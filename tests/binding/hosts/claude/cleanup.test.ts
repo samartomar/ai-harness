@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   applyClaudeCleanup,
   ClaudeCleanupError,
+  type ClaudeCleanupPlan,
   planClaudeCleanup,
   rollbackClaudeCleanup,
 } from "../../../../src/binding/hosts/claude/cleanup.js";
@@ -314,5 +315,34 @@ describe("applyClaudeCleanup — double-apply is safe", () => {
     // Disk state is unchanged by the second run.
     expect(readFileSync(join(home, ".claude", "settings.json"), "utf8")).toBe(afterFirst);
     expect(report().clean).toBe(true);
+  });
+});
+
+describe("applyClaudeCleanup — malformed shared JSON fails the step honestly", () => {
+  it("fails a disable step on a non-object settings root, with backup + manifest intact", () => {
+    seed(".claude/settings.json", `${JSON.stringify(["not", "an", "object"], null, 2)}\n`);
+    const plan: ClaudeCleanupPlan = {
+      schemaVersion: 1,
+      includeUnknown: false,
+      steps: [
+        {
+          action: "backup-then-disable",
+          surface: "plugin",
+          attribution: "superpowers",
+          path: ".claude/settings.json",
+          edit: { kind: "json-key", container: "enabledPlugins", key: "superpowers@obra" },
+        },
+      ],
+      skipped: [],
+    };
+    const result = applyClaudeCleanup(plan, { home, runId: "malformed-root-run" });
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("JSON object root");
+    expect(result.completed).toHaveLength(0);
+    expect(result.pending).toHaveLength(1);
+    // The backup + manifest were written before the failing step; the live file is untouched.
+    expect(existsSync(join(result.backupRoot, "manifest.json"))).toBe(true);
+    expect(existsSync(join(result.backupRoot, "files", ".claude", "settings.json"))).toBe(true);
+    expect(readFileSync(join(home, ".claude", "settings.json"), "utf8")).toContain('"not"');
   });
 });

@@ -33,6 +33,7 @@ import {
   CLAUDE_SETTINGS_LOCAL_PATH,
   CLAUDE_SETTINGS_PATH,
   canonicalJson,
+  parseJsonPointer,
   sha256Hex,
 } from "./surfaces.js";
 
@@ -407,9 +408,16 @@ export async function bindPlugin(
 }
 
 /**
- * Re-bind pre-existing preservation: when the prior lock already owns the same
- * `enabledPlugins` target, reuse its recorded pre-existing state so removal
- * restores the pre-AIH world, not a prior bind's own value.
+ * Re-bind pre-existing preservation: reuse the prior lock's recorded state so
+ * removal restores the pre-AIH world, not a prior bind's own value. Two shapes:
+ *  - the prior lock owns the LEAF (`<file>#/enabledPlugins/<key>` — the container
+ *    pre-existed at first bind): carry its preExisting onto the new leaf intent;
+ *  - the prior lock owns the PARENT container (`<file>#/enabledPlugins` with
+ *    preExisting absent — AIH created the container at first bind): RE-ASSERT
+ *    parent ownership on the re-bind intent. The engine sees the container as
+ *    present now and would otherwise record a leaf whose "pre-existing" is the
+ *    first bind's own value, so removal from a re-bind lock would restore the
+ *    binding instead of pruning the container AIH created.
  */
 function preservePriorPreExisting(
   settingsPlan: ClaudeManagedPlan,
@@ -417,11 +425,28 @@ function preservePriorPreExisting(
   target: string,
 ): void {
   if (previousLock === undefined) return;
-  const prior = previousLock.ownership.find((entry) => entry.target === target);
   const intent = settingsPlan.ownership[0];
-  if (prior !== undefined && intent !== undefined) {
+  if (intent === undefined) return;
+  const prior = previousLock.ownership.find((entry) => entry.target === target);
+  if (prior !== undefined) {
     intent.preExisting = prior.preExisting;
+    return;
   }
+  if (intent.pointer === undefined || intent.pointer.length !== 2) return;
+  const hash = target.indexOf("#");
+  if (hash < 0) return;
+  const file = target.slice(0, hash);
+  const segments = parseJsonPointer(target.slice(hash + 1));
+  const parent = segments[0];
+  const child = segments[1];
+  if (parent === undefined || child === undefined) return;
+  const parentTarget = `${file}#/${parent}`;
+  const parentPrior = previousLock.ownership.find((entry) => entry.target === parentTarget);
+  if (parentPrior === undefined) return;
+  intent.target = parentTarget;
+  intent.pointer = [parent];
+  intent.preExisting = parentPrior.preExisting;
+  intent.applied = { [child]: intent.applied };
 }
 
 interface HomeOwnershipInputs {
@@ -494,6 +519,10 @@ function defaultApplyActions(
         env,
         options: {},
       },
+      // A bind runs inside a user project whose worktree is legitimately dirty
+      // (their own uncommitted work) — the repo-hygiene gate would make binding
+      // unusable there. The write itself stays a targeted single-key merge with
+      // pre-existing state captured at plan time.
       { skipWorktreeGate: true },
     );
 }

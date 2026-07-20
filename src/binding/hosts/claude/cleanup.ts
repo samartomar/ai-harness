@@ -389,7 +389,13 @@ function applyJsonEdit(absFile: string, edit: ClaudeCleanupEdit): void {
   const raw = readIfExists(absFile);
   if (raw === undefined) return;
   const parsed = parseJsoncText(raw);
-  if (!isPlainObject(parsed)) return;
+  if (!isPlainObject(parsed)) {
+    // A shared JSON file whose root is not an object is malformed state; failing
+    // the step (backup intact) is honest — silently "completing" a no-op is not.
+    throw new ClaudeCleanupError(
+      `refusing targeted edit — ${absFile} does not have a JSON object root`,
+    );
+  }
   if (edit.kind === "json-key") {
     if (!DISABLE_CONTAINERS.has(edit.container)) {
       throw new ClaudeCleanupError(

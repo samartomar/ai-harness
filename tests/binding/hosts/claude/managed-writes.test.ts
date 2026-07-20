@@ -112,18 +112,44 @@ describe("jsonField (owned field in a shared JSON file)", () => {
 });
 
 describe("mcpServer (.mcp.json server ownership)", () => {
-  it("binds a server under mcpServers and records mcp-server ownership", async () => {
+  it("records mcp-server LEAF ownership when mcpServers already exists", async () => {
+    // Pre-existing container => the server is owned as a leaf (siblings survive).
+    seed(
+      CLAUDE_MCP_PATH,
+      `${JSON.stringify({ mcpServers: { keep: { command: "k" } } }, null, 2)}\n`,
+    );
     const built = new ClaudeManagedWriteEngine(root)
       .mcpServer("ecc", { command: "ecc-mcp", args: ["serve"] })
       .build();
     await applyActions(root, built.actions);
 
     expect(readJson(root, CLAUDE_MCP_PATH)).toEqual({
-      mcpServers: { ecc: { command: "ecc-mcp", args: ["serve"] } },
+      mcpServers: { keep: { command: "k" }, ecc: { command: "ecc-mcp", args: ["serve"] } },
     });
     const own = built.ownership[0];
     expect(own?.kind).toBe("mcp-server");
     expect(own?.target).toBe("ecc");
+    expect(own?.applied).toEqual({ command: "ecc-mcp", args: ["serve"] });
+    expect(built.writes[0]?.mechanism).toBe("mcp-server");
+  });
+
+  it("records json-pointer PARENT ownership when mcpServers is absent (own what AIH creates)", async () => {
+    // No mcpServers container => AIH creates it, so it OWNS the whole container.
+    const built = new ClaudeManagedWriteEngine(root)
+      .mcpServer("ecc", { command: "ecc-mcp" })
+      .build();
+    await applyActions(root, built.actions);
+
+    expect(readJson(root, CLAUDE_MCP_PATH)).toEqual({
+      mcpServers: { ecc: { command: "ecc-mcp" } },
+    });
+    expect(built.ownership).toHaveLength(1);
+    const own = built.ownership[0];
+    expect(own?.kind).toBe("json-pointer");
+    expect(own?.target).toBe(`${CLAUDE_MCP_PATH}#/mcpServers`);
+    expect(own?.preExisting).toEqual({ absent: true });
+    expect(own?.applied).toEqual({ ecc: { command: "ecc-mcp" } });
+    // The per-slot write still records the mcp-server mechanism.
     expect(built.writes[0]?.mechanism).toBe("mcp-server");
   });
 
@@ -141,16 +167,66 @@ describe("mcpServer (.mcp.json server ownership)", () => {
     });
   });
 
-  it("groups two owned servers into a single .mcp.json write", async () => {
+  it("aggregates two servers into one .mcp.json write AND one parent-container ownership entry", async () => {
     const built = new ClaudeManagedWriteEngine(root)
       .mcpServer("a", { command: "a-mcp" })
       .mcpServer("b", { command: "b-mcp" })
       .build();
     expect(built.actions.filter((a) => a.kind === "write")).toHaveLength(1);
+    // Two per-slot writes, but ONE aggregated parent-container ownership entry.
+    expect(built.writes).toHaveLength(2);
+    expect(built.ownership).toHaveLength(1);
+    expect(built.ownership[0]?.target).toBe(`${CLAUDE_MCP_PATH}#/mcpServers`);
+    expect(built.ownership[0]?.applied).toEqual({
+      a: { command: "a-mcp" },
+      b: { command: "b-mcp" },
+    });
     await applyActions(root, built.actions);
     expect(readJson(root, CLAUDE_MCP_PATH)).toEqual({
       mcpServers: { a: { command: "a-mcp" }, b: { command: "b-mcp" } },
     });
+  });
+});
+
+describe("container ownership — depth-2 into an absent parent (D18 own what you created)", () => {
+  it("owns the PARENT container as one entry for a single leaf into an absent parent", () => {
+    const built = new ClaudeManagedWriteEngine(root)
+      .jsonField(CLAUDE_SETTINGS_PATH, "/enabledPlugins/gstack@aih-gstack", true)
+      .build();
+    expect(built.ownership).toHaveLength(1);
+    const own = built.ownership[0];
+    expect(own?.kind).toBe("json-pointer");
+    expect(own?.target).toBe(`${CLAUDE_SETTINGS_PATH}#/enabledPlugins`);
+    expect(own?.preExisting).toEqual({ absent: true });
+    expect(own?.applied).toEqual({ "gstack@aih-gstack": true });
+    // The per-slot write stays; only ownership collapses to the parent.
+    expect(built.writes).toHaveLength(1);
+    expect(built.writes[0]?.mechanism).toBe("json-pointer");
+  });
+
+  it("aggregates multiple leaves under the same absent parent into ONE merged-container entry", () => {
+    const built = new ClaudeManagedWriteEngine(root)
+      .jsonField(CLAUDE_SETTINGS_PATH, "/skillOverrides/a", "off")
+      .jsonField(CLAUDE_SETTINGS_PATH, "/skillOverrides/b", "off")
+      .build();
+    expect(built.ownership).toHaveLength(1);
+    expect(built.ownership[0]?.target).toBe(`${CLAUDE_SETTINGS_PATH}#/skillOverrides`);
+    expect(built.ownership[0]?.applied).toEqual({ a: "off", b: "off" });
+    // Both per-slot writes are still recorded.
+    expect(built.writes).toHaveLength(2);
+  });
+
+  it("keeps LEAF ownership when the parent already exists (siblings owned independently)", () => {
+    seed(
+      CLAUDE_SETTINGS_PATH,
+      `${JSON.stringify({ skillOverrides: { userOwned: "off" } }, null, 2)}\n`,
+    );
+    const built = new ClaudeManagedWriteEngine(root)
+      .jsonField(CLAUDE_SETTINGS_PATH, "/skillOverrides/a", "off")
+      .build();
+    expect(built.ownership).toHaveLength(1);
+    expect(built.ownership[0]?.target).toBe(`${CLAUDE_SETTINGS_PATH}#/skillOverrides/a`);
+    expect(built.ownership[0]?.applied).toBe("off");
   });
 });
 

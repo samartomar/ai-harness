@@ -82,18 +82,19 @@ function inventory(names: readonly string[], sourceDigest = DIGEST_A): PinnedSki
 }
 
 describe("queueSkillDenyList", () => {
-  it('writes exact "off" entries per pinned name as depth-2 skillOverrides pointers', () => {
+  it('queues exact "off" deny entries per pinned name into an absent skillOverrides container', () => {
     const engine = new ClaudeManagedWriteEngine(root);
     const result = queueSkillDenyList(engine, inventory(["alpha", "beta"]));
     expect(result.denied).toEqual(["alpha", "beta"]);
 
     const built = engine.build();
-    expect(built.ownership.map((o) => o.target)).toEqual([
-      `${CLAUDE_SETTINGS_PATH}#/skillOverrides/alpha`,
-      `${CLAUDE_SETTINGS_PATH}#/skillOverrides/beta`,
-    ]);
-    expect(built.ownership.every((o) => o.kind === "json-pointer")).toBe(true);
-    expect(built.ownership.every((o) => o.applied === "off")).toBe(true);
+    // skillOverrides did not exist on disk, so AIH owns the container it creates as a
+    // SINGLE entry (D18 "own what you created") — removal takes the whole container,
+    // never leaving an empty `skillOverrides: {}` behind.
+    expect(built.ownership).toHaveLength(1);
+    expect(built.ownership[0]?.kind).toBe("json-pointer");
+    expect(built.ownership[0]?.target).toBe(`${CLAUDE_SETTINGS_PATH}#/skillOverrides`);
+    expect(built.ownership[0]?.applied).toEqual({ alpha: "off", beta: "off" });
   });
 
   it("leaves unrelated skillOverrides neighbors (including the user's own off entries) untouched", async () => {

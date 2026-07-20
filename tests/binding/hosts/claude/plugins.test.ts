@@ -193,9 +193,11 @@ describe("bindPlugin — happy path (marketplace add -> install -> D7 match -> s
     expect(result.ownership).toHaveLength(3);
     const [settings, marketplace, cache] = result.ownership;
     expect(settings?.kind).toBe("json-pointer");
-    expect(settings?.target).toBe(`.claude/settings.json#/enabledPlugins/${KEY}`);
+    // Fresh bind into an absent container: AIH created `enabledPlugins`, so it
+    // owns the CONTAINER (own what you created), not just the leaf.
+    expect(settings?.target).toBe(".claude/settings.json#/enabledPlugins");
     expect(settings?.preExisting).toEqual({ absent: true });
-    expect(settings?.applied).toBe(true);
+    expect(settings?.applied).toEqual({ [KEY]: true });
     expect(marketplace?.target).toBe(homeMarketplaceTarget(MARKETPLACE));
     expect(marketplace?.applied).toEqual({ source: resolved.treePath });
     expect(cache?.target).toBe(homePluginCacheTarget(KEY));
@@ -488,8 +490,12 @@ describe("bindPlugin — re-bind idempotency", () => {
 
     // Byte-identical settings on re-bind (no churn).
     expect(readFileSync(join(root, ".claude/settings.json"), "utf8")).toBe(settingsAfterFirst);
-    // The original pre-AIH state (absent) is preserved, not the first bind's own value.
+    // The original pre-AIH state (absent) is preserved, not the first bind's own
+    // value — and PARENT ownership is re-asserted, so removal from the re-bind
+    // lock still takes the whole container AIH created.
+    expect(second.ownership[0]?.target).toBe(".claude/settings.json#/enabledPlugins");
     expect(second.ownership[0]?.preExisting).toEqual({ absent: true });
+    expect(second.ownership[0]?.applied).toEqual({ [KEY]: true });
     expect(second.identity).toEqual(first.identity);
     expect(second.writes).toEqual(first.writes);
   });

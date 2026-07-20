@@ -1,3 +1,4 @@
+import { lstatSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { readIfExists } from "../../../internals/fsxn.js";
 import { extractManagedBlock, stripManagedBlock } from "../../../internals/markers.js";
@@ -8,6 +9,7 @@ import { deepSet } from "./managed-writes.js";
 import {
   CLAUDE_MCP_KEY,
   CLAUDE_MCP_PATH,
+  CLAUDE_OWNED_FILE_ROOTS,
   canonicalJson,
   jsonEqual,
   parseJsonPointer,
@@ -86,6 +88,7 @@ export function planClaudeRemoval(root: string, lock: BindingLock): ClaudeRemova
   const drift: ClaudeDriftEntry[] = [];
   const jsonFiles = new Map<string, JsonRemovalAccumulator>();
   const otherActions: Action[] = [];
+  const removedFiles = new Set<string>();
 
   for (const entry of lock.ownership) {
     if (entry.kind === "json-pointer" || entry.kind === "mcp-server") {
@@ -95,7 +98,7 @@ export function planClaudeRemoval(root: string, lock: BindingLock): ClaudeRemova
       if (block !== undefined) {
         reconcileBlockEntry(root, entry, block, otherActions, drift);
       } else {
-        reconcileFileEntry(root, entry, otherActions, drift);
+        reconcileFileEntry(root, entry, otherActions, drift, removedFiles);
       }
     }
   }
@@ -116,7 +119,53 @@ export function planClaudeRemoval(root: string, lock: BindingLock): ClaudeRemova
     );
   }
 
-  return { actions: [...jsonActions, ...otherActions], drift };
+  // Owned files removed above may empty a directory AIH created under
+  // `.claude/rules|skills|agents/` (D18 "own what you created" — a clean tree keeps
+  // no orphaned empty dir). Removal is CONSERVATIVE: a dir is scheduled only when
+  // every current entry is itself being removed, so a user file left beside an owned
+  // one keeps its directory. Staged AFTER the file removals so the files move first.
+  const dirActions = planEmptyOwnedDirRemovals(root, removedFiles);
+
+  return { actions: [...jsonActions, ...otherActions, ...dirActions], drift };
+}
+
+/**
+ * Directories under an owned-file root that BECOME empty once `removedFiles` are
+ * gone, deepest first. A dir qualifies only when every entry it currently holds is
+ * in the removal set (an already-scheduled deeper dir counts), so a user-authored
+ * neighbour always keeps the directory. Symlinked dirs are skipped (the executor
+ * would refuse them anyway); the owned-file roots themselves are never removed.
+ */
+function planEmptyOwnedDirRemovals(root: string, removedFiles: ReadonlySet<string>): Action[] {
+  if (removedFiles.size === 0) return [];
+  const candidates = new Set<string>();
+  for (const file of removedFiles) {
+    const ownedRoot = CLAUDE_OWNED_FILE_ROOTS.find((r) => file.startsWith(r));
+    if (ownedRoot === undefined) continue;
+    const parts = file.split("/");
+    for (let depth = parts.length - 1; depth >= 1; depth -= 1) {
+      const dir = parts.slice(0, depth).join("/");
+      if (dir.startsWith(ownedRoot)) candidates.add(dir);
+    }
+  }
+  const removedPaths = new Set(removedFiles);
+  const toRemove: string[] = [];
+  const deepestFirst = [...candidates].sort((a, b) => b.split("/").length - a.split("/").length);
+  for (const dir of deepestFirst) {
+    const abs = join(root, dir);
+    let entries: string[];
+    try {
+      if (lstatSync(abs).isSymbolicLink()) continue;
+      entries = readdirSync(abs);
+    } catch {
+      continue; // absent or unreadable — nothing to remove
+    }
+    if (entries.every((name) => removedPaths.has(`${dir}/${name}`))) {
+      toRemove.push(dir);
+      removedPaths.add(dir);
+    }
+  }
+  return toRemove.map((dir) => remove(dir, `Remove empty Claude owned directory ${dir}`));
 }
 
 function reconcileJsonEntry(
@@ -126,7 +175,16 @@ function reconcileJsonEntry(
   drift: ClaudeDriftEntry[],
 ): void {
   const { file, pointer } = jsonRoute(entry);
-  if (pointer.length === 0) return;
+  if (pointer.length === 0) {
+    // A json-pointer entry whose target carries no pointer is a malformed lock
+    // record — conservative removal PRESERVES and reports it, never guesses.
+    drift.push({
+      kind: entry.kind,
+      target: entry.target,
+      reason: "malformed lock target (no JSON pointer) — preserved",
+    });
+    return;
+  }
   const raw = readIfExists(join(root, file));
   let parsed: unknown;
   try {
@@ -197,6 +255,7 @@ function reconcileFileEntry(
   entry: BindingOwnershipEntry,
   actions: Action[],
   drift: ClaudeDriftEntry[],
+  removedFiles: Set<string>,
 ): void {
   const current = readIfExists(join(root, entry.target));
   if (current === undefined) return; // already gone
@@ -214,6 +273,7 @@ function reconcileFileEntry(
     actions.push(writeText(entry.target, contents, `Restore pre-existing file ${entry.target}`));
   } else {
     actions.push(remove(entry.target, `Remove Claude owned file ${entry.target}`));
+    removedFiles.add(entry.target);
   }
 }
 

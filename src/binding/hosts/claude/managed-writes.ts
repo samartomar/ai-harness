@@ -69,7 +69,12 @@ export interface ClaudeOwnershipIntent {
   applied: unknown;
 }
 
-/** The plan bundle: actions to execute, plus the parallel writes + ownership intents. */
+/**
+ * The plan bundle: actions to execute, the per-slot writes, and the ownership
+ * intents. `writes` has one entry per jsonField/mcpServer/block/file call;
+ * `ownership` may be SHORTER when depth-2 leaves under a freshly-created parent
+ * collapse into a single parent-container entry (D18 "own what you created").
+ */
 export interface ClaudeManagedPlan {
   actions: Action[];
   writes: BindingWrite[];
@@ -86,6 +91,8 @@ type Slot =
       value: unknown;
       target: string;
       preExisting: ClaudePreExisting;
+      /** Depth-2 only: the parent container was ABSENT on disk at plan time. */
+      parentAbsent: boolean;
     }
   | {
       type: "block";
@@ -113,9 +120,25 @@ export class ClaudeManagedWriteEngine {
     return raw === undefined ? undefined : parseJsoncText(raw);
   }
 
-  private capturePreExisting(file: string, pointer: string[]): ClaudePreExisting {
-    const found = valueAtPointer(this.readJson(file), pointer);
-    return found.present ? { value: found.value } : { absent: true };
+  /**
+   * Capture, from ONE read of the current file, both the slot's pre-existing value
+   * and — for a depth-2 pointer — whether the PARENT container is absent on disk.
+   * An absent parent means AIH will IMPLICITLY create the container, so build()
+   * records ownership of the whole container ("own what you created") rather than
+   * just the leaf, and removal can take the empty container with it (D18).
+   */
+  private captureJsonSlot(
+    file: string,
+    pointer: string[],
+  ): { preExisting: ClaudePreExisting; parentAbsent: boolean } {
+    const current = this.readJson(file);
+    const found = valueAtPointer(current, pointer);
+    const preExisting: ClaudePreExisting = found.present
+      ? { value: found.value }
+      : { absent: true };
+    const parentAbsent =
+      pointer.length >= 2 && !valueAtPointer(current, [pointer[0] ?? ""]).present;
+    return { preExisting, parentAbsent };
   }
 
   /**
@@ -143,7 +166,7 @@ export class ClaudeManagedWriteEngine {
       pointerStr: pointer,
       value,
       target: `${file}#${pointer}`,
-      preExisting: this.capturePreExisting(file, segments),
+      ...this.captureJsonSlot(file, segments),
     });
     return this;
   }
@@ -167,7 +190,7 @@ export class ClaudeManagedWriteEngine {
       pointerStr: `/${CLAUDE_MCP_KEY}/${id}`,
       value: config,
       target: id,
-      preExisting: this.capturePreExisting(CLAUDE_MCP_PATH, pointer),
+      ...this.captureJsonSlot(CLAUDE_MCP_PATH, pointer),
     });
     return this;
   }
@@ -219,30 +242,61 @@ export class ClaudeManagedWriteEngine {
     return this;
   }
 
-  /** Produce the plan bundle: grouped actions + parallel writes + ownership intents. */
+  /** Produce the plan bundle: grouped actions + per-slot writes + ownership intents. */
   build(): ClaudeManagedPlan {
     const writes: BindingWrite[] = [];
     const ownership: ClaudeOwnershipIntent[] = [];
     const jsonFiles = new Map<string, JsonFileAccumulator>();
+    // Depth-2 slots whose parent AIH creates collapse into ONE ownership entry per
+    // (file, parent): removal takes the whole container AIH added, not just the leaf.
+    const parentGroups = new Map<string, { container: Record<string, unknown> }>();
     const blockActions: Action[] = [];
     const fileActions: Action[] = [];
 
     for (const slot of this.slots) {
       if (slot.type === "json") {
+        // Writes stay per-slot (one BindingWrite per jsonField/mcpServer call).
         writes.push({
           path: slot.file,
           mechanism: slot.kind,
           contentDigest: sha256Hex(canonicalJson(slot.value)),
         });
-        ownership.push({
-          kind: slot.kind,
-          target: slot.target,
-          file: slot.file,
-          pointer: slot.pointer,
-          preExisting: slot.preExisting,
-          applied: slot.value,
-        });
         accumulateJson(jsonFiles, slot.file, slot.pointer, slot.value);
+        if (slot.pointer.length === 2 && slot.parentAbsent) {
+          // Own the PARENT container AIH is about to create (D18: own what you
+          // created). Aggregate every leaf under the same absent parent into one
+          // entry whose `applied` is the merged container.
+          const parent = slot.pointer[0] ?? "";
+          const child = slot.pointer[1] ?? "";
+          const groupKey = `${slot.file} ${parent}`;
+          let group = parentGroups.get(groupKey);
+          if (group === undefined) {
+            const container: Record<string, unknown> = {};
+            group = { container };
+            parentGroups.set(groupKey, group);
+            ownership.push({
+              kind: "json-pointer",
+              target: `${slot.file}#/${parent}`,
+              file: slot.file,
+              pointer: [parent],
+              preExisting: { absent: true },
+              // Same object reference as group.container; filled as children arrive.
+              applied: container,
+            });
+          }
+          group.container[child] = slot.value;
+        } else {
+          // Leaf ownership: depth-1, or depth-2 with a pre-existing parent (today's
+          // behavior — the leaf is pruned/restored on its own, siblings untouched).
+          ownership.push({
+            kind: slot.kind,
+            target: slot.target,
+            file: slot.file,
+            pointer: slot.pointer,
+            preExisting: slot.preExisting,
+            applied: slot.value,
+          });
+        }
       } else if (slot.type === "block") {
         const digest = sha256Hex(slot.bodyTrimmed);
         writes.push({ path: slot.file, mechanism: "file", contentDigest: digest });

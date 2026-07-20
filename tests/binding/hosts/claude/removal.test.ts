@@ -254,3 +254,112 @@ describe("planClaudeRemoval — never a whole-file replacement", () => {
     expect(after.model).toBeUndefined();
   });
 });
+
+describe("planClaudeRemoval — malformed lock targets are preserved and reported", () => {
+  it("reports drift for a json-pointer entry whose target carries no pointer", () => {
+    seed(CLAUDE_SETTINGS_PATH, `${JSON.stringify({ model: "opus" }, null, 2)}\n`);
+    const lock = lockFrom(
+      [],
+      [
+        {
+          kind: "json-pointer",
+          target: CLAUDE_SETTINGS_PATH, // malformed: no "#/pointer" suffix
+          preExisting: { absent: true },
+          applied: "opus",
+          postApplyDigest: "b".repeat(64),
+        },
+      ],
+    );
+    const removal = planClaudeRemoval(root, lock);
+    expect(removal.actions).toHaveLength(0);
+    expect(removal.drift).toHaveLength(1);
+    expect(removal.drift[0]?.reason).toContain("malformed lock target");
+    expect(readJson(root, CLAUDE_SETTINGS_PATH)).toEqual({ model: "opus" });
+  });
+});
+
+describe("planClaudeRemoval — container ownership (own what AIH created)", () => {
+  it("removes the whole container AIH created, leaving no empty object behind", async () => {
+    seed(CLAUDE_SETTINGS_PATH, `${JSON.stringify({ model: "opus" }, null, 2)}\n`); // enabledPlugins absent
+    const built = new ClaudeManagedWriteEngine(root)
+      .jsonField(CLAUDE_SETTINGS_PATH, "/enabledPlugins/gstack@aih-gstack", true)
+      .build();
+    const lock = await bindAndLock(built);
+    expect(readJson(root, CLAUDE_SETTINGS_PATH).enabledPlugins).toEqual({
+      "gstack@aih-gstack": true,
+    });
+
+    const removal = planClaudeRemoval(root, lock);
+    expect(removal.drift).toHaveLength(0);
+    await applyActions(root, removal.actions);
+
+    const after = readJson(root, CLAUDE_SETTINGS_PATH);
+    expect(after.enabledPlugins).toBeUndefined(); // no empty {} container survives
+    expect(after.model).toBe("opus"); // unrelated content survives
+  });
+
+  it("clears a container AIH filled with multiple aggregated leaves", async () => {
+    const built = new ClaudeManagedWriteEngine(root)
+      .jsonField(CLAUDE_SETTINGS_PATH, "/skillOverrides/a", "off")
+      .jsonField(CLAUDE_SETTINGS_PATH, "/skillOverrides/b", "off")
+      .build();
+    const lock = await bindAndLock(built);
+    expect(readJson(root, CLAUDE_SETTINGS_PATH)).toEqual({
+      skillOverrides: { a: "off", b: "off" },
+    });
+
+    const removal = planClaudeRemoval(root, lock);
+    expect(removal.drift).toHaveLength(0);
+    await applyActions(root, removal.actions);
+    expect(readJson(root, CLAUDE_SETTINGS_PATH).skillOverrides).toBeUndefined();
+  });
+
+  it("preserves a user-added sibling in an AIH-created container and reports drift", async () => {
+    const built = new ClaudeManagedWriteEngine(root)
+      .jsonField(CLAUDE_SETTINGS_PATH, "/enabledPlugins/gstack@aih-gstack", true)
+      .build();
+    const lock = await bindAndLock(built);
+    // User adds a sibling INTO the container AIH created (container now drifted).
+    seed(
+      CLAUDE_SETTINGS_PATH,
+      `${JSON.stringify(
+        { enabledPlugins: { "gstack@aih-gstack": true, "user@plugin": true } },
+        null,
+        2,
+      )}\n`,
+    );
+
+    const removal = planClaudeRemoval(root, lock);
+    expect(removal.drift).toHaveLength(1);
+    expect(removal.drift[0]?.target).toBe(`${CLAUDE_SETTINGS_PATH}#/enabledPlugins`);
+    await applyActions(root, removal.actions);
+    // The whole container + both entries survive — never silently deleted.
+    expect(readJson(root, CLAUDE_SETTINGS_PATH).enabledPlugins).toEqual({
+      "gstack@aih-gstack": true,
+      "user@plugin": true,
+    });
+  });
+
+  it("removes an empty owned directory AIH created once the last owned file is gone", async () => {
+    const rel = ".claude/skills/gstack/SKILL.md";
+    const built = new ClaudeManagedWriteEngine(root).ownedFile(rel, "# skill\n").build();
+    const lock = await bindAndLock(built);
+    expect(existsSync(join(root, ".claude", "skills", "gstack"))).toBe(true);
+
+    await applyActions(root, planClaudeRemoval(root, lock).actions);
+    expect(existsSync(join(root, rel))).toBe(false);
+    expect(existsSync(join(root, ".claude", "skills", "gstack"))).toBe(false);
+  });
+
+  it("keeps a directory that still holds a user file after the owned file is removed", async () => {
+    const owned = ".claude/skills/gstack/SKILL.md";
+    const built = new ClaudeManagedWriteEngine(root).ownedFile(owned, "# skill\n").build();
+    const lock = await bindAndLock(built);
+    seed(".claude/skills/gstack/user-notes.md", "# mine\n"); // user neighbour
+
+    await applyActions(root, planClaudeRemoval(root, lock).actions);
+    expect(existsSync(join(root, owned))).toBe(false);
+    expect(existsSync(join(root, ".claude", "skills", "gstack", "user-notes.md"))).toBe(true);
+    expect(existsSync(join(root, ".claude", "skills", "gstack"))).toBe(true);
+  });
+});
