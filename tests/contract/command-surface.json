@@ -422,6 +422,66 @@
       "commands": []
     },
     {
+      "name": "cleanup",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--include-unknown"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--rollback <backupRoot>"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
       "name": "contract",
       "hasDescription": true,
       "arguments": [
