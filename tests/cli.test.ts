@@ -21,7 +21,7 @@ describe("CLI program", () => {
   });
 
   it("declares 28 capabilities and 6 read-only commands", () => {
-    expect(CAPABILITIES).toHaveLength(28);
+    expect(CAPABILITIES).toHaveLength(29);
     expect(READONLY).toHaveLength(6);
   });
 

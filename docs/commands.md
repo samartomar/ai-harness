@@ -15,6 +15,14 @@ Extract the corporate root CA from the OS trust store, lock it down, propagate t
 npm, pip, cargo, conda, Go, git, JVM tools, Gradle, and Maven, and emit Docker daemon
 trust guidance.
 
+## aih cleanup
+
+Report framework contamination in the Claude USER scope (`~/.claude`) with a countable
+leakage summary, then remediate it opt-in: a bare run only previews the plan; `--apply`
+executes with a backup-manifest-first discipline (targeted key/hook removals — a shared
+settings file is never replaced); `--rollback <backupRoot>` restores a prior backup with
+per-file digest checks; `--include-unknown` widens past framework-attributed surfaces.
+
 ## aih heal
 
 Diagnose **and repair** the broken runtime `certs` assumes works — corporate TLS trust, npm, PATH,

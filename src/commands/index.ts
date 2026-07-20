@@ -1,6 +1,10 @@
 import type { Command } from "commander";
 import { command as adopt } from "../adopt/index.js";
 import { vetBaselineCommand } from "../baseline-evidence/commands.js";
+import {
+  command as cleanup,
+  executeClaudeCleanupCommand,
+} from "../binding/hosts/claude/cleanup-command.js";
 import { command as bootstrap } from "../bootstrap/index.js";
 import { command as bootstrapAi } from "../bootstrap-ai/index.js";
 import { command as bundle, verifyCommand as verifyBundle } from "../bundle/index.js";
@@ -91,6 +95,7 @@ import { type RunDeps, runCapability } from "./run.js";
 /** Capability commands (repo/workstation mutators), dry-run by default. */
 export const CAPABILITIES: CommandSpec[] = [
   certs,
+  cleanup,
   heal,
   hardware,
   vdi,
@@ -376,6 +381,7 @@ function registerSpec(program: Command, spec: CommandSpec): void {
         deps.positionalRoot = false;
         deps.optionOverrides = { [spec.positional.optionName]: _rootArg };
       }
+      if (spec === cleanup) deps.execute = executeClaudeCleanupCommand;
       if (spec === ecc) deps.execute = executeEccCommand;
       if (spec === superpowers) deps.execute = executeSuperpowersCommand;
       process.exitCode = await runCapability(spec, command, deps);
