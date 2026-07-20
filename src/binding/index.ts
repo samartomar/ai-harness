@@ -27,6 +27,29 @@ export {
   type ResolveRequest,
   type VerifyResult,
 } from "./adapter.js";
+// W3a — Claude project-scope host adapter (detection + D18 managed-write/removal engine).
+export {
+  CLAUDE_BINDING_MARKER,
+  CLAUDE_BOOTLOADER_PATH,
+  CLAUDE_MCP_PATH,
+  CLAUDE_OWNED_FILE_ROOTS,
+  CLAUDE_SETTINGS_LOCAL_PATH,
+  CLAUDE_SETTINGS_PATH,
+  CLAUDE_SHARED_JSON_FILES,
+  type ClaudeDriftEntry,
+  type ClaudeHostDetectDeps,
+  type ClaudeHostReport,
+  ClaudeHostWriteError,
+  type ClaudeManagedPlan,
+  ClaudeManagedWriteEngine,
+  type ClaudeOwnershipIntent,
+  type ClaudeOwnershipKind,
+  type ClaudePreExisting,
+  type ClaudeRemovalPlan,
+  detectClaudeHost,
+  finalizeClaudeOwnership,
+  planClaudeRemoval,
+} from "./hosts/claude/index.js";
 export {
   type BindingLock,
   BindingLockError,
