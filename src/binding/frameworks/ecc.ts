@@ -1,14 +1,18 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 import { baselineCatalogById } from "../../baseline-evidence/catalogs.js";
+import type { EccMcpComponentId } from "../../ecc/components.js";
 import {
   type EccInstallPreviewArtifact,
   parseEccInstallPreview,
   readEccInstallPreview,
 } from "../../ecc/install-preview.js";
+import { selectedEccMcpServers } from "../../ecc/mcp.js";
 import { AihError } from "../../errors.js";
-import type { Action } from "../../internals/plan.js";
+import { executePlan, type PlanResult } from "../../internals/execute.js";
+import { type Action, plan as planActions } from "../../internals/plan.js";
 import type { Runner } from "../../internals/proc.js";
+import { makeHostAdapter, resolvePlatform } from "../../platform/detect.js";
 import {
   assertPlanAllowed,
   assertProvisionAllowed,
@@ -25,17 +29,36 @@ import {
 } from "../adapter.js";
 import { assertKnownFeatureKeys } from "../features.js";
 import {
+  bindPlugin,
   type ClaudeDriftEntry,
+  type ClaudeManagedPlan,
+  ClaudeManagedWriteEngine,
+  type ClaudeOwnershipIntent,
   claudeHomeDir,
+  defaultPluginCacheLocator,
   estimateContextCostFromTree,
+  finalizeClaudeOwnership,
   HOME_OWNERSHIP_PREFIX,
+  homeMarketplaceTarget,
+  homePluginCacheTarget,
   isHomeScopedTarget,
+  type PluginCacheLocator,
+  type PluginScope,
   planClaudeRemoval,
+  pluginEnableKey,
+  settingsFileForScope,
+  verifyPluginIdentity,
 } from "../hosts/claude/index.js";
-import { canonicalJson, sha256Hex } from "../hosts/claude/surfaces.js";
+import {
+  CLAUDE_MCP_KEY,
+  CLAUDE_MCP_PATH,
+  canonicalJson,
+  sha256Hex,
+} from "../hosts/claude/surfaces.js";
 import {
   type BindingLock,
   type BindingOwnershipEntry,
+  type BindingWrite,
   planBindingRemoval,
   readBindingLock,
   writeBindingLockAtomic,
@@ -56,9 +79,15 @@ import type { BindingDeclaration, BindingGitSource } from "../schema.js";
  * layer around ECC's own selective installer: it does NOT re-implement any ECC
  * install machinery (D9 — the upstream installer is INVOKED, never reimplemented),
  * it drives the installer through an injected seam and records BINDING state in
- * the W2 lock. W4c adds the Full variant to THIS file — the mode switch on
- * `declaration.framework.mode` already routes lean/full; full currently throws a
- * typed not-implemented error.
+ * the W2 lock. W4c adds the ECC **Full** variant to THIS file (below the `== ECC
+ * Full ==` banners): explicit opt-in (`mode: "full"`), the PROJECT-SCOPE PLUGIN
+ * path — Full keeps the file's declared `adapterType` but internally composes the
+ * SAME W3 host services `superpowers.ts` uses (`bindPlugin` marketplace/install +
+ * D7 subtree identity), adds the two mandatory D18 project-scoped state-root env
+ * fields, owns each individually-selected `mcp:<connector>` in `.mcp.json`, and
+ * feeds a static state-write inventory into the strict/lax LABEL DECISION. The
+ * mode switch on `declaration.framework.mode` ({@link eccMode}) routes lean/full,
+ * and {@link assertModeMatchesExistingLock} keeps the two mutually exclusive.
  *
  * D10 (the locked binding ruling this implements EXACTLY):
  * ECC's upstream `minimal` profile is NOT Lean — minimal ships `workflow-quality`
@@ -123,10 +152,30 @@ export class EccBindingError extends AihError {
   }
 }
 
-/** The requested ECC mode is recognized but not yet implemented in this file (Full is W4c). */
+/**
+ * Fail-closed guard for a mode value outside {@link EccMode} — unreachable through
+ * the declaration schema (which restricts `mode` to `lean`/`full`), kept as defense
+ * in depth so a widened schema can never silently route an unknown mode. W4b used
+ * this to stub Full; W4c implements Full, so the only remaining throw site is the
+ * impossible-mode branch in {@link eccMode}.
+ */
 export class EccModeNotImplementedError extends AihError {
   constructor(message: string) {
     super(message, "AIH_BINDING_ECC_MODE");
+  }
+}
+
+/**
+ * D10 point 5 — Lean and Full are MUTUALLY EXCLUSIVE per project. Thrown (typed,
+ * fail-closed) when a `plan`/`provision` for one mode meets an existing lock that
+ * records the OTHER mode, in BOTH directions (Full over a Lean lock, Lean over a
+ * Full lock). Re-binding the SAME mode is allowed. The check lives in the shared
+ * mode-routing area ({@link assertModeMatchesExistingLock}) so both directions are
+ * covered from one place.
+ */
+export class EccModeConflictError extends AihError {
+  constructor(message: string) {
+    super(message, "AIH_BINDING_ECC_MODE_CONFLICT");
   }
 }
 
@@ -218,6 +267,73 @@ export const ECC_LEAN_EXCLUDED: readonly string[] = [
   "auto-update (baseline:commands, baseline:platform)",
   "unrelated language/framework skills (non-detected lang:*, framework:*)",
 ];
+
+// == ECC Full (W4c) — explicit opt-in, project-scope PLUGIN path (D10) =========
+
+/** Route input: absent or `"lean"` -> Lean; `"full"` -> Full. */
+export type EccMode = "lean" | "full";
+
+/**
+ * The plugin name AIH installs for ECC Full. Full is EXPLICIT OPT-IN
+ * (`mode: "full"`) and binds through the SAME W3 host services `superpowers.ts`
+ * uses — the scanned checkout is registered as a marketplace and the plugin is
+ * installed at PROJECT scope (`bindPlugin`, D7 subtree identity). The file's
+ * declared `adapterType` (`upstream-local-installer`) is unchanged; Full internally
+ * uses host-plugin mechanics (D10).
+ */
+export const ECC_FULL_PLUGIN_NAME = "ecc";
+
+/** The marketplace name AIH registers the scanned ECC checkout under for Full. */
+export const ECC_FULL_MARKETPLACE_NAME = "aih-ecc";
+
+/** ECC Full always binds at project scope (`.claude/settings.json`). */
+const ECC_FULL_SCOPE: PluginScope = "project";
+
+/**
+ * The MANDATORY project-scoped state-root env fields (D18-owned in
+ * `.claude/settings.json`, D10 point 2). Each points at a PROJECT-LOCAL,
+ * repo-relative default under `.aih/` — the SAME gitignored territory the binding
+ * lock lives in (`.aih/binding/lock.json`), so ECC agent state and the CLv2
+ * homunculus never leak into the machine home or the committed tree. Owned in the
+ * SAME lock through the one-lock pattern superpowers uses for its telemetry field.
+ */
+const ENV_AGENT_DATA_POINTER = "/env/ECC_AGENT_DATA_HOME";
+const ENV_HOMUNCULUS_POINTER = "/env/CLV2_HOMUNCULUS_DIR";
+/** Default project-local path for `ECC_AGENT_DATA_HOME` (repo-relative, gitignored `.aih/`). */
+export const ECC_AGENT_DATA_HOME_DEFAULT = ".aih/ecc/agent-data";
+/** Default project-local path for `CLV2_HOMUNCULUS_DIR` (repo-relative, gitignored `.aih/`). */
+export const ECC_HOMUNCULUS_DIR_DEFAULT = ".aih/ecc/homunculus";
+
+/**
+ * The ECC Full MCP CONNECTOR ALLOWLIST — the connector ids a Full bind may select,
+ * one per `mcp:<connector>` declaration `features` key (D10 point 3).
+ *
+ * MIRRORS (deliberately does not import) the resolvable subset of
+ * `EXPLICIT_MCP_COMPONENTS` in `src/ecc/components.ts`, as consumed by
+ * `selectedEccMcpServers`/`orgAllowedEccMcpComponents` in `src/ecc/mcp.ts` — those
+ * resolve each `mcp:<id>` against the validated `mcpServers()` catalog in
+ * `src/mcp/servers.ts`. Mirrored rather than imported for the same reasons as the
+ * pin constants: (1) the allowlist is a DELIBERATE, independently-reviewed value —
+ * if the upstream catalog grows a connector, adding it here is a reviewed change,
+ * never a silent follow; (2) it keeps the binding path from depending on the ECC
+ * component-selection module just to read a list. `exa` is intentionally OMITTED:
+ * `EXPLICIT_MCP_COMPONENTS` lists `mcp:exa`, but `src/mcp/servers.ts` ships no
+ * validated `exa` config, so `selectedEccMcpServers(["mcp:exa"])` would throw — a
+ * connector with no config can never be a bindable selection. A test asserts every
+ * id here resolves through `selectedEccMcpServers`, so a drift fails closed.
+ */
+export const ECC_FULL_MCP_CONNECTORS: readonly string[] = [
+  "code-review-graph",
+  "codebase-memory-mcp",
+  "sequential-thinking",
+  "github",
+  "context7",
+];
+
+/** The Full known-feature-key list: exactly one `mcp:<connector>` key per allowlisted connector. */
+export const ECC_FULL_FEATURE_KEYS: readonly string[] = ECC_FULL_MCP_CONNECTORS.map(
+  (id) => `mcp:${id}`,
+);
 
 // -- normalized preview operations + allowlist diff (pure) --------------------
 
@@ -463,6 +579,28 @@ export interface EccLeanAdapterDeps {
   installer?: EccLeanInstaller;
   /** Per-call installer timeout override. */
   timeoutMs?: number;
+  // -- ECC Full (W4c) only; ignored by the Lean path --------------------------
+  /**
+   * Full only: injectable plugin-cache locator threaded to `bindPlugin` (D7) and to
+   * `verify`/`remove`. Defaults to {@link defaultPluginCacheLocator}. Tests inject a
+   * fixture locator so no real `claude` runs and no real `~/.claude` is touched.
+   */
+  locateCache?: PluginCacheLocator;
+  /**
+   * Full only: injectable apply seam for the repo-relative D18 writes (the env-root
+   * fields and the `.mcp.json` connectors, plus `bindPlugin`'s `enabledPlugins`).
+   * Defaults to a real `executePlan` wrapper (worktree gate skipped).
+   */
+  applyActions?: (root: string, actions: Action[]) => Promise<PlanResult>;
+  /**
+   * Full only: state-write surfaces the LABEL DECISION may treat as compliant
+   * because they were removed through a SUPPORTED upstream selection mechanism
+   * (D10 point 4). The only supported mechanism today is the plugin's own
+   * `--config` userConfig options; this list is populated ONLY from such a
+   * mechanism — NEVER by editing plugin content. Each string matches a
+   * {@link EccStateWriteFinding.surface}.
+   */
+  excludedSurfaces?: string[];
 }
 
 /**
@@ -497,17 +635,37 @@ function assertEccDeclaration(declaration: BindingDeclaration): void {
   }
 }
 
-/** Route on `declaration.framework.mode`: absent or "lean" -> lean; "full" -> typed not-implemented. */
-function assertLeanMode(declaration: BindingDeclaration): void {
+/**
+ * Route on `declaration.framework.mode`: absent or `"lean"` -> Lean; `"full"` ->
+ * Full. The declaration schema restricts `mode` to those values; the final throw
+ * is unreachable defense in depth (see {@link EccModeNotImplementedError}).
+ */
+function eccMode(declaration: BindingDeclaration): EccMode {
   const mode = declaration.framework.mode;
-  if (mode === undefined || mode === "lean") return;
-  if (mode === "full") {
-    throw new EccModeNotImplementedError(
-      'ECC Full mode is not implemented yet (W4c); only Lean (mode: "lean" or absent) is supported',
+  if (mode === undefined || mode === "lean") return "lean";
+  if (mode === "full") return "full";
+  throw new EccModeNotImplementedError(`unsupported ECC mode "${String(mode)}"`);
+}
+
+/**
+ * D10 point 5 — the SHARED mode-routing guard both `plan` and `provision` call, in
+ * BOTH modes, so Lean/Full mutual exclusivity is enforced in one place and covers
+ * both directions. When a lock already records an ECC binding in the OTHER mode,
+ * fail closed with {@link EccModeConflictError}; a matching-mode re-bind is allowed,
+ * and a lock for a DIFFERENT framework is a D8 concern handled by the plan/provision
+ * guards, not here. Reading the lock performs no write (safe from a pure `plan`).
+ */
+function assertModeMatchesExistingLock(root: string, requested: EccMode): void {
+  const read = readBindingLock(root);
+  if (!read.present || read.lock.declaration.framework.id !== "ecc") return;
+  const recorded = eccMode(read.lock.declaration);
+  if (recorded !== requested) {
+    throw new EccModeConflictError(
+      `project already has an ECC ${recorded} binding; refusing to ${
+        requested === "full" ? "bind Full over a Lean lock" : "re-bind Lean over a Full lock"
+      } — ECC Lean and Full are mutually exclusive per project (remove the existing binding first)`,
     );
   }
-  // Any other value is already rejected by the declaration schema; fail closed regardless.
-  throw new EccModeNotImplementedError(`unsupported ECC mode "${mode}"`);
 }
 
 function assertGitSource(source: BindingDeclaration["source"]): BindingGitSource {
@@ -646,11 +804,12 @@ async function provisionEccLean(
 ): Promise<ProvisionResult> {
   const declaration = request.context.declaration;
   assertEccDeclaration(declaration);
-  assertLeanMode(declaration);
   // Defense in depth (D8 layer 3 + D12) — the registry dispatch already guards this.
   assertProvisionAllowed(request, disposition);
   const resolved = assertGitResolved(request.resolved);
   assertResolvedMatchesDeclaration(declaration, resolved);
+  // D10 point 5: refuse a Lean re-bind over an existing Full lock (before any work).
+  assertModeMatchesExistingLock(deps.root, "lean");
 
   // 1. Run the upstream PREVIEW (pin-bound) and DIFF it against the allowlist
   //    BEFORE any install — a mismatch fails closed with the installer untouched.
@@ -908,15 +1067,713 @@ function reportEccLean(deps: EccLeanAdapterDeps, context: BindingContext): Bindi
   return { framework: "ecc", lines };
 }
 
+// == ECC Full (W4c) — state-write inventory (label-decision input, D10 point 4) =
+
+/** One state-writing surface the Full inventory found in the scanned checkout. */
+export interface EccStateWriteFinding {
+  /** Which detector produced this finding. */
+  kind:
+    | "continuous-learning-skill"
+    | "learned-skills-write"
+    | "hook-definition"
+    | "outside-root-write";
+  /**
+   * A STABLE surface id — enumerated in {@link EccFullLabelInput.sharedWrites} and
+   * matched against an {@link EccLeanAdapterDeps.excludedSurfaces} entry. Shaped
+   * `<kind>:<location>` so it is both human-readable and deterministic across runs.
+   */
+  surface: string;
+  /** Human-readable detail for the Framework Card / report lines. */
+  detail: string;
+}
+
+/** The Full LABEL DECISION input recorded in `report()` and returned from `provision`. */
+export interface EccFullLabelInput {
+  /**
+   * `true` only when the inventory found ZERO noncompliant surfaces, OR every one
+   * was excluded through a supported selection mechanism (D10 point 4). Otherwise
+   * `false` with {@link sharedWrites} enumerating the surfaces that keep it lax.
+   */
+  strict: boolean;
+  /** The noncompliant shared-write surfaces NOT excluded (sorted, deduped). */
+  sharedWrites: string[];
+}
+
+/** Text extensions the content scanners read (shell / js / ts / py / json). */
+const INVENTORY_TEXT_EXTS: ReadonlySet<string> = new Set([
+  ".sh",
+  ".bash",
+  ".zsh",
+  ".js",
+  ".cjs",
+  ".mjs",
+  ".ts",
+  ".py",
+  ".json",
+]);
+/** Skip absurdly large files; the scanners are grep-style, not parsers. */
+const INVENTORY_MAX_FILE_BYTES = 512 * 1024;
+/** Directories never worth walking for state-write surfaces. */
+const INVENTORY_SKIP_DIRS: ReadonlySet<string> = new Set([".git", "node_modules"]);
+
+/** Writes to the shared learned-skills dir (the known legacy case). */
+const LEARNED_WRITE_RE = /(?:\$HOME|\$\{HOME\}|~)\/\.claude\/skills\/learned/;
+/**
+ * Heuristic net for OTHER writes outside the project-scoped state roots: a write
+ * verb (redirection / mkdir / cp / mv / touch / node fs write) targeting a home or
+ * absolute system path. Best-effort textual detection — documented as a heuristic
+ * (see {@link eccFullStateWriteInventory}); it neither parses shell nor resolves
+ * variables, so it can miss obfuscated writes and (rarely) over-report.
+ */
+const OUTSIDE_WRITE_RE =
+  /(?:>>?\s*|\btee\s+|\bmkdir\s+(?:-p\s+)?|\bcp\s+|\bmv\s+|\btouch\s+|\b(?:writeFileSync|appendFileSync|mkdirSync|createWriteStream)\s*\(\s*)["'`]?(?:\$HOME|\$\{HOME\}|~\/|\/(?:etc|usr|var|opt|root)\/)/;
+
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Collect relative POSIX dir + file paths under `root` (skipping vcs / vendor dirs). */
+function walkInventoryTree(root: string): { dirs: string[]; files: string[] } {
+  const dirs: string[] = [];
+  const files: string[] = [];
+  const walk = (abs: string, rel: string): void => {
+    let names: string[];
+    try {
+      names = readdirSync(abs).sort();
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      const childAbs = join(abs, name);
+      const childRel = rel.length > 0 ? `${rel}/${name}` : name;
+      let isDir: boolean;
+      try {
+        isDir = statSync(childAbs).isDirectory();
+      } catch {
+        continue;
+      }
+      if (isDir) {
+        if (INVENTORY_SKIP_DIRS.has(name)) continue;
+        dirs.push(childRel);
+        walk(childAbs, childRel);
+      } else {
+        files.push(childRel);
+      }
+    }
+  };
+  walk(root, "");
+  return { dirs, files };
+}
+
+function readTextCapped(abs: string): string | undefined {
+  try {
+    if (statSync(abs).size > INVENTORY_MAX_FILE_BYTES) return undefined;
+    return readFileSync(abs, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+/** (b) Hook definitions carried by the plugin manifest (`.claude-plugin/plugin.json`). */
+function hookManifestFindings(treePath: string): EccStateWriteFinding[] {
+  const manifestPath = join(treePath, ".claude-plugin", "plugin.json");
+  const raw = existsSync(manifestPath) ? readTextCapped(manifestPath) : undefined;
+  if (raw === undefined) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!isRecordValue(parsed)) return [];
+  const hooks = parsed.hooks;
+  const findings: EccStateWriteFinding[] = [];
+  if (Array.isArray(hooks)) {
+    for (let index = 0; index < hooks.length; index += 1) {
+      findings.push({
+        kind: "hook-definition",
+        surface: `hook-definition:plugin.json#${index}`,
+        detail: `plugin manifest declares a hook (entry ${index})`,
+      });
+    }
+  } else if (isRecordValue(hooks)) {
+    for (const key of Object.keys(hooks).sort()) {
+      findings.push({
+        kind: "hook-definition",
+        surface: `hook-definition:plugin.json#${key}`,
+        detail: `plugin manifest declares a "${key}" hook`,
+      });
+    }
+  } else if (typeof hooks === "string" && hooks.length > 0) {
+    findings.push({
+      kind: "hook-definition",
+      surface: "hook-definition:plugin.json",
+      detail: `plugin manifest references a hooks file (${hooks})`,
+    });
+  }
+  return findings;
+}
+
+/** A script referencing either project env root is treated as compliant by detector (c). */
+function mentionsEnvRoots(content: string): boolean {
+  return content.includes("ECC_AGENT_DATA_HOME") || content.includes("CLV2_HOMUNCULUS_DIR");
+}
+
+function dedupeFindings(findings: readonly EccStateWriteFinding[]): EccStateWriteFinding[] {
+  const seen = new Set<string>();
+  const out: EccStateWriteFinding[] = [];
+  for (const finding of findings) {
+    if (seen.has(finding.surface)) continue;
+    seen.add(finding.surface);
+    out.push(finding);
+  }
+  return out.sort((left, right) => left.surface.localeCompare(right.surface));
+}
+
+/**
+ * STATIC state-write surface inventory over the SCANNED checkout — the LABEL
+ * DECISION input (D10 point 4). Three detectors:
+ *  (a) the known legacy case — any `skills/continuous-learning` directory (matched
+ *      by prefix), and any shell / js / ts / py file whose CONTENT writes to the
+ *      shared learned-skills dir (`$HOME`/`${HOME}`/`~` + `/.claude/skills/learned`);
+ *  (b) any hook definitions the plugin manifest carries ({@link hookManifestFindings});
+ *  (c) a best-effort HEURISTIC net for anything ELSE writing outside the
+ *      project-scoped env roots — a write verb targeting a home/absolute path
+ *      ({@link OUTSIDE_WRITE_RE}), excluding scripts that reference the project env
+ *      roots. Being textual, (c) does not parse shell or resolve variables, so it
+ *      can miss obfuscated writes and occasionally over-report; it is intentionally
+ *      conservative (one finding per file) to keep the surface set deterministic.
+ * Read-only: no network, no CLI, no host mutation.
+ */
+export function eccFullStateWriteInventory(scannedTreePath: string): EccStateWriteFinding[] {
+  if (!existsSync(scannedTreePath)) return [];
+  const { dirs, files } = walkInventoryTree(scannedTreePath);
+  const findings: EccStateWriteFinding[] = [];
+
+  // (a) continuous-learning skill directories (any `skills/continuous-learning*/`).
+  for (const dir of dirs) {
+    if (/(?:^|\/)skills\/continuous-learning[^/]*$/.test(dir)) {
+      findings.push({
+        kind: "continuous-learning-skill",
+        surface: `continuous-learning-skill:${dir}`,
+        detail: `legacy continuous-learning skill directory present at ${dir}`,
+      });
+    }
+  }
+
+  // (b) hooks the plugin manifest carries.
+  findings.push(...hookManifestFindings(scannedTreePath));
+
+  // (a2) + (c) content scans over text files.
+  for (const rel of files) {
+    if (!INVENTORY_TEXT_EXTS.has(extname(rel).toLowerCase())) continue;
+    const content = readTextCapped(join(scannedTreePath, ...rel.split("/")));
+    if (content === undefined) continue;
+    if (LEARNED_WRITE_RE.test(content)) {
+      findings.push({
+        kind: "learned-skills-write",
+        surface: `learned-skills-write:${rel}`,
+        detail: `writes to the shared learned-skills dir ($HOME/.claude/skills/learned) in ${rel}`,
+      });
+      continue; // the specific legacy case; do not double-count as a generic outside-root write
+    }
+    if (OUTSIDE_WRITE_RE.test(content) && !mentionsEnvRoots(content)) {
+      findings.push({
+        kind: "outside-root-write",
+        surface: `outside-root-write:${rel}`,
+        detail: `heuristic: a write targets a home/absolute path outside the project-scoped state roots in ${rel}`,
+      });
+    }
+  }
+
+  return dedupeFindings(findings);
+}
+
+/**
+ * Compute the Full LABEL DECISION from the inventory (D10 point 4). `strict` is
+ * `true` iff every found surface is excluded through a supported selection mechanism
+ * ({@link EccLeanAdapterDeps.excludedSurfaces}); the remaining surfaces are
+ * enumerated (sorted, deduped) as {@link EccFullLabelInput.sharedWrites}.
+ */
+export function computeEccFullLabel(
+  findings: readonly EccStateWriteFinding[],
+  excludedSurfaces: readonly string[] = [],
+): EccFullLabelInput {
+  const excluded = new Set(excludedSurfaces);
+  const sharedWrites = [
+    ...new Set(
+      findings.map((finding) => finding.surface).filter((surface) => !excluded.has(surface)),
+    ),
+  ].sort();
+  return { strict: sharedWrites.length === 0, sharedWrites };
+}
+
+// == ECC Full — connector selection + plan preview =============================
+
+/** The connector ids a Full declaration turns ON via `mcp:<connector>: true` feature keys. */
+function selectedFullConnectors(declaration: BindingDeclaration): string[] {
+  const features = declaration.framework.features ?? {};
+  return ECC_FULL_MCP_CONNECTORS.filter((id) => features[`mcp:${id}`] === true);
+}
+
+/** Resolve the selected connectors' validated configs from the ECC MCP catalog (D10 point 3). */
+function selectedEccFullServers(declaration: BindingDeclaration): Record<string, unknown> {
+  const ids = selectedFullConnectors(declaration).map((id) => `mcp:${id}` as EccMcpComponentId);
+  return ids.length === 0 ? {} : selectedEccMcpServers(ids);
+}
+
+/** Predict the post-apply digest a real write would seal, without applying anything. */
+function previewEccOwnership(intents: readonly ClaudeOwnershipIntent[]): BindingOwnershipEntry[] {
+  return intents.map((intent) => ({
+    kind: intent.kind,
+    target: intent.target,
+    preExisting: intent.preExisting,
+    applied: intent.applied,
+    postApplyDigest: sha256Hex(canonicalJson(intent.applied)),
+  }));
+}
+
+/**
+ * Preview the two machine-scope (`home:`) entries `bindPlugin` will record. The
+ * exact local checkout path isn't knowable without I/O, so the marketplace preview
+ * stands in the declared repository; the cache preview uses the declared
+ * `treeDigest` — the value a successful bind MUST produce (D7). Mirrors the private
+ * `previewHomeOwnership` in `superpowers.ts`.
+ */
+function previewEccHomeOwnership(
+  source: BindingGitSource,
+  pluginKey: string,
+): BindingOwnershipEntry[] {
+  const marketplaceApplied = { source: { source: "directory", path: source.repository } };
+  return [
+    {
+      kind: "json-pointer",
+      target: homeMarketplaceTarget(ECC_FULL_MARKETPLACE_NAME),
+      preExisting: { absent: true },
+      applied: marketplaceApplied,
+      postApplyDigest: sha256Hex(canonicalJson(marketplaceApplied)),
+    },
+    {
+      kind: "file",
+      target: homePluginCacheTarget(pluginKey),
+      preExisting: { absent: true },
+      applied: source.treeDigest,
+      postApplyDigest: source.treeDigest,
+    },
+  ];
+}
+
+/**
+ * PURE Full plan preview (no disk write). Mirrors `bindPlugin`'s `enabledPlugins`
+ * write, the two mandatory D18 env-root fields (D10 point 2), one owned MCP entry
+ * per individually-selected connector (D10 point 3), and the two `home:` machine
+ * entries. D10 point 6: the connector count + env-root fields are visible in the
+ * preview so the CLI can render cost/consent before confirm.
+ */
+function buildEccFullPlanPreview(
+  root: string,
+  source: BindingGitSource,
+  declaration: BindingDeclaration,
+): BindingPlan {
+  const settingsFile = settingsFileForScope(ECC_FULL_SCOPE);
+  const pluginKey = pluginEnableKey(ECC_FULL_PLUGIN_NAME, ECC_FULL_MARKETPLACE_NAME);
+  const engine = new ClaudeManagedWriteEngine(root)
+    .jsonField(settingsFile, `/enabledPlugins/${pluginKey}`, true)
+    .jsonField(settingsFile, ENV_AGENT_DATA_POINTER, ECC_AGENT_DATA_HOME_DEFAULT)
+    .jsonField(settingsFile, ENV_HOMUNCULUS_POINTER, ECC_HOMUNCULUS_DIR_DEFAULT);
+  for (const [id, config] of Object.entries(selectedEccFullServers(declaration))) {
+    engine.mcpServer(id, config);
+  }
+  const built = engine.build();
+  return {
+    framework: declaration.framework.id,
+    writes: built.writes,
+    ownership: [
+      ...previewEccOwnership(built.ownership),
+      ...previewEccHomeOwnership(source, pluginKey),
+    ],
+  };
+}
+
+// == ECC Full — provision (host-plugin bind + D18 env roots + MCP connectors) ==
+
+/**
+ * The Full `provision` result — the standard `{ lock }` PLUS the LABEL DECISION
+ * input (D10 point 4). Extending the result WITHOUT touching the W2 `ProvisionResult`
+ * / lock schema: the adapter's `provision` still satisfies the `ProvisionResult`
+ * contract, and this widened shape rides through it (a caller casts, exactly as the
+ * Lean/Full remove results do). `report()` recomputes the same label by re-running
+ * the inventory over the marketplace source path recorded in the lock.
+ */
+export interface EccFullProvisionResult extends ProvisionResult {
+  labelInput: EccFullLabelInput;
+}
+
+/**
+ * Default repo-relative apply seam for the Full path (env-root fields + `.mcp.json`
+ * connectors + `bindPlugin`'s `enabledPlugins`). Same recipe as the private
+ * `defaultApplyActions` in `superpowers.ts` (worktree gate skipped — a bind runs
+ * inside a user project legitimately dirty with their own work).
+ */
+function defaultEccApplyActions(
+  deps: EccLeanAdapterDeps,
+): (root: string, actions: Action[]) => Promise<PlanResult> {
+  const env = deps.env ?? {};
+  const run = deps.runner;
+  const host = makeHostAdapter({ platform: resolvePlatform(env), run, env });
+  return (root, actions) =>
+    executePlan(
+      planActions("ecc-full-binding", ...actions),
+      {
+        root,
+        contextDir: "ai-coding",
+        apply: true,
+        verify: false,
+        json: false,
+        run,
+        host,
+        env,
+        options: {},
+      },
+      { skipWorktreeGate: true },
+    );
+}
+
+/**
+ * Re-bind carry-forward for a parent CONTAINER AIH created (`.claude/settings.json`
+ * `/env`, `.mcp.json` `/mcpServers`). On first bind the container is absent, so
+ * `build()` collapses its leaves into ONE parent-container ownership entry (D18
+ * "own what you created"). On a re-bind the container is present, so `build()` would
+ * instead record per-leaf ownership whose "pre-existing" is the FIRST bind's own
+ * value — a later removal would then restore the binding rather than prune the
+ * container AIH added. When the prior lock owned the container, this re-collapses
+ * the fresh leaves back into that single parent-container entry, preserving the
+ * original pre-existing state. A no-op without a prior lock or prior container entry
+ * (the fresh-bind path). Extends `carryForwardOwnership`'s intent to the multi-field
+ * container case.
+ */
+function recollapseOwnedContainer(
+  managedPlan: ClaudeManagedPlan,
+  previousLock: BindingLock | undefined,
+  file: string,
+  parent: string,
+): void {
+  if (previousLock === undefined) return;
+  const parentTarget = `${file}#/${parent}`;
+  const prior = previousLock.ownership.find((entry) => entry.target === parentTarget);
+  if (prior === undefined) return;
+  const container: Record<string, unknown> = {};
+  const kept: ClaudeOwnershipIntent[] = [];
+  for (const intent of managedPlan.ownership) {
+    if (intent.file === file && intent.pointer !== undefined && intent.pointer[0] === parent) {
+      if (intent.pointer.length === 2) {
+        container[intent.pointer[1] as string] = intent.applied;
+        continue;
+      }
+      if (intent.pointer.length === 1 && isRecordValue(intent.applied)) {
+        Object.assign(container, intent.applied);
+        continue;
+      }
+    }
+    kept.push(intent);
+  }
+  kept.unshift({
+    kind: "json-pointer",
+    target: parentTarget,
+    file,
+    pointer: [parent],
+    preExisting: prior.preExisting,
+    applied: container,
+  });
+  managedPlan.ownership = kept;
+}
+
+/** Build the two mandatory project-scoped state-root env fields as a single D18 plan. */
+function buildEccFullEnvPlan(
+  root: string,
+  settingsFile: string,
+  previousLock: BindingLock | undefined,
+): ClaudeManagedPlan {
+  const built = new ClaudeManagedWriteEngine(root)
+    .jsonField(settingsFile, ENV_AGENT_DATA_POINTER, ECC_AGENT_DATA_HOME_DEFAULT)
+    .jsonField(settingsFile, ENV_HOMUNCULUS_POINTER, ECC_HOMUNCULUS_DIR_DEFAULT)
+    .build();
+  recollapseOwnedContainer(built, previousLock, settingsFile, "env");
+  return built;
+}
+
+/**
+ * Own each individually-selected MCP connector as a D18 `.mcp.json` entry (D10
+ * point 3). No connectors selected => NO `.mcp.json` write at all. Configs come
+ * straight from the ECC MCP catalog ({@link selectedEccMcpServers}), so the on-disk
+ * shape is exactly what ECC's own selective installer would write.
+ */
+async function applyEccFullMcpConnectors(
+  deps: EccLeanAdapterDeps,
+  apply: (root: string, actions: Action[]) => Promise<PlanResult>,
+  declaration: BindingDeclaration,
+  previousLock: BindingLock | undefined,
+): Promise<{ writes: BindingWrite[]; ownership: BindingOwnershipEntry[] }> {
+  const servers = selectedEccFullServers(declaration);
+  if (Object.keys(servers).length === 0) return { writes: [], ownership: [] };
+  const engine = new ClaudeManagedWriteEngine(deps.root);
+  for (const [id, config] of Object.entries(servers)) engine.mcpServer(id, config);
+  const built = engine.build();
+  recollapseOwnedContainer(built, previousLock, CLAUDE_MCP_PATH, CLAUDE_MCP_KEY);
+  await apply(deps.root, built.actions);
+  return { writes: built.writes, ownership: finalizeClaudeOwnership(deps.root, built.ownership) };
+}
+
+async function provisionEccFull(
+  deps: EccLeanAdapterDeps,
+  apply: (root: string, actions: Action[]) => Promise<PlanResult>,
+  request: ProvisionRequest,
+  disposition: ScanDisposition,
+): Promise<EccFullProvisionResult> {
+  const declaration = request.context.declaration;
+  assertEccDeclaration(declaration);
+  // Defense in depth (D8 layer 3 + D12) — the registry dispatch already guards this.
+  assertProvisionAllowed(request, disposition);
+  const resolved = assertGitResolved(request.resolved);
+  assertResolvedMatchesDeclaration(declaration, resolved);
+  // D10 point 5: refuse Full over an existing Lean lock (before any host mutation).
+  assertModeMatchesExistingLock(deps.root, "full");
+
+  const priorRead = readBindingLock(deps.root);
+  const previousLock = priorRead.present ? priorRead.lock : undefined;
+
+  // 1. Bind the ECC plugin through the W3 host services (marketplace add -> install
+  //    -> D7 subtree identity -> enabledPlugins). A D7 mismatch throws before any
+  //    env / mcp field or lock is touched (fail closed, no partial state).
+  const bound = await bindPlugin(
+    {
+      disposition,
+      resolved,
+      plugin: ECC_FULL_PLUGIN_NAME,
+      marketplace: ECC_FULL_MARKETPLACE_NAME,
+      scope: ECC_FULL_SCOPE,
+      previousLock,
+    },
+    {
+      root: deps.root,
+      runner: deps.runner,
+      env: deps.env,
+      locateCache: deps.locateCache,
+      applyActions: apply,
+      timeoutMs: deps.timeoutMs,
+    },
+  );
+
+  // 2. Own the MANDATORY project-scoped state-root env fields (D18) in the SAME lock.
+  const envPlan = buildEccFullEnvPlan(deps.root, bound.settingsFile, previousLock);
+  await apply(deps.root, envPlan.actions);
+  const envOwnership = finalizeClaudeOwnership(deps.root, envPlan.ownership);
+
+  // 3. Own each individually-selected MCP connector in `.mcp.json` (none -> no write).
+  const mcp = await applyEccFullMcpConnectors(deps, apply, declaration, previousLock);
+
+  // 4. Assemble the lock (D7 identity from bindPlugin; the extra D18 fields ride along).
+  const lock: BindingLock = {
+    schemaVersion: 1,
+    declaration,
+    writes: [...bound.writes, ...envPlan.writes, ...mcp.writes],
+    scannedDigest: bound.identity.scannedDigest,
+    loadedDigest: bound.identity.loadedDigest,
+    match: bound.identity.match,
+    ownership: [...bound.ownership, ...envOwnership, ...mcp.ownership],
+  };
+  writeBindingLockAtomic(deps.root, lock);
+
+  // 5. LABEL DECISION from the static state-write inventory over the scanned checkout.
+  const labelInput = computeEccFullLabel(
+    eccFullStateWriteInventory(resolved.treePath),
+    deps.excludedSurfaces,
+  );
+  return { lock, labelInput };
+}
+
+// == ECC Full — verify / remove / report ======================================
+
+/** Read the checkout path back out of a sealed marketplace ownership entry (see `sealHomeOwnership`). */
+function marketplaceSourceFrom(entry: BindingOwnershipEntry | undefined): string {
+  const applied = entry?.applied;
+  if (!isRecordValue(applied)) return "";
+  const source = applied.source;
+  if (!isRecordValue(source)) return "";
+  return typeof source.path === "string" ? source.path : "";
+}
+
+/**
+ * Full `verify` — parity with the Lean path but plugin-shaped (mirrors
+ * `verifySuperpowers`): reuse `planClaudeRemoval`'s drift computation READ-ONLY for
+ * the repo-relative D18 fields (enabledPlugins, the two env roots, the `.mcp.json`
+ * connectors), plus an independent D7 re-check of the loaded plugin cache tree.
+ */
+function verifyEccFull(deps: EccLeanAdapterDeps, lock: BindingLock): VerifyResult {
+  const drift: string[] = [];
+
+  const removal = planClaudeRemoval(deps.root, lock);
+  for (const entry of removal.drift) drift.push(`${entry.target}: ${entry.reason}`);
+
+  let identityOk = true;
+  try {
+    const pluginKey = pluginEnableKey(ECC_FULL_PLUGIN_NAME, ECC_FULL_MARKETPLACE_NAME);
+    const marketplaceEntry = lock.ownership.find(
+      (entry) => entry.target === homeMarketplaceTarget(ECC_FULL_MARKETPLACE_NAME),
+    );
+    const locate = deps.locateCache ?? defaultPluginCacheLocator;
+    const loadedTreePath = locate({
+      home: claudeHomeDir(deps.env ?? {}),
+      marketplace: ECC_FULL_MARKETPLACE_NAME,
+      plugin: ECC_FULL_PLUGIN_NAME,
+      pluginKey,
+      marketplaceSourcePath: marketplaceSourceFrom(marketplaceEntry),
+    });
+    const identity = verifyPluginIdentity(lock.scannedDigest, loadedTreePath);
+    identityOk = identity.match;
+    if (!identity.match) {
+      drift.push(
+        `plugin cache identity mismatch: loaded ${identity.loadedDigest} != scanned ${lock.scannedDigest}`,
+      );
+    }
+  } catch (err) {
+    identityOk = false;
+    drift.push(
+      `plugin cache identity re-check failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  return { ok: drift.length === 0 && identityOk, drift };
+}
+
+/**
+ * The Full teardown plan — mirrors `SuperpowersRemoveResult` (the host-plugin path
+ * needs `plugin`/`marketplace` for `claude plugin uninstall`, unlike Lean's
+ * installer teardown). The caller applies repo-relative restore FIRST, then the
+ * machine-scope `removePlugin` teardown (the hard host-ordering constraint).
+ */
+export type EccFullRemoveResult =
+  | { mode: "drift-report-only"; reason: string }
+  | {
+      mode: "apply";
+      repoRelativeActions: Action[];
+      repoRelativeDrift: ClaudeDriftEntry[];
+      homeOwnership: BindingOwnershipEntry[];
+      plugin: string;
+      marketplace: string;
+    };
+
+function removeEccFull(deps: EccLeanAdapterDeps): EccFullRemoveResult {
+  const removalPlan = planBindingRemoval(deps.root);
+  if (removalPlan.mode === "drift-report-only") {
+    return { mode: "drift-report-only", reason: removalPlan.reason };
+  }
+  const lock = removalPlan.lock;
+  const homeOwnership = lock.ownership.filter((entry) => isHomeScopedTarget(entry.target));
+  const repoRelativeOwnership = lock.ownership.filter((entry) => !isHomeScopedTarget(entry.target));
+  const repoRelative = planClaudeRemoval(deps.root, { ...lock, ownership: repoRelativeOwnership });
+  return {
+    mode: "apply",
+    repoRelativeActions: repoRelative.actions,
+    repoRelativeDrift: repoRelative.drift,
+    homeOwnership,
+    plugin: ECC_FULL_PLUGIN_NAME,
+    marketplace: ECC_FULL_MARKETPLACE_NAME,
+  };
+}
+
+function reportEccFull(deps: EccLeanAdapterDeps, context: BindingContext): BindingReport {
+  const lines: string[] = [];
+  const source = context.declaration.source;
+  const pin =
+    source.kind === "git"
+      ? `${source.repository}@${source.commitSha}`
+      : `${source.package}@${source.exactVersion}`;
+  lines.push("framework: ecc");
+  lines.push("mode: full");
+  lines.push(`pin: ${pin}`);
+  lines.push(`plugin: ${ECC_FULL_PLUGIN_NAME}@${ECC_FULL_MARKETPLACE_NAME} (project-scope plugin)`);
+
+  // Selected connectors + env-root fields (D10 point 6 — CLI-render inputs).
+  const connectors = selectedFullConnectors(context.declaration);
+  lines.push(
+    `mcp connectors selected (${connectors.length}): ${connectors.length > 0 ? connectors.join(", ") : "(none)"}`,
+  );
+  lines.push(`state root ECC_AGENT_DATA_HOME: ${ECC_AGENT_DATA_HOME_DEFAULT}`);
+  lines.push(`state root CLV2_HOMUNCULUS_DIR: ${ECC_HOMUNCULUS_DIR_DEFAULT}`);
+
+  const read = readBindingLock(deps.root);
+  if (!read.present) {
+    lines.push("binding lock: absent (not yet provisioned)");
+    lines.push("label decision: not applicable (not yet provisioned)");
+    return { framework: "ecc", lines };
+  }
+
+  const lock = read.lock;
+  lines.push(`scannedDigest: ${lock.scannedDigest}`);
+  lines.push(`loadedDigest: ${lock.loadedDigest}`);
+  lines.push(`match: ${String(lock.match)}`);
+
+  const repoRelative = lock.ownership
+    .filter((entry) => !isHomeScopedTarget(entry.target))
+    .map((entry) => entry.target);
+  const homeScope = lock.ownership
+    .filter((entry) => isHomeScopedTarget(entry.target))
+    .map((entry) => entry.target);
+  lines.push(`D18-owned surfaces: ${repoRelative.length > 0 ? repoRelative.join(", ") : "(none)"}`);
+  lines.push(`machine-scope surfaces: ${homeScope.length > 0 ? homeScope.join(", ") : "(none)"}`);
+
+  // Re-run the LABEL DECISION over the recorded marketplace source path — the
+  // plumbing that carries the label input beyond provision (D10 point 4).
+  const marketplaceEntry = lock.ownership.find(
+    (entry) => entry.target === homeMarketplaceTarget(ECC_FULL_MARKETPLACE_NAME),
+  );
+  const treePath = marketplaceSourceFrom(marketplaceEntry);
+  if (treePath.length > 0) {
+    const label = computeEccFullLabel(eccFullStateWriteInventory(treePath), deps.excludedSurfaces);
+    lines.push(`label decision: ${label.strict ? "strict" : "lax"}`);
+    lines.push(
+      `shared writes: ${label.sharedWrites.length > 0 ? label.sharedWrites.join(", ") : "(none)"}`,
+    );
+    try {
+      const cost = estimateContextCostFromTree(treePath);
+      lines.push(
+        `context-cost estimate (${cost.evidence}, labeled estimate): ~${cost.projectedTokens} tokens ` +
+          `(skills ${cost.counts.skills}, agents ${cost.counts.agents}, commands ${cost.counts.commands}, ` +
+          `hooks ${cost.counts.hooks}, mcpServers ${cost.counts.mcpServers})`,
+      );
+    } catch (err) {
+      lines.push(
+        `context-cost estimate: unavailable (${err instanceof Error ? err.message : String(err)})`,
+      );
+    }
+  } else {
+    lines.push("label decision: unavailable (resolved checkout path not recorded)");
+    lines.push("context-cost estimate: unavailable (resolved checkout path not recorded)");
+  }
+
+  return { framework: "ecc", lines };
+}
+
 // -- factory ------------------------------------------------------------------
 
 /**
  * Widening note for `frameworks/registry.ts`: `BindingRegistryDeps` widens to also
  * carry ECC's construction deps ({@link EccLeanAdapterDeps}'s ECC-only optionals —
- * `installer`, `installPreview`). `root`/`runner`/`env`/`cacheHome`/`timeoutMs` are
- * shared with `SuperpowersAdapterDeps`.
+ * `installer`, `installPreview`, and the Full-only `excludedSurfaces`;
+ * `locateCache`/`applyActions` are already shared with `SuperpowersAdapterDeps`).
+ * `root`/`runner`/`env`/`cacheHome`/`timeoutMs` are shared with `SuperpowersAdapterDeps`.
+ *
+ * Mode routing (D10): `plan`/`provision` route on the declaration's mode
+ * ({@link eccMode} — absent/`"lean"` -> Lean, `"full"` -> Full); `verify`/`remove`/
+ * `report` route on the LOCK's recorded mode (the applied-state authority), falling
+ * back to the declaration when no lock is present. Lean and Full share one file and
+ * one `adapterType`; only the provisioning mechanics differ (D6 installer vs the
+ * project-scope host-plugin path).
  */
 export function createEccAdapter(deps: EccLeanAdapterDeps): FrameworkAdapter {
+  const apply = deps.applyActions ?? defaultEccApplyActions(deps);
+
   return {
     framework: "ecc",
     adapterType: "upstream-local-installer",
@@ -926,8 +1783,8 @@ export function createEccAdapter(deps: EccLeanAdapterDeps): FrameworkAdapter {
     },
 
     async resolve(request: ResolveRequest): Promise<ResolvedSource> {
+      // Resolution is mode-agnostic (source identity only); Full is no longer rejected.
       assertEccDeclaration(request.declaration);
-      assertLeanMode(request.declaration);
       const source = assertGitSource(request.declaration.source);
       return resolveGitSource(
         { repository: source.repository, commitSha: source.commitSha },
@@ -936,30 +1793,65 @@ export function createEccAdapter(deps: EccLeanAdapterDeps): FrameworkAdapter {
     },
 
     plan(context: BindingContext): BindingPlan {
-      assertEccDeclaration(context.declaration);
+      const declaration = context.declaration;
+      assertEccDeclaration(declaration);
       assertPlanAllowed(context);
-      assertKnownFeatureKeys(context.declaration.framework.features, [], "ecc");
-      assertLeanMode(context.declaration);
-      return buildEccLeanPlan(deps, context.declaration);
+      if (eccMode(declaration) === "full") {
+        // Full accepts one `mcp:<connector>` key per allowlisted connector (D10 point 3).
+        assertKnownFeatureKeys(declaration.framework.features, ECC_FULL_FEATURE_KEYS, "ecc");
+        assertModeMatchesExistingLock(deps.root, "full");
+        return buildEccFullPlanPreview(deps.root, assertGitSource(declaration.source), declaration);
+      }
+      // Lean accepts NO feature keys.
+      assertKnownFeatureKeys(declaration.framework.features, [], "ecc");
+      assertModeMatchesExistingLock(deps.root, "lean");
+      return buildEccLeanPlan(deps, declaration);
     },
 
     async provision(
       request: ProvisionRequest,
       disposition: ScanDisposition,
     ): Promise<ProvisionResult> {
-      return provisionEccLean(deps, request, disposition);
+      return eccMode(request.context.declaration) === "full"
+        ? provisionEccFull(deps, apply, request, disposition)
+        : provisionEccLean(deps, request, disposition);
     },
 
-    verify(_context: BindingContext): VerifyResult {
+    verify(context: BindingContext): VerifyResult {
+      const read = readBindingLock(deps.root);
+      if (
+        read.present &&
+        read.lock.declaration.framework.id === "ecc" &&
+        eccMode(read.lock.declaration) === "full"
+      ) {
+        return verifyEccFull(deps, read.lock);
+      }
+      // Lean path also handles the no-lock case (parity: `{ ok: false, drift: ["no binding lock"] }`).
+      void context;
       return verifyEccLean(deps);
     },
 
-    remove(_context: BindingContext) {
+    remove(context: BindingContext) {
+      const read = readBindingLock(deps.root);
+      void context;
+      if (
+        read.present &&
+        read.lock.declaration.framework.id === "ecc" &&
+        eccMode(read.lock.declaration) === "full"
+      ) {
+        return removeEccFull(deps);
+      }
+      // Lean path also handles the no-lock case (parity: drift-report-only).
       return removeEccLean(deps);
     },
 
     report(context: BindingContext): BindingReport {
-      return reportEccLean(deps, context);
+      const read = readBindingLock(deps.root);
+      const mode =
+        read.present && read.lock.declaration.framework.id === "ecc"
+          ? eccMode(read.lock.declaration)
+          : eccMode(context.declaration);
+      return mode === "full" ? reportEccFull(deps, context) : reportEccLean(deps, context);
     },
   };
 }

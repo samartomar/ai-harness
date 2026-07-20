@@ -18,13 +18,14 @@ import { createSuperpowersAdapter, type SuperpowersAdapterDeps } from "./superpo
 
 /**
  * Shared construction deps for every registered adapter. The shared fields
- * (`root`/`runner`/`env`/`cacheHome`/`timeoutMs`) live on {@link SuperpowersAdapterDeps};
- * this shape widens to also carry ECC's adapter-specific optionals (`installer`,
- * `installPreview`). Both factories accept this merged shape (each ignores fields
- * it does not use).
+ * (`root`/`runner`/`env`/`cacheHome`/`timeoutMs`, plus the host-plugin
+ * `locateCache`/`applyActions`) live on {@link SuperpowersAdapterDeps}; this shape
+ * widens to also carry ECC's adapter-specific optionals (`installer`,
+ * `installPreview`, and the ECC Full `excludedSurfaces`). Both factories accept this
+ * merged shape (each ignores fields it does not use).
  */
 export type BindingRegistryDeps = SuperpowersAdapterDeps &
-  Pick<EccLeanAdapterDeps, "installer" | "installPreview">;
+  Pick<EccLeanAdapterDeps, "installer" | "installPreview" | "excludedSurfaces">;
 
 /** Build an {@link AdapterRegistry} with every currently-implemented D6 adapter registered. */
 export function createBindingAdapterRegistry(deps: BindingRegistryDeps): AdapterRegistry {

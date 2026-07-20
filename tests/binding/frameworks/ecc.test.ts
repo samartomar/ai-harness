@@ -1,5 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -7,17 +15,27 @@ import { hashComponentTree } from "../../../src/baseline-evidence/hash.js";
 import { AdapterRegistry, type BindingContext } from "../../../src/binding/adapter.js";
 import { BindingFeatureKeyError } from "../../../src/binding/features.js";
 import {
+  computeEccFullLabel,
   computeEccLeanPreviewDiff,
   createEccAdapter,
+  ECC_AGENT_DATA_HOME_DEFAULT,
+  ECC_FULL_FEATURE_KEYS,
+  ECC_FULL_MARKETPLACE_NAME,
+  ECC_FULL_MCP_CONNECTORS,
+  ECC_FULL_PLUGIN_NAME,
+  ECC_HOMUNCULUS_DIR_DEFAULT,
   ECC_LEAN_ALLOWLIST,
   ECC_PIN_COMMIT,
   ECC_REPOSITORY,
   EccBindingError,
+  type EccFullProvisionResult,
+  type EccFullRemoveResult,
   EccLeanAllowlistError,
   type EccLeanInstaller,
   EccLeanInstallerUnavailableError,
   type EccLeanRemoveResult,
-  EccModeNotImplementedError,
+  EccModeConflictError,
+  eccFullStateWriteInventory,
   eccRuntimeSurfaceHit,
 } from "../../../src/binding/frameworks/ecc.js";
 import { createBindingAdapterRegistry } from "../../../src/binding/frameworks/registry.js";
@@ -35,6 +53,7 @@ import {
   BindingFrameworkConflictError,
 } from "../../../src/binding/schema.js";
 import { readEccInstallPreview } from "../../../src/ecc/install-preview.js";
+import { selectedEccMcpServers } from "../../../src/ecc/mcp.js";
 import { defaultRunner, fakeRunner, type Runner } from "../../../src/internals/proc.js";
 
 /**
@@ -222,6 +241,78 @@ function spyRunner(): { runner: Runner; calls: string[][] } {
   return { runner, calls };
 }
 
+// -- Full fixtures (W4c) ------------------------------------------------------
+
+/**
+ * The `.claude-plugin` manifests every Full `provision()` fixture needs: `bindPlugin`
+ * digests the plugin's own SOURCE SUBTREE (see `pluginSourceSubtreeDigest`), resolved
+ * via these. `source: "./"` (single-plugin-at-root marketplace) makes the subtree the
+ * whole checkout, so its digest equals `resolved.treeDigest` — every digest assertion
+ * below stays valid.
+ */
+const ECC_FULL_MANIFEST_FILES: Record<string, string> = {
+  ".claude-plugin/marketplace.json": JSON.stringify({
+    plugins: [{ name: ECC_FULL_PLUGIN_NAME, source: "./" }],
+  }),
+  ".claude-plugin/plugin.json": JSON.stringify({ name: ECC_FULL_PLUGIN_NAME, version: "1.0.0" }),
+};
+
+/** The `<plugin>@<marketplace>` enable/cache key for the Full path. */
+const ECC_FULL_KEY = `${ECC_FULL_PLUGIN_NAME}@${ECC_FULL_MARKETPLACE_NAME}`;
+
+/** A REAL brand-protected disposition minted over an ECC plugin fixture (manifests + content). */
+function scannedFullFixture(
+  name: string,
+  extra: Record<string, string> = {},
+): { resolved: ResolvedGitSource; disposition: ScanDisposition } {
+  const dir = join(cacheHome, name);
+  for (const [rel, contents] of Object.entries({
+    ...ECC_FIXTURE_FILES,
+    ...ECC_FULL_MANIFEST_FILES,
+    ...extra,
+  })) {
+    const full = join(dir, rel);
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, contents, "utf8");
+  }
+  const topLevel = readdirSync(dir)
+    .filter((n) => n !== ".git")
+    .sort();
+  const hashed = hashComponentTree(dir, topLevel);
+  const source: ScannableSource = {
+    digest: hashed.treeSha256,
+    treePath: dir,
+    identityFiles: hashed.files.map((f) => f.path),
+  };
+  const disposition = runFastScanGate(
+    source,
+    { posture: "enterprise" },
+    { cacheHome, inspectors: W2_DEFAULT_INSPECTORS },
+  );
+  return {
+    resolved: {
+      kind: "git",
+      repository: ECC_REPOSITORY,
+      commitSha: ECC_PIN_COMMIT,
+      treeDigest: hashed.treeSha256,
+      treePath: dir,
+      files: source.identityFiles,
+    },
+    disposition,
+  };
+}
+
+function fullDeclarationFor(
+  treeDigest: string,
+  features?: Record<string, boolean>,
+): BindingDeclaration {
+  return {
+    schemaVersion: 1,
+    framework: { id: "ecc", host: "claude", mode: "full", ...(features ? { features } : {}) },
+    source: { kind: "git", repository: ECC_REPOSITORY, commitSha: ECC_PIN_COMMIT, treeDigest },
+  };
+}
+
 // -- registry -----------------------------------------------------------------
 
 describe("createEccAdapter — registers in AdapterRegistry (D6 upstream-local-installer)", () => {
@@ -243,7 +334,7 @@ describe("createEccAdapter — registers in AdapterRegistry (D6 upstream-local-i
 
 // -- mode routing -------------------------------------------------------------
 
-describe("mode routing — absent/lean -> lean; full -> typed not-implemented", () => {
+describe("mode routing — absent/lean -> Lean; full -> Full (W4c: full is implemented)", () => {
   it("plans lean when mode is absent", () => {
     const adapter = createEccAdapter({ root, runner: spyRunner().runner });
     expect(() => adapter.plan({ declaration: declarationFor("d".repeat(64)) })).not.toThrow();
@@ -256,18 +347,30 @@ describe("mode routing — absent/lean -> lean; full -> typed not-implemented", 
     ).not.toThrow();
   });
 
-  it("throws EccModeNotImplementedError when mode is 'full'", () => {
+  it("plans full when mode is 'full' (routing works — no more not-implemented)", () => {
     const adapter = createEccAdapter({ root, runner: spyRunner().runner });
-    expect(() => adapter.plan({ declaration: declarationFor("d".repeat(64), "full") })).toThrow(
-      EccModeNotImplementedError,
-    );
+    const plan = adapter.plan({ declaration: declarationFor("d".repeat(64), "full") });
+    expect(plan.framework).toBe("ecc");
+    // Full still produces a preview (enabledPlugins + the two env-root fields), unlike
+    // the W4b stub which threw EccModeNotImplementedError here.
+    expect(plan.writes.length).toBeGreaterThan(0);
   });
 
-  it("rejects full mode at resolve too", async () => {
+  it("routes full mode through resolve (rejects a non-git source, not the mode)", async () => {
     const adapter = createEccAdapter({ root, runner: spyRunner().runner });
-    await expect(
-      adapter.resolve({ declaration: declarationFor("d".repeat(64), "full") }),
-    ).rejects.toBeInstanceOf(EccModeNotImplementedError);
+    const declaration: BindingDeclaration = {
+      schemaVersion: 1,
+      framework: { id: "ecc", host: "claude", mode: "full" },
+      source: {
+        kind: "npm",
+        package: "ecc-universal",
+        exactVersion: "1.0.0",
+        integrity: `sha512-${"A".repeat(86)}==`,
+      },
+    };
+    // Full is accepted by resolve (it reaches the git-source assertion) — the failure
+    // is EccBindingError (non-git source), not a mode error.
+    await expect(adapter.resolve({ declaration })).rejects.toBeInstanceOf(EccBindingError);
   });
 });
 
@@ -835,6 +938,538 @@ describe("resolve — delegates to resolveGitSource with the declaration's sourc
       },
     };
     await expect(adapter.resolve({ declaration })).rejects.toBeInstanceOf(EccBindingError);
+  });
+});
+
+// == ECC Full (W4c) ===========================================================
+
+// -- Full: mutual exclusivity with Lean ---------------------------------------
+
+describe("Full — mutual exclusivity with Lean (D10 point 5, BOTH directions)", () => {
+  async function bindLean(name: string): Promise<void> {
+    const { resolved, disposition } = scannedFixture(name);
+    const adapter = createEccAdapter({
+      root,
+      runner: spyRunner().runner,
+      env: { USERPROFILE: home },
+      installPreview: previewArtifact(LEAN_ARTIFACT_OPS),
+      installer: fixtureInstaller(),
+    });
+    await adapter.provision(
+      { context: { declaration: declarationFor(resolved.treeDigest) }, resolved },
+      disposition,
+    );
+  }
+
+  async function bindFull(name: string): Promise<void> {
+    const { resolved, disposition } = scannedFullFixture(name);
+    const adapter = createEccAdapter({
+      root,
+      runner: spyRunner().runner,
+      env: { USERPROFILE: home },
+      locateCache: () => resolved.treePath,
+    });
+    await adapter.provision(
+      { context: { declaration: fullDeclarationFor(resolved.treeDigest) }, resolved },
+      disposition,
+    );
+  }
+
+  it("full plan fails closed over a lean lock", async () => {
+    await bindLean("mx1-lean");
+    const adapter = createEccAdapter({
+      root,
+      runner: spyRunner().runner,
+      env: { USERPROFILE: home },
+    });
+    expect(() => adapter.plan({ declaration: fullDeclarationFor("d".repeat(64)) })).toThrow(
+      EccModeConflictError,
+    );
+  });
+
+  it("full provision fails closed over a lean lock (no CLI, lock stays lean)", async () => {
+    await bindLean("mx2-lean");
+    const { resolved, disposition } = scannedFullFixture("mx2-full");
+    const { runner, calls } = spyRunner();
+    const adapter = createEccAdapter({
+      root,
+      runner,
+      env: { USERPROFILE: home },
+      locateCache: () => resolved.treePath,
+    });
+    await expect(
+      adapter.provision(
+        { context: { declaration: fullDeclarationFor(resolved.treeDigest) }, resolved },
+        disposition,
+      ),
+    ).rejects.toBeInstanceOf(EccModeConflictError);
+    expect(calls).toHaveLength(0);
+    const read = readBindingLock(root);
+    expect(read.present).toBe(true);
+    if (read.present) expect(read.lock.declaration.framework.mode).toBeUndefined();
+  });
+
+  it("lean plan fails closed over a full lock", async () => {
+    await bindFull("mx3-full");
+    const adapter = createEccAdapter({
+      root,
+      runner: spyRunner().runner,
+      env: { USERPROFILE: home },
+    });
+    expect(() => adapter.plan({ declaration: declarationFor("d".repeat(64)) })).toThrow(
+      EccModeConflictError,
+    );
+  });
+
+  it("lean provision fails closed over a full lock (no installer, lock stays full)", async () => {
+    await bindFull("mx4-full");
+    const { resolved, disposition } = scannedFixture("mx4-lean");
+    const spy = { calls: 0 };
+    const adapter = createEccAdapter({
+      root,
+      runner: spyRunner().runner,
+      env: { USERPROFILE: home },
+      installPreview: previewArtifact(LEAN_ARTIFACT_OPS),
+      installer: fixtureInstaller(spy),
+    });
+    await expect(
+      adapter.provision(
+        { context: { declaration: declarationFor(resolved.treeDigest) }, resolved },
+        disposition,
+      ),
+    ).rejects.toBeInstanceOf(EccModeConflictError);
+    expect(spy.calls).toBe(0);
+    const read = readBindingLock(root);
+    expect(read.present).toBe(true);
+    if (read.present) expect(read.lock.declaration.framework.mode).toBe("full");
+  });
+
+  it("allows a matching-mode re-bind (full plan over a full lock)", async () => {
+    await bindFull("mx5-full");
+    const adapter = createEccAdapter({
+      root,
+      runner: spyRunner().runner,
+      env: { USERPROFILE: home },
+    });
+    expect(() => adapter.plan({ declaration: fullDeclarationFor("d".repeat(64)) })).not.toThrow();
+  });
+});
+
+// -- Full: feature-key gate ---------------------------------------------------
+
+describe("Full — feature-key gate (mcp:<connector> allowlist, D10 point 3)", () => {
+  it("accepts a known mcp:<connector> feature key", () => {
+    const adapter = createEccAdapter({ root, runner: spyRunner().runner });
+    expect(() =>
+      adapter.plan({ declaration: fullDeclarationFor("d".repeat(64), { "mcp:github": true }) }),
+    ).not.toThrow();
+  });
+
+  it("rejects an unknown non-mcp feature key for full", () => {
+    const adapter = createEccAdapter({ root, runner: spyRunner().runner });
+    expect(() =>
+      adapter.plan({ declaration: fullDeclarationFor("d".repeat(64), { anything: true }) }),
+    ).toThrow(BindingFeatureKeyError);
+  });
+
+  it("rejects an unknown mcp connector for full", () => {
+    const adapter = createEccAdapter({ root, runner: spyRunner().runner });
+    expect(() =>
+      adapter.plan({ declaration: fullDeclarationFor("d".repeat(64), { "mcp:not-real": true }) }),
+    ).toThrow(BindingFeatureKeyError);
+  });
+
+  it("every allowlisted connector resolves to a validated MCP config (the mirror stays valid)", () => {
+    for (const id of ECC_FULL_MCP_CONNECTORS) {
+      const servers = selectedEccMcpServers([`mcp:${id}`]);
+      expect(Object.keys(servers)).toEqual([id]);
+    }
+  });
+
+  it("ECC_FULL_FEATURE_KEYS is exactly mcp:<connector> per allowlisted connector", () => {
+    expect(ECC_FULL_FEATURE_KEYS).toEqual(ECC_FULL_MCP_CONNECTORS.map((id) => `mcp:${id}`));
+  });
+});
+
+// -- Full: plan preview -------------------------------------------------------
+
+describe("Full — plan preview (connector count + env-root fields, D10 point 6)", () => {
+  it("previews enabledPlugins + env roots + one mcp entry per selected connector, no disk I/O", () => {
+    const adapter = createEccAdapter({ root, runner: spyRunner().runner });
+    const plan = adapter.plan({
+      declaration: fullDeclarationFor("d".repeat(64), { "mcp:github": true, "mcp:context7": true }),
+    });
+    expect(plan.framework).toBe("ecc");
+    // one mcp-server write per selected connector — the connector COUNT the CLI renders.
+    expect(plan.writes.filter((w) => w.mechanism === "mcp-server")).toHaveLength(2);
+    const targets = plan.ownership.map((entry) => entry.target);
+    expect(targets.some((t) => t.includes("/enabledPlugins"))).toBe(true);
+    expect(targets.some((t) => t.includes("/env"))).toBe(true);
+    expect(targets.some((t) => t.includes("mcpServers"))).toBe(true);
+    expect(targets).toContain(
+      `home:.claude/settings.json#/extraKnownMarketplaces/${ECC_FULL_MARKETPLACE_NAME}`,
+    );
+    for (const entry of plan.ownership) expect(entry.postApplyDigest).toMatch(/^[0-9a-f]{64}$/);
+    // pure preview: nothing on disk.
+    expect(existsSync(bindingDir(root))).toBe(false);
+    expect(existsSync(join(root, ".claude", "settings.json"))).toBe(false);
+    expect(existsSync(join(root, ".mcp.json"))).toBe(false);
+  });
+});
+
+// -- Full: provision happy path -----------------------------------------------
+
+describe("Full — provision happy path (bindPlugin-driven)", () => {
+  it("owns env roots + selected connectors, writes a schema-valid lock with D7 subtree identity", async () => {
+    const { resolved, disposition } = scannedFullFixture("full-happy");
+    const { runner, calls } = spyRunner();
+    const adapter = createEccAdapter({
+      root,
+      runner,
+      env: { USERPROFILE: home },
+      locateCache: () => resolved.treePath,
+    });
+    const declaration = fullDeclarationFor(resolved.treeDigest, {
+      "mcp:github": true,
+      "mcp:sequential-thinking": true,
+    });
+
+    const result = (await adapter.provision(
+      { context: { declaration }, resolved },
+      disposition,
+    )) as EccFullProvisionResult;
+
+    // marketplace add -> install, in order; no teardown on the happy path.
+    expect(calls[0]).toEqual(["claude", "plugin", "marketplace", "add", resolved.treePath]);
+    expect(calls[1]).toEqual(["claude", "plugin", "install", ECC_FULL_KEY, "--scope", "project"]);
+    expect(calls.some((c) => c.includes("uninstall") || c.includes("disable"))).toBe(false);
+
+    // schema-valid lock + D7 subtree identity fields (scanned == loaded == treeDigest).
+    expect(BindingLockSchema.safeParse(result.lock).success).toBe(true);
+    expect(result.lock.match).toBe(true);
+    expect(result.lock.scannedDigest).toBe(resolved.treeDigest);
+    expect(result.lock.loadedDigest).toBe(resolved.treeDigest);
+
+    // D18 env-root fields owned with PROJECT-LOCAL values.
+    const settings = JSON.parse(readFileSync(join(root, ".claude", "settings.json"), "utf8"));
+    expect(settings.enabledPlugins).toEqual({ [ECC_FULL_KEY]: true });
+    expect(settings.env.ECC_AGENT_DATA_HOME).toBe(ECC_AGENT_DATA_HOME_DEFAULT);
+    expect(settings.env.CLV2_HOMUNCULUS_DIR).toBe(ECC_HOMUNCULUS_DIR_DEFAULT);
+
+    // selected connectors owned in .mcp.json.
+    const mcp = JSON.parse(readFileSync(join(root, ".mcp.json"), "utf8"));
+    expect(Object.keys(mcp.mcpServers).sort()).toEqual(["github", "sequential-thinking"]);
+
+    const targets = result.lock.ownership.map((entry) => entry.target);
+    expect(targets).toContain(
+      `home:.claude/settings.json#/extraKnownMarketplaces/${ECC_FULL_MARKETPLACE_NAME}`,
+    );
+    expect(targets).toContain(`home:.claude/plugins/cache/${ECC_FULL_KEY}`);
+    expect(targets.some((t) => t.includes("/enabledPlugins"))).toBe(true);
+    expect(targets.some((t) => t.includes("/env"))).toBe(true);
+    expect(targets.some((t) => t.includes("mcpServers"))).toBe(true);
+    for (const entry of result.lock.ownership) {
+      expect(entry.postApplyDigest).toMatch(/^[0-9a-f]{64}$/);
+    }
+    // one mcp-server write per selected connector.
+    expect(result.lock.writes.filter((w) => w.mechanism === "mcp-server")).toHaveLength(2);
+
+    // clean fixture -> strict label, no shared writes.
+    expect(result.labelInput).toEqual({ strict: true, sharedWrites: [] });
+    expect(readBindingLock(root).present).toBe(true);
+  });
+
+  it("no connectors selected -> zero .mcp.json writes (env roots still owned)", async () => {
+    const { resolved, disposition } = scannedFullFixture("full-nomcp");
+    const adapter = createEccAdapter({
+      root,
+      runner: spyRunner().runner,
+      env: { USERPROFILE: home },
+      locateCache: () => resolved.treePath,
+    });
+    const declaration = fullDeclarationFor(resolved.treeDigest);
+
+    const result = (await adapter.provision(
+      { context: { declaration }, resolved },
+      disposition,
+    )) as EccFullProvisionResult;
+
+    expect(existsSync(join(root, ".mcp.json"))).toBe(false);
+    const targets = result.lock.ownership.map((entry) => entry.target);
+    expect(targets.some((t) => t.includes("mcpServers"))).toBe(false);
+    expect(targets.some((t) => t.includes("/env"))).toBe(true);
+    expect(result.lock.writes.filter((w) => w.mechanism === "mcp-server")).toHaveLength(0);
+    expect(result.labelInput.strict).toBe(true);
+  });
+});
+
+// -- Full: forged/mismatched disposition --------------------------------------
+
+describe("Full — forged/mismatched disposition rejected before any CLI (D12)", () => {
+  it("rejects a forged (unbranded) disposition and runs no CLI", async () => {
+    const { resolved } = scannedFullFixture("full-forged");
+    const { runner, calls } = spyRunner();
+    const forged = {
+      digest: resolved.treeDigest,
+      verdict: "allow",
+      findings: [],
+      posture: "enterprise",
+      producedAt: new Date().toISOString(),
+    } as unknown as ScanDisposition;
+    const adapter = createEccAdapter({
+      root,
+      runner,
+      env: { USERPROFILE: home },
+      locateCache: () => resolved.treePath,
+    });
+    const declaration = fullDeclarationFor(resolved.treeDigest, { "mcp:github": true });
+    await expect(
+      adapter.provision({ context: { declaration }, resolved }, forged),
+    ).rejects.toBeInstanceOf(BindingScanError);
+    expect(calls).toHaveLength(0);
+    expect(readBindingLock(root).present).toBe(false);
+  });
+
+  it("rejects a disposition whose digest does not match the resolved source", async () => {
+    const { resolved, disposition } = scannedFullFixture("full-mismatch");
+    const { runner, calls } = spyRunner();
+    const mismatched: ResolvedGitSource = { ...resolved, treeDigest: "f".repeat(64) };
+    const adapter = createEccAdapter({
+      root,
+      runner,
+      env: { USERPROFILE: home },
+      locateCache: () => resolved.treePath,
+    });
+    const declaration = fullDeclarationFor(mismatched.treeDigest);
+    await expect(
+      adapter.provision({ context: { declaration }, resolved: mismatched }, disposition),
+    ).rejects.toBeInstanceOf(BindingScanError);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+// -- Full: state-write inventory + label decision -----------------------------
+
+describe("Full — state-write inventory + label decision (D10 point 4)", () => {
+  function inventoryTree(name: string, files: Record<string, string>): string {
+    const dir = join(cacheHome, name);
+    for (const [rel, contents] of Object.entries(files)) {
+      const full = join(dir, rel);
+      mkdirSync(dirname(full), { recursive: true });
+      writeFileSync(full, contents, "utf8");
+    }
+    return dir;
+  }
+
+  it("flags a continuous-learning skill + a learned-skills write; strict:false, shared writes enumerated", () => {
+    const dir = inventoryTree("inv-dirty", {
+      "skills/continuous-learning/SKILL.md": "# continuous learning\n",
+      "scripts/learn.sh":
+        '#!/usr/bin/env bash\nmkdir -p "$HOME/.claude/skills/learned"\necho note >> "$HOME/.claude/skills/learned/log.md"\n',
+      "rules/a.md": "# rule\n",
+    });
+    const findings = eccFullStateWriteInventory(dir);
+    const kinds = findings.map((f) => f.kind);
+    expect(kinds).toContain("continuous-learning-skill");
+    expect(kinds).toContain("learned-skills-write");
+
+    const label = computeEccFullLabel(findings);
+    expect(label.strict).toBe(false);
+    expect(label.sharedWrites.length).toBeGreaterThan(0);
+    // the enumerated shared writes are exactly the found surfaces.
+    expect(label.sharedWrites).toEqual([...new Set(findings.map((f) => f.surface))].sort());
+  });
+
+  it("flags hook definitions carried by the plugin manifest", () => {
+    const dir = inventoryTree("inv-hooks", {
+      ".claude-plugin/plugin.json": JSON.stringify({
+        name: "ecc",
+        version: "1.0.0",
+        hooks: { PostToolUse: "hooks/post.js" },
+      }),
+    });
+    const findings = eccFullStateWriteInventory(dir);
+    expect(findings.some((f) => f.kind === "hook-definition")).toBe(true);
+  });
+
+  it("clean tree -> strict:true, no shared writes", () => {
+    const dir = inventoryTree("inv-clean", {
+      "rules/a.md": "# rule\n",
+      "agents/planner.md": "# planner\n",
+      "skills/tdd/SKILL.md": "# tdd\n",
+      ".claude-plugin/plugin.json": JSON.stringify({ name: "ecc", version: "1.0.0" }),
+    });
+    expect(eccFullStateWriteInventory(dir)).toEqual([]);
+    expect(computeEccFullLabel(eccFullStateWriteInventory(dir))).toEqual({
+      strict: true,
+      sharedWrites: [],
+    });
+  });
+
+  it("excludedSurfaces covering all findings -> strict:true, exclusions removed", () => {
+    const dir = inventoryTree("inv-excluded", {
+      "skills/continuous-learning-v2/SKILL.md": "# cl v2\n",
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell ${HOME} in fixture script content, not a JS template
+      "scripts/learn.sh": 'echo x >> "${HOME}/.claude/skills/learned/log"\n',
+    });
+    const findings = eccFullStateWriteInventory(dir);
+    expect(findings.length).toBeGreaterThan(0);
+    const excluded = findings.map((f) => f.surface);
+    const label = computeEccFullLabel(findings, excluded);
+    expect(label.strict).toBe(true);
+    expect(label.sharedWrites).toEqual([]);
+  });
+});
+
+// -- Full: verify parity ------------------------------------------------------
+
+describe("Full — verify parity (clean / env-edit / cache-tamper / absent lock)", () => {
+  it("reports absent-lock drift on a fresh root", () => {
+    const adapter = createEccAdapter({ root, runner: spyRunner().runner });
+    expect(adapter.verify({ declaration: fullDeclarationFor("0".repeat(64)) })).toEqual({
+      ok: false,
+      drift: ["no binding lock"],
+    });
+  });
+
+  it("reports ok:true with no drift right after a clean full bind", async () => {
+    const { resolved, disposition } = scannedFullFixture("full-verify-clean");
+    const adapter = createEccAdapter({
+      root,
+      runner: spyRunner().runner,
+      env: { USERPROFILE: home },
+      locateCache: () => resolved.treePath,
+    });
+    const declaration = fullDeclarationFor(resolved.treeDigest, { "mcp:context7": true });
+    await adapter.provision({ context: { declaration }, resolved }, disposition);
+
+    const result = adapter.verify({ declaration });
+    expect(result.drift).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("reports drift when an owned env-root field is edited by hand after bind", async () => {
+    const { resolved, disposition } = scannedFullFixture("full-verify-env");
+    const adapter = createEccAdapter({
+      root,
+      runner: spyRunner().runner,
+      env: { USERPROFILE: home },
+      locateCache: () => resolved.treePath,
+    });
+    const declaration = fullDeclarationFor(resolved.treeDigest);
+    await adapter.provision({ context: { declaration }, resolved }, disposition);
+
+    const settingsPath = join(root, ".claude", "settings.json");
+    const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+    settings.env.ECC_AGENT_DATA_HOME = "/tmp/hijacked"; // user redirected the state root by hand
+    writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf8");
+
+    const result = adapter.verify({ declaration });
+    expect(result.ok).toBe(false);
+    expect(result.drift.some((line) => line.includes("env"))).toBe(true);
+  });
+
+  it("reports drift when the loaded plugin cache tree is tampered after bind (D7 re-check)", async () => {
+    const { resolved, disposition } = scannedFullFixture("full-verify-cache");
+    let located = resolved.treePath;
+    const adapter = createEccAdapter({
+      root,
+      runner: spyRunner().runner,
+      env: { USERPROFILE: home },
+      locateCache: () => located,
+    });
+    const declaration = fullDeclarationFor(resolved.treeDigest);
+    await adapter.provision({ context: { declaration }, resolved }, disposition);
+
+    const tampered = join(cacheHome, "full-verify-cache-tampered");
+    mkdirSync(tampered, { recursive: true });
+    writeFileSync(join(tampered, "README.md"), "# tampered\n", "utf8");
+    located = tampered;
+
+    const result = adapter.verify({ declaration });
+    expect(result.ok).toBe(false);
+    expect(result.drift.some((line) => line.toLowerCase().includes("identity"))).toBe(true);
+  });
+});
+
+// -- Full: remove parity ------------------------------------------------------
+
+describe("Full — remove parity (partition + plugin/marketplace / missing lock)", () => {
+  it("returns drift-report-only with a reason when no lock is present", () => {
+    const adapter = createEccAdapter({ root, runner: spyRunner().runner });
+    const result = adapter.remove({
+      declaration: fullDeclarationFor("0".repeat(64)),
+    }) as EccFullRemoveResult;
+    expect(result.mode).toBe("drift-report-only");
+    if (result.mode === "drift-report-only") expect(result.reason).toContain("no binding lock");
+  });
+
+  it("partitions home-scoped ownership and carries plugin/marketplace after a full bind", async () => {
+    const { resolved, disposition } = scannedFullFixture("full-remove");
+    const adapter = createEccAdapter({
+      root,
+      runner: spyRunner().runner,
+      env: { USERPROFILE: home },
+      locateCache: () => resolved.treePath,
+    });
+    const declaration = fullDeclarationFor(resolved.treeDigest, { "mcp:github": true });
+    await adapter.provision({ context: { declaration }, resolved }, disposition);
+
+    const result = adapter.remove({ declaration }) as EccFullRemoveResult;
+    expect(result.mode).toBe("apply");
+    if (result.mode !== "apply") throw new Error("expected apply mode");
+    expect(result.plugin).toBe(ECC_FULL_PLUGIN_NAME);
+    expect(result.marketplace).toBe(ECC_FULL_MARKETPLACE_NAME);
+    // the two machine-scope entries (marketplace + cache) partition out.
+    expect(result.homeOwnership).toHaveLength(2);
+    expect(result.homeOwnership.every((entry) => entry.target.startsWith("home:"))).toBe(true);
+    // clean right after bind — no repo-relative drift.
+    expect(result.repoRelativeDrift).toEqual([]);
+  });
+});
+
+// -- Full: report -------------------------------------------------------------
+
+describe("Full — report (Framework Card input lines)", () => {
+  it("includes mode:full, pin, connectors, env roots, label decision, and a labeled estimate", async () => {
+    const { resolved, disposition } = scannedFullFixture("full-report");
+    const adapter = createEccAdapter({
+      root,
+      runner: spyRunner().runner,
+      env: { USERPROFILE: home },
+      locateCache: () => resolved.treePath,
+    });
+    const declaration = fullDeclarationFor(resolved.treeDigest, {
+      "mcp:github": true,
+      "mcp:context7": true,
+    });
+    await adapter.provision({ context: { declaration }, resolved }, disposition);
+
+    const report = adapter.report({ declaration });
+    expect(report.framework).toBe("ecc");
+    const text = report.lines.join("\n");
+    expect(text).toContain("mode: full");
+    expect(text).toContain(ECC_REPOSITORY);
+    expect(text).toContain(ECC_PIN_COMMIT);
+    expect(text).toContain("match: true");
+    expect(text).toContain("mcp connectors selected (2)");
+    expect(text).toContain("github");
+    expect(text).toContain(ECC_AGENT_DATA_HOME_DEFAULT);
+    expect(text).toContain(ECC_HOMUNCULUS_DIR_DEFAULT);
+    expect(text).toContain("label decision: strict");
+    expect(text.toLowerCase()).toContain("estimate");
+  });
+
+  it("reports lock-absent state (mode:full, connectors, env roots) before any provision", () => {
+    const adapter = createEccAdapter({ root, runner: spyRunner().runner });
+    const report = adapter.report({
+      declaration: fullDeclarationFor("0".repeat(64), { "mcp:github": true }),
+    });
+    const text = report.lines.join("\n");
+    expect(text).toContain("mode: full");
+    expect(text).toContain("binding lock: absent");
+    expect(text).toContain("mcp connectors selected (1)");
+    expect(text).toContain(ECC_AGENT_DATA_HOME_DEFAULT);
   });
 });
 
