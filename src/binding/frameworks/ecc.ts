@@ -10,6 +10,7 @@ import {
 import { selectedEccMcpServers } from "../../ecc/mcp.js";
 import { AihError } from "../../errors.js";
 import { executePlan, type PlanResult } from "../../internals/execute.js";
+import { readRegularFileWithStats } from "../../internals/fsxn.js";
 import { type Action, plan as planActions } from "../../internals/plan.js";
 import type { Runner } from "../../internals/proc.js";
 import { makeHostAdapter, resolvePlatform } from "../../platform/detect.js";
@@ -1166,12 +1167,11 @@ function walkInventoryTree(root: string): { dirs: string[]; files: string[] } {
 }
 
 function readTextCapped(abs: string): string | undefined {
-  try {
-    if (statSync(abs).size > INVENTORY_MAX_FILE_BYTES) return undefined;
-    return readFileSync(abs, "utf8");
-  } catch {
-    return undefined;
-  }
+  // fd-based read: the size cap is enforced on the opened handle's own fstat and
+  // symlinks are refused at open, so there is no check-to-read window on a path
+  // discovered by the inventory walk (js/file-system-race).
+  const read = readRegularFileWithStats(abs, { maxBytes: INVENTORY_MAX_FILE_BYTES });
+  return read?.contents.toString("utf8");
 }
 
 /** (b) Hook definitions carried by the plugin manifest (`.claude-plugin/plugin.json`). */
