@@ -29,6 +29,16 @@ export {
 } from "./adapter.js";
 // W3f — plan-time feature-key validation shared by every W4+ adapter.
 export { assertKnownFeatureKeys, BindingFeatureKeyError } from "./features.js";
+// W4d — D10 cost-gate measurement record + ECC doctor rules.
+export {
+  buildCostGateRecord,
+  type CostGateBudget,
+  type CostGateRecord,
+  type CostGateVariant,
+  type CostGateVariantMeasurement,
+  type CostGateVerdict,
+  measureCostGateVariant,
+} from "./frameworks/cost-gate.js";
 // W4b — the ECC Lean adapter (upstream-local-installer). Composes the shipped,
 // pin-bound ECC install-preview + an injected selective-install seam; adds no ECC
 // install machinery of its own (D9). W4c adds the Full variant to the same file.
@@ -72,6 +82,7 @@ export {
   type NormalizedEccOp,
   normalizeEccOperations,
 } from "./frameworks/ecc.js";
+export { eccDoubleInstallCheck, eccModeExclusivityCheck } from "./frameworks/ecc-doctor.js";
 // W4a — the first real D6 adapter (Superpowers, host-plugin) + its registry
 // assembly point. Composes the W3 Claude host services above; adds no new
 // host mechanism of its own.
