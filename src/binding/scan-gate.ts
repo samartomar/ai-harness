@@ -8,11 +8,7 @@ import { AihError } from "../errors.js";
 import type { Runner } from "../internals/proc.js";
 import { scanNativeMaliciousCode } from "../trust/detectors.js";
 import { isSafeGitRefName } from "../trust/fetch.js";
-import {
-  buildTrustFileInventory,
-  DEFAULT_TRUST_SKIP_DIRS,
-  type TrustFileInventory,
-} from "../trust/inventory.js";
+import { buildTrustFileInventory, type TrustFileInventory } from "../trust/inventory.js";
 import {
   isStrictUnicodeSurface,
   scanTrustDocument,
@@ -52,6 +48,15 @@ export interface ResolvedGitSource {
   treeDigest: string;
   /** Derived, rebuildable checkout path (machine cache); never recorded identity. */
   treePath: string;
+  /**
+   * The exact leaf files (source-relative POSIX paths) folded into `treeDigest`.
+   * Derived from the digest computation — NOT persisted identity — so the scan can
+   * assert it inspected every byte the digest pins (D7 / CM-27 coverage invariant).
+   * Optional only so hand-constructed test sources need not restate it;
+   * {@link resolveGitSource} — the sole production producer — ALWAYS populates it,
+   * so the coverage cross-check is always active on real resolutions.
+   */
+  files?: readonly string[];
 }
 
 export interface ResolvedNpmSource {
@@ -106,10 +111,21 @@ export function assertResolvedMatchesDeclaration(
 export interface ScannableSource {
   digest: string;
   treePath: string;
+  /**
+   * The exact files the digest covers. When present, the gate requires the scan
+   * inventory to cover every one of them; any identity file the inventory did not
+   * see forces coverage INCOMPLETE (fail-closed), so a disposition can never
+   * attest bytes no inspector examined.
+   */
+  identityFiles?: readonly string[];
 }
 
 export function scannableFromGit(resolved: ResolvedGitSource): ScannableSource {
-  return { digest: resolved.treeDigest, treePath: resolved.treePath };
+  return {
+    digest: resolved.treeDigest,
+    treePath: resolved.treePath,
+    identityFiles: resolved.files,
+  };
 }
 
 // -- Errors ------------------------------------------------------------------
@@ -285,11 +301,19 @@ export async function resolveGitSource(
   }
   const commitSha = await resolveExactSha(request, deps.runner);
   const treePath = await ensureCheckout(request, commitSha, deps);
-  const treeDigest = hashComponentTree(
+  const hashed = hashComponentTree(
     treePath,
     declaredTopLevelPaths(treePath, request.declaredPaths),
-  ).treeSha256;
-  return { kind: "git", repository: request.repository, commitSha, treeDigest, treePath };
+  );
+  return {
+    kind: "git",
+    repository: request.repository,
+    commitSha,
+    treeDigest: hashed.treeSha256,
+    treePath,
+    // Exactly the leaf files the digest covers — the scan must inspect all of them.
+    files: hashed.files.map((file) => file.path),
+  };
 }
 
 // -- npm resolver (minimal; tarball deferred) --------------------------------
@@ -818,8 +842,23 @@ export interface InspectTreeDeps {
   inventoryFactory?: (root: string) => TrustFileInventory;
 }
 
+// The binding scan skips ONLY ".git", matching the digest's fileset
+// (declaredTopLevelPaths excludes ".git" and hashComponentTree then recurses with
+// no skipping). It must NOT reuse DEFAULT_TRUST_SKIP_DIRS, which skips
+// dist/vendor/node_modules/coverage — those bytes ARE in treeDigest, so an
+// inventory that skipped them would leave identity bytes uninspected (CM-27/D7).
+const BINDING_SCAN_SKIP_DIRS: ReadonlySet<string> = new Set([".git"]);
+
 function defaultInventory(root: string): TrustFileInventory {
-  return buildTrustFileInventory(root, { skipDirs: DEFAULT_TRUST_SKIP_DIRS });
+  return buildTrustFileInventory(root, { skipDirs: BINDING_SCAN_SKIP_DIRS });
+}
+
+function runInspectors(
+  treePath: string,
+  inventory: TrustFileInventory,
+  inspectors: readonly DimensionInspector[],
+): DimensionReport[] {
+  return inspectors.map((inspector) => inspector.run({ treePath, inventory }));
 }
 
 /**
@@ -829,8 +868,47 @@ function defaultInventory(root: string): TrustFileInventory {
  */
 export function inspectTree(treePath: string, deps: InspectTreeDeps = {}): DimensionReport[] {
   const inventory = (deps.inventoryFactory ?? defaultInventory)(treePath);
-  const inspectors = deps.inspectors ?? W2_DEFAULT_INSPECTORS;
-  return inspectors.map((inspector) => inspector.run({ treePath, inventory }));
+  return runInspectors(treePath, inventory, deps.inspectors ?? W2_DEFAULT_INSPECTORS);
+}
+
+function toComparablePath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+/**
+ * Structural D7/CM-27 guarantee: assert the scan inventory covered every leaf file
+ * the digest folded in. Any identity file the inventory did not see — and an
+ * ABSENT identity list entirely — becomes a MISSING dimension, which {@link decide}
+ * routes through the same fail-closed incomplete-coverage path, so the disposition
+ * can never plainly allow an identity whose coverage it cannot prove. A source with
+ * no identity list cannot certify coverage and must fail closed, never pass by
+ * default (production always supplies it via {@link scannableFromGit}; this guards
+ * any future hand-built source).
+ */
+function identityCoverageReport(
+  identityFiles: readonly string[] | undefined,
+  inventory: TrustFileInventory,
+): DimensionReport | undefined {
+  if (identityFiles === undefined) {
+    return {
+      dimension: "identity-coverage",
+      status: "missing",
+      reason:
+        "no identity file list accompanied the source, so the scan cannot certify it covered the pinned digest",
+      findings: [],
+    };
+  }
+  const inventoryPaths = new Set(
+    inventory.files.map((entry) => toComparablePath(entry.relativePath)),
+  );
+  const missing = identityFiles.map(toComparablePath).filter((path) => !inventoryPaths.has(path));
+  if (missing.length === 0) return undefined;
+  return {
+    dimension: "identity-coverage",
+    status: "missing",
+    reason: `${missing.length} identity file(s) folded into the digest were not inspected (e.g. ${missing.slice(0, 3).join(", ")})`,
+    findings: [],
+  };
 }
 
 // -- Disposition (brand-protected) -------------------------------------------
@@ -990,22 +1068,37 @@ export function runFastScanGate(
   policy: FastScanPolicy,
   deps: FastScanDeps,
 ): ScanDisposition {
-  const cached = readScanCache(deps.cacheHome, source.digest);
+  // A source with no identity list can never certify coverage, so it must not ride
+  // a warm cache to an allow: skip the cache read entirely and fall through to the
+  // fail-closed recompute below.
+  const cached =
+    source.identityFiles === undefined ? undefined : readScanCache(deps.cacheHome, source.digest);
   if (cached !== undefined) {
     return produceDisposition(source.digest, policy, cached.reports, cached.scannedAt);
   }
-  const reports = inspectTree(source.treePath, {
-    inspectors: deps.inspectors,
-    inventoryFactory: deps.inventoryFactory,
-  });
+  // One inventory serves BOTH the inspectors and the identity-coverage check, so
+  // the digest and the scanned fileset can never silently diverge.
+  const inventory = (deps.inventoryFactory ?? defaultInventory)(source.treePath);
+  const reports = runInspectors(
+    source.treePath,
+    inventory,
+    deps.inspectors ?? W2_DEFAULT_INSPECTORS,
+  );
+  const identityReport = identityCoverageReport(source.identityFiles, inventory);
+  const allReports = identityReport === undefined ? reports : [...reports, identityReport];
   const scannedAt = new Date().toISOString();
-  writeScanCache(deps.cacheHome, {
-    schemaVersion: 1,
-    digest: source.digest,
-    scannedAt,
-    reports: reports.map((report) => ({ ...report, findings: [...report.findings] })),
-  });
-  return produceDisposition(source.digest, policy, reports, scannedAt);
+  // Persist the cache only for a source whose identity list is present. An
+  // absent-identity run is a fail-closed error path; caching its report set would
+  // spuriously block a later, correctly-constructed source for the same digest.
+  if (source.identityFiles !== undefined) {
+    writeScanCache(deps.cacheHome, {
+      schemaVersion: 1,
+      digest: source.digest,
+      scannedAt,
+      reports: allReports.map((report) => ({ ...report, findings: [...report.findings] })),
+    });
+  }
+  return produceDisposition(source.digest, policy, allReports, scannedAt);
 }
 
 // -- Provision authorization guard (D12 code-path invariant) -----------------
