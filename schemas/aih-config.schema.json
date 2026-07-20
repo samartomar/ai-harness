@@ -104,6 +104,126 @@
           }
         }
       }
+    },
+    "binding": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "framework": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": [
+                "ecc",
+                "superpowers",
+                "gstack",
+                "gsd-core"
+              ]
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "lean",
+                "full"
+              ]
+            },
+            "host": {
+              "type": "string",
+              "enum": [
+                "claude"
+              ]
+            },
+            "features": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1
+              },
+              "additionalProperties": {
+                "type": "boolean"
+              }
+            }
+          },
+          "required": [
+            "id",
+            "host"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "git"
+                },
+                "repository": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                },
+                "commitSha": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}$"
+                },
+                "treeDigest": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "kind",
+                "repository",
+                "commitSha",
+                "treeDigest"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "npm"
+                },
+                "package": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 214,
+                  "pattern": "^(?:@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*$"
+                },
+                "exactVersion": {
+                  "type": "string",
+                  "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?(?:\\+[0-9A-Za-z][0-9A-Za-z.-]*)?$"
+                },
+                "integrity": {
+                  "type": "string",
+                  "pattern": "^sha512-[A-Za-z0-9+/]{86}==$"
+                }
+              },
+              "required": [
+                "kind",
+                "package",
+                "exactVersion",
+                "integrity"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "framework",
+        "source"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

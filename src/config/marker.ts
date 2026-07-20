@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { z } from "zod";
+import { type BindingDeclaration, BindingDeclarationSchema } from "../binding/schema.js";
 import { SettingsError } from "../errors.js";
 import {
   type BaselineSourceId,
@@ -74,9 +75,17 @@ export const AihConfigSchema = z.object({
    * the idempotency guard). Optional + committed (shared by the whole team).
    */
   adopt: z.object({ acknowledged: z.array(z.string()).default([]) }).optional(),
+  /**
+   * Project Framework Binding declaration (D7 committed authority, D8 one
+   * framework). A SINGLE object, never an array; its subtree is strict, so a
+   * smuggled second framework is rejected rather than stripped even though this
+   * surrounding marker schema is otherwise lenient. See `../binding/schema.ts`.
+   */
+  binding: BindingDeclarationSchema.optional(),
 });
 
 export type AihConfig = z.infer<typeof AihConfigSchema>;
+export type { BindingDeclaration };
 
 export type AihConfigReadDiagnostic =
   | { invalid: false; present: false }
