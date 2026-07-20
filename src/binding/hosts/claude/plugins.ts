@@ -12,6 +12,7 @@ import {
 import {
   type ClaudeManagedPlan,
   ClaudeManagedWriteEngine,
+  carryForwardOwnership,
   finalizeClaudeOwnership,
 } from "./managed-writes.js";
 import {
@@ -23,8 +24,10 @@ import {
   hashLoadedPluginTree,
   homeMarketplaceTarget,
   homePluginCacheTarget,
+  installPathFromPluginList,
   type PluginCacheLocator,
   type PluginIdentity,
+  pluginSourceSubtreeDigest,
   verifyPluginIdentity,
 } from "./plugin-identity.js";
 import type { ClaudeDriftEntry } from "./removal.js";
@@ -33,7 +36,6 @@ import {
   CLAUDE_SETTINGS_LOCAL_PATH,
   CLAUDE_SETTINGS_PATH,
   canonicalJson,
-  parseJsonPointer,
   sha256Hex,
 } from "./surfaces.js";
 
@@ -241,18 +243,27 @@ export async function listPlugins(deps: PluginCliDeps): Promise<unknown> {
   return parseCliJson(result.stdout, "claude plugin list");
 }
 
-/** `claude plugin details <plugin>@<marketplace> --json`, parsed. Fails closed like {@link listPlugins}. */
+/**
+ * `claude plugin details <plugin>@<marketplace>`, raw stdout TEXT.
+ *
+ * Empirically corrected (2.1.214): this CLI has NO `--json` flag — its
+ * output is a human-readable component inventory (Skills/Agents/Hooks/MCP
+ * servers/LSP servers with counts and names) plus a host-projected token-cost
+ * line (`Always-on:   ~N tok`). Parse it with
+ * `contextCostFromPluginDetailsText` in `./context-cost.js`. Fails closed
+ * ONLY on a non-zero exit / spawn failure — there is no JSON to fail to parse.
+ */
 export async function pluginDetails(
   deps: PluginCliDeps,
   plugin: string,
   marketplace: string,
-): Promise<unknown> {
+): Promise<string> {
   assertSafePluginName(plugin, "plugin");
   assertSafePluginName(marketplace, "marketplace");
   const key = pluginEnableKey(plugin, marketplace);
-  const result = await runClaude(deps, ["claude", "plugin", "details", key, "--json"]);
+  const result = await runClaude(deps, ["claude", "plugin", "details", key]);
   assertCliOk(result, `claude plugin details ${key}`);
-  return parseCliJson(result.stdout, `claude plugin details ${key}`);
+  return result.stdout;
 }
 
 function parseCliJson(stdout: string, describe: string): unknown {
@@ -347,30 +358,49 @@ export async function bindPlugin(
   const locate = deps.locateCache ?? defaultPluginCacheLocator;
   const cliDeps: PluginCliDeps = { runner: deps.runner, env: deps.env, timeoutMs: deps.timeoutMs };
 
-  // 3. Capture the D18 pre-existing `enabledPlugins` state BEFORE any CLI write —
+  // 3. D7 anchor (empirically corrected): the plugin's own SOURCE SUBTREE, not
+  //    the whole scanned checkout — computed BEFORE any CLI call, so a
+  //    malformed marketplace.json / missing plugin entry / missing version
+  //    fails closed with ZERO host mutation.
+  const subtree = pluginSourceSubtreeDigest(resolved.treePath, plugin);
+
+  // 4. Capture the D18 pre-existing `enabledPlugins` state BEFORE any CLI write —
   //    `jsonField` reads disk now — so the lock records the true pre-AIH state even
-  //    though the CLI install also flips the same bit. The apply happens in step 7.
+  //    though the CLI install also flips the same bit. The apply happens in step 8.
   const enablePointer = `/enabledPlugins/${pluginKey}`;
   const settingsPlan: ClaudeManagedPlan = new ClaudeManagedWriteEngine(deps.root)
     .jsonField(settingsFile, enablePointer, true)
     .build();
-  preservePriorPreExisting(settingsPlan, request.previousLock, `${settingsFile}#${enablePointer}`);
+  carryForwardOwnership(settingsPlan, request.previousLock, `${settingsFile}#${enablePointer}`);
 
-  // 4. Register the scanned checkout itself as the marketplace source (machine scope).
+  // 5. Register the scanned checkout itself as the marketplace source (machine scope).
   await marketplaceAdd(cliDeps, resolved.treePath);
 
-  // 5. Materialize the plugin into the host's loadable cache.
+  // 6. Materialize the plugin into the host's loadable cache.
   await installPlugin(cliDeps, plugin, marketplace, scope);
 
-  // 6. D7: re-digest the loaded cache and compare to the scanned digest.
-  const loadedTreePath = locate({
-    home,
-    marketplace,
-    plugin,
-    pluginKey,
-    marketplaceSourcePath: resolved.treePath,
-  });
-  const identity = verifyPluginIdentity(resolved.treeDigest, loadedTreePath);
+  // 7. D7: locate the loaded subtree — PREFER the host's own authoritative
+  //    `installPath` (via `claude plugin list --json`, still --json-capable),
+  //    falling back to the locator (now version-aware) only on a list
+  //    failure or an unparseable/absent entry — then compare to the SUBTREE
+  //    digest computed in step 3.
+  const locatorFallback = (): string =>
+    locate({
+      home,
+      marketplace,
+      plugin,
+      pluginKey,
+      marketplaceSourcePath: resolved.treePath,
+      version: subtree.version,
+    });
+  let loadedTreePath: string;
+  try {
+    const listPayload = await listPlugins(cliDeps);
+    loadedTreePath = installPathFromPluginList(listPayload, pluginKey) ?? locatorFallback();
+  } catch {
+    loadedTreePath = locatorFallback();
+  }
+  const identity = verifyPluginIdentity(subtree.digest, loadedTreePath);
   if (!identity.match) {
     // FAIL CLOSED: undo the install (best-effort disable + uninstall), write no lock.
     await cleanupFailedInstall(cliDeps, plugin, marketplace);
@@ -380,12 +410,12 @@ export async function bindPlugin(
     );
   }
 
-  // 7. Apply the D18-owned `enabledPlugins` write and seal its post-apply digest.
+  // 8. Apply the D18-owned `enabledPlugins` write and seal its post-apply digest.
   const apply = deps.applyActions ?? defaultApplyActions(deps);
   await apply(deps.root, settingsPlan.actions);
   const settingsOwnership = finalizeClaudeOwnership(deps.root, settingsPlan.ownership);
 
-  // 8. Record the machine-scope effects as `home:` ownership the lock reconciles on removal.
+  // 9. Record the machine-scope effects as `home:` ownership the lock reconciles on removal.
   const homeOwnership = sealHomeOwnership({
     marketplace,
     pluginKey,
@@ -407,48 +437,6 @@ export async function bindPlugin(
   };
 }
 
-/**
- * Re-bind pre-existing preservation: reuse the prior lock's recorded state so
- * removal restores the pre-AIH world, not a prior bind's own value. Two shapes:
- *  - the prior lock owns the LEAF (`<file>#/enabledPlugins/<key>` — the container
- *    pre-existed at first bind): carry its preExisting onto the new leaf intent;
- *  - the prior lock owns the PARENT container (`<file>#/enabledPlugins` with
- *    preExisting absent — AIH created the container at first bind): RE-ASSERT
- *    parent ownership on the re-bind intent. The engine sees the container as
- *    present now and would otherwise record a leaf whose "pre-existing" is the
- *    first bind's own value, so removal from a re-bind lock would restore the
- *    binding instead of pruning the container AIH created.
- */
-function preservePriorPreExisting(
-  settingsPlan: ClaudeManagedPlan,
-  previousLock: BindingLock | undefined,
-  target: string,
-): void {
-  if (previousLock === undefined) return;
-  const intent = settingsPlan.ownership[0];
-  if (intent === undefined) return;
-  const prior = previousLock.ownership.find((entry) => entry.target === target);
-  if (prior !== undefined) {
-    intent.preExisting = prior.preExisting;
-    return;
-  }
-  if (intent.pointer === undefined || intent.pointer.length !== 2) return;
-  const hash = target.indexOf("#");
-  if (hash < 0) return;
-  const file = target.slice(0, hash);
-  const segments = parseJsonPointer(target.slice(hash + 1));
-  const parent = segments[0];
-  const child = segments[1];
-  if (parent === undefined || child === undefined) return;
-  const parentTarget = `${file}#/${parent}`;
-  const parentPrior = previousLock.ownership.find((entry) => entry.target === parentTarget);
-  if (parentPrior === undefined) return;
-  intent.target = parentTarget;
-  intent.pointer = [parent];
-  intent.preExisting = parentPrior.preExisting;
-  intent.applied = { [child]: intent.applied };
-}
-
 interface HomeOwnershipInputs {
   marketplace: string;
   pluginKey: string;
@@ -457,15 +445,21 @@ interface HomeOwnershipInputs {
 }
 
 /**
- * Seal the two machine-scope ownership entries. They are MODELED (the user scope
- * stays clean on this VM): pre-existing is recorded as absent — a fresh marketplace
- * + cache — which W4's real-VM run can refine by reading the actual config. The
- * marketplace entry's applied value is the registered source; the cache entry's
- * applied value + post-apply digest ARE the loaded tree digest, so removal can
- * reconcile the cache conservatively against the very digest D7 matched.
+ * Seal the two machine-scope ownership entries. Pre-existing is recorded as
+ * absent — a fresh marketplace + cache (the user scope stays clean on this
+ * VM). The marketplace entry's applied value mirrors the EXACT shape
+ * `claude plugin marketplace add <dir>` writes at
+ * `~/.claude/settings.json#/extraKnownMarketplaces/<name>` (empirically
+ * verified on 2.1.214): `{source: {source: "directory", path: "<abs>"}}` —
+ * the outer `source` is the settings field itself; the inner `{source,path}`
+ * describes how the host was told to find it. The cache entry's applied
+ * value + post-apply digest ARE the loaded (subtree) tree digest, so removal
+ * can reconcile the cache conservatively against the very digest D7 matched.
  */
 function sealHomeOwnership(inputs: HomeOwnershipInputs): BindingOwnershipEntry[] {
-  const marketplaceApplied = { source: inputs.marketplaceSourcePath };
+  const marketplaceApplied = {
+    source: { source: "directory", path: inputs.marketplaceSourcePath },
+  };
   return [
     {
       kind: "json-pointer",
@@ -649,17 +643,18 @@ export async function removePlugin(
   return { removed, drift, cli };
 }
 
+/**
+ * Read the checkout path back out of a sealed marketplace ownership entry's
+ * `applied` value — empirically corrected shape:
+ * `{source: {source: "directory", path: "<abs>"}}` (see {@link sealHomeOwnership}).
+ */
 function readMarketplaceSource(entry: BindingOwnershipEntry | undefined): string {
   const applied = entry?.applied;
-  if (
-    typeof applied === "object" &&
-    applied !== null &&
-    "source" in applied &&
-    typeof (applied as { source: unknown }).source === "string"
-  ) {
-    return (applied as { source: string }).source;
-  }
-  return "";
+  if (typeof applied !== "object" || applied === null) return "";
+  const source = (applied as { source?: unknown }).source;
+  if (typeof source !== "object" || source === null) return "";
+  const path = (source as { path?: unknown }).path;
+  return typeof path === "string" ? path : "";
 }
 
 type CacheReconcileState =

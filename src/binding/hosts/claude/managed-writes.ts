@@ -8,7 +8,7 @@ import {
 import { isPlainObject, parseJsoncText } from "../../../internals/merge.js";
 import { type Action, writeJson, writeText } from "../../../internals/plan.js";
 import { ensureTrailingNewline } from "../../../internals/render.js";
-import type { BindingOwnershipEntry, BindingWrite } from "../../lock.js";
+import type { BindingLock, BindingOwnershipEntry, BindingWrite } from "../../lock.js";
 import {
   assertOwnedFilePath,
   assertSafeKey,
@@ -422,4 +422,67 @@ function postApplyDigest(root: string, intent: ClaudeOwnershipIntent): string {
     return sha256Hex(extractManagedBlock(raw, intent.blockMarker) ?? "");
   }
   return sha256Hex(readIfExists(join(root, intent.file)) ?? "");
+}
+
+/**
+ * Re-provision pre-existing preservation for a SINGLE-slot managed plan —
+ * shared by every caller that re-binds one `jsonField()` owner across a
+ * re-provision (the Claude host's own `enabledPlugins` field in
+ * `hosts/claude/plugins.ts`'s `bindPlugin`, and the Superpowers adapter's
+ * telemetry env field). Previously duplicated verbatim in both call sites
+ * (`plugins.ts`'s private `preservePriorPreExisting` and
+ * `frameworks/superpowers.ts`'s private `preserveAcrossRebind`); this is the
+ * one shared implementation both now call.
+ *
+ * `managedPlan` must have been built from EXACTLY the one `jsonField()` call
+ * being re-provisioned — `ownership[0]` is the intent mutated in place.
+ * `target` is that field's LEAF target string (`<file>#<pointer>`, e.g.
+ * `.claude/settings.json#/enabledPlugins/ecc@ecc-mkt`), matching the
+ * convention the original `jsonField()` call used, REGARDLESS of whether
+ * `build()` already collapsed it to parent-container ownership this time.
+ *
+ * Two shapes the prior lock may have recorded for that leaf:
+ *  - the prior lock owns the LEAF (the container pre-existed at first bind):
+ *    carry its `preExisting` onto the new intent verbatim;
+ *  - the prior lock owns the PARENT container (`<file>#/<parent>` with
+ *    `preExisting` absent — AIH created the container at first bind):
+ *    RE-ASSERT parent ownership on the re-bind intent. The engine now sees
+ *    the container as present (the first bind wrote it) and would otherwise
+ *    record a leaf whose "pre-existing" is the FIRST bind's own value, so a
+ *    later removal from a re-bind lock would restore the binding instead of
+ *    pruning the container AIH created.
+ *
+ * A no-op when there is no prior lock, no ownership intent to mutate, the
+ * intent isn't a depth-2 pointer, or neither shape is found in the prior
+ * lock (nothing to carry forward — the fresh disk-read `preExisting` the
+ * engine already captured stands).
+ */
+export function carryForwardOwnership(
+  managedPlan: ClaudeManagedPlan,
+  previousLock: BindingLock | undefined,
+  target: string,
+): void {
+  if (previousLock === undefined) return;
+  const intent = managedPlan.ownership[0];
+  if (intent === undefined) return;
+  const prior = previousLock.ownership.find((entry) => entry.target === target);
+  if (prior !== undefined) {
+    intent.preExisting = prior.preExisting;
+    return;
+  }
+  if (intent.pointer === undefined || intent.pointer.length !== 2) return;
+  const hash = target.indexOf("#");
+  if (hash < 0) return;
+  const file = target.slice(0, hash);
+  const segments = parseJsonPointer(target.slice(hash + 1));
+  const parent = segments[0];
+  const child = segments[1];
+  if (parent === undefined || child === undefined) return;
+  const parentTarget = `${file}#/${parent}`;
+  const parentPrior = previousLock.ownership.find((entry) => entry.target === parentTarget);
+  if (parentPrior === undefined) return;
+  intent.target = parentTarget;
+  intent.pointer = [parent];
+  intent.preExisting = parentPrior.preExisting;
+  intent.applied = { [child]: intent.applied };
 }

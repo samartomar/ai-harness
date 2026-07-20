@@ -36,6 +36,7 @@ export {
   type ContextCostEvidenceSource,
   type ContextCostReport,
   contextCostFromPluginDetails,
+  contextCostFromPluginDetailsText,
   estimateContextCostFromTree,
 } from "./context-cost.js";
 export {
@@ -49,13 +50,14 @@ export {
   type ClaudeOwnershipIntent,
   type ClaudeOwnershipKind,
   type ClaudePreExisting,
+  carryForwardOwnership,
   finalizeClaudeOwnership,
 } from "./managed-writes.js";
 export {
+  CLAUDE_EXTRA_KNOWN_MARKETPLACES_KEY,
+  CLAUDE_HOME_SETTINGS_REL,
   CLAUDE_PLUGINS_CACHE_REL,
-  CLAUDE_PLUGINS_CONFIG_REL,
   CLAUDE_PLUGINS_DIR_REL,
-  CLAUDE_PLUGINS_MARKETPLACES_KEY,
   ClaudePluginCacheMissingError,
   ClaudePluginError,
   ClaudePluginIdentityError,
@@ -65,10 +67,13 @@ export {
   hashLoadedPluginTree,
   homeMarketplaceTarget,
   homePluginCacheTarget,
+  installPathFromPluginList,
   isHomeScopedTarget,
   type PluginCacheLocator,
   type PluginCacheLocatorParams,
   type PluginIdentity,
+  type PluginSourceSubtree,
+  pluginSourceSubtreeDigest,
   verifyPluginIdentity,
 } from "./plugin-identity.js";
 // W3b — Claude host plugin-binding services (bind/verify/remove lifecycle) + D7

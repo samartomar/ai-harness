@@ -29,6 +29,23 @@ export {
 } from "./adapter.js";
 // W3f — plan-time feature-key validation shared by every W4+ adapter.
 export { assertKnownFeatureKeys, BindingFeatureKeyError } from "./features.js";
+// W4a — the first real D6 adapter (Superpowers, host-plugin) + its registry
+// assembly point. Composes the W3 Claude host services above; adds no new
+// host mechanism of its own.
+export {
+  type BindingRegistryDeps,
+  createBindingAdapterRegistry,
+} from "./frameworks/registry.js";
+export {
+  createSuperpowersAdapter,
+  SUPERPOWERS_MARKETPLACE_NAME,
+  SUPERPOWERS_PIN_COMMIT,
+  SUPERPOWERS_PLUGIN_NAME,
+  SUPERPOWERS_REPOSITORY,
+  type SuperpowersAdapterDeps,
+  SuperpowersBindingError,
+  type SuperpowersRemoveResult,
+} from "./frameworks/superpowers.js";
 // W3 — Claude project-scope host adapter: detection, D18 managed writes/removal,
 // plugin binding + D7 identity, skillOverrides deny lists (D11), contamination
 // report, previewed cleanup with backup/rollback, and context-cost inventory.
@@ -41,12 +58,12 @@ export {
   bindPlugin,
   CLAUDE_BINDING_MARKER,
   CLAUDE_BOOTLOADER_PATH,
+  CLAUDE_EXTRA_KNOWN_MARKETPLACES_KEY,
+  CLAUDE_HOME_SETTINGS_REL,
   CLAUDE_MCP_PATH,
   CLAUDE_OWNED_FILE_ROOTS,
   CLAUDE_PLUGINS_CACHE_REL,
-  CLAUDE_PLUGINS_CONFIG_REL,
   CLAUDE_PLUGINS_DIR_REL,
-  CLAUDE_PLUGINS_MARKETPLACES_KEY,
   CLAUDE_SETTINGS_LOCAL_PATH,
   CLAUDE_SETTINGS_PATH,
   CLAUDE_SHARED_JSON_FILES,
@@ -81,9 +98,11 @@ export {
   type ContaminationSurface,
   type ContextCostEvidenceSource,
   type ContextCostReport,
+  carryForwardOwnership,
   claudeContaminationReport,
   claudeHomeDir,
   contextCostFromPluginDetails,
+  contextCostFromPluginDetailsText,
   defaultPluginCacheLocator,
   detectClaudeHost,
   disablePlugin,
@@ -95,6 +114,7 @@ export {
   hashLoadedPluginTree,
   homeMarketplaceTarget,
   homePluginCacheTarget,
+  installPathFromPluginList,
   installPlugin,
   isHomeScopedTarget,
   listPlugins,
@@ -106,10 +126,12 @@ export {
   type PluginCliDeps,
   type PluginIdentity,
   type PluginScope,
+  type PluginSourceSubtree,
   planClaudeCleanup,
   planClaudeRemoval,
   pluginDetails,
   pluginEnableKey,
+  pluginSourceSubtreeDigest,
   queueSkillDenyList,
   type RemovePluginDeps,
   type RemovePluginRequest,
