@@ -104,6 +104,7 @@ const ECC_COMPONENTS: readonly BaselineCatalogComponent[] = [
     paths: ["skills/verification-loop"],
     skillContent: true,
   },
+  { id: "skill:security-review", paths: ["skills/security-review"], skillContent: true },
   { id: "skill:strategic-compact", paths: ["skills/strategic-compact"], skillContent: true },
   { id: "skill:coding-standards", paths: ["skills/coding-standards"], skillContent: true },
   ...ECC_COMMON_AGENTS.map((name) => ({

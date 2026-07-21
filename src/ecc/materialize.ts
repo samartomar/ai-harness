@@ -120,6 +120,7 @@ const SKILL_MODULES: Readonly<Record<string, string>> = {
 const DIRECT_EVIDENCE_COMPONENTS = new Set<string>([
   "skill:tdd-workflow",
   "skill:verification-loop",
+  "skill:security-review",
   "skill:strategic-compact",
   "skill:coding-standards",
   "agent:code-reviewer",
