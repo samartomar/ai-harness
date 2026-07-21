@@ -588,7 +588,12 @@ describe("verifiedEccInstallPlan", () => {
               cwd: root,
             },
       );
-      const stepsFile = join(root, `det-steps-${firstExit}.json`);
+      // A dedicated subdir, mirroring production's private mkdtemp dir: the
+      // driver removes the file AND its parent — pointing it at `root` would
+      // let POSIX delete the very cwd the deterministic steps spawn in.
+      const stepsDir = join(root, `det-steps-${firstExit}`);
+      mkdirSync(stepsDir, { recursive: true });
+      const stepsFile = join(stepsDir, "steps.json");
       writeFileSync(stepsFile, JSON.stringify(deterministic), "utf8");
       return spawnSync(executable, [...driver.argv.slice(1, -1), stepsFile], {
         cwd: root,
