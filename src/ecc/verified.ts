@@ -1,5 +1,4 @@
-import { randomUUID } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
@@ -59,7 +58,10 @@ const child = require("node:child_process");
 const fs = require("node:fs");
 const stepsPath = process.argv[1];
 const steps = JSON.parse(fs.readFileSync(stepsPath, "utf8"));
-try { fs.unlinkSync(stepsPath); } catch (_) {}
+try {
+  fs.unlinkSync(stepsPath);
+  fs.rmdirSync(require("node:path").dirname(stepsPath));
+} catch (_) {}
 for (const step of steps) {
   if (!step || !Array.isArray(step.argv) || typeof step.cwd !== "string" || step.argv.length === 0) {
     process.stderr.write("invalid verified ECC install step\n");
@@ -264,9 +266,13 @@ function requireAuthorizedRuntime(
 function driverAction(steps: readonly VerifiedInstallStep[]): Action {
   // The steps ride a temp FILE, never argv: they embed unbounded payloads
   // (registration ledger, materialization spec) and Windows command lines cap
-  // at 32,767 chars (W4 live-run ENAMETOOLONG). The driver deletes the file
-  // as its first act; a spawn-failure leftover is inert tmp scratch.
-  const stepsPath = join(tmpdir(), `aih-ecc-verified-steps-${randomUUID()}.json`);
+  // at 32,767 chars (W4 live-run ENAMETOOLONG). This file drives a PRIVILEGED
+  // installer, so it lands in a private per-invocation directory created with
+  // `mkdtempSync` (mode 0700, atomic, unguessable) rather than a bare
+  // world-writable tmp path — no symlink/pre-plant race can swap the driver's
+  // instructions. The driver deletes the file as its first act.
+  const stepsDir = mkdtempSync(join(tmpdir(), "aih-ecc-verified-"));
+  const stepsPath = join(stepsDir, "steps.json");
   writeFileSync(stepsPath, JSON.stringify(steps), "utf8");
   return exec(
     "Install from the evidence-verified ECC checkout — sequential fail-closed driver",
