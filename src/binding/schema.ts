@@ -65,6 +65,18 @@ function isPlausibleGitRepository(value: string): boolean {
   if (value.includes("#") || value.startsWith("-")) return false;
   if (/^https:\/\/\S+$/.test(value)) return true;
   if (/^git@[^\s:]+:\S+$/.test(value)) return true;
+  return isBareRepositorySlug(value);
+}
+
+/**
+ * The bare `owner/repo` branch of {@link isPlausibleGitRepository} — the one
+ * identity form real git cannot take verbatim as a remote (it reads a bare slug
+ * as a local path), so the scan-gate transport layer must map exactly this
+ * shape to its canonical GitHub https remote. The character class admits no
+ * whitespace, control character, `#`, or extra `/`, and a leading `-` on either
+ * segment is rejected, so the predicate is safe standalone.
+ */
+export function isBareRepositorySlug(value: string): boolean {
   const match = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/.exec(value);
   if (match === null) return false;
   return !(match[1] ?? "").startsWith("-") && !(match[2] ?? "").startsWith("-");

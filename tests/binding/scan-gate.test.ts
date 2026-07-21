@@ -128,6 +128,77 @@ describe("git source resolution (D7 exact identity)", () => {
     ).rejects.toBeInstanceOf(BindingScanError);
   });
 
+  it("maps a bare owner/repo slug to its canonical GitHub https remote for ls-remote and clone", async () => {
+    const seen: string[][] = [];
+    const runner = fakeRunner((argv) => {
+      seen.push([...argv]);
+      if (argv[1] === "ls-remote") return { stdout: `${"a".repeat(40)}\tHEAD\n` };
+      if (argv[1] === "clone") return { code: 1, stderr: "transport capture only" };
+      return undefined;
+    });
+    await expect(
+      resolveGitSource({ repository: "obra/superpowers", ref: "HEAD" }, { runner, cacheHome }),
+    ).rejects.toBeInstanceOf(BindingScanError);
+    const lsRemote = seen.find((argv) => argv[1] === "ls-remote") ?? [];
+    const clone = seen.find((argv) => argv[1] === "clone") ?? [];
+    expect(lsRemote[3]).toBe("https://github.com/obra/superpowers.git");
+    expect(clone[clone.length - 2]).toBe("https://github.com/obra/superpowers.git");
+    expect(lsRemote).not.toContain("obra/superpowers");
+    expect(clone).not.toContain("obra/superpowers");
+  });
+
+  it("clones via the mapped GitHub remote when a commitSha pin skips ls-remote (W4 live-run regression)", async () => {
+    const seen: string[][] = [];
+    const runner = fakeRunner((argv) => {
+      seen.push([...argv]);
+      if (argv[1] === "clone") return { code: 1, stderr: "transport capture only" };
+      return undefined;
+    });
+    await expect(
+      resolveGitSource(
+        { repository: "obra/superpowers", commitSha: "d884ae04edebef577e82ff7c4e143debd0bbec99" },
+        { runner, cacheHome },
+      ),
+    ).rejects.toBeInstanceOf(BindingScanError);
+    expect(seen.some((argv) => argv[1] === "ls-remote")).toBe(false);
+    const clone = seen.find((argv) => argv[1] === "clone") ?? [];
+    expect(clone[clone.length - 2]).toBe("https://github.com/obra/superpowers.git");
+  });
+
+  it("passes an https repository locator to git verbatim", async () => {
+    const seen: string[][] = [];
+    const runner = fakeRunner((argv) => {
+      seen.push([...argv]);
+      if (argv[1] === "clone") return { code: 1, stderr: "transport capture only" };
+      return undefined;
+    });
+    await expect(
+      resolveGitSource(
+        { repository: "https://example.com/frameworks/superpowers.git", commitSha: "a".repeat(40) },
+        { runner, cacheHome },
+      ),
+    ).rejects.toBeInstanceOf(BindingScanError);
+    const clone = seen.find((argv) => argv[1] === "clone") ?? [];
+    expect(clone[clone.length - 2]).toBe("https://example.com/frameworks/superpowers.git");
+  });
+
+  it("passes an scp-like repository locator to git verbatim", async () => {
+    const seen: string[][] = [];
+    const runner = fakeRunner((argv) => {
+      seen.push([...argv]);
+      if (argv[1] === "clone") return { code: 1, stderr: "transport capture only" };
+      return undefined;
+    });
+    await expect(
+      resolveGitSource(
+        { repository: "git@github.com:obra/superpowers.git", commitSha: "a".repeat(40) },
+        { runner, cacheHome },
+      ),
+    ).rejects.toBeInstanceOf(BindingScanError);
+    const clone = seen.find((argv) => argv[1] === "clone") ?? [];
+    expect(clone[clone.length - 2]).toBe("git@github.com:obra/superpowers.git");
+  });
+
   it("rejects an unsafe ref", async () => {
     await expect(
       resolveGitSource(

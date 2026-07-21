@@ -18,7 +18,7 @@ import {
   isInstallScriptEvidenceFilePath,
   isMaliciousCodeScanFilePath,
 } from "../trust/script-files.js";
-import { type BindingDeclaration, BindingNpmSourceSchema } from "./schema.js";
+import { type BindingDeclaration, BindingNpmSourceSchema, isBareRepositorySlug } from "./schema.js";
 
 /**
  * Fast-scan gate (D12). No adapter executes upstream code before a policy
@@ -192,6 +192,18 @@ function firstSha(stdout: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Transport locator for `request.repository`. The schema admits three identity
+ * forms; https and scp-like locators are git-reachable verbatim, but a bare
+ * `owner/repo` slug is not (git reads it as a local path), so exactly that
+ * shape maps to its canonical GitHub https remote — the same convention as the
+ * trust pipeline. Recorded identity (locks, evidence, error text) stays
+ * slug-form; only the git argv sees the URL.
+ */
+function gitRemoteLocator(repository: string): string {
+  return isBareRepositorySlug(repository) ? `https://github.com/${repository}.git` : repository;
+}
+
 async function resolveExactSha(request: GitResolveRequest, runner: Runner): Promise<string> {
   if (request.commitSha !== undefined) {
     if (!LOWER_SHA40.test(request.commitSha)) {
@@ -204,7 +216,7 @@ async function resolveExactSha(request: GitResolveRequest, runner: Runner): Prom
     throw new BindingScanError(`unsafe git ref for resolution: ${ref}`);
   }
   // `--` ends option parsing so a repository value can never be read as a flag.
-  const result = await runner(["git", "ls-remote", "--", request.repository, ref]);
+  const result = await runner(["git", "ls-remote", "--", gitRemoteLocator(request.repository), ref]);
   if (result.spawnError || result.code !== 0) {
     throw new BindingScanError(
       `git ls-remote failed for ${request.repository} (${(result.stderr || "").trim().slice(0, 200)})`,
@@ -266,7 +278,7 @@ async function ensureCheckout(
     "--quiet",
     "--no-hardlinks",
     "--",
-    request.repository,
+    gitRemoteLocator(request.repository),
     dir,
   ]);
   if (clone.spawnError || clone.code !== 0) {
