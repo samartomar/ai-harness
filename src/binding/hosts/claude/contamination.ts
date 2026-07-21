@@ -178,6 +178,30 @@ export function claudeContaminationReport(
     });
   }
 
+  // Current-layout ECC machine roots: ECC's installer also lands skills under
+  // `~/.claude/ecc/skills/` and `~/.claude/ecc/.agents/skills/` — the exact
+  // layout `report/v9-panels.ts`'s `machineEccSkillNames` counts. Without these
+  // scans a skills-only ECC install under `~/.claude/ecc/` is INVISIBLE here and
+  // the report renders a false "clean", corrupting the D13 verdict input and the
+  // doctor/acceptance clean-home gates that consume it. One skill per immediate
+  // real directory, name-deduped across the two roots and against the
+  // `~/.claude/skills/` scan above (mirroring `machineEccSkillNames`' union).
+  const seenSkillNames = new Set(
+    entries.filter((entry) => entry.surface === "skill").map((entry) => entry.name),
+  );
+  for (const rel of ["ecc/skills", "ecc/.agents/skills"]) {
+    for (const dirent of listDir(join(claudeDir, ...rel.split("/")))) {
+      if (!dirent.isDirectory() || seenSkillNames.has(dirent.name)) continue;
+      seenSkillNames.add(dirent.name);
+      entries.push({
+        surface: "skill",
+        name: dirent.name,
+        path: `.claude/${rel}/${dirent.name}`,
+        attribution: attributeFramework(dirent.name, `.claude/${rel}/${dirent.name}`),
+      });
+    }
+  }
+
   // Agents: each ~/.claude/agents/*.md markdown file.
   for (const dirent of listDir(join(claudeDir, "agents"))) {
     if (!dirent.isFile() || !dirent.name.endsWith(".md")) continue;
@@ -186,6 +210,20 @@ export function claudeContaminationReport(
       name: dirent.name,
       path: `.claude/agents/${dirent.name}`,
       attribution: attributeFramework(dirent.name, `.claude/agents/${dirent.name}`),
+    });
+  }
+
+  // Current ECC layout also namespaces agents under `agents/ecc/` — the same
+  // namespace `report/v9-panels.ts`'s `eccNamespaced` prefers when present.
+  // Scanned in addition to the flat layout so a namespaced-only install is
+  // never invisible.
+  for (const dirent of listDir(join(claudeDir, "agents", "ecc"))) {
+    if (!dirent.isFile() || !dirent.name.endsWith(".md")) continue;
+    entries.push({
+      surface: "agent",
+      name: `ecc/${dirent.name}`,
+      path: `.claude/agents/ecc/${dirent.name}`,
+      attribution: attributeFramework(dirent.name, `.claude/agents/ecc/${dirent.name}`),
     });
   }
 

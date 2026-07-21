@@ -192,3 +192,60 @@ describe("claudeContaminationReport — project scope is never read", () => {
     expect(report.entries.find((e) => e.name === "proj-skill")).toBeUndefined();
   });
 });
+
+// -- current-layout ECC machine roots (`~/.claude/ecc/`, `agents/ecc/`) ----------
+
+describe("claudeContaminationReport — current-layout ECC machine install", () => {
+  it("flags a skills-only ECC install living solely under ~/.claude/ecc/ (no legacy namespace)", () => {
+    // No SKILL.md required: machineEccSkillNames (report/v9-panels.ts) counts
+    // immediate directories, and this scan mirrors it.
+    mkdirSync(join(home, ".claude", "ecc", "skills", "planning"), { recursive: true });
+    mkdirSync(join(home, ".claude", "ecc", ".agents", "skills", "tdd"), { recursive: true });
+    seed(".claude/agents/ecc/reviewer.md", "# reviewer\n");
+
+    const report = claudeContaminationReport({ home, projectRoot });
+
+    expect(report.clean).toBe(false);
+    expect(report.verdictInput).toBe("contaminated");
+    expect(report.leakage.skills).toBe(2);
+    expect(report.leakage.agents).toBe(1);
+    expect(bySurface(report, "skill").sort()).toEqual(["planning", "tdd"]);
+    const skillPaths = report.entries
+      .filter((e) => e.surface === "skill")
+      .map((e) => e.path)
+      .sort();
+    expect(skillPaths).toEqual([".claude/ecc/.agents/skills/tdd", ".claude/ecc/skills/planning"]);
+    expect(report.entries.every((e) => e.surface !== "skill" || e.attribution === "ecc")).toBe(
+      true,
+    );
+    const agent = report.entries.find((e) => e.surface === "agent");
+    expect(agent).toEqual({
+      surface: "agent",
+      name: "ecc/reviewer.md",
+      path: ".claude/agents/ecc/reviewer.md",
+      attribution: "ecc",
+    });
+  });
+
+  it("name-dedupes a skill present in both current ECC roots (canon: machineEccSkillNames)", () => {
+    mkdirSync(join(home, ".claude", "ecc", "skills", "planning"), { recursive: true });
+    mkdirSync(join(home, ".claude", "ecc", ".agents", "skills", "planning"), { recursive: true });
+
+    const report = claudeContaminationReport({ home, projectRoot });
+
+    expect(report.leakage.skills).toBe(1);
+    expect(report.entries.find((e) => e.surface === "skill")?.path).toBe(
+      ".claude/ecc/skills/planning",
+    );
+  });
+
+  it("name-dedupes a current-root skill against the same name under ~/.claude/skills/", () => {
+    seed(".claude/skills/planning/SKILL.md", "# planning\n");
+    mkdirSync(join(home, ".claude", "ecc", "skills", "planning"), { recursive: true });
+
+    const report = claudeContaminationReport({ home, projectRoot });
+
+    expect(report.leakage.skills).toBe(1);
+    expect(report.entries.find((e) => e.surface === "skill")?.path).toBe(".claude/skills/planning");
+  });
+});
