@@ -252,6 +252,7 @@ function spyRunner(): { runner: Runner; calls: string[][] } {
  */
 const ECC_FULL_MANIFEST_FILES: Record<string, string> = {
   ".claude-plugin/marketplace.json": JSON.stringify({
+    name: ECC_FULL_MARKETPLACE_NAME,
     plugins: [{ name: ECC_FULL_PLUGIN_NAME, source: "./" }],
   }),
   ".claude-plugin/plugin.json": JSON.stringify({ name: ECC_FULL_PLUGIN_NAME, version: "1.0.0" }),
@@ -473,7 +474,7 @@ describe("preview-diff allowlist gate — the pinned artifact + fail-closed case
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       installPreview: artifact,
       installer: fixtureInstaller(spy),
     });
@@ -494,7 +495,7 @@ describe("preview-diff allowlist gate — the pinned artifact + fail-closed case
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       installPreview: artifact,
       installer: fixtureInstaller(spy),
     });
@@ -511,7 +512,7 @@ describe("preview-diff allowlist gate — the pinned artifact + fail-closed case
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       installPreview: previewArtifact(LEAN_ARTIFACT_OPS),
     });
     const declaration = declarationFor(resolved.treeDigest);
@@ -585,7 +586,7 @@ describe("settings-file runtime surface — hook entries / enabledPlugins / env 
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       installPreview: previewArtifact(LEAN_ARTIFACT_OPS),
       installer: rogue,
     });
@@ -605,7 +606,7 @@ describe("provision — happy path on fixtures", () => {
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       installPreview: previewArtifact(LEAN_ARTIFACT_OPS),
       installer: fixtureInstaller(),
     });
@@ -650,7 +651,7 @@ describe("provision — happy path on fixtures", () => {
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       installPreview: previewArtifact(LEAN_ARTIFACT_OPS),
       installer: rogue,
     });
@@ -678,7 +679,7 @@ describe("provision — forged/mismatched disposition rejected before any instal
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       installPreview: previewArtifact(LEAN_ARTIFACT_OPS),
       installer: fixtureInstaller(spy),
     });
@@ -697,7 +698,7 @@ describe("provision — forged/mismatched disposition rejected before any instal
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       installPreview: previewArtifact(LEAN_ARTIFACT_OPS),
       installer: fixtureInstaller(spy),
     });
@@ -714,7 +715,7 @@ describe("provision — forged/mismatched disposition rejected before any instal
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       installPreview: previewArtifact(LEAN_ARTIFACT_OPS),
       installer: fixtureInstaller(spy),
     });
@@ -737,7 +738,7 @@ describe("verify — clean after bind, drift on edit / runtime-surface appearanc
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       installPreview: previewArtifact(LEAN_ARTIFACT_OPS),
       installer: fixtureInstaller(),
     });
@@ -798,7 +799,7 @@ describe("remove — plan/apply separation and missing-lock mode", () => {
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       installPreview: previewArtifact(LEAN_ARTIFACT_OPS),
       installer: fixtureInstaller(),
     });
@@ -823,7 +824,7 @@ describe("report — Framework Card input lines", () => {
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       installPreview: previewArtifact(LEAN_ARTIFACT_OPS),
       installer: fixtureInstaller(),
     });
@@ -951,7 +952,7 @@ describe("Full — mutual exclusivity with Lean (D10 point 5, BOTH directions)",
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       installPreview: previewArtifact(LEAN_ARTIFACT_OPS),
       installer: fixtureInstaller(),
     });
@@ -966,7 +967,7 @@ describe("Full — mutual exclusivity with Lean (D10 point 5, BOTH directions)",
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => resolved.treePath,
     });
     await adapter.provision(
@@ -980,7 +981,7 @@ describe("Full — mutual exclusivity with Lean (D10 point 5, BOTH directions)",
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
     });
     expect(() => adapter.plan({ declaration: fullDeclarationFor("d".repeat(64)) })).toThrow(
       EccModeConflictError,
@@ -994,7 +995,7 @@ describe("Full — mutual exclusivity with Lean (D10 point 5, BOTH directions)",
     const adapter = createEccAdapter({
       root,
       runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => resolved.treePath,
     });
     await expect(
@@ -1014,7 +1015,7 @@ describe("Full — mutual exclusivity with Lean (D10 point 5, BOTH directions)",
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
     });
     expect(() => adapter.plan({ declaration: declarationFor("d".repeat(64)) })).toThrow(
       EccModeConflictError,
@@ -1028,7 +1029,7 @@ describe("Full — mutual exclusivity with Lean (D10 point 5, BOTH directions)",
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       installPreview: previewArtifact(LEAN_ARTIFACT_OPS),
       installer: fixtureInstaller(spy),
     });
@@ -1049,7 +1050,7 @@ describe("Full — mutual exclusivity with Lean (D10 point 5, BOTH directions)",
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
     });
     expect(() => adapter.plan({ declaration: fullDeclarationFor("d".repeat(64)) })).not.toThrow();
   });
@@ -1126,7 +1127,7 @@ describe("Full — provision happy path (bindPlugin-driven)", () => {
     const adapter = createEccAdapter({
       root,
       runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => resolved.treePath,
     });
     const declaration = fullDeclarationFor(resolved.treeDigest, {
@@ -1164,7 +1165,9 @@ describe("Full — provision happy path (bindPlugin-driven)", () => {
     expect(targets).toContain(
       `home:.claude/settings.json#/extraKnownMarketplaces/${ECC_FULL_MARKETPLACE_NAME}`,
     );
-    expect(targets).toContain(`home:.claude/plugins/cache/${ECC_FULL_KEY}`);
+    expect(targets).toContain(
+      `home:.claude/plugins/cache/${ECC_FULL_MARKETPLACE_NAME}/${ECC_FULL_PLUGIN_NAME}`,
+    );
     expect(targets.some((t) => t.includes("/enabledPlugins"))).toBe(true);
     expect(targets.some((t) => t.includes("/env"))).toBe(true);
     expect(targets.some((t) => t.includes("mcpServers"))).toBe(true);
@@ -1184,7 +1187,7 @@ describe("Full — provision happy path (bindPlugin-driven)", () => {
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => resolved.treePath,
     });
     const declaration = fullDeclarationFor(resolved.treeDigest);
@@ -1219,7 +1222,7 @@ describe("Full — forged/mismatched disposition rejected before any CLI (D12)",
     const adapter = createEccAdapter({
       root,
       runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => resolved.treePath,
     });
     const declaration = fullDeclarationFor(resolved.treeDigest, { "mcp:github": true });
@@ -1237,7 +1240,7 @@ describe("Full — forged/mismatched disposition rejected before any CLI (D12)",
     const adapter = createEccAdapter({
       root,
       runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => resolved.treePath,
     });
     const declaration = fullDeclarationFor(mismatched.treeDigest);
@@ -1337,7 +1340,7 @@ describe("Full — verify parity (clean / env-edit / cache-tamper / absent lock)
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => resolved.treePath,
     });
     const declaration = fullDeclarationFor(resolved.treeDigest, { "mcp:context7": true });
@@ -1353,7 +1356,7 @@ describe("Full — verify parity (clean / env-edit / cache-tamper / absent lock)
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => resolved.treePath,
     });
     const declaration = fullDeclarationFor(resolved.treeDigest);
@@ -1375,7 +1378,7 @@ describe("Full — verify parity (clean / env-edit / cache-tamper / absent lock)
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => located,
     });
     const declaration = fullDeclarationFor(resolved.treeDigest);
@@ -1409,7 +1412,7 @@ describe("Full — remove parity (partition + plugin/marketplace / missing lock)
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => resolved.treePath,
     });
     const declaration = fullDeclarationFor(resolved.treeDigest, { "mcp:github": true });
@@ -1436,7 +1439,7 @@ describe("Full — report (Framework Card input lines)", () => {
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => resolved.treePath,
     });
     const declaration = fullDeclarationFor(resolved.treeDigest, {

@@ -76,10 +76,10 @@ describe("eccDoubleInstallCheck", () => {
   });
 
   it("passes when only the plugin is enabled", () => {
-    writeProjectSettings({ enabledPlugins: { "ecc@aih-ecc": true } });
+    writeProjectSettings({ enabledPlugins: { "ecc@ecc": true } });
     const res = eccDoubleInstallCheck(ctx());
     expect(res.verdict).toBe("pass");
-    expect(res.detail).toContain("ECC plugin enabled (ecc@aih-ecc)");
+    expect(res.detail).toContain("ECC plugin enabled (ecc@ecc)");
     expect(res.detail).toContain("no manual ECC rules copy found");
   });
 
@@ -99,17 +99,17 @@ describe("eccDoubleInstallCheck", () => {
   });
 
   it("fails when both the plugin and a project-scope manual copy are present", () => {
-    writeProjectSettings({ enabledPlugins: { "ecc@aih-ecc": true } });
+    writeProjectSettings({ enabledPlugins: { "ecc@ecc": true } });
     writeManualEccCopy(root);
     const res = eccDoubleInstallCheck(ctx());
     expect(res.verdict).toBe("fail");
-    expect(res.detail).toContain("ECC plugin enabled (ecc@aih-ecc)");
+    expect(res.detail).toContain("ECC plugin enabled (ecc@ecc)");
     expect(res.detail).toContain("project:.claude/rules/ecc");
     expect(res.detail).toContain("stacks duplicates");
   });
 
   it("fails when both the plugin and a home-scope manual copy are present", () => {
-    writeProjectSettings({ enabledPlugins: { "ecc@aih-ecc": true } });
+    writeProjectSettings({ enabledPlugins: { "ecc@ecc": true } });
     writeManualEccCopy(home);
     const res = eccDoubleInstallCheck(ctx());
     expect(res.verdict).toBe("fail");
@@ -126,7 +126,7 @@ describe("eccDoubleInstallCheck", () => {
   });
 
   it("ignores a non-ecc-prefixed enabledPlugins key", () => {
-    writeProjectSettings({ enabledPlugins: { "superpowers@aih-superpowers": true } });
+    writeProjectSettings({ enabledPlugins: { "superpowers@superpowers-dev": true } });
     const res = eccDoubleInstallCheck(ctx());
     expect(res.verdict).toBe("pass");
     expect(res.detail).toBe("no ECC plugin enable and no manual ECC rules copy found");
@@ -212,11 +212,11 @@ describe("eccModeExclusivityCheck", () => {
       root,
       eccLock({ ownership: [homeOwnershipEntry("home:.claude/rules/common")] }),
     );
-    writeProjectSettings({ enabledPlugins: { "ecc@aih-ecc": true } });
+    writeProjectSettings({ enabledPlugins: { "ecc@ecc": true } });
     const res = eccModeExclusivityCheck(ctx());
     expect(res.verdict).toBe("fail");
     expect(res.detail).toContain("lean mode lock");
-    expect(res.detail).toContain("ecc@aih-ecc");
+    expect(res.detail).toContain("ecc@ecc");
   });
 
   it("passes for a full lock with an ecc@ plugin entry enabled (matching state)", () => {
@@ -224,10 +224,10 @@ describe("eccModeExclusivityCheck", () => {
       root,
       eccLock({
         declaration: eccDeclaration("full"),
-        ownership: [homeOwnershipEntry("home:.claude/plugins/cache/ecc@aih-ecc")],
+        ownership: [homeOwnershipEntry("home:.claude/plugins/cache/ecc/ecc")],
       }),
     );
-    writeProjectSettings({ enabledPlugins: { "ecc@aih-ecc": true } });
+    writeProjectSettings({ enabledPlugins: { "ecc@ecc": true } });
     const res = eccModeExclusivityCheck(ctx());
     expect(res.verdict).toBe("pass");
     expect(res.detail).toContain("full mode lock with an ecc@ plugin entry");
@@ -268,7 +268,7 @@ describe("eccModeExclusivityCheck", () => {
 
 describe("ECC doctor probes — determinism", () => {
   it("produce identical Check output across two consecutive runs on the same state", () => {
-    writeProjectSettings({ enabledPlugins: { "ecc@aih-ecc": true } });
+    writeProjectSettings({ enabledPlugins: { "ecc@ecc": true } });
     writeManualEccCopy(root);
     writeBindingLockAtomic(root, {
       schemaVersion: 1,

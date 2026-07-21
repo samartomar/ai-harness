@@ -72,9 +72,16 @@ export function homeMarketplaceTarget(marketplace: string): string {
   return `${HOME_OWNERSHIP_PREFIX}${CLAUDE_HOME_SETTINGS_REL}#/${CLAUDE_EXTRA_KNOWN_MARKETPLACES_KEY}/${marketplace}`;
 }
 
-/** Ownership target for a materialized plugin cache tree (kind `file`). */
-export function homePluginCacheTarget(pluginKey: string): string {
-  return `${HOME_OWNERSHIP_PREFIX}${CLAUDE_PLUGINS_CACHE_REL}/${pluginKey}`;
+/**
+ * Ownership target for a materialized plugin cache tree (kind `file`).
+ * Empirically corrected in the W4 live run: the host materializes to
+ * `cache/<marketplace>/<plugin>/<version>/` (see
+ * {@link defaultPluginCacheLocator}), NOT `cache/<pluginKey>` — ownership
+ * roots at the plugin level so every version directory under it is covered by
+ * the same recorded surface.
+ */
+export function homePluginCacheTarget(marketplace: string, plugin: string): string {
+  return `${HOME_OWNERSHIP_PREFIX}${CLAUDE_PLUGINS_CACHE_REL}/${marketplace}/${plugin}`;
 }
 
 /** True for a machine-scope ownership target (the `home:`-prefixed convention). */
@@ -293,6 +300,30 @@ function findMarketplacePluginSource(checkoutPath: string, plugin: string): unkn
     );
   }
   return (entry as { source?: unknown }).source;
+}
+
+/**
+ * The marketplace name the checkout's own manifest declares. The claude host
+ * registers a marketplace under THIS name — `claude plugin marketplace add`
+ * takes no name argument, so the registrar never chooses it (W4 live-run
+ * correction). `bindPlugin` asserts the adapter's pinned expectation matches
+ * this value before any host mutation; a missing or malformed name fails
+ * closed the same way.
+ */
+export function marketplaceManifestName(checkoutPath: string): string {
+  const manifestPath = join(checkoutPath, ".claude-plugin", "marketplace.json");
+  const parsed = readJsonFileOrThrow(
+    manifestPath,
+    "marketplace manifest (.claude-plugin/marketplace.json)",
+  );
+  const name =
+    typeof parsed === "object" && parsed !== null ? (parsed as { name?: unknown }).name : undefined;
+  if (typeof name !== "string" || name.length === 0) {
+    throw new ClaudePluginError(
+      `marketplace manifest at ${manifestPath} declares no "name" — the host registers a marketplace under the manifest's own name, so it must be present`,
+    );
+  }
+  return name;
 }
 
 /**

@@ -100,6 +100,7 @@ const SUPERPOWERS_FIXTURE_FILES = {
  */
 const SUPERPOWERS_MANIFEST_FILES = {
   ".claude-plugin/marketplace.json": JSON.stringify({
+    name: SUPERPOWERS_MARKETPLACE_NAME,
     plugins: [{ name: SUPERPOWERS_PLUGIN_NAME, source: "./" }],
   }),
   ".claude-plugin/plugin.json": JSON.stringify({ name: SUPERPOWERS_PLUGIN_NAME, version: "1.0.0" }),
@@ -249,7 +250,9 @@ describe("plan — D8 conflict + feature-key rejection (pure preview, no I/O)", 
     expect(targets).toContain(
       `home:.claude/settings.json#/extraKnownMarketplaces/${SUPERPOWERS_MARKETPLACE_NAME}`,
     );
-    expect(targets).toContain(`home:.claude/plugins/cache/${KEY}`);
+    expect(targets).toContain(
+      `home:.claude/plugins/cache/${SUPERPOWERS_MARKETPLACE_NAME}/${SUPERPOWERS_PLUGIN_NAME}`,
+    );
 
     // Pure preview: plan must not write anything to disk.
     expect(existsSync(join(root, CLAUDE_SETTINGS_PATH))).toBe(false);
@@ -326,7 +329,7 @@ describe("provision — happy path end to end on fixtures", () => {
     const adapter = createSuperpowersAdapter({
       root,
       runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => resolved.treePath,
     });
     const declaration = declarationFor(resolved.treeDigest);
@@ -351,7 +354,9 @@ describe("provision — happy path end to end on fixtures", () => {
     expect(targets).toContain(
       `home:.claude/settings.json#/extraKnownMarketplaces/${SUPERPOWERS_MARKETPLACE_NAME}`,
     );
-    expect(targets).toContain(`home:.claude/plugins/cache/${KEY}`);
+    expect(targets).toContain(
+      `home:.claude/plugins/cache/${SUPERPOWERS_MARKETPLACE_NAME}/${SUPERPOWERS_PLUGIN_NAME}`,
+    );
     expect(targets.some((t) => t.includes("/enabledPlugins"))).toBe(true);
     expect(targets.some((t) => t.includes("/env"))).toBe(true);
     for (const entry of result.lock.ownership) {
@@ -375,7 +380,11 @@ describe("provision — forged/mismatched disposition rejected before any upstre
       producedAt: new Date().toISOString(),
     } as unknown as ScanDisposition;
     const { runner, calls } = recordingRunner();
-    const adapter = createSuperpowersAdapter({ root, runner, env: { USERPROFILE: home } });
+    const adapter = createSuperpowersAdapter({
+      root,
+      runner,
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+    });
     const declaration = declarationFor(resolved.treeDigest);
 
     await expect(
@@ -387,7 +396,11 @@ describe("provision — forged/mismatched disposition rejected before any upstre
   it("rejects a disposition whose digest does not match the resolved source", async () => {
     const { resolved, disposition } = scannedFixture("src");
     const { runner, calls } = recordingRunner();
-    const adapter = createSuperpowersAdapter({ root, runner, env: { USERPROFILE: home } });
+    const adapter = createSuperpowersAdapter({
+      root,
+      runner,
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+    });
     const mismatched: ResolvedGitSource = { ...resolved, treeDigest: "f".repeat(64) };
     const declaration = declarationFor(mismatched.treeDigest);
 
@@ -400,7 +413,11 @@ describe("provision — forged/mismatched disposition rejected before any upstre
   it("re-rejects a second framework (D8 layer 3) even with a valid allow disposition", async () => {
     const { resolved, disposition } = scannedFixture("src");
     const { runner, calls } = recordingRunner();
-    const adapter = createSuperpowersAdapter({ root, runner, env: { USERPROFILE: home } });
+    const adapter = createSuperpowersAdapter({
+      root,
+      runner,
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+    });
     const declaration = declarationFor(resolved.treeDigest);
 
     await expect(
@@ -423,7 +440,7 @@ describe("provision — D7 loaded-tree mismatch fails closed", () => {
     const adapter = createSuperpowersAdapter({
       root,
       runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => tamperedCache,
     });
     const declaration = declarationFor(resolved.treeDigest);
@@ -433,7 +450,7 @@ describe("provision — D7 loaded-tree mismatch fails closed", () => {
     ).rejects.toThrow();
 
     expect(calls).toContainEqual(["claude", "plugin", "disable", KEY]);
-    expect(calls).toContainEqual(["claude", "plugin", "uninstall", KEY]);
+    expect(calls).toContainEqual(["claude", "plugin", "uninstall", KEY, "--scope", "project"]);
     expect(existsSync(join(root, CLAUDE_SETTINGS_PATH))).toBe(false);
     expect(readBindingLock(root).present).toBe(false);
   });
@@ -448,7 +465,7 @@ describe("provision — re-provision threads previousLock (parent-container owne
     const adapter = createSuperpowersAdapter({
       root,
       runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => resolved.treePath,
     });
     const declaration = declarationFor(resolved.treeDigest);
@@ -487,7 +504,7 @@ describe("verify — clean after bind, drift reported after user edit or cache t
     const adapter = createSuperpowersAdapter({
       root,
       runner: recordingRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => resolved.treePath,
     });
     const declaration = declarationFor(resolved.treeDigest);
@@ -503,7 +520,7 @@ describe("verify — clean after bind, drift reported after user edit or cache t
     const adapter = createSuperpowersAdapter({
       root,
       runner: recordingRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => resolved.treePath,
     });
     const declaration = declarationFor(resolved.treeDigest);
@@ -525,7 +542,7 @@ describe("verify — clean after bind, drift reported after user edit or cache t
     const adapter = createSuperpowersAdapter({
       root,
       runner: recordingRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => locatedPath,
     });
     const declaration = declarationFor(resolved.treeDigest);
@@ -556,7 +573,10 @@ describe("remove — plan/apply separation, round-trip, and missing-lock mode", 
 
   it("round-trips clean: repo-relative restore + home: teardown, no drift", async () => {
     const { resolved, disposition } = scannedFixture("src");
-    const bindDeps = { runner: recordingRunner().runner, env: { USERPROFILE: home } };
+    const bindDeps = {
+      runner: recordingRunner().runner,
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+    };
     const adapter = createSuperpowersAdapter({
       root,
       runner: bindDeps.runner,
@@ -585,11 +605,16 @@ describe("remove — plan/apply separation, round-trip, and missing-lock mode", 
         ownership: removalPlanResult.homeOwnership,
         plugin: removalPlanResult.plugin,
         marketplace: removalPlanResult.marketplace,
+        scope: removalPlanResult.scope,
       },
-      { runner: removeRunner, env: { USERPROFILE: home }, locateCache: () => resolved.treePath },
+      {
+        runner: removeRunner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => resolved.treePath,
+      },
     );
     expect(removal.drift).toEqual([]);
-    expect(calls).toContainEqual(["claude", "plugin", "uninstall", KEY]);
+    expect(calls).toContainEqual(["claude", "plugin", "uninstall", KEY, "--scope", "project"]);
     expect(calls).toContainEqual([
       "claude",
       "plugin",
@@ -616,7 +641,7 @@ describe("report — Framework Card input lines", () => {
     const adapter = createSuperpowersAdapter({
       root,
       runner: recordingRunner().runner,
-      env: { USERPROFILE: home },
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
       locateCache: () => resolved.treePath,
     });
     const declaration = declarationFor(resolved.treeDigest);

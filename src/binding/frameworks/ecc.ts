@@ -284,8 +284,12 @@ export type EccMode = "lean" | "full";
  */
 export const ECC_FULL_PLUGIN_NAME = "ecc";
 
-/** The marketplace name AIH registers the scanned ECC checkout under for Full. */
-export const ECC_FULL_MARKETPLACE_NAME = "aih-ecc";
+/** The marketplace name the PINNED ECC checkout's own manifest declares. The
+ * claude host registers a marketplace under the manifest's name — never a
+ * registrar-chosen one — so this mirrors the manifest at {@link ECC_PIN_COMMIT};
+ * `bindPlugin` asserts the match before any host mutation (W4 live-run
+ * correction). */
+export const ECC_FULL_MARKETPLACE_NAME = "ecc";
 
 /** ECC Full always binds at project scope (`.claude/settings.json`). */
 const ECC_FULL_SCOPE: PluginScope = "project";
@@ -1340,10 +1344,7 @@ function previewEccOwnership(intents: readonly ClaudeOwnershipIntent[]): Binding
  * `treeDigest` — the value a successful bind MUST produce (D7). Mirrors the private
  * `previewHomeOwnership` in `superpowers.ts`.
  */
-function previewEccHomeOwnership(
-  source: BindingGitSource,
-  pluginKey: string,
-): BindingOwnershipEntry[] {
+function previewEccHomeOwnership(source: BindingGitSource): BindingOwnershipEntry[] {
   const marketplaceApplied = { source: { source: "directory", path: source.repository } };
   return [
     {
@@ -1355,7 +1356,7 @@ function previewEccHomeOwnership(
     },
     {
       kind: "file",
-      target: homePluginCacheTarget(pluginKey),
+      target: homePluginCacheTarget(ECC_FULL_MARKETPLACE_NAME, ECC_FULL_PLUGIN_NAME),
       preExisting: { absent: true },
       applied: source.treeDigest,
       postApplyDigest: source.treeDigest,
@@ -1388,10 +1389,7 @@ function buildEccFullPlanPreview(
   return {
     framework: declaration.framework.id,
     writes: built.writes,
-    ownership: [
-      ...previewEccOwnership(built.ownership),
-      ...previewEccHomeOwnership(source, pluginKey),
-    ],
+    ownership: [...previewEccOwnership(built.ownership), ...previewEccHomeOwnership(source)],
   };
 }
 
@@ -1661,6 +1659,7 @@ export type EccFullRemoveResult =
       homeOwnership: BindingOwnershipEntry[];
       plugin: string;
       marketplace: string;
+      scope: PluginScope;
     };
 
 function removeEccFull(deps: EccLeanAdapterDeps): EccFullRemoveResult {
@@ -1679,6 +1678,7 @@ function removeEccFull(deps: EccLeanAdapterDeps): EccFullRemoveResult {
     homeOwnership,
     plugin: ECC_FULL_PLUGIN_NAME,
     marketplace: ECC_FULL_MARKETPLACE_NAME,
+    scope: ECC_FULL_SCOPE,
   };
 }
 

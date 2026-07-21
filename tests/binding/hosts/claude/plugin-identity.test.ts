@@ -55,16 +55,16 @@ describe("home: ownership target convention (empirically corrected: settings.jso
     );
   });
 
-  it("encodes the documented cache target unchanged", () => {
-    expect(homePluginCacheTarget("ecc@ecc-mkt")).toBe(
-      `${HOME_OWNERSHIP_PREFIX}${CLAUDE_PLUGINS_CACHE_REL}/ecc@ecc-mkt`,
+  it("encodes the cache target at the REAL layout: cache/<marketplace>/<plugin> (W4 live-run correction)", () => {
+    expect(homePluginCacheTarget("ecc-mkt", "ecc")).toBe(
+      `${HOME_OWNERSHIP_PREFIX}${CLAUDE_PLUGINS_CACHE_REL}/ecc-mkt/ecc`,
     );
-    expect(homePluginCacheTarget("ecc@ecc-mkt")).toBe("home:.claude/plugins/cache/ecc@ecc-mkt");
+    expect(homePluginCacheTarget("ecc-mkt", "ecc")).toBe("home:.claude/plugins/cache/ecc-mkt/ecc");
   });
 
   it("recognizes home-scoped targets and rejects repo-relative ones", () => {
     expect(isHomeScopedTarget(homeMarketplaceTarget("ecc"))).toBe(true);
-    expect(isHomeScopedTarget(homePluginCacheTarget("ecc@m"))).toBe(true);
+    expect(isHomeScopedTarget(homePluginCacheTarget("m", "ecc"))).toBe(true);
     expect(isHomeScopedTarget(".claude/settings.json#/enabledPlugins/ecc@m")).toBe(false);
     expect(isHomeScopedTarget(".claude/skills/ecc/SKILL.md")).toBe(false);
   });

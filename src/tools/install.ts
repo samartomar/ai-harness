@@ -223,10 +223,11 @@ export function chooseOption(t: ToolSpec, pms: ReadonlySet<string>): PmOption | 
 }
 
 /**
- * Windows can't `execFile` a `.cmd` shim directly (npm/scoop/pnpm/yarn), so route
- * those through `cmd /c` — the same fix the rest of the harness uses for npm/npx.
+ * Windows can't `execFile` a `.cmd` shim directly (npm/scoop/pnpm/yarn — and the
+ * npm-installed `claude` CLI), so route those through `cmd /c` — the same fix the
+ * rest of the harness uses for npm/npx.
  */
-export const WIN_CMD_SHIMS = new Set(["npm", "npx", "pnpm", "scoop", "yarn"]);
+export const WIN_CMD_SHIMS = new Set(["claude", "npm", "npx", "pnpm", "scoop", "yarn"]);
 export function execArgv(platform: Platform, argv: string[]): string[] {
   if (platform !== "windows" || argv[0] === undefined || !WIN_CMD_SHIMS.has(argv[0])) return argv;
   for (const [index, arg] of argv.entries()) {

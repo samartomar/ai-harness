@@ -137,8 +137,12 @@ export const SUPERPOWERS_REPOSITORY = "obra/superpowers";
 /** The plugin name AIH installs. */
 export const SUPERPOWERS_PLUGIN_NAME = "superpowers";
 
-/** The marketplace name AIH registers the scanned checkout under. */
-export const SUPERPOWERS_MARKETPLACE_NAME = "aih-superpowers";
+/** The marketplace name the PINNED checkout's own manifest declares. The claude
+ * host registers a marketplace under the manifest's name — never a
+ * registrar-chosen one — so this mirrors the manifest at
+ * {@link SUPERPOWERS_PIN_COMMIT}; `bindPlugin` asserts the match before any
+ * host mutation (W4 live-run correction). */
+export const SUPERPOWERS_MARKETPLACE_NAME = "superpowers-dev";
 
 /** Superpowers carries no scope feature flag — always bound at project scope. */
 const SUPERPOWERS_SCOPE: PluginScope = "project";
@@ -196,6 +200,7 @@ export type SuperpowersRemoveResult =
       homeOwnership: BindingOwnershipEntry[];
       plugin: string;
       marketplace: string;
+      scope: PluginScope;
     };
 
 function assertSuperpowersDeclaration(declaration: BindingDeclaration): void {
@@ -278,10 +283,7 @@ function previewOwnership(intents: readonly ClaudeOwnershipIntent[]): BindingOwn
  * the declared `treeDigest` directly — the exact value a successful bind
  * MUST produce there (D7 requires the match).
  */
-function previewHomeOwnership(
-  source: BindingGitSource,
-  pluginKey: string,
-): BindingOwnershipEntry[] {
+function previewHomeOwnership(source: BindingGitSource): BindingOwnershipEntry[] {
   const marketplaceApplied = { source: { source: "directory", path: source.repository } };
   return [
     {
@@ -293,7 +295,7 @@ function previewHomeOwnership(
     },
     {
       kind: "file",
-      target: homePluginCacheTarget(pluginKey),
+      target: homePluginCacheTarget(SUPERPOWERS_MARKETPLACE_NAME, SUPERPOWERS_PLUGIN_NAME),
       preExisting: { absent: true },
       applied: source.treeDigest,
       postApplyDigest: source.treeDigest,
@@ -311,7 +313,7 @@ function buildSuperpowersPlanPreview(root: string, source: BindingGitSource): Bi
   return {
     framework: "superpowers",
     writes: built.writes,
-    ownership: [...previewOwnership(built.ownership), ...previewHomeOwnership(source, pluginKey)],
+    ownership: [...previewOwnership(built.ownership), ...previewHomeOwnership(source)],
   };
 }
 
@@ -425,6 +427,7 @@ function removeSuperpowers(deps: SuperpowersAdapterDeps): SuperpowersRemoveResul
     homeOwnership,
     plugin: SUPERPOWERS_PLUGIN_NAME,
     marketplace: SUPERPOWERS_MARKETPLACE_NAME,
+    scope: SUPERPOWERS_SCOPE,
   };
 }
 
