@@ -149,6 +149,34 @@ describe("estimateContextCostFromTree", () => {
     expect(() => estimateContextCostFromTree(dir)).toThrow(ClaudeHostWriteError);
   });
 
+  it("tolerates JSON-Schema metadata keys in hooks.json (W4 live-run: real ECC ships $schema)", () => {
+    const dir = tree("schema-hooks", {
+      "hooks/hooks.json": JSON.stringify({
+        $schema: "https://example.com/hooks.schema.json",
+        PreToolUse: [{ matcher: "x", hooks: [] }],
+      }),
+    });
+    const cost = estimateContextCostFromTree(dir);
+    expect(cost.counts.hooks).toBe(1);
+  });
+
+  it("counts the settings-style wrapper shape (top-level hooks key holding the event map)", () => {
+    const dir = tree("wrapped-hooks", {
+      "hooks/hooks.json": JSON.stringify({
+        $schema: "https://json.schemastore.org/claude-code-settings.json",
+        hooks: {
+          PreToolUse: [
+            { matcher: "Bash", hooks: [] },
+            { matcher: "Write", hooks: [] },
+          ],
+          Stop: [{ matcher: "*", hooks: [] }],
+        },
+      }),
+    });
+    const cost = estimateContextCostFromTree(dir);
+    expect(cost.counts.hooks).toBe(3);
+  });
+
   it("fails closed on malformed .mcp.json", () => {
     const dir = tree("bad-mcp", { ".mcp.json": "{ not: valid json" });
     expect(() => estimateContextCostFromTree(dir)).toThrow(ClaudeHostWriteError);

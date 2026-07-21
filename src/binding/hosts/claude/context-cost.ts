@@ -409,8 +409,18 @@ function countHooks(treePath: string): { count: number; bytes: number } {
       `refusing to estimate context cost — ${path} must be a JSON object of event -> hook array`,
     );
   }
+  // Real hooks.json files come in TWO legitimate shapes (W4 live-run
+  // empirical, e.g. ECC ships the Claude settings-file shape with a
+  // "$schema" header): either a bare event map, or a settings-style wrapper
+  // whose top-level "hooks" key holds the event map. JSON-Schema metadata
+  // keys ("$schema", "$id", ...) are skipped at either level; any other
+  // non-array event value still fails closed as a malformed event map.
+  const wrapped = (parsed as { hooks?: unknown }).hooks;
+  const eventMap = isPlainObject(wrapped) ? wrapped : parsed;
   let count = 0;
-  for (const [event, value] of Object.entries(parsed)) {
+  for (const [event, value] of Object.entries(eventMap)) {
+    if (event.startsWith("$")) continue;
+    if (eventMap === parsed && event === "hooks") continue;
     if (!Array.isArray(value)) {
       throw new ClaudeHostWriteError(
         `refusing to estimate context cost — ${path} event ${JSON.stringify(event)} is not an array`,

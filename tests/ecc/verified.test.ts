@@ -77,15 +77,19 @@ function driverSteps(actions: Action[]): Array<{
   argv: string[];
   cwd: string;
   env?: Record<string, string>;
+  input?: string;
 }> {
   const driver = execs(actions).find((action) => action.describe.includes("verified ECC checkout"));
   expect(driver).toBeDefined();
-  const encoded = driver?.argv.at(-1);
-  if (!encoded) throw new Error("missing verified ECC step payload");
-  return JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as Array<{
+  // Steps ride a temp FILE, never argv (Windows 32K command-line cap; the
+  // driver deletes it on execution — unexecuted plan actions leave it for us).
+  const stepsPath = driver?.argv.at(-1);
+  if (!stepsPath) throw new Error("missing verified ECC steps file path");
+  return JSON.parse(readFileSync(stepsPath, "utf8")) as Array<{
     argv: string[];
     cwd: string;
     env?: Record<string, string>;
+    input?: string;
   }>;
 }
 
@@ -200,12 +204,10 @@ describe("verifiedEccInstallPlan", () => {
       [authorization(), authorization("module:rules-core")],
     );
     const steps = driverSteps(built.actions);
-    const materializationPayload = JSON.parse(
-      Buffer.from(steps[1]?.argv.at(-1) ?? "", "base64").toString("utf8"),
-    ) as { spec: { wholeModules: string[] } };
-    const ledgerPayload = JSON.parse(
-      Buffer.from(steps.at(-1)?.argv.at(-1) ?? "", "base64").toString("utf8"),
-    ) as { contents: string };
+    const materializationPayload = JSON.parse(steps[1]?.input ?? "null") as {
+      spec: { wholeModules: string[] };
+    };
+    const ledgerPayload = JSON.parse(steps.at(-1)?.input ?? "null") as { contents: string };
     const ledger = JSON.parse(ledgerPayload.contents) as {
       projects: Array<{ components: string[] }>;
       targets: Array<{ components: Array<{ id: string }> }>;
@@ -246,9 +248,9 @@ describe("verifiedEccInstallPlan", () => {
     expect(steps[1]?.argv.slice(0, 2)).toEqual([process.execPath, "-e"]);
     expect(steps[1]?.argv[2]).toContain('replace(/\\\\/g, "/")');
     expect(steps[1]?.argv[2]).not.toContain('replace(/\\\\\\\\/g, "/")');
-    const encoded = steps[1]?.argv.at(-1);
-    if (encoded === undefined) throw new Error("missing materialization payload");
-    const payload = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
+    const raw = steps[1]?.input;
+    if (raw === undefined) throw new Error("missing materialization payload");
+    const payload = JSON.parse(raw) as {
       target: string;
       scope: string;
       moduleIds: string[];
@@ -586,8 +588,9 @@ describe("verifiedEccInstallPlan", () => {
               cwd: root,
             },
       );
-      const encoded = Buffer.from(JSON.stringify(deterministic), "utf8").toString("base64");
-      return spawnSync(executable, [...driver.argv.slice(1, -1), encoded], {
+      const stepsFile = join(root, `det-steps-${firstExit}.json`);
+      writeFileSync(stepsFile, JSON.stringify(deterministic), "utf8");
+      return spawnSync(executable, [...driver.argv.slice(1, -1), stepsFile], {
         cwd: root,
         env: { ...process.env, ...env },
         encoding: "utf8",

@@ -766,6 +766,29 @@ function ownershipTargetFor(component: EccLeanComponentPlan): string {
   return component.scope === "home" ? `${HOME_OWNERSHIP_PREFIX}${component.root}` : component.root;
 }
 
+/** The home container every Lean skill delivery lives under. */
+const ECC_SKILLS_CONTAINER_REL = ".claude/skills/ecc";
+
+/**
+ * The upstream installer's runtime-state surfaces a Lean install writes
+ * BESIDES the vetted content ops (2.1.214 + ECC pin, W4 live-run empirical):
+ * a `.claude/.agents/skills/<skill>` cross-CLI mirror per delivered skill and
+ * the `.claude/ecc/install-state.json` ledger. Derived from the selected
+ * home-scoped skill components so the set tracks the allowlist exactly.
+ */
+function installerStateSurfaceRels(components: readonly EccLeanComponentPlan[]): string[] {
+  const rels = new Set<string>();
+  for (const component of components) {
+    if (component.scope !== "home") continue;
+    // The component root is the DIRECTORY for multi-file skills and the single
+    // FILE for one-op skills — capture the skill segment either way.
+    const match = /^\.claude\/skills\/ecc\/([^/]+)(?:\/|$)/.exec(component.root);
+    if (match !== null) rels.add(`.claude/.agents/skills/${match[1]}`);
+  }
+  rels.add(".claude/ecc/install-state.json");
+  return [...rels].sort();
+}
+
 function buildEccLeanPlan(deps: EccLeanAdapterDeps, declaration: BindingDeclaration): BindingPlan {
   const artifact = loadPreviewArtifact(deps);
   const diff = computeEccLeanPreviewDiff(artifact, ECC_LEAN_ALLOWLIST);
@@ -860,6 +883,28 @@ async function provisionEccLean(
       existsSync(abs) ? { value: `present:${component.root}` } : { absent: true },
     );
   }
+  // Installer runtime-state surfaces (W4 live-run correction): the upstream
+  // evidence-gated installer ALSO writes a cross-CLI `.agents` skills mirror
+  // (generated shims alongside the vetted skill bytes) and its own
+  // `ecc/install-state.json` ledger. These are never part of the vetted-content
+  // manifest, but they ARE machine writes this bind causes — so they are owned
+  // ("own what you created"), removal cleans them, and the acceptance
+  // home-delta can expect them. Pre-existing state is captured here, before
+  // any install.
+  const stateSurfaceRels = installerStateSurfaceRels(components);
+  const preExistingByStateSurface = new Map<string, BindingOwnershipEntry["preExisting"]>();
+  for (const rel of stateSurfaceRels) {
+    preExistingByStateSurface.set(
+      rel,
+      existsSync(join(home, rel)) ? { value: `present:${rel}` } : { absent: true },
+    );
+  }
+  // The ecc skills NAMESPACE CONTAINER: owned only when THIS bind creates it,
+  // so removal prunes the container itself — not just the per-component roots
+  // under it — and no empty `.claude/skills/ecc` shell survives to census as
+  // a leaked skill surface (W4 live-run phase-6 correction). A pre-existing
+  // container is never owned and therefore never deleted.
+  const containerPreExisted = existsSync(join(home, ECC_SKILLS_CONTAINER_REL));
 
   // 2. Drive the selective install (exec/Runner seam) and capture actual writes.
   const installer = deps.installer ?? defaultEccLeanInstaller;
@@ -923,6 +968,35 @@ async function provisionEccLean(
       postApplyDigest: digest,
     };
   });
+  // Installer runtime-state surfaces actually written by THIS install: digest
+  // with the SAME routine verify() re-checks (`currentComponentDigest`), so a
+  // later verify is consistent by construction. A surface the installer did
+  // not write (e.g. the fixture installer) is simply not owned.
+  for (const rel of stateSurfaceRels) {
+    const target = `${HOME_OWNERSHIP_PREFIX}${rel}`;
+    const digest = currentComponentDigest(home, deps.root, target);
+    if (digest === undefined) continue;
+    ownership.push({
+      kind: "file",
+      target,
+      preExisting: preExistingByStateSurface.get(rel) ?? { absent: true },
+      applied: digest,
+      postApplyDigest: digest,
+    });
+  }
+  if (!containerPreExisted) {
+    const containerTarget = `${HOME_OWNERSHIP_PREFIX}${ECC_SKILLS_CONTAINER_REL}`;
+    const containerDigest = currentComponentDigest(home, deps.root, containerTarget);
+    if (containerDigest !== undefined) {
+      ownership.push({
+        kind: "file",
+        target: containerTarget,
+        preExisting: { absent: true },
+        applied: containerDigest,
+        postApplyDigest: containerDigest,
+      });
+    }
+  }
 
   const lock: BindingLock = {
     schemaVersion: 1,

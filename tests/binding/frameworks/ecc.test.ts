@@ -619,8 +619,13 @@ describe("provision — happy path on fixtures", () => {
     expect(result.lock.scannedDigest).toBe(result.lock.loadedDigest);
     expect(result.lock.writes).toEqual([]);
 
-    // one bounded ownership entry per allowlisted component, all home-scoped
-    expect(result.lock.ownership).toHaveLength(ECC_LEAN_ALLOWLIST.length);
+    // one bounded ownership entry per allowlisted component, all home-scoped,
+    // plus the skills/ecc namespace CONTAINER the bind itself created (owned
+    // so removal prunes it — W4 live-run phase-6 correction)
+    expect(result.lock.ownership).toHaveLength(ECC_LEAN_ALLOWLIST.length + 1);
+    expect(result.lock.ownership.some((entry) => entry.target === "home:.claude/skills/ecc")).toBe(
+      true,
+    );
     for (const entry of result.lock.ownership) {
       expect(entry.target.startsWith("home:")).toBe(true);
       expect(entry.postApplyDigest).toMatch(/^[0-9a-f]{64}$/);
@@ -811,7 +816,7 @@ describe("remove — plan/apply separation and missing-lock mode", () => {
     if (result.mode !== "apply") throw new Error("expected apply mode");
     // every ECC install root is machine-scope, so nothing repo-relative to restore
     expect(result.repoRelativeDrift).toEqual([]);
-    expect(result.homeOwnership).toHaveLength(ECC_LEAN_ALLOWLIST.length);
+    expect(result.homeOwnership).toHaveLength(ECC_LEAN_ALLOWLIST.length + 1);
     expect(result.homeOwnership.every((entry) => entry.target.startsWith("home:"))).toBe(true);
   });
 });
