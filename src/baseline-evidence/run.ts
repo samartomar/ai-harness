@@ -10,6 +10,7 @@ import {
   structuredChecksProbe,
 } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
+import type { AcceptanceTuple } from "./acceptance.js";
 import type { BaselineCatalog } from "./catalog.js";
 import type { OrgBaselineEvidence } from "./org.js";
 import type { BaselineEvidenceLock } from "./schema.js";
@@ -29,6 +30,8 @@ export interface CaptureBaselineGateInput {
   vendorLock: BaselineEvidenceLock;
   vendorLockSha256: string;
   orgEvidence?: OrgBaselineEvidence;
+  /** When set, only accepted-with-conditions decisions for this exact tuple apply. */
+  acceptanceTuple?: AcceptanceTuple;
 }
 
 export interface BaselineGate {
@@ -40,6 +43,7 @@ export interface BaselineGate {
   vendorLock: BaselineEvidenceLock;
   vendorLockSha256: string;
   orgEvidence?: OrgBaselineEvidence;
+  acceptanceTuple?: AcceptanceTuple;
   authorizations: BaselineAuthorization[];
   held: BaselineHeldComponent[];
 }
@@ -120,6 +124,7 @@ export function captureBaselineGate(input: CaptureBaselineGateInput): BaselineGa
     vendorLock: input.vendorLock,
     vendorLockSha256: input.vendorLockSha256,
     orgEvidence: input.orgEvidence,
+    acceptanceTuple: input.acceptanceTuple,
   });
   const structural = structuralFailureChecks(verification);
   if (structural.length > 0) throw new BaselineEvidenceBlockedError(structural);
@@ -144,6 +149,7 @@ export function captureBaselineGate(input: CaptureBaselineGateInput): BaselineGa
     vendorLock: input.vendorLock,
     vendorLockSha256: input.vendorLockSha256,
     orgEvidence: input.orgEvidence,
+    acceptanceTuple: input.acceptanceTuple,
     authorizations: verification.authorizations,
     held: verification.held,
   };
@@ -164,6 +170,7 @@ export async function baselineInstallPhasePlan(
     vendorLock: gate.vendorLock,
     vendorLockSha256: gate.vendorLockSha256,
     orgEvidence: gate.orgEvidence,
+    acceptanceTuple: gate.acceptanceTuple,
   });
   const structural = structuralFailureChecks(verification);
   if (structural.length > 0) {

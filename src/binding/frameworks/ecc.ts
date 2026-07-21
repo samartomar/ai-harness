@@ -1,5 +1,9 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
+import {
+  findAcceptanceDecision,
+  readAcceptanceDecisions,
+} from "../../baseline-evidence/acceptance.js";
 import { baselineCatalogById } from "../../baseline-evidence/catalogs.js";
 import type { EccMcpComponentId } from "../../ecc/components.js";
 import {
@@ -802,6 +806,18 @@ function componentSubtreeDigest(files: readonly EccLeanInstalledFile[]): string 
   return sha256Hex(canonicalJson(manifest));
 }
 
+/** The exact acceptance tuple ECC Lean binds decisions against (W4 ruling (e)).
+ * The resolve-side binding (repository/commit/treeDigest must match the live
+ * resolution) is asserted by the LIVE installer composition — the only place
+ * acceptance enters the flow — via `acceptanceResolutionMismatches`; fixture
+ * installers never consult acceptance, so a dry-run stays fixture-digested. */
+export const ECC_LEAN_ACCEPTANCE_TUPLE = {
+  framework: "ecc",
+  profile: "ecc-lean-v1",
+  host: "claude",
+  adapter: "ecc-lean",
+} as const;
+
 async function provisionEccLean(
   deps: EccLeanAdapterDeps,
   request: ProvisionRequest,
@@ -1024,6 +1040,32 @@ function reportEccLean(deps: EccLeanAdapterDeps, context: BindingContext): Bindi
   lines.push(`pin: ${pin}`);
   lines.push(`allowlist: ${ECC_LEAN_ALLOWLIST.join(", ")}`);
   lines.push(`excluded: ${ECC_LEAN_EXCLUDED.join(", ")}`);
+
+  // Acceptance disclosure (W4 ruling (e)): raw vet outcome and the signed
+  // acceptance are reported SIDE BY SIDE — an admitted component is never
+  // described as "vet passed" and findings are never described as absent.
+  const decision = findAcceptanceDecision(readAcceptanceDecisions(), ECC_LEAN_ACCEPTANCE_TUPLE);
+  if (decision === undefined) {
+    lines.push("vet acceptance: none shipped — blocked evidence components stay held");
+  } else {
+    const codes = [
+      ...new Set(decision.components.flatMap((component) => component.acceptedFindingCodes)),
+    ].sort();
+    lines.push(
+      `raw vet outcome: ${decision.components.length} allowlist evidence component(s) BLOCKED by ` +
+        `signed findings (verdicts preserved in vendor-lock.json; not reclassified)`,
+    );
+    lines.push(
+      `policy decision: accepted-with-conditions — ${decision.decisionId} ` +
+        `(owner ${decision.owner}, record ${decision.recordSha256.slice(0, 12)}…, policy v${String(decision.policyVersion)})`,
+    );
+    lines.push(`accepted finding codes: ${codes.join(", ")}`);
+    lines.push(`residual risk: ${decision.residualRisk}`);
+    lines.push(
+      `effective install decision: allowed for ${decision.profile} on ` +
+        `${decision.repository}@${decision.commitSha.slice(0, 12)} (exact tuple only)`,
+    );
+  }
 
   const home = claudeHomeDir(deps.env ?? {});
   const read = readBindingLock(deps.root);

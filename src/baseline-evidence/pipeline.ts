@@ -11,6 +11,7 @@ import {
   type TrustSource,
   trustFetchExec,
 } from "../trust/fetch.js";
+import type { AcceptanceTuple } from "./acceptance.js";
 import type { BaselineCatalog } from "./catalog.js";
 import { type ResolveOrgBaselineEvidenceResult, resolveOrgBaselineEvidence } from "./org.js";
 import {
@@ -27,6 +28,8 @@ export interface BaselineEvidencePipelineInput {
   source: TrustSource;
   componentIds: readonly string[];
   allowPartial?: boolean;
+  /** When set, only accepted-with-conditions decisions for this exact tuple apply. */
+  acceptanceTuple?: AcceptanceTuple;
   buildInstallPlan: (
     sourceRoot: string,
     authorizations: readonly BaselineAuthorization[],
@@ -159,6 +162,7 @@ export async function executeBaselineEvidencePipeline(
         vendorLock,
         vendorLockSha256: lockSha256,
         orgEvidence: org.evidence,
+        acceptanceTuple: input.acceptanceTuple,
       });
     } catch (err) {
       if (!(err instanceof BaselineEvidenceBlockedError)) throw err;

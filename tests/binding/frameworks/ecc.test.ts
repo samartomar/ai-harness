@@ -856,6 +856,21 @@ describe("report — Framework Card input lines", () => {
     expect(text).toContain("baseline:rules");
     expect(text).toContain("hooks-runtime");
   });
+
+  it("discloses raw vet outcome AND the signed acceptance side by side, never claiming a vet pass (W4 ruling (e))", () => {
+    const adapter = createEccAdapter({ root, runner: spyRunner().runner });
+    const report = adapter.report({ declaration: declarationFor("0".repeat(64)) });
+    const text = report.lines.join("\n");
+    expect(text).toContain("raw vet outcome:");
+    expect(text).toContain("BLOCKED");
+    expect(text).toContain("verdicts preserved in vendor-lock.json; not reclassified");
+    expect(text).toContain("policy decision: accepted-with-conditions — ecc-lean-v1-20260720");
+    expect(text).toContain("accepted finding codes:");
+    expect(text).toContain("trust.hidden-unicode");
+    expect(text).toContain("residual risk:");
+    expect(text).toContain("effective install decision: allowed for ecc-lean-v1");
+    expect(text).not.toMatch(/vet passed|no danger findings|fast scan passed/i);
+  });
 });
 
 // -- inspect ------------------------------------------------------------------

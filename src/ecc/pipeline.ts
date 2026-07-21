@@ -1,6 +1,7 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { type ParseError, parse } from "jsonc-parser";
+import type { AcceptanceTuple } from "../baseline-evidence/acceptance.js";
 import type { BaselineCatalog } from "../baseline-evidence/catalog.js";
 import { baselineCatalogById } from "../baseline-evidence/catalogs.js";
 import type {
@@ -48,6 +49,8 @@ const FULL_SHA = /^[a-f0-9]{40}$/;
 export interface EccEvidencePipelineDeps extends BaselineEvidencePipelineDeps {
   catalog?: BaselineCatalog;
   source?: TrustSource;
+  /** When set, only accepted-with-conditions decisions for this exact tuple apply. */
+  acceptanceTuple?: AcceptanceTuple;
   vendorLock?: BaselineEvidenceLock;
   vendorLockSha256?: string;
   buildInstallPlan?: typeof verifiedEccInstallPlan;
@@ -238,6 +241,7 @@ export async function executeEccEvidencePipeline(
       source,
       componentIds: componentIds(request),
       allowPartial: true,
+      acceptanceTuple: deps.acceptanceTuple,
       buildInstallPlan: (sourceRoot, authorizations) =>
         buildInstallPlan(ctx, sourceRoot, request, authorizations),
     },
