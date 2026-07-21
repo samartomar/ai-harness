@@ -216,7 +216,13 @@ async function resolveExactSha(request: GitResolveRequest, runner: Runner): Prom
     throw new BindingScanError(`unsafe git ref for resolution: ${ref}`);
   }
   // `--` ends option parsing so a repository value can never be read as a flag.
-  const result = await runner(["git", "ls-remote", "--", gitRemoteLocator(request.repository), ref]);
+  const result = await runner([
+    "git",
+    "ls-remote",
+    "--",
+    gitRemoteLocator(request.repository),
+    ref,
+  ]);
   if (result.spawnError || result.code !== 0) {
     throw new BindingScanError(
       `git ls-remote failed for ${request.repository} (${(result.stderr || "").trim().slice(0, 200)})`,
