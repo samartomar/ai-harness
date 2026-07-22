@@ -639,6 +639,18 @@ export type GstackInstaller = (input: GstackInstallInput) => Promise<GstackInsta
  */
 export const defaultGstackInstaller: GstackInstaller = async (input) => {
   const stage = mkdtempSync(join(tmpdir(), "aih-gstack-setup-"));
+  // Stage cleanup is BEST-EFFORT with Windows EPERM retry semantics (the
+  // copied .git pack files are read-only; node's rm chmod-retries them). A
+  // stubborn scratch dir must never fail a successful install — the leftover
+  // is annotated on the returned stderr instead of thrown (no silent failure).
+  const cleanupStage = (): string | undefined => {
+    try {
+      rmSync(stage, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      return undefined;
+    } catch (error) {
+      return `[aih] stage cleanup left ${stage}: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  };
   try {
     cpSync(input.resolved.treePath, stage, { recursive: true });
     const result = await input.runner([...GSTACK_SETUP_COMMAND], {
@@ -646,9 +658,15 @@ export const defaultGstackInstaller: GstackInstaller = async (input) => {
       env: { ...input.env, GSTACK_HOME: input.gstackHomeAbs },
       timeoutMs: input.timeoutMs,
     });
-    return { exitCode: result.code ?? 1, stdout: result.stdout, stderr: result.stderr };
-  } finally {
-    rmSync(stage, { recursive: true, force: true });
+    const leftover = cleanupStage();
+    return {
+      exitCode: result.code ?? 1,
+      stdout: result.stdout,
+      stderr: leftover === undefined ? result.stderr : `${result.stderr}\n${leftover}`,
+    };
+  } catch (error) {
+    cleanupStage();
+    throw error;
   }
 };
 
@@ -1154,17 +1172,28 @@ async function provisionGstack(
   // Pre-install snapshots (own what you created; conservative unwind boundary).
   const preExistingDirs = attributableSkillDirs(home);
 
-  // 2. Invoke the UPSTREAM installer through the injectable seam.
+  // 2. Invoke the UPSTREAM installer through the injectable seam. A THROWN
+  //    seam unwinds exactly like a nonzero exit: the real setup may already
+  //    have materialized skills dirs before the failure, and leaving them
+  //    undenied would be the leak the reconciliation exists to prevent.
   const installer = deps.installGstack ?? defaultGstackInstaller;
-  const install = await installer({
-    resolved,
-    root: deps.root,
-    home,
-    gstackHomeAbs: join(deps.root, GSTACK_HOME_REL),
-    runner: deps.runner,
-    env,
-    timeoutMs: deps.timeoutMs,
-  });
+  let install: GstackInstallResult;
+  try {
+    install = await installer({
+      resolved,
+      root: deps.root,
+      home,
+      gstackHomeAbs: join(deps.root, GSTACK_HOME_REL),
+      runner: deps.runner,
+      env,
+      timeoutMs: deps.timeoutMs,
+    });
+  } catch (error) {
+    removeCreatedSkillDirs(home, preExistingDirs);
+    throw new GstackBindingError(
+      `gstack upstream installer threw: ${error instanceof Error ? error.message : String(error)} — created skills dirs unwound`,
+    );
+  }
   if (install.exitCode !== 0) {
     removeCreatedSkillDirs(home, preExistingDirs);
     throw new GstackBindingError(

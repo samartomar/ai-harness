@@ -3,9 +3,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { defaultGstackInstaller, GSTACK_SETUP_COMMAND } from "../../../src/binding/index.js";
+import {
+  createGstackAdapter,
+  defaultGstackInstaller,
+  GSTACK_SETUP_COMMAND,
+  type GstackInstaller,
+} from "../../../src/binding/index.js";
 import type { RunResult } from "../../../src/internals/proc.js";
-import { GSTACK_FIXTURE_FILES, scannedGstackFixture } from "./gstack-support.js";
+import {
+  declarationFor,
+  GSTACK_FIXTURE_FILES,
+  recordingRunner,
+  scannedGstackFixture,
+  writeFileEnsuring,
+} from "./gstack-support.js";
 
 describe("defaultGstackInstaller — pristine work-copy staging (spike cache-hygiene lesson)", () => {
   let cacheHome: string;
@@ -56,5 +67,36 @@ describe("defaultGstackInstaller — pristine work-copy staging (spike cache-hyg
       expect(existsSync(join(resolved.treePath, ...rel.split("/")))).toBe(true);
     }
     expect(existsSync(join(resolved.treePath, "node_modules"))).toBe(false);
+  });
+
+  it("provision unwinds skills dirs created before a THROWN installer seam (live-acceptance regression)", async () => {
+    const home = mkdtempSync(join(tmpdir(), "aih-gstack-home-"));
+    const project = mkdtempSync(join(tmpdir(), "aih-gstack-proj-"));
+    try {
+      const { resolved, disposition } = scannedGstackFixture(cacheHome, "thrown-tree");
+      const declaration = declarationFor(resolved.treeDigest);
+      const wrapper = join(home, ".claude", "skills", "gstack-autoplan");
+      const installer: GstackInstaller = () => {
+        writeFileEnsuring(
+          join(wrapper, "SKILL.md"),
+          "---\nname: gstack-autoplan\ndescription: partial install\n---\n\nPartial.\n",
+        );
+        return Promise.reject(new Error("simulated mid-install crash"));
+      };
+      const adapter = createGstackAdapter({
+        root: project,
+        runner: recordingRunner().runner,
+        env: { USERPROFILE: home },
+        installGstack: installer,
+      });
+      await expect(
+        adapter.provision({ context: { declaration }, resolved }, disposition),
+      ).rejects.toThrow(/installer threw[\s\S]*unwound/);
+      // The dir the failed install materialized is gone — nothing undenied remains.
+      expect(existsSync(wrapper)).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(project, { recursive: true, force: true });
+    }
   });
 });
