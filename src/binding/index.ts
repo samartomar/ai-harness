@@ -137,6 +137,7 @@ export {
   type GstackRemoveResult,
   gstackInstalledSubsetIdentity,
   gstackLockdownConfigYaml,
+  isGstackInstallGenerated,
   stripGstackHooks,
 } from "./frameworks/gstack.js";
 // W4a — the first real D6 adapter (Superpowers, host-plugin) + its registry

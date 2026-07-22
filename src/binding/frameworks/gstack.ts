@@ -432,10 +432,37 @@ function sha256HexOfBytes(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+/**
+ * Committed source files that the pinned upstream build REGENERATES in place
+ * (measured against the real setup, W5 adapter-acceptance 2026-07-22): gstack's
+ * `./setup` runs `bun run build` (`gen:llms-txt`, `gen:skill-docs --host all`)
+ * BEFORE the install copy, rewriting these committed files from the scanned
+ * SKILL.md frontmatter. Every one is NON-loaded by Claude — the `llms.txt`
+ * index sits inside the R4-skipped `~/.claude/skills/gstack` root; `agents/` are
+ * OpenAI-platform manifests; `openclaw/` is OpenClaw-host content;
+ * `proactive-suggestions.json` is gstack runtime data — so none reaches the
+ * claude skill loader. They are EXCLUDED from D7 byte-identity (their bytes are
+ * a deterministic function of the already-identity-verified SKILL.md inputs and
+ * the pinned build), PRESENCE-checked (deletion is still a mismatch), and
+ * disclosed on the Framework Card. Gitignored build outputs (compiled binaries,
+ * per-host doc dirs, vendored xterm) are already outside the scanned inventory.
+ */
+export function isGstackInstallGenerated(rel: string): boolean {
+  const posix = rel.replace(/\\/g, "/");
+  return (
+    posix === "gstack/llms.txt" ||
+    posix === "scripts/proactive-suggestions.json" ||
+    posix.startsWith("agents/") ||
+    posix.startsWith("openclaw/")
+  );
+}
+
 /** One per-file record of the installed-subset manifest (actual installed bytes). */
 export interface GstackManifestEntry {
   path: string;
   sha256: string;
+  /** True for build-regenerated committed files: present-checked, never content-pinned. */
+  generated?: boolean;
 }
 
 export interface GstackInstalledIdentity {
@@ -461,15 +488,20 @@ export interface GstackInstalledIdentity {
  * including every top-level `<dir>/SKILL.md`. The `gstack-` name prefix lives
  * only in the SEPARATE wrapper dirs (`~/.claude/skills/gstack-<name>/`), which
  * are NOT in the scanned inventory; the reconciliation step already proves the
- * wrapper SET equals the derived inventory. Everything the install
- * materializes OUTSIDE the inventory (node_modules, build outputs, `.git`) is
- * EXCLUDED from identity and disclosed on the card.
+ * wrapper SET equals the derived inventory.
  *
- * When every inventory file is present and byte-equal, the subset is
- * content-identical to the scanned tree and `loadedDigest` IS the resolved
- * tree digest (the lock's `match === (scannedDigest === loadedDigest)`
- * invariant holds honestly). Any deviation yields a distinct manifest digest
- * instead, so `match` is false.
+ * Two exclusion classes (both disclosed on the card): files the install
+ * materializes OUTSIDE the inventory (node_modules, build outputs, `.git`) are
+ * never seen here; committed files the pinned build REGENERATES in place
+ * ({@link isGstackInstallGenerated} — all non-Claude-loaded) are present-checked
+ * but not byte-compared, since their bytes are a deterministic function of the
+ * identity-verified SKILL.md inputs.
+ *
+ * When every inventory file is present and every NON-generated file is
+ * byte-equal, the loaded+static subset is content-identical to the scanned tree
+ * and `loadedDigest` IS the resolved tree digest (the lock's
+ * `match === (scannedDigest === loadedDigest)` invariant holds honestly). Any
+ * deviation yields a distinct manifest digest instead, so `match` is false.
  */
 export function gstackInstalledSubsetIdentity(
   resolved: ResolvedGitSource,
@@ -490,7 +522,13 @@ export function gstackInstalledSubsetIdentity(
       continue;
     }
     const installed = readFileSync(installedPath);
-    manifest.push({ path: rel, sha256: sha256HexOfBytes(installed) });
+    const generated = isGstackInstallGenerated(rel);
+    manifest.push({
+      path: rel,
+      sha256: sha256HexOfBytes(installed),
+      ...(generated ? { generated: true } : {}),
+    });
+    if (generated) continue; // build-regenerated committed file: presence proven, content not pinned
     const scanned = readFileSync(join(resolved.treePath, rel));
     if (!installed.equals(scanned)) mismatches.push(`content:${rel}`);
   }
@@ -1593,6 +1631,11 @@ function reportGstack(deps: GstackAdapterDeps, context: BindingContext): Binding
       `shared surface: install root ${HOME_OWNERSHIP_PREFIX}${GSTACK_INSTALL_ROOT_REL} materializes the ` +
         "FULL post-build checkout including node_modules, build outputs, and .git " +
         "(excluded from D7 identity, disclosed here; denied, non-registering, teardown-owned)",
+    );
+    lines.push(
+      "install-generated (D7-excluded, present-checked, non-Claude-loaded; bytes derived from the " +
+        "identity-verified SKILL.md inputs by the pinned build): gstack/llms.txt, agents/**, " +
+        "openclaw/**, scripts/proactive-suggestions.json",
     );
     lines.push(
       `shared surface: gstack global state is confined to the project GSTACK_HOME at ${GSTACK_HOME_REL} ` +
