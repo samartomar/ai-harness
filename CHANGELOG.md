@@ -25,6 +25,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `pre-commit` install step beside the hook that fails closed without it, and the
   dependency-install fallback follows the detected language instead of assuming
   Node package managers.
+- The scaffolded `SETUP-TASKS.md` playbook now matches the canon's advisory graph
+  posture: when `large-repo graph safety` fails it tells the agent to warn once and
+  continue with bounded reconnaissance — code-review-graph is advisory, not a gate;
+  repair it only when helper repair is the assigned task — instead of ordering a
+  stop until the graph is repaired and populated.
 
 ## [2.11.0] - 2026-07-15
 
