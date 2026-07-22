@@ -302,8 +302,10 @@ export {
 // hidden-unicode findings whose file is all prose/comment/human-string typography).
 export {
   classifyFileTypography,
+  classifySentinelLineShape,
   enumerateTypography,
   type FileTypographyVerdict,
+  type SentinelLineShape,
   type TypographyAdvisory,
   type TypographyOccurrence,
 } from "./visible-typography.js";

@@ -614,26 +614,46 @@ describe("maintainer-accepted content findings (scan-acceptance baseline)", () =
     }
   });
 
-  it("carries exactly the three ruled gstack SKILL.md prompt-injection acceptances (rule-8)", () => {
+  it("carries exactly the seven ruled gstack acceptances (rule-8 + final calibration)", () => {
     const artifact = readScanAcceptanceArtifact();
     const gstack = artifact.accepted.filter((entry) => entry.repository === "garrytan/gstack");
-    // Rule-8: the ~290 visible-typography hidden-unicode findings are demoted at the
-    // gate, NOT accepted — so there must be NO gstack hidden-unicode acceptances.
-    expect(gstack.filter((entry) => entry.code === "trust.hidden-unicode")).toHaveLength(0);
-    // Exactly the three human-reviewed prompt-injection workflow-control entries.
-    expect(gstack).toHaveLength(3);
+    // Every gstack entry is profile-scoped and human-reviewed; the artifact stays
+    // small (ruling point 11) — no per-occurrence typography entries.
+    expect(gstack).toHaveLength(7);
+    for (const entry of gstack) {
+      expect(entry.profile).toBe("claude:prefix:quiet:no-plan-tune-hooks");
+    }
     const byPath = new Map(gstack.map((entry) => [entry.path, entry]));
+
+    // Three human-reviewed prompt-injection workflow-control entries (rule-8).
     const doc = byPath.get("document-generate/SKILL.md");
     const ios = byPath.get("ios-qa/SKILL.md");
     const office = byPath.get("office-hours/SKILL.md");
     for (const entry of [doc, ios, office]) {
       expect(entry?.code).toBe("trust.prompt-injection");
-      expect(entry?.profile).toBe("claude:prefix:quiet:no-plan-tune-hooks");
     }
     expect(doc?.acceptanceClass).toBe("EXPECTED_SKILL_WORKFLOW_CONTROL");
     expect(ios?.acceptanceClass).toBe("EXPECTED_SKILL_WORKFLOW_CONTROL");
     expect(office?.acceptanceClass).toBe("EXPECTED_CROSS_MODEL_BOUNDARY_INSTRUCTION");
     expect(office?.conditions).toContain("codex-reviews-default-off");
     expect(office?.conditions).toContain("runtime-proof-no-codex-process-or-network-when-disabled");
+
+    // Four sanitizer-family hidden-unicode entries (final calibration): the
+    // characters are proven detection/replacement sentinel literals, not
+    // executable syntax. The ~290 OTHER visible-typography findings are demoted
+    // at the gate, NOT accepted — so hidden-unicode acceptances are exactly these.
+    const sanitizer = gstack.filter((entry) => entry.code === "trust.hidden-unicode");
+    expect(sanitizer).toHaveLength(4);
+    expect(new Set(sanitizer.map((entry) => entry.path))).toEqual(
+      new Set([
+        "lib/redact-engine.ts",
+        "browse/src/server.ts",
+        "browse/src/sanitize.ts",
+        "browse/src/content-security.ts",
+      ]),
+    );
+    for (const entry of sanitizer) {
+      expect(entry.acceptanceClass).toBe("EXPECTED_SANITIZER_SENTINEL_LITERAL");
+    }
   });
 });
