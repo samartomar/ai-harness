@@ -19,8 +19,18 @@ import {
   isInstallScriptEvidenceFilePath,
   isMaliciousCodeScanFilePath,
 } from "../trust/script-files.js";
+import {
+  type ClosureSpec,
+  classificationOf,
+  classifyClosure,
+  type FindingClassification,
+  type HostLoadFacts,
+  type ProfileClosure,
+  type Reachability,
+} from "./closure/profile-closure.js";
 import scanAcceptanceJson from "./scan-acceptance.json";
 import { type BindingDeclaration, BindingNpmSourceSchema, isBareRepositorySlug } from "./schema.js";
+import { classifyFileTypography, type TypographyAdvisory } from "./visible-typography.js";
 
 /**
  * Fast-scan gate (D12). No adapter executes upstream code before a policy
@@ -33,9 +43,13 @@ import { type BindingDeclaration, BindingNpmSourceSchema, isBareRepositorySlug }
  * incomplete coverage here, never as a false green.
  *
  * The {@link ScanDisposition} is brand-protected: it can only be minted inside
- * this module, and `provision` must revalidate it at runtime (brand present,
- * verdict "allow", and its digest equal to the resolved source digest) before it
- * runs any upstream code. A forged or stale token fails closed.
+ * this module, and `provision` must revalidate it at runtime (brand present, its
+ * digest equal to the resolved source digest, and its SELECTED-PROFILE gate
+ * authorizing — ALLOW, or ALLOW_WITH_CONDITIONS with its conditions still in
+ * force) before it runs any upstream code. A forged, blocked, or stale token
+ * fails closed. W5 (a2) adds the closure-aware disposition: the raw source scan
+ * and the selected-profile gate are reported separately, and only the executed/
+ * loaded closure (plus unresolved reachability) gates — see `closure/`.
  */
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
@@ -393,6 +407,16 @@ export type ScanVerdict = "allow" | "block";
 export type ScanCoverage = "complete" | "incomplete";
 export type ScanSeverity = "info" | "low" | "medium" | "high" | "critical";
 
+/**
+ * The two independent (a2) outcomes. `rawSourceScan` describes the WHOLE hashed
+ * tree (honest: findings present or not); `selectedProfileGate` is the actionable
+ * verdict for the selected install/runtime closure — the only one that authorizes
+ * provisioning. `ALLOW_WITH_CONDITIONS` means "allowed because the named accepted
+ * runtime findings were in force" (see {@link assertProvisionAuthorized}).
+ */
+export type RawSourceOutcome = "FINDINGS_PRESENT" | "CLEAN";
+export type SelectedProfileGate = "ALLOW" | "ALLOW_WITH_CONDITIONS" | "BLOCK";
+
 const SEVERITIES = ["info", "low", "medium", "high", "critical"] as const;
 
 export interface ScanFinding {
@@ -413,6 +437,17 @@ export interface ScanFinding {
   /** Set by the policy decision when a maintainer-accepted baseline entry
    * matched this finding exactly (code + path + content hash). */
   accepted?: boolean;
+  /** Closure classification of this finding's file — present ONLY when a closure
+   * spec was applied. Absent ⇒ legacy full-tree behavior (every finding blocks). */
+  classification?: FindingClassification;
+  /** Precise reachability under {@link classification} (audit granularity;
+   * `unknown` rolls up INTO `closure` for the gate but is disclosed distinctly). */
+  closureReachability?: Reachability | "non-materialized";
+  /** Gate-layer visible-typography demotion overlay (W5 rule-8): present ONLY on a
+   * `trust.hidden-unicode` finding whose file is ALL advisory typography under a
+   * seeded closure. The raw `severity` stays "high" (raw counts unaffected); a
+   * finding carrying this is treated as NON-gating by {@link decide}. */
+  advisory?: TypographyAdvisory;
 }
 
 export interface DimensionInspectionContext {
@@ -964,13 +999,47 @@ function identityCoverageReport(
 
 declare const scanDispositionBrand: unique symbol;
 
+/**
+ * The rule-9 five-way disclosure: raw findings, closure findings, inert findings,
+ * accepted runtime findings, and residual risk — each counted separately so a
+ * Framework Card can show them without conflation. Computed on every decision;
+ * for a legacy (no-closure) disposition, `closureFindings` is the whole set and
+ * `inertFindings` is empty.
+ */
+export interface FrameworkCardDisclosure {
+  rawFindings: { total: number; high: number; bySeverity: Record<ScanSeverity, number> };
+  closureFindings: { total: number; high: number; unknownReachability: number };
+  inertFindings: { total: number; high: number };
+  acceptedRuntimeFindings: { total: number };
+  /** Rule-8 visible-typography demotions: high `trust.hidden-unicode` findings whose
+   * file is all advisory typography, reported (non-blocking) rather than accepted. */
+  visibleTypographyAdvisories: { total: number; files: number };
+  residualRisk: { blockingUnaccepted: number; unknownReachability: number; inertReported: number };
+}
+
 export interface ScanDisposition {
   readonly [scanDispositionBrand]: "ScanDisposition";
   readonly digest: string;
+  /** Legacy verdict, always derived: `selectedProfileGate === "BLOCK" ? "block" : "allow"`. */
   readonly verdict: ScanVerdict;
   readonly findings: readonly ScanFinding[];
   readonly posture: Posture;
   readonly producedAt: string;
+  /** Whole-tree outcome (descriptive; never authorizes on its own). */
+  readonly rawSourceScan: RawSourceOutcome;
+  /** The actionable gate for the selected profile — what `assertProvisionAuthorized` reads. */
+  readonly selectedProfileGate: SelectedProfileGate;
+  /** Closure identity + conditions; absent for a legacy full-tree disposition. */
+  readonly closure?: {
+    profile: string;
+    classifierVersion: number;
+    closureDigest: string;
+    hostFactsDigest: string;
+    /** Acceptance keys that neutralized a blocking ≥high finding — the conditions
+     * `ALLOW_WITH_CONDITIONS` requires still be in force at provision time. */
+    requiredAcceptanceKeys?: readonly string[];
+  };
+  readonly disclosure: FrameworkCardDisclosure;
 }
 
 // Runtime brand: identity-based, module-private, and unforgeable even with symbol
@@ -994,12 +1063,25 @@ function mintDisposition(
  * voids the acceptance and the finding blocks again until re-reviewed.
  * `repository` is audit metadata only — the match key is (code, path,
  * fileSha256), which is already content-exact without it.
+ *
+ * `profile` scopes the entry to ONE selected-profile closure (a2): a scoped entry
+ * only applies under that profile and never neutralizes a finding in a file
+ * outside its blocking closure. ABSENT ⇒ the entry applies under any closure (the
+ * W4 full-tree default, so pre-a2 entries need no `profile`). Because an inert
+ * finding never gates, an acceptance whose file is out-of-closure is structurally
+ * incapable of widening the gate — enforced by construction, not by a check.
  */
 export interface AcceptedContentFinding {
   repository: string;
   code: string;
   path: string;
   fileSha256: string;
+  profile?: string;
+  /** Audit metadata (rule-8): the human-reviewed class this acceptance falls under
+   * (e.g. EXPECTED_SKILL_WORKFLOW_CONTROL). Does NOT affect the match key. */
+  acceptanceClass?: string;
+  /** Audit metadata (rule-8): the runtime conditions the acceptance is contingent on. */
+  conditions?: readonly string[];
 }
 
 const AcceptedContentFindingSchema = z
@@ -1008,12 +1090,15 @@ const AcceptedContentFindingSchema = z
     code: z.string().min(1),
     path: z.string().min(1),
     fileSha256: z.string().regex(SHA256_HEX),
+    profile: z.string().min(1).optional(),
+    acceptanceClass: z.string().min(1).optional(),
+    conditions: z.array(z.string().min(1)).optional(),
   })
   .strict();
 
 const ScanAcceptanceArtifactSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(2),
     reason: z.string().min(1),
     accepted: z.array(AcceptedContentFindingSchema),
   })
@@ -1030,7 +1115,7 @@ export type ScanAcceptanceArtifact = z.infer<typeof ScanAcceptanceArtifactSchema
 export function readScanAcceptanceArtifact(): ScanAcceptanceArtifact {
   const parsed = ScanAcceptanceArtifactSchema.safeParse(scanAcceptanceJson);
   if (!parsed.success) {
-    return { schemaVersion: 1, reason: "malformed artifact — zero acceptances", accepted: [] };
+    return { schemaVersion: 2, reason: "malformed artifact — zero acceptances", accepted: [] };
   }
   return parsed.data;
 }
@@ -1046,6 +1131,39 @@ function acceptanceKey(code: string, path: string, fileSha256: string): string {
   return JSON.stringify([code, path, fileSha256]);
 }
 
+/** Read-only hygiene report of an acceptance set against a computed closure. */
+export interface ScanAcceptanceReport {
+  /** Entries (matching the closure's profile, or unscoped) whose file IS in the blocking closure. */
+  applicable: readonly AcceptedContentFinding[];
+  /** Scoped/unscoped entries whose file is absent or inert for this closure — reported, never
+   * auto-deleted, and already harmless (an out-of-closure acceptance cannot widen the gate). */
+  staleOutOfClosure: readonly AcceptedContentFinding[];
+}
+
+/**
+ * Compare an acceptance set against a profile closure (pure — never writes).
+ * Entries scoped to a DIFFERENT profile are skipped entirely; the remainder split
+ * into `applicable` (file present AND in the blocking closure) and
+ * `staleOutOfClosure` (file removed, or materialized-inert). Mirrors the
+ * `skillDenyListReport` missing/extra hygiene model: staleness is a note, not a
+ * gate change — the gate already fails toward "the entry does nothing."
+ */
+export function scanAcceptanceReport(
+  closure: ProfileClosure,
+  accepted: readonly AcceptedContentFinding[] = shippedAcceptedFindings(),
+): ScanAcceptanceReport {
+  const applicable: AcceptedContentFinding[] = [];
+  const staleOutOfClosure: AcceptedContentFinding[] = [];
+  for (const entry of accepted) {
+    if (entry.profile !== undefined && entry.profile !== closure.spec.profile) continue;
+    const present = closure.nodes.has(entry.path);
+    const inClosure = present && classificationOf(closure, entry.path).classification === "closure";
+    if (inClosure) applicable.push(entry);
+    else staleOutOfClosure.push(entry);
+  }
+  return { applicable, staleOutOfClosure };
+}
+
 export interface FastScanPolicy {
   posture: Posture;
   /** Only meaningful at vibe: permit provisioning despite incomplete coverage. */
@@ -1057,6 +1175,14 @@ export interface FastScanPolicy {
    * only) and never reaches critical severity.
    */
   acceptedFindings?: readonly AcceptedContentFinding[];
+  /**
+   * The selected-profile closure spec (a2). ABSENT ⇒ legacy full-tree behavior:
+   * every finding blocks exactly as before. PRESENT ⇒ closure-aware disposition:
+   * findings are classified and only closure (+ unknown-reachability) findings gate.
+   */
+  closureSpec?: ClosureSpec;
+  /** Injected host-load facts for the closure's model-load axis. Absent ⇒ fail closed. */
+  hostFacts?: HostLoadFacts;
 }
 
 function coverageFinding(report: DimensionReport): ScanFinding {
@@ -1068,46 +1194,227 @@ function coverageFinding(report: DimensionReport): ScanFinding {
   };
 }
 
+interface DecisionResult {
+  verdict: ScanVerdict;
+  gate: SelectedProfileGate;
+  rawSourceScan: RawSourceOutcome;
+  findings: ScanFinding[];
+  disclosure: FrameworkCardDisclosure;
+  requiredAcceptanceKeys: string[];
+}
+
+function rankOf(severity: ScanSeverity): number {
+  return SEVERITIES.indexOf(severity);
+}
+
+/** Whether a finding gates. Legacy (no closure) ⇒ every finding blocks; closure-aware
+ * ⇒ only `classification === "closure"` blocks, and a visible-typography `advisory`
+ * demotion is non-gating even though its file is in the closure. */
+function isBlockingFinding(finding: ScanFinding, closureApplied: boolean): boolean {
+  if (!closureApplied) return true;
+  return finding.classification === "closure" && finding.advisory === undefined;
+}
+
+function buildDisclosure(
+  findings: readonly ScanFinding[],
+  blocking: readonly ScanFinding[],
+  inert: readonly ScanFinding[],
+  advisories: readonly ScanFinding[],
+): FrameworkCardDisclosure {
+  const high = (finding: ScanFinding): boolean => rankOf(finding.severity) >= rankOf("high");
+  const bySeverity: Record<ScanSeverity, number> = {
+    info: 0,
+    low: 0,
+    medium: 0,
+    high: 0,
+    critical: 0,
+  };
+  for (const finding of findings) bySeverity[finding.severity] += 1;
+  const blockingHigh = blocking.filter(high);
+  const unknownReachability = blockingHigh.filter(
+    (finding) => finding.closureReachability === "unknown",
+  ).length;
+  const advisoryFiles = new Set(
+    advisories.map((finding) => finding.path).filter((path): path is string => path !== undefined),
+  );
+  return {
+    rawFindings: { total: findings.length, high: findings.filter(high).length, bySeverity },
+    closureFindings: { total: blocking.length, high: blockingHigh.length, unknownReachability },
+    inertFindings: { total: inert.length, high: inert.filter(high).length },
+    acceptedRuntimeFindings: { total: blocking.filter((f) => f.accepted === true).length },
+    visibleTypographyAdvisories: { total: advisories.length, files: advisoryFiles.size },
+    residualRisk: {
+      blockingUnaccepted: blockingHigh.filter((f) => f.accepted !== true).length,
+      unknownReachability,
+      inertReported: inert.filter(high).length,
+    },
+  };
+}
+
+/**
+ * Compute the visible-typography advisory overlay for a seeded closure (rule-8).
+ * Reads each `trust.hidden-unicode` finding's file ONCE (per-file roll-up) and,
+ * when every non-ASCII occurrence is advisory-eligible, records a demotion keyed
+ * by path. ACTIVE ONLY for a seeded closure with a reader — legacy and W4
+ * full-tree paths never reclassify (byte-identical). Fail-closed: an unreadable
+ * or non-demotable file yields no advisory, so its finding stays high/blocking.
+ */
+function computeTypographyAdvisories(
+  findings: readonly ScanFinding[],
+  closure: ProfileClosure | undefined,
+  reader: ((rel: string) => string | undefined) | undefined,
+): Map<string, TypographyAdvisory> {
+  const advisories = new Map<string, TypographyAdvisory>();
+  if (closure === undefined || closure.spec.mode !== "seeded" || reader === undefined) {
+    return advisories;
+  }
+  const paths = new Set<string>();
+  for (const finding of findings) {
+    if (finding.code === "trust.hidden-unicode" && finding.path !== undefined) {
+      paths.add(finding.path);
+    }
+  }
+  for (const path of paths) {
+    const text = reader(path);
+    if (text === undefined) continue;
+    const verdict = classifyFileTypography(path, text);
+    if (verdict.demote) {
+      advisories.set(path, {
+        reclassifiedFrom: "high",
+        contextClass: verdict.contextClass ?? "visible-typography",
+      });
+    }
+  }
+  return advisories;
+}
+
+/**
+ * The (a2) decision. Collects findings (+ coverage findings for missing
+ * dimensions), applies profile-scoped acceptance, classifies each finding against
+ * the closure (when one is supplied), then decides the tri-state selected-profile
+ * gate. When no closure is supplied the classification step is skipped and every
+ * finding blocks — byte-identical to the pre-a2 gate (the W4 safety property).
+ */
 function decide(
   reports: readonly DimensionReport[],
   policy: FastScanPolicy,
-): { verdict: ScanVerdict; findings: ScanFinding[] } {
+  closure?: ProfileClosure,
+  typographyReader?: (rel: string) => string | undefined,
+): DecisionResult {
   const collected: ScanFinding[] = [];
   for (const report of reports) {
     collected.push(...report.findings);
     if (report.status === "missing") collected.push(coverageFinding(report));
   }
-  const rank = (severity: ScanSeverity): number => SEVERITIES.indexOf(severity);
+  const closureApplied = closure !== undefined;
+  const advisoryByPath = computeTypographyAdvisories(collected, closure, typographyReader);
+
   // Acceptance marking: a maintainer-accepted (code, path, fileSha256) triple
   // neutralizes exactly that content-pinned finding. Critical findings are
-  // never acceptable, and a finding without a pin can never match.
+  // never acceptable, and a finding without a pin can never match. An entry
+  // scoped to a `profile` only applies under that profile's closure (an
+  // out-of-closure acceptance is additionally inert because inert findings do
+  // not gate — see the closure-membership property).
+  const activeProfile = closure?.spec.profile;
   const acceptedKeys = new Set(
-    (policy.acceptedFindings ?? shippedAcceptedFindings()).map((entry) =>
-      acceptanceKey(entry.code, entry.path, entry.fileSha256),
-    ),
+    (policy.acceptedFindings ?? shippedAcceptedFindings())
+      .filter((entry) => entry.profile === undefined || entry.profile === activeProfile)
+      .map((entry) => acceptanceKey(entry.code, entry.path, entry.fileSha256)),
   );
-  const findings = collected.map((finding) =>
-    finding.path !== undefined &&
-    finding.contentSha256 !== undefined &&
-    rank(finding.severity) < rank("critical") &&
-    acceptedKeys.has(acceptanceKey(finding.code, finding.path, finding.contentSha256))
-      ? { ...finding, accepted: true }
-      : finding,
+
+  const findings = collected.map((finding) => {
+    let marked = finding;
+    let blockingHere = true;
+    if (closure !== undefined) {
+      // A pathless finding (e.g. malicious-code) can never be proven inert — it
+      // has no file to classify — so it fails closed to blocking `closure`.
+      const classified =
+        finding.path !== undefined
+          ? classificationOf(closure, finding.path)
+          : { classification: "closure" as const, reachability: "unknown" as const };
+      // Rule 5/6: a critical (danger) finding is NEVER inert, even in a file the
+      // closure classifies materialized — a proof of inertness cannot cover a
+      // danger finding. Its file's reachability is still recorded for audit.
+      const classification: FindingClassification =
+        rankOf(finding.severity) >= rankOf("critical") ? "closure" : classified.classification;
+      marked = {
+        ...marked,
+        classification,
+        closureReachability: classified.reachability,
+      };
+      // Rule-8 visible-typography demotion: a hidden-unicode finding whose file is
+      // all advisory typography is reported but does NOT gate (raw severity stays).
+      const advisory =
+        finding.code === "trust.hidden-unicode" && finding.path !== undefined
+          ? advisoryByPath.get(finding.path)
+          : undefined;
+      if (advisory !== undefined) marked = { ...marked, advisory };
+      blockingHere = classification === "closure" && advisory === undefined;
+    }
+    // Acceptance only marks a BLOCKING finding — accepting an inert finding is a
+    // structural no-op (it never gated), so the mark is withheld to keep the
+    // evidence honest. In legacy mode every finding blocks, so this is unchanged.
+    if (
+      blockingHere &&
+      finding.path !== undefined &&
+      finding.contentSha256 !== undefined &&
+      rankOf(finding.severity) < rankOf("critical") &&
+      acceptedKeys.has(acceptanceKey(finding.code, finding.path, finding.contentSha256))
+    ) {
+      marked = { ...marked, accepted: true };
+    }
+    return marked;
+  });
+
+  const blocking = findings.filter((finding) => isBlockingFinding(finding, closureApplied));
+  const inert = closureApplied
+    ? findings.filter((finding) => finding.classification === "materialized-inert")
+    : [];
+  const advisories = findings.filter((finding) => finding.advisory !== undefined);
+
+  const blockingUnacceptedHigh = blocking.some(
+    (finding) => rankOf(finding.severity) >= rankOf("high") && finding.accepted !== true,
   );
-  const hasBlockingFinding = findings.some(
-    (finding) => rank(finding.severity) >= rank("high") && finding.accepted !== true,
+  const acceptedBlockingHigh = blocking.filter(
+    (finding) => rankOf(finding.severity) >= rankOf("high") && finding.accepted === true,
   );
   const complete = reports.every((report) => report.status === "produced");
-  let verdict: ScanVerdict;
-  if (hasBlockingFinding) {
-    verdict = "block";
+  // ALLOW_WITH_CONDITIONS only exists when a closure scopes the conditions; a
+  // legacy disposition with accepted highs is a plain ALLOW (verdict-identical to
+  // the pre-a2 gate, so W4 provisioning is unchanged).
+  const conditionsGate: SelectedProfileGate =
+    closureApplied && acceptedBlockingHigh.length > 0 ? "ALLOW_WITH_CONDITIONS" : "ALLOW";
+
+  let gate: SelectedProfileGate;
+  if (blockingUnacceptedHigh) {
+    gate = "BLOCK";
   } else if (!complete) {
-    verdict =
-      policy.posture === "vibe" && policy.allowIncompleteAtVibe === true ? "allow" : "block";
+    gate =
+      policy.posture === "vibe" && policy.allowIncompleteAtVibe === true ? conditionsGate : "BLOCK";
   } else {
-    verdict = "allow";
+    gate = conditionsGate;
   }
-  return { verdict, findings };
+  const verdict: ScanVerdict = gate === "BLOCK" ? "block" : "allow";
+  const rawSourceScan: RawSourceOutcome = findings.some(
+    (finding) => rankOf(finding.severity) >= rankOf("high"),
+  )
+    ? "FINDINGS_PRESENT"
+    : "CLEAN";
+  const requiredAcceptanceKeys = closureApplied
+    ? acceptedBlockingHigh
+        .filter((finding) => finding.path !== undefined && finding.contentSha256 !== undefined)
+        .map((finding) =>
+          acceptanceKey(finding.code, finding.path as string, finding.contentSha256 as string),
+        )
+    : [];
+  return {
+    verdict,
+    gate,
+    rawSourceScan,
+    findings,
+    disclosure: buildDisclosure(findings, blocking, inert, advisories),
+    requiredAcceptanceKeys,
+  };
 }
 
 function produceDisposition(
@@ -1115,9 +1422,34 @@ function produceDisposition(
   policy: FastScanPolicy,
   reports: readonly DimensionReport[],
   producedAt: string,
+  closure?: ProfileClosure,
+  typographyReader?: (rel: string) => string | undefined,
 ): ScanDisposition {
-  const { verdict, findings } = decide(reports, policy);
-  return mintDisposition({ digest, verdict, findings, posture: policy.posture, producedAt });
+  const decision = decide(reports, policy, closure, typographyReader);
+  const closureBlock =
+    closure === undefined
+      ? undefined
+      : {
+          profile: closure.spec.profile,
+          classifierVersion: closure.spec.classifierVersion,
+          closureDigest: closure.closureDigest,
+          hostFactsDigest: closure.hostFactsDigest,
+          requiredAcceptanceKeys:
+            decision.requiredAcceptanceKeys.length > 0
+              ? decision.requiredAcceptanceKeys
+              : undefined,
+        };
+  return mintDisposition({
+    digest,
+    verdict: decision.verdict,
+    findings: decision.findings,
+    posture: policy.posture,
+    producedAt,
+    rawSourceScan: decision.rawSourceScan,
+    selectedProfileGate: decision.gate,
+    closure: closureBlock,
+    disclosure: decision.disclosure,
+  });
 }
 
 // -- Scan cache (derived; corrupt == miss, never fail-closed) ----------------
@@ -1146,13 +1478,14 @@ const DimensionReportSchema = z
   })
   .strict();
 
-// schemaVersion 2: v1 records predate the acceptance content pins, so serving
-// them would silently disable the accepted-findings baseline for that digest
-// (their findings can never match an acceptance entry). Bumping the literal
-// turns every v1 record into a cache miss — a recompute, never a stale verdict.
+// schemaVersion 3: the cache stores PRE-decision reports (closure classification
+// and acceptance are always recomputed fresh), so a stale record can never carry
+// a wrong verdict — but the a2 change reshapes the disposition, and the v1→v2
+// precedent's conservatism is retained: bumping the literal turns every older
+// record into a cache miss (a recompute), never a served pre-a2 artifact.
 const ScanCacheRecordSchema = z
   .object({
-    schemaVersion: z.literal(2),
+    schemaVersion: z.literal(3),
     digest: z.string().regex(SHA256_HEX),
     scannedAt: z.string().min(1),
     reports: z.array(DimensionReportSchema),
@@ -1212,13 +1545,33 @@ export function runFastScanGate(
   policy: FastScanPolicy,
   deps: FastScanDeps,
 ): ScanDisposition {
+  // The closure is a policy-cheap classification recomputed every call (like
+  // acceptance), so it rides both the warm-cache and the fresh path. Absent a
+  // closure spec, it is undefined and the gate stays byte-identical to pre-a2.
+  const closure =
+    policy.closureSpec === undefined
+      ? undefined
+      : computeClosureForSource(source, policy.closureSpec, policy.hostFacts, deps);
+  // The visible-typography reclassifier re-reads flagged files from the derived
+  // checkout; supplied only when a closure is active (it is otherwise inert).
+  const typographyReader =
+    closure === undefined
+      ? undefined
+      : (rel: string): string | undefined => readTextSafe(join(source.treePath, rel));
   // A source with no identity list can never certify coverage, so it must not ride
   // a warm cache to an allow: skip the cache read entirely and fall through to the
   // fail-closed recompute below.
   const cached =
     source.identityFiles === undefined ? undefined : readScanCache(deps.cacheHome, source.digest);
   if (cached !== undefined) {
-    return produceDisposition(source.digest, policy, cached.reports, cached.scannedAt);
+    return produceDisposition(
+      source.digest,
+      policy,
+      cached.reports,
+      cached.scannedAt,
+      closure,
+      typographyReader,
+    );
   }
   // One inventory serves BOTH the inspectors and the identity-coverage check, so
   // the digest and the scanned fileset can never silently diverge.
@@ -1236,22 +1589,55 @@ export function runFastScanGate(
   // spuriously block a later, correctly-constructed source for the same digest.
   if (source.identityFiles !== undefined) {
     writeScanCache(deps.cacheHome, {
-      schemaVersion: 2,
+      schemaVersion: 3,
       digest: source.digest,
       scannedAt,
       reports: allReports.map((report) => ({ ...report, findings: [...report.findings] })),
     });
   }
-  return produceDisposition(source.digest, policy, allReports, scannedAt);
+  return produceDisposition(
+    source.digest,
+    policy,
+    allReports,
+    scannedAt,
+    closure,
+    typographyReader,
+  );
+}
+
+/**
+ * Classify the selected-profile closure for a scannable source. The file universe
+ * is the exact identity fileset the digest pins (so the closure and the digest can
+ * never silently diverge); a hand-built source without one falls back to an
+ * inventory walk. Blocking files are read from the derived checkout on demand.
+ */
+function computeClosureForSource(
+  source: ScannableSource,
+  spec: ClosureSpec,
+  hostFacts: HostLoadFacts | undefined,
+  deps: FastScanDeps,
+): ProfileClosure {
+  const files =
+    source.identityFiles !== undefined
+      ? source.identityFiles.map(toComparablePath)
+      : (deps.inventoryFactory ?? defaultInventory)(source.treePath).files.map((entry) =>
+          toComparablePath(entry.relativePath),
+        );
+  const readText = (rel: string): string | undefined => readTextSafe(join(source.treePath, rel));
+  return classifyClosure({ files, readText }, spec, hostFacts);
 }
 
 // -- Provision authorization guard (D12 code-path invariant) -----------------
 
 /**
  * The gate every adapter's `provision` MUST pass before running any upstream
- * code: the disposition must be genuine (branded by this module), its verdict
- * must be "allow", and its digest must equal the EXACT resolved source digest
- * being provisioned. A forged, blocked, or stale token fails closed.
+ * code: the disposition must be genuine (branded by this module), its digest must
+ * equal the EXACT resolved source digest being provisioned, and its
+ * SELECTED-PROFILE gate must authorize. `BLOCK` fails closed; `ALLOW` passes;
+ * `ALLOW_WITH_CONDITIONS` passes only when every condition it named is still in
+ * force — i.e. each `requiredAcceptanceKeys` entry corresponds to a finding the
+ * disposition actually carries as accepted (a tamper/integrity check). A legacy
+ * disposition with no `selectedProfileGate` falls back to its `verdict`.
  */
 export function assertProvisionAuthorized(
   disposition: ScanDisposition,
@@ -1262,14 +1648,42 @@ export function assertProvisionAuthorized(
       "refusing to provision: scan disposition is forged or was not produced by the scan gate",
     );
   }
-  if (disposition.verdict !== "allow") {
-    throw new BindingScanError(
-      `refusing to provision: scan disposition verdict is "${disposition.verdict}"`,
-    );
-  }
   if (disposition.digest !== expectedDigest) {
     throw new BindingScanError(
       `refusing to provision: scan disposition digest ${disposition.digest} does not match the resolved source digest ${expectedDigest}`,
     );
+  }
+  const gate: SelectedProfileGate =
+    disposition.selectedProfileGate ?? (disposition.verdict === "allow" ? "ALLOW" : "BLOCK");
+  if (gate === "BLOCK") {
+    throw new BindingScanError(
+      `refusing to provision: selected-profile gate is "BLOCK" (verdict "${disposition.verdict}")`,
+    );
+  }
+  if (gate === "ALLOW_WITH_CONDITIONS") {
+    const required = disposition.closure?.requiredAcceptanceKeys ?? [];
+    if (required.length === 0) {
+      throw new BindingScanError(
+        "refusing to provision: ALLOW_WITH_CONDITIONS disposition names no acceptance conditions",
+      );
+    }
+    const acceptedKeys = new Set(
+      disposition.findings
+        .filter(
+          (finding) =>
+            finding.accepted === true &&
+            finding.path !== undefined &&
+            finding.contentSha256 !== undefined,
+        )
+        .map((finding) =>
+          acceptanceKey(finding.code, finding.path as string, finding.contentSha256 as string),
+        ),
+    );
+    const unmet = required.filter((key) => !acceptedKeys.has(key));
+    if (unmet.length > 0) {
+      throw new BindingScanError(
+        `refusing to provision: ${unmet.length} ALLOW_WITH_CONDITIONS acceptance condition(s) are no longer in force`,
+      );
+    }
   }
 }

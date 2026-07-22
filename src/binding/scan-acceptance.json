@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 1,
-  "reason": "Maintainer-accepted content findings for the pinned framework binding trees: obra/superpowers@d884ae04edebef577e82ff7c4e143debd0bbec99 and samartomar/ECC@16563d4a30f17d097cc4629f6d97e02adf823016 (W4 ruling 2026-07-20; provenance in the internal roadmap SESSION-STATE attempt-2/attempt-3 records). Each entry is pinned to the file's exact content (sha256 of UTF-8 text, CRLF-normalized to LF): any substantive edit voids the acceptance. Regenerate by re-running the binding inspection over the pinned checkouts and re-reviewing every new entry.",
+  "schemaVersion": 2,
+  "reason": "Maintainer-accepted content findings for the pinned framework binding trees: obra/superpowers@d884ae04edebef577e82ff7c4e143debd0bbec99 and samartomar/ECC@16563d4a30f17d097cc4629f6d97e02adf823016 (W4 ruling 2026-07-20; provenance in the internal roadmap SESSION-STATE attempt-2/attempt-3 records). Each entry is pinned to the file's exact content (sha256 of UTF-8 text, CRLF-normalized to LF): any substantive edit voids the acceptance. schemaVersion 2 (a2) adds an optional per-entry \"profile\" that scopes an acceptance to one selected-profile closure; an entry without \"profile\" applies under any closure (the W4 full-tree default, so these entries are unchanged). Regenerate by re-running the binding inspection over the pinned checkouts and re-reviewing every new entry; a profile-scoped entry is only valid while its file remains in that profile's blocking closure. Per the 2026-07-21 FINAL Unicode scanner-calibration ruling, the reachable visible-typography trust.hidden-unicode findings are NOT accepted here — they are demoted to advisory at the gate layer (see src/binding/visible-typography.ts), which preserves the raw detector evidence while keeping bidi/zero-width/control/format/confusable/unknown-context occurrences blocking. The garrytan/gstack entries (all profile claude:prefix:quiet:no-plan-tune-hooks) are: three human-reviewed trust.prompt-injection SKILL.md workflow-control acceptances; and four trust.hidden-unicode EXPECTED_SANITIZER_SENTINEL_LITERAL acceptances for the sanitizer sources lib/redact-engine.ts, browse/src/server.ts, browse/src/sanitize.ts, and browse/src/content-security.ts. The visible-typography reclassifier cannot demote those four because their special characters sit in detection regex literals / code positions (or are U+FFFD replacement chars and emoji, which never demote); the ruling accepts them only because tests prove (classifySentinelLineShape) the characters are explicit detection/replacement sentinel VALUES — regex character classes, .replace(...) operands, and named sentinel-string constants — and not executable identifiers, commands, paths, keys, or syntax (conditions: tests-prove-sentinel-literal-semantics). Optional acceptanceClass/conditions audit metadata does not affect the (code, path, fileSha256) match key.",
   "accepted": [
     {
       "repository": "obra/superpowers",
@@ -12679,6 +12679,94 @@
       "code": "trust.hidden-unicode",
       "path": "WORKING-CONTEXT.md",
       "fileSha256": "c25504c5ce551b4282eb804c5d783e06c4055aa64d5c09e048e5c37b2218b5a5"
+    },
+    {
+      "repository": "garrytan/gstack",
+      "profile": "claude:prefix:quiet:no-plan-tune-hooks",
+      "code": "trust.prompt-injection",
+      "path": "document-generate/SKILL.md",
+      "fileSha256": "3d97c417c753900f906369590d1721614a6df49530ec4c44c05ba895300f891b",
+      "acceptanceClass": "EXPECTED_SKILL_WORKFLOW_CONTROL"
+    },
+    {
+      "repository": "garrytan/gstack",
+      "profile": "claude:prefix:quiet:no-plan-tune-hooks",
+      "code": "trust.prompt-injection",
+      "path": "ios-qa/SKILL.md",
+      "fileSha256": "cb6cdb1e794ced65f1a343e7671ecc2ff45276f30fc3fdd3af44e4429adcbf94",
+      "acceptanceClass": "EXPECTED_SKILL_WORKFLOW_CONTROL"
+    },
+    {
+      "repository": "garrytan/gstack",
+      "profile": "claude:prefix:quiet:no-plan-tune-hooks",
+      "code": "trust.prompt-injection",
+      "path": "office-hours/SKILL.md",
+      "fileSha256": "b5a0b9d72f4a992ba0b52cd7b27d15e7e0e29e35c4b775477ec3a031c47f5c92",
+      "acceptanceClass": "EXPECTED_CROSS_MODEL_BOUNDARY_INSTRUCTION",
+      "conditions": [
+        "codex-reviews-default-off",
+        "explicit-user-opt-in",
+        "enterprise-policy-may-disable",
+        "codex-read-only",
+        "cross-model-network-web-search-disclosed",
+        "runtime-proof-no-codex-process-or-network-when-disabled"
+      ]
+    },
+    {
+      "repository": "garrytan/gstack",
+      "profile": "claude:prefix:quiet:no-plan-tune-hooks",
+      "code": "trust.hidden-unicode",
+      "path": "lib/redact-engine.ts",
+      "fileSha256": "c1f5df32ff8192178deb247874940e4069705080d09f16e9222667ae48da1923",
+      "acceptanceClass": "EXPECTED_SANITIZER_SENTINEL_LITERAL",
+      "conditions": [
+        "tests-prove-sentinel-literal-semantics"
+      ]
+    },
+    {
+      "repository": "garrytan/gstack",
+      "profile": "claude:prefix:quiet:no-plan-tune-hooks",
+      "code": "trust.hidden-unicode",
+      "path": "browse/src/server.ts",
+      "fileSha256": "ec35af9423c113678726d0da0fe275986401fe08da875b64c1f4909ec24f7f91",
+      "acceptanceClass": "EXPECTED_SANITIZER_SENTINEL_LITERAL",
+      "conditions": [
+        "tests-prove-sentinel-literal-semantics"
+      ]
+    },
+    {
+      "repository": "garrytan/gstack",
+      "profile": "claude:prefix:quiet:no-plan-tune-hooks",
+      "code": "trust.hidden-unicode",
+      "path": "browse/src/sanitize.ts",
+      "fileSha256": "6c99c793ba3f54b3014fb526ff49c6d92d985d10a1d60677daceef6c9e36d6e3",
+      "acceptanceClass": "EXPECTED_SANITIZER_SENTINEL_LITERAL",
+      "conditions": [
+        "tests-prove-sentinel-literal-semantics"
+      ]
+    },
+    {
+      "repository": "garrytan/gstack",
+      "profile": "claude:prefix:quiet:no-plan-tune-hooks",
+      "code": "trust.hidden-unicode",
+      "path": "browse/src/content-security.ts",
+      "fileSha256": "21f83175f81b662e9117506f57b9e35d2fe78c9111b5abd243d1cc24838ed38a",
+      "acceptanceClass": "EXPECTED_SANITIZER_SENTINEL_LITERAL",
+      "conditions": [
+        "tests-prove-sentinel-literal-semantics"
+      ]
+    },
+    {
+      "repository": "garrytan/gstack",
+      "code": "trust.hidden-unicode",
+      "path": "lib/gstack-decision.ts",
+      "fileSha256": "9b19bd2e4f0f8c32dbd41a45cd745562e40bed5c57835a194720ba0e6d1b2267",
+      "profile": "claude:prefix:quiet:no-plan-tune-hooks",
+      "acceptanceClass": "EXPECTED_UI_DISPLAY_GLYPH",
+      "conditions": [
+        "inspected-display-only-em-dashes-in-comments-and-error-string",
+        "tokenizer-desync-documented-in-0j-evidence"
+      ]
     }
   ]
 }
