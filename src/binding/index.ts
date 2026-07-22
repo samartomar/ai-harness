@@ -27,6 +27,23 @@ export {
   type ResolveRequest,
   type VerifyResult,
 } from "./adapter.js";
+// W5 — the selected-profile closure classifier (a2). The scan gate consumes this
+// to separate the executed/loaded runtime closure from materialized-inert source.
+export {
+  CLOSURE_CLASSIFIER_VERSION,
+  type ClosureInput,
+  type ClosureNode,
+  type ClosureSeed,
+  type ClosureSpec,
+  classificationOf,
+  classifyClosure,
+  type FindingClassification,
+  FULL_TREE_PROFILE,
+  fullTreeClosureSpec,
+  type HostLoadFacts,
+  type ProfileClosure,
+  type Reachability,
+} from "./closure/profile-closure.js";
 // W3f — plan-time feature-key validation shared by every W4+ adapter.
 export { assertKnownFeatureKeys, BindingFeatureKeyError } from "./features.js";
 // W4d — D10 cost-gate measurement record + ECC doctor rules.
@@ -84,6 +101,45 @@ export {
   normalizeEccOperations,
 } from "./frameworks/ecc.js";
 export { eccDoubleInstallCheck, eccModeExclusivityCheck } from "./frameworks/ecc-doctor.js";
+// W5 — the gstack shared-runtime adapter. Composes the W3 skillOverrides
+// deny-list + managed-write + removal primitives over the upstream installer
+// seam; adds no scanning/closure machinery of its own.
+export {
+  applyGstackNamePatch,
+  createGstackAdapter,
+  defaultGstackInstaller,
+  deriveGstackSkillInventory,
+  GSTACK_CONDITIONAL_IDENTITIES,
+  GSTACK_CONFIG_REL,
+  GSTACK_FEATURE_KEYS,
+  GSTACK_HOME_REL,
+  GSTACK_HOOK_STRIP_TARGET,
+  GSTACK_INSTALL_ROOT_REL,
+  GSTACK_LOCKDOWN_ENTRIES,
+  GSTACK_MANIFEST_REL,
+  GSTACK_PIN_COMMIT,
+  GSTACK_PIN_TREE_DIGEST,
+  GSTACK_PINNED_SKILL_INVENTORY,
+  GSTACK_REPOSITORY,
+  GSTACK_RESIDUAL_RISKS,
+  GSTACK_ROOT_ALIAS_DIR,
+  GSTACK_SELECTED_PROFILE,
+  GSTACK_SETUP_COMMAND,
+  type GstackAdapterDeps,
+  GstackBindingError,
+  type GstackChoices,
+  type GstackHookStripResult,
+  type GstackInstalledIdentity,
+  type GstackInstaller,
+  type GstackInstallInput,
+  type GstackInstallResult,
+  type GstackManifestEntry,
+  type GstackRemoveResult,
+  gstackInstalledSubsetIdentity,
+  gstackLockdownConfigYaml,
+  isGstackInstallGenerated,
+  stripGstackHooks,
+} from "./frameworks/gstack.js";
 // W4a — the first real D6 adapter (Superpowers, host-plugin) + its registry
 // assembly point. Composes the W3 Claude host services above; adds no new
 // host mechanism of its own.
@@ -217,6 +273,7 @@ export {
   writeBindingLockAtomic,
 } from "./lock.js";
 export {
+  type AcceptedContentFinding,
   acquireNpmTree,
   assertProvisionAuthorized,
   assertResolvedMatchesDeclaration,
@@ -228,6 +285,7 @@ export {
   type DimensionReport,
   type FastScanDeps,
   type FastScanPolicy,
+  type FrameworkCardDisclosure,
   type GitResolveDeps,
   type GitResolveRequest,
   type InspectTreeDeps,
@@ -235,19 +293,25 @@ export {
   type NpmMetadataFetcher,
   type NpmRegistryMetadata,
   type NpmResolveRequest,
+  type RawSourceOutcome,
   type ResolvedGitSource,
   type ResolvedNpmSource,
   type ResolvedSource,
+  readScanAcceptanceArtifact,
   resolvedSourceDigest,
   resolveGitSource,
   resolveNpmSource,
   runFastScanGate,
+  type ScanAcceptanceArtifact,
+  type ScanAcceptanceReport,
   type ScanCoverage,
   type ScanDisposition,
   type ScanFinding,
   type ScannableSource,
   type ScanSeverity,
   type ScanVerdict,
+  type SelectedProfileGate,
+  scanAcceptanceReport,
   scannableFromGit,
   W2_DEFAULT_INSPECTORS,
 } from "./scan-gate.js";
@@ -273,3 +337,14 @@ export {
   readBindingDeclaration,
   safeParseBindingDeclaration,
 } from "./schema.js";
+// W5 rule-8 — gate-layer visible-typography reclassifier (advisory demotion of
+// hidden-unicode findings whose file is all prose/comment/human-string typography).
+export {
+  classifyFileTypography,
+  classifySentinelLineShape,
+  enumerateTypography,
+  type FileTypographyVerdict,
+  type SentinelLineShape,
+  type TypographyAdvisory,
+  type TypographyOccurrence,
+} from "./visible-typography.js";

@@ -613,4 +613,52 @@ describe("maintainer-accepted content findings (scan-acceptance baseline)", () =
       expect(entry.path).not.toContain("\\");
     }
   });
+
+  it("carries exactly the eight ruled gstack acceptances (rule-8 + final calibration)", () => {
+    const artifact = readScanAcceptanceArtifact();
+    const gstack = artifact.accepted.filter((entry) => entry.repository === "garrytan/gstack");
+    // Every gstack entry is profile-scoped and human-reviewed; the artifact stays
+    // small (ruling point 11) — no per-occurrence typography entries.
+    expect(gstack).toHaveLength(8);
+    for (const entry of gstack) {
+      expect(entry.profile).toBe("claude:prefix:quiet:no-plan-tune-hooks");
+    }
+    const byPath = new Map(gstack.map((entry) => [entry.path, entry]));
+
+    // Three human-reviewed prompt-injection workflow-control entries (rule-8).
+    const doc = byPath.get("document-generate/SKILL.md");
+    const ios = byPath.get("ios-qa/SKILL.md");
+    const office = byPath.get("office-hours/SKILL.md");
+    for (const entry of [doc, ios, office]) {
+      expect(entry?.code).toBe("trust.prompt-injection");
+    }
+    expect(doc?.acceptanceClass).toBe("EXPECTED_SKILL_WORKFLOW_CONTROL");
+    expect(ios?.acceptanceClass).toBe("EXPECTED_SKILL_WORKFLOW_CONTROL");
+    expect(office?.acceptanceClass).toBe("EXPECTED_CROSS_MODEL_BOUNDARY_INSTRUCTION");
+    expect(office?.conditions).toContain("codex-reviews-default-off");
+    expect(office?.conditions).toContain("runtime-proof-no-codex-process-or-network-when-disabled");
+
+    // Four sanitizer-family entries + one inspected display-glyph entry (final
+    // calibration): sanitizer characters are proven detection/replacement
+    // sentinel literals; the gstack-decision.ts em-dashes were individually
+    // inspected as display-only comment/error-string text (point 8). The ~290
+    // OTHER visible-typography findings are demoted at the gate, NOT accepted —
+    // so hidden-unicode acceptances are exactly these five.
+    const hiddenUnicode = gstack.filter((entry) => entry.code === "trust.hidden-unicode");
+    expect(hiddenUnicode).toHaveLength(5);
+    const byClass = new Map<string, string[]>();
+    for (const entry of hiddenUnicode) {
+      const cls = entry.acceptanceClass ?? "(none)";
+      byClass.set(cls, [...(byClass.get(cls) ?? []), entry.path]);
+    }
+    expect(new Set(byClass.get("EXPECTED_SANITIZER_SENTINEL_LITERAL"))).toEqual(
+      new Set([
+        "lib/redact-engine.ts",
+        "browse/src/server.ts",
+        "browse/src/sanitize.ts",
+        "browse/src/content-security.ts",
+      ]),
+    );
+    expect(byClass.get("EXPECTED_UI_DISPLAY_GLYPH")).toEqual(["lib/gstack-decision.ts"]);
+  });
 });
