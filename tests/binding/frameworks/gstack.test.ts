@@ -328,8 +328,9 @@ describe("stripGstackHooks — path/substring across ALL events + tags, never ta
       },
     });
     expect(result.changed).toBe(true);
-    expect((result.nextHooks?.Weird as Record<string, unknown>).not).toBe("an array");
-    expect(result.nextHooks?.SessionStart).toEqual(["not-an-object"]);
+    const next = result.nextHooks ?? {};
+    expect((next.Weird as Record<string, unknown>).not).toBe("an array");
+    expect(next.SessionStart).toEqual(["not-an-object"]);
   });
 
   it("returns no-change on a non-object settings value", () => {
