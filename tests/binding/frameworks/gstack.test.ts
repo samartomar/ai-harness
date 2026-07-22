@@ -185,6 +185,32 @@ describe("deriveGstackSkillInventory — tree-derived, patched, superset-safe", 
     });
     expect(() => deriveGstackSkillInventory(resolvedOver(dir))).toThrow(GstackBindingError);
   });
+
+  it("fails closed when the resolved tree is unreadable", () => {
+    const missing = join(cacheHome, "does-not-exist-tree");
+    expect(() => deriveGstackSkillInventory(resolvedOver(missing))).toThrow(
+      /resolved tree unreadable/,
+    );
+  });
+
+  it("fails closed on a derived identity carrying a space (control/space character)", () => {
+    const dir = fixtureTree(cacheHome, "derive-space", {
+      "spacey/SKILL.md": "---\nname: qa foo\n---\nbody\n",
+    });
+    expect(() => deriveGstackSkillInventory(resolvedOver(dir))).toThrow(/control\/space character/);
+  });
+
+  it("skips a top-level SKILL.md whose frontmatter carries no name", () => {
+    const dir = fixtureTree(cacheHome, "derive-noname-skip", {
+      "qa/SKILL.md": "---\nname: qa\n---\nbody\n",
+      "nameless/SKILL.md": "---\ndescription: only a description\n---\nbody\n",
+    });
+    const inventory = deriveGstackSkillInventory(resolvedOver(dir));
+    // The nameless dir derives its identity from the DIR name (gstack-nameless);
+    // the loop never crashes on the missing frontmatter name.
+    expect(inventory.names).toContain("gstack-qa");
+    expect(inventory.names).toContain("gstack-nameless");
+  });
 });
 
 // -- lockdown config -----------------------------------------------------------
@@ -286,6 +312,29 @@ describe("stripGstackHooks — path/substring across ALL events + tags, never ta
     const result = stripGstackHooks({ hooks: { SessionStart: [userHook] } });
     expect(result.changed).toBe(false);
     expect(result.removedCount).toBe(0);
+  });
+
+  it("preserves a non-array event value and a non-object group verbatim", () => {
+    const result = stripGstackHooks({
+      hooks: {
+        // A malformed (non-array) event value survives untouched...
+        Weird: { not: "an array" },
+        // ...and a non-object group inside a real event is kept as-is, alongside
+        // a stripped gstack group so a change is still recorded.
+        SessionStart: [
+          "not-an-object",
+          { hooks: [{ type: "command", command: ".claude/skills/gstack/bin/x" }] },
+        ],
+      },
+    });
+    expect(result.changed).toBe(true);
+    expect((result.nextHooks?.Weird as Record<string, unknown>).not).toBe("an array");
+    expect(result.nextHooks?.SessionStart).toEqual(["not-an-object"]);
+  });
+
+  it("returns no-change on a non-object settings value", () => {
+    expect(stripGstackHooks(42).changed).toBe(false);
+    expect(stripGstackHooks({ hooks: "not-an-object" }).changed).toBe(false);
   });
 });
 

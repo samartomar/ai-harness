@@ -70,6 +70,26 @@ describe("defaultGstackInstaller — pristine work-copy staging (spike cache-hyg
     expect(existsSync(join(resolved.treePath, "node_modules"))).toBe(false);
   });
 
+  it("cleans the scratch stage and rethrows when staging the checkout fails", async () => {
+    const { resolved } = scannedGstackFixture(cacheHome, "stage-fail");
+    // A resolved treePath that does not exist makes cpSync throw; the installer
+    // must still clean its scratch stage (best-effort) and rethrow.
+    const broken = { ...resolved, treePath: join(cacheHome, "no-such-checkout") };
+    await expect(
+      defaultGstackInstaller({
+        resolved: broken,
+        root: cacheHome,
+        home: cacheHome,
+        gstackHomeAbs: join(cacheHome, "gstack-home"),
+        runner: recordingRunner().runner,
+        env: {},
+      }),
+    ).rejects.toThrow();
+    // No leftover scratch stages under tmp for this run.
+    const strays = readdirSync(tmpdir()).filter((d) => d.startsWith("aih-gstack-setup-"));
+    expect(strays).toEqual([]);
+  });
+
   it("provision unwinds skills dirs created before a THROWN installer seam (live-acceptance regression)", async () => {
     const home = mkdtempSync(join(tmpdir(), "aih-gstack-home-"));
     const project = mkdtempSync(join(tmpdir(), "aih-gstack-proj-"));
@@ -95,6 +115,40 @@ describe("defaultGstackInstaller — pristine work-copy staging (spike cache-hyg
       ).rejects.toThrow(/installer threw[\s\S]*unwound/);
       // The dir the failed install materialized is gone — nothing undenied remains.
       expect(existsSync(wrapper)).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(project, { recursive: true, force: true });
+    }
+  });
+
+  it("unwind PRESERVES a gstack skills dir that pre-existed the bind", async () => {
+    const home = mkdtempSync(join(tmpdir(), "aih-gstack-home-"));
+    const project = mkdtempSync(join(tmpdir(), "aih-gstack-proj-"));
+    try {
+      const { resolved, disposition } = scannedGstackFixture(cacheHome, "preexist-tree");
+      const declaration = declarationFor(resolved.treeDigest);
+      // A gstack-shaped dir already on the machine before this bind.
+      const preExisting = join(home, ".claude", "skills", "gstack-preexisting");
+      writeFileEnsuring(join(preExisting, "SKILL.md"), "---\nname: gstack-preexisting\n---\nold\n");
+      const installer: GstackInstaller = () => {
+        writeFileEnsuring(
+          join(home, ".claude", "skills", "gstack-autoplan", "SKILL.md"),
+          "---\nname: gstack-autoplan\n---\npartial\n",
+        );
+        return Promise.reject(new Error("crash after partial install"));
+      };
+      const adapter = createGstackAdapter({
+        root: project,
+        runner: recordingRunner().runner,
+        env: { USERPROFILE: home },
+        installGstack: installer,
+      });
+      await expect(
+        adapter.provision({ context: { declaration }, resolved }, disposition),
+      ).rejects.toThrow(/unwound/);
+      // The bind-created dir is removed; the PRE-EXISTING one is preserved.
+      expect(existsSync(join(home, ".claude", "skills", "gstack-autoplan"))).toBe(false);
+      expect(existsSync(preExisting)).toBe(true);
     } finally {
       rmSync(home, { recursive: true, force: true });
       rmSync(project, { recursive: true, force: true });

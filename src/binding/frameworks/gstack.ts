@@ -1407,12 +1407,12 @@ async function provisionGstack(
     }
   } catch (error) {
     if (error instanceof GstackBindingError) throw error;
-    await unwindSealed(
+    // unwindSealed returns Promise<never> — it always throws.
+    return unwindSealed(
       `gstack provision failed mid-apply: ${
         error instanceof Error ? error.message : String(error)
       } — sealed surfaces unwound`,
     );
-    throw error; // unreachable (unwindSealed throws); satisfies control-flow analysis
   }
   const assembledOwnership: BindingOwnershipEntry[] = sealed;
 

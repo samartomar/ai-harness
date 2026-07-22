@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { InspectReport } from "../../../src/binding/adapter.js";
 import {
   createGstackAdapter,
   GSTACK_CONFIG_REL,
@@ -16,7 +17,12 @@ import {
 } from "../../../src/binding/frameworks/gstack.js";
 import { isHomeScopedTarget } from "../../../src/binding/hosts/claude/index.js";
 import { CLAUDE_SETTINGS_PATH } from "../../../src/binding/hosts/claude/surfaces.js";
-import { BindingLockSchema, bindingDir, readBindingLock } from "../../../src/binding/lock.js";
+import {
+  BindingLockSchema,
+  bindingDir,
+  readBindingLock,
+  writeBindingLockAtomic,
+} from "../../../src/binding/lock.js";
 import type { PlanResult } from "../../../src/internals/execute.js";
 import type { Action } from "../../../src/internals/plan.js";
 import { applyActions, readJson, readText } from "../hosts/claude/support.js";
@@ -226,6 +232,26 @@ describe("provision — post-install reconciliation (fail closed)", () => {
     expect(existsSync(skillsPath("gstack"))).toBe(false);
     expect(readBindingLock(root).present).toBe(false);
   });
+
+  it("an installer that delivers NOTHING (no skills dir) refuses on the empty reality", async () => {
+    const { resolved, disposition } = scannedGstackFixture(cacheHome, "recon-empty");
+    const declaration = declarationFor(resolved.treeDigest);
+    // Exit 0 but write no skills at all: enumeration sees an absent skills dir
+    // and reconciliation refuses (every non-conditional identity undelivered).
+    const emptyInstaller: ReturnType<typeof fixtureInstaller>["installer"] = () =>
+      Promise.resolve({ exitCode: 0, stdout: "did nothing\n", stderr: "" });
+    const adapter = createGstackAdapter({
+      root,
+      runner: recordingRunner().runner,
+      env: ENV(),
+      installGstack: emptyInstaller,
+      applyActions,
+    });
+    await expect(
+      adapter.provision({ context: { declaration }, resolved }, disposition),
+    ).rejects.toThrow(/non-conditional inventory identities missing/);
+    expect(readBindingLock(root).present).toBe(false);
+  });
 });
 
 // -- provision: hook strip ------------------------------------------------------
@@ -349,6 +375,175 @@ describe("provision — D7 installed-subset mismatch fails closed and unwinds th
     await expect(provisionFixture("d7-wrongpatch", { installer })).rejects.toThrow(
       /identity mismatch/,
     );
+    expect(readBindingLock(root).present).toBe(false);
+  });
+});
+
+// -- verify + report + inspect: defensive branches -----------------------------
+
+describe("gstack verify/report/inspect — defensive and unavailable branches", () => {
+  it("verify reports drift when the home settings become unparseable (deny re-check fails closed)", async () => {
+    const { adapter, declaration } = await provisionFixture("verify-corrupt");
+    writeFileSync(join(home, CLAUDE_SETTINGS_PATH), "{ not: valid json", "utf8");
+    const result = adapter.verify({ declaration });
+    expect(result.ok).toBe(false);
+    expect(result.drift.some((d) => /deny-list re-check failed|hook re-check failed/.test(d))).toBe(
+      true,
+    );
+  });
+
+  it("verify reports drift when a gstack hook shape reappears in home settings", async () => {
+    const { adapter, declaration } = await provisionFixture("verify-hook");
+    const settingsPath = join(home, CLAUDE_SETTINGS_PATH);
+    const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as Record<string, unknown>;
+    settings.hooks = {
+      SessionStart: [
+        {
+          hooks: [{ type: "command", command: ".claude/skills/gstack/bin/gstack-session-update" }],
+        },
+      ],
+    };
+    writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+    const result = adapter.verify({ declaration });
+    expect(result.ok).toBe(false);
+    expect(result.drift.some((d) => /hook shape present/.test(d))).toBe(true);
+  });
+
+  it("verify reports drift when the installed-subset manifest is bound to a different source digest", async () => {
+    const { adapter, declaration } = await provisionFixture("verify-manifest");
+    const manifestPath = join(root, GSTACK_MANIFEST_REL);
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+    manifest.sourceTreeDigest = "f".repeat(64);
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+    const result = adapter.verify({ declaration });
+    expect(result.ok).toBe(false);
+    expect(result.drift.some((d) => /different source tree digest/.test(d))).toBe(true);
+  });
+
+  it("verify reports drift when a recorded installed file is deleted", async () => {
+    const { adapter, declaration } = await provisionFixture("verify-missing");
+    rmSync(join(home, GSTACK_INSTALL_ROOT_REL, "setup"), { force: true });
+    const result = adapter.verify({ declaration });
+    expect(result.ok).toBe(false);
+    expect(result.drift.some((d) => /installed file missing: setup/.test(d))).toBe(true);
+  });
+
+  it("reconstructs the denied set from a PER-LEAF deny lock shape (not just the container)", async () => {
+    const { adapter, declaration } = await provisionFixture("verify-perleaf");
+    // Rewrite the lock's collapsed deny container into per-leaf ownership
+    // entries (the alternate shape deniedNamesFromLock must also understand).
+    const read = readBindingLock(root);
+    expect(read.present).toBe(true);
+    if (!read.present) return;
+    const lock = read.lock;
+    const container = lock.ownership.find((e) => e.target === DENY_TARGET);
+    const keys = Object.keys((container?.applied as Record<string, unknown>) ?? {});
+    const perLeaf = keys.map((k) => ({
+      kind: "json-pointer" as const,
+      target: `${DENY_TARGET}/${k}`,
+      preExisting: { absent: true } as const,
+      applied: "off",
+      postApplyDigest: "0".repeat(64),
+    }));
+    writeBindingLockAtomic(root, {
+      ...lock,
+      ownership: [...lock.ownership.filter((e) => e.target !== DENY_TARGET), ...perLeaf],
+    });
+    // verify reads the deny set via deniedNamesFromLock (per-leaf branch) and
+    // finds every key still "off" — no deny drift from the reshaped lock.
+    const result = adapter.verify({ declaration });
+    expect(result.drift.some((d) => /skillOverrides deny missing/.test(d))).toBe(false);
+  });
+
+  it("report discloses the deny-unavailable branch when home skillOverrides is malformed", async () => {
+    const { adapter, declaration } = await provisionFixture("report-unavailable");
+    writeFileSync(
+      join(home, CLAUDE_SETTINGS_PATH),
+      `${JSON.stringify({ skillOverrides: 123 })}\n`,
+      "utf8",
+    );
+    const report = adapter.report({ declaration });
+    expect(report.lines.join("\n")).toMatch(/deny re-verification: unavailable/);
+  });
+
+  it("inspect notes an absent skills directory without throwing", () => {
+    const { resolved } = scannedGstackFixture(cacheHome, "inspect-notes");
+    const adapter = createGstackAdapter({ root, runner: recordingRunner().runner, env: ENV() });
+    const report = adapter.inspect({ treePath: resolved.treePath }) as InspectReport;
+    expect(report.framework).toBe("gstack");
+    expect(report.notes.length).toBeGreaterThan(0);
+  });
+
+  it("report discloses the install-root-absent branch when the install is gone", async () => {
+    const { adapter, declaration } = await provisionFixture("report-noroot");
+    rmSync(join(home, GSTACK_INSTALL_ROOT_REL), { recursive: true, force: true });
+    const report = adapter.report({ declaration });
+    expect(report.lines.join("\n")).toMatch(/context-cost estimate: unavailable/);
+  });
+
+  it("ignores a pre-existing non-gstack skills dir during reconciliation", async () => {
+    // A stray, non-gstack skill dir present in the home before the bind must be
+    // left untouched and skipped by wrapper-identity enumeration.
+    writeFileEnsuring(
+      join(home, ".claude", "skills", "some-other-tool", "SKILL.md"),
+      "---\nname: some-other-tool\n---\nunrelated\n",
+    );
+    const { result } = await provisionFixture("stray-dir");
+    expect(result.lock.match).toBe(true);
+    // The stray dir survives (never gstack-attributable, never owned/removed).
+    expect(existsSync(join(home, ".claude", "skills", "some-other-tool", "SKILL.md"))).toBe(true);
+    expect(result.lock.ownership.map((e) => e.target)).not.toContain(
+      "home:.claude/skills/some-other-tool",
+    );
+  });
+
+  it("uses the DEFAULT apply seam (real executePlan) when none is injected", async () => {
+    const { resolved, disposition } = scannedGstackFixture(cacheHome, "default-apply");
+    const adapter = createGstackAdapter({
+      root,
+      runner: recordingRunner().runner,
+      env: ENV(),
+      installGstack: fixtureInstaller().installer,
+      // no applyActions — exercises defaultApplyActions -> executePlan
+    });
+    const declaration = declarationFor(resolved.treeDigest);
+    const result = await adapter.provision({ context: { declaration }, resolved }, disposition);
+    expect(result.lock.match).toBe(true);
+    expect(readJson(root, CLAUDE_SETTINGS_PATH).skillOverrides).toBeDefined();
+  });
+
+  it("verify reports drift when the installed-subset manifest is unreadable JSON", async () => {
+    const { adapter, declaration } = await provisionFixture("manifest-corrupt");
+    writeFileSync(join(root, GSTACK_MANIFEST_REL), "{ not json", "utf8");
+    const result = adapter.verify({ declaration });
+    expect(result.ok).toBe(false);
+    expect(result.drift.some((d) => /manifest missing or unreadable/.test(d))).toBe(true);
+  });
+
+  it("inspect tolerates an unreadable tree path (readdir throws) without crashing", () => {
+    const adapter = createGstackAdapter({ root, runner: recordingRunner().runner, env: ENV() });
+    const report = adapter.inspect({
+      treePath: join(cacheHome, "does-not-exist"),
+    }) as InspectReport;
+    expect(report.notes.some((n) => /no top-level SKILL\.md skill dirs/.test(n))).toBe(true);
+  });
+
+  it("provision fails closed on a non-git resolved source", async () => {
+    const { resolved, disposition } = scannedGstackFixture(cacheHome, "notgit");
+    const adapter = createGstackAdapter({
+      root,
+      runner: recordingRunner().runner,
+      env: ENV(),
+      installGstack: fixtureInstaller().installer,
+      applyActions,
+    });
+    const declaration = declarationFor(resolved.treeDigest);
+    const npmResolved = { kind: "npm", package: "x", exactVersion: "1.0.0" } as never;
+    // Fails closed — the D12 disposition/subject guard rejects the mismatched
+    // resolved before any side effect (defense in depth over the registry).
+    await expect(
+      adapter.provision({ context: { declaration }, resolved: npmResolved }, disposition),
+    ).rejects.toThrow(/refusing to provision|resolved git source/);
     expect(readBindingLock(root).present).toBe(false);
   });
 });
