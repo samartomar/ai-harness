@@ -25,11 +25,14 @@ export interface InitPhase {
 
 /**
  * The fixed bootstrap order: profile → superpowers → bootstrap-ai → scaffold →
- * secrets → guardrails → mcp → sandbox → usage. Profiling detects the stack (Cursor
- * rules); Superpowers installs the default ECC-adjacent agent baseline for the selected CLIs;
- * bootstrap-ai lays the Layer-2 canon (the SOLE writer of root bootloaders +
+ * secrets → guardrails → mcp → contract → sandbox → usage. Profiling detects the stack
+ * (Cursor rules); Superpowers installs the default ECC-adjacent agent baseline for the
+ * selected CLIs; bootstrap-ai lays the Layer-2 canon (the SOLE writer of root bootloaders +
  * RULE_ROUTER); scaffolding lays the context dir the router points at; secrets +
- * guardrails fence the repo before MCP wiring and the sandbox land on top. Each
+ * guardrails fence the repo before MCP wiring lands on top; contract runs AFTER mcp so
+ * first-run synthesis sees the planned `.mcp.json` surface (init threads it via
+ * `ctx.plannedMcpServers` — disk alone would say "none" until a second run); the sandbox
+ * and usage recorder land last. Each
  * file has exactly one writer, so the composed plan dedupes to one write per path.
  *
  * ECC is deliberately NOT a phase: `aih ecc` runs ECC's own network installer
@@ -57,11 +60,6 @@ export const INIT_PHASES: readonly InitPhase[] = [
       "scaffold — lay down repo hygiene + local guardrails (and, under --canon legacy, the full doc family)",
   },
   {
-    command: contract,
-    headline:
-      "contract — synthesize the repo contract the router points at: project.json + project.md + setup.md",
-  },
-  {
     command: secrets,
     headline: "secrets — deny agent reads of plaintext secrets and document vault injection",
   },
@@ -72,6 +70,11 @@ export const INIT_PHASES: readonly InitPhase[] = [
   {
     command: mcp,
     headline: "mcp — configure enterprise MCP servers in .mcp.json",
+  },
+  {
+    command: contract,
+    headline:
+      "contract — synthesize the repo contract the router points at: project.json + project.md + setup.md",
   },
   {
     command: sandbox,

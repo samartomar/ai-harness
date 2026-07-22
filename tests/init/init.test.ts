@@ -437,10 +437,10 @@ describe("aih init — composition, not duplication", () => {
       "superpowers",
       "bootstrap-ai",
       "scaffold",
-      "contract",
       "secrets",
       "guardrails",
       "mcp",
+      "contract", // after mcp: first-run synthesis reads the planned .mcp.json surface
       "sandbox",
       "usage",
     ];
