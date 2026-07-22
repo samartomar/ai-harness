@@ -821,6 +821,25 @@ describe("report — Framework Card discloses the install surface, lockdown, and
     expect(text).toContain("lockdown telemetry: off");
     expect(text).toContain("R5: slash-menu hiding is verified by proxy only");
   });
+
+  it("discloses the ENABLED user choices (codex enabled, proactive true, browser on-demand)", async () => {
+    const { adapter, declaration } = await provisionFixture("report-enabled", {
+      features: { codexReviews: true, proactive: true, browserAutomation: true },
+    });
+    const text = adapter.report({ declaration }).lines.join("\n");
+    expect(text).toContain("user choice codex_reviews: enabled");
+    expect(text).toContain("user choice proactive: true");
+    expect(text).toContain("user choice browser automation: on-demand");
+    // The lockdown config on disk carries the enabled choices literally.
+    expect(readText(root, GSTACK_CONFIG_REL)).toContain("codex_reviews: enabled");
+  });
+
+  it("discloses the install-generated (D7-excluded) file set on the card", async () => {
+    const { adapter, declaration } = await provisionFixture("report-generated");
+    const text = adapter.report({ declaration }).lines.join("\n");
+    expect(text).toContain("install-generated");
+    expect(text).toContain("gstack/llms.txt");
+  });
 });
 
 // -- the PERMANENT office-hours runtime test ------------------------------------
