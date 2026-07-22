@@ -12719,7 +12719,9 @@
       "path": "lib/redact-engine.ts",
       "fileSha256": "c1f5df32ff8192178deb247874940e4069705080d09f16e9222667ae48da1923",
       "acceptanceClass": "EXPECTED_SANITIZER_SENTINEL_LITERAL",
-      "conditions": ["tests-prove-sentinel-literal-semantics"]
+      "conditions": [
+        "tests-prove-sentinel-literal-semantics"
+      ]
     },
     {
       "repository": "garrytan/gstack",
@@ -12728,7 +12730,9 @@
       "path": "browse/src/server.ts",
       "fileSha256": "ec35af9423c113678726d0da0fe275986401fe08da875b64c1f4909ec24f7f91",
       "acceptanceClass": "EXPECTED_SANITIZER_SENTINEL_LITERAL",
-      "conditions": ["tests-prove-sentinel-literal-semantics"]
+      "conditions": [
+        "tests-prove-sentinel-literal-semantics"
+      ]
     },
     {
       "repository": "garrytan/gstack",
@@ -12737,7 +12741,9 @@
       "path": "browse/src/sanitize.ts",
       "fileSha256": "6c99c793ba3f54b3014fb526ff49c6d92d985d10a1d60677daceef6c9e36d6e3",
       "acceptanceClass": "EXPECTED_SANITIZER_SENTINEL_LITERAL",
-      "conditions": ["tests-prove-sentinel-literal-semantics"]
+      "conditions": [
+        "tests-prove-sentinel-literal-semantics"
+      ]
     },
     {
       "repository": "garrytan/gstack",
@@ -12746,7 +12752,21 @@
       "path": "browse/src/content-security.ts",
       "fileSha256": "21f83175f81b662e9117506f57b9e35d2fe78c9111b5abd243d1cc24838ed38a",
       "acceptanceClass": "EXPECTED_SANITIZER_SENTINEL_LITERAL",
-      "conditions": ["tests-prove-sentinel-literal-semantics"]
+      "conditions": [
+        "tests-prove-sentinel-literal-semantics"
+      ]
+    },
+    {
+      "repository": "garrytan/gstack",
+      "code": "trust.hidden-unicode",
+      "path": "lib/gstack-decision.ts",
+      "fileSha256": "9b19bd2e4f0f8c32dbd41a45cd745562e40bed5c57835a194720ba0e6d1b2267",
+      "profile": "claude:prefix:quiet:no-plan-tune-hooks",
+      "acceptanceClass": "EXPECTED_UI_DISPLAY_GLYPH",
+      "conditions": [
+        "inspected-display-only-em-dashes-in-comments-and-error-string",
+        "tokenizer-desync-documented-in-0j-evidence"
+      ]
     }
   ]
 }

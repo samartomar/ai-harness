@@ -80,6 +80,13 @@ const DECORATIVE_CODEPOINTS = new Set<number>([
   0x2010, 0x2012, 0x2013, 0x2014, 0x2015,
   // curated punctuation: … · • §
   0x2026, 0x00b7, 0x2022, 0x00a7,
+  // Display-glyph correction (maintainer-authorized 2026-07-22, option (b) after
+  // the official requirement-8 run): the EMOJI-block check/cross/star/warning
+  // status glyphs and observed same-class display symbols that the dingbat-only
+  // U+2713-2718 range missed. Explicit enumeration, never a broad category —
+  // each is a visible pictograph/sign with no invisible or ASCII-confusable
+  // rendering: ✅ ❌ ★ ⚠ ⛔ 🤖 🔥 × ≤ ≥.
+  0x2705, 0x274c, 0x2605, 0x26a0, 0x26d4, 0x1f916, 0x1f525, 0x00d7, 0x2264, 0x2265,
 ]);
 
 /**

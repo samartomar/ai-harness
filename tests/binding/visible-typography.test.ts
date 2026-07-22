@@ -188,6 +188,49 @@ describe("decorative allow-list is explicit ranges, not \\p{S}\\p{Pd} (ruling po
     expect(verdict.demote).toBe(false);
     expect(verdict.blockingReason).toMatch(/always-block/);
   });
+
+  // Maintainer-authorized display-glyph correction (2026-07-22, option (b) after
+  // the official requirement-8 BLOCK): the emoji-block status glyphs and observed
+  // same-class display symbols the dingbat-only check/cross range missed.
+  const CORRECTED_DISPLAY_GLYPHS = [
+    "✅", // white heavy check mark (emoji check)
+    "❌", // cross mark (emoji cross)
+    "★", // black star
+    "⚠", // warning sign (bare)
+    "⛔", // no entry
+    "\u{1F916}", // robot face
+    "\u{1F525}", // fire
+    "×", // multiplication sign
+    "≤", // less-than or equal
+    "≥", // greater-than or equal
+  ];
+
+  it("every corrected display glyph demotes in a markdown fence (DISPLAY context)", () => {
+    for (const ch of CORRECTED_DISPLAY_GLYPHS) {
+      expect(
+        classifyFileTypography("qa/SKILL.md", `\`\`\`\n${ch} status line\n\`\`\`\n`).demote,
+        `U+${(ch.codePointAt(0) ?? 0).toString(16).toUpperCase()}`,
+      ).toBe(true);
+    }
+  });
+
+  it("corrected BMP display glyphs demote in a ts string literal (DISPLAY context)", () => {
+    // Astral glyphs are exercised via markdown above; the ts/js tokenizer scans
+    // by code unit, and no astral display glyph occurs in ts contexts in the
+    // pinned tree.
+    for (const ch of CORRECTED_DISPLAY_GLYPHS.filter((c) => (c.codePointAt(0) ?? 0) <= 0xffff)) {
+      expect(
+        classifyFileTypography("browse/src/x.ts", `const s = "${ch} ok";\n`).demote,
+        `U+${(ch.codePointAt(0) ?? 0).toString(16).toUpperCase()}`,
+      ).toBe(true);
+    }
+  });
+
+  it("the correction does not widen always-block or FFFD behavior", () => {
+    expect(classifyFileTypography("qa/SKILL.md", `\`\`\`\n${REPL}\n\`\`\`\n`).demote).toBe(false);
+    const zwsp = "​";
+    expect(classifyFileTypography("qa/SKILL.md", `\`\`\`\n✅${zwsp}\n\`\`\`\n`).demote).toBe(false);
+  });
 });
 
 describe("DISPLAY letter/mark advisories (ruling point 2)", () => {
@@ -246,7 +289,7 @@ describe("scanTsJs template interpolation depth (ruling point 3a)", () => {
     expect(verdict.blockingReason).toMatch(/code/);
   });
 
-  it("code inside a ${} interpolation is code: a raw non-ASCII there blocks", () => {
+  it("code inside a template interpolation is code: a raw non-ASCII there blocks", () => {
     const src = `const s = \`n=\${count ${DHORIZ} 1}\`;\n`;
     expect(classifyFileTypography("browse/src/x.ts", src).demote).toBe(false);
   });

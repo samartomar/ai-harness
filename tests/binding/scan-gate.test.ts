@@ -614,12 +614,12 @@ describe("maintainer-accepted content findings (scan-acceptance baseline)", () =
     }
   });
 
-  it("carries exactly the seven ruled gstack acceptances (rule-8 + final calibration)", () => {
+  it("carries exactly the eight ruled gstack acceptances (rule-8 + final calibration)", () => {
     const artifact = readScanAcceptanceArtifact();
     const gstack = artifact.accepted.filter((entry) => entry.repository === "garrytan/gstack");
     // Every gstack entry is profile-scoped and human-reviewed; the artifact stays
     // small (ruling point 11) — no per-occurrence typography entries.
-    expect(gstack).toHaveLength(7);
+    expect(gstack).toHaveLength(8);
     for (const entry of gstack) {
       expect(entry.profile).toBe("claude:prefix:quiet:no-plan-tune-hooks");
     }
@@ -638,13 +638,20 @@ describe("maintainer-accepted content findings (scan-acceptance baseline)", () =
     expect(office?.conditions).toContain("codex-reviews-default-off");
     expect(office?.conditions).toContain("runtime-proof-no-codex-process-or-network-when-disabled");
 
-    // Four sanitizer-family hidden-unicode entries (final calibration): the
-    // characters are proven detection/replacement sentinel literals, not
-    // executable syntax. The ~290 OTHER visible-typography findings are demoted
-    // at the gate, NOT accepted — so hidden-unicode acceptances are exactly these.
-    const sanitizer = gstack.filter((entry) => entry.code === "trust.hidden-unicode");
-    expect(sanitizer).toHaveLength(4);
-    expect(new Set(sanitizer.map((entry) => entry.path))).toEqual(
+    // Four sanitizer-family entries + one inspected display-glyph entry (final
+    // calibration): sanitizer characters are proven detection/replacement
+    // sentinel literals; the gstack-decision.ts em-dashes were individually
+    // inspected as display-only comment/error-string text (point 8). The ~290
+    // OTHER visible-typography findings are demoted at the gate, NOT accepted —
+    // so hidden-unicode acceptances are exactly these five.
+    const hiddenUnicode = gstack.filter((entry) => entry.code === "trust.hidden-unicode");
+    expect(hiddenUnicode).toHaveLength(5);
+    const byClass = new Map<string, string[]>();
+    for (const entry of hiddenUnicode) {
+      const cls = entry.acceptanceClass ?? "(none)";
+      byClass.set(cls, [...(byClass.get(cls) ?? []), entry.path]);
+    }
+    expect(new Set(byClass.get("EXPECTED_SANITIZER_SENTINEL_LITERAL"))).toEqual(
       new Set([
         "lib/redact-engine.ts",
         "browse/src/server.ts",
@@ -652,8 +659,6 @@ describe("maintainer-accepted content findings (scan-acceptance baseline)", () =
         "browse/src/content-security.ts",
       ]),
     );
-    for (const entry of sanitizer) {
-      expect(entry.acceptanceClass).toBe("EXPECTED_SANITIZER_SENTINEL_LITERAL");
-    }
+    expect(byClass.get("EXPECTED_UI_DISPLAY_GLYPH")).toEqual(["lib/gstack-decision.ts"]);
   });
 });
