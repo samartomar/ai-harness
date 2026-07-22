@@ -40,8 +40,8 @@ Define success criteria, then loop until verified.
 
 - Validate at boundaries; reject malformed/hostile input — never coerce. Fail closed on ambiguity.
 - Explicit error handling; no silent failures.
-- No secrets in code, prompts, fixtures, logs, or error text.
-- Do not open `.env*` or `secrets/**`; validate secret presence with `aih secrets --verify`.
+- No secrets in code, config, prompts, fixtures, logs, or error text.
+- Do not open `.env*` or `secrets/**` (`.env.example` / `.env.sample` are readable templates); validate secret presence with `aih secrets --verify`.
 - On large repos, code-review-graph is advisory blast-area context, not evidence or a gate. If it fails or is stale, warn once and continue from source and tests. Repair it only when helper repair is the assigned task.
 - Repo evidence (source, tests, schemas, CI) is the truth, not model memory. Don't
   invent commands, paths, or APIs; verify a path exists before citing it.

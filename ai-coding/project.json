@@ -7,7 +7,8 @@
   ],
   "description": "Enterprise AI Bootstrapping Harness — governed AI-assisted coding for enterprise workstations and repos: TLS trust, repo canon, skill supply chain, evidence",
   "languages": [
-    "TypeScript/Node.js"
+    "TypeScript/Node.js",
+    "Python"
   ],
   "frameworks": [],
   "cloud": [],
@@ -17,7 +18,8 @@
   "entrypoints": [
     "dist/cli.js",
     "src/cli.ts",
-    "src/index.ts"
+    "src/index.ts",
+    "dist/index.js"
   ],
   "commands": {
     "verify": {
@@ -42,9 +44,9 @@
     }
   },
   "scale": {
-    "trackedFiles": 578,
+    "trackedFiles": 761,
     "class": "medium",
-    "isMonorepo": false
+    "isMonorepo": true
   },
   "sensitivePaths": [],
   "knownGaps": [
@@ -58,5 +60,14 @@
     "sequential-thinking",
     "serena",
     "token-savior"
-  ]
+  ],
+  "workspaces": {
+    "tools/cisco-skill-scanner": {
+      "languages": [
+        "Python"
+      ],
+      "packageManager": "uv",
+      "commands": {}
+    }
+  }
 }
