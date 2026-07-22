@@ -405,10 +405,10 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
   },
   "scale.code-review-graph-missing": {
     audience: "developer",
-    failSeverity: "blocking",
+    failSeverity: "degraded",
     title: "code-review-graph unavailable for large repo",
     action:
-      "Stop repository work. Enable the local graph with `aih mcp --apply` and `aih tools --apply`, then continue only after `aih doctor` verifies a populated graph.",
+      "Warn once and continue from source and tests with bounded rg/fd reconnaissance — the graph is advisory, not a gate. Restore it with `aih mcp --apply` and `aih tools --apply`; repair it only when helper repair is the assigned task.",
   },
   "report.context-over-budget": {
     audience: "developer",

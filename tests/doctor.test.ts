@@ -133,8 +133,9 @@ describe("doctor — large-repo graph safety", () => {
     const res = await probe?.run(c);
     expect(res?.verdict).toBe("fail");
     expect(res?.code).toBe("scale.code-review-graph-missing");
-    expect(res?.detail).toContain("Stop repository work");
-    expect(res?.detail).toContain("verifies a populated graph");
+    expect(res?.detail).toContain("advisory, not a gate");
+    expect(res?.detail).toContain("warn once and continue with bounded rg/fd reconnaissance");
+    expect(res?.detail).not.toContain("Stop repository work");
   });
 
   it("passes large repos when the repo MCP graph is configured and uvx is available", async () => {

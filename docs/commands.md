@@ -46,8 +46,9 @@ Install the agent shell tools the harness leans on — `rg`/`fd`/`jq` plus
 `ast-grep`/`comby`/`tree`/`gh`/`code-review-graph` — through the platform package manager. Dry-run
 previews; `--apply` installs. A blocked install on a locked-down box is escalated as an IT ticket
 rather than failing silently. On large repositories, the generated agent canon treats
-`code-review-graph` as a fail-closed prerequisite: if it is unavailable, errors, or has no populated
-graph, repository work stops until the graph is repaired and verified populated.
+`code-review-graph` as advisory blast-area context, not a gate: if it is unavailable, errors, or has
+no populated graph, agents warn once and continue with bounded `rg`/`fd` reconnaissance, repairing
+the graph only when helper repair is the assigned task.
 
 Comby is optional; AIH does not provide a Windows-native installer for it. On Windows, when no
 user-managed compatible package manager provides Comby, `aih tools` emits manual guidance and its missing
