@@ -551,6 +551,27 @@ describe("gstack verify/report/inspect — defensive and unavailable branches", 
 // -- provision: re-provision ----------------------------------------------------
 
 describe("provision — re-provision stays deterministic and preserves first-bind pre-existing state", () => {
+  it("carries per-KEY preExisting when skillOverrides pre-existed the first bind (no owned container)", async () => {
+    // A user skillOverrides object already on disk: the first bind owns per-KEY
+    // (not the container), so a re-bind takes the per-key preExisting carry.
+    writeFileEnsuring(
+      join(home, CLAUDE_SETTINGS_PATH),
+      `${JSON.stringify({ skillOverrides: { "user-skill": "off" } }, null, 2)}\n`,
+    );
+    const first = await provisionFixture("reprov-preexist");
+    const denyFirst = first.result.lock.ownership.find((e) => e.target === DENY_TARGET);
+    // No collapsed container is owned (the container pre-existed); per-key entries instead.
+    expect(denyFirst).toBeUndefined();
+    const second = await first.adapter.provision(
+      { context: { declaration: first.declaration }, resolved: first.resolved },
+      first.disposition,
+    );
+    expect(second.lock.match).toBe(true);
+    // The user's own key survives both binds.
+    const settings = readJson(home, CLAUDE_SETTINGS_PATH);
+    expect((settings.skillOverrides as Record<string, string>)["user-skill"]).toBe("off");
+  });
+
   it("second provision yields identical settings bytes and absent-at-container preExisting", async () => {
     const first = await provisionFixture("rebind");
     const homeBytesAfterFirst = readFileSync(join(home, CLAUDE_SETTINGS_PATH), "utf8");
