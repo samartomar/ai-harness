@@ -213,11 +213,37 @@ export function projectContractDoc(
  * gaps; the LIVE gaps stay in the regenerated `project.md`/`project.json`. Kept short on
  * purpose — this is a checklist, not a playbook.
  */
+/**
+ * The install bullet when no package manager was detected: name the manager family
+ * for the detected language instead of assuming Node, and say so honestly when there
+ * is no manifest at all — an empty or non-Node repo must not be told to run npm.
+ */
+function installFallbackLine(dir: string, languages: readonly string[]): string {
+  if (languages.length === 0) {
+    return `- _No package manifest detected — record the install command in \`${dir}/project.json\` when one exists._`;
+  }
+  const lower = languages.map((l) => l.toLowerCase());
+  const has = (needle: string) => lower.some((l) => l.includes(needle));
+  if (has("typescript") || has("javascript") || has("node")) {
+    return "- Install dependencies with the repo's package manager (npm / pnpm / yarn / bun).";
+  }
+  if (has("python")) {
+    return "- Install dependencies with the repo's Python manager (uv / poetry / pip).";
+  }
+  if (has("rust")) {
+    return "- Install dependencies: `cargo fetch` (or let `cargo build` resolve them).";
+  }
+  if (lower.includes("go")) {
+    return "- Install dependencies: `go mod download`.";
+  }
+  return `- Install dependencies with the ${languages[0]} toolchain's package manager.`;
+}
+
 export function setupDoc(dir: string, c: ProjectContract): string {
   const install = installCommand(c.packageManager);
   const installLine = install
     ? `- Install dependencies: \`${install}\`.`
-    : "- Install dependencies with the repo's package manager (npm / pnpm / yarn / bun).";
+    : installFallbackLine(dir, c.languages);
   const verify: string[] = [];
   const partialChecks = [
     c.commands.typecheck,
@@ -273,6 +299,8 @@ export function setupDoc(dir: string, c: ProjectContract): string {
     "## 2. Turn on the guardrails (once per clone)",
     "",
     "- `git config core.hooksPath .githooks` — enables the pre-commit lint/test/secret hook.",
+    "- Install `pre-commit` (`pipx install pre-commit` or `brew install pre-commit`) — with",
+    "  `.pre-commit-config.yaml` present, the hook fails closed until the tool is installed.",
     "- `aih secrets --verify` — confirm no plaintext secrets are committed.",
     "",
     mcpToolingBlock(c),
