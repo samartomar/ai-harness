@@ -320,6 +320,32 @@ describe("provision — unconditional hook strip (both shapes, cross-event, reco
     expect(applied.strippedGstackHooks.PostToolUse).toHaveLength(2);
   });
 
+  it("re-strips gstack hooks re-added between binds and does not carry the strip record's preExisting", async () => {
+    const gstackBin = `${home.replace(/\\/g, "/")}/.claude/skills/gstack/bin`;
+    const first = await provisionFixture("strip-rebind");
+    // A gstack hook reappears after the first bind (e.g. a stray upstream write).
+    const settingsPath = join(home, CLAUDE_SETTINGS_PATH);
+    const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as Record<string, unknown>;
+    settings.hooks = {
+      SessionStart: [
+        { hooks: [{ type: "command", command: `${gstackBin}/gstack-session-update` }] },
+      ],
+    };
+    writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+    // Re-provision strips it again; the strip record is recorded fresh (never
+    // carried from the prior lock's preExisting).
+    const second = await first.adapter.provision(
+      { context: { declaration: first.declaration }, resolved: first.resolved },
+      first.disposition,
+    );
+    const after = readJson(home, CLAUDE_SETTINGS_PATH);
+    expect(after.hooks).toBeUndefined();
+    const stripEntry = second.lock.ownership.find((e) => e.target === GSTACK_HOOK_STRIP_TARGET);
+    expect(stripEntry).toBeDefined();
+    const applied = stripEntry?.applied as { strippedGstackHooks: Record<string, unknown[]> };
+    expect(applied.strippedGstackHooks.SessionStart).toHaveLength(1);
+  });
+
   it("strips a gstack-only hooks object down to nothing (the hooks key is removed)", async () => {
     writeFileEnsuring(
       join(home, CLAUDE_SETTINGS_PATH),
