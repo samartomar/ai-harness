@@ -1,7 +1,7 @@
 # ai-harness — agent bootloader (AGENTS.md)
 
 This file is not the full rulebook. It is the cross-tool entry point read by
-Codex, Antigravity, OpenCode, Zed, and Kimi; canonical guidance lives in
+Codex CLI, Antigravity, OpenCode, Zed, Kimi CLI, and Kiro; canonical guidance lives in
 `ai-coding/` (start at `RULE_ROUTER.md`). The shared block below is generated from `ai-coding/`; regenerate with `aih bootstrap-ai`.
 
 Per-tool notes: `ai-coding/adapters/`.
@@ -37,8 +37,8 @@ any non-trivial change; the essentials are inline below.
 
 - Validate at boundaries; reject malformed or hostile input — never coerce it. Fail closed on ambiguity.
 - Handle errors explicitly; no silent failures.
-- No secrets in code, config, fixtures, logs, or error text.
-- Do not open `.env*` or `secrets/**`; validate secret presence with `aih secrets --verify`.
+- No secrets in code, config, prompts, fixtures, logs, or error text.
+- Do not open `.env*` or `secrets/**` (`.env.example` / `.env.sample` are readable templates); validate secret presence with `aih secrets --verify`.
 - On large repos, code-review-graph is advisory blast-area context, not evidence or a gate. If it fails or is stale, warn once and continue from source and tests. Repair it only when helper repair is the assigned task.
 
 ## External action boundary

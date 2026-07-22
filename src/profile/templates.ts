@@ -41,9 +41,9 @@ function commandLines(stack: RepoStack, prefix: string): string[] {
   if (stack.formatCommand) out.push(`${prefix}Format: \`${stack.formatCommand}\``);
   if (stack.startCommand) out.push(`${prefix}Start: \`${stack.startCommand}\``);
   if (out.length === 0) {
-    out.push(
-      `${prefix}No test/build/lint/format/start script is defined — add one before relying on it.`,
-    );
+    // Not `${prefix}…` — the caller's prefix is "- Use ", which would mangle the
+    // empty state into "- Use No test/… script is defined".
+    out.push("- No test/build/lint/format/start script is defined — add one before relying on it.");
   }
   return out;
 }

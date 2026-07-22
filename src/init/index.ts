@@ -8,7 +8,7 @@ import {
 } from "../internals/baseline-sources.js";
 import { CANON_OPTION } from "../internals/canon-mode.js";
 import { detectFallbackNotice, isTargeted, resolveTargets } from "../internals/cli-detect.js";
-import { deepMerge } from "../internals/merge.js";
+import { deepMerge, isPlainObject } from "../internals/merge.js";
 import type { Action, CommandSpec, PlanContext, WriteAction } from "../internals/plan.js";
 import { doc, plan, writeJson } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
@@ -110,6 +110,23 @@ function mergeJsonWriteActions(first: WriteAction, next: WriteAction): WriteActi
 }
 
 /**
+ * MCP server names from any `.mcp.json` write already composed into the init plan.
+ * The mcp phase orders before contract precisely so that first-run contract
+ * synthesis reflects the surface this same run is about to write — from disk alone
+ * the contract would report "no servers" until a second run (first-run staleness).
+ */
+function plannedMcpServerNames(actions: readonly Action[]): readonly string[] {
+  const names = new Set<string>();
+  for (const a of actions) {
+    if (a.kind !== "write" || a.path !== ".mcp.json" || !isPlainObject(a.json)) continue;
+    const servers = (a.json as Record<string, unknown>).mcpServers;
+    if (!isPlainObject(servers)) continue;
+    for (const name of Object.keys(servers)) names.add(name);
+  }
+  return [...names];
+}
+
+/**
  * Orchestrate a full repo bootstrap by COMPOSING the repo-scoped capabilities —
  * profile, superpowers, bootstrap-ai, scaffold, contract, secrets, guardrails,
  * mcp, sandbox, usage — in that order (ECC is a separate gated step; init points at it). Each phase's actions come straight from
@@ -160,7 +177,9 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     const phaseCtx =
       phase.command.name === "mcp"
         ? { ...baseCtx, options: { ...ctx.options, mode: mcpMode } }
-        : baseCtx;
+        : phase.command.name === "contract"
+          ? { ...baseCtx, plannedMcpServers: plannedMcpServerNames(actions) }
+          : baseCtx;
     const sub = await phase.command.plan(phaseCtx);
     actions.push(doc(`init: ${phase.command.name}`, phase.headline));
     actions.push(...sub.actions);

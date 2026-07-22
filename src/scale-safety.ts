@@ -295,8 +295,8 @@ async function evaluateScaleSafety(
       code: "scale.code-review-graph-missing",
       detail:
         `${detailPrefix}${files} tracked files >= ${LARGE_REPO_FILE_THRESHOLD}; ${graph.detail}. ` +
-        "Install/enable code-review-graph before broad analysis: `aih mcp --apply` and `aih tools --apply`. " +
-        "Stop repository work until `aih doctor` verifies a populated graph.",
+        "code-review-graph is advisory, not a gate: warn once and continue with bounded rg/fd reconnaissance. " +
+        "Restore graph context with `aih mcp --apply` and `aih tools --apply`; repair it only when helper repair is the assigned task.",
     },
     emitDigest: true,
   };

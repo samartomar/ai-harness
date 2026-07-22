@@ -6,6 +6,39 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A first `aih init --apply` now synthesizes the repo contract from the planned MCP
+  surface: the contract phase composes after mcp and reads the staged `.mcp.json`
+  server names, so `project.json` / `project.md` no longer report "no servers
+  detected" in the same run that writes those servers. A second apply stays
+  byte-identical.
+- Generated canon consistency: the compact RULE_ROUTER renders the "External action
+  boundary" section its adapters cite; the shared block and the agent behavior core
+  render identical secrets invariants from one source; the `.env*` rule states the
+  `.env.example` / `.env.sample` exception the secrets enforcement already grants;
+  the empty-state Testing line routes through `aih contract` / `aih bootstrap-ai`
+  instead of inviting a hand edit in a regenerated file; the AGENTS.md reader list
+  derives from the CLI registry (adding Kiro alongside Kimi); the Cursor stack
+  rule's empty state no longer renders "Use No test/…".
+- `setup.md` first-run guidance is executable on a fresh clone: it names the
+  `pre-commit` install step beside the hook that fails closed without it, and the
+  dependency-install fallback follows the detected language instead of assuming
+  Node package managers.
+- The scaffolded `SETUP-TASKS.md` playbook now matches the canon's advisory graph
+  posture: when `large-repo graph safety` fails it tells the agent to warn once and
+  continue with bounded reconnaissance — code-review-graph is advisory, not a gate;
+  repair it only when helper repair is the assigned task — instead of ordering a
+  stop until the graph is repaired and populated.
+- The `large-repo graph safety` doctor probe and the `scale.code-review-graph-missing`
+  support finding carry that same advisory posture instead of ordering a stop until
+  `aih doctor` verifies a populated graph: warn once and continue with bounded rg/fd
+  reconnaissance; repair the graph only when helper repair is the assigned task. The
+  finding's severity drops from blocking to degraded, the probe still reports `fail`
+  so `aih doctor` and the report digest keep surfacing the missing helper, and the
+  `aih tools` docs now describe the advisory posture instead of a fail-closed
+  prerequisite.
+
 ## [2.11.0] - 2026-07-15
 
 ### Added
