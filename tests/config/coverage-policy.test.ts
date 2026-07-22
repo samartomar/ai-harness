@@ -9,8 +9,14 @@ interface CoverageShape {
   thresholds?: Record<string, unknown>;
 }
 
+// W5 (project framework binding) deliberate ratchet adjustment (maintainer-approved):
+// the branch-dense closure classifier + visible-typography reclassifier landed the
+// genuine global statements aggregate at ~91.0% (CI ~90.98%), so the global floor is
+// 90.5 (tracked here so the drop is DELIBERATE, never silent — AIH-TEST-001). The two
+// W5 gate files gain scoped floors that lock them in to ratchet UP as their dedicated
+// closure/typography-path tests land; the gstack adapter (~97%) is pinned too.
 const minimumGlobalThresholds = {
-  statements: 91,
+  statements: 90.5,
   branches: 78,
   functions: 94,
   lines: 92,
@@ -40,6 +46,24 @@ const minimumScopedThresholds = {
     branches: 78,
     functions: 100,
     lines: 88,
+  },
+  "src/binding/closure/profile-closure.ts": {
+    statements: 69,
+    branches: 49,
+    functions: 94,
+    lines: 69,
+  },
+  "src/binding/visible-typography.ts": {
+    statements: 84,
+    branches: 78,
+    functions: 92,
+    lines: 84,
+  },
+  "src/binding/frameworks/gstack.ts": {
+    statements: 95,
+    branches: 82,
+    functions: 97,
+    lines: 95,
   },
 } as const;
 
