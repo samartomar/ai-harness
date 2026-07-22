@@ -208,12 +208,6 @@ export function projectContractDoc(
 }
 
 /**
- * The first-run setup seed: install + verify, turn on the guardrails, close the gaps.
- * Write-once ({once:true}) — a team owns and edits it, so it embeds a snapshot of the
- * gaps; the LIVE gaps stay in the regenerated `project.md`/`project.json`. Kept short on
- * purpose — this is a checklist, not a playbook.
- */
-/**
  * The install bullet when no package manager was detected: name the manager family
  * for the detected language instead of assuming Node, and say so honestly when there
  * is no manifest at all — an empty or non-Node repo must not be told to run npm.
@@ -233,12 +227,18 @@ function installFallbackLine(dir: string, languages: readonly string[]): string 
   if (has("rust")) {
     return "- Install dependencies: `cargo fetch` (or let `cargo build` resolve them).";
   }
-  if (lower.includes("go")) {
+  if (has("go")) {
     return "- Install dependencies: `go mod download`.";
   }
   return `- Install dependencies with the ${languages[0]} toolchain's package manager.`;
 }
 
+/**
+ * The first-run setup seed: install + verify, turn on the guardrails, close the gaps.
+ * Write-once ({once:true}) — a team owns and edits it, so it embeds a snapshot of the
+ * gaps; the LIVE gaps stay in the regenerated `project.md`/`project.json`. Kept short on
+ * purpose — this is a checklist, not a playbook.
+ */
 export function setupDoc(dir: string, c: ProjectContract): string {
   const install = installCommand(c.packageManager);
   const installLine = install
