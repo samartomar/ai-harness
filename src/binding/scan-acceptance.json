@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 1,
-  "reason": "Maintainer-accepted content findings for the pinned framework binding trees: obra/superpowers@d884ae04edebef577e82ff7c4e143debd0bbec99 and samartomar/ECC@16563d4a30f17d097cc4629f6d97e02adf823016 (W4 ruling 2026-07-20; provenance in the internal roadmap SESSION-STATE attempt-2/attempt-3 records). Each entry is pinned to the file's exact content (sha256 of UTF-8 text, CRLF-normalized to LF): any substantive edit voids the acceptance. Regenerate by re-running the binding inspection over the pinned checkouts and re-reviewing every new entry.",
+  "schemaVersion": 2,
+  "reason": "Maintainer-accepted content findings for the pinned framework binding trees: obra/superpowers@d884ae04edebef577e82ff7c4e143debd0bbec99 and samartomar/ECC@16563d4a30f17d097cc4629f6d97e02adf823016 (W4 ruling 2026-07-20; provenance in the internal roadmap SESSION-STATE attempt-2/attempt-3 records). Each entry is pinned to the file's exact content (sha256 of UTF-8 text, CRLF-normalized to LF): any substantive edit voids the acceptance. schemaVersion 2 (a2) adds an optional per-entry \"profile\" that scopes an acceptance to one selected-profile closure; an entry without \"profile\" applies under any closure (the W4 full-tree default, so these entries are unchanged). Regenerate by re-running the binding inspection over the pinned checkouts and re-reviewing every new entry; a profile-scoped entry is only valid while its file remains in that profile's blocking closure.",
   "accepted": [
     {
       "repository": "obra/superpowers",

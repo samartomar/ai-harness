@@ -27,6 +27,23 @@ export {
   type ResolveRequest,
   type VerifyResult,
 } from "./adapter.js";
+// W5 — the selected-profile closure classifier (a2). The scan gate consumes this
+// to separate the executed/loaded runtime closure from materialized-inert source.
+export {
+  CLOSURE_CLASSIFIER_VERSION,
+  type ClosureInput,
+  type ClosureNode,
+  type ClosureSeed,
+  type ClosureSpec,
+  classificationOf,
+  classifyClosure,
+  type FindingClassification,
+  FULL_TREE_PROFILE,
+  fullTreeClosureSpec,
+  type HostLoadFacts,
+  type ProfileClosure,
+  type Reachability,
+} from "./closure/profile-closure.js";
 // W3f — plan-time feature-key validation shared by every W4+ adapter.
 export { assertKnownFeatureKeys, BindingFeatureKeyError } from "./features.js";
 // W4d — D10 cost-gate measurement record + ECC doctor rules.
@@ -217,6 +234,7 @@ export {
   writeBindingLockAtomic,
 } from "./lock.js";
 export {
+  type AcceptedContentFinding,
   acquireNpmTree,
   assertProvisionAuthorized,
   assertResolvedMatchesDeclaration,
@@ -228,6 +246,7 @@ export {
   type DimensionReport,
   type FastScanDeps,
   type FastScanPolicy,
+  type FrameworkCardDisclosure,
   type GitResolveDeps,
   type GitResolveRequest,
   type InspectTreeDeps,
@@ -235,19 +254,25 @@ export {
   type NpmMetadataFetcher,
   type NpmRegistryMetadata,
   type NpmResolveRequest,
+  type RawSourceOutcome,
   type ResolvedGitSource,
   type ResolvedNpmSource,
   type ResolvedSource,
+  readScanAcceptanceArtifact,
   resolvedSourceDigest,
   resolveGitSource,
   resolveNpmSource,
   runFastScanGate,
+  type ScanAcceptanceArtifact,
+  type ScanAcceptanceReport,
   type ScanCoverage,
   type ScanDisposition,
   type ScanFinding,
   type ScannableSource,
   type ScanSeverity,
   type ScanVerdict,
+  type SelectedProfileGate,
+  scanAcceptanceReport,
   scannableFromGit,
   W2_DEFAULT_INSPECTORS,
 } from "./scan-gate.js";
