@@ -298,3 +298,12 @@ export {
   readBindingDeclaration,
   safeParseBindingDeclaration,
 } from "./schema.js";
+// W5 rule-8 — gate-layer visible-typography reclassifier (advisory demotion of
+// hidden-unicode findings whose file is all prose/comment/human-string typography).
+export {
+  classifyFileTypography,
+  enumerateTypography,
+  type FileTypographyVerdict,
+  type TypographyAdvisory,
+  type TypographyOccurrence,
+} from "./visible-typography.js";

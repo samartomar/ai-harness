@@ -411,6 +411,64 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
     const critical = disposition.findings.find((f) => f.code === "trust.malicious-code");
     expect(critical?.classification).toBe("closure");
   });
+
+  // -- rule-8 visible-typography demotion at the gate -----------------------
+
+  const BANNER_TS = "/*\n * ────────────────────\n * banner\n */\nexport const value = 1;\n";
+
+  function tsBuildInputSpec(): ClosureSpec {
+    return {
+      profile: GSTACK_PROFILE,
+      classifierVersion: 1,
+      mode: "seeded",
+      seeds: [{ path: "browse/src/index.ts", reachability: "build-input" }],
+    };
+  }
+
+  it("rule 8 — an all-advisory closure file demotes to advisory (ALLOW; raw high preserved)", async () => {
+    const disposition = await gateOver(
+      { "browse/src/index.ts": BANNER_TS },
+      { posture: "vibe", closureSpec: tsBuildInputSpec(), hostFacts: HOST_FACTS_A },
+    );
+    expect(disposition.selectedProfileGate).toBe("ALLOW");
+    expect(disposition.rawSourceScan).toBe("FINDINGS_PRESENT");
+    expect(disposition.disclosure.visibleTypographyAdvisories.total).toBeGreaterThan(0);
+    expect(disposition.disclosure.visibleTypographyAdvisories.files).toBeGreaterThan(0);
+    expect(disposition.disclosure.closureFindings.high).toBe(0);
+    const finding = disposition.findings.find((f) => f.code === "trust.hidden-unicode");
+    expect(finding?.severity).toBe("high"); // raw detector severity preserved
+    expect(finding?.advisory?.reclassifiedFrom).toBe("high");
+    expect(finding?.advisory?.contextClass).toBe("comment");
+  });
+
+  it("rule 8 — the legacy (no closureSpec) path does NOT reclassify; the same file BLOCKS", async () => {
+    const disposition = await gateOver({ "browse/src/index.ts": BANNER_TS }, { posture: "vibe" });
+    expect(disposition.verdict).toBe("block");
+    const finding = disposition.findings.find((f) => f.code === "trust.hidden-unicode");
+    expect(finding?.advisory).toBeUndefined();
+  });
+
+  it("rule 8 — per-file roll-up: one code-position char keeps the whole file blocking", async () => {
+    // advisory box-drawing comment PLUS a box-drawing char at a code position.
+    const mixed = "/*\n * ─────\n */\nconst ─ = 1;\n";
+    const disposition = await gateOver(
+      { "browse/src/index.ts": mixed },
+      { posture: "vibe", closureSpec: tsBuildInputSpec(), hostFacts: HOST_FACTS_A },
+    );
+    expect(disposition.selectedProfileGate).toBe("BLOCK");
+    const finding = disposition.findings.find((f) => f.code === "trust.hidden-unicode");
+    expect(finding?.advisory).toBeUndefined();
+  });
+
+  it("rule 8 — a W4 full-tree closure does NOT reclassify (byte-identical: the file BLOCKS)", async () => {
+    const disposition = await gateOver(
+      { "browse/src/index.ts": BANNER_TS },
+      { posture: "vibe", closureSpec: fullTreeClosureSpec(), hostFacts: HOST_FACTS_A },
+    );
+    expect(disposition.verdict).toBe("block");
+    const finding = disposition.findings.find((f) => f.code === "trust.hidden-unicode");
+    expect(finding?.advisory).toBeUndefined();
+  });
 });
 
 // -- W4 full-tree regression (fixture 9): outcomes unchanged vs legacy --------

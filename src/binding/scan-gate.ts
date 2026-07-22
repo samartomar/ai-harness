@@ -30,6 +30,7 @@ import {
 } from "./closure/profile-closure.js";
 import scanAcceptanceJson from "./scan-acceptance.json";
 import { type BindingDeclaration, BindingNpmSourceSchema, isBareRepositorySlug } from "./schema.js";
+import { classifyFileTypography, type TypographyAdvisory } from "./visible-typography.js";
 
 /**
  * Fast-scan gate (D12). No adapter executes upstream code before a policy
@@ -442,6 +443,11 @@ export interface ScanFinding {
   /** Precise reachability under {@link classification} (audit granularity;
    * `unknown` rolls up INTO `closure` for the gate but is disclosed distinctly). */
   closureReachability?: Reachability | "non-materialized";
+  /** Gate-layer visible-typography demotion overlay (W5 rule-8): present ONLY on a
+   * `trust.hidden-unicode` finding whose file is ALL advisory typography under a
+   * seeded closure. The raw `severity` stays "high" (raw counts unaffected); a
+   * finding carrying this is treated as NON-gating by {@link decide}. */
+  advisory?: TypographyAdvisory;
 }
 
 export interface DimensionInspectionContext {
@@ -1005,6 +1011,9 @@ export interface FrameworkCardDisclosure {
   closureFindings: { total: number; high: number; unknownReachability: number };
   inertFindings: { total: number; high: number };
   acceptedRuntimeFindings: { total: number };
+  /** Rule-8 visible-typography demotions: high `trust.hidden-unicode` findings whose
+   * file is all advisory typography, reported (non-blocking) rather than accepted. */
+  visibleTypographyAdvisories: { total: number; files: number };
   residualRisk: { blockingUnaccepted: number; unknownReachability: number; inertReported: number };
 }
 
@@ -1068,6 +1077,11 @@ export interface AcceptedContentFinding {
   path: string;
   fileSha256: string;
   profile?: string;
+  /** Audit metadata (rule-8): the human-reviewed class this acceptance falls under
+   * (e.g. EXPECTED_SKILL_WORKFLOW_CONTROL). Does NOT affect the match key. */
+  acceptanceClass?: string;
+  /** Audit metadata (rule-8): the runtime conditions the acceptance is contingent on. */
+  conditions?: readonly string[];
 }
 
 const AcceptedContentFindingSchema = z
@@ -1077,6 +1091,8 @@ const AcceptedContentFindingSchema = z
     path: z.string().min(1),
     fileSha256: z.string().regex(SHA256_HEX),
     profile: z.string().min(1).optional(),
+    acceptanceClass: z.string().min(1).optional(),
+    conditions: z.array(z.string().min(1)).optional(),
   })
   .strict();
 
@@ -1192,15 +1208,18 @@ function rankOf(severity: ScanSeverity): number {
 }
 
 /** Whether a finding gates. Legacy (no closure) ⇒ every finding blocks; closure-aware
- * ⇒ only `classification === "closure"` (control/build-input/model-loaded/unknown) blocks. */
+ * ⇒ only `classification === "closure"` blocks, and a visible-typography `advisory`
+ * demotion is non-gating even though its file is in the closure. */
 function isBlockingFinding(finding: ScanFinding, closureApplied: boolean): boolean {
-  return closureApplied ? finding.classification === "closure" : true;
+  if (!closureApplied) return true;
+  return finding.classification === "closure" && finding.advisory === undefined;
 }
 
 function buildDisclosure(
   findings: readonly ScanFinding[],
   blocking: readonly ScanFinding[],
   inert: readonly ScanFinding[],
+  advisories: readonly ScanFinding[],
 ): FrameworkCardDisclosure {
   const high = (finding: ScanFinding): boolean => rankOf(finding.severity) >= rankOf("high");
   const bySeverity: Record<ScanSeverity, number> = {
@@ -1215,17 +1234,58 @@ function buildDisclosure(
   const unknownReachability = blockingHigh.filter(
     (finding) => finding.closureReachability === "unknown",
   ).length;
+  const advisoryFiles = new Set(
+    advisories.map((finding) => finding.path).filter((path): path is string => path !== undefined),
+  );
   return {
     rawFindings: { total: findings.length, high: findings.filter(high).length, bySeverity },
     closureFindings: { total: blocking.length, high: blockingHigh.length, unknownReachability },
     inertFindings: { total: inert.length, high: inert.filter(high).length },
     acceptedRuntimeFindings: { total: blocking.filter((f) => f.accepted === true).length },
+    visibleTypographyAdvisories: { total: advisories.length, files: advisoryFiles.size },
     residualRisk: {
       blockingUnaccepted: blockingHigh.filter((f) => f.accepted !== true).length,
       unknownReachability,
       inertReported: inert.filter(high).length,
     },
   };
+}
+
+/**
+ * Compute the visible-typography advisory overlay for a seeded closure (rule-8).
+ * Reads each `trust.hidden-unicode` finding's file ONCE (per-file roll-up) and,
+ * when every non-ASCII occurrence is advisory-eligible, records a demotion keyed
+ * by path. ACTIVE ONLY for a seeded closure with a reader — legacy and W4
+ * full-tree paths never reclassify (byte-identical). Fail-closed: an unreadable
+ * or non-demotable file yields no advisory, so its finding stays high/blocking.
+ */
+function computeTypographyAdvisories(
+  findings: readonly ScanFinding[],
+  closure: ProfileClosure | undefined,
+  reader: ((rel: string) => string | undefined) | undefined,
+): Map<string, TypographyAdvisory> {
+  const advisories = new Map<string, TypographyAdvisory>();
+  if (closure === undefined || closure.spec.mode !== "seeded" || reader === undefined) {
+    return advisories;
+  }
+  const paths = new Set<string>();
+  for (const finding of findings) {
+    if (finding.code === "trust.hidden-unicode" && finding.path !== undefined) {
+      paths.add(finding.path);
+    }
+  }
+  for (const path of paths) {
+    const text = reader(path);
+    if (text === undefined) continue;
+    const verdict = classifyFileTypography(path, text);
+    if (verdict.demote) {
+      advisories.set(path, {
+        reclassifiedFrom: "high",
+        contextClass: verdict.contextClass ?? "visible-typography",
+      });
+    }
+  }
+  return advisories;
 }
 
 /**
@@ -1239,6 +1299,7 @@ function decide(
   reports: readonly DimensionReport[],
   policy: FastScanPolicy,
   closure?: ProfileClosure,
+  typographyReader?: (rel: string) => string | undefined,
 ): DecisionResult {
   const collected: ScanFinding[] = [];
   for (const report of reports) {
@@ -1246,6 +1307,7 @@ function decide(
     if (report.status === "missing") collected.push(coverageFinding(report));
   }
   const closureApplied = closure !== undefined;
+  const advisoryByPath = computeTypographyAdvisories(collected, closure, typographyReader);
 
   // Acceptance marking: a maintainer-accepted (code, path, fileSha256) triple
   // neutralizes exactly that content-pinned finding. Critical findings are
@@ -1280,7 +1342,14 @@ function decide(
         classification,
         closureReachability: classified.reachability,
       };
-      blockingHere = classification === "closure";
+      // Rule-8 visible-typography demotion: a hidden-unicode finding whose file is
+      // all advisory typography is reported but does NOT gate (raw severity stays).
+      const advisory =
+        finding.code === "trust.hidden-unicode" && finding.path !== undefined
+          ? advisoryByPath.get(finding.path)
+          : undefined;
+      if (advisory !== undefined) marked = { ...marked, advisory };
+      blockingHere = classification === "closure" && advisory === undefined;
     }
     // Acceptance only marks a BLOCKING finding — accepting an inert finding is a
     // structural no-op (it never gated), so the mark is withheld to keep the
@@ -1301,6 +1370,7 @@ function decide(
   const inert = closureApplied
     ? findings.filter((finding) => finding.classification === "materialized-inert")
     : [];
+  const advisories = findings.filter((finding) => finding.advisory !== undefined);
 
   const blockingUnacceptedHigh = blocking.some(
     (finding) => rankOf(finding.severity) >= rankOf("high") && finding.accepted !== true,
@@ -1342,7 +1412,7 @@ function decide(
     gate,
     rawSourceScan,
     findings,
-    disclosure: buildDisclosure(findings, blocking, inert),
+    disclosure: buildDisclosure(findings, blocking, inert, advisories),
     requiredAcceptanceKeys,
   };
 }
@@ -1353,8 +1423,9 @@ function produceDisposition(
   reports: readonly DimensionReport[],
   producedAt: string,
   closure?: ProfileClosure,
+  typographyReader?: (rel: string) => string | undefined,
 ): ScanDisposition {
-  const decision = decide(reports, policy, closure);
+  const decision = decide(reports, policy, closure, typographyReader);
   const closureBlock =
     closure === undefined
       ? undefined
@@ -1481,13 +1552,26 @@ export function runFastScanGate(
     policy.closureSpec === undefined
       ? undefined
       : computeClosureForSource(source, policy.closureSpec, policy.hostFacts, deps);
+  // The visible-typography reclassifier re-reads flagged files from the derived
+  // checkout; supplied only when a closure is active (it is otherwise inert).
+  const typographyReader =
+    closure === undefined
+      ? undefined
+      : (rel: string): string | undefined => readTextSafe(join(source.treePath, rel));
   // A source with no identity list can never certify coverage, so it must not ride
   // a warm cache to an allow: skip the cache read entirely and fall through to the
   // fail-closed recompute below.
   const cached =
     source.identityFiles === undefined ? undefined : readScanCache(deps.cacheHome, source.digest);
   if (cached !== undefined) {
-    return produceDisposition(source.digest, policy, cached.reports, cached.scannedAt, closure);
+    return produceDisposition(
+      source.digest,
+      policy,
+      cached.reports,
+      cached.scannedAt,
+      closure,
+      typographyReader,
+    );
   }
   // One inventory serves BOTH the inspectors and the identity-coverage check, so
   // the digest and the scanned fileset can never silently diverge.
@@ -1511,7 +1595,14 @@ export function runFastScanGate(
       reports: allReports.map((report) => ({ ...report, findings: [...report.findings] })),
     });
   }
-  return produceDisposition(source.digest, policy, allReports, scannedAt, closure);
+  return produceDisposition(
+    source.digest,
+    policy,
+    allReports,
+    scannedAt,
+    closure,
+    typographyReader,
+  );
 }
 
 /**

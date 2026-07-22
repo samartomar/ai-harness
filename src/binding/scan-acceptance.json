@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "reason": "Maintainer-accepted content findings for the pinned framework binding trees: obra/superpowers@d884ae04edebef577e82ff7c4e143debd0bbec99 and samartomar/ECC@16563d4a30f17d097cc4629f6d97e02adf823016 (W4 ruling 2026-07-20; provenance in the internal roadmap SESSION-STATE attempt-2/attempt-3 records). Each entry is pinned to the file's exact content (sha256 of UTF-8 text, CRLF-normalized to LF): any substantive edit voids the acceptance. schemaVersion 2 (a2) adds an optional per-entry \"profile\" that scopes an acceptance to one selected-profile closure; an entry without \"profile\" applies under any closure (the W4 full-tree default, so these entries are unchanged). Regenerate by re-running the binding inspection over the pinned checkouts and re-reviewing every new entry; a profile-scoped entry is only valid while its file remains in that profile's blocking closure.",
+  "reason": "Maintainer-accepted content findings for the pinned framework binding trees: obra/superpowers@d884ae04edebef577e82ff7c4e143debd0bbec99 and samartomar/ECC@16563d4a30f17d097cc4629f6d97e02adf823016 (W4 ruling 2026-07-20; provenance in the internal roadmap SESSION-STATE attempt-2/attempt-3 records). Each entry is pinned to the file's exact content (sha256 of UTF-8 text, CRLF-normalized to LF): any substantive edit voids the acceptance. schemaVersion 2 (a2) adds an optional per-entry \"profile\" that scopes an acceptance to one selected-profile closure; an entry without \"profile\" applies under any closure (the W4 full-tree default, so these entries are unchanged). Regenerate by re-running the binding inspection over the pinned checkouts and re-reviewing every new entry; a profile-scoped entry is only valid while its file remains in that profile's blocking closure. Per the 2026-07-21 rule-8 ruling, the ~290 reachable visible-typography trust.hidden-unicode findings are NOT accepted here — they are demoted to advisory at the gate layer (see src/binding/visible-typography.ts), which preserves the raw detector evidence while keeping bidi/zero-width/control/format/confusable/unknown-context occurrences blocking. The only garrytan/gstack entries are the three human-reviewed trust.prompt-injection SKILL.md workflow-control acceptances (profile claude:prefix:quiet:no-plan-tune-hooks), with optional acceptanceClass/conditions audit metadata that does not affect the (code, path, fileSha256) match key.",
   "accepted": [
     {
       "repository": "obra/superpowers",
@@ -12679,6 +12679,38 @@
       "code": "trust.hidden-unicode",
       "path": "WORKING-CONTEXT.md",
       "fileSha256": "c25504c5ce551b4282eb804c5d783e06c4055aa64d5c09e048e5c37b2218b5a5"
+    },
+    {
+      "repository": "garrytan/gstack",
+      "profile": "claude:prefix:quiet:no-plan-tune-hooks",
+      "code": "trust.prompt-injection",
+      "path": "document-generate/SKILL.md",
+      "fileSha256": "3d97c417c753900f906369590d1721614a6df49530ec4c44c05ba895300f891b",
+      "acceptanceClass": "EXPECTED_SKILL_WORKFLOW_CONTROL"
+    },
+    {
+      "repository": "garrytan/gstack",
+      "profile": "claude:prefix:quiet:no-plan-tune-hooks",
+      "code": "trust.prompt-injection",
+      "path": "ios-qa/SKILL.md",
+      "fileSha256": "cb6cdb1e794ced65f1a343e7671ecc2ff45276f30fc3fdd3af44e4429adcbf94",
+      "acceptanceClass": "EXPECTED_SKILL_WORKFLOW_CONTROL"
+    },
+    {
+      "repository": "garrytan/gstack",
+      "profile": "claude:prefix:quiet:no-plan-tune-hooks",
+      "code": "trust.prompt-injection",
+      "path": "office-hours/SKILL.md",
+      "fileSha256": "b5a0b9d72f4a992ba0b52cd7b27d15e7e0e29e35c4b775477ec3a031c47f5c92",
+      "acceptanceClass": "EXPECTED_CROSS_MODEL_BOUNDARY_INSTRUCTION",
+      "conditions": [
+        "codex-reviews-default-off",
+        "explicit-user-opt-in",
+        "enterprise-policy-may-disable",
+        "codex-read-only",
+        "cross-model-network-web-search-disclosed",
+        "runtime-proof-no-codex-process-or-network-when-disabled"
+      ]
     }
   ]
 }

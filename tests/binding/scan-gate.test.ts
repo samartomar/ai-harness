@@ -613,4 +613,27 @@ describe("maintainer-accepted content findings (scan-acceptance baseline)", () =
       expect(entry.path).not.toContain("\\");
     }
   });
+
+  it("carries exactly the three ruled gstack SKILL.md prompt-injection acceptances (rule-8)", () => {
+    const artifact = readScanAcceptanceArtifact();
+    const gstack = artifact.accepted.filter((entry) => entry.repository === "garrytan/gstack");
+    // Rule-8: the ~290 visible-typography hidden-unicode findings are demoted at the
+    // gate, NOT accepted — so there must be NO gstack hidden-unicode acceptances.
+    expect(gstack.filter((entry) => entry.code === "trust.hidden-unicode")).toHaveLength(0);
+    // Exactly the three human-reviewed prompt-injection workflow-control entries.
+    expect(gstack).toHaveLength(3);
+    const byPath = new Map(gstack.map((entry) => [entry.path, entry]));
+    const doc = byPath.get("document-generate/SKILL.md");
+    const ios = byPath.get("ios-qa/SKILL.md");
+    const office = byPath.get("office-hours/SKILL.md");
+    for (const entry of [doc, ios, office]) {
+      expect(entry?.code).toBe("trust.prompt-injection");
+      expect(entry?.profile).toBe("claude:prefix:quiet:no-plan-tune-hooks");
+    }
+    expect(doc?.acceptanceClass).toBe("EXPECTED_SKILL_WORKFLOW_CONTROL");
+    expect(ios?.acceptanceClass).toBe("EXPECTED_SKILL_WORKFLOW_CONTROL");
+    expect(office?.acceptanceClass).toBe("EXPECTED_CROSS_MODEL_BOUNDARY_INSTRUCTION");
+    expect(office?.conditions).toContain("codex-reviews-default-off");
+    expect(office?.conditions).toContain("runtime-proof-no-codex-process-or-network-when-disabled");
+  });
 });
