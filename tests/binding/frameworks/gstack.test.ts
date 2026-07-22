@@ -290,14 +290,14 @@ describe("stripGstackHooks — path/substring across ALL events + tags, never ta
 
 // -- D7 subset identity (pure over fixtures) -----------------------------------
 
-describe("gstackInstalledSubsetIdentity — inventory-restricted, patch-normalized", () => {
+describe("gstackInstalledSubsetIdentity — inventory-restricted, exact-byte", () => {
   function faithfulCopy(treePath: string, files: readonly string[], installRoot: string): void {
+    // The real install-root copy is a verbatim cp -R (RAW bytes) — patch-names
+    // runs on the source afterward and only the separate wrapper dirs are
+    // patched, so a faithful install-root copy is exact scanned bytes.
     for (const rel of files) {
       const raw = readFileSync(join(treePath, ...rel.split("/")));
-      const segments = rel.split("/");
-      const eligible = segments.length === 2 && segments[1] === "SKILL.md";
-      const out = eligible ? applyGstackNamePatch(raw.toString("utf8")) : raw.toString("utf8");
-      writeFileEnsuring(join(installRoot, ...segments), out);
+      writeFileEnsuring(join(installRoot, ...rel.split("/")), raw.toString("utf8"));
     }
   }
 
@@ -306,7 +306,7 @@ describe("gstackInstalledSubsetIdentity — inventory-restricted, patch-normaliz
     return resolved;
   }
 
-  it("a faithful patched install digests to the resolved tree digest (match honest)", () => {
+  it("a faithful raw install digests to the resolved tree digest (match honest)", () => {
     const resolved = resolvedFixture("d7-faithful");
     const installRoot = join(home, GSTACK_INSTALL_ROOT_REL);
     faithfulCopy(resolved.treePath, resolved.files ?? [], installRoot);
@@ -327,14 +327,14 @@ describe("gstackInstalledSubsetIdentity — inventory-restricted, patch-normaliz
     expect(identity.loadedDigest).toBe(resolved.treeDigest);
   });
 
-  it("an unpatched top-level SKILL.md is a content mismatch (the patch is EXPECTED)", () => {
-    const resolved = resolvedFixture("d7-unpatched");
+  it("a WRONGLY name-patched top-level SKILL.md is a content mismatch (reality leaves the install root raw)", () => {
+    const resolved = resolvedFixture("d7-wrongpatch");
     const installRoot = join(home, GSTACK_INSTALL_ROOT_REL);
     for (const rel of resolved.files ?? []) {
-      writeFileEnsuring(
-        join(installRoot, ...rel.split("/")),
-        readFileSync(join(resolved.treePath, ...rel.split("/")), "utf8"),
-      );
+      const raw = readFileSync(join(resolved.treePath, ...rel.split("/")), "utf8");
+      const segments = rel.split("/");
+      const eligible = segments.length === 2 && segments[1] === "SKILL.md";
+      writeFileEnsuring(join(installRoot, ...segments), eligible ? applyGstackNamePatch(raw) : raw);
     }
     const identity = gstackInstalledSubsetIdentity(resolved, installRoot);
     expect(identity.mismatches).toContain("content:qa/SKILL.md");

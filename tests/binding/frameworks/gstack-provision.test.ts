@@ -344,9 +344,9 @@ describe("provision — D7 installed-subset mismatch fails closed and unwinds th
     expect(readBindingLock(root).present).toBe(false);
   });
 
-  it("an unpatched install (name patch skipped) is a D7 mismatch — the patch is part of the expectation", async () => {
-    const installer = fixtureInstaller({ skipNamePatch: true });
-    await expect(provisionFixture("d7-unpatched", { installer })).rejects.toThrow(
+  it("an install-root copy that was wrongly name-patched is a D7 mismatch (reality leaves it raw)", async () => {
+    const installer = fixtureInstaller({ patchInstallRoot: true });
+    await expect(provisionFixture("d7-wrongpatch", { installer })).rejects.toThrow(
       /identity mismatch/,
     );
     expect(readBindingLock(root).present).toBe(false);

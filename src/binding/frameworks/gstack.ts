@@ -346,12 +346,6 @@ export function applyGstackNamePatch(content: string): string {
   });
 }
 
-/** A tree-relative path eligible for the name patch: a top-level `<dir>/SKILL.md`. */
-function isPatchEligible(rel: string): boolean {
-  const segments = rel.replace(/\\/g, "/").split("/");
-  return segments.length === 2 && segments[1] === "SKILL.md";
-}
-
 /** Apply the patch rule to a NAME (dir/frontmatter identity), not file content. */
 function patchIdentity(name: string): string {
   return name === "gstack" || name.startsWith("gstack-") ? name : `gstack-${name}`;
@@ -457,17 +451,25 @@ export interface GstackInstalledIdentity {
 /**
  * The D7 identity for a shared-runtime install: the INSTALLED
  * `~/.claude/skills/gstack` subtree RESTRICTED to the scanned file inventory,
- * with the deterministic name patch applied to EXPECTATIONS (top-level
- * `<dir>/SKILL.md` frontmatter names gain the `gstack-` prefix on install — a
- * faithful install differs from the scanned bytes in exactly that rule).
- * Everything the install materializes OUTSIDE the inventory (node_modules,
- * build outputs, `.git`) is EXCLUDED from identity and disclosed on the card.
+ * compared as EXACT scanned bytes.
  *
- * When every inventory file is present and byte-equal to its expectation, the
- * subset is content-identical to the scanned tree modulo the deterministic
- * patch, and `loadedDigest` IS the resolved tree digest (the lock's
- * `match === (scannedDigest === loadedDigest)` invariant holds honestly). Any
- * deviation yields a distinct manifest digest instead, so `match` is false.
+ * Measured against the real upstream setup (W5 adapter-acceptance, 2026-07-22):
+ * the global-branch install does a verbatim whole-tree `cp -R` of the source
+ * into `~/.claude/skills/gstack` BEFORE `gstack-patch-names` runs, and
+ * patch-names mutates the SOURCE (then the wrappers are linked from it) — so
+ * the install-root copy is UNPATCHED and must equal the scanned bytes exactly,
+ * including every top-level `<dir>/SKILL.md`. The `gstack-` name prefix lives
+ * only in the SEPARATE wrapper dirs (`~/.claude/skills/gstack-<name>/`), which
+ * are NOT in the scanned inventory; the reconciliation step already proves the
+ * wrapper SET equals the derived inventory. Everything the install
+ * materializes OUTSIDE the inventory (node_modules, build outputs, `.git`) is
+ * EXCLUDED from identity and disclosed on the card.
+ *
+ * When every inventory file is present and byte-equal, the subset is
+ * content-identical to the scanned tree and `loadedDigest` IS the resolved
+ * tree digest (the lock's `match === (scannedDigest === loadedDigest)`
+ * invariant holds honestly). Any deviation yields a distinct manifest digest
+ * instead, so `match` is false.
  */
 export function gstackInstalledSubsetIdentity(
   resolved: ResolvedGitSource,
@@ -490,12 +492,7 @@ export function gstackInstalledSubsetIdentity(
     const installed = readFileSync(installedPath);
     manifest.push({ path: rel, sha256: sha256HexOfBytes(installed) });
     const scanned = readFileSync(join(resolved.treePath, rel));
-    if (isPatchEligible(rel)) {
-      const expected = applyGstackNamePatch(scanned.toString("utf8"));
-      if (installed.toString("utf8") !== expected) mismatches.push(`content:${rel}`);
-    } else if (!installed.equals(scanned)) {
-      mismatches.push(`content:${rel}`);
-    }
+    if (!installed.equals(scanned)) mismatches.push(`content:${rel}`);
   }
   const loadedDigest =
     mismatches.length === 0

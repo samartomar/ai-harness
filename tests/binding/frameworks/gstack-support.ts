@@ -210,16 +210,19 @@ export interface FixtureInstallerOptions {
   junk?: boolean;
   /** Mutate the install root after the faithful copy (D7 tamper scenarios). */
   tamperInstallRoot?: (installRootAbs: string) => void;
-  /** Skip the deterministic name patch on the install-root copy (D7 mismatch). */
-  skipNamePatch?: boolean;
+  /** Incorrectly name-patch the install-root whole-tree copy (real setup leaves
+   * it RAW — patch-names runs on the source after the copy). Induces a genuine
+   * D7 mismatch on the top-level SKILL.md files. */
+  patchInstallRoot?: boolean;
 }
 
 /**
- * A fixture installer replicating the measured install surface: whole-tree copy
- * into `~/.claude/skills/gstack` with the deterministic name patch applied, one
- * wrapper dir per top-level skill (patched SKILL.md), the `_gstack-command`
- * root alias (frontmatter `name: gstack`), and optional junk/aliases/deviations.
- * Executes NO upstream code.
+ * A fixture installer replicating the measured install surface: a verbatim
+ * whole-tree copy into `~/.claude/skills/gstack` (RAW — the real setup copies
+ * before patch-names runs on the source), one wrapper dir per top-level skill
+ * (PATCHED SKILL.md), the `_gstack-command` root alias (frontmatter
+ * `name: gstack`), and optional junk/aliases/deviations. Executes NO upstream
+ * code.
  */
 export function fixtureInstaller(opts: FixtureInstallerOptions = {}): {
   installer: GstackInstaller;
@@ -235,7 +238,10 @@ export function fixtureInstaller(opts: FixtureInstallerOptions = {}): {
       const raw = readFileSync(join(resolved.treePath, ...rel.split("/")), "utf8");
       const segments = rel.split("/");
       const eligible = segments.length === 2 && segments[1] === "SKILL.md";
-      const out = eligible && opts.skipNamePatch !== true ? applyGstackNamePatch(raw) : raw;
+      // The install-root whole-tree copy is RAW in reality (patch-names runs on
+      // the source AFTER this copy). patchInstallRoot forces the WRONG,
+      // mismatch-inducing behavior for the D7 negative test.
+      const out = eligible && opts.patchInstallRoot === true ? applyGstackNamePatch(raw) : raw;
       writeFileEnsuring(join(installRoot, ...segments), out);
     }
     if (opts.junk === true) {
