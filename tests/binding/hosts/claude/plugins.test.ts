@@ -39,6 +39,7 @@ import {
 import {
   BindingScanError,
   type DimensionInspector,
+  type ResolvedGitSource,
   runFastScanGate,
   type ScanDisposition,
   type ScannableSource,
@@ -79,6 +80,33 @@ const producedCritical: DimensionInspector = {
   }),
 };
 
+describe("windows claude shim routing (cmd /c)", () => {
+  function recording(): { runner: Runner; calls: string[][] } {
+    const calls: string[][] = [];
+    const runner: Runner = async (argv) => {
+      calls.push([...argv]);
+      return { code: 0, stdout: "", stderr: "" };
+    };
+    return { runner, calls };
+  }
+
+  // npm ships the claude CLI as a .cmd shim on Windows, which Node's execFile
+  // cannot spawn directly (ENOENT / EINVAL) — the canon route is execArgv's
+  // cmd /c wrap, the same fix the harness uses for npm/npx (W4 live-run
+  // rehearsal regression).
+  it("routes the claude argv through cmd /c on windows", async () => {
+    const { runner, calls } = recording();
+    await marketplaceAdd({ runner, env: { USERPROFILE: home, AIH_PLATFORM: "windows" } }, root);
+    expect(calls[0]).toEqual(["cmd", "/c", "claude", "plugin", "marketplace", "add", root]);
+  });
+
+  it("keeps the raw claude argv on non-windows platforms", async () => {
+    const { runner, calls } = recording();
+    await marketplaceAdd({ runner, env: { USERPROFILE: home, AIH_PLATFORM: "linux" } }, root);
+    expect(calls[0]).toEqual(["claude", "plugin", "marketplace", "add", root]);
+  });
+});
+
 /** A tree of `{ relPath: contents }` under a fresh dir. */
 function tree(name: string, files: Record<string, string>): string {
   const dir = join(cacheHome, name);
@@ -91,19 +119,14 @@ function tree(name: string, files: Record<string, string>): string {
 }
 
 /**
- * A scanned source with a GENUINE brand-protected disposition minted by the real
- * gate over an on-disk tree (no git, no network): identityFiles are exactly the
- * digest's fileset so coverage is complete and the gate allows.
+ * Mint a GENUINE brand-protected disposition + resolved source over an
+ * ALREADY-BUILT on-disk tree (no git, no network): identityFiles are exactly
+ * the digest's fileset so coverage is complete and the gate allows.
  */
-function scannedFixture(
-  name: string,
-  files: Record<string, string>,
+function mintFixture(
+  dir: string,
   inspectors: DimensionInspector[] = [producedClean],
-): {
-  resolved: import("../../../../src/binding/scan-gate.js").ResolvedGitSource;
-  disposition: ScanDisposition;
-} {
-  const dir = tree(name, files);
+): { resolved: ResolvedGitSource; disposition: ScanDisposition } {
   const topLevel = readdirSync(dir)
     .filter((n) => n !== ".git")
     .sort();
@@ -125,6 +148,42 @@ function scannedFixture(
     },
     disposition,
   };
+}
+
+/**
+ * The default `.claude-plugin/marketplace.json` + `.claude-plugin/plugin.json`
+ * every `bindPlugin` fixture needs (empirically corrected: the D7 anchor is
+ * now the plugin's own SOURCE SUBTREE, resolved via these manifests — see
+ * `pluginSourceSubtreeDigest`). `source: "./"` is the degenerate
+ * single-plugin-at-root case (e.g. obra/superpowers): the subtree IS the
+ * whole checkout, so its digest equals `resolved.treeDigest` — every EXISTING
+ * digest assertion in this file stays valid unchanged.
+ */
+function pluginManifestFiles(
+  plugin: string = PLUGIN,
+  source = "./",
+  version = "1.0.0",
+): Record<string, string> {
+  return {
+    ".claude-plugin/marketplace.json": JSON.stringify({
+      name: MARKETPLACE,
+      plugins: [{ name: plugin, source }],
+    }),
+    ".claude-plugin/plugin.json": JSON.stringify({ name: plugin, version }),
+  };
+}
+
+/**
+ * A scanned fixture with the default single-plugin-at-root manifests merged
+ * in ahead of the caller's own `files`.
+ */
+function scannedFixture(
+  name: string,
+  files: Record<string, string>,
+  inspectors: DimensionInspector[] = [producedClean],
+): { resolved: ResolvedGitSource; disposition: ScanDisposition } {
+  const dir = tree(name, { ...pluginManifestFiles(), ...files });
+  return mintFixture(dir, inspectors);
 }
 
 /** A recording runner over the fake seam; `script` overrides specific commands. */
@@ -168,7 +227,12 @@ describe("bindPlugin — happy path (marketplace add -> install -> D7 match -> s
 
     const result = await bindPlugin(
       { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
-      { root, runner, env: { USERPROFILE: home }, locateCache: () => resolved.treePath },
+      {
+        root,
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => resolved.treePath,
+      },
     );
 
     // Marketplace add of the scanned checkout, THEN install, in order.
@@ -199,8 +263,12 @@ describe("bindPlugin — happy path (marketplace add -> install -> D7 match -> s
     expect(settings?.preExisting).toEqual({ absent: true });
     expect(settings?.applied).toEqual({ [KEY]: true });
     expect(marketplace?.target).toBe(homeMarketplaceTarget(MARKETPLACE));
-    expect(marketplace?.applied).toEqual({ source: resolved.treePath });
-    expect(cache?.target).toBe(homePluginCacheTarget(KEY));
+    // Empirically corrected: mirrors the exact shape `claude plugin marketplace
+    // add <dir>` writes at settings.json#/extraKnownMarketplaces/<name>.
+    expect(marketplace?.applied).toEqual({
+      source: { source: "directory", path: resolved.treePath },
+    });
+    expect(cache?.target).toBe(homePluginCacheTarget(MARKETPLACE, PLUGIN));
     expect(cache?.applied).toBe(resolved.treeDigest);
     expect(cache?.postApplyDigest).toBe(resolved.treeDigest);
     for (const entry of result.ownership) {
@@ -226,7 +294,12 @@ describe("bindPlugin — happy path (marketplace add -> install -> D7 match -> s
 
     const result = await bindPlugin(
       { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE, scope: "local" },
-      { root, runner, env: { USERPROFILE: home }, locateCache: () => resolved.treePath },
+      {
+        root,
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => resolved.treePath,
+      },
     );
 
     expect(calls[1]).toEqual(["claude", "plugin", "install", KEY, "--scope", "local"]);
@@ -246,13 +319,18 @@ describe("bindPlugin — D7 digest mismatch fails closed", () => {
     await expect(
       bindPlugin(
         { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
-        { root, runner, env: { USERPROFILE: home }, locateCache: () => tamperedCache },
+        {
+          root,
+          runner,
+          env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+          locateCache: () => tamperedCache,
+        },
       ),
     ).rejects.toBeInstanceOf(ClaudePluginIdentityError);
 
     // Teardown was scheduled (disable + uninstall), fail closed.
     expect(calls).toContainEqual(["claude", "plugin", "disable", KEY]);
-    expect(calls).toContainEqual(["claude", "plugin", "uninstall", KEY]);
+    expect(calls).toContainEqual(["claude", "plugin", "uninstall", KEY, "--scope", "project"]);
     // No partial project state.
     expect(existsSync(join(root, ".claude/settings.json"))).toBe(false);
   });
@@ -264,7 +342,12 @@ describe("bindPlugin — D7 digest mismatch fails closed", () => {
 
     const err = await bindPlugin(
       { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
-      { root, runner, env: { USERPROFILE: home }, locateCache: () => tamperedCache },
+      {
+        root,
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => tamperedCache,
+      },
     ).catch((e) => e as ClaudePluginIdentityError);
 
     expect(err.identity.match).toBe(false);
@@ -288,7 +371,12 @@ describe("bindPlugin — disposition authorization (D12) refused before any upst
     await expect(
       bindPlugin(
         { disposition: forged, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
-        { root, runner, env: { USERPROFILE: home }, locateCache: () => resolved.treePath },
+        {
+          root,
+          runner,
+          env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+          locateCache: () => resolved.treePath,
+        },
       ),
     ).rejects.toBeInstanceOf(BindingScanError);
     expect(calls).toHaveLength(0);
@@ -306,7 +394,12 @@ describe("bindPlugin — disposition authorization (D12) refused before any upst
           plugin: PLUGIN,
           marketplace: MARKETPLACE,
         },
-        { root, runner, env: { USERPROFILE: home }, locateCache: () => resolved.treePath },
+        {
+          root,
+          runner,
+          env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+          locateCache: () => resolved.treePath,
+        },
       ),
     ).rejects.toBeInstanceOf(BindingScanError);
     expect(calls).toHaveLength(0);
@@ -321,7 +414,12 @@ describe("bindPlugin — disposition authorization (D12) refused before any upst
     await expect(
       bindPlugin(
         { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
-        { root, runner, env: { USERPROFILE: home }, locateCache: () => resolved.treePath },
+        {
+          root,
+          runner,
+          env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+          locateCache: () => resolved.treePath,
+        },
       ),
     ).rejects.toBeInstanceOf(BindingScanError);
     expect(calls).toHaveLength(0);
@@ -356,8 +454,10 @@ describe("lifecycle CLI wrappers surface failures fail-closed", () => {
 
   it("uninstallPlugin succeeds on exit 0 and passes the plugin key", async () => {
     const { runner, calls } = recordingRunner();
-    await expect(uninstallPlugin({ runner }, PLUGIN, MARKETPLACE)).resolves.toBeUndefined();
-    expect(calls[0]).toEqual(["claude", "plugin", "uninstall", KEY]);
+    await expect(
+      uninstallPlugin({ runner, env: { AIH_PLATFORM: "linux" } }, PLUGIN, MARKETPLACE, "project"),
+    ).resolves.toBeUndefined();
+    expect(calls[0]).toEqual(["claude", "plugin", "uninstall", KEY, "--scope", "project"]);
   });
 
   it("listPlugins fails closed on unparseable CLI output", async () => {
@@ -367,11 +467,165 @@ describe("lifecycle CLI wrappers surface failures fail-closed", () => {
     await expect(listPlugins({ runner })).rejects.toBeInstanceOf(ClaudePluginError);
   });
 
-  it("pluginDetails parses JSON output", async () => {
-    const { runner } = recordingRunner((argv) =>
-      argv.includes("details") ? { code: 0, stdout: JSON.stringify({ name: KEY }) } : undefined,
+  it("pluginDetails returns raw stdout TEXT and passes no --json flag (empirically corrected: no such flag exists)", async () => {
+    const detailsText = "Skills (1)\n  - test-skill\n\nAlways-on:   ~27 tok\n";
+    const { runner, calls } = recordingRunner((argv) =>
+      argv.includes("details") ? { code: 0, stdout: detailsText } : undefined,
     );
-    await expect(pluginDetails({ runner }, PLUGIN, MARKETPLACE)).resolves.toEqual({ name: KEY });
+    await expect(
+      pluginDetails({ runner, env: { AIH_PLATFORM: "linux" } }, PLUGIN, MARKETPLACE),
+    ).resolves.toBe(detailsText);
+    expect(calls[0]).toEqual(["claude", "plugin", "details", KEY]);
+  });
+
+  it("pluginDetails fails closed on a non-zero exit only (no JSON to fail to parse)", async () => {
+    const { runner } = recordingRunner((argv) =>
+      argv.includes("details") ? { code: 1, stderr: "no such plugin" } : undefined,
+    );
+    await expect(pluginDetails({ runner }, PLUGIN, MARKETPLACE)).rejects.toBeInstanceOf(
+      ClaudePluginError,
+    );
+  });
+});
+
+describe("bindPlugin — D7 anchor is the plugin's SOURCE SUBTREE, not the whole checkout (empirically corrected)", () => {
+  it("scannedDigest is the subtree digest (differs from resolved.treeDigest) when the plugin source is a subdirectory", async () => {
+    const dir = tree("subtree-anchor", {
+      ".claude-plugin/marketplace.json": JSON.stringify({
+        name: MARKETPLACE,
+        plugins: [{ name: PLUGIN, source: "./plugin" }],
+      }),
+      "plugin/.claude-plugin/plugin.json": JSON.stringify({ name: PLUGIN, version: "3.0.0" }),
+      "plugin/SKILL.md": "# skill\n",
+      "unrelated-sibling.md": "# not part of the plugin subtree at all\n",
+    });
+    const { resolved, disposition } = mintFixture(dir);
+    // The host materializes ONLY the subtree bytes — a distinct, real tree.
+    const subtreeCache = tree("subtree-anchor-cache", {
+      "SKILL.md": "# skill\n",
+      ".claude-plugin/plugin.json": JSON.stringify({ name: PLUGIN, version: "3.0.0" }),
+    });
+    const { runner } = recordingRunner();
+
+    const result = await bindPlugin(
+      { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+      {
+        root,
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => subtreeCache,
+      },
+    );
+
+    expect(result.identity.match).toBe(true);
+    expect(result.identity.scannedDigest).not.toBe(resolved.treeDigest);
+  });
+
+  it("fails closed with ZERO CLI calls when the checkout has no marketplace.json", async () => {
+    const dir = tree("no-manifest-bind", { "SKILL.md": "# skill\n" });
+    const { resolved, disposition } = mintFixture(dir);
+    const { runner, calls } = recordingRunner();
+
+    await expect(
+      bindPlugin(
+        { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+        { root, runner, env: { USERPROFILE: home, AIH_PLATFORM: "linux" }, locateCache: () => dir },
+      ),
+    ).rejects.toBeInstanceOf(ClaudePluginError);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("fails closed with ZERO CLI calls when the checkout's marketplace.json has no entry for the plugin", async () => {
+    const dir = tree("wrong-plugin-name-bind", {
+      ".claude-plugin/marketplace.json": JSON.stringify({
+        plugins: [{ name: "some-other-plugin", source: "./" }],
+      }),
+    });
+    const { resolved, disposition } = mintFixture(dir);
+    const { runner, calls } = recordingRunner();
+
+    await expect(
+      bindPlugin(
+        { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+        { root, runner, env: { USERPROFILE: home, AIH_PLATFORM: "linux" }, locateCache: () => dir },
+      ),
+    ).rejects.toBeInstanceOf(ClaudePluginError);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("bindPlugin — prefers listPlugins' authoritative installPath over the locator guess", () => {
+  it("uses the installPath reported by `claude plugin list --json` when present", async () => {
+    const { resolved, disposition } = scannedFixture("src", { "SKILL.md": "# skill\n" });
+    // The injected locator deliberately points at the WRONG tree — proves the
+    // authoritative list path is preferred over the locator's guess.
+    const wrongLocatorPath = tree("wrong-locator-guess", { "SKILL.md": "# WRONG\n" });
+    const { runner } = recordingRunner((argv) =>
+      argv.includes("list")
+        ? {
+            code: 0,
+            stdout: JSON.stringify({
+              version: 2,
+              plugins: { [KEY]: [{ scope: "project", installPath: resolved.treePath }] },
+            }),
+          }
+        : undefined,
+    );
+
+    const result = await bindPlugin(
+      { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+      {
+        root,
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => wrongLocatorPath,
+      },
+    );
+
+    expect(result.identity.match).toBe(true);
+    expect(result.loadedTreePath).toBe(resolved.treePath);
+  });
+
+  it("falls back to the locator when listPlugins has no entry for the plugin key (parse succeeds, entry absent)", async () => {
+    const { resolved, disposition } = scannedFixture("src", { "SKILL.md": "# skill\n" });
+    const { runner } = recordingRunner((argv) =>
+      argv.includes("list")
+        ? { code: 0, stdout: JSON.stringify({ version: 2, plugins: {} }) }
+        : undefined,
+    );
+
+    const result = await bindPlugin(
+      { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+      {
+        root,
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => resolved.treePath,
+      },
+    );
+
+    expect(result.identity.match).toBe(true);
+    expect(result.loadedTreePath).toBe(resolved.treePath);
+  });
+
+  it("falls back to the locator when listPlugins itself fails (non-zero exit)", async () => {
+    const { resolved, disposition } = scannedFixture("src", { "SKILL.md": "# skill\n" });
+    const { runner } = recordingRunner((argv) =>
+      argv.includes("list") ? { code: 1, stderr: "boom" } : undefined,
+    );
+
+    const result = await bindPlugin(
+      { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+      {
+        root,
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => resolved.treePath,
+      },
+    );
+
+    expect(result.identity.match).toBe(true);
+    expect(result.loadedTreePath).toBe(resolved.treePath);
   });
 });
 
@@ -381,7 +635,12 @@ describe("removePlugin — conservative machine-scope reconciliation", () => {
     const { runner } = recordingRunner();
     return bindPlugin(
       { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
-      { root, runner, env: { USERPROFILE: home }, locateCache: () => resolved.treePath },
+      {
+        root,
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => resolved.treePath,
+      },
     );
   }
 
@@ -390,14 +649,18 @@ describe("removePlugin — conservative machine-scope reconciliation", () => {
     const { runner, calls } = recordingRunner();
 
     const removal = await removePlugin(
-      { ownership: bound.ownership, plugin: PLUGIN, marketplace: MARKETPLACE },
-      { runner, env: { USERPROFILE: home }, locateCache: () => bound.loadedTreePath },
+      { ownership: bound.ownership, plugin: PLUGIN, marketplace: MARKETPLACE, scope: "project" },
+      {
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => bound.loadedTreePath,
+      },
     );
 
     expect(removal.drift).toHaveLength(0);
-    expect(removal.removed).toContain(homePluginCacheTarget(KEY));
+    expect(removal.removed).toContain(homePluginCacheTarget(MARKETPLACE, PLUGIN));
     expect(removal.removed).toContain(homeMarketplaceTarget(MARKETPLACE));
-    expect(calls).toContainEqual(["claude", "plugin", "uninstall", KEY]);
+    expect(calls).toContainEqual(["claude", "plugin", "uninstall", KEY, "--scope", "project"]);
     expect(calls).toContainEqual(["claude", "plugin", "marketplace", "remove", MARKETPLACE]);
   });
 
@@ -408,12 +671,18 @@ describe("removePlugin — conservative machine-scope reconciliation", () => {
     const { runner, calls } = recordingRunner();
 
     const removal = await removePlugin(
-      { ownership: bound.ownership, plugin: PLUGIN, marketplace: MARKETPLACE },
-      { runner, env: { USERPROFILE: home }, locateCache: () => bound.loadedTreePath },
+      { ownership: bound.ownership, plugin: PLUGIN, marketplace: MARKETPLACE, scope: "project" },
+      {
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => bound.loadedTreePath,
+      },
     );
 
     expect(removal.removed).toHaveLength(0);
-    expect(removal.drift.map((d) => d.target)).toContain(homePluginCacheTarget(KEY));
+    expect(removal.drift.map((d) => d.target)).toContain(
+      homePluginCacheTarget(MARKETPLACE, PLUGIN),
+    );
     expect(removal.drift.map((d) => d.target)).toContain(homeMarketplaceTarget(MARKETPLACE));
     // Nothing torn down — the user's drift is never silently removed.
     expect(calls).toHaveLength(0);
@@ -429,14 +698,18 @@ describe("removePlugin — conservative machine-scope reconciliation", () => {
     const { runner, calls } = recordingRunner();
 
     const removal = await removePlugin(
-      { ownership: bound.ownership, plugin: PLUGIN, marketplace: MARKETPLACE },
-      { runner, env: { USERPROFILE: home }, locateCache: () => emptyCache },
+      { ownership: bound.ownership, plugin: PLUGIN, marketplace: MARKETPLACE, scope: "project" },
+      { runner, env: { USERPROFILE: home, AIH_PLATFORM: "linux" }, locateCache: () => emptyCache },
     );
 
     expect(removal.removed).toHaveLength(0);
-    expect(removal.drift.map((d) => d.target)).toContain(homePluginCacheTarget(KEY));
+    expect(removal.drift.map((d) => d.target)).toContain(
+      homePluginCacheTarget(MARKETPLACE, PLUGIN),
+    );
     expect(removal.drift.map((d) => d.target)).toContain(homeMarketplaceTarget(MARKETPLACE));
-    const cacheDrift = removal.drift.find((d) => d.target === homePluginCacheTarget(KEY));
+    const cacheDrift = removal.drift.find(
+      (d) => d.target === homePluginCacheTarget(MARKETPLACE, PLUGIN),
+    );
     expect(cacheDrift?.reason).toContain("unreadable");
     // No teardown — nothing was torn down for a tree we cannot verify is gone.
     expect(calls).toHaveLength(0);
@@ -447,8 +720,12 @@ describe("removePlugin — conservative machine-scope reconciliation", () => {
     const { runner, calls } = recordingRunner();
 
     const removal = await removePlugin(
-      { ownership: bound.ownership, plugin: PLUGIN, marketplace: MARKETPLACE },
-      { runner, env: { USERPROFILE: home }, locateCache: () => join(home, "absent-cache") },
+      { ownership: bound.ownership, plugin: PLUGIN, marketplace: MARKETPLACE, scope: "project" },
+      {
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => join(home, "absent-cache"),
+      },
     );
 
     expect(removal.removed).toHaveLength(0);
@@ -466,7 +743,7 @@ describe("bindPlugin — re-bind idempotency", () => {
       {
         root,
         runner: recordingRunner().runner,
-        env: { USERPROFILE: home },
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
         locateCache: () => resolved.treePath,
       },
     );
@@ -483,7 +760,7 @@ describe("bindPlugin — re-bind idempotency", () => {
       {
         root,
         runner: recordingRunner().runner,
-        env: { USERPROFILE: home },
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
         locateCache: () => resolved.treePath,
       },
     );
@@ -517,7 +794,12 @@ describe("bindPlugin / wrappers — safe-key refusal of hostile plugin/marketpla
     await expect(
       bindPlugin(
         { disposition, resolved, plugin: bad, marketplace: MARKETPLACE },
-        { root, runner, env: { USERPROFILE: home }, locateCache: () => resolved.treePath },
+        {
+          root,
+          runner,
+          env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+          locateCache: () => resolved.treePath,
+        },
       ),
     ).rejects.toThrow();
     // Refused at the boundary — before any CLI ran.
@@ -527,5 +809,115 @@ describe("bindPlugin / wrappers — safe-key refusal of hostile plugin/marketpla
   it("refuses a hostile marketplace name in the install wrapper", async () => {
     const { runner } = recordingRunner();
     await expect(installPlugin({ runner }, PLUGIN, "--evil", "project")).rejects.toThrow();
+  });
+});
+
+describe("marketplace manifest-name contract (W4 live-run correction)", () => {
+  // `claude plugin marketplace add <dir>` registers the marketplace under the
+  // NAME THE MANIFEST DECLARES — never a registrar-chosen one. A mismatched
+  // expectation must fail closed before any host mutation, and a failed bind
+  // must unwind the registration it just made.
+  const MARKETPLACE_REMOVE = ["claude", "plugin", "marketplace", "remove", MARKETPLACE];
+
+  function bindDeps(runner: Runner, locate?: () => string) {
+    return {
+      root,
+      runner,
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+      ...(locate === undefined ? {} : { locateCache: locate }),
+    };
+  }
+
+  it("refuses before any CLI call when the manifest declares a different marketplace name", async () => {
+    const { resolved, disposition } = scannedFixture("name-mismatch", {
+      ".claude-plugin/marketplace.json": JSON.stringify({
+        name: "other-mkt",
+        plugins: [{ name: PLUGIN, source: "./" }],
+      }),
+    });
+    const { runner, calls } = recordingRunner();
+    await expect(
+      bindPlugin(
+        { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+        bindDeps(runner, () => resolved.treePath),
+      ),
+    ).rejects.toThrow(ClaudePluginError);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("removes the just-registered marketplace when the install step fails", async () => {
+    const { resolved, disposition } = scannedFixture("install-fails", {});
+    const { runner, calls } = recordingRunner((argv) =>
+      argv.includes("install") ? { code: 1, stderr: "install exploded" } : undefined,
+    );
+    await expect(
+      bindPlugin(
+        { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+        bindDeps(runner, () => resolved.treePath),
+      ),
+    ).rejects.toThrow(ClaudePluginError);
+    expect(calls).toContainEqual(MARKETPLACE_REMOVE);
+  });
+
+  it("removes the just-registered marketplace on a D7 identity mismatch", async () => {
+    const { resolved, disposition } = scannedFixture("d7-unwind", {});
+    const tamperedCache = tree("d7-unwind-tampered", { "SKILL.md": "tampered bytes\n" });
+    const { runner, calls } = recordingRunner();
+    await expect(
+      bindPlugin(
+        { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+        bindDeps(runner, () => tamperedCache),
+      ),
+    ).rejects.toThrow(ClaudePluginIdentityError);
+    expect(calls).toContainEqual(MARKETPLACE_REMOVE);
+  });
+
+  it("deletes the owned cache root on clean removal even when the host CLI leaves bytes behind", async () => {
+    // 2.1.214 empirical: project-scope uninstall deregisters but leaves the
+    // cache bytes — removal must tear down the owned root itself.
+    const { resolved, disposition } = scannedFixture("cli-leaves-bytes", {});
+    const { runner } = recordingRunner();
+    const bound = await bindPlugin(
+      { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+      bindDeps(runner, () => resolved.treePath),
+    );
+    const ownedRoot = join(home, ".claude", "plugins", "cache", MARKETPLACE, PLUGIN);
+    mkdirSync(join(ownedRoot, "1.0.0"), { recursive: true });
+    writeFileSync(join(ownedRoot, "1.0.0", "SKILL.md"), "# left behind\n", "utf8");
+
+    const removal = await removePlugin(
+      { ownership: bound.ownership, plugin: PLUGIN, marketplace: MARKETPLACE, scope: "project" },
+      {
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => bound.loadedTreePath,
+      },
+    );
+    expect(removal.removed).toContain(homePluginCacheTarget(MARKETPLACE, PLUGIN));
+    expect(existsSync(ownedRoot)).toBe(false);
+  });
+
+  it("never removes a marketplace that was registered before the bind", async () => {
+    const { resolved, disposition } = scannedFixture("pre-registered", {});
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    writeFileSync(
+      join(home, ".claude", "settings.json"),
+      JSON.stringify({
+        extraKnownMarketplaces: {
+          [MARKETPLACE]: { source: { source: "directory", path: resolved.treePath } },
+        },
+      }),
+      "utf8",
+    );
+    const { runner, calls } = recordingRunner((argv) =>
+      argv.includes("install") ? { code: 1, stderr: "install exploded" } : undefined,
+    );
+    await expect(
+      bindPlugin(
+        { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+        bindDeps(runner, () => resolved.treePath),
+      ),
+    ).rejects.toThrow(ClaudePluginError);
+    expect(calls).not.toContainEqual(MARKETPLACE_REMOVE);
   });
 });

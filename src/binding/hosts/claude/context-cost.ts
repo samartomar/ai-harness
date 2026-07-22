@@ -13,23 +13,30 @@ import { CLAUDE_MCP_KEY, ClaudeHostWriteError } from "./surfaces.js";
  * available; AIH estimates labeled as estimates elsewhere)". The Framework
  * Card (W7) surfaces this as "context-cost estimate at session start
  * (labeled estimate, with its evidence source)" — this module produces the
- * {@link ContextCostReport} that data comes from, via exactly two entry points:
+ * {@link ContextCostReport} that data comes from, via three entry points:
  *
- *  - {@link contextCostFromPluginDetails} — HOST-REPORTED. Parses an already
- *    fetched `claude plugin details --json` payload (the W3b `pluginDetails`
- *    wrapper in `./plugins.ts` invokes the CLI; this module never shells out
- *    itself). Tolerant of absent sections (they count as zero) but fails
- *    closed on a payload with no recognizable shape at all, and NEVER invents
- *    a token number the host did not report.
+ *  - {@link contextCostFromPluginDetails} — HOST-REPORTED, JSON payload.
+ *    Kept for forward-compat with a future host version; `claude plugin
+ *    details` does NOT actually accept `--json` today (see the text sibling
+ *    below) — this parses an already-fetched payload of that SHAPE, should
+ *    one ever be produced. Tolerant of absent sections (they count as zero)
+ *    but fails closed on a payload with no recognizable shape at all, and
+ *    NEVER invents a token number the host did not report.
+ *  - {@link contextCostFromPluginDetailsText} — HOST-REPORTED, TEXT (the
+ *    ACTUAL 2.1.214 shape). Parses the raw stdout `claude plugin details`
+ *    prints (the W3b `pluginDetails` wrapper in `./plugins.ts` invokes the
+ *    CLI; this module never shells out itself): a component inventory
+ *    (`Skills (N)`, etc.) plus an `Always-on:   ~N tok` line. Same
+ *    tolerance/fail-closed/no-fabrication rules as the JSON sibling.
  *  - {@link estimateContextCostFromTree} — AIH-ESTIMATE. Walks a framework
  *    tree on disk (a scanned checkout or an installed surface dir) and
  *    derives a labeled, deterministic estimate from file counts and byte
  *    sizes — no tokenizer, no network, no magic numbers beyond the
  *    documented bytes/4 divisor.
  *
- * Both paths return the SAME {@link ContextCostReport} shape so a caller (or
- * the Framework Card renderer) never has to branch on which adapter produced
- * it — only on `source`/`estimate` to label it correctly.
+ * All three paths return the SAME {@link ContextCostReport} shape so a
+ * caller (or the Framework Card renderer) never has to branch on which
+ * adapter produced it — only on `source`/`estimate` to label it correctly.
  */
 
 export type ContextCostEvidenceSource = "host-reported" | "aih-estimate";
@@ -153,6 +160,83 @@ function projectedTokensFromPayload(value: unknown): number | undefined {
   throw new ClaudeHostWriteError(
     "unrecognized plugin details payload — projectedTokens must be a number or { total }",
   );
+}
+
+// -- Host-reported path (TEXT): `claude plugin details` (no --json flag) ----
+
+/**
+ * One component-inventory header per {@link ContextCostReport.counts} key
+ * this text format can report. Matched case-insensitively, anchored to line
+ * start, tolerant of a singular/plural header name (`Skill`/`Skills`).
+ * `rules` has NO line here — like the JSON-payload sibling, this evidence
+ * source has no concept of "rules" (an AIH/framework-tree surface), so it
+ * always reports `0`. A future LSP-servers line is intentionally NOT folded
+ * into any of these six slots — `ContextCostReport.counts` has no slot for
+ * it, and inventing one would misattribute a count to the wrong category
+ * rather than simply not carrying it.
+ */
+const DETAILS_TEXT_CATEGORY_PATTERNS: ReadonlyArray<
+  readonly [key: keyof ContextCostReport["counts"], pattern: RegExp]
+> = [
+  ["skills", /^\s*Skills?\s*\((\d+)\)/im],
+  ["agents", /^\s*Agents?\s*\((\d+)\)/im],
+  ["commands", /^\s*Commands?\s*\((\d+)\)/im],
+  ["hooks", /^\s*Hooks?\s*\((\d+)\)/im],
+  ["mcpServers", /^\s*MCP\s*[Ss]ervers?\s*\((\d+)\)/im],
+];
+
+/** The host-projected session-start token line, e.g. `Always-on:   ~27 tok`. */
+const DETAILS_TEXT_ALWAYS_ON_PATTERN = /Always-on:\s+~(\d+)\s*tok/i;
+
+/**
+ * Host-reported context cost: parse the raw TEXT `claude plugin details`
+ * prints (empirically corrected — this CLI has NO `--json` flag; the W3b
+ * `pluginDetails` wrapper in `./plugins.ts` invokes it and hands the stdout
+ * here unmodified). Tolerant per-category (an absent header counts as `0`,
+ * matching {@link contextCostFromPluginDetails}'s JSON-payload tolerance
+ * model), but the text AS A WHOLE must carry at least one recognizable
+ * signal — a component header OR the `Always-on:` line — or it fails closed
+ * rather than silently reporting an all-zero-but-successful cost for
+ * unrelated/garbage text. NEVER fabricates a token number: an absent
+ * `Always-on:` line leaves `projectedTokens` `undefined`.
+ */
+export function contextCostFromPluginDetailsText(text: string): ContextCostReport {
+  if (typeof text !== "string") {
+    throw new ClaudeHostWriteError("unrecognized plugin details text — expected a string");
+  }
+
+  const counts: ContextCostReport["counts"] = {
+    skills: 0,
+    agents: 0,
+    commands: 0,
+    rules: 0,
+    hooks: 0,
+    mcpServers: 0,
+  };
+  let anyCategoryMatched = false;
+  for (const [key, pattern] of DETAILS_TEXT_CATEGORY_PATTERNS) {
+    const match = text.match(pattern);
+    if (match?.[1] !== undefined) {
+      anyCategoryMatched = true;
+      counts[key] = Number(match[1]);
+    }
+  }
+
+  const tokenMatch = text.match(DETAILS_TEXT_ALWAYS_ON_PATTERN);
+  if (!anyCategoryMatched && !tokenMatch) {
+    throw new ClaudeHostWriteError(
+      'unrecognized plugin details text — expected a component inventory (e.g. "Skills (N)") and/or an "Always-on: ~N tok" line',
+    );
+  }
+
+  return {
+    source: "host-reported",
+    evidence: "claude plugin details (text)",
+    projectedTokens: tokenMatch?.[1] !== undefined ? Number(tokenMatch[1]) : undefined,
+    counts,
+    totalBytes: 0,
+    estimate: false,
+  };
 }
 
 // -- AIH-estimate path: static tree walk --------------------------------------
@@ -325,8 +409,18 @@ function countHooks(treePath: string): { count: number; bytes: number } {
       `refusing to estimate context cost — ${path} must be a JSON object of event -> hook array`,
     );
   }
+  // Real hooks.json files come in TWO legitimate shapes (W4 live-run
+  // empirical, e.g. ECC ships the Claude settings-file shape with a
+  // "$schema" header): either a bare event map, or a settings-style wrapper
+  // whose top-level "hooks" key holds the event map. JSON-Schema metadata
+  // keys ("$schema", "$id", ...) are skipped at either level; any other
+  // non-array event value still fails closed as a malformed event map.
+  const wrapped = (parsed as { hooks?: unknown }).hooks;
+  const eventMap = isPlainObject(wrapped) ? wrapped : parsed;
   let count = 0;
-  for (const [event, value] of Object.entries(parsed)) {
+  for (const [event, value] of Object.entries(eventMap)) {
+    if (event.startsWith("$")) continue;
+    if (eventMap === parsed && event === "hooks") continue;
     if (!Array.isArray(value)) {
       throw new ClaudeHostWriteError(
         `refusing to estimate context cost — ${path} event ${JSON.stringify(event)} is not an array`,

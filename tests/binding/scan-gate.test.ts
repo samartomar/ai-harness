@@ -1,14 +1,17 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  type AcceptedContentFinding,
   acquireNpmTree,
   assertProvisionAuthorized,
   BindingNotSupportedError,
   BindingScanError,
   type DimensionInspector,
+  readScanAcceptanceArtifact,
   resolvedSourceDigest,
   resolveGitSource,
   resolveNpmSource,
@@ -126,6 +129,94 @@ describe("git source resolution (D7 exact identity)", () => {
     await expect(
       resolveGitSource({ repository: "affaan-m/ECC", ref: "HEAD" }, { runner, cacheHome }),
     ).rejects.toBeInstanceOf(BindingScanError);
+  });
+
+  it("maps a bare owner/repo slug to its canonical GitHub https remote for ls-remote and clone", async () => {
+    const seen: string[][] = [];
+    const runner = fakeRunner((argv) => {
+      seen.push([...argv]);
+      if (argv[1] === "ls-remote") return { stdout: `${"a".repeat(40)}\tHEAD\n` };
+      if (argv[1] === "clone") return { code: 1, stderr: "transport capture only" };
+      return undefined;
+    });
+    await expect(
+      resolveGitSource({ repository: "obra/superpowers", ref: "HEAD" }, { runner, cacheHome }),
+    ).rejects.toBeInstanceOf(BindingScanError);
+    const lsRemote = seen.find((argv) => argv[1] === "ls-remote") ?? [];
+    const clone = seen.find((argv) => argv[1] === "clone") ?? [];
+    expect(lsRemote[3]).toBe("https://github.com/obra/superpowers.git");
+    expect(clone[clone.length - 2]).toBe("https://github.com/obra/superpowers.git");
+    expect(lsRemote).not.toContain("obra/superpowers");
+    expect(clone).not.toContain("obra/superpowers");
+  });
+
+  it("clones via the mapped GitHub remote when a commitSha pin skips ls-remote (W4 live-run regression)", async () => {
+    const seen: string[][] = [];
+    const runner = fakeRunner((argv) => {
+      seen.push([...argv]);
+      if (argv[1] === "clone") return { code: 1, stderr: "transport capture only" };
+      return undefined;
+    });
+    await expect(
+      resolveGitSource(
+        { repository: "obra/superpowers", commitSha: "d884ae04edebef577e82ff7c4e143debd0bbec99" },
+        { runner, cacheHome },
+      ),
+    ).rejects.toBeInstanceOf(BindingScanError);
+    expect(seen.some((argv) => argv[1] === "ls-remote")).toBe(false);
+    const clone = seen.find((argv) => argv[1] === "clone") ?? [];
+    expect(clone[clone.length - 2]).toBe("https://github.com/obra/superpowers.git");
+  });
+
+  it("gives transport git calls a tree-scaled timeout instead of proc's 30s default (W4 attempt-4 live-run regression)", async () => {
+    const seen: Array<{ argv: string[]; timeoutMs?: number }> = [];
+    const runner = fakeRunner((argv, opts) => {
+      seen.push({ argv: [...argv], timeoutMs: opts?.timeoutMs });
+      if (argv[1] === "ls-remote") return { stdout: `${"a".repeat(40)}\tHEAD\n` };
+      if (argv[3] === "checkout") return { code: 1, stderr: "transport capture only" };
+      return undefined;
+    });
+    await expect(
+      resolveGitSource({ repository: "samartomar/ECC", ref: "HEAD" }, { runner, cacheHome }),
+    ).rejects.toBeInstanceOf(BindingScanError);
+    for (const op of ["ls-remote", "clone"]) {
+      expect(seen.find((call) => call.argv[1] === op)?.timeoutMs).toBe(120_000);
+    }
+    expect(seen.find((call) => call.argv[3] === "checkout")?.timeoutMs).toBe(120_000);
+  });
+
+  it("passes an https repository locator to git verbatim", async () => {
+    const seen: string[][] = [];
+    const runner = fakeRunner((argv) => {
+      seen.push([...argv]);
+      if (argv[1] === "clone") return { code: 1, stderr: "transport capture only" };
+      return undefined;
+    });
+    await expect(
+      resolveGitSource(
+        { repository: "https://example.com/frameworks/superpowers.git", commitSha: "a".repeat(40) },
+        { runner, cacheHome },
+      ),
+    ).rejects.toBeInstanceOf(BindingScanError);
+    const clone = seen.find((argv) => argv[1] === "clone") ?? [];
+    expect(clone[clone.length - 2]).toBe("https://example.com/frameworks/superpowers.git");
+  });
+
+  it("passes an scp-like repository locator to git verbatim", async () => {
+    const seen: string[][] = [];
+    const runner = fakeRunner((argv) => {
+      seen.push([...argv]);
+      if (argv[1] === "clone") return { code: 1, stderr: "transport capture only" };
+      return undefined;
+    });
+    await expect(
+      resolveGitSource(
+        { repository: "git@github.com:obra/superpowers.git", commitSha: "a".repeat(40) },
+        { runner, cacheHome },
+      ),
+    ).rejects.toBeInstanceOf(BindingScanError);
+    const clone = seen.find((argv) => argv[1] === "clone") ?? [];
+    expect(clone[clone.length - 2]).toBe("git@github.com:obra/superpowers.git");
   });
 
   it("rejects an unsafe ref", async () => {
@@ -361,5 +452,165 @@ describe("provision authorization guard (D12 code-path invariant)", () => {
       producedAt: new Date().toISOString(),
     } as unknown as ScanDisposition;
     expect(() => assertProvisionAuthorized(forged, digest)).toThrow(BindingScanError);
+  });
+});
+
+describe("maintainer-accepted content findings (scan-acceptance baseline)", () => {
+  // U+200B inside instruction text: a genuinely hidden character the real
+  // content-risk inspector maps to trust.hidden-unicode (high).
+  const ZWSP = String.fromCharCode(0x200b);
+  const HIDDEN_SKILL = `# skill\n\nzero${ZWSP}width instruction\n`;
+
+  function sha256Utf8(text: string): string {
+    return createHash("sha256").update(text, "utf8").digest("hex");
+  }
+
+  async function hiddenUnicodeScannable(extraFiles: Record<string, string> = {}) {
+    initGitRepo(repoDir, { "SKILL.md": HIDDEN_SKILL, "README.md": "hello\n", ...extraFiles });
+    const resolved = await resolveGitSource(
+      { repository: repoDir, ref: "HEAD" },
+      { runner: defaultRunner, cacheHome },
+    );
+    return scannableFromGit(resolved);
+  }
+
+  const acceptSkill: AcceptedContentFinding = {
+    repository: "test/fixture",
+    code: "trust.hidden-unicode",
+    path: "SKILL.md",
+    fileSha256: sha256Utf8(HIDDEN_SKILL),
+  };
+
+  it("blocks an unaccepted hidden-unicode high and pins it with path + content hash", async () => {
+    const src = await hiddenUnicodeScannable();
+    const disposition = runFastScanGate(src, { posture: "vibe" }, { cacheHome });
+    expect(disposition.verdict).toBe("block");
+    const finding = disposition.findings.find((f) => f.code === "trust.hidden-unicode");
+    expect(finding?.path).toBe("SKILL.md");
+    expect(finding?.contentSha256).toBe(sha256Utf8(HIDDEN_SKILL));
+    expect(finding?.accepted).toBeUndefined();
+  });
+
+  it("allows when every high finding matches an accepted triple, keeping the findings marked in evidence", async () => {
+    const src = await hiddenUnicodeScannable();
+    const disposition = runFastScanGate(
+      src,
+      { posture: "vibe", acceptedFindings: [acceptSkill] },
+      { cacheHome },
+    );
+    expect(disposition.verdict).toBe("allow");
+    const finding = disposition.findings.find((f) => f.code === "trust.hidden-unicode");
+    expect(finding?.accepted).toBe(true);
+    expect(finding?.path).toBe("SKILL.md");
+  });
+
+  it("keeps blocking when the accepted entry's content hash no longer matches (content-pinned)", async () => {
+    const src = await hiddenUnicodeScannable();
+    const stale: AcceptedContentFinding = { ...acceptSkill, fileSha256: "a".repeat(64) };
+    const disposition = runFastScanGate(
+      src,
+      { posture: "vibe", acceptedFindings: [stale] },
+      { cacheHome },
+    );
+    expect(disposition.verdict).toBe("block");
+  });
+
+  it("keeps blocking when a new high finding appears alongside accepted ones", async () => {
+    const src = await hiddenUnicodeScannable({ "notes/OTHER.md": `also${ZWSP}hidden\n` });
+    const disposition = runFastScanGate(
+      src,
+      { posture: "vibe", acceptedFindings: [acceptSkill] },
+      { cacheHome },
+    );
+    expect(disposition.verdict).toBe("block");
+  });
+
+  it("never accepts a critical finding, even when the baseline lists its exact triple", async () => {
+    const src = await hiddenUnicodeScannable();
+    const criticalWithPin: DimensionInspector = {
+      dimension: "test-critical-pinned",
+      run: () => ({
+        dimension: "test-critical-pinned",
+        status: "produced",
+        findings: [
+          {
+            code: "trust.malicious-code",
+            severity: "critical",
+            detail: "boom",
+            coverage: "complete",
+            path: "x.js",
+            contentSha256: "ab".repeat(32),
+          },
+        ],
+      }),
+    };
+    const disposition = runFastScanGate(
+      src,
+      {
+        posture: "vibe",
+        acceptedFindings: [
+          {
+            repository: "test/fixture",
+            code: "trust.malicious-code",
+            path: "x.js",
+            fileSha256: "ab".repeat(32),
+          },
+        ],
+      },
+      { cacheHome, inspectors: [criticalWithPin] },
+    );
+    expect(disposition.verdict).toBe("block");
+  });
+
+  it("ignores a schemaVersion-1 scan-cache record (pre-acceptance format) and recomputes", async () => {
+    initGitRepo(repoDir, { "SKILL.md": "# skill\n" });
+    const resolved = await resolveGitSource(
+      { repository: repoDir, ref: "HEAD" },
+      { runner: defaultRunner, cacheHome },
+    );
+    const src = scannableFromGit(resolved);
+    expect(runFastScanGate(src, { posture: "vibe" }, { cacheHome }).verdict).toBe("allow");
+    // A stale v1 record fabricating a critical finding must be a cache MISS,
+    // not a served verdict: the acceptance fields it cannot carry would
+    // otherwise silently disable the baseline for this digest.
+    writeFileSync(
+      join(cacheHome, "scan-cache", `${src.digest}.json`),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        digest: src.digest,
+        scannedAt: "2026-01-01T00:00:00.000Z",
+        reports: [
+          {
+            dimension: "legacy",
+            status: "produced",
+            findings: [
+              {
+                code: "trust.malicious-code",
+                severity: "critical",
+                detail: "stale",
+                coverage: "complete",
+              },
+            ],
+          },
+        ],
+      })}\n`,
+    );
+    expect(runFastScanGate(src, { posture: "vibe" }, { cacheHome }).verdict).toBe("allow");
+  });
+
+  it("ships a valid acceptance artifact restricted to content-risk codes", () => {
+    const artifact = readScanAcceptanceArtifact();
+    expect(artifact.accepted.length).toBeGreaterThan(0);
+    const contentRiskCodes = new Set([
+      "trust.hidden-unicode",
+      "trust.prompt-injection",
+      "trust.visible-unicode",
+    ]);
+    for (const entry of artifact.accepted) {
+      expect(contentRiskCodes.has(entry.code)).toBe(true);
+      expect(entry.fileSha256).toMatch(SHA256);
+      expect(entry.path.length).toBeGreaterThan(0);
+      expect(entry.path).not.toContain("\\");
+    }
   });
 });

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   contextCostFromPluginDetails,
+  contextCostFromPluginDetailsText,
   estimateContextCostFromTree,
 } from "../../../../src/binding/hosts/claude/context-cost.js";
 import { ClaudeHostWriteError } from "../../../../src/binding/hosts/claude/surfaces.js";
@@ -148,6 +149,34 @@ describe("estimateContextCostFromTree", () => {
     expect(() => estimateContextCostFromTree(dir)).toThrow(ClaudeHostWriteError);
   });
 
+  it("tolerates JSON-Schema metadata keys in hooks.json (W4 live-run: real ECC ships $schema)", () => {
+    const dir = tree("schema-hooks", {
+      "hooks/hooks.json": JSON.stringify({
+        $schema: "https://example.com/hooks.schema.json",
+        PreToolUse: [{ matcher: "x", hooks: [] }],
+      }),
+    });
+    const cost = estimateContextCostFromTree(dir);
+    expect(cost.counts.hooks).toBe(1);
+  });
+
+  it("counts the settings-style wrapper shape (top-level hooks key holding the event map)", () => {
+    const dir = tree("wrapped-hooks", {
+      "hooks/hooks.json": JSON.stringify({
+        $schema: "https://json.schemastore.org/claude-code-settings.json",
+        hooks: {
+          PreToolUse: [
+            { matcher: "Bash", hooks: [] },
+            { matcher: "Write", hooks: [] },
+          ],
+          Stop: [{ matcher: "*", hooks: [] }],
+        },
+      }),
+    });
+    const cost = estimateContextCostFromTree(dir);
+    expect(cost.counts.hooks).toBe(3);
+  });
+
   it("fails closed on malformed .mcp.json", () => {
     const dir = tree("bad-mcp", { ".mcp.json": "{ not: valid json" });
     expect(() => estimateContextCostFromTree(dir)).toThrow(ClaudeHostWriteError);
@@ -260,5 +289,100 @@ describe("contextCostFromPluginDetails", () => {
     expect(() =>
       contextCostFromPluginDetails({ projectedTokens: Number.POSITIVE_INFINITY }),
     ).toThrow(ClaudeHostWriteError);
+  });
+});
+
+describe("contextCostFromPluginDetailsText (empirically corrected: `claude plugin details` has no --json flag)", () => {
+  const FULL_TEXT = [
+    "Superpowers v1.0.0",
+    "",
+    "Skills (2)",
+    "  - brainstorming",
+    "  - writing-plans",
+    "",
+    "Agents (1)",
+    "  - reviewer",
+    "",
+    "Hooks (3)",
+    "  - PreToolUse",
+    "",
+    "MCP servers (2)",
+    "  - server-a",
+    "",
+    "LSP servers (1)",
+    "  - typescript",
+    "",
+    "Always-on:   ~27 tok",
+    "",
+  ].join("\n");
+
+  it("parses the full component inventory and the Always-on token line", () => {
+    const report = contextCostFromPluginDetailsText(FULL_TEXT);
+    expect(report).toEqual({
+      source: "host-reported",
+      evidence: "claude plugin details (text)",
+      projectedTokens: 27,
+      counts: { skills: 2, agents: 1, commands: 0, rules: 0, hooks: 3, mcpServers: 2 },
+      totalBytes: 0,
+      estimate: false,
+    });
+  });
+
+  it("counts absent categories as zero (per-category optionality, like the JSON-payload sibling)", () => {
+    const text = "Skills (1)\n  - solo-skill\n\nAlways-on:   ~10 tok\n";
+    const report = contextCostFromPluginDetailsText(text);
+    expect(report.counts).toEqual({
+      skills: 1,
+      agents: 0,
+      commands: 0,
+      rules: 0,
+      hooks: 0,
+      mcpServers: 0,
+    });
+    expect(report.projectedTokens).toBe(10);
+  });
+
+  it("leaves projectedTokens undefined when the Always-on line is absent — no fabrication", () => {
+    const text = "Skills (1)\n  - solo-skill\n";
+    const report = contextCostFromPluginDetailsText(text);
+    expect(report.projectedTokens).toBeUndefined();
+    expect(report.counts.skills).toBe(1);
+    expect(report.source).toBe("host-reported");
+    expect(report.estimate).toBe(false);
+  });
+
+  it("succeeds on an Always-on line alone (no component headers) — all counts zero, tokens present", () => {
+    const report = contextCostFromPluginDetailsText("Always-on:   ~5 tok\n");
+    expect(report.projectedTokens).toBe(5);
+    expect(report.counts).toEqual({
+      skills: 0,
+      agents: 0,
+      commands: 0,
+      rules: 0,
+      hooks: 0,
+      mcpServers: 0,
+    });
+  });
+
+  it("is tolerant of case and header naming variance (MCP Servers vs MCP servers)", () => {
+    const report = contextCostFromPluginDetailsText("MCP Servers (4)\n\nAlways-On:   ~1 tok\n");
+    expect(report.counts.mcpServers).toBe(4);
+  });
+
+  describe("rejects unrecognized text — never fabricates a report", () => {
+    const cases: Array<[string, string]> = [
+      ["empty string", ""],
+      ["unrelated prose", "This plugin does not have any structured output at all.\n"],
+      ["whitespace only", "   \n\n  \n"],
+    ];
+    it.each(cases)("rejects %s", (_label, text) => {
+      expect(() => contextCostFromPluginDetailsText(text)).toThrow(ClaudeHostWriteError);
+    });
+
+    it("rejects a non-string input", () => {
+      expect(() => contextCostFromPluginDetailsText(42 as unknown as string)).toThrow(
+        ClaudeHostWriteError,
+      );
+    });
   });
 });

@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { classifyCanon, isAdoptable } from "./adopt/classify.js";
 import { enterpriseBaselineAttestationCheck } from "./baseline/attestation.js";
+import { eccDoubleInstallCheck, eccModeExclusivityCheck } from "./binding/frameworks/ecc-doctor.js";
 import { readAihConfigDiagnostic } from "./config/marker.js";
 import { contractTruthCheck } from "./contract/check.js";
 import { detectInstall } from "./internals/cli-detect.js";
@@ -251,6 +252,8 @@ export const command: CommandSpec = {
               code: "env.dev-tool-missing",
             };
       }),
+      probe("ECC double-install", () => eccDoubleInstallCheck(ctx)),
+      probe("ECC mode exclusivity", () => eccModeExclusivityCheck(ctx)),
       probe("large-repo graph safety", () => scaleSafetyCheck(ctx)),
       probe("VDI compatibility matrix", () => vdiCompatibilityCheck(ctx)),
       probe("MCP managed allowlist", () => mcpManagedAllowlistCheck(ctx)),

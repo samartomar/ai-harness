@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { extname, join } from "node:path";
@@ -18,7 +19,8 @@ import {
   isInstallScriptEvidenceFilePath,
   isMaliciousCodeScanFilePath,
 } from "../trust/script-files.js";
-import { type BindingDeclaration, BindingNpmSourceSchema } from "./schema.js";
+import scanAcceptanceJson from "./scan-acceptance.json";
+import { type BindingDeclaration, BindingNpmSourceSchema, isBareRepositorySlug } from "./schema.js";
 
 /**
  * Fast-scan gate (D12). No adapter executes upstream code before a policy
@@ -192,6 +194,25 @@ function firstSha(stdout: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Transport locator for `request.repository`. The schema admits three identity
+ * forms; https and scp-like locators are git-reachable verbatim, but a bare
+ * `owner/repo` slug is not (git reads it as a local path), so exactly that
+ * shape maps to its canonical GitHub https remote — the same convention as the
+ * trust pipeline. Recorded identity (locks, evidence, error text) stays
+ * slug-form; only the git argv sees the URL.
+ */
+function gitRemoteLocator(repository: string): string {
+  return isBareRepositorySlug(repository) ? `https://github.com/${repository}.git` : repository;
+}
+
+/**
+ * Transport timeout for ls-remote/clone/checkout — these move or materialize a
+ * whole framework tree (sized by the repo, not by us), so wider than proc's 30s
+ * default; same budget as the plugin CLI lane.
+ */
+const TRANSPORT_TIMEOUT_MS = 120_000;
+
 async function resolveExactSha(request: GitResolveRequest, runner: Runner): Promise<string> {
   if (request.commitSha !== undefined) {
     if (!LOWER_SHA40.test(request.commitSha)) {
@@ -204,7 +225,10 @@ async function resolveExactSha(request: GitResolveRequest, runner: Runner): Prom
     throw new BindingScanError(`unsafe git ref for resolution: ${ref}`);
   }
   // `--` ends option parsing so a repository value can never be read as a flag.
-  const result = await runner(["git", "ls-remote", "--", request.repository, ref]);
+  const result = await runner(
+    ["git", "ls-remote", "--", gitRemoteLocator(request.repository), ref],
+    { timeoutMs: TRANSPORT_TIMEOUT_MS },
+  );
   if (result.spawnError || result.code !== 0) {
     throw new BindingScanError(
       `git ls-remote failed for ${request.repository} (${(result.stderr || "").trim().slice(0, 200)})`,
@@ -260,21 +284,18 @@ async function ensureCheckout(
   // Missing, stale, or dirty: wipe and rebuild the checkout fresh, fail closed.
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(join(deps.cacheHome, "cache"), { recursive: true });
-  const clone = await deps.runner([
-    "git",
-    "clone",
-    "--quiet",
-    "--no-hardlinks",
-    "--",
-    request.repository,
-    dir,
-  ]);
+  const clone = await deps.runner(
+    ["git", "clone", "--quiet", "--no-hardlinks", "--", gitRemoteLocator(request.repository), dir],
+    { timeoutMs: TRANSPORT_TIMEOUT_MS },
+  );
   if (clone.spawnError || clone.code !== 0) {
     throw new BindingScanError(
       `git clone failed for ${request.repository} (${(clone.stderr || "").trim().slice(0, 200)})`,
     );
   }
-  const checkout = await deps.runner(["git", "-C", dir, "checkout", "--quiet", commitSha]);
+  const checkout = await deps.runner(["git", "-C", dir, "checkout", "--quiet", commitSha], {
+    timeoutMs: TRANSPORT_TIMEOUT_MS,
+  });
   if (checkout.spawnError || checkout.code !== 0) {
     throw new BindingScanError(
       `git checkout ${commitSha} failed (${(checkout.stderr || "").trim().slice(0, 200)})`,
@@ -379,6 +400,19 @@ export interface ScanFinding {
   severity: ScanSeverity;
   detail: string;
   coverage: ScanCoverage;
+  /** Source-relative POSIX path of the scanned file. Present only on
+   * content-risk findings, where it lets an accepted-baseline entry pin the
+   * finding; inspectors whose findings must never be acceptable (e.g.
+   * malicious-code) deliberately do not set it. */
+  path?: string;
+  /** sha256 of the scanned file's UTF-8 text, CRLF-normalized to LF — the
+   * acceptance content pin. Normalized so a checkout's platform line-ending
+   * drift (core.autocrlf) cannot void or forge-break an acceptance while any
+   * substantive edit still does. */
+  contentSha256?: string;
+  /** Set by the policy decision when a maintainer-accepted baseline entry
+   * matched this finding exactly (code + path + content hash). */
+  accepted?: boolean;
 }
 
 export interface DimensionInspectionContext {
@@ -410,10 +444,19 @@ const GRADED_SEVERITY: Record<string, ScanSeverity> = {
   "trust.visible-unicode": "medium",
 };
 
-function findingFromCode(code: string | undefined, detail: string): ScanFinding {
+function findingFromCode(
+  code: string | undefined,
+  detail: string,
+  pin?: { path: string; contentSha256: string },
+): ScanFinding {
   const resolvedCode = code ?? "trust.finding";
   const severity = DANGER_SEVERITY[resolvedCode] ?? GRADED_SEVERITY[resolvedCode] ?? "medium";
-  return { code: resolvedCode, severity, detail, coverage: "complete" };
+  const finding: ScanFinding = { code: resolvedCode, severity, detail, coverage: "complete" };
+  if (pin !== undefined) {
+    finding.path = pin.path;
+    finding.contentSha256 = pin.contentSha256;
+  }
+  return finding;
 }
 
 function readTextSafe(path: string): string | undefined {
@@ -440,9 +483,15 @@ function inspectContentRisk(dimension: string, ctx: DimensionInspectionContext):
     if (!isDoc && !isStrict) continue;
     const source = readTextSafe(entry.absolutePath);
     if (source === undefined) continue;
+    const pin = {
+      path: toComparablePath(rel),
+      contentSha256: createHash("sha256")
+        .update(source.replace(/\r\n/g, "\n"), "utf8")
+        .digest("hex"),
+    };
     const checks = isDoc ? scanTrustDocument(rel, source) : scanTrustUnicodeDocument(rel, source);
     for (const check of checks) {
-      findings.push(findingFromCode(check.code, check.detail ?? `${rel}: content risk`));
+      findings.push(findingFromCode(check.code, check.detail ?? `${rel}: content risk`, pin));
     }
   }
   return { dimension, status: "produced", findings };
@@ -937,10 +986,77 @@ function mintDisposition(
   return disposition;
 }
 
+// -- Maintainer-accepted content findings (scan-acceptance baseline) ---------
+
+/**
+ * One maintainer-accepted content finding, pinned to the exact file content:
+ * `fileSha256` is the sha256 of the file's UTF-8 text, so ANY edit to the file
+ * voids the acceptance and the finding blocks again until re-reviewed.
+ * `repository` is audit metadata only — the match key is (code, path,
+ * fileSha256), which is already content-exact without it.
+ */
+export interface AcceptedContentFinding {
+  repository: string;
+  code: string;
+  path: string;
+  fileSha256: string;
+}
+
+const AcceptedContentFindingSchema = z
+  .object({
+    repository: z.string().min(1),
+    code: z.string().min(1),
+    path: z.string().min(1),
+    fileSha256: z.string().regex(SHA256_HEX),
+  })
+  .strict();
+
+const ScanAcceptanceArtifactSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    reason: z.string().min(1),
+    accepted: z.array(AcceptedContentFindingSchema),
+  })
+  .strict();
+
+export type ScanAcceptanceArtifact = z.infer<typeof ScanAcceptanceArtifactSchema>;
+
+/**
+ * Parse the shipped scan-acceptance artifact. Fail-closed: a malformed
+ * artifact yields ZERO acceptances (the gate stays at full strictness), never
+ * a widened gate — and the artifact's own unit test fails loudly on shape
+ * drift so a malformed ship cannot go unnoticed.
+ */
+export function readScanAcceptanceArtifact(): ScanAcceptanceArtifact {
+  const parsed = ScanAcceptanceArtifactSchema.safeParse(scanAcceptanceJson);
+  if (!parsed.success) {
+    return { schemaVersion: 1, reason: "malformed artifact — zero acceptances", accepted: [] };
+  }
+  return parsed.data;
+}
+
+let shippedAcceptance: ScanAcceptanceArtifact | undefined;
+function shippedAcceptedFindings(): readonly AcceptedContentFinding[] {
+  shippedAcceptance ??= readScanAcceptanceArtifact();
+  return shippedAcceptance.accepted;
+}
+
+/** Unambiguous match key regardless of path/code characters. */
+function acceptanceKey(code: string, path: string, fileSha256: string): string {
+  return JSON.stringify([code, path, fileSha256]);
+}
+
 export interface FastScanPolicy {
   posture: Posture;
   /** Only meaningful at vibe: permit provisioning despite incomplete coverage. */
   allowIncompleteAtVibe?: boolean;
+  /**
+   * Maintainer-accepted content findings; when absent, the shipped
+   * scan-acceptance artifact applies. Acceptance can only match a finding
+   * that carries a content pin (path + contentSha256 — content-risk findings
+   * only) and never reaches critical severity.
+   */
+  acceptedFindings?: readonly AcceptedContentFinding[];
 }
 
 function coverageFinding(report: DimensionReport): ScanFinding {
@@ -956,13 +1072,31 @@ function decide(
   reports: readonly DimensionReport[],
   policy: FastScanPolicy,
 ): { verdict: ScanVerdict; findings: ScanFinding[] } {
-  const findings: ScanFinding[] = [];
+  const collected: ScanFinding[] = [];
   for (const report of reports) {
-    findings.push(...report.findings);
-    if (report.status === "missing") findings.push(coverageFinding(report));
+    collected.push(...report.findings);
+    if (report.status === "missing") collected.push(coverageFinding(report));
   }
   const rank = (severity: ScanSeverity): number => SEVERITIES.indexOf(severity);
-  const hasBlockingFinding = findings.some((finding) => rank(finding.severity) >= rank("high"));
+  // Acceptance marking: a maintainer-accepted (code, path, fileSha256) triple
+  // neutralizes exactly that content-pinned finding. Critical findings are
+  // never acceptable, and a finding without a pin can never match.
+  const acceptedKeys = new Set(
+    (policy.acceptedFindings ?? shippedAcceptedFindings()).map((entry) =>
+      acceptanceKey(entry.code, entry.path, entry.fileSha256),
+    ),
+  );
+  const findings = collected.map((finding) =>
+    finding.path !== undefined &&
+    finding.contentSha256 !== undefined &&
+    rank(finding.severity) < rank("critical") &&
+    acceptedKeys.has(acceptanceKey(finding.code, finding.path, finding.contentSha256))
+      ? { ...finding, accepted: true }
+      : finding,
+  );
+  const hasBlockingFinding = findings.some(
+    (finding) => rank(finding.severity) >= rank("high") && finding.accepted !== true,
+  );
   const complete = reports.every((report) => report.status === "produced");
   let verdict: ScanVerdict;
   if (hasBlockingFinding) {
@@ -988,12 +1122,18 @@ function produceDisposition(
 
 // -- Scan cache (derived; corrupt == miss, never fail-closed) ----------------
 
+// Cached findings are PRE-decision: they may carry the acceptance content pin
+// (path/contentSha256) but never an `accepted` mark — acceptance is decided
+// fresh on every gate call so baseline changes are always honored. A record
+// carrying unknown fields fails the strict parse and is treated as a miss.
 const ScanFindingSchema = z
   .object({
     code: z.string().min(1),
     severity: z.enum(SEVERITIES),
     detail: z.string(),
     coverage: z.enum(["complete", "incomplete"]),
+    path: z.string().min(1).optional(),
+    contentSha256: z.string().regex(SHA256_HEX).optional(),
   })
   .strict();
 
@@ -1006,9 +1146,13 @@ const DimensionReportSchema = z
   })
   .strict();
 
+// schemaVersion 2: v1 records predate the acceptance content pins, so serving
+// them would silently disable the accepted-findings baseline for that digest
+// (their findings can never match an acceptance entry). Bumping the literal
+// turns every v1 record into a cache miss — a recompute, never a stale verdict.
 const ScanCacheRecordSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(2),
     digest: z.string().regex(SHA256_HEX),
     scannedAt: z.string().min(1),
     reports: z.array(DimensionReportSchema),
@@ -1092,7 +1236,7 @@ export function runFastScanGate(
   // spuriously block a later, correctly-constructed source for the same digest.
   if (source.identityFiles !== undefined) {
     writeScanCache(deps.cacheHome, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       digest: source.digest,
       scannedAt,
       reports: allReports.map((report) => ({ ...report, findings: [...report.findings] })),

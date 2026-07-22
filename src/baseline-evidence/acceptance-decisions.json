@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "decisions": [
+    {
+      "decisionId": "ecc-lean-v1-20260720",
+      "decision": "accepted-with-conditions",
+      "owner": "maintainer:samartomar",
+      "policyVersion": 1,
+      "framework": "ecc",
+      "profile": "ecc-lean-v1",
+      "host": "claude",
+      "adapter": "ecc-lean",
+      "repository": "samartomar/ECC",
+      "commitSha": "16563d4a30f17d097cc4629f6d97e02adf823016",
+      "treeDigest": "a6334281f1f1e2b5b7491fef7232e2dd620b192d9ba20914fe50e2c92367ff67",
+      "residualRisk": "Maintainer-reviewed content-risk findings accepted for the pinned ECC Lean v1 profile only: unicode confusables and typography in instruction files, secret-exfiltration-shaped wording in security teaching material, third-party scanner passthrough findings on the same bytes, and skill license-metadata gaps. No malicious-code, auto-exec, dependency-confusion, typosquat, or source-changed finding is accepted; those are unwaivable. Raw vet verdicts stay blocked-by-default in vendor-lock.json. skill:security-review joins via its fine-grained pinned-scanner evidence entry (fdb924d2); the coarse module:security unit remains inadmissible (unwaivable auto-exec finding in a sibling skill).",
+      "components": [
+        {
+          "evidenceComponentId": "agent:build-error-resolver",
+          "treeSha256": "aedf020f4d178b610f005045029a898f56d45351b5653247fba3d36b15bd42d8",
+          "acceptedFindingCodes": [
+            "trust.detector-finding",
+            "trust.hidden-unicode"
+          ]
+        },
+        {
+          "evidenceComponentId": "agent:code-reviewer",
+          "treeSha256": "1999cb3d4c9adc2146be864235cffafa5157c467173cf6a0214c898a326df44f",
+          "acceptedFindingCodes": [
+            "trust.detector-finding",
+            "trust.hidden-unicode"
+          ]
+        },
+        {
+          "evidenceComponentId": "agent:planner",
+          "treeSha256": "b7586738b19b0c0003072e4575753b4d2359a935ed33ef44cb4a831cc7e497d3",
+          "acceptedFindingCodes": [
+            "trust.hidden-unicode"
+          ]
+        },
+        {
+          "evidenceComponentId": "agent:security-reviewer",
+          "treeSha256": "0979daf595794072c47a8ed822874ae582a5e578d0ad89ebfe2681a0dd03d5e1",
+          "acceptedFindingCodes": [
+            "trust.detector-finding",
+            "trust.hidden-unicode"
+          ]
+        },
+        {
+          "evidenceComponentId": "module:rules-core",
+          "treeSha256": "682bcacfa9a0250a781751982ee200a3db08030ef619b8b01b304bc86a70c064",
+          "acceptedFindingCodes": [
+            "trust.detector-finding",
+            "trust.hidden-unicode",
+            "trust.prompt-injection",
+            "trust.visible-unicode"
+          ]
+        },
+        {
+          "evidenceComponentId": "skill:security-review",
+          "treeSha256": "e587d7894bc97f97819d2642492c1c07372f5db71511cca351687480e450adc7",
+          "acceptedFindingCodes": [
+            "trust.prompt-injection",
+            "trust.skill-metadata-license"
+          ]
+        },
+        {
+          "evidenceComponentId": "skill:tdd-workflow",
+          "treeSha256": "2201b478c7613a21ca72687726317efdf9098f66216d77c4f007cfefa76e1d6a",
+          "acceptedFindingCodes": [
+            "trust.cisco-finding",
+            "trust.hidden-unicode",
+            "trust.prompt-injection",
+            "trust.skill-metadata-license"
+          ]
+        }
+      ],
+      "recordSha256": "b190fe4a70b96b1fc798a9bdf37376389ef65a7af9e3490e760a1bfa3a9f7703"
+    }
+  ]
+}

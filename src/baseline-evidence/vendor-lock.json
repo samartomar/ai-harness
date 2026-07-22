@@ -1327,6 +1327,40 @@
           "findings": []
         },
         {
+          "id": "skill:security-review",
+          "paths": [
+            "skills/security-review"
+          ],
+          "treeSha256": "e587d7894bc97f97819d2642492c1c07372f5db71511cca351687480e450adc7",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "native.c27693752d5d"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12+uvlock.6e440d87a6a5"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "skills/security-review/SKILL.md:249 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:skills/security-review/SKILL.md:24219562ff98dfb4e9646ad1f26a1b2e421627f57215c85a3f90ae229a33ed52"
+            },
+            {
+              "code": "trust.skill-metadata-license",
+              "detail": "skills/security-review/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-skill-metadata-license:skills/security-review/SKILL.md:6a1b101ef212bd95c219169b6f4a2624913269a33236f3377ce5d6a710e69951"
+            }
+          ]
+        },
+        {
           "id": "skill:strategic-compact",
           "paths": [
             "skills/strategic-compact"

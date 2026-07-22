@@ -1,8 +1,10 @@
-import { isAbsolute } from "node:path";
+import { readFileSync, rmSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
 import { executePlan, type PlanResult } from "../../../internals/execute.js";
 import { type Action, plan } from "../../../internals/plan.js";
 import type { Runner, RunResult } from "../../../internals/proc.js";
 import { makeHostAdapter, resolvePlatform } from "../../../platform/detect.js";
+import { execArgv } from "../../../tools/install.js";
 import type { BindingLock, BindingOwnershipEntry, BindingWrite } from "../../lock.js";
 import {
   assertProvisionAuthorized,
@@ -12,6 +14,7 @@ import {
 import {
   type ClaudeManagedPlan,
   ClaudeManagedWriteEngine,
+  carryForwardOwnership,
   finalizeClaudeOwnership,
 } from "./managed-writes.js";
 import {
@@ -20,11 +23,15 @@ import {
   ClaudePluginIdentityError,
   claudeHomeDir,
   defaultPluginCacheLocator,
+  HOME_OWNERSHIP_PREFIX,
   hashLoadedPluginTree,
   homeMarketplaceTarget,
   homePluginCacheTarget,
+  installPathFromPluginList,
+  marketplaceManifestName,
   type PluginCacheLocator,
   type PluginIdentity,
+  pluginSourceSubtreeDigest,
   verifyPluginIdentity,
 } from "./plugin-identity.js";
 import type { ClaudeDriftEntry } from "./removal.js";
@@ -33,7 +40,6 @@ import {
   CLAUDE_SETTINGS_LOCAL_PATH,
   CLAUDE_SETTINGS_PATH,
   canonicalJson,
-  parseJsonPointer,
   sha256Hex,
 } from "./surfaces.js";
 
@@ -131,10 +137,34 @@ export interface PluginCliDeps {
 }
 
 async function runClaude(deps: PluginCliDeps, argv: string[]): Promise<RunResult> {
-  return deps.runner(argv, {
+  // npm ships `claude` as a .cmd shim on Windows, which execFile cannot spawn
+  // (ENOENT/EINVAL) — route through the canon cmd /c wrap (injection-asserted
+  // per argv element), exactly as the harness already spawns npm/npx.
+  return deps.runner(execArgv(resolvePlatform(deps.env), argv), {
     env: deps.env,
     timeoutMs: deps.timeoutMs ?? DEFAULT_PLUGIN_CLI_TIMEOUT_MS,
   });
+}
+
+/**
+ * Whether `<home>/.claude/settings.json` already registers `marketplace` under
+ * `extraKnownMarketplaces` — read BEFORE `marketplace add`, so a failed bind
+ * only unwinds a registration it created itself (an unreadable or malformed
+ * settings file reads as "not registered").
+ */
+function marketplaceIsRegistered(home: string, marketplace: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(
+      readFileSync(join(home, ".claude", "settings.json"), "utf8"),
+    );
+    const known =
+      typeof parsed === "object" && parsed !== null
+        ? (parsed as { extraKnownMarketplaces?: unknown }).extraKnownMarketplaces
+        : undefined;
+    return typeof known === "object" && known !== null && Object.hasOwn(known, marketplace);
+  } catch {
+    return false;
+  }
 }
 
 /** Fail closed on a spawn failure or non-zero exit where success is required. */
@@ -219,18 +249,25 @@ export async function disablePlugin(
   );
 }
 
-/** Uninstall an installed plugin (lifecycle + removal wrapper). */
+/**
+ * Uninstall an installed plugin (lifecycle + removal wrapper). The scope is
+ * REQUIRED: `claude plugin uninstall` defaults to `--scope user` (2.1.214
+ * empirical, W4 live-run correction), so a project/local install must be
+ * uninstalled at its own scope or the host refuses with "enabled at project
+ * scope".
+ */
 export async function uninstallPlugin(
   deps: PluginCliDeps,
   plugin: string,
   marketplace: string,
+  scope: PluginScope,
 ): Promise<void> {
   assertSafePluginName(plugin, "plugin");
   assertSafePluginName(marketplace, "marketplace");
   const key = pluginEnableKey(plugin, marketplace);
   assertCliOk(
-    await runClaude(deps, ["claude", "plugin", "uninstall", key]),
-    `claude plugin uninstall ${key}`,
+    await runClaude(deps, ["claude", "plugin", "uninstall", key, "--scope", scope]),
+    `claude plugin uninstall ${key} --scope ${scope}`,
   );
 }
 
@@ -241,18 +278,27 @@ export async function listPlugins(deps: PluginCliDeps): Promise<unknown> {
   return parseCliJson(result.stdout, "claude plugin list");
 }
 
-/** `claude plugin details <plugin>@<marketplace> --json`, parsed. Fails closed like {@link listPlugins}. */
+/**
+ * `claude plugin details <plugin>@<marketplace>`, raw stdout TEXT.
+ *
+ * Empirically corrected (2.1.214): this CLI has NO `--json` flag — its
+ * output is a human-readable component inventory (Skills/Agents/Hooks/MCP
+ * servers/LSP servers with counts and names) plus a host-projected token-cost
+ * line (`Always-on:   ~N tok`). Parse it with
+ * `contextCostFromPluginDetailsText` in `./context-cost.js`. Fails closed
+ * ONLY on a non-zero exit / spawn failure — there is no JSON to fail to parse.
+ */
 export async function pluginDetails(
   deps: PluginCliDeps,
   plugin: string,
   marketplace: string,
-): Promise<unknown> {
+): Promise<string> {
   assertSafePluginName(plugin, "plugin");
   assertSafePluginName(marketplace, "marketplace");
   const key = pluginEnableKey(plugin, marketplace);
-  const result = await runClaude(deps, ["claude", "plugin", "details", key, "--json"]);
+  const result = await runClaude(deps, ["claude", "plugin", "details", key]);
   assertCliOk(result, `claude plugin details ${key}`);
-  return parseCliJson(result.stdout, `claude plugin details ${key}`);
+  return result.stdout;
 }
 
 function parseCliJson(stdout: string, describe: string): unknown {
@@ -347,47 +393,96 @@ export async function bindPlugin(
   const locate = deps.locateCache ?? defaultPluginCacheLocator;
   const cliDeps: PluginCliDeps = { runner: deps.runner, env: deps.env, timeoutMs: deps.timeoutMs };
 
-  // 3. Capture the D18 pre-existing `enabledPlugins` state BEFORE any CLI write —
+  // 3. D7 anchor (empirically corrected): the plugin's own SOURCE SUBTREE, not
+  //    the whole scanned checkout — computed BEFORE any CLI call, so a
+  //    malformed marketplace.json / missing plugin entry / missing version
+  //    fails closed with ZERO host mutation.
+  const subtree = pluginSourceSubtreeDigest(resolved.treePath, plugin);
+
+  // 3b. The host registers a marketplace under the MANIFEST's own name, never a
+  //     registrar-chosen one (W4 live-run correction) — assert the adapter's
+  //     pinned expectation matches before any host mutation.
+  const manifestName = marketplaceManifestName(resolved.treePath);
+  if (manifestName !== marketplace) {
+    throw new ClaudePluginError(
+      `refusing to bind ${plugin}: the checkout's marketplace manifest declares name ` +
+        `${JSON.stringify(manifestName)} but the adapter expected ${JSON.stringify(marketplace)} — ` +
+        `the host registers a marketplace under the manifest's name, so the pinned expectation must match`,
+    );
+  }
+
+  // 4. Capture the D18 pre-existing `enabledPlugins` state BEFORE any CLI write —
   //    `jsonField` reads disk now — so the lock records the true pre-AIH state even
-  //    though the CLI install also flips the same bit. The apply happens in step 7.
+  //    though the CLI install also flips the same bit. The apply happens in step 8.
   const enablePointer = `/enabledPlugins/${pluginKey}`;
   const settingsPlan: ClaudeManagedPlan = new ClaudeManagedWriteEngine(deps.root)
     .jsonField(settingsFile, enablePointer, true)
     .build();
-  preservePriorPreExisting(settingsPlan, request.previousLock, `${settingsFile}#${enablePointer}`);
+  carryForwardOwnership(settingsPlan, request.previousLock, `${settingsFile}#${enablePointer}`);
 
-  // 4. Register the scanned checkout itself as the marketplace source (machine scope).
+  // 5. Register the scanned checkout itself as the marketplace source (machine
+  //    scope). Whether the name was ALREADY registered is captured first: a
+  //    failed bind must only unwind a registration it created itself.
+  const marketplacePreRegistered = marketplaceIsRegistered(home, marketplace);
   await marketplaceAdd(cliDeps, resolved.treePath);
 
-  // 5. Materialize the plugin into the host's loadable cache.
-  await installPlugin(cliDeps, plugin, marketplace, scope);
+  let identity: PluginIdentity;
+  let loadedTreePath: string;
+  try {
+    // 6. Materialize the plugin into the host's loadable cache.
+    await installPlugin(cliDeps, plugin, marketplace, scope);
 
-  // 6. D7: re-digest the loaded cache and compare to the scanned digest.
-  const loadedTreePath = locate({
-    home,
-    marketplace,
-    plugin,
-    pluginKey,
-    marketplaceSourcePath: resolved.treePath,
-  });
-  const identity = verifyPluginIdentity(resolved.treeDigest, loadedTreePath);
-  if (!identity.match) {
-    // FAIL CLOSED: undo the install (best-effort disable + uninstall), write no lock.
-    await cleanupFailedInstall(cliDeps, plugin, marketplace);
-    throw new ClaudePluginIdentityError(
-      `refusing to bind plugin ${pluginKey}: the loaded tree digest ${identity.loadedDigest} does not match the scanned digest ${identity.scannedDigest} (D7 mismatch)`,
-      identity,
-    );
+    // 7. D7: locate the loaded subtree — PREFER the host's own authoritative
+    //    `installPath` (via `claude plugin list --json`, still --json-capable),
+    //    falling back to the locator (now version-aware) only on a list
+    //    failure or an unparseable/absent entry — then compare to the SUBTREE
+    //    digest computed in step 3.
+    const locatorFallback = (): string =>
+      locate({
+        home,
+        marketplace,
+        plugin,
+        pluginKey,
+        marketplaceSourcePath: resolved.treePath,
+        version: subtree.version,
+      });
+    try {
+      const listPayload = await listPlugins(cliDeps);
+      loadedTreePath = installPathFromPluginList(listPayload, pluginKey) ?? locatorFallback();
+    } catch {
+      loadedTreePath = locatorFallback();
+    }
+    identity = verifyPluginIdentity(subtree.digest, loadedTreePath);
+    if (!identity.match) {
+      // FAIL CLOSED: undo the install (best-effort disable + uninstall), write no lock.
+      await cleanupFailedInstall(cliDeps, plugin, marketplace, scope);
+      throw new ClaudePluginIdentityError(
+        `refusing to bind plugin ${pluginKey}: the loaded tree digest ${identity.loadedDigest} does not match the scanned digest ${identity.scannedDigest} (D7 mismatch)`,
+        identity,
+      );
+    }
+  } catch (err) {
+    // Machine-scope unwind (best-effort): a bind failing after step 5 must not
+    // leave its own marketplace registration behind (W4 live-run correction).
+    if (!marketplacePreRegistered) {
+      try {
+        await marketplaceRemove(cliDeps, marketplace);
+      } catch {
+        // best-effort — the original bind failure below is the error that matters
+      }
+    }
+    throw err;
   }
 
-  // 7. Apply the D18-owned `enabledPlugins` write and seal its post-apply digest.
+  // 8. Apply the D18-owned `enabledPlugins` write and seal its post-apply digest.
   const apply = deps.applyActions ?? defaultApplyActions(deps);
   await apply(deps.root, settingsPlan.actions);
   const settingsOwnership = finalizeClaudeOwnership(deps.root, settingsPlan.ownership);
 
-  // 8. Record the machine-scope effects as `home:` ownership the lock reconciles on removal.
+  // 9. Record the machine-scope effects as `home:` ownership the lock reconciles on removal.
   const homeOwnership = sealHomeOwnership({
     marketplace,
+    plugin,
     pluginKey,
     marketplaceSourcePath: resolved.treePath,
     loadedDigest: identity.loadedDigest,
@@ -407,65 +502,30 @@ export async function bindPlugin(
   };
 }
 
-/**
- * Re-bind pre-existing preservation: reuse the prior lock's recorded state so
- * removal restores the pre-AIH world, not a prior bind's own value. Two shapes:
- *  - the prior lock owns the LEAF (`<file>#/enabledPlugins/<key>` — the container
- *    pre-existed at first bind): carry its preExisting onto the new leaf intent;
- *  - the prior lock owns the PARENT container (`<file>#/enabledPlugins` with
- *    preExisting absent — AIH created the container at first bind): RE-ASSERT
- *    parent ownership on the re-bind intent. The engine sees the container as
- *    present now and would otherwise record a leaf whose "pre-existing" is the
- *    first bind's own value, so removal from a re-bind lock would restore the
- *    binding instead of pruning the container AIH created.
- */
-function preservePriorPreExisting(
-  settingsPlan: ClaudeManagedPlan,
-  previousLock: BindingLock | undefined,
-  target: string,
-): void {
-  if (previousLock === undefined) return;
-  const intent = settingsPlan.ownership[0];
-  if (intent === undefined) return;
-  const prior = previousLock.ownership.find((entry) => entry.target === target);
-  if (prior !== undefined) {
-    intent.preExisting = prior.preExisting;
-    return;
-  }
-  if (intent.pointer === undefined || intent.pointer.length !== 2) return;
-  const hash = target.indexOf("#");
-  if (hash < 0) return;
-  const file = target.slice(0, hash);
-  const segments = parseJsonPointer(target.slice(hash + 1));
-  const parent = segments[0];
-  const child = segments[1];
-  if (parent === undefined || child === undefined) return;
-  const parentTarget = `${file}#/${parent}`;
-  const parentPrior = previousLock.ownership.find((entry) => entry.target === parentTarget);
-  if (parentPrior === undefined) return;
-  intent.target = parentTarget;
-  intent.pointer = [parent];
-  intent.preExisting = parentPrior.preExisting;
-  intent.applied = { [child]: intent.applied };
-}
-
 interface HomeOwnershipInputs {
   marketplace: string;
+  plugin: string;
   pluginKey: string;
   marketplaceSourcePath: string;
   loadedDigest: string;
 }
 
 /**
- * Seal the two machine-scope ownership entries. They are MODELED (the user scope
- * stays clean on this VM): pre-existing is recorded as absent — a fresh marketplace
- * + cache — which W4's real-VM run can refine by reading the actual config. The
- * marketplace entry's applied value is the registered source; the cache entry's
- * applied value + post-apply digest ARE the loaded tree digest, so removal can
- * reconcile the cache conservatively against the very digest D7 matched.
+ * Seal the two machine-scope ownership entries. Pre-existing is recorded as
+ * absent — a fresh marketplace + cache (the user scope stays clean on this
+ * VM). The marketplace entry's applied value mirrors the EXACT shape
+ * `claude plugin marketplace add <dir>` writes at
+ * `~/.claude/settings.json#/extraKnownMarketplaces/<name>` (empirically
+ * verified on 2.1.214): `{source: {source: "directory", path: "<abs>"}}` —
+ * the outer `source` is the settings field itself; the inner `{source,path}`
+ * describes how the host was told to find it. The cache entry's applied
+ * value + post-apply digest ARE the loaded (subtree) tree digest, so removal
+ * can reconcile the cache conservatively against the very digest D7 matched.
  */
 function sealHomeOwnership(inputs: HomeOwnershipInputs): BindingOwnershipEntry[] {
-  const marketplaceApplied = { source: inputs.marketplaceSourcePath };
+  const marketplaceApplied = {
+    source: { source: "directory", path: inputs.marketplaceSourcePath },
+  };
   return [
     {
       kind: "json-pointer",
@@ -476,7 +536,7 @@ function sealHomeOwnership(inputs: HomeOwnershipInputs): BindingOwnershipEntry[]
     },
     {
       kind: "file",
-      target: homePluginCacheTarget(inputs.pluginKey),
+      target: homePluginCacheTarget(inputs.marketplace, inputs.plugin),
       preExisting: { absent: true },
       applied: inputs.loadedDigest,
       postApplyDigest: inputs.loadedDigest,
@@ -489,13 +549,17 @@ async function cleanupFailedInstall(
   deps: PluginCliDeps,
   plugin: string,
   marketplace: string,
+  scope: PluginScope,
 ): Promise<void> {
-  for (const step of [disablePlugin, uninstallPlugin]) {
-    try {
-      await step(deps, plugin, marketplace);
-    } catch {
-      // Swallowed: cleanup is best-effort; the identity error is what surfaces.
-    }
+  try {
+    await disablePlugin(deps, plugin, marketplace);
+  } catch {
+    // Swallowed: cleanup is best-effort; the identity error is what surfaces.
+  }
+  try {
+    await uninstallPlugin(deps, plugin, marketplace, scope);
+  } catch {
+    // Swallowed: cleanup is best-effort; the identity error is what surfaces.
   }
 }
 
@@ -534,6 +598,9 @@ export interface RemovePluginRequest {
   ownership: readonly BindingOwnershipEntry[];
   plugin: string;
   marketplace: string;
+  /** The scope the plugin was installed at — uninstall must name it (the CLI
+   * defaults to user scope; W4 live-run correction). */
+  scope: PluginScope;
 }
 
 export interface RemovePluginDeps {
@@ -578,7 +645,7 @@ export async function removePlugin(
   const cliDeps: PluginCliDeps = { runner: deps.runner, env: deps.env, timeoutMs: deps.timeoutMs };
 
   const cacheEntry = request.ownership.find(
-    (entry) => entry.target === homePluginCacheTarget(pluginKey),
+    (entry) => entry.target === homePluginCacheTarget(request.marketplace, request.plugin),
   );
   const marketplaceEntry = request.ownership.find(
     (entry) => entry.target === homeMarketplaceTarget(request.marketplace),
@@ -632,10 +699,20 @@ export async function removePlugin(
   // Clean: tear the plugin and its marketplace down (best-effort, idempotent).
   cli.push(
     await bestEffortCli(
-      () => uninstallPlugin(cliDeps, request.plugin, request.marketplace),
-      `claude plugin uninstall ${pluginKey}`,
+      () => uninstallPlugin(cliDeps, request.plugin, request.marketplace, request.scope),
+      `claude plugin uninstall ${pluginKey} --scope ${request.scope}`,
     ),
   );
+  // 2.1.214 empirical (W4 live rehearsal): a project-scope uninstall
+  // deregisters the plugin but leaves the materialized cache bytes on disk.
+  // The digest check above proved this tree is EXACTLY the recorded surface,
+  // so deleting the owned cache root directly is the same recorded-surface
+  // teardown the Lean installer path performs — this line is never reached on
+  // drift or unreadable state.
+  rmSync(join(home, ...cacheEntry.target.slice(HOME_OWNERSHIP_PREFIX.length).split("/")), {
+    recursive: true,
+    force: true,
+  });
   removed.push(cacheEntry.target);
   if (marketplaceEntry !== undefined) {
     cli.push(
@@ -649,17 +726,18 @@ export async function removePlugin(
   return { removed, drift, cli };
 }
 
+/**
+ * Read the checkout path back out of a sealed marketplace ownership entry's
+ * `applied` value — empirically corrected shape:
+ * `{source: {source: "directory", path: "<abs>"}}` (see {@link sealHomeOwnership}).
+ */
 function readMarketplaceSource(entry: BindingOwnershipEntry | undefined): string {
   const applied = entry?.applied;
-  if (
-    typeof applied === "object" &&
-    applied !== null &&
-    "source" in applied &&
-    typeof (applied as { source: unknown }).source === "string"
-  ) {
-    return (applied as { source: string }).source;
-  }
-  return "";
+  if (typeof applied !== "object" || applied === null) return "";
+  const source = (applied as { source?: unknown }).source;
+  if (typeof source !== "object" || source === null) return "";
+  const path = (source as { path?: unknown }).path;
+  return typeof path === "string" ? path : "";
 }
 
 type CacheReconcileState =

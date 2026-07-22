@@ -1,5 +1,11 @@
 import type { Posture } from "../config/posture.js";
 import type { Check, CheckCode } from "../internals/verify.js";
+import {
+  type AcceptanceDecision,
+  type AcceptanceTuple,
+  matchComponentAcceptance,
+  readAcceptanceDecisions,
+} from "./acceptance.js";
 import { type BaselineCatalog, resolveCatalogComponents } from "./catalog.js";
 import { hashComponentTree } from "./hash.js";
 import type { OrgBaselineEvidence } from "./org.js";
@@ -17,6 +23,16 @@ export interface BaselineAuthorization {
   tier: "vendor" | "org";
   issuer: string;
   evidenceSha256: string;
+  /** Effective disposition. Absent/"pass" = signed vet pass. "accepted-with-conditions"
+   * = the raw vet verdict is BLOCKED (preserved untouched in the lock) and an exact
+   * signed acceptance decision admitted this component (W4 ruling (e)). */
+  effective?: "pass" | "accepted-with-conditions";
+  /** Present iff `effective` is "accepted-with-conditions": the signed decision. */
+  acceptance?: {
+    decisionId: string;
+    recordSha256: string;
+    acceptedFindingCodes: string[];
+  };
 }
 
 export interface BaselineHeldComponent {
@@ -34,6 +50,10 @@ export interface VerifyBaselineComponentsInput {
   vendorLock: BaselineEvidenceLock;
   vendorLockSha256: string;
   orgEvidence?: OrgBaselineEvidence;
+  /** Signed accepted-with-conditions decisions; defaults to the shipped artifact. */
+  acceptanceDecisions?: readonly AcceptanceDecision[];
+  /** When set, only decisions matching this exact profile/host/adapter tuple apply. */
+  acceptanceTuple?: AcceptanceTuple;
 }
 
 export interface BaselineVerificationResult {
@@ -147,6 +167,41 @@ export function verifyBaselineComponents(
     const vendorEntry = vendorSource?.components.find((candidate) => candidate.id === component.id);
     const exactVendor = exactComponent(vendorSource, component.id, component.paths, actual);
     if (exactVendor?.verdict === "blocked") {
+      // Accepted-with-conditions join (W4 ruling (e)): the raw verdict stays
+      // blocked; an EXACT signed acceptance (same repo/pin/component/digest,
+      // every finding code accepted, none unwaivable, unexpired) may admit the
+      // component. The check names BOTH facts — the raw block is never
+      // reported as a vet pass.
+      const rawCodes = [...new Set(exactVendor.findings.map((finding) => finding.code))];
+      const acceptance = matchComponentAcceptance(
+        input.acceptanceDecisions ?? readAcceptanceDecisions(),
+        {
+          framework: input.catalog.id,
+          repository: sourceName,
+          commitSha: input.catalog.pinnedSha,
+          componentId: component.id,
+          componentTreeSha256: actual,
+          findingCodes: rawCodes,
+        },
+        new Date(),
+        input.acceptanceTuple,
+      );
+      if (acceptance !== undefined) {
+        checks.push({
+          name,
+          verdict: "pass",
+          detail:
+            `${component.id} raw vet verdict is BLOCKED (${rawCodes.join(", ") || "trust finding"}); ` +
+            `admitted by signed acceptance ${acceptance.decisionId} (accepted-with-conditions; ` +
+            `raw findings preserved in the vendor lock)`,
+        });
+        authorizations.push({
+          ...authorization(input, component.id, actual, "vendor"),
+          effective: "accepted-with-conditions",
+          acceptance,
+        });
+        continue;
+      }
       const check = blockedCheck(name, exactVendor);
       checks.push(check);
       hold(

@@ -15,13 +15,51 @@ jobs:
     steps:
       - name: Check out ai-harness
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Full history so the relevance gate can diff against the PR base sha.
+          fetch-depth: 0
+      - name: Decide whether this event can change vetting inputs
+        id: relevance
+        shell: bash
+        # The from-scratch re-vet costs ~30 min. On pull_request it runs only
+        # when the diff can affect vetting inputs: the pins in this workflow
+        # file, the evidence generator and committed locks
+        # (src/baseline-evidence), the scanners it orchestrates (src/trust),
+        # the install-preview producers (src/ecc, src/superpowers), the pinned
+        # scanner project (tools/cisco-skill-scanner), or the dependency graph.
+        # Push-to-main and manual dispatch ALWAYS re-vet, so the from-scratch
+        # ground truth on main (issue #444) is untouched and any PR-side miss
+        # is still caught at merge. This is a step-level gate, not a paths:
+        # trigger filter, so the vet-once check always reports a conclusion
+        # and can never wedge a required-checks list in "expected".
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "vet=true" >> "$GITHUB_OUTPUT"
+            echo "non-PR event (${{ github.event_name }}): always re-vet"
+            exit 0
+          fi
+          base="${{ github.event.pull_request.base.sha }}"
+          changed="$(git diff --name-only "$base" HEAD)"
+          printf 'changed files:\n%s\n' "$changed"
+          pattern='^(\.github/workflows/baseline-evidence\.yml$|src/baseline-evidence/|src/trust/|src/ecc/|src/superpowers/|tools/cisco-skill-scanner/|package\.json$|package-lock\.json$)'
+          if printf '%s\n' "$changed" | grep -qE "$pattern"; then
+            echo "vet=true" >> "$GITHUB_OUTPUT"
+            echo "vetting-relevant changes found: re-vet"
+          else
+            echo "vet=false" >> "$GITHUB_OUTPUT"
+            echo "no vetting-relevant changes: skipping the re-vet (pass)"
+          fi
       - name: Set up Node.js
+        if: steps.relevance.outputs.vet == 'true'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: "22"
           cache: npm
-      - run: npm ci
+      - if: steps.relevance.outputs.vet == 'true'
+        run: npm ci
       - name: Pull and verify pinned SkillSpector image by digest
+        if: steps.relevance.outputs.vet == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -38,11 +76,13 @@ jobs:
           echo "repo digests: ${digests}"
           echo "$digests" | grep -q "sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
       - name: Set up pinned uv
+        if: steps.relevance.outputs.vet == 'true'
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           version: "0.11.14"
           cache-dependency-glob: tools/cisco-skill-scanner/uv.lock
       - name: Cache and verify pinned Cisco skill-scanner
+        if: steps.relevance.outputs.vet == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -52,6 +92,7 @@ jobs:
             --offline --no-python-downloads --no-env-file skill-scanner --version)"
           test "$version" = "skill-scanner 2.0.12"
       - name: Check out exact ECC baseline
+        if: steps.relevance.outputs.vet == 'true'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: samartomar/ECC
@@ -59,6 +100,7 @@ jobs:
           path: .baseline-sources/ecc
           persist-credentials: false
       - name: Check out exact Superpowers baseline
+        if: steps.relevance.outputs.vet == 'true'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: obra/Superpowers
@@ -66,6 +108,7 @@ jobs:
           path: .baseline-sources/superpowers
           persist-credentials: false
       - name: Re-vet exact pins and fail on evidence drift
+        if: steps.relevance.outputs.vet == 'true'
         # CI is always the from-scratch ground truth (issue #444): --full disables
         # incremental receipt reuse so this run rescans every component, the same
         # as before I1. Incremental reuse is the human-loop default (baseline:vet /
@@ -81,7 +124,9 @@ jobs:
             src/baseline-evidence/vendor-lock.json \
             src/baseline-evidence/ecc-install-preview.json
       - name: Upload baseline evidence report
-        if: always()
+        # Upload whenever the re-vet actually ran (including on its failure,
+        # for post-mortem); skip when the relevance gate skipped the vet.
+        if: ${{ !cancelled() && steps.relevance.outputs.vet == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: baseline-evidence-lock

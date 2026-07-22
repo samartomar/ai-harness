@@ -29,6 +29,78 @@ export {
 } from "./adapter.js";
 // W3f — plan-time feature-key validation shared by every W4+ adapter.
 export { assertKnownFeatureKeys, BindingFeatureKeyError } from "./features.js";
+// W4d — D10 cost-gate measurement record + ECC doctor rules.
+export {
+  buildCostGateRecord,
+  type CostGateBudget,
+  type CostGateRecord,
+  type CostGateVariant,
+  type CostGateVariantMeasurement,
+  type CostGateVerdict,
+  measureCostGateVariant,
+} from "./frameworks/cost-gate.js";
+// W4b — the ECC Lean adapter (upstream-local-installer). Composes the shipped,
+// pin-bound ECC install-preview + an injected selective-install seam; adds no ECC
+// install machinery of its own (D9). W4c adds the Full variant to the same file.
+export {
+  componentInstallRoot,
+  computeEccFullLabel,
+  computeEccLeanPreviewDiff,
+  createEccAdapter,
+  ECC_AGENT_DATA_HOME_DEFAULT,
+  ECC_FULL_FEATURE_KEYS,
+  ECC_FULL_MARKETPLACE_NAME,
+  ECC_FULL_MCP_CONNECTORS,
+  ECC_FULL_PLUGIN_NAME,
+  ECC_HOMUNCULUS_DIR_DEFAULT,
+  ECC_HOST_TARGET,
+  ECC_LEAN_ACCEPTANCE_TUPLE,
+  ECC_LEAN_ALLOWLIST,
+  ECC_LEAN_EXCLUDED,
+  ECC_PIN_COMMIT,
+  ECC_REPOSITORY,
+  EccBindingError,
+  type EccFullLabelInput,
+  type EccFullProvisionResult,
+  type EccFullRemoveResult,
+  type EccLeanAdapterDeps,
+  EccLeanAllowlistError,
+  type EccLeanInstalledFile,
+  type EccLeanInstaller,
+  EccLeanInstallerUnavailableError,
+  type EccLeanInstallInput,
+  type EccLeanInstallResult,
+  type EccLeanManifest,
+  type EccLeanPreviewDiff,
+  type EccLeanRemoveResult,
+  type EccMode,
+  EccModeConflictError,
+  EccModeNotImplementedError,
+  type EccStateWriteFinding,
+  eccFullStateWriteInventory,
+  eccLeanManifest,
+  eccRuntimeSurfaceHit,
+  type NormalizedEccOp,
+  normalizeEccOperations,
+} from "./frameworks/ecc.js";
+export { eccDoubleInstallCheck, eccModeExclusivityCheck } from "./frameworks/ecc-doctor.js";
+// W4a — the first real D6 adapter (Superpowers, host-plugin) + its registry
+// assembly point. Composes the W3 Claude host services above; adds no new
+// host mechanism of its own.
+export {
+  type BindingRegistryDeps,
+  createBindingAdapterRegistry,
+} from "./frameworks/registry.js";
+export {
+  createSuperpowersAdapter,
+  SUPERPOWERS_MARKETPLACE_NAME,
+  SUPERPOWERS_PIN_COMMIT,
+  SUPERPOWERS_PLUGIN_NAME,
+  SUPERPOWERS_REPOSITORY,
+  type SuperpowersAdapterDeps,
+  SuperpowersBindingError,
+  type SuperpowersRemoveResult,
+} from "./frameworks/superpowers.js";
 // W3 — Claude project-scope host adapter: detection, D18 managed writes/removal,
 // plugin binding + D7 identity, skillOverrides deny lists (D11), contamination
 // report, previewed cleanup with backup/rollback, and context-cost inventory.
@@ -41,12 +113,12 @@ export {
   bindPlugin,
   CLAUDE_BINDING_MARKER,
   CLAUDE_BOOTLOADER_PATH,
+  CLAUDE_EXTRA_KNOWN_MARKETPLACES_KEY,
+  CLAUDE_HOME_SETTINGS_REL,
   CLAUDE_MCP_PATH,
   CLAUDE_OWNED_FILE_ROOTS,
   CLAUDE_PLUGINS_CACHE_REL,
-  CLAUDE_PLUGINS_CONFIG_REL,
   CLAUDE_PLUGINS_DIR_REL,
-  CLAUDE_PLUGINS_MARKETPLACES_KEY,
   CLAUDE_SETTINGS_LOCAL_PATH,
   CLAUDE_SETTINGS_PATH,
   CLAUDE_SHARED_JSON_FILES,
@@ -81,9 +153,11 @@ export {
   type ContaminationSurface,
   type ContextCostEvidenceSource,
   type ContextCostReport,
+  carryForwardOwnership,
   claudeContaminationReport,
   claudeHomeDir,
   contextCostFromPluginDetails,
+  contextCostFromPluginDetailsText,
   defaultPluginCacheLocator,
   detectClaudeHost,
   disablePlugin,
@@ -95,6 +169,7 @@ export {
   hashLoadedPluginTree,
   homeMarketplaceTarget,
   homePluginCacheTarget,
+  installPathFromPluginList,
   installPlugin,
   isHomeScopedTarget,
   listPlugins,
@@ -106,10 +181,12 @@ export {
   type PluginCliDeps,
   type PluginIdentity,
   type PluginScope,
+  type PluginSourceSubtree,
   planClaudeCleanup,
   planClaudeRemoval,
   pluginDetails,
   pluginEnableKey,
+  pluginSourceSubtreeDigest,
   queueSkillDenyList,
   type RemovePluginDeps,
   type RemovePluginRequest,

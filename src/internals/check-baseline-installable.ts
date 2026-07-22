@@ -3,6 +3,11 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  type AcceptanceDecision,
+  matchComponentAcceptance,
+  readAcceptanceDecisions,
+} from "../baseline-evidence/acceptance.js";
 import type { BaselineCatalog } from "../baseline-evidence/catalog.js";
 import {
   BASELINE_CATALOG_IDS,
@@ -75,6 +80,8 @@ export interface CheckInstallableBaselineInput {
   fixtureOnly?: boolean;
   /** Target CLI to record in the fixture registration ledger. */
   cli?: string;
+  /** Signed accepted-with-conditions decisions; defaults to the shipped artifact. */
+  acceptanceDecisions?: readonly AcceptanceDecision[];
 }
 
 interface CatalogEvaluation {
@@ -133,6 +140,7 @@ function evaluateCatalog(
   lock: BaselineEvidenceLock,
   catalog: BaselineCatalog,
   lockSha256: string,
+  acceptances: readonly AcceptanceDecision[],
 ): CatalogEvaluation {
   const source = boundSource(lock, catalog);
   const authorizations: BaselineAuthorization[] = [];
@@ -157,6 +165,32 @@ function evaluateCatalog(
     }
     if (exact?.verdict === "blocked") {
       const codes = [...new Set(exact.findings.map((finding) => finding.code))];
+      // Accepted-with-conditions join (W4 ruling (e)) — mirrors verify.ts's
+      // runtime join against the LOCK's recorded component digest (the release
+      // gate has no source tree to re-hash; the runtime path re-verifies
+      // against real bytes).
+      const acceptance = matchComponentAcceptance(acceptances, {
+        framework: catalog.id,
+        repository: `${catalog.owner}/${catalog.repo}`,
+        commitSha: catalog.pinnedSha,
+        componentId: component.id,
+        componentTreeSha256: exact.treeSha256,
+        findingCodes: codes,
+      });
+      if (acceptance !== undefined) {
+        authorizations.push({
+          componentId: component.id,
+          source: `${catalog.owner}/${catalog.repo}`,
+          pinnedSha: catalog.pinnedSha,
+          treeSha256: exact.treeSha256,
+          tier: "vendor",
+          issuer: VENDOR_ISSUER,
+          evidenceSha256: lockSha256,
+          effective: "accepted-with-conditions",
+          acceptance,
+        });
+        continue;
+      }
       held.push({ componentId: component.id, codes: codes.length > 0 ? codes : ["trust.finding"] });
       continue;
     }
@@ -341,7 +375,12 @@ export async function checkInstallableBaseline(
         mkdirSync(home, { recursive: true });
         mkdirSync(project, { recursive: true });
 
-        const { authorizations, held } = evaluateCatalog(lock, catalog, lockSha256);
+        const { authorizations, held } = evaluateCatalog(
+          lock,
+          catalog,
+          lockSha256,
+          input.acceptanceDecisions ?? readAcceptanceDecisions(),
+        );
         const installedComponentIds = authorizations.map((a) => a.componentId).sort();
 
         if (authorizations.length > 0) {

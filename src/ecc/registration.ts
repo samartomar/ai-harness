@@ -34,6 +34,15 @@ const AuthorizationSchema = z
     tier: z.enum(["vendor", "org"]),
     issuer: z.string().min(1).max(240),
     evidenceSha256: z.string().regex(SHA256),
+    effective: z.enum(["pass", "accepted-with-conditions"]).optional(),
+    acceptance: z
+      .object({
+        decisionId: z.string().min(1).max(240),
+        recordSha256: z.string().regex(SHA256),
+        acceptedFindingCodes: z.array(z.string().min(1).max(120)).max(64),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

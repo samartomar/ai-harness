@@ -1,4 +1,5 @@
-import { homedir } from "node:os";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
@@ -45,22 +46,39 @@ interface VerifiedInstallStep {
   argv: string[];
   cwd: string;
   env?: Record<string, string>;
+  /** Stdin payload for the step. Unbounded data (ledger, materialization
+   * payloads) must NEVER ride argv — Windows command lines cap at 32,767
+   * chars, and the W4 live run hit ENAMETOOLONG once the registration ledger
+   * grew (defect: nested base64 payloads scaling with ledger size). */
+  input?: string;
 }
 
 const VERIFIED_ECC_INSTALL_DRIVER = String.raw`
 const child = require("node:child_process");
-const steps = JSON.parse(Buffer.from(process.argv[1], "base64").toString("utf8"));
+const fs = require("node:fs");
+const stepsPath = process.argv[1];
+const steps = JSON.parse(fs.readFileSync(stepsPath, "utf8"));
+try {
+  fs.unlinkSync(stepsPath);
+  fs.rmdirSync(require("node:path").dirname(stepsPath));
+} catch (_) {}
 for (const step of steps) {
   if (!step || !Array.isArray(step.argv) || typeof step.cwd !== "string" || step.argv.length === 0) {
     process.stderr.write("invalid verified ECC install step\n");
     process.exit(1);
   }
-  const result = child.spawnSync(step.argv[0], step.argv.slice(1), {
+  const options = {
     cwd: step.cwd,
     env: { ...process.env, ...(step.env || {}) },
-    stdio: "inherit",
     shell: false,
-  });
+  };
+  if (typeof step.input === "string") {
+    options.input = step.input;
+    options.stdio = ["pipe", "inherit", "inherit"];
+  } else {
+    options.stdio = "inherit";
+  }
+  const result = child.spawnSync(step.argv[0], step.argv.slice(1), options);
   if (result.error) {
     process.stderr.write(result.error.message + "\n");
     process.exit(1);
@@ -71,7 +89,7 @@ for (const step of steps) {
 
 const VERIFIED_ECC_MATERIALIZE_DRIVER = String.raw`
 const path = require("node:path");
-const payload = JSON.parse(Buffer.from(process.argv[1], "base64").toString("utf8"));
+const payload = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
 if (!payload || typeof payload.sourceRoot !== "string" || typeof payload.target !== "string" || !payload.spec) {
   throw new Error("invalid scoped ECC materialization payload");
 }
@@ -129,7 +147,7 @@ const retryTransient = (operation) => {
     }
   }
 };
-const payload = JSON.parse(Buffer.from(process.argv[1], "base64").toString("utf8"));
+const payload = JSON.parse(fs.readFileSync(0, "utf8"));
 if (!payload || typeof payload.home !== "string" || !path.isAbsolute(payload.home) || typeof payload.contents !== "string") throw new Error("invalid ECC registration-ledger payload");
 const safe = (entry, kind) => {
   if (!fs.existsSync(entry)) return;
@@ -193,23 +211,20 @@ function materializeStep(
     ...eccMaterializationSpec(selection),
     spec: eccMaterializationSpec(selection),
   };
-  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
   return {
-    argv: [process.execPath, "-e", VERIFIED_ECC_MATERIALIZE_DRIVER, encoded],
+    argv: [process.execPath, "-e", VERIFIED_ECC_MATERIALIZE_DRIVER],
     cwd: ctx.root,
     env: { ECC_DISABLED_MCPS: disabledUpstreamMcps(selection) },
+    input: JSON.stringify(payload),
   };
 }
 
 function ledgerWriteStep(ctx: PlanContext, ledger: RegistrationLedger): VerifiedInstallStep {
   const home = ctx.env.HOME || ctx.env.USERPROFILE || homedir();
-  const payload = Buffer.from(
-    JSON.stringify({ home, contents: serializeRegistrationLedger(ledger) }),
-    "utf8",
-  ).toString("base64");
   return {
-    argv: [process.execPath, "-e", VERIFIED_ECC_LEDGER_WRITER, payload],
+    argv: [process.execPath, "-e", VERIFIED_ECC_LEDGER_WRITER],
     cwd: ctx.root,
+    input: JSON.stringify({ home, contents: serializeRegistrationLedger(ledger) }),
   };
 }
 
@@ -249,10 +264,19 @@ function requireAuthorizedRuntime(
 }
 
 function driverAction(steps: readonly VerifiedInstallStep[]): Action {
-  const encoded = Buffer.from(JSON.stringify(steps), "utf8").toString("base64");
+  // The steps ride a temp FILE, never argv: they embed unbounded payloads
+  // (registration ledger, materialization spec) and Windows command lines cap
+  // at 32,767 chars (W4 live-run ENAMETOOLONG). This file drives a PRIVILEGED
+  // installer, so it lands in a private per-invocation directory created with
+  // `mkdtempSync` (mode 0700, atomic, unguessable) rather than a bare
+  // world-writable tmp path — no symlink/pre-plant race can swap the driver's
+  // instructions. The driver deletes the file as its first act.
+  const stepsDir = mkdtempSync(join(tmpdir(), "aih-ecc-verified-"));
+  const stepsPath = join(stepsDir, "steps.json");
+  writeFileSync(stepsPath, JSON.stringify(steps), "utf8");
   return exec(
     "Install from the evidence-verified ECC checkout — sequential fail-closed driver",
-    [process.execPath, "-e", VERIFIED_ECC_INSTALL_DRIVER, encoded],
+    [process.execPath, "-e", VERIFIED_ECC_INSTALL_DRIVER, stepsPath],
     {
       timeoutMs: 180_000,
       failureCheck: (result) => ({
