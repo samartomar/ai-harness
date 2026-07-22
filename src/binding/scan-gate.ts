@@ -206,6 +206,13 @@ function gitRemoteLocator(repository: string): string {
   return isBareRepositorySlug(repository) ? `https://github.com/${repository}.git` : repository;
 }
 
+/**
+ * Transport timeout for ls-remote/clone/checkout — these move or materialize a
+ * whole framework tree (sized by the repo, not by us), so wider than proc's 30s
+ * default; same budget as the plugin CLI lane.
+ */
+const TRANSPORT_TIMEOUT_MS = 120_000;
+
 async function resolveExactSha(request: GitResolveRequest, runner: Runner): Promise<string> {
   if (request.commitSha !== undefined) {
     if (!LOWER_SHA40.test(request.commitSha)) {
@@ -218,13 +225,10 @@ async function resolveExactSha(request: GitResolveRequest, runner: Runner): Prom
     throw new BindingScanError(`unsafe git ref for resolution: ${ref}`);
   }
   // `--` ends option parsing so a repository value can never be read as a flag.
-  const result = await runner([
-    "git",
-    "ls-remote",
-    "--",
-    gitRemoteLocator(request.repository),
-    ref,
-  ]);
+  const result = await runner(
+    ["git", "ls-remote", "--", gitRemoteLocator(request.repository), ref],
+    { timeoutMs: TRANSPORT_TIMEOUT_MS },
+  );
   if (result.spawnError || result.code !== 0) {
     throw new BindingScanError(
       `git ls-remote failed for ${request.repository} (${(result.stderr || "").trim().slice(0, 200)})`,
@@ -280,21 +284,18 @@ async function ensureCheckout(
   // Missing, stale, or dirty: wipe and rebuild the checkout fresh, fail closed.
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(join(deps.cacheHome, "cache"), { recursive: true });
-  const clone = await deps.runner([
-    "git",
-    "clone",
-    "--quiet",
-    "--no-hardlinks",
-    "--",
-    gitRemoteLocator(request.repository),
-    dir,
-  ]);
+  const clone = await deps.runner(
+    ["git", "clone", "--quiet", "--no-hardlinks", "--", gitRemoteLocator(request.repository), dir],
+    { timeoutMs: TRANSPORT_TIMEOUT_MS },
+  );
   if (clone.spawnError || clone.code !== 0) {
     throw new BindingScanError(
       `git clone failed for ${request.repository} (${(clone.stderr || "").trim().slice(0, 200)})`,
     );
   }
-  const checkout = await deps.runner(["git", "-C", dir, "checkout", "--quiet", commitSha]);
+  const checkout = await deps.runner(["git", "-C", dir, "checkout", "--quiet", commitSha], {
+    timeoutMs: TRANSPORT_TIMEOUT_MS,
+  });
   if (checkout.spawnError || checkout.code !== 0) {
     throw new BindingScanError(
       `git checkout ${commitSha} failed (${(checkout.stderr || "").trim().slice(0, 200)})`,

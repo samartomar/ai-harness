@@ -168,6 +168,23 @@ describe("git source resolution (D7 exact identity)", () => {
     expect(clone[clone.length - 2]).toBe("https://github.com/obra/superpowers.git");
   });
 
+  it("gives transport git calls a tree-scaled timeout instead of proc's 30s default (W4 attempt-4 live-run regression)", async () => {
+    const seen: Array<{ argv: string[]; timeoutMs?: number }> = [];
+    const runner = fakeRunner((argv, opts) => {
+      seen.push({ argv: [...argv], timeoutMs: opts?.timeoutMs });
+      if (argv[1] === "ls-remote") return { stdout: `${"a".repeat(40)}\tHEAD\n` };
+      if (argv[3] === "checkout") return { code: 1, stderr: "transport capture only" };
+      return undefined;
+    });
+    await expect(
+      resolveGitSource({ repository: "samartomar/ECC", ref: "HEAD" }, { runner, cacheHome }),
+    ).rejects.toBeInstanceOf(BindingScanError);
+    for (const op of ["ls-remote", "clone"]) {
+      expect(seen.find((call) => call.argv[1] === op)?.timeoutMs).toBe(120_000);
+    }
+    expect(seen.find((call) => call.argv[3] === "checkout")?.timeoutMs).toBe(120_000);
+  });
+
   it("passes an https repository locator to git verbatim", async () => {
     const seen: string[][] = [];
     const runner = fakeRunner((argv) => {
