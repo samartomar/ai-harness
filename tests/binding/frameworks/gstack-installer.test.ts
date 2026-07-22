@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -12,6 +12,7 @@ import {
 import type { RunResult } from "../../../src/internals/proc.js";
 import {
   declarationFor,
+  fixtureInstaller,
   GSTACK_FIXTURE_FILES,
   recordingRunner,
   scannedGstackFixture,
@@ -94,6 +95,46 @@ describe("defaultGstackInstaller — pristine work-copy staging (spike cache-hyg
       ).rejects.toThrow(/installer threw[\s\S]*unwound/);
       // The dir the failed install materialized is gone — nothing undenied remains.
       expect(existsSync(wrapper)).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(project, { recursive: true, force: true });
+    }
+  });
+
+  it("provision unwinds the install when a post-install APPLY fails (mid-apply saga; live-acceptance regression)", async () => {
+    const home = mkdtempSync(join(tmpdir(), "aih-gstack-home-"));
+    const project = mkdtempSync(join(tmpdir(), "aih-gstack-proj-"));
+    try {
+      const { resolved, disposition } = scannedGstackFixture(cacheHome, "midapply-tree");
+      const declaration = declarationFor(resolved.treeDigest);
+      const { installer } = fixtureInstaller();
+      const adapter = createGstackAdapter({
+        root: project,
+        runner: recordingRunner().runner,
+        env: { USERPROFILE: home },
+        installGstack: installer,
+        // The deny write fails (e.g. an executor path-containment refusal);
+        // empty-action applies (the unwind's no-op removals) still succeed.
+        applyActions: (root, actions) => {
+          if (root === home && actions.length > 0) {
+            return Promise.reject(new Error("refusing to write outside the target root"));
+          }
+          return Promise.resolve({ ok: true, results: [] } as never);
+        },
+      });
+      await expect(
+        adapter.provision({ context: { declaration }, resolved }, disposition),
+      ).rejects.toThrow(/mid-apply[\s\S]*unwound/);
+      // Everything the install materialized is gone — installed-but-undenied
+      // skills must never survive a failed bind.
+      expect(existsSync(join(home, ".claude", "skills", "gstack"))).toBe(false);
+      const skillsDir = join(home, ".claude", "skills");
+      const leftover = existsSync(skillsDir)
+        ? readdirSync(skillsDir).filter(
+            (d) => d === "gstack" || d.startsWith("gstack-") || d === "_gstack-command",
+          )
+        : [];
+      expect(leftover).toEqual([]);
     } finally {
       rmSync(home, { recursive: true, force: true });
       rmSync(project, { recursive: true, force: true });

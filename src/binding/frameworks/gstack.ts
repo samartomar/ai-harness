@@ -1226,129 +1226,24 @@ async function provisionGstack(
     );
   }
 
-  // 4. Deny BEFORE any session can list: user-scope skillOverrides "off" for the
-  //    FULL inventory via the root-parameterized engine (the deliberate,
-  //    first-class user-scope crossing; D18 ownership with home: targets).
-  const denyEngine = new ClaudeManagedWriteEngine(home);
-  queueSkillDenyList(denyEngine, inventory);
-  const denyPlan = denyEngine.build();
-  normalizeContainerOwnership(
-    denyPlan,
-    previousLock,
-    CLAUDE_SETTINGS_PATH,
-    "skillOverrides",
-    (target) => `${HOME_OWNERSHIP_PREFIX}${target}`,
-  );
-  await apply(home, denyPlan.actions);
-  const denyOwnership = toHomeScoped(finalizeClaudeOwnership(home, denyPlan.ownership));
-
-  // 5. UNCONDITIONAL hook strip (defense against variant drift even though the
-  //    ruled profile writes zero hooks): path/substring across ALL events + tags.
-  const homeSettingsRaw = readIfExists(join(home, CLAUDE_SETTINGS_PATH));
-  let strip: GstackHookStripResult = {
-    changed: false,
-    nextHooks: undefined,
-    fragments: {},
-    removedCount: 0,
-  };
-  if (homeSettingsRaw !== undefined) {
-    strip = stripGstackHooks(parseJsoncText(homeSettingsRaw));
-    if (strip.changed) {
-      const action =
-        strip.nextHooks === undefined
-          ? writeJson(CLAUDE_SETTINGS_PATH, {}, "Strip gstack hooks (emptied)", {
-              merge: true,
-              removeJsonTopLevelKeys: ["hooks"],
-            })
-          : writeJson(CLAUDE_SETTINGS_PATH, { hooks: strip.nextHooks }, "Strip gstack hooks", {
-              merge: true,
-              replaceJsonKeys: ["hooks"],
-            });
-      await apply(home, [action]);
-    }
-  }
-  const stripOwnership: BindingOwnershipEntry[] = [];
-  if (strip.changed) {
-    const applied = { strippedGstackHooks: strip.fragments };
-    stripOwnership.push({
-      kind: "json-pointer",
-      target: GSTACK_HOOK_STRIP_TARGET,
-      preExisting: { value: strip.fragments },
-      applied,
-      postApplyDigest: sha256Hex(canonicalJson(applied)),
-    });
-  }
-
-  // 6. Project surfaces: skillOverrides re-enables ("on" x inventory), the
-  //    CLAUDE.md routing block, and the GSTACK_HOME literal lockdown config.
-  const projectEngine = new ClaudeManagedWriteEngine(deps.root);
-  queueProjectSurfaces(projectEngine, inventory);
-  const projectPlan = projectEngine.build();
-  normalizeContainerOwnership(
-    projectPlan,
-    previousLock,
-    CLAUDE_SETTINGS_PATH,
-    "skillOverrides",
-    (target) => target,
-  );
-  await apply(deps.root, projectPlan.actions);
-  const projectOwnership = finalizeClaudeOwnership(deps.root, projectPlan.ownership);
-
-  const configText = gstackLockdownConfigYaml(choices);
-  const configPrior = readIfExists(join(deps.root, GSTACK_CONFIG_REL));
-  await apply(deps.root, [
-    writeText(GSTACK_CONFIG_REL, configText, "Write gstack lockdown config.yaml"),
-  ]);
-  const configDigest = sha256Hex(readIfExists(join(deps.root, GSTACK_CONFIG_REL)) ?? "");
-  const configOwnership: BindingOwnershipEntry = {
-    kind: "file",
-    target: GSTACK_CONFIG_REL,
-    preExisting: configPrior === undefined ? { absent: true } : { value: configPrior },
-    applied: sha256Hex(configText),
-    postApplyDigest: configDigest,
-  };
-
-  // Install-surface ownership: the whole-checkout install root + every wrapper
-  // dir reality created (own what you created; the conditional alias is owned
-  // only when it actually exists).
-  const createdDirs = [...attributableSkillDirs(home)].sort();
-  const installOwnership: BindingOwnershipEntry[] = createdDirs.map((dir) => {
-    const rel = `${GSTACK_SKILLS_DIR_REL}/${dir}`;
-    const applied = { installedDir: rel };
-    return {
-      kind: "file",
-      target: `${HOME_OWNERSHIP_PREFIX}${rel}`,
-      preExisting: preExistingDirs.has(dir) ? { value: `present:${rel}` } : { absent: true },
-      applied,
-      postApplyDigest: sha256Hex(canonicalJson(applied)),
-    };
-  });
-
-  // 7. D7 identity: scannedDigest = resolved tree digest; loadedDigest = the
-  //    installed subtree RESTRICTED to the scanned inventory with the
-  //    deterministic name patch applied to expectations. Mismatch => fail-closed
-  //    unwind of this bind's own surfaces.
-  const identity = gstackInstalledSubsetIdentity(resolved, join(home, GSTACK_INSTALL_ROOT_REL));
-  const assembledOwnership: BindingOwnershipEntry[] = [
-    ...denyOwnership,
-    ...stripOwnership,
-    ...installOwnership,
-    ...projectOwnership,
-    configOwnership,
-  ];
-  if (identity.mismatches.length > 0) {
-    // Unwind: restore project + home JSON surfaces from the just-sealed
-    // ownership (values still equal applied, so removal restores cleanly),
-    // then delete the created install dirs. The hook-strip record is never
-    // restored (stripped gstack hooks stay stripped).
-    const repoEntries = assembledOwnership.filter((entry) => !isHomeScopedTarget(entry.target));
+  // Steps 4–7 run as a SAGA: any failure after the installer unwinds every
+  // surface sealed so far (restore project + home JSON from the just-sealed
+  // ownership — values still equal applied, so removal restores cleanly — then
+  // delete the created install dirs). The hook-strip record is never restored
+  // (stripped gstack hooks stay stripped). A machine left with installed but
+  // undenied skills would be the exact leak the deny exists to prevent — so a
+  // mid-apply failure (e.g. an executor path-containment refusal) must not
+  // strand the bind half-applied.
+  const sealed: BindingOwnershipEntry[] = [];
+  const unwindSealed = async (reason: string): Promise<never> => {
+    const repoEntries = sealed.filter((entry) => !isHomeScopedTarget(entry.target));
     const repoRemoval = planClaudeRemoval(
       deps.root,
       pseudoLock(declaration, resolved, repoEntries),
     );
     await apply(deps.root, repoRemoval.actions);
     const homeJsonEntries = toHomeRelative(
-      assembledOwnership.filter(
+      sealed.filter(
         (entry) =>
           isHomeScopedTarget(entry.target) &&
           entry.target !== GSTACK_HOOK_STRIP_TARGET &&
@@ -1358,12 +1253,133 @@ async function provisionGstack(
     const homeRemoval = planClaudeRemoval(home, pseudoLock(declaration, resolved, homeJsonEntries));
     await apply(home, homeRemoval.actions);
     removeCreatedSkillDirs(home, preExistingDirs);
-    throw new GstackBindingError(
-      `gstack D7 installed-subset identity mismatch (${identity.mismatches
-        .slice(0, 5)
-        .join(", ")}) — bind unwound`,
+    throw new GstackBindingError(reason);
+  };
+
+  let identity: GstackInstalledIdentity;
+  let projectWrites: BindingWrite[] = [];
+  let sealedConfigText = "";
+  let strip: GstackHookStripResult = {
+    changed: false,
+    nextHooks: undefined,
+    fragments: {},
+    removedCount: 0,
+  };
+  try {
+    // 4. Deny BEFORE any session can list: user-scope skillOverrides "off" for
+    //    the FULL inventory via the root-parameterized engine (the deliberate,
+    //    first-class user-scope crossing; D18 ownership with home: targets).
+    const denyEngine = new ClaudeManagedWriteEngine(home);
+    queueSkillDenyList(denyEngine, inventory);
+    const denyPlan = denyEngine.build();
+    normalizeContainerOwnership(
+      denyPlan,
+      previousLock,
+      CLAUDE_SETTINGS_PATH,
+      "skillOverrides",
+      (target) => `${HOME_OWNERSHIP_PREFIX}${target}`,
     );
+    await apply(home, denyPlan.actions);
+    sealed.push(...toHomeScoped(finalizeClaudeOwnership(home, denyPlan.ownership)));
+
+    // 5. UNCONDITIONAL hook strip (defense against variant drift even though the
+    //    ruled profile writes zero hooks): path/substring across ALL events + tags.
+    const homeSettingsRaw = readIfExists(join(home, CLAUDE_SETTINGS_PATH));
+    if (homeSettingsRaw !== undefined) {
+      strip = stripGstackHooks(parseJsoncText(homeSettingsRaw));
+      if (strip.changed) {
+        const action =
+          strip.nextHooks === undefined
+            ? writeJson(CLAUDE_SETTINGS_PATH, {}, "Strip gstack hooks (emptied)", {
+                merge: true,
+                removeJsonTopLevelKeys: ["hooks"],
+              })
+            : writeJson(CLAUDE_SETTINGS_PATH, { hooks: strip.nextHooks }, "Strip gstack hooks", {
+                merge: true,
+                replaceJsonKeys: ["hooks"],
+              });
+        await apply(home, [action]);
+        const applied = { strippedGstackHooks: strip.fragments };
+        sealed.push({
+          kind: "json-pointer",
+          target: GSTACK_HOOK_STRIP_TARGET,
+          preExisting: { value: strip.fragments },
+          applied,
+          postApplyDigest: sha256Hex(canonicalJson(applied)),
+        });
+      }
+    }
+
+    // 6. Project surfaces: skillOverrides re-enables ("on" x inventory), the
+    //    CLAUDE.md routing block, and the GSTACK_HOME literal lockdown config.
+    const projectEngine = new ClaudeManagedWriteEngine(deps.root);
+    queueProjectSurfaces(projectEngine, inventory);
+    const projectPlan = projectEngine.build();
+    normalizeContainerOwnership(
+      projectPlan,
+      previousLock,
+      CLAUDE_SETTINGS_PATH,
+      "skillOverrides",
+      (target) => target,
+    );
+    await apply(deps.root, projectPlan.actions);
+    sealed.push(...finalizeClaudeOwnership(deps.root, projectPlan.ownership));
+    projectWrites = projectPlan.writes;
+
+    const configText = gstackLockdownConfigYaml(choices);
+    sealedConfigText = configText;
+    const configPrior = readIfExists(join(deps.root, GSTACK_CONFIG_REL));
+    await apply(deps.root, [
+      writeText(GSTACK_CONFIG_REL, configText, "Write gstack lockdown config.yaml"),
+    ]);
+    const configDigest = sha256Hex(readIfExists(join(deps.root, GSTACK_CONFIG_REL)) ?? "");
+    sealed.push({
+      kind: "file",
+      target: GSTACK_CONFIG_REL,
+      preExisting: configPrior === undefined ? { absent: true } : { value: configPrior },
+      applied: sha256Hex(configText),
+      postApplyDigest: configDigest,
+    });
+
+    // Install-surface ownership: the whole-checkout install root + every wrapper
+    // dir reality created (own what you created; the conditional alias is owned
+    // only when it actually exists).
+    const createdDirs = [...attributableSkillDirs(home)].sort();
+    sealed.push(
+      ...createdDirs.map((dir): BindingOwnershipEntry => {
+        const rel = `${GSTACK_SKILLS_DIR_REL}/${dir}`;
+        const applied = { installedDir: rel };
+        return {
+          kind: "file",
+          target: `${HOME_OWNERSHIP_PREFIX}${rel}`,
+          preExisting: preExistingDirs.has(dir) ? { value: `present:${rel}` } : { absent: true },
+          applied,
+          postApplyDigest: sha256Hex(canonicalJson(applied)),
+        };
+      }),
+    );
+
+    // 7. D7 identity: scannedDigest = resolved tree digest; loadedDigest = the
+    //    installed subtree RESTRICTED to the scanned inventory with the
+    //    deterministic name patch applied to expectations.
+    identity = gstackInstalledSubsetIdentity(resolved, join(home, GSTACK_INSTALL_ROOT_REL));
+    if (identity.mismatches.length > 0) {
+      await unwindSealed(
+        `gstack D7 installed-subset identity mismatch (${identity.mismatches
+          .slice(0, 5)
+          .join(", ")}) — bind unwound`,
+      );
+    }
+  } catch (error) {
+    if (error instanceof GstackBindingError) throw error;
+    await unwindSealed(
+      `gstack provision failed mid-apply: ${
+        error instanceof Error ? error.message : String(error)
+      } — sealed surfaces unwound`,
+    );
+    throw error; // unreachable (unwindSealed throws); satisfies control-flow analysis
   }
+  const assembledOwnership: BindingOwnershipEntry[] = sealed;
 
   // Persist the installed-subset manifest (verify's per-file re-check baseline).
   const manifestFile: GstackManifestFile = {
@@ -1399,8 +1415,8 @@ async function provisionGstack(
     }
   }
   const writes: BindingWrite[] = [
-    ...projectPlan.writes,
-    { path: GSTACK_CONFIG_REL, mechanism: "file", contentDigest: sha256Hex(configText) },
+    ...projectWrites,
+    { path: GSTACK_CONFIG_REL, mechanism: "file", contentDigest: sha256Hex(sealedConfigText) },
     { path: GSTACK_MANIFEST_REL, mechanism: "file", contentDigest: manifestDigest },
   ];
   const lock: BindingLock = {
