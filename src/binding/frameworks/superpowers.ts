@@ -141,6 +141,15 @@ export class SuperpowersBindingError extends AihError {
  */
 export const SUPERPOWERS_PIN_COMMIT = "d884ae04edebef577e82ff7c4e143debd0bbec99";
 
+/**
+ * The Superpowers adapter version (W7 §C.2) — bumped when this adapter's
+ * provisioning / qualification logic changes. It is one of the fields keyed into the
+ * runtime-qualification cache (`scan-cache-tiers.ts` `runtimeQualKey`), so a bump
+ * re-keys every prior host qualification (a cache miss / recompute), never a served
+ * stale one. Registered alongside the factory in `registry.ts` (`ADAPTER_VERSIONS`).
+ */
+export const ADAPTER_VERSION = 1 as const;
+
 /** The pinned git source location (`owner/repo` shape; see `isPlausibleGitRepository`). */
 export const SUPERPOWERS_REPOSITORY = "obra/superpowers";
 

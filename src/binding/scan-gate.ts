@@ -1235,6 +1235,19 @@ export interface FastScanPolicy {
   closureSpec?: ClosureSpec;
   /** Injected host-load facts for the closure's model-load axis. Absent ⇒ fail closed. */
   hostFacts?: HostLoadFacts;
+  /**
+   * Phase-2 (W7 §C) deep-scanner dimensions, PRE-COMPUTED by the caller. The deep
+   * scanners are ASYNC (they spawn uvx/docker through a runner) and cannot run inside
+   * this synchronous gate, so the provision/doctor flow runs them via
+   * `scan-cache-tiers.ts` (`runDeepScanTier` — which consults and writes the deep-scan
+   * cache) and passes the produced/missing dimensions here. They are folded through the
+   * SAME {@link decide} / coverage path as the fast dimensions: a `missing` deep
+   * dimension yields an incomplete-coverage finding exactly like a missing fast
+   * dimension. ABSENT ⇒ byte-identical to the pre-Phase-2 gate — the exact same report
+   * array is decided, so every existing caller is unaffected. Deep tiers are opt-in;
+   * NOTHING scans at session start.
+   */
+  deepDimensionReports?: readonly DimensionReport[];
 }
 
 function coverageFinding(report: DimensionReport): ScanFinding {
@@ -1614,6 +1627,14 @@ export function runFastScanGate(
     closure === undefined
       ? undefined
       : (rel: string): string | undefined => readTextSafe(join(source.treePath, rel));
+  // Phase-2 (§C.4) deep-dimension fold — THE one integration seam. Pre-computed deep
+  // dimensions (from `scan-cache-tiers.ts`) are appended to the fast dimensions so the
+  // SAME `decide()`/coverage path handles both. Absent ⇒ the SAME array reference is
+  // decided (identity-preserving), so the disposition is byte-identical to the
+  // pre-Phase-2 gate and every existing caller/test is unaffected.
+  const deepDimensionReports = policy.deepDimensionReports ?? [];
+  const withDeep = (reports: readonly DimensionReport[]): readonly DimensionReport[] =>
+    deepDimensionReports.length === 0 ? reports : [...reports, ...deepDimensionReports];
   // A source with no identity list can never certify coverage, so it must not ride
   // a warm cache to an allow: skip the cache read entirely and fall through to the
   // fail-closed recompute below.
@@ -1623,7 +1644,7 @@ export function runFastScanGate(
     return produceDisposition(
       source.digest,
       policy,
-      cached.reports,
+      withDeep(cached.reports),
       cached.scannedAt,
       closure,
       typographyReader,
@@ -1654,7 +1675,7 @@ export function runFastScanGate(
   return produceDisposition(
     source.digest,
     policy,
-    allReports,
+    withDeep(allReports),
     scannedAt,
     closure,
     typographyReader,

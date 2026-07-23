@@ -12,6 +12,7 @@ import {
   bindingHostTupleCheck,
   bindingMcpInventoryCheck,
   bindingSettingsDriftCheck,
+  cardDoctorInputFromChecks,
   eccDoubleInstallCheck,
   eccModeExclusivityCheck,
 } from "../../../src/binding/frameworks/binding-doctor.js";
@@ -784,5 +785,71 @@ describe("W7 exit criterion — doctor determinism over the committed fixture pa
 
   it("project-b (Superpowers-bound) serializes byte-identically across two consecutive runs", async () => {
     await serializeDoctorTwice(join(fixtures, "project-b"));
+  });
+});
+
+// ===========================================================================
+// DoctorCardInput wiring (design §A.3.3) — cardDoctorInputFromChecks
+// ===========================================================================
+
+describe("cardDoctorInputFromChecks (§A.3.3)", () => {
+  it("derives {contaminationClean, inTuple} from the B1/B3 stable codes, never from detail", () => {
+    const clean: Check[] = [
+      {
+        name: "binding contamination",
+        verdict: "pass",
+        detail: "no user-scope framework contamination",
+      },
+      {
+        name: "binding host tuple",
+        verdict: "pass",
+        detail: "host in-tuple — all hard facts match",
+      },
+    ];
+    expect(cardDoctorInputFromChecks(clean)).toEqual({ contaminationClean: true, inTuple: true });
+
+    // B1 contamination (advisory skip at vibe/team OR fail at enterprise) both carry the code.
+    const contaminated: Check[] = [
+      {
+        name: "binding contamination",
+        verdict: "skip",
+        code: "binding.contaminated",
+        detail: "1 skills, 0 agents, 0 hooks, 0 rules, 0 plugins, 0 mcpServers (advisory)",
+      },
+    ];
+    expect(cardDoctorInputFromChecks(contaminated)).toEqual({
+      contaminationClean: false,
+      inTuple: true,
+    });
+
+    // B3 off-tuple downgrades inTuple.
+    const offTuple: Check[] = [
+      {
+        name: "binding host tuple",
+        verdict: "fail",
+        code: "binding.host-off-tuple",
+        detail: "host off-tuple — hard facts differ: ram-class",
+      },
+    ];
+    expect(cardDoctorInputFromChecks(offTuple)).toEqual({
+      contaminationClean: true,
+      inTuple: false,
+    });
+  });
+
+  it("treats B3 version-drift as still in-tuple for the card (facts held; only provenance advanced)", () => {
+    const drift: Check[] = [
+      {
+        name: "binding host tuple",
+        verdict: "skip",
+        code: "binding.host-version-drift",
+        detail: "Claude Code version advanced; hard facts re-measured and held",
+      },
+    ];
+    expect(cardDoctorInputFromChecks(drift)).toEqual({ contaminationClean: true, inTuple: true });
+  });
+
+  it("an empty check set is clean+in-tuple (a clean doctor is necessary, not sufficient, for STRICT)", () => {
+    expect(cardDoctorInputFromChecks([])).toEqual({ contaminationClean: true, inTuple: true });
   });
 });

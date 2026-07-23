@@ -5,6 +5,7 @@ import { readIfExists } from "../../internals/fsxn.js";
 import { isPlainObject, parseJsoncText } from "../../internals/merge.js";
 import type { PlanContext } from "../../internals/plan.js";
 import type { Check } from "../../internals/verify.js";
+import type { DoctorCardInput } from "../card.js";
 import {
   classifyTuple,
   type HostTuple,
@@ -635,5 +636,31 @@ export function bindingMcpInventoryCheck(ctx: PlanContext): Check {
     verdict: "skip",
     code: "binding.mcp-inventory",
     detail: `${sorted.length} MCP server${sorted.length === 1 ? "" : "s"}: ${sorted.join(", ")}`,
+  };
+}
+
+// -- DoctorCardInput wiring (design §A.3.3) ----------------------------------
+
+/**
+ * Derive the card's {@link DoctorCardInput} from a doctor run's `Check[]` — the seam
+ * (design §A.3.3) that lets a doctor-aware caller downgrade a card's support label
+ * from the B1/B3 verdicts WITHOUT the card layer importing the doctor.
+ *
+ * Both signals are read by their STABLE `code` (never by matching `detail`):
+ *  - `contaminationClean` is false iff B1 emitted `binding.contaminated` (as a
+ *    fail at enterprise or an advisory skip at vibe/team) — otherwise clean.
+ *  - `inTuple` is false iff B3 emitted `binding.host-off-tuple`. A
+ *    `binding.host-version-drift` is NOT off-tuple: the hard facts held and only the
+ *    Claude Code provenance advanced, so it stays in-tuple for the card (design §B.3).
+ *
+ * Absent codes ⇒ `{ contaminationClean: true, inTuple: true }`. Passing this into
+ * {@link buildFrameworkCard} still only issues STRICT when the target is
+ * strict-capable (H4/O1) — a clean doctor is necessary, not sufficient.
+ */
+export function cardDoctorInputFromChecks(checks: readonly Check[]): DoctorCardInput {
+  const hasCode = (code: Check["code"]): boolean => checks.some((check) => check.code === code);
+  return {
+    contaminationClean: !hasCode("binding.contaminated"),
+    inTuple: !hasCode("binding.host-off-tuple"),
   };
 }

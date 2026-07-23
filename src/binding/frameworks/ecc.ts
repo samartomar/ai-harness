@@ -237,6 +237,15 @@ export class EccLeanInstallerUnavailableError extends AihError {
  */
 export const ECC_PIN_COMMIT = "16563d4a30f17d097cc4629f6d97e02adf823016";
 
+/**
+ * The ECC adapter version (W7 §C.2) — bumped when this adapter's provisioning /
+ * qualification logic changes. Keyed into the runtime-qualification cache
+ * (`scan-cache-tiers.ts` `runtimeQualKey`), so a bump re-keys every prior host
+ * qualification (a cache miss / recompute). Registered alongside the factory in
+ * `registry.ts` (`ADAPTER_VERSIONS`). One version covers both ECC modes (lean/full).
+ */
+export const ADAPTER_VERSION = 1 as const;
+
 /** The pinned git source location (`owner/repo` shape; see `isPlausibleGitRepository`). */
 export const ECC_REPOSITORY = "samartomar/ECC";
 

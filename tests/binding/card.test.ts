@@ -132,6 +132,38 @@ describe("FrameworkCard schema + parse", () => {
     expect(round.scanCache?.disclosure).toEqual(DISCLOSURE);
   });
 
+  it("carries scanCache.deepScanKey/runtimeQualKey when the caller supplies them, absent otherwise (Phase-2 §C card wiring)", () => {
+    const DEEP = "d".repeat(64);
+    const QUAL = "e".repeat(64);
+    const withKeys = buildFrameworkCard(
+      baseInput({
+        scanCache: scanCardIdentity({
+          rawSourceScan: "CLEAN",
+          selectedProfileGate: "ALLOW",
+          disclosure: DISCLOSURE,
+          deepScanKey: DEEP,
+          runtimeQualKey: QUAL,
+        }),
+      }),
+    );
+    expect(withKeys.scanCache?.deepScanKey).toBe(DEEP);
+    expect(withKeys.scanCache?.runtimeQualKey).toBe(QUAL);
+    // The Phase-2 keys survive the strict zod round-trip (schema drift would fail here).
+    expect(parseFrameworkCard(JSON.parse(JSON.stringify(withKeys)))).toEqual(withKeys);
+
+    const withoutKeys = buildFrameworkCard(
+      baseInput({
+        scanCache: scanCardIdentity({
+          rawSourceScan: "CLEAN",
+          selectedProfileGate: "ALLOW",
+          disclosure: DISCLOSURE,
+        }),
+      }),
+    );
+    expect(withoutKeys.scanCache?.deepScanKey).toBeUndefined();
+    expect(withoutKeys.scanCache?.runtimeQualKey).toBeUndefined();
+  });
+
   it("is strict — rejects unknown keys", () => {
     const card = buildFrameworkCard(baseInput());
     expect(FrameworkCardSchema.safeParse({ ...card, smuggled: true }).success).toBe(false);

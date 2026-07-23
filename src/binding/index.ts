@@ -109,6 +109,7 @@ export {
   bindingHostTupleCheck,
   bindingMcpInventoryCheck,
   bindingSettingsDriftCheck,
+  cardDoctorInputFromChecks,
   eccDoubleInstallCheck,
   eccModeExclusivityCheck,
 } from "./frameworks/binding-doctor.js";
@@ -209,6 +210,7 @@ export {
 // assembly point. Composes the W3 Claude host services above; adds no new
 // host mechanism of its own.
 export {
+  ADAPTER_VERSIONS,
   type BindingRegistryDeps,
   createBindingAdapterRegistry,
 } from "./frameworks/registry.js";
@@ -352,6 +354,39 @@ export {
   writeBindingLockAtomic,
 } from "./lock.js";
 export { type AcquireNpmTreeOptions, acquireNpmTree } from "./npm-source.js";
+// W7 §C (Phase 2) — the two D12 scan cache tiers (deep-scan + runtime-qualification),
+// the async deep-scanner dimensions (cisco@uvx produced, skillspector@docker missing
+// on this VM), and the canonical tier keys. Off-tuple never satisfies the runtime-qual
+// tier — structurally (the tuple is in the key) and defensively (the read-time guard).
+export {
+  type CoverageEntry,
+  ciscoSkillScannerInspector,
+  DEEP_DIMENSION_INSPECTORS,
+  DEEP_SCAN_TIMEOUT_MS,
+  DEEP_SCANNER_VERSION,
+  type DeepDimensionContext,
+  type DeepDimensionInspector,
+  type DeepScanKeyInput,
+  type DeepScanRecord,
+  type DeepScanTierInput,
+  type DeepScanTierResult,
+  deepScanIdentityOf,
+  deepScanKey,
+  type ReadRuntimeQualificationInput,
+  type RecordRuntimeQualificationInput,
+  type RuntimeQualKeyInput,
+  type RuntimeQualRecord,
+  type RuntimeQualResult,
+  readDeepScanCache,
+  readRuntimeQualification,
+  recordRuntimeQualification,
+  runDeepScanTier,
+  runtimeQualKey,
+  SCAN_POLICY_VERSION,
+  ScanCacheTierError,
+  skillspectorInspector,
+  sourceIdOf,
+} from "./scan-cache-tiers.js";
 export {
   type AcceptedContentFinding,
   assertProvisionAuthorized,
