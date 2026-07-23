@@ -6,9 +6,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   type AcceptedContentFinding,
-  acquireNpmTree,
   assertProvisionAuthorized,
-  BindingNotSupportedError,
   BindingScanError,
   type DimensionInspector,
   readScanAcceptanceArtifact,
@@ -253,15 +251,8 @@ describe("npm source resolution (minimal; tarball deferred)", () => {
     ).rejects.toBeInstanceOf(BindingScanError);
   });
 
-  it("does not fake tarball acquisition success", () => {
-    const resolved = {
-      kind: "npm" as const,
-      package: "x",
-      exactVersion: "1.0.0",
-      integrity: INTEGRITY,
-    };
-    expect(() => acquireNpmTree(resolved)).toThrow(BindingNotSupportedError);
-  });
+  // W6 replaces the deferred-acquisition throw stub with real acquisition; see
+  // tests/binding/npm-source.test.ts for the acquire/verify/unpack/digest suite.
 });
 
 describe("fast scan disposition (D12 gate + posture-graded coverage)", () => {

@@ -272,9 +272,9 @@ export {
   readBindingLock,
   writeBindingLockAtomic,
 } from "./lock.js";
+export { type AcquireNpmTreeOptions, acquireNpmTree } from "./npm-source.js";
 export {
   type AcceptedContentFinding,
-  acquireNpmTree,
   assertProvisionAuthorized,
   assertResolvedMatchesDeclaration,
   BindingNotSupportedError,
@@ -313,6 +313,7 @@ export {
   type SelectedProfileGate,
   scanAcceptanceReport,
   scannableFromGit,
+  scannableFromNpm,
   W2_DEFAULT_INSPECTORS,
 } from "./scan-gate.js";
 export {
