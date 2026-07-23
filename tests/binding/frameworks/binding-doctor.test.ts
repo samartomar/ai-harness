@@ -120,9 +120,15 @@ function bind(
   return lock;
 }
 
-/** Seed a user-scope (home) skill directory — a contamination surface. */
+/**
+ * Seed a user-scope (home) skill — a contamination surface. Content-bearing:
+ * the scanner counts an immediate skills/ subdirectory only when it has
+ * content (a bare empty directory is host scaffolding, e.g. skills/learned).
+ */
 function seedHomeSkill(name: string): void {
-  mkdirSync(join(home, ".claude", "skills", name), { recursive: true });
+  const dir = join(home, ".claude", "skills", name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "SKILL.md"), `# ${name}\n`, "utf8");
 }
 
 /** Seed a project-scope surface file under `<root>/.claude`. */

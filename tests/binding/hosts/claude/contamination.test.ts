@@ -148,6 +148,30 @@ describe("claudeContaminationReport — clean home", () => {
   });
 });
 
+describe("claudeContaminationReport — host-scaffolded empty skill directories", () => {
+  it("does not count a contentless immediate directory under ~/.claude/skills/ (host-scaffolded skills/learned)", () => {
+    // The Claude CLI scaffolds an EMPTY `skills/learned/` on its own (observed
+    // live on 2.1.214–2.1.218 during the W8 acceptance run): a contentless
+    // directory is not loadable material and must not dirty a pristine home.
+    mkdirSync(join(home, ".claude", "skills", "learned"), { recursive: true });
+    const report = claudeContaminationReport({ home, projectRoot });
+    expect(report.leakage.skills).toBe(0);
+    expect(report.clean).toBe(true);
+    expect(report.entries).toEqual([]);
+  });
+
+  it("still counts skills/learned the moment anything lands inside it", () => {
+    // ECC's legacy continuous-learning defaults its write path to
+    // `${HOME}/.claude/skills/learned` (DECISIONS-LOCKED, ECC Full label note);
+    // content inside the scaffold must stay visible leakage.
+    seed(".claude/skills/learned/instinct.md", "# learned instinct\n");
+    const report = claudeContaminationReport({ home, projectRoot });
+    expect(report.leakage.skills).toBe(1);
+    expect(report.entries.map((e) => e.path)).toEqual([".claude/skills/learned"]);
+    expect(report.clean).toBe(false);
+  });
+});
+
 describe("claudeContaminationReport — malformed user-scope JSON does not crash", () => {
   it("records a warning naming settings.json and still counts other surfaces", () => {
     // Readable surfaces around a broken settings.json.
