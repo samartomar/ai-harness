@@ -276,9 +276,16 @@ export function claudeContaminationReport(
   const skillOverrides: string[] = [];
 
   // Skills: each immediate subdirectory of ~/.claude/skills/ is ONE skill (nested
-  // content is not double-counted).
+  // content is not double-counted). A CONTENTLESS directory is not counted: the
+  // Claude CLI scaffolds an empty `skills/learned/` on its own (observed live on
+  // 2.1.214–2.1.218), so bare-directory counting would dirty every pristine
+  // home; anything INSIDE such a directory still counts, keeping ECC's legacy
+  // learned-skills writes visible. The `~/.claude/ecc/*` machine roots below
+  // deliberately KEEP bare-directory counting — the host never scaffolds there,
+  // so the directory layout itself is install evidence.
   for (const dirent of listDir(join(claudeDir, "skills"))) {
     if (!dirent.isDirectory()) continue;
+    if (listDir(join(claudeDir, "skills", dirent.name)).length === 0) continue;
     entries.push({
       surface: "skill",
       name: dirent.name,
