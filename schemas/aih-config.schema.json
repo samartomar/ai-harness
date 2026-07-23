@@ -22,8 +22,7 @@
       "type": "string",
       "enum": [
         "ecc",
-        "gstack",
-        "gsd"
+        "gstack"
       ]
     },
     "posture": {
@@ -120,8 +119,7 @@
               "enum": [
                 "ecc",
                 "superpowers",
-                "gstack",
-                "gsd-core"
+                "gstack"
               ]
             },
             "mode": {

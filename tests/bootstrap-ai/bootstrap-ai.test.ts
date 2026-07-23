@@ -318,14 +318,10 @@ describe("bootstrap-ai — selectable Layer-1 baseline", () => {
     expect(marker.baseline).toBe("gstack");
   });
 
-  it("--baseline gsd rewrites Layer 1 to open-gsd/gsd-core", async () => {
-    const w = writesByPath(
-      (await command.plan(makeCtx({ canon: "compact", baseline: "gsd" }))).actions,
+  it("rejects --baseline gsd (GSD removed from the baseline set by the 2026-07-22 scope decision)", async () => {
+    await expect(command.plan(makeCtx({ canon: "compact", baseline: "gsd" }))).rejects.toThrow(
+      /unknown --baseline "gsd"/,
     );
-    const router = w.get(".ai-context/RULE_ROUTER.md")?.contents ?? "";
-
-    expect(router).toContain("open-gsd/gsd-core");
-    expect(router).not.toContain("affaan-m/ECC");
   });
 
   it("default and explicit --baseline ecc render byte-identical canon and marker payloads", async () => {

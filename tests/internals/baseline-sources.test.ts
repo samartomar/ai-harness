@@ -9,7 +9,9 @@ import {
 
 describe("baseline source registry", () => {
   it("ships the v1 selectable baselines with pinned delegated sources", () => {
-    expect(BASELINE_SOURCES.map((s) => s.id)).toEqual(["ecc", "gstack", "gsd"]);
+    // gsd was removed from the selectable baselines by the 2026-07-22 scope
+    // decision (see the D3 amendments); the registry ships ecc + gstack.
+    expect(BASELINE_SOURCES.map((s) => s.id)).toEqual(["ecc", "gstack"]);
     for (const source of BASELINE_SOURCES) {
       expect(source.sources.length).toBeGreaterThan(0);
       for (const repo of source.sources) {
