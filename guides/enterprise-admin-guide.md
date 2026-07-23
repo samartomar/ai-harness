@@ -20,7 +20,7 @@ The `enterprise` posture emphasizes least privilege, approval, auditability, and
 
 The enterprise examples in this public guide are intentionally limited to reviewed Figma, Jira/Atlassian, and AWS MCP paths. Additional service MCPs should follow the same policy and source-review pattern before appearing in public enterprise guidance.
 
-Release baseline covered by this guide: `@aihq/harness@2.11.0`. The scoped public security doc documents SLSA v1.2 Build L2 for tagged release artifacts; no Build L3 or formal compliance claim is made.
+Release baseline covered by this guide: `@aihq/harness@2.12.0`. The scoped public security doc documents SLSA v1.2 Build L2 for tagged release artifacts; no Build L3 or formal compliance claim is made.
 
 ## 2. Quickstart / Implementation Blueprint
 
@@ -50,16 +50,16 @@ If Docker or cosign is not part of the organization's selected policy path, docu
 Verify the release before rollout:
 
 ```console
-npm install -g @aihq/harness@2.11.0
-aih verify-release 2.11.0
+npm install -g @aihq/harness@2.12.0
+aih verify-release 2.12.0
 ```
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs
 pass. A skipped leg is incomplete evidence, not a successful rollout gate.
 
 For a major-version upgrade, install the approved explicit version (currently
-`npm install -g @aihq/harness@2.11.0`); `npm update -g` may stay within the current major. Re-run
-`aih verify-release 2.11.0` after an upgrade. Use `--force` only
+`npm install -g @aihq/harness@2.12.0`); `npm update -g` may stay within the current major. Re-run
+`aih verify-release 2.12.0` after an upgrade. Use `--force` only
 when replacing a broken global install after reviewing the npm prefix and approved package source.
 
 Bootstrap a governed repo with an enterprise posture:
@@ -234,8 +234,8 @@ Most writing commands refuse a dirty worktree unless `--force` is supplied. In g
 Min Configuration:
 
 ```powershell
-npm install -g @aihq/harness@2.11.0
-aih verify-release 2.11.0
+npm install -g @aihq/harness@2.12.0
+aih verify-release 2.12.0
 aih policy validate
 aih init . --posture enterprise --mcp-mode offline --mcp-compliant
 aih init . --posture enterprise --mcp-mode offline --mcp-compliant --apply
@@ -467,7 +467,7 @@ uvx awslabs.core-mcp-server@1.0.27 --help
 Before handing configuration to developers, verify the admin package from the same repo or distribution location developers will use:
 
 ```powershell
-aih verify-release 2.11.0
+aih verify-release 2.12.0
 aih policy validate
 aih policy verify --against <trusted-policy-sha-or-bundle>
 aih pack validate --pack docs-quality

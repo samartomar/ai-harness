@@ -8,7 +8,7 @@
 [![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-339933.svg)](package.json)
 
 <p align="center">
-  <img src="docs/assets/aih-overview.svg" alt="aih v2.11.0 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
+  <img src="docs/assets/aih-overview.svg" alt="aih v2.12.0 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
 </p>
 
 A cross-platform CLI that helps prepare developer workstations and repositories for
@@ -51,8 +51,8 @@ Install and verify a published release. Current releases publish npm provenance 
 checksums and a keyless cosign bundle:
 
 ```bash
-npm install -g @aihq/harness@2.11.0      # then run: aih --help
-aih verify-release 2.11.0   # checks npm signatures, GitHub release sums, and cosign evidence for 2.11.0
+npm install -g @aihq/harness@2.12.0      # then run: aih --help
+aih verify-release 2.12.0   # checks npm signatures, GitHub release sums, and cosign evidence for 2.12.0
 ```
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs

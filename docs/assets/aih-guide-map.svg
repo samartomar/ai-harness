@@ -1,5 +1,5 @@
 <svg width="1200" height="680" viewBox="0 0 1200 680" xmlns="http://www.w3.org/2000/svg" role="img" font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif">
-  <title>AI-Harness guide map for v2.11.0 public documentation</title>
+  <title>AI-Harness guide map for v2.12.0 public documentation</title>
   <desc>Reader paths from the guide index to vibe developer, team, enterprise admin, and enterprise developer guides, with shared command, lifecycle, and posture references.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -30,7 +30,7 @@
   <text x="64" y="120" font-size="17" fill="#adbac7">Start with the reader's job, then move into the guide that owns that workflow.</text>
   <g transform="translate(942,58)">
     <rect width="194" height="30" rx="15" fill="#3fb950" fill-opacity="0.14" stroke="#3fb950" stroke-opacity="0.55"/>
-    <text x="97" y="20" font-size="12.5" font-weight="700" fill="#56d364" text-anchor="middle">v2.11.0 public guide set</text>
+    <text x="97" y="20" font-size="12.5" font-weight="700" fill="#56d364" text-anchor="middle">v2.12.0 public guide set</text>
   </g>
 
   <line x1="64" y1="154" x2="1136" y2="154" stroke="#1d242e"/>
