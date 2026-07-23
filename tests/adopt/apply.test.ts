@@ -85,7 +85,7 @@ describe("aih adopt --apply — marker-divergent carve + regenerate", () => {
     expect(classifyCanon(tmp, DIR).kind).toBe("already-adopted");
   });
 
-  it("keeps a persisted non-default baseline when carving a divergent router", async () => {
+  it("fails closed on a persisted removed baseline (gstack) rather than carving a stale router", async () => {
     put("CLAUDE.md", divergentBootloader());
     put(
       ".aih-config.json",
@@ -97,14 +97,11 @@ describe("aih adopt --apply — marker-divergent carve + regenerate", () => {
       }),
     );
 
+    // gstack was removed as a CLI-surfaced baseline (2026-07-23); a persisted
+    // gstack marker is a now-invalid governance value and fails closed rather
+    // than silently falling back to the default.
     const ctx = makeCtx({ apply: true });
-    await executePlan(await command.plan(ctx), ctx);
-
-    const router = read(`${DIR}/RULE_ROUTER.md`);
-    expect(router).toContain("garrytan/gstack");
-    expect(router).not.toContain("affaan-m/ECC");
-    expect(router).not.toContain("Superpowers");
-    expect(JSON.parse(read(".aih-config.json")).baseline).toBe("gstack");
+    await expect(command.plan(ctx)).rejects.toThrow(/invalid baseline/);
   });
 
   it("is idempotent: a second adopt run after convergence writes nothing", async () => {

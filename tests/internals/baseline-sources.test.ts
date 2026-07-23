@@ -9,9 +9,10 @@ import {
 
 describe("baseline source registry", () => {
   it("ships the v1 selectable baselines with pinned delegated sources", () => {
-    // gsd was removed from the selectable baselines by the 2026-07-22 scope
-    // decision (see the D3 amendments); the registry ships ecc + gstack.
-    expect(BASELINE_SOURCES.map((s) => s.id)).toEqual(["ecc", "gstack"]);
+    // The 2026-07-23 scope decision removed gsd and then gstack from the
+    // selectable baselines (gstack is retained but not CLI-surfaced); the
+    // registry ships ecc only.
+    expect(BASELINE_SOURCES.map((s) => s.id)).toEqual(["ecc"]);
     for (const source of BASELINE_SOURCES) {
       expect(source.sources.length).toBeGreaterThan(0);
       for (const repo of source.sources) {
@@ -39,13 +40,15 @@ describe("baseline source registry", () => {
 
   it("resolves absent baselines to ecc and rejects unknown ids", () => {
     expect(resolveBaselineSource({}).id).toBe("ecc");
-    expect(resolveBaselineSource({ baseline: "gstack" }).id).toBe("gstack");
+    expect(resolveBaselineSource({ baseline: "ecc" }).id).toBe("ecc");
+    // gstack was removed as a selectable baseline (2026-07-23) — now unknown.
+    expect(() => resolveBaselineSource({ baseline: "gstack" })).toThrow(/unknown --baseline/);
     expect(() => resolveBaselineSource({ baseline: "missing" })).toThrow(/unknown --baseline/);
   });
 
   it("describes delegated sources with owner/repo and short pins", () => {
-    expect(describeBaselineSource(resolveBaselineSource({ baseline: "gstack" }))).toContain(
-      "garrytan/gstack@",
+    expect(describeBaselineSource(resolveBaselineSource({ baseline: "ecc" }))).toContain(
+      "samartomar/ECC@",
     );
   });
 });

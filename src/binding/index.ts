@@ -172,11 +172,13 @@ export {
 // seam; adds no scanning/closure machinery of its own.
 export {
   applyGstackNamePatch,
+  createDormantGstackAdapter,
   createGstackAdapter,
   defaultGstackInstaller,
   deriveGstackSkillInventory,
   GSTACK_CONDITIONAL_IDENTITIES,
   GSTACK_CONFIG_REL,
+  GSTACK_DORMANT_NOTICE,
   GSTACK_FEATURE_KEYS,
   GSTACK_HOME_REL,
   GSTACK_HOOK_STRIP_TARGET,

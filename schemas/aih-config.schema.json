@@ -21,8 +21,7 @@
     "baseline": {
       "type": "string",
       "enum": [
-        "ecc",
-        "gstack"
+        "ecc"
       ]
     },
     "posture": {

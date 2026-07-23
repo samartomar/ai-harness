@@ -6,7 +6,7 @@ import {
   type EccLeanAdapterDeps,
 } from "./ecc.js";
 import {
-  createGstackAdapter,
+  createDormantGstackAdapter,
   ADAPTER_VERSION as GSTACK_ADAPTER_VERSION,
   type GstackAdapterDeps,
 } from "./gstack.js";
@@ -48,7 +48,12 @@ export function createBindingAdapterRegistry(deps: BindingRegistryDeps): Adapter
   const registry = new AdapterRegistry();
   registry.register(createSuperpowersAdapter(deps));
   registry.register(createEccAdapter(deps));
-  registry.register(createGstackAdapter(deps));
+  // gstack registers DORMANT (2026-07-23 scope decision — EVALUATED_DEFERRED
+  // for v1): new binds refuse with the decision-citing notice while
+  // verify/remove/report keep working, so an existing bind retains its
+  // diagnostics and exit path. The full adapter stays built and tested for a
+  // future re-entry decision.
+  registry.register(createDormantGstackAdapter(deps));
   return registry;
 }
 
