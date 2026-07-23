@@ -61,7 +61,7 @@ describe("README docs currency", () => {
     }
     expect(overview).toContain(`v${pkg.version} overview`);
     expect(overview).toContain("Five governed-readiness pillars");
-    expect(overview).toContain("42 commands");
+    expect(overview).toContain("43 commands");
     expect(normalizedOverview).toContain("aih truth pack · verify · docs-lint claim gate");
     expect(overview).toContain("Claim-ledger entries &amp; project-truth assertions");
     expect(overview).toContain("SHA-bound sidecar · staged pack · drift gate");

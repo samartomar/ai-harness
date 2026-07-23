@@ -6,8 +6,63 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-07-23
+
+### Added
+
+- **Framework binding for Claude (v1).** `aih` binds a pinned upstream AI framework
+  into a project's Claude Code host, project-scoped, running a fast-scan safety gate
+  (D12) before any upstream code executes. The v1 catalog is ECC (Lean default / Full
+  opt-in) and Superpowers; each binds through its own adapter into per-project
+  `enabledPlugins` with no machine-scope writes, and a typed lock plus Framework Card
+  records the exact installed surface. Committed binding schema, adapter contract, and
+  fast-scan gate. (#480, #481)
+- ECC and Superpowers framework adapters. ECC installs via its upstream installer
+  pinned at `samartomar/ECC@16563d4a` with exclusivity-checked Lean and Full modes;
+  Superpowers binds as a host plugin pinned at `obra/superpowers`. Each round-trips
+  bind → verify → remove to a clean tree and preserves unrelated and user-modified
+  content on removal (D18 ownership). (#482)
+- SRI-verified npm tarball acquisition for the fast-scan gate: framework sources
+  resolved from npm are integrity-checked against the lockfile digest before the gate
+  reads them. (#490)
+- Binding doctor, a typed Framework Card, and D12 scan-cache tiers. The doctor probes
+  contamination and leakage, host tuple, settings and hook-chain drift, MCP inventory,
+  and context cost; the card is derived from the observed surface; the scan cache is
+  keyed on digest + profile + adapter + host tuple, and an off-tuple host never
+  satisfies a cached qualification. (#492)
+- Framework Value Gate. Each supported framework's measured benefit — capability and
+  governance surface deltas plus a characteristic-workflow signal — is scored against
+  a no-framework baseline, failing closed to `INCOMPLETE_MEASUREMENT` when a required
+  input is missing. (#494)
+
+### Removed
+
+- **Breaking:** `aih bootstrap-ai --baseline gsd` is removed, and GSD leaves the
+  framework and baseline sets: a `gsd-core` binding declaration and a persisted
+  `baseline: "gsd"` marker both fail closed with the existing unknown-baseline
+  errors, and the committed `aih-config.schema.json` no longer admits the value.
+  Migrate to `--baseline ecc` (the sole selectable canon baseline, bundling ECC and
+  Superpowers). (#491)
+- **Breaking:** `aih bootstrap-ai --baseline gstack` is removed and the gstack
+  adapter is no longer surfaced from the CLI: new gstack binds refuse with a typed
+  error citing the scope decision, and a persisted `baseline: "gstack"` marker fails
+  closed. The adapter and its contract remain in-tree (verify/remove/report stay
+  functional for an existing bind); re-entry is a future release's decision. (#493)
+
+### Changed
+
+- The binding fast-scan gate is closure-aware and selected-profile driven, evaluating
+  each framework against calibrated Unicode and typography acceptance instead of a
+  hardcoded catalog. (#487)
+
 ### Fixed
 
+- The binding contamination report no longer counts a contentless immediate
+  `~/.claude/skills/` subdirectory — such as the host-CLI-scaffolded empty
+  `skills/learned` — as machine-scope skill leakage; a subdirectory with any content
+  still counts, and the `~/.claude/ecc/*` machine roots keep bare-directory counting.
+  (#495)
+- The binding contamination report scans current-layout ECC machine roots. (#483)
 - A first `aih init --apply` now synthesizes the repo contract from the planned MCP
   surface: the contract phase composes after mcp and reads the staged `.mcp.json`
   server names, so `project.json` / `project.md` no longer report "no servers
@@ -1204,7 +1259,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.11.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/samartomar/ai-harness/compare/v2.11.0...v3.0.0
 [2.11.0]: https://github.com/samartomar/ai-harness/compare/v2.10.0...v2.11.0
 [2.10.0]: https://github.com/samartomar/ai-harness/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/samartomar/ai-harness/compare/v2.8.0...v2.9.0
