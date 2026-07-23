@@ -114,6 +114,35 @@ export const ContextCostCardSchema = z
   .strict();
 export type ContextCostCard = z.infer<typeof ContextCostCardSchema>;
 
+/**
+ * The W8 Framework Value Gate disclosure (design §"New card fragment") — the
+ * CREDIT side shown SIDE BY SIDE with the cost debit and scan/support risk, never
+ * a composite. Surface deltas use `z.number().int()` (NOT NonNeg): a contaminated
+ * baseline can drive a negative delta, and the honest measurement must survive
+ * to drive INSUFFICIENT rather than be clamped to look clean (Q8).
+ */
+export const FrameworkValueCardSchema = z
+  .object({
+    verdict: z.enum(["DELIVERS_VALUE", "INSUFFICIENT_VALUE", "INCOMPLETE_MEASUREMENT"]),
+    invocableSurfaceDelta: z.number().int(),
+    governanceSurfaceDelta: z.number().int(),
+    /** The context-cost debit (disclosed; its pass/fail lives in the cost gate, not here). */
+    contextCostTokens: NonNegInt.optional(),
+    characteristicWorkflow: z
+      .object({
+        name: z.string().min(1),
+        succeeded: z.boolean(),
+        baselineAbsent: z.boolean(),
+      })
+      .strict(),
+    dimensionsDelivered: z.array(z.string().min(1)),
+    minSurfaceDelta: NonNegInt,
+    /** Project C evidence id (path-free per H3). */
+    baselineRef: z.string().min(1),
+  })
+  .strict();
+export type FrameworkValueCard = z.infer<typeof FrameworkValueCardSchema>;
+
 const BySeveritySchema = z
   .object({
     info: NonNegInt,
@@ -219,6 +248,7 @@ export const FrameworkCardSchema = z
     sharedState: z.array(SharedStateEntrySchema),
     contextCost: ContextCostCardSchema.optional(),
     scanCache: ScanCardIdentitySchema.optional(),
+    valueGate: FrameworkValueCardSchema.optional(),
     residualRisks: z.array(z.string().min(1)),
     enterpriseDisposition: z.string(),
   })
@@ -458,6 +488,7 @@ export interface FrameworkCardBuildInput {
   sharedState?: SharedStateEntry[];
   contextCost?: ContextCostCard;
   scanCache?: ScanCardIdentity;
+  valueGate?: FrameworkValueCard;
   residualRisks?: string[];
   enterpriseDisposition?: string;
   /** Absent ⇒ support label is NEVER STRICT (O1). Supplied by the Phase 1b doctor. */
@@ -518,6 +549,7 @@ export function buildFrameworkCard(input: FrameworkCardBuildInput): FrameworkCar
     ),
     ...(input.contextCost !== undefined ? { contextCost: input.contextCost } : {}),
     ...(input.scanCache !== undefined ? { scanCache: input.scanCache } : {}),
+    ...(input.valueGate !== undefined ? { valueGate: input.valueGate } : {}),
     residualRisks: uniqueSorted(input.residualRisks ?? []),
     enterpriseDisposition: input.enterpriseDisposition ?? "",
   };
@@ -580,6 +612,51 @@ function scanCacheLines(card: FrameworkCard): string[] {
   return lines;
 }
 
+/** A signed integer label, e.g. `+5` / `-3` / `0` (deltas may be negative, Q8). */
+function signedDelta(value: number): string {
+  return value >= 0 ? `+${value}` : String(value);
+}
+
+/**
+ * The W8 value-gate disclosure lines. HONEST framing (Q6/D13): the workflow line
+ * names the framework-DELIVERED SURFACE that is absent in no-framework — it NEVER
+ * claims the base model cannot review/plan ad hoc — and carries NO composite
+ * score, ratio, or "best" wording (the value verdict is orthogonal to cost/risk,
+ * which are disclosed on their own lines).
+ */
+function valueLines(card: FrameworkCard): string[] {
+  const value = card.valueGate;
+  if (value === undefined) return [];
+  const workflow = value.characteristicWorkflow;
+  const lines = [
+    `value gate: ${value.verdict} ` +
+      `(invocable surface delta ${signedDelta(value.invocableSurfaceDelta)}, ` +
+      `governance surface delta ${signedDelta(value.governanceSurfaceDelta)}, ` +
+      `min surface delta ${value.minSurfaceDelta})`,
+  ];
+  if (workflow.succeeded && workflow.baselineAbsent) {
+    lines.push(
+      `characteristic workflow: delivers the ${workflow.name} workflow surface, absent in no-framework`,
+    );
+  } else if (!workflow.succeeded) {
+    lines.push(`characteristic workflow ${workflow.name}: did not succeed in the bound session`);
+  } else {
+    lines.push(
+      `characteristic workflow ${workflow.name} surface: also present in the no-framework baseline`,
+    );
+  }
+  if (value.dimensionsDelivered.length > 0) {
+    lines.push(`dimensions delivered: ${value.dimensionsDelivered.join(", ")}`);
+  }
+  if (value.contextCostTokens !== undefined) {
+    lines.push(
+      `context-cost debit: ~${value.contextCostTokens} tokens (disclosed; gated by the cost gate)`,
+    );
+  }
+  lines.push(`value baseline: ${value.baselineRef}`);
+  return lines;
+}
+
 /**
  * The single deterministic renderer that REPLACES the three ad-hoc `lines`
  * builders. A pure function of the card (arrays already canonical), so two
@@ -634,6 +711,7 @@ export function renderFrameworkCard(card: FrameworkCard): string[] {
 
   lines.push(...costLines(card));
   lines.push(...scanCacheLines(card));
+  lines.push(...valueLines(card));
 
   for (const risk of card.residualRisks) lines.push(risk);
   if (card.enterpriseDisposition.length > 0) lines.push(card.enterpriseDisposition);

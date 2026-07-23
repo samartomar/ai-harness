@@ -82,6 +82,17 @@ export default defineConfig({
           functions: 100,
           lines: 95,
         },
+        // W8 §D14 framework value gate — a small, PURE verdict module (surface
+        // deltas + the decisive characteristic-workflow signal, fail-closed to
+        // INCOMPLETE). Fully exercised by value-gate.test.ts (36/36 stmts,
+        // 48/48 branches, 5/5 funcs, 35/35 lines); pinned at its genuine level so
+        // it can only ratchet up, with the standard branch cushion.
+        "src/binding/frameworks/value-gate.ts": {
+          statements: 100,
+          branches: 96,
+          functions: 100,
+          lines: 100,
+        },
       },
     },
   },

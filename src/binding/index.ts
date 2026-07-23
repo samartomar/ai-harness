@@ -47,6 +47,8 @@ export {
   FrameworkCardDisclosureSchema,
   FrameworkCardError,
   FrameworkCardSchema,
+  type FrameworkValueCard,
+  FrameworkValueCardSchema,
   frameworkCardPath,
   type HookEntry,
   HookEntrySchema,
@@ -226,6 +228,21 @@ export {
   SuperpowersBindingError,
   type SuperpowersRemoveResult,
 } from "./frameworks/superpowers.js";
+// W8 — the D14 Framework Value Gate: the CREDIT side vs the no-framework baseline
+// (surface deltas + the decisive characteristic-workflow signal), fail-closed to
+// INCOMPLETE. Reuses the cost/context surface primitive; never re-implements it.
+export {
+  buildFrameworkValueRecord,
+  type CharacteristicWorkflowResult,
+  DEFAULT_VALUE_THRESHOLDS,
+  type FrameworkSurfaceMeasurement,
+  type FrameworkValueDeltas,
+  type FrameworkValueIdentity,
+  type FrameworkValueRecord,
+  type FrameworkValueThresholds,
+  type FrameworkValueVerdict,
+  measureFrameworkSurfaces,
+} from "./frameworks/value-gate.js";
 // W7 §B.3 — the D16 host tuple: the type + committed constant (Phase 1a) plus the
 // live measurement + pure classification (Phase 1b) the D16 doctor probe compares.
 export {
