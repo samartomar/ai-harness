@@ -321,8 +321,8 @@ repo-declared local graph/memory servers); Context7 and Exa are never defaults.
 
 The harness models the same two-layer setup used in the reference repos (eicp / ai-os / syntegris):
 
-- **Layer 1 — user baseline:** selectable with `--baseline ecc|gstack|gsd` (default `ecc`,
-  ECC + Superpowers installed per CLI by `aih ecc` / `aih superpowers`).
+- **Layer 1 — user baseline:** `--baseline ecc` — the default and sole selectable baseline
+  (ECC + Superpowers installed per CLI by `aih ecc` / `aih superpowers`).
 - **Layer 2 — repo canon:** the committed `ai-coding/` (or `--context-dir`) tree — `RULE_ROUTER.md`
   (stack-aware routing entry point), the contract files `project.json`, `project.md`, and `setup.md`,
   `adapters/<cli>.md` (per-tool wiring notes), and the root **bootloaders** (`CLAUDE.md`, `AGENTS.md`,
@@ -336,7 +336,6 @@ away from the canonical source — wire it into CI to keep every tool's entry po
 
 ```bash
 aih bootstrap-ai --all-tools --apply   # lay down RULE_ROUTER + adapters + bootloaders for every CLI
-aih bootstrap-ai --baseline gstack     # use garrytan/gstack as the Layer-1 baseline
 aih bootstrap-ai --verify              # CI drift gate (no writes; exit 1 on drift)
 ```
 
