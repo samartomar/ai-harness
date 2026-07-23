@@ -32,6 +32,18 @@ import {
   type ResolveRequest,
   type VerifyResult,
 } from "../adapter.js";
+import {
+  buildFrameworkCard,
+  type ContextCostCard,
+  contextCostCard,
+  contextCostUnavailable,
+  d18SurfaceLabels,
+  type FrameworkCardCounts,
+  renderFrameworkCard,
+  type SharedStateEntry,
+  type SupportLabel,
+  sourceIdentityFromLock,
+} from "../card.js";
 import { assertKnownFeatureKeys } from "../features.js";
 import {
   bindPlugin,
@@ -1103,39 +1115,34 @@ function removeEccLean(deps: EccLeanAdapterDeps): EccLeanRemoveResult {
 // -- report -------------------------------------------------------------------
 
 function reportEccLean(deps: EccLeanAdapterDeps, context: BindingContext): BindingReport {
-  const lines: string[] = [];
   const source = context.declaration.source;
-  const pin =
-    source.kind === "git"
-      ? `${source.repository}@${source.commitSha}`
-      : `${source.package}@${source.exactVersion}`;
-  lines.push("framework: ecc");
-  lines.push("mode: lean");
-  lines.push(`pin: ${pin}`);
-  lines.push(`allowlist: ${ECC_LEAN_ALLOWLIST.join(", ")}`);
-  lines.push(`excluded: ${ECC_LEAN_EXCLUDED.join(", ")}`);
 
-  // Acceptance disclosure (W4 ruling (e)): raw vet outcome and the signed
-  // acceptance are reported SIDE BY SIDE — an admitted component is never
-  // described as "vet passed" and findings are never described as absent.
+  // Selection + acceptance disclosure (W4 ruling (e)): the allowlist, the
+  // explicit exclusions, and the raw vet outcome vs the signed acceptance are
+  // carried as card disclosures — an admitted component is never described as
+  // "vet passed" and findings are never described as absent.
+  const disclosures: string[] = [
+    `allowlist: ${ECC_LEAN_ALLOWLIST.join(", ")}`,
+    `excluded: ${ECC_LEAN_EXCLUDED.join(", ")}`,
+  ];
   const decision = findAcceptanceDecision(readAcceptanceDecisions(), ECC_LEAN_ACCEPTANCE_TUPLE);
   if (decision === undefined) {
-    lines.push("vet acceptance: none shipped — blocked evidence components stay held");
+    disclosures.push("vet acceptance: none shipped — blocked evidence components stay held");
   } else {
     const codes = [
       ...new Set(decision.components.flatMap((component) => component.acceptedFindingCodes)),
     ].sort();
-    lines.push(
+    disclosures.push(
       `raw vet outcome: ${decision.components.length} allowlist evidence component(s) BLOCKED by ` +
         `signed findings (verdicts preserved in vendor-lock.json; not reclassified)`,
     );
-    lines.push(
+    disclosures.push(
       `policy decision: accepted-with-conditions — ${decision.decisionId} ` +
         `(owner ${decision.owner}, record ${decision.recordSha256.slice(0, 12)}…, policy v${String(decision.policyVersion)})`,
     );
-    lines.push(`accepted finding codes: ${codes.join(", ")}`);
-    lines.push(`residual risk: ${decision.residualRisk}`);
-    lines.push(
+    disclosures.push(`accepted finding codes: ${codes.join(", ")}`);
+    disclosures.push(`residual risk: ${decision.residualRisk}`);
+    disclosures.push(
       `effective install decision: allowed for ${decision.profile} on ` +
         `${decision.repository}@${decision.commitSha.slice(0, 12)} (exact tuple only)`,
     );
@@ -1143,49 +1150,60 @@ function reportEccLean(deps: EccLeanAdapterDeps, context: BindingContext): Bindi
 
   const home = claudeHomeDir(deps.env ?? {});
   const read = readBindingLock(deps.root);
+  const installMechanism = "upstream-local-installer (selective install)";
+
   if (!read.present) {
-    lines.push("binding lock: absent (not yet provisioned)");
-    lines.push("runtime-surface absence: not applicable (not yet provisioned)");
-    return { framework: "ecc", lines };
+    const card = buildFrameworkCard({
+      framework: "ecc",
+      mode: "lean",
+      scope: "project",
+      targetLabel: "DEFERRED",
+      source,
+      installMechanism,
+      residualRisks: disclosures,
+      enterpriseDisposition: "runtime-surface absence: not applicable (not yet provisioned)",
+    });
+    return { framework: "ecc", card, lines: renderFrameworkCard(card) };
   }
 
   const lock = read.lock;
-  lines.push(`scannedDigest: ${lock.scannedDigest}`);
-  lines.push(`loadedDigest: ${lock.loadedDigest}`);
-  lines.push(`match: ${String(lock.match)}`);
-  const installedComponents = lock.ownership
-    .map((entry) =>
-      isHomeScopedTarget(entry.target)
-        ? entry.target.slice(HOME_OWNERSHIP_PREFIX.length)
-        : entry.target,
-    )
-    .sort();
-  lines.push(
-    `installed surfaces: ${installedComponents.length > 0 ? installedComponents.join(", ") : "(none)"}`,
-  );
+  const { identity } = sourceIdentityFromLock(lock);
+  const { repoRelative, homeScope } = d18SurfaceLabels(lock);
 
+  // D10 runtime-surface absence attestation — the state-containment axis that
+  // makes Lean strict-CAPABLE (the doctor still gates STRICT via DoctorCardInput).
   const present = runtimeSurfacePresences(home);
-  lines.push(
+  const runtimeSurface =
     present.length === 0
       ? "runtime-surface absence: attested (no hooks, no MCP servers, no learned skills)"
-      : `runtime-surface absence: VIOLATED — present: ${present.join(", ")}`,
-  );
+      : `runtime-surface absence: VIOLATED — present: ${present.join(", ")}`;
 
-  const claudeTree = join(home, ".claude");
+  let contextCost: ContextCostCard;
+  let counts: FrameworkCardCounts | undefined;
   try {
-    const cost = estimateContextCostFromTree(claudeTree);
-    lines.push(
-      `context-cost estimate (${cost.evidence}, labeled estimate): ~${cost.projectedTokens} tokens ` +
-        `(skills ${cost.counts.skills}, agents ${cost.counts.agents}, commands ${cost.counts.commands}, ` +
-        `rules ${cost.counts.rules}, hooks ${cost.counts.hooks}, mcpServers ${cost.counts.mcpServers})`,
-    );
-  } catch (err) {
-    lines.push(
-      `context-cost estimate: unavailable (${err instanceof Error ? err.message : String(err)})`,
-    );
+    const fragment = contextCostCard(estimateContextCostFromTree(join(home, ".claude")));
+    contextCost = fragment.contextCost;
+    counts = fragment.counts;
+  } catch {
+    contextCost = contextCostUnavailable("claude tree not estimable");
   }
 
-  return { framework: "ecc", lines };
+  const card = buildFrameworkCard({
+    framework: "ecc",
+    mode: "lean",
+    scope: "project",
+    targetLabel:
+      present.length === 0 ? "STRICT_PROJECT_BINDING_VERIFIED" : "PROJECT_BINDING_CONFLICTED",
+    source,
+    identity,
+    installMechanism,
+    scriptsBinariesDeps: [...repoRelative, ...homeScope],
+    contextCost,
+    counts,
+    residualRisks: disclosures,
+    enterpriseDisposition: runtimeSurface,
+  });
+  return { framework: "ecc", card, lines: renderFrameworkCard(card) };
 }
 
 // == ECC Full (W4c) — state-write inventory (label-decision input, D10 point 4) =
@@ -1799,76 +1817,88 @@ function removeEccFull(deps: EccLeanAdapterDeps): EccFullRemoveResult {
 }
 
 function reportEccFull(deps: EccLeanAdapterDeps, context: BindingContext): BindingReport {
-  const lines: string[] = [];
   const source = context.declaration.source;
-  const pin =
-    source.kind === "git"
-      ? `${source.repository}@${source.commitSha}`
-      : `${source.package}@${source.exactVersion}`;
-  lines.push("framework: ecc");
-  lines.push("mode: full");
-  lines.push(`pin: ${pin}`);
-  lines.push(`plugin: ${ECC_FULL_PLUGIN_NAME}@${ECC_FULL_MARKETPLACE_NAME} (project-scope plugin)`);
-
-  // Selected connectors + env-root fields (D10 point 6 — CLI-render inputs).
+  // Selected connectors + env-root fields (D10 point 6 — CLI-render inputs),
+  // available regardless of lock presence.
   const connectors = selectedFullConnectors(context.declaration);
-  lines.push(
-    `mcp connectors selected (${connectors.length}): ${connectors.length > 0 ? connectors.join(", ") : "(none)"}`,
-  );
-  lines.push(`state root ECC_AGENT_DATA_HOME: ${ECC_AGENT_DATA_HOME_DEFAULT}`);
-  lines.push(`state root CLV2_HOMUNCULUS_DIR: ${ECC_HOMUNCULUS_DIR_DEFAULT}`);
+  const sharedState: SharedStateEntry[] = [
+    { label: "ECC_AGENT_DATA_HOME", kind: "state-dir", note: ECC_AGENT_DATA_HOME_DEFAULT },
+    { label: "CLV2_HOMUNCULUS_DIR", kind: "state-dir", note: ECC_HOMUNCULUS_DIR_DEFAULT },
+  ];
+  const installMechanism = `host-plugin (project-scope plugin ${ECC_FULL_PLUGIN_NAME}@${ECC_FULL_MARKETPLACE_NAME})`;
 
   const read = readBindingLock(deps.root);
   if (!read.present) {
-    lines.push("binding lock: absent (not yet provisioned)");
-    lines.push("label decision: not applicable (not yet provisioned)");
-    return { framework: "ecc", lines };
+    const card = buildFrameworkCard({
+      framework: "ecc",
+      mode: "full",
+      scope: "project",
+      targetLabel: "DEFERRED",
+      source,
+      installMechanism,
+      mcpServers: connectors,
+      sharedState,
+      enterpriseDisposition: "label decision: not applicable (not yet provisioned)",
+    });
+    return { framework: "ecc", card, lines: renderFrameworkCard(card) };
   }
 
   const lock = read.lock;
-  lines.push(`scannedDigest: ${lock.scannedDigest}`);
-  lines.push(`loadedDigest: ${lock.loadedDigest}`);
-  lines.push(`match: ${String(lock.match)}`);
-
-  const repoRelative = lock.ownership
-    .filter((entry) => !isHomeScopedTarget(entry.target))
-    .map((entry) => entry.target);
-  const homeScope = lock.ownership
-    .filter((entry) => isHomeScopedTarget(entry.target))
-    .map((entry) => entry.target);
-  lines.push(`D18-owned surfaces: ${repoRelative.length > 0 ? repoRelative.join(", ") : "(none)"}`);
-  lines.push(`machine-scope surfaces: ${homeScope.length > 0 ? homeScope.join(", ") : "(none)"}`);
+  const { identity } = sourceIdentityFromLock(lock);
+  const { repoRelative, homeScope } = d18SurfaceLabels(lock);
 
   // Re-run the LABEL DECISION over the recorded marketplace source path — the
-  // plumbing that carries the label input beyond provision (D10 point 4).
+  // plumbing that carries the label input beyond provision (D10 point 4). The
+  // strict/lax result is the state-containment axis (`targetLabel`); the doctor
+  // still gates STRICT via DoctorCardInput.
   const marketplaceEntry = lock.ownership.find(
     (entry) => entry.target === homeMarketplaceTarget(ECC_FULL_MARKETPLACE_NAME),
   );
   const treePath = marketplaceSourceFrom(marketplaceEntry);
+  let targetLabel: SupportLabel;
+  let disposition: string;
+  const residualRisks: string[] = [];
+  let contextCost: ContextCostCard;
+  let counts: FrameworkCardCounts | undefined;
   if (treePath.length > 0) {
     const label = computeEccFullLabel(eccFullStateWriteInventory(treePath), deps.excludedSurfaces);
-    lines.push(`label decision: ${label.strict ? "strict" : "lax"}`);
-    lines.push(
+    targetLabel = label.strict
+      ? "STRICT_PROJECT_BINDING_VERIFIED"
+      : "PROJECT_SELECTED_SHARED_RUNTIME";
+    disposition = `label decision: ${label.strict ? "strict" : "lax"}`;
+    residualRisks.push(
       `shared writes: ${label.sharedWrites.length > 0 ? label.sharedWrites.join(", ") : "(none)"}`,
     );
     try {
-      const cost = estimateContextCostFromTree(treePath);
-      lines.push(
-        `context-cost estimate (${cost.evidence}, labeled estimate): ~${cost.projectedTokens} tokens ` +
-          `(skills ${cost.counts.skills}, agents ${cost.counts.agents}, commands ${cost.counts.commands}, ` +
-          `hooks ${cost.counts.hooks}, mcpServers ${cost.counts.mcpServers})`,
-      );
-    } catch (err) {
-      lines.push(
-        `context-cost estimate: unavailable (${err instanceof Error ? err.message : String(err)})`,
-      );
+      const fragment = contextCostCard(estimateContextCostFromTree(treePath));
+      contextCost = fragment.contextCost;
+      counts = fragment.counts;
+    } catch {
+      contextCost = contextCostUnavailable("resolved checkout tree not estimable");
     }
   } else {
-    lines.push("label decision: unavailable (resolved checkout path not recorded)");
-    lines.push("context-cost estimate: unavailable (resolved checkout path not recorded)");
+    targetLabel = "PROJECT_SELECTED_SHARED_RUNTIME";
+    disposition = "label decision: unavailable (resolved checkout path not recorded)";
+    contextCost = contextCostUnavailable("resolved checkout path not recorded");
   }
 
-  return { framework: "ecc", lines };
+  const card = buildFrameworkCard({
+    framework: "ecc",
+    mode: "full",
+    scope: "project",
+    targetLabel,
+    source,
+    identity,
+    installMechanism,
+    mcpServers: connectors,
+    scriptsBinariesDeps: [...repoRelative, ...homeScope],
+    sharedState,
+    contextCost,
+    counts,
+    residualRisks,
+    enterpriseDisposition: disposition,
+  });
+  return { framework: "ecc", card, lines: renderFrameworkCard(card) };
 }
 
 // -- factory ------------------------------------------------------------------

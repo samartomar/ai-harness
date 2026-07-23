@@ -27,6 +27,42 @@ export {
   type ResolveRequest,
   type VerifyResult,
 } from "./adapter.js";
+// W7 §A — the typed, versioned Framework Card (derived, rebuildable evidence),
+// its single deterministic renderer, the no-machine-local-path validator (H3),
+// the committed-card read/write helpers (O8), and the shared card fragments.
+export {
+  assertNoMachineLocalPath,
+  buildFrameworkCard,
+  CARD_SCHEMA_VERSION,
+  type ContextCostCard,
+  ContextCostCardSchema,
+  contextCostCard,
+  contextCostUnavailable,
+  type DoctorCardInput,
+  d18SurfaceLabels,
+  deriveSupportLabel,
+  type FrameworkCard,
+  type FrameworkCardBuildInput,
+  type FrameworkCardCounts,
+  FrameworkCardDisclosureSchema,
+  FrameworkCardError,
+  FrameworkCardSchema,
+  frameworkCardPath,
+  type HookEntry,
+  HookEntrySchema,
+  parseFrameworkCard,
+  readFrameworkCard,
+  renderFrameworkCard,
+  type ScanCardIdentity,
+  ScanCardIdentitySchema,
+  type SharedStateEntry,
+  SharedStateEntrySchema,
+  SUPPORT_LABELS,
+  type SupportLabel,
+  scanCardIdentity,
+  sourceIdentityFromLock,
+  writeFrameworkCardAtomic,
+} from "./card.js";
 // W5 — the selected-profile closure classifier (a2). The scan gate consumes this
 // to separate the executed/loaded runtime closure from materialized-inert source.
 export {
@@ -44,6 +80,21 @@ export {
   type ProfileClosure,
   type Reachability,
 } from "./closure/profile-closure.js";
+// W7 §A.4 — the local verification evidence writer (a SEPARATE, machine-level,
+// gitignored record; absolute paths allowed — never the committed card, O3).
+export {
+  type EvidenceContaminationEntry,
+  EvidenceContaminationEntrySchema,
+  evidenceDir,
+  evidencePath,
+  LOCAL_EVIDENCE_SCHEMA_VERSION,
+  type LocalVerificationEvidence,
+  LocalVerificationEvidenceError,
+  LocalVerificationEvidenceSchema,
+  parseLocalVerificationEvidence,
+  readLocalVerificationEvidence,
+  writeLocalVerificationEvidenceAtomic,
+} from "./evidence.js";
 // W3f — plan-time feature-key validation shared by every W4+ adapter.
 export { assertKnownFeatureKeys, BindingFeatureKeyError } from "./features.js";
 // W4d — D10 cost-gate measurement record + ECC doctor rules.
@@ -157,6 +208,9 @@ export {
   SuperpowersBindingError,
   type SuperpowersRemoveResult,
 } from "./frameworks/superpowers.js";
+// W7 §B.3 — the D16 host tuple (TYPE + CONSTANT only in Phase 1a; the measurement
+// + classification are Phase 1b).
+export { type HostTuple, SUPPORTED_HOST_TUPLE } from "./host-tuple.js";
 // W3 — Claude project-scope host adapter: detection, D18 managed writes/removal,
 // plugin binding + D7 identity, skillOverrides deny lists (D11), contamination
 // report, previewed cleanup with backup/rollback, and context-cost inventory.

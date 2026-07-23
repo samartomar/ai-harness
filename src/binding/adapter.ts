@@ -1,4 +1,5 @@
 import { AihError } from "../errors.js";
+import type { FrameworkCard } from "./card.js";
 import type { BindingLock, BindingOwnershipEntry, BindingWrite } from "./lock.js";
 import {
   assertProvisionAuthorized,
@@ -92,6 +93,17 @@ export interface RemoveResult {
 
 export interface BindingReport {
   framework: FrameworkId;
+  /**
+   * The typed, versioned Framework Card (W7 §A) — the derived, rebuildable
+   * evidence record `lines` is rendered from. `report()` builds it; a `provision()`
+   * persists it beside the lock (O8). See {@link FrameworkCard}.
+   *
+   * OPTIONAL: the migrated ECC and Superpowers reports always populate it; the
+   * gstack report is EVALUATED_DEFERRED for v1 (maintainer scope reduction,
+   * DECISION-LOG 2026-07-23) and still returns lines-only, so consumers must
+   * treat `card` as possibly-absent until every adapter is migrated.
+   */
+  card?: FrameworkCard;
   lines: string[];
 }
 

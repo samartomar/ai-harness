@@ -19,6 +19,16 @@ import {
   type ResolveRequest,
   type VerifyResult,
 } from "../adapter.js";
+import {
+  buildFrameworkCard,
+  type ContextCostCard,
+  contextCostCard,
+  contextCostUnavailable,
+  d18SurfaceLabels,
+  type FrameworkCardCounts,
+  renderFrameworkCard,
+  sourceIdentityFromLock,
+} from "../card.js";
 import { assertKnownFeatureKeys } from "../features.js";
 import {
   bindPlugin,
@@ -434,59 +444,61 @@ function removeSuperpowers(deps: SuperpowersAdapterDeps): SuperpowersRemoveResul
 // -- report -------------------------------------------------------------------
 
 function reportSuperpowers(deps: SuperpowersAdapterDeps, context: BindingContext): BindingReport {
-  const lines: string[] = [];
   const source = context.declaration.source;
-  const pin =
-    source.kind === "git"
-      ? `${source.repository}@${source.commitSha}`
-      : `${source.package}@${source.exactVersion}`;
-  lines.push("framework: superpowers");
-  lines.push(`pin: ${pin}`);
-
   const read = readBindingLock(deps.root);
+
   if (!read.present) {
-    lines.push("binding lock: absent (not yet provisioned)");
-    lines.push("telemetry: disabled");
-    return { framework: "superpowers", lines };
+    const card = buildFrameworkCard({
+      framework: "superpowers",
+      scope: "project",
+      targetLabel: "DEFERRED",
+      source,
+      installMechanism: "host-plugin (project-scope Claude plugin)",
+      telemetry: "disabled",
+      enterpriseDisposition: "not yet provisioned",
+    });
+    return { framework: "superpowers", card, lines: renderFrameworkCard(card) };
   }
 
   const lock = read.lock;
-  lines.push(`scannedDigest: ${lock.scannedDigest}`);
-  lines.push(`loadedDigest: ${lock.loadedDigest}`);
-  lines.push(`match: ${String(lock.match)}`);
+  const { identity } = sourceIdentityFromLock(lock);
+  const { repoRelative, homeScope } = d18SurfaceLabels(lock);
 
-  const repoRelative = lock.ownership
-    .filter((entry) => !isHomeScopedTarget(entry.target))
-    .map((entry) => entry.target);
-  const homeScope = lock.ownership
-    .filter((entry) => isHomeScopedTarget(entry.target))
-    .map((entry) => entry.target);
-  lines.push(`D18-owned surfaces: ${repoRelative.length > 0 ? repoRelative.join(", ") : "(none)"}`);
-  lines.push(`machine-scope surfaces: ${homeScope.length > 0 ? homeScope.join(", ") : "(none)"}`);
-
+  // context-cost: estimated from the materialized marketplace source subtree. A
+  // missing/unestimable tree reports unavailable with a PATH-FREE reason (the raw
+  // estimator error may embed an absolute path, which the committed card forbids).
   const marketplaceEntry = lock.ownership.find(
     (entry) => entry.target === homeMarketplaceTarget(SUPERPOWERS_MARKETPLACE_NAME),
   );
   const treePath = marketplaceSourceFrom(marketplaceEntry);
+  let contextCost: ContextCostCard;
+  let counts: FrameworkCardCounts | undefined;
   if (treePath.length > 0) {
     try {
-      const cost = estimateContextCostFromTree(treePath);
-      lines.push(
-        `context-cost estimate (${cost.evidence}, labeled estimate): ~${cost.projectedTokens} tokens ` +
-          `(skills ${cost.counts.skills}, agents ${cost.counts.agents}, commands ${cost.counts.commands}, ` +
-          `hooks ${cost.counts.hooks}, mcpServers ${cost.counts.mcpServers})`,
-      );
-    } catch (err) {
-      lines.push(
-        `context-cost estimate: unavailable (${err instanceof Error ? err.message : String(err)})`,
-      );
+      const fragment = contextCostCard(estimateContextCostFromTree(treePath));
+      contextCost = fragment.contextCost;
+      counts = fragment.counts;
+    } catch {
+      contextCost = contextCostUnavailable("resolved checkout tree not estimable");
     }
   } else {
-    lines.push("context-cost estimate: unavailable (resolved checkout path not recorded)");
+    contextCost = contextCostUnavailable("resolved checkout path not recorded");
   }
 
-  lines.push("telemetry: disabled");
-  return { framework: "superpowers", lines };
+  const card = buildFrameworkCard({
+    framework: "superpowers",
+    scope: "project",
+    targetLabel: "STRICT_PROJECT_BINDING_VERIFIED",
+    source,
+    identity,
+    installMechanism: "host-plugin (project-scope Claude plugin)",
+    telemetry: "disabled",
+    scriptsBinariesDeps: [...repoRelative, ...homeScope],
+    contextCost,
+    counts,
+    enterpriseDisposition: "project-scope host-plugin; telemetry disabled",
+  });
+  return { framework: "superpowers", card, lines: renderFrameworkCard(card) };
 }
 
 // -- factory --------------------------------------------------------------------
