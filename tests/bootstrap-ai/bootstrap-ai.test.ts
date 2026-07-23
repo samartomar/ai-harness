@@ -303,19 +303,10 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
 });
 
 describe("bootstrap-ai — selectable Layer-1 baseline", () => {
-  it("--baseline gstack rewrites Layer 1 to garrytan/gstack and persists the choice", async () => {
-    const w = writesByPath(
-      (await command.plan(makeCtx({ canon: "compact", baseline: "gstack" }))).actions,
+  it("rejects --baseline gstack (retained but not CLI-surfaced per the 2026-07-23 scope decision)", async () => {
+    await expect(command.plan(makeCtx({ canon: "compact", baseline: "gstack" }))).rejects.toThrow(
+      /unknown --baseline "gstack"/,
     );
-    const router = w.get(".ai-context/RULE_ROUTER.md")?.contents ?? "";
-    const adapter = w.get(".ai-context/adapters/claude.md")?.contents ?? "";
-    const marker = w.get(".aih-config.json")?.json as { baseline?: string };
-
-    expect(router).toContain("garrytan/gstack");
-    expect(router).not.toContain("affaan-m/ECC");
-    expect(router).not.toContain("Superpowers");
-    expect(adapter).toContain("garrytan/gstack");
-    expect(marker.baseline).toBe("gstack");
   });
 
   it("rejects --baseline gsd (GSD removed from the baseline set by the 2026-07-22 scope decision)", async () => {
@@ -379,18 +370,17 @@ describe("bootstrap-ai — doctor probes (drift gate)", () => {
     expect(res?.detail).toContain("drift");
   });
 
-  it("fails on baseline drift when the marker and generated router/adapter disagree", async () => {
+  it("fails on generated-doc drift when a canon file diverges from what the marker regenerates", async () => {
     const applied = makeCtx({ canon: "compact", baseline: "ecc" }, { apply: true });
     await executePlan(await command.plan(applied), applied);
-    put(
-      ".aih-config.json",
-      JSON.stringify({
-        schemaVersion: 1,
-        contextDir: ".ai-context",
-        targets: ["claude"],
-        baseline: "gstack",
-      }),
-    );
+    // Tamper the generated router + adapter so they diverge from a clean
+    // regeneration. (The drift used to be induced by switching the marker to a
+    // second baseline; gstack is no longer a selectable baseline to drift
+    // toward, so the divergence is induced on the generated docs directly — the
+    // fail-closed-on-invalid-baseline path is covered by the adopt + marker
+    // suites.)
+    put(".ai-context/RULE_ROUTER.md", "# hand-edited router — drifted\n");
+    put(".ai-context/adapters/claude.md", "# hand-edited adapter — drifted\n");
 
     const verifyCtx = makeCtx({ canon: "compact" }, { verify: true });
     const res = await executePlan(await command.plan(verifyCtx), verifyCtx);
