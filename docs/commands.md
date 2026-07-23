@@ -89,8 +89,8 @@ Orchestrate the workstation 4-phase rollout (certs → hardware/vdi → telemetr
 ## aih init
 
 Initialize a repo: profile + selected baseline + bootstrap-ai + scaffold + contract + secrets +
-guardrails + mcp + sandbox + usage in one pass (one writer per file). `--baseline ecc|gstack|gsd` selects the Layer-1 canon
-baseline and records the choice in `.aih-config.json`; `ecc` remains the default. ECC is a separate
+guardrails + mcp + sandbox + usage in one pass (one writer per file). `--baseline ecc` records the Layer-1 canon
+baseline in `.aih-config.json`; `ecc` (bundling ECC + Superpowers) is the default and only selectable value. ECC is a separate
 gated network step — run `aih ecc` when ready (it points at ECC's own installer). For locked-down
 MCP rollout, `--mcp-mode offline|none` and `--mcp-compliant` are forwarded to the MCP phase.
 Under `--apply`, the usage phase writes `.aih/usage-record.mjs` and the git hook chain needed to
@@ -125,8 +125,8 @@ weak-model-safety lint of the generated canon** — every `#[[file:…]]`/backti
 resolve and no leftover `<insert>`/`TODO` scaffolding ships (a dangling reference fails the gate;
 soft-imperative/taste-word prose is advisory). Existing bootloaders are merged: hand-written
 content outside the managed block is preserved, and dry-run/apply summaries report those writes as
-`merge` rather than `overwrite`. Use `--baseline ecc|gstack|gsd` to render the Layer-1 references;
-non-default choices are persisted so later `contract` and `bootstrap-ai` runs stay aligned.
+`merge` rather than `overwrite`. Use `--baseline ecc` to render the Layer-1 references; the
+choice is persisted so later `contract` and `bootstrap-ai` runs stay aligned.
 
 ## aih contract
 
