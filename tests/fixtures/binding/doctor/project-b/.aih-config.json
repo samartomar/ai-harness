@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "contextDir": "ai-coding",
+  "targets": [],
+  "binding": {
+    "schemaVersion": 1,
+    "framework": {
+      "id": "superpowers",
+      "host": "claude"
+    },
+    "source": {
+      "kind": "git",
+      "repository": "obra/superpowers",
+      "commitSha": "dddddddddddddddddddddddddddddddddddddddd",
+      "treeDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  }
+}

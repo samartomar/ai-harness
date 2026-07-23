@@ -114,6 +114,16 @@ export class GstackBindingError extends AihError {
 
 // -- Pinned constants ---------------------------------------------------------
 
+/**
+ * The gstack adapter version (W7 §C.2) — bumped when this adapter's provisioning /
+ * qualification logic changes. Keyed into the runtime-qualification cache
+ * (`scan-cache-tiers.ts` `runtimeQualKey`), so a bump re-keys every prior host
+ * qualification. Registered alongside the factory in `registry.ts`
+ * (`ADAPTER_VERSIONS`); gstack is EVALUATED_DEFERRED for v1 but carries a version so
+ * the tier key is uniform across every registered adapter.
+ */
+export const ADAPTER_VERSION = 1 as const;
+
 /** The pinned git source location (`owner/repo` shape; see `isPlausibleGitRepository`). */
 export const GSTACK_REPOSITORY = "garrytan/gstack";
 

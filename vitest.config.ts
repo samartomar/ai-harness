@@ -73,6 +73,15 @@ export default defineConfig({
           functions: 97,
           lines: 95,
         },
+        // W7 §C scan cache tiers — branch-dense derived-cache + deep-scanner
+        // machinery (canonical keys, read-time tuple guard, SARIF mapping). Locked
+        // just below its genuine level (§D.3) so it can only ratchet up.
+        "src/binding/scan-cache-tiers.ts": {
+          statements: 93,
+          branches: 81,
+          functions: 100,
+          lines: 95,
+        },
       },
     },
   },

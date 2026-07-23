@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "declaration": {
+    "schemaVersion": 1,
+    "framework": {
+      "id": "ecc",
+      "host": "claude",
+      "mode": "lean"
+    },
+    "source": {
+      "kind": "git",
+      "repository": "affaan-m/ECC",
+      "commitSha": "cccccccccccccccccccccccccccccccccccccccc",
+      "treeDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "writes": [],
+  "scannedDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "loadedDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "match": true,
+  "ownership": []
+}

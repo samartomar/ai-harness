@@ -27,6 +27,42 @@ export {
   type ResolveRequest,
   type VerifyResult,
 } from "./adapter.js";
+// W7 §A — the typed, versioned Framework Card (derived, rebuildable evidence),
+// its single deterministic renderer, the no-machine-local-path validator (H3),
+// the committed-card read/write helpers (O8), and the shared card fragments.
+export {
+  assertNoMachineLocalPath,
+  buildFrameworkCard,
+  CARD_SCHEMA_VERSION,
+  type ContextCostCard,
+  ContextCostCardSchema,
+  contextCostCard,
+  contextCostUnavailable,
+  type DoctorCardInput,
+  d18SurfaceLabels,
+  deriveSupportLabel,
+  type FrameworkCard,
+  type FrameworkCardBuildInput,
+  type FrameworkCardCounts,
+  FrameworkCardDisclosureSchema,
+  FrameworkCardError,
+  FrameworkCardSchema,
+  frameworkCardPath,
+  type HookEntry,
+  HookEntrySchema,
+  parseFrameworkCard,
+  readFrameworkCard,
+  renderFrameworkCard,
+  type ScanCardIdentity,
+  ScanCardIdentitySchema,
+  type SharedStateEntry,
+  SharedStateEntrySchema,
+  SUPPORT_LABELS,
+  type SupportLabel,
+  scanCardIdentity,
+  sourceIdentityFromLock,
+  writeFrameworkCardAtomic,
+} from "./card.js";
 // W5 — the selected-profile closure classifier (a2). The scan gate consumes this
 // to separate the executed/loaded runtime closure from materialized-inert source.
 export {
@@ -44,8 +80,39 @@ export {
   type ProfileClosure,
   type Reachability,
 } from "./closure/profile-closure.js";
+// W7 §A.4 — the local verification evidence writer (a SEPARATE, machine-level,
+// gitignored record; absolute paths allowed — never the committed card, O3).
+export {
+  type EvidenceContaminationEntry,
+  EvidenceContaminationEntrySchema,
+  evidenceDir,
+  evidencePath,
+  LOCAL_EVIDENCE_SCHEMA_VERSION,
+  type LocalVerificationEvidence,
+  LocalVerificationEvidenceError,
+  LocalVerificationEvidenceSchema,
+  parseLocalVerificationEvidence,
+  readLocalVerificationEvidence,
+  writeLocalVerificationEvidenceAtomic,
+} from "./evidence.js";
 // W3f — plan-time feature-key validation shared by every W4+ adapter.
 export { assertKnownFeatureKeys, BindingFeatureKeyError } from "./features.js";
+// W7 §B — the binding doctor: the two ECC checks (W4d) PLUS the eight D8/D11/D16/D18
+// read-only probes B1–B8 wired into `aih doctor`. All deterministic (no timestamp/abs
+// path in any Check.detail), self-skipping when no binding lock/declaration is present.
+export {
+  bindingContaminationCheck,
+  bindingContextCostCheck,
+  bindingDenyListFreshnessCheck,
+  bindingFrameworkDriftCheck,
+  bindingHookChainChecks,
+  bindingHostTupleCheck,
+  bindingMcpInventoryCheck,
+  bindingSettingsDriftCheck,
+  cardDoctorInputFromChecks,
+  eccDoubleInstallCheck,
+  eccModeExclusivityCheck,
+} from "./frameworks/binding-doctor.js";
 // W4d — D10 cost-gate measurement record + ECC doctor rules.
 export {
   buildCostGateRecord,
@@ -100,7 +167,6 @@ export {
   type NormalizedEccOp,
   normalizeEccOperations,
 } from "./frameworks/ecc.js";
-export { eccDoubleInstallCheck, eccModeExclusivityCheck } from "./frameworks/ecc-doctor.js";
 // W5 — the gstack shared-runtime adapter. Composes the W3 skillOverrides
 // deny-list + managed-write + removal primitives over the upstream installer
 // seam; adds no scanning/closure machinery of its own.
@@ -144,6 +210,7 @@ export {
 // assembly point. Composes the W3 Claude host services above; adds no new
 // host mechanism of its own.
 export {
+  ADAPTER_VERSIONS,
   type BindingRegistryDeps,
   createBindingAdapterRegistry,
 } from "./frameworks/registry.js";
@@ -157,6 +224,16 @@ export {
   SuperpowersBindingError,
   type SuperpowersRemoveResult,
 } from "./frameworks/superpowers.js";
+// W7 §B.3 — the D16 host tuple: the type + committed constant (Phase 1a) plus the
+// live measurement + pure classification (Phase 1b) the D16 doctor probe compares.
+export {
+  classifyTuple,
+  type HostTuple,
+  type MeasureHostTupleContext,
+  measureHostTuple,
+  SUPPORTED_HOST_TUPLE,
+  type TupleClass,
+} from "./host-tuple.js";
 // W3 — Claude project-scope host adapter: detection, D18 managed writes/removal,
 // plugin binding + D7 identity, skillOverrides deny lists (D11), contamination
 // report, previewed cleanup with backup/rollback, and context-cost inventory.
@@ -212,6 +289,7 @@ export {
   carryForwardOwnership,
   claudeContaminationReport,
   claudeHomeDir,
+  collectHookChain,
   contextCostFromPluginDetails,
   contextCostFromPluginDetailsText,
   defaultPluginCacheLocator,
@@ -222,6 +300,8 @@ export {
   type FrameworkAttribution,
   finalizeClaudeOwnership,
   HOME_OWNERSHIP_PREFIX,
+  type HookChainEntry,
+  type HookScope,
   hashLoadedPluginTree,
   homeMarketplaceTarget,
   homePluginCacheTarget,
@@ -247,6 +327,7 @@ export {
   type RemovePluginDeps,
   type RemovePluginRequest,
   type RemovePluginResult,
+  readClaudeSettingsDrift,
   removePlugin,
   rollbackClaudeCleanup,
   type SkillDenyListReport,
@@ -273,6 +354,39 @@ export {
   writeBindingLockAtomic,
 } from "./lock.js";
 export { type AcquireNpmTreeOptions, acquireNpmTree } from "./npm-source.js";
+// W7 §C (Phase 2) — the two D12 scan cache tiers (deep-scan + runtime-qualification),
+// the async deep-scanner dimensions (cisco@uvx produced, skillspector@docker missing
+// on this VM), and the canonical tier keys. Off-tuple never satisfies the runtime-qual
+// tier — structurally (the tuple is in the key) and defensively (the read-time guard).
+export {
+  type CoverageEntry,
+  ciscoSkillScannerInspector,
+  DEEP_DIMENSION_INSPECTORS,
+  DEEP_SCAN_TIMEOUT_MS,
+  DEEP_SCANNER_VERSION,
+  type DeepDimensionContext,
+  type DeepDimensionInspector,
+  type DeepScanKeyInput,
+  type DeepScanRecord,
+  type DeepScanTierInput,
+  type DeepScanTierResult,
+  deepScanIdentityOf,
+  deepScanKey,
+  type ReadRuntimeQualificationInput,
+  type RecordRuntimeQualificationInput,
+  type RuntimeQualKeyInput,
+  type RuntimeQualRecord,
+  type RuntimeQualResult,
+  readDeepScanCache,
+  readRuntimeQualification,
+  recordRuntimeQualification,
+  runDeepScanTier,
+  runtimeQualKey,
+  SCAN_POLICY_VERSION,
+  ScanCacheTierError,
+  skillspectorInspector,
+  sourceIdOf,
+} from "./scan-cache-tiers.js";
 export {
   type AcceptedContentFinding,
   assertProvisionAuthorized,

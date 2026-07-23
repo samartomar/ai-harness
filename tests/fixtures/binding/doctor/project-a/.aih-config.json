@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "contextDir": "ai-coding",
+  "targets": [],
+  "binding": {
+    "schemaVersion": 1,
+    "framework": {
+      "id": "ecc",
+      "host": "claude",
+      "mode": "lean"
+    },
+    "source": {
+      "kind": "git",
+      "repository": "affaan-m/ECC",
+      "commitSha": "cccccccccccccccccccccccccccccccccccccccc",
+      "treeDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  }
+}

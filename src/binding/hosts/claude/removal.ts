@@ -84,22 +84,203 @@ function blockRoute(target: string): { file: string; marker: string } | undefine
   return { file: target.slice(0, sep), marker: target.slice(sep + "#block:".length) };
 }
 
-export function planClaudeRemoval(root: string, lock: BindingLock): ClaudeRemovalPlan {
+/**
+ * The read-only classification of ONE owned entry — what conservative removal will
+ * do with it. Both {@link readClaudeSettingsDrift} (drift half) and
+ * {@link planClaudeRemoval} (action half) consume this SAME classification, so they
+ * can never disagree about which entries drifted (W7 §B.7).
+ */
+type OwnershipDisposition =
+  | { kind: "drift"; drift: ClaudeDriftEntry }
+  /** Already gone / no owned value to reconcile — idempotent no-op. */
+  | { kind: "noop" }
+  /** Reconcile a JSON pointer / MCP server slot by restoring or pruning it. */
+  | {
+      kind: "json-remove";
+      file: string;
+      parent: string;
+      child: string;
+      single: boolean;
+      preExisting: BindingOwnershipEntry["preExisting"];
+    }
+  /** Strip an AIH-managed CLAUDE.md fence. */
+  | { kind: "block-strip"; file: string; marker: string; raw: string }
+  /** Restore a file's pre-existing content. */
+  | { kind: "file-restore"; target: string; contents: string }
+  /** Remove an AIH-created file that had no pre-existing content. */
+  | { kind: "file-remove"; target: string };
+
+/** Classify a JSON-pointer / MCP-server entry (pure read; drift is PRESERVED, never deleted). */
+function classifyJsonEntry(root: string, entry: BindingOwnershipEntry): OwnershipDisposition {
+  const { file, pointer } = jsonRoute(entry);
+  if (pointer.length === 0) {
+    // A json-pointer entry whose target carries no pointer is a malformed lock
+    // record — conservative removal PRESERVES and reports it, never guesses.
+    return {
+      kind: "drift",
+      drift: {
+        kind: entry.kind,
+        target: entry.target,
+        reason: "malformed lock target (no JSON pointer) — preserved",
+      },
+    };
+  }
+  const raw = readIfExists(join(root, file));
+  let parsed: unknown;
+  try {
+    parsed = raw === undefined ? undefined : parseJsoncText(raw);
+  } catch {
+    return {
+      kind: "drift",
+      drift: { kind: entry.kind, target: entry.target, reason: "file is not parseable JSON" },
+    };
+  }
+  const found = valueAtPointer(parsed, pointer);
+  if (!found.present) return { kind: "noop" }; // already gone — idempotent no-op
+  if (!jsonEqual(found.value, entry.applied)) {
+    return {
+      kind: "drift",
+      drift: { kind: entry.kind, target: entry.target, reason: "owned value modified since bind" },
+    };
+  }
+  return {
+    kind: "json-remove",
+    file,
+    parent: pointer[0] ?? "",
+    child: pointer[1] ?? "",
+    single: pointer.length === 1,
+    preExisting: entry.preExisting,
+  };
+}
+
+/** Classify a CLAUDE.md managed-block entry (pure read). */
+function classifyBlockEntry(
+  root: string,
+  entry: BindingOwnershipEntry,
+  block: { file: string; marker: string },
+): OwnershipDisposition {
+  const raw = readIfExists(join(root, block.file));
+  const body = raw === undefined ? undefined : extractManagedBlock(raw, block.marker);
+  if (raw === undefined || body === undefined) return { kind: "noop" }; // fence already gone
+  if (sha256Hex(body) !== entry.postApplyDigest) {
+    return {
+      kind: "drift",
+      drift: { kind: entry.kind, target: entry.target, reason: "managed block edited since bind" },
+    };
+  }
+  return { kind: "block-strip", file: block.file, marker: block.marker, raw };
+}
+
+/** Classify a whole-file entry (pure read). */
+function classifyFileEntry(root: string, entry: BindingOwnershipEntry): OwnershipDisposition {
+  const current = readIfExists(join(root, entry.target));
+  if (current === undefined) return { kind: "noop" }; // already gone
+  if (sha256Hex(current) !== entry.postApplyDigest) {
+    return {
+      kind: "drift",
+      drift: { kind: entry.kind, target: entry.target, reason: "owned file modified since bind" },
+    };
+  }
+  const pre = entry.preExisting;
+  if ("value" in pre) {
+    const contents = typeof pre.value === "string" ? pre.value : canonicalJson(pre.value);
+    return { kind: "file-restore", target: entry.target, contents };
+  }
+  return { kind: "file-remove", target: entry.target };
+}
+
+/** Route one owned entry to its per-kind classifier (json / block / file). */
+function classifyOwnershipEntry(root: string, entry: BindingOwnershipEntry): OwnershipDisposition {
+  if (entry.kind === "json-pointer" || entry.kind === "mcp-server") {
+    return classifyJsonEntry(root, entry);
+  }
+  const block = blockRoute(entry.target);
+  if (block !== undefined) return classifyBlockEntry(root, entry, block);
+  return classifyFileEntry(root, entry);
+}
+
+/**
+ * The pure, READ-ONLY D18 settings-drift half of {@link planClaudeRemoval} (W7
+ * §B.7). Returns the owned entries whose live value diverged from the applied
+ * value since bind — the ones conservative removal PRESERVES rather than deletes —
+ * in lock-ownership order. `planClaudeRemoval` CALLS this for its `drift`, so the
+ * removal planner and the doctor's read-only settings-drift probe cannot disagree.
+ */
+export function readClaudeSettingsDrift(root: string, lock: BindingLock): ClaudeDriftEntry[] {
   const drift: ClaudeDriftEntry[] = [];
+  for (const entry of lock.ownership) {
+    const disposition = classifyOwnershipEntry(root, entry);
+    if (disposition.kind === "drift") drift.push(disposition.drift);
+  }
+  return drift;
+}
+
+/** Apply one `json-remove` disposition's restore/prune to a file's accumulator. */
+function applyJsonRemoval(
+  acc: JsonRemovalAccumulator,
+  d: OwnershipDisposition & { kind: "json-remove" },
+): void {
+  const pre = d.preExisting;
+  if ("value" in pre) {
+    if (d.single) {
+      deepSet(acc.json, [d.parent], pre.value);
+      acc.replaceKeys.add(d.parent);
+    } else {
+      deepSet(acc.json, [d.parent, d.child], pre.value);
+      addToMap(acc.replaceChildKeys, d.parent, d.child);
+    }
+  } else if (d.single) {
+    acc.removeTopLevel.add(d.parent);
+  } else {
+    addToMap(acc.removeChild, d.parent, d.child);
+  }
+}
+
+export function planClaudeRemoval(root: string, lock: BindingLock): ClaudeRemovalPlan {
+  // The drift half is the pure {@link readClaudeSettingsDrift} — one source of the
+  // drift decision, shared with the doctor's B7 probe. The action half re-uses the
+  // SAME {@link classifyOwnershipEntry} so a drifted entry is preserved identically.
+  const drift = readClaudeSettingsDrift(root, lock);
   const jsonFiles = new Map<string, JsonRemovalAccumulator>();
   const otherActions: Action[] = [];
   const removedFiles = new Set<string>();
 
   for (const entry of lock.ownership) {
-    if (entry.kind === "json-pointer" || entry.kind === "mcp-server") {
-      reconcileJsonEntry(root, entry, jsonFiles, drift);
-    } else {
-      const block = blockRoute(entry.target);
-      if (block !== undefined) {
-        reconcileBlockEntry(root, entry, block, otherActions, drift);
-      } else {
-        reconcileFileEntry(root, entry, otherActions, drift, removedFiles);
+    const disposition = classifyOwnershipEntry(root, entry);
+    switch (disposition.kind) {
+      case "drift":
+      case "noop":
+        break; // drift is collected by readClaudeSettingsDrift; a no-op does nothing
+      case "json-remove": {
+        const acc = jsonFiles.get(disposition.file) ?? newAccumulator();
+        applyJsonRemoval(acc, disposition);
+        jsonFiles.set(disposition.file, acc);
+        break;
       }
+      case "block-strip":
+        otherActions.push(
+          writeText(
+            disposition.file,
+            stripManagedBlock(disposition.raw, disposition.marker),
+            "Remove Claude managed CLAUDE.md block",
+          ),
+        );
+        break;
+      case "file-restore":
+        otherActions.push(
+          writeText(
+            disposition.target,
+            disposition.contents,
+            `Restore pre-existing file ${disposition.target}`,
+          ),
+        );
+        break;
+      case "file-remove":
+        otherActions.push(
+          remove(disposition.target, `Remove Claude owned file ${disposition.target}`),
+        );
+        removedFiles.add(disposition.target);
+        break;
     }
   }
 
@@ -166,115 +347,6 @@ function planEmptyOwnedDirRemovals(root: string, removedFiles: ReadonlySet<strin
     }
   }
   return toRemove.map((dir) => remove(dir, `Remove empty Claude owned directory ${dir}`));
-}
-
-function reconcileJsonEntry(
-  root: string,
-  entry: BindingOwnershipEntry,
-  jsonFiles: Map<string, JsonRemovalAccumulator>,
-  drift: ClaudeDriftEntry[],
-): void {
-  const { file, pointer } = jsonRoute(entry);
-  if (pointer.length === 0) {
-    // A json-pointer entry whose target carries no pointer is a malformed lock
-    // record — conservative removal PRESERVES and reports it, never guesses.
-    drift.push({
-      kind: entry.kind,
-      target: entry.target,
-      reason: "malformed lock target (no JSON pointer) — preserved",
-    });
-    return;
-  }
-  const raw = readIfExists(join(root, file));
-  let parsed: unknown;
-  try {
-    parsed = raw === undefined ? undefined : parseJsoncText(raw);
-  } catch {
-    drift.push({ kind: entry.kind, target: entry.target, reason: "file is not parseable JSON" });
-    return;
-  }
-  const found = valueAtPointer(parsed, pointer);
-  if (!found.present) return; // already gone — idempotent no-op
-  if (!jsonEqual(found.value, entry.applied)) {
-    drift.push({
-      kind: entry.kind,
-      target: entry.target,
-      reason: "owned value modified since bind",
-    });
-    return;
-  }
-  const acc = jsonFiles.get(file) ?? newAccumulator();
-  const pre = entry.preExisting;
-  const parent = pointer[0] ?? "";
-  const child = pointer[1] ?? "";
-  if ("value" in pre) {
-    if (pointer.length === 1) {
-      deepSet(acc.json, [parent], pre.value);
-      acc.replaceKeys.add(parent);
-    } else {
-      deepSet(acc.json, [parent, child], pre.value);
-      addToMap(acc.replaceChildKeys, parent, child);
-    }
-  } else if (pointer.length === 1) {
-    acc.removeTopLevel.add(parent);
-  } else {
-    addToMap(acc.removeChild, parent, child);
-  }
-  jsonFiles.set(file, acc);
-}
-
-function reconcileBlockEntry(
-  root: string,
-  entry: BindingOwnershipEntry,
-  block: { file: string; marker: string },
-  actions: Action[],
-  drift: ClaudeDriftEntry[],
-): void {
-  const raw = readIfExists(join(root, block.file));
-  const body = raw === undefined ? undefined : extractManagedBlock(raw, block.marker);
-  if (raw === undefined || body === undefined) return; // fence already gone
-  if (sha256Hex(body) !== entry.postApplyDigest) {
-    drift.push({
-      kind: entry.kind,
-      target: entry.target,
-      reason: "managed block edited since bind",
-    });
-    return;
-  }
-  actions.push(
-    writeText(
-      block.file,
-      stripManagedBlock(raw, block.marker),
-      "Remove Claude managed CLAUDE.md block",
-    ),
-  );
-}
-
-function reconcileFileEntry(
-  root: string,
-  entry: BindingOwnershipEntry,
-  actions: Action[],
-  drift: ClaudeDriftEntry[],
-  removedFiles: Set<string>,
-): void {
-  const current = readIfExists(join(root, entry.target));
-  if (current === undefined) return; // already gone
-  if (sha256Hex(current) !== entry.postApplyDigest) {
-    drift.push({
-      kind: entry.kind,
-      target: entry.target,
-      reason: "owned file modified since bind",
-    });
-    return;
-  }
-  const pre = entry.preExisting;
-  if ("value" in pre) {
-    const contents = typeof pre.value === "string" ? pre.value : canonicalJson(pre.value);
-    actions.push(writeText(entry.target, contents, `Restore pre-existing file ${entry.target}`));
-  } else {
-    actions.push(remove(entry.target, `Remove Claude owned file ${entry.target}`));
-    removedFiles.add(entry.target);
-  }
 }
 
 function accumulatorHasWork(acc: JsonRemovalAccumulator): boolean {

@@ -30,7 +30,10 @@ export {
   type ContaminationLeakage,
   type ContaminationSurface,
   claudeContaminationReport,
+  collectHookChain,
   type FrameworkAttribution,
+  type HookChainEntry,
+  type HookScope,
 } from "./contamination.js";
 export {
   type ContextCostEvidenceSource,
@@ -105,6 +108,7 @@ export {
   type ClaudeDriftEntry,
   type ClaudeRemovalPlan,
   planClaudeRemoval,
+  readClaudeSettingsDrift,
 } from "./removal.js";
 export {
   type PinnedSkillInventory,

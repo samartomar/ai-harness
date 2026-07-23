@@ -1,7 +1,20 @@
 import { AdapterRegistry } from "../adapter.js";
-import { createEccAdapter, type EccLeanAdapterDeps } from "./ecc.js";
-import { createGstackAdapter, type GstackAdapterDeps } from "./gstack.js";
-import { createSuperpowersAdapter, type SuperpowersAdapterDeps } from "./superpowers.js";
+import type { FrameworkId } from "../schema.js";
+import {
+  createEccAdapter,
+  ADAPTER_VERSION as ECC_ADAPTER_VERSION,
+  type EccLeanAdapterDeps,
+} from "./ecc.js";
+import {
+  createGstackAdapter,
+  ADAPTER_VERSION as GSTACK_ADAPTER_VERSION,
+  type GstackAdapterDeps,
+} from "./gstack.js";
+import {
+  createSuperpowersAdapter,
+  ADAPTER_VERSION as SUPERPOWERS_ADAPTER_VERSION,
+  type SuperpowersAdapterDeps,
+} from "./superpowers.js";
 
 /**
  * The one assembly point that wires concrete D6 `FrameworkAdapter`s into an
@@ -38,3 +51,17 @@ export function createBindingAdapterRegistry(deps: BindingRegistryDeps): Adapter
   registry.register(createGstackAdapter(deps));
   return registry;
 }
+
+/**
+ * The per-adapter `ADAPTER_VERSION` for every registered framework (W7 §C.2),
+ * registered here ALONGSIDE the factory so the two never drift. It is the
+ * `adapterVersion` a provision / acceptance flow keys into the runtime-qualification
+ * cache (`scan-cache-tiers.ts` `runtimeQualKey`): a bump re-keys that framework's host
+ * qualifications. WIDENS additively as later adapters land, exactly like
+ * {@link BindingRegistryDeps}.
+ */
+export const ADAPTER_VERSIONS: Readonly<Record<FrameworkId, number>> = {
+  superpowers: SUPERPOWERS_ADAPTER_VERSION,
+  ecc: ECC_ADAPTER_VERSION,
+  gstack: GSTACK_ADAPTER_VERSION,
+};

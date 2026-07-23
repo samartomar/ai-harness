@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { hashComponentTree } from "../../../src/baseline-evidence/hash.js";
 import { AdapterRegistry, type BindingContext } from "../../../src/binding/adapter.js";
+import { assertNoMachineLocalPath, parseFrameworkCard } from "../../../src/binding/card.js";
 import { BindingFeatureKeyError } from "../../../src/binding/features.js";
 import { createBindingAdapterRegistry } from "../../../src/binding/frameworks/registry.js";
 import {
@@ -649,6 +650,9 @@ describe("report — Framework Card input lines", () => {
 
     const report = adapter.report({ declaration });
     expect(report.framework).toBe("superpowers");
+    // §D.2 row A: the migrated report yields a parseable, machine-path-free card.
+    expect(report.card).toBeDefined();
+    assertNoMachineLocalPath(parseFrameworkCard(report.card));
     const text = report.lines.join("\n");
     expect(text).toContain(SUPERPOWERS_REPOSITORY);
     expect(text).toContain(SUPERPOWERS_PIN_COMMIT);
@@ -661,6 +665,8 @@ describe("report — Framework Card input lines", () => {
   it("reports lock-absent state before any provision", () => {
     const adapter = createSuperpowersAdapter({ root, runner: recordingRunner().runner });
     const report = adapter.report({ declaration: declarationFor("0".repeat(64)) });
+    expect(report.card).toBeDefined();
+    assertNoMachineLocalPath(parseFrameworkCard(report.card));
     expect(report.lines.join("\n")).toContain("absent");
   });
 });
