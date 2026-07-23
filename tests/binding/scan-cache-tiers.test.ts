@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -383,7 +383,11 @@ describe("runDeepScanTier — cache hit means NO re-scan", () => {
     await runDeepScanTier(tierInput(runner));
     const key = deepScanKey({ framework: "ecc", sourceId: COMMIT, treeDigest: SHA_TREE });
     const path = join(cacheHome, "deep-scan-cache", `${key}.json`);
-    expect(existsSync(path)).toBe(true);
+    // The prior run wrote a valid record — prove it reads back as a hit, then
+    // corrupt it in place (no existsSync check-then-write: the read IS the proof).
+    expect(
+      readDeepScanCache(cacheHome, { framework: "ecc", sourceId: COMMIT, treeDigest: SHA_TREE }),
+    ).toBeDefined();
     writeFileSync(path, "{ this is not valid json", "utf8");
     expect(
       readDeepScanCache(cacheHome, { framework: "ecc", sourceId: COMMIT, treeDigest: SHA_TREE }),
