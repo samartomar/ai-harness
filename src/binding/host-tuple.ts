@@ -106,15 +106,18 @@ export function classifyTuple(measured: HostTuple, pinned: HostTuple): TupleClas
 }
 
 /**
- * The narrow context {@link measureHostTuple} needs — a runner plus the RAM
- * fact. (vCPU is read directly as LOGICAL `os.cpus().length`; the host
- * adapter's physical-core count is deliberately not part of this seam.)
+ * The narrow context {@link measureHostTuple} needs — a runner, the RAM fact,
+ * and the LOGICAL-processor count. `logicalProcessors` defaults to
+ * `os.cpus().length` (the W1 record's "24 logical processors" semantics — NOT
+ * the host adapter's physical-core count, which reads 12 on this SMT host); it
+ * is injectable so a test can pin it deterministically across CI machines.
  */
 export interface MeasureHostTupleContext {
   run: Runner;
   host: {
     totalRamGb(): Promise<number>;
   };
+  logicalProcessors?: () => number;
 }
 
 /**
@@ -146,7 +149,7 @@ export async function measureHostTuple(ctx: MeasureHostTupleContext): Promise<Ho
   // LOGICAL processors — the W1 environment record's "24 logical processors"
   // semantics (the host adapter's cpuPhysicalCores() counts physical cores,
   // which on this SMT machine reads 12 and would mis-gate the reference host).
-  const vcpu = cpus().length;
+  const vcpu = (ctx.logicalProcessors ?? (() => cpus().length))();
   return {
     claudeCode: { measuredOn: claudeVersion },
     // "10.0.26200" -> "26200"; a non-Windows or unexpected shape keeps the raw

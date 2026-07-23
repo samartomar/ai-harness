@@ -74,7 +74,10 @@ describe("classifyTuple", () => {
 });
 
 describe("measureHostTuple", () => {
-  const host = { totalRamGb: async () => 23.6, cpuPhysicalCores: async () => 24 };
+  // logicalProcessors is injected (default os.cpus().length) so vcpuClass is
+  // deterministic across CI machines rather than reading the runner's core count.
+  const host = { totalRamGb: async () => 23.6 };
+  const ctxExtras = { host, logicalProcessors: () => 24 };
 
   it("reads Node/arch from the process, bun & claude via the runner, ram/vcpu via the host", async () => {
     const run = fakeRunner((argv) => {
@@ -82,7 +85,7 @@ describe("measureHostTuple", () => {
       if (argv[0] === "claude") return { stdout: "2.1.217 (Claude Code)\n" };
       return undefined;
     });
-    const measured = await measureHostTuple({ run, host });
+    const measured = await measureHostTuple({ run, ...ctxExtras });
     expect(measured.node).toBe(process.versions.node);
     expect(measured.arch).toBe(arch);
     expect(measured.bun).toBe("1.3.14");
@@ -93,7 +96,7 @@ describe("measureHostTuple", () => {
 
   it("records `unknown` (never fabricates) when bun/claude cannot be spawned", async () => {
     const run = fakeRunner(() => ({ spawnError: true, code: 127 }));
-    const measured = await measureHostTuple({ run, host });
+    const measured = await measureHostTuple({ run, ...ctxExtras });
     expect(measured.bun).toBe("unknown");
     expect(measured.claudeCode.measuredOn).toBe("unknown");
   });
@@ -102,6 +105,8 @@ describe("measureHostTuple", () => {
     const run = fakeRunner((argv) =>
       argv[0] === "bun" ? { stdout: "1.3.14" } : { stdout: "2.1.217" },
     );
-    expect(await measureHostTuple({ run, host })).toEqual(await measureHostTuple({ run, host }));
+    expect(await measureHostTuple({ run, ...ctxExtras })).toEqual(
+      await measureHostTuple({ run, ...ctxExtras }),
+    );
   });
 });
