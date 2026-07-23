@@ -2,7 +2,7 @@ import { type Dirent, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { readIfExists } from "../../../internals/fsxn.js";
 import { isPlainObject, parseJsoncText } from "../../../internals/merge.js";
-import { CLAUDE_MCP_KEY } from "./surfaces.js";
+import { CLAUDE_MCP_KEY, CLAUDE_SETTINGS_LOCAL_PATH, CLAUDE_SETTINGS_PATH } from "./surfaces.js";
 
 /**
  * Claude USER-scope contamination report (D13). Claude loads USER-scope surfaces
@@ -153,6 +153,115 @@ function collectHookCommands(hooks: unknown): { event: string; command: string }
         out.push({ event, command: group.command });
       }
     }
+  }
+  return out;
+}
+
+/**
+ * The hook-scope a chain entry was read from — which settings LAYER it lives in.
+ * `home` = user-scope (`~/.claude/settings.json`), `project` =
+ * `<root>/.claude/settings.json`, `local` = `<root>/.claude/settings.local.json`.
+ */
+export type HookScope = "home" | "project" | "local";
+
+/**
+ * One resolved hook-chain entry (W7 §B.6). Richer than {@link collectHookCommands}:
+ * it keeps the group `matcher` and records the settings `scope`. `command` is the
+ * RAW command string (it may embed a machine-local path, so it is for structured
+ * consumers — the card/evidence — never for a `Check.detail`); `origin` is a
+ * PATH-FREE display label (the basename of the command's first token) safe to echo
+ * into a deterministic, portable doctor detail.
+ */
+export interface HookChainEntry {
+  event: string;
+  matcher?: string;
+  /** Raw command (may contain a machine-local path) — structured consumers only. */
+  command: string;
+  /** Path-free display label: the basename of the command's first token. */
+  origin: string;
+  scope: HookScope;
+}
+
+/**
+ * A path-free origin label for a hook command: the basename of its first
+ * whitespace-delimited token, with any POSIX/Windows directory or drive prefix
+ * stripped. `node C:\a\b.js` -> `node`; `C:\tools\hook.exe --x` -> `hook.exe`;
+ * `.aih/hooks/x.mjs` -> `x.mjs`; an empty command -> `inline`. Guarantees the
+ * result carries no path separator, so a Check.detail built from it stays portable.
+ */
+function hookOrigin(command: string): string {
+  const argv0 = command.trim().split(/\s+/)[0] ?? "";
+  if (argv0.length === 0) return "inline";
+  const basename = argv0.split(/[/\\]/).at(-1) ?? argv0;
+  return basename.length > 0 ? basename : "inline";
+}
+
+/**
+ * Flatten one settings `hooks` map into {@link HookChainEntry} rows for a given
+ * scope, KEEPING the group matcher (which {@link collectHookCommands} drops).
+ * Handles the canonical nested shape (`{ Event: [ { matcher, hooks: [ { command } ] } ] }`)
+ * and the flatter `{ Event: [ "cmd" ] }` / `{ Event: [ { command } ] }` shapes.
+ */
+function hookChainEntriesFrom(hooks: unknown, scope: HookScope): HookChainEntry[] {
+  const out: HookChainEntry[] = [];
+  if (!isPlainObject(hooks)) return out;
+  for (const [event, groups] of Object.entries(hooks)) {
+    if (!Array.isArray(groups)) continue;
+    for (const group of groups) {
+      if (typeof group === "string") {
+        out.push({ event, command: group, origin: hookOrigin(group), scope });
+        continue;
+      }
+      if (!isPlainObject(group)) continue;
+      const matcher =
+        typeof group.matcher === "string" && group.matcher.length > 0 ? group.matcher : undefined;
+      const push = (command: string): void => {
+        out.push({
+          event,
+          ...(matcher !== undefined ? { matcher } : {}),
+          command,
+          origin: hookOrigin(command),
+          scope,
+        });
+      };
+      if (Array.isArray(group.hooks)) {
+        for (const inner of group.hooks) {
+          if (typeof inner === "string") push(inner);
+          else if (isPlainObject(inner) && typeof inner.command === "string") push(inner.command);
+        }
+      } else if (typeof group.command === "string") {
+        push(group.command);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Collect the per-event hook chain across ALL three Claude settings layers — home
+ * (`~/.claude/settings.json`), project (`<root>/.claude/settings.json`), and local
+ * (`<root>/.claude/settings.local.json`) — for the W7 §B.6 doctor probe. READ-ONLY
+ * and tolerant: an absent or malformed settings file contributes nothing (never
+ * throws). Entries are returned in layer order (home, project, local); the caller
+ * SORTS before formatting for determinism.
+ */
+export function collectHookChain(params: { home: string; projectRoot: string }): HookChainEntry[] {
+  const sources: readonly [HookScope, string][] = [
+    ["home", join(params.home, CLAUDE_SETTINGS_PATH)],
+    ["project", join(params.projectRoot, CLAUDE_SETTINGS_PATH)],
+    ["local", join(params.projectRoot, CLAUDE_SETTINGS_LOCAL_PATH)],
+  ];
+  const out: HookChainEntry[] = [];
+  for (const [scope, abs] of sources) {
+    const raw = readIfExists(abs);
+    if (raw === undefined) continue;
+    let parsed: unknown;
+    try {
+      parsed = parseJsoncText(raw);
+    } catch {
+      continue; // tolerant: a malformed settings layer contributes nothing
+    }
+    if (isPlainObject(parsed)) out.push(...hookChainEntriesFrom(parsed.hooks, scope));
   }
   return out;
 }

@@ -70,6 +70,7 @@ const HostTupleSchema = z
   .object({
     claudeCode: z.object({ measuredOn: z.string().min(1) }).strict(),
     windowsBuild: z.string().min(1),
+    windowsUbr: z.string().min(1).optional(),
     arch: z.string().min(1),
     node: z.string().min(1),
     bun: z.string().min(1),

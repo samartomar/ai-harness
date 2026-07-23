@@ -504,6 +504,15 @@ describe("Check.code — invariants", () => {
       "marketplace.sums-coverage": true,
       "marketplace.unapproved-verdict": true,
       "marketplace.signature": true,
+      "binding.contaminated": true,
+      "binding.host-off-tuple": true,
+      "binding.host-version-drift": true,
+      "binding.framework-drift": true,
+      "binding.no-adapter": true,
+      "binding.deny-stale": true,
+      "binding.hook-chain": true,
+      "binding.settings-drift": true,
+      "binding.mcp-inventory": true,
     };
     const srcDir = join(process.cwd(), "src");
     const src = (readdirSync(srcDir, { recursive: true }) as string[])

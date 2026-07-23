@@ -2,7 +2,18 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { classifyCanon, isAdoptable } from "./adopt/classify.js";
 import { enterpriseBaselineAttestationCheck } from "./baseline/attestation.js";
-import { eccDoubleInstallCheck, eccModeExclusivityCheck } from "./binding/frameworks/ecc-doctor.js";
+import {
+  bindingContaminationCheck,
+  bindingContextCostCheck,
+  bindingDenyListFreshnessCheck,
+  bindingFrameworkDriftCheck,
+  bindingHookChainChecks,
+  bindingHostTupleCheck,
+  bindingMcpInventoryCheck,
+  bindingSettingsDriftCheck,
+  eccDoubleInstallCheck,
+  eccModeExclusivityCheck,
+} from "./binding/frameworks/binding-doctor.js";
 import { readAihConfigDiagnostic } from "./config/marker.js";
 import { contractTruthCheck } from "./contract/check.js";
 import { detectInstall } from "./internals/cli-detect.js";
@@ -14,6 +25,7 @@ import {
   type PlanContext,
   plan,
   probe,
+  probeMany,
   structuredChecksProbe,
 } from "./internals/plan.js";
 import { canonLintCheck } from "./lint/run.js";
@@ -254,6 +266,16 @@ export const command: CommandSpec = {
       }),
       probe("ECC double-install", () => eccDoubleInstallCheck(ctx)),
       probe("ECC mode exclusivity", () => eccModeExclusivityCheck(ctx)),
+      // W7 §B — the eight binding doctor probes (B1–B8). Read-only, deterministic,
+      // posture-graded where noted; each self-skips when no binding is present.
+      probe("binding contamination", () => bindingContaminationCheck(ctx)),
+      probe("binding context cost", () => bindingContextCostCheck(ctx)),
+      probe("binding host tuple", () => bindingHostTupleCheck(ctx)),
+      probe("binding framework drift", () => bindingFrameworkDriftCheck(ctx)),
+      probe("binding deny-list freshness", () => bindingDenyListFreshnessCheck(ctx)),
+      probeMany("binding hook chain", (probeCtx) => bindingHookChainChecks(probeCtx)),
+      probe("binding settings drift", () => bindingSettingsDriftCheck(ctx)),
+      probe("binding mcp inventory", () => bindingMcpInventoryCheck(ctx)),
       probe("large-repo graph safety", () => scaleSafetyCheck(ctx)),
       probe("VDI compatibility matrix", () => vdiCompatibilityCheck(ctx)),
       probe("MCP managed allowlist", () => mcpManagedAllowlistCheck(ctx)),

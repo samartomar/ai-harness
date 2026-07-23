@@ -97,6 +97,21 @@ export {
 } from "./evidence.js";
 // W3f — plan-time feature-key validation shared by every W4+ adapter.
 export { assertKnownFeatureKeys, BindingFeatureKeyError } from "./features.js";
+// W7 §B — the binding doctor: the two ECC checks (W4d) PLUS the eight D8/D11/D16/D18
+// read-only probes B1–B8 wired into `aih doctor`. All deterministic (no timestamp/abs
+// path in any Check.detail), self-skipping when no binding lock/declaration is present.
+export {
+  bindingContaminationCheck,
+  bindingContextCostCheck,
+  bindingDenyListFreshnessCheck,
+  bindingFrameworkDriftCheck,
+  bindingHookChainChecks,
+  bindingHostTupleCheck,
+  bindingMcpInventoryCheck,
+  bindingSettingsDriftCheck,
+  eccDoubleInstallCheck,
+  eccModeExclusivityCheck,
+} from "./frameworks/binding-doctor.js";
 // W4d — D10 cost-gate measurement record + ECC doctor rules.
 export {
   buildCostGateRecord,
@@ -151,7 +166,6 @@ export {
   type NormalizedEccOp,
   normalizeEccOperations,
 } from "./frameworks/ecc.js";
-export { eccDoubleInstallCheck, eccModeExclusivityCheck } from "./frameworks/ecc-doctor.js";
 // W5 — the gstack shared-runtime adapter. Composes the W3 skillOverrides
 // deny-list + managed-write + removal primitives over the upstream installer
 // seam; adds no scanning/closure machinery of its own.
@@ -208,9 +222,16 @@ export {
   SuperpowersBindingError,
   type SuperpowersRemoveResult,
 } from "./frameworks/superpowers.js";
-// W7 §B.3 — the D16 host tuple (TYPE + CONSTANT only in Phase 1a; the measurement
-// + classification are Phase 1b).
-export { type HostTuple, SUPPORTED_HOST_TUPLE } from "./host-tuple.js";
+// W7 §B.3 — the D16 host tuple: the type + committed constant (Phase 1a) plus the
+// live measurement + pure classification (Phase 1b) the D16 doctor probe compares.
+export {
+  classifyTuple,
+  type HostTuple,
+  type MeasureHostTupleContext,
+  measureHostTuple,
+  SUPPORTED_HOST_TUPLE,
+  type TupleClass,
+} from "./host-tuple.js";
 // W3 — Claude project-scope host adapter: detection, D18 managed writes/removal,
 // plugin binding + D7 identity, skillOverrides deny lists (D11), contamination
 // report, previewed cleanup with backup/rollback, and context-cost inventory.
@@ -266,6 +287,7 @@ export {
   carryForwardOwnership,
   claudeContaminationReport,
   claudeHomeDir,
+  collectHookChain,
   contextCostFromPluginDetails,
   contextCostFromPluginDetailsText,
   defaultPluginCacheLocator,
@@ -276,6 +298,8 @@ export {
   type FrameworkAttribution,
   finalizeClaudeOwnership,
   HOME_OWNERSHIP_PREFIX,
+  type HookChainEntry,
+  type HookScope,
   hashLoadedPluginTree,
   homeMarketplaceTarget,
   homePluginCacheTarget,
@@ -301,6 +325,7 @@ export {
   type RemovePluginDeps,
   type RemovePluginRequest,
   type RemovePluginResult,
+  readClaudeSettingsDrift,
   removePlugin,
   rollbackClaudeCleanup,
   type SkillDenyListReport,

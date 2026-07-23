@@ -879,6 +879,71 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "The artifact's SHA256SUMS could not be verified against a publisher signature — sign at publish time (`aih marketplace publish --dir <dir> --signer cosign|gh --apply`) and gate consumption with `aih marketplace validate --dir <dir> --require-signature` (add `--repo <owner/repo>` for gh attestations). A missing signature, missing verifier tool, or failed verification leaves the artifact's provenance unproven — do not consume it in gated environments.",
   },
+  // Project framework binding — the W7 §B doctor probes (B1–B8). All developer
+  // self-fixes: the developer runs the named binding command themselves.
+  "binding.contaminated": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "user-scope framework surfaces contaminate the bound project",
+    action:
+      "A global (`~/.claude`) framework install leaks skills/agents/hooks/rules/plugins/MCP servers into every project, competing with the bound framework. Review with `aih doctor` and clean the user scope with `aih cleanup` so the project binding is the only methodology surface (advisory at vibe/team, blocking at enterprise).",
+  },
+  "binding.host-off-tuple": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "host environment differs from the qualified D16 tuple",
+    action:
+      "A hard host fact (arch, Windows build, Bun, Node major, RAM class, or vCPU class) differs from the tuple the binding was qualified against, so support is downgraded (the read-only doctor still renders). Re-qualify on the supported host, or accept the downgraded support label (blocking at enterprise).",
+  },
+  "binding.host-version-drift": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "Claude Code version advanced since the tuple was pinned",
+    action:
+      "The hard host facts still match the qualified tuple; only the Claude Code version advanced. This is an advisory — the doctor re-measured the facts and they held. Refresh the recorded provenance on the next bind/verify; no action is required to keep the binding supported.",
+  },
+  "binding.framework-drift": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "more than one methodology framework has a live surface",
+    action:
+      "D8 allows exactly one methodology framework per project, but a competing framework surface is live alongside the bound one. Remove the competing install (`aih cleanup`), or re-bind to the intended single framework, so only one methodology surface remains.",
+  },
+  "binding.no-adapter": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "the bound framework has no registered adapter",
+    action:
+      "The committed declaration names a framework this aih build has no adapter for, so the doctor cannot fully verify it (diagnosable, never a crash). Upgrade aih to a build that registers the framework's adapter, or re-bind to a supported framework.",
+  },
+  "binding.deny-stale": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "the skill deny-list is stale (a pinned skill is no longer denied)",
+    action:
+      "An added or renamed upstream skill defaults to ON and leaks until the deny list is regenerated from a freshly pinned inventory. Re-bind or update the framework so `skillOverrides` is regenerated from the current pinned skill inventory.",
+  },
+  "binding.hook-chain": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "resolved per-event hook chain inventory",
+    action:
+      "Advisory: the doctor lists the hooks that fire (home, project, and local settings layers) so the per-event chain is auditable. Review the listed hooks; remove any you did not intend to run.",
+  },
+  "binding.settings-drift": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "an AIH-owned settings value changed since bind",
+    action:
+      "Advisory: an owned `.claude/settings.json` value diverged from what the bind applied. Conservative removal PRESERVES a drifted value (never silently deletes it). Review the change; re-bind if it was unintended.",
+  },
+  "binding.mcp-inventory": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "resolved MCP server inventory",
+    action:
+      "Advisory: the doctor lists the MCP servers declared across the project and home settings so the connector surface is auditable. Review the listed servers; remove any you did not intend to expose.",
+  },
 };
 
 /** Severity rank for sorting: most urgent first. */

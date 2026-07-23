@@ -137,7 +137,19 @@ export type CheckCode =
   | "marketplace.checksum-mismatch"
   | "marketplace.sums-coverage"
   | "marketplace.unapproved-verdict"
-  | "marketplace.signature";
+  | "marketplace.signature"
+  // project framework binding — the W7 §B doctor probes (B1–B8). Read-only,
+  // posture-graded where noted; a fail flips the exit, a coded skip is an
+  // advisory a support/ledger consumer routes without matching `detail`.
+  | "binding.contaminated" // B1: user-scope leakage (fail at enterprise; advisory skip below)
+  | "binding.host-off-tuple" // B3: measured host tuple off the pinned D16 tuple (posture-graded)
+  | "binding.host-version-drift" // B3: hard facts held, Claude Code version advanced (advisory)
+  | "binding.framework-drift" // B4: more than one methodology framework has a live surface (fail)
+  | "binding.no-adapter" // B4: declared framework has no registered adapter (diagnosable advisory)
+  | "binding.deny-stale" // B5: a pinned skill is no longer denied — deny list is stale (fail)
+  | "binding.hook-chain" // B6: per-event hook chain inventory (advisory)
+  | "binding.settings-drift" // B7: an AIH-owned settings value changed since bind (advisory)
+  | "binding.mcp-inventory"; // B8: resolved MCP server inventory (advisory)
 
 export interface Check {
   name: string;
