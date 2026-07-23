@@ -7,7 +7,7 @@ import { createSuperpowersAdapter, type SuperpowersAdapterDeps } from "./superpo
  * The one assembly point that wires concrete D6 `FrameworkAdapter`s into an
  * {@link AdapterRegistry}. W4a registered the first (Superpowers, host-plugin);
  * W4b adds ECC Lean (upstream-local-installer); W5 adds gstack (shared-runtime).
- * Later work packages (gsd-core) add their own `create<Framework>Adapter`
+ * Later work packages add their own `create<Framework>Adapter`
  * factory in a sibling module and register it here too; `BindingRegistryDeps`
  * WIDENS additively (a merged shape covering every adapter's construction deps)
  * as they land, not replaced — matching the rest of Project Framework Binding.

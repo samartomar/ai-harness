@@ -43,18 +43,6 @@ export const BASELINE_SOURCES = [
     ],
     installVerb: "the pinned garrytan/gstack install path",
   },
-  {
-    id: "gsd",
-    label: "GSD",
-    sources: [
-      {
-        owner: "open-gsd",
-        repo: "gsd-core",
-        pinnedSha: "8f2ebbe9bfbb98a1fc15cab36c3f6d5618eac341",
-      },
-    ],
-    installVerb: "the pinned open-gsd/gsd-core install path",
-  },
 ] as const satisfies readonly BaselineSource[];
 
 export type BaselineSourceId = (typeof BASELINE_SOURCES)[number]["id"];
