@@ -54,6 +54,10 @@ import { classifyFileTypography, type TypographyAdvisory } from "./visible-typog
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 const LOWER_SHA40 = /^[0-9a-f]{40}$/;
+// npm SRI sha512: base64 of 64 bytes (86 chars + "=="). Mirrors schema.ts's
+// SRI_SHA512 — an npm scannable's digest IS its integrity, so the scan cache
+// must recognize this shape alongside a git tree's sha256 hex digest.
+const SRI_SHA512 = /^sha512-[A-Za-z0-9+/]{86}==$/;
 
 // -- Resolved identity -------------------------------------------------------
 
@@ -80,6 +84,22 @@ export interface ResolvedNpmSource {
   package: string;
   exactVersion: string;
   integrity: string;
+  /**
+   * Acquisition fields — populated by `acquireNpmTree` (`./npm-source.ts`) once
+   * the EXACT tarball has been SRI-verified, contained-unpacked, and digested.
+   * Absent on a bare identity resolution ({@link resolveNpmSource}); a hand-built
+   * npm source that omits them is not scannable ({@link scannableFromNpm} fails
+   * closed). `treeDigest` uses the SAME tree-hash idiom git uses ({@link
+   * resolveGitSource} via `hashComponentTree`), so an identical tree digests to an
+   * identical value regardless of source kind. `gitHead` is present only when an
+   * `expectedGitHead` provenance assertion was made.
+   */
+  treeDigest?: string;
+  /** Derived, rebuildable content-addressed tree path (machine cache); not identity. */
+  treePath?: string;
+  /** The exact leaf files (source-relative POSIX) folded into `treeDigest`. */
+  files?: readonly string[];
+  gitHead?: string;
 }
 
 export type ResolvedSource = ResolvedGitSource | ResolvedNpmSource;
@@ -144,6 +164,28 @@ export function scannableFromGit(resolved: ResolvedGitSource): ScannableSource {
   };
 }
 
+/**
+ * Make an acquired npm source scannable — the npm mirror of {@link
+ * scannableFromGit}. The scannable digest is the SRI `integrity` (what {@link
+ * resolvedSourceDigest} already binds an npm disposition to), NOT the tree digest:
+ * an npm tree and a byte-identical git tree share a `treeDigest` but must NEVER
+ * share a scan-cache entry, so keying on the npm-namespaced integrity keeps them
+ * disjoint by construction. Fails closed if the source was never materialized
+ * (identity-only resolution), so a disposition can never attest an absent tree.
+ */
+export function scannableFromNpm(resolved: ResolvedNpmSource): ScannableSource {
+  if (resolved.treePath === undefined) {
+    throw new BindingScanError(
+      "npm source has no materialized tree; acquire the tarball (acquireNpmTree) before scanning",
+    );
+  }
+  return {
+    digest: resolved.integrity,
+    treePath: resolved.treePath,
+    identityFiles: resolved.files,
+  };
+}
+
 // -- Errors ------------------------------------------------------------------
 
 /** Fail-closed scan-gate error (resolution, digest mismatch, forged token, …). */
@@ -153,7 +195,7 @@ export class BindingScanError extends AihError {
   }
 }
 
-/** A capability deferred to a later work item (e.g. npm tarball acquisition). */
+/** A capability deferred to a later work item (e.g. a deep external scanner dimension). */
 export class BindingNotSupportedError extends AihError {
   constructor(message: string) {
     super(message, "AIH_BINDING_UNSUPPORTED");
@@ -172,8 +214,19 @@ function sourceCheckoutDir(cacheHome: string, commitSha: string): string {
   return join(cacheHome, "cache", commitSha);
 }
 
+/**
+ * Filesystem-safe scan-cache filename for a scannable digest. A git tree digest is
+ * already sha256 hex (safe, used verbatim so existing cache files are unchanged);
+ * an npm SRI integrity contains base64 `/`/`+`, so it is hashed into a stable hex
+ * token. Distinct digests keep distinct tokens, and {@link readScanCache} still
+ * re-checks the stored digest, so a git tree and an npm tree never collide.
+ */
+function scanCacheFileToken(digest: string): string {
+  return SHA256_HEX.test(digest) ? digest : createHash("sha256").update(digest).digest("hex");
+}
+
 function scanCachePath(cacheHome: string, digest: string): string {
-  return join(cacheHome, "scan-cache", `${digest}.json`);
+  return join(cacheHome, "scan-cache", `${scanCacheFileToken(digest)}.json`);
 }
 
 // -- Git resolver ------------------------------------------------------------
@@ -351,7 +404,13 @@ export async function resolveGitSource(
   };
 }
 
-// -- npm resolver (minimal; tarball deferred) --------------------------------
+// -- npm identity resolver ---------------------------------------------------
+// Identity discovery only (package + version -> exact version + SRI integrity).
+// EXACT tarball acquisition, SRI verification, contained unpacking, and tree
+// digest live in the sibling `./npm-source.ts` as `acquireNpmTree`, which
+// consumes a {@link ResolvedNpmSource} and returns it enriched with the
+// materialized tree — mirroring how {@link resolveGitSource} materializes a git
+// checkout. The result is fed to the gate via {@link scannableFromNpm}.
 
 export interface NpmResolveRequest {
   package: string;
@@ -392,13 +451,6 @@ export async function resolveNpmSource(
     );
   }
   return candidate;
-}
-
-/** Tarball acquisition is deferred; never fake success (D12). */
-export function acquireNpmTree(_resolved: ResolvedNpmSource): never {
-  throw new BindingNotSupportedError(
-    "npm tarball acquisition and scanning is not yet supported; resolution produces identity only",
-  );
 }
 
 // -- Fast static inspection (orchestrated trust seams) -----------------------
@@ -1486,7 +1538,11 @@ const DimensionReportSchema = z
 const ScanCacheRecordSchema = z
   .object({
     schemaVersion: z.literal(3),
-    digest: z.string().regex(SHA256_HEX),
+    // A git tree digest (sha256 hex) OR an npm scannable digest (SRI sha512
+    // integrity): npm and git dispositions bind to different digest namespaces,
+    // so the derived cache must recognize both. A record whose digest matches
+    // neither shape is a miss (recompute), never a fail-closed block.
+    digest: z.string().refine((value) => SHA256_HEX.test(value) || SRI_SHA512.test(value)),
     scannedAt: z.string().min(1),
     reports: z.array(DimensionReportSchema),
   })
