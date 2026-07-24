@@ -1,19 +1,5 @@
 {
   "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.aih/usage-record.mjs\" --from codex",
-            "timeout": 5,
-            "statusMessage": "Recording aih usage",
-            "commandWindows": "for /f \"delims=\" %r in ('git rev-parse --show-toplevel 2^>nul') do @node \"%r\\.aih\\usage-record.mjs\" --from codex"
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [

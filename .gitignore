@@ -20,8 +20,6 @@ Thumbs.db
 .env.*
 !.env.example
 
-# aih-managed (backup, temp, generated reports; keep committed recorder)
-
 # internal (non-public) docs — clone samartomar/ai-harness-internal here for
 # cross-agent access without exposing competitive/roadmap/handoff docs publicly
 .internal/
@@ -36,10 +34,8 @@ Thumbs.db
 # `aih pack install` and must not be double-committed (single-source-of-truth).
 ai-coding/skills/
 
-# aih-managed (backup, temp, and generated reports)
+# aih artifacts — never tracked (this checkout is not aih-governed)
 *.aih.bak
 *.aih.tmp
 .aih-truth.json
-!.aih/
-.aih/*
-!.aih/usage-record.mjs
+.aih/
