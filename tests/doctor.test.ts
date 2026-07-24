@@ -1029,6 +1029,56 @@ describe("doctor — MCP managed allowlist drift", () => {
 
     expect(res?.verdict).toBe("pass");
   });
+
+  // #501 — after an in-place upgrade the managed allowlist can hold the launch
+  // shape an earlier aih generated (bare `uvx <pkg>`), while `.mcp.json` carries
+  // the current hardened shape. That is a generation delta, not user drift.
+  it("reports a generation delta with the re-projection command for an earlier aih launch shape (#501)", async () => {
+    writeMcp("uvx", [
+      "--offline",
+      "--no-python-downloads",
+      "--no-env-file",
+      "code-review-graph@2.3.6",
+      "serve",
+    ]);
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+      }),
+    );
+    writeAllowlist(["uvx", "code-review-graph@2.1.0", "serve"]);
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("fail");
+    expect(res?.code).toBe("mcp.allowlist-generation-delta");
+    expect(res?.detail).toContain("generation delta");
+    expect(res?.detail).toContain("aih policy project --apply");
+    expect(res?.detail).not.toMatch(/drift/i);
+  });
+
+  it("keeps drift wording for an earlier launch shape when no committed org policy can be re-projected", async () => {
+    writeMcp("uvx", [
+      "--offline",
+      "--no-python-downloads",
+      "--no-env-file",
+      "code-review-graph@2.3.6",
+      "serve",
+    ]);
+    writeAllowlist(["uvx", "code-review-graph@2.1.0", "serve"]);
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("fail");
+    expect(res?.code).toBe("mcp.allowlist-drift");
+    expect(res?.detail).not.toContain("aih policy project --apply");
+  });
 });
 
 describe("doctor — org-policy drift", () => {

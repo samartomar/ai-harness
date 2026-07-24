@@ -6,6 +6,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Doctor distinguishes generation deltas from user drift on aih-generated managed
+  artifacts. When `.claude/managed-settings.json` or the managed MCP allowlist
+  matches an EARLIER aih generation's own output — a pre-hardening bare `uvx <pkg>`
+  launch shape, an older version pin, or missing newer projection keys — after an
+  in-place upgrade, doctor now reports a generation delta (`org-policy.generation-delta`,
+  `mcp.allowlist-generation-delta`) naming `aih policy project --apply` inline instead
+  of implying a local edit. Attribution is fail-closed: any difference not positively
+  explained by aih's generation history still fails under the existing drift codes,
+  and the re-projection under `--apply` (shipped in v2.11.0) is re-validated to
+  migrate old-generation managed allowlists. (#501)
+
 ## [3.0.0] - 2026-07-23
 
 ### Added
