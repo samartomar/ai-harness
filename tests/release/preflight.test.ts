@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { IntentAcknowledgementArtifact } from "../../src/internals/release-intent-artifact.js";
 import type {
   MergedPr,
@@ -15,6 +15,10 @@ import {
   parseGitLog,
   runPreflight,
 } from "../../src/internals/release-preflight.js";
+
+// Heavy child-process/fixture tests: per-test budgets sized for worker
+// contention, not idle hardware — 5s/30s caps flaked under load (#509).
+vi.setConfig({ testTimeout: 120_000 });
 
 function pr(number: number, title: string, labels: string[] = ["semver:patch"]): MergedPr {
   return { number, title, semverLabels: labels, milestone: "next-release" };
@@ -664,7 +668,7 @@ else if (args.startsWith("api graphql ")) {
         removeTempDir(dir);
       }
     }
-  }, 30_000);
+  });
 
   it("(b) an issue ref with no closing merged PR becomes a named finding, not a crash", () => {
     const dir = mkdtempSync(join(tmpdir(), "aih-release-issue-ref-none-"));
