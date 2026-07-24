@@ -9,9 +9,10 @@ import { executePlan, resolveContents } from "../../src/internals/execute.js";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { jsonFile } from "../../src/internals/render.js";
+import { bakedCatalogPins } from "../../src/mcp/currency.js";
 import { mcpPackagePinDriftProbe } from "../../src/mcp/hygiene.js";
 import { command, mcpApproveCommand } from "../../src/mcp/index.js";
-import { mcpResolverPinState, uvxPrimaryPin } from "../../src/mcp/pins.js";
+import { hasExactPackagePin, mcpResolverPinState, uvxPrimaryPin } from "../../src/mcp/pins.js";
 import { mcpApprovalSubject } from "../../src/mcp/policy.js";
 import { existingMcpTomlNames, removeMcpTomlServers } from "../../src/mcp/render.js";
 import type { McpServer } from "../../src/mcp/servers.js";
@@ -2525,5 +2526,30 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         (a) => a.kind === "probe" && a.describe.includes("comply with enterprise policy"),
       ),
     ).toBe(false);
+  });
+});
+
+describe("mcp pin currency — catalog-pin visibility guard (issue #504 review)", () => {
+  it("every exact package pin declared in servers.ts is visible to the all-on baked-pin set", () => {
+    // The offline currency tier reads the catalog under an all-on stack. A
+    // future STACK-CONDITIONAL pin that stack fails to enable would silently
+    // vanish from the comparison (a missed-stale false negative), so this
+    // guard scans servers.ts for every exact-pin string literal (the same pin
+    // grammar the resolvers honor) and requires each one to surface in
+    // bakedCatalogPins(). Escape the stack → this test fails, not the signal.
+    const source = readFileSync(join(process.cwd(), "src", "mcp", "servers.ts"), "utf8");
+    const literals = [...source.matchAll(/"([^"\\]+)"/g)].map((match) => match[1] ?? "");
+    const declaredPins = [...new Set(literals.filter((value) => hasExactPackagePin(value)))];
+    // Anchor the extraction: the two wired tools must be found, otherwise the
+    // literal scan itself broke and the subset assertion below would be vacuous.
+    expect(declaredPins.some((spec) => spec.startsWith("codebase-memory-mcp@"))).toBe(true);
+    expect(declaredPins.some((spec) => spec.startsWith("code-review-graph@"))).toBe(true);
+
+    const baked = new Set([...bakedCatalogPins().values()].map((pin) => pin.spec));
+    const invisible = declaredPins.filter((spec) => !baked.has(spec));
+    expect(
+      invisible,
+      "catalog pin(s) invisible to the offline pin-currency tier — extend ALL_SERVERS_STACK in src/mcp/currency.ts to enable the server(s) that carry them",
+    ).toEqual([]);
   });
 });

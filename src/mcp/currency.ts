@@ -43,21 +43,46 @@ const PROBE_NAME = "mcp-pin-currency";
 const REGISTRY_TIMEOUT_MS = 15_000;
 
 /**
- * Every stack-conditional catalog server enabled, so each baked pin has a
- * comparable counterpart regardless of what this repo's own stack detection
- * would select. Only the pins are read from the resulting catalog.
+ * An all-on repo stack for reading the catalog's pins: every stack dimension is
+ * populated — the full detection vocabulary for the enumerable dimensions (the
+ * WEB_FRAMEWORKS set from servers.ts, the cloud/database/deployment values
+ * scan.ts documents) and representative truthy values for the rest — so
+ * stack-conditional catalog servers are enabled and their pins comparable. This
+ * maximizes coverage but proves nothing by itself: the catalog-pin visibility
+ * guard in tests/mcp/mcp.test.ts fails the build when any exact pin declared in
+ * servers.ts is missing from {@link bakedCatalogPins}, so a future conditional
+ * pin this stack fails to enable breaks CI instead of silently vanishing from
+ * the offline currency tier.
  */
 const ALL_SERVERS_STACK: RepoStack = {
-  languages: [],
-  frameworks: ["React"],
-  cloud: ["AWS"],
-  databases: [],
-  deployment: [],
-  hasTypeScript: false,
-  scripts: {},
-  entryPoints: [],
-  browserTest: false,
-  isMonorepo: false,
+  languages: ["TypeScript/Node.js", "Python"],
+  frameworks: ["Next.js", "React", "Vue", "Svelte", "Angular"],
+  cloud: ["AWS", "Azure", "GCP"],
+  databases: ["PostgreSQL", "MySQL", "MongoDB", "SQLite", "Redis", "DynamoDB"],
+  deployment: ["Docker", "Kubernetes-Helm", "Terraform", "Serverless Framework"],
+  packageManager: "npm",
+  hasTypeScript: true,
+  scripts: { test: "npm test" },
+  description: "all-on stack for catalog pin enumeration",
+  entryPoints: ["src/index.ts"],
+  testRunner: "npm test",
+  buildCommand: "npm run build",
+  lintCommand: "npm run lint",
+  formatCommand: "npm run format",
+  startCommand: "npm start",
+  verifyCommand: "npm run verify",
+  typecheckCommand: "npm run typecheck",
+  deploymentCommands: {
+    cdkSynth: "npx cdk synth",
+    cdkDiff: "npx cdk diff",
+    cdkDeploy: "npx cdk deploy",
+  },
+  browserTest: true,
+  isMonorepo: true,
+  workspaceTool: "npm-yarn",
+  workspaces: {},
+  workspaceCount: 1,
+  virtualEnvPaths: [".venv"],
 };
 
 interface ExactLaunchPin {
@@ -151,8 +176,14 @@ function basePackageName(packageName: string): string {
   return packageName.replace(/\[[^\]]*\]$/, "");
 }
 
-/** The exact pins the CURRENT build's catalog generates, by server name. */
-function bakedCatalogPins(): Map<string, ExactLaunchPin> {
+/**
+ * The exact pins the CURRENT build's catalog generates, by server name, read
+ * under {@link ALL_SERVERS_STACK}. Exported for the catalog-pin visibility
+ * guard in tests/mcp/mcp.test.ts, which fails when any exact pin declared in
+ * servers.ts is missing here — the enforcement that no catalog pin can be
+ * invisible to the offline currency tier.
+ */
+export function bakedCatalogPins(): Map<string, ExactLaunchPin> {
   const pins = new Map<string, ExactLaunchPin>();
   for (const [server, config] of Object.entries(mcpServers("project", ALL_SERVERS_STACK))) {
     if (config.type !== "stdio") continue;
