@@ -45,6 +45,107 @@ export function managedMcpAllowlistSettings(
 }
 
 /**
+ * The hardened launch prefix the current generation emits for uvx-run MCP
+ * servers (see `src/mcp/servers.ts`). Earlier aih generations emitted the same
+ * command without this prefix (and, across releases, with older version pins).
+ * The prefix is the positive fingerprint that lets doctor attribute an on-disk
+ * delta to aih's own generated output evolving rather than to a local edit.
+ */
+const GENERATION_HARDENED_LAUNCH_FLAGS = [
+  "--offline",
+  "--no-python-downloads",
+  "--no-env-file",
+] as const;
+
+function packageBase(spec: string): string {
+  const at = spec.lastIndexOf("@");
+  return at > 0 ? spec.slice(0, at) : spec;
+}
+
+function hasHardenedPrefix(args: readonly string[]): boolean {
+  return (
+    args.length > GENERATION_HARDENED_LAUNCH_FLAGS.length &&
+    GENERATION_HARDENED_LAUNCH_FLAGS.every((flag, i) => args[i] === flag)
+  );
+}
+
+/** Human name for a managed server command: the package spec without its version pin. */
+export function managedServerDisplayName(command: readonly string[]): string {
+  const args = command.slice(1);
+  const rest = hasHardenedPrefix(args) ? args.slice(GENERATION_HARDENED_LAUNCH_FLAGS.length) : args;
+  return packageBase(rest[0] ?? "") || command[0] || "<empty>";
+}
+
+/**
+ * True when `actual` is a launch shape an EARLIER aih generation produced for
+ * the current `expected` command. Recognition is strict and fail-closed:
+ * `expected` must carry the current hardened prefix (only aih's own generated
+ * output is a valid attribution anchor), and `actual` may differ from it only
+ * in the known generation evolutions — the missing prefix (pre-hardening
+ * output) and/or an older/absent version pin of the same package. Anything
+ * else stays unattributed so real local edits keep failing as drift.
+ */
+export function previousGenerationCommandForm(
+  actual: readonly string[],
+  expected: readonly string[],
+): boolean {
+  const command = expected[0];
+  if (command === undefined || actual[0] !== command) return false;
+  if (commandKey(actual) === commandKey(expected)) return false;
+  const expectedArgs = expected.slice(1);
+  if (!hasHardenedPrefix(expectedArgs)) return false;
+  const expectedRest = expectedArgs.slice(GENERATION_HARDENED_LAUNCH_FLAGS.length);
+  const actualArgs = actual.slice(1);
+  const actualRest = hasHardenedPrefix(actualArgs)
+    ? actualArgs.slice(GENERATION_HARDENED_LAUNCH_FLAGS.length)
+    : actualArgs;
+  if (actualRest.length !== expectedRest.length || expectedRest.length === 0) return false;
+  const base = packageBase(expectedRest[0] ?? "");
+  if (base.length === 0 || packageBase(actualRest[0] ?? "") !== base) return false;
+  return expectedRest.slice(1).every((arg, i) => actualRest[i + 1] === arg);
+}
+
+export interface ManagedAllowlistGenerationDelta {
+  /** On-disk commands recognized as an earlier generation's launch shape, with their current counterpart. */
+  previous: { actual: string[]; expected: string[] }[];
+  /** Expected commands with no on-disk counterpart (introduced by a newer generation). */
+  added: string[][];
+}
+
+/**
+ * Attribute the difference between an on-disk managed allowlist and the
+ * currently generated one to aih's own generation history — or refuse.
+ * Every on-disk command must be either exactly a current command or a
+ * recognized previous-generation form of a distinct current command, and at
+ * least one previous-generation form must be present (a purely additive delta
+ * has no fingerprint and could equally be a local deletion). Returns
+ * `undefined` when any command cannot be positively attributed.
+ */
+export function managedAllowlistGenerationDelta(
+  actual: readonly string[][],
+  expected: readonly string[][],
+): ManagedAllowlistGenerationDelta | undefined {
+  const remaining = [...expected];
+  const unpaired: string[][] = [];
+  for (const command of actual) {
+    const exact = remaining.findIndex((candidate) => commandKey(candidate) === commandKey(command));
+    if (exact === -1) unpaired.push([...command]);
+    else remaining.splice(exact, 1);
+  }
+  const previous: ManagedAllowlistGenerationDelta["previous"] = [];
+  for (const command of unpaired) {
+    const match = remaining.findIndex((candidate) =>
+      previousGenerationCommandForm(command, candidate),
+    );
+    if (match === -1) return undefined;
+    previous.push({ actual: command, expected: [...(remaining[match] as string[])] });
+    remaining.splice(match, 1);
+  }
+  if (previous.length === 0) return undefined;
+  return { previous, added: remaining.map((command) => [...command]) };
+}
+
+/**
  * Return the Claude managed-MCP fields only when their on-disk pair exactly
  * matches an AIH projection. This excludes same-key operator configuration.
  */
@@ -195,6 +296,31 @@ export function mcpManagedAllowlistCheck(ctx: PlanContext): Check {
         verdict: "pass",
         detail: `${actual.commands.length} managed MCP command${actual.commands.length === 1 ? "" : "s"} match .mcp.json`,
       };
+    }
+    // #501 — attribute the mismatch to aih's own generation history before
+    // calling it drift. Only when the committed org policy still owns the
+    // managed allowlist is `aih policy project --apply` a valid prescription.
+    if (policy?.mcp?.allowManagedOnly === true) {
+      const generation = managedAllowlistGenerationDelta(actual.commands, desired.commands);
+      if (generation !== undefined) {
+        const names = [
+          ...new Set(generation.previous.map((pair) => managedServerDisplayName(pair.expected))),
+        ];
+        const count = generation.previous.length;
+        const addedNote =
+          generation.added.length > 0
+            ? `; ${generation.added.length} newly generated command${generation.added.length === 1 ? "" : "s"} not yet present`
+            : "";
+        return {
+          name,
+          verdict: "fail",
+          detail:
+            `generation delta: ${count} managed allowlist ${count === 1 ? "entry matches" : "entries match"} ` +
+            `an earlier aih-generated launch shape of the current .mcp.json servers (${names.join(", ")})${addedNote}; ` +
+            "a newer aih changed its generated output — run `aih policy project --apply` to re-project",
+          code: "mcp.allowlist-generation-delta",
+        };
+      }
     }
     return {
       name,
