@@ -25,6 +25,7 @@ import {
   scannableFromNpm,
 } from "../../src/binding/scan-gate.js";
 import { defaultRunner, fakeRunner, type Runner } from "../../src/internals/proc.js";
+import { hermeticGitEnv } from "../git-fixture-env.js";
 
 const SHA256 = /^[0-9a-f]{64}$/;
 
@@ -122,7 +123,7 @@ function npmSource(integrity: string): ResolvedNpmSource {
 }
 
 function git(dir: string, args: string[]): void {
-  execFileSync("git", args, { cwd: dir, stdio: "pipe" });
+  execFileSync("git", args, { cwd: dir, stdio: "pipe", env: hermeticGitEnv() });
 }
 
 function initGitRepo(dir: string, files: Record<string, string>): void {

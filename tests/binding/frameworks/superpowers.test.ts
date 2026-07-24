@@ -52,6 +52,7 @@ import {
   type Runner,
   type RunResult,
 } from "../../../src/internals/proc.js";
+import { hermeticGitEnv } from "../../git-fixture-env.js";
 import { applyActions } from "../hosts/claude/support.js";
 
 /**
@@ -265,7 +266,8 @@ describe("plan — D8 conflict + feature-key rejection (pure preview, no I/O)", 
 describe("resolve — delegates to resolveGitSource with the declaration's source", () => {
   function initGitRepo(dir: string): void {
     mkdirSync(dir, { recursive: true });
-    const g = (args: string[]) => execFileSync("git", args, { cwd: dir, stdio: "pipe" });
+    const g = (args: string[]) =>
+      execFileSync("git", args, { cwd: dir, stdio: "pipe", env: hermeticGitEnv() });
     g(["init", "-b", "main"]);
     g(["config", "user.email", "test@example.com"]);
     g(["config", "user.name", "Binding Test"]);
@@ -279,7 +281,12 @@ describe("resolve — delegates to resolveGitSource with the declaration's sourc
     const repoDir = mkdtempSync(join(tmpdir(), "aih-sp-repo-"));
     try {
       initGitRepo(repoDir);
-      const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoDir }).toString().trim();
+      const head = execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: repoDir,
+        env: hermeticGitEnv(),
+      })
+        .toString()
+        .trim();
       const adapter = createSuperpowersAdapter({ root, runner: defaultRunner, cacheHome });
       const declaration: BindingDeclaration = {
         schemaVersion: 1,

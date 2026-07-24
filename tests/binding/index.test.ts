@@ -16,6 +16,7 @@ import {
   writeBindingLockAtomic,
 } from "../../src/binding/index.js";
 import { defaultRunner } from "../../src/internals/proc.js";
+import { hermeticGitEnv } from "../git-fixture-env.js";
 import { createFakeAdapter } from "./fake-adapter.js";
 
 const complete: DimensionInspector = {
@@ -28,7 +29,7 @@ let repoDir: string;
 let cacheHome: string;
 
 function git(dir: string, args: string[]): void {
-  execFileSync("git", args, { cwd: dir, stdio: "pipe" });
+  execFileSync("git", args, { cwd: dir, stdio: "pipe", env: hermeticGitEnv() });
 }
 
 function initRepo(dir: string): void {

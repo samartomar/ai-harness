@@ -56,6 +56,7 @@ import {
 import { readEccInstallPreview } from "../../../src/ecc/install-preview.js";
 import { selectedEccMcpServers } from "../../../src/ecc/mcp.js";
 import { defaultRunner, fakeRunner, type Runner } from "../../../src/internals/proc.js";
+import { hermeticGitEnv } from "../../git-fixture-env.js";
 
 /**
  * W4b — the ECC Lean FrameworkAdapter (upstream-local-installer). Every
@@ -921,7 +922,8 @@ describe("inspect — cheap static notes over a tree path", () => {
 describe("resolve — delegates to resolveGitSource with the declaration's source", () => {
   function initGitRepo(dir: string): void {
     mkdirSync(dir, { recursive: true });
-    const g = (args: string[]) => execFileSync("git", args, { cwd: dir, stdio: "pipe" });
+    const g = (args: string[]) =>
+      execFileSync("git", args, { cwd: dir, stdio: "pipe", env: hermeticGitEnv() });
     g(["init", "-b", "main"]);
     g(["config", "user.email", "test@example.com"]);
     g(["config", "user.name", "Binding Test"]);
@@ -935,7 +937,12 @@ describe("resolve — delegates to resolveGitSource with the declaration's sourc
     const repoDir = mkdtempSync(join(tmpdir(), "aih-ecc-repo-"));
     try {
       initGitRepo(repoDir);
-      const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoDir }).toString().trim();
+      const head = execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: repoDir,
+        env: hermeticGitEnv(),
+      })
+        .toString()
+        .trim();
       const adapter = createEccAdapter({ root, runner: defaultRunner, cacheHome });
       const declaration: BindingDeclaration = {
         schemaVersion: 1,

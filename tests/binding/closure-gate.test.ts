@@ -24,6 +24,7 @@ import {
   scannableFromGit,
 } from "../../src/binding/scan-gate.js";
 import { defaultRunner } from "../../src/internals/proc.js";
+import { hermeticGitEnv } from "../git-fixture-env.js";
 
 // Heavy real-git/child-process tests: per-test budgets sized for worker
 // contention, not idle hardware — 5s defaults flaked on CI runners (#509).
@@ -254,7 +255,7 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
   let repoDir: string;
 
   function git(dir: string, args: string[]): void {
-    execFileSync("git", args, { cwd: dir, stdio: "pipe" });
+    execFileSync("git", args, { cwd: dir, stdio: "pipe", env: hermeticGitEnv() });
   }
 
   function initGitRepo(dir: string, files: Record<string, string>): void {
@@ -483,17 +484,19 @@ describe("W4 full-tree closure reproduces the legacy verdict (byte-identical out
 
   function initGitRepo(dir: string, files: Record<string, string>): void {
     mkdirSync(dir, { recursive: true });
-    execFileSync("git", ["init", "-b", "main"], { cwd: dir, stdio: "pipe" });
-    execFileSync("git", ["config", "user.email", "t@example.com"], { cwd: dir, stdio: "pipe" });
-    execFileSync("git", ["config", "user.name", "W4 Test"], { cwd: dir, stdio: "pipe" });
-    execFileSync("git", ["config", "commit.gpgsign", "false"], { cwd: dir, stdio: "pipe" });
+    const git = (args: string[]) =>
+      execFileSync("git", args, { cwd: dir, stdio: "pipe", env: hermeticGitEnv() });
+    git(["init", "-b", "main"]);
+    git(["config", "user.email", "t@example.com"]);
+    git(["config", "user.name", "W4 Test"]);
+    git(["config", "commit.gpgsign", "false"]);
     for (const [rel, content] of Object.entries(files)) {
       const abs = join(dir, rel);
       mkdirSync(dirname(abs), { recursive: true });
       writeFileSync(abs, content);
     }
-    execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
-    execFileSync("git", ["commit", "-m", "init"], { cwd: dir, stdio: "pipe" });
+    git(["add", "-A"]);
+    git(["commit", "-m", "init"]);
   }
 
   async function bothGates(

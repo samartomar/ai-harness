@@ -18,6 +18,7 @@ import {
   scannableFromGit,
 } from "../../src/binding/scan-gate.js";
 import { defaultRunner, fakeRunner } from "../../src/internals/proc.js";
+import { hermeticGitEnv } from "../git-fixture-env.js";
 
 // Heavy real-git/child-process tests: per-test budgets sized for worker
 // contention, not idle hardware — 5s defaults flaked on CI runners (#509).
@@ -31,7 +32,7 @@ let cacheHome: string;
 let repoDir: string;
 
 function git(dir: string, args: string[]): void {
-  execFileSync("git", args, { cwd: dir, stdio: "pipe" });
+  execFileSync("git", args, { cwd: dir, stdio: "pipe", env: hermeticGitEnv() });
 }
 
 function initGitRepo(dir: string, files: Record<string, string>): void {
@@ -118,7 +119,12 @@ describe("git source resolution (D7 exact identity)", () => {
 
   it("accepts an exact commit SHA input without a ref resolution round-trip", async () => {
     initGitRepo(repoDir, { "SKILL.md": "# skill\n" });
-    const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoDir }).toString().trim();
+    const head = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: repoDir,
+      env: hermeticGitEnv(),
+    })
+      .toString()
+      .trim();
     const resolved = await resolveGitSource(
       { repository: repoDir, commitSha: head },
       { runner: defaultRunner, cacheHome },

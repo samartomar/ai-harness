@@ -41,6 +41,7 @@ import {
   BindingFrameworkConflictError,
 } from "../../../src/binding/schema.js";
 import { defaultRunner } from "../../../src/internals/proc.js";
+import { hermeticGitEnv } from "../../git-fixture-env.js";
 import {
   declarationFor,
   fixtureInstaller,
@@ -591,7 +592,8 @@ describe("plan — pure preview of every owned surface (no write ever lands)", (
 describe("resolve — delegates to resolveGitSource with the declaration's source", () => {
   function initGitRepo(dir: string): void {
     mkdirSync(dir, { recursive: true });
-    const git = (args: string[]) => execFileSync("git", args, { cwd: dir, stdio: "pipe" });
+    const git = (args: string[]) =>
+      execFileSync("git", args, { cwd: dir, stdio: "pipe", env: hermeticGitEnv() });
     git(["init", "-b", "main"]);
     git(["config", "user.email", "test@example.com"]);
     git(["config", "user.name", "Binding Test"]);
@@ -605,7 +607,12 @@ describe("resolve — delegates to resolveGitSource with the declaration's sourc
     const repoDir = mkdtempSync(join(tmpdir(), "aih-gs-repo-"));
     try {
       initGitRepo(repoDir);
-      const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoDir }).toString().trim();
+      const head = execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: repoDir,
+        env: hermeticGitEnv(),
+      })
+        .toString()
+        .trim();
       const adapter = createGstackAdapter({ root, runner: defaultRunner, cacheHome });
       const declaration: BindingDeclaration = {
         schemaVersion: 1,

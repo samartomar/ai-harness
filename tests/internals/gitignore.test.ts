@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { aihIgnoreWrite } from "../../src/internals/gitignore.js";
+import { hermeticGitEnv } from "../git-fixture-env.js";
 
 const TEST_PROCESS_TIMEOUT_MS = 10_000;
 
@@ -55,22 +56,20 @@ describe("aihIgnoreWrite", () => {
     expect(lines).not.toContain(".aih/");
   });
 
-  it.each([
-    ".aih/",
-    "/.aih/",
-    ".aih",
-    "/.aih",
-  ])("supersedes every `.aih`-dir exclude form (%s) so the negation actually re-includes the recorder", (excludeForm) => {
-    // Any of these excludes the .aih DIRECTORY; git then can't re-include a child, so
-    // leaving one would silently re-strand the recorder (the original bug). It MUST be
-    // stripped — this is intentional, not a user-line loss, and is the only way the fix works.
-    writeFileSync(join(root, ".gitignore"), `node_modules/\n${excludeForm}\n`);
-    const lines = (aihIgnoreWrite(root).contents ?? "").split(/\r?\n/);
-    expect(lines).not.toContain(excludeForm); // the dir-exclude is gone
-    expect(lines).toContain(".aih/*"); // replaced by a contents-only ignore
-    expect(lines).toContain("!.aih/usage-record.mjs"); // that the negation can pierce
-    expect(lines).toContain("node_modules/"); // unrelated content preserved
-  });
+  it.each([".aih/", "/.aih/", ".aih", "/.aih"])(
+    "supersedes every `.aih`-dir exclude form (%s) so the negation actually re-includes the recorder",
+    (excludeForm) => {
+      // Any of these excludes the .aih DIRECTORY; git then can't re-include a child, so
+      // leaving one would silently re-strand the recorder (the original bug). It MUST be
+      // stripped — this is intentional, not a user-line loss, and is the only way the fix works.
+      writeFileSync(join(root, ".gitignore"), `node_modules/\n${excludeForm}\n`);
+      const lines = (aihIgnoreWrite(root).contents ?? "").split(/\r?\n/);
+      expect(lines).not.toContain(excludeForm); // the dir-exclude is gone
+      expect(lines).toContain(".aih/*"); // replaced by a contents-only ignore
+      expect(lines).toContain("!.aih/usage-record.mjs"); // that the negation can pierce
+      expect(lines).toContain("node_modules/"); // unrelated content preserved
+    },
+  );
 
   it("does NOT touch `.aih/*` or `.aih/**` (they leave the dir traversable — negation works)", () => {
     // These ignore contents, not the directory, so they coexist with the negation and
@@ -122,6 +121,7 @@ describe("aihIgnoreWrite", () => {
         cwd: root,
         encoding: "utf8",
         timeout: TEST_PROCESS_TIMEOUT_MS,
+        env: hermeticGitEnv(),
       }).trim();
     // A real git repo with git-managed line endings deterministic across platforms.
     git("init", "-q");
@@ -144,6 +144,7 @@ describe("aihIgnoreWrite", () => {
         execFileSync("git", ["check-ignore", "-q", rel], {
           cwd: root,
           timeout: TEST_PROCESS_TIMEOUT_MS,
+          env: hermeticGitEnv(),
         });
         return true; // exit 0 → ignored
       } catch {
