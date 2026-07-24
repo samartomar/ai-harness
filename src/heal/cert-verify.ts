@@ -63,9 +63,16 @@ function caCheck(env: NodeJS.ProcessEnv, tlsOk: boolean, tlsFailed: boolean): Ch
 
 async function planCertVerify(ctx: PlanContext, shared: HealShared): Promise<Action[]> {
   const tlsOk = shared.tlsRegistry.verdict === "pass" && shared.tlsPypi.verdict === "pass";
-  const tlsFailed = shared.tlsRegistry.verdict === "fail" || shared.tlsPypi.verdict === "fail";
+  const nodeTrustDiverged = shared.runtimeTls.some(
+    ({ os, node }) => os.verdict === "pass" && node.verdict === "fail",
+  );
+  const tlsFailed =
+    shared.tlsRegistry.verdict === "fail" || shared.tlsPypi.verdict === "fail" || nodeTrustDiverged;
   const ca = caCheck(ctx.env, tlsOk, tlsFailed);
-  const actions: Action[] = [captured(ca), captured(shared.tlsRegistry), captured(shared.tlsPypi)];
+  const actions: Action[] = [
+    captured(ca),
+    ...shared.runtimeTls.flatMap(({ os, node }) => [captured(os), captured(node)]),
+  ];
 
   // Prescribe the certs fix when TLS is actually failing, or the env var is
   // set-but-broken. A `skip` (curl absent, or unset-but-TLS-OK) never triggers it.

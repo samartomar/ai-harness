@@ -1,6 +1,7 @@
 import { type Action, type PlanContext, type ProbeAction, probe } from "../internals/plan.js";
 import type { RunResult } from "../internals/proc.js";
 import type { Check } from "../internals/verify.js";
+import type { RuntimeTlsObservation } from "./node-trust.js";
 
 /**
  * Shared contract for the `heal` steps. Each step DIAGNOSES at plan-build time and
@@ -25,6 +26,7 @@ export const PYPI_URL = "https://pypi.org";
 export interface HealShared {
   tlsRegistry: Check;
   tlsPypi: Check;
+  runtimeTls: readonly RuntimeTlsObservation[];
 }
 
 /** One ordered heal step; `plan` returns the actions this step contributes. */

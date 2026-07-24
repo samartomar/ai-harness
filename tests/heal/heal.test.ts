@@ -614,9 +614,6 @@ describe("heal — mcp pre-flight", () => {
     );
     expect(findCheck(p.actions, "mcp: endpoint TLS probes")?.verdict).toBe("skip");
     expect(calls.some((argv) => argv.join(" ").includes("attacker.example"))).toBe(false);
-    expect(calls.some((argv) => ["node", "python3", "openssl"].includes(argv[0] ?? ""))).toBe(
-      false,
-    );
   });
 
   it("formats non-default MCP endpoint ports correctly in OpenSSL guidance", async () => {
