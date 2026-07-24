@@ -1,13 +1,15 @@
+import { availableParallelism } from "node:os";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
     globals: false,
     environment: "node",
-    // Heavy real-git tests assume bounded concurrency: uncapped workers on
-    // high-core machines overcommit CPU/RAM and blow per-test budgets (#509).
-    // CI runners have <=4 cores; this ceiling only affects larger dev machines.
-    maxWorkers: 8,
+    // Ceiling, not a floor: vitest uses an explicit maxWorkers number verbatim
+    // (no core-count clamp), so min() keeps low-core CI runners at their
+    // derived default while capping high-core dev machines, whose uncapped
+    // worker counts overcommit CPU/RAM and blow per-test budgets (#509).
+    maxWorkers: Math.min(8, Math.max(availableParallelism() - 1, 1)),
     include: ["tests/**/*.test.ts"],
     coverage: {
       provider: "v8",

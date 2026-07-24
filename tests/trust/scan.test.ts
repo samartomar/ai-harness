@@ -52,7 +52,8 @@ import { sandboxSmokeDockerRunArgv } from "../../src/trust/smoke.js";
 
 // Heavy real-git/fixture tests: per-test budgets sized for worker contention,
 // not idle hardware — the 5s default (and a 30s cap) flaked under load (#509).
-vi.setConfig({ testTimeout: 120_000 });
+// hookTimeout covers the afterEach rm of multi-thousand-file fixture trees.
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
 let dir: string;
 
