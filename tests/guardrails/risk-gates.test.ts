@@ -123,6 +123,17 @@ describe("riskGatesTouched() — TS mirror of the generated workflow's matcher",
       }
     }
   });
+
+  it("gate path patterns use NO bracket expressions (F4: mirror escapes [abc], bash wouldn't)", () => {
+    // The TS mirror escapes `[`/`]` to literals; a bash `case` treats them as a
+    // char class. A future bracket pattern would silently desync mirror vs shell,
+    // so forbid them at the source (mirrors the no-whitespace guard above).
+    for (const g of RISK_GATES) {
+      for (const p of g.pathPatterns) {
+        expect(p).not.toMatch(/[[\]]/);
+      }
+    }
+  });
 });
 
 describe("riskGatesWorkflowYaml() — the generated CI consumer", () => {
@@ -143,12 +154,34 @@ describe("riskGatesWorkflowYaml() — the generated CI consumer", () => {
     expect(yaml).toContain("jq -r");
     expect(yaml).toContain(".gates[]");
     expect(yaml).toContain("pathPatterns");
-    // Patterns are matched, never glob-expanded against the checkout cwd.
-    expect(yaml).toContain("set -f");
     // A custom context dir rewires the consumer to the matching sidecar path.
     expect(riskGatesWorkflowYaml(".context/risk-gates.json")).toContain(
       "SIDECAR: .context/risk-gates.json",
     );
+  });
+
+  it("disables globbing as an ACTIVE line before matching (F3a: not a comment substring)", () => {
+    // `set -f` must be a real statement (exact trimmed line, never text inside a
+    // comment) and must run before the first pattern-match `case`, or an unquoted
+    // $pattern word would expand against the checkout instead of matching the diff.
+    const scriptLines = yaml.split("\n").map((line) => line.trim());
+    const noglobIndex = scriptLines.indexOf("set -f");
+    expect(noglobIndex).toBeGreaterThanOrEqual(0);
+    const firstCaseIndex = scriptLines.findIndex((line) =>
+      line.startsWith('case "$path" in $pattern)'),
+    );
+    expect(firstCaseIndex).toBeGreaterThan(noglobIndex);
+  });
+
+  it("strips a trailing CR from both field reads so CRLF sidecars/diffs still match (F3b)", () => {
+    // jq/git may write CRLF; without the strip a \r glues onto the last pattern or
+    // path token and the match silently fails. The TS mirror doesn't model CRLF,
+    // so pin the shell strip on BOTH reads directly (neutering either goes red).
+    const scriptLines = yaml.split("\n").map((line) => line.trim());
+    // Distinct substrings of `${patterns%$'\r'}` / `${path%$'\r'}` — the `%$'\r'}`
+    // suffix only exists as part of the CR-strip parameter expansion.
+    expect(scriptLines.some((line) => line.includes("patterns%$'\\r'}"))).toBe(true);
+    expect(scriptLines.some((line) => line.includes("path%$'\\r'}"))).toBe(true);
   });
 
   it("ask-not-deny: warns and summarizes but never fails on a touched gate", () => {

@@ -20,6 +20,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the workflow's bash matcher (`riskGatesTouched`), and gate patterns are matched
   with shell globbing disabled so they can never expand against the checkout. At
   vibe posture neither sidecar nor workflow is emitted. Refs #507
+- `aih workspace graph` projects the workspace's own declared contract relations
   (`.aih-workspace.json` `repos[]` + `edges[]`) into a queryable cross-repo graph —
   declared over inferred: a declared two-repo workspace yields queryable cross-repo
   edges from declarations alone, with graph-tool inference demoted to optional
