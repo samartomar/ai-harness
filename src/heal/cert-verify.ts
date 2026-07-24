@@ -112,6 +112,14 @@ function finalTrustProbe(origins: readonly string[], vars: readonly EnvVar[]): A
   });
 }
 
+function supersededByFinalTrustProbe(check: Check): Check {
+  return {
+    name: check.name,
+    verdict: "skip",
+    detail: "pre-apply Node trust divergence; final persisted trust verification owns the result",
+  };
+}
+
 async function planCertVerify(ctx: PlanContext, shared: HealShared): Promise<Action[]> {
   const tlsOk = shared.tlsRegistry.verdict === "pass" && shared.tlsPypi.verdict === "pass";
   const divergentOrigins = shared.runtimeTls
@@ -149,6 +157,22 @@ async function planCertVerify(ctx: PlanContext, shared: HealShared): Promise<Act
       ),
     );
     return actions;
+  }
+
+  if (ctx.apply) {
+    actions.splice(
+      0,
+      actions.length,
+      captured(supersededByFinalTrustProbe(ca)),
+      ...shared.runtimeTls.flatMap(({ os, node }) => [
+        captured(os),
+        captured(
+          os.verdict === "pass" && node.verdict === "fail"
+            ? supersededByFinalTrustProbe(node)
+            : node,
+        ),
+      ]),
+    );
   }
 
   const home = ctx.env.USERPROFILE || ctx.env.HOME || ctx.root;

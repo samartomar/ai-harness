@@ -1,6 +1,13 @@
 import { type Action, digest, type PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
-import { captured, classifyTool, type HealShared, type HealStep, versionArgv } from "./common.js";
+import {
+  captured,
+  classifyTool,
+  type HealShared,
+  type HealStep,
+  REGISTRY_URL,
+  versionArgv,
+} from "./common.js";
 import { nodeMissingDoc, npmOfflineDoc, npmReinstallDoc } from "./templates.js";
 
 /** First non-empty trimmed line of `text` (for terse error details). */
@@ -88,7 +95,8 @@ async function planNpmHeal(ctx: PlanContext, shared: HealShared): Promise<Action
   }
   if (npm.verdict !== "fail") return actions; // L0
 
-  if (shared.tlsRegistry.verdict === "pass") {
+  const nodeRegistry = shared.runtimeTls.find(({ origin }) => origin === REGISTRY_URL)?.node;
+  if (nodeRegistry?.verdict === "pass") {
     actions.push(digest("heal: reinstall npm via Node's TLS", npmReinstallDoc())); // L1
   } else {
     actions.push(digest("heal: reinstall npm offline", npmOfflineDoc(ctx.host.npmCliPath()))); // L2

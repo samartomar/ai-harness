@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   macLaunchAgentPlist,
   nodeTrustEnvVars,
@@ -107,6 +107,30 @@ describe("DarwinAdapter trust store", () => {
     expect(verifyCalls.every(({ opts }) => opts?.maxBufferBytes === 4096)).toBe(true);
   });
 });
+it("fails closed when aggregate root verification time is exhausted", async () => {
+  const first = pem("QQ==");
+  const second = pem("Qg==");
+  const now = vi
+    .spyOn(Date, "now")
+    .mockReturnValueOnce(0)
+    .mockReturnValueOnce(0)
+    .mockReturnValue(60_000);
+  const verifyCalls: RunOptions[] = [];
+  const a = mk((argv, opts) => {
+    if (argv[0] !== "security") return undefined;
+    if (argv[1] === "find-certificate") return { code: 0, stdout: `${first}${second}` };
+    if (argv[1] === "verify-cert") {
+      if (opts !== undefined) verifyCalls.push(opts);
+      return { code: 0 };
+    }
+    return undefined;
+  });
+
+  expect(await a.trustStoreRoots()).toEqual([]);
+  expect(verifyCalls).toHaveLength(1);
+  expect(verifyCalls[0]?.timeoutMs).toBe(20_000);
+  now.mockRestore();
+});
 
 describe("macOS Node trust persistence", () => {
   it("escapes every interpolated plist value and uses literal ProgramArguments", () => {
@@ -145,7 +169,7 @@ describe("macOS Node trust persistence", () => {
     ]);
   });
 
-  it("neutralizes the non-selected LaunchAgent and current launchd value", () => {
+  it("neutralizes non-selected launchd trust before enabling the selected value", () => {
     const actions = nodeTrustPersistenceActions(
       persistenceCtx({
         HOME: "/Users/example",
@@ -165,8 +189,8 @@ describe("macOS Node trust persistence", () => {
       plists.find((action) => action.path.includes("node-extra-ca-certs"))?.contents,
     ).not.toContain("stale-exact.pem");
     expect(launchctl.map((action) => action.argv)).toEqual([
-      ["/bin/launchctl", "setenv", "NODE_USE_SYSTEM_CA", "1"],
       ["/bin/launchctl", "unsetenv", "NODE_EXTRA_CA_CERTS"],
+      ["/bin/launchctl", "setenv", "NODE_USE_SYSTEM_CA", "1"],
     ]);
     expect(launchctl.every((action) => action.requiresPriorExecSuccess)).toBe(true);
   });

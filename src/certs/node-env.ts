@@ -205,6 +205,10 @@ export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly Env
   if (ctx.host.platform === "linux") return [];
 
   if (ctx.host.platform === "windows") {
+    const percentExpanded = selected.find((variable) => variable.value.includes("%"));
+    if (percentExpanded !== undefined) {
+      throw new SettingsError(`${percentExpanded.key} must not contain % for setx persistence`);
+    }
     const oversized = selected.find((variable) => variable.value.length > SETX_MAX_VALUE_LEN);
     if (oversized !== undefined) {
       throw new SettingsError(`${oversized.key} exceeds the setx 1,024-character value limit`);
@@ -224,8 +228,8 @@ export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly Env
       );
     };
     return [
-      ...selected.map((variable) => setxAction(variable.key, variable.value, false)),
       ...unselected.map((key) => setxAction(key, "", true)),
+      ...selected.map((variable) => setxAction(variable.key, variable.value, false)),
     ];
   }
 
@@ -235,13 +239,15 @@ export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly Env
   const launchAgents = join(home, "Library", "LaunchAgents");
   assertNormalizedAbsolutePath(launchAgents, "LaunchAgents directory");
   const sorted = [...selected].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-  const writes: Action[] = [];
-  const execs: Action[] = [];
+  const selectedWrites: Action[] = [];
+  const selectedExecs: Action[] = [];
+  const unselectedWrites: Action[] = [];
+  const unselectedExecs: Action[] = [];
   for (const variable of sorted) {
     const label = launchAgentLabel(variable.key);
     const path = join(launchAgents, `${label}.plist`);
     assertNormalizedAbsolutePath(path, "LaunchAgent path");
-    writes.push(
+    selectedWrites.push(
       writeText(
         path,
         macLaunchAgentPlist(label, variable.key, variable.value),
@@ -249,7 +255,7 @@ export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly Env
         { external: true, sensitive: { path: true } },
       ),
     );
-    execs.push(
+    selectedExecs.push(
       persistenceExec(
         `set ${variable.key} in the current launchd user environment`,
         ["/bin/launchctl", "setenv", variable.key, variable.value],
@@ -262,7 +268,7 @@ export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly Env
     const label = launchAgentLabel(key);
     const path = join(launchAgents, `${label}.plist`);
     assertNormalizedAbsolutePath(path, "LaunchAgent path");
-    writes.push(
+    unselectedWrites.push(
       writeText(
         path,
         macLaunchAgentUnsetPlist(label, key),
@@ -270,7 +276,7 @@ export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly Env
         { external: true, sensitive: { path: true } },
       ),
     );
-    execs.push(
+    unselectedExecs.push(
       persistenceExec(
         `clear non-selected ${key} from the current launchd user environment`,
         ["/bin/launchctl", "unsetenv", key],
@@ -278,5 +284,5 @@ export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly Env
       ),
     );
   }
-  return [...writes, ...execs];
+  return [...unselectedWrites, ...selectedWrites, ...unselectedExecs, ...selectedExecs];
 }

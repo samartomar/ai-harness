@@ -120,6 +120,7 @@ function expectExtraCa(candidate: NodeTrustCandidate): CertEntry[] {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("selectNodeTrustCandidate", () => {
@@ -156,6 +157,53 @@ describe("selectNodeTrustCandidate", () => {
     ).toEqual(["NODE_USE_SYSTEM_CA"]);
   });
 
+  it("caps aggregate candidate work at its deadline and passes only remaining time", async () => {
+    const now = vi
+      .spyOn(Date, "now")
+      .mockReturnValueOnce(10_000)
+      .mockReturnValueOnce(10_000)
+      .mockReturnValueOnce(129_500)
+      .mockReturnValue(129_500);
+    const calls: Array<{ kind: ProbeKind; timeoutMs: number | undefined }> = [];
+
+    const candidate = await selectNodeTrustCandidate(
+      candidateCtx((kind, _origin, opts) => {
+        calls.push({ kind, timeoutMs: opts?.timeoutMs });
+        if (kind === "system-ca") return { code: 1 };
+        if (kind === "capture") return capturedChain(LEAF_A_PEM);
+        throw new Error(`unexpected ${kind} probe`);
+      }),
+      ["https://runtime.example.test"],
+    );
+
+    expect(candidate).toEqual({ kind: "unresolved" });
+    expect(calls).toEqual([
+      { kind: "system-ca", timeoutMs: 25_000 },
+      { kind: "capture", timeoutMs: 500 },
+    ]);
+    now.mockRestore();
+  });
+
+  it("fails closed without starting more candidate probes after the aggregate deadline", async () => {
+    const now = vi
+      .spyOn(Date, "now")
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValue(120_000);
+    const calls: ProbeKind[] = [];
+
+    const candidate = await selectNodeTrustCandidate(
+      candidateCtx((kind) => {
+        calls.push(kind);
+        return { code: 1 };
+      }),
+      ["https://first.example.test", "https://second.example.test"],
+    );
+
+    expect(candidate).toEqual({ kind: "unresolved" });
+    expect(calls).toEqual(["system-ca"]);
+    now.mockRestore();
+  });
   it("selects only OS-trusted roots that issue the served chain", async () => {
     let candidateInput = "";
     const candidate = await selectNodeTrustCandidate(

@@ -129,12 +129,12 @@ describe("WindowsAdapter", () => {
 
   it("persists env via setx DIRECTLY — no cmd wrapper that would re-parse the value", () => {
     const a = adapter(() => undefined);
-    // A CA path under a legal `R&D` folder: `&`/`%`/`^` are valid path characters. Routing
+    // A CA path under a legal `R&D` folder: `&`/`^` are valid path characters. Routing
     // this through `cmd /c setx` would let cmd split on `&` — corrupting the persisted path
     // to `C:\R` and executing `D\certs\ca.pem` as a command. Direct setx.exe spawn (execFile,
     // no shell) keeps the whole path as one literal argv element.
-    const argv = a.persistentEnvArgv("NODE_EXTRA_CA_CERTS", "C:\\R&D\\certs\\ca%1.pem");
-    expect(argv).toEqual(["setx", "NODE_EXTRA_CA_CERTS", "C:\\R&D\\certs\\ca%1.pem"]);
+    const argv = a.persistentEnvArgv("NODE_EXTRA_CA_CERTS", "C:\\R&D\\certs\\ca^1.pem");
+    expect(argv).toEqual(["setx", "NODE_EXTRA_CA_CERTS", "C:\\R&D\\certs\\ca^1.pem"]);
     expect(argv[0]).not.toBe("cmd");
   });
 
@@ -142,18 +142,18 @@ describe("WindowsAdapter", () => {
     const ctx = persistenceCtx();
     const actions = nodeTrustPersistenceActions(
       ctx,
-      nodeTrustEnvVars("C:\\R&D\\certs\\ca%1^bundle.pem"),
+      nodeTrustEnvVars("C:\\R&D\\certs\\ca^1-bundle.pem"),
     );
     const setx = actions.filter((action) => action.kind === "exec");
 
     expect(setx.map((action) => action.argv)).toEqual([
       ["setx", "NODE_USE_SYSTEM_CA", "1"],
-      ["setx", "NODE_EXTRA_CA_CERTS", "C:\\R&D\\certs\\ca%1^bundle.pem"],
+      ["setx", "NODE_EXTRA_CA_CERTS", "C:\\R&D\\certs\\ca^1-bundle.pem"],
     ]);
     expect(setx.every((action) => action.argv[0] !== "cmd")).toBe(true);
   });
 
-  it("sets the selected value before case-insensitively clearing stale Windows trust", () => {
+  it("clears unselected Windows trust before setting the selected value", () => {
     const systemActions = nodeTrustPersistenceActions(
       persistenceCtx({
         USERPROFILE: "C:\\Users\\example",
@@ -163,8 +163,8 @@ describe("WindowsAdapter", () => {
       nodeTrustEnvVars(),
     ).filter((action) => action.kind === "exec");
     expect(systemActions.map((action) => action.argv)).toEqual([
-      ["setx", "NODE_USE_SYSTEM_CA", "1"],
       ["setx", "NODE_EXTRA_CA_CERTS", ""],
+      ["setx", "NODE_USE_SYSTEM_CA", "1"],
     ]);
     expect(systemActions.every((action) => action.requiresPriorExecSuccess)).toBe(true);
 
@@ -173,9 +173,17 @@ describe("WindowsAdapter", () => {
       [{ key: NODE_EXTRA_CA_CERTS, value: "C:\\certs\\selected.pem" }],
     ).filter((action) => action.kind === "exec");
     expect(extraActions.map((action) => action.argv)).toEqual([
-      ["setx", "NODE_EXTRA_CA_CERTS", "C:\\certs\\selected.pem"],
       ["setx", "NODE_USE_SYSTEM_CA", ""],
+      ["setx", "NODE_EXTRA_CA_CERTS", "C:\\certs\\selected.pem"],
     ]);
+  });
+
+  it("fails closed before setx when a selected value contains percent expansion syntax", () => {
+    expect(() =>
+      nodeTrustPersistenceActions(persistenceCtx(), [
+        { key: NODE_EXTRA_CA_CERTS, value: "C:\\certs\\%USERNAME%\\ca.pem" },
+      ]),
+    ).toThrow(/must not contain %/);
   });
 
   it("rejects a setx value longer than 1,024 characters during planning", () => {
@@ -193,7 +201,7 @@ describe("WindowsAdapter", () => {
 
     const action = nodeTrustPersistenceActions(persistenceCtx(), [
       { key: NODE_EXTRA_CA_CERTS, value },
-    ]).find((candidate) => candidate.kind === "exec");
+    ]).find((candidate) => candidate.kind === "exec" && candidate.argv[1] === NODE_EXTRA_CA_CERTS);
 
     expect(action?.argv).toEqual(["setx", NODE_EXTRA_CA_CERTS, value]);
   });

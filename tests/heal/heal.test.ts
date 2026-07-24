@@ -665,8 +665,8 @@ describe("heal — cert step", () => {
     const result = await executePlan(p, ctx);
     const setxCalls = calls.filter(({ argv }) => argv[0] === "setx");
     expect(setxCalls.map(({ argv }) => argv)).toEqual([
-      ["setx", "NODE_USE_SYSTEM_CA", "1"],
       ["setx", "NODE_EXTRA_CA_CERTS", ""],
+      ["setx", "NODE_USE_SYSTEM_CA", "1"],
     ]);
     const lastSetxIndex = calls.findLastIndex(({ argv }) => argv[0] === "setx");
     const finalProbeIndex = calls.findIndex(
@@ -734,6 +734,51 @@ describe("heal — cert step", () => {
     );
   });
 
+  it("successful final Node verification clears pre-apply divergence failures", async () => {
+    const ctx = makeCtx({
+      root: freshTmp(),
+      platform: "windows",
+      ca: "unset",
+      nodeRegistry: "fail",
+      nodePypi: "ok",
+      systemCa: "ok",
+      apply: true,
+    });
+    const p = await command.plan(ctx);
+
+    const result = await executePlan(p, ctx);
+    expect(result.report?.ok).toBe(true);
+    expect(result.report?.checks.filter(({ verdict }) => verdict === "fail")).toHaveLength(0);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([expect.objectContaining({ verdict: "skip" })]),
+    );
+  });
+
+  it("dry-run and unresolved apply retain divergence failures", async () => {
+    const contexts = [
+      makeCtx({
+        root: freshTmp(),
+        ca: "unset",
+        nodeRegistry: "fail",
+        nodePypi: "ok",
+        systemCa: "ok",
+      }),
+      makeCtx({
+        root: freshTmp(),
+        ca: "unset",
+        nodeRegistry: "fail",
+        nodePypi: "ok",
+        systemCa: "fail",
+        apply: true,
+      }),
+    ];
+
+    for (const ctx of contexts) {
+      const result = await executePlan(await command.plan(ctx), ctx);
+      expect(result.report?.ok).toBe(false);
+    }
+  });
+
   it("a failed selected persist exec surfaces a failure and blocks final verification", async () => {
     const ctx = makeCtx({
       root: freshTmp(),
@@ -762,6 +807,36 @@ describe("heal — cert step", () => {
     );
     expect(finalProbeRan).toBe(false);
   });
+
+  it("a failed final Node verification still fails after applying resolved trust", async () => {
+    const ctx = makeCtx({
+      root: freshTmp(),
+      platform: "windows",
+      ca: "unset",
+      nodeRegistry: "fail",
+      nodePypi: "ok",
+      systemCa: "ok",
+      apply: true,
+    });
+    const base = ctx.run;
+    let systemTrustProbeCount = 0;
+    ctx.run = async (argv, opts) => {
+      if (argv[0] === "node" && opts?.env?.NODE_USE_SYSTEM_CA === "1") {
+        systemTrustProbeCount += 1;
+        if (systemTrustProbeCount > 1) return { code: 1, stdout: "", stderr: "TLS failed" };
+      }
+      return base(argv, opts);
+    };
+    const p = await command.plan(ctx);
+
+    const result = await executePlan(p, ctx);
+    expect(result.report?.ok).toBe(false);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "cert: verify persisted Node trust", verdict: "fail" }),
+      ]),
+    );
+  });
 });
 
 describe("heal — npm ladder", () => {
@@ -781,6 +856,21 @@ describe("heal — npm ladder", () => {
     expect(d?.text).toContain("NODE_EXTRA_CA_CERTS");
   });
 
+  it("npm-only uses the Node registry observation for download remediation", async () => {
+    const p = await command.plan(
+      makeCtx({
+        root: freshTmp(),
+        scope: "npm",
+        ca: "valid",
+        npm: "fail",
+        registry: "ok",
+        nodeRegistry: "fail",
+      }),
+    );
+    expect(findDigest(p.actions, "reinstall npm via Node")).toBeUndefined();
+    expect(findDigest(p.actions, "reinstall npm offline")?.text).toContain("Fix trust first");
+  });
+
   it("L2: npm broken + registry blocked → offline guidance using npm-cli.js", async () => {
     const p = await command.plan(
       makeCtx({
@@ -788,6 +878,7 @@ describe("heal — npm ladder", () => {
         ca: "valid",
         npm: "fail",
         registry: "fail",
+        nodeRegistry: "fail",
         npmCli: "/opt/node/npm-cli.js",
       }),
     );

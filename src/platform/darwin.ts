@@ -17,6 +17,7 @@ const MAX_DARWIN_KEYCHAIN_BYTES = 2 * 1024 * 1024;
 const MAX_DARWIN_ROOTS = 512;
 const MAX_DARWIN_CERT_BYTES = 64 * 1024;
 const DARWIN_TRUST_VERIFY_BYTES = 4096;
+const DARWIN_TRUST_VERIFY_DEADLINE_MS = 60_000;
 
 /**
  * macOS host adapter (implemented, fixture-tested, not smoke-tested on this box).
@@ -79,13 +80,16 @@ export class DarwinAdapter implements HostAdapter {
     if (unique.length > MAX_DARWIN_ROOTS) return [];
 
     const trusted: CertEntry[] = [];
+    const deadline = Date.now() + DARWIN_TRUST_VERIFY_DEADLINE_MS;
     for (const candidate of unique) {
       if (Buffer.byteLength(candidate.pem, "utf8") > MAX_DARWIN_CERT_BYTES) return [];
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) return [];
       const verified = await this.run(
         ["security", "verify-cert", "-c", "/dev/stdin", "-l", "-L", "-q"],
         {
           input: candidate.pem,
-          timeoutMs: 20_000,
+          timeoutMs: Math.min(20_000, remainingMs),
           maxBufferBytes: DARWIN_TRUST_VERIFY_BYTES,
         },
       );

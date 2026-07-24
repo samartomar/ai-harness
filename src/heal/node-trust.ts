@@ -9,6 +9,9 @@ import type { CertEntry } from "../platform/base.js";
 import { PYPI_URL, REGISTRY_URL } from "./common.js";
 
 const MAX_TLS_ORIGINS = 6;
+const NODE_TLS_TIMEOUT_MS = 25_000;
+const NODE_TRUST_SELECTION_TIMEOUT_MS = 120_000;
+const MAX_NODE_TRUST_SELECTION_PROBES = 128;
 
 const NODE_TLS_SCRIPT =
   "const tls=require('node:tls');const u=new URL(process.argv[1]);" +
@@ -65,6 +68,19 @@ interface ParsedRoot {
   entry: CertEntry;
   cert: X509Certificate;
   fingerprint: string;
+}
+
+interface ProbeBudget {
+  deadline: number;
+  remaining: number;
+}
+
+function remainingProbeTimeout(budget: ProbeBudget): number | undefined {
+  if (budget.remaining === 0) return undefined;
+  const remainingMs = budget.deadline - Date.now();
+  if (remainingMs <= 0) return undefined;
+  budget.remaining -= 1;
+  return Math.min(NODE_TLS_TIMEOUT_MS, remainingMs);
 }
 
 function httpsOrigin(value: string): string | undefined {
@@ -232,10 +248,11 @@ function rootCandidateUnions(
 async function capturePeerChain(
   ctx: PlanContext,
   origin: string,
+  timeoutMs: number,
 ): Promise<X509Certificate[] | undefined> {
   const result = await ctx.run(["node", "-e", NODE_TLS_CAPTURE_SCRIPT, origin], {
     env: ctx.env,
-    timeoutMs: 25_000,
+    timeoutMs,
     maxBufferBytes: MAX_CAPTURE_BYTES,
   });
   if (result.spawnError || result.truncated || result.code !== 0) return undefined;
@@ -246,11 +263,12 @@ async function probeExtraCa(
   ctx: PlanContext,
   origin: string,
   certs: readonly CertEntry[],
+  timeoutMs: number,
 ): Promise<boolean> {
   const result = await ctx.run(["node", "-e", NODE_TLS_EXTRA_CA_SCRIPT, origin], {
     env: verifiedTlsEnv(selectedNodeTrustEnv(ctx.env, [])),
     input: JSON.stringify(certs.map((cert) => cert.pem)),
-    timeoutMs: 25_000,
+    timeoutMs,
     maxBufferBytes: 4096,
   });
   return !result.spawnError && !result.truncated && result.code === 0;
@@ -277,11 +295,12 @@ export async function probeNodeTls(
   ctx: PlanContext,
   origin: string,
   env: NodeJS.ProcessEnv = ctx.env,
+  timeoutMs = NODE_TLS_TIMEOUT_MS,
 ): Promise<Check> {
   const host = new URL(origin).host;
   const result = await ctx.run(["node", "-e", NODE_TLS_SCRIPT, origin], {
     env: verifiedTlsEnv(env),
-    timeoutMs: 25_000,
+    timeoutMs,
   });
   if (result.spawnError && !/timed out/i.test(result.stderr)) {
     return { name: `cert: Node TLS ${host}`, verdict: "skip", detail: "node not found on PATH" };
@@ -303,16 +322,26 @@ export async function selectNodeTrustCandidate(
   const origins = candidateOrigins(divergentOrigins);
   if (origins === undefined) return { kind: "unresolved" };
 
+  const budget: ProbeBudget = {
+    deadline: Date.now() + NODE_TRUST_SELECTION_TIMEOUT_MS,
+    remaining: MAX_NODE_TRUST_SELECTION_PROBES,
+  };
   const systemEnv = selectedNodeTrustEnv(ctx.env, nodeTrustEnvVars());
   let systemCaPasses = true;
   for (const origin of origins) {
-    if ((await probeNodeTls(ctx, origin, systemEnv)).verdict !== "pass") systemCaPasses = false;
+    const timeoutMs = remainingProbeTimeout(budget);
+    if (timeoutMs === undefined) return { kind: "unresolved" };
+    if ((await probeNodeTls(ctx, origin, systemEnv, timeoutMs)).verdict !== "pass") {
+      systemCaPasses = false;
+    }
   }
   if (systemCaPasses) return { kind: "system-ca" };
 
   const chains: X509Certificate[][] = [];
   for (const origin of origins) {
-    const chain = await capturePeerChain(ctx, origin);
+    const timeoutMs = remainingProbeTimeout(budget);
+    if (timeoutMs === undefined) return { kind: "unresolved" };
+    const chain = await capturePeerChain(ctx, origin, timeoutMs);
     if (chain === undefined) return { kind: "unresolved" };
     chains.push(chain);
   }
@@ -334,7 +363,9 @@ export async function selectNodeTrustCandidate(
     const certs = union.map((root) => root.entry);
     let passes = true;
     for (const origin of origins) {
-      if (!(await probeExtraCa(ctx, origin, certs))) passes = false;
+      const timeoutMs = remainingProbeTimeout(budget);
+      if (timeoutMs === undefined) return { kind: "unresolved" };
+      if (!(await probeExtraCa(ctx, origin, certs, timeoutMs))) passes = false;
     }
     if (passes) return { kind: "extra-ca", certs };
   }

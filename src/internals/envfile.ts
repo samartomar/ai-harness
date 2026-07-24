@@ -9,7 +9,7 @@ export interface EnvVar {
 /** Format a single env assignment for the target shell. */
 export function formatExport(v: EnvVar, shell: EnvShell): string {
   if (shell === "powershell") {
-    return `$env:${v.key} = ${JSON.stringify(v.value)}`;
+    return `$env:${v.key} = '${v.value.replace(/'/g, "''")}'`;
   }
   return `export ${v.key}=${posixQuote(v.value)}`;
 }

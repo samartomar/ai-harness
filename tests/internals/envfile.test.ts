@@ -52,7 +52,15 @@ describe("envfile managed blocks", () => {
   });
 
   it("formats PowerShell exports", () => {
-    expect(formatExport({ key: "A", value: "b" }, "powershell")).toBe('$env:A = "b"');
+    expect(formatExport({ key: "A", value: "b" }, "powershell")).toBe("$env:A = 'b'");
+  });
+
+  it("renders PowerShell values as inert single-quoted literals", () => {
+    const value = "C:\\$HOME\\$(Get-Item env:USERNAME)\\`tick\\O'Brien.pem";
+
+    expect(formatExport({ key: "NODE_EXTRA_CA_CERTS", value }, "powershell")).toBe(
+      "$env:NODE_EXTRA_CA_CERTS = 'C:\\$HOME\\$(Get-Item env:USERNAME)\\`tick\\O''Brien.pem'",
+    );
   });
 
   it("preserves CRLF line endings when present", () => {
