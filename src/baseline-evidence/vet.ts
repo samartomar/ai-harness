@@ -4,6 +4,7 @@ import type { Check } from "../internals/verify.js";
 import { scanTrustTreeWithAnalyzers, type TrustScanResult } from "../trust/scan.js";
 import { VERSION } from "../version.js";
 import type { BaselineCatalog, BaselineCatalogComponent } from "./catalog.js";
+import { resolveVetConcurrency, runWithConcurrency } from "./concurrency.js";
 import { hashComponentTree } from "./hash.js";
 import {
   type ComponentReuseRecord,
@@ -14,6 +15,7 @@ import {
 } from "./reuse.js";
 import {
   type BaselineAnalyzerReceipt,
+  type BaselineComponentEvidence,
   type BaselineEvidenceFinding,
   type BaselineEvidenceLock,
   type BaselineSourceEvidence,
@@ -261,58 +263,67 @@ export async function vetBaselineCatalog(
   const versions = { "aih-native": VERSION, ...(options.analyzerVersions ?? {}) };
   const priorSource = findPriorSource(options.reuseFrom, catalog);
   const full = options.full === true;
-  const components = [];
+  const components: BaselineComponentEvidence[] = [];
   const reuseRecords: ComponentReuseRecord[] = [];
-  for (const component of catalog.components) {
-    const tree = hashComponentTree(sourceRoot, component.paths);
-    const requiredAnalyzers =
-      typeof options.requiredAnalyzers === "function"
-        ? options.requiredAnalyzers(component, sourceRoot)
-        : (options.requiredAnalyzers ?? []);
-    const decision = decideComponentReuse({
-      priorSource,
-      component,
-      currentTreeSha256: tree.treeSha256,
-      requiredAnalyzers,
-      analyzerVersions: versions,
-      full,
-    });
-    const analyzerNames =
-      decision.reuse && decision.priorEntry !== undefined
-        ? decision.priorEntry.analyzers.map((receipt) => receipt.name)
-        : requiredAnalyzers;
-    reuseRecords.push({
-      componentId: component.id,
-      decision,
-      currentTreeSha256: tree.treeSha256,
-      priorTreeSha256: decision.priorEntry?.treeSha256,
-      analyzerNames,
-    });
-    if (decision.reuse && decision.priorEntry !== undefined) {
-      components.push(spliceReusedComponent(decision.priorEntry));
-      continue;
-    }
-    const scan = await scanComponent({ sourceRoot, component });
-    const afterScan = hashComponentTree(sourceRoot, component.paths);
-    if (afterScan.treeSha256 !== tree.treeSha256) {
-      throw new Error(`baseline component ${component.id} changed during vet scan`);
-    }
-    const findings = blockingFindings(scan.checks);
-    components.push({
-      id: component.id,
-      paths: [...component.paths],
-      treeSha256: tree.treeSha256,
-      verdict: findings.length > 0 ? ("blocked" as const) : ("pass" as const),
-      analyzers: analyzerReceipts(
-        scan.analyzersRun,
-        versions,
+  // Scan components with bounded concurrency (issue #519). Each task writes its
+  // result by catalog index, so completion order does not change the produced
+  // artifacts — verified byte-identical to the serial output. The default keeps
+  // ~2 vCPU per concurrent scan; override with AIH_VET_CONCURRENCY. A
+  // concurrency of 1 is exactly the original serial scan.
+  await runWithConcurrency(
+    catalog.components,
+    resolveVetConcurrency(),
+    async (component, index) => {
+      const tree = hashComponentTree(sourceRoot, component.paths);
+      const requiredAnalyzers =
+        typeof options.requiredAnalyzers === "function"
+          ? options.requiredAnalyzers(component, sourceRoot)
+          : (options.requiredAnalyzers ?? []);
+      const decision = decideComponentReuse({
+        priorSource,
+        component,
+        currentTreeSha256: tree.treeSha256,
         requiredAnalyzers,
-        component.id,
-        scan.checks,
-      ),
-      findings,
-    });
-  }
+        analyzerVersions: versions,
+        full,
+      });
+      const analyzerNames =
+        decision.reuse && decision.priorEntry !== undefined
+          ? decision.priorEntry.analyzers.map((receipt) => receipt.name)
+          : requiredAnalyzers;
+      reuseRecords[index] = {
+        componentId: component.id,
+        decision,
+        currentTreeSha256: tree.treeSha256,
+        priorTreeSha256: decision.priorEntry?.treeSha256,
+        analyzerNames,
+      };
+      if (decision.reuse && decision.priorEntry !== undefined) {
+        components[index] = spliceReusedComponent(decision.priorEntry);
+        return;
+      }
+      const scan = await scanComponent({ sourceRoot, component });
+      const afterScan = hashComponentTree(sourceRoot, component.paths);
+      if (afterScan.treeSha256 !== tree.treeSha256) {
+        throw new Error(`baseline component ${component.id} changed during vet scan`);
+      }
+      const findings = blockingFindings(scan.checks);
+      components[index] = {
+        id: component.id,
+        paths: [...component.paths],
+        treeSha256: tree.treeSha256,
+        verdict: findings.length > 0 ? ("blocked" as const) : ("pass" as const),
+        analyzers: analyzerReceipts(
+          scan.analyzersRun,
+          versions,
+          requiredAnalyzers,
+          component.id,
+          scan.checks,
+        ),
+        findings,
+      };
+    },
+  );
   const progress = options.scanOptions?.progress;
   if (progress) {
     for (const line of formatCatalogReuseSummary(catalog, reuseRecords)) progress(line);
