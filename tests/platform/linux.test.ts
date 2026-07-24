@@ -118,4 +118,24 @@ describe("LinuxAdapter", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("recognizes OpenSSL hashed certificate filenames in a fallback directory", async () => {
+    const anchors = mkdtempSync(join(tmpdir(), "aih-hashed-anchors-"));
+    try {
+      writeFileSync(join(anchors, "d34db33f.0"), FAKE_PEM);
+      const a = new LinuxAdapter(
+        fakeRunner(() => undefined),
+        {},
+        [anchors],
+        [],
+      );
+
+      const certs = await a.trustStoreRoots();
+
+      expect(certs).toHaveLength(1);
+      expect(certs[0]?.pem).toBe(FAKE_PEM);
+    } finally {
+      rmSync(anchors, { recursive: true, force: true });
+    }
+  });
 });

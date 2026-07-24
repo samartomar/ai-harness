@@ -12,13 +12,17 @@ const MAX_TLS_ORIGINS = 6;
 const NODE_TLS_SCRIPT =
   "const tls=require('node:tls');const u=new URL(process.argv[1]);" +
   "const h=u.hostname.replace(/^\\[(.*)\\]$/,'$1');" +
-  "const s=tls.connect({host:h,port:Number(u.port||443),servername:h,timeout:20000}," +
-  "()=>{s.end();process.exit(0)});" +
+  "const s=tls.connect({host:h,port:Number(u.port||443),servername:h,timeout:20000," +
+  "rejectUnauthorized:true},()=>{const ok=s.authorized;s.end();process.exit(ok?0:1)});" +
   "s.on('error',()=>process.exit(1));" +
   "s.on('timeout',()=>{s.destroy();process.exit(1)})";
 
 const MAX_CAPTURED_CHAIN_CERTS = 8;
 const MAX_CAPTURE_BYTES = 64 * 1024;
+const MAX_ROOTS_PER_ORIGIN = 8;
+const MAX_CANDIDATE_UNIONS = 256;
+const MAX_TRUST_STORE_ROOTS = 1024;
+const MAX_ROOT_PEM_BYTES = 64 * 1024;
 
 const NODE_TLS_CAPTURE_SCRIPT =
   "const tls=require('node:tls');const u=new URL(process.argv[1]);" +
@@ -40,7 +44,8 @@ const NODE_TLS_EXTRA_CA_SCRIPT =
   "let extra;try{extra=JSON.parse(fs.readFileSync(0,'utf8'))}catch{process.exit(1)}" +
   "if(!Array.isArray(extra)||!extra.every((pem)=>typeof pem==='string'))process.exit(1);" +
   "const s=tls.connect({host:h,port:Number(u.port||443),servername:h,timeout:20000," +
-  "ca:[...tls.rootCertificates,...extra]},()=>{s.end();process.exit(0)});" +
+  "rejectUnauthorized:true,ca:[...tls.rootCertificates,...extra]},()=>{" +
+  "const ok=s.authorized;s.end();process.exit(ok?0:1)});" +
   "s.on('error',()=>process.exit(1));" +
   "s.on('timeout',()=>{s.destroy();process.exit(1)})";
 
@@ -90,6 +95,12 @@ function candidateOrigins(values: readonly string[]): string[] | undefined {
   return origins.length > 0 && origins.length <= MAX_TLS_ORIGINS ? origins : undefined;
 }
 
+function verifiedTlsEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const safe = { ...env };
+  delete safe.NODE_TLS_REJECT_UNAUTHORIZED;
+  return safe;
+}
+
 function parseCapturedChain(stdout: string): X509Certificate[] | undefined {
   if (Buffer.byteLength(stdout, "utf8") > MAX_CAPTURE_BYTES) return undefined;
   let values: unknown;
@@ -125,6 +136,7 @@ function parseCapturedChain(stdout: string): X509Certificate[] | undefined {
 function validRoots(entries: readonly CertEntry[], now: number): ParsedRoot[] {
   const roots = new Map<string, ParsedRoot>();
   for (const entry of entries) {
+    if (Buffer.byteLength(entry.pem, "utf8") > MAX_ROOT_PEM_BYTES) continue;
     try {
       const cert = new X509Certificate(entry.pem);
       const validFrom = Date.parse(cert.validFrom);
@@ -161,6 +173,59 @@ function rootIssuesTail(root: X509Certificate, tail: X509Certificate): boolean {
   }
 }
 
+function rootCandidateUnions(
+  candidatesByOrigin: readonly (readonly ParsedRoot[])[],
+): ParsedRoot[][] | undefined {
+  if (
+    candidatesByOrigin.length === 0 ||
+    candidatesByOrigin.some(
+      (candidates) => candidates.length === 0 || candidates.length > MAX_ROOTS_PER_ORIGIN,
+    )
+  ) {
+    return undefined;
+  }
+
+  const unions = new Map<string, ParsedRoot[]>();
+  const selected = new Map<string, ParsedRoot>();
+  let exceeded = false;
+
+  const visit = (originIndex: number): void => {
+    if (exceeded) return;
+    if (originIndex === candidatesByOrigin.length) {
+      const roots = [...selected.values()].sort((a, b) =>
+        a.fingerprint.localeCompare(b.fingerprint),
+      );
+      const key = roots.map((root) => root.fingerprint).join("|");
+      if (!unions.has(key)) {
+        if (unions.size === MAX_CANDIDATE_UNIONS) {
+          exceeded = true;
+          return;
+        }
+        unions.set(key, roots);
+      }
+      return;
+    }
+
+    for (const root of candidatesByOrigin[originIndex] ?? []) {
+      const alreadySelected = selected.has(root.fingerprint);
+      selected.set(root.fingerprint, root);
+      visit(originIndex + 1);
+      if (!alreadySelected) selected.delete(root.fingerprint);
+    }
+  };
+
+  visit(0);
+  if (exceeded) return undefined;
+  return [...unions.values()].sort((a, b) => {
+    const byCardinality = a.length - b.length;
+    if (byCardinality !== 0) return byCardinality;
+    return a
+      .map((root) => root.fingerprint)
+      .join("|")
+      .localeCompare(b.map((root) => root.fingerprint).join("|"));
+  });
+}
+
 async function capturePeerChain(
   ctx: PlanContext,
   origin: string,
@@ -180,7 +245,7 @@ async function probeExtraCa(
   certs: readonly CertEntry[],
 ): Promise<boolean> {
   const result = await ctx.run(["node", "-e", NODE_TLS_EXTRA_CA_SCRIPT, origin], {
-    env: ctx.env,
+    env: verifiedTlsEnv(ctx.env),
     input: JSON.stringify(certs.map((cert) => cert.pem)),
     timeoutMs: 25_000,
     maxBufferBytes: 4096,
@@ -212,7 +277,7 @@ export async function probeNodeTls(
 ): Promise<Check> {
   const host = new URL(origin).host;
   const result = await ctx.run(["node", "-e", NODE_TLS_SCRIPT, origin], {
-    env,
+    env: verifiedTlsEnv(env),
     timeoutMs: 25_000,
   });
   if (result.spawnError && !/timed out/i.test(result.stderr)) {
@@ -249,22 +314,26 @@ export async function selectNodeTrustCandidate(
     chains.push(chain);
   }
 
-  const roots = validRoots(await ctx.host.trustStoreRoots(), Date.now());
-  const matched = new Map<string, ParsedRoot>();
+  const rootEntries = await ctx.host.trustStoreRoots();
+  if (rootEntries.length > MAX_TRUST_STORE_ROOTS) return { kind: "unresolved" };
+  const roots = validRoots(rootEntries, Date.now());
+  const candidatesByOrigin: ParsedRoot[][] = [];
   for (const chain of chains) {
     const tail = chain.at(-1);
     if (tail === undefined) return { kind: "unresolved" };
-    const issuedBy = roots.find((root) => rootIssuesTail(root.cert, tail));
-    if (issuedBy === undefined) return { kind: "unresolved" };
-    matched.set(issuedBy.fingerprint, issuedBy);
+    candidatesByOrigin.push(roots.filter((root) => rootIssuesTail(root.cert, tail)));
   }
 
-  const certs = [...matched.values()]
-    .sort((a, b) => a.fingerprint.localeCompare(b.fingerprint))
-    .map((root) => root.entry);
-  let extraCaPasses = true;
-  for (const origin of origins) {
-    if (!(await probeExtraCa(ctx, origin, certs))) extraCaPasses = false;
+  const unions = rootCandidateUnions(candidatesByOrigin);
+  if (unions === undefined) return { kind: "unresolved" };
+
+  for (const union of unions) {
+    const certs = union.map((root) => root.entry);
+    let passes = true;
+    for (const origin of origins) {
+      if (!(await probeExtraCa(ctx, origin, certs))) passes = false;
+    }
+    if (passes) return { kind: "extra-ca", certs };
   }
-  return extraCaPasses ? { kind: "extra-ca", certs } : { kind: "unresolved" };
+  return { kind: "unresolved" };
 }

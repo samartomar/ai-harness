@@ -13,6 +13,11 @@ import {
 import { parseFirstInt, parseNvidiaSmi, parsePemBlocks } from "./parse.js";
 import { posixNpmCliPath, posixTlsProbeArgv } from "./posix.js";
 
+const MAX_DARWIN_KEYCHAIN_BYTES = 2 * 1024 * 1024;
+const MAX_DARWIN_ROOTS = 512;
+const MAX_DARWIN_CERT_BYTES = 64 * 1024;
+const DARWIN_TRUST_VERIFY_BYTES = 4096;
+
 /**
  * macOS host adapter (implemented, fixture-tested, not smoke-tested on this box).
  * Uses `security` for trust-store export and `sysctl` for hardware facts.
@@ -53,14 +58,42 @@ export class DarwinAdapter implements HostAdapter {
       "/System/Library/Keychains/SystemRootCertificates.keychain",
     ];
     if (home) keychains.unshift(join(home, "Library", "Keychains", "login.keychain-db"));
-    const found: CertEntry[] = [];
+
+    const candidates: CertEntry[] = [];
     for (const keychain of keychains) {
-      const res = await this.run(["security", "find-certificate", "-a", "-p", keychain]);
-      if (!res.spawnError && res.stdout.includes("BEGIN CERTIFICATE")) {
-        found.push(...parsePemBlocks(res.stdout, `trusted root (${keychain})`));
+      const res = await this.run(["security", "find-certificate", "-a", "-p", keychain], {
+        timeoutMs: 20_000,
+        maxBufferBytes: MAX_DARWIN_KEYCHAIN_BYTES,
+      });
+      if (
+        !res.spawnError &&
+        !res.truncated &&
+        res.code === 0 &&
+        res.stdout.includes("BEGIN CERTIFICATE")
+      ) {
+        candidates.push(...parsePemBlocks(res.stdout, `trusted root (${keychain})`));
       }
     }
-    return dedupeCertEntries(found);
+
+    const unique = dedupeCertEntries(candidates);
+    if (unique.length > MAX_DARWIN_ROOTS) return [];
+
+    const trusted: CertEntry[] = [];
+    for (const candidate of unique) {
+      if (Buffer.byteLength(candidate.pem, "utf8") > MAX_DARWIN_CERT_BYTES) return [];
+      const verified = await this.run(
+        ["security", "verify-cert", "-c", "/dev/stdin", "-l", "-L", "-q"],
+        {
+          input: candidate.pem,
+          timeoutMs: 20_000,
+          maxBufferBytes: DARWIN_TRUST_VERIFY_BYTES,
+        },
+      );
+      if (!verified.spawnError && !verified.truncated && verified.code === 0) {
+        trusted.push(candidate);
+      }
+    }
+    return trusted;
   }
 
   lockDownFileArgv(path: string): string[] {

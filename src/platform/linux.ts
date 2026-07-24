@@ -103,7 +103,7 @@ export class LinuxAdapter implements HostAdapter {
         continue;
       }
       for (const name of names) {
-        if (!/\.(crt|pem|cer)$/i.test(name)) continue;
+        if (!/^(?:[0-9a-f]{8}\.\d+|.+\.(?:crt|pem|cer))$/i.test(name)) continue;
         try {
           const subject = `${name} (${dir})`;
           roots.push(...parsePemBlocks(readFileSync(join(dir, name), "utf8"), subject));

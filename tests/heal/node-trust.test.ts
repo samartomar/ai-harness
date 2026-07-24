@@ -13,16 +13,44 @@ const NOT_CA_PEM = readFileSync(new URL("../fixtures/certs/not-ca.pem", import.m
 const LEAF_A_PEM = readFileSync(new URL("../fixtures/certs/leaf-a.pem", import.meta.url), "utf8");
 const LEAF_B_PEM = readFileSync(new URL("../fixtures/certs/leaf-b.pem", import.meta.url), "utf8");
 const LEAF_C_PEM = readFileSync(new URL("../fixtures/certs/leaf-c.pem", import.meta.url), "utf8");
+const ROOT_ALT_A_PEM = readFileSync(
+  new URL("../fixtures/certs/root-alt-a.pem", import.meta.url),
+  "utf8",
+);
+const ROOT_ALT_B_PEM = readFileSync(
+  new URL("../fixtures/certs/root-alt-b.pem", import.meta.url),
+  "utf8",
+);
+const ROOT_ALT_C_PEM = readFileSync(
+  new URL("../fixtures/certs/root-alt-c.pem", import.meta.url),
+  "utf8",
+);
+const INTERMEDIATE_PEM = readFileSync(
+  new URL("../fixtures/certs/intermediate.pem", import.meta.url),
+  "utf8",
+);
+const LEAF_INTERMEDIATE_PEM = readFileSync(
+  new URL("../fixtures/certs/leaf-intermediate.pem", import.meta.url),
+  "utf8",
+);
 
 const ROOT_A = certEntry(ROOT_A_PEM);
 const ROOT_B = certEntry(ROOT_B_PEM);
 const NOT_CA = certEntry(NOT_CA_PEM);
+const ALT_ROOTS = [ROOT_ALT_A_PEM, ROOT_ALT_B_PEM, ROOT_ALT_C_PEM]
+  .map(certEntry)
+  .sort((a, b) =>
+    new X509Certificate(a.pem).fingerprint256.localeCompare(
+      new X509Certificate(b.pem).fingerprint256,
+    ),
+  );
 
 type ProbeKind = "system-ca" | "capture" | "extra-ca";
 type ProbeHandler = (
   kind: ProbeKind,
   origin: string,
   opts: RunOptions | undefined,
+  script: string,
 ) => Partial<RunResult> | undefined;
 
 function certEntry(pem: string): CertEntry {
@@ -36,8 +64,11 @@ function capturedChain(...pems: string[]): Partial<RunResult> {
   };
 }
 
-function candidateCtx(handler: ProbeHandler, roots: CertEntry[] = []): PlanContext {
-  const env: NodeJS.ProcessEnv = { EXISTING_SETTING: "preserved" };
+function candidateCtx(
+  handler: ProbeHandler,
+  roots: CertEntry[] = [],
+  env: NodeJS.ProcessEnv = { EXISTING_SETTING: "preserved" },
+): PlanContext {
   const run = fakeRunner((argv, opts) => {
     if (argv[0] !== "node" || argv[1] !== "-e") return undefined;
     const script = argv[2] ?? "";
@@ -47,7 +78,7 @@ function candidateCtx(handler: ProbeHandler, roots: CertEntry[] = []): PlanConte
       : script.includes("rootCertificates")
         ? "extra-ca"
         : "system-ca";
-    return handler(kind, origin, opts);
+    return handler(kind, origin, opts, script);
   });
   const host = Object.assign(makeHostAdapter({ platform: "linux", run, env }), {
     trustStoreRoots: async () => roots,
@@ -197,6 +228,123 @@ describe("selectNodeTrustCandidate", () => {
       "https://runtime.example.test",
       "https://second.example.test",
     ]);
+  });
+
+  it("matches a trusted root through the captured intermediate chain", async () => {
+    const candidate = await selectNodeTrustCandidate(
+      candidateCtx(
+        (kind) => {
+          if (kind === "system-ca") return { code: 1 };
+          if (kind === "capture") {
+            return capturedChain(LEAF_INTERMEDIATE_PEM, INTERMEDIATE_PEM);
+          }
+          return { code: 0 };
+        },
+        [ALT_ROOTS[0] as CertEntry],
+      ),
+      ["https://intermediate.example.test"],
+    );
+
+    expect(expectExtraCa(candidate).map((cert) => cert.pem)).toEqual([ALT_ROOTS[0]?.pem]);
+  });
+
+  it("tries an alternate signing root after the first valid root fails verification", async () => {
+    const ordered = ALT_ROOTS.slice(0, 2);
+    const attempted: string[][] = [];
+    const candidate = await selectNodeTrustCandidate(
+      candidateCtx((kind, _origin, opts) => {
+        if (kind === "system-ca") return { code: 1 };
+        if (kind === "capture") {
+          return capturedChain(LEAF_INTERMEDIATE_PEM, INTERMEDIATE_PEM);
+        }
+        const pems = JSON.parse(opts?.input ?? "[]") as string[];
+        attempted.push(pems);
+        return { code: pems[0] === ordered[1]?.pem ? 0 : 1 };
+      }, ordered),
+      ["https://intermediate.example.test"],
+    );
+
+    expect(expectExtraCa(candidate).map((cert) => cert.pem)).toEqual([ordered[1]?.pem]);
+    expect(attempted).toEqual([[ordered[0]?.pem], [ordered[1]?.pem]]);
+  });
+
+  it("selects a shared single root before trying a larger passing union", async () => {
+    const [firstOnly, secondOnly, shared] = ALT_ROOTS;
+    const attempts: Array<{ origin: string; pems: string[] }> = [];
+    const candidate = await selectNodeTrustCandidate(
+      candidateCtx((kind, origin, opts) => {
+        if (kind === "system-ca") return { code: 1 };
+        if (kind === "capture") {
+          return capturedChain(LEAF_INTERMEDIATE_PEM, INTERMEDIATE_PEM);
+        }
+        const pems = JSON.parse(opts?.input ?? "[]") as string[];
+        attempts.push({ origin, pems });
+        if (pems.length !== 1) return { code: 0 };
+        if (pems[0] === shared?.pem) return { code: 0 };
+        if (pems[0] === firstOnly?.pem) {
+          return { code: origin.includes("first") ? 0 : 1 };
+        }
+        if (pems[0] === secondOnly?.pem) {
+          return { code: origin.includes("second") ? 0 : 1 };
+        }
+        return { code: 1 };
+      }, ALT_ROOTS),
+      ["https://first.example.test", "https://second.example.test"],
+    );
+
+    expect(expectExtraCa(candidate).map((cert) => cert.pem)).toEqual([shared?.pem]);
+    expect(attempts.map(({ pems }) => pems)).toEqual([
+      [firstOnly?.pem],
+      [firstOnly?.pem],
+      [secondOnly?.pem],
+      [secondOnly?.pem],
+      [shared?.pem],
+      [shared?.pem],
+    ]);
+  });
+
+  it("forces authorization and removes an inherited Node TLS verification bypass", async () => {
+    const verified: Array<{ script: string; env: NodeJS.ProcessEnv }> = [];
+    const candidate = await selectNodeTrustCandidate(
+      candidateCtx(
+        (kind, _origin, opts, script) => {
+          if (kind === "capture") return capturedChain(LEAF_A_PEM);
+          verified.push({ script, env: opts?.env ?? {} });
+          return { code: kind === "system-ca" ? 1 : 0 };
+        },
+        [ROOT_A],
+        {
+          EXISTING_SETTING: "preserved",
+          NODE_TLS_REJECT_UNAUTHORIZED: "0",
+        },
+      ),
+      ["https://runtime.example.test"],
+    );
+
+    expect(candidate.kind).toBe("extra-ca");
+    expect(verified).toHaveLength(2);
+    for (const call of verified) {
+      expect(call.script).toContain("rejectUnauthorized:true");
+      expect(call.script).toContain(".authorized");
+      expect(call.env.NODE_TLS_REJECT_UNAUTHORIZED).toBeUndefined();
+      expect(call.env.EXISTING_SETTING).toBe("preserved");
+    }
+  });
+
+  it("fails closed when the trust-root inventory exceeds its input bound", async () => {
+    const candidate = await selectNodeTrustCandidate(
+      candidateCtx(
+        (kind) => {
+          if (kind === "system-ca") return { code: 1 };
+          if (kind === "capture") return capturedChain(LEAF_A_PEM);
+          throw new Error("an oversized root inventory must never reach candidate verification");
+        },
+        Array.from({ length: 1025 }, () => ROOT_A),
+      ),
+      ["https://runtime.example.test"],
+    );
+
+    expect(candidate).toEqual({ kind: "unresolved" });
   });
 
   it("fails closed on malformed or credential-bearing origins", async () => {
