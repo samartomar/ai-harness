@@ -18,7 +18,11 @@ import { acceptChanged } from "../../src/internals/scan-allowlist.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/secrets/index.js";
 import { SECRET_RULE } from "../../src/secrets/probes.js";
-import { scanConfigSecrets, scanExternalConfigSecrets, scanSecrets } from "../../src/secrets/scan.js";
+import {
+  scanConfigSecrets,
+  scanExternalConfigSecrets,
+  scanSecrets,
+} from "../../src/secrets/scan.js";
 
 let dir: string;
 beforeEach(() => {
