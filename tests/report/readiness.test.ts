@@ -44,6 +44,8 @@ interface Tools {
   tls?: "ok" | "fail";
   /** `git rev-parse --is-inside-work-tree` answers "true" (repo root is a work tree). */
   gitRepo?: boolean;
+  /** rev-parse ERRORS (git present but failing, e.g. dubious ownership) instead of answering. */
+  gitRevParseError?: boolean;
   /** Paths `git ls-files` reports as tracked (the committed-secret classifier input). */
   gitTracked?: string[];
 }
@@ -95,10 +97,14 @@ function toolRunner(t: Tools): PlanContext["run"] {
     // git.
     if (cmd === "git") {
       if (t.git === false) return { spawnError: true, code: 127 };
-      if (argv.includes("rev-parse"))
+      if (argv.includes("rev-parse")) {
+        if (t.gitRevParseError) {
+          return { code: 128, stderr: "fatal: detected dubious ownership in repository" };
+        }
         return t.gitRepo
           ? { code: 0, stdout: "true" }
           : { code: 128, stderr: "fatal: not a git repository" };
+      }
       if (argv.includes("ls-files")) return { code: 0, stdout: (t.gitTracked ?? []).join("\0") };
       return { code: 0, stdout: "git version 2.44" };
     }
@@ -303,6 +309,18 @@ describe("readinessDigest — posture flips the amber gates", () => {
     put(".env", "API_KEY=sk-live-abcdef0123456789\n");
     const { data } = await digestData(ctx({ git: false }, { posture: "enterprise" as Posture }));
     expect(data.blockers.some((b) => b.id === "no-committed-secret")).toBe(true);
+  });
+
+  it("a rev-parse ERROR (git present but failing) fails closed to the committed class (review F3)", async () => {
+    // Dubious-ownership and similar failures are NOT "not a work tree": the
+    // truth is unknown, so the finding keeps the strongest (committed) gate.
+    scaffoldReady();
+    put(".env", "API_KEY=sk-live-abcdef0123456789\n");
+    const { data } = await digestData(
+      ctx({ gitRevParseError: true }, { posture: "enterprise" as Posture }),
+    );
+    expect(data.blockers.some((b) => b.id === "no-committed-secret")).toBe(true);
+    expect(data.blockers.some((b) => b.id === "no-plaintext-secret-on-disk")).toBe(false);
   });
 
   it("git-absent is a WARN at vibe but a GATE at enterprise", async () => {

@@ -197,8 +197,12 @@ interface SecretFindings {
  * is never dropped by classification; ambiguity fails closed:
  *  - git itself unavailable → every finding stays in the committed class (exactly
  *    the pre-split gate, the strongest claim);
- *  - git present but the root is not a work tree → nothing CAN be committed, so
- *    every finding is on-disk plaintext;
+ *  - git ANSWERS "not a work tree" (rev-parse exit-0 "false", or the definitive
+ *    `fatal: not a git repository`) → nothing CAN be committed, so every finding
+ *    is on-disk plaintext;
+ *  - git ERRORS for any other reason (dubious ownership, permissions, a failed
+ *    exec) → the truth is unknown → every finding stays in the committed class
+ *    (fail closed, matching the git-absent doctrine);
  *  - inside a work tree, `git ls-files` decides per path (a `secrets/` dir counts
  *    as committed when any tracked path lives under it).
  */
@@ -209,8 +213,15 @@ async function classifySecretFindings(ctx: PlanContext, gitOk: boolean): Promise
   const all = [...files, ...dirs].sort();
   if (all.length === 0) return { committed: [], onDisk: [] };
   if (!gitOk) return { committed: all, onDisk: [] };
-  const inWorkTree = await gitRead(ctx, ["rev-parse", "--is-inside-work-tree"]);
-  if (inWorkTree !== "true") return { committed: [], onDisk: all };
+  const revParse = await ctx.run(["git", "-C", ctx.root, "rev-parse", "--is-inside-work-tree"]);
+  const saidTrue = !revParse.spawnError && revParse.code === 0 && revParse.stdout.trim() === "true";
+  if (!saidTrue) {
+    // Distinguish git ANSWERING "not a work tree" from git ERRORING (review F3).
+    const answeredNotAWorkTree =
+      !revParse.spawnError &&
+      (revParse.code === 0 || /not a git repository/i.test(revParse.stderr));
+    return answeredNotAWorkTree ? { committed: [], onDisk: all } : { committed: all, onDisk: [] };
+  }
   const listed = await gitRead(ctx, ["ls-files", "-z", "--", ...files, ...dirs], { trim: false });
   if (listed === undefined) return { committed: all, onDisk: [] }; // ambiguous → fail closed
   const tracked = new Set(listed.split("\0").filter((p) => p.length > 0));
