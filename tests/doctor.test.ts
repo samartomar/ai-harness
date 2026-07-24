@@ -1557,3 +1557,190 @@ describe("doctor — MCP uvx pin attestation (issue #502)", () => {
     expect(res?.code).toBeUndefined();
   });
 });
+
+describe("doctor — MCP pin currency (issue #504)", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aih-doctor-pin-currency-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function rooted(
+    options: Record<string, unknown> = {},
+    run: Runner = fakeRunner(() => ({ code: 1, spawnError: true })),
+  ): PlanContext {
+    return {
+      root: dir,
+      contextDir: "ai-coding",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: {},
+      options,
+    };
+  }
+
+  function writeMcp(servers: Record<string, unknown>): void {
+    writeFileSync(join(dir, ".mcp.json"), JSON.stringify({ mcpServers: servers }));
+  }
+
+  /** The baked codebase-memory-mcp catalog launch at an arbitrary pinned version. */
+  function cmmServer(version: string): Record<string, unknown> {
+    return {
+      type: "stdio",
+      command: "uvx",
+      args: [
+        "--offline",
+        "--no-python-downloads",
+        "--no-env-file",
+        `codebase-memory-mcp@${version}`,
+      ],
+    };
+  }
+
+  const SEQ_SERVER = {
+    type: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.12.18"],
+  };
+
+  /**
+   * A fake registry: answers `npm view <name> version` from `npm` and
+   * `curl … https://pypi.org/pypi/<name>/json` from `pypi`, recording every
+   * network argv so tests can also assert what was NOT queried.
+   */
+  function registryRunner(latest: {
+    npm?: Record<string, string>;
+    pypi?: Record<string, string>;
+  }): {
+    run: Runner;
+    seen: string[][];
+  } {
+    const seen: string[][] = [];
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "npm" && argv[1] === "view") {
+        seen.push([...argv]);
+        const version = latest.npm?.[argv[2] ?? ""];
+        return version === undefined
+          ? { code: 1, stderr: "npm ERR! 404" }
+          : { code: 0, stdout: `${version}\n` };
+      }
+      if (argv[0] === "curl") {
+        seen.push([...argv]);
+        const url = argv.at(-1) ?? "";
+        const name = /pypi\.org\/pypi\/([^/]+)\/json/.exec(url)?.[1];
+        const version = name === undefined ? undefined : latest.pypi?.[name];
+        return version === undefined
+          ? { code: 22, stderr: "curl: (22) The requested URL returned error: 404" }
+          : { code: 0, stdout: JSON.stringify({ info: { version } }) };
+      }
+      return { code: 1, spawnError: true };
+    });
+    return { run, seen };
+  }
+
+  it("declares the --check-pin-currency opt-in flag", () => {
+    expect(command.options?.some((o) => o.flags === "--check-pin-currency")).toBe(true);
+  });
+
+  it("always renders a currency row; without the flag nothing is queried and the opt-in is named", async () => {
+    writeMcp({ "codebase-memory-mcp": cmmServer("0.8.1") });
+    const { run, seen } = registryRunner({ pypi: { "codebase-memory-mcp": "0.9.0" } });
+    const c = rooted({}, run);
+    const probe = findProbe((await command.plan(c)).actions, "MCP pin currency");
+    expect(probe).toBeDefined();
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBeUndefined();
+    expect(res?.detail).toContain("codebase-memory-mcp@0.8.1");
+    expect(res?.detail).toContain("--check-pin-currency");
+    expect(seen).toEqual([]); // no registry traffic without the opt-in
+  });
+
+  it("reports projection lag offline (mcp.projection-stale) when .mcp.json pins differ from this build's catalog", async () => {
+    writeMcp({ "codebase-memory-mcp": cmmServer("0.8.0") });
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP pin currency");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.projection-stale");
+    expect(res?.detail).toContain("codebase-memory-mcp@0.8.0");
+    expect(res?.detail).toContain("codebase-memory-mcp@0.8.1");
+    expect(res?.detail).toContain("aih mcp --apply");
+  });
+
+  it("warns (mcp.pin-stale) when the registry publishes a newer release than a uvx pin", async () => {
+    writeMcp({ "codebase-memory-mcp": cmmServer("0.8.1") });
+    const { run, seen } = registryRunner({ pypi: { "codebase-memory-mcp": "0.9.0" } });
+    const c = rooted({ checkPinCurrency: true }, run);
+    const probe = findProbe((await command.plan(c)).actions, "MCP pin currency");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.pin-stale");
+    expect(res?.detail).toContain("0.8.1");
+    expect(res?.detail).toContain("0.9.0");
+    // The PyPI metadata endpoint was queried read-only for the pinned package.
+    expect(
+      seen.some(
+        (argv) =>
+          argv[0] === "curl" && argv.at(-1) === "https://pypi.org/pypi/codebase-memory-mcp/json",
+      ),
+    ).toBe(true);
+  });
+
+  it("checks npm-backed pins through `npm view <name> version`", async () => {
+    writeMcp({ "sequential-thinking": SEQ_SERVER });
+    const { run, seen } = registryRunner({
+      npm: { "@modelcontextprotocol/server-sequential-thinking": "2026.7.4" },
+    });
+    const c = rooted({ checkPinCurrency: true }, run);
+    const probe = findProbe((await command.plan(c)).actions, "MCP pin currency");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.pin-stale");
+    expect(res?.detail).toContain("2025.12.18");
+    expect(res?.detail).toContain("2026.7.4");
+    expect(seen).toContainEqual([
+      "npm",
+      "view",
+      "@modelcontextprotocol/server-sequential-thinking",
+      "version",
+    ]);
+  });
+
+  it("passes when every pin matches its registry's latest release", async () => {
+    writeMcp({ "codebase-memory-mcp": cmmServer("0.8.1"), "sequential-thinking": SEQ_SERVER });
+    const { run } = registryRunner({
+      npm: { "@modelcontextprotocol/server-sequential-thinking": "2025.12.18" },
+      pypi: { "codebase-memory-mcp": "0.8.1" },
+    });
+    const c = rooted({ checkPinCurrency: true }, run);
+    const probe = findProbe((await command.plan(c)).actions, "MCP pin currency");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("current");
+    expect(res?.detail).toContain("codebase-memory-mcp@0.8.1");
+  });
+
+  it("degrades honestly (uncoded skip) when the registry cannot be queried", async () => {
+    writeMcp({ "codebase-memory-mcp": cmmServer("0.8.1") });
+    const c = rooted({ checkPinCurrency: true }); // every spawn fails (curl absent)
+    const probe = findProbe((await command.plan(c)).actions, "MCP pin currency");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBeUndefined();
+    expect(res?.detail).toContain("could not resolve");
+  });
+
+  it("skips quietly when no .mcp.json exists", async () => {
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP pin currency");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBeUndefined();
+  });
+});

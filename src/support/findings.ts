@@ -293,6 +293,20 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Pin every uvx MCP launcher exactly (pkg==x.y.z), then run `aih doctor --attest-mcp-pins` to launch each pinned server once and compare its self-reported serverInfo.version to the pin.",
   },
+  "mcp.pin-stale": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "MCP package pin lags the latest upstream release",
+    action:
+      "Treat the newer release as a bump candidate, never an automatic upgrade: vet the new version through the trust gate (`aih trust scan <owner>/<repo> --pin <sha>` with the required analyzers), bump the catalog pin in an aih release, then re-project each repo with `aih mcp --apply` and re-attest with `aih doctor --attest-mcp-pins`.",
+  },
+  "mcp.projection-stale": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: ".mcp.json pin differs from this aih build's catalog pin",
+    action:
+      "Run `aih mcp --apply` to re-project the repo's MCP config onto the current catalog pins — after an aih upgrade this re-projection is the second half of a pin refresh. If the local pin was changed deliberately, keep it and record why.",
+  },
   "cli.not-detected": {
     audience: "developer",
     failSeverity: "degraded",

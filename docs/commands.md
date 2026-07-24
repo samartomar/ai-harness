@@ -664,6 +664,17 @@ For OpenCode, those unsafe generated entries are written with `enabled:false` so
 retry them on startup until the operator fixes the env or URL. Under `--verify`, npm-backed MCP
 package pins are compared with the configured registry response so version-pin drift is visible.
 
+**codebase-memory-mcp graph UI — deliberately not surfaced.** Upstream codebase-memory-mcp also
+publishes an optional interactive graph-visualization UI variant alongside the headless server.
+aih does not install, launch, or link it, by decision rather than omission: the catalog wires the
+stdio server only, under hardened uvx flags (`--offline --no-python-downloads --no-env-file`), and
+every downstream control — the managed allowlist, pin attestation, and pin currency — is scoped to
+exactly that launch shape. A browser-serving UI binary is a different execution and egress surface
+(a listening port and a served web app rather than a stdio pipe), and it has not been vetted as
+part of the wired-tool pin. Operators who want the UI can run it out-of-band against the same
+indexes and should treat it as an unvetted convenience. Revisit this decision only together with a
+vetted pin bump that covers the UI variant's surface.
+
 ## aih sandbox
 
 Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUnavailable`).
@@ -703,6 +714,24 @@ the pin — a mismatch warns (`mcp.version-drift`), a match passes. The launch g
 reported as unattestable). Attestation proves what the resolved artifact self-reports at runtime;
 it does not prove provenance or integrity, and it executes the pinned artifact — which is why the
 live handshake is opt-in.
+
+The `mcp-pin-currency` row tracks how current those pins are. The catalog pins are compile-time
+constants, so picking up an upstream improvement lags twice by construction: the pin must be bumped
+in an aih release, and each repo must then re-project its `.mcp.json`. The row surfaces both
+halves. Offline, on every run, each exactly-pinned npx/uvx launch in `.mcp.json` is compared
+against the pin this aih build's catalog generates for the same server; a difference reports
+`mcp.projection-stale` and names the fix (`aih mcp --apply`) — after an aih upgrade, that
+re-projection is the second half of a pin refresh. `--check-pin-currency` opts in to the upstream
+half: doctor queries each pin's registry for its latest release (npm via `npm view`, PyPI via its
+JSON metadata endpoint over curl) — metadata only, nothing is downloaded or executed, but it is
+network egress from a read-only command, so it is opt-in. A pin whose registry publishes a newer
+release warns (`mcp.pin-stale`); a current pin set passes. A newer release is a bump **candidate**,
+never an instruction: the refresh path is (1) vet the new version through the trust gate
+(`aih trust scan <owner>/<repo> --pin <sha>`, which fails closed at enterprise posture unless the
+required analyzers — the pinned SkillSpector image and the Cisco skill-scanner — are available),
+(2) bump the catalog pin in an aih release, (3) re-project each repo with `aih mcp --apply` (at
+enterprise, also `aih policy project --apply` so the managed allowlist tracks the new launch
+shape), and (4) re-attest with `aih doctor --attest-mcp-pins`.
 
 In the canon markdown lint, `canon-ref-resolves` accepts a reference guarded by an explicit
 existence conditional on the same line ("Read `x.md` only if it exists"): the waiver applies only
