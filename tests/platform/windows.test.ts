@@ -33,6 +33,22 @@ describe("WindowsAdapter", () => {
     expect(await a.trustStoreCerts("Zscaler")).toHaveLength(0);
   });
 
+  it("enumerates every trusted root without a subject filter and deduplicates PEM", async () => {
+    let script = "";
+    const raw = "Q".repeat(80);
+    const a = adapter((argv) => {
+      if (argv[0] !== "pwsh") return undefined;
+      script = argv.at(-1) ?? "";
+      return { stdout: `${raw}\tCN=Example Root A\n${raw}\tCN=Duplicate Root A\n` };
+    });
+
+    const certs = await a.trustStoreRoots();
+
+    expect(certs).toHaveLength(1);
+    expect(script).toContain("Cert:\\CurrentUser\\Root, Cert:\\LocalMachine\\Root");
+    expect(script).not.toContain("Where-Object");
+  });
+
   it("persists env via setx DIRECTLY — no cmd wrapper that would re-parse the value", () => {
     const a = adapter(() => undefined);
     // A CA path under a legal `R&D` folder: `&`/`%`/`^` are valid path characters. Routing

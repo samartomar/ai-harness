@@ -6,6 +6,8 @@ type Handler = Parameters<typeof fakeRunner>[0];
 const mk = (handler: Handler, env: NodeJS.ProcessEnv = {}): DarwinAdapter =>
   new DarwinAdapter(fakeRunner(handler) as Runner, env);
 
+const FAKE_PEM = "-----BEGIN CERTIFICATE-----\nQQ==\n-----END CERTIFICATE-----\n";
+
 describe("DarwinAdapter trust store", () => {
   it("queries the per-user login keychain alongside the system keychains", async () => {
     const queried: string[] = [];
@@ -38,6 +40,24 @@ describe("DarwinAdapter trust store", () => {
     await a.trustStoreCerts("Corp");
     expect(queried.some((q) => q.includes("login.keychain-db"))).toBe(false);
     expect(queried.some((q) => q.includes("System.keychain"))).toBe(true);
+  });
+
+  it("enumerates all keychain roots without a subject filter and deduplicates PEM", async () => {
+    const calls: string[][] = [];
+    const a = mk(
+      (argv) => {
+        if (argv[0] !== "security") return undefined;
+        calls.push(argv);
+        return { stdout: FAKE_PEM };
+      },
+      { HOME: "/Users/example" },
+    );
+
+    const certs = await a.trustStoreRoots();
+
+    expect(certs).toHaveLength(1);
+    expect(calls).toHaveLength(3);
+    expect(calls.every((argv) => !argv.includes("-c"))).toBe(true);
   });
 });
 

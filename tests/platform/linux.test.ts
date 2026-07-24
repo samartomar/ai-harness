@@ -97,4 +97,20 @@ describe("LinuxAdapter", () => {
       rmSync(anchors, { recursive: true, force: true });
     }
   });
+
+  it("prefers a consolidated root bundle and deduplicates identical PEM blocks", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-root-bundle-"));
+    try {
+      const bundle = join(root, "ca-certificates.crt");
+      writeFileSync(bundle, `${FAKE_PEM}${FAKE_PEM}`);
+      const a = new LinuxAdapter(fakeRunner(() => undefined), {}, [], [bundle]);
+
+      const certs = await a.trustStoreRoots();
+
+      expect(certs).toHaveLength(1);
+      expect(certs[0]?.pem).toBe(FAKE_PEM);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
