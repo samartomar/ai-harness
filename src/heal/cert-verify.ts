@@ -247,9 +247,12 @@ async function planCertVerify(ctx: PlanContext, shared: HealShared): Promise<Act
         {
           unsetKeys: unselectedNodeTrustKeys(vars),
           sensitive: { path: true },
+          requiresPriorExecSuccess: true,
         },
       ),
-      ...nodeTrustPersistenceActions(ctx, vars),
+      ...nodeTrustPersistenceActions(ctx, vars).map((action) =>
+        action.kind === "write" ? { ...action, requiresPriorExecSuccess: true } : action,
+      ),
     );
   }
 

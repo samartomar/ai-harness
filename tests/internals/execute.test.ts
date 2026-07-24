@@ -1035,6 +1035,79 @@ describe("executePlan", () => {
     ]);
   });
 
+  it("does not commit dependent files when a prior exec fails", async () => {
+    const bundle = join(dir, "bundle.pem");
+    const dependent = join(dir, "dependent.plist");
+    const profile = join(dir, "profile");
+    const run = fakeRunner((argv) => ({ code: argv[1] === "fail" ? 1 : 0 }));
+
+    const result = await executePlan(
+      plan(
+        "t",
+        writeText(bundle, "certificate", "write bundle", { external: true }),
+        exec("lock bundle", ["node", "fail"]),
+        writeText(dependent, "trust reference", "persist trust file", {
+          external: true,
+          requiresPriorExecSuccess: true,
+        }),
+        envBlock(
+          profile,
+          "trust",
+          "posix",
+          [{ key: "NODE_EXTRA_CA_CERTS", value: bundle }],
+          "persist trust profile",
+          { requiresPriorExecSuccess: true },
+        ),
+        exec("persist runtime trust", ["node", "persist"], {
+          requiresPriorExecSuccess: true,
+        }),
+      ),
+      ctx({ apply: true, run }),
+    );
+
+    expect(existsSync(bundle)).toBe(true);
+    expect(existsSync(dependent)).toBe(false);
+    expect(existsSync(profile)).toBe(false);
+    expect(result.execs.at(-1)).toMatchObject({ describe: "persist runtime trust", ran: false });
+  });
+
+  it("commits dependent files before the first dependent exec runs", async () => {
+    const dependent = join(dir, "dependent.plist");
+    const profile = join(dir, "profile");
+    let persistenceSawFiles = false;
+    const run = fakeRunner((argv) => {
+      if (argv[1] === "persist") {
+        persistenceSawFiles = existsSync(dependent) && existsSync(profile);
+      }
+      return { code: 0 };
+    });
+
+    await executePlan(
+      plan(
+        "t",
+        exec("lock bundle", ["node", "lock"]),
+        writeText(dependent, "trust reference", "persist trust file", {
+          external: true,
+          requiresPriorExecSuccess: true,
+        }),
+        envBlock(
+          profile,
+          "trust",
+          "posix",
+          [{ key: "NODE_EXTRA_CA_CERTS", value: join(dir, "bundle.pem") }],
+          "persist trust profile",
+          { requiresPriorExecSuccess: true },
+        ),
+        exec("persist runtime trust", ["node", "persist"], {
+          requiresPriorExecSuccess: true,
+        }),
+      ),
+      ctx({ apply: true, run }),
+    );
+
+    expect(persistenceSawFiles).toBe(true);
+  });
+
   it("formats exec argv with quoting for runnable summaries", async () => {
     const result = await executePlan(
       plan("t", exec("inline script", ["node", "-e", "console.log('a b')"])),

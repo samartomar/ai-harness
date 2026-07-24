@@ -1,5 +1,13 @@
 import { X509Certificate } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -730,6 +738,52 @@ describe("heal — cert step", () => {
     expect(result.report?.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "cert: verify persisted Node trust", verdict: "pass" }),
+      ]),
+    );
+  });
+
+  it("does not persist extra-CA trust when bundle lockdown fails", async () => {
+    const root = freshTmp();
+    const ctx = makeCtx({
+      root,
+      platform: "darwin",
+      scope: "certs",
+      ca: "unset",
+      nodeRegistry: "fail",
+      nodePypi: "ok",
+      systemCa: "fail",
+      extraCa: "ok",
+      capturedChain: [LEAF_A_PEM],
+      trustRoots: [ROOT_A],
+      apply: true,
+    });
+    const calls: string[][] = [];
+    const base = ctx.run;
+    ctx.run = async (argv, opts) => {
+      calls.push(argv);
+      if (argv[0] === "chmod") return { code: 1, stdout: "", stderr: "permission denied" };
+      return base(argv, opts);
+    };
+
+    const p = await command.plan(ctx);
+    const bundle = trustBundleWrite(p.actions);
+    const profile = findEnvBlock(p.actions, "heal-node-trust");
+    const plists = p.actions.filter(
+      (action): action is Extract<Action, { kind: "write" }> =>
+        action.kind === "write" && action.path.endsWith(".plist"),
+    );
+    expect(bundle).toBeDefined();
+    expect(profile).toBeDefined();
+    expect(plists).toHaveLength(2);
+
+    const result = await executePlan(p, ctx);
+
+    expect(existsSync(profile?.path ?? "")).toBe(false);
+    expect(plists.every((action) => !existsSync(action.path))).toBe(true);
+    expect(calls.some((argv) => argv[0] === "/bin/launchctl")).toBe(false);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "cert: lock selected Node CA bundle", verdict: "fail" }),
       ]),
     );
   });

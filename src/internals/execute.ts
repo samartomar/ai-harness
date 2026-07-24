@@ -661,6 +661,7 @@ export async function executePlan(
   }
 
   const txn = new FsTransaction();
+  const deferredTxn = new FsTransaction();
   const sensitiveBackupTargets = new Set<string>();
   const writes: WriteSummary[] = [];
   const docs: PlanResult["docs"] = [];
@@ -714,7 +715,8 @@ export async function executePlan(
                 ? "merge"
                 : "overwrite";
         if (ctx.apply && effect !== "unchanged") {
-          txn.stage(absPath, contents, action.mode, action.expect);
+          const targetTxn = action.requiresPriorExecSuccess ? deferredTxn : txn;
+          targetTxn.stage(absPath, contents, action.mode, action.expect);
           if (action.sensitive?.path) sensitiveBackupTargets.add(absPath);
         }
         writes.push({
@@ -808,16 +810,27 @@ export async function executePlan(
   // each scope's managed block in order.
   const envByPath = new Map<
     string,
-    { display: string; blocks: EnvBlockAction[]; sensitive: boolean }
+    {
+      display: string;
+      blocks: EnvBlockAction[];
+      sensitive: boolean;
+      requiresPriorExecSuccess: boolean;
+    }
   >();
   for (const b of envBlockActions) {
     const abs = resolvePath(ctx, b.path);
-    const group = envByPath.get(abs) ?? { display: b.path, blocks: [], sensitive: false };
+    const group = envByPath.get(abs) ?? {
+      display: b.path,
+      blocks: [],
+      sensitive: false,
+      requiresPriorExecSuccess: false,
+    };
     group.blocks.push(b);
     group.sensitive ||= b.sensitive?.path === true;
+    group.requiresPriorExecSuccess ||= b.requiresPriorExecSuccess === true;
     envByPath.set(abs, group);
   }
-  for (const [absPath, { display, blocks, sensitive }] of envByPath) {
+  for (const [absPath, { display, blocks, sensitive, requiresPriorExecSuccess }] of envByPath) {
     const existing = readIfExists(absPath);
     let content = existing ?? "";
     for (const b of blocks) {
@@ -826,7 +839,8 @@ export async function executePlan(
     const effect: WriteSummary["effect"] =
       existing === undefined ? "create" : existing === content ? "unchanged" : "merge";
     if (ctx.apply && effect !== "unchanged") {
-      txn.stage(absPath, content);
+      const targetTxn = requiresPriorExecSuccess ? deferredTxn : txn;
+      targetTxn.stage(absPath, content);
       if (sensitive) sensitiveBackupTargets.add(absPath);
     }
     writes.push({
@@ -856,6 +870,18 @@ export async function executePlan(
     }
   }
 
+  let deferredCommitted = false;
+  const commitDeferredWrites = (): void => {
+    if (!ctx.apply || deferredCommitted) return;
+    const committed = deferredTxn.commit();
+    deferredCommitted = true;
+    backups.push(
+      ...committed.backups.map((backup) =>
+        isSensitiveBackup(backup, sensitiveBackupTargets) ? REDACTED_PATH : backup,
+      ),
+    );
+  };
+
   // Local mutating commands run only on apply, after files are in place.
   const execs: PlanResult["execs"] = [];
   const execFailureChecks: Check[] = [];
@@ -867,6 +893,7 @@ export async function executePlan(
         execs.push({ describe: a.describe, argv: collectedArgv(a), ran: false });
         continue;
       }
+      if (a.requiresPriorExecSuccess) commitDeferredWrites();
       if (a.expect !== undefined) {
         // Apply-time content pin: the command must consume the exact bytes the
         // plan preflighted. ONE read (no stat-then-read window), hashed the same
@@ -916,6 +943,7 @@ export async function executePlan(
       execs.push({ describe: a.describe, argv: collectedArgv(a), ran: false });
     }
   }
+  if (!priorExecFailed) commitDeferredWrites();
 
   let report: VerificationReport | undefined;
   let verification: VerificationPipelineRun | undefined;

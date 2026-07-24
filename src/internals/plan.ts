@@ -86,6 +86,8 @@ export interface WriteAction {
    * and the executor fails closed if their resolved path escapes the root.
    */
   external?: boolean;
+  /** Commit this file only after every earlier non-allowed exec has succeeded. */
+  requiresPriorExecSuccess?: boolean;
 }
 
 export interface DocAction {
@@ -180,6 +182,8 @@ export interface EnvBlockAction {
   unsetKeys?: string[];
   describe: string;
   sensitive?: ActionSensitivity;
+  /** Commit this profile block only after every earlier non-allowed exec has succeeded. */
+  requiresPriorExecSuccess?: boolean;
 }
 
 /**
@@ -402,6 +406,7 @@ export function writeText(
     once?: boolean;
     external?: boolean;
     sensitive?: ActionSensitivity;
+    requiresPriorExecSuccess?: boolean;
   } = {},
 ): WriteAction {
   return {
@@ -413,6 +418,7 @@ export function writeText(
     mode: opts.mode,
     once: opts.once,
     external: opts.external,
+    requiresPriorExecSuccess: opts.requiresPriorExecSuccess,
     ...(opts.sensitive === undefined ? {} : { sensitive: opts.sensitive }),
   };
 }
@@ -562,7 +568,11 @@ export function envBlock(
   shell: EnvShell,
   vars: EnvVar[],
   describe: string,
-  opts: { unsetKeys?: string[]; sensitive?: ActionSensitivity } = {},
+  opts: {
+    unsetKeys?: string[];
+    sensitive?: ActionSensitivity;
+    requiresPriorExecSuccess?: boolean;
+  } = {},
 ): EnvBlockAction {
   return {
     kind: "envblock",
@@ -573,6 +583,7 @@ export function envBlock(
     describe,
     ...(opts.unsetKeys === undefined ? {} : { unsetKeys: opts.unsetKeys }),
     ...(opts.sensitive === undefined ? {} : { sensitive: opts.sensitive }),
+    requiresPriorExecSuccess: opts.requiresPriorExecSuccess,
   };
 }
 
