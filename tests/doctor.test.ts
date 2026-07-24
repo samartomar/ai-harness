@@ -6,7 +6,7 @@ import { AIH_CONFIG_FILE } from "../src/config/marker.js";
 import { command } from "../src/doctor.js";
 import { executePlan } from "../src/internals/execute.js";
 import type { Action, PlanContext, ProbeAction } from "../src/internals/plan.js";
-import { fakeRunner } from "../src/internals/proc.js";
+import { fakeRunner, type Runner } from "../src/internals/proc.js";
 import { makeHostAdapter } from "../src/platform/detect.js";
 
 /** A ctx whose `which` probe reports the given binaries as present. */
@@ -1306,5 +1306,144 @@ describe("doctor — usage-capture hook health probes", () => {
     );
     expect(rec?.verdict).toBe("skip");
     expect(tool?.verdict).toBe("skip");
+  });
+});
+
+describe("doctor — MCP uvx pin attestation (issue #502)", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aih-doctor-uvx-attest-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function rooted(
+    options: Record<string, unknown> = {},
+    run: Runner = fakeRunner(() => ({ code: 1, spawnError: true })),
+  ): PlanContext {
+    return {
+      root: dir,
+      contextDir: "ai-coding",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: {},
+      options,
+    };
+  }
+
+  function writeMcp(args: string[], command = "uvx"): void {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({ mcpServers: { "code-review-graph": { type: "stdio", command, args } } }),
+    );
+  }
+
+  /** A fake pinned uvx server whose MCP initialize response self-reports `version`. */
+  function uvxServerRunner(version: string): {
+    run: Runner;
+    seen: { input?: string; argv?: string[] };
+  } {
+    const seen: { input?: string; argv?: string[] } = {};
+    const run = fakeRunner((argv, opts) => {
+      if (argv[0] === "uvx") {
+        seen.argv = argv;
+        seen.input = opts?.input;
+        return {
+          code: 0,
+          stdout: `${JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            result: {
+              protocolVersion: "2025-06-18",
+              capabilities: {},
+              serverInfo: { name: "code-review-graph", version },
+            },
+          })}\n`,
+        };
+      }
+      return { code: 1, spawnError: true };
+    });
+    return { run, seen };
+  }
+
+  it("declares the --attest-mcp-pins opt-in flag", () => {
+    expect(command.options?.some((o) => o.flags === "--attest-mcp-pins")).toBe(true);
+  });
+
+  it("always renders an attestation row: pinned-but-unattested is visible, never silent", async () => {
+    writeMcp(["code-review-graph@2.3.6", "serve"]);
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP uvx pin attestation");
+    expect(probe).toBeDefined();
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.pin-unattested");
+    expect(res?.detail).toContain("code-review-graph@2.3.6");
+    expect(res?.detail).toContain("--attest-mcp-pins");
+  });
+
+  it("warns (mcp.version-drift) when the launched server self-reports a version off the pin", async () => {
+    writeMcp(["code-review-graph@2.3.6", "serve"]);
+    const { run, seen } = uvxServerRunner("2.3.4");
+    const c = rooted({ attestMcpPins: true }, run);
+    const probe = findProbe((await command.plan(c)).actions, "MCP uvx pin attestation");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.version-drift");
+    expect(res?.detail).toContain("2.3.6");
+    expect(res?.detail).toContain("2.3.4");
+    // The probe launched the CONFIGURED pinned command with an MCP initialize handshake.
+    expect(seen.argv).toEqual(["uvx", "code-review-graph@2.3.6", "serve"]);
+    expect(seen.input).toContain('"initialize"');
+  });
+
+  it("passes when serverInfo.version matches the honored pin", async () => {
+    writeMcp(["code-review-graph@2.3.6", "serve"]);
+    const { run } = uvxServerRunner("2.3.6");
+    const c = rooted({ attestMcpPins: true }, run);
+    const probe = findProbe((await command.plan(c)).actions, "MCP uvx pin attestation");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("attested");
+    expect(res?.detail).toContain("code-review-graph@2.3.6");
+  });
+
+  it("reports an honest unattested state when the pinned server never answers initialize", async () => {
+    writeMcp(["code-review-graph@2.3.6", "serve"]);
+    const run = fakeRunner((argv) =>
+      argv[0] === "uvx"
+        ? { code: 1, stderr: "boom", spawnError: true }
+        : { code: 1, spawnError: true },
+    );
+    const c = rooted({ attestMcpPins: true }, run);
+    const probe = findProbe((await command.plan(c)).actions, "MCP uvx pin attestation");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.pin-unattested");
+    expect(res?.detail).toContain("could not attest");
+  });
+
+  it("an unpinned uvx launcher is surfaced as unattestable (never silently green)", async () => {
+    writeMcp(["code-review-graph", "serve"]);
+    const c = rooted({ attestMcpPins: true });
+    const probe = findProbe((await command.plan(c)).actions, "MCP uvx pin attestation");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.pin-unattested");
+    expect(res?.detail).toContain("exact");
+    expect(res?.detail).toContain("code-review-graph");
+  });
+
+  it("skips quietly (uncoded) when no uvx MCP servers are configured", async () => {
+    writeMcp(["server-foo@1.2.3"], "npx");
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP uvx pin attestation");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBeUndefined();
   });
 });

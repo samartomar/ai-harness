@@ -279,6 +279,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Review the named MCP package pin and the configured package registry/cache. Update the generated pin only if the served version is intentionally approved; otherwise fix the registry/cache alias before relying on the MCP server.",
   },
+  "mcp.pin-unattested": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "MCP package pin not attested against the resolved artifact",
+    action:
+      "Pin every uvx MCP launcher exactly (pkg==x.y.z), then run `aih doctor --attest-mcp-pins` to launch each pinned server once and compare its self-reported serverInfo.version to the pin.",
+  },
   "cli.not-detected": {
     audience: "developer",
     failSeverity: "degraded",

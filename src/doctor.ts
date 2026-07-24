@@ -30,6 +30,7 @@ import {
 } from "./internals/plan.js";
 import { canonLintCheck } from "./lint/run.js";
 import { mcpManagedAllowlistCheck } from "./mcp/allowlist.js";
+import { mcpUvxPinAttestationProbe } from "./mcp/attest.js";
 import { orgPolicyDriftProbes, orgPolicyIntegrityProbes } from "./org-policy/drift.js";
 import { resolveTargetSet } from "./report/cli-coverage.js";
 import { loadabilityForWithDryRun, loadReason } from "./report/cli-loadability.js";
@@ -71,6 +72,11 @@ export const command: CommandSpec = {
     {
       flags: "--sarif <file>",
       description: "write the health report as SARIF 2.1.0 for GitHub code-scanning (`-` → stdout)",
+    },
+    {
+      flags: "--attest-mcp-pins",
+      description:
+        "launch each exactly-pinned uvx MCP server once (MCP initialize handshake) and compare its self-reported serverInfo.version to the pin — executes the pinned artifact, so it is opt-in",
     },
   ],
   plan: (ctx) => {
@@ -279,6 +285,10 @@ export const command: CommandSpec = {
       probe("large-repo graph safety", () => scaleSafetyCheck(ctx)),
       probe("VDI compatibility matrix", () => vdiCompatibilityCheck(ctx)),
       probe("MCP managed allowlist", () => mcpManagedAllowlistCheck(ctx)),
+      // Resolved-artifact attestation for uvx pins (issue #502): the allowlist
+      // proves config SHAPE; this row proves (or honestly refuses to claim) what
+      // the pinned artifact self-reports at runtime. Live launch is opt-in.
+      probe("MCP uvx pin attestation", (probeCtx) => mcpUvxPinAttestationProbe(probeCtx)),
       structuredChecksProbe("trust-lock local drift", (probeCtx) =>
         trustLockLocalDriftChecks(probeCtx),
       ),

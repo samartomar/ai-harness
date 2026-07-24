@@ -418,6 +418,7 @@ describe("Check.code — invariants", () => {
       "mcp.hardcoded-secret": true,
       "mcp.allowlist-drift": true,
       "mcp.version-drift": true,
+      "mcp.pin-unattested": true,
       "cli.not-detected": true,
       "cli.config-only": true,
       "cli.bootloader-missing": true,

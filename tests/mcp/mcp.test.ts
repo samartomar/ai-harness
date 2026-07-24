@@ -11,7 +11,7 @@ import { fakeRunner } from "../../src/internals/proc.js";
 import { jsonFile } from "../../src/internals/render.js";
 import { mcpPackagePinDriftProbe } from "../../src/mcp/hygiene.js";
 import { command, mcpApproveCommand } from "../../src/mcp/index.js";
-import { mcpResolverPinState } from "../../src/mcp/pins.js";
+import { mcpResolverPinState, uvxPrimaryPin } from "../../src/mcp/pins.js";
 import { mcpApprovalSubject } from "../../src/mcp/policy.js";
 import { existingMcpTomlNames, removeMcpTomlServers } from "../../src/mcp/render.js";
 import type { McpServer } from "../../src/mcp/servers.js";
@@ -359,6 +359,35 @@ describe("aih mcp — generated mcpServers blueprint", () => {
       mcpResolverPinState("uvx", ["tool==1.2.3"], { NODE_OPTIONS: "--require ./evil.js" }),
     ).toBe("unpinned");
     expect(mcpResolverPinState("npx", ["--", "@scope/tool@1.2.3"])).toBe("pinned");
+  });
+
+  it("uvxPrimaryPin extracts the exact primary pin only from a fully pinned launch", () => {
+    expect(uvxPrimaryPin(["code-review-graph@2.3.6", "serve"])).toEqual({
+      packageName: "code-review-graph",
+      version: "2.3.6",
+      spec: "code-review-graph@2.3.6",
+    });
+    expect(uvxPrimaryPin(["mcp-atlassian==1.2.3"])).toEqual({
+      packageName: "mcp-atlassian",
+      version: "1.2.3",
+      spec: "mcp-atlassian==1.2.3",
+    });
+    expect(uvxPrimaryPin(["--", "tool==9.0.1"])).toEqual({
+      packageName: "tool",
+      version: "9.0.1",
+      spec: "tool==9.0.1",
+    });
+    // Unpinned / source-changing launches carry no attestable pin evidence.
+    expect(uvxPrimaryPin(["code-review-graph", "serve"])).toBeUndefined();
+    expect(uvxPrimaryPin(["--from", "tool==1.2.3", "sh"])).toBeUndefined();
+    expect(uvxPrimaryPin(["--with", "extra", "tool==1.2.3"])).toBeUndefined();
+    expect(uvxPrimaryPin([])).toBeUndefined();
+    // A pinned launch with pinned --with extras still attests by its PRIMARY spec.
+    expect(uvxPrimaryPin(["--with", "extra==2.0.0", "tool==1.2.3"])).toEqual({
+      packageName: "tool",
+      version: "1.2.3",
+      spec: "tool==1.2.3",
+    });
   });
 
   it("derives each generated package-resolver supply-chain label from its launch pin", async () => {

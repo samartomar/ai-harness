@@ -35,6 +35,7 @@ export type CheckCode =
   | "mcp.hardcoded-secret"
   | "mcp.allowlist-drift"
   | "mcp.version-drift"
+  | "mcp.pin-unattested"
   // CLI bootloaders / canon
   | "cli.not-detected"
   | "cli.config-only"
