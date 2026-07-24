@@ -14,6 +14,18 @@ describe("CLI registry", () => {
     expect(Object.keys(CLI_REGISTRY).length).toBe(SUPPORTED_CLIS.length);
   });
 
+  it("keeps reviewed runtime TLS origins in the CLI registry", () => {
+    const origins = entry("kiro").tlsOrigins ?? [];
+    expect(origins.length).toBeGreaterThan(0);
+    for (const origin of origins) {
+      const url = new URL(origin);
+      expect(url.protocol).toBe("https:");
+      expect(url.username).toBe("");
+      expect(url.password).toBe("");
+      expect(url.pathname).toBe("/");
+    }
+  });
+
   it("exposes the documented support vocabulary, including fallback", () => {
     expect(SUPPORT_LEVELS).toEqual(["native", "fallback", "absent"]);
   });

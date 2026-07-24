@@ -21,6 +21,8 @@ interface Scenario {
   platform?: Platform;
   registry?: State;
   pypi?: State;
+  nodeRegistry?: State;
+  nodePypi?: State;
   mcpNodeTls?: State;
   mcpPythonTls?: State;
   mcpNodeCaBundle?: State;
@@ -73,7 +75,13 @@ function runnerFor(sc: Scenario) {
     }
     // node/npm/npx run directly on POSIX, or via `cmd /c <tool> --version` on Windows.
     const tool = cmd === "cmd" ? (argv[2] ?? "") : cmd;
-    if (tool === "node" && argv.includes("-e")) return tlsResult(sc.mcpNodeTls ?? "ok");
+    if (tool === "node" && argv.includes("-e")) {
+      const origin = argv.at(-1) ?? "";
+      const host = origin.startsWith("https://") ? new URL(origin).hostname : "";
+      if (host === "registry.npmjs.org") return tlsResult(sc.nodeRegistry ?? "ok");
+      if (host === "pypi.org") return tlsResult(sc.nodePypi ?? "ok");
+      return tlsResult(sc.mcpNodeTls ?? "ok");
+    }
     if ((tool === "python3" || tool === "py") && argv.includes("-c"))
       return tlsResult(sc.mcpPythonTls ?? "ok");
     if (cmd === "openssl" && argv.includes("s_client")) {
@@ -290,6 +298,21 @@ describe("heal — cert step", () => {
     );
     expect(findCheck(p.actions, "NODE_EXTRA_CA_CERTS")?.verdict).toBe("skip");
     expect(findDigest(p.actions, "re-propagate corporate trust")).toBeUndefined();
+  });
+
+  it("fails when OS TLS passes but Node TLS fails", async () => {
+    const p = await command.plan(
+      makeCtx({
+        root: freshTmp(),
+        ca: "unset",
+        registry: "ok",
+        pypi: "ok",
+        nodeRegistry: "fail",
+        nodePypi: "fail",
+      }),
+    );
+    expect(findCheck(p.actions, "Node TLS registry.npmjs.org")?.verdict).toBe("fail");
+    expect(findCheck(p.actions, "NODE_EXTRA_CA_CERTS")?.verdict).toBe("fail");
   });
 
   it("env set but file missing fails", async () => {
