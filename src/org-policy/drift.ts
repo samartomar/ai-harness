@@ -15,6 +15,11 @@ import {
 } from "../internals/plan.js";
 import { ensureTrailingNewline } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
+import {
+  type ManagedAllowlistGenerationDelta,
+  managedAllowlistGenerationDelta,
+  managedServerDisplayName,
+} from "../mcp/allowlist.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import { orgPolicyProjectionActions } from "./project.js";
 import { OrgPolicyError, orgPolicyPath, readOrgPolicy } from "./schema.js";
@@ -103,6 +108,123 @@ function removedProjectionParts(
     .map((key) => `${key} should be absent`);
 }
 
+const MANAGED_MCP_PROJECTION_KEYS = ["allowManagedMcpServersOnly", "allowedMcpServers"] as const;
+
+function serverCommands(value: unknown): string[][] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: string[][] = [];
+  for (const entry of value) {
+    if (!isPlainObject(entry)) return undefined;
+    const command = (entry as { serverCommand?: unknown }).serverCommand;
+    if (
+      !Array.isArray(command) ||
+      !command.every((arg): arg is string => typeof arg === "string")
+    ) {
+      return undefined;
+    }
+    out.push([...command]);
+  }
+  return out;
+}
+
+/**
+ * True when some value BOTH sides carry differs (merge semantics: a key or
+ * array item the file simply lacks is additive, not a mismatch). A mismatch is
+ * a local edit no generation history explains, so attribution must refuse.
+ */
+function projectionValueMismatch(actual: unknown, expected: unknown): boolean {
+  if (isPlainObject(expected)) {
+    if (!isPlainObject(actual)) return true;
+    return Object.entries(expected).some(
+      ([key, value]) => key in actual && projectionValueMismatch(actual[key], value),
+    );
+  }
+  if (Array.isArray(expected)) return !Array.isArray(actual);
+  return !sameJson(actual, expected);
+}
+
+interface ManagedSettingsGenerationDelta {
+  allowlist: ManagedAllowlistGenerationDelta;
+  missingParts: string[];
+}
+
+/**
+ * #501 — attribute a managed-settings difference to aih's own generation
+ * history: the on-disk managed MCP allowlist must consist entirely of current
+ * or recognized previous-generation launch shapes (the positive fingerprint),
+ * and every other difference must be purely additive (projection keys a newer
+ * aih generates that the older generation never wrote). Any value both sides
+ * carry that differs is a local edit and attribution refuses, keeping the
+ * ordinary drift verdict.
+ */
+function managedSettingsGenerationDelta(
+  actual: unknown,
+  action: WriteAction,
+): ManagedSettingsGenerationDelta | undefined {
+  if (action.merge !== true || action.removeJsonTopLevelKeys !== undefined) return undefined;
+  if (!isPlainObject(action.json) || !isPlainObject(actual)) return undefined;
+  const replaceKeys = new Set(action.replaceJsonKeys ?? []);
+  if (!MANAGED_MCP_PROJECTION_KEYS.every((key) => replaceKeys.has(key))) return undefined;
+  const expected = action.json;
+  if (actual.allowManagedMcpServersOnly !== expected.allowManagedMcpServersOnly) return undefined;
+  const actualCommands = serverCommands(actual.allowedMcpServers);
+  const expectedCommands = serverCommands(expected.allowedMcpServers);
+  if (actualCommands === undefined || expectedCommands === undefined) return undefined;
+  const allowlist = managedAllowlistGenerationDelta(actualCommands, expectedCommands);
+  if (allowlist === undefined) return undefined;
+  const withoutManagedKeys = (value: Record<string, unknown>): Record<string, unknown> =>
+    Object.fromEntries(
+      Object.entries(value).filter(
+        ([key]) => !(MANAGED_MCP_PROJECTION_KEYS as readonly string[]).includes(key),
+      ),
+    );
+  const expectedRest = withoutManagedKeys(expected);
+  const actualRest = withoutManagedKeys(actual);
+  if (projectionValueMismatch(actualRest, expectedRest)) return undefined;
+  return { allowlist, missingParts: missingProjectionParts(actualRest, expectedRest) };
+}
+
+function generationDeltaCheck(
+  action: WriteAction,
+  generation: ManagedSettingsGenerationDelta,
+  posture: Posture,
+): Check {
+  const count = generation.allowlist.previous.length;
+  const names = [
+    ...new Set(
+      generation.allowlist.previous.map((pair) => managedServerDisplayName(pair.expected)),
+    ),
+  ];
+  const parts = [
+    `${count} managed MCP allowlist ${count === 1 ? "entry" : "entries"} in an earlier generated launch shape (${names.join(", ")})`,
+  ];
+  if (generation.allowlist.added.length > 0) {
+    parts.push(
+      `${generation.allowlist.added.length} newly generated ${generation.allowlist.added.length === 1 ? "entry" : "entries"} not yet present`,
+    );
+  }
+  if (generation.missingParts.length > 0) {
+    const shown = generation.missingParts.slice(0, 4).join("; ");
+    const more =
+      generation.missingParts.length > 4 ? `; +${generation.missingParts.length - 4} more` : "";
+    parts.push(`newer projection parts not yet present: ${shown}${more}`);
+  }
+  const check: Check = {
+    name: `org-policy generation delta: ${action.path}`,
+    verdict: "fail",
+    detail:
+      `generation delta in ${action.path}: content matches an earlier aih generation's output, ` +
+      `not a local edit (${parts.join("; ")}); a newer aih changed its generated projection — ` +
+      "run `aih policy project --apply` to re-project",
+    code: "org-policy.generation-delta",
+    location: { uri: action.path },
+    fingerprint: `org-policy-generation-delta:${action.path}`,
+  };
+  // Same severity as the managed-key drift path this refines: a hard fail at
+  // team/enterprise (the finding is never suppressed), warning-only at vibe.
+  return posture === "vibe" ? postureGradeCheck(check, "verify", posture) : check;
+}
+
 function driftCheck(action: WriteAction, posture: Posture): (ctx: PlanContext) => Check {
   return (ctx) => {
     const abs = resolve(ctx.root, action.path);
@@ -148,6 +270,12 @@ function driftCheck(action: WriteAction, posture: Posture): (ctx: PlanContext) =
           ...exactDiffs,
           ...removedProjectionParts(actual, action.removeJsonTopLevelKeys),
         ];
+        if (diffs.length > 0) {
+          // #501 — before reporting drift, check whether the whole difference is
+          // explained by aih's own generated output evolving between versions.
+          const generation = managedSettingsGenerationDelta(actual, action);
+          if (generation !== undefined) return generationDeltaCheck(action, generation, posture);
+        }
         if (exactDiffs.length > 0 && posture !== "vibe") {
           return {
             name: `org-policy drift: ${action.path}`,

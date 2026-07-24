@@ -142,6 +142,49 @@ describe("policy project", () => {
       /policy project requires a committed aih-org-policy\.json/,
     );
   });
+
+  it("migrates an older-generation managed allowlist and projection under --apply (#501)", async () => {
+    // Fixture: managed artifacts written by a pre-2.9 aih — a bare (unhardened,
+    // older-pinned) uvx allowlist entry and none of the newer projection keys.
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(
+      join(dir, ".claude", "managed-settings.json"),
+      JSON.stringify({
+        allowManagedMcpServersOnly: true,
+        allowedMcpServers: [{ serverCommand: ["uvx", "code-review-graph@2.1.0", "serve"] }],
+      }),
+    );
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify(
+        policy({ mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true } }),
+      ),
+    );
+    const applied: PlanContext = { ...ctx(), apply: true, targets: ["claude"] };
+
+    await executePlan(await policyProjectCommand.plan(applied), applied);
+
+    const managed = JSON.parse(
+      readFileSync(join(dir, ".claude", "managed-settings.json"), "utf8"),
+    ) as {
+      organizationPolicy?: unknown;
+      sandbox?: unknown;
+      allowedMcpServers?: { serverCommand: string[] }[];
+    };
+    expect(managed.organizationPolicy).toBeDefined();
+    expect(managed.sandbox).toBeDefined();
+    const commands = (managed.allowedMcpServers ?? []).map((entry) => entry.serverCommand);
+    expect(commands).toEqual([
+      expect.arrayContaining(["uvx", "--offline", "--no-python-downloads", "--no-env-file"]),
+    ]);
+    expect(JSON.stringify(commands)).not.toContain("code-review-graph@2.1.0");
+
+    const healed = ctx();
+    const check = await orgPolicyDriftProbes(healed)
+      .find((p) => p.describe.includes(".claude/managed-settings.json"))
+      ?.run(healed);
+    expect(check?.verdict).toBe("pass");
+  });
 });
 
 describe("OrgPolicySchema", () => {
@@ -816,6 +859,93 @@ describe("orgPolicyDriftProbes", () => {
       "org-policy drift: managed-settings.json.example",
     );
     expect(probes.map((p) => p.describe)).toContain("org-policy drift: managed-mcp.json.example");
+  });
+
+  // #501 — an in-place upgrade leaves managed artifacts aih itself generated
+  // under an older shape. That is a generation delta (aih's generated output
+  // evolved), not user drift, and the message must name the re-projection command.
+  function writeOldGenerationFixture(): void {
+    writePolicy(policy({ mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true } }));
+    writeManagedSettings({
+      allowManagedMcpServersOnly: true,
+      // bare pre-hardening launch shape with an older pin; the newer
+      // organizationPolicy/sandbox projection keys are absent entirely.
+      allowedMcpServers: [{ serverCommand: ["uvx", "code-review-graph@2.1.0", "serve"] }],
+    });
+  }
+
+  it("reports a generation delta naming the re-projection command, not user drift (#501)", async () => {
+    writeOldGenerationFixture();
+    const c = ctx();
+
+    const check = await orgPolicyDriftProbes(c)
+      .find((p) => p.describe.includes(".claude/managed-settings.json"))
+      ?.run(c);
+
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("org-policy.generation-delta");
+    expect(check?.detail).toContain("generation delta");
+    expect(check?.detail).toContain("aih policy project --apply");
+    expect(check?.detail).not.toMatch(/drift/i);
+    expect(check?.name).not.toMatch(/drift/i);
+    expect(check?.location?.uri).toBe(".claude/managed-settings.json");
+  });
+
+  it("keeps the generation delta warning-only in vibe posture without drift wording", async () => {
+    writeOldGenerationFixture();
+    const c: PlanContext = { ...ctx(), posture: "vibe", postureSource: "flag" };
+
+    const check = await orgPolicyDriftProbes(c)
+      .find((p) => p.describe.includes(".claude/managed-settings.json"))
+      ?.run(c);
+
+    expect(check?.verdict).toBe("pass");
+    expect(check?.detail).toContain("warning-only (vibe posture)");
+    expect(check?.detail).toContain("aih policy project --apply");
+    expect(check?.detail).not.toMatch(/drift/i);
+  });
+
+  it("fails closed as drift when an allowlist entry matches no aih generation", async () => {
+    writePolicy(policy({ mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true } }));
+    writeManagedSettings({
+      allowManagedMcpServersOnly: true,
+      allowedMcpServers: [{ serverCommand: ["uvx", "operator-tool", "serve"] }],
+    });
+    const c = ctx();
+
+    const check = await orgPolicyDriftProbes(c)
+      .find((p) => p.describe.includes(".claude/managed-settings.json"))
+      ?.run(c);
+
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("org-policy.drift");
+    expect(check?.detail).toContain("org-policy drift");
+  });
+
+  it("fails closed as drift when a generation-shaped delta is mixed with a real edit", async () => {
+    const value = policy({
+      mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+    });
+    const parsed = parseOrgPolicy(value);
+    writePolicy(value);
+    const c = ctx();
+    const projected = writes(orgPolicyProjectionActions(c, parsed)).find(
+      (w) => w.path === ".claude/managed-settings.json",
+    );
+    const expected = projected?.json as { organizationPolicy?: Record<string, unknown> };
+    writeManagedSettings({
+      allowManagedMcpServersOnly: true,
+      allowedMcpServers: [{ serverCommand: ["uvx", "code-review-graph@2.1.0", "serve"] }],
+      // a value both sides carry but with different content: a real local edit
+      organizationPolicy: { ...expected.organizationPolicy, minimumPosture: "vibe" },
+    });
+
+    const check = await orgPolicyDriftProbes(c)
+      .find((p) => p.describe.includes(".claude/managed-settings.json"))
+      ?.run(c);
+
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("org-policy.drift");
   });
 });
 

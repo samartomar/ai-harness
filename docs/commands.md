@@ -415,6 +415,14 @@ projection. When managed-only MCP is active, it records existing AIH ownership p
 configuration write when `AIH_ORG_POLICY` selects an override; previewing without `--apply` remains
 inspectable, but mutation requires the committed default policy source.
 
+`project --apply` is also the upgrade migration path: it replaces managed MCP allowlist entries an
+earlier aih generation wrote (for example a pre-hardening bare `uvx <pkg>` launch shape or an older
+version pin) and adds projection keys a newer generation introduced. When `aih doctor` can
+positively attribute the whole on-disk difference to that generation history, it reports a
+**generation delta** (`org-policy.generation-delta`, `mcp.allowlist-generation-delta`) naming
+`aih policy project --apply` inline rather than implying a local edit; any unattributable
+difference still fails closed under the ordinary drift codes.
+
 `validate` is the **read-only CI gate** over the active local org policy source: the default
 committed `aih-org-policy.json`, or an explicit `AIH_ORG_POLICY` override. The policy source is
 JSON only; JavaScript/module policy files are not executed and fail as `org-policy.invalid` with
