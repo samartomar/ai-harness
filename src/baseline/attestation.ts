@@ -21,7 +21,7 @@ import { spanningMcp } from "../workspace/templates.js";
 
 type SurfaceKind = "mcp" | "marketplace";
 
-interface CapabilitySurface {
+export interface CapabilitySurface {
   kind: SurfaceKind;
   id: string;
   label: string;
@@ -448,7 +448,16 @@ function parseMarketplaceSurfaces(root: string): { surfaces: CapabilitySurface[]
   };
 }
 
-function collectSurfaces(ctx: PlanContext): { surfaces: CapabilitySurface[]; error?: Check } {
+/**
+ * The observed external capability surfaces of a repo — the exact lens the
+ * enterprise baseline attestation grades. Exported so `aih policy init` can
+ * seed a starter registry from the SAME collection (declaring precisely what
+ * attestation would inspect), instead of re-deriving a second, drift-prone view.
+ */
+export function collectCapabilitySurfaces(ctx: PlanContext): {
+  surfaces: CapabilitySurface[];
+  error?: Check;
+} {
   const mcp = parseMcpSurfaces(ctx);
   if (mcp.error) return mcp;
   const marketplace = parseMarketplaceSurfaces(ctx.root);
@@ -475,7 +484,7 @@ function isDeclared(surface: CapabilitySurface, policy: OrgPolicy): boolean {
   });
 }
 
-function surfaceSummary(surface: CapabilitySurface): string {
+export function surfaceSummary(surface: CapabilitySurface): string {
   const source = surface.sourceUri ? ` @ ${surface.sourceUri}` : "";
   return `${surface.label}${source} (${surface.metadata})`;
 }
@@ -490,7 +499,7 @@ export function enterpriseBaselineAttestationCheck(ctx: PlanContext): Check {
     };
   }
 
-  const collected = collectSurfaces(ctx);
+  const collected = collectCapabilitySurfaces(ctx);
   if (collected.error) return collected.error;
   if (collected.surfaces.length === 0) {
     return {

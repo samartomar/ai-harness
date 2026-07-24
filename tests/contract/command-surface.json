@@ -1882,9 +1882,68 @@
       "options": [],
       "commands": [
         {
+          "name": "init",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "root",
+              "required": false
+            }
+          ],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
           "name": "project",
           "hasDescription": true,
-          "arguments": [],
+          "arguments": [
+            {
+              "name": "root",
+              "required": false
+            }
+          ],
           "options": [
             {
               "flags": "--all-tools"
@@ -1933,7 +1992,12 @@
         {
           "name": "validate",
           "hasDescription": true,
-          "arguments": [],
+          "arguments": [
+            {
+              "name": "root",
+              "required": false
+            }
+          ],
           "options": [
             {
               "flags": "--bundle <path>"
@@ -1964,7 +2028,12 @@
         {
           "name": "verify",
           "hasDescription": true,
-          "arguments": [],
+          "arguments": [
+            {
+              "name": "root",
+              "required": false
+            }
+          ],
           "options": [
             {
               "flags": "--against <sha256|bundle>"
