@@ -18,7 +18,7 @@ import { acceptChanged } from "../../src/internals/scan-allowlist.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/secrets/index.js";
 import { SECRET_RULE } from "../../src/secrets/probes.js";
-import { scanConfigSecrets, scanSecrets } from "../../src/secrets/scan.js";
+import { scanConfigSecrets, scanExternalConfigSecrets, scanSecrets } from "../../src/secrets/scan.js";
 
 let dir: string;
 beforeEach(() => {
@@ -221,6 +221,79 @@ describe("scanConfigSecrets", () => {
     expect(hits).toHaveLength(1);
     expect(hits[0]?.key).toBe("API_KEY");
     expect(JSON.stringify(hits)).not.toContain("abcd1234efgh5678");
+  });
+
+  it("does NOT flag path-designating keys holding path-shaped values", () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          gh: {
+            env: {
+              GITHUB_TOKEN_FILE: "/run/secrets/github-token",
+              AWS_ACCESS_KEY_PATH: "C:\\Users\\svc\\aws\\access-key",
+              CREDENTIAL_DIR: "\\\\fileserver\\vault\\creds",
+            },
+          },
+        },
+      }),
+    );
+    expect(scanConfigSecrets(dir)).toEqual([]);
+  });
+
+  it("still flags a secret-shaped value under a path-designating key", () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: { db: { env: { API_KEY_PATH: "hunter2-hunter2-hunter2" } } },
+      }),
+    );
+    const hits = scanConfigSecrets(dir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.key).toBe("API_KEY_PATH");
+  });
+
+  it("keeps flagging PATH_TOKEN — path words must be end-anchored", () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: { relay: { env: { PATH_TOKEN: "/run/secrets/relay-token" } } },
+      }),
+    );
+    const hits = scanConfigSecrets(dir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.key).toBe("PATH_TOKEN");
+  });
+
+  it("keeps flagging an interior-slash value under a path key — only a LEADING path shape suppresses", () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: { db: { env: { API_KEY_PATH: "Zk8/qW3+hunter2hunter2==" } } },
+      }),
+    );
+    const hits = scanConfigSecrets(dir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.key).toBe("API_KEY_PATH");
+  });
+
+  it("does NOT flag path-valued path keys in an external TOML config (raw fallback)", () => {
+    const abs = join(dir, "config.toml");
+    writeFileSync(
+      abs,
+      'NODE_REPL_NODE_PATH = "C:\\Program Files\\nodejs\\node.exe"\n' +
+        'NODE_REPL_TRUSTED_CODE_PATHS = "C:\\dev\\trusted"\n' +
+        'CODEX_CLI_PATH = "/usr/local/bin/codex"\n',
+    );
+    expect(scanExternalConfigSecrets([{ file: "~/.codex/config.toml", absPath: abs }])).toEqual([]);
+  });
+
+  it("still flags a secret-shaped value under a path key in the raw fallback", () => {
+    const abs = join(dir, "config.toml");
+    writeFileSync(abs, 'API_KEY_PATH = "hunter2-hunter2-hunter2"\n');
+    const hits = scanExternalConfigSecrets([{ file: "~/.codex/config.toml", absPath: abs }]);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.key).toBe("API_KEY_PATH");
   });
 
   it("does not follow symlinked MCP config paths outside the repo", () => {
