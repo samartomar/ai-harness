@@ -893,7 +893,6 @@ export async function executePlan(
         execs.push({ describe: a.describe, argv: collectedArgv(a), ran: false });
         continue;
       }
-      if (a.requiresPriorExecSuccess) commitDeferredWrites();
       if (a.expect !== undefined) {
         // Apply-time content pin: the command must consume the exact bytes the
         // plan preflighted. ONE read (no stat-then-read window), hashed the same

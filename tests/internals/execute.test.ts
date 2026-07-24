@@ -1071,7 +1071,7 @@ describe("executePlan", () => {
     expect(result.execs.at(-1)).toMatchObject({ describe: "persist runtime trust", ran: false });
   });
 
-  it("commits dependent files before the first dependent exec runs", async () => {
+  it("commits dependent files only after dependent execs succeed", async () => {
     const dependent = join(dir, "dependent.plist");
     const profile = join(dir, "profile");
     let persistenceSawFiles = false;
@@ -1105,7 +1105,9 @@ describe("executePlan", () => {
       ctx({ apply: true, run }),
     );
 
-    expect(persistenceSawFiles).toBe(true);
+    expect(persistenceSawFiles).toBe(false);
+    expect(existsSync(dependent)).toBe(true);
+    expect(existsSync(profile)).toBe(true);
   });
 
   it("formats exec argv with quoting for runnable summaries", async () => {

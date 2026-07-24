@@ -86,7 +86,7 @@ export interface WriteAction {
    * and the executor fails closed if their resolved path escapes the root.
    */
   external?: boolean;
-  /** Commit this file only after every earlier non-allowed exec has succeeded. */
+  /** Commit this file only after every non-allowed exec in the plan has succeeded. */
   requiresPriorExecSuccess?: boolean;
 }
 
@@ -182,7 +182,7 @@ export interface EnvBlockAction {
   unsetKeys?: string[];
   describe: string;
   sensitive?: ActionSensitivity;
-  /** Commit this profile block only after every earlier non-allowed exec has succeeded. */
+  /** Commit this profile block only after every non-allowed exec in the plan has succeeded. */
   requiresPriorExecSuccess?: boolean;
 }
 

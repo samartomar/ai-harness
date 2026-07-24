@@ -528,6 +528,52 @@ describe("heal — cert step", () => {
     );
   });
 
+  it("does not commit system-CA persistence when GUI environment updates fail", async () => {
+    for (const platform of ["darwin", "windows"] as const) {
+      const root = freshTmp();
+      const persistenceCommand = platform === "windows" ? "setx" : "/bin/launchctl";
+      const ctx = makeCtx({
+        root,
+        platform,
+        scope: "certs",
+        ca: "unset",
+        nodeRegistry: "fail",
+        nodePypi: "ok",
+        systemCa: "ok",
+        apply: true,
+      });
+      const calls: string[][] = [];
+      const base = ctx.run;
+      ctx.run = async (argv, opts) => {
+        if (argv[0] === persistenceCommand) {
+          calls.push(argv);
+          return { code: 1, stdout: "", stderr: "persistence failed" };
+        }
+        return base(argv, opts);
+      };
+
+      const p = await command.plan(ctx);
+      const profile = findEnvBlock(p.actions, "heal-node-trust");
+      const plists = p.actions.filter(
+        (action): action is Extract<Action, { kind: "write" }> =>
+          action.kind === "write" && action.path.endsWith(".plist"),
+      );
+      expect(profile).toBeDefined();
+      expect(plists).toHaveLength(platform === "darwin" ? 2 : 0);
+
+      const result = await executePlan(p, ctx);
+
+      expect(existsSync(profile?.path ?? "")).toBe(false);
+      expect(plists.every((action) => !existsSync(action.path))).toBe(true);
+      expect(calls).toHaveLength(1);
+      expect(
+        result.execs
+          .filter((action) => action.argv[0] === persistenceCommand)
+          .map((action) => action.ran),
+      ).toEqual([true, false]);
+    }
+  });
+
   it("extra-ca writes and locks one deterministic PEM then persists only NODE_EXTRA_CA_CERTS", async () => {
     const root = freshTmp();
     const p = await command.plan(
