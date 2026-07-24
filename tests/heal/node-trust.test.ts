@@ -333,6 +333,8 @@ describe("selectNodeTrustCandidate", () => {
         {
           EXISTING_SETTING: "preserved",
           NODE_TLS_REJECT_UNAUTHORIZED: "0",
+          Node_Tls_Reject_Unauthorized: "0",
+          node_tls_reject_unauthorized: "0",
         },
       ),
       ["https://runtime.example.test"],
@@ -343,7 +345,9 @@ describe("selectNodeTrustCandidate", () => {
     for (const call of verified) {
       expect(call.script).toContain("rejectUnauthorized:true");
       expect(call.script).toContain(".authorized");
-      expect(call.env.NODE_TLS_REJECT_UNAUTHORIZED).toBeUndefined();
+      expect(
+        Object.keys(call.env).filter((key) => key.toLowerCase() === "node_tls_reject_unauthorized"),
+      ).toEqual([]);
       expect(call.env.EXISTING_SETTING).toBe("preserved");
     }
   });

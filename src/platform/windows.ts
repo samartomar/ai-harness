@@ -68,7 +68,14 @@ export class WindowsAdapter implements HostAdapter {
     const options = { maxBufferBytes: MAX_WINDOWS_ROOT_OUTPUT_BYTES };
     let res = await this.run(pwsh(script), options);
     if (res.spawnError) res = await this.run(winPowershell(script), options);
-    if (res.spawnError || res.truncated || res.code !== 0) return [];
+    if (
+      res.spawnError ||
+      res.truncated ||
+      res.code !== 0 ||
+      Buffer.byteLength(res.stdout, "utf8") > MAX_WINDOWS_ROOT_OUTPUT_BYTES
+    ) {
+      return [];
+    }
     const roots = parseCertLines(res.stdout);
     if (roots.length > MAX_WINDOWS_ROOT_ENTRIES) return [];
     return dedupeCertEntries(roots);

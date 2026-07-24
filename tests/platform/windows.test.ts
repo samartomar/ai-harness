@@ -66,6 +66,44 @@ describe("WindowsAdapter", () => {
     expect(await a.trustStoreRoots()).toEqual([]);
   });
 
+  it("falls back for root inventory when pwsh cannot spawn", async () => {
+    const calls: string[] = [];
+    const raw = `${"Q".repeat(80)}\tCN=Fallback Root\n`;
+    const a = adapter((argv, opts) => {
+      calls.push(argv[0] ?? "");
+      expect(opts?.maxBufferBytes).toBe(2 * 1024 * 1024);
+      if (argv[0] === "pwsh") return { spawnError: true, code: 127 };
+      if (argv[0] === "powershell.exe") return { stdout: raw };
+      return undefined;
+    });
+
+    expect(await a.trustStoreRoots()).toHaveLength(1);
+    expect(calls).toEqual(["pwsh", "powershell.exe"]);
+  });
+
+  it("returns no roots when neither PowerShell can spawn", async () => {
+    const a = adapter(() => ({ spawnError: true, code: 127 }));
+
+    expect(await a.trustStoreRoots()).toEqual([]);
+  });
+
+  it("rejects oversized root output even if the runner omits its truncation flag", async () => {
+    const raw = `${"Q".repeat(80)}\t${"S".repeat(2 * 1024 * 1024)}\n`;
+    const a = adapter(() => ({ stdout: raw }));
+
+    expect(await a.trustStoreRoots()).toEqual([]);
+  });
+
+  it("rejects more than 1,024 parsed roots", async () => {
+    const stdout = Array.from({ length: 1025 }, (_, index) => {
+      const raw = Buffer.from(`root-${index}`.padEnd(32, "x")).toString("base64");
+      return `${raw}\tCN=Root ${index}`;
+    }).join("\n");
+    const a = adapter(() => ({ stdout }));
+
+    expect(await a.trustStoreRoots()).toEqual([]);
+  });
+
   it("persists env via setx DIRECTLY — no cmd wrapper that would re-parse the value", () => {
     const a = adapter(() => undefined);
     // A CA path under a legal `R&D` folder: `&`/`%`/`^` are valid path characters. Routing

@@ -97,7 +97,9 @@ function candidateOrigins(values: readonly string[]): string[] | undefined {
 
 function verifiedTlsEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const safe = { ...env };
-  delete safe.NODE_TLS_REJECT_UNAUTHORIZED;
+  for (const key of Object.keys(safe)) {
+    if (key.toLowerCase() === "node_tls_reject_unauthorized") delete safe[key];
+  }
   return safe;
 }
 
