@@ -84,6 +84,7 @@ import { command as vdi } from "../vdi/index.js";
 import { runWorkspaceAdd, workspaceAddCommand } from "../workspace/acquire.js";
 import {
   command as workspace,
+  workspaceGraphCommand as workspaceGraph,
   workspaceHydrateCommand as workspaceHydrate,
   workspaceInitCommand as workspaceInit,
   workspaceLinkCommand as workspaceLink,
@@ -154,6 +155,7 @@ export const PARENT_GROUPS = [
 export const GROUPED_COMMAND_SPECS = {
   workspace: [
     workspaceAddCommand,
+    workspaceGraph,
     workspaceHydrate,
     workspaceInit,
     workspaceLink,
@@ -411,6 +413,18 @@ function registerSpec(program: Command, spec: CommandSpec): void {
         optionOverrides: { path: pathText },
       });
     });
+
+    const graph = cmd
+      .command(workspaceGraph.name)
+      .description(workspaceGraph.summary)
+      .argument("[root]", "target workspace root (defaults to --root or cwd)");
+    addFlagsForSpec(graph, workspaceGraph);
+    addOptionsForSpec(graph, workspaceGraph);
+    graph.action(
+      async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
+        process.exitCode = await runCapability(workspaceGraph, command);
+      },
+    );
 
     const snap = cmd
       .command(workspaceSnapshot.name)

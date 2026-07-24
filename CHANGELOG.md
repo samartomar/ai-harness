@@ -8,6 +8,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `aih workspace graph` projects the workspace's own declared contract relations
+  (`.aih-workspace.json` `repos[]` + `edges[]`) into a queryable cross-repo graph —
+  declared over inferred: a declared two-repo workspace yields queryable cross-repo
+  edges from declarations alone, with graph-tool inference demoted to optional
+  enrichment. `--apply` writes the pure, deterministic projection (every edge marked
+  `provenance: "declared"`) to `.aih/workspace-graph.json`; `--repo`/`--from`/`--to`/
+  `--kind` answer edge queries without writing; `--json` carries the graph, query,
+  and matches. Fail-closed: dangling edge endpoints and undeclared query repo ids
+  are errors, so a typo can never read as "no dependencies". (#505)
 - Org-policy surface UX for the enterprise first-setup loop. `aih policy init [root]`
   seeds a starter `aih-org-policy.json` from observed fleet state: catalog-bound MCP
   surfaces (the exact lens enterprise baseline attestation grades) become
