@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import type { Runner } from "../internals/proc.js";
 import {
   type CertEntry,
+  dedupeCertEntries,
   type GpuInfo,
   type HostAdapter,
   safeCaPattern,
@@ -54,6 +55,17 @@ export class WindowsAdapter implements HostAdapter {
     if (res.spawnError) res = await this.run(winPowershell(script));
     if (res.spawnError) return [];
     return parseCertLines(res.stdout);
+  }
+
+  async trustStoreRoots(): Promise<CertEntry[]> {
+    const script = [
+      "Get-ChildItem Cert:\\CurrentUser\\Root, Cert:\\LocalMachine\\Root -ErrorAction SilentlyContinue |",
+      '  ForEach-Object { [System.Convert]::ToBase64String($_.RawData) + "`t" + $_.Subject }',
+    ].join("\n");
+    let res = await this.run(pwsh(script));
+    if (res.spawnError) res = await this.run(winPowershell(script));
+    if (res.spawnError) return [];
+    return dedupeCertEntries(parseCertLines(res.stdout));
   }
 
   lockDownFileArgv(path: string): string[] {

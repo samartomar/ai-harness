@@ -103,7 +103,12 @@ describe("LinuxAdapter", () => {
     try {
       const bundle = join(root, "ca-certificates.crt");
       writeFileSync(bundle, `${FAKE_PEM}${FAKE_PEM}`);
-      const a = new LinuxAdapter(fakeRunner(() => undefined), {}, [], [bundle]);
+      const a = new LinuxAdapter(
+        fakeRunner(() => undefined),
+        {},
+        [],
+        [bundle],
+      );
 
       const certs = await a.trustStoreRoots();
 

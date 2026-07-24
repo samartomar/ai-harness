@@ -4,13 +4,14 @@ import { join } from "node:path";
 import type { Runner } from "../internals/proc.js";
 import {
   type CertEntry,
+  dedupeCertEntries,
   type GpuInfo,
   type HostAdapter,
   safeCaPattern,
   type VdiInfo,
   vdiFromEnv,
 } from "./base.js";
-import { parseFirstInt, parseNvidiaSmi } from "./parse.js";
+import { parseFirstInt, parseNvidiaSmi, parsePemBlocks } from "./parse.js";
 import { posixNpmCliPath, posixTlsProbeArgv } from "./posix.js";
 
 const ANCHOR_DIRS = [
@@ -18,6 +19,8 @@ const ANCHOR_DIRS = [
   "/etc/pki/ca-trust/source/anchors",
   "/etc/ssl/certs",
 ];
+
+const CA_BUNDLE_PATHS = ["/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt"];
 
 /**
  * Linux host adapter (implemented, fixture-tested, not smoke-tested on this box).
@@ -35,6 +38,8 @@ export class LinuxAdapter implements HostAdapter {
     private readonly env: NodeJS.ProcessEnv,
     /** Override the trust-store anchor dirs (tests); defaults to the system set. */
     private readonly anchorDirs: readonly string[] = ANCHOR_DIRS,
+    /** Override consolidated system CA bundles (tests); defaults to standard paths. */
+    private readonly caBundlePaths: readonly string[] = CA_BUNDLE_PATHS,
   ) {}
 
   async trustStoreCerts(pattern: string): Promise<CertEntry[]> {
@@ -77,6 +82,37 @@ export class LinuxAdapter implements HostAdapter {
       }
     }
     return out;
+  }
+
+  async trustStoreRoots(): Promise<CertEntry[]> {
+    for (const bundlePath of this.caBundlePaths) {
+      try {
+        const roots = parsePemBlocks(readFileSync(bundlePath, "utf8"), bundlePath);
+        if (roots.length > 0) return dedupeCertEntries(roots);
+      } catch {
+        // Try the next consolidated bundle, then fall back to anchor directories.
+      }
+    }
+
+    const roots: CertEntry[] = [];
+    for (const dir of this.anchorDirs) {
+      let names: string[];
+      try {
+        names = readdirSync(dir).sort();
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        if (!/\.(crt|pem|cer)$/i.test(name)) continue;
+        try {
+          const subject = `${name} (${dir})`;
+          roots.push(...parsePemBlocks(readFileSync(join(dir, name), "utf8"), subject));
+        } catch {
+          // Skip unreadable/non-file entries.
+        }
+      }
+    }
+    return dedupeCertEntries(roots);
   }
 
   /** Best-effort subject match via openssl; false when openssl is absent or errors. */

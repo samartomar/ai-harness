@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { Runner } from "../internals/proc.js";
 import {
   type CertEntry,
+  dedupeCertEntries,
   type GpuInfo,
   type HostAdapter,
   safeCaPattern,
@@ -43,6 +44,23 @@ export class DarwinAdapter implements HostAdapter {
       }
     }
     return found;
+  }
+
+  async trustStoreRoots(): Promise<CertEntry[]> {
+    const home = this.env.HOME ?? "";
+    const keychains = [
+      "/Library/Keychains/System.keychain",
+      "/System/Library/Keychains/SystemRootCertificates.keychain",
+    ];
+    if (home) keychains.unshift(join(home, "Library", "Keychains", "login.keychain-db"));
+    const found: CertEntry[] = [];
+    for (const keychain of keychains) {
+      const res = await this.run(["security", "find-certificate", "-a", "-p", keychain]);
+      if (!res.spawnError && res.stdout.includes("BEGIN CERTIFICATE")) {
+        found.push(...parsePemBlocks(res.stdout, `trusted root (${keychain})`));
+      }
+    }
+    return dedupeCertEntries(found);
   }
 
   lockDownFileArgv(path: string): string[] {

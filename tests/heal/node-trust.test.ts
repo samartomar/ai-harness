@@ -1,16 +1,9 @@
 import { X509Certificate } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  type NodeTrustCandidate,
-  selectNodeTrustCandidate,
-} from "../../src/heal/node-trust.js";
+import { type NodeTrustCandidate, selectNodeTrustCandidate } from "../../src/heal/node-trust.js";
 import type { PlanContext } from "../../src/internals/plan.js";
-import {
-  fakeRunner,
-  type RunOptions,
-  type RunResult,
-} from "../../src/internals/proc.js";
+import { fakeRunner, type RunOptions, type RunResult } from "../../src/internals/proc.js";
 import type { CertEntry } from "../../src/platform/base.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
@@ -39,9 +32,7 @@ function certEntry(pem: string): CertEntry {
 function capturedChain(...pems: string[]): Partial<RunResult> {
   return {
     code: 0,
-    stdout: JSON.stringify(
-      pems.map((pem) => new X509Certificate(pem).raw.toString("base64")),
-    ),
+    stdout: JSON.stringify(pems.map((pem) => new X509Certificate(pem).raw.toString("base64"))),
   };
 }
 
@@ -185,7 +176,9 @@ describe("selectNodeTrustCandidate", () => {
         (kind, origin) => {
           if (kind === "system-ca") return { code: 1 };
           if (kind === "capture") {
-            return origin.includes("second") ? capturedChain(LEAF_B_PEM) : capturedChain(LEAF_A_PEM);
+            return origin.includes("second")
+              ? capturedChain(LEAF_B_PEM)
+              : capturedChain(LEAF_A_PEM);
           }
           verifiedOrigins.push(origin);
           return { code: 0 };
