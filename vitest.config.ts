@@ -4,6 +4,10 @@ export default defineConfig({
   test: {
     globals: false,
     environment: "node",
+    // Heavy real-git tests assume bounded concurrency: uncapped workers on
+    // high-core machines overcommit CPU/RAM and blow per-test budgets (#509).
+    // CI runners have <=4 cores; this ceiling only affects larger dev machines.
+    maxWorkers: 8,
     include: ["tests/**/*.test.ts"],
     coverage: {
       provider: "v8",

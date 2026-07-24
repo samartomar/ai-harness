@@ -13,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { Command } from "commander";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CISCO_SKILL_SCANNER_PROJECT } from "../../src/baseline-evidence/analyzer-profile.js";
 import { runCapability } from "../../src/commands/run.js";
 import { executePlan } from "../../src/internals/execute.js";
@@ -49,6 +49,10 @@ import {
   trustScanProbes,
 } from "../../src/trust/scan.js";
 import { sandboxSmokeDockerRunArgv } from "../../src/trust/smoke.js";
+
+// Heavy real-git/fixture tests: per-test budgets sized for worker contention,
+// not idle hardware — the 5s default (and a 30s cap) flaked under load (#509).
+vi.setConfig({ testTimeout: 120_000 });
 
 let dir: string;
 
@@ -5545,5 +5549,5 @@ describe("trustScanCommand", () => {
     expect(JSON.parse(stdout)).toMatchObject({ capability: "large-trust-scan" });
     expect(stdout).not.toContain("inventory");
     expect(stderr).toContain("detector semgrep started");
-  }, 30_000);
+  });
 });
