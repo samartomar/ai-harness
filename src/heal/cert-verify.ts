@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { posix, win32 } from "node:path";
 import {
   NODE_EXTRA_CA_CERTS,
   nodeTrustEnvVars,
@@ -7,6 +7,7 @@ import {
   selectedNodeTrustEnv,
   unselectedNodeTrustKeys,
 } from "../certs/node-env.js";
+import { AihError } from "../errors.js";
 import type { EnvVar } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
 import {
@@ -27,6 +28,25 @@ const ENV_KEY = NODE_EXTRA_CA_CERTS;
 const CHECK = "cert: NODE_EXTRA_CA_CERTS";
 const HEAL_NODE_TRUST_SCOPE = "heal-node-trust";
 const HEAL_BUNDLE_NAME = "corporate-root-ca.pem";
+
+function absolutePathApi(value: string): typeof posix | typeof win32 | undefined {
+  if (posix.isAbsolute(value)) return posix;
+  const windowsRoot = win32.parse(value).root;
+  const windowsFullyAbsolute =
+    win32.isAbsolute(value) && (windowsRoot.includes(":") || windowsRoot.startsWith("\\\\"));
+  return windowsFullyAbsolute ? win32 : undefined;
+}
+
+function joinFromAbsoluteBase(base: string, ...segments: string[]): string {
+  const pathApi = absolutePathApi(base);
+  if (pathApi === undefined) {
+    throw new AihError(
+      "certificate paths require an absolute home or output directory",
+      "AIH_UNSAFE_PATH",
+    );
+  }
+  return pathApi.join(base, ...segments);
+}
 
 /**
  * Diagnose whether the corporate CA is wired into Node's TLS. The AUTHORITATIVE
@@ -176,7 +196,7 @@ async function planCertVerify(ctx: PlanContext, shared: HealShared): Promise<Act
   }
 
   const home = ctx.env.USERPROFILE || ctx.env.HOME || ctx.root;
-  const profile = ctx.host.shellProfilePaths()[0] ?? join(home, ".profile");
+  const profile = ctx.host.shellProfilePaths()[0] ?? joinFromAbsoluteBase(home, ".profile");
   let vars: EnvVar[];
   if (candidate.kind === "system-ca") {
     vars = nodeTrustEnvVars();
@@ -195,7 +215,7 @@ async function planCertVerify(ctx: PlanContext, shared: HealShared): Promise<Act
       ...nodeTrustPersistenceActions(ctx, vars),
     );
   } else {
-    const bundlePath = join(home, ".config", "enterprise-ca", HEAL_BUNDLE_NAME);
+    const bundlePath = joinFromAbsoluteBase(home, ".config", "enterprise-ca", HEAL_BUNDLE_NAME);
     vars = nodeTrustEnvVars(bundlePath).filter((variable) => variable.key === NODE_EXTRA_CA_CERTS);
     const bundle = candidate.certs.map((cert) => cert.pem).join("");
     const lockArgv = ctx.host.lockDownFileArgv(bundlePath);
