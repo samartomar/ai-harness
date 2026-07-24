@@ -1,4 +1,10 @@
 import { describe, expect, it } from "vitest";
+import {
+  NODE_EXTRA_CA_CERTS,
+  nodeTrustEnvVars,
+  nodeTrustPersistenceActions,
+} from "../../src/certs/node-env.js";
+import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type RunOptions, type RunResult } from "../../src/internals/proc.js";
 import { WindowsAdapter } from "../../src/platform/windows.js";
 
@@ -6,6 +12,23 @@ type Handler = (argv: string[], opts?: RunOptions) => Partial<RunResult> | undef
 
 function adapter(handler: Handler, env: NodeJS.ProcessEnv = {}): WindowsAdapter {
   return new WindowsAdapter(fakeRunner(handler), env);
+}
+
+function persistenceCtx(
+  env: NodeJS.ProcessEnv = { USERPROFILE: "C:\\Users\\example" },
+): PlanContext {
+  const run = fakeRunner(() => undefined);
+  return {
+    root: "C:\\repo",
+    contextDir: "ai-coding",
+    apply: false,
+    verify: true,
+    json: false,
+    run,
+    host: new WindowsAdapter(run, env),
+    env,
+    options: {},
+  };
 }
 
 describe("WindowsAdapter", () => {
@@ -113,6 +136,50 @@ describe("WindowsAdapter", () => {
     const argv = a.persistentEnvArgv("NODE_EXTRA_CA_CERTS", "C:\\R&D\\certs\\ca%1.pem");
     expect(argv).toEqual(["setx", "NODE_EXTRA_CA_CERTS", "C:\\R&D\\certs\\ca%1.pem"]);
     expect(argv[0]).not.toBe("cmd");
+  });
+
+  it("plans literal direct setx actions for only the selected Node trust values", () => {
+    const ctx = persistenceCtx();
+    const actions = nodeTrustPersistenceActions(
+      ctx,
+      nodeTrustEnvVars("C:\\R&D\\certs\\ca%1^bundle.pem"),
+    );
+    const setx = actions.filter((action) => action.kind === "exec");
+
+    expect(setx.map((action) => action.argv)).toEqual([
+      ["setx", "NODE_USE_SYSTEM_CA", "1"],
+      ["setx", "NODE_EXTRA_CA_CERTS", "C:\\R&D\\certs\\ca%1^bundle.pem"],
+    ]);
+    expect(setx.every((action) => action.argv[0] !== "cmd")).toBe(true);
+  });
+
+  it("fails visibly instead of planning a setx value longer than 1,024 characters", async () => {
+    const ctx = persistenceCtx();
+    const value = `C:\\${"x".repeat(1022)}`;
+    expect(value).toHaveLength(1025);
+
+    const actions = nodeTrustPersistenceActions(ctx, [{ key: NODE_EXTRA_CA_CERTS, value }]);
+
+    expect(actions.some((action) => action.kind === "exec")).toBe(false);
+    const failure = actions.find((action) => action.kind === "probe");
+    if (failure?.kind !== "probe") throw new Error("missing persistence failure probe");
+    expect(await failure.run(ctx)).toMatchObject({
+      verdict: "fail",
+      code: "cert.ca-missing",
+    });
+  });
+
+  it("attaches a visible failure check to each setx persistence action", () => {
+    const action = nodeTrustPersistenceActions(persistenceCtx(), [
+      { key: NODE_EXTRA_CA_CERTS, value: "C:\\certs\\ca.pem" },
+    ]).find((candidate) => candidate.kind === "exec");
+
+    expect(action?.failureCheck).toBeTypeOf("function");
+    const check =
+      typeof action?.failureCheck === "function"
+        ? action.failureCheck({ code: 5, stdout: "", stderr: "denied" })
+        : undefined;
+    expect(check).toMatchObject({ verdict: "fail", code: "cert.ca-missing" });
   });
 
   it("parses physical cores and total RAM", async () => {

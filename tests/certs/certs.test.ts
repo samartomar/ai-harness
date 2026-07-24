@@ -190,11 +190,12 @@ describe("certs plan — happy path", () => {
     const root = freshTmp();
     const ctx = makeCtx({ root, env: { HOME: join(root, "home") } });
 
-    // The trust env is an envblock (scope "certs") carrying all six vars.
+    // The trust env is an envblock (scope "certs") carrying every runtime setting.
     const eb = findEnvBlock((await command.plan(ctx)).actions, "certs");
     expect(eb).toBeDefined();
     const keys = eb?.vars.map((v) => v.key) ?? [];
     for (const key of [
+      "NODE_USE_SYSTEM_CA",
       "NODE_EXTRA_CA_CERTS",
       "PIP_CERT",
       "SSL_CERT_FILE",
@@ -208,8 +209,22 @@ describe("certs plan — happy path", () => {
     // The executor renders it into the profile with posix `export` + markers.
     const body = await renderProfile(ctx);
     expect(body).toContain("# >>> aih managed (certs) >>>");
+    expect(body).toContain("export NODE_USE_SYSTEM_CA=1");
     expect(body).toContain("export NODE_EXTRA_CA_CERTS=");
     expect(body).toMatch(/export SSL_CERT_DIR=.*enterprise-ca/);
+  });
+
+  it("explicit certs propagates system CA plus the selected extra bundle", async () => {
+    const block = findEnvBlock(
+      (await command.plan(makeCtx({ root: freshTmp() }))).actions,
+      "certs",
+    );
+    expect(block?.vars).toEqual(
+      expect.arrayContaining([
+        { key: "NODE_USE_SYSTEM_CA", value: "1" },
+        expect.objectContaining({ key: "NODE_EXTRA_CA_CERTS" }),
+      ]),
+    );
   });
 
   it("re-running the profile upsert is idempotent (twice == once)", async () => {
@@ -390,14 +405,27 @@ describe("certs plan — windows trust propagation", () => {
     );
 
     const execs = p.actions.filter((a) => a.kind === "exec");
-    expect(execs).toHaveLength(2);
-    const lockdown = findExec(p.actions);
+    expect(execs).toHaveLength(4);
+    const lockdown = execs.find((action) => action.argv[0] === "icacls");
     // Windows adapter locks down with icacls, disabling inheritance and granting the user read.
     expect(lockdown?.argv.slice(0, 2)).toEqual(["icacls", expect.any(String)]);
     expect(lockdown?.argv).toContain("/inheritance:r");
     expect(lockdown?.argv).toContain("/grant:r");
     expect(lockdown?.argv).toContain("samar:(R)");
     expect(lockdown?.argv[1]?.replace(/\\/g, "/")).toContain("corporate-root-ca.pem");
+  });
+
+  it("Windows certs persists both Node values directly", async () => {
+    const p = await command.plan(makeCtx({ root: freshTmp(), platform: "windows" }));
+    const setx = p.actions.filter(
+      (action): action is Extract<Action, { kind: "exec" }> =>
+        action.kind === "exec" && action.argv[0] === "setx",
+    );
+    expect(setx.map((action) => action.argv.slice(0, 2))).toEqual([
+      ["setx", "NODE_USE_SYSTEM_CA"],
+      ["setx", "NODE_EXTRA_CA_CERTS"],
+    ]);
+    expect(setx.every((action) => action.argv.length === 3)).toBe(true);
   });
 
   it("exports the trust block to the PowerShell profile in $env: form", async () => {
@@ -416,6 +444,30 @@ describe("certs plan — windows trust propagation", () => {
     expect(body).toContain('$env:NODE_EXTRA_CA_CERTS = "');
     expect(body).not.toContain("export NODE_EXTRA_CA_CERTS=");
     expect(body).toMatch(/\$env:SSL_CERT_DIR = ".*enterprise-ca"/);
+  });
+
+  it("macOS writes escaped deterministic LaunchAgents and updates launchd", async () => {
+    const p = await command.plan(
+      makeCtx({ root: freshTmp(), platform: "darwin", env: { HOME: "/Users/R&D" } }),
+    );
+    const plists = p.actions.filter(
+      (action): action is Extract<Action, { kind: "write" }> =>
+        action.kind === "write" && action.path.endsWith(".plist"),
+    );
+    expect(plists).toHaveLength(2);
+    expect(plists[0]?.contents).toContain("&amp;");
+    expect(plists[0]?.contents).not.toContain("/bin/sh");
+    expect(plists.map((action) => action.contents)).toEqual(
+      [...plists.map((action) => action.contents)].sort(),
+    );
+    const launchctl = p.actions.filter(
+      (action): action is Extract<Action, { kind: "exec" }> =>
+        action.kind === "exec" && action.argv[0] === "/bin/launchctl",
+    );
+    expect(launchctl.map((action) => action.argv.slice(0, 3))).toEqual([
+      ["/bin/launchctl", "setenv", "NODE_EXTRA_CA_CERTS"],
+      ["/bin/launchctl", "setenv", "NODE_USE_SYSTEM_CA"],
+    ]);
   });
 });
 

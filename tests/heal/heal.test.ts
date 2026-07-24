@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { X509Certificate } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -16,6 +17,12 @@ import type { HostAdapter, Platform } from "../../src/platform/base.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
 const PEM = "-----BEGIN CERTIFICATE-----\nMIIBExampleCorporateRootCA\n-----END CERTIFICATE-----\n";
+const ROOT_A_PEM = readFileSync(new URL("../fixtures/certs/root-a.pem", import.meta.url), "utf8");
+const LEAF_A_PEM = readFileSync(new URL("../fixtures/certs/leaf-a.pem", import.meta.url), "utf8");
+const ROOT_A: CertEntry = {
+  subject: new X509Certificate(ROOT_A_PEM).subject,
+  pem: ROOT_A_PEM,
+};
 
 type State = "ok" | "fail" | "absent" | "timeout";
 
@@ -25,6 +32,12 @@ interface Scenario {
   pypi?: State;
   nodeRegistry?: State;
   nodePypi?: State;
+  /** Result when the selector retries divergent origins with NODE_USE_SYSTEM_CA=1. */
+  systemCa?: State;
+  /** Result when the selector retries divergent origins with its verified minimal bundle. */
+  extraCa?: State;
+  capturedChain?: string[];
+  trustRoots?: CertEntry[];
   mcpNodeTls?: State;
   mcpPythonTls?: State;
   mcpNodeCaBundle?: State;
@@ -63,7 +76,7 @@ function toolResult(s: State, version: string): Partial<RunResult> {
 
 /** A runner that answers TLS probes (by URL) and node/npm/npx version checks. */
 function runnerFor(sc: Scenario) {
-  return fakeRunner((argv) => {
+  return fakeRunner((argv, opts) => {
     const cmd = argv[0] ?? "";
     const joined = argv.join(" ");
     const isTls = cmd === "curl" || cmd === "powershell.exe" || cmd === "pwsh";
@@ -78,11 +91,27 @@ function runnerFor(sc: Scenario) {
     // node/npm/npx run directly on POSIX, or via `cmd /c <tool> --version` on Windows.
     const tool = cmd === "cmd" ? (argv[2] ?? "") : cmd;
     if (tool === "node" && argv.includes("-e")) {
+      const script = argv[argv.indexOf("-e") + 1] ?? "";
       const origin = argv.at(-1) ?? "";
+      if (script.includes("rejectUnauthorized:false")) {
+        if (sc.capturedChain === undefined) return { code: 1 };
+        return {
+          code: 0,
+          stdout: JSON.stringify(
+            sc.capturedChain.map((pem) => new X509Certificate(pem).raw.toString("base64")),
+          ),
+        };
+      }
+      if (script.includes("rootCertificates")) return tlsResult(sc.extraCa ?? "fail");
+
       const host = origin.startsWith("https://") ? new URL(origin).hostname : "";
-      if (host === "registry.npmjs.org") return tlsResult(sc.nodeRegistry ?? "ok");
-      if (host === "pypi.org") return tlsResult(sc.nodePypi ?? "ok");
-      return tlsResult(sc.mcpNodeTls ?? "ok");
+      const current =
+        host === "registry.npmjs.org"
+          ? (sc.nodeRegistry ?? "ok")
+          : host === "pypi.org"
+            ? (sc.nodePypi ?? "ok")
+            : (sc.mcpNodeTls ?? "ok");
+      return tlsResult(opts?.env?.NODE_USE_SYSTEM_CA === "1" ? (sc.systemCa ?? current) : current);
     }
     if ((tool === "python3" || tool === "py") && argv.includes("-c"))
       return tlsResult(sc.mcpPythonTls ?? "ok");
@@ -143,10 +172,13 @@ function envFor(sc: Scenario): NodeJS.ProcessEnv {
 
 function hostFor(sc: Scenario, env: NodeJS.ProcessEnv): HostAdapter {
   const base = makeHostAdapter({ platform: sc.platform ?? "linux", run: runnerFor(sc), env });
-  if (sc.npmCli === undefined) return base;
+  if (sc.npmCli === undefined && sc.trustRoots === undefined) return base;
   return new Proxy(base, {
     get(t, p, r) {
-      if (p === "npmCliPath") return () => sc.npmCli;
+      if (p === "npmCliPath" && sc.npmCli !== undefined) return () => sc.npmCli;
+      if (p === "trustStoreRoots" && sc.trustRoots !== undefined) {
+        return async (): Promise<CertEntry[]> => sc.trustRoots ?? [];
+      }
       return Reflect.get(t, p, r);
     },
   });
@@ -216,6 +248,20 @@ async function runCheck(
 }
 function execs(actions: Action[]) {
   return actions.filter((a): a is Extract<Action, { kind: "exec" }> => a.kind === "exec");
+}
+
+function findEnvBlock(actions: Action[], scope: string) {
+  return actions.find(
+    (action): action is Extract<Action, { kind: "envblock" }> =>
+      action.kind === "envblock" && action.scope === scope,
+  );
+}
+
+function trustBundleWrite(actions: Action[]) {
+  return actions.find(
+    (action): action is Extract<Action, { kind: "write" }> =>
+      action.kind === "write" && action.path.endsWith("corporate-root-ca.pem"),
+  );
 }
 
 describe("heal — command surface", () => {
@@ -404,106 +450,145 @@ describe("heal — cert step", () => {
     expect(findDigest(p.actions, "re-propagate corporate trust")).toBeUndefined();
   });
 
-  it("Windows persists the CA at user scope so GUI apps inherit it", async () => {
-    const p = await command.plan(makeCtx({ root: freshTmp(), platform: "windows", ca: "valid" }));
-    const e = execs(p.actions);
-    expect(e).toHaveLength(1);
-    // `setx` (not a pwsh-only [Environment]::SetEnvironmentVariable) so the persist works
-    // on managed images without PowerShell 7 and under Constrained Language Mode. Spawned
-    // DIRECTLY (no `cmd /c` wrapper), so the CA path is a single literal argv element and
-    // cmd never re-parses `&`/`%`/`^` in it (see persistentEnvArgv).
-    expect(e[0]?.argv.slice(0, 2)).toEqual(["setx", "NODE_EXTRA_CA_CERTS"]);
-    expect(e[0]?.argv).toHaveLength(3);
-    expect(e[0]?.argv[2]).toContain("ca.pem");
-    expect(findDigest(p.actions, "GUI apps inherit the CA")).toBeDefined();
-  });
+  it("system-ca persists only NODE_USE_SYSTEM_CA", async () => {
+    const p = await command.plan(
+      makeCtx({
+        root: freshTmp(),
+        ca: "unset",
+        nodeRegistry: "fail",
+        nodePypi: "ok",
+        systemCa: "ok",
+      }),
+    );
 
-  // Skipped on macOS: its PATH_MAX is 1024, so a valid PEM cannot exist at a >1024-char
-  // path to reach the guard. Linux (PATH_MAX 4096) and Windows (Node long-path) exercise it.
-  it.skipIf(process.platform === "darwin")(
-    "skips the setx persist and fails visibly when the CA path exceeds setx's 1024-char limit",
-    async () => {
-      const root = freshTmp();
-      // A valid PEM at a >1024-char path: setx would silently truncate the value (exit 0)
-      // and persist a corrupted CA path, so heal must fail visibly instead of running it.
-      let deep = root;
-      for (let i = 0; i < 12; i++) deep = join(deep, `seg${i}`.padEnd(90, "x"));
-      mkdirSync(deep, { recursive: true });
-      const longPem = join(deep, "ca.pem");
-      writeFileSync(longPem, PEM, "utf8");
-      expect(longPem.length).toBeGreaterThan(1024);
-
-      const ctx = makeCtx({ root, platform: "windows", ca: "unset" });
-      ctx.env.NODE_EXTRA_CA_CERTS = longPem;
-
-      const p = await command.plan(ctx);
-      // No setx exec (it would corrupt the path via truncation) …
-      expect(execs(p.actions).some((e) => e.argv[0] === "setx")).toBe(false);
-      // … and a failing persist check surfaces instead, routed to the certs remediation.
-      const check = findCheck(p.actions, "persist at user scope");
-      expect(check?.verdict).toBe("fail");
-      expect(check?.code).toBe("cert.ca-missing");
-      expect(check?.detail).toContain("truncates");
-    },
-  );
-
-  // Boundary: setx truncates only ABOVE 1024, so a path of EXACTLY 1024 must still persist
-  // (guards against a future `>=` regression). macOS PATH_MAX (1024) can't hold it → skip.
-  it.skipIf(process.platform === "darwin")(
-    "persists normally at exactly the 1024-char boundary (only >1024 truncates)",
-    async () => {
-      const root = freshTmp();
-      let base = root;
-      while (base.length < 800) base = join(base, "seg".padEnd(90, "x"));
-      mkdirSync(base, { recursive: true });
-      // Pad a leaf so the full path is EXACTLY 1024 chars (one join separator + ".pem").
-      const leafLen = 1024 - base.length - 1;
-      const pem1024 = join(base, `${"z".repeat(leafLen - 4)}.pem`);
-      expect(pem1024.length).toBe(1024);
-      writeFileSync(pem1024, PEM, "utf8");
-
-      const ctx = makeCtx({ root, platform: "windows", ca: "unset" });
-      ctx.env.NODE_EXTRA_CA_CERTS = pem1024;
-
-      const p = await command.plan(ctx);
-      // Exactly 1024 → the setx persist IS emitted (no truncation), no failing check.
-      expect(execs(p.actions).some((e) => e.argv[0] === "setx")).toBe(true);
-      expect(findCheck(p.actions, "persist at user scope")).toBeUndefined();
-    },
-  );
-
-  it("a failed persist exec under --apply surfaces a failing check (not an invisible exit-1)", async () => {
-    // Before the fix the persist exec was pwsh-only: on a box without PowerShell 7 it
-    // ENOENTed (exit 127), runCapability set exit 1 (execFailed), yet the report printed
-    // "0 failed" — a contradiction any scripted gate on heal would choke on. Now a
-    // failureCheck lands the failure IN the report so exit code and report agree.
-    const ctx = makeCtx({ root: freshTmp(), platform: "windows", ca: "valid", apply: true });
-    // Fail ONLY the `setx …` persist exec (as on a locked-down box where setx is
-    // policy-blocked); TLS + node/npm/npx still answer healthy via the base runner.
-    const base = ctx.run;
-    ctx.run = async (argv, opts) =>
-      argv[0] === "setx"
-        ? { code: 127, stdout: "", stderr: "'setx' is not recognized", spawnError: true }
-        : base(argv, opts);
-
-    const result = await executePlan(await command.plan(ctx), ctx);
-
-    // The persist exec ran and failed …
-    const persist = result.execs.find((x) => x.argv[0] === "setx");
-    expect(persist?.ran).toBe(true);
-    expect(persist?.ok).toBe(false);
-    // … and that failure is now the report's single failing check (cert-coded), so
-    // result.report.exitCode() (1) agrees with runCapability's execFailed-driven exit.
-    const fails = result.report?.checks.filter((c) => c.verdict === "fail") ?? [];
-    expect(fails).toHaveLength(1);
-    expect(fails[0]?.name).toBe("cert: persist at user scope");
-    expect(fails[0]?.code).toBe("cert.ca-missing");
-    expect(result.report?.exitCode()).toBe(1);
-  });
-
-  it("POSIX emits no persist exec (the profile envblock is the durable seam)", async () => {
-    const p = await command.plan(makeCtx({ root: freshTmp(), platform: "linux", ca: "valid" }));
+    expect(findEnvBlock(p.actions, "heal-node-trust")?.vars).toEqual([
+      { key: "NODE_USE_SYSTEM_CA", value: "1" },
+    ]);
+    expect(trustBundleWrite(p.actions)).toBeUndefined();
     expect(execs(p.actions)).toHaveLength(0);
+    const note = findDigest(p.actions, "selected Node trust");
+    expect(note?.text).toContain("NODE_USE_SYSTEM_CA");
+    expect(note?.text).toContain("relaunch");
+    expect(note?.text).toContain("operator verification");
+  });
+
+  it("extra-ca writes and locks one deterministic PEM then persists only NODE_EXTRA_CA_CERTS", async () => {
+    const root = freshTmp();
+    const p = await command.plan(
+      makeCtx({
+        root,
+        ca: "unset",
+        nodeRegistry: "fail",
+        nodePypi: "ok",
+        systemCa: "fail",
+        extraCa: "ok",
+        capturedChain: [LEAF_A_PEM],
+        trustRoots: [ROOT_A, ROOT_A],
+      }),
+    );
+
+    const bundle = trustBundleWrite(p.actions);
+    expect(bundle?.path).toBe(join(root, ".config", "enterprise-ca", "corporate-root-ca.pem"));
+    expect(bundle?.path.startsWith(root)).toBe(true);
+    expect(bundle?.contents).toBe(ROOT_A_PEM);
+    expect(bundle?.external).toBe(true);
+    expect(findEnvBlock(p.actions, "heal-node-trust")?.vars).toEqual([
+      { key: "NODE_EXTRA_CA_CERTS", value: bundle?.path },
+    ]);
+    const lock = execs(p.actions).find((action) => action.argv[0] === "chmod");
+    expect(lock?.argv).toEqual(["chmod", "600", bundle?.path]);
+    expect(p.actions.map((action) => action.describe).join("\n")).not.toContain(
+      "BEGIN CERTIFICATE",
+    );
+  });
+
+  it("unresolved divergence plans no trust mutation", async () => {
+    const p = await command.plan(
+      makeCtx({
+        root: freshTmp(),
+        platform: "windows",
+        ca: "unset",
+        nodeRegistry: "fail",
+        nodePypi: "ok",
+        systemCa: "fail",
+      }),
+    );
+
+    expect(findEnvBlock(p.actions, "heal-node-trust")).toBeUndefined();
+    expect(trustBundleWrite(p.actions)).toBeUndefined();
+    expect(execs(p.actions).some((action) => action.argv[0] === "setx")).toBe(false);
+    expect(findDigest(p.actions, "unresolved Node trust")).toBeDefined();
+  });
+
+  it("healthy Windows trust plans no trust mutation", async () => {
+    const p = await command.plan(makeCtx({ root: freshTmp(), platform: "windows", ca: "valid" }));
+
+    expect(findEnvBlock(p.actions, "heal-node-trust")).toBeUndefined();
+    expect(trustBundleWrite(p.actions)).toBeUndefined();
+    expect(execs(p.actions).some((action) => action.argv[0] === "setx")).toBe(false);
+  });
+
+  it("apply runs selected persistence before the final Node verification", async () => {
+    const ctx = makeCtx({
+      root: freshTmp(),
+      platform: "windows",
+      ca: "unset",
+      nodeRegistry: "fail",
+      nodePypi: "ok",
+      systemCa: "ok",
+      apply: true,
+    });
+    const calls: Array<{ argv: string[]; env: NodeJS.ProcessEnv | undefined }> = [];
+    const base = ctx.run;
+    ctx.run = async (argv, opts) => {
+      calls.push({ argv, env: opts?.env });
+      return base(argv, opts);
+    };
+    const p = await command.plan(ctx);
+    calls.length = 0;
+
+    const result = await executePlan(p, ctx);
+    const setxIndex = calls.findIndex(({ argv }) => argv[0] === "setx");
+    const finalProbeIndex = calls.findIndex(
+      ({ argv, env }) =>
+        argv[0] === "node" && argv.includes("-e") && env?.NODE_USE_SYSTEM_CA === "1",
+    );
+    expect(setxIndex).toBeGreaterThanOrEqual(0);
+    expect(finalProbeIndex).toBeGreaterThan(setxIndex);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "cert: verify persisted Node trust", verdict: "pass" }),
+      ]),
+    );
+  });
+
+  it("a failed selected persist exec surfaces a failure and blocks final verification", async () => {
+    const ctx = makeCtx({
+      root: freshTmp(),
+      platform: "windows",
+      ca: "unset",
+      nodeRegistry: "fail",
+      nodePypi: "ok",
+      systemCa: "ok",
+      apply: true,
+    });
+    const base = ctx.run;
+    let finalProbeRan = false;
+    ctx.run = async (argv, opts) => {
+      if (argv[0] === "setx") return { code: 5, stdout: "", stderr: "denied" };
+      if (argv[0] === "node" && opts?.env?.NODE_USE_SYSTEM_CA === "1") finalProbeRan = true;
+      return base(argv, opts);
+    };
+    const p = await command.plan(ctx);
+    finalProbeRan = false;
+
+    const result = await executePlan(p, ctx);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ verdict: "fail", code: "cert.ca-missing" }),
+      ]),
+    );
+    expect(finalProbeRan).toBe(false);
   });
 });
 

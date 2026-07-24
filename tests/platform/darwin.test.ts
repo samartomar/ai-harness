@@ -1,10 +1,31 @@
 import { describe, expect, it } from "vitest";
+import {
+  macLaunchAgentPlist,
+  nodeTrustEnvVars,
+  nodeTrustPersistenceActions,
+} from "../../src/certs/node-env.js";
+import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type Runner, type RunOptions } from "../../src/internals/proc.js";
 import { DarwinAdapter } from "../../src/platform/darwin.js";
 
 type Handler = Parameters<typeof fakeRunner>[0];
 const mk = (handler: Handler, env: NodeJS.ProcessEnv = {}): DarwinAdapter =>
   new DarwinAdapter(fakeRunner(handler) as Runner, env);
+
+function persistenceCtx(env: NodeJS.ProcessEnv = { HOME: "/Users/R&D" }): PlanContext {
+  const run = fakeRunner(() => undefined);
+  return {
+    root: "/repo",
+    contextDir: "ai-coding",
+    apply: false,
+    verify: true,
+    json: false,
+    run,
+    host: new DarwinAdapter(run, env),
+    env,
+    options: {},
+  };
+}
 
 const pem = (body: string): string =>
   `-----BEGIN CERTIFICATE-----\n${body}\n-----END CERTIFICATE-----\n`;
@@ -84,6 +105,58 @@ describe("DarwinAdapter trust store", () => {
       ),
     ).toBe(true);
     expect(verifyCalls.every(({ opts }) => opts?.maxBufferBytes === 4096)).toBe(true);
+  });
+});
+
+describe("macOS Node trust persistence", () => {
+  it("escapes every interpolated plist value and uses literal ProgramArguments", () => {
+    const plist = macLaunchAgentPlist(
+      "dev.aih.env.node-extra-ca-certs",
+      "NODE_EXTRA_CA_CERTS",
+      `/Users/R&D/<certs>/"quoted"/'bundle'.pem`,
+    );
+
+    expect(plist).toContain("&amp;");
+    expect(plist).toContain("&lt;certs&gt;");
+    expect(plist).toContain("&quot;quoted&quot;");
+    expect(plist).toContain("&apos;bundle&apos;");
+    expect(plist).toContain("<string>/bin/launchctl</string>");
+    expect(plist).toContain("<string>setenv</string>");
+    expect(plist).not.toContain("/bin/sh");
+  });
+
+  it("plans sorted idempotent LaunchAgents plus direct launchctl argv", () => {
+    const ctx = persistenceCtx();
+    const actions = nodeTrustPersistenceActions(ctx, nodeTrustEnvVars("/Users/R&D/certs/ca.pem"));
+    const plists = actions.filter((action) => action.kind === "write");
+    const launchctl = actions.filter((action) => action.kind === "exec");
+
+    expect(plists.map((action) => action.path)).toEqual([
+      "/Users/R&D/Library/LaunchAgents/dev.aih.env.node-extra-ca-certs.plist",
+      "/Users/R&D/Library/LaunchAgents/dev.aih.env.node-use-system-ca.plist",
+    ]);
+    expect(plists.every((action) => action.external === true)).toBe(true);
+    expect(plists.map((action) => action.contents)).toEqual(
+      [...plists.map((action) => action.contents)].sort(),
+    );
+    expect(launchctl.map((action) => action.argv)).toEqual([
+      ["/bin/launchctl", "setenv", "NODE_EXTRA_CA_CERTS", "/Users/R&D/certs/ca.pem"],
+      ["/bin/launchctl", "setenv", "NODE_USE_SYSTEM_CA", "1"],
+    ]);
+  });
+
+  it("fails closed on unsafe labels, keys, homes, and non-normalized CA paths", () => {
+    expect(() => macLaunchAgentPlist("dev.aih.env../escape", "NODE_USE_SYSTEM_CA", "1")).toThrow();
+    expect(() => macLaunchAgentPlist("dev.aih.env.node-use-system-ca", "NODE<USE", "1")).toThrow();
+    expect(() =>
+      nodeTrustPersistenceActions(persistenceCtx({ HOME: "relative/home" }), nodeTrustEnvVars()),
+    ).toThrow();
+    expect(() =>
+      nodeTrustPersistenceActions(
+        persistenceCtx(),
+        nodeTrustEnvVars("/Users/example/../escape.pem"),
+      ),
+    ).toThrow();
   });
 });
 
