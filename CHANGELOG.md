@@ -8,6 +8,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Canon MUST-to-enforcing-check map: `docs/CONTROL_MATRIX.md` gains a
+  `## Canon MUST Map` section classifying every imperative line the generated
+  Layer-2 canon (`src/bootstrap-ai/canon.ts`) emits — generation-invariant MUSTs
+  cite their drift probe or canon lint seam, governance MUSTs cite their gate
+  (secret scan, guardrail artifacts, posture grading), and agent-behavioral MUSTs
+  are labeled `agent-directed, not aih-gated`. A regression gate
+  (`tests/bootstrap-ai/canon-must-map.test.ts`) regenerates the reachable canon
+  surface, extracts imperative lines by a documented token set, and fails closed
+  on any unmapped imperative or stale map row. (Refs #507)
 - `aih workspace graph` projects the workspace's own declared contract relations
   (`.aih-workspace.json` `repos[]` + `edges[]`) into a queryable cross-repo graph —
   declared over inferred: a declared two-repo workspace yields queryable cross-repo
