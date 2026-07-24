@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
 import type { EccComponentSelection } from "../../src/ecc/components.js";
 import { eccEvidenceComponentIdsForSelection } from "../../src/ecc/evidence.js";
+import { buildEccRegistrationRequest } from "../../src/ecc/pipeline.js";
 import {
   emptyRegistrationLedger,
   readRegistrationLedger,
@@ -326,6 +327,134 @@ describe("verifiedEccInstallPlan", () => {
         (action) => action.kind === "write" && action.describe.includes("Codex config.toml"),
       ),
     ).toBe(true);
+  });
+
+  // #506 F1: the enterprise rollout observed the Codex merge receiving the core
+  // profile regardless of `--profile full`. These two tests lock the resolved
+  // profile end-to-end through the LIVE path (registration request → verified
+  // install plan → merge argv/spec), so a reintroduced hardcode fails here.
+  it("threads --profile full through the registration request into a full-scope Codex merge", () => {
+    const context: PlanContext = { ...ctx(), options: { profile: "full", cli: "codex" } };
+    const request = buildEccRegistrationRequest(context, ["codex"]);
+    expect(request.profile).toBe("full");
+    expect(request.selection.scope).toBe("full");
+
+    const built = verifiedEccInstallPlan(
+      context,
+      join(root, "quarantine", "tree"),
+      request,
+      authorizationsForSelection("codex", request.selection),
+    );
+    const merge = driverSteps(built.actions).find((step) =>
+      step.argv.join(" ").includes("codex-install-merge"),
+    );
+    if (merge === undefined) throw new Error("missing Codex merge step");
+    // argv: [node, -e, script, repoRoot, profileId, homeDir, …, stateB64, specB64, mcpB64]
+    expect(merge.argv[4]).toBe("full");
+    const specB64 = merge.argv.at(-2);
+    if (specB64 === undefined) throw new Error("missing Codex materialization spec");
+    expect(JSON.parse(Buffer.from(specB64, "base64").toString("utf8"))).toMatchObject({
+      scope: "full",
+    });
+  });
+
+  it("--profile full executes the Codex merge as a full install (upstream profileId=full, every skill)", () => {
+    const sourceRoot = join(root, "ecc-source");
+    const home = join(root, "home");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(join(home, ".codex", "config.toml"), "", "utf8");
+    put(
+      join(sourceRoot, "scripts", "lib", "install-executor.js"),
+      `exports.createManifestInstallPlan = ({ profileId, moduleIds, homeDir }) => {
+        require("node:fs").writeFileSync(
+          require("node:path").join(homeDir, "captured-manifest-request.json"),
+          JSON.stringify({ profileId, moduleIds }),
+        );
+        return {
+          operations: [],
+          statePreview: {
+            schemaVersion: 1,
+            installedAt: new Date().toISOString(),
+            request: {},
+            resolution: { selectedModules: [], skippedModules: [] },
+            source: { manifestVersion: 1 },
+            operations: [],
+          },
+          installStatePath: require("node:path").join(homeDir, ".codex", "ecc-install-state.json"),
+        };
+      };\n`,
+    );
+    put(
+      join(sourceRoot, "scripts", "lib", "install-state.js"),
+      'exports.writeInstallState = (path, state) => require("node:fs").writeFileSync(path, JSON.stringify(state), "utf8");\n',
+    );
+    for (const name of ["merge-codex-config.js", "merge-mcp-config.js"]) {
+      put(join(sourceRoot, "scripts", "codex", name), "process.exit(0);\n");
+    }
+    put(
+      join(sourceRoot, ".codex", "AGENTS.md"),
+      [
+        "## Skills Discovery",
+        "",
+        "old guidance",
+        "",
+        "Available skills:",
+        "- alpha-skill — test",
+        "",
+        "## MCP Servers",
+        "",
+        "old MCP guidance",
+        "",
+        "## External Action Boundaries",
+        "",
+        "boundary",
+        "",
+        "| Skills | Skills loaded via plugin | `.agents/skills/` directory |",
+        "",
+      ].join("\n"),
+    );
+    put(join(sourceRoot, "skills", "alpha-skill", "SKILL.md"), "# Alpha\n");
+    put(join(sourceRoot, "skills", "beta-skill", "SKILL.md"), "# Beta\n");
+
+    const run = fakeRunner(() => undefined);
+    const context: PlanContext = {
+      ...ctx(),
+      env: { HOME: home },
+      host: makeHostAdapter({ platform: "linux", run, env: { HOME: home } }),
+      run,
+      options: { profile: "full", cli: "codex" },
+    };
+    const request = buildEccRegistrationRequest(context, ["codex"]);
+    const built = verifiedEccInstallPlan(
+      context,
+      sourceRoot,
+      request,
+      authorizationsForSelection("codex", request.selection),
+    );
+    const step = driverSteps(built.actions)[1];
+    if (step === undefined) throw new Error("missing Codex install step");
+    const executable = step.argv[0];
+    if (executable === undefined) throw new Error("missing Codex install executable");
+
+    const result = spawnSync(executable, step.argv.slice(1), {
+      cwd: step.cwd,
+      env: { ...process.env, ...step.env, HOME: home, USERPROFILE: home },
+      encoding: "utf8",
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    // The upstream installer received the FULL profile, not a scoped module list.
+    expect(JSON.parse(readFileSync(join(home, "captured-manifest-request.json"), "utf8"))).toEqual({
+      profileId: "full",
+      moduleIds: [],
+    });
+    // Every skill in the verified checkout materialized — the full set, not core.
+    expect(readFileSync(join(home, ".codex", "skills", "alpha-skill", "SKILL.md"), "utf8")).toBe(
+      "# Alpha\n",
+    );
+    expect(readFileSync(join(home, ".codex", "skills", "beta-skill", "SKILL.md"), "utf8")).toBe(
+      "# Beta\n",
+    );
   });
 
   it("does not treat its own scoped HTTP GitHub registration as a rerun collision", () => {

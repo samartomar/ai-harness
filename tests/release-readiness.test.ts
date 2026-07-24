@@ -113,6 +113,10 @@ describe("release readiness metadata", () => {
       "guides/vibe-developer-guide.md",
       "guides/enterprise-developer-guide.md",
       "guides/enterprise-admin-guide.md",
+      // #506 F4: the enterprise onboarding runbook's provisioning step must route
+      // global-install provenance through the release verifier — a bare
+      // `npm audit signatures` cannot audit a global install (EAUDITGLOBAL).
+      "docs/ENTERPRISE_ONBOARDING.md",
     ];
     for (const path of installDocs) {
       const text = read(path);
@@ -136,6 +140,15 @@ describe("release readiness metadata", () => {
       expect(text).toContain("all three legs");
       expect(text).toContain("skipped leg is incomplete evidence");
     }
+    // #506 F4: copy-pasteable command blocks in the release verification doc must
+    // not carry a bare `npm audit signatures` step either — for a release consumer
+    // (global install) it fails with EAUDITGLOBAL; `aih verify-release` runs the
+    // signature audit against a temporary prefix instead.
+    const slsa = read("docs/security/release-slsa.md");
+    for (const block of slsa.match(/```(?:bash|console|powershell)\n[\s\S]*?```/g) ?? []) {
+      expect(block).not.toContain("npm audit signatures");
+    }
+    expect(slsa).toContain("aih verify-release <version>");
     for (const path of [
       "guides/enterprise-developer-guide.md",
       "guides/enterprise-admin-guide.md",

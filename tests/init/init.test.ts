@@ -602,6 +602,9 @@ describe("aih init — target-gated tool artifacts (.cursor on cursor, .claude o
       (a): a is WriteAction => a.kind === "write" && a.path === ".aih-config.json",
     );
     expect(marker?.json).toMatchObject({ targets: ["kiro"] });
+    // #506 F3: the resolved set REPLACES any previously persisted targets — the
+    // marker merge must never union a scoped run back up to old CLI targets.
+    expect(marker?.replaceJsonKeys).toContain("targets");
   });
 });
 

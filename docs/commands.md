@@ -135,6 +135,11 @@ soft-imperative/taste-word prose is advisory). Existing bootloaders are merged: 
 content outside the managed block is preserved, and dry-run/apply summaries report those writes as
 `merge` rather than `overwrite`. Use `--baseline ecc` to render the Layer-1 references; the
 choice is persisted so later `contract` and `bootstrap-ai` runs stay aligned.
+Regeneration scope honors `--cli`: the run regenerates adapters/bootloaders only for the resolved
+CLI set, and the `.aih-config.json` marker's `targets` are **replaced** with that set — an explicit
+`--cli claude,codex` run narrows the persisted targets, so a later bare (marker-driven) re-run no
+longer resurrects a previously bootstrapped CLI's adapter + bootloader. Files for a dropped CLI stay
+on disk untouched; remove them with `aih prune`.
 
 ## aih contract
 
@@ -150,7 +155,11 @@ Converge an **existing** AI canon onto aih's managed model **without overwriting
 `--migrate-cli` folds committed CLI-native content into the canon (copy + pointer-convert,
 content-verified, backed up); `--ack <paths>` marks paths as intentionally tool-native so adopt
 stops flagging them. Bootloader convergence uses the same managed-block merge reporting as
-`bootstrap-ai`.
+`bootstrap-ai`. **Footprint convergence is deliberate here and beats CLI scope**: adopt regenerates
+every bootloader that already exists on disk (an existing `GEMINI.md` is converged even when `--cli`
+names fewer tools), because reaching the already-adopted state requires every existing bootloader to
+carry the managed block; content outside the block is merge-preserved. The converged set is what the
+`.aih-config.json` marker records. To actually drop a CLI's artifacts, use `aih prune`.
 
 ## aih prune
 
