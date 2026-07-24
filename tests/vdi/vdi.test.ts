@@ -296,9 +296,9 @@ describe("VDI host (windows)", () => {
       ctx({ platform: "windows", vdi: VDI_ON, env: { ...env, USERPROFILE: dir } }),
     );
 
-    // PowerShell exports are double-quoted; paths are normalized to forward slashes.
-    expect(body).toContain(`$env:OLLAMA_MODELS = "${under(scratch, "ollama", "models")}"`);
-    expect(body).toContain(`$env:CRG_GLOBAL_DB_PATH = "${under(scratch, "crg", "global.db")}"`);
+    // PowerShell exports are single-quoted; paths are normalized to forward slashes.
+    expect(body).toContain(`$env:OLLAMA_MODELS = '${under(scratch, "ollama", "models")}'`);
+    expect(body).toContain(`$env:CRG_GLOBAL_DB_PATH = '${under(scratch, "crg", "global.db")}'`);
 
     const p = await command.plan(ctx({ platform: "windows", vdi: VDI_ON, env }));
     const mkdir = (byKind(p, "exec") as ExecAction[]).find((e) =>

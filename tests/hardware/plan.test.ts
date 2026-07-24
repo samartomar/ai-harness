@@ -142,10 +142,10 @@ describe("plan shape", () => {
 describe("generated OLLAMA_* env block (rendered by the executor)", () => {
   it("emits the four blueprint static vars verbatim (PowerShell format)", async () => {
     const body = await renderProfile(makeCtx({ env: winTmpEnv() }));
-    expect(body).toContain('$env:OLLAMA_FLASH_ATTENTION = "1"');
-    expect(body).toContain('$env:OLLAMA_KV_CACHE_TYPE = "q8_0"');
-    expect(body).toContain('$env:OLLAMA_CONTEXT_LENGTH = "8192"');
-    expect(body).toContain('$env:OLLAMA_KEEP_ALIVE = "-1"');
+    expect(body).toContain("$env:OLLAMA_FLASH_ATTENTION = '1'");
+    expect(body).toContain("$env:OLLAMA_KV_CACHE_TYPE = 'q8_0'");
+    expect(body).toContain("$env:OLLAMA_CONTEXT_LENGTH = '8192'");
+    expect(body).toContain("$env:OLLAMA_KEEP_ALIVE = '-1'");
   });
 
   it("wraps the block in the aih-managed (hardware) markers", async () => {
@@ -157,13 +157,13 @@ describe("generated OLLAMA_* env block (rendered by the executor)", () => {
   it("writes the computed parallel-request count into OLLAMA_NUM_PARALLEL", async () => {
     // 32GB -> 25GB server; 5GB model -> floor(25/6)=4 parallel.
     const body = await renderProfile(makeCtx({ env: winTmpEnv() }));
-    expect(body).toContain('$env:OLLAMA_NUM_PARALLEL = "4"');
+    expect(body).toContain("$env:OLLAMA_NUM_PARALLEL = '4'");
   });
 
   it("recomputes parallelism for a larger --model-size-gb", async () => {
     // 12GB model on a 25GB server -> floor(25 / 14.4)=1.
     const body = await renderProfile(makeCtx({ env: winTmpEnv(), options: { modelSizeGb: "12" } }));
-    expect(body).toContain('$env:OLLAMA_NUM_PARALLEL = "1"');
+    expect(body).toContain("$env:OLLAMA_NUM_PARALLEL = '1'");
   });
 
   it("rejects malformed or non-positive --model-size-gb instead of using the default", async () => {
@@ -225,7 +225,7 @@ describe("no-GPU host", () => {
     expect(doc?.text).toContain("Recommended quantization     : Q3_K_S");
     // 16GB -> 12GB server; 5GB model -> floor(12/6)=2.
     const body = await renderProfile(ctx);
-    expect(body).toContain('$env:OLLAMA_NUM_PARALLEL = "2"');
+    expect(body).toContain("$env:OLLAMA_NUM_PARALLEL = '2'");
   });
 });
 

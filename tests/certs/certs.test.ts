@@ -442,9 +442,9 @@ describe("certs plan — windows trust propagation", () => {
     const body = await renderProfile(ctx);
     expect(body).toContain("# >>> aih managed (certs) >>>");
     // PowerShell syntax, not POSIX `export`.
-    expect(body).toContain('$env:NODE_EXTRA_CA_CERTS = "');
+    expect(body).toContain("$env:NODE_EXTRA_CA_CERTS = '");
     expect(body).not.toContain("export NODE_EXTRA_CA_CERTS=");
-    expect(body).toMatch(/\$env:SSL_CERT_DIR = ".*enterprise-ca"/);
+    expect(body).toMatch(/\$env:SSL_CERT_DIR = '.*enterprise-ca'/);
   });
 
   it("macOS writes escaped deterministic LaunchAgents and updates launchd", async () => {
