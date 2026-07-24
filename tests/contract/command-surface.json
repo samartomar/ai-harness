@@ -642,6 +642,9 @@
           "flags": "--attest-mcp-pins"
         },
         {
+          "flags": "--check-pin-currency"
+        },
+        {
           "flags": "--context-dir <dir>",
           "defaultValue": "ai-coding"
         },

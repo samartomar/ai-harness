@@ -29,6 +29,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   self-reports at runtime, not the artifact's provenance or integrity. Because the
   probe executes the pinned third-party artifact, the live handshake is opt-in only.
   (#502)
+- Pin currency for the wired MCP tool pins. Doctor renders an `mcp-pin-currency`
+  row covering both halves of the pin-refresh double lag: offline on every run it
+  compares each exactly-pinned npx/uvx launch in `.mcp.json` against the pin this
+  aih build's catalog generates for the same server (a difference is the
+  re-projection half — `mcp.projection-stale`, fixed by `aih mcp --apply`), and
+  `aih doctor --check-pin-currency` opts in to the upstream half, querying each
+  pin's registry for its latest release (npm via `npm view`, PyPI via its JSON
+  metadata endpoint) — registry metadata only, nothing downloaded or executed,
+  opt-in because it is network egress from a read-only command. A newer upstream
+  release warns (`mcp.pin-stale`) as a vet-then-bump candidate, never an automatic
+  upgrade; the documented refresh path is vet (`aih trust scan`) → bump in an aih
+  release → re-project (`aih mcp --apply`) → re-attest (`--attest-mcp-pins`). The
+  codebase-memory-mcp interactive graph-UI variant is deliberately not installed or
+  linked — the wired, vetted surface is the headless stdio launch only — and that
+  decision is recorded in docs/commands.md. (#504)
 
 ### Fixed
 

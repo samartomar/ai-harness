@@ -32,6 +32,7 @@ import {
 import { canonLintCheck } from "./lint/run.js";
 import { mcpManagedAllowlistCheck } from "./mcp/allowlist.js";
 import { mcpUvxPinAttestationProbe } from "./mcp/attest.js";
+import { mcpPinCurrencyProbe } from "./mcp/currency.js";
 import { orgPolicyDriftProbes, orgPolicyIntegrityProbes } from "./org-policy/drift.js";
 import { resolveTargetSet } from "./report/cli-coverage.js";
 import { loadabilityForWithDryRun, loadReason } from "./report/cli-loadability.js";
@@ -78,6 +79,11 @@ export const command: CommandSpec = {
       flags: "--attest-mcp-pins",
       description:
         "launch each exactly-pinned uvx MCP server once (MCP initialize handshake) and compare its self-reported serverInfo.version to the pin — executes the pinned artifact, so it is opt-in",
+    },
+    {
+      flags: "--check-pin-currency",
+      description:
+        "compare each exactly-pinned npx/uvx MCP package launch against its registry's latest release (npm/PyPI metadata only; nothing is downloaded or executed) — network egress, so it is opt-in",
     },
   ],
   plan: (ctx) => {
@@ -321,6 +327,10 @@ export const command: CommandSpec = {
       // proves config SHAPE; this row proves (or honestly refuses to claim) what
       // the pinned artifact self-reports at runtime. Live launch is opt-in.
       probe("MCP uvx pin attestation", (probeCtx) => mcpUvxPinAttestationProbe(probeCtx)),
+      // Pin currency for the wired MCP tool pins (issue #504): re-projection lag
+      // vs THIS build's catalog is reported offline; the registry latest-release
+      // comparison is opt-in (network) via --check-pin-currency.
+      probe("MCP pin currency", (probeCtx) => mcpPinCurrencyProbe(probeCtx)),
       structuredChecksProbe("trust-lock local drift", (probeCtx) =>
         trustLockLocalDriftChecks(probeCtx),
       ),
