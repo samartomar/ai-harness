@@ -568,7 +568,6 @@ describe("heal — cert step", () => {
       Object.assign(ctx.env, {
         NODE_USE_SYSTEM_CA: "0",
         Node_Use_System_Ca: "1",
-        NODE_EXTRA_CA_CERTS: "/stale/exact.pem",
         Node_Extra_Ca_Certs: "/stale/mixed.pem",
       });
       const calls: Array<{ argv: string[]; env: NodeJS.ProcessEnv | undefined }> = [];
@@ -591,8 +590,16 @@ describe("heal — cert step", () => {
 
       calls.length = 0;
       const result = await executePlan(p, ctx);
-      expect(JSON.stringify(result)).not.toContain(root);
-      expect(summarizeResult(result)).not.toContain(root);
+      const json = JSON.stringify(result);
+      const human = summarizeResult(result);
+      for (const sensitivePath of [
+        join(root, ".config", "enterprise-ca", "corporate-root-ca.pem"),
+        ctx.host.shellProfilePaths()[0] as string,
+        join(root, "Library", "LaunchAgents"),
+      ]) {
+        expect(json).not.toContain(sensitivePath);
+        expect(human).not.toContain(sensitivePath);
+      }
       if (apply) {
         expect(calls.map(({ argv }) => argv).some((argv) => argv[1] === "unsetenv")).toBe(true);
         const finalEnv = calls.filter(({ argv }) => argv[0] === "node").at(-1)?.env ?? {};

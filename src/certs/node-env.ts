@@ -1,12 +1,13 @@
 import { join, posix, win32 } from "node:path";
 import { SettingsError } from "../errors.js";
 import type { EnvVar } from "../internals/envfile.js";
-import { type Action, exec, type PlanContext, probe, writeText } from "../internals/plan.js";
+import { type Action, exec, type PlanContext, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 
 export const NODE_USE_SYSTEM_CA = "NODE_USE_SYSTEM_CA";
 export const NODE_EXTRA_CA_CERTS = "NODE_EXTRA_CA_CERTS";
 
+const NODE_TRUST_KEYS = [NODE_USE_SYSTEM_CA, NODE_EXTRA_CA_CERTS] as const;
 const SETX_MAX_VALUE_LEN = 1024;
 const ENV_KEY = /^[A-Z][A-Z0-9_]{0,127}$/;
 const LAUNCH_AGENT_LABEL = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
@@ -59,6 +60,29 @@ function selectedVars(vars: readonly EnvVar[]): EnvVar[] {
     seen.add(variable.key);
     return { key: variable.key, value: variable.value };
   });
+}
+
+function isNodeTrustKey(key: string): boolean {
+  const normalized = key.toUpperCase();
+  return NODE_TRUST_KEYS.some((candidate) => candidate === normalized);
+}
+
+export function selectedNodeTrustEnv(
+  env: NodeJS.ProcessEnv,
+  vars: readonly EnvVar[],
+): NodeJS.ProcessEnv {
+  const selected = selectedVars(vars);
+  const isolated: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (!isNodeTrustKey(key)) isolated[key] = value;
+  }
+  for (const variable of selected) isolated[variable.key] = variable.value;
+  return isolated;
+}
+
+export function unselectedNodeTrustKeys(vars: readonly EnvVar[]): string[] {
+  const selectedKeys = new Set(selectedVars(vars).map((variable) => variable.key));
+  return NODE_TRUST_KEYS.filter((key) => !selectedKeys.has(key));
 }
 
 export function nodeTrustEnvVars(extraCaPath?: string): EnvVar[] {
@@ -122,6 +146,36 @@ export function macLaunchAgentPlist(label: string, key: string, value: string): 
   ].join("\n");
 }
 
+function macLaunchAgentUnsetPlist(label: string, key: string): string {
+  if (!NODE_TRUST_KEYS.some((candidate) => candidate === key)) {
+    throw new SettingsError(`unsupported Node trust environment key: ${key}`);
+  }
+  if (!LAUNCH_AGENT_LABEL.test(label) || label !== launchAgentLabel(key)) {
+    throw new SettingsError("LaunchAgent label is invalid");
+  }
+  const escapedLabel = xmlEscape(label);
+  const escapedKey = xmlEscape(key);
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0">',
+    "<dict>",
+    "  <key>Label</key>",
+    `  <string>${escapedLabel}</string>`,
+    "  <key>ProgramArguments</key>",
+    "  <array>",
+    "    <string>/bin/launchctl</string>",
+    "    <string>unsetenv</string>",
+    `    <string>${escapedKey}</string>`,
+    "  </array>",
+    "  <key>RunAtLoad</key>",
+    "  <true/>",
+    "</dict>",
+    "</plist>",
+    "",
+  ].join("\n");
+}
+
 function persistenceFailure(key: string, code: number | null | undefined): Check {
   return {
     name: `cert: persist ${key} at user scope`,
@@ -131,46 +185,48 @@ function persistenceFailure(key: string, code: number | null | undefined): Check
   };
 }
 
-function persistenceExec(describe: string, argv: string[], key: string): Action {
+function persistenceExec(
+  describe: string,
+  argv: string[],
+  key: string,
+  sensitiveArgv: readonly number[] = [],
+): Action {
   return exec(describe, argv, {
     requiresPriorExecSuccess: true,
     blockProbesOnFailure: true,
     failureCheck: (result) => persistenceFailure(key, result.code),
+    ...(sensitiveArgv.length === 0 ? {} : { sensitive: { argv: sensitiveArgv } }),
   });
 }
 
 export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly EnvVar[]): Action[] {
   const selected = selectedVars(vars);
+  const unselected = unselectedNodeTrustKeys(selected);
   if (ctx.host.platform === "linux") return [];
 
   if (ctx.host.platform === "windows") {
-    const oversized = selected.filter((variable) => variable.value.length > SETX_MAX_VALUE_LEN);
-    if (oversized.length > 0) {
-      return oversized.map((variable) =>
-        probe(`cert: persist ${variable.key} at user scope`, () => ({
-          name: `cert: persist ${variable.key} at user scope`,
-          verdict: "fail",
-          code: "cert.ca-missing",
-          detail: `${variable.key} is ${variable.value.length} chars; setx truncates values over ${SETX_MAX_VALUE_LEN}`,
-        })),
-      );
+    const oversized = selected.find((variable) => variable.value.length > SETX_MAX_VALUE_LEN);
+    if (oversized !== undefined) {
+      throw new SettingsError(`${oversized.key} exceeds the setx 1,024-character value limit`);
     }
-    return selected.map((variable) => {
-      const argv = ctx.host.persistentEnvArgv(variable.key, variable.value);
-      if (
-        argv.length !== 3 ||
-        argv[0] !== "setx" ||
-        argv[1] !== variable.key ||
-        argv[2] !== variable.value
-      ) {
+    const setxAction = (key: string, value: string, clear: boolean): Action => {
+      const argv = ctx.host.persistentEnvArgv(key, value);
+      if (argv.length !== 3 || argv[0] !== "setx" || argv[1] !== key || argv[2] !== value) {
         throw new SettingsError("Windows Node trust persistence must use direct literal setx argv");
       }
       return persistenceExec(
-        `persist ${variable.key} for GUI-launched Node runtimes`,
+        clear
+          ? `clear non-selected ${key} for GUI-launched Node runtimes`
+          : `persist ${key} for GUI-launched Node runtimes`,
         argv,
-        variable.key,
+        key,
+        !clear && key === NODE_EXTRA_CA_CERTS ? [2] : [],
       );
-    });
+    };
+    return [
+      ...selected.map((variable) => setxAction(variable.key, variable.value, false)),
+      ...unselected.map((key) => setxAction(key, "", true)),
+    ];
   }
 
   const home = ctx.env.HOME;
@@ -190,7 +246,7 @@ export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly Env
         path,
         macLaunchAgentPlist(label, variable.key, variable.value),
         `persist ${variable.key} in a user LaunchAgent`,
-        { external: true },
+        { external: true, sensitive: { path: true } },
       ),
     );
     execs.push(
@@ -198,6 +254,27 @@ export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly Env
         `set ${variable.key} in the current launchd user environment`,
         ["/bin/launchctl", "setenv", variable.key, variable.value],
         variable.key,
+        variable.key === NODE_EXTRA_CA_CERTS ? [3] : [],
+      ),
+    );
+  }
+  for (const key of unselected) {
+    const label = launchAgentLabel(key);
+    const path = join(launchAgents, `${label}.plist`);
+    assertNormalizedAbsolutePath(path, "LaunchAgent path");
+    writes.push(
+      writeText(
+        path,
+        macLaunchAgentUnsetPlist(label, key),
+        `neutralize non-selected ${key} in a user LaunchAgent`,
+        { external: true, sensitive: { path: true } },
+      ),
+    );
+    execs.push(
+      persistenceExec(
+        `clear non-selected ${key} from the current launchd user environment`,
+        ["/bin/launchctl", "unsetenv", key],
+        key,
       ),
     );
   }

@@ -70,6 +70,20 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
   const envVars = trustEnvVars(pemPath, outDir, trustStorePath);
   const gradlePath = join(home, ".gradle", "gradle.properties");
   const mavenPath = mavenRcPath(home, ctx.host.platform);
+  const lockArgv = ctx.host.lockDownFileArgv(pemPath);
+  const keytoolArgv = [
+    "keytool",
+    "-importcert",
+    "-noprompt",
+    "-storepass",
+    TRUSTSTORE_PASSWORD,
+    "-alias",
+    "aih-corporate-root-ca",
+    "-file",
+    pemPath,
+    "-keystore",
+    trustStorePath,
+  ];
 
   // `certs` is a HOST-level capability: every file it writes lives under the user's
   // home/system (PEM bundle + per-manager configs), not the repo root, so each write
@@ -79,25 +93,15 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
     // 1. The exported CA bundle, then lock it down to the current user.
     writeText(pemPath, bundle, `corporate root CA bundle (PEM, ${certs.length} cert(s))`, {
       external: true,
+      sensitive: { path: true },
     }),
-    exec("lock down the PEM to the current user", ctx.host.lockDownFileArgv(pemPath)),
-    exec(
-      "JVM: import corporate CA into the generated user truststore",
-      [
-        "keytool",
-        "-importcert",
-        "-noprompt",
-        "-storepass",
-        TRUSTSTORE_PASSWORD,
-        "-alias",
-        "aih-corporate-root-ca",
-        "-file",
-        pemPath,
-        "-keystore",
-        trustStorePath,
-      ],
-      { allowFailure: true },
-    ),
+    exec("lock down the PEM to the current user", lockArgv, {
+      sensitive: { argv: lockArgv.flatMap((value, index) => (value === pemPath ? [index] : [])) },
+    }),
+    exec("JVM: import corporate CA into the generated user truststore", keytoolArgv, {
+      allowFailure: true,
+      sensitive: { argv: [8, 10] },
+    }),
 
     // 2. Propagate trust to every runtime via shell-profile env exports.
     envBlock(
@@ -106,6 +110,7 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
       shell,
       envVars,
       "export TLS trust env vars for Node, pip, requests, cargo, git, Go/JVM tools",
+      { sensitive: { path: true } },
     ),
     ...nodeTrustPersistenceActions(ctx, nodeEnvVars),
 

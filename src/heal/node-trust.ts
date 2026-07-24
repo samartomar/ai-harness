@@ -1,4 +1,5 @@
 import { X509Certificate } from "node:crypto";
+import { nodeTrustEnvVars, selectedNodeTrustEnv } from "../certs/node-env.js";
 import { readAihConfig } from "../config/marker.js";
 import { entry } from "../internals/cli-registry.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
@@ -247,7 +248,7 @@ async function probeExtraCa(
   certs: readonly CertEntry[],
 ): Promise<boolean> {
   const result = await ctx.run(["node", "-e", NODE_TLS_EXTRA_CA_SCRIPT, origin], {
-    env: verifiedTlsEnv(ctx.env),
+    env: verifiedTlsEnv(selectedNodeTrustEnv(ctx.env, [])),
     input: JSON.stringify(certs.map((cert) => cert.pem)),
     timeoutMs: 25_000,
     maxBufferBytes: 4096,
@@ -302,7 +303,7 @@ export async function selectNodeTrustCandidate(
   const origins = candidateOrigins(divergentOrigins);
   if (origins === undefined) return { kind: "unresolved" };
 
-  const systemEnv = { ...ctx.env, NODE_USE_SYSTEM_CA: "1" };
+  const systemEnv = selectedNodeTrustEnv(ctx.env, nodeTrustEnvVars());
   let systemCaPasses = true;
   for (const origin of origins) {
     if ((await probeNodeTls(ctx, origin, systemEnv)).verdict !== "pass") systemCaPasses = false;

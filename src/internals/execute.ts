@@ -41,6 +41,21 @@ import { type Check, VerificationReport } from "./verify.js";
 import { dirtyRemoveTargets, dirtyWriteTargets, normalizeRel } from "./worktree-gate.js";
 
 const VERIFICATION_TRUNCATION_SUFFIX = "... [truncated]";
+const REDACTED_PATH = "<redacted-path>";
+
+function collectedPath(action: { path: string; sensitive?: { path?: boolean } }): string {
+  return action.sensitive?.path ? REDACTED_PATH : action.path;
+}
+
+function collectedArgv(action: ExecAction): string[] {
+  const indexes = new Set(action.sensitive?.argv ?? []);
+  return action.argv.map((value, index) => (indexes.has(index) ? REDACTED_PATH : value));
+}
+
+function isSensitiveBackup(path: string, targets: ReadonlySet<string>): boolean {
+  const suffix = ".aih.bak";
+  return path.endsWith(suffix) && targets.has(path.slice(0, -suffix.length));
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -646,6 +661,7 @@ export async function executePlan(
   }
 
   const txn = new FsTransaction();
+  const sensitiveBackupTargets = new Set<string>();
   const writes: WriteSummary[] = [];
   const docs: PlanResult["docs"] = [];
   const probes: PlanResult["probes"] = [];
@@ -680,7 +696,7 @@ export async function executePlan(
       if (action.once && existing !== undefined) {
         // Write-once seed file already present — preserve the user's content.
         writes.push({
-          path: action.path,
+          path: collectedPath(action),
           describe: action.describe,
           merged: false,
           effect: "kept",
@@ -699,9 +715,10 @@ export async function executePlan(
                 : "overwrite";
         if (ctx.apply && effect !== "unchanged") {
           txn.stage(absPath, contents, action.mode, action.expect);
+          if (action.sensitive?.path) sensitiveBackupTargets.add(absPath);
         }
         writes.push({
-          path: action.path,
+          path: collectedPath(action),
           describe: action.describe,
           merged: Boolean(action.merge),
           effect,
@@ -789,24 +806,31 @@ export async function executePlan(
   // Fold env-block actions per file so multiple scopes COMPOSE (rather than the
   // last write clobbering earlier ones): start from on-disk content and upsert
   // each scope's managed block in order.
-  const envByPath = new Map<string, { display: string; blocks: EnvBlockAction[] }>();
+  const envByPath = new Map<
+    string,
+    { display: string; blocks: EnvBlockAction[]; sensitive: boolean }
+  >();
   for (const b of envBlockActions) {
     const abs = resolvePath(ctx, b.path);
-    const group = envByPath.get(abs) ?? { display: b.path, blocks: [] };
+    const group = envByPath.get(abs) ?? { display: b.path, blocks: [], sensitive: false };
     group.blocks.push(b);
+    group.sensitive ||= b.sensitive?.path === true;
     envByPath.set(abs, group);
   }
-  for (const [absPath, { display, blocks }] of envByPath) {
+  for (const [absPath, { display, blocks, sensitive }] of envByPath) {
     const existing = readIfExists(absPath);
     let content = existing ?? "";
     for (const b of blocks) {
-      content = upsertManagedBlock(content, b.scope, b.vars, b.shell);
+      content = upsertManagedBlock(content, b.scope, b.vars, b.shell, b.unsetKeys);
     }
     const effect: WriteSummary["effect"] =
       existing === undefined ? "create" : existing === content ? "unchanged" : "merge";
-    if (ctx.apply && effect !== "unchanged") txn.stage(absPath, content);
+    if (ctx.apply && effect !== "unchanged") {
+      txn.stage(absPath, content);
+      if (sensitive) sensitiveBackupTargets.add(absPath);
+    }
     writes.push({
-      path: display,
+      path: sensitive ? REDACTED_PATH : display,
       describe: `managed env block(s): ${blocks.map((b) => b.scope).join(", ")}`,
       merged: true,
       effect,
@@ -816,7 +840,9 @@ export async function executePlan(
   let backups: string[] = [];
   if (ctx.apply) {
     const committed = txn.commit();
-    backups = committed.backups;
+    backups = committed.backups.map((backup) =>
+      isSensitiveBackup(backup, sensitiveBackupTargets) ? REDACTED_PATH : backup,
+    );
     // Reconcile each removal summary's `to` with the destination commit ACTUALLY
     // chose. A hard-delete whose `<path>.aih.bak` slot is occupied never overwrites
     // it — it lands at `<path>.1.aih.bak` — so the planned `to` would misdirect the
@@ -838,7 +864,7 @@ export async function executePlan(
   for (const a of execActions) {
     if (ctx.apply) {
       if (priorExecFailed && a.requiresPriorExecSuccess) {
-        execs.push({ describe: a.describe, argv: a.argv, ran: false });
+        execs.push({ describe: a.describe, argv: collectedArgv(a), ran: false });
         continue;
       }
       if (a.expect !== undefined) {
@@ -872,7 +898,7 @@ export async function executePlan(
       const ok = res.code === 0 || Boolean(a.allowFailure);
       execs.push({
         describe: a.describe,
-        argv: a.argv,
+        argv: collectedArgv(a),
         ran: true,
         code: res.code,
         ok,
@@ -887,7 +913,7 @@ export async function executePlan(
         if (a.blockProbesOnFailure) skipProbesAfterExecFailure = true;
       }
     } else {
-      execs.push({ describe: a.describe, argv: a.argv, ran: false });
+      execs.push({ describe: a.describe, argv: collectedArgv(a), ran: false });
     }
   }
 

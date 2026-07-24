@@ -14,6 +14,11 @@ export function formatExport(v: EnvVar, shell: EnvShell): string {
   return `export ${v.key}=${posixQuote(v.value)}`;
 }
 
+export function formatUnset(key: string, shell: EnvShell): string {
+  if (shell === "powershell") return `$env:${key} = $null`;
+  return `unset ${key}`;
+}
+
 function posixQuote(s: string): string {
   if (/^[A-Za-z0-9_./:@%+=-]+$/.test(s)) return s;
   return `'${s.replace(/'/g, `'\\''`)}'`;
@@ -36,8 +41,13 @@ export function upsertManagedBlock(
   scope: string,
   vars: EnvVar[],
   shell: EnvShell,
+  unsetKeys: readonly string[] = [],
 ): string {
-  return upsertTextBlock(existing, scope, vars.map((v) => formatExport(v, shell)).join("\n"));
+  const body = [
+    ...unsetKeys.map((key) => formatUnset(key, shell)),
+    ...vars.map((variable) => formatExport(variable, shell)),
+  ].join("\n");
+  return upsertTextBlock(existing, scope, body);
 }
 
 /**

@@ -4,6 +4,8 @@ import {
   NODE_EXTRA_CA_CERTS,
   nodeTrustEnvVars,
   nodeTrustPersistenceActions,
+  selectedNodeTrustEnv,
+  unselectedNodeTrustKeys,
 } from "../certs/node-env.js";
 import type { EnvVar } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
@@ -89,8 +91,7 @@ function caCheck(
 
 function finalTrustProbe(origins: readonly string[], vars: readonly EnvVar[]): Action {
   return probe("cert: verify persisted Node trust", async (probeCtx) => {
-    const env = { ...probeCtx.env };
-    for (const variable of vars) env[variable.key] = variable.value;
+    const env = selectedNodeTrustEnv(probeCtx.env, vars);
 
     let failed = 0;
     for (const origin of origins) {
@@ -162,6 +163,10 @@ async function planCertVerify(ctx: PlanContext, shared: HealShared): Promise<Act
         ctx.host.envShell(),
         vars,
         "persist the verified Node system-CA selection in the managed shell profile",
+        {
+          unsetKeys: unselectedNodeTrustKeys(vars),
+          sensitive: { path: true },
+        },
       ),
       ...nodeTrustPersistenceActions(ctx, vars),
     );
@@ -169,32 +174,36 @@ async function planCertVerify(ctx: PlanContext, shared: HealShared): Promise<Act
     const bundlePath = join(home, ".config", "enterprise-ca", HEAL_BUNDLE_NAME);
     vars = nodeTrustEnvVars(bundlePath).filter((variable) => variable.key === NODE_EXTRA_CA_CERTS);
     const bundle = candidate.certs.map((cert) => cert.pem).join("");
+    const lockArgv = ctx.host.lockDownFileArgv(bundlePath);
     actions.push(
       writeText(
         bundlePath,
         bundle,
         `selected minimal Node CA bundle (${candidate.certs.length} cert(s))`,
-        { external: true },
+        { external: true, sensitive: { path: true } },
       ),
-      exec(
-        "lock down the selected Node CA bundle to the current user",
-        ctx.host.lockDownFileArgv(bundlePath),
-        {
-          blockProbesOnFailure: true,
-          failureCheck: {
-            name: "cert: lock selected Node CA bundle",
-            verdict: "fail",
-            code: "cert.ca-missing",
-            detail: "could not lock the selected Node CA bundle to the current user",
-          },
+      exec("lock down the selected Node CA bundle to the current user", lockArgv, {
+        blockProbesOnFailure: true,
+        sensitive: {
+          argv: lockArgv.flatMap((value, index) => (value === bundlePath ? [index] : [])),
         },
-      ),
+        failureCheck: {
+          name: "cert: lock selected Node CA bundle",
+          verdict: "fail",
+          code: "cert.ca-missing",
+          detail: "could not lock the selected Node CA bundle to the current user",
+        },
+      }),
       envBlock(
         profile,
         HEAL_NODE_TRUST_SCOPE,
         ctx.host.envShell(),
         vars,
         "persist the verified minimal Node CA bundle in the managed shell profile",
+        {
+          unsetKeys: unselectedNodeTrustKeys(vars),
+          sensitive: { path: true },
+        },
       ),
       ...nodeTrustPersistenceActions(ctx, vars),
     );

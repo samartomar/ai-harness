@@ -40,10 +40,18 @@ import type { Check } from "./verify.js";
  */
 export type ActionKind = "write" | "probe" | "doc" | "exec" | "envblock" | "digest" | "remove";
 
+export interface ActionSensitivity {
+  /** Replace an action's result path with a stable placeholder. */
+  path?: boolean;
+  /** Replace only these argv indexes in the collected PlanResult. */
+  argv?: readonly number[];
+}
+
 export interface WriteAction {
   kind: "write";
   path: string;
   describe: string;
+  sensitive?: ActionSensitivity;
   /** Raw file contents (for text files). */
   contents?: string;
   /** Structured value (for JSON files); enables `merge`. */
@@ -132,6 +140,7 @@ export interface ExecAction {
   kind: "exec";
   describe: string;
   argv: string[];
+  sensitive?: ActionSensitivity;
   /** Optional working directory for local, quarantined helper commands. */
   cwd?: string;
   /** Optional scrubbed environment for local helper commands. */
@@ -168,7 +177,9 @@ export interface EnvBlockAction {
   scope: string;
   shell: EnvShell;
   vars: EnvVar[];
+  unsetKeys?: string[];
   describe: string;
+  sensitive?: ActionSensitivity;
 }
 
 /**
@@ -385,7 +396,13 @@ export function writeText(
   path: string,
   contents: string,
   describe: string,
-  opts: { merge?: boolean; mode?: number; once?: boolean; external?: boolean } = {},
+  opts: {
+    merge?: boolean;
+    mode?: number;
+    once?: boolean;
+    external?: boolean;
+    sensitive?: ActionSensitivity;
+  } = {},
 ): WriteAction {
   return {
     kind: "write",
@@ -396,6 +413,7 @@ export function writeText(
     mode: opts.mode,
     once: opts.once,
     external: opts.external,
+    ...(opts.sensitive === undefined ? {} : { sensitive: opts.sensitive }),
   };
 }
 
@@ -519,6 +537,7 @@ export function exec(
     blockProbesOnFailure?: boolean;
     requiresPriorExecSuccess?: boolean;
     expect?: ExecAction["expect"];
+    sensitive?: ActionSensitivity;
   } = {},
 ): ExecAction {
   return {
@@ -533,6 +552,7 @@ export function exec(
     requiresPriorExecSuccess: opts.requiresPriorExecSuccess,
     allowFailure: opts.allowFailure,
     expect: opts.expect,
+    ...(opts.sensitive === undefined ? {} : { sensitive: opts.sensitive }),
   };
 }
 
@@ -542,8 +562,18 @@ export function envBlock(
   shell: EnvShell,
   vars: EnvVar[],
   describe: string,
+  opts: { unsetKeys?: string[]; sensitive?: ActionSensitivity } = {},
 ): EnvBlockAction {
-  return { kind: "envblock", path, scope, shell, vars, describe };
+  return {
+    kind: "envblock",
+    path,
+    scope,
+    shell,
+    vars,
+    describe,
+    ...(opts.unsetKeys === undefined ? {} : { unsetKeys: opts.unsetKeys }),
+    ...(opts.sensitive === undefined ? {} : { sensitive: opts.sensitive }),
+  };
 }
 
 export function remove(
