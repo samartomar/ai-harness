@@ -379,6 +379,10 @@ It writes, at the parent (it does **not** touch the child repos — run `aih ini
   are checked out to the recorded ref, and children with no recorded remote are skipped with a note.
   Until a declared child exists, `aih workspace --apply` skips that child's graph MCP scope and emits
   a hydrate note instead of wiring an empty path.
+- `aih workspace graph` projects the **declared** contract edges into a queryable cross-repo graph:
+  `--repo`/`--from`/`--to`/`--kind` answer "what depends on what" from `.aih-workspace.json` alone,
+  and `--apply` writes the projection to `.aih/workspace-graph.json`. Declared topology is the source
+  of truth — the per-repo graph MCP servers are optional enrichment, never required.
 
 ### Support tickets
 

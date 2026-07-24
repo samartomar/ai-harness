@@ -25,10 +25,11 @@ describe("CLI program", () => {
     expect(READONLY).toHaveLength(6);
   });
 
-  it("registers workspace acquisition, snapshot, and plan subcommands", () => {
+  it("registers workspace acquisition, graph, snapshot, and plan subcommands", () => {
     const workspace = buildProgram().commands.find((c) => c.name() === "workspace");
     expect(workspace?.commands.map((c) => c.name()).sort()).toEqual([
       "add",
+      "graph",
       "hydrate",
       "init",
       "link",

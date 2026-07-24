@@ -313,6 +313,16 @@ rollup so the child report cells see the refreshed artifacts. Until a declared c
 `aih workspace --apply` emits a hydrate note and skips that child's graph MCP scope instead of wiring
 an empty path.
 
+`aih workspace graph [root]` projects the declared contract relations in `.aih-workspace.json` into a
+queryable cross-repo graph — declared over inferred: the declarations are the source of truth, and
+the per-repo workspace graph MCP servers are optional enrichment, never required for declared
+coverage. The projection is a pure function of the manifest (nodes from `repos[]`, edges from
+`edges[]`, each edge marked `provenance: "declared"`); `--apply` writes it to
+`.aih/workspace-graph.json`, and `--repo <id>`, `--from <id>`, `--to <id>`, and `--kind <kind>`
+filter the printed edge table (`--json` carries the same graph, query, and matches). It fails closed:
+a declared edge endpoint or a query repo id that does not match a declared repo id is an error, so a
+typo can never read as "no dependencies".
+
 **Skill governance & supply chain**
 
 ## aih trust

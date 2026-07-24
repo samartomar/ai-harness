@@ -8,6 +8,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `aih workspace graph` projects the workspace's own declared contract relations
+  (`.aih-workspace.json` `repos[]` + `edges[]`) into a queryable cross-repo graph —
+  declared over inferred: a declared two-repo workspace yields queryable cross-repo
+  edges from declarations alone, with graph-tool inference demoted to optional
+  enrichment. `--apply` writes the pure, deterministic projection (every edge marked
+  `provenance: "declared"`) to `.aih/workspace-graph.json`; `--repo`/`--from`/`--to`/
+  `--kind` answer edge queries without writing; `--json` carries the graph, query,
+  and matches. Fail-closed: dangling edge endpoints and undeclared query repo ids
+  are errors, so a typo can never read as "no dependencies". (#505)
+
 - Doctor distinguishes generation deltas from user drift on aih-generated managed
   artifacts. When `.claude/managed-settings.json` or the managed MCP allowlist
   matches an EARLIER aih generation's own output — a pre-hardening bare `uvx <pkg>`
