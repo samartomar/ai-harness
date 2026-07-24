@@ -1,11 +1,13 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { classifyTool, versionArgv } from "../../src/heal/common.js";
 import { command } from "../../src/heal/index.js";
+import { probeNodeTls, runtimeTlsOrigins } from "../../src/heal/node-trust.js";
 import { parseScope } from "../../src/heal/phases.js";
 import { pathFixDoc } from "../../src/heal/templates.js";
+import * as cliRegistry from "../../src/internals/cli-registry.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type RunResult } from "../../src/internals/proc.js";
@@ -275,6 +277,67 @@ describe("heal — tool invocation (Windows .cmd shim)", () => {
   });
 });
 
+describe("heal — Node TLS boundaries", () => {
+  it("selects only bounded, credential-free HTTPS origins from configured targets", () => {
+    const root = freshTmp();
+    writeFileSync(
+      join(root, ".aih-config.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        contextDir: "ai-coding",
+        targets: ["claude", "codex", "cursor", "antigravity", "gemini"],
+      }),
+    );
+    const originsByCli: Record<string, string[]> = {
+      claude: [
+        "http://insecure.example.test",
+        "https://user:pass@credentials.example.test",
+        "https://path.example.test/not-an-origin",
+        "https://query.example.test/?query=value",
+        "https://fragment.example.test/#fragment",
+        "https://first.example.test",
+      ],
+      codex: ["https://first.example.test", "https://second.example.test"],
+      cursor: ["https://third.example.test"],
+      antigravity: ["https://fourth.example.test"],
+      gemini: ["https://fifth.example.test"],
+    };
+    const originalEntry = cliRegistry.entry;
+    const entrySpy = vi.spyOn(cliRegistry, "entry").mockImplementation((cli) => ({
+      ...originalEntry(cli),
+      tlsOrigins: originsByCli[cli] ?? [],
+    }));
+
+    try {
+      expect(runtimeTlsOrigins(makeCtx({ root }))).toEqual([
+        "https://registry.npmjs.org",
+        "https://pypi.org",
+        "https://first.example.test",
+        "https://second.example.test",
+        "https://third.example.test",
+        "https://fourth.example.test",
+      ]);
+    } finally {
+      entrySpy.mockRestore();
+    }
+  });
+
+  it("reports a missing Node runtime as an explicit skip", async () => {
+    const ctx = makeCtx({ root: freshTmp() });
+    ctx.run = fakeRunner(() => ({
+      code: 127,
+      spawnError: true,
+      stderr: "spawn node ENOENT",
+    }));
+
+    await expect(probeNodeTls(ctx, "https://node.example.test")).resolves.toEqual({
+      name: "cert: Node TLS node.example.test",
+      verdict: "skip",
+      detail: "node not found on PATH",
+    });
+  });
+});
+
 describe("heal — cert step", () => {
   it("all green: cert + both TLS probes pass, no fix digest", async () => {
     const p = await command.plan(makeCtx({ root: freshTmp(), ca: "valid" }));
@@ -304,7 +367,7 @@ describe("heal — cert step", () => {
     const p = await command.plan(
       makeCtx({
         root: freshTmp(),
-        ca: "unset",
+        ca: "valid",
         registry: "ok",
         pypi: "ok",
         nodeRegistry: "fail",

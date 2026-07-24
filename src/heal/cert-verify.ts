@@ -20,8 +20,21 @@ const SETX_MAX_VALUE_LEN = 1024;
  * heal doesn't cry wolf on a machine with no proxy. The env var is only a hard fail
  * when it's set-but-broken (a real misconfig) or when TLS is actually failing.
  */
-function caCheck(env: NodeJS.ProcessEnv, tlsOk: boolean, tlsFailed: boolean): Check {
+function caCheck(
+  env: NodeJS.ProcessEnv,
+  tlsOk: boolean,
+  tlsFailed: boolean,
+  nodeTrustDiverged: boolean,
+): Check {
   const p = env[ENV_KEY];
+  if (nodeTrustDiverged) {
+    return {
+      name: CHECK,
+      verdict: "fail",
+      detail: "Node TLS verification fails despite an OS-verified origin",
+      code: "tls.verify-failed",
+    };
+  }
   if (p && existsSync(p) && readIfExists(p)?.includes("BEGIN CERTIFICATE")) {
     return { name: CHECK, verdict: "pass", detail: `${p} (valid PEM)` };
   }
@@ -68,7 +81,7 @@ async function planCertVerify(ctx: PlanContext, shared: HealShared): Promise<Act
   );
   const tlsFailed =
     shared.tlsRegistry.verdict === "fail" || shared.tlsPypi.verdict === "fail" || nodeTrustDiverged;
-  const ca = caCheck(ctx.env, tlsOk, tlsFailed);
+  const ca = caCheck(ctx.env, tlsOk, tlsFailed, nodeTrustDiverged);
   const actions: Action[] = [
     captured(ca),
     ...shared.runtimeTls.flatMap(({ os, node }) => [captured(os), captured(node)]),
