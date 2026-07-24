@@ -45,6 +45,12 @@ This rule specifically overrides generic large-repo graph advice for this repo:
 review cost, but it is never a start, correctness, security, test, merge, or
 release gate.
 
+Graph currency is kept automatically: the repo-local `.githooks/post-merge`
+hook (enabled once per clone via `git config core.hooksPath .githooks`) starts
+a detached incremental `code-review-graph` update after every merge or pull. A
+missed refresh only ages the advisory context — run
+`node tools/repo-ai-tools.mjs graph-refresh` by hand to catch up.
+
 ## Installation and licensing
 
 Run `node tools/repo-ai-tools.mjs install` from the repository root, then
