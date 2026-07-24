@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { fakeRunner, type RunResult } from "../../src/internals/proc.js";
+import { fakeRunner, type RunOptions, type RunResult } from "../../src/internals/proc.js";
 import { WindowsAdapter } from "../../src/platform/windows.js";
 
-type Handler = (argv: string[]) => Partial<RunResult> | undefined;
+type Handler = (argv: string[], opts?: RunOptions) => Partial<RunResult> | undefined;
 
 function adapter(handler: Handler, env: NodeJS.ProcessEnv = {}): WindowsAdapter {
   return new WindowsAdapter(fakeRunner(handler), env);
@@ -35,10 +35,12 @@ describe("WindowsAdapter", () => {
 
   it("enumerates every trusted root without a subject filter and deduplicates PEM", async () => {
     let script = "";
+    let maxBufferBytes: number | undefined;
     const raw = "Q".repeat(80);
-    const a = adapter((argv) => {
+    const a = adapter((argv, opts) => {
       if (argv[0] !== "pwsh") return undefined;
       script = argv.at(-1) ?? "";
+      maxBufferBytes = opts?.maxBufferBytes;
       return { stdout: `${raw}\tCN=Example Root A\n${raw}\tCN=Duplicate Root A\n` };
     });
 
@@ -47,6 +49,21 @@ describe("WindowsAdapter", () => {
     expect(certs).toHaveLength(1);
     expect(script).toContain("Cert:\\CurrentUser\\Root, Cert:\\LocalMachine\\Root");
     expect(script).not.toContain("Where-Object");
+    expect(maxBufferBytes).toBe(2 * 1024 * 1024);
+  });
+
+  it("returns no roots from truncated enumeration output", async () => {
+    const raw = `${"Q".repeat(80)}\tCN=Partial Root\n`;
+    const a = adapter(() => ({ stdout: raw, truncated: true }));
+
+    expect(await a.trustStoreRoots()).toEqual([]);
+  });
+
+  it("returns no roots from non-zero enumeration output", async () => {
+    const raw = `${"Q".repeat(80)}\tCN=Partial Root\n`;
+    const a = adapter(() => ({ stdout: raw, code: 1 }));
+
+    expect(await a.trustStoreRoots()).toEqual([]);
   });
 
   it("persists env via setx DIRECTLY — no cmd wrapper that would re-parse the value", () => {

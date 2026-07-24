@@ -138,4 +138,97 @@ describe("LinuxAdapter", () => {
       rmSync(anchors, { recursive: true, force: true });
     }
   });
+
+  it("rejects an oversized consolidated bundle before materializing it", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-oversized-bundle-"));
+    try {
+      const bundle = join(root, "ca-certificates.crt");
+      writeFileSync(bundle, `${FAKE_PEM}${"X".repeat(2 * 1024 * 1024)}`);
+      const a = new LinuxAdapter(
+        fakeRunner(() => undefined),
+        {},
+        [],
+        [bundle],
+      );
+
+      expect(await a.trustStoreRoots()).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a consolidated bundle with too many certificate entries", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-oversized-bundle-entries-"));
+    try {
+      const bundle = join(root, "ca-certificates.crt");
+      writeFileSync(bundle, FAKE_PEM.repeat(1025));
+      const a = new LinuxAdapter(
+        fakeRunner(() => undefined),
+        {},
+        [],
+        [bundle],
+      );
+
+      expect(await a.trustStoreRoots()).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("returns no partial fallback inventory when one file exceeds its byte bound", async () => {
+    const anchors = mkdtempSync(join(tmpdir(), "aih-oversized-anchor-file-"));
+    try {
+      writeFileSync(join(anchors, "a-valid.crt"), FAKE_PEM);
+      writeFileSync(join(anchors, "b-oversized.crt"), `${FAKE_PEM}${"X".repeat(2 * 1024 * 1024)}`);
+      const a = new LinuxAdapter(
+        fakeRunner(() => undefined),
+        {},
+        [anchors],
+        [],
+      );
+
+      expect(await a.trustStoreRoots()).toEqual([]);
+    } finally {
+      rmSync(anchors, { recursive: true, force: true });
+    }
+  });
+
+  it("returns no partial fallback inventory when total bytes exceed the bound", async () => {
+    const anchors = mkdtempSync(join(tmpdir(), "aih-oversized-anchor-total-"));
+    try {
+      for (const name of ["a.crt", "b.crt", "c.crt"]) {
+        writeFileSync(join(anchors, name), `${FAKE_PEM}${"X".repeat(1536 * 1024)}`);
+      }
+      const a = new LinuxAdapter(
+        fakeRunner(() => undefined),
+        {},
+        [anchors],
+        [],
+      );
+
+      expect(await a.trustStoreRoots()).toEqual([]);
+    } finally {
+      rmSync(anchors, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an oversized directory inventory without returning partial roots", async () => {
+    const anchors = mkdtempSync(join(tmpdir(), "aih-oversized-anchor-dir-"));
+    try {
+      writeFileSync(join(anchors, "trusted.crt"), FAKE_PEM);
+      for (let index = 0; index < 1025; index += 1) {
+        writeFileSync(join(anchors, `ignored-${index}.txt`), "");
+      }
+      const a = new LinuxAdapter(
+        fakeRunner(() => undefined),
+        {},
+        [anchors],
+        [],
+      );
+
+      expect(await a.trustStoreRoots()).toEqual([]);
+    } finally {
+      rmSync(anchors, { recursive: true, force: true });
+    }
+  });
 });

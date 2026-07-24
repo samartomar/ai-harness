@@ -33,11 +33,28 @@ const LEAF_INTERMEDIATE_PEM = readFileSync(
   new URL("../fixtures/certs/leaf-intermediate.pem", import.meta.url),
   "utf8",
 );
+const OVERFLOW_INTERMEDIATE_PEM = readFileSync(
+  new URL("../fixtures/certs/overflow-intermediate.pem", import.meta.url),
+  "utf8",
+);
 
 const ROOT_A = certEntry(ROOT_A_PEM);
 const ROOT_B = certEntry(ROOT_B_PEM);
 const NOT_CA = certEntry(NOT_CA_PEM);
 const ALT_ROOTS = [ROOT_ALT_A_PEM, ROOT_ALT_B_PEM, ROOT_ALT_C_PEM]
+  .map(certEntry)
+  .sort((a, b) =>
+    new X509Certificate(a.pem).fingerprint256.localeCompare(
+      new X509Certificate(b.pem).fingerprint256,
+    ),
+  );
+
+const OVERFLOW_ROOTS = Array.from({ length: 9 }, (_, index) =>
+  readFileSync(
+    new URL(`../fixtures/certs/overflow-root-${index + 1}.pem`, import.meta.url),
+    "utf8",
+  ),
+)
   .map(certEntry)
   .sort((a, b) =>
     new X509Certificate(a.pem).fingerprint256.localeCompare(
@@ -329,6 +346,47 @@ describe("selectNodeTrustCandidate", () => {
       expect(call.env.NODE_TLS_REJECT_UNAUTHORIZED).toBeUndefined();
       expect(call.env.EXISTING_SETTING).toBe("preserved");
     }
+  });
+
+  it("fails closed when one origin has too many signing-root candidates", async () => {
+    const candidate = await selectNodeTrustCandidate(
+      candidateCtx((kind) => {
+        if (kind === "system-ca") return { code: 1 };
+        if (kind === "capture") return capturedChain(OVERFLOW_INTERMEDIATE_PEM);
+        throw new Error("candidate overflow must not reach TLS verification");
+      }, OVERFLOW_ROOTS),
+      ["https://overflow.example.test"],
+    );
+
+    expect(candidate).toEqual({ kind: "unresolved" });
+  });
+
+  it("fails closed when deterministic candidate unions exceed the search bound", async () => {
+    const origins = [
+      "https://alt-one.example.test",
+      "https://alt-two.example.test",
+      "https://alt-three.example.test",
+      "https://overflow-one.example.test",
+      "https://overflow-two.example.test",
+      "https://overflow-three.example.test",
+    ];
+    const candidate = await selectNodeTrustCandidate(
+      candidateCtx(
+        (kind, origin) => {
+          if (kind === "system-ca") return { code: 1 };
+          if (kind === "capture") {
+            return capturedChain(
+              origin.includes("overflow") ? OVERFLOW_INTERMEDIATE_PEM : INTERMEDIATE_PEM,
+            );
+          }
+          throw new Error("union overflow must not reach TLS verification");
+        },
+        [...ALT_ROOTS, ...OVERFLOW_ROOTS.slice(0, 8)],
+      ),
+      origins,
+    );
+
+    expect(candidate).toEqual({ kind: "unresolved" });
   });
 
   it("fails closed when the trust-root inventory exceeds its input bound", async () => {
