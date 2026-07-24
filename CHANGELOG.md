@@ -20,6 +20,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the workflow's bash matcher (`riskGatesTouched`), and gate patterns are matched
   with shell globbing disabled so they can never expand against the checkout. At
   vibe posture neither sidecar nor workflow is emitted. Refs #507
+- Canon MUST-to-enforcing-check map: `docs/CONTROL_MATRIX.md` gains a
+  `## Canon MUST Map` section classifying every imperative line the generated
+  Layer-2 canon (`src/bootstrap-ai/canon.ts`) emits — generation-invariant MUSTs
+  cite their drift probe or canon lint seam, governance MUSTs cite their gate
+  (secret scan, guardrail artifacts, posture grading), and agent-behavioral MUSTs
+  are labeled `agent-directed, not aih-gated`. A regression gate
+  (`tests/bootstrap-ai/canon-must-map.test.ts`) regenerates the reachable canon
+  surface, extracts imperative lines by a documented token set, and fails closed
+  on any unmapped imperative or stale map row. (Refs #507)
 - `aih workspace graph` projects the workspace's own declared contract relations
   (`.aih-workspace.json` `repos[]` + `edges[]`) into a queryable cross-repo graph —
   declared over inferred: a declared two-repo workspace yields queryable cross-repo
@@ -81,8 +90,38 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   linked — the wired, vetted surface is the headless stdio launch only — and that
   decision is recorded in docs/commands.md. (#504)
 
+### Changed
+
+- Single-sourced the generated discipline text at its authored layer (slice A of
+  the #507 canon-structure theme): the working-agreement principles (think before
+  coding, simplicity first, surgical changes, goal-driven, canon tools), the
+  invariant list, and the reporting bar are now authored once in
+  `src/bootstrap-ai/canon.ts` (`DISCIPLINE_PRINCIPLES` / `DISCIPLINE_INVARIANTS` /
+  `DISCIPLINE_REPORTING`), and both renderings — the shared canonical block's
+  compact bullets and `rules/agent-behavior-core.md`'s long-form sections — derive
+  from that single source, drift-guarded by the extended byte-identical-fragments
+  tests. Emitted output is byte-identical in both canon modes: the marker id
+  (`ai-canonical:shared`), every emitted path, legacy output, and the committed
+  dogfood tree are all unchanged, so no deployed bootloader reads as drifted.
+  Refs #507.
+
 ### Fixed
 
+- Adapter regeneration scope now honors `--cli`: the `.aih-config.json` marker's
+  `targets` are replaced with each run's resolved CLI set instead of being
+  array-unioned with previous runs, so an explicit `aih bootstrap-ai --cli
+  claude,codex` narrows the persisted footprint and later marker-driven re-runs no
+  longer resurrect a dropped CLI's adapter + bootloader (files on disk stay
+  untouched; `aih prune` removes them). `aih adopt`'s convergence of every
+  bootloader that already exists on disk is deliberate — required to reach
+  already-adopted — and is now documented as footprint-convergence-beats-CLI-scope
+  in the command reference. The ECC Codex `--profile full` passthrough reported by
+  the same enterprise rollout batch is locked with live-path regression tests
+  (resolved profile → registration request → full-scope Codex merge), and the
+  enterprise onboarding + release-SLSA docs now route global-install provenance
+  through `aih verify-release` instead of a bare `npm audit signatures`, which
+  cannot audit a global install (`EAUDITGLOBAL`); the verifier runs
+  `npm audit signatures --prefix <temp>` against the exact release instead. (#506)
 - `aih ready` reports the factual secret-location class instead of labelling every
   plaintext finding "committed": git-tracked findings stay under `no-committed-secret`
   (rotate + rewrite git history), while untracked on-disk files report
