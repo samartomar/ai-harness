@@ -106,6 +106,107 @@ describe("activation frontmatter", () => {
   });
 });
 
+describe("kiro steering frontmatter variants (#500)", () => {
+  const steering = ".kiro/steering/00-canon.md";
+
+  it("CRLF line endings still count as inclusion: always", () => {
+    scaffoldCanon();
+    write(steering, "---\r\ninclusion: always\r\n---\r\nRULE_ROUTER.md\r\n");
+    const l = loadabilityFor(ctx(), "kiro");
+    expect(checkOk(l, "activation")).toBe(true);
+    expect(l.verdict).toBe("unverified");
+  });
+
+  it("a UTF-8 BOM before the opening --- still counts (Kiro's loader strips it)", () => {
+    scaffoldCanon();
+    write(steering, `${String.fromCharCode(0xfeff)}---\ninclusion: always\n---\nRULE_ROUTER.md\n`);
+    const l = loadabilityFor(ctx(), "kiro");
+    expect(checkOk(l, "activation")).toBe(true);
+    expect(checkOk(l, "frontmatter-hygiene")).toBe(true);
+    expect(l.verdict).toBe("unverified");
+  });
+
+  it("BOM + CRLF combined (the reported Windows shape) still counts", () => {
+    scaffoldCanon();
+    write(
+      steering,
+      `${String.fromCharCode(0xfeff)}---\r\ninclusion: always\r\n---\r\nRULE_ROUTER.md\r\n`,
+    );
+    expect(loadabilityFor(ctx(), "kiro").verdict).toBe("unverified");
+  });
+
+  it('a double-quoted value (inclusion: "always") still counts', () => {
+    scaffoldCanon();
+    write(steering, '---\ninclusion: "always"\n---\nRULE_ROUTER.md\n');
+    expect(loadabilityFor(ctx(), "kiro").verdict).toBe("unverified");
+  });
+
+  it("a single-quoted value (inclusion: 'always') still counts", () => {
+    scaffoldCanon();
+    write(steering, "---\ninclusion: 'always'\n---\nRULE_ROUTER.md\n");
+    expect(loadabilityFor(ctx(), "kiro").verdict).toBe("unverified");
+  });
+
+  it("extra spaces around the colon and value still count", () => {
+    scaffoldCanon();
+    write(steering, "---\ninclusion :   always  \n---\nRULE_ROUTER.md\n");
+    expect(loadabilityFor(ctx(), "kiro").verdict).toBe("unverified");
+  });
+
+  it("key order does not matter", () => {
+    scaffoldCanon();
+    write(steering, "---\ndescription: canon\ninclusion: always\n---\nRULE_ROUTER.md\n");
+    expect(loadabilityFor(ctx(), "kiro").verdict).toBe("unverified");
+  });
+
+  it("a CRLF file genuinely missing the directive still fails", () => {
+    scaffoldCanon();
+    write(steering, "---\r\ndescription: x\r\n---\r\nRULE_ROUTER.md\r\n");
+    const l = loadabilityFor(ctx(), "kiro");
+    expect(l.verdict).toBe("wontLoad");
+    expect(checkOk(l, "activation")).toBe(false);
+  });
+
+  it("an indented (nested) inclusion key is not a top-level directive and still fails", () => {
+    scaffoldCanon();
+    write(steering, "---\nsettings:\n  inclusion: always\n---\nRULE_ROUTER.md\n");
+    expect(loadabilityFor(ctx(), "kiro").verdict).toBe("wontLoad");
+  });
+
+  it("a quoted wrong value does not sneak through", () => {
+    scaffoldCanon();
+    write(steering, '---\ninclusion: "manual"\n---\nRULE_ROUTER.md\n');
+    expect(loadabilityFor(ctx(), "kiro").verdict).toBe("wontLoad");
+  });
+
+  it("BOM-tolerance does not swallow unterminated CRLF frontmatter", () => {
+    scaffoldCanon();
+    write(steering, `${String.fromCharCode(0xfeff)}---\r\ninclusion: always\r\nRULE_ROUTER.md\r\n`);
+    const l = loadabilityFor(ctx(), "kiro");
+    expect(l.verdict).toBe("wontLoad");
+    expect(checkOk(l, "frontmatter-hygiene")).toBe(false);
+  });
+
+  it('cursor alwaysApply: "true" still won\'t load — quoting a YAML boolean stays strict', () => {
+    scaffoldCanon();
+    write(".cursor/rules/00-canon.mdc", '---\nalwaysApply: "true"\n---\nRULE_ROUTER.md\n');
+    const l = loadabilityFor(ctx(), "cursor");
+    expect(l.verdict).toBe("wontLoad");
+    expect(checkOk(l, "activation")).toBe(false);
+  });
+
+  it("cursor keeps the strict no-BOM contract — tolerance is Kiro-scoped", () => {
+    scaffoldCanon();
+    write(
+      ".cursor/rules/00-canon.mdc",
+      `${String.fromCharCode(0xfeff)}---\nalwaysApply: true\n---\nRULE_ROUTER.md\n`,
+    );
+    const l = loadabilityFor(ctx(), "cursor");
+    expect(l.verdict).toBe("wontLoad");
+    expect(checkOk(l, "frontmatter-hygiene")).toBe(false);
+  });
+});
+
 describe("hygiene + router chain", () => {
   it("a BOM before content won't load", () => {
     scaffoldCanon();
