@@ -93,6 +93,10 @@ describe("workspace graph — declared contract edges become queryable graph edg
     const plan = await workspaceGraphCommand.plan(ctx);
     const artifact = graphWrite(plan.actions).json as WorkspaceGraph;
 
+    // Pin the plan's exact action-kind shape (artifact write, .gitignore write,
+    // digest) so an exec — i.e. tool inference — can never sneak into the
+    // projection plan unnoticed.
+    expect(plan.actions.map((action) => action.kind)).toEqual(["write", "write", "digest"]);
     // Deterministic, pure projection of the manifest — exact equality pins that
     // no timestamps, inference results, or ambient state leak into the artifact.
     expect(artifact).toEqual({
