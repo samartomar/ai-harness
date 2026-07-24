@@ -138,8 +138,11 @@ choice is persisted so later `contract` and `bootstrap-ai` runs stay aligned.
 Regeneration scope honors `--cli`: the run regenerates adapters/bootloaders only for the resolved
 CLI set, and the `.aih-config.json` marker's `targets` are **replaced** with that set — an explicit
 `--cli claude,codex` run narrows the persisted targets, so a later bare (marker-driven) re-run no
-longer resurrects a previously bootstrapped CLI's adapter + bootloader. Files for a dropped CLI stay
-on disk untouched; remove them with `aih prune`.
+longer resurrects a previously bootstrapped CLI's adapter + bootloader. Because the set is replaced,
+naming a partial list **drops the omitted CLIs** from recorded intent — `--cli codex` alone rewrites
+`targets` to just `["codex"]`, so pass the full intended list and do not omit a CLI unless you mean
+to drop it (see [guides/cli-lifecycle-guide.md](../guides/cli-lifecycle-guide.md)). Files for a
+dropped CLI stay on disk untouched; remove them with `aih prune`.
 
 ## aih contract
 

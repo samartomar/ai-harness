@@ -149,6 +149,13 @@ describe("release readiness metadata", () => {
       expect(block).not.toContain("npm audit signatures");
     }
     expect(slsa).toContain("aih verify-release <version>");
+    // #506 F4: the onboarding runbook also carries an INLINE-code version pin in
+    // prose ("currently `npm install -g @aihq/harness@X`") OUTSIDE any fence. The
+    // fenced block is guarded above via the package.json-derived pin; this closes
+    // the inline-code gap so the prose pin can't silently rot after a version bump.
+    const onboarding = read("docs/ENTERPRISE_ONBOARDING.md");
+    expect(onboarding).toContain("install the approved explicit version (currently");
+    expect(onboarding).toContain(`\`npm install -g @aihq/harness@${currentVersion}\`);`);
     for (const path of [
       "guides/enterprise-developer-guide.md",
       "guides/enterprise-admin-guide.md",
