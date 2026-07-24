@@ -195,6 +195,14 @@ describe("kiro steering frontmatter variants (#500)", () => {
     expect(checkOk(l, "activation")).toBe(false);
   });
 
+  it("cursor `alwaysApply :true` (spaced colon, no space after) is not a mapping and still fails", () => {
+    scaffoldCanon();
+    write(".cursor/rules/00-canon.mdc", "---\nalwaysApply :true\n---\nRULE_ROUTER.md\n");
+    const l = loadabilityFor(ctx(), "cursor");
+    expect(l.verdict).toBe("wontLoad");
+    expect(checkOk(l, "activation")).toBe(false);
+  });
+
   it("cursor keeps the strict no-BOM contract — tolerance is Kiro-scoped", () => {
     scaffoldCanon();
     write(
@@ -212,6 +220,14 @@ describe("hygiene + router chain", () => {
     scaffoldCanon();
     write(".windsurfrules", `${String.fromCharCode(0xfeff)}RULE_ROUTER.md\n`);
     const l = loadabilityFor(ctx(), "windsurf");
+    expect(l.verdict).toBe("wontLoad");
+    expect(checkOk(l, "frontmatter-hygiene")).toBe(false);
+  });
+
+  it("unterminated CRLF frontmatter fails hygiene on a no-activation CLI", () => {
+    scaffoldCanon();
+    write("CLAUDE.md", "---\r\ntitle: canon\r\nRULE_ROUTER.md\r\n");
+    const l = loadabilityFor(ctx(), "claude");
     expect(l.verdict).toBe("wontLoad");
     expect(checkOk(l, "frontmatter-hygiene")).toBe(false);
   });

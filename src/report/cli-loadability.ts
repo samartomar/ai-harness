@@ -48,7 +48,9 @@ const FRONTMATTER_OPEN = /^---[ \t]*\r?\n/;
  * -flavored Kiro steering files were flagged as missing `inclusion: always`).
  * Keys stay anchored at column 0 so a nested mapping never counts as top-level,
  * and values keep their quotes: equivalence is decided in
- * {@link activationValueMatches}, not here.
+ * {@link activationValueMatches}, not here. A spaced colon must still be a YAML
+ * mapping indicator (followed by whitespace or end-of-line): `key :value` is a
+ * plain scalar in strict YAML — no key at all — so it stays rejected.
  */
 function frontmatterOf(text: string): Record<string, string> | undefined {
   const t = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
@@ -56,7 +58,7 @@ function frontmatterOf(text: string): Record<string, string> | undefined {
   if (!m?.[1]) return undefined;
   const fields: Record<string, string> = {};
   for (const line of m[1].split(/\r?\n/)) {
-    const kv = line.match(/^([A-Za-z0-9_-]+)[ \t]*:\s*(.*)$/);
+    const kv = line.match(/^([A-Za-z0-9_-]+)(?::|[ \t]+:(?=[ \t]|$))\s*(.*)$/);
     if (kv?.[1]) fields[kv[1]] = (kv[2] ?? "").trim();
   }
   return fields;
