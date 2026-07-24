@@ -42,6 +42,10 @@ interface Tools {
   jq?: boolean;
   /** TLS handshake to the registry: "ok" (default) | "fail". */
   tls?: "ok" | "fail";
+  /** `git rev-parse --is-inside-work-tree` answers "true" (repo root is a work tree). */
+  gitRepo?: boolean;
+  /** Paths `git ls-files` reports as tracked (the committed-secret classifier input). */
+  gitTracked?: string[];
 }
 
 let dir: string; // repo root
@@ -89,10 +93,15 @@ function toolRunner(t: Tools): PlanContext["run"] {
         ? { code: 1, stderr: "Cannot find module" }
         : { code: 0, stdout: "10.9.2" };
     // git.
-    if (cmd === "git")
-      return t.git === false
-        ? { spawnError: true, code: 127 }
-        : { code: 0, stdout: "git version 2.44" };
+    if (cmd === "git") {
+      if (t.git === false) return { spawnError: true, code: 127 };
+      if (argv.includes("rev-parse"))
+        return t.gitRepo
+          ? { code: 0, stdout: "true" }
+          : { code: 128, stderr: "fatal: not a git repository" };
+      if (argv.includes("ls-files")) return { code: 0, stdout: (t.gitTracked ?? []).join("\0") };
+      return { code: 0, stdout: "git version 2.44" };
+    }
     return undefined;
   });
 }
@@ -247,17 +256,53 @@ describe("readinessDigest — a broken runtime", () => {
 });
 
 describe("readinessDigest — posture flips the amber gates", () => {
-  it("a committed secret is a WARN at vibe but a GATE at enterprise", async () => {
+  it("a plaintext secret (on-disk class here) is a WARN at vibe but a GATE at enterprise", async () => {
     scaffoldReady();
+    // The fixture dir is NOT a git work tree, so nothing can be committed: the
+    // finding must carry the on-disk class, with the same posture split.
     put(".env", "API_KEY=sk-live-abcdef0123456789\n");
 
     const vibe = await digestData(ctx({}, { posture: "vibe" as Posture }));
-    expect(vibe.data.blockers.some((b) => b.id === "no-committed-secret")).toBe(false);
-    expect(vibe.data.warns.some((w) => w.id === "no-committed-secret")).toBe(true);
+    expect(vibe.data.blockers.some((b) => b.id === "no-plaintext-secret-on-disk")).toBe(false);
+    expect(vibe.data.warns.some((w) => w.id === "no-plaintext-secret-on-disk")).toBe(true);
 
     const ent = await digestData(ctx({}, { posture: "enterprise" as Posture }));
-    expect(ent.data.blockers.some((b) => b.id === "no-committed-secret")).toBe(true);
+    expect(ent.data.blockers.some((b) => b.id === "no-plaintext-secret-on-disk")).toBe(true);
     expect(ent.data.banner).toBe("NOT READY");
+  });
+
+  it("an UNTRACKED .env in a git repo reports the on-disk class + vault remediation (issue #502)", async () => {
+    scaffoldReady();
+    put(".env", "API_KEY=sk-live-abcdef0123456789\n");
+    const { data } = await digestData(
+      ctx({ gitRepo: true, gitTracked: [] }, { posture: "enterprise" as Posture }),
+    );
+    const onDisk = data.blockers.find((b) => b.id === "no-plaintext-secret-on-disk");
+    expect(onDisk).toBeDefined();
+    expect(onDisk?.cmd).toContain("vault");
+    // Relabelled, never dropped — and never misfiled as the committed class.
+    expect(data.blockers.some((b) => b.id === "no-committed-secret")).toBe(false);
+    expect(data.banner).toBe("NOT READY");
+  });
+
+  it("a TRACKED .env reports the committed class + history-rewrite remediation", async () => {
+    scaffoldReady();
+    put(".env", "API_KEY=sk-live-abcdef0123456789\n");
+    const { data } = await digestData(
+      ctx({ gitRepo: true, gitTracked: [".env"] }, { posture: "enterprise" as Posture }),
+    );
+    const committed = data.blockers.find((b) => b.id === "no-committed-secret");
+    expect(committed).toBeDefined();
+    expect(committed?.cmd).toContain("history");
+    expect(committed?.cmd).toContain("rotate");
+    expect(data.blockers.some((b) => b.id === "no-plaintext-secret-on-disk")).toBe(false);
+  });
+
+  it("git unavailable → the finding stays under the committed gate (fail closed, never dropped)", async () => {
+    scaffoldReady();
+    put(".env", "API_KEY=sk-live-abcdef0123456789\n");
+    const { data } = await digestData(ctx({ git: false }, { posture: "enterprise" as Posture }));
+    expect(data.blockers.some((b) => b.id === "no-committed-secret")).toBe(true);
   });
 
   it("git-absent is a WARN at vibe but a GATE at enterprise", async () => {

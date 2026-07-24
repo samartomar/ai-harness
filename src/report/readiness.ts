@@ -10,6 +10,7 @@ import {
 } from "../heal/common.js";
 import { mcpStep } from "../heal/mcp-probe.js";
 import { pathStep } from "../heal/path-heal.js";
+import { gitRead } from "../internals/git.js";
 import { preCommitHookActive } from "../internals/git-hooks.js";
 import type { Action, DigestAction, PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
@@ -46,9 +47,10 @@ import { remediationBlock } from "./render.js";
  *
  * A check is a pass/fail reused from the underlying probe's own `fail`/`pass`/`skip`
  * verdict; `skip`/not-applicable is neither pass nor fail and is EXCLUDED from both
- * scoring and blocking. Posture (see {@link postureFromContext}) promotes two amber
- * warn-at-vibe gates — a committed secret, and git-absent / stale-contract — to hard
- * gates at team/enterprise, following the same split `secrets`/governance already use.
+ * scoring and blocking. Posture (see {@link postureFromContext}) promotes the amber
+ * warn-at-vibe gates — the secret gates (committed AND on-disk classes), and
+ * git-absent / stale-contract — to hard gates at team/enterprise, following the same
+ * split `secrets`/governance already use.
  *
  * Pure composition: every signal is one of aih's existing read-only probes (heal's
  * node/npm/TLS ladder, per-CLI loadability, the contract truth check, the secret
@@ -181,9 +183,46 @@ export async function coreToolsMissing(ctx: PlanContext): Promise<string[]> {
   return missing;
 }
 
-/** Any committed plaintext / hardcoded secret (value-blind) — the secret gate signal. */
-function secretsPresent(root: string): boolean {
-  return scanSecrets(root).matches.length > 0 || scanConfigSecrets(root).length > 0;
+/** Secret-scan findings split by location class: git-tracked (committed) vs on-disk only. */
+interface SecretFindings {
+  committed: string[];
+  onDisk: string[];
+}
+
+/**
+ * Classify every secret-scan finding (value-blind) by WHERE it lives, because the
+ * remediation differs by class: a git-TRACKED finding is committed material
+ * (history rewrite + rotate), while an untracked on-disk `.env` needs a vault move
+ * + rotate — flagging the latter as "committed" prescribes the wrong fix. A finding
+ * is never dropped by classification; ambiguity fails closed:
+ *  - git itself unavailable → every finding stays in the committed class (exactly
+ *    the pre-split gate, the strongest claim);
+ *  - git present but the root is not a work tree → nothing CAN be committed, so
+ *    every finding is on-disk plaintext;
+ *  - inside a work tree, `git ls-files` decides per path (a `secrets/` dir counts
+ *    as committed when any tracked path lives under it).
+ */
+async function classifySecretFindings(ctx: PlanContext, gitOk: boolean): Promise<SecretFindings> {
+  const scan = scanSecrets(ctx.root);
+  const files = [...new Set([...scan.envFiles, ...scanConfigSecrets(ctx.root).map((h) => h.file)])];
+  const dirs = scan.secretDirs;
+  const all = [...files, ...dirs].sort();
+  if (all.length === 0) return { committed: [], onDisk: [] };
+  if (!gitOk) return { committed: all, onDisk: [] };
+  const inWorkTree = await gitRead(ctx, ["rev-parse", "--is-inside-work-tree"]);
+  if (inWorkTree !== "true") return { committed: [], onDisk: all };
+  const listed = await gitRead(ctx, ["ls-files", "-z", "--", ...files, ...dirs], { trim: false });
+  if (listed === undefined) return { committed: all, onDisk: [] }; // ambiguous → fail closed
+  const tracked = new Set(listed.split("\0").filter((p) => p.length > 0));
+  const committed: string[] = [];
+  const onDisk: string[] = [];
+  for (const file of files) (tracked.has(file) ? committed : onDisk).push(file);
+  for (const dir of dirs) {
+    const prefix = `${dir}/`;
+    const hasTrackedChild = [...tracked].some((p) => p.startsWith(prefix));
+    (hasTrackedChild ? committed : onDisk).push(dir);
+  }
+  return { committed: committed.sort(), onDisk: onDisk.sort() };
 }
 
 /**
@@ -247,13 +286,14 @@ async function buildChecks(ctx: PlanContext): Promise<ReadinessCheck[]> {
     cmd: "aih heal --scope path",
   });
 
-  // git: WARN at vibe, GATE at team/enterprise (an amber promote, like the secret gate).
+  // git: WARN at vibe, GATE at team/enterprise (an amber promote, like the secret gates).
+  const git = await gitVerdict(ctx);
   out.push({
     id: "git-present",
     title: "git available on PATH",
     severity: posture === "vibe" ? "warn" : "gate",
     dimension: "machine",
-    verdict: await gitVerdict(ctx),
+    verdict: git,
     cmd: "install git (winget/apt/brew) and re-run",
   });
 
@@ -312,15 +352,28 @@ async function buildChecks(ctx: PlanContext): Promise<ReadinessCheck[]> {
     cmd: "add a test/build/start script to package.json",
   });
 
-  // Plaintext/hardcoded committed secret: GATE at team/enterprise, WARN at vibe — the
-  // exact split the `secrets` control uses. A finding is a fail; none ⇒ pass.
+  // Plaintext/hardcoded secret: GATE at team/enterprise, WARN at vibe — the exact
+  // split the `secrets` control uses. A finding is a fail; none ⇒ pass. Two rows,
+  // one per LOCATION class, because the fixes differ: committed (git-tracked)
+  // material needs a history rewrite + rotation, while an untracked on-disk file
+  // needs a vault move + rotation — one gate mislabelling the other prescribes the
+  // wrong remediation (issue #502). Classification never drops a finding.
+  const secrets = await classifySecretFindings(ctx, git === "pass");
   out.push({
     id: "no-committed-secret",
     title: "No plaintext/hardcoded secret committed",
     severity: posture === "vibe" ? "warn" : "gate",
     dimension: "repo-contract",
-    verdict: secretsPresent(root) ? "fail" : "pass",
-    cmd: "move secrets to env refs; run: aih secrets --apply",
+    verdict: secrets.committed.length > 0 ? "fail" : "pass",
+    cmd: "rotate the exposed credential, rewrite it out of git history (git filter-repo / BFG), then: aih secrets --apply",
+  });
+  out.push({
+    id: "no-plaintext-secret-on-disk",
+    title: "No plaintext secret on disk (untracked)",
+    severity: posture === "vibe" ? "warn" : "gate",
+    dimension: "repo-contract",
+    verdict: secrets.onDisk.length > 0 ? "fail" : "pass",
+    cmd: "rotate the credential and move it to your secret vault / env references (never commit it); run: aih secrets --apply",
   });
 
   // ---- harness-wiring: loadability + guardrails --------------------------
