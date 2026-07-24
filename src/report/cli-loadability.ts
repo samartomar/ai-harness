@@ -38,17 +38,48 @@ export interface CliLoadability {
   fix?: string;
 }
 
-/** Parse a leading `---` frontmatter block into flat key/value pairs (BOM-tolerant). */
+/** A frontmatter opener: `---` at byte 0, optional trailing spaces, LF or CRLF (#500). */
+const FRONTMATTER_OPEN = /^---[ \t]*\r?\n/;
+
+/**
+ * Parse a leading `---` frontmatter block into flat key/value pairs. Byte-level
+ * variance that leaves the YAML document identical — a UTF-8 BOM, CRLF line
+ * endings, spaces before the colon — must not change the result (#500: Windows
+ * -flavored Kiro steering files were flagged as missing `inclusion: always`).
+ * Keys stay anchored at column 0 so a nested mapping never counts as top-level,
+ * and values keep their quotes: equivalence is decided in
+ * {@link activationValueMatches}, not here. A spaced colon must still be a YAML
+ * mapping indicator (followed by whitespace or end-of-line): `key :value` is a
+ * plain scalar in strict YAML — no key at all — so it stays rejected.
+ */
 function frontmatterOf(text: string): Record<string, string> | undefined {
   const t = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
-  const m = t.match(/^---\n([\s\S]*?)\n---/);
+  const m = t.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---/);
   if (!m?.[1]) return undefined;
   const fields: Record<string, string> = {};
-  for (const line of m[1].split("\n")) {
-    const kv = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+  for (const line of m[1].split(/\r?\n/)) {
+    const kv = line.match(/^([A-Za-z0-9_-]+)(?::|[ \t]+:(?=[ \t]|$))\s*(.*)$/);
     if (kv?.[1]) fields[kv[1]] = (kv[2] ?? "").trim();
   }
   return fields;
+}
+
+/** Plain YAML literals whose type changes when quoted; a quoted form must not match them. */
+const YAML_NON_STRING_LITERALS = new Set(["true", "false", "null", "~"]);
+
+/**
+ * Whether a parsed frontmatter value carries the required activation value.
+ * Byte-equal always matches. A quoted value (`inclusion: "always"`) is the same
+ * YAML string as the plain form, so it matches too (#500) — unless the expected
+ * value is a non-string literal: quoting `true` turns Cursor's `alwaysApply`
+ * boolean into a string, so that stays byte-strict and keeps failing closed.
+ */
+function activationValueMatches(raw: string | undefined, expected: string): boolean {
+  if (raw === undefined) return false;
+  if (raw === expected) return true;
+  if (YAML_NON_STRING_LITERALS.has(expected)) return false;
+  const quoted = /^"(.*)"$/.exec(raw) ?? /^'(.*)'$/.exec(raw);
+  return quoted !== null && quoted[1] === expected;
 }
 
 /** The bootloader carries the required activation key (Cursor/Kiro), or n/a. */
@@ -64,7 +95,7 @@ function activationCheck(ctx: PlanContext, cli: Cli, present: string[]): LoadChe
   const bad: string[] = [];
   for (const rel of present) {
     const fm = frontmatterOf(readIfExists(join(ctx.root, rel)) ?? "");
-    if (!fm || fm[act.key] !== act.value) bad.push(rel);
+    if (!fm || !activationValueMatches(fm[act.key], act.value)) bad.push(rel);
   }
   return bad.length === 0
     ? { name: "activation", ok: true, detail: `${act.key}: ${act.value} set` }
@@ -75,23 +106,42 @@ function activationCheck(ctx: PlanContext, cli: Cli, present: string[]): LoadChe
       };
 }
 
-/** No BOM, and any opened frontmatter block actually closes/parses. */
-function hygieneCheck(ctx: PlanContext, present: string[]): LoadCheck {
+/**
+ * No load-blocking bytes, and any opened frontmatter block actually closes/parses.
+ * Kiro's steering loader strips a UTF-8 BOM before parsing frontmatter
+ * (field-verified, #500), so a BOM alone is not a load blocker there; every other
+ * CLI keeps the strict no-BOM contract.
+ */
+function hygieneCheck(ctx: PlanContext, cli: Cli, present: string[]): LoadCheck {
   const bad: string[] = [];
+  let bomTolerated = false;
   for (const rel of present) {
     const text = readIfExists(join(ctx.root, rel)) ?? "";
-    if (text.charCodeAt(0) === 0xfeff) bad.push(`${rel} (BOM before content)`);
-    else if (/^---\n/.test(text) && frontmatterOf(text) === undefined) {
+    const hasBom = text.charCodeAt(0) === 0xfeff;
+    if (hasBom && cli !== "kiro") {
+      bad.push(`${rel} (BOM before content)`);
+      continue;
+    }
+    bomTolerated ||= hasBom;
+    const t = hasBom ? text.slice(1) : text;
+    if (FRONTMATTER_OPEN.test(t) && frontmatterOf(t) === undefined) {
       bad.push(`${rel} (unterminated frontmatter)`);
     }
   }
-  return bad.length === 0
-    ? { name: "frontmatter-hygiene", ok: true, detail: "no BOM; frontmatter parses" }
-    : {
-        name: "frontmatter-hygiene",
-        ok: false,
-        detail: `byte/frontmatter issue: ${bad.join(", ")}`,
-      };
+  if (bad.length > 0) {
+    return {
+      name: "frontmatter-hygiene",
+      ok: false,
+      detail: `byte/frontmatter issue: ${bad.join(", ")}`,
+    };
+  }
+  return {
+    name: "frontmatter-hygiene",
+    ok: true,
+    detail: bomTolerated
+      ? "frontmatter parses (UTF-8 BOM tolerated by Kiro's loader)"
+      : "no BOM; frontmatter parses",
+  };
 }
 
 function targetChainCheck(
@@ -264,7 +314,7 @@ function structuralLoadabilityFor(ctx: PlanContext, cli: Cli): CliLoadability {
   }
   const checks: LoadCheck[] = [
     activationCheck(ctx, cli, present),
-    hygieneCheck(ctx, present),
+    hygieneCheck(ctx, cli, present),
     routerChainCheck(ctx),
     contextCapCheck(ctx, cli, present),
   ];

@@ -34,6 +34,7 @@ export type CheckCode =
   | "mcp.compliant-stale-denied"
   | "mcp.hardcoded-secret"
   | "mcp.allowlist-drift"
+  | "mcp.allowlist-generation-delta"
   | "mcp.version-drift"
   | "mcp.pin-unattested"
   // CLI bootloaders / canon
@@ -65,6 +66,7 @@ export type CheckCode =
   | "contract.stale"
   // org policy
   | "org-policy.drift"
+  | "org-policy.generation-delta"
   | "org-policy.invalid"
   | "org-policy.bundle-invalid"
   | "bundle.signature"

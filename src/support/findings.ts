@@ -272,6 +272,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Re-run `aih mcp --posture enterprise --apply` (or the org-policy projection) so `.claude/managed-settings.json` matches the committed `.mcp.json` fixed server set.",
   },
+  "mcp.allowlist-generation-delta": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "managed MCP allowlist matches an earlier aih generation",
+    action:
+      "Run `aih policy project --apply` to re-project the managed allowlist in `.claude/managed-settings.json` onto the current aih-generated launch shape; the on-disk entries match an earlier aih generation's output, not a local edit.",
+  },
   "mcp.version-drift": {
     audience: "developer",
     failSeverity: "degraded",
@@ -458,6 +465,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "org policy projection drifted",
     action:
       "Re-run the org-policy projection (`aih init --posture enterprise --apply`, or the narrower command that owns the drifted file) so managed settings match `aih-org-policy.json`.",
+  },
+  "org-policy.generation-delta": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "org policy projection matches an earlier aih generation",
+    action:
+      "Run `aih policy project --apply` so `.claude/managed-settings.json` carries the current aih-generated projection; the on-disk content matches an earlier aih generation's output, not a local edit.",
   },
   "org-policy.invalid": {
     audience: "developer",
