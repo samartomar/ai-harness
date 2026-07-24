@@ -109,6 +109,51 @@ describe("executePlan", () => {
     expect(existsSync(join(dir, "a.txt"))).toBe(false);
   });
 
+  it("redacts opt-in sensitive paths and argv at PlanResult collection", async () => {
+    const bundlePath = join(dir, "home", "corporate-root-ca.pem");
+    const profilePath = join(dir, "home", ".profile");
+    mkdirSync(dirname(bundlePath), { recursive: true });
+    writeFileSync(bundlePath, "old bundle\n", "utf8");
+    writeFileSync(profilePath, "old profile\n", "utf8");
+
+    const sensitiveWrite = Object.assign(
+      writeText(bundlePath, "new bundle", "write sensitive bundle", { external: true }),
+      { sensitive: { path: true } },
+    );
+    const sensitiveProfile = Object.assign(
+      envBlock(
+        profilePath,
+        "heal-node-trust",
+        "posix",
+        [{ key: "NODE_EXTRA_CA_CERTS", value: bundlePath }],
+        "write sensitive profile",
+      ),
+      { sensitive: { path: true } },
+    );
+    const sensitiveExec = Object.assign(
+      exec("lock sensitive bundle", ["chmod", "600", bundlePath]),
+      { sensitive: { argv: [2] } },
+    );
+    const p = plan("sensitive", sensitiveWrite, sensitiveProfile, sensitiveExec);
+
+    const dry = await executePlan(p, ctx());
+    expect(JSON.stringify(dry)).not.toContain(dir);
+    expect(summarizeResult(dry)).not.toContain(dir);
+
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return { code: 0 };
+    });
+    const applied = await executePlan(p, ctx({ apply: true, run }));
+    expect(calls).toContainEqual(["chmod", "600", bundlePath]);
+    expect(JSON.stringify(applied)).not.toContain(dir);
+    expect(summarizeResult(applied)).not.toContain(dir);
+    expect(applied.writes.every((write) => !write.path.includes(dir))).toBe(true);
+    expect(applied.execs[0]?.argv).not.toContain(bundlePath);
+    expect(applied.backups.every((backup) => !backup.includes(dir))).toBe(true);
+  });
+
   it("apply writes files with a trailing newline", async () => {
     await executePlan(plan("t", writeText("a.txt", "hi", "write a")), ctx({ apply: true }));
     expect(readFileSync(join(dir, "a.txt"), "utf8")).toBe("hi\n");

@@ -126,11 +126,20 @@ describe("selectNodeTrustCandidate", () => {
   it("selects system CA before evaluating an extra bundle", async () => {
     const calls: Array<{ kind: ProbeKind; env: NodeJS.ProcessEnv }> = [];
     const candidate = await selectNodeTrustCandidate(
-      candidateCtx((kind, _origin, opts) => {
-        calls.push({ kind, env: opts?.env ?? {} });
-        if (kind !== "system-ca") throw new Error(`unexpected ${kind} probe`);
-        return { code: 0 };
-      }),
+      candidateCtx(
+        (kind, _origin, opts) => {
+          calls.push({ kind, env: opts?.env ?? {} });
+          if (kind !== "system-ca") throw new Error(`unexpected ${kind} probe`);
+          return { code: 0 };
+        },
+        [],
+        {
+          EXISTING_SETTING: "preserved",
+          NODE_EXTRA_CA_CERTS: "/stale/exact.pem",
+          Node_Extra_Ca_Certs: "/stale/mixed.pem",
+          node_use_system_ca: "0",
+        },
+      ),
       ["https://runtime.example.test"],
     );
 
@@ -140,6 +149,11 @@ describe("selectNodeTrustCandidate", () => {
       EXISTING_SETTING: "preserved",
       NODE_USE_SYSTEM_CA: "1",
     });
+    expect(
+      Object.keys(calls[0]?.env ?? {}).filter((key) =>
+        ["node_use_system_ca", "node_extra_ca_certs"].includes(key.toLowerCase()),
+      ),
+    ).toEqual(["NODE_USE_SYSTEM_CA"]);
   });
 
   it("selects only OS-trusted roots that issue the served chain", async () => {

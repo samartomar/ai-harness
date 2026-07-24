@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -53,6 +53,7 @@ interface CtxOptions {
   options?: Record<string, unknown>;
   handler?: Handler;
   root: string;
+  apply?: boolean;
   verify?: boolean;
 }
 
@@ -62,7 +63,7 @@ function makeCtx(o: CtxOptions): PlanContext {
   return {
     root: o.root,
     contextDir: ".ai-context",
-    apply: false,
+    apply: o.apply ?? false,
     verify: o.verify ?? false,
     json: false,
     run,
@@ -520,6 +521,32 @@ describe("certs plan — unsafe output paths", () => {
         }),
       ),
     ).rejects.toMatchObject({ code: "AIH_UNSAFE_PATH" });
+  });
+
+  it("rejects an oversized default Windows apply before files or execs mutate", async () => {
+    const root = freshTmp();
+    const out = join(
+      root,
+      ...Array.from({ length: 5 }, (_, index) => `${index}${"x".repeat(220)}`),
+    );
+    const calls: string[][] = [];
+    const ctx = makeCtx({
+      root,
+      platform: "windows",
+      env: { USERPROFILE: root },
+      options: { out },
+      apply: true,
+      handler: (argv) => {
+        calls.push(argv);
+        return { code: 0 };
+      },
+    });
+
+    await expect((async () => executePlan(await command.plan(ctx), ctx))()).rejects.toThrow(
+      /1,024/,
+    );
+    expect(readdirSync(root)).toEqual([]);
+    expect(calls).toEqual([]);
   });
 
   it("rejects control characters in the home-derived path boundary", async () => {

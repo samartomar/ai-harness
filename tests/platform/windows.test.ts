@@ -153,20 +153,38 @@ describe("WindowsAdapter", () => {
     expect(setx.every((action) => action.argv[0] !== "cmd")).toBe(true);
   });
 
-  it("fails visibly instead of planning a setx value longer than 1,024 characters", async () => {
-    const ctx = persistenceCtx();
+  it("sets the selected value before case-insensitively clearing stale Windows trust", () => {
+    const systemActions = nodeTrustPersistenceActions(
+      persistenceCtx({
+        USERPROFILE: "C:\\Users\\example",
+        NODE_EXTRA_CA_CERTS: "C:\\stale\\exact.pem",
+        Node_Extra_Ca_Certs: "C:\\stale\\mixed.pem",
+      }),
+      nodeTrustEnvVars(),
+    ).filter((action) => action.kind === "exec");
+    expect(systemActions.map((action) => action.argv)).toEqual([
+      ["setx", "NODE_USE_SYSTEM_CA", "1"],
+      ["setx", "NODE_EXTRA_CA_CERTS", ""],
+    ]);
+    expect(systemActions.every((action) => action.requiresPriorExecSuccess)).toBe(true);
+
+    const extraActions = nodeTrustPersistenceActions(
+      persistenceCtx({ USERPROFILE: "C:\\Users\\example", node_use_system_ca: "1" }),
+      [{ key: NODE_EXTRA_CA_CERTS, value: "C:\\certs\\selected.pem" }],
+    ).filter((action) => action.kind === "exec");
+    expect(extraActions.map((action) => action.argv)).toEqual([
+      ["setx", "NODE_EXTRA_CA_CERTS", "C:\\certs\\selected.pem"],
+      ["setx", "NODE_USE_SYSTEM_CA", ""],
+    ]);
+  });
+
+  it("rejects a setx value longer than 1,024 characters during planning", () => {
     const value = `C:\\${"x".repeat(1022)}`;
     expect(value).toHaveLength(1025);
 
-    const actions = nodeTrustPersistenceActions(ctx, nodeTrustEnvVars(value));
-
-    expect(actions.some((action) => action.kind === "exec")).toBe(false);
-    const failure = actions.find((action) => action.kind === "probe");
-    if (failure?.kind !== "probe") throw new Error("missing persistence failure probe");
-    expect(await failure.run(ctx)).toMatchObject({
-      verdict: "fail",
-      code: "cert.ca-missing",
-    });
+    expect(() => nodeTrustPersistenceActions(persistenceCtx(), nodeTrustEnvVars(value))).toThrow(
+      /1,024/,
+    );
   });
 
   it("allows a setx value exactly 1,024 characters long", () => {

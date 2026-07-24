@@ -9,7 +9,7 @@ import { probeNodeTls, runtimeTlsOrigins } from "../../src/heal/node-trust.js";
 import { parseScope } from "../../src/heal/phases.js";
 import { pathFixDoc } from "../../src/heal/templates.js";
 import * as cliRegistry from "../../src/internals/cli-registry.js";
-import { executePlan } from "../../src/internals/execute.js";
+import { executePlan, summarizeResult } from "../../src/internals/execute.js";
 import type { Action, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type RunResult } from "../../src/internals/proc.js";
 import type { Check } from "../../src/internals/verify.js";
@@ -478,6 +478,48 @@ describe("heal — cert step", () => {
     expect(note?.text).toContain("operator verification");
   });
 
+  it("system-ca removes stale exact and mixed-case trust before profile and final verification", async () => {
+    const ctx = makeCtx({
+      root: freshTmp(),
+      ca: "unset",
+      nodeRegistry: "fail",
+      nodePypi: "ok",
+      systemCa: "ok",
+      apply: true,
+    });
+    Object.assign(ctx.env, {
+      NODE_EXTRA_CA_CERTS: "/stale/exact.pem",
+      Node_Extra_Ca_Certs: "/stale/mixed.pem",
+      node_use_system_ca: "0",
+    });
+    const calls: NodeJS.ProcessEnv[] = [];
+    const base = ctx.run;
+    ctx.run = async (argv, opts) => {
+      if (argv[0] === "node" && argv.includes("-e")) calls.push(opts?.env ?? {});
+      return base(argv, opts);
+    };
+
+    const p = await command.plan(ctx);
+    expect(findEnvBlock(p.actions, "heal-node-trust")).toMatchObject({
+      vars: [{ key: "NODE_USE_SYSTEM_CA", value: "1" }],
+      unsetKeys: ["NODE_EXTRA_CA_CERTS"],
+    });
+    calls.length = 0;
+    await executePlan(p, ctx);
+
+    const finalEnv = calls.at(-1) ?? {};
+    expect(
+      Object.keys(finalEnv).filter((key) =>
+        ["node_use_system_ca", "node_extra_ca_certs"].includes(key.toLowerCase()),
+      ),
+    ).toEqual(["NODE_USE_SYSTEM_CA"]);
+    const profile = readFileSync(ctx.host.shellProfilePaths()[0] as string, "utf8");
+    expect(profile).toContain("unset NODE_EXTRA_CA_CERTS");
+    expect(profile.indexOf("unset NODE_EXTRA_CA_CERTS")).toBeLessThan(
+      profile.indexOf("export NODE_USE_SYSTEM_CA=1"),
+    );
+  });
+
   it("extra-ca writes and locks one deterministic PEM then persists only NODE_EXTRA_CA_CERTS", async () => {
     const root = freshTmp();
     const p = await command.plan(
@@ -506,6 +548,61 @@ describe("heal — cert step", () => {
     expect(p.actions.map((action) => action.describe).join("\n")).not.toContain(
       "BEGIN CERTIFICATE",
     );
+  });
+
+  it("extra-ca clears stale trust on macOS and redacts dry-run/apply results", async () => {
+    for (const apply of [false, true]) {
+      const root = freshTmp();
+      const ctx = makeCtx({
+        root,
+        platform: "darwin",
+        ca: "unset",
+        nodeRegistry: "fail",
+        nodePypi: "ok",
+        systemCa: "fail",
+        extraCa: "ok",
+        capturedChain: [LEAF_A_PEM],
+        trustRoots: [ROOT_A],
+        apply,
+      });
+      Object.assign(ctx.env, {
+        NODE_USE_SYSTEM_CA: "0",
+        Node_Use_System_Ca: "1",
+        NODE_EXTRA_CA_CERTS: "/stale/exact.pem",
+        Node_Extra_Ca_Certs: "/stale/mixed.pem",
+      });
+      const calls: Array<{ argv: string[]; env: NodeJS.ProcessEnv | undefined }> = [];
+      const base = ctx.run;
+      ctx.run = async (argv, opts) => {
+        calls.push({ argv, env: opts?.env });
+        return base(argv, opts);
+      };
+
+      const p = await command.plan(ctx);
+      expect(findEnvBlock(p.actions, "heal-node-trust")).toMatchObject({
+        vars: [expect.objectContaining({ key: "NODE_EXTRA_CA_CERTS" })],
+        unsetKeys: ["NODE_USE_SYSTEM_CA"],
+      });
+      const stalePlist = p.actions.find(
+        (action) => action.kind === "write" && action.path.includes("node-use-system-ca"),
+      );
+      expect(stalePlist).toMatchObject({ kind: "write" });
+      if (stalePlist?.kind === "write") expect(stalePlist.contents).toContain("unsetenv");
+
+      calls.length = 0;
+      const result = await executePlan(p, ctx);
+      expect(JSON.stringify(result)).not.toContain(root);
+      expect(summarizeResult(result)).not.toContain(root);
+      if (apply) {
+        expect(calls.map(({ argv }) => argv).some((argv) => argv[1] === "unsetenv")).toBe(true);
+        const finalEnv = calls.filter(({ argv }) => argv[0] === "node").at(-1)?.env ?? {};
+        expect(
+          Object.keys(finalEnv).filter((key) =>
+            ["node_use_system_ca", "node_extra_ca_certs"].includes(key.toLowerCase()),
+          ),
+        ).toEqual(["NODE_EXTRA_CA_CERTS"]);
+      }
+    }
   });
 
   it("unresolved divergence plans no trust mutation", async () => {
@@ -544,6 +641,11 @@ describe("heal — cert step", () => {
       systemCa: "ok",
       apply: true,
     });
+    Object.assign(ctx.env, {
+      NODE_EXTRA_CA_CERTS: "C:\\stale\\exact.pem",
+      Node_Extra_Ca_Certs: "C:\\stale\\mixed.pem",
+      node_use_system_ca: "0",
+    });
     const calls: Array<{ argv: string[]; env: NodeJS.ProcessEnv | undefined }> = [];
     const base = ctx.run;
     ctx.run = async (argv, opts) => {
@@ -554,13 +656,23 @@ describe("heal — cert step", () => {
     calls.length = 0;
 
     const result = await executePlan(p, ctx);
-    const setxIndex = calls.findIndex(({ argv }) => argv[0] === "setx");
+    const setxCalls = calls.filter(({ argv }) => argv[0] === "setx");
+    expect(setxCalls.map(({ argv }) => argv)).toEqual([
+      ["setx", "NODE_USE_SYSTEM_CA", "1"],
+      ["setx", "NODE_EXTRA_CA_CERTS", ""],
+    ]);
+    const lastSetxIndex = calls.findLastIndex(({ argv }) => argv[0] === "setx");
     const finalProbeIndex = calls.findIndex(
       ({ argv, env }) =>
         argv[0] === "node" && argv.includes("-e") && env?.NODE_USE_SYSTEM_CA === "1",
     );
-    expect(setxIndex).toBeGreaterThanOrEqual(0);
-    expect(finalProbeIndex).toBeGreaterThan(setxIndex);
+    expect(lastSetxIndex).toBeGreaterThanOrEqual(0);
+    expect(finalProbeIndex).toBeGreaterThan(lastSetxIndex);
+    expect(
+      Object.keys(calls[finalProbeIndex]?.env ?? {}).filter((key) =>
+        ["node_use_system_ca", "node_extra_ca_certs"].includes(key.toLowerCase()),
+      ),
+    ).toEqual(["NODE_USE_SYSTEM_CA"]);
     expect(result.report?.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "cert: verify persisted Node trust", verdict: "pass" }),

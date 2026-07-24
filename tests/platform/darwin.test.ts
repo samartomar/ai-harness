@@ -145,6 +145,32 @@ describe("macOS Node trust persistence", () => {
     ]);
   });
 
+  it("neutralizes the non-selected LaunchAgent and current launchd value", () => {
+    const actions = nodeTrustPersistenceActions(
+      persistenceCtx({
+        HOME: "/Users/example",
+        NODE_EXTRA_CA_CERTS: "/Users/example/stale-exact.pem",
+        Node_Extra_Ca_Certs: "/Users/example/stale-mixed.pem",
+      }),
+      nodeTrustEnvVars(),
+    );
+    const plists = actions.filter((action) => action.kind === "write");
+    const launchctl = actions.filter((action) => action.kind === "exec");
+
+    expect(plists).toHaveLength(2);
+    expect(
+      plists.find((action) => action.path.includes("node-extra-ca-certs"))?.contents,
+    ).toContain("<string>unsetenv</string>");
+    expect(
+      plists.find((action) => action.path.includes("node-extra-ca-certs"))?.contents,
+    ).not.toContain("stale-exact.pem");
+    expect(launchctl.map((action) => action.argv)).toEqual([
+      ["/bin/launchctl", "setenv", "NODE_USE_SYSTEM_CA", "1"],
+      ["/bin/launchctl", "unsetenv", "NODE_EXTRA_CA_CERTS"],
+    ]);
+    expect(launchctl.every((action) => action.requiresPriorExecSuccess)).toBe(true);
+  });
+
   it("fails closed on unsafe labels, keys, homes, and non-normalized CA paths", () => {
     expect(() => macLaunchAgentPlist("dev.aih.env../escape", "NODE_USE_SYSTEM_CA", "1")).toThrow();
     expect(() => macLaunchAgentPlist("dev.aih.env.node-use-system-ca", "NODE<USE", "1")).toThrow();
