@@ -3,8 +3,6 @@ export interface TrackedArtifactViolation {
   reason: string;
 }
 
-const ALLOWED_AIH_TRACKED_PATHS = new Set([".aih/usage-record.mjs"]);
-
 function normalizeTrackedPath(path: string): string {
   return path.trim().replace(/\\/g, "/").replace(/^\.\//, "");
 }
@@ -22,8 +20,8 @@ function forbiddenReason(path: string): string | undefined {
   if (path.endsWith(".tsbuildinfo")) {
     return "TypeScript incremental cache";
   }
-  if ((path === ".aih" || path.startsWith(".aih/")) && !ALLOWED_AIH_TRACKED_PATHS.has(path)) {
-    return ".aih runtime data; only .aih/usage-record.mjs may be tracked";
+  if (path === ".aih" || path.startsWith(".aih/")) {
+    return ".aih runtime data; nothing under .aih may be tracked";
   }
   return undefined;
 }
