@@ -221,6 +221,24 @@ function isEscapingRef(ref: string): boolean {
 }
 
 /**
+ * An explicit existence conditional on the SAME line as the reference — "only if
+ * `x.md` exists", "when it exists", "(only if `.kiro/` exists)". A doc that
+ * already guards a reference behind the file's existence is not a broken canon
+ * link when the file is absent, so `canon-ref-resolves` must not flag it (the
+ * field false positive in issue #502). Deliberately line-scoped and keyed on the
+ * literal "exist(s)" so an unguarded dangler is still caught, and it NEVER
+ * waives the escaping-ref check — a traversal is fatal, guarded or not.
+ */
+const EXISTENCE_GUARD_RE = /\b(?:if|when)\b[^\n]*\bexists?\b/i;
+
+/** The full line of `src` containing byte offset `index`. */
+function lineAt(src: string, index: number): string {
+  const start = src.lastIndexOf("\n", Math.max(0, index - 1)) + 1;
+  const end = src.indexOf("\n", index);
+  return src.slice(start, end === -1 ? src.length : end);
+}
+
+/**
  * Does a referenced path resolve? Adapts isolint's missing-file rule (which does a
  * basename fallback "for leniency") to aih's model: aih emits paths both
  * dir-prefixed (`ai-coding/RULE_ROUTER.md`) and bare (`RULE_ROUTER.md`), so an
@@ -284,7 +302,7 @@ export const RULES: LintRule[] = [
     appliesTo: PROSE,
     run: (src, ctx) => {
       const out: LintFinding[] = [];
-      const check = (ref: string): void => {
+      const check = (ref: string, offset: number): void => {
         if (/^(https?|mailto|tel|data):/i.test(ref) || ref.startsWith("#")) return;
         if (isEscapingRef(ref)) {
           out.push({
@@ -301,6 +319,11 @@ export const RULES: LintRule[] = [
         // user content does this constantly — not a broken canon link to police.
         const refNorm = normalizeRef(ref);
         if (refNorm.includes("/") && !refNorm.startsWith(`${ctx.contextDir}/`)) return;
+        // A reference the doc itself guards behind the file's existence ("only if
+        // `x.md` exists") is conditional by declaration — an absent target is the
+        // guarded case, not a broken link. Applies ONLY to resolution, never to
+        // the escaping-ref check above.
+        if (EXISTENCE_GUARD_RE.test(lineAt(src, offset))) return;
         if (!refResolves(ref, ctx)) {
           out.push({
             ruleId: "canon-ref-resolves",
@@ -309,8 +332,8 @@ export const RULES: LintRule[] = [
           });
         }
       };
-      for (const m of src.matchAll(BACKTICK_PATH_RE)) check(m[1] as string);
-      for (const m of src.matchAll(KIRO_REF_RE)) check(m[1] as string);
+      for (const m of src.matchAll(BACKTICK_PATH_RE)) check(m[1] as string, m.index);
+      for (const m of src.matchAll(KIRO_REF_RE)) check(m[1] as string, m.index);
       return out;
     },
   },
