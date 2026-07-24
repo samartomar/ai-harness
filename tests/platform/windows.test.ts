@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   NODE_EXTRA_CA_CERTS,
+  NODE_USE_SYSTEM_CA,
   nodeTrustEnvVars,
   nodeTrustPersistenceActions,
 } from "../../src/certs/node-env.js";
-import type { ExecAction, PlanContext } from "../../src/internals/plan.js";
+import { executePlan } from "../../src/internals/execute.js";
+import { type ExecAction, type PlanContext, plan } from "../../src/internals/plan.js";
 import { fakeRunner, type RunOptions, type RunResult } from "../../src/internals/proc.js";
 import { WindowsAdapter } from "../../src/platform/windows.js";
 
@@ -153,7 +155,7 @@ describe("WindowsAdapter", () => {
     expect(setx.every((action) => action.argv[0] !== "cmd")).toBe(true);
   });
 
-  it("clears unselected Windows trust before setting the selected value", () => {
+  it("sets selected Windows trust before clearing the unselected value", () => {
     const systemActions = nodeTrustPersistenceActions(
       persistenceCtx({
         USERPROFILE: "C:\\Users\\example",
@@ -163,8 +165,8 @@ describe("WindowsAdapter", () => {
       nodeTrustEnvVars(),
     ).filter((action) => action.kind === "exec");
     expect(systemActions.map((action) => action.argv)).toEqual([
-      ["setx", "NODE_EXTRA_CA_CERTS", ""],
       ["setx", "NODE_USE_SYSTEM_CA", "1"],
+      ["setx", "NODE_EXTRA_CA_CERTS", ""],
     ]);
     expect(systemActions.every((action) => action.requiresPriorExecSuccess)).toBe(true);
 
@@ -173,8 +175,45 @@ describe("WindowsAdapter", () => {
       [{ key: NODE_EXTRA_CA_CERTS, value: "C:\\certs\\selected.pem" }],
     ).filter((action) => action.kind === "exec");
     expect(extraActions.map((action) => action.argv)).toEqual([
-      ["setx", "NODE_USE_SYSTEM_CA", ""],
       ["setx", "NODE_EXTRA_CA_CERTS", "C:\\certs\\selected.pem"],
+      ["setx", "NODE_USE_SYSTEM_CA", ""],
+    ]);
+  });
+
+  it("preserves prior Windows trust when enabling the selected value fails", async () => {
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return { code: argv[1] === NODE_USE_SYSTEM_CA ? 5 : 0 };
+    });
+    const planned = nodeTrustPersistenceActions(persistenceCtx(), nodeTrustEnvVars());
+
+    await executePlan(plan("windows trust persistence", ...planned), {
+      ...persistenceCtx(),
+      apply: true,
+      run,
+    });
+
+    expect(calls).toEqual([["setx", NODE_USE_SYSTEM_CA, "1"]]);
+  });
+
+  it("enables selected Windows trust before a failed stale-value clear", async () => {
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return { code: argv[1] === NODE_EXTRA_CA_CERTS ? 5 : 0 };
+    });
+    const planned = nodeTrustPersistenceActions(persistenceCtx(), nodeTrustEnvVars());
+
+    await executePlan(plan("windows trust persistence", ...planned), {
+      ...persistenceCtx(),
+      apply: true,
+      run,
+    });
+
+    expect(calls).toEqual([
+      ["setx", NODE_USE_SYSTEM_CA, "1"],
+      ["setx", NODE_EXTRA_CA_CERTS, ""],
     ]);
   });
 

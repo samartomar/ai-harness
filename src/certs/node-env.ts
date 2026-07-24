@@ -229,8 +229,8 @@ export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly Env
       );
     };
     return [
-      ...unselected.map((key) => setxAction(key, "", true)),
       ...selected.map((variable) => setxAction(variable.key, variable.value, false)),
+      ...unselected.map((key) => setxAction(key, "", true)),
     ];
   }
 
@@ -285,5 +285,5 @@ export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly Env
       ),
     );
   }
-  return [...unselectedWrites, ...selectedWrites, ...unselectedExecs, ...selectedExecs];
+  return [...unselectedWrites, ...selectedWrites, ...selectedExecs, ...unselectedExecs];
 }

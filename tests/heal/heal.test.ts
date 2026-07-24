@@ -719,8 +719,8 @@ describe("heal — cert step", () => {
     const result = await executePlan(p, ctx);
     const setxCalls = calls.filter(({ argv }) => argv[0] === "setx");
     expect(setxCalls.map(({ argv }) => argv)).toEqual([
-      ["setx", "NODE_EXTRA_CA_CERTS", ""],
       ["setx", "NODE_USE_SYSTEM_CA", "1"],
+      ["setx", "NODE_EXTRA_CA_CERTS", ""],
     ]);
     const lastSetxIndex = calls.findLastIndex(({ argv }) => argv[0] === "setx");
     const finalProbeIndex = calls.findIndex(

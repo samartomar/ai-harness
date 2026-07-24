@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   macLaunchAgentPlist,
+  NODE_EXTRA_CA_CERTS,
+  NODE_USE_SYSTEM_CA,
   nodeTrustEnvVars,
   nodeTrustPersistenceActions,
 } from "../../src/certs/node-env.js";
-import type { PlanContext } from "../../src/internals/plan.js";
+import { executePlan } from "../../src/internals/execute.js";
+import { type PlanContext, plan } from "../../src/internals/plan.js";
 import { fakeRunner, type Runner, type RunOptions } from "../../src/internals/proc.js";
 import { DarwinAdapter } from "../../src/platform/darwin.js";
 
@@ -180,7 +183,7 @@ describe("macOS Node trust persistence", () => {
     ]);
   });
 
-  it("neutralizes non-selected launchd trust before enabling the selected value", () => {
+  it("enables selected launchd trust before neutralizing the unselected value", () => {
     const actions = nodeTrustPersistenceActions(
       persistenceCtx({
         HOME: "/Users/example",
@@ -200,10 +203,53 @@ describe("macOS Node trust persistence", () => {
       plists.find((action) => action.path.includes("node-extra-ca-certs"))?.contents,
     ).not.toContain("stale-exact.pem");
     expect(launchctl.map((action) => action.argv)).toEqual([
-      ["/bin/launchctl", "unsetenv", "NODE_EXTRA_CA_CERTS"],
       ["/bin/launchctl", "setenv", "NODE_USE_SYSTEM_CA", "1"],
+      ["/bin/launchctl", "unsetenv", "NODE_EXTRA_CA_CERTS"],
     ]);
     expect(launchctl.every((action) => action.requiresPriorExecSuccess)).toBe(true);
+  });
+
+  it("preserves prior launchd trust when enabling the selected value fails", async () => {
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return { code: argv[1] === "setenv" ? 5 : 0 };
+    });
+    const planned = nodeTrustPersistenceActions(
+      persistenceCtx({ HOME: "/Users/example" }),
+      nodeTrustEnvVars(),
+    ).filter((action) => action.kind === "exec");
+
+    await executePlan(plan("macOS trust persistence", ...planned), {
+      ...persistenceCtx({ HOME: "/Users/example" }),
+      apply: true,
+      run,
+    });
+
+    expect(calls).toEqual([["/bin/launchctl", "setenv", NODE_USE_SYSTEM_CA, "1"]]);
+  });
+
+  it("enables selected launchd trust before a failed stale-value clear", async () => {
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return { code: argv[1] === "unsetenv" ? 5 : 0 };
+    });
+    const planned = nodeTrustPersistenceActions(
+      persistenceCtx({ HOME: "/Users/example" }),
+      nodeTrustEnvVars(),
+    ).filter((action) => action.kind === "exec");
+
+    await executePlan(plan("macOS trust persistence", ...planned), {
+      ...persistenceCtx({ HOME: "/Users/example" }),
+      apply: true,
+      run,
+    });
+
+    expect(calls).toEqual([
+      ["/bin/launchctl", "setenv", NODE_USE_SYSTEM_CA, "1"],
+      ["/bin/launchctl", "unsetenv", NODE_EXTRA_CA_CERTS],
+    ]);
   });
 
   it("fails closed on unsafe labels, keys, homes, and non-normalized CA paths", () => {
