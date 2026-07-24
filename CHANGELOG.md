@@ -69,6 +69,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   linked — the wired, vetted surface is the headless stdio launch only — and that
   decision is recorded in docs/commands.md. (#504)
 
+### Changed
+
+- Single-sourced the generated discipline text at its authored layer (slice A of
+  the #507 canon-structure theme): the working-agreement principles (think before
+  coding, simplicity first, surgical changes, goal-driven, canon tools), the
+  invariant list, and the reporting bar are now authored once in
+  `src/bootstrap-ai/canon.ts` (`DISCIPLINE_PRINCIPLES` / `DISCIPLINE_INVARIANTS` /
+  `DISCIPLINE_REPORTING`), and both renderings — the shared canonical block's
+  compact bullets and `rules/agent-behavior-core.md`'s long-form sections — derive
+  from that single source, drift-guarded by the extended byte-identical-fragments
+  tests. Emitted output is byte-identical in both canon modes: the marker id
+  (`ai-canonical:shared`), every emitted path, legacy output, and the committed
+  dogfood tree are all unchanged, so no deployed bootloader reads as drifted.
+  Refs #507.
+
 ### Fixed
 
 - `aih ready` reports the factual secret-location class instead of labelling every
