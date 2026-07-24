@@ -111,15 +111,15 @@ export function certFixDoc(caPattern: string, shellFlag: string): string {
 }
 
 /**
- * Windows-only note paired with the persist-CA exec: GUI-launched apps read env
- * from the per-user registry, not the PowerShell profile, so the CA must be set
- * there for Kiro / Claude Desktop / IDEs to inherit it.
+ * A selected Node candidate verifies the runtime seam, while packaged GUI apps
+ * must be fully relaunched and checked by the operator after local persistence.
  */
-export function guiCaNote(): string {
+export function guiCaNote(keys: readonly string[]): string {
   return lines(
-    "GUI-launched apps (Kiro, Claude Desktop, IDEs) inherit env from the per-user",
-    "registry, not your PowerShell profile — so NODE_EXTRA_CA_CERTS is persisted there",
-    "too. Relaunch those apps after applying for them to pick up the corporate CA.",
+    `Selected Node trust setting: ${keys.join(", ")}.`,
+    "The candidate passed the bounded Node probes; under --apply, a final Node probe runs after local persistence actions.",
+    "Fully relaunch affected packaged GUI applications so they inherit the new environment.",
+    "Packaged runtimes may restrict Node environment controls and still require operator verification after relaunch.",
   );
 }
 

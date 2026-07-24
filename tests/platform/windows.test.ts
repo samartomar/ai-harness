@@ -158,7 +158,7 @@ describe("WindowsAdapter", () => {
     const value = `C:\\${"x".repeat(1022)}`;
     expect(value).toHaveLength(1025);
 
-    const actions = nodeTrustPersistenceActions(ctx, [{ key: NODE_EXTRA_CA_CERTS, value }]);
+    const actions = nodeTrustPersistenceActions(ctx, nodeTrustEnvVars(value));
 
     expect(actions.some((action) => action.kind === "exec")).toBe(false);
     const failure = actions.find((action) => action.kind === "probe");
@@ -167,6 +167,17 @@ describe("WindowsAdapter", () => {
       verdict: "fail",
       code: "cert.ca-missing",
     });
+  });
+
+  it("allows a setx value exactly 1,024 characters long", () => {
+    const value = `C:\\${"x".repeat(1021)}`;
+    expect(value).toHaveLength(1024);
+
+    const action = nodeTrustPersistenceActions(persistenceCtx(), [
+      { key: NODE_EXTRA_CA_CERTS, value },
+    ]).find((candidate) => candidate.kind === "exec");
+
+    expect(action?.argv).toEqual(["setx", NODE_EXTRA_CA_CERTS, value]);
   });
 
   it("attaches a visible failure check to each setx persistence action", () => {

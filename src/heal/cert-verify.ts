@@ -1,17 +1,30 @@
 import { existsSync } from "node:fs";
+import { join } from "node:path";
+import {
+  NODE_EXTRA_CA_CERTS,
+  nodeTrustEnvVars,
+  nodeTrustPersistenceActions,
+} from "../certs/node-env.js";
+import type { EnvVar } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
-import { type Action, digest, exec, type PlanContext } from "../internals/plan.js";
+import {
+  type Action,
+  digest,
+  envBlock,
+  exec,
+  type PlanContext,
+  probe,
+  writeText,
+} from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { captured, type HealShared, type HealStep } from "./common.js";
+import { probeNodeTls, selectNodeTrustCandidate } from "./node-trust.js";
 import { certFixDoc, guiCaNote } from "./templates.js";
 
-const ENV_KEY = "NODE_EXTRA_CA_CERTS";
+const ENV_KEY = NODE_EXTRA_CA_CERTS;
 const CHECK = "cert: NODE_EXTRA_CA_CERTS";
-const PERSIST_CHECK = "cert: persist at user scope";
-// The Windows per-user-env persist mechanism (`setx`) silently truncates a value over
-// 1024 chars and still exits 0 — a plain exec would corrupt the stored CA path while the
-// report shows "0 failed". We preflight the length and fail visibly instead.
-const SETX_MAX_VALUE_LEN = 1024;
+const HEAL_NODE_TRUST_SCOPE = "heal-node-trust";
+const HEAL_BUNDLE_NAME = "corporate-root-ca.pem";
 
 /**
  * Diagnose whether the corporate CA is wired into Node's TLS. The AUTHORITATIVE
@@ -36,13 +49,13 @@ function caCheck(
     };
   }
   if (p && existsSync(p) && readIfExists(p)?.includes("BEGIN CERTIFICATE")) {
-    return { name: CHECK, verdict: "pass", detail: `${p} (valid PEM)` };
+    return { name: CHECK, verdict: "pass", detail: "configured PEM bundle is present and valid" };
   }
   if (p && !existsSync(p)) {
     return {
       name: CHECK,
       verdict: "fail",
-      detail: `set but the file is missing: ${p}`,
+      detail: "configured PEM bundle file is missing",
       code: "cert.ca-missing",
     };
   }
@@ -50,7 +63,7 @@ function caCheck(
     return {
       name: CHECK,
       verdict: "fail",
-      detail: `not a valid PEM bundle: ${p}`,
+      detail: "configured bundle is not valid PEM",
       code: "cert.ca-missing",
     };
   }
@@ -74,11 +87,36 @@ function caCheck(
   return { name: CHECK, verdict: "skip", detail: "not set; TLS not probed" };
 }
 
+function finalTrustProbe(origins: readonly string[], vars: readonly EnvVar[]): Action {
+  return probe("cert: verify persisted Node trust", async (probeCtx) => {
+    const env = { ...probeCtx.env };
+    for (const variable of vars) env[variable.key] = variable.value;
+
+    let failed = 0;
+    for (const origin of origins) {
+      if ((await probeNodeTls(probeCtx, origin, env)).verdict !== "pass") failed += 1;
+    }
+    return failed === 0
+      ? {
+          name: "cert: verify persisted Node trust",
+          verdict: "pass",
+          detail: `selected Node trust verified across ${origins.length} reviewed origin(s)`,
+        }
+      : {
+          name: "cert: verify persisted Node trust",
+          verdict: "fail",
+          code: "tls.verify-failed",
+          detail: `selected Node trust failed for ${failed} of ${origins.length} reviewed origin(s)`,
+        };
+  });
+}
+
 async function planCertVerify(ctx: PlanContext, shared: HealShared): Promise<Action[]> {
   const tlsOk = shared.tlsRegistry.verdict === "pass" && shared.tlsPypi.verdict === "pass";
-  const nodeTrustDiverged = shared.runtimeTls.some(
-    ({ os, node }) => os.verdict === "pass" && node.verdict === "fail",
-  );
+  const divergentOrigins = shared.runtimeTls
+    .filter(({ os, node }) => os.verdict === "pass" && node.verdict === "fail")
+    .map(({ origin }) => origin);
+  const nodeTrustDiverged = divergentOrigins.length > 0;
   const tlsFailed =
     shared.tlsRegistry.verdict === "fail" || shared.tlsPypi.verdict === "fail" || nodeTrustDiverged;
   const ca = caCheck(ctx.env, tlsOk, tlsFailed, nodeTrustDiverged);
@@ -87,9 +125,10 @@ async function planCertVerify(ctx: PlanContext, shared: HealShared): Promise<Act
     ...shared.runtimeTls.flatMap(({ os, node }) => [captured(os), captured(node)]),
   ];
 
-  // Prescribe the certs fix when TLS is actually failing, or the env var is
-  // set-but-broken. A `skip` (curl absent, or unset-but-TLS-OK) never triggers it.
-  if (tlsFailed || ca.verdict === "fail") {
+  // A generic CA repair remains appropriate for OS-level TLS failures and a broken
+  // explicitly configured bundle. Runtime-only divergence takes the narrower,
+  // candidate-verified path below instead.
+  if ((tlsFailed || ca.verdict === "fail") && !nodeTrustDiverged) {
     const pattern = String(ctx.options.caPattern ?? "Zscaler");
     const flag =
       ctx.host.envShell() === "powershell"
@@ -98,48 +137,76 @@ async function planCertVerify(ctx: PlanContext, shared: HealShared): Promise<Act
     actions.push(digest("heal: re-propagate corporate trust", certFixDoc(pattern, flag)));
   }
 
-  // Windows only: when the CA is valid in this shell, also persist it at the
-  // per-user registry scope so GUI-launched apps (Kiro/Claude/IDEs) inherit it —
-  // the PowerShell $PROFILE export never reaches them. `persistentEnvArgv` returns
-  // [] on POSIX (the profile envblock is the durable seam there), so nothing is
-  // emitted off-Windows. The set is idempotent (same value), and it's a LOCAL
-  // registry write — never a remote call.
-  if (ca.verdict === "pass") {
-    const caPath = ctx.env[ENV_KEY] as string;
-    const persist = ctx.host.persistentEnvArgv(ENV_KEY, caPath);
-    if (persist.length > 0 && caPath.length > SETX_MAX_VALUE_LEN) {
-      // Persisting via setx would silently truncate this path (exit 0) and leave GUI apps
-      // inheriting a corrupted CA path — fail visibly instead of writing a broken value.
-      actions.push(
-        captured({
-          name: PERSIST_CHECK,
-          verdict: "fail",
-          code: "cert.ca-missing",
-          detail: `${ENV_KEY} path is ${caPath.length} chars — the user-env persist store truncates values over ${SETX_MAX_VALUE_LEN}, which would corrupt the CA path GUI apps inherit; move the PEM to a shorter path, then run: aih certs --apply`,
-        }),
-      );
-    } else if (persist.length > 0) {
-      actions.push(
-        exec("persist the CA at user scope so GUI apps inherit it", persist, {
-          // Surface a persist failure in the verification report instead of leaving it
-          // invisible: a non-zero exec already flips runCapability's exit code (execFailed
-          // → 1), but with no failureCheck the report still prints "0 failed", so a scripted
-          // gate on `aih heal` sees an exit-1/report-0 contradiction it can't act on. A fail
-          // Check reconciles the two and routes to the same corporate-trust remediation.
-          failureCheck: (result) => ({
-            name: PERSIST_CHECK,
-            verdict: "fail",
-            code: "cert.ca-missing",
-            detail: `could not persist ${ENV_KEY} at user scope (exit ${
-              result.code ?? "signal"
-            }); GUI-launched apps may not inherit the CA — run: aih certs --apply`,
-          }),
-        }),
-      );
-      actions.push(digest("heal: GUI apps inherit the CA (Windows)", guiCaNote()));
-    }
+  if (!nodeTrustDiverged) return actions;
+
+  const candidate = await selectNodeTrustCandidate(ctx, divergentOrigins);
+  if (candidate.kind === "unresolved") {
+    actions.push(
+      digest(
+        "heal: unresolved Node trust candidate",
+        "No candidate passed Node verification for every reviewed origin. No trust settings were changed; keep TLS verification enabled and review the local trust chain before retrying.",
+      ),
+    );
+    return actions;
   }
 
+  const home = ctx.env.USERPROFILE || ctx.env.HOME || ctx.root;
+  const profile = ctx.host.shellProfilePaths()[0] ?? join(home, ".profile");
+  let vars: EnvVar[];
+  if (candidate.kind === "system-ca") {
+    vars = nodeTrustEnvVars();
+    actions.push(
+      envBlock(
+        profile,
+        HEAL_NODE_TRUST_SCOPE,
+        ctx.host.envShell(),
+        vars,
+        "persist the verified Node system-CA selection in the managed shell profile",
+      ),
+      ...nodeTrustPersistenceActions(ctx, vars),
+    );
+  } else {
+    const bundlePath = join(home, ".config", "enterprise-ca", HEAL_BUNDLE_NAME);
+    vars = nodeTrustEnvVars(bundlePath).filter((variable) => variable.key === NODE_EXTRA_CA_CERTS);
+    const bundle = candidate.certs.map((cert) => cert.pem).join("");
+    actions.push(
+      writeText(
+        bundlePath,
+        bundle,
+        `selected minimal Node CA bundle (${candidate.certs.length} cert(s))`,
+        { external: true },
+      ),
+      exec(
+        "lock down the selected Node CA bundle to the current user",
+        ctx.host.lockDownFileArgv(bundlePath),
+        {
+          blockProbesOnFailure: true,
+          failureCheck: {
+            name: "cert: lock selected Node CA bundle",
+            verdict: "fail",
+            code: "cert.ca-missing",
+            detail: "could not lock the selected Node CA bundle to the current user",
+          },
+        },
+      ),
+      envBlock(
+        profile,
+        HEAL_NODE_TRUST_SCOPE,
+        ctx.host.envShell(),
+        vars,
+        "persist the verified minimal Node CA bundle in the managed shell profile",
+      ),
+      ...nodeTrustPersistenceActions(ctx, vars),
+    );
+  }
+
+  actions.push(
+    digest(
+      "heal: selected Node trust configuration",
+      guiCaNote(vars.map((variable) => variable.key)),
+    ),
+  );
+  if (ctx.apply) actions.push(finalTrustProbe(divergentOrigins, vars));
   return actions;
 }
 

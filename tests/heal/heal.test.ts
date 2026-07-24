@@ -13,7 +13,7 @@ import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type RunResult } from "../../src/internals/proc.js";
 import type { Check } from "../../src/internals/verify.js";
-import type { HostAdapter, Platform } from "../../src/platform/base.js";
+import type { CertEntry, HostAdapter, Platform } from "../../src/platform/base.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
 const PEM = "-----BEGIN CERTIFICATE-----\nMIIBExampleCorporateRootCA\n-----END CERTIFICATE-----\n";
@@ -111,7 +111,13 @@ function runnerFor(sc: Scenario) {
           : host === "pypi.org"
             ? (sc.nodePypi ?? "ok")
             : (sc.mcpNodeTls ?? "ok");
-      return tlsResult(opts?.env?.NODE_USE_SYSTEM_CA === "1" ? (sc.systemCa ?? current) : current);
+      const selected =
+        opts?.env?.NODE_USE_SYSTEM_CA === "1"
+          ? (sc.systemCa ?? current)
+          : sc.extraCa !== undefined && opts?.env?.NODE_EXTRA_CA_CERTS !== undefined
+            ? sc.extraCa
+            : current;
+      return tlsResult(selected);
     }
     if ((tool === "python3" || tool === "py") && argv.includes("-c"))
       return tlsResult(sc.mcpPythonTls ?? "ok");
@@ -555,6 +561,53 @@ describe("heal — cert step", () => {
     );
     expect(setxIndex).toBeGreaterThanOrEqual(0);
     expect(finalProbeIndex).toBeGreaterThan(setxIndex);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "cert: verify persisted Node trust", verdict: "pass" }),
+      ]),
+    );
+  });
+
+  it("apply writes and locks the selected extra bundle before final Node verification", async () => {
+    const root = freshTmp();
+    const ctx = makeCtx({
+      root,
+      ca: "unset",
+      nodeRegistry: "fail",
+      nodePypi: "ok",
+      systemCa: "fail",
+      extraCa: "ok",
+      capturedChain: [LEAF_A_PEM],
+      trustRoots: [ROOT_A],
+      apply: true,
+    });
+    const calls: Array<{ argv: string[]; env: NodeJS.ProcessEnv | undefined }> = [];
+    const base = ctx.run;
+    let bundleAtFinal = "";
+    ctx.run = async (argv, opts) => {
+      calls.push({ argv, env: opts?.env });
+      if (
+        argv[0] === "node" &&
+        argv.includes("-e") &&
+        opts?.env?.NODE_EXTRA_CA_CERTS !== undefined
+      ) {
+        bundleAtFinal = readFileSync(opts.env.NODE_EXTRA_CA_CERTS, "utf8");
+      }
+      return base(argv, opts);
+    };
+    const p = await command.plan(ctx);
+    calls.length = 0;
+
+    const result = await executePlan(p, ctx);
+    const lockIndex = calls.findIndex(({ argv }) => argv[0] === "chmod");
+    const finalProbeIndex = calls.findIndex(
+      ({ argv, env }) =>
+        argv[0] === "node" && argv.includes("-e") && env?.NODE_EXTRA_CA_CERTS !== undefined,
+    );
+    expect(lockIndex).toBeGreaterThanOrEqual(0);
+    expect(finalProbeIndex).toBeGreaterThan(lockIndex);
+    expect(calls[finalProbeIndex]?.env?.NODE_USE_SYSTEM_CA).toBeUndefined();
+    expect(bundleAtFinal).toBe(ROOT_A_PEM);
     expect(result.report?.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "cert: verify persisted Node trust", verdict: "pass" }),

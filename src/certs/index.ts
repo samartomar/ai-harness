@@ -16,6 +16,7 @@ import {
 import { stripTrailingNewlines } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import { upsertIniKey } from "./ini.js";
+import { nodeTrustEnvVars, nodeTrustPersistenceActions } from "./node-env.js";
 import { dockerTrustDoc, homebrewDoc, noCertDoc } from "./templates.js";
 
 const DEFAULT_OUT_DIR = "~/.config/enterprise-ca";
@@ -65,6 +66,7 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
   const bundle = certs.map((c) => c.pem).join("");
 
   const profile = ctx.host.shellProfilePaths()[0] ?? join(home, ".profile");
+  const nodeEnvVars = nodeTrustEnvVars(pemPath);
   const envVars = trustEnvVars(pemPath, outDir, trustStorePath);
   const gradlePath = join(home, ".gradle", "gradle.properties");
   const mavenPath = mavenRcPath(home, ctx.host.platform);
@@ -105,6 +107,7 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
       envVars,
       "export TLS trust env vars for Node, pip, requests, cargo, git, Go/JVM tools",
     ),
+    ...nodeTrustPersistenceActions(ctx, nodeEnvVars),
 
     // 3. Per-manager config files (faithful to the blueprint matrix; idempotent).
     writeText(
@@ -162,7 +165,7 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
 function trustEnvVars(pemPath: string, outDir: string, trustStorePath: string): EnvVar[] {
   const javaTrustStore = `-Djavax.net.ssl.trustStore=${trustStorePath} -Djavax.net.ssl.trustStorePassword=${TRUSTSTORE_PASSWORD}`;
   return [
-    { key: "NODE_EXTRA_CA_CERTS", value: pemPath },
+    ...nodeTrustEnvVars(pemPath),
     { key: "PIP_CERT", value: pemPath },
     { key: "SSL_CERT_FILE", value: pemPath },
     { key: "REQUESTS_CA_BUNDLE", value: pemPath },
