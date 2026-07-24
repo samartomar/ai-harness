@@ -4,7 +4,7 @@ import {
   nodeTrustEnvVars,
   nodeTrustPersistenceActions,
 } from "../../src/certs/node-env.js";
-import type { PlanContext } from "../../src/internals/plan.js";
+import type { ExecAction, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type RunOptions, type RunResult } from "../../src/internals/proc.js";
 import { WindowsAdapter } from "../../src/platform/windows.js";
 
@@ -201,7 +201,10 @@ describe("WindowsAdapter", () => {
 
     const action = nodeTrustPersistenceActions(persistenceCtx(), [
       { key: NODE_EXTRA_CA_CERTS, value },
-    ]).find((candidate) => candidate.kind === "exec" && candidate.argv[1] === NODE_EXTRA_CA_CERTS);
+    ]).find(
+      (candidate): candidate is ExecAction =>
+        candidate.kind === "exec" && candidate.argv[1] === NODE_EXTRA_CA_CERTS,
+    );
 
     expect(action?.argv).toEqual(["setx", NODE_EXTRA_CA_CERTS, value]);
   });
