@@ -253,6 +253,30 @@ describe("scanConfigSecrets", () => {
     expect(hits[0]?.key).toBe("API_KEY_PATH");
   });
 
+  it("keeps flagging PATH_TOKEN — path words must be end-anchored", () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: { relay: { env: { PATH_TOKEN: "/run/secrets/relay-token" } } },
+      }),
+    );
+    const hits = scanConfigSecrets(dir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.key).toBe("PATH_TOKEN");
+  });
+
+  it("keeps flagging an interior-slash value under a path key — only a LEADING path shape suppresses", () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: { db: { env: { API_KEY_PATH: "Zk8/qW3+hunter2hunter2==" } } },
+      }),
+    );
+    const hits = scanConfigSecrets(dir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.key).toBe("API_KEY_PATH");
+  });
+
   it("does NOT flag path-valued path keys in an external TOML config (raw fallback)", () => {
     const abs = join(dir, "config.toml");
     writeFileSync(
