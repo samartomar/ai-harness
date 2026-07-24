@@ -299,6 +299,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Install the CLI binary or target it explicitly only when the tool can run; config directories alone may be stale.",
   },
+  "cli.binary-broken": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "AI CLI detected but not usable (its own exec fails)",
+    action:
+      "Reinstall or update the named CLI: its binary resolves on PATH but cannot execute even `--version`, so every invocation would fail.",
+  },
   "cli.bootloader-missing": {
     audience: "developer",
     failSeverity: "blocking",

@@ -855,6 +855,10 @@ describe("doctor — AI CLI runnable vs config-only inventory", () => {
       if ((argv[0] === "which" || argv[0] === "where") && present.includes(argv[1] ?? "")) {
         return { code: 0, stdout: `/usr/bin/${argv[1]}` };
       }
+      // A present binary answers its cheap sanity exec cleanly (a healthy install).
+      if (present.includes(argv[0] ?? "") && argv[1] === "--version") {
+        return { code: 0, stdout: "9.9.9" };
+      }
       return { code: 1, spawnError: true };
     });
     return {
@@ -889,6 +893,62 @@ describe("doctor — AI CLI runnable vs config-only inventory", () => {
     expect(res?.verdict).toBe("skip");
     expect(res?.detail).toContain("no runnable CLIs");
     expect(res?.detail).toContain("windsurf");
+  });
+
+  /** which/where resolves `bins`, but a bin in `dead` hard-fails its own exec. */
+  function deadCliCtx(bins: string[], dead: string[]): PlanContext {
+    const run = fakeRunner((argv) => {
+      if ((argv[0] === "which" || argv[0] === "where") && bins.includes(argv[1] ?? "")) {
+        return { code: 0, stdout: `/usr/bin/${argv[1]}` };
+      }
+      if (bins.includes(argv[0] ?? "") && argv[1] === "--version") {
+        return dead.includes(argv[0] ?? "")
+          ? { code: 1, stderr: "fatal: configured model requires a newer CLI" }
+          : { code: 0, stdout: "9.9.9" };
+      }
+      return { code: 1, spawnError: true };
+    });
+    return {
+      root: dir,
+      contextDir: "ai-coding",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: { HOME: dir } }),
+      env: { HOME: dir },
+      options: {},
+    };
+  }
+
+  it("a detected binary whose every exec hard-fails is NOT green (dead CLI, issue #502)", async () => {
+    // `where/which` resolves codex, but the CLI itself cannot execute even
+    // `--version` — "binary launches" is not "CLI usable".
+    const c = deadCliCtx(["codex"], ["codex"]);
+    const probe = findProbe((await command.plan(c)).actions, "AI CLIs detected");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("fail");
+    expect(res?.code).toBe("cli.binary-broken");
+    expect(res?.detail).toContain("codex");
+  });
+
+  it("a broken CLI is surfaced (never hidden) even when another CLI is healthy", async () => {
+    const c = deadCliCtx(["codex", "gemini"], ["gemini"]);
+    const probe = findProbe((await command.plan(c)).actions, "AI CLIs detected");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("runnable: codex");
+    expect(res?.detail).toContain("broken");
+    expect(res?.detail).toContain("gemini");
+  });
+
+  it("a healthy exec keeps the runnable pass exactly as before", async () => {
+    const c = deadCliCtx(["codex"], []);
+    const probe = findProbe((await command.plan(c)).actions, "AI CLIs detected");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("runnable: codex");
+    expect(res?.detail).not.toContain("broken");
   });
 });
 

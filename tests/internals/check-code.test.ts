@@ -421,6 +421,7 @@ describe("Check.code — invariants", () => {
       "mcp.pin-unattested": true,
       "cli.not-detected": true,
       "cli.config-only": true,
+      "cli.binary-broken": true,
       "cli.bootloader-missing": true,
       "cli.bootloader-drift": true,
       "cli.wont-load": true,

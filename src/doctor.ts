@@ -16,6 +16,7 @@ import {
 } from "./binding/frameworks/binding-doctor.js";
 import { readAihConfigDiagnostic } from "./config/marker.js";
 import { contractTruthCheck } from "./contract/check.js";
+import { classifyTool, versionArgv } from "./heal/common.js";
 import { detectInstall } from "./internals/cli-detect.js";
 import { readIfExists } from "./internals/fsxn.js";
 import { gitRead } from "./internals/git.js";
@@ -187,27 +188,58 @@ export const command: CommandSpec = {
       }),
       probe("AI CLIs detected", async () => {
         const installs = await detectInstall(ctx);
-        const runnable = installs.filter((i) => i.binary).map((i) => i.cli);
+        const detected = installs.filter((i) => i.binary);
         const configOnly = installs.filter((i) => i.config && !i.binary).map((i) => i.cli);
+        // "binary resolves on PATH" is not "CLI usable": a binary that hard-fails
+        // even its own `--version` exec fails EVERY invocation (broken or too-old
+        // install), so it must not count as runnable (issue #502). The cheap
+        // sanity exec reuses heal's version-probe grammar; anything but a clean
+        // exit-0 keeps the CLI OUT of the runnable set and SURFACES it as broken
+        // — a relabel, never a dropped detection.
+        const isWindows = ctx.host.platform === "windows";
+        const states = await Promise.all(
+          detected.map(async (install) => {
+            const res = await ctx.run(
+              versionArgv(ctx.host.platform, install.binaryDetail ?? install.cli),
+              { timeoutMs: 10_000 },
+            );
+            return { cli: install.cli, usable: classifyTool(res, isWindows) === "ok" };
+          }),
+        );
+        const runnable = states.filter((s) => s.usable).map((s) => s.cli);
+        const broken = states.filter((s) => !s.usable).map((s) => s.cli);
         const configNote =
           configOnly.length > 0
             ? `; config-only traces (not runnable): ${configOnly.join(", ")}`
             : "";
-        return runnable.length > 0
-          ? {
-              name: "ai-clis",
-              verdict: "pass",
-              detail: `runnable: ${runnable.join(", ")}${configNote}`,
-            }
-          : {
-              name: "ai-clis",
-              verdict: "skip",
-              detail:
-                configOnly.length > 0
-                  ? `no runnable CLIs; config-only traces are not enough to target setup: ${configOnly.join(", ")}`
-                  : "none runnable — target explicitly with --cli or --all-tools",
-              code: "cli.not-detected",
-            };
+        const brokenNote =
+          broken.length > 0
+            ? `; broken (binary on PATH but its --version exec fails — reinstall/update): ${broken.join(", ")}`
+            : "";
+        if (runnable.length > 0) {
+          return {
+            name: "ai-clis",
+            verdict: "pass",
+            detail: `runnable: ${runnable.join(", ")}${brokenNote}${configNote}`,
+          };
+        }
+        if (broken.length > 0) {
+          return {
+            name: "ai-clis",
+            verdict: "fail",
+            code: "cli.binary-broken",
+            detail: `no usable AI CLI: every detected binary fails its --version exec ("binary launches" is not "CLI usable"): ${broken.join(", ")} — reinstall or update${configNote}`,
+          };
+        }
+        return {
+          name: "ai-clis",
+          verdict: "skip",
+          detail:
+            configOnly.length > 0
+              ? `no runnable CLIs; config-only traces are not enough to target setup: ${configOnly.join(", ")}`
+              : "none runnable — target explicitly with --cli or --all-tools",
+          code: "cli.not-detected",
+        };
       }),
       // Present file != loaded: fail closed when a targeted CLI's bootloader is on
       // disk but won't auto-load. Tier-2 dry-run probes prove runtime load only

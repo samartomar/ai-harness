@@ -39,6 +39,7 @@ export type CheckCode =
   // CLI bootloaders / canon
   | "cli.not-detected"
   | "cli.config-only"
+  | "cli.binary-broken"
   | "cli.bootloader-missing"
   | "cli.bootloader-drift"
   | "cli.wont-load"
