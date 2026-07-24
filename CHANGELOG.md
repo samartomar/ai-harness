@@ -8,6 +8,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Canon MUST-to-enforcing-check map: `docs/CONTROL_MATRIX.md` gains a
+  `## Canon MUST Map` section classifying every imperative line the generated
+  Layer-2 canon (`src/bootstrap-ai/canon.ts`) emits — generation-invariant MUSTs
+  cite their drift probe or canon lint seam, governance MUSTs cite their gate
+  (secret scan, guardrail artifacts, posture grading), and agent-behavioral MUSTs
+  are labeled `agent-directed, not aih-gated`. A regression gate
+  (`tests/bootstrap-ai/canon-must-map.test.ts`) regenerates the reachable canon
+  surface, extracts imperative lines by a documented token set, and fails closed
+  on any unmapped imperative or stale map row. (Refs #507)
 - `aih workspace graph` projects the workspace's own declared contract relations
   (`.aih-workspace.json` `repos[]` + `edges[]`) into a queryable cross-repo graph —
   declared over inferred: a declared two-repo workspace yields queryable cross-repo
@@ -68,6 +77,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   codebase-memory-mcp interactive graph-UI variant is deliberately not installed or
   linked — the wired, vetted surface is the headless stdio launch only — and that
   decision is recorded in docs/commands.md. (#504)
+
+### Changed
+
+- Single-sourced the generated discipline text at its authored layer (slice A of
+  the #507 canon-structure theme): the working-agreement principles (think before
+  coding, simplicity first, surgical changes, goal-driven, canon tools), the
+  invariant list, and the reporting bar are now authored once in
+  `src/bootstrap-ai/canon.ts` (`DISCIPLINE_PRINCIPLES` / `DISCIPLINE_INVARIANTS` /
+  `DISCIPLINE_REPORTING`), and both renderings — the shared canonical block's
+  compact bullets and `rules/agent-behavior-core.md`'s long-form sections — derive
+  from that single source, drift-guarded by the extended byte-identical-fragments
+  tests. Emitted output is byte-identical in both canon modes: the marker id
+  (`ai-canonical:shared`), every emitted path, legacy output, and the committed
+  dogfood tree are all unchanged, so no deployed bootloader reads as drifted.
+  Refs #507.
 
 ### Fixed
 
