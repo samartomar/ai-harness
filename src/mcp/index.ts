@@ -17,7 +17,13 @@ import type { Cli } from "../internals/clis.js";
 import { upsertTextBlock } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
-import type { Action, CommandSpec, PlanContext, WriteAction } from "../internals/plan.js";
+import type {
+  Action,
+  CommandSpec,
+  DigestAction,
+  PlanContext,
+  WriteAction,
+} from "../internals/plan.js";
 import { digest, doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import { beginMarker, endMarker } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
@@ -337,6 +343,58 @@ function emptyManagedAllowlistDoc(): string {
     "",
     "No generated MCP server will be written. Add a current catalog server name to allowedServers, or set allowManagedOnly: false to retain the normal catalog.",
   ].join("\n");
+}
+
+/**
+ * #503 — the generating command names its own declaration gap. At enterprise
+ * posture, baseline attestation requires every generated MCP server to be a
+ * declared registry member (`mcp.allowedServers`), so aih writing a server and
+ * then failing its own attestation for it was a guaranteed first-setup loop.
+ * This digest changes no gate: whenever the generated set carries servers the
+ * active policy leaves undeclared, it emits the ready-to-merge declaration —
+ * or points a policy-less repo at `aih policy init` — the moment the gap is
+ * created, instead of leaving hand-authoring as the only path.
+ */
+function undeclaredGeneratedDigest(
+  policy: OrgPolicy | undefined,
+  writeServerNames: readonly string[],
+): DigestAction | undefined {
+  if (writeServerNames.length === 0) return undefined;
+  if (policy === undefined) {
+    return digest(
+      "Undeclared generated MCP servers",
+      [
+        `No ${AIH_ORG_POLICY_FILE} declares a capability registry, so enterprise baseline`,
+        `attestation flags every generated MCP server as undeclared: ${writeServerNames.join(", ")}`,
+        "",
+        "Run `aih policy init` (review the starter, then --apply) to seed mcp.allowedServers",
+        "from observed fleet state instead of hand-authoring the policy.",
+      ].join("\n"),
+      { undeclared: [...writeServerNames] },
+    );
+  }
+  const declared = new Set(policy.mcp?.allowedServers ?? []);
+  const undeclared = writeServerNames.filter((name) => !declared.has(name));
+  if (undeclared.length === 0) return undefined;
+  const allowedServers = uniquePreservingOrder([
+    ...(policy.mcp?.allowedServers ?? []),
+    ...undeclared,
+  ]);
+  return digest(
+    "Undeclared generated MCP servers",
+    [
+      `${AIH_ORG_POLICY_FILE} does not declare ${undeclared.length} generated MCP server(s), so`,
+      `enterprise baseline attestation flags them as undeclared: ${undeclared.join(", ")}`,
+      "",
+      `Ready to merge into ${AIH_ORG_POLICY_FILE} (the union of current + generated declarations):`,
+      "",
+      JSON.stringify({ mcp: { allowedServers } }, null, 2),
+      "",
+      "Declaring mcp.allowedServers records registry membership only; reviewed third-party",
+      "egress approval remains `aih mcp approve <server> --accept-egress`.",
+    ].join("\n"),
+    { undeclared, allowedServers },
+  );
 }
 
 function deniedGeneratedServers(
@@ -1095,6 +1153,8 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       const noticeTitle = mcpCompliant ? "Quarantined MCP servers" : "Enterprise MCP apply warning";
       actions.push(digest(noticeTitle, noticeText), doc(noticeTitle, noticeText));
     }
+    const declarationGap = undeclaredGeneratedDigest(catalog.policy, writeServerNames);
+    if (declarationGap !== undefined) actions.push(declarationGap);
     const policyProbeServers = mcpCompliant ? writeServers : servers;
     const managedMcpActive =
       catalog.policy === undefined || catalog.policy.mcp?.allowManagedOnly === true;

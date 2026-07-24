@@ -423,7 +423,25 @@ build); `validate --require-signature` then
 
 ## aih policy
 
-Schema, projection, and trusted-channel gates for the org policy. `project --apply` compiles the
+Starter seeding, schema, projection, and trusted-channel gates for the org policy. Every `policy`
+subcommand is repo-scoped and accepts the conventional optional `[root]` positional —
+`aih policy validate .` works exactly like `aih init .` (`--root` and `AIH_ROOT` still apply).
+
+`init` seeds a starter `aih-org-policy.json` from **observed fleet state**, so authoring the policy
+becomes a review exercise instead of a blank page — and a fresh enterprise setup passes baseline
+attestation for aih-generated MCP servers without hand-editing. The starter declares exactly what
+the attestation lens observes: catalog-bound MCP surfaces become `mcp.allowedServers`; surfaces
+attestation force-undeclares (stale generated residue, non-catalog servers) are listed for review,
+never silently declared; and marketplace surfaces are **never auto-trusted** — `trust.approvedSources`
+grants acquisition trust beyond registry membership, so those entries stay an explicit review step.
+Fail-closed boundaries: an existing policy is never overwritten (plan-time refusal plus an
+apply-time absent pin), an active `AIH_ORG_POLICY` override refuses outright (the starter only
+targets the committed default file), and an unreadable MCP config aborts the plan. The starter
+records the resolved posture as `minimumPosture`, and `--verify` grades the written file with the
+same schema gate as `validate`. Declaring `mcp.allowedServers` records registry membership only;
+reviewed third-party egress approval remains `aih mcp approve`.
+
+`project --apply` compiles the
 committed `aih-org-policy.json` into only its generated policy artifacts —
 `.claude/managed-settings.json` and, at enterprise posture, the two system-path examples. It does
 not run `aih init`, regenerate the canon, or modify unrelated settings. This is a Claude projection:
@@ -635,6 +653,12 @@ managed stdio allowlist only when `mcp.allowManagedOnly` is true. At Enterprise 
 apply keeps the full generated server set but warns when policy denies any server; add
 `--mcp-compliant` to omit denied generated servers from MCP client configs and list them with reasons
 in the governance guidance. Use the same flag on `--verify` to verify the compliant plan.
+At Enterprise posture the plan also names its own declaration gap: when generated servers are
+missing from `mcp.allowedServers`, an `Undeclared generated MCP servers` digest emits a
+ready-to-merge `allowedServers` snippet (the union of current and generated declarations) — or, with
+no committed policy at all, points at `aih policy init` — so baseline attestation never flags an
+aih-generated server without the fix in hand. The digest is guidance only: it changes no gate, and
+declaring registry membership is still not an egress approval.
 With `allowManagedOnly: true`, an empty list is deny-all across direct, offline, init, and client
 writers; a populated list emits only listed, enabled servers. With `false`, the enabled catalog
 remains available, and cleanup preserves operator entries while replacing exact AIH output.
@@ -649,6 +673,17 @@ retry-fail because an env placeholder is unset or a URL host is a placeholder su
 For OpenCode, those unsafe generated entries are written with `enabled:false` so the client does not
 retry them on startup until the operator fixes the env or URL. Under `--verify`, npm-backed MCP
 package pins are compared with the configured registry response so version-pin drift is visible.
+
+**codebase-memory-mcp graph UI — deliberately not surfaced.** Upstream codebase-memory-mcp also
+publishes an optional interactive graph-visualization UI variant alongside the headless server.
+aih does not install, launch, or link it, by decision rather than omission: the catalog wires the
+stdio server only, under hardened uvx flags (`--offline --no-python-downloads --no-env-file`), and
+every downstream control — the managed allowlist, pin attestation, and pin currency — is scoped to
+exactly that launch shape. A browser-serving UI binary is a different execution and egress surface
+(a listening port and a served web app rather than a stdio pipe), and it has not been vetted as
+part of the wired-tool pin. Operators who want the UI can run it out-of-band against the same
+indexes and should treat it as an unvetted convenience. Revisit this decision only together with a
+vetted pin bump that covers the UI variant's surface.
 
 ## aih sandbox
 
@@ -689,6 +724,24 @@ the pin — a mismatch warns (`mcp.version-drift`), a match passes. The launch g
 reported as unattestable). Attestation proves what the resolved artifact self-reports at runtime;
 it does not prove provenance or integrity, and it executes the pinned artifact — which is why the
 live handshake is opt-in.
+
+The `mcp-pin-currency` row tracks how current those pins are. The catalog pins are compile-time
+constants, so picking up an upstream improvement lags twice by construction: the pin must be bumped
+in an aih release, and each repo must then re-project its `.mcp.json`. The row surfaces both
+halves. Offline, on every run, each exactly-pinned npx/uvx launch in `.mcp.json` is compared
+against the pin this aih build's catalog generates for the same server; a difference reports
+`mcp.projection-stale` and names the fix (`aih mcp --apply`) — after an aih upgrade, that
+re-projection is the second half of a pin refresh. `--check-pin-currency` opts in to the upstream
+half: doctor queries each pin's registry for its latest release (npm via `npm view`, PyPI via its
+JSON metadata endpoint over curl) — metadata only, nothing is downloaded or executed, but it is
+network egress from a read-only command, so it is opt-in. A pin whose registry publishes a newer
+release warns (`mcp.pin-stale`); a current pin set passes. A newer release is a bump **candidate**,
+never an instruction: the refresh path is (1) vet the new version through the trust gate
+(`aih trust scan <owner>/<repo> --pin <sha>`, which fails closed at enterprise posture unless the
+required analyzers — the pinned SkillSpector image and the Cisco skill-scanner — are available),
+(2) bump the catalog pin in an aih release, (3) re-project each repo with `aih mcp --apply` (at
+enterprise, also `aih policy project --apply` so the managed allowlist tracks the new launch
+shape), and (4) re-attest with `aih doctor --attest-mcp-pins`.
 
 In the canon markdown lint, `canon-ref-resolves` accepts a reference guarded by an explicit
 existence conditional on the same line ("Read `x.md` only if it exists"): the waiver applies only

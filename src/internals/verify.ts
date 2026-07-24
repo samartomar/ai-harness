@@ -37,6 +37,13 @@ export type CheckCode =
   | "mcp.allowlist-generation-delta"
   | "mcp.version-drift"
   | "mcp.pin-unattested"
+  // Pin currency (issue #504): `mcp.pin-stale` — a registry publishes a newer
+  // release than an exactly-pinned MCP package launch (a vet-then-bump candidate,
+  // never an automatic upgrade); `mcp.projection-stale` — a `.mcp.json` pin
+  // differs from the pin this aih build's catalog generates for the same server
+  // (the post-upgrade re-projection half of the double lag).
+  | "mcp.pin-stale"
+  | "mcp.projection-stale"
   // CLI bootloaders / canon
   | "cli.not-detected"
   | "cli.config-only"

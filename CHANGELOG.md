@@ -17,6 +17,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--kind` answer edge queries without writing; `--json` carries the graph, query,
   and matches. Fail-closed: dangling edge endpoints and undeclared query repo ids
   are errors, so a typo can never read as "no dependencies". (#505)
+- Org-policy surface UX for the enterprise first-setup loop. `aih policy init [root]`
+  seeds a starter `aih-org-policy.json` from observed fleet state: catalog-bound MCP
+  surfaces (the exact lens enterprise baseline attestation grades) become
+  `mcp.allowedServers`, so a fresh enterprise setup passes attestation for servers aih
+  itself generated with no hand-editing. Fail-closed boundaries: an existing policy or
+  an active `AIH_ORG_POLICY` override refuses; surfaces attestation force-undeclares
+  are listed for review, never silently declared; marketplace surfaces are never
+  auto-trusted into `trust.approvedSources`. At enterprise posture `aih mcp` now names
+  its own declaration gap: generated servers the active policy leaves undeclared
+  produce a ready-to-merge `allowedServers` snippet digest (or a pointer at
+  `aih policy init` when no policy exists) — guidance only, no gate or verdict
+  changes. Every `aih policy` subcommand also accepts the conventional optional
+  `[root]` positional, so `aih policy validate <root>` works like the other
+  repo-scoped commands. (#503)
 
 - Doctor distinguishes generation deltas from user drift on aih-generated managed
   artifacts. When `.claude/managed-settings.json` or the managed MCP allowlist
@@ -39,6 +53,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   self-reports at runtime, not the artifact's provenance or integrity. Because the
   probe executes the pinned third-party artifact, the live handshake is opt-in only.
   (#502)
+- Pin currency for the wired MCP tool pins. Doctor renders an `mcp-pin-currency`
+  row covering both halves of the pin-refresh double lag: offline on every run it
+  compares each exactly-pinned npx/uvx launch in `.mcp.json` against the pin this
+  aih build's catalog generates for the same server (a difference is the
+  re-projection half — `mcp.projection-stale`, fixed by `aih mcp --apply`), and
+  `aih doctor --check-pin-currency` opts in to the upstream half, querying each
+  pin's registry for its latest release (npm via `npm view`, PyPI via its JSON
+  metadata endpoint) — registry metadata only, nothing downloaded or executed,
+  opt-in because it is network egress from a read-only command. A newer upstream
+  release warns (`mcp.pin-stale`) as a vet-then-bump candidate, never an automatic
+  upgrade; the documented refresh path is vet (`aih trust scan`) → bump in an aih
+  release → re-project (`aih mcp --apply`) → re-attest (`--attest-mcp-pins`). The
+  codebase-memory-mcp interactive graph-UI variant is deliberately not installed or
+  linked — the wired, vetted surface is the headless stdio launch only — and that
+  decision is recorded in docs/commands.md. (#504)
 
 ### Fixed
 

@@ -420,6 +420,8 @@ describe("Check.code — invariants", () => {
       "mcp.allowlist-generation-delta": true,
       "mcp.version-drift": true,
       "mcp.pin-unattested": true,
+      "mcp.pin-stale": true,
+      "mcp.projection-stale": true,
       "cli.not-detected": true,
       "cli.config-only": true,
       "cli.binary-broken": true,
