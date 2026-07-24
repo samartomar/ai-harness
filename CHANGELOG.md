@@ -95,6 +95,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Adapter regeneration scope now honors `--cli`: the `.aih-config.json` marker's
+  `targets` are replaced with each run's resolved CLI set instead of being
+  array-unioned with previous runs, so an explicit `aih bootstrap-ai --cli
+  claude,codex` narrows the persisted footprint and later marker-driven re-runs no
+  longer resurrect a dropped CLI's adapter + bootloader (files on disk stay
+  untouched; `aih prune` removes them). `aih adopt`'s convergence of every
+  bootloader that already exists on disk is deliberate — required to reach
+  already-adopted — and is now documented as footprint-convergence-beats-CLI-scope
+  in the command reference. The ECC Codex `--profile full` passthrough reported by
+  the same enterprise rollout batch is locked with live-path regression tests
+  (resolved profile → registration request → full-scope Codex merge), and the
+  enterprise onboarding + release-SLSA docs now route global-install provenance
+  through `aih verify-release` instead of a bare `npm audit signatures`, which
+  cannot audit a global install (`EAUDITGLOBAL`); the verifier runs
+  `npm audit signatures --prefix <temp>` against the exact release instead. (#506)
 - `aih ready` reports the factual secret-location class instead of labelling every
   plaintext finding "committed": git-tracked findings stay under `no-committed-secret`
   (rotate + rewrite git history), while untracked on-disk files report
