@@ -96,10 +96,18 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
       sensitive: { path: true },
     }),
     exec("lock down the PEM to the current user", lockArgv, {
+      blockProbesOnFailure: true,
       sensitive: { argv: lockArgv.flatMap((value, index) => (value === pemPath ? [index] : [])) },
+      failureCheck: {
+        name: "cert: lock down PEM bundle",
+        verdict: "fail",
+        code: "cert.ca-missing",
+        detail: "could not lock down the corporate CA bundle to the current user",
+      },
     }),
     exec("JVM: import corporate CA into the generated user truststore", keytoolArgv, {
       allowFailure: true,
+      requiresPriorExecSuccess: true,
       sensitive: { argv: [8, 10] },
     }),
 
@@ -110,29 +118,31 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
       shell,
       envVars,
       "export TLS trust env vars for Node, pip, requests, cargo, git, Go/JVM tools",
-      { sensitive: { path: true } },
+      { sensitive: { path: true }, requiresPriorExecSuccess: true },
     ),
-    ...nodeTrustPersistenceActions(ctx, nodeEnvVars),
+    ...nodeTrustPersistenceActions(ctx, nodeEnvVars).map((action) =>
+      action.kind === "write" ? { ...action, requiresPriorExecSuccess: true } : action,
+    ),
 
     // 3. Per-manager config files (faithful to the blueprint matrix; idempotent).
     writeText(
       joinFromAbsoluteBase(home, ".npmrc"),
       upsertIniKey(readIfExists(joinFromAbsoluteBase(home, ".npmrc")) ?? "", "cafile", pemPath),
       "npm: set cafile to the corporate CA bundle",
-      { external: true },
+      { external: true, requiresPriorExecSuccess: true },
     ),
     pipConfigWrite(ctx, home, pemPath),
     writeText(
       joinFromAbsoluteBase(home, ".cargo", "config.toml"),
       cargoConfig(readIfExists(joinFromAbsoluteBase(home, ".cargo", "config.toml")) ?? "", pemPath),
       "cargo: set [http] cainfo and [net] git-fetch-with-cli",
-      { external: true },
+      { external: true, requiresPriorExecSuccess: true },
     ),
     writeText(
       joinFromAbsoluteBase(home, ".gitconfig"),
       gitConfig(readIfExists(joinFromAbsoluteBase(home, ".gitconfig")) ?? "", pemPath),
       "git: set [http] sslCAInfo to the corporate CA bundle",
-      { external: true },
+      { external: true, requiresPriorExecSuccess: true },
     ),
     doc(
       "Docker: install corporate CA in daemon trust store",
@@ -142,19 +152,19 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
       gradlePath,
       gradleProperties(readIfExists(gradlePath) ?? "", trustStorePath),
       "Gradle: set JVM SSL trustStore system properties",
-      { external: true },
+      { external: true, requiresPriorExecSuccess: true },
     ),
     writeText(
       mavenPath,
       mavenRc(readIfExists(mavenPath) ?? "", trustStorePath, ctx.host.platform),
       "Maven: export JVM SSL trustStore options",
-      { external: true },
+      { external: true, requiresPriorExecSuccess: true },
     ),
     writeText(
       joinFromAbsoluteBase(home, ".condarc"),
       condarcConfig(readIfExists(joinFromAbsoluteBase(home, ".condarc")) ?? "", pemPath),
       "conda: set ssl_verify to the corporate CA bundle",
-      { external: true },
+      { external: true, requiresPriorExecSuccess: true },
     ),
 
     // 4. Homebrew bundles its own CA store and needs a prefix-specific cp + rehash
@@ -247,6 +257,7 @@ function pipConfigWrite(ctx: PlanContext, home: string, pemPath: string) {
     "pip: set global.cert to the corporate CA bundle",
     {
       external: true, // home/system path, not repo-scoped
+      requiresPriorExecSuccess: true,
     },
   );
 }

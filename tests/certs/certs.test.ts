@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -390,6 +390,57 @@ describe("certs plan — Homebrew stays a doc; conda is now an applied .condarc 
     const condarc = findWrite(p.actions, "/.condarc");
     expect(condarc).toBeDefined();
     expect(condarc?.contents).toMatch(/^ssl_verify: .*corporate-root-ca\.pem$/m);
+  });
+});
+
+describe("certs plan — lockdown failure", () => {
+  it("does not persist trust references when PEM lockdown fails", async () => {
+    const root = freshTmp();
+    const home = join(root, "home");
+    const calls: string[][] = [];
+    const ctx = makeCtx({
+      root,
+      platform: "darwin",
+      env: { HOME: home },
+      apply: true,
+      verify: true,
+      handler: (argv) => {
+        calls.push(argv);
+        return argv[0] === "chmod"
+          ? { code: 1, stdout: "", stderr: "permission denied" }
+          : undefined;
+      },
+    });
+
+    const p = await command.plan(ctx);
+    const pem = findWrite(p.actions, "/corporate-root-ca.pem");
+    const profile = findEnvBlock(p.actions, "certs");
+    const plists = p.actions.filter(
+      (action): action is Extract<Action, { kind: "write" }> =>
+        action.kind === "write" && action.path.endsWith(".plist"),
+    );
+    const managerWrites = p.actions.filter(
+      (action): action is Extract<Action, { kind: "write" }> =>
+        action.kind === "write" && action !== pem && !action.path.endsWith(".plist"),
+    );
+    expect(pem).toBeDefined();
+    expect(profile).toBeDefined();
+    expect(plists).toHaveLength(2);
+    expect(managerWrites).toHaveLength(7);
+
+    const result = await executePlan(p, ctx);
+
+    expect(existsSync(pem?.path ?? "")).toBe(true);
+    expect(existsSync(profile?.path ?? "")).toBe(false);
+    expect(plists.every((action) => !existsSync(action.path))).toBe(true);
+    expect(managerWrites.every((action) => !existsSync(action.path))).toBe(true);
+    expect(calls.some((argv) => argv[0] === "keytool")).toBe(false);
+    expect(calls.some((argv) => argv[0] === "/bin/launchctl")).toBe(false);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "cert: lock down PEM bundle", verdict: "fail" }),
+      ]),
+    );
   });
 });
 
