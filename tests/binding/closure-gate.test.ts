@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type ClosureInput,
   type ClosureSpec,
@@ -24,6 +24,10 @@ import {
   scannableFromGit,
 } from "../../src/binding/scan-gate.js";
 import { defaultRunner } from "../../src/internals/proc.js";
+
+// Heavy real-git/child-process tests: per-test budgets sized for worker
+// contention, not idle hardware — 5s defaults flaked on CI runners (#509).
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
 // The measured R4 host fact (evidence: evidence-w5-spike/2b-r4-nested-loader.json):
 // claude-code@2.1.214 does NOT register a SKILL.md nested inside a repo-shaped

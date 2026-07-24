@@ -40,3 +40,6 @@ ai-coding/skills/
 *.aih.tmp
 .aih-truth.json
 /.aih/
+
+# local vet provisioning (pinned vendor checkouts; CI recreates its own)
+.baseline-sources/
