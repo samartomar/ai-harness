@@ -169,6 +169,17 @@ describe("macOS Node trust persistence", () => {
     ]);
   });
 
+  it("preserves a validated Windows HOME path style for LaunchAgent paths", () => {
+    const home = "C:\\Users\\example";
+    const actions = nodeTrustPersistenceActions(persistenceCtx({ HOME: home }), nodeTrustEnvVars());
+    const plists = actions.filter((action) => action.kind === "write");
+
+    expect(plists.map((action) => action.path)).toEqual([
+      `${home}\\Library\\LaunchAgents\\dev.aih.env.node-extra-ca-certs.plist`,
+      `${home}\\Library\\LaunchAgents\\dev.aih.env.node-use-system-ca.plist`,
+    ]);
+  });
+
   it("neutralizes non-selected launchd trust before enabling the selected value", () => {
     const actions = nodeTrustPersistenceActions(
       persistenceCtx({

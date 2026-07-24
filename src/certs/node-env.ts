@@ -20,7 +20,7 @@ function hasControlCharacter(value: string): boolean {
   return false;
 }
 
-function assertNormalizedAbsolutePath(value: string, name: string): void {
+function assertNormalizedAbsolutePath(value: string, name: string): typeof posix | typeof win32 {
   if (hasControlCharacter(value)) {
     throw new SettingsError(`${name} contains a control character`);
   }
@@ -31,6 +31,7 @@ function assertNormalizedAbsolutePath(value: string, name: string): void {
   if (pathApi === undefined || pathApi.normalize(value) !== value) {
     throw new SettingsError(`${name} must be an absolute normalized path`);
   }
+  return pathApi;
 }
 
 function assertSelectedVar(variable: EnvVar): void {
@@ -235,8 +236,8 @@ export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly Env
 
   const home = ctx.env.HOME;
   if (home === undefined) throw new SettingsError("HOME is required for macOS LaunchAgents");
-  assertNormalizedAbsolutePath(home, "HOME");
-  const launchAgents = posix.join(home, "Library", "LaunchAgents");
+  const pathApi = assertNormalizedAbsolutePath(home, "HOME");
+  const launchAgents = pathApi.join(home, "Library", "LaunchAgents");
   assertNormalizedAbsolutePath(launchAgents, "LaunchAgents directory");
   const sorted = [...selected].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   const selectedWrites: Action[] = [];
@@ -245,7 +246,7 @@ export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly Env
   const unselectedExecs: Action[] = [];
   for (const variable of sorted) {
     const label = launchAgentLabel(variable.key);
-    const path = posix.join(launchAgents, `${label}.plist`);
+    const path = pathApi.join(launchAgents, `${label}.plist`);
     assertNormalizedAbsolutePath(path, "LaunchAgent path");
     selectedWrites.push(
       writeText(
@@ -266,7 +267,7 @@ export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly Env
   }
   for (const key of unselected) {
     const label = launchAgentLabel(key);
-    const path = posix.join(launchAgents, `${label}.plist`);
+    const path = pathApi.join(launchAgents, `${label}.plist`);
     assertNormalizedAbsolutePath(path, "LaunchAgent path");
     unselectedWrites.push(
       writeText(
