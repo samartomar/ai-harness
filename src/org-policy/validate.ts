@@ -51,8 +51,10 @@ function localPolicyUri(env: NodeJS.ProcessEnv): string {
  * Grade the local `aih-org-policy.json`. `readOrgPolicy` already folds JSON
  * and schema failures into one `OrgPolicyError` whose message lists the zod
  * issues — that message IS the finding detail, never re-derived here.
+ * Exported so `aih policy init --verify` grades its freshly written starter
+ * with the IDENTICAL schema gate `policy validate` applies.
  */
-function localPolicyCheck(ctx: PlanContext): Check {
+export function localPolicyCheck(ctx: PlanContext): Check {
   const uri = localPolicyUri(ctx.env);
   try {
     const policy = readOrgPolicy(ctx.root, ctx.env);

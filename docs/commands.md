@@ -413,7 +413,25 @@ build); `validate --require-signature` then
 
 ## aih policy
 
-Schema, projection, and trusted-channel gates for the org policy. `project --apply` compiles the
+Starter seeding, schema, projection, and trusted-channel gates for the org policy. Every `policy`
+subcommand is repo-scoped and accepts the conventional optional `[root]` positional —
+`aih policy validate .` works exactly like `aih init .` (`--root` and `AIH_ROOT` still apply).
+
+`init` seeds a starter `aih-org-policy.json` from **observed fleet state**, so authoring the policy
+becomes a review exercise instead of a blank page — and a fresh enterprise setup passes baseline
+attestation for aih-generated MCP servers without hand-editing. The starter declares exactly what
+the attestation lens observes: catalog-bound MCP surfaces become `mcp.allowedServers`; surfaces
+attestation force-undeclares (stale generated residue, non-catalog servers) are listed for review,
+never silently declared; and marketplace surfaces are **never auto-trusted** — `trust.approvedSources`
+grants acquisition trust beyond registry membership, so those entries stay an explicit review step.
+Fail-closed boundaries: an existing policy is never overwritten (plan-time refusal plus an
+apply-time absent pin), an active `AIH_ORG_POLICY` override refuses outright (the starter only
+targets the committed default file), and an unreadable MCP config aborts the plan. The starter
+records the resolved posture as `minimumPosture`, and `--verify` grades the written file with the
+same schema gate as `validate`. Declaring `mcp.allowedServers` records registry membership only;
+reviewed third-party egress approval remains `aih mcp approve`.
+
+`project --apply` compiles the
 committed `aih-org-policy.json` into only its generated policy artifacts —
 `.claude/managed-settings.json` and, at enterprise posture, the two system-path examples. It does
 not run `aih init`, regenerate the canon, or modify unrelated settings. This is a Claude projection:
@@ -625,6 +643,12 @@ managed stdio allowlist only when `mcp.allowManagedOnly` is true. At Enterprise 
 apply keeps the full generated server set but warns when policy denies any server; add
 `--mcp-compliant` to omit denied generated servers from MCP client configs and list them with reasons
 in the governance guidance. Use the same flag on `--verify` to verify the compliant plan.
+At Enterprise posture the plan also names its own declaration gap: when generated servers are
+missing from `mcp.allowedServers`, an `Undeclared generated MCP servers` digest emits a
+ready-to-merge `allowedServers` snippet (the union of current and generated declarations) — or, with
+no committed policy at all, points at `aih policy init` — so baseline attestation never flags an
+aih-generated server without the fix in hand. The digest is guidance only: it changes no gate, and
+declaring registry membership is still not an egress approval.
 With `allowManagedOnly: true`, an empty list is deny-all across direct, offline, init, and client
 writers; a populated list emits only listed, enabled servers. With `false`, the enabled catalog
 remains available, and cleanup preserves operator entries while replacing exact AIH output.
