@@ -18,6 +18,37 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   explained by aih's generation history still fails under the existing drift codes,
   and the re-projection under `--apply` (shipped in v2.11.0) is re-validated to
   migrate old-generation managed allowlists. (#501)
+- Resolved-artifact attestation for uvx MCP pins. Doctor always renders an
+  `mcp-uvx-pin-attestation` row: with exactly-pinned uvx servers in `.mcp.json` it
+  reports the pins as NOT attested (`mcp.pin-unattested`, an advisory skip) until the
+  operator opts in with `aih doctor --attest-mcp-pins`, which launches each pinned
+  server once with an MCP `initialize` handshake and compares its self-reported
+  `serverInfo.version` to the pin — a mismatch warns (`mcp.version-drift`), a match
+  passes. The launch gate is fail-closed (literal `uvx`, exact end-to-end pins, no
+  config-supplied environment); attestation proves what the resolved artifact
+  self-reports at runtime, not the artifact's provenance or integrity. Because the
+  probe executes the pinned third-party artifact, the live handshake is opt-in only.
+  (#502)
+
+### Fixed
+
+- `aih ready` reports the factual secret-location class instead of labelling every
+  plaintext finding "committed": git-tracked findings stay under `no-committed-secret`
+  (rotate + rewrite git history), while untracked on-disk files report
+  `no-plaintext-secret-on-disk` (rotate + move to a vault / env references). Both
+  classes keep the same posture split, no finding is dropped, and an unanswerable
+  git state (git absent, or rev-parse erroring for reasons like dubious ownership)
+  fails closed to the committed class. (#502)
+- Doctor's `ai-clis` probe no longer stays green for a dead CLI. Each detected
+  binary must pass a bounded `--version` exec: broken binaries are named in the
+  probe detail, and when every detected binary fails the exec the probe hard-fails
+  as `cli.binary-broken` instead of reporting the machine as runnable. (#502)
+- The canon lint's `canon-ref-resolves` rule no longer flags references inside an
+  explicit "only if `<file>` exists" conditional. The waiver is ref-bound (the
+  guard's subject must be the reference itself or an anaphoric "it"), positive
+  polarity only (negated guards such as "does not exist" never waive), prose-only
+  (fenced code blocks never qualify), and line-scoped; escaping refs stay fatal
+  even when guarded. (#502)
 
 ## [3.0.0] - 2026-07-23
 

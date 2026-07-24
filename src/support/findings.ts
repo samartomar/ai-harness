@@ -286,6 +286,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Review the named MCP package pin and the configured package registry/cache. Update the generated pin only if the served version is intentionally approved; otherwise fix the registry/cache alias before relying on the MCP server.",
   },
+  "mcp.pin-unattested": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "MCP package pin not attested against the resolved artifact",
+    action:
+      "Pin every uvx MCP launcher exactly (pkg==x.y.z), then run `aih doctor --attest-mcp-pins` to launch each pinned server once and compare its self-reported serverInfo.version to the pin.",
+  },
   "cli.not-detected": {
     audience: "developer",
     failSeverity: "degraded",
@@ -298,6 +305,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "AI CLI config found but binary missing",
     action:
       "Install the CLI binary or target it explicitly only when the tool can run; config directories alone may be stale.",
+  },
+  "cli.binary-broken": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "AI CLI detected but not usable (its own exec fails)",
+    action:
+      "Reinstall or update the named CLI: its binary resolves on PATH but cannot execute even `--version`, so every invocation would fail.",
   },
   "cli.bootloader-missing": {
     audience: "developer",

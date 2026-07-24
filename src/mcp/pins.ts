@@ -88,15 +88,22 @@ export function npxLaunchPins(args: readonly string[]): ExactNpmPackagePin[] {
   return pins.every((pin) => pin !== undefined) ? (pins as ExactNpmPackagePin[]) : [];
 }
 
+interface UvxLaunchOperands {
+  primary?: string;
+  withPackages: string[];
+  /** A source-changing/unknown option was seen — no exact-pin evidence possible. */
+  disqualified: boolean;
+}
+
 /**
- * Checks whether `uvx` has exactly pinned its executable package and every
- * explicitly added package. The direct positional package operand is the only
- * supported executable form: `--from` can run an arbitrary command and therefore
- * needs package-bin provenance beyond this syntax-only check. Any source-changing
- * option that requires an external file, editable path, or alternative index is
- * unpinned until an artifact provenance model can verify it.
+ * Walk a `uvx` launch's args to its executable operands. The direct positional
+ * package operand is the only supported executable form: `--from` can run an
+ * arbitrary command and therefore needs package-bin provenance beyond this
+ * syntax-only parse. Any source-changing option that requires an external file,
+ * editable path, or alternative index disqualifies the launch until an artifact
+ * provenance model can verify it.
  */
-function hasPinnedUvxLaunch(args: readonly string[]): boolean {
+function uvxLaunchOperands(args: readonly string[]): UvxLaunchOperands {
   let primary: string | undefined;
   const withPackages: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
@@ -107,7 +114,9 @@ function hasPinnedUvxLaunch(args: readonly string[]): boolean {
       break;
     }
 
-    if (arg === "--from" || optionValue(arg, "--from") !== undefined) return false;
+    if (arg === "--from" || optionValue(arg, "--from") !== undefined) {
+      return { withPackages, disqualified: true };
+    }
 
     const withValue = optionValue(arg, "--with");
     if (withValue !== undefined) {
@@ -116,7 +125,7 @@ function hasPinnedUvxLaunch(args: readonly string[]): boolean {
     }
     if (arg === "--with" || arg === "-w") {
       const value = args[index + 1];
-      if (value === undefined) return false;
+      if (value === undefined) return { withPackages, disqualified: true };
       withPackages.push(value);
       index += 1;
       continue;
@@ -127,18 +136,53 @@ function hasPinnedUvxLaunch(args: readonly string[]): boolean {
       arg === "--with-requirements" ||
       optionValue(arg, "--with-requirements") !== undefined
     ) {
-      return false;
+      return { withPackages, disqualified: true };
     }
     if (UVX_BOOLEAN_OPTIONS.has(arg)) continue;
-    if (arg.startsWith("-")) return false;
+    if (arg.startsWith("-")) return { withPackages, disqualified: true };
     primary = arg;
     break;
   }
+  return { primary, withPackages, disqualified: false };
+}
+
+/**
+ * Checks whether `uvx` has exactly pinned its executable package and every
+ * explicitly added package (see {@link uvxLaunchOperands} for the grammar).
+ */
+function hasPinnedUvxLaunch(args: readonly string[]): boolean {
+  const operands = uvxLaunchOperands(args);
   return (
-    primary !== undefined &&
-    hasExactPythonPackagePin(primary) &&
-    withPackages.every(hasExactPythonPackagePin)
+    !operands.disqualified &&
+    operands.primary !== undefined &&
+    hasExactPythonPackagePin(operands.primary) &&
+    operands.withPackages.every(hasExactPythonPackagePin)
   );
+}
+
+export interface ExactUvxPackagePin {
+  packageName: string;
+  version: string;
+  spec: string;
+}
+
+function exactUvxPackagePin(value: string): ExactUvxPackagePin | undefined {
+  const spec = value.trim();
+  const match = PYTHON_PACKAGE_SPEC.exec(spec);
+  if (match?.[1] === undefined || match[2] === undefined) return undefined;
+  return { packageName: match[1], version: match[2], spec };
+}
+
+/**
+ * The exact PRIMARY package pin behind a `uvx` launch — the distribution whose
+ * running server self-reports `serverInfo.version` — returned only when the whole
+ * launch is exactly pinned (primary AND every `--with`) with no source-changing
+ * option. `undefined` means the launch carries no attestable exact-pin evidence.
+ */
+export function uvxPrimaryPin(args: readonly string[]): ExactUvxPackagePin | undefined {
+  if (!hasPinnedUvxLaunch(args)) return undefined;
+  const primary = uvxLaunchOperands(args).primary;
+  return primary === undefined ? undefined : exactUvxPackagePin(primary);
 }
 
 function hasResolverEnvironmentOverride(

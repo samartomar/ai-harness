@@ -639,6 +639,9 @@
       ],
       "options": [
         {
+          "flags": "--attest-mcp-pins"
+        },
+        {
           "flags": "--context-dir <dir>",
           "defaultValue": "ai-coding"
         },

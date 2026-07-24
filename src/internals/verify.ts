@@ -36,9 +36,11 @@ export type CheckCode =
   | "mcp.allowlist-drift"
   | "mcp.allowlist-generation-delta"
   | "mcp.version-drift"
+  | "mcp.pin-unattested"
   // CLI bootloaders / canon
   | "cli.not-detected"
   | "cli.config-only"
+  | "cli.binary-broken"
   | "cli.bootloader-missing"
   | "cli.bootloader-drift"
   | "cli.wont-load"

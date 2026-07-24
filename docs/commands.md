@@ -62,6 +62,14 @@ loadability, contract, secret scan). Diagnoses by default (non-zero when blocked
 auto-fixable blocker (missing `rg`/`fd`/`jq`) installs under confirmation. Surfaces a `sec-ready`
 panel in `aih report --v9`.
 
+The secret gate reports the finding's LOCATION class, because the remediation differs: a
+git-tracked finding is `no-committed-secret` (rotate the credential and rewrite it out of git
+history), while an untracked on-disk file is `no-plaintext-secret-on-disk` (rotate and move it to a
+vault / env references). Both classes carry the same posture split (warn at vibe, gate at
+team/enterprise) and no finding is ever dropped by classification: when git cannot answer — git is
+absent, or `rev-parse` errors (for example dubious ownership) — every finding stays under the
+committed class, the strongest gate.
+
 ## aih session-guard
 
 Inspect session/action text with the EPIC 5 session guardrails. `--text <text>` runs a read-only,
@@ -655,7 +663,28 @@ control-matrix update so public claims can detect drift. A missing rules file em
 
 Fail-closed verification of the workstation/repo configuration (+ workspace mode: validates each
 child repo). Includes a **canon markdown lint** (read-only) over the scaffolded `ai-coding/` tree.
-It remains read-only. `--posture enterprise` also runs the enterprise baseline attestation: MCP
+It remains read-only.
+
+The `ai-clis` probe verifies a detected CLI binary can actually execute, not only that it resolves
+on PATH: each detected binary runs a bounded `--version` exec, broken binaries are named in the
+probe detail, and a machine where EVERY detected binary fails the exec hard-fails as
+`cli.binary-broken` rather than reporting runnable CLIs.
+
+The `mcp-uvx-pin-attestation` row covers the resolved artifact behind uvx MCP pins in `.mcp.json`.
+By default it reports exactly-pinned uvx servers as not attested (`mcp.pin-unattested`, an advisory
+skip). `--attest-mcp-pins` opts in to a live check: doctor launches each exactly-pinned server once
+with an MCP `initialize` handshake and compares the server's self-reported `serverInfo.version` to
+the pin — a mismatch warns (`mcp.version-drift`), a match passes. The launch gate is fail-closed
+(literal `uvx` command, exact end-to-end pins, no config-supplied environment; anything else is
+reported as unattestable). Attestation proves what the resolved artifact self-reports at runtime;
+it does not prove provenance or integrity, and it executes the pinned artifact — which is why the
+live handshake is opt-in.
+
+In the canon markdown lint, `canon-ref-resolves` accepts a reference guarded by an explicit
+existence conditional on the same line ("Read `x.md` only if it exists"): the waiver applies only
+when the guard's subject is that reference itself (or an anaphoric "it"), only with positive
+polarity (a negated guard such as "does not exist" never waives), and never inside fenced code
+blocks; escaping references stay fatal even when guarded. `--posture enterprise` also runs the enterprise baseline attestation: MCP
 servers from known repo-scoped MCP config files (`.mcp.json`, Cursor, Kiro, VS Code, and legacy
 OpenCode residues)
 and packaged marketplace skills from `.aih/marketplace/marketplace.json` must be declared in
