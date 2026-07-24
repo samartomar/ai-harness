@@ -71,45 +71,39 @@ function sameRegularRootFile(left: BigIntStats, right: BigIntStats): boolean {
 
 function readRootFile(path: string, maxBytes: number): RootFileRead {
   let fd: number | undefined;
-  let pathWasStat = false;
   let result: RootFileRead = { kind: "invalid" };
   try {
-    const pathBefore = statSync(path, { bigint: true });
-    pathWasStat = true;
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) return result;
+    fd = openSync(
+      path,
+      fsConstants.O_RDONLY | fsConstants.O_NONBLOCK | (fsConstants.O_NOFOLLOW ?? 0),
+    );
+    const descriptorBefore = fstatSync(fd, { bigint: true });
     if (
-      pathBefore.isFile() &&
-      Number.isSafeInteger(maxBytes) &&
-      maxBytes >= 0 &&
-      pathBefore.size >= 0n &&
-      pathBefore.size <= BigInt(maxBytes)
+      descriptorBefore.isFile() &&
+      descriptorBefore.size >= 0n &&
+      descriptorBefore.size <= BigInt(maxBytes)
     ) {
-      fd = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK);
-      const descriptorBefore = fstatSync(fd, { bigint: true });
-      if (sameRegularRootFile(pathBefore, descriptorBefore)) {
-        const bytes = Number(descriptorBefore.size);
-        const buffer = Buffer.alloc(bytes);
-        let offset = 0;
-        while (offset < bytes) {
-          const read = readSync(fd, buffer, offset, bytes - offset, null);
-          if (read <= 0) break;
-          offset += read;
-        }
-        const descriptorAfter = fstatSync(fd, { bigint: true });
-        const pathAfter = statSync(path, { bigint: true });
-        if (
-          offset === bytes &&
-          sameRegularRootFile(descriptorBefore, descriptorAfter) &&
-          sameRegularRootFile(descriptorAfter, pathAfter)
-        ) {
-          result = { kind: "ok", text: buffer.toString("utf8"), bytes };
-        }
+      const bytes = Number(descriptorBefore.size);
+      const buffer = Buffer.alloc(bytes);
+      let offset = 0;
+      while (offset < bytes) {
+        const read = readSync(fd, buffer, offset, bytes - offset, null);
+        if (read <= 0) break;
+        offset += read;
+      }
+      const descriptorAfter = fstatSync(fd, { bigint: true });
+      const pathAfter = statSync(path, { bigint: true });
+      if (
+        offset === bytes &&
+        sameRegularRootFile(descriptorBefore, descriptorAfter) &&
+        sameRegularRootFile(descriptorAfter, pathAfter)
+      ) {
+        result = { kind: "ok", text: buffer.toString("utf8"), bytes };
       }
     }
   } catch (error) {
-    result =
-      !pathWasStat && fd === undefined && errorCode(error) === "ENOENT"
-        ? { kind: "missing" }
-        : result;
+    result = fd === undefined && errorCode(error) === "ENOENT" ? { kind: "missing" } : result;
   }
   if (fd !== undefined) {
     try {

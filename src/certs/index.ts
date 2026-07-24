@@ -1,4 +1,4 @@
-import { isAbsolute, join } from "node:path";
+import { posix, win32 } from "node:path";
 import { AihError } from "../errors.js";
 import { type EnvVar, upsertTextBlock } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
@@ -47,8 +47,8 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
   const home = ctx.env.USERPROFILE || ctx.env.HOME || ctx.root;
   assertSafePathText(home, "home directory");
   const outDir = resolveOutDir(ctx.options.out, home);
-  const pemPath = join(outDir, PEM_NAME);
-  const trustStorePath = join(outDir, TRUSTSTORE_NAME);
+  const pemPath = joinFromAbsoluteBase(outDir, PEM_NAME);
+  const trustStorePath = joinFromAbsoluteBase(outDir, TRUSTSTORE_NAME);
   assertSafePathText(outDir, "--out");
   assertSafePathText(pemPath, "PEM path");
   assertSafePathText(trustStorePath, "truststore path");
@@ -65,10 +65,10 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
 
   const bundle = certs.map((c) => c.pem).join("");
 
-  const profile = ctx.host.shellProfilePaths()[0] ?? join(home, ".profile");
+  const profile = ctx.host.shellProfilePaths()[0] ?? joinFromAbsoluteBase(home, ".profile");
   const nodeEnvVars = nodeTrustEnvVars(pemPath);
   const envVars = trustEnvVars(pemPath, outDir, trustStorePath);
-  const gradlePath = join(home, ".gradle", "gradle.properties");
+  const gradlePath = joinFromAbsoluteBase(home, ".gradle", "gradle.properties");
   const mavenPath = mavenRcPath(home, ctx.host.platform);
   const lockArgv = ctx.host.lockDownFileArgv(pemPath);
   const keytoolArgv = [
@@ -116,21 +116,21 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
 
     // 3. Per-manager config files (faithful to the blueprint matrix; idempotent).
     writeText(
-      join(home, ".npmrc"),
-      upsertIniKey(readIfExists(join(home, ".npmrc")) ?? "", "cafile", pemPath),
+      joinFromAbsoluteBase(home, ".npmrc"),
+      upsertIniKey(readIfExists(joinFromAbsoluteBase(home, ".npmrc")) ?? "", "cafile", pemPath),
       "npm: set cafile to the corporate CA bundle",
       { external: true },
     ),
     pipConfigWrite(ctx, home, pemPath),
     writeText(
-      join(home, ".cargo", "config.toml"),
-      cargoConfig(readIfExists(join(home, ".cargo", "config.toml")) ?? "", pemPath),
+      joinFromAbsoluteBase(home, ".cargo", "config.toml"),
+      cargoConfig(readIfExists(joinFromAbsoluteBase(home, ".cargo", "config.toml")) ?? "", pemPath),
       "cargo: set [http] cainfo and [net] git-fetch-with-cli",
       { external: true },
     ),
     writeText(
-      join(home, ".gitconfig"),
-      gitConfig(readIfExists(join(home, ".gitconfig")) ?? "", pemPath),
+      joinFromAbsoluteBase(home, ".gitconfig"),
+      gitConfig(readIfExists(joinFromAbsoluteBase(home, ".gitconfig")) ?? "", pemPath),
       "git: set [http] sslCAInfo to the corporate CA bundle",
       { external: true },
     ),
@@ -151,8 +151,8 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
       { external: true },
     ),
     writeText(
-      join(home, ".condarc"),
-      condarcConfig(readIfExists(join(home, ".condarc")) ?? "", pemPath),
+      joinFromAbsoluteBase(home, ".condarc"),
+      condarcConfig(readIfExists(joinFromAbsoluteBase(home, ".condarc")) ?? "", pemPath),
       "conda: set ssl_verify to the corporate CA bundle",
       { external: true },
     ),
@@ -181,16 +181,36 @@ function trustEnvVars(pemPath: string, outDir: string, trustStorePath: string): 
   ];
 }
 
+function absolutePathApi(value: string): typeof posix | typeof win32 | undefined {
+  if (posix.isAbsolute(value)) return posix;
+  const windowsRoot = win32.parse(value).root;
+  const windowsFullyAbsolute =
+    win32.isAbsolute(value) && (windowsRoot.includes(":") || windowsRoot.startsWith("\\\\"));
+  return windowsFullyAbsolute ? win32 : undefined;
+}
+
+/** Join using the separator semantics already established by an absolute base path. */
+function joinFromAbsoluteBase(base: string, ...segments: string[]): string {
+  const pathApi = absolutePathApi(base);
+  if (pathApi === undefined) {
+    throw new AihError(
+      "certificate paths require an absolute home or output directory",
+      "AIH_UNSAFE_PATH",
+    );
+  }
+  return pathApi.join(base, ...segments);
+}
+
 /** Resolve the PEM output directory, expanding a leading `~` to the home dir. */
 function resolveOutDir(out: unknown, home: string): string {
   const raw = typeof out === "string" && out.length > 0 ? out : DEFAULT_OUT_DIR;
   assertSafePathText(raw, "--out");
   if (raw === "~") return home;
   if (raw.startsWith("~/") || raw.startsWith("~\\")) {
-    return join(home, raw.slice(2));
+    return joinFromAbsoluteBase(home, raw.slice(2));
   }
-  if (isAbsolute(raw)) return raw;
-  return join(home, raw);
+  if (absolutePathApi(raw) !== undefined) return raw;
+  return joinFromAbsoluteBase(home, raw);
 }
 
 function assertSafePathText(value: string, label: string): void {
@@ -214,8 +234,12 @@ function assertSafePathText(value: string, label: string): void {
 function pipConfigWrite(ctx: PlanContext, home: string, pemPath: string) {
   const isWindows = ctx.host.platform === "windows";
   const pipPath = isWindows
-    ? join(ctx.env.APPDATA ?? join(home, "AppData", "Roaming"), "pip", "pip.ini")
-    : join(home, ".config", "pip", "pip.conf");
+    ? joinFromAbsoluteBase(
+        ctx.env.APPDATA ?? joinFromAbsoluteBase(home, "AppData", "Roaming"),
+        "pip",
+        "pip.ini",
+      )
+    : joinFromAbsoluteBase(home, ".config", "pip", "pip.conf");
   const existing = readIfExists(pipPath) ?? "";
   return writeText(
     pipPath,
@@ -296,7 +320,9 @@ export function gradleProperties(existing: string, trustStorePath: string): stri
 }
 
 function mavenRcPath(home: string, platform: "windows" | "darwin" | "linux"): string {
-  return platform === "windows" ? join(home, "mavenrc_pre.cmd") : join(home, ".mavenrc");
+  return platform === "windows"
+    ? joinFromAbsoluteBase(home, "mavenrc_pre.cmd")
+    : joinFromAbsoluteBase(home, ".mavenrc");
 }
 
 /** Upsert a Maven rc block that appends the generated truststore to MAVEN_OPTS. */

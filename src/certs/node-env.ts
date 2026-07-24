@@ -1,4 +1,4 @@
-import { join, posix, win32 } from "node:path";
+import { posix, win32 } from "node:path";
 import { SettingsError } from "../errors.js";
 import type { EnvVar } from "../internals/envfile.js";
 import { type Action, exec, type PlanContext, writeText } from "../internals/plan.js";
@@ -236,7 +236,7 @@ export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly Env
   const home = ctx.env.HOME;
   if (home === undefined) throw new SettingsError("HOME is required for macOS LaunchAgents");
   assertNormalizedAbsolutePath(home, "HOME");
-  const launchAgents = join(home, "Library", "LaunchAgents");
+  const launchAgents = posix.join(home, "Library", "LaunchAgents");
   assertNormalizedAbsolutePath(launchAgents, "LaunchAgents directory");
   const sorted = [...selected].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   const selectedWrites: Action[] = [];
@@ -245,7 +245,7 @@ export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly Env
   const unselectedExecs: Action[] = [];
   for (const variable of sorted) {
     const label = launchAgentLabel(variable.key);
-    const path = join(launchAgents, `${label}.plist`);
+    const path = posix.join(launchAgents, `${label}.plist`);
     assertNormalizedAbsolutePath(path, "LaunchAgent path");
     selectedWrites.push(
       writeText(
@@ -266,7 +266,7 @@ export function nodeTrustPersistenceActions(ctx: PlanContext, vars: readonly Env
   }
   for (const key of unselected) {
     const label = launchAgentLabel(key);
-    const path = join(launchAgents, `${label}.plist`);
+    const path = posix.join(launchAgents, `${label}.plist`);
     assertNormalizedAbsolutePath(path, "LaunchAgent path");
     unselectedWrites.push(
       writeText(

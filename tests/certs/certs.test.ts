@@ -394,6 +394,38 @@ describe("certs plan — Homebrew stays a doc; conda is now an applied .condarc 
 });
 
 describe("certs plan — windows trust propagation", () => {
+  it("preserves Windows path style for certificate output and manager configs", async () => {
+    const root = freshTmp();
+    const home = "C:\\Users\\example";
+    const p = await command.plan(
+      makeCtx({
+        root,
+        platform: "windows",
+        env: {
+          USERPROFILE: home,
+          APPDATA: `${home}\\AppData\\Roaming`,
+          USERNAME: "example",
+        },
+      }),
+    );
+
+    const writePaths = p.actions
+      .filter((action) => action.kind === "write")
+      .map((action) => action.path);
+    expect(writePaths).toEqual(
+      expect.arrayContaining([
+        `${home}\\.config\\enterprise-ca\\corporate-root-ca.pem`,
+        `${home}\\.npmrc`,
+        `${home}\\AppData\\Roaming\\pip\\pip.ini`,
+        `${home}\\.cargo\\config.toml`,
+        `${home}\\.gitconfig`,
+        `${home}\\.gradle\\gradle.properties`,
+        `${home}\\mavenrc_pre.cmd`,
+        `${home}\\.condarc`,
+      ]),
+    );
+  });
+
   it("locks the PEM down via icacls (blueprint /inheritance:r /grant:r)", async () => {
     const root = freshTmp();
     const home = join(root, "home");

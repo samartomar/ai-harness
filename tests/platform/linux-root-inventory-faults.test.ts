@@ -43,6 +43,14 @@ function realStat(path: PathLike, options?: { bigint?: boolean }): Stats | BigIn
   return options?.bigint ? actualFs.statSync(path, { bigint: true }) : actualFs.statSync(path);
 }
 
+function expectSafeRootOpenFlags(flags: unknown): void {
+  expect(typeof flags).toBe("number");
+  const value = flags as number;
+  const nonblock = actualFs.constants.O_NONBLOCK ?? 0;
+  const noFollow = actualFs.constants.O_NOFOLLOW ?? 0;
+  expect(value & nonblock).toBe(nonblock);
+  expect(value & noFollow).toBe(noFollow);
+}
 function changedMtime(stats: BigIntStats): BigIntStats {
   return Object.assign(Object.create(Object.getPrototypeOf(stats)), stats, {
     mtimeNs: stats.mtimeNs + 1n,
@@ -81,11 +89,11 @@ describe("Linux root inventory fault handling", () => {
       let statCalls = 0;
       vi.mocked(statSync).mockImplementation(((path: PathLike, options?: { bigint?: boolean }) => {
         statCalls += 1;
-        return statCalls === 2 ? realStat(replacement, options) : realStat(path, options);
+        return statCalls === 1 ? realStat(replacement, options) : realStat(path, options);
       }) as typeof statSync);
 
       expect(await adapter([], [bundle]).trustStoreRoots()).toEqual([]);
-      expect(statCalls).toBe(2);
+      expect(statCalls).toBe(1);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -140,7 +148,7 @@ describe("Linux root inventory fault handling", () => {
     }
   });
 
-  it("rejects a blocking special file before attempting to open it", async () => {
+  it("opens with no-follow before rejecting a changed pathname", async () => {
     const root = mkdtempSync(join(tmpdir(), "aih-root-special-file-"));
     try {
       const bundle = join(root, "bundle.crt");
@@ -150,10 +158,34 @@ describe("Linux root inventory fault handling", () => {
         actualFs.statSync(bundle),
         { isFile: () => false },
       ) as Stats;
-      vi.mocked(statSync).mockReturnValueOnce(special);
+      vi.mocked(statSync).mockImplementation((() => {
+        expect(openSync).toHaveBeenCalledOnce();
+        return special;
+      }) as unknown as typeof statSync);
 
       expect(await adapter([], [bundle]).trustStoreRoots()).toEqual([]);
-      expect(openSync).not.toHaveBeenCalled();
+      const flags = vi.mocked(openSync).mock.calls[0]?.[1];
+      expectSafeRootOpenFlags(flags);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("opens a descriptor with no-follow before its first pathname stat", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-root-descriptor-first-"));
+    try {
+      const bundle = join(root, "bundle.crt");
+      writeFileSync(bundle, FAKE_PEM);
+      vi.mocked(statSync).mockImplementation(((path: PathLike, options?: { bigint?: boolean }) => {
+        expect(openSync).toHaveBeenCalledOnce();
+        return realStat(path, options);
+      }) as typeof statSync);
+
+      expect(await adapter([], [bundle]).trustStoreRoots()).toEqual([
+        { subject: bundle, pem: FAKE_PEM },
+      ]);
+      const flags = vi.mocked(openSync).mock.calls[0]?.[1];
+      expectSafeRootOpenFlags(flags);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
