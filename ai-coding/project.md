@@ -8,7 +8,7 @@ Enterprise AI Bootstrapping Harness — governed AI-assisted coding for enterpri
 
 ## Stack
 
-- Languages: TypeScript/Node.js
+- Languages: TypeScript/Node.js, Python
 - Package manager: npm
 
 ## Commands
@@ -21,11 +21,12 @@ Enterprise AI Bootstrapping Harness — governed AI-assisted coding for enterpri
 
 ## Scale
 
-- 578 tracked files · medium
+- 761 tracked files · medium · monorepo
 
 ## Entry points
 
 - `dist/cli.js`
+- `dist/index.js`
 - `src/cli.ts`
 - `src/index.ts`
 

@@ -27,8 +27,12 @@ const MARKER_FILE = ".aih-config.json";
 
 export const BINDING_SCHEMA_VERSION = 1 as const;
 
-/** The four methodology frameworks W1 enumerates. Unknown ids are rejected. */
-export const FRAMEWORK_IDS = ["ecc", "superpowers", "gstack", "gsd-core"] as const;
+/** The v1 framework set (W1's enumeration, as amended). Unknown ids are rejected. */
+// gsd-core was removed from the v1 set by the 2026-07-22 maintainer scope decision
+// (a product-value call, superseding D3): a declaration naming it fails closed here
+// rather than reaching a missing adapter. The contamination attributions keep
+// detecting gsd residue independently.
+export const FRAMEWORK_IDS = ["ecc", "superpowers", "gstack"] as const;
 export type FrameworkId = (typeof FRAMEWORK_IDS)[number];
 
 /** Only `ecc` carries a lean/full mode; every other framework must omit it. */

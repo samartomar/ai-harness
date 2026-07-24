@@ -2,9 +2,21 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { classifyCanon, isAdoptable } from "./adopt/classify.js";
 import { enterpriseBaselineAttestationCheck } from "./baseline/attestation.js";
-import { eccDoubleInstallCheck, eccModeExclusivityCheck } from "./binding/frameworks/ecc-doctor.js";
+import {
+  bindingContaminationCheck,
+  bindingContextCostCheck,
+  bindingDenyListFreshnessCheck,
+  bindingFrameworkDriftCheck,
+  bindingHookChainChecks,
+  bindingHostTupleCheck,
+  bindingMcpInventoryCheck,
+  bindingSettingsDriftCheck,
+  eccDoubleInstallCheck,
+  eccModeExclusivityCheck,
+} from "./binding/frameworks/binding-doctor.js";
 import { readAihConfigDiagnostic } from "./config/marker.js";
 import { contractTruthCheck } from "./contract/check.js";
+import { classifyTool, versionArgv } from "./heal/common.js";
 import { detectInstall } from "./internals/cli-detect.js";
 import { readIfExists } from "./internals/fsxn.js";
 import { gitRead } from "./internals/git.js";
@@ -14,10 +26,13 @@ import {
   type PlanContext,
   plan,
   probe,
+  probeMany,
   structuredChecksProbe,
 } from "./internals/plan.js";
 import { canonLintCheck } from "./lint/run.js";
 import { mcpManagedAllowlistCheck } from "./mcp/allowlist.js";
+import { mcpUvxPinAttestationProbe } from "./mcp/attest.js";
+import { mcpPinCurrencyProbe } from "./mcp/currency.js";
 import { orgPolicyDriftProbes, orgPolicyIntegrityProbes } from "./org-policy/drift.js";
 import { resolveTargetSet } from "./report/cli-coverage.js";
 import { loadabilityForWithDryRun, loadReason } from "./report/cli-loadability.js";
@@ -59,6 +74,16 @@ export const command: CommandSpec = {
     {
       flags: "--sarif <file>",
       description: "write the health report as SARIF 2.1.0 for GitHub code-scanning (`-` → stdout)",
+    },
+    {
+      flags: "--attest-mcp-pins",
+      description:
+        "launch each exactly-pinned uvx MCP server once (MCP initialize handshake) and compare its self-reported serverInfo.version to the pin — executes the pinned artifact, so it is opt-in",
+    },
+    {
+      flags: "--check-pin-currency",
+      description:
+        "compare each exactly-pinned npx/uvx MCP package launch against its registry's latest release (npm/PyPI metadata only; nothing is downloaded or executed) — network egress, so it is opt-in",
     },
   ],
   plan: (ctx) => {
@@ -169,27 +194,58 @@ export const command: CommandSpec = {
       }),
       probe("AI CLIs detected", async () => {
         const installs = await detectInstall(ctx);
-        const runnable = installs.filter((i) => i.binary).map((i) => i.cli);
+        const detected = installs.filter((i) => i.binary);
         const configOnly = installs.filter((i) => i.config && !i.binary).map((i) => i.cli);
+        // "binary resolves on PATH" is not "CLI usable": a binary that hard-fails
+        // even its own `--version` exec fails EVERY invocation (broken or too-old
+        // install), so it must not count as runnable (issue #502). The cheap
+        // sanity exec reuses heal's version-probe grammar; anything but a clean
+        // exit-0 keeps the CLI OUT of the runnable set and SURFACES it as broken
+        // — a relabel, never a dropped detection.
+        const isWindows = ctx.host.platform === "windows";
+        const states = await Promise.all(
+          detected.map(async (install) => {
+            const res = await ctx.run(
+              versionArgv(ctx.host.platform, install.binaryDetail ?? install.cli),
+              { timeoutMs: 10_000 },
+            );
+            return { cli: install.cli, usable: classifyTool(res, isWindows) === "ok" };
+          }),
+        );
+        const runnable = states.filter((s) => s.usable).map((s) => s.cli);
+        const broken = states.filter((s) => !s.usable).map((s) => s.cli);
         const configNote =
           configOnly.length > 0
             ? `; config-only traces (not runnable): ${configOnly.join(", ")}`
             : "";
-        return runnable.length > 0
-          ? {
-              name: "ai-clis",
-              verdict: "pass",
-              detail: `runnable: ${runnable.join(", ")}${configNote}`,
-            }
-          : {
-              name: "ai-clis",
-              verdict: "skip",
-              detail:
-                configOnly.length > 0
-                  ? `no runnable CLIs; config-only traces are not enough to target setup: ${configOnly.join(", ")}`
-                  : "none runnable — target explicitly with --cli or --all-tools",
-              code: "cli.not-detected",
-            };
+        const brokenNote =
+          broken.length > 0
+            ? `; broken (binary on PATH but its --version exec fails — reinstall/update): ${broken.join(", ")}`
+            : "";
+        if (runnable.length > 0) {
+          return {
+            name: "ai-clis",
+            verdict: "pass",
+            detail: `runnable: ${runnable.join(", ")}${brokenNote}${configNote}`,
+          };
+        }
+        if (broken.length > 0) {
+          return {
+            name: "ai-clis",
+            verdict: "fail",
+            code: "cli.binary-broken",
+            detail: `no usable AI CLI: every detected binary fails its --version exec ("binary launches" is not "CLI usable"): ${broken.join(", ")} — reinstall or update${configNote}`,
+          };
+        }
+        return {
+          name: "ai-clis",
+          verdict: "skip",
+          detail:
+            configOnly.length > 0
+              ? `no runnable CLIs; config-only traces are not enough to target setup: ${configOnly.join(", ")}`
+              : "none runnable — target explicitly with --cli or --all-tools",
+          code: "cli.not-detected",
+        };
       }),
       // Present file != loaded: fail closed when a targeted CLI's bootloader is on
       // disk but won't auto-load. Tier-2 dry-run probes prove runtime load only
@@ -254,9 +310,27 @@ export const command: CommandSpec = {
       }),
       probe("ECC double-install", () => eccDoubleInstallCheck(ctx)),
       probe("ECC mode exclusivity", () => eccModeExclusivityCheck(ctx)),
+      // W7 §B — the eight binding doctor probes (B1–B8). Read-only, deterministic,
+      // posture-graded where noted; each self-skips when no binding is present.
+      probe("binding contamination", () => bindingContaminationCheck(ctx)),
+      probe("binding context cost", () => bindingContextCostCheck(ctx)),
+      probe("binding host tuple", () => bindingHostTupleCheck(ctx)),
+      probe("binding framework drift", () => bindingFrameworkDriftCheck(ctx)),
+      probe("binding deny-list freshness", () => bindingDenyListFreshnessCheck(ctx)),
+      probeMany("binding hook chain", (probeCtx) => bindingHookChainChecks(probeCtx)),
+      probe("binding settings drift", () => bindingSettingsDriftCheck(ctx)),
+      probe("binding mcp inventory", () => bindingMcpInventoryCheck(ctx)),
       probe("large-repo graph safety", () => scaleSafetyCheck(ctx)),
       probe("VDI compatibility matrix", () => vdiCompatibilityCheck(ctx)),
       probe("MCP managed allowlist", () => mcpManagedAllowlistCheck(ctx)),
+      // Resolved-artifact attestation for uvx pins (issue #502): the allowlist
+      // proves config SHAPE; this row proves (or honestly refuses to claim) what
+      // the pinned artifact self-reports at runtime. Live launch is opt-in.
+      probe("MCP uvx pin attestation", (probeCtx) => mcpUvxPinAttestationProbe(probeCtx)),
+      // Pin currency for the wired MCP tool pins (issue #504): re-projection lag
+      // vs THIS build's catalog is reported offline; the registry latest-release
+      // comparison is opt-in (network) via --check-pin-currency.
+      probe("MCP pin currency", (probeCtx) => mcpPinCurrencyProbe(probeCtx)),
       structuredChecksProbe("trust-lock local drift", (probeCtx) =>
         trustLockLocalDriftChecks(probeCtx),
       ),

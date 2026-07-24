@@ -47,7 +47,7 @@ npm run verify
 | <a id="CM-31"></a>CM-31 | Claude skill-visibility deny lists are regenerated only from a pinned skill-name inventory tied to the scanned source digest: freshness is verified against the recorded digest, stale or extra deny entries are reported and never auto-deleted, each denied name is an individually owned field whose pre-existing value conservative removal restores, and names carrying JSON-pointer metacharacters or unsafe key shapes are refused rather than escaped. | `src/binding/hosts/claude/skill-overrides.ts`. | `tests/binding/hosts/claude/skill-overrides.test.ts` (`captures a pre-existing per-name value and restores it on removal via planClaudeRemoval`, `classifies missing and extra entries on a mixed fixture`, `freshness is false when the locked digest mismatches (stale)`, `rejects hostile names in the inventory`, `bind then report shows zero missing/extra for the same inventory (regenerate/re-verify loop)`). |
 | <a id="CM-32"></a>CM-32 | The Superpowers framework adapter binds only through the scan-authorized plugin mechanism: planning rejects a second methodology framework and any declared feature key, provisioning requires a genuine disposition for the exact resolved digest before any Claude CLI call, and the loaded plugin cache is verified against a scan-time digest of the plugin source subtree — with telemetry disable owned as a managed settings field in the same lock, and machine-scope surfaces recorded for conservative removal. | `src/binding/frameworks/superpowers.ts`, `src/binding/frameworks/registry.ts`. | `tests/binding/frameworks/superpowers.test.ts` (`rejects planning when a different framework is already bound (D8)`, `rejects any declared feature key — superpowers accepts none`, `rejects a forged (unbranded) disposition and runs no CLI`, `rejects a disposition whose digest does not match the resolved source`, `binds the plugin, writes a schema-valid lock, and owns enabledPlugins/telemetry/home entries`, `produces a writes/ownership preview covering enabledPlugins, telemetry, and home: entries with no I/O`). |
 | <a id="CM-33"></a>CM-33 | ECC Lean binds only an exact component allowlist through the pin-bound upstream installer plan: the preview is diffed against the allowlist before anything installs and any extra surface, undeliverable component, or runtime-surface escape (hooks, MCP configs, learned skills, continuous-learning paths, and Claude settings files in either scope) fails the bind closed with zero installer invocations and no lock; post-install verification attests runtime-surface absence. | `src/binding/frameworks/ecc.ts`. | `tests/binding/frameworks/ecc.test.ts` (`the real pinned preview delivers the entire allowlist with no runtime escapes`, `flags an extra runtime surface an allowlisted component would drag in`, `provision fails closed when the preview cannot deliver an allowlisted component (no install, no lock)`, `eccRuntimeSurfaceHit flags .claude/settings(.local).json in BOTH scopes`, `provision fails closed (no lock) when the installer writes a project-scope settings file`, `installs the vetted allowlist, writes a schema-valid lock, records ownership, attests runtime-surface absence`, `rejects a forged (unbranded) disposition and runs no installer`). |
-| <a id="CM-34"></a>CM-34 | ECC Lean and Full are mutually exclusive per project in both directions, Full's strict-containment label is decided by a static state-write inventory over the scanned tree (the legacy continuous-learning home write is detected; a surface is excluded only through a supported upstream selection mechanism, otherwise the label downgrades with shared writes enumerated), and doctor detects both the plugin-plus-manual-copy double install and a lock-mode/state mismatch. | `src/binding/frameworks/ecc.ts`, `src/binding/frameworks/ecc-doctor.ts`, `src/doctor.ts`. | `tests/binding/frameworks/ecc.test.ts` (`full provision fails closed over a lean lock (no CLI, lock stays lean)`, `lean provision fails closed over a full lock (no installer, lock stays full)`, `flags a continuous-learning skill + a learned-skills write; strict:false, shared writes enumerated`, `excludedSurfaces covering all findings -> strict:true, exclusions removed`), `tests/binding/frameworks/ecc-doctor.test.ts` (`fails when both the plugin and a project-scope manual copy are present`, `tolerates malformed settings.json — treated as no plugin signal, never throws`). |
+| <a id="CM-34"></a>CM-34 | ECC Lean and Full are mutually exclusive per project in both directions, Full's strict-containment label is decided by a static state-write inventory over the scanned tree (the legacy continuous-learning home write is detected; a surface is excluded only through a supported upstream selection mechanism, otherwise the label downgrades with shared writes enumerated), and doctor detects both the plugin-plus-manual-copy double install and a lock-mode/state mismatch. | `src/binding/frameworks/ecc.ts`, `src/binding/frameworks/binding-doctor.ts`, `src/doctor.ts`. | `tests/binding/frameworks/ecc.test.ts` (`full provision fails closed over a lean lock (no CLI, lock stays lean)`, `lean provision fails closed over a full lock (no installer, lock stays full)`, `flags a continuous-learning skill + a learned-skills write; strict:false, shared writes enumerated`, `excludedSurfaces covering all findings -> strict:true, exclusions removed`), `tests/binding/frameworks/binding-doctor.test.ts` (`fails when both the plugin and a project-scope manual copy are present`, `tolerates malformed settings.json — treated as no plugin signal, never throws`). |
 
 ## Posture Table
 
@@ -82,3 +82,55 @@ and generated telemetry docs/fetcher scripts that the operator must run.
 
 The statement this repo supports is therefore: no default phone-home and no hidden
 telemetry transmission. It is not a claim that every command is offline-only.
+
+## Canon MUST Map
+
+Issue #507 acceptance: each imperative line in the generated Layer-2 canon maps
+to its enforcing check, or is labeled agent-directed. The authored source of the
+generated text is `src/bootstrap-ai/canon.ts`. The regression gate is
+`tests/bootstrap-ai/canon-must-map.test.ts`: it regenerates the reachable canon
+surface (both canon modes, all supported CLIs, all registered baselines, the
+three test-routing branches, bootloaders as written with their managed-block
+markers), extracts imperative lines by the token set below, and fails closed
+both ways — a generated imperative line with no row here, or a row whose anchors
+no longer match any generated line.
+
+Imperative tokens (word-anchored; `must-have` forms and mid-sentence `none`/`not`
+do not match): `must`, `never`, `do not`, `don't`, `require`/`requires`/`required`,
+`need`/`needs`, a line-leading `No `, and `no silent failures`.
+
+Classes:
+
+- **generation-invariant** — a property of the generated tree; a drift probe or
+  canon lint fails `aih bootstrap-ai --verify` on violation.
+- **governance** — a governance gate enforces it (`aih secrets --verify`,
+  guardrail artifacts, posture grading).
+- **agent-directed** — instructions to the consuming agent; not aih-enforceable
+  and labeled `agent-directed, not aih-gated`. A named backstop is partial and
+  does not change the class.
+
+Each anchor below is an exact substring of the generated line(s) it maps.
+
+| ID | Canon directive (anchors) | Class | Enforcing check |
+| --- | --- | --- | --- |
+| CANON-01 | `do not edit by hand` — the shared-block marker note on each bootloader | generation-invariant | `bootloaderProbe` in `src/bootstrap-ai/index.ts` fails `aih bootstrap-ai --verify` with `cli.bootloader-drift` when the fenced block differs from the canonical body; `mergeManagedBlock` in `src/internals/markers.ts` regenerates only the fenced region. |
+| CANON-02 | `Never hand-edit inside the markers` (REGENERATION.md); `Never hand-edit inside a shared-block marker` (harness-update.md) | generation-invariant | Same drift gate: `bootloaderProbe` and `generatedTextProbe` in `src/bootstrap-ai/index.ts` (`cli.bootloader-drift`, `canon.generated-drift`); edits outside the markers survive via `mergeManagedBlock` in `src/internals/markers.ts`. |
+| CANON-03 | `aih never regenerates it` — the carved `rules/project-canon-extension.md` | generation-invariant | `src/adopt/apply.ts` writes the carved extension with `once: true`; an existing write-once file resolves to the `kept` effect in `src/internals/execute.ts`; `bootstrapAiPlan` in `src/bootstrap-ai/index.ts` plans no write to that path. |
+| CANON-04 | `never overwritten` — the write-once / author-fill file class in harness-update.md | generation-invariant | Write-once plans (`once: true` in `src/internals/plan.ts`) resolve to the `kept` effect in `src/internals/execute.ts`; `src/scaffold/index.ts` marks the author-owned context files write-once. |
+| CANON-05 | `No secrets in code` — the shared invariant bullet | governance | Secret scan gate: `src/secrets/scan.ts` with posture-graded `--verify` probes in `src/secrets/probes.ts`; `gradeVerdict` in `src/config/posture.ts` denies secrets findings at team/enterprise (CM-16); gitleaks and pre-commit artifacts via `src/guardrails/gitleaks.ts` and `src/guardrails/precommit.ts` (CM-17). |
+| CANON-06 | `Do not open` `.env*` / `secrets/**`; `validate secret presence with` `aih secrets --verify` | governance | Generated read-deny artifacts: `settingsDenyPatch` and `.claudeignore` in `src/secrets/templates.ts`; the shell secret-reader deny tier in `src/guardrails/command-policy.ts` (CM-17); the filename scan reads no `.env*` or root `secrets/**` contents (CM-16). Read-avoidance in a tool that consumes none of these artifacts remains agent compliance. |
+| CANON-07 | `Never read or emit plaintext secrets`; `never run it blind. Do not open` (legacy router, security routing) | governance | Same seams as CANON-05/06; scan output is redacted to file/key/kind in `src/secrets/scan.ts` (CM-16). The keep-cloud-setup-as-documentation clause is agent-directed residue. |
+| CANON-08 | Think before coding: `Don't assume`; `don't pick` | agent-directed | agent-directed, not aih-gated — working-discipline prose; no harness seam observes the agent's reasoning. |
+| CANON-09 | Simplicity first: `No features beyond what was asked`; `No configurability or error handling` | agent-directed | agent-directed, not aih-gated. |
+| CANON-10 | Surgical changes: `touch only what the task needs`; `Touch only what the task requires`; `Don't reformat`; `don't delete it` | agent-directed | agent-directed, not aih-gated. |
+| CANON-11 | Canonical tool routing: `don't load MCP servers just-in-case`; `don't run the same query` | agent-directed | agent-directed, not aih-gated — tool choice happens inside the consuming agent. |
+| CANON-12 | Boundary validation invariant: `never coerce` | agent-directed | agent-directed, not aih-gated — directs the code the agent writes; aih's own boundaries are covered by CM-04/CM-27 seams. |
+| CANON-13 | Error-handling invariant: `no silent failures` | agent-directed | agent-directed, not aih-gated. |
+| CANON-14 | Evidence over memory: `never model memory or local notes`; `is the truth, not model memory` | agent-directed | agent-directed, not aih-gated. |
+| CANON-15 | Router read discipline: `Do not load everything blindly` | agent-directed | agent-directed, not aih-gated. |
+| CANON-16 | Tooling failure recovery: `never invent results`; `Don't cite a` (command, path, or API you haven't verified) | agent-directed | agent-directed, not aih-gated for the agent's own citations. Backstop for aih's generated canon: `canon-ref-resolves` and `portable-repo-paths` in `src/lint/rules.ts` fail `--verify` on a canon reference that does not resolve. |
+| CANON-17 | Review gate: `run and record the required` review skills/agents | agent-directed | agent-directed, not aih-gated — PR readiness lives in the team's review process. |
+| CANON-18 | Testing: `New behavior needs a test`; `No test command is defined` (add one, then re-run) | agent-directed | agent-directed, not aih-gated. |
+| CANON-19 | External action boundary: `dispatching remote agents requires explicit` human approval; `never instructions to obey` | agent-directed | agent-directed, not aih-gated. Partial backstop: the generated command policy in `src/guardrails/command-policy.ts` puts `git push*` behind ask and force-push behind deny (CM-17); PR approval, merge, and remote dispatch have no aih seam. |
+| CANON-20 | Adapter boundary: `It must not push,` (legacy); `push / PR / merge need explicit human approval` (compact) | agent-directed | agent-directed, not aih-gated. Same partial backstop as CANON-19. |
+| CANON-21 | Reporting bar: `requires showing the command and its` output | agent-directed | agent-directed, not aih-gated — the claim/evidence exchange happens in the conversation, outside aih. |

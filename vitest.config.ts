@@ -1,9 +1,15 @@
+import { availableParallelism } from "node:os";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
     globals: false,
     environment: "node",
+    // Ceiling, not a floor: vitest uses an explicit maxWorkers number verbatim
+    // (no core-count clamp), so min() keeps low-core CI runners at their
+    // derived default while capping high-core dev machines, whose uncapped
+    // worker counts overcommit CPU/RAM and blow per-test budgets (#509).
+    maxWorkers: Math.min(8, Math.max(availableParallelism() - 1, 1)),
     include: ["tests/**/*.test.ts"],
     coverage: {
       provider: "v8",
@@ -72,6 +78,26 @@ export default defineConfig({
           branches: 82,
           functions: 97,
           lines: 95,
+        },
+        // W7 §C scan cache tiers — branch-dense derived-cache + deep-scanner
+        // machinery (canonical keys, read-time tuple guard, SARIF mapping). Locked
+        // just below its genuine level (§D.3) so it can only ratchet up.
+        "src/binding/scan-cache-tiers.ts": {
+          statements: 93,
+          branches: 81,
+          functions: 100,
+          lines: 95,
+        },
+        // W8 §D14 framework value gate — a small, PURE verdict module (surface
+        // deltas + the decisive characteristic-workflow signal, fail-closed to
+        // INCOMPLETE). Fully exercised by value-gate.test.ts (36/36 stmts,
+        // 48/48 branches, 5/5 funcs, 35/35 lines); pinned at its genuine level so
+        // it can only ratchet up, with the standard branch cushion.
+        "src/binding/frameworks/value-gate.ts": {
+          statements: 100,
+          branches: 96,
+          functions: 100,
+          lines: 100,
         },
       },
     },

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "declaration": {
+    "schemaVersion": 1,
+    "framework": {
+      "id": "superpowers",
+      "host": "claude"
+    },
+    "source": {
+      "kind": "git",
+      "repository": "obra/superpowers",
+      "commitSha": "dddddddddddddddddddddddddddddddddddddddd",
+      "treeDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  "writes": [],
+  "scannedDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "loadedDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "match": true,
+  "ownership": []
+}

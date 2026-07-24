@@ -58,6 +58,7 @@ import {
 } from "../lock.js";
 import {
   assertResolvedMatchesDeclaration,
+  BindingNotSupportedError,
   bindingCacheHome,
   type ResolvedGitSource,
   type ResolvedSource,
@@ -113,6 +114,16 @@ export class GstackBindingError extends AihError {
 }
 
 // -- Pinned constants ---------------------------------------------------------
+
+/**
+ * The gstack adapter version (W7 §C.2) — bumped when this adapter's provisioning /
+ * qualification logic changes. Keyed into the runtime-qualification cache
+ * (`scan-cache-tiers.ts` `runtimeQualKey`), so a bump re-keys every prior host
+ * qualification. Registered alongside the factory in `registry.ts`
+ * (`ADAPTER_VERSIONS`); gstack is EVALUATED_DEFERRED for v1 but carries a version so
+ * the tier key is uniform across every registered adapter.
+ */
+export const ADAPTER_VERSION = 1 as const;
 
 /** The pinned git source location (`owner/repo` shape; see `isPlausibleGitRepository`). */
 export const GSTACK_REPOSITORY = "garrytan/gstack";
@@ -1773,6 +1784,38 @@ export function createGstackAdapter(deps: GstackAdapterDeps): FrameworkAdapter {
 
     report(context: BindingContext): BindingReport {
       return reportGstack(deps, context);
+    },
+  };
+}
+
+// -- v1 dormancy (2026-07-23 maintainer scope decision) -----------------------
+
+/** The refusal every NEW gstack bind receives while the adapter is dormant. */
+export const GSTACK_DORMANT_NOTICE =
+  "gstack is EVALUATED_DEFERRED for v1 (2026-07-22/23 maintainer scope decision): " +
+  "the adapter is retained fully built and spike-tested but is not user-selectable — " +
+  "new binds are refused. verify/remove/report remain available so an existing bind " +
+  "keeps its exit path. Re-entry requires named user demand, measured value, " +
+  "acceptable cost, and a new explicit maintainer decision.";
+
+/**
+ * The DORMANT gstack adapter the product registry assembles. The raw
+ * {@link createGstackAdapter} stays exported — the full D6 contract remains
+ * built, tested, and ready for a future re-entry decision — but the CLI-facing
+ * assembly refuses NEW binds: `plan` and `provision` throw
+ * {@link BindingNotSupportedError} with {@link GSTACK_DORMANT_NOTICE} before any
+ * side effect, while `inspect`/`resolve`/`verify`/`remove`/`report` pass through
+ * unchanged (an existing bind keeps its diagnostics and its exit path).
+ */
+export function createDormantGstackAdapter(deps: GstackAdapterDeps): FrameworkAdapter {
+  const adapter = createGstackAdapter(deps);
+  return {
+    ...adapter,
+    plan(): never {
+      throw new BindingNotSupportedError(GSTACK_DORMANT_NOTICE);
+    },
+    provision(): never {
+      throw new BindingNotSupportedError(GSTACK_DORMANT_NOTICE);
     },
   };
 }

@@ -37,8 +37,8 @@ any non-trivial change; the essentials are inline below.
 
 - Validate at boundaries; reject malformed or hostile input — never coerce it. Fail closed on ambiguity.
 - Handle errors explicitly; no silent failures.
-- No secrets in code, config, fixtures, logs, or error text.
-- Do not open `.env*` or `secrets/**`; validate secret presence with `aih secrets --verify`.
+- No secrets in code, config, prompts, fixtures, logs, or error text.
+- Do not open `.env*` or `secrets/**` (`.env.example` / `.env.sample` are readable templates); validate secret presence with `aih secrets --verify`.
 - On large repos, code-review-graph is advisory blast-area context, not evidence or a gate. If it fails or is stale, warn once and continue from source and tests. Repair it only when helper repair is the assigned task.
 
 ## External action boundary

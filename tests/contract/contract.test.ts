@@ -139,10 +139,21 @@ describe("PR 1B — project.md + setup.md", () => {
   it("project.md points at the selected baseline without duplicating its rules", async () => {
     seedMindworksLike(dir);
     const c = await synth();
-    const md = projectContractDoc("ai-coding", c, { baseline: "gstack" });
+    // A non-ecc baseline exercises the repo-ref rendering branch. Passed as an
+    // explicit source object rather than a selectable id — gstack was removed as
+    // a CLI baseline (2026-07-23) and ecc (the only selectable id) renders the
+    // "ECC / Superpowers" branch instead.
+    const md = projectContractDoc("ai-coding", c, {
+      baseline: {
+        id: "example",
+        label: "Example baseline",
+        sources: [{ owner: "example", repo: "rules", pinnedSha: "a".repeat(40) }],
+        installVerb: "follow example/rules",
+      },
+    });
 
     expect(md).toContain("RULE_ROUTER.md");
-    expect(md).toContain("garrytan/gstack");
+    expect(md).toContain("example/rules");
     expect(md).not.toContain("ECC / Superpowers");
   });
 

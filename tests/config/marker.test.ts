@@ -110,17 +110,28 @@ describe("aihConfigJson", () => {
       contextDir: "ai-coding",
       targets: ["claude"],
     });
-    expect(aihConfigJson("ai-coding", ["claude"], "gstack")).toEqual({
+  });
+
+  it("fails closed on a persisted gstack baseline (removed as CLI-surfaced by the 2026-07-23 scope decision)", () => {
+    writeMarker({
       schemaVersion: 1,
       contextDir: "ai-coding",
       targets: ["claude"],
       baseline: "gstack",
     });
+    expect(() => readAihConfig(dir)).toThrow(/invalid baseline/);
+    expect(() => readAihConfigBaseline(dir)).toThrow(/invalid baseline/);
   });
 
-  it("parses a persisted non-default baseline", () => {
-    writeMarker(aihConfigJson("ai-coding", ["claude"], "gsd"));
-    expect(readAihConfig(dir)?.baseline).toBe("gsd");
+  it("fails closed on a persisted gsd baseline (removed by the 2026-07-22 scope decision)", () => {
+    writeMarker({
+      schemaVersion: 1,
+      contextDir: "ai-coding",
+      targets: ["claude"],
+      baseline: "gsd",
+    });
+    expect(() => readAihConfig(dir)).toThrow(/invalid baseline/);
+    expect(() => readAihConfigBaseline(dir)).toThrow(/invalid baseline/);
   });
 
   it("round-trips through readAihConfig byte-for-byte", () => {

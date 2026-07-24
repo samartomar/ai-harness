@@ -97,18 +97,30 @@ function contractWorkspaces(stack: RepoStack): ProjectContract["workspaces"] | u
   return workspaces;
 }
 
-function readMcpServers(root: string): string[] {
+/** Server names read from the root `.mcp.json` on disk (empty when absent or unparsable). */
+function diskMcpServerNames(root: string): string[] {
   const raw = readRegularFile(join(root, ".mcp.json"))?.toString("utf8");
   if (raw === undefined) return [];
   try {
     const parsed = parseJsoncText(raw);
     if (!isPlainObject(parsed) || !isPlainObject(parsed.mcpServers)) return [];
-    return [...new Set(Object.keys(parsed.mcpServers).map(safeMcpServerLabel))].sort((a, b) =>
-      a.localeCompare(b),
-    );
+    return Object.keys(parsed.mcpServers);
   } catch {
     return [];
   }
+}
+
+/**
+ * The contract's MCP server list: the on-disk `.mcp.json` UNIONED with any servers an
+ * orchestrator has already planned to write there ({@link PlanContext.plannedMcpServers},
+ * threaded by `aih init`, whose mcp phase composes before contract). Without the planned
+ * set, a first `aih init --apply` would synthesize "no servers detected" while the very
+ * same run writes `.mcp.json` — and the contract would only catch up on a second run.
+ */
+function readMcpServers(root: string, planned: readonly string[]): string[] {
+  return [...new Set([...diskMcpServerNames(root), ...planned].map(safeMcpServerLabel))].sort(
+    (a, b) => a.localeCompare(b),
+  );
 }
 
 const MCP_SERVER_LABEL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/;
@@ -277,7 +289,7 @@ export async function synthesizeContract(
     deployment: stack.deployment,
     packageManager: stack.packageManager,
     entrypoints: stack.entryPoints,
-    mcpServers: readMcpServers(root),
+    mcpServers: readMcpServers(root, ctx.plannedMcpServers ?? []),
     commands,
     ...(workspaces ? { workspaces } : {}),
     scale: {

@@ -54,6 +54,17 @@ describe("binding declaration schema", () => {
     expect(second).toEqual(declaration);
   });
 
+  it("rejects the gsd-core framework id (removed from the v1 set by the 2026-07-22 scope decision)", () => {
+    const bad = gitDeclaration();
+    // No mode/features: the object must be rejected on the id alone, never on a
+    // side rule like the mode-only-for-ecc refinement.
+    bad.framework = {
+      id: "gsd-core",
+      host: "claude",
+    } as unknown as BindingDeclaration["framework"];
+    expect(BindingDeclarationSchema.safeParse(bad).success).toBe(false);
+  });
+
   it("rejects a short commit SHA", () => {
     const bad = gitDeclaration();
     bad.source = {

@@ -1,5 +1,8 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Command } from "commander";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ALL_COMMAND_SPEC_PATHS,
   ALL_COMMAND_SPECS,
@@ -25,10 +28,11 @@ describe("CLI program", () => {
     expect(READONLY).toHaveLength(6);
   });
 
-  it("registers workspace acquisition, snapshot, and plan subcommands", () => {
+  it("registers workspace acquisition, graph, snapshot, and plan subcommands", () => {
     const workspace = buildProgram().commands.find((c) => c.name() === "workspace");
     expect(workspace?.commands.map((c) => c.name()).sort()).toEqual([
       "add",
+      "graph",
       "hydrate",
       "init",
       "link",
@@ -88,9 +92,51 @@ describe("CLI program", () => {
     expect(capability?.commands.map((c) => c.name()).sort()).toEqual(["prune", "resolve"]);
   });
 
-  it("registers policy projection, validation, and pin verification as nested commands", () => {
+  it("registers policy starter, projection, validation, and pin verification as nested commands", () => {
     const policy = buildProgram().commands.find((c) => c.name() === "policy");
-    expect(policy?.commands.map((c) => c.name()).sort()).toEqual(["project", "validate", "verify"]);
+    expect(policy?.commands.map((c) => c.name()).sort()).toEqual([
+      "init",
+      "project",
+      "validate",
+      "verify",
+    ]);
+  });
+
+  it("policy subcommands accept an optional [root] like other repo-scoped commands", () => {
+    const policy = buildProgram().commands.find((c) => c.name() === "policy");
+    expect(policy?.commands.length).toBeGreaterThan(0);
+    for (const sub of policy?.commands ?? []) {
+      expect(
+        sub.registeredArguments.map((a) => ({ name: a.name(), required: a.required })),
+        `policy ${sub.name()} should take an optional [root]`,
+      ).toEqual([{ name: "root", required: false }]);
+    }
+  });
+
+  it("resolves a policy validate positional root like other repo-scoped commands", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "aih-policy-root-"));
+    const priorExitCode = process.exitCode;
+    const writes: string[] = [];
+    const spy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation((chunk: string | Uint8Array) => {
+        writes.push(String(chunk));
+        return true;
+      });
+    try {
+      writeFileSync(join(dir, "aih-org-policy.json"), "{not json");
+      const program = buildProgram();
+      program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+      await program.parseAsync(["node", "aih", "policy", "validate", dir, "--json", "--no-log"]);
+
+      // The positional root targeted the tmp repo: its malformed policy is the finding.
+      expect(process.exitCode).toBe(1);
+      expect(writes.join("")).toContain("org-policy.invalid");
+    } finally {
+      spy.mockRestore();
+      process.exitCode = priorExitCode;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("registers truth pack and verify as nested commands", () => {

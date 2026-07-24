@@ -437,10 +437,10 @@ describe("aih init — composition, not duplication", () => {
       "superpowers",
       "bootstrap-ai",
       "scaffold",
-      "contract",
       "secrets",
       "guardrails",
       "mcp",
+      "contract", // after mcp: first-run synthesis reads the planned .mcp.json surface
       "sandbox",
       "usage",
     ];
@@ -591,21 +591,10 @@ describe("aih init — target-gated tool artifacts (.cursor on cursor, .claude o
     expect(p).toContain(".claudeignore");
   });
 
-  it("--baseline gstack skips the Superpowers phase and records the selected baseline", async () => {
-    const p = await command.plan(ctx({ options: { cli: "kiro", baseline: "gstack" } }));
-    const paths = writePaths(p.actions);
-    const docText = docs(p.actions)
-      .map((d) => `${d.describe}\n${d.text}`)
-      .join("\n");
-    const marker = p.actions.find(
-      (a): a is WriteAction => a.kind === "write" && a.path === ".aih-config.json",
-    );
-
-    expect(docs(p.actions).map((d) => d.describe)).not.toContain("init: superpowers");
-    expect(paths).not.toContain(".kiro/steering/superpowers-methodology.md");
-    expect(docText).toContain("garrytan/gstack");
-    expect(docText).not.toContain("Superpowers install summary");
-    expect(marker?.json).toMatchObject({ baseline: "gstack", targets: ["kiro"] });
+  it("rejects --baseline gstack (retained but not CLI-surfaced per the 2026-07-23 scope decision)", async () => {
+    await expect(
+      command.plan(ctx({ options: { cli: "kiro", baseline: "gstack" } })),
+    ).rejects.toThrow(/unknown --baseline "gstack"/);
   });
 
   it("records the resolved targets in the .aih-config.json marker", async () => {
@@ -613,6 +602,9 @@ describe("aih init — target-gated tool artifacts (.cursor on cursor, .claude o
       (a): a is WriteAction => a.kind === "write" && a.path === ".aih-config.json",
     );
     expect(marker?.json).toMatchObject({ targets: ["kiro"] });
+    // #506 F3: the resolved set REPLACES any previously persisted targets — the
+    // marker merge must never union a scoped run back up to old CLI targets.
+    expect(marker?.replaceJsonKeys).toContain("targets");
   });
 });
 

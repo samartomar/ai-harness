@@ -89,6 +89,12 @@ const CliEntry = z.object({
   binaries: z.array(z.string()),
   /** Root bootloader file(s) the tool auto-loads as system context every turn. */
   bootloaders: z.array(z.string()),
+  /**
+   * True when the tool natively reads the root `AGENTS.md` standard even though the
+   * bootloader aih WRITES for it lives elsewhere (Kiro: `.kiro/steering/`). Tools
+   * with `AGENTS.md` in `bootloaders` are readers by definition — no flag needed.
+   */
+  readsAgentsMd: z.boolean().optional(),
   /** Home-relative machine-level skill discovery dir, when the tool has one aih can sync. */
   machineSkillDir: z.string().optional(),
   mcp: McpProfile,
@@ -281,6 +287,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     configDirs: [".kiro"],
     binaries: ["kiro"],
     bootloaders: [".kiro/steering/00-canon.md"],
+    readsAgentsMd: true,
     mcp: {
       support: "native",
       configPath: ".kiro/settings/mcp.json",

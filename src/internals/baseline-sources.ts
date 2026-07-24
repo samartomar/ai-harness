@@ -31,30 +31,10 @@ export const BASELINE_SOURCES = [
     ],
     installVerb: "`aih ecc` / `aih superpowers`",
   },
-  {
-    id: "gstack",
-    label: "gstack",
-    sources: [
-      {
-        owner: "garrytan",
-        repo: "gstack",
-        pinnedSha: "11de390be1be6849eb9a15f91ff4922dd16c589a",
-      },
-    ],
-    installVerb: "the pinned garrytan/gstack install path",
-  },
-  {
-    id: "gsd",
-    label: "GSD",
-    sources: [
-      {
-        owner: "open-gsd",
-        repo: "gsd-core",
-        pinnedSha: "8f2ebbe9bfbb98a1fc15cab36c3f6d5618eac341",
-      },
-    ],
-    installVerb: "the pinned open-gsd/gsd-core install path",
-  },
+  // gstack was removed as a selectable canon baseline by the 2026-07-23 scope
+  // decision (gstack retained but not surfaced from the CLI). --baseline gstack
+  // and a persisted gstack marker now fail closed. The adapter code stays
+  // in-tree (registered dormant); re-entry needs a new maintainer decision.
 ] as const satisfies readonly BaselineSource[];
 
 export type BaselineSourceId = (typeof BASELINE_SOURCES)[number]["id"];

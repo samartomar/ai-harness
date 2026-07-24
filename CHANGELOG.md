@@ -6,6 +6,228 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The risk-gates sidecar has a real consumer: at team/enterprise posture
+  `aih guardrails` now also generates `.github/workflows/risk-gates.yml` — a
+  pull-request workflow (the same "runs in YOUR CI, not from aih" boundary as the
+  SCA workflow) that reads `risk-gates.json`, diffs the PR's changed paths against
+  each gate's path patterns, and surfaces every touched gate as warning
+  annotations plus a job-summary table. Ask-not-deny end to end: a touched gate
+  never fails the build, matching the `risk-gates` warn grading at every posture;
+  the job name is the sidecar's declared `ci.checkName`, and the only hard failure
+  is a corrupted sidecar. The matcher policy is unit-tested through a TS mirror of
+  the workflow's bash matcher (`riskGatesTouched`), and gate patterns are matched
+  with shell globbing disabled so they can never expand against the checkout. At
+  vibe posture neither sidecar nor workflow is emitted. Refs #507
+- Canon MUST-to-enforcing-check map: `docs/CONTROL_MATRIX.md` gains a
+  `## Canon MUST Map` section classifying every imperative line the generated
+  Layer-2 canon (`src/bootstrap-ai/canon.ts`) emits — generation-invariant MUSTs
+  cite their drift probe or canon lint seam, governance MUSTs cite their gate
+  (secret scan, guardrail artifacts, posture grading), and agent-behavioral MUSTs
+  are labeled `agent-directed, not aih-gated`. A regression gate
+  (`tests/bootstrap-ai/canon-must-map.test.ts`) regenerates the reachable canon
+  surface, extracts imperative lines by a documented token set, and fails closed
+  on any unmapped imperative or stale map row. (Refs #507)
+- `aih workspace graph` projects the workspace's own declared contract relations
+  (`.aih-workspace.json` `repos[]` + `edges[]`) into a queryable cross-repo graph —
+  declared over inferred: a declared two-repo workspace yields queryable cross-repo
+  edges from declarations alone, with graph-tool inference demoted to optional
+  enrichment. `--apply` writes the pure, deterministic projection (every edge marked
+  `provenance: "declared"`) to `.aih/workspace-graph.json`; `--repo`/`--from`/`--to`/
+  `--kind` answer edge queries without writing; `--json` carries the graph, query,
+  and matches. Fail-closed: dangling edge endpoints and undeclared query repo ids
+  are errors, so a typo can never read as "no dependencies". (#505)
+- Org-policy surface UX for the enterprise first-setup loop. `aih policy init [root]`
+  seeds a starter `aih-org-policy.json` from observed fleet state: catalog-bound MCP
+  surfaces (the exact lens enterprise baseline attestation grades) become
+  `mcp.allowedServers`, so a fresh enterprise setup passes attestation for servers aih
+  itself generated with no hand-editing. Fail-closed boundaries: an existing policy or
+  an active `AIH_ORG_POLICY` override refuses; surfaces attestation force-undeclares
+  are listed for review, never silently declared; marketplace surfaces are never
+  auto-trusted into `trust.approvedSources`. At enterprise posture `aih mcp` now names
+  its own declaration gap: generated servers the active policy leaves undeclared
+  produce a ready-to-merge `allowedServers` snippet digest (or a pointer at
+  `aih policy init` when no policy exists) — guidance only, no gate or verdict
+  changes. Every `aih policy` subcommand also accepts the conventional optional
+  `[root]` positional, so `aih policy validate <root>` works like the other
+  repo-scoped commands. (#503)
+
+- Doctor distinguishes generation deltas from user drift on aih-generated managed
+  artifacts. When `.claude/managed-settings.json` or the managed MCP allowlist
+  matches an EARLIER aih generation's own output — a pre-hardening bare `uvx <pkg>`
+  launch shape, an older version pin, or missing newer projection keys — after an
+  in-place upgrade, doctor now reports a generation delta (`org-policy.generation-delta`,
+  `mcp.allowlist-generation-delta`) naming `aih policy project --apply` inline instead
+  of implying a local edit. Attribution is fail-closed: any difference not positively
+  explained by aih's generation history still fails under the existing drift codes,
+  and the re-projection under `--apply` (shipped in v2.11.0) is re-validated to
+  migrate old-generation managed allowlists. (#501)
+- Resolved-artifact attestation for uvx MCP pins. Doctor always renders an
+  `mcp-uvx-pin-attestation` row: with exactly-pinned uvx servers in `.mcp.json` it
+  reports the pins as NOT attested (`mcp.pin-unattested`, an advisory skip) until the
+  operator opts in with `aih doctor --attest-mcp-pins`, which launches each pinned
+  server once with an MCP `initialize` handshake and compares its self-reported
+  `serverInfo.version` to the pin — a mismatch warns (`mcp.version-drift`), a match
+  passes. The launch gate is fail-closed (literal `uvx`, exact end-to-end pins, no
+  config-supplied environment); attestation proves what the resolved artifact
+  self-reports at runtime, not the artifact's provenance or integrity. Because the
+  probe executes the pinned third-party artifact, the live handshake is opt-in only.
+  (#502)
+- Pin currency for the wired MCP tool pins. Doctor renders an `mcp-pin-currency`
+  row covering both halves of the pin-refresh double lag: offline on every run it
+  compares each exactly-pinned npx/uvx launch in `.mcp.json` against the pin this
+  aih build's catalog generates for the same server (a difference is the
+  re-projection half — `mcp.projection-stale`, fixed by `aih mcp --apply`), and
+  `aih doctor --check-pin-currency` opts in to the upstream half, querying each
+  pin's registry for its latest release (npm via `npm view`, PyPI via its JSON
+  metadata endpoint) — registry metadata only, nothing downloaded or executed,
+  opt-in because it is network egress from a read-only command. A newer upstream
+  release warns (`mcp.pin-stale`) as a vet-then-bump candidate, never an automatic
+  upgrade; the documented refresh path is vet (`aih trust scan`) → bump in an aih
+  release → re-project (`aih mcp --apply`) → re-attest (`--attest-mcp-pins`). The
+  codebase-memory-mcp interactive graph-UI variant is deliberately not installed or
+  linked — the wired, vetted surface is the headless stdio launch only — and that
+  decision is recorded in docs/commands.md. (#504)
+
+### Changed
+
+- Single-sourced the generated discipline text at its authored layer (slice A of
+  the #507 canon-structure theme): the working-agreement principles (think before
+  coding, simplicity first, surgical changes, goal-driven, canon tools), the
+  invariant list, and the reporting bar are now authored once in
+  `src/bootstrap-ai/canon.ts` (`DISCIPLINE_PRINCIPLES` / `DISCIPLINE_INVARIANTS` /
+  `DISCIPLINE_REPORTING`), and both renderings — the shared canonical block's
+  compact bullets and `rules/agent-behavior-core.md`'s long-form sections — derive
+  from that single source, drift-guarded by the extended byte-identical-fragments
+  tests. Emitted output is byte-identical in both canon modes: the marker id
+  (`ai-canonical:shared`), every emitted path, legacy output, and the committed
+  dogfood tree are all unchanged, so no deployed bootloader reads as drifted.
+  Refs #507.
+
+### Fixed
+
+- Adapter regeneration scope now honors `--cli`: the `.aih-config.json` marker's
+  `targets` are replaced with each run's resolved CLI set instead of being
+  array-unioned with previous runs, so an explicit `aih bootstrap-ai --cli
+  claude,codex` narrows the persisted footprint and later marker-driven re-runs no
+  longer resurrect a dropped CLI's adapter + bootloader (files on disk stay
+  untouched; `aih prune` removes them). `aih adopt`'s convergence of every
+  bootloader that already exists on disk is deliberate — required to reach
+  already-adopted — and is now documented as footprint-convergence-beats-CLI-scope
+  in the command reference. The ECC Codex `--profile full` passthrough reported by
+  the same enterprise rollout batch is locked with live-path regression tests
+  (resolved profile → registration request → full-scope Codex merge), and the
+  enterprise onboarding + release-SLSA docs now route global-install provenance
+  through `aih verify-release` instead of a bare `npm audit signatures`, which
+  cannot audit a global install (`EAUDITGLOBAL`); the verifier runs
+  `npm audit signatures --prefix <temp>` against the exact release instead. (#506)
+- `aih ready` reports the factual secret-location class instead of labelling every
+  plaintext finding "committed": git-tracked findings stay under `no-committed-secret`
+  (rotate + rewrite git history), while untracked on-disk files report
+  `no-plaintext-secret-on-disk` (rotate + move to a vault / env references). Both
+  classes keep the same posture split, no finding is dropped, and an unanswerable
+  git state (git absent, or rev-parse erroring for reasons like dubious ownership)
+  fails closed to the committed class. (#502)
+- Doctor's `ai-clis` probe no longer stays green for a dead CLI. Each detected
+  binary must pass a bounded `--version` exec: broken binaries are named in the
+  probe detail, and when every detected binary fails the exec the probe hard-fails
+  as `cli.binary-broken` instead of reporting the machine as runnable. (#502)
+- The canon lint's `canon-ref-resolves` rule no longer flags references inside an
+  explicit "only if `<file>` exists" conditional. The waiver is ref-bound (the
+  guard's subject must be the reference itself or an anaphoric "it"), positive
+  polarity only (negated guards such as "does not exist" never waive), prose-only
+  (fenced code blocks never qualify), and line-scoped; escaping refs stay fatal
+  even when guarded. (#502)
+
+## [3.0.0] - 2026-07-23
+
+### Added
+
+- **Framework binding for Claude (v1).** `aih` binds a pinned upstream AI framework
+  into a project's Claude Code host, project-scoped, running a fast-scan safety gate
+  (D12) before any upstream code executes. The v1 catalog is ECC (Lean default / Full
+  opt-in) and Superpowers; each binds through its own adapter into per-project
+  `enabledPlugins` with no machine-scope writes, and a typed lock plus Framework Card
+  records the exact installed surface. Committed binding schema, adapter contract, and
+  fast-scan gate. (#480, #481)
+- ECC and Superpowers framework adapters. ECC installs via its upstream installer
+  pinned at `samartomar/ECC@16563d4a` with exclusivity-checked Lean and Full modes;
+  Superpowers binds as a host plugin pinned at `obra/superpowers`. Each round-trips
+  bind → verify → remove to a clean tree and preserves unrelated and user-modified
+  content on removal (D18 ownership). (#482)
+- SRI-verified npm tarball acquisition for the fast-scan gate: framework sources
+  resolved from npm are integrity-checked against the lockfile digest before the gate
+  reads them. (#490)
+- Binding doctor, a typed Framework Card, and D12 scan-cache tiers. The doctor probes
+  contamination and leakage, host tuple, settings and hook-chain drift, MCP inventory,
+  and context cost; the card is derived from the observed surface; the scan cache is
+  keyed on digest + profile + adapter + host tuple, and an off-tuple host never
+  satisfies a cached qualification. (#492)
+- Framework Value Gate. Each supported framework's measured benefit — capability and
+  governance surface deltas plus a characteristic-workflow signal — is scored against
+  a no-framework baseline, failing closed to `INCOMPLETE_MEASUREMENT` when a required
+  input is missing. (#494)
+
+### Removed
+
+- **Breaking:** `aih bootstrap-ai --baseline gsd` is removed, and GSD leaves the
+  framework and baseline sets: a `gsd-core` binding declaration and a persisted
+  `baseline: "gsd"` marker both fail closed with the existing unknown-baseline
+  errors, and the committed `aih-config.schema.json` no longer admits the value.
+  Migrate to `--baseline ecc` (the sole selectable canon baseline, bundling ECC and
+  Superpowers). (#491)
+- **Breaking:** `aih bootstrap-ai --baseline gstack` is removed and the gstack
+  adapter is no longer surfaced from the CLI: new gstack binds refuse with a typed
+  error citing the scope decision, and a persisted `baseline: "gstack"` marker fails
+  closed. The adapter and its contract remain in-tree (verify/remove/report stay
+  functional for an existing bind); re-entry is a future release's decision. (#493)
+
+### Changed
+
+- The binding fast-scan gate is closure-aware and selected-profile driven, evaluating
+  each framework against calibrated Unicode and typography acceptance instead of a
+  hardcoded catalog. (#487)
+
+### Fixed
+
+- The binding contamination report no longer counts a contentless immediate
+  `~/.claude/skills/` subdirectory — such as the host-CLI-scaffolded empty
+  `skills/learned` — as machine-scope skill leakage; a subdirectory with any content
+  still counts, and the `~/.claude/ecc/*` machine roots keep bare-directory counting.
+  (#495)
+- The binding contamination report scans current-layout ECC machine roots. (#483)
+- A first `aih init --apply` now synthesizes the repo contract from the planned MCP
+  surface: the contract phase composes after mcp and reads the staged `.mcp.json`
+  server names, so `project.json` / `project.md` no longer report "no servers
+  detected" in the same run that writes those servers. A second apply stays
+  byte-identical.
+- Generated canon consistency: the compact RULE_ROUTER renders the "External action
+  boundary" section its adapters cite; the shared block and the agent behavior core
+  render identical secrets invariants from one source; the `.env*` rule states the
+  `.env.example` / `.env.sample` exception the secrets enforcement already grants;
+  the empty-state Testing line routes through `aih contract` / `aih bootstrap-ai`
+  instead of inviting a hand edit in a regenerated file; the AGENTS.md reader list
+  derives from the CLI registry (adding Kiro alongside Kimi); the Cursor stack
+  rule's empty state no longer renders "Use No test/…".
+- `setup.md` first-run guidance is executable on a fresh clone: it names the
+  `pre-commit` install step beside the hook that fails closed without it, and the
+  dependency-install fallback follows the detected language instead of assuming
+  Node package managers.
+- The scaffolded `SETUP-TASKS.md` playbook now matches the canon's advisory graph
+  posture: when `large-repo graph safety` fails it tells the agent to warn once and
+  continue with bounded reconnaissance — code-review-graph is advisory, not a gate;
+  repair it only when helper repair is the assigned task — instead of ordering a
+  stop until the graph is repaired and populated.
+- The `large-repo graph safety` doctor probe and the `scale.code-review-graph-missing`
+  support finding carry that same advisory posture instead of ordering a stop until
+  `aih doctor` verifies a populated graph: warn once and continue with bounded rg/fd
+  reconnaissance; repair the graph only when helper repair is the assigned task. The
+  finding's severity drops from blocking to degraded, the probe still reports `fail`
+  so `aih doctor` and the report digest keep surfacing the missing helper, and the
+  `aih tools` docs now describe the advisory posture instead of a fail-closed
+  prerequisite.
+
 ## [2.11.0] - 2026-07-15
 
 ### Added
@@ -1171,7 +1393,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.11.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/samartomar/ai-harness/compare/v2.11.0...v3.0.0
 [2.11.0]: https://github.com/samartomar/ai-harness/compare/v2.10.0...v2.11.0
 [2.10.0]: https://github.com/samartomar/ai-harness/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/samartomar/ai-harness/compare/v2.8.0...v2.9.0

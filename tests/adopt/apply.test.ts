@@ -12,7 +12,7 @@ import {
   extractManagedBlock,
   splitManagedBody,
 } from "../../src/internals/markers.js";
-import type { PlanContext } from "../../src/internals/plan.js";
+import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
@@ -85,7 +85,26 @@ describe("aih adopt --apply — marker-divergent carve + regenerate", () => {
     expect(classifyCanon(tmp, DIR).kind).toBe("already-adopted");
   });
 
-  it("keeps a persisted non-default baseline when carving a divergent router", async () => {
+  it("persists the converged targets by replacement, and converges every existing bootloader", async () => {
+    put("CLAUDE.md", divergentBootloader());
+    put("GEMINI.md", "# hand-written gemini bootloader\n");
+
+    const actions = (await command.plan(makeCtx())).actions;
+    // #506 F3 (documented convergence): adopt deliberately converges EVERY
+    // bootloader that already exists on disk — the footprint, not a CLI flag,
+    // decides what gets regenerated, so the repo actually reaches already-adopted.
+    const writes = actions.filter((a) => a.kind === "write").map((a) => a.path.replace(/\\/g, "/"));
+    expect(writes).toContain("GEMINI.md");
+    // The persisted marker records that converged set by REPLACEMENT, so a later
+    // scoped `bootstrap-ai --cli` narrow is never silently unioned back up.
+    const marker = actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".aih-config.json",
+    );
+    expect(marker?.replaceJsonKeys).toContain("targets");
+    expect(marker?.json).toMatchObject({ targets: ["claude", "gemini"] });
+  });
+
+  it("fails closed on a persisted removed baseline (gstack) rather than carving a stale router", async () => {
     put("CLAUDE.md", divergentBootloader());
     put(
       ".aih-config.json",
@@ -97,14 +116,11 @@ describe("aih adopt --apply — marker-divergent carve + regenerate", () => {
       }),
     );
 
+    // gstack was removed as a CLI-surfaced baseline (2026-07-23); a persisted
+    // gstack marker is a now-invalid governance value and fails closed rather
+    // than silently falling back to the default.
     const ctx = makeCtx({ apply: true });
-    await executePlan(await command.plan(ctx), ctx);
-
-    const router = read(`${DIR}/RULE_ROUTER.md`);
-    expect(router).toContain("garrytan/gstack");
-    expect(router).not.toContain("affaan-m/ECC");
-    expect(router).not.toContain("Superpowers");
-    expect(JSON.parse(read(".aih-config.json")).baseline).toBe("gstack");
+    await expect(command.plan(ctx)).rejects.toThrow(/invalid baseline/);
   });
 
   it("is idempotent: a second adopt run after convergence writes nothing", async () => {

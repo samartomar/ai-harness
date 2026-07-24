@@ -30,6 +30,7 @@ import {
   reposOption,
 } from "./detect.js";
 import { workspaceGitExecs, workspaceGitignoreWrite } from "./git.js";
+import { workspaceGraphCommand } from "./graph.js";
 import { workspaceHydrateCommand } from "./hydrate.js";
 import { workspaceLinkCommand } from "./link.js";
 import {
@@ -838,4 +839,10 @@ export const workspaceReportCommand: CommandSpec = {
   plan: workspaceReportPlan,
 };
 
-export { snapshotCommand, taskPlanCommand, workspaceHydrateCommand, workspaceLinkCommand };
+export {
+  snapshotCommand,
+  taskPlanCommand,
+  workspaceGraphCommand,
+  workspaceHydrateCommand,
+  workspaceLinkCommand,
+};

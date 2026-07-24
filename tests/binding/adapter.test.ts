@@ -118,19 +118,29 @@ afterEach(() => {
 });
 
 describe("adapter-type registry (D6)", () => {
-  it("registers each of the four active adapter types", () => {
+  it("registers each of the four active adapter types across the v1 framework set", () => {
     const registry = new AdapterRegistry();
     const pairs = [
       ["ecc", "host-plugin"],
       ["superpowers", "project-skills"],
       ["gstack", "upstream-local-installer"],
-      ["gsd-core", "shared-runtime"],
     ] as const;
     for (const [framework, adapterType] of pairs) {
       registry.register(createFakeAdapter({ framework, adapterType, resolved: DUMMY_RESOLVED }));
     }
-    expect(registry.frameworks().sort()).toEqual(["ecc", "gsd-core", "gstack", "superpowers"]);
+    expect(registry.frameworks().sort()).toEqual(["ecc", "gstack", "superpowers"]);
     expect(registry.get("ecc")?.adapterType).toBe("host-plugin");
+    // The fourth active type registers too (the v1 set has three frameworks, so
+    // shared-runtime is proven on a fresh registry rather than a fourth id).
+    const second = new AdapterRegistry();
+    second.register(
+      createFakeAdapter({
+        framework: "gstack",
+        adapterType: "shared-runtime",
+        resolved: DUMMY_RESOLVED,
+      }),
+    );
+    expect(second.get("gstack")?.adapterType).toBe("shared-runtime");
   });
 
   it("refuses to register a deferred standalone-host adapter", () => {

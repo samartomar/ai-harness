@@ -51,7 +51,7 @@ describe("committed JSON Schemas", () => {
     validateCommittedSchema("schemas/aih-config.schema.json", {
       schemaVersion: 1,
       contextDir: "ai-coding",
-      baseline: "gstack",
+      baseline: "ecc",
     });
     validateCommittedSchema("schemas/aih-org-policy.schema.json", {
       schemaVersion: 1,

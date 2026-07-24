@@ -279,6 +279,14 @@ export interface PlanContext {
    * secrets` the Claude secrets guard) and always writes.
    */
   targets?: Cli[];
+  /**
+   * MCP server names an orchestrator has already PLANNED to write to the root
+   * `.mcp.json`. `aih init` composes its mcp phase before contract and threads the
+   * names here so first-run contract synthesis reflects the surface the same run
+   * creates, instead of reporting "none" until a second run reads it from disk.
+   * Undefined when a leaf command runs standalone — disk state is then the truth.
+   */
+  plannedMcpServers?: readonly string[];
   /** Capability-specific options parsed from the CLI. */
   options: Record<string, unknown>;
 }

@@ -24,7 +24,7 @@ describe("tracked artifact guard", () => {
     ]);
   });
 
-  it("allows only the committed aih usage recorder under .aih", () => {
+  it("forbids any tracked file under .aih, including the retired usage recorder", () => {
     const violations = findTrackedArtifactViolations([
       ".aih/usage-record.mjs",
       ".aih/report.html",
@@ -32,6 +32,7 @@ describe("tracked artifact guard", () => {
     ]);
 
     expect(violations.map((v) => v.path)).toEqual([
+      ".aih/usage-record.mjs",
       ".aih/report.html",
       ".aih/history/events.jsonl",
     ]);
@@ -46,6 +47,7 @@ describe("tracked artifact guard", () => {
 
     expect(violations.map((v) => v.path)).toEqual([
       "node_modules/typescript/package.json",
+      ".aih/usage-record.mjs",
       ".aih/scratch/report.html",
     ]);
   });

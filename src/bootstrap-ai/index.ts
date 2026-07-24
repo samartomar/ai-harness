@@ -257,7 +257,11 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   // root so `aih report` / `aih doctor` grade against the tools this repo was wired
   // for — not the `claude` default — even on a standalone `bootstrap-ai` run. Under
   // `aih init` the orchestrator resolves once and owns this write (ctx.targets set),
-  // so skip it here to avoid a duplicate. Merge preserves adopt's acknowledged list.
+  // so skip it here to avoid a duplicate. Merge preserves adopt's acknowledged list,
+  // but `targets` is REPLACED with this run's resolved set: the generic deep merge
+  // unions arrays, which made an explicit `--cli` narrow impossible — the next
+  // marker-driven re-run silently regenerated the dropped CLI's adapter and
+  // bootloader again (#506).
   if (ctx.targets === undefined) {
     actions.push(
       writeJson(
@@ -266,6 +270,7 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
         "persist bootstrap intent (context-dir + CLI targets) so report/doctor read it",
         {
           merge: true,
+          replaceJsonKeys: ["targets"],
           removeJsonTopLevelKeys:
             ctx.options.baseline === DEFAULT_BASELINE_SOURCE_ID ? ["baseline"] : undefined,
         },

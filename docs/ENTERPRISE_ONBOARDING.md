@@ -8,21 +8,26 @@
 1. Install from npm or an internal mirror and verify the release:
 
    ```bash
-   npm install -g @aihq/harness@latest
-   npm audit signatures
-   aih verify-release
+   npm install -g @aihq/harness@3.0.0
+   aih verify-release 3.0.0
    ```
 
-   Expected healthy output: npm signature verification passes, the GitHub Release
+   `aih verify-release` is the provenance gate for a global install. Do not add a
+   bare `npm audit signatures` step here: it cannot audit a global install (npm
+   refuses with `EAUDITGLOBAL`), so the verifier instead installs the exact release
+   into a temporary prefix and runs `npm audit signatures --prefix <temp>` there.
+   Expected healthy output: the npm signature leg passes, the GitHub Release
    checksum file is fetched, the cosign bundle over `SHA256SUMS.txt` verifies, and
-   the installed tarball hash matches the checksum file. If `npm`, `gh`, or
-   `cosign` is missing, the command reports an explicit skip for that leg rather
-   than a pass; install the missing verifier before treating the release as fully
-   verified.
-   Use `npm install -g @aihq/harness@latest` for major-version upgrades; `npm update -g`
-   may stay within the existing major. If a broken global install blocks replacement,
-   rerun the install with `--force` only after reviewing the global npm prefix and
-   confirming the package source is approved.
+   the installed tarball hash matches the checksum file.
+   Full release verification requires local `npm`, `gh`, and `cosign`; proceed only
+   when all three legs pass. A missing verifier reports an explicit skip for that
+   leg rather than a pass — a skipped leg is incomplete evidence, not a successful
+   rollout gate.
+   For a major-version upgrade, install the approved explicit version (currently
+   `npm install -g @aihq/harness@3.0.0`); `npm update -g` may stay within the
+   existing major. If a broken global install blocks replacement, rerun the install
+   with `--force` only after reviewing the global npm prefix and confirming the
+   package source is approved.
 
 2. Run workstation readiness and repair:
 

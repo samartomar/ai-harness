@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "superpowers-init"
+          }
+        ]
+      }
+    ]
+  },
+  "mcpServers": {
+    "superpowers-connector": {
+      "command": "sp-mcp"
+    }
+  }
+}

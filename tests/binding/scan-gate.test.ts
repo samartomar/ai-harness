@@ -3,12 +3,10 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type AcceptedContentFinding,
-  acquireNpmTree,
   assertProvisionAuthorized,
-  BindingNotSupportedError,
   BindingScanError,
   type DimensionInspector,
   readScanAcceptanceArtifact,
@@ -20,6 +18,10 @@ import {
   scannableFromGit,
 } from "../../src/binding/scan-gate.js";
 import { defaultRunner, fakeRunner } from "../../src/internals/proc.js";
+
+// Heavy real-git/child-process tests: per-test budgets sized for worker
+// contention, not idle hardware — 5s defaults flaked on CI runners (#509).
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const SHA40 = /^[0-9a-f]{40}$/;
@@ -253,15 +255,8 @@ describe("npm source resolution (minimal; tarball deferred)", () => {
     ).rejects.toBeInstanceOf(BindingScanError);
   });
 
-  it("does not fake tarball acquisition success", () => {
-    const resolved = {
-      kind: "npm" as const,
-      package: "x",
-      exactVersion: "1.0.0",
-      integrity: INTEGRITY,
-    };
-    expect(() => acquireNpmTree(resolved)).toThrow(BindingNotSupportedError);
-  });
+  // W6 replaces the deferred-acquisition throw stub with real acquisition; see
+  // tests/binding/npm-source.test.ts for the acquire/verify/unpack/digest suite.
 });
 
 describe("fast scan disposition (D12 gate + posture-graded coverage)", () => {

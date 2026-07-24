@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { hashComponentTree } from "../../../src/baseline-evidence/hash.js";
 import { AdapterRegistry, type BindingContext } from "../../../src/binding/adapter.js";
+import { assertNoMachineLocalPath, parseFrameworkCard } from "../../../src/binding/card.js";
 import { BindingFeatureKeyError } from "../../../src/binding/features.js";
 import {
   computeEccFullLabel,
@@ -839,6 +840,9 @@ describe("report — Framework Card input lines", () => {
 
     const report = adapter.report({ declaration });
     expect(report.framework).toBe("ecc");
+    // §D.2 row A: the migrated report yields a parseable, machine-path-free card.
+    expect(report.card).toBeDefined();
+    assertNoMachineLocalPath(parseFrameworkCard(report.card));
     const text = report.lines.join("\n");
     expect(text).toContain("mode: lean");
     expect(text).toContain(ECC_REPOSITORY);
@@ -857,6 +861,8 @@ describe("report — Framework Card input lines", () => {
   it("reports lock-absent state (with allowlist + exclusions) before any provision", () => {
     const adapter = createEccAdapter({ root, runner: spyRunner().runner });
     const report = adapter.report({ declaration: declarationFor("0".repeat(64)) });
+    expect(report.card).toBeDefined();
+    assertNoMachineLocalPath(parseFrameworkCard(report.card));
     const text = report.lines.join("\n");
     expect(text).toContain("binding lock: absent");
     expect(text).toContain("baseline:rules");
@@ -1471,6 +1477,8 @@ describe("Full — report (Framework Card input lines)", () => {
 
     const report = adapter.report({ declaration });
     expect(report.framework).toBe("ecc");
+    expect(report.card).toBeDefined();
+    assertNoMachineLocalPath(parseFrameworkCard(report.card));
     const text = report.lines.join("\n");
     expect(text).toContain("mode: full");
     expect(text).toContain(ECC_REPOSITORY);
@@ -1489,6 +1497,8 @@ describe("Full — report (Framework Card input lines)", () => {
     const report = adapter.report({
       declaration: fullDeclarationFor("0".repeat(64), { "mcp:github": true }),
     });
+    expect(report.card).toBeDefined();
+    assertNoMachineLocalPath(parseFrameworkCard(report.card));
     const text = report.lines.join("\n");
     expect(text).toContain("mode: full");
     expect(text).toContain("binding lock: absent");
