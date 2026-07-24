@@ -1,9 +1,15 @@
+import { availableParallelism } from "node:os";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
     globals: false,
     environment: "node",
+    // Ceiling, not a floor: vitest uses an explicit maxWorkers number verbatim
+    // (no core-count clamp), so min() keeps low-core CI runners at their
+    // derived default while capping high-core dev machines, whose uncapped
+    // worker counts overcommit CPU/RAM and blow per-test budgets (#509).
+    maxWorkers: Math.min(8, Math.max(availableParallelism() - 1, 1)),
     include: ["tests/**/*.test.ts"],
     coverage: {
       provider: "v8",

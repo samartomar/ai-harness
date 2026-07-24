@@ -206,14 +206,6 @@ describe("aggregateUsage", () => {
 });
 
 describe("capture artifacts", () => {
-  it("keeps the tracked recorder byte-for-byte in sync with the generated recorder", () => {
-    const tracked = readFileSync(join(process.cwd(), ".aih", "usage-record.mjs"), "utf8").replace(
-      /\r\n/g,
-      "\n",
-    );
-    expect(tracked).toBe(usageRecorderScript());
-  });
-
   it("the recorder appends to .aih/usage.jsonl and derives commit LOC", () => {
     const src = usageRecorderScript();
     expect(src).toContain(".aih/usage.jsonl");

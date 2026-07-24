@@ -12,7 +12,7 @@ import {
   extractManagedBlock,
   splitManagedBody,
 } from "../../src/internals/markers.js";
-import type { PlanContext } from "../../src/internals/plan.js";
+import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
@@ -83,6 +83,25 @@ describe("aih adopt --apply — marker-divergent carve + regenerate", () => {
     // 4. The marker is persisted → a re-classify reads already-adopted.
     expect(existsSync(join(tmp, ".aih-config.json"))).toBe(true);
     expect(classifyCanon(tmp, DIR).kind).toBe("already-adopted");
+  });
+
+  it("persists the converged targets by replacement, and converges every existing bootloader", async () => {
+    put("CLAUDE.md", divergentBootloader());
+    put("GEMINI.md", "# hand-written gemini bootloader\n");
+
+    const actions = (await command.plan(makeCtx())).actions;
+    // #506 F3 (documented convergence): adopt deliberately converges EVERY
+    // bootloader that already exists on disk — the footprint, not a CLI flag,
+    // decides what gets regenerated, so the repo actually reaches already-adopted.
+    const writes = actions.filter((a) => a.kind === "write").map((a) => a.path.replace(/\\/g, "/"));
+    expect(writes).toContain("GEMINI.md");
+    // The persisted marker records that converged set by REPLACEMENT, so a later
+    // scoped `bootstrap-ai --cli` narrow is never silently unioned back up.
+    const marker = actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".aih-config.json",
+    );
+    expect(marker?.replaceJsonKeys).toContain("targets");
+    expect(marker?.json).toMatchObject({ targets: ["claude", "gemini"] });
   });
 
   it("fails closed on a persisted removed baseline (gstack) rather than carving a stale router", async () => {

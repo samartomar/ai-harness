@@ -26,6 +26,7 @@ import { marketplaceBuildCommand } from "../marketplace/build.js";
 import { marketplacePublishCommand } from "../marketplace/publish.js";
 import { marketplaceValidateCommand } from "../marketplace/validate.js";
 import { command as mcp, mcpApproveCommand } from "../mcp/index.js";
+import { policyInitCommand } from "../org-policy/init.js";
 import {
   policyProjectCommand,
   policyValidateCommand,
@@ -83,6 +84,7 @@ import { command as vdi } from "../vdi/index.js";
 import { runWorkspaceAdd, workspaceAddCommand } from "../workspace/acquire.js";
 import {
   command as workspace,
+  workspaceGraphCommand as workspaceGraph,
   workspaceHydrateCommand as workspaceHydrate,
   workspaceInitCommand as workspaceInit,
   workspaceLinkCommand as workspaceLink,
@@ -153,6 +155,7 @@ export const PARENT_GROUPS = [
 export const GROUPED_COMMAND_SPECS = {
   workspace: [
     workspaceAddCommand,
+    workspaceGraph,
     workspaceHydrate,
     workspaceInit,
     workspaceLink,
@@ -190,7 +193,7 @@ export const GROUPED_COMMAND_SPECS = {
     packInstallCommand,
   ],
   marketplace: [marketplaceBuildCommand, marketplaceValidateCommand, marketplacePublishCommand],
-  policy: [policyProjectCommand, policyValidateCommand, policyVerifyCommand],
+  policy: [policyInitCommand, policyProjectCommand, policyValidateCommand, policyVerifyCommand],
   evidence: [evidenceBuildCommand, vetBaselineCommand],
   truth: [truthPackCommand, truthVerifyCommand],
 } as const satisfies Record<(typeof PARENT_GROUPS)[number], readonly CommandSpec[]>;
@@ -410,6 +413,18 @@ function registerSpec(program: Command, spec: CommandSpec): void {
         optionOverrides: { path: pathText },
       });
     });
+
+    const graph = cmd
+      .command(workspaceGraph.name)
+      .description(workspaceGraph.summary)
+      .argument("[root]", "target workspace root (defaults to --root or cwd)");
+    addFlagsForSpec(graph, workspaceGraph);
+    addOptionsForSpec(graph, workspaceGraph);
+    graph.action(
+      async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
+        process.exitCode = await runCapability(workspaceGraph, command);
+      },
+    );
 
     const snap = cmd
       .command(workspaceSnapshot.name)
@@ -716,20 +731,32 @@ export function registerCommands(
     });
   }
 
-  // `policy` mirrors the `marketplace` group: options-only subcommands (no
-  // positional). `project` compiles the committed local policy only; `validate`
+  // `policy` subcommands are repo-scoped, so each accepts the conventional
+  // optional `[root]` positional (issue #503) — `aih policy validate .` works
+  // exactly like `aih init .`. `init` seeds a starter policy from observed MCP
+  // surfaces; `project` compiles the committed local policy only; `validate`
   // is the read-only schema gate over that local policy (or, under --bundle, a
   // policy-bundle envelope).
   const policy = program
     .command("policy")
-    .description("Project, validate + verify the org policy and its generated settings");
-  for (const spec of [policyProjectCommand, policyValidateCommand, policyVerifyCommand]) {
-    const sub = policy.command(spec.name).description(spec.summary);
+    .description("Seed, project, validate + verify the org policy and its generated settings");
+  for (const spec of [
+    policyInitCommand,
+    policyProjectCommand,
+    policyValidateCommand,
+    policyVerifyCommand,
+  ]) {
+    const sub = policy
+      .command(spec.name)
+      .description(spec.summary)
+      .argument("[root]", "target repository root (defaults to --root or cwd)");
     addFlagsForSpec(sub, spec);
     addOptionsForSpec(sub, spec);
-    sub.action(async (_options: Record<string, unknown>, command: Command) => {
-      process.exitCode = await runCapability(spec, command, { positionalRoot: false });
-    });
+    sub.action(
+      async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
+        process.exitCode = await runCapability(spec, command);
+      },
+    );
   }
 
   // `evidence` mirrors the same options-only shape: `build` packages the

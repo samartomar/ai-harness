@@ -53,16 +53,226 @@ function testRoutingLine(stack: RepoStack, canon: CanonMode): string {
     : "No test command is defined in the repo — add one, then re-run `aih bootstrap-ai` to record it.";
 }
 
+// ---- single-source discipline (#507) --------------------------------------
+//
+// The shared canonical block and `rules/agent-behavior-core.md` express the SAME
+// working discipline at two depths. They used to be two independently authored
+// strings; every structure below is now the one authored source, and both
+// documents render from it. The two renderings intentionally differ in depth —
+// the bullet is the distillation — but the pair lives at one site, so it is
+// authored, reviewed, and drift-guarded together (the posture the secrets
+// invariant established after it diverged into "config" vs "prompts" variants).
+
+export type DisciplinePrincipleId =
+  | "think-before-coding"
+  | "simplicity-first"
+  | "surgical-changes"
+  | "goal-driven"
+  | "canon-tools";
+
 /**
- * Invariant bullets shared VERBATIM by the shared block digest and the full agent
- * behavior core. One source, so the two renderings can never drift apart again
- * (they once diverged into "config" vs "prompts" variants of the secrets rule).
+ * One discipline principle, authored once with both renderings: the compact
+ * working-agreement bullet (shared block → every bootloader) and the long-form
+ * behavior-core section.
  */
-function secretsInvariantLines(): string[] {
-  return [
-    "- No secrets in code, config, prompts, fixtures, logs, or error text.",
-    "- Do not open `.env*` or `secrets/**` (`.env.example` / `.env.sample` are readable templates); validate secret presence with `aih secrets --verify`.",
-  ];
+export interface DisciplinePrinciple {
+  /** Stable handle for tests/tooling; never emitted. */
+  readonly id: DisciplinePrincipleId;
+  /** Compact rendering: `- **<label>** — <text>` under "## Working agreement". */
+  readonly bullet: { readonly label: string; readonly text: string };
+  /** Long-form rendering: the `## <heading>` section body in the behavior core. */
+  readonly section: { readonly heading: string; readonly lines: readonly string[] };
+}
+
+/** Every discipline principle, in working-agreement (bullet) order. */
+export const DISCIPLINE_PRINCIPLES: readonly DisciplinePrinciple[] = [
+  {
+    id: "think-before-coding",
+    bullet: {
+      label: "Think before coding",
+      text: "state the goal and the smallest change that meets it; surface tradeoffs, don't pick silently.",
+    },
+    section: {
+      heading: "1. Think before coding",
+      lines: [
+        "Don't assume; don't hide confusion; surface tradeoffs.",
+        "",
+        "- State assumptions explicitly. If uncertain, ask — or, in an autonomous run,",
+        "  record the assumption and proceed with the most defensible reading.",
+        "- If multiple interpretations exist, name them; don't pick one silently.",
+        "- If a simpler approach exists, say so. Push back when warranted.",
+      ],
+    },
+  },
+  {
+    id: "simplicity-first",
+    bullet: {
+      label: "Simplicity first",
+      text: "minimum code that solves it; nothing speculative.",
+    },
+    section: {
+      heading: "2. Simplicity first",
+      lines: [
+        "The minimum code that solves the problem; nothing speculative.",
+        "",
+        "- No features beyond what was asked.",
+        "- No configurability or error handling for cases that cannot occur.",
+        "- If 200 lines could be 50, rewrite it.",
+      ],
+    },
+  },
+  {
+    id: "surgical-changes",
+    bullet: {
+      label: "Surgical changes",
+      text: "touch only what the task needs; match the nearest peer file; every changed line traces to the request.",
+    },
+    section: {
+      heading: "3. Surgical changes",
+      lines: [
+        "Touch only what the task requires; clean up only your own mess.",
+        "",
+        "- Don't reformat, rename, or \"improve\" adjacent code that isn't broken.",
+        "- Match the nearest peer file's style even if you'd do it differently.",
+        "- Remove only the orphans YOUR change created; flag unrelated dead code, don't delete it.",
+        "- Every changed line should trace directly to the request.",
+      ],
+    },
+  },
+  {
+    id: "goal-driven",
+    bullet: {
+      label: "Goal-driven",
+      text: "turn the task into a verifiable check (write the failing test first), then loop until it is green.",
+    },
+    section: {
+      heading: "4. Goal-driven execution",
+      lines: [
+        "Define success criteria, then loop until verified.",
+        "",
+        '- "Add validation" → write tests for invalid input, then make them pass.',
+        '- "Fix the bug" → write a failing test that reproduces it, then make it pass.',
+        "- For multi-step work, state a short plan with a verify step for each step.",
+      ],
+    },
+  },
+  {
+    id: "canon-tools",
+    bullet: {
+      label: "Use the canon's tools",
+      text: "use the canonical tool this repo names; don't load MCP servers just-in-case; when two look alike, pick the one the canon names.",
+    },
+    section: {
+      heading: "Tool selection",
+      lines: [
+        "Use the canonical tool this repo names; don't load MCP servers just-in-case; when two",
+        "tools look alike, pick the one the canon names — and here the canon names the graph pair:",
+        "",
+        "- **code-review-graph** — advisory change-time impact radius, affected flows, and review",
+        "  context. Use it once before broad edits or reviews, then verify its result in source and tests.",
+        "- **codebase-memory-mcp** — retrieval + memory: semantic code search, trace a path between",
+        "  symbols, structural graph queries, and durable decision memory (ADRs).",
+        "",
+        "They each build their own graph, so don't run the same query against both:",
+        "impact / what-breaks -> code-review-graph; find / trace / recall -> codebase-memory-mcp.",
+      ],
+    },
+  },
+];
+
+/** The "## Working agreement" bullet list — the compact rendering of every principle, in order. */
+export function disciplineBulletLines(): string[] {
+  return DISCIPLINE_PRINCIPLES.map((p) => `- **${p.bullet.label}** — ${p.bullet.text}`);
+}
+
+/** One principle's long-form behavior-core section (`## <heading>` + body lines). */
+export function disciplineSectionLines(id: DisciplinePrincipleId): string[] {
+  const principle = DISCIPLINE_PRINCIPLES.find((p) => p.id === id);
+  if (principle === undefined) throw new Error(`unknown discipline principle: ${id}`);
+  return [`## ${principle.section.heading}`, "", ...principle.section.lines];
+}
+
+/**
+ * One invariant, authored once. `shared` entries render byte-identical in both
+ * documents (the drift-guard posture that fixed the secrets split). The
+ * boundary/error entries still carry a historical wording split between the two
+ * renderings; the pair is co-located here so the variance is visible at one
+ * authored site — unifying the wording is an output-changing follow-up (#507),
+ * deliberately not taken in this byte-frozen single-sourcing pass.
+ */
+export type DisciplineInvariant = { readonly id: string } & (
+  | { readonly shared: readonly string[] }
+  | { readonly compact: readonly string[]; readonly longForm: readonly string[] }
+);
+
+/** Every invariant both documents list, in emission order. */
+export const DISCIPLINE_INVARIANTS: readonly DisciplineInvariant[] = [
+  {
+    id: "boundary-validation",
+    compact: [
+      "- Validate at boundaries; reject malformed or hostile input — never coerce it. Fail closed on ambiguity.",
+    ],
+    longForm: [
+      "- Validate at boundaries; reject malformed/hostile input — never coerce. Fail closed on ambiguity.",
+    ],
+  },
+  {
+    id: "error-handling",
+    compact: ["- Handle errors explicitly; no silent failures."],
+    longForm: ["- Explicit error handling; no silent failures."],
+  },
+  {
+    // Once diverged into "config" vs "prompts" variants; byte-identical ever since.
+    id: "secrets",
+    shared: [
+      "- No secrets in code, config, prompts, fixtures, logs, or error text.",
+      "- Do not open `.env*` or `secrets/**` (`.env.example` / `.env.sample` are readable templates); validate secret presence with `aih secrets --verify`.",
+    ],
+  },
+  {
+    id: "graph-advisory",
+    shared: [
+      "- On large repos, code-review-graph is advisory blast-area context, not evidence or a gate. If it fails or is stale, warn once and continue from source and tests. Repair it only when helper repair is the assigned task.",
+    ],
+  },
+];
+
+/** The invariant list in one rendering, in authored order. */
+export function invariantLines(rendering: "compact" | "longForm"): string[] {
+  return DISCIPLINE_INVARIANTS.flatMap((inv) =>
+    "shared" in inv ? [...inv.shared] : [...inv[rendering]],
+  );
+}
+
+/**
+ * The reporting bar, authored once with both renderings. The lead discipline is
+ * the same; the tails intentionally differ — the block closes with the one-line
+ * summary, the core itemizes the four-part report.
+ */
+export const DISCIPLINE_REPORTING = {
+  compact: {
+    heading: "Reporting",
+    lines: [
+      "Claiming done, tests pass, or typecheck clean requires showing the command and its",
+      "output — a sanity gate is not a completion gate. If you couldn't run it, say so and",
+      "name what's unverified. State impact, what you skipped, and the remaining risk.",
+    ],
+  },
+  longForm: {
+    heading: "Reporting a change",
+    lines: [
+      "Claiming done, tests pass, or typecheck clean requires showing the command and its",
+      "output — a sanity gate is not a completion gate. If you couldn't run it, say so and name",
+      "what's unverified. Then report (1) the impact surface, (2) the validation you ran,",
+      "(3) higher-confidence checks run or explicitly skipped, (4) the remaining risk.",
+    ],
+  },
+} as const;
+
+/** One rendering of the reporting section (`## <heading>` + lines). */
+export function reportingSectionLines(rendering: "compact" | "longForm"): string[] {
+  const r = DISCIPLINE_REPORTING[rendering];
+  return [`## ${r.heading}`, "", ...r.lines];
 }
 
 /**
@@ -84,8 +294,9 @@ function externalActionBoundaryLines(): string[] {
  * The shared canonical block body — identical in `_shared-canonical-block.md` and
  * in every bootloader's managed block (so the drift check compares like for like).
  * Deliberately tool-agnostic and crisp: it routes to the router, distils the
- * behavioral core inline, states the invariants, draws the external-action
- * boundary, and sets the reporting bar. Full core: `rules/agent-behavior-core.md`.
+ * behavioral core inline (the compact rendering of the single-source discipline
+ * above), states the invariants, draws the external-action boundary, and sets the
+ * reporting bar. Full core: `rules/agent-behavior-core.md`.
  */
 export function sharedCanonicalBlockBody(dir: string): string {
   return lines(
@@ -100,28 +311,17 @@ export function sharedCanonicalBlockBody(dir: string): string {
     "",
     "## Working agreement",
     "",
-    "- **Think before coding** — state the goal and the smallest change that meets it; surface tradeoffs, don't pick silently.",
-    "- **Simplicity first** — minimum code that solves it; nothing speculative.",
-    "- **Surgical changes** — touch only what the task needs; match the nearest peer file; every changed line traces to the request.",
-    "- **Goal-driven** — turn the task into a verifiable check (write the failing test first), then loop until it is green.",
-    "- **Use the canon's tools** — use the canonical tool this repo names; don't load MCP servers just-in-case; when two look alike, pick the one the canon names.",
+    disciplineBulletLines(),
     "",
     "## Invariants",
     "",
-    "- Validate at boundaries; reject malformed or hostile input — never coerce it. Fail closed on ambiguity.",
-    "- Handle errors explicitly; no silent failures.",
-    secretsInvariantLines(),
-    "- On large repos, code-review-graph is advisory blast-area context, not evidence or a gate. If it fails or is stale, warn once and continue from source and tests. Repair it only when helper repair is the assigned task.",
+    invariantLines("compact"),
     "",
     "## External action boundary",
     "",
     externalActionBoundaryLines(),
     "",
-    "## Reporting",
-    "",
-    "Claiming done, tests pass, or typecheck clean requires showing the command and its",
-    "output — a sanity gate is not a completion gate. If you couldn't run it, say so and",
-    "name what's unverified. State impact, what you skipped, and the remaining risk.",
+    reportingSectionLines("compact"),
   );
 }
 
@@ -129,6 +329,7 @@ export function sharedCanonicalBlockBody(dir: string): string {
  * The canonical agent behavior core (`rules/agent-behavior-core.md`) — the full
  * working discipline the shared block and router route to. Generalized from the
  * widely-used Think/Simplify/Surgical/Goal-driven core; tool- and domain-agnostic.
+ * Every section is the long-form rendering of the single-source discipline above.
  */
 export function agentBehaviorCoreDoc(dir: string): string {
   return lines(
@@ -136,68 +337,25 @@ export function agentBehaviorCoreDoc(dir: string): string {
     "",
     `Canonical working discipline for every AI tool in this repo — the rulebook \`${dir}/RULE_ROUTER.md\` and the bootloaders route to. Read it before any non-trivial change.`,
     "",
-    "## 1. Think before coding",
+    disciplineSectionLines("think-before-coding"),
     "",
-    "Don't assume; don't hide confusion; surface tradeoffs.",
+    disciplineSectionLines("simplicity-first"),
     "",
-    "- State assumptions explicitly. If uncertain, ask — or, in an autonomous run,",
-    "  record the assumption and proceed with the most defensible reading.",
-    "- If multiple interpretations exist, name them; don't pick one silently.",
-    "- If a simpler approach exists, say so. Push back when warranted.",
+    disciplineSectionLines("surgical-changes"),
     "",
-    "## 2. Simplicity first",
-    "",
-    "The minimum code that solves the problem; nothing speculative.",
-    "",
-    "- No features beyond what was asked.",
-    "- No configurability or error handling for cases that cannot occur.",
-    "- If 200 lines could be 50, rewrite it.",
-    "",
-    "## 3. Surgical changes",
-    "",
-    "Touch only what the task requires; clean up only your own mess.",
-    "",
-    "- Don't reformat, rename, or \"improve\" adjacent code that isn't broken.",
-    "- Match the nearest peer file's style even if you'd do it differently.",
-    "- Remove only the orphans YOUR change created; flag unrelated dead code, don't delete it.",
-    "- Every changed line should trace directly to the request.",
-    "",
-    "## 4. Goal-driven execution",
-    "",
-    "Define success criteria, then loop until verified.",
-    "",
-    '- "Add validation" → write tests for invalid input, then make them pass.',
-    '- "Fix the bug" → write a failing test that reproduces it, then make it pass.',
-    "- For multi-step work, state a short plan with a verify step for each step.",
+    disciplineSectionLines("goal-driven"),
     "",
     "## Invariants (always hold)",
     "",
-    "- Validate at boundaries; reject malformed/hostile input — never coerce. Fail closed on ambiguity.",
-    "- Explicit error handling; no silent failures.",
-    secretsInvariantLines(),
-    "- On large repos, code-review-graph is advisory blast-area context, not evidence or a gate. If it fails or is stale, warn once and continue from source and tests. Repair it only when helper repair is the assigned task.",
+    invariantLines("longForm"),
+    // Core-only invariant: the block's "Start here" already carries the evidence
+    // rule in routing form, so it is deliberately not part of the shared list.
     "- Repo evidence (source, tests, schemas, CI) is the truth, not model memory. Don't",
     "  invent commands, paths, or APIs; verify a path exists before citing it.",
     "",
-    "## Tool selection",
+    disciplineSectionLines("canon-tools"),
     "",
-    "Use the canonical tool this repo names; don't load MCP servers just-in-case; when two",
-    "tools look alike, pick the one the canon names — and here the canon names the graph pair:",
-    "",
-    "- **code-review-graph** — advisory change-time impact radius, affected flows, and review",
-    "  context. Use it once before broad edits or reviews, then verify its result in source and tests.",
-    "- **codebase-memory-mcp** — retrieval + memory: semantic code search, trace a path between",
-    "  symbols, structural graph queries, and durable decision memory (ADRs).",
-    "",
-    "They each build their own graph, so don't run the same query against both:",
-    "impact / what-breaks -> code-review-graph; find / trace / recall -> codebase-memory-mcp.",
-    "",
-    "## Reporting a change",
-    "",
-    "Claiming done, tests pass, or typecheck clean requires showing the command and its",
-    "output — a sanity gate is not a completion gate. If you couldn't run it, say so and name",
-    "what's unverified. Then report (1) the impact surface, (2) the validation you ran,",
-    "(3) higher-confidence checks run or explicitly skipped, (4) the remaining risk.",
+    reportingSectionLines("longForm"),
   );
 }
 

@@ -6,7 +6,7 @@ import { AIH_CONFIG_FILE } from "../src/config/marker.js";
 import { command } from "../src/doctor.js";
 import { executePlan } from "../src/internals/execute.js";
 import type { Action, PlanContext, ProbeAction } from "../src/internals/plan.js";
-import { fakeRunner } from "../src/internals/proc.js";
+import { fakeRunner, type Runner } from "../src/internals/proc.js";
 import { makeHostAdapter } from "../src/platform/detect.js";
 
 /** A ctx whose `which` probe reports the given binaries as present. */
@@ -855,6 +855,10 @@ describe("doctor — AI CLI runnable vs config-only inventory", () => {
       if ((argv[0] === "which" || argv[0] === "where") && present.includes(argv[1] ?? "")) {
         return { code: 0, stdout: `/usr/bin/${argv[1]}` };
       }
+      // A present binary answers its cheap sanity exec cleanly (a healthy install).
+      if (present.includes(argv[0] ?? "") && argv[1] === "--version") {
+        return { code: 0, stdout: "9.9.9" };
+      }
       return { code: 1, spawnError: true };
     });
     return {
@@ -889,6 +893,62 @@ describe("doctor — AI CLI runnable vs config-only inventory", () => {
     expect(res?.verdict).toBe("skip");
     expect(res?.detail).toContain("no runnable CLIs");
     expect(res?.detail).toContain("windsurf");
+  });
+
+  /** which/where resolves `bins`, but a bin in `dead` hard-fails its own exec. */
+  function deadCliCtx(bins: string[], dead: string[]): PlanContext {
+    const run = fakeRunner((argv) => {
+      if ((argv[0] === "which" || argv[0] === "where") && bins.includes(argv[1] ?? "")) {
+        return { code: 0, stdout: `/usr/bin/${argv[1]}` };
+      }
+      if (bins.includes(argv[0] ?? "") && argv[1] === "--version") {
+        return dead.includes(argv[0] ?? "")
+          ? { code: 1, stderr: "fatal: configured model requires a newer CLI" }
+          : { code: 0, stdout: "9.9.9" };
+      }
+      return { code: 1, spawnError: true };
+    });
+    return {
+      root: dir,
+      contextDir: "ai-coding",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: { HOME: dir } }),
+      env: { HOME: dir },
+      options: {},
+    };
+  }
+
+  it("a detected binary whose every exec hard-fails is NOT green (dead CLI, issue #502)", async () => {
+    // `where/which` resolves codex, but the CLI itself cannot execute even
+    // `--version` — "binary launches" is not "CLI usable".
+    const c = deadCliCtx(["codex"], ["codex"]);
+    const probe = findProbe((await command.plan(c)).actions, "AI CLIs detected");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("fail");
+    expect(res?.code).toBe("cli.binary-broken");
+    expect(res?.detail).toContain("codex");
+  });
+
+  it("a broken CLI is surfaced (never hidden) even when another CLI is healthy", async () => {
+    const c = deadCliCtx(["codex", "gemini"], ["gemini"]);
+    const probe = findProbe((await command.plan(c)).actions, "AI CLIs detected");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("runnable: codex");
+    expect(res?.detail).toContain("broken");
+    expect(res?.detail).toContain("gemini");
+  });
+
+  it("a healthy exec keeps the runnable pass exactly as before", async () => {
+    const c = deadCliCtx(["codex"], []);
+    const probe = findProbe((await command.plan(c)).actions, "AI CLIs detected");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("runnable: codex");
+    expect(res?.detail).not.toContain("broken");
   });
 });
 
@@ -1028,6 +1088,56 @@ describe("doctor — MCP managed allowlist drift", () => {
     const res = await probe?.run(c);
 
     expect(res?.verdict).toBe("pass");
+  });
+
+  // #501 — after an in-place upgrade the managed allowlist can hold the launch
+  // shape an earlier aih generated (bare `uvx <pkg>`), while `.mcp.json` carries
+  // the current hardened shape. That is a generation delta, not user drift.
+  it("reports a generation delta with the re-projection command for an earlier aih launch shape (#501)", async () => {
+    writeMcp("uvx", [
+      "--offline",
+      "--no-python-downloads",
+      "--no-env-file",
+      "code-review-graph@2.3.6",
+      "serve",
+    ]);
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+      }),
+    );
+    writeAllowlist(["uvx", "code-review-graph@2.1.0", "serve"]);
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("fail");
+    expect(res?.code).toBe("mcp.allowlist-generation-delta");
+    expect(res?.detail).toContain("generation delta");
+    expect(res?.detail).toContain("aih policy project --apply");
+    expect(res?.detail).not.toMatch(/drift/i);
+  });
+
+  it("keeps drift wording for an earlier launch shape when no committed org policy can be re-projected", async () => {
+    writeMcp("uvx", [
+      "--offline",
+      "--no-python-downloads",
+      "--no-env-file",
+      "code-review-graph@2.3.6",
+      "serve",
+    ]);
+    writeAllowlist(["uvx", "code-review-graph@2.1.0", "serve"]);
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("fail");
+    expect(res?.code).toBe("mcp.allowlist-drift");
+    expect(res?.detail).not.toContain("aih policy project --apply");
   });
 });
 
@@ -1306,5 +1416,331 @@ describe("doctor — usage-capture hook health probes", () => {
     );
     expect(rec?.verdict).toBe("skip");
     expect(tool?.verdict).toBe("skip");
+  });
+});
+
+describe("doctor — MCP uvx pin attestation (issue #502)", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aih-doctor-uvx-attest-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function rooted(
+    options: Record<string, unknown> = {},
+    run: Runner = fakeRunner(() => ({ code: 1, spawnError: true })),
+  ): PlanContext {
+    return {
+      root: dir,
+      contextDir: "ai-coding",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: {},
+      options,
+    };
+  }
+
+  function writeMcp(args: string[], command = "uvx"): void {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({ mcpServers: { "code-review-graph": { type: "stdio", command, args } } }),
+    );
+  }
+
+  /** A fake pinned uvx server whose MCP initialize response self-reports `version`. */
+  function uvxServerRunner(version: string): {
+    run: Runner;
+    seen: { input?: string; argv?: string[] };
+  } {
+    const seen: { input?: string; argv?: string[] } = {};
+    const run = fakeRunner((argv, opts) => {
+      if (argv[0] === "uvx") {
+        seen.argv = argv;
+        seen.input = opts?.input;
+        return {
+          code: 0,
+          stdout: `${JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            result: {
+              protocolVersion: "2025-06-18",
+              capabilities: {},
+              serverInfo: { name: "code-review-graph", version },
+            },
+          })}\n`,
+        };
+      }
+      return { code: 1, spawnError: true };
+    });
+    return { run, seen };
+  }
+
+  it("declares the --attest-mcp-pins opt-in flag", () => {
+    expect(command.options?.some((o) => o.flags === "--attest-mcp-pins")).toBe(true);
+  });
+
+  it("always renders an attestation row: pinned-but-unattested is visible, never silent", async () => {
+    writeMcp(["code-review-graph@2.3.6", "serve"]);
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP uvx pin attestation");
+    expect(probe).toBeDefined();
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.pin-unattested");
+    expect(res?.detail).toContain("code-review-graph@2.3.6");
+    expect(res?.detail).toContain("--attest-mcp-pins");
+  });
+
+  it("warns (mcp.version-drift) when the launched server self-reports a version off the pin", async () => {
+    writeMcp(["code-review-graph@2.3.6", "serve"]);
+    const { run, seen } = uvxServerRunner("2.3.4");
+    const c = rooted({ attestMcpPins: true }, run);
+    const probe = findProbe((await command.plan(c)).actions, "MCP uvx pin attestation");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.version-drift");
+    expect(res?.detail).toContain("2.3.6");
+    expect(res?.detail).toContain("2.3.4");
+    // The probe launched the CONFIGURED pinned command with an MCP initialize handshake.
+    expect(seen.argv).toEqual(["uvx", "code-review-graph@2.3.6", "serve"]);
+    expect(seen.input).toContain('"initialize"');
+  });
+
+  it("passes when serverInfo.version matches the honored pin", async () => {
+    writeMcp(["code-review-graph@2.3.6", "serve"]);
+    const { run } = uvxServerRunner("2.3.6");
+    const c = rooted({ attestMcpPins: true }, run);
+    const probe = findProbe((await command.plan(c)).actions, "MCP uvx pin attestation");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("attested");
+    expect(res?.detail).toContain("code-review-graph@2.3.6");
+  });
+
+  it("reports an honest unattested state when the pinned server never answers initialize", async () => {
+    writeMcp(["code-review-graph@2.3.6", "serve"]);
+    const run = fakeRunner((argv) =>
+      argv[0] === "uvx"
+        ? { code: 1, stderr: "boom", spawnError: true }
+        : { code: 1, spawnError: true },
+    );
+    const c = rooted({ attestMcpPins: true }, run);
+    const probe = findProbe((await command.plan(c)).actions, "MCP uvx pin attestation");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.pin-unattested");
+    expect(res?.detail).toContain("could not attest");
+  });
+
+  it("an unpinned uvx launcher is surfaced as unattestable (never silently green)", async () => {
+    writeMcp(["code-review-graph", "serve"]);
+    const c = rooted({ attestMcpPins: true });
+    const probe = findProbe((await command.plan(c)).actions, "MCP uvx pin attestation");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.pin-unattested");
+    expect(res?.detail).toContain("exact");
+    expect(res?.detail).toContain("code-review-graph");
+  });
+
+  it("skips quietly (uncoded) when no uvx MCP servers are configured", async () => {
+    writeMcp(["server-foo@1.2.3"], "npx");
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP uvx pin attestation");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBeUndefined();
+  });
+});
+
+describe("doctor — MCP pin currency (issue #504)", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aih-doctor-pin-currency-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function rooted(
+    options: Record<string, unknown> = {},
+    run: Runner = fakeRunner(() => ({ code: 1, spawnError: true })),
+  ): PlanContext {
+    return {
+      root: dir,
+      contextDir: "ai-coding",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: {},
+      options,
+    };
+  }
+
+  function writeMcp(servers: Record<string, unknown>): void {
+    writeFileSync(join(dir, ".mcp.json"), JSON.stringify({ mcpServers: servers }));
+  }
+
+  /** The baked codebase-memory-mcp catalog launch at an arbitrary pinned version. */
+  function cmmServer(version: string): Record<string, unknown> {
+    return {
+      type: "stdio",
+      command: "uvx",
+      args: [
+        "--offline",
+        "--no-python-downloads",
+        "--no-env-file",
+        `codebase-memory-mcp@${version}`,
+      ],
+    };
+  }
+
+  const SEQ_SERVER = {
+    type: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.12.18"],
+  };
+
+  /**
+   * A fake registry: answers `npm view <name> version` from `npm` and
+   * `curl … https://pypi.org/pypi/<name>/json` from `pypi`, recording every
+   * network argv so tests can also assert what was NOT queried.
+   */
+  function registryRunner(latest: {
+    npm?: Record<string, string>;
+    pypi?: Record<string, string>;
+  }): {
+    run: Runner;
+    seen: string[][];
+  } {
+    const seen: string[][] = [];
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "npm" && argv[1] === "view") {
+        seen.push([...argv]);
+        const version = latest.npm?.[argv[2] ?? ""];
+        return version === undefined
+          ? { code: 1, stderr: "npm ERR! 404" }
+          : { code: 0, stdout: `${version}\n` };
+      }
+      if (argv[0] === "curl") {
+        seen.push([...argv]);
+        const url = argv.at(-1) ?? "";
+        const name = /pypi\.org\/pypi\/([^/]+)\/json/.exec(url)?.[1];
+        const version = name === undefined ? undefined : latest.pypi?.[name];
+        return version === undefined
+          ? { code: 22, stderr: "curl: (22) The requested URL returned error: 404" }
+          : { code: 0, stdout: JSON.stringify({ info: { version } }) };
+      }
+      return { code: 1, spawnError: true };
+    });
+    return { run, seen };
+  }
+
+  it("declares the --check-pin-currency opt-in flag", () => {
+    expect(command.options?.some((o) => o.flags === "--check-pin-currency")).toBe(true);
+  });
+
+  it("always renders a currency row; without the flag nothing is queried and the opt-in is named", async () => {
+    writeMcp({ "codebase-memory-mcp": cmmServer("0.8.1") });
+    const { run, seen } = registryRunner({ pypi: { "codebase-memory-mcp": "0.9.0" } });
+    const c = rooted({}, run);
+    const probe = findProbe((await command.plan(c)).actions, "MCP pin currency");
+    expect(probe).toBeDefined();
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBeUndefined();
+    expect(res?.detail).toContain("codebase-memory-mcp@0.8.1");
+    expect(res?.detail).toContain("--check-pin-currency");
+    expect(seen).toEqual([]); // no registry traffic without the opt-in
+  });
+
+  it("reports projection lag offline (mcp.projection-stale) when .mcp.json pins differ from this build's catalog", async () => {
+    writeMcp({ "codebase-memory-mcp": cmmServer("0.8.0") });
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP pin currency");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.projection-stale");
+    expect(res?.detail).toContain("codebase-memory-mcp@0.8.0");
+    expect(res?.detail).toContain("codebase-memory-mcp@0.8.1");
+    expect(res?.detail).toContain("aih mcp --apply");
+  });
+
+  it("warns (mcp.pin-stale) when the registry publishes a newer release than a uvx pin", async () => {
+    writeMcp({ "codebase-memory-mcp": cmmServer("0.8.1") });
+    const { run, seen } = registryRunner({ pypi: { "codebase-memory-mcp": "0.9.0" } });
+    const c = rooted({ checkPinCurrency: true }, run);
+    const probe = findProbe((await command.plan(c)).actions, "MCP pin currency");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.pin-stale");
+    expect(res?.detail).toContain("0.8.1");
+    expect(res?.detail).toContain("0.9.0");
+    // The PyPI metadata endpoint was queried read-only for the pinned package.
+    expect(
+      seen.some(
+        (argv) =>
+          argv[0] === "curl" && argv.at(-1) === "https://pypi.org/pypi/codebase-memory-mcp/json",
+      ),
+    ).toBe(true);
+  });
+
+  it("checks npm-backed pins through `npm view <name> version`", async () => {
+    writeMcp({ "sequential-thinking": SEQ_SERVER });
+    const { run, seen } = registryRunner({
+      npm: { "@modelcontextprotocol/server-sequential-thinking": "2026.7.4" },
+    });
+    const c = rooted({ checkPinCurrency: true }, run);
+    const probe = findProbe((await command.plan(c)).actions, "MCP pin currency");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.pin-stale");
+    expect(res?.detail).toContain("2025.12.18");
+    expect(res?.detail).toContain("2026.7.4");
+    expect(seen).toContainEqual([
+      "npm",
+      "view",
+      "@modelcontextprotocol/server-sequential-thinking",
+      "version",
+    ]);
+  });
+
+  it("passes when every pin matches its registry's latest release", async () => {
+    writeMcp({ "codebase-memory-mcp": cmmServer("0.8.1"), "sequential-thinking": SEQ_SERVER });
+    const { run } = registryRunner({
+      npm: { "@modelcontextprotocol/server-sequential-thinking": "2025.12.18" },
+      pypi: { "codebase-memory-mcp": "0.8.1" },
+    });
+    const c = rooted({ checkPinCurrency: true }, run);
+    const probe = findProbe((await command.plan(c)).actions, "MCP pin currency");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("current");
+    expect(res?.detail).toContain("codebase-memory-mcp@0.8.1");
+  });
+
+  it("degrades honestly (uncoded skip) when the registry cannot be queried", async () => {
+    writeMcp({ "codebase-memory-mcp": cmmServer("0.8.1") });
+    const c = rooted({ checkPinCurrency: true }); // every spawn fails (curl absent)
+    const probe = findProbe((await command.plan(c)).actions, "MCP pin currency");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBeUndefined();
+    expect(res?.detail).toContain("could not resolve");
+  });
+
+  it("skips quietly when no .mcp.json exists", async () => {
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP pin currency");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBeUndefined();
   });
 });

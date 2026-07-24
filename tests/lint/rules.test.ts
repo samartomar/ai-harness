@@ -101,6 +101,73 @@ describe("lint rules — canon-ref-resolves (FAIL tier, the headline rule)", () 
     ).toHaveLength(0);
   });
 
+  it("does not flag a ref inside an explicit existence conditional (issue #502)", () => {
+    // The doc itself guards the reference ("only if <file> exists"), so an
+    // unresolved optional target is not a broken canon link.
+    expect(
+      findings("Read `ai-coding/optional-notes.md` only if it exists.", "canon-ref-resolves"),
+    ).toHaveLength(0);
+    expect(
+      findings("Only if `ai-coding/optional-notes.md` exists, load it.", "canon-ref-resolves"),
+    ).toHaveLength(0);
+    expect(
+      findings("Load #[[file:ai-coding/optional-notes.md]] when it exists.", "canon-ref-resolves"),
+    ).toHaveLength(0);
+    expect(
+      findings("### Kiro (only if `ai-coding/kiro-extras.md` exists)", "canon-ref-resolves"),
+    ).toHaveLength(0);
+  });
+
+  it("the waiver binds to the guarded ref — another file's guard waives nothing (review F1a)", () => {
+    // `optional.md` resolves; only `missing.md` is dangling, and the guard's
+    // subject is optional.md — so missing.md must still be flagged.
+    const c = ctx({ fileExists: (p) => p === "ai-coding/optional.md" });
+    const f = findings(
+      "If `ai-coding/optional.md` exists, also read `ai-coding/missing.md`.",
+      "canon-ref-resolves",
+      c,
+    );
+    expect(f).toHaveLength(1);
+    expect(f[0]?.message).toContain("ai-coding/missing.md");
+  });
+
+  it("negated existence guards never waive (review F1b)", () => {
+    // "does not exist" / "no longer exists" / "never exists" are instructions to
+    // CREATE or regenerate — the ref must still resolve.
+    expect(
+      findings("Create `ai-coding/missing.md` if it does not exist.", "canon-ref-resolves"),
+    ).toHaveLength(1);
+    expect(
+      findings("If `ai-coding/missing.md` no longer exists, regenerate it.", "canon-ref-resolves"),
+    ).toHaveLength(1);
+    expect(
+      findings("Keep `ai-coding/missing.md` even when it never exists.", "canon-ref-resolves"),
+    ).toHaveLength(1);
+  });
+
+  it("a guard inside a fenced code block cannot waive (review F1c)", () => {
+    // Fence content has always been flagged by this rule; the waiver must not
+    // soften that.
+    const fenced = "Intro.\n\n```md\nRead `ai-coding/missing.md` only if it exists.\n```\n";
+    expect(findings(fenced, "canon-ref-resolves")).toHaveLength(1);
+  });
+
+  it("existence conditionals never waive escaping refs, other lines, or plain danglers", () => {
+    // Escaping the repo/context root stays fatal even when guarded.
+    expect(findings("Read `../outside.md` only if it exists.", "canon-ref-resolves")).toHaveLength(
+      1,
+    );
+    // The guard is LINE-scoped: a conditional on another line waives nothing.
+    expect(
+      findings(
+        "Only if the optional file exists:\n\nRead `ai-coding/missing.md` now.",
+        "canon-ref-resolves",
+      ),
+    ).toHaveLength(1);
+    // An unguarded dangling ref still fails (detection is not weakened).
+    expect(findings("Read `ai-coding/missing.md` now.", "canon-ref-resolves")).toHaveLength(1);
+  });
+
   it("resolves illustrative other-tool native entry files (not dangling refs)", () => {
     // `other-tools.md` / `harness-update.md` legitimately mention where Copilot/Kiro/
     // Windsurf keep config; aih only writes these when that tool is targeted, so they

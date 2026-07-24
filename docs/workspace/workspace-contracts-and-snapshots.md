@@ -106,6 +106,61 @@ GraphQL, protobuf, or other contract file.
 the parent router/contracts docs. `--from` and `--to` must reference declared
 repo ids; missing ids fail verification and no child repo files are written.
 
+## Workspace graph (declared over inferred)
+
+`aih workspace graph` projects the declared manifest into a queryable cross-repo
+graph. The posture is declared over inferred: the relations authored in
+`.aih-workspace.json` are the source of truth for cross-repo topology, and
+graph-tool inference (the per-repo workspace graph MCP servers) is optional
+enrichment on top — never a requirement. A declared two-repo workspace yields
+queryable cross-repo edges from its declarations alone: no child checkout, no
+indexing, no tool execution.
+
+The projection is a pure function of the manifest. Under `--apply` it is written
+to `.aih/workspace-graph.json`:
+
+```json
+{
+  "schemaVersion": 1,
+  "source": ".aih-workspace.json",
+  "topology": "declared",
+  "generatedBy": "aih workspace graph",
+  "nodes": [
+    { "id": "ui", "path": "ui", "kind": "frontend", "router": "ai-coding/RULE_ROUTER.md" },
+    { "id": "backend", "path": "backend", "kind": "api", "router": "ai-coding/RULE_ROUTER.md" }
+  ],
+  "edges": [
+    {
+      "id": "ui-consumes-backend-api",
+      "from": "ui",
+      "to": "backend",
+      "kind": "api-contract",
+      "contractPath": "backend/openapi.yaml",
+      "consumerPath": "ui/src/api",
+      "provenance": "declared"
+    }
+  ]
+}
+```
+
+Every edge carries `provenance: "declared"`, so any future enrichment layer can
+add differently-attributed edges without blurring what was authored.
+
+Queries filter the printed edge table without writing anything: `--repo <id>`
+matches edges touching a repo in either direction, `--from <id>` and `--to <id>`
+match the declared direction exactly, and `--kind <kind>` matches the contract
+kind label. `--json` carries the graph, the query, and the matching edges.
+
+The command fails closed instead of guessing:
+
+- no `.aih-workspace.json`, or one that does not parse, is an error;
+- a declared edge whose `from`/`to` is not a declared repo id is an error
+  (a dangling edge is a manifest bug, not topology);
+- a query repo id that is not declared is an error, so a typo can never read
+  as "no dependencies";
+- a `--kind` with no matching edges is answered honestly with a zero-match
+  count, because kinds are free-form labels.
+
 ## Snapshots
 
 `aih workspace snapshot` records the current declared child repo state. The
@@ -176,12 +231,16 @@ Examples:
 - Snapshot creation is local and dry-run gated like other write commands.
 - The optional lock is a known-good baseline, not a remote checkout authority.
 - Contract edges document evidence paths; they do not enforce API compatibility.
+- The workspace graph is a declared-topology projection; it does not infer,
+  verify, or execute anything in child repos.
 - Hydration can use recorded child metadata, but it does not edit remotes.
 
 ## Source links
 
 - [`src/workspace/manifest.ts`](../../src/workspace/manifest.ts)
+- [`src/workspace/graph.ts`](../../src/workspace/graph.ts)
 - [`src/workspace/snapshot.ts`](../../src/workspace/snapshot.ts)
 - [`src/workspace/state.ts`](../../src/workspace/state.ts)
 - [`tests/workspace/manifest.test.ts`](../../tests/workspace/manifest.test.ts)
+- [`tests/workspace/graph.test.ts`](../../tests/workspace/graph.test.ts)
 - [`tests/report/workspace-report.test.ts`](../../tests/report/workspace-report.test.ts)

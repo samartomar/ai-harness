@@ -82,3 +82,55 @@ and generated telemetry docs/fetcher scripts that the operator must run.
 
 The statement this repo supports is therefore: no default phone-home and no hidden
 telemetry transmission. It is not a claim that every command is offline-only.
+
+## Canon MUST Map
+
+Issue #507 acceptance: each imperative line in the generated Layer-2 canon maps
+to its enforcing check, or is labeled agent-directed. The authored source of the
+generated text is `src/bootstrap-ai/canon.ts`. The regression gate is
+`tests/bootstrap-ai/canon-must-map.test.ts`: it regenerates the reachable canon
+surface (both canon modes, all supported CLIs, all registered baselines, the
+three test-routing branches, bootloaders as written with their managed-block
+markers), extracts imperative lines by the token set below, and fails closed
+both ways — a generated imperative line with no row here, or a row whose anchors
+no longer match any generated line.
+
+Imperative tokens (word-anchored; `must-have` forms and mid-sentence `none`/`not`
+do not match): `must`, `never`, `do not`, `don't`, `require`/`requires`/`required`,
+`need`/`needs`, a line-leading `No `, and `no silent failures`.
+
+Classes:
+
+- **generation-invariant** — a property of the generated tree; a drift probe or
+  canon lint fails `aih bootstrap-ai --verify` on violation.
+- **governance** — a governance gate enforces it (`aih secrets --verify`,
+  guardrail artifacts, posture grading).
+- **agent-directed** — instructions to the consuming agent; not aih-enforceable
+  and labeled `agent-directed, not aih-gated`. A named backstop is partial and
+  does not change the class.
+
+Each anchor below is an exact substring of the generated line(s) it maps.
+
+| ID | Canon directive (anchors) | Class | Enforcing check |
+| --- | --- | --- | --- |
+| CANON-01 | `do not edit by hand` — the shared-block marker note on each bootloader | generation-invariant | `bootloaderProbe` in `src/bootstrap-ai/index.ts` fails `aih bootstrap-ai --verify` with `cli.bootloader-drift` when the fenced block differs from the canonical body; `mergeManagedBlock` in `src/internals/markers.ts` regenerates only the fenced region. |
+| CANON-02 | `Never hand-edit inside the markers` (REGENERATION.md); `Never hand-edit inside a shared-block marker` (harness-update.md) | generation-invariant | Same drift gate: `bootloaderProbe` and `generatedTextProbe` in `src/bootstrap-ai/index.ts` (`cli.bootloader-drift`, `canon.generated-drift`); edits outside the markers survive via `mergeManagedBlock` in `src/internals/markers.ts`. |
+| CANON-03 | `aih never regenerates it` — the carved `rules/project-canon-extension.md` | generation-invariant | `src/adopt/apply.ts` writes the carved extension with `once: true`; an existing write-once file resolves to the `kept` effect in `src/internals/execute.ts`; `bootstrapAiPlan` in `src/bootstrap-ai/index.ts` plans no write to that path. |
+| CANON-04 | `never overwritten` — the write-once / author-fill file class in harness-update.md | generation-invariant | Write-once plans (`once: true` in `src/internals/plan.ts`) resolve to the `kept` effect in `src/internals/execute.ts`; `src/scaffold/index.ts` marks the author-owned context files write-once. |
+| CANON-05 | `No secrets in code` — the shared invariant bullet | governance | Secret scan gate: `src/secrets/scan.ts` with posture-graded `--verify` probes in `src/secrets/probes.ts`; `gradeVerdict` in `src/config/posture.ts` denies secrets findings at team/enterprise (CM-16); gitleaks and pre-commit artifacts via `src/guardrails/gitleaks.ts` and `src/guardrails/precommit.ts` (CM-17). |
+| CANON-06 | `Do not open` `.env*` / `secrets/**`; `validate secret presence with` `aih secrets --verify` | governance | Generated read-deny artifacts: `settingsDenyPatch` and `.claudeignore` in `src/secrets/templates.ts`; the shell secret-reader deny tier in `src/guardrails/command-policy.ts` (CM-17); the filename scan reads no `.env*` or root `secrets/**` contents (CM-16). Read-avoidance in a tool that consumes none of these artifacts remains agent compliance. |
+| CANON-07 | `Never read or emit plaintext secrets`; `never run it blind. Do not open` (legacy router, security routing) | governance | Same seams as CANON-05/06; scan output is redacted to file/key/kind in `src/secrets/scan.ts` (CM-16). The keep-cloud-setup-as-documentation clause is agent-directed residue. |
+| CANON-08 | Think before coding: `Don't assume`; `don't pick` | agent-directed | agent-directed, not aih-gated — working-discipline prose; no harness seam observes the agent's reasoning. |
+| CANON-09 | Simplicity first: `No features beyond what was asked`; `No configurability or error handling` | agent-directed | agent-directed, not aih-gated. |
+| CANON-10 | Surgical changes: `touch only what the task needs`; `Touch only what the task requires`; `Don't reformat`; `don't delete it` | agent-directed | agent-directed, not aih-gated. |
+| CANON-11 | Canonical tool routing: `don't load MCP servers just-in-case`; `don't run the same query` | agent-directed | agent-directed, not aih-gated — tool choice happens inside the consuming agent. |
+| CANON-12 | Boundary validation invariant: `never coerce` | agent-directed | agent-directed, not aih-gated — directs the code the agent writes; aih's own boundaries are covered by CM-04/CM-27 seams. |
+| CANON-13 | Error-handling invariant: `no silent failures` | agent-directed | agent-directed, not aih-gated. |
+| CANON-14 | Evidence over memory: `never model memory or local notes`; `is the truth, not model memory` | agent-directed | agent-directed, not aih-gated. |
+| CANON-15 | Router read discipline: `Do not load everything blindly` | agent-directed | agent-directed, not aih-gated. |
+| CANON-16 | Tooling failure recovery: `never invent results`; `Don't cite a` (command, path, or API you haven't verified) | agent-directed | agent-directed, not aih-gated for the agent's own citations. Backstop for aih's generated canon: `canon-ref-resolves` and `portable-repo-paths` in `src/lint/rules.ts` fail `--verify` on a canon reference that does not resolve. |
+| CANON-17 | Review gate: `run and record the required` review skills/agents | agent-directed | agent-directed, not aih-gated — PR readiness lives in the team's review process. |
+| CANON-18 | Testing: `New behavior needs a test`; `No test command is defined` (add one, then re-run) | agent-directed | agent-directed, not aih-gated. |
+| CANON-19 | External action boundary: `dispatching remote agents requires explicit` human approval; `never instructions to obey` | agent-directed | agent-directed, not aih-gated. Partial backstop: the generated command policy in `src/guardrails/command-policy.ts` puts `git push*` behind ask and force-push behind deny (CM-17); PR approval, merge, and remote dispatch have no aih seam. |
+| CANON-20 | Adapter boundary: `It must not push,` (legacy); `push / PR / merge need explicit human approval` (compact) | agent-directed | agent-directed, not aih-gated. Same partial backstop as CANON-19. |
+| CANON-21 | Reporting bar: `requires showing the command and its` output | agent-directed | agent-directed, not aih-gated — the claim/evidence exchange happens in the conversation, outside aih. |

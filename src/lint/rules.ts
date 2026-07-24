@@ -221,6 +221,67 @@ function isEscapingRef(ref: string): boolean {
 }
 
 /**
+ * Existence-conditional waiver for `canon-ref-resolves` ("Read `x.md` only if
+ * it exists" — the issue #502 false positive), bound tightly after review:
+ *  - REF-BOUND: the guard clause (the text between if/when and "exist(s)")
+ *    must name the unresolved ref itself, or be an anaphoric "it" — another
+ *    file's existence guard waives nothing;
+ *  - POSITIVE POLARITY only: a negated guard ("does not exist", "no longer
+ *    exists", "never exists") is an instruction to CREATE/regenerate, so the
+ *    ref must still resolve. Negation is checked on the clause's PROSE only —
+ *    inline-code spans are stripped first so a filename containing "no"/"not"
+ *    cannot misfire;
+ *  - PROSE ONLY: content inside fenced code blocks never qualifies for the
+ *    waiver (this rule has always flagged fence content; the waiver must not
+ *    soften that);
+ *  - line-scoped, and it NEVER waives the escaping-ref check — a traversal is
+ *    fatal, guarded or not.
+ */
+const EXISTENCE_GUARD_CLAUSE_RE = /\b(?:if|when)\b([^\n]*?)\bexists?\b/gi;
+const GUARD_NEGATION_RE = /\b(?:not|never|no)\b|n't\b/i;
+const GUARD_ANAPHOR_RE = /\bit\b/i;
+
+/** A guard clause with inline-code / Kiro-ref spans removed — its prose. */
+function clauseProse(clause: string): string {
+  return clause.replace(/`[^`\n]*`/g, " ").replace(/#\[\[file:[^\]\n]*\]\]/g, " ");
+}
+
+/** Does a positive, ref-bound existence guard on this line waive `ref`? */
+function existenceGuardWaives(line: string, ref: string): boolean {
+  EXISTENCE_GUARD_CLAUSE_RE.lastIndex = 0;
+  for (
+    let m = EXISTENCE_GUARD_CLAUSE_RE.exec(line);
+    m !== null;
+    m = EXISTENCE_GUARD_CLAUSE_RE.exec(line)
+  ) {
+    if (m.index === EXISTENCE_GUARD_CLAUSE_RE.lastIndex) EXISTENCE_GUARD_CLAUSE_RE.lastIndex++;
+    const clause = m[1] ?? "";
+    const prose = clauseProse(clause);
+    if (GUARD_NEGATION_RE.test(prose)) continue; // negated guard never waives
+    if (clause.includes(ref) || GUARD_ANAPHOR_RE.test(prose)) return true;
+  }
+  return false;
+}
+
+/** Fenced-code intervals ONLY (no inline spans — the refs themselves are inline code). */
+function fencedIntervals(src: string): Interval[] {
+  const intervals: Interval[] = [];
+  const re = /^(```+|~~~+)[^\n]*\n[\s\S]*?^\1[^\S\n]*$/gm;
+  for (let m = re.exec(src); m !== null; m = re.exec(src)) {
+    intervals.push([m.index, m.index + m[0].length]);
+    if (m.index === re.lastIndex) re.lastIndex++;
+  }
+  return intervals;
+}
+
+/** The full line of `src` containing byte offset `index`. */
+function lineAt(src: string, index: number): string {
+  const start = src.lastIndexOf("\n", Math.max(0, index - 1)) + 1;
+  const end = src.indexOf("\n", index);
+  return src.slice(start, end === -1 ? src.length : end);
+}
+
+/**
  * Does a referenced path resolve? Adapts isolint's missing-file rule (which does a
  * basename fallback "for leniency") to aih's model: aih emits paths both
  * dir-prefixed (`ai-coding/RULE_ROUTER.md`) and bare (`RULE_ROUTER.md`), so an
@@ -284,7 +345,8 @@ export const RULES: LintRule[] = [
     appliesTo: PROSE,
     run: (src, ctx) => {
       const out: LintFinding[] = [];
-      const check = (ref: string): void => {
+      const fences = fencedIntervals(src);
+      const check = (ref: string, offset: number): void => {
         if (/^(https?|mailto|tel|data):/i.test(ref) || ref.startsWith("#")) return;
         if (isEscapingRef(ref)) {
           out.push({
@@ -301,6 +363,12 @@ export const RULES: LintRule[] = [
         // user content does this constantly — not a broken canon link to police.
         const refNorm = normalizeRef(ref);
         if (refNorm.includes("/") && !refNorm.startsWith(`${ctx.contextDir}/`)) return;
+        // A reference the doc itself guards behind ITS OWN existence ("only if
+        // `x.md` exists") is conditional by declaration — an absent target is the
+        // guarded case, not a broken link. Ref-bound, positive-polarity, prose
+        // only (see EXISTENCE_GUARD_CLAUSE_RE); applies ONLY to resolution,
+        // never to the escaping-ref check above.
+        if (!inSkip(offset, fences) && existenceGuardWaives(lineAt(src, offset), ref)) return;
         if (!refResolves(ref, ctx)) {
           out.push({
             ruleId: "canon-ref-resolves",
@@ -309,8 +377,8 @@ export const RULES: LintRule[] = [
           });
         }
       };
-      for (const m of src.matchAll(BACKTICK_PATH_RE)) check(m[1] as string);
-      for (const m of src.matchAll(KIRO_REF_RE)) check(m[1] as string);
+      for (const m of src.matchAll(BACKTICK_PATH_RE)) check(m[1] as string, m.index);
+      for (const m of src.matchAll(KIRO_REF_RE)) check(m[1] as string, m.index);
       return out;
     },
   },

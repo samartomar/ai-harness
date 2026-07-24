@@ -6,6 +6,140 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The risk-gates sidecar has a real consumer: at team/enterprise posture
+  `aih guardrails` now also generates `.github/workflows/risk-gates.yml` — a
+  pull-request workflow (the same "runs in YOUR CI, not from aih" boundary as the
+  SCA workflow) that reads `risk-gates.json`, diffs the PR's changed paths against
+  each gate's path patterns, and surfaces every touched gate as warning
+  annotations plus a job-summary table. Ask-not-deny end to end: a touched gate
+  never fails the build, matching the `risk-gates` warn grading at every posture;
+  the job name is the sidecar's declared `ci.checkName`, and the only hard failure
+  is a corrupted sidecar. The matcher policy is unit-tested through a TS mirror of
+  the workflow's bash matcher (`riskGatesTouched`), and gate patterns are matched
+  with shell globbing disabled so they can never expand against the checkout. At
+  vibe posture neither sidecar nor workflow is emitted. Refs #507
+- Canon MUST-to-enforcing-check map: `docs/CONTROL_MATRIX.md` gains a
+  `## Canon MUST Map` section classifying every imperative line the generated
+  Layer-2 canon (`src/bootstrap-ai/canon.ts`) emits — generation-invariant MUSTs
+  cite their drift probe or canon lint seam, governance MUSTs cite their gate
+  (secret scan, guardrail artifacts, posture grading), and agent-behavioral MUSTs
+  are labeled `agent-directed, not aih-gated`. A regression gate
+  (`tests/bootstrap-ai/canon-must-map.test.ts`) regenerates the reachable canon
+  surface, extracts imperative lines by a documented token set, and fails closed
+  on any unmapped imperative or stale map row. (Refs #507)
+- `aih workspace graph` projects the workspace's own declared contract relations
+  (`.aih-workspace.json` `repos[]` + `edges[]`) into a queryable cross-repo graph —
+  declared over inferred: a declared two-repo workspace yields queryable cross-repo
+  edges from declarations alone, with graph-tool inference demoted to optional
+  enrichment. `--apply` writes the pure, deterministic projection (every edge marked
+  `provenance: "declared"`) to `.aih/workspace-graph.json`; `--repo`/`--from`/`--to`/
+  `--kind` answer edge queries without writing; `--json` carries the graph, query,
+  and matches. Fail-closed: dangling edge endpoints and undeclared query repo ids
+  are errors, so a typo can never read as "no dependencies". (#505)
+- Org-policy surface UX for the enterprise first-setup loop. `aih policy init [root]`
+  seeds a starter `aih-org-policy.json` from observed fleet state: catalog-bound MCP
+  surfaces (the exact lens enterprise baseline attestation grades) become
+  `mcp.allowedServers`, so a fresh enterprise setup passes attestation for servers aih
+  itself generated with no hand-editing. Fail-closed boundaries: an existing policy or
+  an active `AIH_ORG_POLICY` override refuses; surfaces attestation force-undeclares
+  are listed for review, never silently declared; marketplace surfaces are never
+  auto-trusted into `trust.approvedSources`. At enterprise posture `aih mcp` now names
+  its own declaration gap: generated servers the active policy leaves undeclared
+  produce a ready-to-merge `allowedServers` snippet digest (or a pointer at
+  `aih policy init` when no policy exists) — guidance only, no gate or verdict
+  changes. Every `aih policy` subcommand also accepts the conventional optional
+  `[root]` positional, so `aih policy validate <root>` works like the other
+  repo-scoped commands. (#503)
+
+- Doctor distinguishes generation deltas from user drift on aih-generated managed
+  artifacts. When `.claude/managed-settings.json` or the managed MCP allowlist
+  matches an EARLIER aih generation's own output — a pre-hardening bare `uvx <pkg>`
+  launch shape, an older version pin, or missing newer projection keys — after an
+  in-place upgrade, doctor now reports a generation delta (`org-policy.generation-delta`,
+  `mcp.allowlist-generation-delta`) naming `aih policy project --apply` inline instead
+  of implying a local edit. Attribution is fail-closed: any difference not positively
+  explained by aih's generation history still fails under the existing drift codes,
+  and the re-projection under `--apply` (shipped in v2.11.0) is re-validated to
+  migrate old-generation managed allowlists. (#501)
+- Resolved-artifact attestation for uvx MCP pins. Doctor always renders an
+  `mcp-uvx-pin-attestation` row: with exactly-pinned uvx servers in `.mcp.json` it
+  reports the pins as NOT attested (`mcp.pin-unattested`, an advisory skip) until the
+  operator opts in with `aih doctor --attest-mcp-pins`, which launches each pinned
+  server once with an MCP `initialize` handshake and compares its self-reported
+  `serverInfo.version` to the pin — a mismatch warns (`mcp.version-drift`), a match
+  passes. The launch gate is fail-closed (literal `uvx`, exact end-to-end pins, no
+  config-supplied environment); attestation proves what the resolved artifact
+  self-reports at runtime, not the artifact's provenance or integrity. Because the
+  probe executes the pinned third-party artifact, the live handshake is opt-in only.
+  (#502)
+- Pin currency for the wired MCP tool pins. Doctor renders an `mcp-pin-currency`
+  row covering both halves of the pin-refresh double lag: offline on every run it
+  compares each exactly-pinned npx/uvx launch in `.mcp.json` against the pin this
+  aih build's catalog generates for the same server (a difference is the
+  re-projection half — `mcp.projection-stale`, fixed by `aih mcp --apply`), and
+  `aih doctor --check-pin-currency` opts in to the upstream half, querying each
+  pin's registry for its latest release (npm via `npm view`, PyPI via its JSON
+  metadata endpoint) — registry metadata only, nothing downloaded or executed,
+  opt-in because it is network egress from a read-only command. A newer upstream
+  release warns (`mcp.pin-stale`) as a vet-then-bump candidate, never an automatic
+  upgrade; the documented refresh path is vet (`aih trust scan`) → bump in an aih
+  release → re-project (`aih mcp --apply`) → re-attest (`--attest-mcp-pins`). The
+  codebase-memory-mcp interactive graph-UI variant is deliberately not installed or
+  linked — the wired, vetted surface is the headless stdio launch only — and that
+  decision is recorded in docs/commands.md. (#504)
+
+### Changed
+
+- Single-sourced the generated discipline text at its authored layer (slice A of
+  the #507 canon-structure theme): the working-agreement principles (think before
+  coding, simplicity first, surgical changes, goal-driven, canon tools), the
+  invariant list, and the reporting bar are now authored once in
+  `src/bootstrap-ai/canon.ts` (`DISCIPLINE_PRINCIPLES` / `DISCIPLINE_INVARIANTS` /
+  `DISCIPLINE_REPORTING`), and both renderings — the shared canonical block's
+  compact bullets and `rules/agent-behavior-core.md`'s long-form sections — derive
+  from that single source, drift-guarded by the extended byte-identical-fragments
+  tests. Emitted output is byte-identical in both canon modes: the marker id
+  (`ai-canonical:shared`), every emitted path, legacy output, and the committed
+  dogfood tree are all unchanged, so no deployed bootloader reads as drifted.
+  Refs #507.
+
+### Fixed
+
+- Adapter regeneration scope now honors `--cli`: the `.aih-config.json` marker's
+  `targets` are replaced with each run's resolved CLI set instead of being
+  array-unioned with previous runs, so an explicit `aih bootstrap-ai --cli
+  claude,codex` narrows the persisted footprint and later marker-driven re-runs no
+  longer resurrect a dropped CLI's adapter + bootloader (files on disk stay
+  untouched; `aih prune` removes them). `aih adopt`'s convergence of every
+  bootloader that already exists on disk is deliberate — required to reach
+  already-adopted — and is now documented as footprint-convergence-beats-CLI-scope
+  in the command reference. The ECC Codex `--profile full` passthrough reported by
+  the same enterprise rollout batch is locked with live-path regression tests
+  (resolved profile → registration request → full-scope Codex merge), and the
+  enterprise onboarding + release-SLSA docs now route global-install provenance
+  through `aih verify-release` instead of a bare `npm audit signatures`, which
+  cannot audit a global install (`EAUDITGLOBAL`); the verifier runs
+  `npm audit signatures --prefix <temp>` against the exact release instead. (#506)
+- `aih ready` reports the factual secret-location class instead of labelling every
+  plaintext finding "committed": git-tracked findings stay under `no-committed-secret`
+  (rotate + rewrite git history), while untracked on-disk files report
+  `no-plaintext-secret-on-disk` (rotate + move to a vault / env references). Both
+  classes keep the same posture split, no finding is dropped, and an unanswerable
+  git state (git absent, or rev-parse erroring for reasons like dubious ownership)
+  fails closed to the committed class. (#502)
+- Doctor's `ai-clis` probe no longer stays green for a dead CLI. Each detected
+  binary must pass a bounded `--version` exec: broken binaries are named in the
+  probe detail, and when every detected binary fails the exec the probe hard-fails
+  as `cli.binary-broken` instead of reporting the machine as runnable. (#502)
+- The canon lint's `canon-ref-resolves` rule no longer flags references inside an
+  explicit "only if `<file>` exists" conditional. The waiver is ref-bound (the
+  guard's subject must be the reference itself or an anaphoric "it"), positive
+  polarity only (negated guards such as "does not exist" never waive), prose-only
+  (fenced code blocks never qualify), and line-scoped; escaping refs stay fatal
+  even when guarded. (#502)
+
 ## [3.0.0] - 2026-07-23
 
 ### Added

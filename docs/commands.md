@@ -62,6 +62,14 @@ loadability, contract, secret scan). Diagnoses by default (non-zero when blocked
 auto-fixable blocker (missing `rg`/`fd`/`jq`) installs under confirmation. Surfaces a `sec-ready`
 panel in `aih report --v9`.
 
+The secret gate reports the finding's LOCATION class, because the remediation differs: a
+git-tracked finding is `no-committed-secret` (rotate the credential and rewrite it out of git
+history), while an untracked on-disk file is `no-plaintext-secret-on-disk` (rotate and move it to a
+vault / env references). Both classes carry the same posture split (warn at vibe, gate at
+team/enterprise) and no finding is ever dropped by classification: when git cannot answer — git is
+absent, or `rev-parse` errors (for example dubious ownership) — every finding stays under the
+committed class, the strongest gate.
+
 ## aih session-guard
 
 Inspect session/action text with the EPIC 5 session guardrails. `--text <text>` runs a read-only,
@@ -127,6 +135,14 @@ soft-imperative/taste-word prose is advisory). Existing bootloaders are merged: 
 content outside the managed block is preserved, and dry-run/apply summaries report those writes as
 `merge` rather than `overwrite`. Use `--baseline ecc` to render the Layer-1 references; the
 choice is persisted so later `contract` and `bootstrap-ai` runs stay aligned.
+Regeneration scope honors `--cli`: the run regenerates adapters/bootloaders only for the resolved
+CLI set, and the `.aih-config.json` marker's `targets` are **replaced** with that set — an explicit
+`--cli claude,codex` run narrows the persisted targets, so a later bare (marker-driven) re-run no
+longer resurrects a previously bootstrapped CLI's adapter + bootloader. Because the set is replaced,
+naming a partial list **drops the omitted CLIs** from recorded intent — `--cli codex` alone rewrites
+`targets` to just `["codex"]`, so pass the full intended list and do not omit a CLI unless you mean
+to drop it (see [guides/cli-lifecycle-guide.md](../guides/cli-lifecycle-guide.md)). Files for a
+dropped CLI stay on disk untouched; remove them with `aih prune`.
 
 ## aih contract
 
@@ -142,7 +158,11 @@ Converge an **existing** AI canon onto aih's managed model **without overwriting
 `--migrate-cli` folds committed CLI-native content into the canon (copy + pointer-convert,
 content-verified, backed up); `--ack <paths>` marks paths as intentionally tool-native so adopt
 stops flagging them. Bootloader convergence uses the same managed-block merge reporting as
-`bootstrap-ai`.
+`bootstrap-ai`. **Footprint convergence is deliberate here and beats CLI scope**: adopt regenerates
+every bootloader that already exists on disk (an existing `GEMINI.md` is converged even when `--cli`
+names fewer tools), because reaching the already-adopted state requires every existing bootloader to
+carry the managed block; content outside the block is merge-preserved. The converged set is what the
+`.aih-config.json` marker records. To actually drop a CLI's artifacts, use `aih prune`.
 
 ## aih prune
 
@@ -305,6 +325,16 @@ rollup so the child report cells see the refreshed artifacts. Until a declared c
 `aih workspace --apply` emits a hydrate note and skips that child's graph MCP scope instead of wiring
 an empty path.
 
+`aih workspace graph [root]` projects the declared contract relations in `.aih-workspace.json` into a
+queryable cross-repo graph — declared over inferred: the declarations are the source of truth, and
+the per-repo workspace graph MCP servers are optional enrichment, never required for declared
+coverage. The projection is a pure function of the manifest (nodes from `repos[]`, edges from
+`edges[]`, each edge marked `provenance: "declared"`); `--apply` writes it to
+`.aih/workspace-graph.json`, and `--repo <id>`, `--from <id>`, `--to <id>`, and `--kind <kind>`
+filter the printed edge table (`--json` carries the same graph, query, and matches). It fails closed:
+a declared edge endpoint or a query repo id that does not match a declared repo id is an error, so a
+typo can never read as "no dependencies".
+
 **Skill governance & supply chain**
 
 ## aih trust
@@ -405,7 +435,25 @@ build); `validate --require-signature` then
 
 ## aih policy
 
-Schema, projection, and trusted-channel gates for the org policy. `project --apply` compiles the
+Starter seeding, schema, projection, and trusted-channel gates for the org policy. Every `policy`
+subcommand is repo-scoped and accepts the conventional optional `[root]` positional —
+`aih policy validate .` works exactly like `aih init .` (`--root` and `AIH_ROOT` still apply).
+
+`init` seeds a starter `aih-org-policy.json` from **observed fleet state**, so authoring the policy
+becomes a review exercise instead of a blank page — and a fresh enterprise setup passes baseline
+attestation for aih-generated MCP servers without hand-editing. The starter declares exactly what
+the attestation lens observes: catalog-bound MCP surfaces become `mcp.allowedServers`; surfaces
+attestation force-undeclares (stale generated residue, non-catalog servers) are listed for review,
+never silently declared; and marketplace surfaces are **never auto-trusted** — `trust.approvedSources`
+grants acquisition trust beyond registry membership, so those entries stay an explicit review step.
+Fail-closed boundaries: an existing policy is never overwritten (plan-time refusal plus an
+apply-time absent pin), an active `AIH_ORG_POLICY` override refuses outright (the starter only
+targets the committed default file), and an unreadable MCP config aborts the plan. The starter
+records the resolved posture as `minimumPosture`, and `--verify` grades the written file with the
+same schema gate as `validate`. Declaring `mcp.allowedServers` records registry membership only;
+reviewed third-party egress approval remains `aih mcp approve`.
+
+`project --apply` compiles the
 committed `aih-org-policy.json` into only its generated policy artifacts —
 `.claude/managed-settings.json` and, at enterprise posture, the two system-path examples. It does
 not run `aih init`, regenerate the canon, or modify unrelated settings. This is a Claude projection:
@@ -414,6 +462,14 @@ projection. When managed-only MCP is active, it records existing AIH ownership p
 `.aih-config.json` so later deactivation can remove only the exact generated values. It refuses a
 configuration write when `AIH_ORG_POLICY` selects an override; previewing without `--apply` remains
 inspectable, but mutation requires the committed default policy source.
+
+`project --apply` is also the upgrade migration path: it replaces managed MCP allowlist entries an
+earlier aih generation wrote (for example a pre-hardening bare `uvx <pkg>` launch shape or an older
+version pin) and adds projection keys a newer generation introduced. When `aih doctor` can
+positively attribute the whole on-disk difference to that generation history, it reports a
+**generation delta** (`org-policy.generation-delta`, `mcp.allowlist-generation-delta`) naming
+`aih policy project --apply` inline rather than implying a local edit; any unattributable
+difference still fails closed under the ordinary drift codes.
 
 `validate` is the **read-only CI gate** over the active local org policy source: the default
 committed `aih-org-policy.json`, or an explicit `AIH_ORG_POLICY` override. The policy source is
@@ -512,10 +568,14 @@ emits one result per finding for GitHub code-scanning. <!-- aih:claim CM-16 -->
 ## aih guardrails
 
 Generate `.gitleaks.toml`, `.pre-commit-config.yaml`, and a GitHub Actions workflow for CI secret
-scanning plus strong/network-copyleft license blocking. Generation is not activation: local
-pre-commit enforcement requires `gitleaks`, `pre-commit`, and `git config core.hooksPath .githooks`;
-CI enforcement requires committing the generated workflow and making the relevant jobs required
-checks on protected branches. <!-- aih:claim CM-17 -->
+scanning plus strong/network-copyleft license blocking. At team/enterprise posture it also emits
+the machine-readable risk-gate sidecar (`<context-dir>/risk-gates.json`) together with its
+consumer, `.github/workflows/risk-gates.yml`: a pull-request job that diffs the PR's changed paths
+against the declared gate patterns and surfaces every touched gate as warning annotations plus a
+job summary — ask-not-deny, so it never fails the build on a touched gate. Generation is not
+activation: local pre-commit enforcement requires `gitleaks`, `pre-commit`, and
+`git config core.hooksPath .githooks`; CI enforcement requires committing the generated workflows
+and making the relevant jobs required checks on protected branches. <!-- aih:claim CM-17 -->
 
 **Analytics & operations**
 
@@ -609,6 +669,12 @@ managed stdio allowlist only when `mcp.allowManagedOnly` is true. At Enterprise 
 apply keeps the full generated server set but warns when policy denies any server; add
 `--mcp-compliant` to omit denied generated servers from MCP client configs and list them with reasons
 in the governance guidance. Use the same flag on `--verify` to verify the compliant plan.
+At Enterprise posture the plan also names its own declaration gap: when generated servers are
+missing from `mcp.allowedServers`, an `Undeclared generated MCP servers` digest emits a
+ready-to-merge `allowedServers` snippet (the union of current and generated declarations) — or, with
+no committed policy at all, points at `aih policy init` — so baseline attestation never flags an
+aih-generated server without the fix in hand. The digest is guidance only: it changes no gate, and
+declaring registry membership is still not an egress approval.
 With `allowManagedOnly: true`, an empty list is deny-all across direct, offline, init, and client
 writers; a populated list emits only listed, enabled servers. With `false`, the enabled catalog
 remains available, and cleanup preserves operator entries while replacing exact AIH output.
@@ -623,6 +689,17 @@ retry-fail because an env placeholder is unset or a URL host is a placeholder su
 For OpenCode, those unsafe generated entries are written with `enabled:false` so the client does not
 retry them on startup until the operator fixes the env or URL. Under `--verify`, npm-backed MCP
 package pins are compared with the configured registry response so version-pin drift is visible.
+
+**codebase-memory-mcp graph UI — deliberately not surfaced.** Upstream codebase-memory-mcp also
+publishes an optional interactive graph-visualization UI variant alongside the headless server.
+aih does not install, launch, or link it, by decision rather than omission: the catalog wires the
+stdio server only, under hardened uvx flags (`--offline --no-python-downloads --no-env-file`), and
+every downstream control — the managed allowlist, pin attestation, and pin currency — is scoped to
+exactly that launch shape. A browser-serving UI binary is a different execution and egress surface
+(a listening port and a served web app rather than a stdio pipe), and it has not been vetted as
+part of the wired-tool pin. Operators who want the UI can run it out-of-band against the same
+indexes and should treat it as an unvetted convenience. Revisit this decision only together with a
+vetted pin bump that covers the UI variant's surface.
 
 ## aih sandbox
 
@@ -647,7 +724,46 @@ control-matrix update so public claims can detect drift. A missing rules file em
 
 Fail-closed verification of the workstation/repo configuration (+ workspace mode: validates each
 child repo). Includes a **canon markdown lint** (read-only) over the scaffolded `ai-coding/` tree.
-It remains read-only. `--posture enterprise` also runs the enterprise baseline attestation: MCP
+It remains read-only.
+
+The `ai-clis` probe verifies a detected CLI binary can actually execute, not only that it resolves
+on PATH: each detected binary runs a bounded `--version` exec, broken binaries are named in the
+probe detail, and a machine where EVERY detected binary fails the exec hard-fails as
+`cli.binary-broken` rather than reporting runnable CLIs.
+
+The `mcp-uvx-pin-attestation` row covers the resolved artifact behind uvx MCP pins in `.mcp.json`.
+By default it reports exactly-pinned uvx servers as not attested (`mcp.pin-unattested`, an advisory
+skip). `--attest-mcp-pins` opts in to a live check: doctor launches each exactly-pinned server once
+with an MCP `initialize` handshake and compares the server's self-reported `serverInfo.version` to
+the pin — a mismatch warns (`mcp.version-drift`), a match passes. The launch gate is fail-closed
+(literal `uvx` command, exact end-to-end pins, no config-supplied environment; anything else is
+reported as unattestable). Attestation proves what the resolved artifact self-reports at runtime;
+it does not prove provenance or integrity, and it executes the pinned artifact — which is why the
+live handshake is opt-in.
+
+The `mcp-pin-currency` row tracks how current those pins are. The catalog pins are compile-time
+constants, so picking up an upstream improvement lags twice by construction: the pin must be bumped
+in an aih release, and each repo must then re-project its `.mcp.json`. The row surfaces both
+halves. Offline, on every run, each exactly-pinned npx/uvx launch in `.mcp.json` is compared
+against the pin this aih build's catalog generates for the same server; a difference reports
+`mcp.projection-stale` and names the fix (`aih mcp --apply`) — after an aih upgrade, that
+re-projection is the second half of a pin refresh. `--check-pin-currency` opts in to the upstream
+half: doctor queries each pin's registry for its latest release (npm via `npm view`, PyPI via its
+JSON metadata endpoint over curl) — metadata only, nothing is downloaded or executed, but it is
+network egress from a read-only command, so it is opt-in. A pin whose registry publishes a newer
+release warns (`mcp.pin-stale`); a current pin set passes. A newer release is a bump **candidate**,
+never an instruction: the refresh path is (1) vet the new version through the trust gate
+(`aih trust scan <owner>/<repo> --pin <sha>`, which fails closed at enterprise posture unless the
+required analyzers — the pinned SkillSpector image and the Cisco skill-scanner — are available),
+(2) bump the catalog pin in an aih release, (3) re-project each repo with `aih mcp --apply` (at
+enterprise, also `aih policy project --apply` so the managed allowlist tracks the new launch
+shape), and (4) re-attest with `aih doctor --attest-mcp-pins`.
+
+In the canon markdown lint, `canon-ref-resolves` accepts a reference guarded by an explicit
+existence conditional on the same line ("Read `x.md` only if it exists"): the waiver applies only
+when the guard's subject is that reference itself (or an anaphoric "it"), only with positive
+polarity (a negated guard such as "does not exist" never waives), and never inside fenced code
+blocks; escaping references stay fatal even when guarded. `--posture enterprise` also runs the enterprise baseline attestation: MCP
 servers from known repo-scoped MCP config files (`.mcp.json`, Cursor, Kiro, VS Code, and legacy
 OpenCode residues)
 and packaged marketplace skills from `.aih/marketplace/marketplace.json` must be declared in
