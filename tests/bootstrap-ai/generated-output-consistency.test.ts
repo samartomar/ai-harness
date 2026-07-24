@@ -3,6 +3,12 @@ import {
   adapterNote,
   agentBehaviorCoreDoc,
   bootloaderPreamble,
+  DISCIPLINE_INVARIANTS,
+  DISCIPLINE_PRINCIPLES,
+  disciplineBulletLines,
+  disciplineSectionLines,
+  invariantLines,
+  reportingSectionLines,
   ruleRouterDoc,
   sharedCanonicalBlockBody,
 } from "../../src/bootstrap-ai/canon.js";
@@ -102,6 +108,78 @@ describe("generated canon — internal consistency", () => {
     const mdc = renderStackMdc(emptyStack());
     expect(mdc).toContain("- No test/build/lint/format/start script is defined");
     expect(mdc).not.toContain("Use No test");
+  });
+});
+
+/**
+ * #507 slice A: the discipline text is authored ONCE (DISCIPLINE_PRINCIPLES /
+ * DISCIPLINE_INVARIANTS / DISCIPLINE_REPORTING) and both documents render from
+ * it — the shared block's compact bullets and the behavior core's long-form
+ * sections. Same posture the secrets-invariants guard above established, extended
+ * to every duplicated principle pair.
+ */
+describe("generated canon — single-source discipline (#507)", () => {
+  /** The lines of `doc`'s `## <heading>` section, exclusive of the blank-line frame. */
+  const section = (doc: string, heading: string): string[] => {
+    const body = doc.split(`\n## ${heading}\n\n`)[1]?.split("\n\n## ")[0];
+    expect(body, `section "## ${heading}" missing`).toBeDefined();
+    return (body ?? "").split("\n");
+  };
+
+  it("the shared block's Working agreement renders every principle bullet from DISCIPLINE_PRINCIPLES, in order", () => {
+    expect(DISCIPLINE_PRINCIPLES.map((p) => p.id)).toEqual([
+      "think-before-coding",
+      "simplicity-first",
+      "surgical-changes",
+      "goal-driven",
+      "canon-tools",
+    ]);
+    expect(section(sharedCanonicalBlockBody(DIR), "Working agreement")).toEqual(
+      disciplineBulletLines(),
+    );
+  });
+
+  it("the behavior core renders each principle's long-form section from the same source, in document order", () => {
+    const core = agentBehaviorCoreDoc(DIR);
+    let cursor = -1;
+    for (const p of DISCIPLINE_PRINCIPLES) {
+      const rendered = disciplineSectionLines(p.id).join("\n");
+      const at = core.indexOf(rendered);
+      expect(
+        at,
+        `long-form section for "${p.id}" must render verbatim from the principle source`,
+      ).toBeGreaterThan(cursor);
+      cursor = at;
+    }
+  });
+
+  it("shared-rendering invariants are byte-identical in both docs (graph-advisory joins the secrets guard)", () => {
+    const block = sharedCanonicalBlockBody(DIR);
+    const core = agentBehaviorCoreDoc(DIR);
+    const shared = DISCIPLINE_INVARIANTS.filter((inv) => "shared" in inv);
+    expect(shared.map((inv) => inv.id)).toEqual(["secrets", "graph-advisory"]);
+    for (const inv of shared) {
+      for (const line of inv.shared) {
+        expect(block).toContain(`\n${line}\n`);
+        expect(core).toContain(`\n${line}\n`);
+      }
+    }
+  });
+
+  it("both invariant lists and the reporting pair derive from the single authored source", () => {
+    const block = sharedCanonicalBlockBody(DIR);
+    const core = agentBehaviorCoreDoc(DIR);
+    expect(section(block, "Invariants")).toEqual(invariantLines("compact"));
+    // The core appends its one core-only invariant (repo evidence over model
+    // memory) after the shared-source list — assert the derived prefix exactly.
+    const coreInvariants = section(core, "Invariants (always hold)");
+    expect(coreInvariants.slice(0, invariantLines("longForm").length)).toEqual(
+      invariantLines("longForm"),
+    );
+    expect(coreInvariants[invariantLines("longForm").length]).toMatch(/^- Repo evidence /);
+    // Reporting: one authored pair, two renderings (compact summary vs itemized report).
+    expect(block).toContain(reportingSectionLines("compact").join("\n"));
+    expect(core).toContain(reportingSectionLines("longForm").join("\n"));
   });
 });
 

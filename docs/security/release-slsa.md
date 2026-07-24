@@ -73,11 +73,14 @@ identity instead of being accepted by an invisible local flag.
 After a tag is released:
 
 ```bash
-npm audit signatures
 aih verify-release <version>
 gh attestation verify <downloaded-tarball.tgz> --repo samartomar/ai-harness
 ```
 
-`aih verify-release` is the packaged convenience gate for the install path. A
-consumer with a formal SLSA policy should additionally verify the provenance
-attestation against its expected builder identity and release workflow.
+`aih verify-release` is the packaged convenience gate for the install path. It
+covers the npm signature/provenance audit by installing the exact release into a
+temporary prefix and running `npm audit signatures --prefix <temp>` there — a
+bare `npm audit signatures` cannot verify a global install (npm refuses with
+`EAUDITGLOBAL`). A consumer with a formal SLSA policy should additionally verify
+the provenance attestation against its expected builder identity and release
+workflow.

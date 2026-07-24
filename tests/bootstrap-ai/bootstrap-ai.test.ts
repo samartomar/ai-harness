@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { command } from "../../src/bootstrap-ai/index.js";
-import { executePlan } from "../../src/internals/execute.js";
+import { executePlan, resolveContents } from "../../src/internals/execute.js";
 import { LOADABILITY_SENTINEL } from "../../src/internals/loadability-sentinel.js";
 import type { Action, PlanContext, ProbeAction, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -273,6 +273,48 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     expect(marker).toBeDefined();
     expect(marker?.merge).toBe(true);
     expect((marker?.json as { targets?: string[] })?.targets).toEqual(["claude", "codex"]);
+  });
+
+  // #506 F3: the marker previously deep-merged, and deepMerge UNIONS arrays — so an
+  // explicit `--cli claude,codex` run could never narrow the persisted targets, and
+  // the next marker-driven bare run resurrected the gemini adapter + bootloader
+  // (on-disk footprint convergence silently beating the CLI scope).
+  it("explicit --cli replaces the persisted marker targets instead of unioning into them", async () => {
+    put(
+      ".aih-config.json",
+      `${JSON.stringify(
+        { schemaVersion: 1, contextDir: ".ai-context", targets: ["claude", "codex", "gemini"] },
+        null,
+        2,
+      )}\n`,
+    );
+    const marker = writesByPath((await command.plan(makeCtx({ cli: "claude,codex" }))).actions).get(
+      ".aih-config.json",
+    );
+    expect(marker).toBeDefined();
+    expect(marker?.replaceJsonKeys).toContain("targets");
+    const merged = JSON.parse(
+      resolveContents(marker as WriteAction, join(tmp, ".aih-config.json")),
+    ) as { targets?: string[] };
+    expect(merged.targets).toEqual(["claude", "codex"]);
+  });
+
+  it("a marker-scoped re-run regenerates only the recorded CLIs (no gemini resurrection)", async () => {
+    put(
+      ".aih-config.json",
+      `${JSON.stringify(
+        { schemaVersion: 1, contextDir: ".ai-context", targets: ["claude", "codex"] },
+        null,
+        2,
+      )}\n`,
+    );
+    put("GEMINI.md", "# stale gemini bootloader\n");
+    put(".ai-context/adapters/gemini.md", "# stale gemini adapter\n");
+    const w = writesByPath((await command.plan(makeCtx())).actions);
+    expect(w.has("CLAUDE.md")).toBe(true);
+    expect(w.has("AGENTS.md")).toBe(true);
+    expect(w.has("GEMINI.md")).toBe(false);
+    expect(w.has(".ai-context/adapters/gemini.md")).toBe(false);
   });
 
   it("--all-tools dedupes AGENTS.md to a single write", async () => {

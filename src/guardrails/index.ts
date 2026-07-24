@@ -18,13 +18,15 @@ import { scanRepo } from "../profile/scan.js";
 import { claudeBashPermissions, commandPolicyDoc, sandboxExecPolicy } from "./command-policy.js";
 import { gitleaksToml } from "./gitleaks.js";
 import { gitleaksMergeSnippet, PRECOMMIT_HEADER, preCommitConfigYaml } from "./precommit.js";
-import { riskGatesDoc, riskGatesJson } from "./risk-gates.js";
+import { riskGatesDoc, riskGatesJson, riskGatesWorkflowYaml } from "./risk-gates.js";
 import { blockingLicenses, scaWorkflowYaml } from "./sca.js";
 import { taxonomyDoc } from "./taxonomy.js";
 
 const GITLEAKS_PATH = ".gitleaks.toml";
 const PRECOMMIT_PATH = ".pre-commit-config.yaml";
 const SCA_PATH = ".github/workflows/sca.yml";
+/** The generated consumer of the risk-gates sidecar (#507): a PR-diff surfacing job. */
+const RISK_GATES_WORKFLOW_PATH = ".github/workflows/risk-gates.yml";
 /** Native Claude permission file the command-policy projection merges into. */
 const CLAUDE_SETTINGS_PATH = ".claude/settings.json";
 /** Project managed-settings file for command-policy enforcement under team+. */
@@ -191,6 +193,14 @@ function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
         posture === "enterprise"
           ? "Risk-gate categories (ask-not-deny), required CI sidecar"
           : "Risk-gate categories (ask-not-deny), CI-checkable sidecar",
+      ),
+      // The sidecar's consumer: a PR-diff workflow that surfaces touched gates as
+      // warnings in the customer's pipeline. Warn-only at every posture, matching
+      // the `risk-gates` grading — it never fails the build on a touched gate.
+      writeText(
+        RISK_GATES_WORKFLOW_PATH,
+        riskGatesWorkflowYaml(riskGatesPath(ctx)),
+        "CI risk-gates workflow: PR-diff consumer of risk-gates.json (warn, never fail)",
       ),
     );
   }

@@ -6,12 +6,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import { runCapability } from "../../src/commands/run.js";
 import { upsertTextBlock } from "../../src/internals/envfile.js";
 import { executePlan, resolveContents } from "../../src/internals/execute.js";
-import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
+import type { DigestAction, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { jsonFile } from "../../src/internals/render.js";
+import { bakedCatalogPins } from "../../src/mcp/currency.js";
 import { mcpPackagePinDriftProbe } from "../../src/mcp/hygiene.js";
 import { command, mcpApproveCommand } from "../../src/mcp/index.js";
-import { mcpResolverPinState } from "../../src/mcp/pins.js";
+import { hasExactPackagePin, mcpResolverPinState, uvxPrimaryPin } from "../../src/mcp/pins.js";
 import { mcpApprovalSubject } from "../../src/mcp/policy.js";
 import { existingMcpTomlNames, removeMcpTomlServers } from "../../src/mcp/render.js";
 import type { McpServer } from "../../src/mcp/servers.js";
@@ -359,6 +360,35 @@ describe("aih mcp — generated mcpServers blueprint", () => {
       mcpResolverPinState("uvx", ["tool==1.2.3"], { NODE_OPTIONS: "--require ./evil.js" }),
     ).toBe("unpinned");
     expect(mcpResolverPinState("npx", ["--", "@scope/tool@1.2.3"])).toBe("pinned");
+  });
+
+  it("uvxPrimaryPin extracts the exact primary pin only from a fully pinned launch", () => {
+    expect(uvxPrimaryPin(["code-review-graph@2.3.6", "serve"])).toEqual({
+      packageName: "code-review-graph",
+      version: "2.3.6",
+      spec: "code-review-graph@2.3.6",
+    });
+    expect(uvxPrimaryPin(["mcp-atlassian==1.2.3"])).toEqual({
+      packageName: "mcp-atlassian",
+      version: "1.2.3",
+      spec: "mcp-atlassian==1.2.3",
+    });
+    expect(uvxPrimaryPin(["--", "tool==9.0.1"])).toEqual({
+      packageName: "tool",
+      version: "9.0.1",
+      spec: "tool==9.0.1",
+    });
+    // Unpinned / source-changing launches carry no attestable pin evidence.
+    expect(uvxPrimaryPin(["code-review-graph", "serve"])).toBeUndefined();
+    expect(uvxPrimaryPin(["--from", "tool==1.2.3", "sh"])).toBeUndefined();
+    expect(uvxPrimaryPin(["--with", "extra", "tool==1.2.3"])).toBeUndefined();
+    expect(uvxPrimaryPin([])).toBeUndefined();
+    // A pinned launch with pinned --with extras still attests by its PRIMARY spec.
+    expect(uvxPrimaryPin(["--with", "extra==2.0.0", "tool==1.2.3"])).toEqual({
+      packageName: "tool",
+      version: "1.2.3",
+      spec: "tool==1.2.3",
+    });
   });
 
   it("derives each generated package-resolver supply-chain label from its launch pin", async () => {
@@ -2008,6 +2038,62 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     expect(JSON.stringify(managed?.json)).toContain("code-review-graph@2.3.6");
   });
 
+  it("emits a ready-to-merge allowedServers snippet for generated servers the policy leaves undeclared", async () => {
+    const root = makeTmp();
+    writeMcpPolicy(root, { allowedServers: ["github"], allowManagedOnly: false });
+    const p = await command.plan(makeCtx({ root, options: { posture: "enterprise" } }));
+    const dotMcp = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    );
+    const generated = Object.keys(serversOf(dotMcp as WriteAction));
+    const snippet = p.actions.find(
+      (a): a is DigestAction => a.kind === "digest" && a.describe.includes("Undeclared generated"),
+    );
+    const data = snippet?.data as { undeclared: string[]; allowedServers: string[] } | undefined;
+
+    expect(snippet).toBeDefined();
+    expect(snippet?.text).toContain('"allowedServers"');
+    expect(snippet?.text).toContain("context7");
+    // Ready to merge: the snippet carries the UNION, so pasting it loses nothing.
+    expect(data?.allowedServers).toContain("github");
+    expect(data?.undeclared).toEqual(generated.filter((name) => name !== "github"));
+    // Declaring registry membership is not an egress approval — the snippet must say so.
+    expect(snippet?.text).toContain("aih mcp approve");
+  });
+
+  it("points a policy-less enterprise repo at aih policy init instead of hand-editing", async () => {
+    const p = await command.plan(makeCtx({ options: { posture: "enterprise" } }));
+    const snippet = p.actions.find(
+      (a): a is DigestAction => a.kind === "digest" && a.describe.includes("Undeclared generated"),
+    );
+
+    expect(snippet).toBeDefined();
+    expect(snippet?.text).toContain("aih policy init");
+  });
+
+  it("emits no declaration guidance at vibe posture or when every generated server is declared", async () => {
+    const vibe = await command.plan(makeCtx());
+    expect(
+      vibe.actions.some((a) => a.kind === "digest" && a.describe.includes("Undeclared generated")),
+    ).toBe(false);
+
+    const root = makeTmp();
+    const first = await command.plan(makeCtx({ root, options: { posture: "enterprise" } }));
+    const dotMcp = first.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    );
+    writeMcpPolicy(root, {
+      allowedServers: Object.keys(serversOf(dotMcp as WriteAction)),
+      allowManagedOnly: false,
+    });
+    const declared = await command.plan(makeCtx({ root, options: { posture: "enterprise" } }));
+    expect(
+      declared.actions.some(
+        (a) => a.kind === "digest" && a.describe.includes("Undeclared generated"),
+      ),
+    ).toBe(false);
+  });
+
   it("does not auto-pass hosted GitHub when org-policy declares no incumbent GitHub host", async () => {
     const root = makeTmp();
     writeFileSync(
@@ -2496,5 +2582,30 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         (a) => a.kind === "probe" && a.describe.includes("comply with enterprise policy"),
       ),
     ).toBe(false);
+  });
+});
+
+describe("mcp pin currency — catalog-pin visibility guard (issue #504 review)", () => {
+  it("every exact package pin declared in servers.ts is visible to the all-on baked-pin set", () => {
+    // The offline currency tier reads the catalog under an all-on stack. A
+    // future STACK-CONDITIONAL pin that stack fails to enable would silently
+    // vanish from the comparison (a missed-stale false negative), so this
+    // guard scans servers.ts for every exact-pin string literal (the same pin
+    // grammar the resolvers honor) and requires each one to surface in
+    // bakedCatalogPins(). Escape the stack → this test fails, not the signal.
+    const source = readFileSync(join(process.cwd(), "src", "mcp", "servers.ts"), "utf8");
+    const literals = [...source.matchAll(/"([^"\\]+)"/g)].map((match) => match[1] ?? "");
+    const declaredPins = [...new Set(literals.filter((value) => hasExactPackagePin(value)))];
+    // Anchor the extraction: the two wired tools must be found, otherwise the
+    // literal scan itself broke and the subset assertion below would be vacuous.
+    expect(declaredPins.some((spec) => spec.startsWith("codebase-memory-mcp@"))).toBe(true);
+    expect(declaredPins.some((spec) => spec.startsWith("code-review-graph@"))).toBe(true);
+
+    const baked = new Set([...bakedCatalogPins().values()].map((pin) => pin.spec));
+    const invisible = declaredPins.filter((spec) => !baked.has(spec));
+    expect(
+      invisible,
+      "catalog pin(s) invisible to the offline pin-currency tier — extend ALL_SERVERS_STACK in src/mcp/currency.ts to enable the server(s) that carry them",
+    ).toEqual([]);
   });
 });

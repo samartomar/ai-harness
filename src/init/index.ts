@@ -215,6 +215,9 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       "persist bootstrap intent (context-dir + CLI targets) so re-runs and doctor read it",
       {
         merge: true,
+        // `targets` records exactly the set this run resolved — replaced, never
+        // array-unioned with a previous run's set, so `--cli` can narrow (#506).
+        replaceJsonKeys: ["targets"],
         removeJsonTopLevelKeys:
           ctx.options.baseline === DEFAULT_BASELINE_SOURCE_ID ? ["baseline"] : undefined,
       },

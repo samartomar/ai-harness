@@ -143,6 +143,26 @@ const SECRET_KEY_RE =
 /** Minimum length for a secret-key literal to count — skips trivial flags like "1"/"on". */
 const MIN_SECRET_VALUE_LEN = 8;
 
+/** Path-designating key suffixes (`*_PATH`, `*_DIR`, `*_FILE`, ...) — end-anchored so `PATH_TOKEN` never matches. */
+const PATH_KEY_RE = /(?:^|[_.-])(?:path|paths|dir|dirs|file|files|home)$/i;
+
+/** Drive-letter, UNC, or absolute-POSIX form — the value designates a filesystem location. */
+function isPathShapedValue(value: string): boolean {
+  const t = value.trim();
+  return /^[A-Za-z]:[\\/]/.test(t) || t.startsWith("\\\\") || t.startsWith("/");
+}
+
+/**
+ * A path-designating key holding a path-shaped value is configuration, not a
+ * credential — "rotate the exposed value" is meaningless for the path to
+ * node.exe (#499). The carve-out needs BOTH conditions: a secret-shaped value
+ * under `API_KEY_PATH` still fails, and provider token shapes are matched
+ * before the key rule in both scan branches, so they stay flagged regardless.
+ */
+function isPathConfigEntry(key: string, value: string): boolean {
+  return PATH_KEY_RE.test(key) && isPathShapedValue(value);
+}
+
 /** An env reference (`${VAR}` / `$VAR` / `%VAR%`) or empty value is the sanctioned form — not a leak. */
 function isPlaceholderOrEmpty(value: string): boolean {
   const t = value.trim();
@@ -181,6 +201,7 @@ function rawSecretKeyHits(value: string, file: string): ConfigSecretHit[] {
     const key = match[1] ?? "";
     const literal = match[2] ?? "";
     if (isPlaceholderOrEmpty(literal) || /^https?:\/\//i.test(literal.trim())) continue;
+    if (isPathConfigEntry(key, literal)) continue;
     hits.push({ file, key, kind: "secret-looking key with a literal value" });
   }
   return hits;
@@ -210,7 +231,8 @@ function walkJson(node: unknown, key: string, file: string, hits: ConfigSecretHi
       SECRET_KEY_RE.test(key) &&
       !isPlaceholderOrEmpty(node) &&
       node.trim().length >= MIN_SECRET_VALUE_LEN &&
-      !/^https?:\/\//i.test(node.trim())
+      !/^https?:\/\//i.test(node.trim()) &&
+      !isPathConfigEntry(key, node)
     ) {
       hits.push({ file, key, kind: "secret-looking key with a literal value" });
     }

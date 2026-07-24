@@ -84,6 +84,14 @@ export function blockedLicensesFound(
 export const GITLEAKS_LINUX_X64_TAR_SHA256 =
   "fa0500f6b7e41d28791ebc680f5dd9899cd42b58629218a5f041efa899151a8e";
 
+/**
+ * SHA-pinned actions/checkout ref shared by every workflow aih generates (this
+ * one and the risk-gates consumer) — one authored source so the pin cannot drift
+ * between generated workflows.
+ */
+export const CHECKOUT_ACTION_PIN =
+  "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0";
+
 function matrixComment(): string[] {
   const rows = LICENSE_MATRIX.map(
     (t) => `#   ${t.category.padEnd(16)} -> ${t.disposition.padEnd(12)} (${t.spdx.join(", ")})`,
@@ -118,7 +126,7 @@ export function scaWorkflowYaml(): string {
     "  secret-scan:",
     "    runs-on: ubuntu-latest",
     "    steps:",
-    "      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0",
+    `      - uses: ${CHECKOUT_ACTION_PIN}`,
     "        with:",
     "          fetch-depth: 0",
     `      - name: Install gitleaks (pinned ${GITLEAKS_REV})`,
@@ -137,7 +145,7 @@ export function scaWorkflowYaml(): string {
     "    steps:",
     // Actions SHA-pinned (matching aih's own CI discipline). anchore/sbom-action
     // is the real SBOM action — the old anchore/syft-action ref did not resolve.
-    "      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0",
+    `      - uses: ${CHECKOUT_ACTION_PIN}`,
     "      - name: Scan dependency licenses (SBOM)",
     "        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0",
     "        with:",

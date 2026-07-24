@@ -150,6 +150,8 @@ export async function adoptApplyActions(
   }
 
   // Persist intent so the next run reads already-adopted (merge keeps adopt.acknowledged).
+  // `targets` is replaced with the converged set — never array-unioned with a stale
+  // marker — so a later scoped `bootstrap-ai --cli` narrow stays narrowed (#506).
   actions.push(
     writeJson(
       AIH_CONFIG_FILE,
@@ -157,6 +159,7 @@ export async function adoptApplyActions(
       "persist adopt intent (context-dir + targets)",
       {
         merge: true,
+        replaceJsonKeys: ["targets"],
         removeJsonTopLevelKeys:
           ctx.options.baseline === DEFAULT_BASELINE_SOURCE_ID ? ["baseline"] : undefined,
       },

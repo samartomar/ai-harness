@@ -272,12 +272,40 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Re-run `aih mcp --posture enterprise --apply` (or the org-policy projection) so `.claude/managed-settings.json` matches the committed `.mcp.json` fixed server set.",
   },
+  "mcp.allowlist-generation-delta": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "managed MCP allowlist matches an earlier aih generation",
+    action:
+      "Run `aih policy project --apply` to re-project the managed allowlist in `.claude/managed-settings.json` onto the current aih-generated launch shape; the on-disk entries match an earlier aih generation's output, not a local edit.",
+  },
   "mcp.version-drift": {
     audience: "developer",
     failSeverity: "degraded",
     title: "MCP package pin resolved to a different version",
     action:
       "Review the named MCP package pin and the configured package registry/cache. Update the generated pin only if the served version is intentionally approved; otherwise fix the registry/cache alias before relying on the MCP server.",
+  },
+  "mcp.pin-unattested": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "MCP package pin not attested against the resolved artifact",
+    action:
+      "Pin every uvx MCP launcher exactly (pkg==x.y.z), then run `aih doctor --attest-mcp-pins` to launch each pinned server once and compare its self-reported serverInfo.version to the pin.",
+  },
+  "mcp.pin-stale": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "MCP package pin lags the latest upstream release",
+    action:
+      "Treat the newer release as a bump candidate, never an automatic upgrade: vet the new version through the trust gate (`aih trust scan <owner>/<repo> --pin <sha>` with the required analyzers), bump the catalog pin in an aih release, then re-project each repo with `aih mcp --apply` and re-attest with `aih doctor --attest-mcp-pins`.",
+  },
+  "mcp.projection-stale": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: ".mcp.json pin differs from this aih build's catalog pin",
+    action:
+      "Run `aih mcp --apply` to re-project the repo's MCP config onto the current catalog pins — after an aih upgrade this re-projection is the second half of a pin refresh. If the local pin was changed deliberately, keep it and record why.",
   },
   "cli.not-detected": {
     audience: "developer",
@@ -291,6 +319,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "AI CLI config found but binary missing",
     action:
       "Install the CLI binary or target it explicitly only when the tool can run; config directories alone may be stale.",
+  },
+  "cli.binary-broken": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "AI CLI detected but not usable (its own exec fails)",
+    action:
+      "Reinstall or update the named CLI: its binary resolves on PATH but cannot execute even `--version`, so every invocation would fail.",
   },
   "cli.bootloader-missing": {
     audience: "developer",
@@ -444,6 +479,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "org policy projection drifted",
     action:
       "Re-run the org-policy projection (`aih init --posture enterprise --apply`, or the narrower command that owns the drifted file) so managed settings match `aih-org-policy.json`.",
+  },
+  "org-policy.generation-delta": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "org policy projection matches an earlier aih generation",
+    action:
+      "Run `aih policy project --apply` so `.claude/managed-settings.json` carries the current aih-generated projection; the on-disk content matches an earlier aih generation's output, not a local edit.",
   },
   "org-policy.invalid": {
     audience: "developer",
