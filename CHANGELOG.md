@@ -8,6 +8,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The risk-gates sidecar has a real consumer: at team/enterprise posture
+  `aih guardrails` now also generates `.github/workflows/risk-gates.yml` — a
+  pull-request workflow (the same "runs in YOUR CI, not from aih" boundary as the
+  SCA workflow) that reads `risk-gates.json`, diffs the PR's changed paths against
+  each gate's path patterns, and surfaces every touched gate as warning
+  annotations plus a job-summary table. Ask-not-deny end to end: a touched gate
+  never fails the build, matching the `risk-gates` warn grading at every posture;
+  the job name is the sidecar's declared `ci.checkName`, and the only hard failure
+  is a corrupted sidecar. The matcher policy is unit-tested through a TS mirror of
+  the workflow's bash matcher (`riskGatesTouched`), and gate patterns are matched
+  with shell globbing disabled so they can never expand against the checkout. At
+  vibe posture neither sidecar nor workflow is emitted. Refs #507
 - Canon MUST-to-enforcing-check map: `docs/CONTROL_MATRIX.md` gains a
   `## Canon MUST Map` section classifying every imperative line the generated
   Layer-2 canon (`src/bootstrap-ai/canon.ts`) emits — generation-invariant MUSTs

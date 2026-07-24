@@ -78,6 +78,7 @@ describe("guardrails command", () => {
     expect(writes).toContain(".pre-commit-config.yaml");
     expect(writes).toContain(".github/workflows/sca.yml");
     expect(writes).toContain(".ai-context/risk-gates.json");
+    expect(writes).toContain(".github/workflows/risk-gates.yml"); // the sidecar's consumer
     expect(writes).toContain(".claude/settings.json"); // command-policy projection survives
     expect(writes).toContain(".claude/managed-settings.json"); // managed commandPolicy survives
   });
@@ -88,7 +89,8 @@ describe("guardrails command", () => {
       .filter((a) => a.kind === "write")
       .map((a) => (a as WriteAction).path);
     // gitleaks + pre-commit + sca, then the command-policy projection into Claude's
-    // native permission file and the CI-checkable risk-gates JSON sidecar.
+    // native permission file, the CI-checkable risk-gates JSON sidecar, and the
+    // sidecar's generated CI consumer.
     expect(writePaths).toEqual([
       ".gitleaks.toml",
       ".pre-commit-config.yaml",
@@ -96,6 +98,7 @@ describe("guardrails command", () => {
       ".claude/settings.json",
       ".claude/managed-settings.json",
       ".ai-context/risk-gates.json",
+      ".github/workflows/risk-gates.yml",
     ]);
     // taxonomy (path) + license CI note + command-policy (path) + risk-gates CI note.
     expect(p.actions.filter((a) => a.kind === "doc")).toHaveLength(4);
@@ -120,6 +123,8 @@ describe("guardrails command", () => {
     expect(paths).not.toContain(".claude/settings.json");
     expect(paths).not.toContain(".claude/managed-settings.json");
     expect(paths).not.toContain(".ai-context/risk-gates.json");
+    // No sidecar -> no consumer: the workflow is posture-gated with it.
+    expect(paths).not.toContain(".github/workflows/risk-gates.yml");
     expect(p.actions.some((a) => a.kind === "doc" && a.text.includes("Risk Gates"))).toBe(true);
   });
 
@@ -173,6 +178,37 @@ describe("guardrails command", () => {
         a.text.includes("Risk Gates"),
     );
     expect(riskNote).toBeDefined();
+  });
+
+  it("wires the sidecar to a generated consumer: the risk-gates PR-diff workflow (team+)", async () => {
+    const p = await command.plan(ctx({ posture: "team" }));
+    const wf = writeAt(p.actions, ".github/workflows/risk-gates.yml");
+    expect(wf).toBeDefined();
+    expect(wf?.merge).toBeFalsy(); // aih-owned generated file, like sca.yml
+    const yaml = wf?.contents ?? "";
+    // The workflow consumes the sidecar guardrails just planned...
+    expect(yaml).toContain("SIDECAR: .ai-context/risk-gates.json");
+    // ...under the job name the sidecar itself declares as ci.checkName.
+    const sidecar = writeAt(p.actions, ".ai-context/risk-gates.json")?.json as {
+      ci: { checkName: string };
+    };
+    expect(yaml).toContain(`\n  ${sidecar.ci.checkName}:`);
+  });
+
+  it("emits the identical risk-gates workflow at enterprise (required-ness lives in the sidecar)", async () => {
+    const team = await command.plan(ctx({ posture: "team" }));
+    const enterprise = await command.plan(ctx({ posture: "enterprise" }));
+    const teamYaml = writeAt(team.actions, ".github/workflows/risk-gates.yml")?.contents;
+    const entYaml = writeAt(enterprise.actions, ".github/workflows/risk-gates.yml")?.contents;
+    expect(entYaml).toBeDefined();
+    expect(entYaml).toBe(teamYaml);
+  });
+
+  it("routes the risk-gates workflow at a custom contextDir sidecar", async () => {
+    const p = await command.plan(ctx({ contextDir: ".context" }));
+    const yaml = writeAt(p.actions, ".github/workflows/risk-gates.yml")?.contents ?? "";
+    expect(yaml).toContain("SIDECAR: .context/risk-gates.json");
+    expect(yaml).not.toContain(".ai-context/risk-gates.json");
   });
 
   it("TWO WRITERS compose: secrets Read(...) + guardrails Bash(...) both survive the merge", async () => {
@@ -434,6 +470,9 @@ describe("guardrails command", () => {
     expect(grab(a.actions, ".gitleaks.toml")).toBe(grab(b.actions, ".gitleaks.toml"));
     expect(grab(a.actions, ".github/workflows/sca.yml")).toBe(
       grab(b.actions, ".github/workflows/sca.yml"),
+    );
+    expect(grab(a.actions, ".github/workflows/risk-gates.yml")).toBe(
+      grab(b.actions, ".github/workflows/risk-gates.yml"),
     );
   });
 

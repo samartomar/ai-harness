@@ -568,10 +568,14 @@ emits one result per finding for GitHub code-scanning. <!-- aih:claim CM-16 -->
 ## aih guardrails
 
 Generate `.gitleaks.toml`, `.pre-commit-config.yaml`, and a GitHub Actions workflow for CI secret
-scanning plus strong/network-copyleft license blocking. Generation is not activation: local
-pre-commit enforcement requires `gitleaks`, `pre-commit`, and `git config core.hooksPath .githooks`;
-CI enforcement requires committing the generated workflow and making the relevant jobs required
-checks on protected branches. <!-- aih:claim CM-17 -->
+scanning plus strong/network-copyleft license blocking. At team/enterprise posture it also emits
+the machine-readable risk-gate sidecar (`<context-dir>/risk-gates.json`) together with its
+consumer, `.github/workflows/risk-gates.yml`: a pull-request job that diffs the PR's changed paths
+against the declared gate patterns and surfaces every touched gate as warning annotations plus a
+job summary — ask-not-deny, so it never fails the build on a touched gate. Generation is not
+activation: local pre-commit enforcement requires `gitleaks`, `pre-commit`, and
+`git config core.hooksPath .githooks`; CI enforcement requires committing the generated workflows
+and making the relevant jobs required checks on protected branches. <!-- aih:claim CM-17 -->
 
 **Analytics & operations**
 
