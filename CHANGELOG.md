@@ -8,6 +8,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Org-policy surface UX for the enterprise first-setup loop. `aih policy init [root]`
+  seeds a starter `aih-org-policy.json` from observed fleet state: catalog-bound MCP
+  surfaces (the exact lens enterprise baseline attestation grades) become
+  `mcp.allowedServers`, so a fresh enterprise setup passes attestation for servers aih
+  itself generated with no hand-editing. Fail-closed boundaries: an existing policy or
+  an active `AIH_ORG_POLICY` override refuses; surfaces attestation force-undeclares
+  are listed for review, never silently declared; marketplace surfaces are never
+  auto-trusted into `trust.approvedSources`. At enterprise posture `aih mcp` now names
+  its own declaration gap: generated servers the active policy leaves undeclared
+  produce a ready-to-merge `allowedServers` snippet digest (or a pointer at
+  `aih policy init` when no policy exists) — guidance only, no gate or verdict
+  changes. Every `aih policy` subcommand also accepts the conventional optional
+  `[root]` positional, so `aih policy validate <root>` works like the other
+  repo-scoped commands. (#503)
+
 - Doctor distinguishes generation deltas from user drift on aih-generated managed
   artifacts. When `.claude/managed-settings.json` or the managed MCP allowlist
   matches an EARLIER aih generation's own output — a pre-hardening bare `uvx <pkg>`

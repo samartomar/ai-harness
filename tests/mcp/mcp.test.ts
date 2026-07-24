@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { runCapability } from "../../src/commands/run.js";
 import { upsertTextBlock } from "../../src/internals/envfile.js";
 import { executePlan, resolveContents } from "../../src/internals/execute.js";
-import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
+import type { DigestAction, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { jsonFile } from "../../src/internals/render.js";
 import { mcpPackagePinDriftProbe } from "../../src/mcp/hygiene.js";
@@ -2035,6 +2035,62 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     expect(managed?.merge).toBe(true);
     expect(managed?.json).toMatchObject({ allowManagedMcpServersOnly: true });
     expect(JSON.stringify(managed?.json)).toContain("code-review-graph@2.3.6");
+  });
+
+  it("emits a ready-to-merge allowedServers snippet for generated servers the policy leaves undeclared", async () => {
+    const root = makeTmp();
+    writeMcpPolicy(root, { allowedServers: ["github"], allowManagedOnly: false });
+    const p = await command.plan(makeCtx({ root, options: { posture: "enterprise" } }));
+    const dotMcp = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    );
+    const generated = Object.keys(serversOf(dotMcp as WriteAction));
+    const snippet = p.actions.find(
+      (a): a is DigestAction => a.kind === "digest" && a.describe.includes("Undeclared generated"),
+    );
+    const data = snippet?.data as { undeclared: string[]; allowedServers: string[] } | undefined;
+
+    expect(snippet).toBeDefined();
+    expect(snippet?.text).toContain('"allowedServers"');
+    expect(snippet?.text).toContain("context7");
+    // Ready to merge: the snippet carries the UNION, so pasting it loses nothing.
+    expect(data?.allowedServers).toContain("github");
+    expect(data?.undeclared).toEqual(generated.filter((name) => name !== "github"));
+    // Declaring registry membership is not an egress approval — the snippet must say so.
+    expect(snippet?.text).toContain("aih mcp approve");
+  });
+
+  it("points a policy-less enterprise repo at aih policy init instead of hand-editing", async () => {
+    const p = await command.plan(makeCtx({ options: { posture: "enterprise" } }));
+    const snippet = p.actions.find(
+      (a): a is DigestAction => a.kind === "digest" && a.describe.includes("Undeclared generated"),
+    );
+
+    expect(snippet).toBeDefined();
+    expect(snippet?.text).toContain("aih policy init");
+  });
+
+  it("emits no declaration guidance at vibe posture or when every generated server is declared", async () => {
+    const vibe = await command.plan(makeCtx());
+    expect(
+      vibe.actions.some((a) => a.kind === "digest" && a.describe.includes("Undeclared generated")),
+    ).toBe(false);
+
+    const root = makeTmp();
+    const first = await command.plan(makeCtx({ root, options: { posture: "enterprise" } }));
+    const dotMcp = first.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    );
+    writeMcpPolicy(root, {
+      allowedServers: Object.keys(serversOf(dotMcp as WriteAction)),
+      allowManagedOnly: false,
+    });
+    const declared = await command.plan(makeCtx({ root, options: { posture: "enterprise" } }));
+    expect(
+      declared.actions.some(
+        (a) => a.kind === "digest" && a.describe.includes("Undeclared generated"),
+      ),
+    ).toBe(false);
   });
 
   it("does not auto-pass hosted GitHub when org-policy declares no incumbent GitHub host", async () => {
