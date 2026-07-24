@@ -34,8 +34,9 @@ Thumbs.db
 # `aih pack install` and must not be double-committed (single-source-of-truth).
 ai-coding/skills/
 
-# aih artifacts — never tracked (this checkout is not aih-governed)
+# aih artifacts — never tracked (this checkout is not aih-governed); root-anchored
+# so committed test fixtures under tests/fixtures/**/.aih stay addable
 *.aih.bak
 *.aih.tmp
 .aih-truth.json
-.aih/
+/.aih/
