@@ -109,6 +109,51 @@ describe("executePlan", () => {
     expect(existsSync(join(dir, "a.txt"))).toBe(false);
   });
 
+  it("redacts opt-in sensitive paths and argv at PlanResult collection", async () => {
+    const bundlePath = join(dir, "home", "corporate-root-ca.pem");
+    const profilePath = join(dir, "home", ".profile");
+    mkdirSync(dirname(bundlePath), { recursive: true });
+    writeFileSync(bundlePath, "old bundle\n", "utf8");
+    writeFileSync(profilePath, "old profile\n", "utf8");
+
+    const sensitiveWrite = Object.assign(
+      writeText(bundlePath, "new bundle", "write sensitive bundle", { external: true }),
+      { sensitive: { path: true } },
+    );
+    const sensitiveProfile = Object.assign(
+      envBlock(
+        profilePath,
+        "heal-node-trust",
+        "posix",
+        [{ key: "NODE_EXTRA_CA_CERTS", value: bundlePath }],
+        "write sensitive profile",
+      ),
+      { sensitive: { path: true } },
+    );
+    const sensitiveExec = Object.assign(
+      exec("lock sensitive bundle", ["chmod", "600", bundlePath]),
+      { sensitive: { argv: [2] } },
+    );
+    const p = plan("sensitive", sensitiveWrite, sensitiveProfile, sensitiveExec);
+
+    const dry = await executePlan(p, ctx());
+    expect(JSON.stringify(dry)).not.toContain(dir);
+    expect(summarizeResult(dry)).not.toContain(dir);
+
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return { code: 0 };
+    });
+    const applied = await executePlan(p, ctx({ apply: true, run }));
+    expect(calls).toContainEqual(["chmod", "600", bundlePath]);
+    expect(JSON.stringify(applied)).not.toContain(dir);
+    expect(summarizeResult(applied)).not.toContain(dir);
+    expect(applied.writes.every((write) => !write.path.includes(dir))).toBe(true);
+    expect(applied.execs[0]?.argv).not.toContain(bundlePath);
+    expect(applied.backups.every((backup) => !backup.includes(dir))).toBe(true);
+  });
+
   it("apply writes files with a trailing newline", async () => {
     await executePlan(plan("t", writeText("a.txt", "hi", "write a")), ctx({ apply: true }));
     expect(readFileSync(join(dir, "a.txt"), "utf8")).toBe("hi\n");
@@ -988,6 +1033,81 @@ describe("executePlan", () => {
       expect.objectContaining({ describe: "independent", ran: true, ok: true }),
       expect.objectContaining({ describe: "dependent", ran: false }),
     ]);
+  });
+
+  it("does not commit dependent files when a prior exec fails", async () => {
+    const bundle = join(dir, "bundle.pem");
+    const dependent = join(dir, "dependent.plist");
+    const profile = join(dir, "profile");
+    const run = fakeRunner((argv) => ({ code: argv[1] === "fail" ? 1 : 0 }));
+
+    const result = await executePlan(
+      plan(
+        "t",
+        writeText(bundle, "certificate", "write bundle", { external: true }),
+        exec("lock bundle", ["node", "fail"]),
+        writeText(dependent, "trust reference", "persist trust file", {
+          external: true,
+          requiresPriorExecSuccess: true,
+        }),
+        envBlock(
+          profile,
+          "trust",
+          "posix",
+          [{ key: "NODE_EXTRA_CA_CERTS", value: bundle }],
+          "persist trust profile",
+          { requiresPriorExecSuccess: true },
+        ),
+        exec("persist runtime trust", ["node", "persist"], {
+          requiresPriorExecSuccess: true,
+        }),
+      ),
+      ctx({ apply: true, run }),
+    );
+
+    expect(existsSync(bundle)).toBe(true);
+    expect(existsSync(dependent)).toBe(false);
+    expect(existsSync(profile)).toBe(false);
+    expect(result.execs.at(-1)).toMatchObject({ describe: "persist runtime trust", ran: false });
+  });
+
+  it("commits dependent files only after dependent execs succeed", async () => {
+    const dependent = join(dir, "dependent.plist");
+    const profile = join(dir, "profile");
+    let persistenceSawFiles = false;
+    const run = fakeRunner((argv) => {
+      if (argv[1] === "persist") {
+        persistenceSawFiles = existsSync(dependent) && existsSync(profile);
+      }
+      return { code: 0 };
+    });
+
+    await executePlan(
+      plan(
+        "t",
+        exec("lock bundle", ["node", "lock"]),
+        writeText(dependent, "trust reference", "persist trust file", {
+          external: true,
+          requiresPriorExecSuccess: true,
+        }),
+        envBlock(
+          profile,
+          "trust",
+          "posix",
+          [{ key: "NODE_EXTRA_CA_CERTS", value: join(dir, "bundle.pem") }],
+          "persist trust profile",
+          { requiresPriorExecSuccess: true },
+        ),
+        exec("persist runtime trust", ["node", "persist"], {
+          requiresPriorExecSuccess: true,
+        }),
+      ),
+      ctx({ apply: true, run }),
+    );
+
+    expect(persistenceSawFiles).toBe(false);
+    expect(existsSync(dependent)).toBe(true);
+    expect(existsSync(profile)).toBe(true);
   });
 
   it("formats exec argv with quoting for runnable summaries", async () => {

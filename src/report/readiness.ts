@@ -248,7 +248,7 @@ async function buildChecks(ctx: PlanContext): Promise<ReadinessCheck[]> {
 
   // ---- machine: host runtime + tooling -----------------------------------
   const tlsRegistry = await tlsCheck(ctx, "tls: registry", REGISTRY_URL);
-  const shared: HealShared = { tlsRegistry, tlsPypi: tlsRegistry };
+  const shared: HealShared = { tlsRegistry, tlsPypi: tlsRegistry, runtimeTls: [] };
 
   const node = await nodeVerdict(ctx);
   const nodeOk = node === "pass";

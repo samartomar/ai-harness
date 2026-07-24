@@ -176,7 +176,7 @@ describe("telemetry plan — OTel env block", () => {
     expect(eb?.path.replace(/\\/g, "/")).toMatch(/_profile\.ps1$/);
     expect(eb?.shell).toBe("powershell");
     const body = await renderProfile(makeCtx({ platform: "windows" }));
-    expect(body).toContain('$env:OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"');
+    expect(body).toContain("$env:OTEL_EXPORTER_OTLP_ENDPOINT = 'http://127.0.0.1:4317'");
   });
 
   it("is idempotent — re-applying over an already-written profile yields the same file", async () => {

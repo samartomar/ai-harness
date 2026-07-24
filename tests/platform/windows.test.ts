@@ -1,11 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { fakeRunner, type RunResult } from "../../src/internals/proc.js";
+import {
+  NODE_EXTRA_CA_CERTS,
+  NODE_USE_SYSTEM_CA,
+  nodeTrustEnvVars,
+  nodeTrustPersistenceActions,
+} from "../../src/certs/node-env.js";
+import { executePlan } from "../../src/internals/execute.js";
+import { type ExecAction, type PlanContext, plan } from "../../src/internals/plan.js";
+import { fakeRunner, type RunOptions, type RunResult } from "../../src/internals/proc.js";
 import { WindowsAdapter } from "../../src/platform/windows.js";
 
-type Handler = (argv: string[]) => Partial<RunResult> | undefined;
+type Handler = (argv: string[], opts?: RunOptions) => Partial<RunResult> | undefined;
 
 function adapter(handler: Handler, env: NodeJS.ProcessEnv = {}): WindowsAdapter {
   return new WindowsAdapter(fakeRunner(handler), env);
+}
+
+function persistenceCtx(
+  env: NodeJS.ProcessEnv = { USERPROFILE: "C:\\Users\\example" },
+): PlanContext {
+  const run = fakeRunner(() => undefined);
+  return {
+    root: "C:\\repo",
+    contextDir: "ai-coding",
+    apply: false,
+    verify: true,
+    json: false,
+    run,
+    host: new WindowsAdapter(run, env),
+    env,
+    options: {},
+  };
 }
 
 describe("WindowsAdapter", () => {
@@ -33,15 +58,207 @@ describe("WindowsAdapter", () => {
     expect(await a.trustStoreCerts("Zscaler")).toHaveLength(0);
   });
 
+  it("enumerates every trusted root without a subject filter and deduplicates PEM", async () => {
+    let script = "";
+    let maxBufferBytes: number | undefined;
+    const raw = "Q".repeat(80);
+    const a = adapter((argv, opts) => {
+      if (argv[0] !== "pwsh") return undefined;
+      script = argv.at(-1) ?? "";
+      maxBufferBytes = opts?.maxBufferBytes;
+      return { stdout: `${raw}\tCN=Example Root A\n${raw}\tCN=Duplicate Root A\n` };
+    });
+
+    const certs = await a.trustStoreRoots();
+
+    expect(certs).toHaveLength(1);
+    expect(script).toContain("Cert:\\CurrentUser\\Root, Cert:\\LocalMachine\\Root");
+    expect(script).not.toContain("Where-Object");
+    expect(maxBufferBytes).toBe(2 * 1024 * 1024);
+  });
+
+  it("returns no roots from truncated enumeration output", async () => {
+    const raw = `${"Q".repeat(80)}\tCN=Partial Root\n`;
+    const a = adapter(() => ({ stdout: raw, truncated: true }));
+
+    expect(await a.trustStoreRoots()).toEqual([]);
+  });
+
+  it("returns no roots from non-zero enumeration output", async () => {
+    const raw = `${"Q".repeat(80)}\tCN=Partial Root\n`;
+    const a = adapter(() => ({ stdout: raw, code: 1 }));
+
+    expect(await a.trustStoreRoots()).toEqual([]);
+  });
+
+  it("falls back for root inventory when pwsh cannot spawn", async () => {
+    const calls: string[] = [];
+    const raw = `${"Q".repeat(80)}\tCN=Fallback Root\n`;
+    const a = adapter((argv, opts) => {
+      calls.push(argv[0] ?? "");
+      expect(opts?.maxBufferBytes).toBe(2 * 1024 * 1024);
+      if (argv[0] === "pwsh") return { spawnError: true, code: 127 };
+      if (argv[0] === "powershell.exe") return { stdout: raw };
+      return undefined;
+    });
+
+    expect(await a.trustStoreRoots()).toHaveLength(1);
+    expect(calls).toEqual(["pwsh", "powershell.exe"]);
+  });
+
+  it("returns no roots when neither PowerShell can spawn", async () => {
+    const a = adapter(() => ({ spawnError: true, code: 127 }));
+
+    expect(await a.trustStoreRoots()).toEqual([]);
+  });
+
+  it("rejects oversized root output even if the runner omits its truncation flag", async () => {
+    const raw = `${"Q".repeat(80)}\t${"S".repeat(2 * 1024 * 1024)}\n`;
+    const a = adapter(() => ({ stdout: raw }));
+
+    expect(await a.trustStoreRoots()).toEqual([]);
+  });
+
+  it("rejects more than 1,024 parsed roots", async () => {
+    const stdout = Array.from({ length: 1025 }, (_, index) => {
+      const raw = Buffer.from(`root-${index}`.padEnd(32, "x")).toString("base64");
+      return `${raw}\tCN=Root ${index}`;
+    }).join("\n");
+    const a = adapter(() => ({ stdout }));
+
+    expect(await a.trustStoreRoots()).toEqual([]);
+  });
+
   it("persists env via setx DIRECTLY — no cmd wrapper that would re-parse the value", () => {
     const a = adapter(() => undefined);
-    // A CA path under a legal `R&D` folder: `&`/`%`/`^` are valid path characters. Routing
+    // A CA path under a legal `R&D` folder: `&`/`^` are valid path characters. Routing
     // this through `cmd /c setx` would let cmd split on `&` — corrupting the persisted path
     // to `C:\R` and executing `D\certs\ca.pem` as a command. Direct setx.exe spawn (execFile,
     // no shell) keeps the whole path as one literal argv element.
-    const argv = a.persistentEnvArgv("NODE_EXTRA_CA_CERTS", "C:\\R&D\\certs\\ca%1.pem");
-    expect(argv).toEqual(["setx", "NODE_EXTRA_CA_CERTS", "C:\\R&D\\certs\\ca%1.pem"]);
+    const argv = a.persistentEnvArgv("NODE_EXTRA_CA_CERTS", "C:\\R&D\\certs\\ca^1.pem");
+    expect(argv).toEqual(["setx", "NODE_EXTRA_CA_CERTS", "C:\\R&D\\certs\\ca^1.pem"]);
     expect(argv[0]).not.toBe("cmd");
+  });
+
+  it("plans literal direct setx actions for only the selected Node trust values", () => {
+    const ctx = persistenceCtx();
+    const actions = nodeTrustPersistenceActions(
+      ctx,
+      nodeTrustEnvVars("C:\\R&D\\certs\\ca^1-bundle.pem"),
+    );
+    const setx = actions.filter((action) => action.kind === "exec");
+
+    expect(setx.map((action) => action.argv)).toEqual([
+      ["setx", "NODE_USE_SYSTEM_CA", "1"],
+      ["setx", "NODE_EXTRA_CA_CERTS", "C:\\R&D\\certs\\ca^1-bundle.pem"],
+    ]);
+    expect(setx.every((action) => action.argv[0] !== "cmd")).toBe(true);
+  });
+
+  it("sets selected Windows trust before clearing the unselected value", () => {
+    const systemActions = nodeTrustPersistenceActions(
+      persistenceCtx({
+        USERPROFILE: "C:\\Users\\example",
+        NODE_EXTRA_CA_CERTS: "C:\\stale\\exact.pem",
+        Node_Extra_Ca_Certs: "C:\\stale\\mixed.pem",
+      }),
+      nodeTrustEnvVars(),
+    ).filter((action) => action.kind === "exec");
+    expect(systemActions.map((action) => action.argv)).toEqual([
+      ["setx", "NODE_USE_SYSTEM_CA", "1"],
+      ["setx", "NODE_EXTRA_CA_CERTS", ""],
+    ]);
+    expect(systemActions.every((action) => action.requiresPriorExecSuccess)).toBe(true);
+
+    const extraActions = nodeTrustPersistenceActions(
+      persistenceCtx({ USERPROFILE: "C:\\Users\\example", node_use_system_ca: "1" }),
+      [{ key: NODE_EXTRA_CA_CERTS, value: "C:\\certs\\selected.pem" }],
+    ).filter((action) => action.kind === "exec");
+    expect(extraActions.map((action) => action.argv)).toEqual([
+      ["setx", "NODE_EXTRA_CA_CERTS", "C:\\certs\\selected.pem"],
+      ["setx", "NODE_USE_SYSTEM_CA", ""],
+    ]);
+  });
+
+  it("preserves prior Windows trust when enabling the selected value fails", async () => {
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return { code: argv[1] === NODE_USE_SYSTEM_CA ? 5 : 0 };
+    });
+    const planned = nodeTrustPersistenceActions(persistenceCtx(), nodeTrustEnvVars());
+
+    await executePlan(plan("windows trust persistence", ...planned), {
+      ...persistenceCtx(),
+      apply: true,
+      run,
+    });
+
+    expect(calls).toEqual([["setx", NODE_USE_SYSTEM_CA, "1"]]);
+  });
+
+  it("enables selected Windows trust before a failed stale-value clear", async () => {
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return { code: argv[1] === NODE_EXTRA_CA_CERTS ? 5 : 0 };
+    });
+    const planned = nodeTrustPersistenceActions(persistenceCtx(), nodeTrustEnvVars());
+
+    await executePlan(plan("windows trust persistence", ...planned), {
+      ...persistenceCtx(),
+      apply: true,
+      run,
+    });
+
+    expect(calls).toEqual([
+      ["setx", NODE_USE_SYSTEM_CA, "1"],
+      ["setx", NODE_EXTRA_CA_CERTS, ""],
+    ]);
+  });
+
+  it("fails closed before setx when a selected value contains percent expansion syntax", () => {
+    expect(() =>
+      nodeTrustPersistenceActions(persistenceCtx(), [
+        { key: NODE_EXTRA_CA_CERTS, value: "C:\\certs\\%USERNAME%\\ca.pem" },
+      ]),
+    ).toThrow(/must not contain %/);
+  });
+
+  it("rejects a setx value longer than 1,024 characters during planning", () => {
+    const value = `C:\\${"x".repeat(1022)}`;
+    expect(value).toHaveLength(1025);
+
+    expect(() => nodeTrustPersistenceActions(persistenceCtx(), nodeTrustEnvVars(value))).toThrow(
+      /1,024/,
+    );
+  });
+
+  it("allows a setx value exactly 1,024 characters long", () => {
+    const value = `C:\\${"x".repeat(1021)}`;
+    expect(value).toHaveLength(1024);
+
+    const action = nodeTrustPersistenceActions(persistenceCtx(), [
+      { key: NODE_EXTRA_CA_CERTS, value },
+    ]).find(
+      (candidate): candidate is ExecAction =>
+        candidate.kind === "exec" && candidate.argv[1] === NODE_EXTRA_CA_CERTS,
+    );
+
+    expect(action?.argv).toEqual(["setx", NODE_EXTRA_CA_CERTS, value]);
+  });
+
+  it("attaches a visible failure check to each setx persistence action", () => {
+    const action = nodeTrustPersistenceActions(persistenceCtx(), [
+      { key: NODE_EXTRA_CA_CERTS, value: "C:\\certs\\ca.pem" },
+    ]).find((candidate) => candidate.kind === "exec");
+
+    expect(action?.failureCheck).toBeTypeOf("function");
+    const check =
+      typeof action?.failureCheck === "function"
+        ? action.failureCheck({ code: 5, stdout: "", stderr: "denied" })
+        : undefined;
+    expect(check).toMatchObject({ verdict: "fail", code: "cert.ca-missing" });
   });
 
   it("parses physical cores and total RAM", async () => {
