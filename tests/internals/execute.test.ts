@@ -921,6 +921,66 @@ describe("executePlan", () => {
     expect(calls).toEqual([["echo", "hi"]]);
   });
 
+  it("surfaces the child diagnostic when an exec action fails", async () => {
+    const run = fakeRunner(() => ({
+      code: 1,
+      stderr: "npm ERR! 404 Not Found - GET https://registry.npmjs.org/ecc-universal\n",
+    }));
+
+    const result = await executePlan(
+      plan("t", exec("install ECC", ["npx", "-y", "ecc-universal"])),
+      ctx({ apply: true, run }),
+    );
+
+    expect(result.execs[0]?.stderr).toContain("npm ERR! 404 Not Found");
+    expect(summarizeResult(result)).toContain("npm ERR! 404 Not Found");
+  });
+
+  it("does not attach child output to a successful exec action", async () => {
+    const run = fakeRunner(() => ({ code: 0, stderr: "warning: noisy but harmless" }));
+
+    const result = await executePlan(
+      plan("t", exec("noop", ["echo", "hi"])),
+      ctx({ apply: true, run }),
+    );
+
+    expect(result.execs[0]).toMatchObject({ ok: true });
+    expect(result.execs[0]?.stderr).toBeUndefined();
+    expect(summarizeResult(result)).not.toContain("noisy but harmless");
+  });
+
+  it("redacts secrets out of surfaced child output", async () => {
+    const run = fakeRunner(() => ({
+      code: 1,
+      stderr: "npm ERR! auth failed\nNPM_TOKEN=abcd1234efgh5678\n",
+    }));
+
+    const result = await executePlan(
+      plan("t", exec("install ECC", ["npx", "-y", "ecc-universal"])),
+      ctx({ apply: true, run }),
+    );
+
+    expect(result.execs[0]?.stderr).toContain("[REDACTED]");
+    expect(result.execs[0]?.stderr).not.toContain("abcd1234efgh5678");
+    expect(summarizeResult(result)).not.toContain("abcd1234efgh5678");
+  });
+
+  it("bounds surfaced child output to the trailing lines", async () => {
+    const lines = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`);
+    const run = fakeRunner(() => ({ code: 1, stderr: `${lines.join("\n")}\n` }));
+
+    const result = await executePlan(
+      plan("t", exec("chatty", ["node", "chatty.mjs"])),
+      ctx({ apply: true, run }),
+    );
+
+    const surfaced = result.execs[0]?.stderr ?? "";
+    expect(surfaced).toContain("line 60");
+    expect(surfaced).toContain("line 41");
+    expect(surfaced).not.toContain("line 40");
+    expect(surfaced).toContain("40 earlier line(s) omitted");
+  });
+
   it("passes exec cwd, environment, and timeout through the runner seam", async () => {
     const calls: Array<{
       argv: string[];
