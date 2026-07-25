@@ -126,6 +126,44 @@ function put(path: string, contents: string): void {
 }
 
 describe("verifiedEccInstallPlan", () => {
+  it("names the full-to-scoped downgrade when acceptance authorizes only a subset", () => {
+    const requested: EccComponentSelection = { ...selection(), scope: "full" };
+    const everything = eccEvidenceComponentIdsForSelection("claude", requested);
+    const withheld = "module:rules-core";
+    expect(everything).toContain(withheld);
+
+    const built = verifiedEccInstallPlan(
+      ctx(),
+      join(root, "quarantine", "tree"),
+      { clis: ["claude"], profile: "full", packs: [], selection: requested },
+      everything.filter((id) => id !== withheld).map(authorization),
+    );
+
+    const text = built.actions
+      .filter((action) => action.kind === "digest")
+      .map((action) => (action as { text: string }).text)
+      .join("\n");
+    expect(text).toMatch(/requested full profile reduced to scoped/);
+    expect(text).toContain(withheld);
+  });
+
+  it("does not report a downgrade when the full profile is fully authorized", () => {
+    const requested: EccComponentSelection = { ...selection(), scope: "full" };
+
+    const built = verifiedEccInstallPlan(
+      ctx(),
+      join(root, "quarantine", "tree"),
+      { clis: ["claude"], profile: "full", packs: [], selection: requested },
+      authorizationsForSelection("claude", requested),
+    );
+
+    const text = built.actions
+      .filter((action) => action.kind === "digest")
+      .map((action) => (action as { text: string }).text)
+      .join("\n");
+    expect(text).not.toMatch(/reduced to scoped/);
+  });
+
   it("refuses before runtime preparation when ecc-installer is not authorized", () => {
     expect(() =>
       verifiedEccInstallPlan(
