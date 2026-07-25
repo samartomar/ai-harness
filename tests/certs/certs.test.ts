@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -53,6 +53,7 @@ interface CtxOptions {
   options?: Record<string, unknown>;
   handler?: Handler;
   root: string;
+  apply?: boolean;
   verify?: boolean;
 }
 
@@ -62,7 +63,7 @@ function makeCtx(o: CtxOptions): PlanContext {
   return {
     root: o.root,
     contextDir: ".ai-context",
-    apply: false,
+    apply: o.apply ?? false,
     verify: o.verify ?? false,
     json: false,
     run,
@@ -190,11 +191,12 @@ describe("certs plan — happy path", () => {
     const root = freshTmp();
     const ctx = makeCtx({ root, env: { HOME: join(root, "home") } });
 
-    // The trust env is an envblock (scope "certs") carrying all six vars.
+    // The trust env is an envblock (scope "certs") carrying every runtime setting.
     const eb = findEnvBlock((await command.plan(ctx)).actions, "certs");
     expect(eb).toBeDefined();
     const keys = eb?.vars.map((v) => v.key) ?? [];
     for (const key of [
+      "NODE_USE_SYSTEM_CA",
       "NODE_EXTRA_CA_CERTS",
       "PIP_CERT",
       "SSL_CERT_FILE",
@@ -208,8 +210,22 @@ describe("certs plan — happy path", () => {
     // The executor renders it into the profile with posix `export` + markers.
     const body = await renderProfile(ctx);
     expect(body).toContain("# >>> aih managed (certs) >>>");
+    expect(body).toContain("export NODE_USE_SYSTEM_CA=1");
     expect(body).toContain("export NODE_EXTRA_CA_CERTS=");
     expect(body).toMatch(/export SSL_CERT_DIR=.*enterprise-ca/);
+  });
+
+  it("explicit certs propagates system CA plus the selected extra bundle", async () => {
+    const block = findEnvBlock(
+      (await command.plan(makeCtx({ root: freshTmp() }))).actions,
+      "certs",
+    );
+    expect(block?.vars).toEqual(
+      expect.arrayContaining([
+        { key: "NODE_USE_SYSTEM_CA", value: "1" },
+        expect.objectContaining({ key: "NODE_EXTRA_CA_CERTS" }),
+      ]),
+    );
   });
 
   it("re-running the profile upsert is idempotent (twice == once)", async () => {
@@ -377,7 +393,90 @@ describe("certs plan — Homebrew stays a doc; conda is now an applied .condarc 
   });
 });
 
+describe("certs plan — lockdown failure", () => {
+  it("does not persist trust references when PEM lockdown fails", async () => {
+    const root = freshTmp();
+    const home = join(root, "home");
+    const calls: string[][] = [];
+    const ctx = makeCtx({
+      root,
+      platform: "darwin",
+      env: { HOME: home },
+      apply: true,
+      verify: true,
+      handler: (argv) => {
+        calls.push(argv);
+        return argv[0] === "chmod"
+          ? { code: 1, stdout: "", stderr: "permission denied" }
+          : undefined;
+      },
+    });
+
+    const p = await command.plan(ctx);
+    const pem = findWrite(p.actions, "/corporate-root-ca.pem");
+    const profile = findEnvBlock(p.actions, "certs");
+    const plists = p.actions.filter(
+      (action): action is Extract<Action, { kind: "write" }> =>
+        action.kind === "write" && action.path.endsWith(".plist"),
+    );
+    const managerWrites = p.actions.filter(
+      (action): action is Extract<Action, { kind: "write" }> =>
+        action.kind === "write" && action !== pem && !action.path.endsWith(".plist"),
+    );
+    expect(pem).toBeDefined();
+    expect(profile).toBeDefined();
+    expect(plists).toHaveLength(2);
+    expect(managerWrites).toHaveLength(7);
+
+    const result = await executePlan(p, ctx);
+
+    expect(existsSync(pem?.path ?? "")).toBe(true);
+    expect(existsSync(profile?.path ?? "")).toBe(false);
+    expect(plists.every((action) => !existsSync(action.path))).toBe(true);
+    expect(managerWrites.every((action) => !existsSync(action.path))).toBe(true);
+    expect(calls.some((argv) => argv[0] === "keytool")).toBe(false);
+    expect(calls.some((argv) => argv[0] === "/bin/launchctl")).toBe(false);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "cert: lock down PEM bundle", verdict: "fail" }),
+      ]),
+    );
+  });
+});
+
 describe("certs plan — windows trust propagation", () => {
+  it("preserves Windows path style for certificate output and manager configs", async () => {
+    const root = freshTmp();
+    const home = "C:\\Users\\example";
+    const p = await command.plan(
+      makeCtx({
+        root,
+        platform: "windows",
+        env: {
+          USERPROFILE: home,
+          APPDATA: `${home}\\AppData\\Roaming`,
+          USERNAME: "example",
+        },
+      }),
+    );
+
+    const writePaths = p.actions
+      .filter((action) => action.kind === "write")
+      .map((action) => action.path);
+    expect(writePaths).toEqual(
+      expect.arrayContaining([
+        `${home}\\.config\\enterprise-ca\\corporate-root-ca.pem`,
+        `${home}\\.npmrc`,
+        `${home}\\AppData\\Roaming\\pip\\pip.ini`,
+        `${home}\\.cargo\\config.toml`,
+        `${home}\\.gitconfig`,
+        `${home}\\.gradle\\gradle.properties`,
+        `${home}\\mavenrc_pre.cmd`,
+        `${home}\\.condarc`,
+      ]),
+    );
+  });
+
   it("locks the PEM down via icacls (blueprint /inheritance:r /grant:r)", async () => {
     const root = freshTmp();
     const home = join(root, "home");
@@ -390,14 +489,27 @@ describe("certs plan — windows trust propagation", () => {
     );
 
     const execs = p.actions.filter((a) => a.kind === "exec");
-    expect(execs).toHaveLength(2);
-    const lockdown = findExec(p.actions);
+    expect(execs).toHaveLength(4);
+    const lockdown = execs.find((action) => action.argv[0] === "icacls");
     // Windows adapter locks down with icacls, disabling inheritance and granting the user read.
     expect(lockdown?.argv.slice(0, 2)).toEqual(["icacls", expect.any(String)]);
     expect(lockdown?.argv).toContain("/inheritance:r");
     expect(lockdown?.argv).toContain("/grant:r");
     expect(lockdown?.argv).toContain("samar:(R)");
     expect(lockdown?.argv[1]?.replace(/\\/g, "/")).toContain("corporate-root-ca.pem");
+  });
+
+  it("Windows certs persists both Node values directly", async () => {
+    const p = await command.plan(makeCtx({ root: freshTmp(), platform: "windows" }));
+    const setx = p.actions.filter(
+      (action): action is Extract<Action, { kind: "exec" }> =>
+        action.kind === "exec" && action.argv[0] === "setx",
+    );
+    expect(setx.map((action) => action.argv.slice(0, 2))).toEqual([
+      ["setx", "NODE_USE_SYSTEM_CA"],
+      ["setx", "NODE_EXTRA_CA_CERTS"],
+    ]);
+    expect(setx.every((action) => action.argv.length === 3)).toBe(true);
   });
 
   it("exports the trust block to the PowerShell profile in $env: form", async () => {
@@ -413,9 +525,33 @@ describe("certs plan — windows trust propagation", () => {
     const body = await renderProfile(ctx);
     expect(body).toContain("# >>> aih managed (certs) >>>");
     // PowerShell syntax, not POSIX `export`.
-    expect(body).toContain('$env:NODE_EXTRA_CA_CERTS = "');
+    expect(body).toContain("$env:NODE_EXTRA_CA_CERTS = '");
     expect(body).not.toContain("export NODE_EXTRA_CA_CERTS=");
-    expect(body).toMatch(/\$env:SSL_CERT_DIR = ".*enterprise-ca"/);
+    expect(body).toMatch(/\$env:SSL_CERT_DIR = '.*enterprise-ca'/);
+  });
+
+  it("macOS writes escaped deterministic LaunchAgents and updates launchd", async () => {
+    const p = await command.plan(
+      makeCtx({ root: freshTmp(), platform: "darwin", env: { HOME: "/Users/R&D" } }),
+    );
+    const plists = p.actions.filter(
+      (action): action is Extract<Action, { kind: "write" }> =>
+        action.kind === "write" && action.path.endsWith(".plist"),
+    );
+    expect(plists).toHaveLength(2);
+    expect(plists[0]?.contents).toContain("&amp;");
+    expect(plists[0]?.contents).not.toContain("/bin/sh");
+    expect(plists.map((action) => action.contents)).toEqual(
+      [...plists.map((action) => action.contents)].sort(),
+    );
+    const launchctl = p.actions.filter(
+      (action): action is Extract<Action, { kind: "exec" }> =>
+        action.kind === "exec" && action.argv[0] === "/bin/launchctl",
+    );
+    expect(launchctl.map((action) => action.argv.slice(0, 3))).toEqual([
+      ["/bin/launchctl", "setenv", "NODE_EXTRA_CA_CERTS"],
+      ["/bin/launchctl", "setenv", "NODE_USE_SYSTEM_CA"],
+    ]);
   });
 });
 
@@ -468,6 +604,32 @@ describe("certs plan — unsafe output paths", () => {
         }),
       ),
     ).rejects.toMatchObject({ code: "AIH_UNSAFE_PATH" });
+  });
+
+  it("rejects an oversized default Windows apply before files or execs mutate", async () => {
+    const root = freshTmp();
+    const out = join(
+      root,
+      ...Array.from({ length: 5 }, (_, index) => `${index}${"x".repeat(220)}`),
+    );
+    const calls: string[][] = [];
+    const ctx = makeCtx({
+      root,
+      platform: "windows",
+      env: { USERPROFILE: root },
+      options: { out },
+      apply: true,
+      handler: (argv) => {
+        calls.push(argv);
+        return { code: 0 };
+      },
+    });
+
+    await expect((async () => executePlan(await command.plan(ctx), ctx))()).rejects.toThrow(
+      /1,024/,
+    );
+    expect(readdirSync(root)).toEqual([]);
+    expect(calls).toEqual([]);
   });
 
   it("rejects control characters in the home-derived path boundary", async () => {

@@ -31,8 +31,36 @@ describe("envfile managed blocks", () => {
     expect(out).toContain("export USER_VAR=1");
   });
 
+  it("renders durable non-selected unsets before selected exports", () => {
+    const render = upsertManagedBlock as unknown as (
+      existing: string,
+      scope: string,
+      selected: typeof vars,
+      shell: "posix" | "powershell",
+      unsetKeys: string[],
+    ) => string;
+
+    const posix = render("", "heal-node-trust", vars, "posix", ["NODE_USE_SYSTEM_CA"]);
+    expect(posix.indexOf("unset NODE_USE_SYSTEM_CA")).toBeLessThan(
+      posix.indexOf("export NODE_EXTRA_CA_CERTS"),
+    );
+
+    const powershell = render("", "heal-node-trust", vars, "powershell", ["NODE_USE_SYSTEM_CA"]);
+    expect(powershell.indexOf("$env:NODE_USE_SYSTEM_CA = $null")).toBeLessThan(
+      powershell.indexOf("$env:NODE_EXTRA_CA_CERTS"),
+    );
+  });
+
   it("formats PowerShell exports", () => {
-    expect(formatExport({ key: "A", value: "b" }, "powershell")).toBe('$env:A = "b"');
+    expect(formatExport({ key: "A", value: "b" }, "powershell")).toBe("$env:A = 'b'");
+  });
+
+  it("renders PowerShell values as inert single-quoted literals", () => {
+    const value = "C:\\$HOME\\$(Get-Item env:USERNAME)\\`tick\\O'Brien.pem";
+
+    expect(formatExport({ key: "NODE_EXTRA_CA_CERTS", value }, "powershell")).toBe(
+      "$env:NODE_EXTRA_CA_CERTS = 'C:\\$HOME\\$(Get-Item env:USERNAME)\\`tick\\O''Brien.pem'",
+    );
   });
 
   it("preserves CRLF line endings when present", () => {

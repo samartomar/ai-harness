@@ -118,6 +118,8 @@ const CliEntry = z.object({
    * size check is a no-op until a real number is known — never a guessed verdict.
    */
   contextCap: z.number().int().positive().optional(),
+  /** Reviewed public HTTPS origins for bounded runtime TLS checks. */
+  tlsOrigins: z.array(z.string().url()).optional(),
 });
 export type CliEntry = z.infer<typeof CliEntry>;
 
@@ -295,6 +297,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configFormat: "json",
     },
     activation: { key: "inclusion", value: "always" },
+    tlsOrigins: ["https://kiro.dev"],
     dryRunProbe: manualDryRunProbe("Kiro"),
   },
 };

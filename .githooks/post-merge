@@ -1,0 +1,6 @@
+#!/bin/sh
+# Repo-local hook: refresh the advisory code-review-graph after each merge/pull
+# so blast-radius context tracks main. Enable with: git config core.hooksPath .githooks
+# Advisory only — the refresh is detached and this hook never blocks git.
+
+node tools/repo-ai-tools.mjs graph-refresh || true

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import type { Runner } from "../internals/proc.js";
 import {
   type CertEntry,
+  dedupeCertEntries,
   type GpuInfo,
   type HostAdapter,
   safeCaPattern,
@@ -11,6 +12,9 @@ import {
   vdiFromEnv,
 } from "./base.js";
 import { parseCertLines, parseFirstInt, parseNvidiaSmi } from "./parse.js";
+
+const MAX_WINDOWS_ROOT_OUTPUT_BYTES = 2 * 1024 * 1024;
+const MAX_WINDOWS_ROOT_ENTRIES = 1024;
 
 /** Build a non-interactive PowerShell 7 (`pwsh`) invocation for a script string. */
 function pwsh(script: string): string[] {
@@ -54,6 +58,27 @@ export class WindowsAdapter implements HostAdapter {
     if (res.spawnError) res = await this.run(winPowershell(script));
     if (res.spawnError) return [];
     return parseCertLines(res.stdout);
+  }
+
+  async trustStoreRoots(): Promise<CertEntry[]> {
+    const script = [
+      "Get-ChildItem Cert:\\CurrentUser\\Root, Cert:\\LocalMachine\\Root -ErrorAction SilentlyContinue |",
+      '  ForEach-Object { [System.Convert]::ToBase64String($_.RawData) + "`t" + $_.Subject }',
+    ].join("\n");
+    const options = { maxBufferBytes: MAX_WINDOWS_ROOT_OUTPUT_BYTES };
+    let res = await this.run(pwsh(script), options);
+    if (res.spawnError) res = await this.run(winPowershell(script), options);
+    if (
+      res.spawnError ||
+      res.truncated ||
+      res.code !== 0 ||
+      Buffer.byteLength(res.stdout, "utf8") > MAX_WINDOWS_ROOT_OUTPUT_BYTES
+    ) {
+      return [];
+    }
+    const roots = parseCertLines(res.stdout);
+    if (roots.length > MAX_WINDOWS_ROOT_ENTRIES) return [];
+    return dedupeCertEntries(roots);
   }
 
   lockDownFileArgv(path: string): string[] {

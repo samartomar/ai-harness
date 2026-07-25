@@ -140,6 +140,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (fenced code blocks never qualify), and line-scoped; escaping refs stay fatal
   even when guarded. (#502)
 
+### Fixed
+
+- `aih heal` now distinguishes OS-native TLS success from Node runtime trust,
+  tests system trust before a minimal OS-root fallback, and persists only a
+  candidate that verifies; `aih certs` also propagates GUI-safe Node trust on
+  Windows and macOS. (#512)
+
 ## [3.0.0] - 2026-07-23
 
 ### Added
