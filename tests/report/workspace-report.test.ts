@@ -645,6 +645,9 @@ describe("report workspace rollup", () => {
     expect(maxInsideChecks).toBeGreaterThan(1);
   });
 
+  // Explicit budget: materializing eight child workspaces on disk dominates this
+  // test's cost — the capped probes themselves only sleep 5ms each — and a loaded
+  // Windows runner pushed that fixture setup past the 5s default (observed 5043ms).
   it("caps concurrent child evidence git probes for larger workspaces", async () => {
     const repos = ["api", "docs", "infra", "shared", "ui", "web", "worker", "jobs"];
     writeWorkspaceManifest({ repos, contextDir: "ai-coding" });
@@ -677,5 +680,5 @@ describe("report workspace rollup", () => {
 
     expect(maxInsideChecks).toBeGreaterThan(1);
     expect(maxInsideChecks).toBeLessThanOrEqual(4);
-  });
+  }, 20_000);
 });
