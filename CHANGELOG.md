@@ -6,6 +6,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- A partially-authorized `aih ecc --profile full` run now states why its scope
+  was reduced. When the org's signed acceptance covers only a subset of the
+  full-profile module set, `authorizedEccSelection` downgrades to `scope:
+  "scoped"` and the pipeline proceeds under `allowPartial` — correct fail-closed
+  behavior, but the operator-visible symptom was "I asked for full and got a
+  reduced set," inferable only from the held-baseline-components digest. The
+  verified install plan now emits an `ECC profile scope` digest naming the
+  reduction and the withheld module ids, carried in the `--json` envelope as
+  `{ requestedScope, authorizedScope, held }`. This reports only: the gating is
+  unchanged, unauthorized modules still do not install, and a fully-authorized
+  full profile is untouched. Refs #527
+
 ### Fixed
 
 - A failing `exec` action now surfaces the child's diagnostic instead of only its
@@ -20,6 +34,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   chokepoint through `redactSecrets` before any renderer sees it, and bounded to
   the trailing 20 lines / 4096 characters with an explicit omission count.
   Successful actions attach nothing. Refs #538
+
+### Security
+
+- Two output-hardening gaps closed in the shared workspace manifest validation
+  layer (`src/workspace/manifest.ts`), inherited identically by the snapshot,
+  hydrate, link, task-plan, and workspace-index paths. `normalizeWorkspacePath`
+  threw its absolute-path rejection before the printability assertion ran, so a
+  hostile manifest path carrying a raw ESC byte was joined into the thrown
+  message and printed unsanitized by the CLI error path; the assertion is now
+  hoisted above every rejection and the messages interpolate the normalized
+  value, making them sanitized by construction. `assertWorkspacePrintable`
+  blocked C0/DEL and table metacharacters but accepted U+202E and the rest of
+  the bidi set, letting a hostile edge `kind` spoof the visual order of a
+  rendered digest table; the gate now rejects every Unicode control and format
+  codepoint, which also covers C1 and the zero-width and tag characters. No
+  behavior change for well-formed manifests. Refs #520
 
 ## [3.1.0] - 2026-07-25
 
