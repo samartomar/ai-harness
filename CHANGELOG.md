@@ -6,6 +6,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A failing `exec` action now surfaces the child's diagnostic instead of only its
+  exit code. `defaultRunner` always captured both child streams, but the plan
+  projection kept only `code`/`ok`, so `aih ecc --cli claude --apply` on a clean
+  machine reported `step failed (exit 1)` with no way to tell a missing `npx`
+  from a registry 404, an unreachable proxy, or a throwing upstream installer —
+  the only recourse was re-running the command by hand. `PlanResult["execs"]`
+  entries now carry `stderr`/`stdout`, rendered under the `[exec]` line and
+  carried in the `--json` envelope. Child output can contain credentials
+  (registry-URL tokens, proxy auth), so it is masked at a single source-side
+  chokepoint through `redactSecrets` before any renderer sees it, and bounded to
+  the trailing 20 lines / 4096 characters with an explicit omission count.
+  Successful actions attach nothing. Refs #538
+
 ## [3.1.0] - 2026-07-25
 
 ### Added

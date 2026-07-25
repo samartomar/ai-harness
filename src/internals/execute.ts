@@ -41,6 +41,9 @@ import { type Check, VerificationReport } from "./verify.js";
 import { dirtyRemoveTargets, dirtyWriteTargets, normalizeRel } from "./worktree-gate.js";
 
 const VERIFICATION_TRUNCATION_SUFFIX = "... [truncated]";
+/** Trailing child-output budget surfaced on a failed exec action. */
+const MAX_SURFACED_CHILD_OUTPUT_LINES = 20;
+const MAX_SURFACED_CHILD_OUTPUT_CHARS = 4_096;
 const REDACTED_PATH = "<redacted-path>";
 
 function collectedPath(action: { path: string; sensitive?: { path?: boolean } }): string {
@@ -208,6 +211,30 @@ function verificationText(value: string | undefined, fallback: string): string {
     text,
     MAX_VERIFICATION_STRING_FIELD_LENGTH - VERIFICATION_TRUNCATION_SUFFIX.length,
   )}${VERIFICATION_TRUNCATION_SUFFIX}`;
+}
+
+/**
+ * Project a failed child's captured output onto the plan result.
+ *
+ * This is the single source-side chokepoint for child output, mirroring the
+ * digest chokepoint in executePlan: redact HERE, upstream of every renderer, so
+ * the human summary and the `--json` envelope carry the same masked body. Child
+ * stderr routinely carries credentials (tokens in registry URLs, proxy auth),
+ * and it is unbounded — a chatty installer can emit megabytes — so the tail is
+ * kept and the head dropped with an explicit count rather than silently.
+ */
+function surfacedChildOutput(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  const redacted = redactSecrets(raw).replace(/\s+$/, "");
+  if (redacted.length === 0) return undefined;
+  const lines = redacted.split("\n");
+  const omitted = Math.max(0, lines.length - MAX_SURFACED_CHILD_OUTPUT_LINES);
+  let text = lines.slice(-MAX_SURFACED_CHILD_OUTPUT_LINES).join("\n");
+  // Second bound: twenty copies of one pathological line is still unbounded.
+  if (text.length > MAX_SURFACED_CHILD_OUTPUT_CHARS) {
+    text = text.slice(-MAX_SURFACED_CHILD_OUTPUT_CHARS);
+  }
+  return omitted > 0 ? `… ${omitted} earlier line(s) omitted\n${text}` : text;
 }
 
 function optionalVerificationText(value: string | undefined): string | undefined {
@@ -400,7 +427,17 @@ export interface PlanResult {
     effect?: "create" | "overwrite" | "unchanged";
   }[];
   probes: { describe: string }[];
-  execs: { describe: string; argv: string[]; ran: boolean; code?: number | null; ok?: boolean }[];
+  execs: {
+    describe: string;
+    argv: string[];
+    ran: boolean;
+    code?: number | null;
+    ok?: boolean;
+    /** Redacted, tail-bounded child stderr. Present only when the action failed. */
+    stderr?: string;
+    /** Redacted, tail-bounded child stdout, for children that diagnose there. */
+    stdout?: string;
+  }[];
   /** Read-only computed reports surfaced verbatim (text) + machine-readable (`data`). */
   digests: { describe: string; text: string; data?: unknown }[];
   backups: string[];
@@ -922,12 +959,19 @@ export async function executePlan(
       }
       const res = await ctx.run(a.argv, { cwd: a.cwd, env: a.env, timeoutMs: a.timeoutMs });
       const ok = res.code === 0 || Boolean(a.allowFailure);
+      // A failing child already wrote a good diagnostic; carry it so the exit
+      // code is not the only evidence the operator gets. Successful runs stay
+      // out of the envelope — that output is noise, and children can be chatty.
+      const stderr = ok ? undefined : surfacedChildOutput(res.stderr);
+      const stdout = ok ? undefined : surfacedChildOutput(res.stdout);
       execs.push({
         describe: a.describe,
         argv: collectedArgv(a),
         ran: true,
         code: res.code,
         ok,
+        ...(stderr === undefined ? {} : { stderr }),
+        ...(stdout === undefined ? {} : { stdout }),
       });
       if (!ok) {
         priorExecFailed = true;
@@ -1057,6 +1101,16 @@ export function summarizeResult(result: PlanResult): string {
   for (const e of result.execs) {
     const status = e.ran ? ` (exit ${e.code})` : " (run with --apply)";
     out.push(`  [exec] ${formatArgv(e.argv)} — ${e.describe}${status}`);
+    // Already redacted and bounded at the collection chokepoint in executePlan,
+    // so this text and the `--json` envelope carry the same masked body.
+    if (e.stderr) {
+      out.push("    stderr:");
+      out.push(indent(stripTrailingNewlines(e.stderr), 6));
+    }
+    if (e.stdout) {
+      out.push("    stdout:");
+      out.push(indent(stripTrailingNewlines(e.stdout), 6));
+    }
   }
   // Only list probes when there's no report to supersede them; otherwise the
   // Verification section below already shows each check with its verdict + detail
