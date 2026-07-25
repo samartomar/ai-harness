@@ -6,6 +6,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- A partially-authorized `aih ecc --profile full` run now states why its scope
+  was reduced. When the org's signed acceptance covers only a subset of the
+  full-profile module set, `authorizedEccSelection` downgrades to `scope:
+  "scoped"` and the pipeline proceeds under `allowPartial` — correct fail-closed
+  behavior, but the operator-visible symptom was "I asked for full and got a
+  reduced set," inferable only from the held-baseline-components digest. The
+  verified install plan now emits an `ECC profile scope` digest naming the
+  reduction and the withheld module ids, carried in the `--json` envelope as
+  `{ requestedScope, authorizedScope, held }`. This reports only: the gating is
+  unchanged, unauthorized modules still do not install, and a fully-authorized
+  full profile is untouched. Refs #527
+
 ## [3.1.0] - 2026-07-25
 
 ### Added

@@ -19,7 +19,11 @@ import { lines } from "../internals/render.js";
 import { execArgv } from "../tools/install.js";
 import { codexMcpCollisionActions } from "./codex.js";
 import type { EccComponentSelection } from "./components.js";
-import { authorizedEccSelection, installedEccComponentRegistrations } from "./evidence.js";
+import {
+  authorizedEccSelection,
+  eccEvidenceComponentIdsForSelection,
+  installedEccComponentRegistrations,
+} from "./evidence.js";
 import { codexEccActions, type EccRepoCheckout, kiroEccActions } from "./index.js";
 import { eccActionsForCli, eccToolsDoc, isAihDirectEccInstallTarget } from "./install.js";
 import { eccMaterializationSpec } from "./materialize.js";
@@ -254,6 +258,40 @@ function evidenceDigest(authorizations: readonly BaselineAuthorization[]): Actio
   );
 }
 
+/**
+ * Name the by-design `full` -> `scoped` reduction the acceptance gate performs.
+ *
+ * Holding unauthorized modules back is correct, but the operator-visible symptom
+ * is "I asked for full and got a reduced set" with no stated reason — the
+ * downgrade was previously only inferable from the held-baseline-components
+ * digest. State it directly at the point it happens. This reports; it does not
+ * gate.
+ */
+function profileDowngradeDigest(
+  requested: EccComponentSelection,
+  authorized: EccComponentSelection,
+  authorizations: readonly BaselineAuthorization[],
+  targets: readonly Cli[],
+): Action | undefined {
+  if (requested.scope !== "full" || authorized.scope !== "scoped") return undefined;
+  const authorizedIds = new Set(authorizations.map((authorization) => authorization.componentId));
+  const held = [
+    ...new Set(
+      targets.flatMap((target) =>
+        eccEvidenceComponentIdsForSelection(target, requested).filter(
+          (componentId) => !authorizedIds.has(componentId),
+        ),
+      ),
+    ),
+  ].sort();
+  if (held.length === 0) return undefined;
+  return digest(
+    "ECC profile scope",
+    `requested full profile reduced to scoped: ${held.length} module(s) held pending org acceptance — ${held.join(", ")}`,
+    { requestedScope: "full", authorizedScope: "scoped", held },
+  );
+}
+
 function requireAuthorizedRuntime(
   authorizations: readonly BaselineAuthorization[],
   componentId: "runtime:ecc-installer" | "runtime:ecc-kiro",
@@ -303,6 +341,10 @@ export function verifiedEccInstallPlan(
     request.selection === undefined
       ? undefined
       : authorizedEccSelection(request.selection, authorizations, evidenceBoundTargets);
+  const downgrade =
+    request.selection === undefined || selection === undefined
+      ? undefined
+      : profileDowngradeDigest(request.selection, selection, authorizations, evidenceBoundTargets);
   if (
     selection !== undefined &&
     evidenceBoundTargets.length > 0 &&
@@ -456,5 +498,6 @@ export function verifiedEccInstallPlan(
       `Every mutating ECC step above uses ${sourceRoot.replace(/\\/g, "/")} after component hash verification.`,
     ),
     evidenceDigest(authorizations),
+    ...(downgrade === undefined ? [] : [downgrade]),
   );
 }
