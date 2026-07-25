@@ -22,6 +22,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `aih workspace` no longer destroys a bootstrapped repo's own bootloader. The
+  workspace bootloader write is a whole-file `writeText`, while `aih
+  bootstrap-ai` merges the canon into an `ai-canonical:shared` fence and leaves
+  everything around it verbatim — so pointing `aih workspace --apply` at a
+  directory that was already bootstrapped as a repo silently replaced its
+  `CLAUDE.md`, fence and hand-written preamble alike, with no warning and no
+  route back. The plan now runs a preflight that refuses with
+  `AIH_WORKSPACE_BOOTLOADER_CONFLICT` when a targeted root bootloader carries
+  that block, naming the conflicting file and pointing at the parent-only
+  layout. The refusal happens before anything is staged, so the bootloader is
+  left byte-for-byte unchanged, and it runs for dry-run too, so a plan never
+  advertises a write that `--apply` would reject. `--force` is preserved as the
+  explicit destructive override, under which the documented overwrite — and its
+  `*.aih.bak` backup — still occurs. A directory is either a bootstrapped repo
+  or a workspace parent; the combined layout stays unsupported. `.mcp.json` is
+  merged, not overwritten, and is unaffected. Refs #539
+
 - A failing `exec` action now surfaces the child's diagnostic instead of only its
   exit code. `defaultRunner` always captured both child streams, but the plan
   projection kept only `code`/`ok`, so `aih ecc --cli claude --apply` on a clean

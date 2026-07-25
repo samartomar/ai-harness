@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync } from "node:fs";
 import { basename, join, posix, resolve } from "node:path";
+import { SHARED_MARKER } from "../bootstrap-ai/canon.js";
 import { asPosture } from "../config/posture.js";
 import { AihError, SettingsError } from "../errors.js";
 import { bootloadersFor, entry as registryEntry } from "../internals/cli-registry.js";
 import { type Cli, resolveClis } from "../internals/clis.js";
-import { readRegularFile } from "../internals/fsxn.js";
+import { readIfExists, readRegularFile } from "../internals/fsxn.js";
+import { extractManagedBlock } from "../internals/markers.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 import type { Action, CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
 import { doc, exec, plan, probe, writeJson, writeText } from "../internals/plan.js";
@@ -482,6 +484,39 @@ function workspaceBootloaderWrites(
 }
 
 /**
+ * Preflight for {@link workspaceBootloaderWrites}: refuse when a targeted root
+ * bootloader is already owned by a BOOTSTRAPPED REPO. `bootstrap-ai` merges the canon
+ * into an `ai-canonical:shared` fence and leaves everything around it verbatim, but the
+ * workspace bootloader is a whole-file `writeText` — so running `aih workspace` at a
+ * repo root silently replaced that repo's own `CLAUDE.md`, fence and hand-written
+ * preamble alike. A directory is either a bootstrapped repo or a workspace parent; the
+ * combined layout is deliberately unsupported, so this refuses and routes rather than
+ * writing. Runs for dry-run too, so the plan never advertises a write that `--apply`
+ * would reject. `--force` is the explicit destructive override — under it the documented
+ * overwrite still happens and the executor backs the original up to `*.aih.bak`.
+ */
+function assertNoBootstrappedBootloader(ctx: PlanContext, bootloaders: readonly string[]): void {
+  if (ctx.options.force === true) return;
+  const conflicts = bootloaders.filter((path) => {
+    const text = readIfExists(join(ctx.root, path));
+    return text !== undefined && extractManagedBlock(text, SHARED_MARKER) !== undefined;
+  });
+  if (conflicts.length === 0) return;
+  // Only registry-sourced bootloader paths are interpolated (trusted constants), never
+  // the user-supplied root or any file content.
+  const plural = conflicts.length > 1;
+  throw new AihError(
+    `Refusing to overwrite ${conflicts.join(", ")}: this directory is already a bootstrapped ` +
+      `repository — ${plural ? "those files carry" : "that file carries"} an ${SHARED_MARKER} ` +
+      "block written by `aih bootstrap-ai`, and `aih workspace` replaces a bootloader wholesale. " +
+      "A workspace parent HOLDS repos; it must not also be a repo. Run `aih workspace` from the " +
+      `parent directory instead, or pass --force to overwrite ${plural ? "them" : "it"} ` +
+      `(the original${plural ? "s are" : " is"} backed up to *.aih.bak).`,
+    "AIH_WORKSPACE_BOOTLOADER_CONFLICT",
+  );
+}
+
+/**
  * `aih workspace <parent>` — scaffold a MULTI-REPO workspace (parent-only). For a
  * parent folder holding separate repos (e.g. a UI repo and a backend repo), it
  * writes the cross-repo canon that bridges them: a workspace marker, a VS Code
@@ -538,6 +573,7 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const staleMcp = staleManagedMcpServerKeys(ctx.root, mcpKeys);
   const clis = resolveClis(ctx.options, { strict: true });
   const bootloaders = bootloadersFor(clis);
+  assertNoBootstrappedBootloader(ctx, bootloaders);
   const bootloaderActivations = bootloaderActivationsFor(clis);
   const writes: WriteAction[] = [
     writeJson(

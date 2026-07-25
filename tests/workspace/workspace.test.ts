@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { command as bootstrapAiCommand } from "../../src/bootstrap-ai/index.js";
 import { runCapability } from "../../src/commands/run.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, ProbeAction, WriteAction } from "../../src/internals/plan.js";
@@ -1862,5 +1863,81 @@ describe("workspace — write-once executor behavior", () => {
 
     const raw = JSON.parse(readFileSync(join(parent, ".aih-workspace.json"), "utf8"));
     expect(raw.repos).toEqual([{ id: "api", path: "api", router: "ai-coding/RULE_ROUTER.md" }]);
+  });
+});
+
+describe("workspace — refuses a root that is already a bootstrapped repo (#539)", () => {
+  /**
+   * Bootstrap `parent` for real (not a hand-written fixture) so `CLAUDE.md` carries a
+   * genuine `ai-canonical:shared` block — the exact collision a repo-turned-workspace-parent
+   * hits. Returns the absolute bootloader path.
+   */
+  async function bootstrapParentRepo(): Promise<string> {
+    const bootstrapCtx = makeCtx({}, true);
+    await executePlan(await bootstrapAiCommand.plan(bootstrapCtx), bootstrapCtx);
+    const bootloader = join(parent, "CLAUDE.md");
+    expect(readFileSync(bootloader, "utf8")).toContain("<!-- BEGIN ai-canonical:shared");
+    return bootloader;
+  }
+
+  it("refuses with a coded conflict and leaves the bootloader byte-for-byte unchanged", async () => {
+    child("ui");
+    const bootloader = await bootstrapParentRepo();
+    const before = readFileSync(bootloader);
+
+    const applied = makeCtx({}, true);
+    await expect(command.plan(applied)).rejects.toMatchObject({
+      code: "AIH_WORKSPACE_BOOTLOADER_CONFLICT",
+    });
+
+    // Byte-for-byte, not merely "the marker survived": a partial rewrite that kept the
+    // fence would still have destroyed the repo's own bootloader.
+    expect(readFileSync(bootloader).equals(before)).toBe(true);
+    expect(existsSync(join(parent, "CLAUDE.md.aih.bak"))).toBe(false);
+    // The refusal is a preflight — no workspace artifact is written either.
+    expect(existsSync(join(parent, ".aih-workspace.json"))).toBe(false);
+  });
+
+  it("names the conflicting bootloader and routes to --force", async () => {
+    child("ui");
+    await bootstrapParentRepo();
+
+    await expect(command.plan(makeCtx({}, true))).rejects.toThrow(/CLAUDE\.md[\s\S]*--force/);
+  });
+
+  it("refuses the dry run too, so the plan never advertises a write it would reject", async () => {
+    child("ui");
+    const bootloader = await bootstrapParentRepo();
+    const before = readFileSync(bootloader);
+
+    await expect(command.plan(makeCtx())).rejects.toMatchObject({
+      code: "AIH_WORKSPACE_BOOTLOADER_CONFLICT",
+    });
+    expect(readFileSync(bootloader).equals(before)).toBe(true);
+  });
+
+  it("still writes the workspace canon when no bootloader carries the shared marker", async () => {
+    child("ui");
+    const applied = makeCtx({}, true);
+
+    await executePlan(await command.plan(applied), applied);
+
+    expect(readFileSync(join(parent, "CLAUDE.md"), "utf8")).toContain("Claude workspace");
+    expect(existsSync(join(parent, ".aih-workspace.json"))).toBe(true);
+  });
+
+  it("--force preserves the documented overwrite, including the .aih.bak backup", async () => {
+    child("ui");
+    const bootloader = await bootstrapParentRepo();
+    const before = readFileSync(bootloader, "utf8");
+
+    const forced = makeCtx({ force: true }, true);
+    await executePlan(await command.plan(forced), forced);
+
+    const after = readFileSync(bootloader, "utf8");
+    expect(after).not.toBe(before);
+    expect(after).toContain("Claude workspace");
+    expect(after).not.toContain("<!-- BEGIN ai-canonical:shared");
+    expect(readFileSync(join(parent, "CLAUDE.md.aih.bak"), "utf8")).toBe(before);
   });
 });
