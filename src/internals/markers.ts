@@ -115,6 +115,23 @@ export function extractManagedBlock(text: string, marker: string): string | unde
   return m?.[1]?.trim();
 }
 
+/**
+ * True when `text` OPENS a managed block for `marker` — the BEGIN line alone, with no
+ * matching END required. It recognizes exactly the same BEGIN line
+ * {@link extractManagedBlock} does; it just asks the weaker question.
+ *
+ * {@link extractManagedBlock} needs a well-formed pair because it returns a body. A
+ * caller about to OVERWRITE a file needs the opposite bias: a bootloader whose END line
+ * was truncated or hand-deleted is still owned by `marker`, and a file someone already
+ * damaged is the one you least want silently replaced. Ownership checks guarding a
+ * destructive write use this and fail closed; anything that reads the body keeps using
+ * {@link extractManagedBlock}.
+ */
+export function hasManagedBlockStart(text: string, marker: string): boolean {
+  const pattern = new RegExp(`<!-- BEGIN ${escapeRegExp(marker)}[^\\n]*-->`);
+  return pattern.test(text.replace(/\r\n/g, "\n"));
+}
+
 /** The sub-marker that fences a human "project extension" inside a managed block. */
 export const PROJECT_EXTENSION_MARKER = "project-extension";
 
