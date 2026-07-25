@@ -289,6 +289,40 @@ describe("workspace manifest parser", () => {
     expect(m.errors.join("\n")).toMatch(/safe to print/);
   });
 
+  it("sanitizes control characters before reporting an absolute repo path", () => {
+    const m = parseWorkspaceManifest(
+      {
+        repos: [{ id: "evil", path: "/e[31mvil" }],
+      },
+      "ai-coding",
+    );
+
+    expect(m.status).toBe("ERROR");
+    const joined = m.errors.join("\n");
+    expect(joined).not.toContain("");
+    expect(joined).toMatch(/workspace repo path must be safe to print/);
+  });
+
+  it("rejects Unicode bidi controls in printable manifest fields", () => {
+    const m = parseWorkspaceManifest(
+      {
+        repos: [{ id: "ok", path: "ok" }],
+        edges: [
+          {
+            id: "edge",
+            from: "ok",
+            to: "ok",
+            kind: "api‮gnp‬",
+          },
+        ],
+      },
+      "ai-coding",
+    );
+
+    expect(m.status).toBe("ERROR");
+    expect(m.errors.join("\n")).toMatch(/workspace edge kind must be safe to print/);
+  });
+
   it("builds normalized repo objects for generated workspace docs", () => {
     expect(workspaceReposFromPaths(["services/api", "ui"])).toEqual([
       {
