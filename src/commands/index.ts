@@ -256,7 +256,7 @@ export function addSharedFlags(cmd: Command): Command {
     .option("--apply", "execute the plan (default: dry-run; nothing is written)")
     .option(
       "--force",
-      "apply even when the git worktree is dirty (skip the clean-worktree preflight)",
+      "override a fail-closed preflight: apply over a dirty worktree, or over a bootloader owned by a bootstrapped repo",
     )
     .option("--verify", "run verification probes after applying")
     .option("--json", "emit machine-readable JSON")
