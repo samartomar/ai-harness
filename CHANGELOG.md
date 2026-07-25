@@ -142,6 +142,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Baseline-vet concurrency helper (`src/baseline-evidence/concurrency.ts`) no
+  longer silently reinterprets a malformed `AIH_VET_CONCURRENCY` override:
+  `resolveVetConcurrency` now requires the (whitespace-trimmed) value to be a
+  plain positive integer, so values like `"2x"`, `"1.5"`, and `"1e3"` — which
+  `Number.parseInt` previously coerced into `2`, `1`, and `1` respectively —
+  fall back to the documented `max(1, floor(cpus/2))` default instead of
+  silently changing the effective concurrency. Separately, `runWithConcurrency`
+  now fails fast: once any task rejects, no worker pulls a new item from the
+  shared iterator, so detector subprocesses and temp scan directories are no
+  longer created after the caller has already begun failure cleanup;
+  already-in-flight tasks are still awaited to settle (no orphaned or
+  unhandled-rejected promises) and the first rejection observed is still the
+  one propagated to the caller. (#529)
 - `aih heal` now distinguishes OS-native TLS success from Node runtime trust,
   tests system trust before a minimal OS-root fallback, and persists only a
   candidate that verifies; `aih certs` also propagates GUI-safe Node trust on
