@@ -51,13 +51,19 @@ export interface WorkspaceManifest {
 
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const UNSAFE_PRINTABLE_MARKUP_CHARS = new Set(["|", "<", ">", "[", "]", "`"]);
+// Control (C0/C1/DEL) plus every Unicode format codepoint. The format class is
+// what carries the bidi overrides, embeddings, and isolates used for visual
+// spoofing in digest tables, along with zero-width and tag characters.
+const UNSAFE_PRINTABLE_CODEPOINT_RE = /[\p{Cc}\p{Cf}]/u;
 const SAFE_GIT_REF_CHARS_RE = /^[A-Za-z0-9._/-]+$/;
 const SAFE_SCP_REMOTE_RE = /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[A-Za-z0-9._~/-]+$/;
 
 export function assertWorkspacePrintable(value: string, label: string): void {
+  if (UNSAFE_PRINTABLE_CODEPOINT_RE.test(value)) {
+    throw new Error(`${label} must be safe to print in workspace reports`);
+  }
   for (const char of value) {
-    const code = char.charCodeAt(0);
-    if (code <= 31 || code === 127 || UNSAFE_PRINTABLE_MARKUP_CHARS.has(char)) {
+    if (UNSAFE_PRINTABLE_MARKUP_CHARS.has(char)) {
       throw new Error(`${label} must be safe to print in workspace reports`);
     }
   }
@@ -66,16 +72,18 @@ export function assertWorkspacePrintable(value: string, label: string): void {
 export function normalizeWorkspacePath(raw: string, label = "workspace path"): string {
   const value = raw.trim().replace(/\\/g, "/");
   if (value.length === 0) throw new Error(`${label} must be non-empty`);
-  if (value.startsWith("/") || /^[A-Za-z]:/.test(value) || value.startsWith("//")) {
-    throw new Error(`${label} must be relative to the parent workspace: ${raw}`);
-  }
+  // Assert printability first: every throw below echoes the path back to the
+  // operator's terminal, so the message must be sanitized by construction.
   assertWorkspacePrintable(value, label);
+  if (value.startsWith("/") || /^[A-Za-z]:/.test(value) || value.startsWith("//")) {
+    throw new Error(`${label} must be relative to the parent workspace: ${value}`);
+  }
   const parts = value.split("/").filter((p) => p.length > 0);
   if (parts.some((p) => p === "." || p === "..")) {
-    throw new Error(`${label} must not traverse parents: ${raw}`);
+    throw new Error(`${label} must not traverse parents: ${value}`);
   }
   if (label === "workspace repo path" && parts.some((p) => p.startsWith("-"))) {
-    throw new Error(`${label} segment must not start with '-': ${raw}`);
+    throw new Error(`${label} segment must not start with '-': ${value}`);
   }
   return parts.join("/");
 }
