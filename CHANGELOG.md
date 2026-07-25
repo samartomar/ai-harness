@@ -22,6 +22,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Bare first-run CLI targeting now follows the documented `claude` default instead
+  of silently widening to every runnable CLI on `PATH`. Existing repositories still
+  regenerate from committed `.aih-config.json` targets, and `--detect` remains the
+  explicit way to select runnable installed tools. This also prevents a bare `aih
+  mcp --apply` from unexpectedly writing global Codex or Gemini configuration.
+  Refs #507
+
 - `aih workspace` no longer destroys a bootstrapped repo's own bootloader. The
   workspace bootloader write is a whole-file `writeText`, while `aih
   bootstrap-ai` merges the canon into an `ai-canonical:shared` fence and leaves

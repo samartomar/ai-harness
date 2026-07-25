@@ -7,7 +7,6 @@ import {
   type ManagedMcpProjectionOwnership,
   managedMcpProjectionConfigJsonFromRaw,
   managedMcpProjectionOwnership,
-  readAihConfig,
   revokedManagedMcpProjectionOwnership,
 } from "../config/marker.js";
 import { SettingsError } from "../errors.js";
@@ -836,36 +835,6 @@ function mcpGuidanceDoc(e: CliEntry, serverNames: string[]): string {
   ].join("\n");
 }
 
-function hasExplicitTargetSelection(ctx: PlanContext): boolean {
-  return (
-    ctx.targets !== undefined ||
-    (typeof ctx.options.cli === "string" && ctx.options.cli.trim().length > 0) ||
-    ctx.options.allTools === true ||
-    ctx.options.detect === true
-  );
-}
-
-function defaultTargetSelectionNotice(ctx: PlanContext, clis: readonly Cli[]): string | undefined {
-  if (hasExplicitTargetSelection(ctx)) return undefined;
-  const marker = readAihConfig(ctx.root);
-  if (marker !== undefined && marker.targets.length > 0) return undefined;
-  const globalTargets = clis
-    .map((cli) => entry(cli))
-    .filter((e) => {
-      const path = e.mcp.configPath;
-      return e.mcp.support === "native" && path !== undefined && isExternalMcp(path);
-    })
-    .map((e) => `  - ${e.label}: ${e.mcp.configPath}`);
-  if (globalTargets.length === 0) return undefined;
-  return [
-    "No --cli, --all-tools, --detect, or committed .aih-config.json targets were provided.",
-    "For a first run, aih mcp targets runnable installed AI CLIs. These selected targets use global MCP config files, so --apply can affect that CLI in every project:",
-    ...globalTargets,
-    "",
-    "Pass --cli <list> to narrow the target set, or commit .aih-config.json through aih init/bootstrap-ai so later runs use the repo's recorded targets.",
-  ].join("\n");
-}
-
 async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const posture = ctx.posture ?? asPosture(ctx.options.posture);
   assertOrgPolicyMutationSource({ ...ctx, posture });
@@ -874,10 +843,10 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   if (mode === "none") return planMcpNone(ctx);
   if (mode === "offline") return planMcpOffline(ctx);
 
-  // Honor --cli/--all-tools/--detect, a committed marker, or the first-run
-  // runnable-CLI default. Previously mcp ignored the selection and wrote Claude's
-  // `.mcp.json` for every tool — a real bug for Codex (config.toml), Copilot
-  // (.vscode/mcp.json), OpenCode, Zed, etc.
+  // Honor --cli/--all-tools/--detect, a committed marker, or the deterministic
+  // first-run Claude default. Previously mcp ignored the selection and wrote
+  // Claude's `.mcp.json` for every tool — a real bug for Codex (config.toml),
+  // Copilot (.vscode/mcp.json), OpenCode, Zed, etc.
   const { clis } = await resolveTargets(ctx);
   const scope = String(ctx.options.scope ?? "project");
   const selfHost = ctx.options.selfHost === true;
@@ -943,16 +912,12 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const writtenPaths = new Set<string>();
   const compliantConfigChecks: CompliantConfigCheck[] = [];
   const quarantinedPolicies = new Map<string, ServerPolicy>(denied.map((p) => [p.name, p]));
-  const targetSelectionNotice = defaultTargetSelectionNotice(ctx, clis);
   if (
     catalog.policy?.mcp?.allowManagedOnly === true &&
     Object.keys(servers).length > 0 &&
     Object.keys(orgAllowed).length === 0
   ) {
     actions.push(digest("MCP allowlist filtered all servers", emptyManagedAllowlistDoc()));
-  }
-  if (targetSelectionNotice !== undefined) {
-    actions.push(digest("MCP target selection", targetSelectionNotice));
   }
   for (const cli of clis) {
     const e = entry(cli);

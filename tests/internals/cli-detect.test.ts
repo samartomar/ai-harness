@@ -156,12 +156,11 @@ describe("resolveTargetClis", () => {
     expect(await resolveTargetClis(makeCtx())).toEqual(["claude"]);
   });
 
-  it("with no flags + no marker, defaults to the RUNNABLE installed CLIs (binary on PATH)", async () => {
-    // The first-run fix: wire every tool you actually have, not just claude — so a
-    // kiro user doesn't have to discover kiro was left unwired.
+  it("with no flags + no marker, defaults to claude even when other CLIs are runnable", async () => {
+    // A bare first run is deterministic and matches the documented contract.
+    // Discovering installed tools remains an explicit --detect operation.
     const r = await resolveTargetClis(makeCtx({}, ["claude", "kiro", "codex"]));
-    expect(r).toEqual(expect.arrayContaining(["claude", "kiro", "codex"]));
-    expect(r).not.toContain("cursor"); // not installed → not wired
+    expect(r).toEqual(["claude"]);
   });
 
   it("excludes a config-only/stale tool (config dir, no binary) from the default", async () => {

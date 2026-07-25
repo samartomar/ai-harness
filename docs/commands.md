@@ -653,16 +653,14 @@ endpoints → `{ usage_report, skills }`).
 
 ## aih mcp
 
-Generate the MCP server config **for the targeted CLIs** (`--cli`/`--all-tools`; otherwise the
-committed `.aih-config.json` targets, then runnable installed CLIs on a first run, falling back to
-Claude when nothing runnable is detected):
+Generate the MCP server config **for the targeted CLIs** (`--cli`/`--all-tools`/`--detect`;
+otherwise the committed `.aih-config.json` targets, then Claude on a first run):
 Claude/Kimi share `.mcp.json`, Cursor uses `.cursor/mcp.json`, and Kiro uses
 `.kiro/settings/mcp.json`; Codex gets native TOML in `~/.codex/config.toml` (including
 `bearer_token_env_var` for token auth), OpenCode gets its global
 `~/.config/opencode/opencode.json` `mcp` map, and Copilot/Zed or other global-config entries get
-their registry-specific native writes or guidance. If first-run detection selects global config
-targets, the plan emits an MCP target-selection digest because `--apply` can affect that CLI across
-all projects. Scopes:
+their registry-specific native writes or guidance. Global config targets are selected only through
+an explicit flag or a committed marker; `--apply` can affect that CLI across all projects. Scopes:
 local/project/remote. For locked-down orgs,
 `--mode offline` (vendored local-command servers) or `--mode none` (no MCP + a CLI-tool fallback)
 plus a `managed-mcp.json` admin template. Enterprise org policy can also tune the hosted GitHub
