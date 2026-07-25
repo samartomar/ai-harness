@@ -10,6 +10,7 @@ import { defaultRunner, fakeRunner, type Runner } from "../../src/internals/proc
 import { command as mcpCommand } from "../../src/mcp/index.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command as uninstallCommand } from "../../src/uninstall/index.js";
+import { hermeticGitEnv } from "../git-fixture-env.js";
 
 const TEST_PROCESS_TIMEOUT_MS = 10_000;
 
@@ -51,6 +52,7 @@ const git = (...args: string[]): void => {
   execFileSync("git", ["-C", tmp, ...args], {
     stdio: "ignore",
     timeout: TEST_PROCESS_TIMEOUT_MS,
+    env: hermeticGitEnv(),
   });
 };
 

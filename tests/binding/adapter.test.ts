@@ -26,6 +26,7 @@ import {
   BindingFrameworkConflictError,
 } from "../../src/binding/schema.js";
 import { defaultRunner } from "../../src/internals/proc.js";
+import { hermeticGitEnv } from "../git-fixture-env.js";
 import { createFakeAdapter } from "./fake-adapter.js";
 
 const DUMMY_RESOLVED: ResolvedSource = {
@@ -73,7 +74,8 @@ const cleanups: string[] = [];
 
 function initGitRepo(dir: string): void {
   mkdirSync(dir, { recursive: true });
-  const g = (args: string[]) => execFileSync("git", args, { cwd: dir, stdio: "pipe" });
+  const g = (args: string[]) =>
+    execFileSync("git", args, { cwd: dir, stdio: "pipe", env: hermeticGitEnv() });
   g(["init", "-b", "main"]);
   g(["config", "user.email", "test@example.com"]);
   g(["config", "user.name", "Binding Test"]);

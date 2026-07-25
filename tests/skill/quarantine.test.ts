@@ -11,6 +11,7 @@ import { makeHostAdapter } from "../../src/platform/detect.js";
 import { skillInventory, skillInventoryCommand } from "../../src/skill/inventory.js";
 import { skillQuarantineCommand } from "../../src/skill/quarantine.js";
 import { skillRemoveCommand } from "../../src/skill/remove.js";
+import { hermeticGitEnv } from "../git-fixture-env.js";
 
 const PIN = "a".repeat(40);
 const CONTEXT_DIR = "ai-coding";
@@ -141,6 +142,7 @@ const git = (...args: string[]): void => {
   execFileSync("git", ["-C", workspace, ...args], {
     stdio: "ignore",
     timeout: TEST_PROCESS_TIMEOUT_MS,
+    env: hermeticGitEnv(),
   });
 };
 

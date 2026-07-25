@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { aihIgnoreWrite } from "../../src/internals/gitignore.js";
+import { hermeticGitEnv } from "../git-fixture-env.js";
 
 const TEST_PROCESS_TIMEOUT_MS = 10_000;
 
@@ -120,6 +121,7 @@ describe("aihIgnoreWrite", () => {
         cwd: root,
         encoding: "utf8",
         timeout: TEST_PROCESS_TIMEOUT_MS,
+        env: hermeticGitEnv(),
       }).trim();
     // A real git repo with git-managed line endings deterministic across platforms.
     git("init", "-q");
@@ -142,6 +144,7 @@ describe("aihIgnoreWrite", () => {
         execFileSync("git", ["check-ignore", "-q", rel], {
           cwd: root,
           timeout: TEST_PROCESS_TIMEOUT_MS,
+          env: hermeticGitEnv(),
         });
         return true; // exit 0 → ignored
       } catch {

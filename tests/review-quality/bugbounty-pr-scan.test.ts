@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { hermeticGitEnv } from "../git-fixture-env.js";
 
 interface ScanFinding {
   severity: string;
@@ -41,6 +42,7 @@ function run(command: string, args: string[], cwd: string): string {
     cwd,
     encoding: "utf8",
     timeout: TEST_PROCESS_TIMEOUT_MS,
+    env: hermeticGitEnv(),
   });
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(" ")} failed\n${result.stdout}\n${result.stderr}`);
@@ -80,6 +82,7 @@ function scan(): { status: number | null; stdout: string; output: ScanOutput } {
   const result = spawnSync(python, [script, "--repo", root, "--base", "HEAD~1", "--head", "HEAD"], {
     encoding: "utf8",
     timeout: TEST_PROCESS_TIMEOUT_MS,
+    env: hermeticGitEnv(),
   });
   return {
     status: result.status,

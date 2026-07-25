@@ -16,6 +16,7 @@ import {
 } from "../../src/binding/scan-gate.js";
 import { type BindingDeclaration, BindingDeclarationSchema } from "../../src/binding/schema.js";
 import { defaultRunner } from "../../src/internals/proc.js";
+import { hermeticGitEnv } from "../git-fixture-env.js";
 import { createFakeAdapter } from "./fake-adapter.js";
 
 const producedClean: DimensionInspector = {
@@ -27,7 +28,7 @@ let repoDir: string;
 let cacheHome: string;
 
 function git(dir: string, args: string[]): string {
-  return execFileSync("git", args, { cwd: dir }).toString().trim();
+  return execFileSync("git", args, { cwd: dir, env: hermeticGitEnv() }).toString().trim();
 }
 
 function commit(dir: string, rel: string, content: string): string {
