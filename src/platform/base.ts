@@ -38,6 +38,8 @@ export interface HostAdapter {
 
   /** Corporate root CAs whose subject contains `pattern`, from the OS trust store. */
   trustStoreCerts(pattern: string): Promise<CertEntry[]>;
+  /** Public CA certificates from the OS trusted-root stores; read-only and deduplicated. */
+  trustStoreRoots(): Promise<CertEntry[]>;
   /** The argv that would restrict `path` to the current user (icacls/chmod). Not executed here. */
   lockDownFileArgv(path: string): string[];
   /** The argv that creates a directory symlink/junction at `linkPath` → `targetPath`. */
@@ -88,6 +90,16 @@ export function derBase64ToPem(base64: string): string {
       .match(/.{1,64}/g)
       ?.join("\n") ?? "";
   return `-----BEGIN CERTIFICATE-----\n${body}\n-----END CERTIFICATE-----\n`;
+}
+
+/** Deduplicate certificate entries by their PEM bytes while preserving first-seen order. */
+export function dedupeCertEntries(entries: readonly CertEntry[]): CertEntry[] {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    if (seen.has(entry.pem)) return false;
+    seen.add(entry.pem);
+    return true;
+  });
 }
 
 /** Validate a CA subject-match pattern (used in shell commands). Conservative allowlist. */

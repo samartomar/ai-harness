@@ -13,7 +13,9 @@ For task-oriented command selection, use the workflow companion:
 
 Extract the corporate root CA from the OS trust store, lock it down, propagate trust to
 npm, pip, cargo, conda, Go, git, JVM tools, Gradle, and Maven, and emit Docker daemon
-trust guidance.
+trust guidance. On Windows and macOS, it also propagates GUI-safe Node trust; fully
+relaunch GUI applications after applying the change. Packaged application behavior
+remains operator-verified.
 
 ## aih cleanup
 
@@ -38,7 +40,9 @@ repo-derived MCP endpoints during planning; live Node/Python endpoint TLS handsh
 comparisons require explicit `--probe-mcp-endpoints` and run as verification probes. For major
 AI-Harness upgrades, prefer
 `npm install -g @aihq/harness@latest`; add `--force` only when replacing a broken global install
-after reviewing the current workstation state. `--scope certs,npm,path,mcp,all`.
+after reviewing the current workstation state. For the same bounded origins, it compares OS and
+Node TLS handshakes, tries system trust before a minimal set of matched OS roots, and persists a
+candidate locally only under `--apply` after it verifies. `--scope certs,npm,path,mcp,all`.
 
 ## aih tools
 

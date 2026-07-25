@@ -137,20 +137,20 @@ describe("runPreflight — declared intent checkpoint", () => {
     });
   });
 
-  it.each([
-    "minor",
-    "major",
-  ] as const)("passes without acknowledgement when declared intent is %s", (intent) => {
-    const d = cleanData();
-    d.declaredIntent = intent;
+  it.each(["minor", "major"] as const)(
+    "passes without acknowledgement when declared intent is %s",
+    (intent) => {
+      const d = cleanData();
+      d.declaredIntent = intent;
 
-    expect(runPreflight(d)).toMatchObject({
-      ok: true,
-      declaredIntent: intent,
-      intentEscalation: false,
-      intentAcknowledged: false,
-    });
-  });
+      expect(runPreflight(d)).toMatchObject({
+        ok: true,
+        declaredIntent: intent,
+        intentEscalation: false,
+        intentAcknowledged: false,
+      });
+    },
+  );
 
   it("rejects a raw token without a resolved acknowledgement artifact", () => {
     const d = cleanData();

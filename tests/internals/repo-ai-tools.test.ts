@@ -101,6 +101,35 @@ describe("ai-harness repo AI tooling", () => {
     expect(claudeStopCommands).toContain("node tools/repo-ai-tools.mjs token-optimizer-stop");
   });
 
+  it("wires a fail-open post-merge hook that refreshes the advisory review graph", () => {
+    const hook = readFileSync(resolve(root, ".githooks/post-merge"), "utf8");
+    const routing = readFileSync(resolve(root, "ai-coding/rules/repo-ai-tools.md"), "utf8");
+
+    expect(hook.startsWith("#!/bin/sh")).toBe(true);
+    expect(hook).toContain("node tools/repo-ai-tools.mjs graph-refresh");
+    expect(hook).toContain("|| true");
+    expect(routing).toContain(".githooks/post-merge");
+  });
+
+  it("derives the graph-refresh launcher from the pinned .mcp.json serve entry", () => {
+    const printed = JSON.parse(
+      execFileSync(process.execPath, ["tools/repo-ai-tools.mjs", "graph-refresh", "--print"], {
+        cwd: root,
+        encoding: "utf8",
+      }),
+    ) as { command: string; args: string[] };
+    const mcp = JSON.parse(readFileSync(resolve(root, ".mcp.json"), "utf8")) as {
+      mcpServers: Record<string, { command: string; args: string[] }>;
+    };
+    const serve = mcp.mcpServers["code-review-graph"];
+    if (!serve) throw new Error(".mcp.json is missing the code-review-graph server");
+
+    expect(printed.command).toBe(serve.command);
+    expect(printed.args.slice(0, serve.args.length - 1)).toEqual(serve.args.slice(0, -1));
+    expect(printed.args).toContain("update");
+    expect(printed.args).not.toContain("serve");
+  });
+
   it("routes overlapping tools in the repo-owned canon", () => {
     const extension = readFileSync(
       resolve(root, "ai-coding/rules/project-canon-extension.md"),
