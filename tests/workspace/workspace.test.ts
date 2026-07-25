@@ -1905,6 +1905,50 @@ describe("workspace — refuses a root that is already a bootstrapped repo (#539
     await expect(command.plan(makeCtx({}, true))).rejects.toThrow(/CLAUDE\.md[\s\S]*--force/);
   });
 
+  it("refuses a truncated fence too — a damaged bootloader is still repo-owned", async () => {
+    child("ui");
+    const bootloader = await bootstrapParentRepo();
+    // Drop the END line. `extractManagedBlock` no longer sees a well-formed block, but the
+    // file is unambiguously bootstrap-ai-owned — and a bootloader someone already damaged
+    // is the one you least want silently replaced. Fail closed on the ambiguity.
+    writeFileSync(
+      bootloader,
+      readFileSync(bootloader, "utf8").replace("<!-- END ai-canonical:shared -->", ""),
+      "utf8",
+    );
+    const before = readFileSync(bootloader);
+
+    await expect(command.plan(makeCtx({}, true))).rejects.toMatchObject({
+      code: "AIH_WORKSPACE_BOOTLOADER_CONFLICT",
+    });
+    expect(readFileSync(bootloader).equals(before)).toBe(true);
+  });
+
+  it("names every conflicting bootloader when more than one is targeted", async () => {
+    child("ui");
+    const bootstrapCtx = makeCtx({ cli: "claude,codex" }, true);
+    await executePlan(await bootstrapAiCommand.plan(bootstrapCtx), bootstrapCtx);
+    const claudeBefore = readFileSync(join(parent, "CLAUDE.md"));
+    const agentsBefore = readFileSync(join(parent, "AGENTS.md"));
+
+    let error: (Error & { code?: string }) | undefined;
+    try {
+      await command.plan(makeCtx({ cli: "claude,codex" }, true));
+    } catch (e) {
+      error = e as Error & { code?: string };
+    }
+    if (error === undefined) throw new Error("expected a bootloader conflict refusal");
+
+    expect(error.code).toBe("AIH_WORKSPACE_BOOTLOADER_CONFLICT");
+    expect(error.message).toContain("CLAUDE.md");
+    expect(error.message).toContain("AGENTS.md");
+    // The plural wording branch, otherwise never exercised.
+    expect(error.message).toContain("those files carry");
+    expect(error.message).toContain("originals are");
+    expect(readFileSync(join(parent, "CLAUDE.md")).equals(claudeBefore)).toBe(true);
+    expect(readFileSync(join(parent, "AGENTS.md")).equals(agentsBefore)).toBe(true);
+  });
+
   it("refuses the dry run too, so the plan never advertises a write it would reject", async () => {
     child("ui");
     const bootloader = await bootstrapParentRepo();

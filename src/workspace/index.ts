@@ -7,7 +7,7 @@ import { AihError, SettingsError } from "../errors.js";
 import { bootloadersFor, entry as registryEntry } from "../internals/cli-registry.js";
 import { type Cli, resolveClis } from "../internals/clis.js";
 import { readIfExists, readRegularFile } from "../internals/fsxn.js";
-import { extractManagedBlock } from "../internals/markers.js";
+import { hasManagedBlockStart } from "../internals/markers.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 import type { Action, CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
 import { doc, exec, plan, probe, writeJson, writeText } from "../internals/plan.js";
@@ -494,12 +494,17 @@ function workspaceBootloaderWrites(
  * writing. Runs for dry-run too, so the plan never advertises a write that `--apply`
  * would reject. `--force` is the explicit destructive override — under it the documented
  * overwrite still happens and the executor backs the original up to `*.aih.bak`.
+ *
+ * Ownership is tested with {@link hasManagedBlockStart}, not `extractManagedBlock`: a
+ * bootloader whose END line was truncated carries no well-formed block yet is still
+ * repo-owned, and failing open there would clobber precisely the damaged file that is
+ * hardest to recover.
  */
 function assertNoBootstrappedBootloader(ctx: PlanContext, bootloaders: readonly string[]): void {
   if (ctx.options.force === true) return;
   const conflicts = bootloaders.filter((path) => {
     const text = readIfExists(join(ctx.root, path));
-    return text !== undefined && extractManagedBlock(text, SHARED_MARKER) !== undefined;
+    return text !== undefined && hasManagedBlockStart(text, SHARED_MARKER);
   });
   if (conflicts.length === 0) return;
   // Only registry-sourced bootloader paths are interpolated (trusted constants), never
@@ -509,7 +514,7 @@ function assertNoBootstrappedBootloader(ctx: PlanContext, bootloaders: readonly 
     `Refusing to overwrite ${conflicts.join(", ")}: this directory is already a bootstrapped ` +
       `repository — ${plural ? "those files carry" : "that file carries"} an ${SHARED_MARKER} ` +
       "block written by `aih bootstrap-ai`, and `aih workspace` replaces a bootloader wholesale. " +
-      "A workspace parent HOLDS repos; it must not also be a repo. Run `aih workspace` from the " +
+      "A workspace parent holds repos; it must not also be a repo. Run `aih workspace` from the " +
       `parent directory instead, or pass --force to overwrite ${plural ? "them" : "it"} ` +
       `(the original${plural ? "s are" : " is"} backed up to *.aih.bak).`,
     "AIH_WORKSPACE_BOOTLOADER_CONFLICT",

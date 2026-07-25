@@ -307,9 +307,10 @@ with absolute root-anchored paths, and a `.aih-workspace.json` marker. Declare t
 With `--git`, the generated `.gitignore` defensively ignores all immediate child Git repos, including
 ones outside the declared workspace scope.
 
-Parent-only is enforced, not just documented: if a targeted root bootloader already carries an
-`ai-canonical:shared` block (i.e. the directory was bootstrapped as a repo by `aih bootstrap-ai`),
-the command refuses with `AIH_WORKSPACE_BOOTLOADER_CONFLICT` and writes nothing — dry-run included,
+Parent-only is enforced, not just documented: if a targeted root bootloader already opens an
+`ai-canonical:shared` block (i.e. the directory was bootstrapped as a repo by `aih bootstrap-ai`) —
+including one whose closing marker was truncated — the command refuses with
+`AIH_WORKSPACE_BOOTLOADER_CONFLICT` and writes nothing — dry-run included,
 so the plan never advertises a write that `--apply` would reject. A directory is either a
 bootstrapped repo or a workspace parent, never both. Run `aih workspace` from the parent directory
 instead, or pass `--force` to take the documented overwrite (the original is backed up to

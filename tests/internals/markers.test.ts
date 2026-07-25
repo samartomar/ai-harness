@@ -3,6 +3,7 @@ import {
   beginLine,
   endLine,
   extractManagedBlock,
+  hasManagedBlockStart,
   mergeManagedBlock,
   PROJECT_EXTENSION_MARKER,
   splitManagedBody,
@@ -74,6 +75,35 @@ describe("extractManagedBlock", () => {
     const a = mergeManagedBlock(undefined, block, "# P");
     const b = mergeManagedBlock(undefined, { ...block, note: "a different note" }, "# P");
     expect(extractManagedBlock(a, block.marker)).toBe(extractManagedBlock(b, block.marker));
+  });
+});
+
+describe("hasManagedBlockStart — ownership check for a destructive write", () => {
+  it("is true for a well-formed block, like extractManagedBlock", () => {
+    const file = mergeManagedBlock(undefined, block, "# P");
+    expect(hasManagedBlockStart(file, "ai-canonical:shared")).toBe(true);
+  });
+
+  it("is true when the END line is missing, where extractManagedBlock gives up", () => {
+    const truncated = mergeManagedBlock(undefined, block, "# P").replace(
+      endLine("ai-canonical:shared"),
+      "",
+    );
+    // The divergence that matters: a damaged fence is still owned by the marker, so a
+    // caller about to overwrite the file must refuse.
+    expect(extractManagedBlock(truncated, "ai-canonical:shared")).toBeUndefined();
+    expect(hasManagedBlockStart(truncated, "ai-canonical:shared")).toBe(true);
+  });
+
+  it("is false when the marker is absent, and does not match a different marker", () => {
+    expect(hasManagedBlockStart("# Just a file\n", "ai-canonical:shared")).toBe(false);
+    const other = mergeManagedBlock(undefined, { ...block, marker: "ai-canonical:other" }, "# P");
+    expect(hasManagedBlockStart(other, "ai-canonical:shared")).toBe(false);
+  });
+
+  it("matches through CRLF line endings", () => {
+    const crlf = mergeManagedBlock(undefined, block, "# P").replace(/\n/g, "\r\n");
+    expect(hasManagedBlockStart(crlf, "ai-canonical:shared")).toBe(true);
   });
 });
 

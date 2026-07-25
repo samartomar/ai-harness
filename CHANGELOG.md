@@ -30,8 +30,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `CLAUDE.md`, fence and hand-written preamble alike, with no warning and no
   route back. The plan now runs a preflight that refuses with
   `AIH_WORKSPACE_BOOTLOADER_CONFLICT` when a targeted root bootloader carries
-  that block, naming the conflicting file and pointing at the parent-only
-  layout. The refusal happens before anything is staged, so the bootloader is
+  that block, naming the conflicting files and pointing at the parent-only
+  layout. Ownership is tested on the `BEGIN` line alone via the new
+  `hasManagedBlockStart`, so a bootloader whose `END` line was truncated — which
+  carries no well-formed block yet is still repo-owned, and is the hardest case
+  to recover — refuses rather than failing open. The refusal happens before
+  anything is staged, so the bootloader is
   left byte-for-byte unchanged, and it runs for dry-run too, so a plan never
   advertises a write that `--apply` would reject. `--force` is preserved as the
   explicit destructive override, under which the documented overwrite — and its
