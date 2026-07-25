@@ -56,8 +56,14 @@ or as an object:
 
 Implemented validation rejects parent traversal, absolute paths, Windows drive
 paths, duplicate repo ids, duplicate repo paths, dash-leading path segments, and
-Markdown/HTML/control syntax in printable fields. `remote` accepts safe HTTPS,
-SSH, `git+ssh`, and scp-like Git remotes; `ref` accepts safe Git ref syntax.
+Markdown/HTML/control syntax in printable fields. Printable fields reject every
+Unicode control and format codepoint, so bidi overrides and isolates (U+202A–
+U+202E, U+2066–U+2069) cannot reach a rendered digest table and spoof the visual
+order of a repo id, path, or edge kind. The printability check runs before any
+rejection message interpolates the offending value, so a hostile manifest cannot
+smuggle escape sequences to the terminal through a validation error. `remote`
+accepts safe HTTPS, SSH, `git+ssh`, and scp-like Git remotes; `ref` accepts safe
+Git ref syntax.
 Use `aih workspace link <path> --apply` to author repo entries without editing
 the JSON by hand; it writes only parent workspace files.
 

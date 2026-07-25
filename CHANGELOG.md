@@ -20,6 +20,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unchanged, unauthorized modules still do not install, and a fully-authorized
   full profile is untouched. Refs #527
 
+### Security
+
+- Two output-hardening gaps closed in the shared workspace manifest validation
+  layer (`src/workspace/manifest.ts`), inherited identically by the snapshot,
+  hydrate, link, task-plan, and workspace-index paths. `normalizeWorkspacePath`
+  threw its absolute-path rejection before the printability assertion ran, so a
+  hostile manifest path carrying a raw ESC byte was joined into the thrown
+  message and printed unsanitized by the CLI error path; the assertion is now
+  hoisted above every rejection and the messages interpolate the normalized
+  value, making them sanitized by construction. `assertWorkspacePrintable`
+  blocked C0/DEL and table metacharacters but accepted U+202E and the rest of
+  the bidi set, letting a hostile edge `kind` spoof the visual order of a
+  rendered digest table; the gate now rejects every Unicode control and format
+  codepoint, which also covers C1 and the zero-width and tag characters. No
+  behavior change for well-formed manifests. Refs #520
+
 ## [3.1.0] - 2026-07-25
 
 ### Added
