@@ -67,6 +67,39 @@ describe("runWithConcurrency", () => {
     });
     expect(calls).toBe(0);
   });
+
+  it("fails fast: no new task starts once one has rejected, but in-flight tasks settle", async () => {
+    const items = Array.from({ length: 10 }, (_, i) => i);
+    const started: number[] = [];
+    await expect(
+      runWithConcurrency(items, 3, async (_item, index) => {
+        started.push(index);
+        if (index === 0) {
+          throw new Error("boom");
+        }
+        // In-flight siblings should be allowed to settle, but nothing new
+        // should start after the rejection propagates.
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }),
+    ).rejects.toThrow("boom");
+    // Give any (buggy) still-running background workers plenty of time to
+    // pull further entries before asserting nothing new was started.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    // Only the tasks already pulled by the initial 3 workers may have
+    // started; none of the remaining 7 items may have been started.
+    expect(started.length).toBe(3);
+    expect(new Set(started)).toEqual(new Set([0, 1, 2]));
+  });
+
+  it("does not produce unhandled rejections when a sibling task also rejects", async () => {
+    const items = Array.from({ length: 5 }, (_, i) => i);
+    await expect(
+      runWithConcurrency(items, 3, async (_item, index) => {
+        await new Promise((resolve) => setTimeout(resolve, index === 1 ? 1 : 5));
+        throw new Error(`fail-${index}`);
+      }),
+    ).rejects.toThrow(/fail-/);
+  });
 });
 
 describe("resolveVetConcurrency", () => {
@@ -74,10 +107,21 @@ describe("resolveVetConcurrency", () => {
     expect(resolveVetConcurrency({ AIH_VET_CONCURRENCY: "4" })).toBe(4);
   });
 
+  it("trims surrounding whitespace on an otherwise valid override", () => {
+    expect(resolveVetConcurrency({ AIH_VET_CONCURRENCY: " 2 " })).toBe(2);
+  });
+
   it("ignores empty or invalid overrides and uses the core-based default", () => {
     const fallback = Math.max(1, Math.floor(cpus().length / 2));
     expect(resolveVetConcurrency({})).toBe(fallback);
     for (const bad of ["", "0", "-2", "abc"]) {
+      expect(resolveVetConcurrency({ AIH_VET_CONCURRENCY: bad })).toBe(fallback);
+    }
+  });
+
+  it("rejects malformed values that Number.parseInt would silently reinterpret", () => {
+    const fallback = Math.max(1, Math.floor(cpus().length / 2));
+    for (const bad of ["2x", "1.5", "1e3", "0x2", "  ", "+2", "2.0", "NaN"]) {
       expect(resolveVetConcurrency({ AIH_VET_CONCURRENCY: bad })).toBe(fallback);
     }
   });
