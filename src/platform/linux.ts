@@ -1,9 +1,22 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import {
+  type BigIntStats,
+  closeSync,
+  existsSync,
+  constants as fsConstants,
+  fstatSync,
+  opendirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  statSync,
+} from "node:fs";
 import { cpus, totalmem } from "node:os";
 import { join } from "node:path";
 import type { Runner } from "../internals/proc.js";
 import {
   type CertEntry,
+  dedupeCertEntries,
   type GpuInfo,
   type HostAdapter,
   safeCaPattern,
@@ -18,6 +31,140 @@ const ANCHOR_DIRS = [
   "/etc/pki/ca-trust/source/anchors",
   "/etc/ssl/certs",
 ];
+
+const CA_BUNDLE_PATHS = ["/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt"];
+
+const MAX_ROOT_FILE_BYTES = 2 * 1024 * 1024;
+const MAX_ROOT_TOTAL_BYTES = 4 * 1024 * 1024;
+const MAX_ROOT_FILE_ENTRIES = 512;
+const MAX_ROOT_TOTAL_ENTRIES = 1024;
+const MAX_ROOT_DIRECTORY_ENTRIES = 1024;
+const ROOT_FILE_NAME = /^(?:[0-9a-f]{8}\.\d+|.+\.(?:crt|pem|cer))$/i;
+
+type RootFileRead =
+  | { kind: "ok"; text: string; bytes: number }
+  | { kind: "missing" }
+  | { kind: "invalid" };
+
+type RootDirectoryRead =
+  | { kind: "ok"; names: string[]; entries: number }
+  | { kind: "missing" }
+  | { kind: "invalid" };
+
+function errorCode(error: unknown): string | undefined {
+  return typeof error === "object" && error !== null && "code" in error
+    ? String(error.code)
+    : undefined;
+}
+
+function sameRegularRootFile(left: BigIntStats, right: BigIntStats): boolean {
+  return (
+    left.isFile() &&
+    right.isFile() &&
+    left.size === right.size &&
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.mtimeNs === right.mtimeNs &&
+    left.ctimeNs === right.ctimeNs
+  );
+}
+
+function readRootFile(path: string, maxBytes: number): RootFileRead {
+  let fd: number | undefined;
+  let result: RootFileRead = { kind: "invalid" };
+  try {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) return result;
+    fd = openSync(
+      path,
+      fsConstants.O_RDONLY | fsConstants.O_NONBLOCK | (fsConstants.O_NOFOLLOW ?? 0),
+    );
+    const descriptorBefore = fstatSync(fd, { bigint: true });
+    if (
+      descriptorBefore.isFile() &&
+      descriptorBefore.size >= 0n &&
+      descriptorBefore.size <= BigInt(maxBytes)
+    ) {
+      const bytes = Number(descriptorBefore.size);
+      const buffer = Buffer.alloc(bytes);
+      let offset = 0;
+      while (offset < bytes) {
+        const read = readSync(fd, buffer, offset, bytes - offset, null);
+        if (read <= 0) break;
+        offset += read;
+      }
+      const descriptorAfter = fstatSync(fd, { bigint: true });
+      const pathAfter = statSync(path, { bigint: true });
+      if (
+        offset === bytes &&
+        sameRegularRootFile(descriptorBefore, descriptorAfter) &&
+        sameRegularRootFile(descriptorAfter, pathAfter)
+      ) {
+        result = { kind: "ok", text: buffer.toString("utf8"), bytes };
+      }
+    }
+  } catch (error) {
+    result = fd === undefined && errorCode(error) === "ENOENT" ? { kind: "missing" } : result;
+  }
+  if (fd !== undefined) {
+    try {
+      closeSync(fd);
+    } catch {
+      result = { kind: "invalid" };
+    }
+  }
+  return result;
+}
+
+function rootDirectoryNames(path: string, maxEntries: number): RootDirectoryRead {
+  let directory: ReturnType<typeof opendirSync> | undefined;
+  let result: RootDirectoryRead = { kind: "invalid" };
+  try {
+    directory = opendirSync(path);
+    const names: string[] = [];
+    let entries = 0;
+    let overflow = false;
+    for (;;) {
+      const entry = directory.readSync();
+      if (entry === null) break;
+      entries += 1;
+      if (entries > maxEntries) {
+        overflow = true;
+        break;
+      }
+      if (ROOT_FILE_NAME.test(entry.name)) names.push(entry.name);
+    }
+    if (!overflow) result = { kind: "ok", names: names.sort(), entries };
+  } catch (error) {
+    result =
+      directory === undefined && errorCode(error) === "ENOENT" ? { kind: "missing" } : result;
+  }
+  if (directory !== undefined) {
+    try {
+      directory.closeSync();
+    } catch {
+      result = { kind: "invalid" };
+    }
+  }
+  return result;
+}
+
+function boundedPemBlocks(
+  text: string,
+  subject: string,
+  maxEntries: number,
+): CertEntry[] | undefined {
+  const begin = "-----BEGIN CERTIFICATE-----";
+  const end = "-----END CERTIFICATE-----";
+  const roots: CertEntry[] = [];
+  let from = 0;
+  for (let start = text.indexOf(begin, from); start >= 0; start = text.indexOf(begin, from)) {
+    const endAt = text.indexOf(end, start + begin.length);
+    if (endAt < 0 || roots.length === maxEntries) return undefined;
+    roots.push({ subject, pem: `${text.slice(start, endAt + end.length).trim()}\n` });
+    from = endAt + end.length;
+  }
+  return roots;
+}
 
 /**
  * Linux host adapter (implemented, fixture-tested, not smoke-tested on this box).
@@ -35,6 +182,8 @@ export class LinuxAdapter implements HostAdapter {
     private readonly env: NodeJS.ProcessEnv,
     /** Override the trust-store anchor dirs (tests); defaults to the system set. */
     private readonly anchorDirs: readonly string[] = ANCHOR_DIRS,
+    /** Override consolidated system CA bundles (tests); defaults to standard paths. */
+    private readonly caBundlePaths: readonly string[] = CA_BUNDLE_PATHS,
   ) {}
 
   async trustStoreCerts(pattern: string): Promise<CertEntry[]> {
@@ -77,6 +226,60 @@ export class LinuxAdapter implements HostAdapter {
       }
     }
     return out;
+  }
+
+  async trustStoreRoots(): Promise<CertEntry[]> {
+    let totalBytes = 0;
+    let totalEntries = 0;
+    for (const bundlePath of this.caBundlePaths) {
+      const source = readRootFile(
+        bundlePath,
+        Math.min(MAX_ROOT_FILE_BYTES, MAX_ROOT_TOTAL_BYTES - totalBytes),
+      );
+      if (source.kind === "missing") continue;
+      if (source.kind !== "ok") return [];
+      totalBytes += source.bytes;
+      if (totalBytes > MAX_ROOT_TOTAL_BYTES) return [];
+      const roots = boundedPemBlocks(
+        source.text,
+        bundlePath,
+        Math.min(MAX_ROOT_FILE_ENTRIES, MAX_ROOT_TOTAL_ENTRIES - totalEntries),
+      );
+      if (roots === undefined) return [];
+      totalEntries += roots.length;
+      if (totalEntries > MAX_ROOT_TOTAL_ENTRIES) return [];
+      if (roots.length > 0) return dedupeCertEntries(roots);
+    }
+
+    const roots: CertEntry[] = [];
+    let directoryEntries = 0;
+    for (const dir of this.anchorDirs) {
+      const inventory = rootDirectoryNames(dir, MAX_ROOT_DIRECTORY_ENTRIES - directoryEntries);
+      if (inventory.kind === "missing") continue;
+      if (inventory.kind !== "ok") return [];
+      directoryEntries += inventory.entries;
+
+      for (const name of inventory.names) {
+        const source = readRootFile(
+          join(dir, name),
+          Math.min(MAX_ROOT_FILE_BYTES, MAX_ROOT_TOTAL_BYTES - totalBytes),
+        );
+        if (source.kind !== "ok") return [];
+        totalBytes += source.bytes;
+        if (totalBytes > MAX_ROOT_TOTAL_BYTES) return [];
+        const subject = `${name} (${dir})`;
+        const entries = boundedPemBlocks(
+          source.text,
+          subject,
+          Math.min(MAX_ROOT_FILE_ENTRIES, MAX_ROOT_TOTAL_ENTRIES - totalEntries),
+        );
+        if (entries === undefined) return [];
+        totalEntries += entries.length;
+        if (totalEntries > MAX_ROOT_TOTAL_ENTRIES) return [];
+        roots.push(...entries);
+      }
+    }
+    return dedupeCertEntries(roots);
   }
 
   /** Best-effort subject match via openssl; false when openssl is absent or errors. */

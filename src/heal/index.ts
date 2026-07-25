@@ -9,7 +9,15 @@ import {
   writeText,
 } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
-import { type HealScope, type HealShared, PYPI_URL, REGISTRY_URL, tlsCheck } from "./common.js";
+import {
+  type HealScope,
+  type HealShared,
+  hostOf,
+  PYPI_URL,
+  REGISTRY_URL,
+  tlsCheck,
+} from "./common.js";
+import { probeNodeTls, runtimeTlsOrigins } from "./node-trust.js";
 import { HEAL_STEPS, parseScope } from "./phases.js";
 
 /** A placeholder check for a TLS endpoint that this run's scope didn't probe. */
@@ -33,16 +41,28 @@ function notProbed(name: string): Check {
 async function healPlan(ctx: PlanContext): Promise<Plan> {
   const scopes = new Set<HealScope>(parseScope(ctx.options.scope));
 
-  // One TLS handshake per endpoint, shared across the cert/npm/mcp steps. Probe
-  // the registry whenever any consumer is in scope; pypi only for the certs step.
+  // Compare the OS and Node TLS stacks once per bounded public origin. Existing
+  // steps reuse the core OS observations, preserving their scope-specific checks.
+  const runtimeTls = await Promise.all(
+    runtimeTlsOrigins(ctx).map(async (origin) => {
+      const host = hostOf(origin);
+      const [os, node] = await Promise.all([
+        tlsCheck(ctx, `cert: TLS ${host}`, origin),
+        probeNodeTls(ctx, origin),
+      ]);
+      return { origin, os, node };
+    }),
+  );
+  const observations = new Map(runtimeTls.map((observation) => [observation.origin, observation]));
   const needRegistry = scopes.has("certs") || scopes.has("npm") || scopes.has("mcp");
   const shared: HealShared = {
     tlsRegistry: needRegistry
-      ? await tlsCheck(ctx, "cert: TLS registry.npmjs.org", REGISTRY_URL)
+      ? (observations.get(REGISTRY_URL)?.os ?? notProbed("cert: TLS registry.npmjs.org"))
       : notProbed("cert: TLS registry.npmjs.org"),
     tlsPypi: scopes.has("certs")
-      ? await tlsCheck(ctx, "cert: TLS pypi.org", PYPI_URL)
+      ? (observations.get(PYPI_URL)?.os ?? notProbed("cert: TLS pypi.org"))
       : notProbed("cert: TLS pypi.org"),
+    runtimeTls,
   };
 
   const actions: Action[] = [];

@@ -1,4 +1,4 @@
-import { isAbsolute, join } from "node:path";
+import { posix, win32 } from "node:path";
 import { AihError } from "../errors.js";
 import { type EnvVar, upsertTextBlock } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
@@ -16,6 +16,7 @@ import {
 import { stripTrailingNewlines } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import { upsertIniKey } from "./ini.js";
+import { nodeTrustEnvVars, nodeTrustPersistenceActions } from "./node-env.js";
 import { dockerTrustDoc, homebrewDoc, noCertDoc } from "./templates.js";
 
 const DEFAULT_OUT_DIR = "~/.config/enterprise-ca";
@@ -46,8 +47,8 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
   const home = ctx.env.USERPROFILE || ctx.env.HOME || ctx.root;
   assertSafePathText(home, "home directory");
   const outDir = resolveOutDir(ctx.options.out, home);
-  const pemPath = join(outDir, PEM_NAME);
-  const trustStorePath = join(outDir, TRUSTSTORE_NAME);
+  const pemPath = joinFromAbsoluteBase(outDir, PEM_NAME);
+  const trustStorePath = joinFromAbsoluteBase(outDir, TRUSTSTORE_NAME);
   assertSafePathText(outDir, "--out");
   assertSafePathText(pemPath, "PEM path");
   assertSafePathText(trustStorePath, "truststore path");
@@ -64,10 +65,25 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
 
   const bundle = certs.map((c) => c.pem).join("");
 
-  const profile = ctx.host.shellProfilePaths()[0] ?? join(home, ".profile");
+  const profile = ctx.host.shellProfilePaths()[0] ?? joinFromAbsoluteBase(home, ".profile");
+  const nodeEnvVars = nodeTrustEnvVars(pemPath);
   const envVars = trustEnvVars(pemPath, outDir, trustStorePath);
-  const gradlePath = join(home, ".gradle", "gradle.properties");
+  const gradlePath = joinFromAbsoluteBase(home, ".gradle", "gradle.properties");
   const mavenPath = mavenRcPath(home, ctx.host.platform);
+  const lockArgv = ctx.host.lockDownFileArgv(pemPath);
+  const keytoolArgv = [
+    "keytool",
+    "-importcert",
+    "-noprompt",
+    "-storepass",
+    TRUSTSTORE_PASSWORD,
+    "-alias",
+    "aih-corporate-root-ca",
+    "-file",
+    pemPath,
+    "-keystore",
+    trustStorePath,
+  ];
 
   // `certs` is a HOST-level capability: every file it writes lives under the user's
   // home/system (PEM bundle + per-manager configs), not the repo root, so each write
@@ -77,25 +93,23 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
     // 1. The exported CA bundle, then lock it down to the current user.
     writeText(pemPath, bundle, `corporate root CA bundle (PEM, ${certs.length} cert(s))`, {
       external: true,
+      sensitive: { path: true },
     }),
-    exec("lock down the PEM to the current user", ctx.host.lockDownFileArgv(pemPath)),
-    exec(
-      "JVM: import corporate CA into the generated user truststore",
-      [
-        "keytool",
-        "-importcert",
-        "-noprompt",
-        "-storepass",
-        TRUSTSTORE_PASSWORD,
-        "-alias",
-        "aih-corporate-root-ca",
-        "-file",
-        pemPath,
-        "-keystore",
-        trustStorePath,
-      ],
-      { allowFailure: true },
-    ),
+    exec("lock down the PEM to the current user", lockArgv, {
+      blockProbesOnFailure: true,
+      sensitive: { argv: lockArgv.flatMap((value, index) => (value === pemPath ? [index] : [])) },
+      failureCheck: {
+        name: "cert: lock down PEM bundle",
+        verdict: "fail",
+        code: "cert.ca-missing",
+        detail: "could not lock down the corporate CA bundle to the current user",
+      },
+    }),
+    exec("JVM: import corporate CA into the generated user truststore", keytoolArgv, {
+      allowFailure: true,
+      requiresPriorExecSuccess: true,
+      sensitive: { argv: [8, 10] },
+    }),
 
     // 2. Propagate trust to every runtime via shell-profile env exports.
     envBlock(
@@ -104,27 +118,31 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
       shell,
       envVars,
       "export TLS trust env vars for Node, pip, requests, cargo, git, Go/JVM tools",
+      { sensitive: { path: true }, requiresPriorExecSuccess: true },
+    ),
+    ...nodeTrustPersistenceActions(ctx, nodeEnvVars).map((action) =>
+      action.kind === "write" ? { ...action, requiresPriorExecSuccess: true } : action,
     ),
 
     // 3. Per-manager config files (faithful to the blueprint matrix; idempotent).
     writeText(
-      join(home, ".npmrc"),
-      upsertIniKey(readIfExists(join(home, ".npmrc")) ?? "", "cafile", pemPath),
+      joinFromAbsoluteBase(home, ".npmrc"),
+      upsertIniKey(readIfExists(joinFromAbsoluteBase(home, ".npmrc")) ?? "", "cafile", pemPath),
       "npm: set cafile to the corporate CA bundle",
-      { external: true },
+      { external: true, requiresPriorExecSuccess: true },
     ),
     pipConfigWrite(ctx, home, pemPath),
     writeText(
-      join(home, ".cargo", "config.toml"),
-      cargoConfig(readIfExists(join(home, ".cargo", "config.toml")) ?? "", pemPath),
+      joinFromAbsoluteBase(home, ".cargo", "config.toml"),
+      cargoConfig(readIfExists(joinFromAbsoluteBase(home, ".cargo", "config.toml")) ?? "", pemPath),
       "cargo: set [http] cainfo and [net] git-fetch-with-cli",
-      { external: true },
+      { external: true, requiresPriorExecSuccess: true },
     ),
     writeText(
-      join(home, ".gitconfig"),
-      gitConfig(readIfExists(join(home, ".gitconfig")) ?? "", pemPath),
+      joinFromAbsoluteBase(home, ".gitconfig"),
+      gitConfig(readIfExists(joinFromAbsoluteBase(home, ".gitconfig")) ?? "", pemPath),
       "git: set [http] sslCAInfo to the corporate CA bundle",
-      { external: true },
+      { external: true, requiresPriorExecSuccess: true },
     ),
     doc(
       "Docker: install corporate CA in daemon trust store",
@@ -134,19 +152,19 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
       gradlePath,
       gradleProperties(readIfExists(gradlePath) ?? "", trustStorePath),
       "Gradle: set JVM SSL trustStore system properties",
-      { external: true },
+      { external: true, requiresPriorExecSuccess: true },
     ),
     writeText(
       mavenPath,
       mavenRc(readIfExists(mavenPath) ?? "", trustStorePath, ctx.host.platform),
       "Maven: export JVM SSL trustStore options",
-      { external: true },
+      { external: true, requiresPriorExecSuccess: true },
     ),
     writeText(
-      join(home, ".condarc"),
-      condarcConfig(readIfExists(join(home, ".condarc")) ?? "", pemPath),
+      joinFromAbsoluteBase(home, ".condarc"),
+      condarcConfig(readIfExists(joinFromAbsoluteBase(home, ".condarc")) ?? "", pemPath),
       "conda: set ssl_verify to the corporate CA bundle",
-      { external: true },
+      { external: true, requiresPriorExecSuccess: true },
     ),
 
     // 4. Homebrew bundles its own CA store and needs a prefix-specific cp + rehash
@@ -162,7 +180,7 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
 function trustEnvVars(pemPath: string, outDir: string, trustStorePath: string): EnvVar[] {
   const javaTrustStore = `-Djavax.net.ssl.trustStore=${trustStorePath} -Djavax.net.ssl.trustStorePassword=${TRUSTSTORE_PASSWORD}`;
   return [
-    { key: "NODE_EXTRA_CA_CERTS", value: pemPath },
+    ...nodeTrustEnvVars(pemPath),
     { key: "PIP_CERT", value: pemPath },
     { key: "SSL_CERT_FILE", value: pemPath },
     { key: "REQUESTS_CA_BUNDLE", value: pemPath },
@@ -173,16 +191,36 @@ function trustEnvVars(pemPath: string, outDir: string, trustStorePath: string): 
   ];
 }
 
+function absolutePathApi(value: string): typeof posix | typeof win32 | undefined {
+  if (posix.isAbsolute(value)) return posix;
+  const windowsRoot = win32.parse(value).root;
+  const windowsFullyAbsolute =
+    win32.isAbsolute(value) && (windowsRoot.includes(":") || windowsRoot.startsWith("\\\\"));
+  return windowsFullyAbsolute ? win32 : undefined;
+}
+
+/** Join using the separator semantics already established by an absolute base path. */
+function joinFromAbsoluteBase(base: string, ...segments: string[]): string {
+  const pathApi = absolutePathApi(base);
+  if (pathApi === undefined) {
+    throw new AihError(
+      "certificate paths require an absolute home or output directory",
+      "AIH_UNSAFE_PATH",
+    );
+  }
+  return pathApi.join(base, ...segments);
+}
+
 /** Resolve the PEM output directory, expanding a leading `~` to the home dir. */
 function resolveOutDir(out: unknown, home: string): string {
   const raw = typeof out === "string" && out.length > 0 ? out : DEFAULT_OUT_DIR;
   assertSafePathText(raw, "--out");
   if (raw === "~") return home;
   if (raw.startsWith("~/") || raw.startsWith("~\\")) {
-    return join(home, raw.slice(2));
+    return joinFromAbsoluteBase(home, raw.slice(2));
   }
-  if (isAbsolute(raw)) return raw;
-  return join(home, raw);
+  if (absolutePathApi(raw) !== undefined) return raw;
+  return joinFromAbsoluteBase(home, raw);
 }
 
 function assertSafePathText(value: string, label: string): void {
@@ -206,8 +244,12 @@ function assertSafePathText(value: string, label: string): void {
 function pipConfigWrite(ctx: PlanContext, home: string, pemPath: string) {
   const isWindows = ctx.host.platform === "windows";
   const pipPath = isWindows
-    ? join(ctx.env.APPDATA ?? join(home, "AppData", "Roaming"), "pip", "pip.ini")
-    : join(home, ".config", "pip", "pip.conf");
+    ? joinFromAbsoluteBase(
+        ctx.env.APPDATA ?? joinFromAbsoluteBase(home, "AppData", "Roaming"),
+        "pip",
+        "pip.ini",
+      )
+    : joinFromAbsoluteBase(home, ".config", "pip", "pip.conf");
   const existing = readIfExists(pipPath) ?? "";
   return writeText(
     pipPath,
@@ -215,6 +257,7 @@ function pipConfigWrite(ctx: PlanContext, home: string, pemPath: string) {
     "pip: set global.cert to the corporate CA bundle",
     {
       external: true, // home/system path, not repo-scoped
+      requiresPriorExecSuccess: true,
     },
   );
 }
@@ -288,7 +331,9 @@ export function gradleProperties(existing: string, trustStorePath: string): stri
 }
 
 function mavenRcPath(home: string, platform: "windows" | "darwin" | "linux"): string {
-  return platform === "windows" ? join(home, "mavenrc_pre.cmd") : join(home, ".mavenrc");
+  return platform === "windows"
+    ? joinFromAbsoluteBase(home, "mavenrc_pre.cmd")
+    : joinFromAbsoluteBase(home, ".mavenrc");
 }
 
 /** Upsert a Maven rc block that appends the generated truststore to MAVEN_OPTS. */

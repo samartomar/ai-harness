@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out ai-harness
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history so the relevance gate can diff against the PR base sha.
           fetch-depth: 0
@@ -52,7 +52,7 @@ jobs:
           fi
       - name: Set up Node.js
         if: steps.relevance.outputs.vet == 'true'
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
           cache: npm
@@ -77,7 +77,7 @@ jobs:
           echo "$digests" | grep -q "sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
       - name: Set up pinned uv
         if: steps.relevance.outputs.vet == 'true'
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.11.14"
           cache-dependency-glob: tools/cisco-skill-scanner/uv.lock
@@ -93,7 +93,7 @@ jobs:
           test "$version" = "skill-scanner 2.0.12"
       - name: Check out exact ECC baseline
         if: steps.relevance.outputs.vet == 'true'
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: samartomar/ECC
           ref: 16563d4a30f17d097cc4629f6d97e02adf823016
@@ -101,7 +101,7 @@ jobs:
           persist-credentials: false
       - name: Check out exact Superpowers baseline
         if: steps.relevance.outputs.vet == 'true'
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: obra/Superpowers
           ref: d884ae04edebef577e82ff7c4e143debd0bbec99
