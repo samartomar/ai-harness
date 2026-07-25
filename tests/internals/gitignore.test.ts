@@ -55,22 +55,20 @@ describe("aihIgnoreWrite", () => {
     expect(lines).not.toContain(".aih/");
   });
 
-  it.each([
-    ".aih/",
-    "/.aih/",
-    ".aih",
-    "/.aih",
-  ])("supersedes every `.aih`-dir exclude form (%s) so the negation actually re-includes the recorder", (excludeForm) => {
-    // Any of these excludes the .aih DIRECTORY; git then can't re-include a child, so
-    // leaving one would silently re-strand the recorder (the original bug). It MUST be
-    // stripped — this is intentional, not a user-line loss, and is the only way the fix works.
-    writeFileSync(join(root, ".gitignore"), `node_modules/\n${excludeForm}\n`);
-    const lines = (aihIgnoreWrite(root).contents ?? "").split(/\r?\n/);
-    expect(lines).not.toContain(excludeForm); // the dir-exclude is gone
-    expect(lines).toContain(".aih/*"); // replaced by a contents-only ignore
-    expect(lines).toContain("!.aih/usage-record.mjs"); // that the negation can pierce
-    expect(lines).toContain("node_modules/"); // unrelated content preserved
-  });
+  it.each([".aih/", "/.aih/", ".aih", "/.aih"])(
+    "supersedes every `.aih`-dir exclude form (%s) so the negation actually re-includes the recorder",
+    (excludeForm) => {
+      // Any of these excludes the .aih DIRECTORY; git then can't re-include a child, so
+      // leaving one would silently re-strand the recorder (the original bug). It MUST be
+      // stripped — this is intentional, not a user-line loss, and is the only way the fix works.
+      writeFileSync(join(root, ".gitignore"), `node_modules/\n${excludeForm}\n`);
+      const lines = (aihIgnoreWrite(root).contents ?? "").split(/\r?\n/);
+      expect(lines).not.toContain(excludeForm); // the dir-exclude is gone
+      expect(lines).toContain(".aih/*"); // replaced by a contents-only ignore
+      expect(lines).toContain("!.aih/usage-record.mjs"); // that the negation can pierce
+      expect(lines).toContain("node_modules/"); // unrelated content preserved
+    },
+  );
 
   it("does NOT touch `.aih/*` or `.aih/**` (they leave the dir traversable — negation works)", () => {
     // These ignore contents, not the directory, so they coexist with the negation and
