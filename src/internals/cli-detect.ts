@@ -129,6 +129,13 @@ export interface TargetResolution {
   clis: Cli[];
   /** True when `--detect` found nothing and the result fell back to `claude`. */
   detectFellBack: boolean;
+  /**
+   * True when NOTHING selected the targets — no injected `ctx.targets`, no
+   * `--cli`/`--all-tools`/`--detect`, and no marker targets — so the result is the
+   * bare `claude` default. Callers use it to warn before narrowing past canon the
+   * repo already has; an expressed selection is never second-guessed.
+   */
+  bareDefault: boolean;
 }
 
 /**
@@ -187,7 +194,8 @@ export async function resolveTargets(ctx: PlanContext): Promise<TargetResolution
   // every phase via `ctx.targets`, so the user is prompted at most once and all
   // phases agree on the set. When present, it is authoritative — short-circuit
   // before any detection/prompt so no phase re-resolves or re-prompts.
-  if (ctx.targets !== undefined) return { clis: ctx.targets, detectFellBack: false };
+  if (ctx.targets !== undefined)
+    return { clis: ctx.targets, detectFellBack: false, bareDefault: false };
   const opts = ctx.options;
   const explicit = typeof opts.cli === "string" && opts.cli.trim().length > 0;
   if (opts.detect === true && opts.allTools !== true && !explicit) {
@@ -196,11 +204,12 @@ export async function resolveTargets(ctx: PlanContext): Promise<TargetResolution
     const configOnly = installs.filter((i) => i.config && !i.binary).map((i) => i.cli);
     if (ctx.prompter) {
       const confirmed = await confirmDetectedClis(ctx.prompter, runnable, configOnly);
-      if (confirmed.length > 0) return { clis: confirmed, detectFellBack: false };
-      return { clis: ["claude"], detectFellBack: true };
+      if (confirmed.length > 0)
+        return { clis: confirmed, detectFellBack: false, bareDefault: false };
+      return { clis: ["claude"], detectFellBack: true, bareDefault: false };
     }
-    if (runnable.length > 0) return { clis: runnable, detectFellBack: false };
-    return { clis: ["claude"], detectFellBack: true };
+    if (runnable.length > 0) return { clis: runnable, detectFellBack: false, bareDefault: false };
+    return { clis: ["claude"], detectFellBack: true, bareDefault: false };
   }
   // No explicit selection (no --cli/--all-tools/--detect): honor the committed
   // `.aih-config.json` targets when present. The marker records what the repo was
@@ -208,25 +217,61 @@ export async function resolveTargets(ctx: PlanContext): Promise<TargetResolution
   // SAME tools instead of narrowing to the `claude` default — which would drop the
   // codex/gemini canon. Mirrors how `doctor` treats the marker's contextDir as
   // authoritative. Fail-soft: a malformed marker / unknown tool just falls through.
-  if (!explicit && opts.allTools !== true && opts.detect !== true) {
-    // 1. A committed marker is authoritative (an adopted repo's targets) — so a re-run
-    //    regenerates for the SAME tools instead of narrowing/widening.
+  const unselected = !explicit && opts.allTools !== true && opts.detect !== true;
+  if (unselected) {
+    // A committed marker is authoritative (an adopted repo's targets) — so a re-run
+    // regenerates for the SAME tools instead of narrowing.
     const cfg = readAihConfig(ctx.root);
     if (cfg && cfg.targets.length > 0) {
       const fromMarker = resolveClis({ cli: cfg.targets.join(",") });
-      if (fromMarker.length > 0) return { clis: fromMarker, detectFellBack: false };
+      if (fromMarker.length > 0)
+        return { clis: fromMarker, detectFellBack: false, bareDefault: false };
     }
-    // 2. No marker (a FIRST run) → default to the RUNNABLE installed CLIs (binary on
-    //    PATH) so the first run wires the tools you ACTUALLY have — not just claude,
-    //    which left every other installed CLI (kiro, codex, …) unwired and silent.
-    //    Config-only/stale dirs (e.g. a leftover `~/.windsurf` with no binary) are
-    //    excluded, so this also stops init scattering artifacts for tools you lack.
-    const runnable = (await detectInstall(ctx)).filter((i) => i.binary).map((i) => i.cli);
-    if (runnable.length > 0) return { clis: runnable, detectFellBack: false };
   }
-  // Fallback: explicit `--cli` (validated strictly so a typo fails closed) or, with
-  // no flags + no marker + nothing runnable detected (CI / fresh box), claude.
-  return { clis: resolveClis(opts, { strict: true }), detectFellBack: false };
+  // Fallback: explicit `--cli` (validated strictly so a typo fails closed) or a
+  // deterministic first-run default of claude. Discovering runnable tools is an
+  // explicit `--detect` operation. Reaching here with nothing selected IS the bare
+  // default — flagged so callers can warn before it narrows past existing canon.
+  return {
+    clis: resolveClis(opts, { strict: true }),
+    detectFellBack: false,
+    bareDefault: unselected,
+  };
+}
+
+/**
+ * The root bootloader files present in the repo that `clis` will NOT regenerate.
+ *
+ * Reported as FILES, not tool names: `AGENTS.md` is the bootloader for codex,
+ * antigravity, opencode, zed AND kimi, so naming tools would invent an intent the
+ * repo never expressed. Paths come from the same CLI registry that drives
+ * generation, so this can't drift from what a run actually writes.
+ */
+export function unmanagedBootloaders(root: string, clis: readonly Cli[]): string[] {
+  const managed = new Set(clis.flatMap((cli) => entry(cli).bootloaders));
+  const present = SUPPORTED_CLIS.flatMap((cli) => entry(cli).bootloaders)
+    .filter((rel) => !managed.has(rel) && existsSync(join(root, rel)))
+    .sort();
+  return [...new Set(present)];
+}
+
+/**
+ * The notice emitted when a bare run's `claude` default leaves bootloaders the repo
+ * already has unregenerated — and therefore outside the `--verify` drift gate, which
+ * only probes the resolved targets. Silent narrowing is the one sharp edge of the
+ * deterministic default, so it is stated rather than inferred.
+ */
+export function bareDefaultNarrowingNotice(paths: readonly string[]): string {
+  return [
+    "No --cli, --all-tools, --detect, or committed .aih-config.json targets were given,",
+    "so this run targets only `claude`. These bootloaders already exist here and will NOT",
+    "be regenerated or drift-checked by this run:",
+    ...paths.map((p) => `  - ${p}`),
+    "",
+    "Re-run with `--cli <list>` (e.g. `--cli claude,codex`) or `--detect` to include them.",
+    "Committing .aih-config.json via `aih init`/`aih bootstrap-ai` records the target set",
+    "so later bare re-runs regenerate all of it automatically.",
+  ].join("\n");
 }
 
 /** Back-compat thin wrapper for callers that only need the CLI list. */

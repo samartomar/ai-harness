@@ -1771,7 +1771,7 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     expect(merged.mcpServers.userLocal).toBeDefined();
   });
 
-  it("warns when first-run default targeting selects global MCP config files", async () => {
+  it("a bare first run stays on the Claude project config even when global CLIs are runnable", async () => {
     const root = makeTmp();
     const home = makeTmp();
     const run = fakeRunner((argv) =>
@@ -1782,22 +1782,16 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
 
     const p = await command.plan(makeCtx({ root, env: { HOME: home, USERPROFILE: home }, run }));
     const writes = p.actions.filter((a): a is WriteAction => a.kind === "write");
-    const targetNotice = p.actions.find(
-      (a) => a.kind === "digest" && a.describe === "MCP target selection",
-    );
-
+    expect(writes.some((w) => w.path === ".mcp.json")).toBe(true);
     expect(writes.some((w) => w.path.replace(/\\/g, "/").endsWith(".codex/config.toml"))).toBe(
-      true,
+      false,
     );
     expect(writes.some((w) => w.path.replace(/\\/g, "/").endsWith(".gemini/settings.json"))).toBe(
-      true,
+      false,
     );
-    expect(targetNotice?.kind === "digest" ? targetNotice.text : "").toContain(
-      "global MCP config files",
-    );
-    expect(targetNotice?.kind === "digest" ? targetNotice.text : "").toContain(
-      "~/.codex/config.toml",
-    );
+    expect(
+      p.actions.some((a) => a.kind === "digest" && a.describe === "MCP target selection"),
+    ).toBe(false);
   });
 
   it("--all-tools writes each tool's OWN MCP config — never Claude's .mcp.json for a TOML/global tool", async () => {

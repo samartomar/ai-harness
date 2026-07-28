@@ -177,7 +177,7 @@ for the vet/sign/policy flow. <!-- aih:claim CM-20 -->
 | [`aih track`](docs/commands.md#aih-track) | Record one metrics sample (commits, LOC delta, adoption) to `.aih/history.jsonl` — the time-series behind `aih report` trends. |
 | [`aih usage`](docs/commands.md#aih-usage) | Install the multi-tool usage-capture layer → `.aih/usage.jsonl` — local activity counts only, no cost, no prompts. |
 | [`aih telemetry`](docs/commands.md#aih-telemetry) | Inject OpenTelemetry env, a redacting Bindplane collector, and an analytics fetcher. |
-| [`aih mcp`](docs/commands.md#aih-mcp) | Generate MCP config for targeted CLIs, warn when first-run detection selects global config targets, and use `--mcp-compliant` to omit denied generated servers from targeted configs. <!-- aih:claim CM-18 --> |
+| [`aih mcp`](docs/commands.md#aih-mcp) | Generate MCP config for targeted CLIs; a bare first run stays on Claude, while `--detect` explicitly selects runnable tools. Use `--mcp-compliant` to omit denied generated servers from targeted configs. <!-- aih:claim CM-18 --> |
 | [`aih sandbox`](docs/commands.md#aih-sandbox) | Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUnavailable`). |
 
 ### Verification
@@ -270,12 +270,15 @@ real `.kiro/` tree):
 - `aih superpowers --cli kiro` → `.kiro/steering/superpowers-methodology.md` (the
   brainstorm → plan → TDD → review routing, since Kiro can't load `~/.claude/superpowers`).
 
-**Detection** (`--detect`) targets runnable CLI binaries on PATH. Config dirs (`~/.claude`,
-`~/.codex`, `~/.gemini`, `~/.cursor`, `~/.kiro`, …) are still reported as config-only traces, but
-they are advisory and may be stale; they do not drive setup unless you explicitly type the CLI with
-`--cli` or `--all-tools`. Precedence: `--all-tools` > `--cli` > `--detect` > committed marker >
-runnable CLIs > default `claude`. When `--detect` finds no runnable CLI it defaults to `claude` and
-says so. **In an interactive terminal, `--detect` shows the runnable list and any config-only traces
+**Detection** (`--detect`) targets runnable CLI binaries on PATH — and it is the *only* thing that
+does. Nothing on your machine changes what a bare run targets: runnable binaries need `--detect`,
+and config dirs (`~/.claude`, `~/.codex`, `~/.gemini`, `~/.cursor`, `~/.kiro`, …) are reported as
+config-only traces that are advisory, may be stale, and never drive setup unless you type the CLI
+with `--cli` or `--all-tools`. Precedence: `--all-tools` > `--cli` > `--detect` > committed marker >
+default `claude`. When `--detect` finds no runnable CLI it defaults to `claude` and says so; a bare
+run that defaults to `claude` while the repo already has other bootloaders (`AGENTS.md`, …) says
+that too, naming the files it will not regenerate or drift-check. **In an interactive terminal,
+`--detect` shows the runnable list and any config-only traces
 before asking you to confirm or edit it** (press Enter to accept, or type a comma-separated list to
 add/remove tools) before anything installs — pass `--yes` (or run non-interactively / piped /
 `--json`) to skip the prompt and use the runnable list as-is. `aih doctor` reports runnable vs
