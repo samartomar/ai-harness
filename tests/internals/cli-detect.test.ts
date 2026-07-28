@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  bareDefaultNarrowingNotice,
   confirmDetectedClis,
   detectClis,
   detectFallbackNotice,
@@ -10,8 +11,9 @@ import {
   presentClis,
   resolveTargetClis,
   resolveTargets,
+  unmanagedBootloaders,
 } from "../../src/internals/cli-detect.js";
-import { SUPPORTED_CLIS } from "../../src/internals/clis.js";
+import { type Cli, SUPPORTED_CLIS } from "../../src/internals/clis.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import type { Prompter } from "../../src/internals/prompt.js";
@@ -163,10 +165,10 @@ describe("resolveTargetClis", () => {
     expect(r).toEqual(["claude"]);
   });
 
-  it("excludes a config-only/stale tool (config dir, no binary) from the default", async () => {
-    configDir(".windsurf"); // leftover dir with no binary on PATH
-    const r = await resolveTargetClis(makeCtx()); // nothing runnable
-    expect(r).toEqual(["claude"]); // windsurf is NOT wired from a stale dir
+  it("ignores a config-only/stale tool AND a runnable binary alike", async () => {
+    // Neither signal drives a bare run any more: the default is unconditional.
+    configDir(".windsurf"); // leftover dir, no binary
+    expect(await resolveTargetClis(makeCtx({}, ["windsurf"]))).toEqual(["claude"]);
   });
 });
 
@@ -215,6 +217,55 @@ describe("resolveTargets / detectFallbackNotice", () => {
     const n = detectFallbackNotice();
     expect(n).toContain("--cli");
     expect(n).toContain("--all-tools");
+  });
+});
+
+describe("bareDefault — the silent-narrowing signal", () => {
+  it("flags bareDefault when nothing selects targets (no flags, no marker)", async () => {
+    const r = await resolveTargets(makeCtx({}, ["claude", "codex"]));
+    expect(r.clis).toEqual(["claude"]);
+    expect(r.bareDefault).toBe(true);
+  });
+
+  it("does not flag bareDefault when the committed marker supplies targets", async () => {
+    writeFileSync(
+      join(home, ".aih-config.json"),
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["claude", "codex"] }),
+    );
+    expect((await resolveTargets(makeCtx())).bareDefault).toBe(false);
+  });
+
+  it("does not flag bareDefault for any explicit selection", async () => {
+    expect((await resolveTargets(makeCtx({ cli: "codex" }))).bareDefault).toBe(false);
+    expect((await resolveTargets(makeCtx({ allTools: true }))).bareDefault).toBe(false);
+    expect((await resolveTargets(makeCtx({ detect: true }, ["codex"]))).bareDefault).toBe(false);
+  });
+
+  it("does not flag bareDefault when an orchestrator injected the targets", async () => {
+    const ctx = { ...makeCtx(), targets: ["claude", "gemini"] as Cli[] };
+    expect((await resolveTargets(ctx)).bareDefault).toBe(false);
+  });
+
+  it("reports bootloaders present in the repo that the target set will not regenerate", () => {
+    writeFileSync(join(home, "CLAUDE.md"), "# claude");
+    writeFileSync(join(home, "AGENTS.md"), "# agents");
+    writeFileSync(join(home, "GEMINI.md"), "# gemini");
+    // Named as FILES, not CLIs: AGENTS.md is shared by codex/antigravity/opencode/
+    // zed/kimi, so listing tool names would invent intent the repo never expressed.
+    expect(unmanagedBootloaders(home, ["claude"])).toEqual(["AGENTS.md", "GEMINI.md"]);
+  });
+
+  it("reports nothing when the target set already regenerates every bootloader present", () => {
+    writeFileSync(join(home, "CLAUDE.md"), "# claude");
+    expect(unmanagedBootloaders(home, ["claude"])).toEqual([]);
+  });
+
+  it("the narrowing notice names the unmanaged files and the fix flags", () => {
+    const n = bareDefaultNarrowingNotice(["AGENTS.md", "GEMINI.md"]);
+    expect(n).toContain("AGENTS.md");
+    expect(n).toContain("GEMINI.md");
+    expect(n).toContain("--cli");
+    expect(n).toContain("--detect");
   });
 });
 

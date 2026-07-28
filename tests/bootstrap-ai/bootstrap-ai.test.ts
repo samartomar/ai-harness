@@ -499,6 +499,39 @@ describe("bootstrap-ai — hygiene & detect notice", () => {
       rmSync(emptyHome, { recursive: true, force: true });
     }
   });
+
+  it("warns when a bare re-run narrows past bootloaders the repo already has", async () => {
+    // The drift gate probes only the RESOLVED targets, so a bare run on a repo whose
+    // marker lost its targets would verify CLAUDE.md and silently let AGENTS.md rot.
+    put("CLAUDE.md", "# claude");
+    put("AGENTS.md", "# agents");
+    const notice = (await command.plan(makeCtx())).actions.find(
+      (a) => a.kind === "doc" && a.describe.includes("targeting narrowed"),
+    );
+    expect(notice?.kind === "doc" ? notice.text : "").toContain("AGENTS.md");
+    expect(notice?.kind === "doc" ? notice.text : "").toContain("--cli");
+  });
+
+  it("stays quiet when the bare default already covers every bootloader present", async () => {
+    put("CLAUDE.md", "# claude");
+    const actions = (await command.plan(makeCtx())).actions;
+    expect(actions.some((a) => a.kind === "doc" && a.describe.includes("targeting narrowed"))).toBe(
+      false,
+    );
+  });
+
+  it("stays quiet when the committed marker already names the extra tools", async () => {
+    put("CLAUDE.md", "# claude");
+    put("AGENTS.md", "# agents");
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: ".ai-context", targets: ["claude", "codex"] }),
+    );
+    const actions = (await command.plan(makeCtx())).actions;
+    expect(actions.some((a) => a.kind === "doc" && a.describe.includes("targeting narrowed"))).toBe(
+      false,
+    );
+  });
 });
 
 describe("bootstrap-ai — boundary", () => {

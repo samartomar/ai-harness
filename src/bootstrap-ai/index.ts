@@ -6,7 +6,13 @@ import {
   resolveBaselineSource,
 } from "../internals/baseline-sources.js";
 import { CANON_OPTION, type CanonMode, canonMode } from "../internals/canon-mode.js";
-import { detectFallbackNotice, detectInstall, resolveTargets } from "../internals/cli-detect.js";
+import {
+  bareDefaultNarrowingNotice,
+  detectFallbackNotice,
+  detectInstall,
+  resolveTargets,
+  unmanagedBootloaders,
+} from "../internals/cli-detect.js";
 import type { Cli } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
@@ -176,7 +182,7 @@ function generatedTextProbe(relPath: string, expected: string): Action {
 async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   const dir = ctx.contextDir;
   const canon = canonMode(ctx);
-  const { clis, detectFellBack } = await resolveTargets(ctx);
+  const { clis, detectFellBack, bareDefault } = await resolveTargets(ctx);
   const baseline = resolveBaselineSource(ctx.options, readAihConfigBaseline(ctx.root));
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const repoName = repoNameOf(ctx.root);
@@ -330,6 +336,21 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   // If --detect found nothing and we defaulted to claude, say so plainly.
   if (detectFellBack) {
     actions.push(doc("no AI CLIs detected — defaulted to claude", detectFallbackNotice()));
+  }
+
+  // The bare `claude` default is deterministic by design, but on a repo that already
+  // carries other bootloaders it narrows silently — and the drift probes above only
+  // cover `bootloaders` (the RESOLVED targets), so the rest would rot unverified.
+  if (bareDefault) {
+    const unmanaged = unmanagedBootloaders(ctx.root, clis);
+    if (unmanaged.length > 0) {
+      actions.push(
+        doc(
+          "targeting narrowed to claude — other bootloaders untouched",
+          bareDefaultNarrowingNotice(unmanaged),
+        ),
+      );
+    }
   }
 
   // A short orientation doc so the dry-run explains itself.

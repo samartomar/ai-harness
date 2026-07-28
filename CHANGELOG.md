@@ -29,6 +29,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   mcp --apply` from unexpectedly writing global Codex or Gemini configuration.
   Refs #507
 
+- `aih init` / `aih bootstrap-ai` now say so when that `claude` default narrows past
+  bootloaders the repo already has, naming the files (`AGENTS.md`, `GEMINI.md`, …)
+  the run will neither regenerate nor drift-check. The `--verify` drift gate only
+  probes the resolved targets, so an unrecorded target set could previously let the
+  rest of a multi-tool repo's canon rot behind a green check. Refs #507
+
 - `aih workspace` no longer destroys a bootstrapped repo's own bootloader. The
   workspace bootloader write is a whole-file `writeText`, while `aih
   bootstrap-ai` merges the canon into an `ai-canonical:shared` fence and leaves

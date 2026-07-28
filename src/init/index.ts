@@ -7,7 +7,13 @@ import {
   resolveBaselineSource,
 } from "../internals/baseline-sources.js";
 import { CANON_OPTION } from "../internals/canon-mode.js";
-import { detectFallbackNotice, isTargeted, resolveTargets } from "../internals/cli-detect.js";
+import {
+  bareDefaultNarrowingNotice,
+  detectFallbackNotice,
+  isTargeted,
+  resolveTargets,
+  unmanagedBootloaders,
+} from "../internals/cli-detect.js";
 import { deepMerge, isPlainObject } from "../internals/merge.js";
 import type { Action, CommandSpec, PlanContext, WriteAction } from "../internals/plan.js";
 import { doc, plan, writeJson } from "../internals/plan.js";
@@ -170,6 +176,21 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // (the phases short-circuit on `ctx.targets`, so no phase emits this itself).
   if (resolution.detectFellBack) {
     actions.push(doc("no AI CLIs detected — defaulted to claude", detectFallbackNotice()));
+  }
+
+  // Same guard as `bootstrap-ai`, but it must live here too: init threads `targets`
+  // into every phase, so the bootstrap-ai phase short-circuits `resolveTargets` and
+  // never sees `bareDefault` itself.
+  if (resolution.bareDefault) {
+    const unmanaged = unmanagedBootloaders(ctx.root, resolution.clis);
+    if (unmanaged.length > 0) {
+      actions.push(
+        doc(
+          "targeting narrowed to claude — other bootloaders untouched",
+          bareDefaultNarrowingNotice(unmanaged),
+        ),
+      );
+    }
   }
 
   for (const phase of INIT_PHASES) {
