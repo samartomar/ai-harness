@@ -15,9 +15,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Added `aih live [root] --cli codex|claude|kimi --prompt-file <file>` for real-time,
   capped progress from one explicitly selected local CLI. Codex and Claude use pinned
-  read-only modes. Kimi 0.29.2 requires explicit non-read-only consent, is visibly
-  labeled `non_read_only`, may use native tools and change the selected worktree, and
-  is accepted only through its direct native-executable argv transport. Aih performs
+  core read-only modes; this is not clean-room isolation from local vendor customization:
+  Claude skills are disabled without `--safe-mode`, Codex does not ignore all user
+  configuration, and native instructions/plugins/hooks/MCP configuration may still
+  initialize without an aih read-only attestation. Kimi 0.29.2 requires explicit
+  non-read-only consent, is visibly labeled `non_read_only`, may use native tools and
+  change the selected worktree, and is accepted only through its direct
+  native-executable argv transport. Aih performs
   no worktree-safety or dirty-tree preflight for Kimi; although aih never prints its
   prompt argument, Task Manager, WMIC, and other local process-inspection tools may
   expose it.

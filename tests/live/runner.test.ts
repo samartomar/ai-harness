@@ -94,7 +94,7 @@ afterEach(() => {
 });
 
 describe("live launch contract", () => {
-  it("pins read-only Codex and Claude invocations and sends prompts only on stdin", () => {
+  it("pins core read-only Codex and Claude invocations without claiming clean-room isolation", () => {
     const root = fixtureRoot();
     const env = { PATH: root };
     install(root, nativeName("codex", process.platform));
@@ -121,6 +121,10 @@ describe("live launch contract", () => {
     });
     expect(launchFor("codex", prompt, env, process.platform).args).not.toContain(prompt);
     expect(launchFor("claude", prompt, env, process.platform).args).not.toContain(prompt);
+    expect(launchFor("codex", prompt, env, process.platform).args).not.toContain(
+      "--ignore-user-config",
+    );
+    expect(launchFor("claude", prompt, env, process.platform).args).not.toContain("--safe-mode");
   });
 
   it("uses Kimi's exact direct argv prompt transport and labels it non-read-only at result time", async () => {

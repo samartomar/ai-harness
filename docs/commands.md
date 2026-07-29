@@ -94,7 +94,12 @@ decoded text byte-for-byte through stdin; no shell command or wrapper contains t
 Codex runs as `codex exec --sandbox read-only --ephemeral --json -`. Claude runs with
 `--permission-mode plan --tools Read,Glob,Grep`, slash commands and session persistence disabled,
 and no edit or Bash tool. Their progress, human/JSON success output, and human/JSON error messages
-carry the exact safety label `read_only`.
+carry the exact safety label `read_only`. That label describes these pinned core CLI/tool modes, not
+a clean-room attestation for every locally configured extension. Claude's
+`--disable-slash-commands` disables its skills, but aih does not pass Claude `--safe-mode`; Codex
+likewise does not ignore all user configuration. Native project/user instructions, plugins, hooks,
+MCP configuration, or other vendor customization surfaces can therefore still initialize according
+to the selected CLI and local configuration, and aih does not attest those extensions as read-only.
 
 Kimi 0.29.2 has no help-verified read-only/no-tools prompt streaming mode. Selecting it therefore
 requires `--allow-kimi-non-read-only`; without that acknowledgement aih fails before reading the
@@ -111,9 +116,10 @@ Progress is emitted immediately on stderr as capped generic events; malformed/un
 and every stderr fragment become fixed signals rather than echoed content. One sanitized, bounded
 terminal result uses the standard human digest or JSON envelope on stdout. `--timeout <seconds>`
 defaults to 120. Every final success or error view identifies the selected CLI and its `read_only`
-or `non_read_only` label. `aih live` does not load skills, choose workers, schedule tasks, retain
-agent memory, or run a council; an acknowledged Kimi subprocess can implement changes through its
-native tools as described above.
+or `non_read_only` label. Aih itself does not choose skills or workers, schedule tasks, retain aih
+agent memory, or run a council. The deliberately launched vendor CLI can still initialize the
+native customization surfaces disclosed above; an acknowledged Kimi subprocess can implement
+changes through its native tools as described above.
 
 ## aih hardware
 

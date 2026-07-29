@@ -117,6 +117,10 @@ For `aih live`, Codex and Claude use explicit `read_only` modes. The acknowledge
 `non_read_only` path may use native tools and change the selected worktree; aih performs no
 worktree-safety or dirty-tree preflight for it. Kimi's required prompt argument is never printed by
 aih but can be visible to Task Manager, WMIC, and other local process-inspection tools.
+`read_only` describes the pinned core Codex/Claude invocation, not clean-room isolation from every
+local extension: Claude skills are disabled, but Claude `--safe-mode` is not used, Codex user
+configuration is not wholly ignored, and native instructions/plugins/hooks/MCP configuration may
+still initialize under the vendor CLI. Aih does not attest those customizations as read-only.
 
 ### Repo canon & bootstrap
 
