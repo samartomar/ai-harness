@@ -22,6 +22,7 @@ import { command as hardware } from "../hardware/index.js";
 import { command as heal } from "../heal/index.js";
 import { command as init } from "../init/index.js";
 import type { CommandSpec } from "../internals/plan.js";
+import { command as live } from "../live/index.js";
 import { marketplaceBuildCommand } from "../marketplace/build.js";
 import { marketplacePublishCommand } from "../marketplace/publish.js";
 import { marketplaceValidateCommand } from "../marketplace/validate.js";
@@ -45,6 +46,7 @@ import {
   runPackInstall,
 } from "../pack/index.js";
 import { sanitizeLabel } from "../plugins/registry.js";
+import { command as changeProfile } from "../profile/change-profile-command.js";
 import { command as profile } from "../profile/index.js";
 import { command as prune } from "../prune/index.js";
 import { command as ready } from "../ready/index.js";
@@ -127,7 +129,10 @@ export const CAPABILITIES: CommandSpec[] = [
   init,
 ];
 
-/** Read-only commands (always safe). */
+/**
+ * Commands registered with the non-mutating aih executor surface. `live` normally runs
+ * read-only Codex/Claude modes, but its explicitly acknowledged Kimi path is non-read-only.
+ */
 export const READONLY: CommandSpec[] = [
   doctor,
   docsLint,
@@ -135,6 +140,8 @@ export const READONLY: CommandSpec[] = [
   verifyBundle,
   verifyReleaseCommand,
   sessionGuard,
+  changeProfile,
+  live,
 ];
 
 export const ALL_COMMANDS: CommandSpec[] = [...CAPABILITIES, ...READONLY];
@@ -534,7 +541,6 @@ export function registerCommands(
       );
     }
   }
-
   const trust = program.command("trust").description("Trust-gate operations for external sources");
   const allow = trust
     .command(trustAllowCommand.name)
