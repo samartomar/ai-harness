@@ -88,6 +88,24 @@ describe("change-profile rule table", () => {
     expect(ids(profile, "escalations")).toContain("framework.ui-ambiguous");
   });
 
+  it("recognizes API contract paths without matching suffix near-misses", () => {
+    const profile = classify([
+      added("api/openapi.yaml"),
+      added("contracts/swagger/v1.yaml"),
+      added("events/asyncapi/spec.yaml"),
+      added("rpc/service.proto"),
+      added("schema/query.graphql"),
+    ]);
+    expect(ids(profile, "triggers")).toContain("risk.api-contract");
+
+    const nearMiss = classify([
+      added("api/not-openapiish.txt"),
+      added("rpc/service.proto.bak"),
+      added("schema/query.graphql.txt"),
+    ]);
+    expect(ids(nearMiss, "triggers")).not.toContain("risk.api-contract");
+  });
+
   it("infers frameworks only from changed valid package.json and go.mod", () => {
     const profile = classify([
       added("package.json", JSON.stringify({ dependencies: { react: "1", express: "1" } })),

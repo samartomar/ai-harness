@@ -380,7 +380,10 @@ export function classifyChangeProfile(value: unknown): ChangeProfile {
       /^(?:cdk\.json|samconfig\.toml|serverless\.[^/]+)$/.test(lower)
     )
       emitFact("risk.infrastructure", "infrastructure-path");
-    if (/(?:^|\/)(?:openapi|swagger|asyncapi)(?:\.|\/)|\.(?:proto|graphql)$/.test(lower))
+    if (
+      /(?:^|\/)(?:openapi|swagger|asyncapi)(?:\.|\/)/.test(lower) ||
+      /\.(?:proto|graphql)$/.test(lower)
+    )
       emitFact("risk.api-contract", "api-contract-path");
     if (/(?:^|\/)(?:\.github\/workflows|\.gitlab-ci|azure-pipelines)(?:\/|\.|$)/.test(lower))
       emitFact("risk.ci", "ci-path");
