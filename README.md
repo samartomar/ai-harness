@@ -108,9 +108,15 @@ Keep this table as a navigation index: do not add flag-level behavior or workflo
 | [`aih tools`](docs/commands.md#aih-tools) | Install the agent shell tools the harness leans on (`rg`/`fd`/`jq`, `ast-grep`, `gh`, …) through the platform package manager. |
 | [`aih ready`](docs/commands.md#aih-ready) | Grade a blocker-aware readiness verdict: can a developer start work with an AI agent here, now? |
 | [`aih session-guard`](docs/commands.md#aih-session-guard) | Inspect session/action text offline for secret-like values and dangerous local actions. |
+| [`aih live`](docs/commands.md#aih-live) | Stream bounded progress from one explicitly selected local Codex, Claude, or opt-in non-read-only Kimi invocation. |
 | [`aih hardware`](docs/commands.md#aih-hardware) | Profile CPU/RAM/GPU and emit tuned Ollama/llama.cpp settings. |
 | [`aih vdi`](docs/commands.md#aih-vdi) | Detect VDI (Citrix/WorkSpaces/RES/RDP) and redirect caches + SQLite to local scratch. |
 | [`aih bootstrap`](docs/commands.md#aih-bootstrap) | Orchestrate the workstation 4-phase rollout (certs → hardware/vdi → telemetry). |
+
+For `aih live`, Codex and Claude use explicit `read_only` modes. The acknowledged Kimi
+`non_read_only` path may use native tools and change the selected worktree; aih performs no
+worktree-safety or dirty-tree preflight for it. Kimi's required prompt argument is never printed by
+aih but can be visible to Task Manager, WMIC, and other local process-inspection tools.
 
 ### Repo canon & bootstrap
 
@@ -118,6 +124,7 @@ Keep this table as a navigation index: do not add flag-level behavior or workflo
 | --- | --- |
 | [`aih init`](docs/commands.md#aih-init) | Initialize a repo in one pass: profile + superpowers + bootstrap-ai + scaffold + contract + secrets + guardrails + mcp + sandbox + usage. |
 | [`aih profile`](docs/commands.md#aih-profile) | Detect the repo's stack recursively and synthesize Cursor stack rules (`.cursor/rules/*.mdc`). |
+| [`aih change-profile`](docs/commands.md#aih-change-profile) | Deterministically classify one explicit bounded change-facts JSON file without Git/worktree discovery. |
 | [`aih scaffold`](docs/commands.md#aih-scaffold) | Scaffold repo hygiene — secret deny-list, pre-commit hook, `.gitignore` entries; `--canon legacy` adds the full context-doc family. |
 | [`aih bootstrap-ai`](docs/commands.md#aih-bootstrap-ai) | Emit and verify the repo's Layer-2 canon — `RULE_ROUTER.md`, per-CLI adapters, root bootloaders; `--verify` is the drift gate. |
 | [`aih contract`](docs/commands.md#aih-contract) | Synthesize the machine-readable repo contract (`project.json`) from the detected stack. |

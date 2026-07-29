@@ -15,13 +15,9 @@ import {
 import { jsonFile, lines } from "../internals/render.js";
 import { type RepoStack, scanRepo } from "../profile/scan.js";
 import { VERSION } from "../version.js";
+import { CapabilityIdSchema } from "./id.js";
 
 export const AIH_CAPABILITIES_FILE = "aih-capabilities.json";
-
-const CapabilityIdSchema = z
-  .string()
-  .min(1)
-  .regex(/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/);
 
 const CapabilityInstallSchema = z.enum(["auto-add", "warn", "requires-approval"]);
 

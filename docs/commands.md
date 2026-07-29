@@ -82,6 +82,39 @@ commands, remote pipe-to-shell patterns, privileged operations, and publish/rele
 reuse the verification pipeline shape, return bounded evidence, hash the input for correlation, and
 never echo detected secret values.
 
+## aih live
+
+Stream bounded, schema-owned progress from one human-invoked local AI CLI:
+`aih live [root] --cli codex|claude|kimi --prompt-file <file>`. Exactly one `--cli` is required;
+there is no default, detection, or fan-out. The optional positional `[root]` and `--root <dir>` use
+the normal aih target-root contract, and the selected process runs in that root. The prompt must be
+one deliberately named, bounded regular file containing strict UTF-8. Codex and Claude receive its
+decoded text byte-for-byte through stdin; no shell command or wrapper contains the prompt.
+
+Codex runs as `codex exec --sandbox read-only --ephemeral --json -`. Claude runs with
+`--permission-mode plan --tools Read,Glob,Grep`, slash commands and session persistence disabled,
+and no edit or Bash tool. Their progress, human/JSON success output, and human/JSON error messages
+carry the exact safety label `read_only`.
+
+Kimi 0.29.2 has no help-verified read-only/no-tools prompt streaming mode. Selecting it therefore
+requires `--allow-kimi-non-read-only`; without that acknowledgement aih fails before reading the
+prompt or launching a process. Kimi is labeled `non_read_only` in progress and final output, may use
+its native tools, and can change the selected worktree. Aih performs no worktree-safety or
+dirty-tree preflight for this Kimi path. Aih does not add OS containment or claim a sandbox. Kimi's
+prompt must travel as the single direct argv value required by its
+`--prompt <prompt> --output-format stream-json` interface, so this path runs only a native Kimi
+executable without a shell; on Windows, a `.cmd`-only Kimi installation is rejected. Aih never
+prints that argv, but the prompt process argument can be visible to local process-listing and
+inspection tools such as Task Manager, WMIC, or equivalent local utilities.
+
+Progress is emitted immediately on stderr as capped generic events; malformed/unknown native stdout
+and every stderr fragment become fixed signals rather than echoed content. One sanitized, bounded
+terminal result uses the standard human digest or JSON envelope on stdout. `--timeout <seconds>`
+defaults to 120. Every final success or error view identifies the selected CLI and its `read_only`
+or `non_read_only` label. `aih live` does not load skills, choose workers, schedule tasks, retain
+agent memory, or run a council; an acknowledged Kimi subprocess can implement changes through its
+native tools as described above.
+
 ## aih hardware
 
 Profile CPU/RAM/GPU; compute memory/thread/parallel limits + quantization; emit tuned
@@ -120,6 +153,22 @@ The v3 lane stays offline and never treats `.aih/` or `~/.aih/` as authority.
 
 Recursively detect the repo's stack and synthesize Cursor stack rules (`.cursor/rules/*.mdc`). Root
 bootloaders are owned by `bootstrap-ai`.
+
+## aih change-profile
+
+Classify one explicit normalized change-facts document with
+`aih change-profile [root] --input <file>`. The adapter accepts only a named, bounded regular file:
+`-`, stdin, directories, empty/oversized files, invalid UTF-8, multiple or malformed JSON documents,
+unknown fields, contradictory facts, and classifier-invalid facts fail closed with
+`AIH_CHANGE_PROFILE_INPUT`. It performs no gatherer, Git/worktree discovery, skill loading, live
+invocation, or repository mutation.
+
+The classifier remains a separate pure deterministic function. A valid run emits exactly one
+standard `change profile` digest; in `--json` output the structured profile is
+`digests[0].data`. Invalid input reports only stable, sanitized, bounded issue records—not the input
+path, parser diagnostics, supplied content, revisions, root, or home directory. Current and previous
+change paths containing C0/C1 control or bidirectional-control characters are invalid, so successful
+human and JSON results cannot echo those characters from supplied paths.
 
 ## aih scaffold
 

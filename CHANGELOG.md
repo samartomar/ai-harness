@@ -8,6 +8,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Added `aih change-profile --input <file>`, a canonical read-only adapter over the
+  pure deterministic change-profile classifier. It accepts one bounded strict-UTF-8
+  regular JSON file and emits one standard digest; every invalid-input class shares
+  the stable `AIH_CHANGE_PROFILE_INPUT` code with bounded sanitized issue records.
+
+- Added `aih live [root] --cli codex|claude|kimi --prompt-file <file>` for real-time,
+  capped progress from one explicitly selected local CLI. Codex and Claude use pinned
+  read-only modes. Kimi 0.29.2 requires explicit non-read-only consent, is visibly
+  labeled `non_read_only`, may use native tools and change the selected worktree, and
+  is accepted only through its direct native-executable argv transport. Aih performs
+  no worktree-safety or dirty-tree preflight for Kimi; although aih never prints its
+  prompt argument, Task Manager, WMIC, and other local process-inspection tools may
+  expose it.
+
 - A partially-authorized `aih ecc --profile full` run now states why its scope
   was reduced. When the org's signed acceptance covers only a subset of the
   full-profile module set, `authorizedEccSelection` downgrades to `scope:

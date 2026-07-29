@@ -25,7 +25,7 @@
   </g>
   <text x="220" y="110" font-size="16" fill="#8b949e">The governed <tspan fill="#adbac7" font-weight="600">readiness</tspan> layer for AI-assisted software development</text>
   <g transform="translate(1136,66)" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
-    <text x="0" y="0" font-size="13.5" fill="#6e7681">43 commands</text>
+    <text x="0" y="0" font-size="13.5" fill="#6e7681">45 commands</text>
     <text x="0" y="21" font-size="13.5" fill="#6e7681">TypeScript · Apache-2.0</text>
   </g>
 

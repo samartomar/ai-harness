@@ -422,6 +422,42 @@
       "commands": []
     },
     {
+      "name": "change-profile",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--input <file>"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        }
+      ],
+      "commands": []
+    },
+    {
       "name": "cleanup",
       "hasDescription": true,
       "arguments": [
@@ -1122,6 +1158,52 @@
         },
         {
           "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "live",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--allow-kimi-non-read-only"
+        },
+        {
+          "flags": "--cli <cli>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--prompt-file <file>"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--timeout <seconds>",
+          "defaultValue": "120"
         }
       ],
       "commands": []
