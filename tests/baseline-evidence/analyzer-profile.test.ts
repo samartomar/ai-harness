@@ -6,15 +6,19 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   baselineAnalyzerVersions,
   CISCO_MCP_SCANNER_LOCK,
+  CISCO_MCP_SCANNER_PROJECT,
   CISCO_MCP_SCANNER_VERSION,
   CISCO_SKILL_SCANNER_LOCK,
+  CISCO_SKILL_SCANNER_PROJECT,
   CISCO_SKILL_SCANNER_VERSION,
   preflightRequiredBaselineAnalyzers,
   requiredBaselineAnalyzersForComponent,
   requiredBaselineDetectorsForComponent,
   SEMGREP_LOCK,
+  SEMGREP_PROJECT,
   SEMGREP_VERSION,
   SNYK_AGENT_SCAN_LOCK,
+  SNYK_AGENT_SCAN_PROJECT,
   SNYK_AGENT_SCAN_VERSION,
 } from "../../src/baseline-evidence/analyzer-profile.js";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
@@ -98,6 +102,20 @@ describe("required baseline analyzer applicability", () => {
   ])("binds optional analyzer %s to its committed uv lock", (label, version, lock) => {
     const digest = createHash("sha256").update(readFileSync(lock)).digest("hex").slice(0, 12);
     expect(baselineAnalyzerVersions()[label]).toBe(`${version}+uvlock.${digest}`);
+  });
+
+  it.each([
+    [CISCO_SKILL_SCANNER_PROJECT, "cisco-ai-skill-scanner", CISCO_SKILL_SCANNER_VERSION],
+    [CISCO_MCP_SCANNER_PROJECT, "cisco-ai-mcp-scanner", CISCO_MCP_SCANNER_VERSION],
+    [SEMGREP_PROJECT, "semgrep", SEMGREP_VERSION],
+    [SNYK_AGENT_SCAN_PROJECT, "snyk-agent-scan", SNYK_AGENT_SCAN_VERSION],
+  ])("matches %s project and lock to %s==%s", (project, dependency, version) => {
+    expect(readFileSync(join(project, "pyproject.toml"), "utf8")).toContain(
+      `"${dependency}==${version}"`,
+    );
+    expect(readFileSync(join(project, "uv.lock"), "utf8")).toContain(
+      `name = "${dependency}"\nversion = "${version}"`,
+    );
   });
 });
 

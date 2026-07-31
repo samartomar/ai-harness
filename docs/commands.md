@@ -429,7 +429,7 @@ For multi-skill sources, `vet <src> --name <skill> --apply` writes scoped eviden
 one logical skill; `card --name <skill>` and `approve --name <skill>` require that matching
 scoped evidence rather than a source-wide report.
 The deep-scan ladder records detector availability in evidence via `analyzersRun`: aih-native,
-SkillSpector, Cisco AI Defense skill-scanner, Semgrep, Snyk Agent Scan, AgentShield, and the
+SkillSpector, Cisco AI Defense skill-scanner, Semgrep, Snyk Agent Scan, and the
 MCP scanner when MCP config is present; detector findings escalate the verdict, while unavailable
 required detectors fail closed at enterprise posture.
 Ordinary visible Unicode is retained as a non-blocking warning; actual bidi, zero-width, tag,

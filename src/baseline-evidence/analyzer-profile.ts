@@ -4,12 +4,20 @@ import { basename, join } from "node:path";
 import type { Runner } from "../internals/proc.js";
 import type { Platform } from "../platform/base.js";
 import {
+  CISCO_MCP_SCANNER_ANALYZER,
   CISCO_MCP_SCANNER_PROJECT,
+  CISCO_MCP_SCANNER_VERSION,
+  CISCO_SKILL_SCANNER_ANALYZER,
   CISCO_SKILL_SCANNER_PROJECT,
+  CISCO_SKILL_SCANNER_VERSION,
   checkDetectorsAvailable,
   resolveCiscoScanConcurrency,
+  SEMGREP_ANALYZER,
   SEMGREP_PROJECT,
+  SEMGREP_VERSION,
+  SNYK_AGENT_SCAN_ANALYZER,
   SNYK_AGENT_SCAN_PROJECT,
+  SNYK_AGENT_SCAN_VERSION,
   type TrustDetectorName,
 } from "../trust/detectors.js";
 import {
@@ -21,13 +29,18 @@ import type { BaselineCatalogComponent } from "./catalog.js";
 import { nativeAnalyzerIdentity } from "./native-identity.js";
 import type { VetBaselineCatalogOptions } from "./vet.js";
 
-export { CISCO_SKILL_SCANNER_PROJECT };
+export {
+  CISCO_MCP_SCANNER_PROJECT,
+  CISCO_MCP_SCANNER_VERSION,
+  CISCO_SKILL_SCANNER_PROJECT,
+  CISCO_SKILL_SCANNER_VERSION,
+  SEMGREP_PROJECT,
+  SEMGREP_VERSION,
+  SNYK_AGENT_SCAN_PROJECT,
+  SNYK_AGENT_SCAN_VERSION,
+};
 
-export const CISCO_SKILL_SCANNER_VERSION = "2.0.12";
 export const CISCO_SKILL_SCANNER_SPEC = `cisco-ai-skill-scanner==${CISCO_SKILL_SCANNER_VERSION}`;
-export const CISCO_MCP_SCANNER_VERSION = "4.8.1";
-export const SEMGREP_VERSION = "1.172.0";
-export const SNYK_AGENT_SCAN_VERSION = "0.5.15";
 
 export const CISCO_SKILL_SCANNER_LOCK = join(CISCO_SKILL_SCANNER_PROJECT, "uv.lock");
 export const CISCO_MCP_SCANNER_LOCK = join(CISCO_MCP_SCANNER_PROJECT, "uv.lock");
@@ -116,10 +129,13 @@ export function baselineAnalyzerVersions(): Readonly<Record<string, string>> {
     // detector source changed, forcing a full re-vet in every release PR.
     "aih-native": nativeAnalyzerIdentity(),
     "skillspector@docker": `${SKILLSPECTOR_SOURCE_REVISION}@${SKILLSPECTOR_IMAGE_DIGEST}`,
-    "cisco@uvx": uvLockIdentity(CISCO_SKILL_SCANNER_VERSION, CISCO_SKILL_SCANNER_LOCK),
-    "mcp-scanner@uv:4.8.1": uvLockIdentity(CISCO_MCP_SCANNER_VERSION, CISCO_MCP_SCANNER_LOCK),
-    "semgrep@uv:1.172.0": uvLockIdentity(SEMGREP_VERSION, SEMGREP_LOCK),
-    "snyk-agent-scan@uv:0.5.15": uvLockIdentity(SNYK_AGENT_SCAN_VERSION, SNYK_AGENT_SCAN_LOCK),
+    [CISCO_SKILL_SCANNER_ANALYZER]: uvLockIdentity(
+      CISCO_SKILL_SCANNER_VERSION,
+      CISCO_SKILL_SCANNER_LOCK,
+    ),
+    [CISCO_MCP_SCANNER_ANALYZER]: uvLockIdentity(CISCO_MCP_SCANNER_VERSION, CISCO_MCP_SCANNER_LOCK),
+    [SEMGREP_ANALYZER]: uvLockIdentity(SEMGREP_VERSION, SEMGREP_LOCK),
+    [SNYK_AGENT_SCAN_ANALYZER]: uvLockIdentity(SNYK_AGENT_SCAN_VERSION, SNYK_AGENT_SCAN_LOCK),
   };
 }
 

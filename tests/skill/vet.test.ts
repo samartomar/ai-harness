@@ -176,7 +176,7 @@ function detectorRunner(
       if (argv.includes("scan")) return { code: 0, stdout: JSON.stringify({ findings: [] }) };
     }
     if (argv.includes("semgrep")) {
-      if (argv.includes("--version")) return { code: 0, stdout: "1.125.0\n" };
+      if (argv.includes("--version")) return { code: 0, stdout: "1.172.0\n" };
       if (argv.includes("scan")) {
         return { code: 0, stdout: JSON.stringify({ version: "2.1.0", runs: [] }) };
       }

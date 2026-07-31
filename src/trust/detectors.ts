@@ -127,6 +127,14 @@ export const CISCO_SKILL_SCANNER_PROJECT =
 export const CISCO_MCP_SCANNER_PROJECT = join(TRUST_SCANNERS_ROOT, "cisco-mcp");
 export const SEMGREP_PROJECT = join(TRUST_SCANNERS_ROOT, "semgrep");
 export const SNYK_AGENT_SCAN_PROJECT = join(TRUST_SCANNERS_ROOT, "snyk-agent-scan");
+export const CISCO_SKILL_SCANNER_VERSION = "2.0.12";
+export const CISCO_MCP_SCANNER_VERSION = "4.8.1";
+export const SEMGREP_VERSION = "1.172.0";
+export const SNYK_AGENT_SCAN_VERSION = "0.5.15";
+export const CISCO_SKILL_SCANNER_ANALYZER = "cisco@uvx";
+export const CISCO_MCP_SCANNER_ANALYZER = `mcp-scanner@uv:${CISCO_MCP_SCANNER_VERSION}`;
+export const SEMGREP_ANALYZER = `semgrep@uv:${SEMGREP_VERSION}`;
+export const SNYK_AGENT_SCAN_ANALYZER = `snyk-agent-scan@uv:${SNYK_AGENT_SCAN_VERSION}`;
 // These Semgrep rules are deliberately small harness-owned safety rules, not a
 // complete substitute for native trust checks. The regexes are line-oriented,
 // including the download-and-execute rule, so a pass is same-line coverage only.
@@ -601,7 +609,7 @@ export function mcpScannerStaticArgv(platform: Platform, inputJson: string): str
     ...mcpScannerBaseArgv(),
     "--raw",
     "--analyzers",
-    "yara,prompt_defense,readiness",
+    "yara",
     "static",
     "--tools",
     inputJson,
@@ -617,6 +625,9 @@ export function semgrepScanArgv(platform: Platform, tree: string, config: string
     "--sarif",
     "--metrics=off",
     "--disable-version-check",
+    "--x-ignore-semgrepignore-files",
+    "--no-git-ignore",
+    "--scan-unknown-extensions",
     "--",
     tree,
   ]);
@@ -724,7 +735,7 @@ async function checkCiscoAvailable(
   const expectedVersion =
     typeof runtimeOptionsOrExpectedVersion === "string"
       ? runtimeOptionsOrExpectedVersion
-      : undefined;
+      : CISCO_SKILL_SCANNER_VERSION;
   const version = await run(ciscoSkillScannerVersionArgv(platform), {
     env: scrubFetchEnv(env),
     timeoutMs: UV_SCANNER_STARTUP_TIMEOUT_MS,
@@ -771,8 +782,14 @@ async function checkSemgrepAvailable(
   });
   const reason = runFailureReason(version, `semgrep exit ${version.code ?? "signal"}`);
   if (reason !== undefined) return reason;
-  if (`${version.stdout}${version.stderr}`.trim().length === 0) {
+  const output = `${version.stdout}${version.stderr}`.trim();
+  if (output.length === 0) {
     return "semgrep version check emitted no output";
+  }
+  const reportedVersions: string[] =
+    output.match(/[0-9]+(?:\.[0-9]+)+(?:[-+][0-9A-Za-z.-]+)?/g) ?? [];
+  if (!reportedVersions.includes(SEMGREP_VERSION)) {
+    return `semgrep version ${JSON.stringify(output)} does not match ${SEMGREP_VERSION}`;
   }
   return undefined;
 }
@@ -1261,14 +1278,15 @@ function mcpScannerRuleId(analyzer: string, threat: string): string {
   return normalized.length > 0 ? normalized : analyzer;
 }
 
-function mcpScannerToolUri(raw: unknown): string {
+function mcpScannerToolUri(raw: unknown, sourceUriByToolName: ReadonlyMap<string, string>): string {
   if (typeof raw !== "string") return "mcp-scanner.json";
-  const separator = raw.lastIndexOf(":");
-  const candidate = separator > 0 ? raw.slice(0, separator) : raw;
-  return isSafeRelativeSarifUri(candidate) ? candidate : "mcp-scanner.json";
+  const candidate = sourceUriByToolName.get(raw);
+  return candidate !== undefined && isSafeRelativeSarifUri(candidate)
+    ? candidate
+    : "mcp-scanner.json";
 }
 
-function mcpScannerSarif(raw: string): SarifLog {
+function mcpScannerSarif(raw: string, sourceUriByToolName: ReadonlyMap<string, string>): SarifLog {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -1278,6 +1296,13 @@ function mcpScannerSarif(raw: string): SarifLog {
   if (!Array.isArray(parsed)) {
     throw new Error("mcp-scanner JSON did not include a result array");
   }
+  if (parsed.length !== sourceUriByToolName.size) {
+    throw new Error(
+      `mcp-scanner returned ${parsed.length} result(s) for ${sourceUriByToolName.size} submitted tool(s)`,
+    );
+  }
+
+  const remainingToolNames = new Set(sourceUriByToolName.keys());
 
   const results: SarifResult[] = [];
   for (const rawResult of parsed) {
@@ -1288,8 +1313,17 @@ function mcpScannerSarif(raw: string): SarifLog {
     if (result.status !== "completed" || typeof result.is_safe !== "boolean") {
       throw new Error("mcp-scanner JSON included an incomplete result");
     }
+    if (typeof result.tool_name !== "string") {
+      throw new Error("mcp-scanner JSON result omitted its submitted tool name");
+    }
+    if (!remainingToolNames.delete(result.tool_name)) {
+      throw new Error(`mcp-scanner JSON included an unexpected tool result: ${result.tool_name}`);
+    }
     if (!isRecord(result.findings)) {
       throw new Error("mcp-scanner JSON result omitted analyzer findings");
+    }
+    if (!isRecord(result.findings.yara_analyzer)) {
+      throw new Error("mcp-scanner JSON result omitted required YARA analyzer coverage");
     }
 
     let emitted = 0;
@@ -1325,7 +1359,9 @@ function mcpScannerSarif(raw: string): SarifLog {
           locations: [
             {
               physicalLocation: {
-                artifactLocation: { uri: mcpScannerToolUri(result.tool_name) },
+                artifactLocation: {
+                  uri: mcpScannerToolUri(result.tool_name, sourceUriByToolName),
+                },
                 region: { startLine: 1 },
               },
             },
@@ -1347,7 +1383,12 @@ function safeToolName(raw: string): string {
   return safe.length > 0 ? safe.slice(0, 120) : "mcp-server";
 }
 
-function mcpStaticToolsFromConfig(rel: string, parsed: unknown): Array<Record<string, unknown>> {
+interface McpStaticTool {
+  sourceUri: string;
+  tool: Record<string, unknown>;
+}
+
+function mcpStaticToolsFromConfig(rel: string, parsed: unknown): McpStaticTool[] {
   if (!isRecord(parsed)) return [];
   const maps: Array<Record<string, unknown>> = [];
   for (const key of ["mcpServers", "servers", "mcp"]) {
@@ -1363,18 +1404,18 @@ function mcpStaticToolsFromConfig(rel: string, parsed: unknown): Array<Record<st
             ? rawServer.description.slice(0, 400)
             : `MCP server declared in ${rel}`;
         return {
-          name: safeToolName(`${rel}:${name}`),
-          description,
-          inputSchema: { type: "object", properties: {} },
+          sourceUri: rel,
+          tool: {
+            name: safeToolName(`${rel}:${name}`),
+            description,
+            inputSchema: { type: "object", properties: {} },
+          },
         };
       }),
   );
 }
 
-function mcpStaticTools(
-  root: string,
-  inventory?: TrustFileInventory,
-): Array<Record<string, unknown>> {
+function mcpStaticTools(root: string, inventory?: TrustFileInventory): McpStaticTool[] {
   return mcpConfigFiles(root, inventory).flatMap((abs) => {
     const rel = toPosix(relative(root, abs));
     try {
@@ -1382,9 +1423,12 @@ function mcpStaticTools(
     } catch {
       return [
         {
-          name: safeToolName(`${rel}:malformed`),
-          description: `Malformed MCP config declared in ${rel}`,
-          inputSchema: { type: "object", properties: {} },
+          sourceUri: rel,
+          tool: {
+            name: safeToolName(`${rel}:malformed`),
+            description: `Malformed MCP config declared in ${rel}`,
+            inputSchema: { type: "object", properties: {} },
+          },
         },
       ];
     }
@@ -1401,11 +1445,20 @@ async function runMcpScannerScan(
   const tmp = mkdtempSync(join(tmpdir(), "aih-mcp-scanner-"));
   const input = join(tmp, "tools.json");
   try {
-    writeFileSync(
-      input,
-      `${JSON.stringify({ tools: mcpStaticTools(tree, runtimeOptions.inventory) }, null, 2)}\n`,
-      "utf8",
-    );
+    const staticTools = mcpStaticTools(tree, runtimeOptions.inventory);
+    if (staticTools.length === 0) {
+      throw new Error("mcp-scanner received an MCP config with no scannable tools");
+    }
+    const sourceUriByToolName = new Map<string, string>();
+    const tools = staticTools.map(({ sourceUri, tool }) => {
+      if (typeof tool.name !== "string") throw new Error("derived MCP tool omitted its name");
+      if (sourceUriByToolName.has(tool.name)) {
+        throw new Error(`derived duplicate MCP tool name: ${tool.name}`);
+      }
+      sourceUriByToolName.set(tool.name, sourceUri);
+      return tool;
+    });
+    writeFileSync(input, `${JSON.stringify({ tools }, null, 2)}\n`, "utf8");
     const scan = await run(mcpScannerStaticArgv(platform, input), {
       env: scrubFetchEnv(env),
       timeoutMs: 120_000,
@@ -1413,7 +1466,7 @@ async function runMcpScannerScan(
     const reason = runFailureReason(scan, `detector exit ${scan.code ?? "signal"}`);
     if (reason !== undefined) throw new Error(reason);
     if (scan.stdout.trim().length === 0) throw new Error("mcp-scanner emitted no JSON");
-    return JSON.stringify(mcpScannerSarif(scan.stdout));
+    return JSON.stringify(mcpScannerSarif(scan.stdout, sourceUriByToolName));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -1433,7 +1486,7 @@ async function runSemgrepScan(
       env: scrubFetchEnv(env),
       timeoutMs: 120_000,
     });
-    if (scan.spawnError || (scan.code !== 0 && scan.code !== 1)) {
+    if (scan.spawnError || scan.code !== 0) {
       throw new Error(scan.stderr || scan.stdout || `detector exit ${scan.code ?? "signal"}`);
     }
     if (scan.stdout.trim().length === 0) throw new Error("semgrep scan emitted no SARIF");
@@ -2054,7 +2107,7 @@ function analyzerPassCheck(detector: TrustDetector, analyzersRun: readonly strin
     return {
       name: "trust detector semgrep",
       verdict: "pass",
-      detail: `Semgrep static scan completed with harness rules, SARIF output, --metrics=off, and --disable-version-check. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
+      detail: `Semgrep static scan completed with harness rules, SARIF output, repository ignore files disabled, --metrics=off, and --disable-version-check. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
     };
   }
   if (detector.name === "snyk-agent-scan") {
@@ -2088,21 +2141,21 @@ const SKILL_TRUST_DETECTORS: TrustDetector[] = [
   },
   {
     name: "cisco",
-    analyzerLabel: "cisco@uvx",
+    analyzerLabel: CISCO_SKILL_SCANNER_ANALYZER,
     checkAvailable: checkCiscoAvailable,
     runScan: runCiscoSkillScan,
     ruleMap: CISCO_RULE_MAP,
   },
   {
     name: "semgrep",
-    analyzerLabel: "semgrep@uv:1.172.0",
+    analyzerLabel: SEMGREP_ANALYZER,
     checkAvailable: checkSemgrepAvailable,
     runScan: runSemgrepScan,
     ruleMap: SEMGREP_RULE_MAP,
   },
   {
     name: "snyk-agent-scan",
-    analyzerLabel: "snyk-agent-scan@uv:0.5.15",
+    analyzerLabel: SNYK_AGENT_SCAN_ANALYZER,
     checkAvailable: checkSnykAgentScanAvailable,
     runScan: runSnykAgentScan,
     ruleMap: SNYK_AGENT_SCAN_RULE_MAP,
@@ -2114,7 +2167,7 @@ const MCP_CONFIG_DETECTORS: TrustDetector[] = [
   // including MCP config files. This list is for MCP-specific detector tools.
   {
     name: "mcp-scanner",
-    analyzerLabel: "mcp-scanner@uv:4.8.1",
+    analyzerLabel: CISCO_MCP_SCANNER_ANALYZER,
     checkAvailable: checkMcpScannerAvailable,
     runScan: runMcpScannerScan,
     ruleMap: MCP_SCANNER_RULE_MAP,
