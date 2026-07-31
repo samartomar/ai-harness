@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { entry, REGISTRY_IDS } from "../../src/internals/cli-registry.js";
 import { executePlan, resolveContents } from "../../src/internals/execute.js";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { plan } from "../../src/internals/plan.js";
@@ -759,6 +760,62 @@ describe("orgPolicyProjectionActions", () => {
       allowManagedMcpServersOnly: true,
     });
     expect(JSON.parse(readFileSync(markerPath, "utf8"))).toMatchObject({ operatorRevision: 1 });
+  });
+});
+
+describe("orgPolicyDriftProbes — target scope (#554)", () => {
+  function writeScopePolicy(value: Record<string, unknown>): void {
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(value));
+  }
+
+  // Enterprise floor: the posture the defect was reported under, and the one where a
+  // missing projection is a hard fail rather than a posture-downgraded warning.
+  const denyPolicy = () =>
+    policy({
+      minimumPosture: "enterprise",
+      command: { deny: { add: [{ pattern: "terraform destroy*" }] } },
+    });
+
+  function scopeCtx(targets: readonly string[]): PlanContext {
+    return { ...ctx(), posture: "enterprise", targets: targets as PlanContext["targets"] };
+  }
+
+  /** Every registered CLI that does NOT own the projected `.claude/` artifacts. */
+  const nonOwners = REGISTRY_IDS.filter((id) => !entry(id).configDirs.includes(".claude"));
+
+  it.each(nonOwners)(
+    "does not fail a %s-only repo for an artifact it never projects",
+    async (cli) => {
+      writeScopePolicy(denyPolicy());
+      const c = scopeCtx([cli]);
+      const checks = await Promise.all(orgPolicyDriftProbes(c).map((p) => p.run(c)));
+      // `aih policy project` emits zero actions when the owning CLI is untargeted,
+      // so a failing drift finding here would be unsatisfiable by construction.
+      expect(checks.filter((k) => k?.verdict === "fail").map((k) => k?.detail ?? "")).toEqual([]);
+    },
+  );
+
+  it("still fails a Claude-targeted repo when the projection is missing", async () => {
+    writeScopePolicy(denyPolicy());
+    const c = scopeCtx(["claude"]);
+    const checks = await Promise.all(orgPolicyDriftProbes(c).map((p) => p.run(c)));
+    expect(checks.some((k) => k?.verdict === "fail")).toBe(true);
+  });
+
+  it("reports dropped-target residue when an untargeted artifact is still on disk", async () => {
+    writeScopePolicy(denyPolicy());
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(join(dir, ".claude", "managed-settings.json"), JSON.stringify({ stale: true }));
+    const c = scopeCtx(["kiro"]);
+    const checks = await Promise.all(orgPolicyDriftProbes(c).map((p) => p.run(c)));
+    const details = checks
+      .filter((k) => k?.verdict === "fail")
+      .map((k) => k?.detail ?? "")
+      .join(" ");
+    expect(details).not.toBe("");
+    // Must route to prune, never to a projection that cannot run here.
+    expect(details).toMatch(/prune/i);
+    expect(details).not.toMatch(/policy project --apply/);
   });
 });
 

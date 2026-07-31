@@ -445,6 +445,7 @@ describe("Check.code — invariants", () => {
       "contract.path-unportable": true,
       "contract.stale": true,
       "org-policy.drift": true,
+      "org-policy.dropped-target-residue": true,
       "org-policy.generation-delta": true,
       "org-policy.invalid": true,
       "org-policy.bundle-invalid": true,
