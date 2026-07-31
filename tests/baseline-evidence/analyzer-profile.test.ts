@@ -85,6 +85,22 @@ describe("required baseline analyzer applicability", () => {
     ]);
   });
 
+  it("does not infer skill content from a missing declared harness path", () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-analyzer-profile-missing-"));
+    roots.push(root);
+    const nested = component("runtime:ecc-kiro", [".kiro"]);
+
+    expect(requiredBaselineAnalyzersForComponent(nested, root)).toEqual([
+      "aih-native",
+      "skillspector@docker",
+      "semgrep@uv:1.172.0",
+    ]);
+    expect(requiredBaselineDetectorsForComponent(nested, root)).toEqual([
+      "skillspector",
+      "semgrep",
+    ]);
+  });
+
   it("binds the Cisco analyzer receipt identity to the committed uv lock", () => {
     const digest = createHash("sha256")
       .update(readFileSync(CISCO_SKILL_SCANNER_LOCK))
