@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -135,4 +135,34 @@ describe("final output manifest", () => {
       }),
     ).toThrow(/target must be a regular file/);
   });
+
+  it.skipIf(process.platform === "win32")(
+    "rejects a manifest entry whose symlink resolves outside the output root",
+    () => {
+      const root = fixtureRoot();
+      const outside = fixtureRoot();
+      symlinkSync(join(outside, "a.json"), join(root, "linked.json"), "file");
+
+      expect(() => verifyOutputManifest(root, `${"a".repeat(64)}  linked.json\n`)).toThrow(
+        /resolves outside root/,
+      );
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "rejects a manifest parent whose symlink resolves outside the output root",
+    () => {
+      const root = fixtureRoot();
+      const outside = fixtureRoot();
+      symlinkSync(outside, join(root, "linked"), "dir");
+
+      expect(() =>
+        writeVerifiedOutputManifest({
+          root,
+          manifestPath: join(root, "linked", "final-output-sha256.txt"),
+          outputPaths: ["a.json"],
+        }),
+      ).toThrow(/parent resolves outside/);
+    },
+  );
 });
