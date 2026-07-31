@@ -372,7 +372,12 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   "}",
   "const mergeSteps = [[process.execPath, mergeCodexConfig, configPath]];",
   "prepareDestination(configPath);",
-  'if (!fs.existsSync(configPath)) fs.writeFileSync(configPath, "", { flag: "wx" });',
+  // `wx` already means "create only if absent" atomically, so the existsSync
+  // pre-check added a TOCTOU window and nothing else. It also disagreed with the
+  // open() when the path traverses a directory symlink (a symlinked HOME on
+  // Windows), turning a benign already-exists into a hard EEXIST crash.
+  'try { fs.writeFileSync(configPath, "", { flag: "wx" }); }',
+  'catch (e) { if (e.code !== "EEXIST") throw e; }',
   "if (!mcpSpec) mergeSteps.push([process.execPath, mergeMcpConfig, configPath]);",
   "for (const argv of mergeSteps) {",
   '  const result = child.spawnSync(argv[0], argv.slice(1), { stdio: "inherit" });',

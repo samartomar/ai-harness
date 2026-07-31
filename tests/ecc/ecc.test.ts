@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -713,7 +714,12 @@ describe("Codex managed destination safety", () => {
   function guardedMerge(configPath: string): ReturnType<typeof spawnSync> {
     const home = join(tmp, "home");
     const repo = join(tmp, "ecc");
-    mkdirSync(join(home, ".codex"), { recursive: true });
+    // The home-alias case makes `home` a directory symlink, and on Windows a
+    // recursive mkdir whose path traverses one fails ENOENT. Resolve the link
+    // first and create under the real target — still visible through the alias,
+    // so the alias semantics under test are unchanged.
+    if (!existsSync(home)) mkdirSync(home, { recursive: true });
+    mkdirSync(join(realpathSync(home), ".codex"), { recursive: true });
     mkdirSync(repo, { recursive: true });
     const base = makeCtx({ cli: "codex" });
     const ctx = {
