@@ -48,7 +48,7 @@ describe("baseline source registry", () => {
 
   it("describes delegated sources with owner/repo and short pins", () => {
     expect(describeBaselineSource(resolveBaselineSource({ baseline: "ecc" }))).toContain(
-      "samartomar/ECC@",
+      "affaan-m/ecc@",
     );
   });
 });

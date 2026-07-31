@@ -21,6 +21,11 @@ const SHA40 = /^[a-f0-9]{40}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 
 const ComponentIdSchema = z.string().min(3).max(160).regex(COMPONENT_ID);
+const ModuleIdSchema = z
+  .string()
+  .min(1)
+  .max(160)
+  .regex(/^[a-z0-9][a-z0-9._-]*$/);
 const McpComponentIdSchema = ComponentIdSchema.refine((value) => value.startsWith("mcp:"), {
   message: "MCP component IDs must start with mcp:",
 });
@@ -56,11 +61,13 @@ const ProjectRegistrationSchema = z
     scope: z.enum(["scoped", "full"]),
     components: z.array(ComponentIdSchema).max(4096),
     mcps: z.array(McpComponentIdSchema).max(128),
+    moduleIds: z.array(ModuleIdSchema).max(512).optional(),
   })
   .strict()
   .superRefine((project, context) => {
     duplicateIssues(project.components, "component", context);
     duplicateIssues(project.mcps, "MCP component", context);
+    duplicateIssues(project.moduleIds ?? [], "module", context);
   });
 
 const InstalledComponentSchema = z
@@ -111,6 +118,7 @@ export interface ProjectRegistration {
   scope: "scoped" | "full";
   components: EccComponentId[];
   mcps: EccMcpComponentId[];
+  moduleIds?: string[];
 }
 
 export interface InstalledComponentRegistration {
@@ -133,6 +141,7 @@ export interface RegistrationLedger {
 export interface RegistrationUnion {
   components: EccComponentId[];
   mcps: EccMcpComponentId[];
+  moduleIds: string[];
 }
 
 export interface AtomicLedgerWriteDeps {
@@ -170,6 +179,7 @@ function normalizeStoredProject(project: ProjectRegistration): ProjectRegistrati
     scope: project.scope,
     components: uniqueSorted(project.components),
     mcps: uniqueSorted(project.mcps),
+    moduleIds: uniqueSorted(project.moduleIds ?? []),
   };
 }
 
@@ -217,6 +227,7 @@ export function machineRegistrationUnion(ledger: RegistrationLedger): Registrati
   return {
     components: uniqueSorted(ledger.projects.flatMap((project) => project.components)),
     mcps: uniqueSorted(ledger.projects.flatMap((project) => project.mcps)),
+    moduleIds: uniqueSorted(ledger.projects.flatMap((project) => project.moduleIds ?? [])),
   };
 }
 

@@ -32,8 +32,8 @@ describe("ECC install preview generation", () => {
           {
             kind: "copy-file",
             moduleId: input.moduleIds[0],
-            sourceRelativePath: "rules/core.md",
-            destinationPath: input.homeDir + "/." + input.target + "/rules/core.md",
+            sourceRelativePath: "rules/common/security.md",
+            destinationPath: input.homeDir + "/." + input.target + "/rules/common/security.md",
           },
           {
             kind: "copy-file",
@@ -54,14 +54,14 @@ describe("ECC install preview generation", () => {
 
     const result = generateEccInstallPreviewArtifact(root, PIN);
 
-    expect(result.source).toEqual({ owner: "samartomar", repo: "ECC", pinnedSha: PIN });
+    expect(result.source).toEqual({ owner: "affaan-m", repo: "ecc", pinnedSha: PIN });
     expect(result.operations).toContainEqual(
       expect.objectContaining({
         target: "claude",
         componentId: "baseline:rules",
         kind: "copy-file",
-        source: "rules/core.md",
-        destination: "<home>/.claude/rules/core.md",
+        source: "rules/common/security.md",
+        destination: "<home>/.claude/rules/common/security.md",
       }),
     );
     expect(result.operations).not.toContainEqual(

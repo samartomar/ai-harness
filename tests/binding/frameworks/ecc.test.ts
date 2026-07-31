@@ -152,7 +152,7 @@ interface Op {
 function previewArtifact(ops: Op[]): any {
   return {
     schemaVersion: 1,
-    source: { owner: "samartomar", repo: "ECC", pinnedSha: ECC_PIN_COMMIT },
+    source: { owner: "affaan-m", repo: "ecc", pinnedSha: ECC_PIN_COMMIT },
     operations: ops.map((op) => ({
       target: "claude",
       kind: op.kind ?? "copy-file",
@@ -870,18 +870,13 @@ describe("report — Framework Card input lines", () => {
     expect(text).toContain("hooks-runtime");
   });
 
-  it("discloses raw vet outcome AND the signed acceptance side by side, never claiming a vet pass (W4 ruling (e))", () => {
+  it("does not report a retired fork acceptance as an install authorization", () => {
     const adapter = createEccAdapter({ root, runner: spyRunner().runner });
     const report = adapter.report({ declaration: declarationFor("0".repeat(64)) });
     const text = report.lines.join("\n");
-    expect(text).toContain("raw vet outcome:");
-    expect(text).toContain("BLOCKED");
-    expect(text).toContain("verdicts preserved in vendor-lock.json; not reclassified");
-    expect(text).toContain("policy decision: accepted-with-conditions — ecc-lean-v1-20260720");
-    expect(text).toContain("accepted finding codes:");
-    expect(text).toContain("trust.hidden-unicode");
-    expect(text).toContain("residual risk:");
-    expect(text).toContain("effective install decision: allowed for ecc-lean-v1");
+    expect(text).toContain("vet acceptance: none shipped");
+    expect(text).not.toContain("ecc-lean-v1-20260720");
+    expect(text).not.toContain("effective install decision: allowed");
     expect(text).not.toMatch(/vet passed|no danger findings|fast scan passed/i);
   });
 });
@@ -1522,7 +1517,7 @@ describe("acceptance — real evidence-gated ECC selective install", () => {
      * The HARD RULE forbids a real ECC install in unit tests. Run this only in the
      * orchestrator-triggered acceptance phase, on a throwaway machine seat:
      *
-     *  1. Resolve the pinned source: `resolveGitSource({ repository: "samartomar/ECC",
+     *  1. Resolve the pinned source: `resolveGitSource({ repository: "affaan-m/ecc",
      *     commitSha: ECC_PIN_COMMIT }, { runner: defaultRunner, cacheHome: <tmp> })`.
      *  2. Run the W2 fast-scan gate over the checkout to mint a real disposition.
      *  3. Build a real EccLeanInstaller that composes ECC's `executeEccEvidencePipeline`

@@ -4,7 +4,11 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Runner } from "../internals/proc.js";
 import type { Platform } from "../platform/base.js";
-import { checkDetectorsAvailable, type TrustDetectorName } from "../trust/detectors.js";
+import {
+  checkDetectorsAvailable,
+  resolveCiscoScanConcurrency,
+  type TrustDetectorName,
+} from "../trust/detectors.js";
 import {
   SKILLSPECTOR_IMAGE_DIGEST,
   SKILLSPECTOR_SOURCE_REVISION,
@@ -28,10 +32,12 @@ export const CISCO_SKILL_SCANNER_PROJECT =
   resolve(moduleDir, "..", "tools", "cisco-skill-scanner");
 export const CISCO_SKILL_SCANNER_LOCK = join(CISCO_SKILL_SCANNER_PROJECT, "uv.lock");
 
+export function ciscoSkillScannerLockSha256(): string {
+  return createHash("sha256").update(readFileSync(CISCO_SKILL_SCANNER_LOCK)).digest("hex");
+}
+
 function ciscoSkillScannerIdentity(): string {
-  const lockDigest = createHash("sha256")
-    .update(readFileSync(CISCO_SKILL_SCANNER_LOCK))
-    .digest("hex");
+  const lockDigest = ciscoSkillScannerLockSha256();
   return `${CISCO_SKILL_SCANNER_VERSION}+uvlock.${lockDigest.slice(0, 12)}`;
 }
 
@@ -126,6 +132,11 @@ export function requiredBaselineVetOptions(runtime: {
     requiredAnalyzers: requiredBaselineAnalyzersForComponent,
     requiredDetectorsForComponent: requiredBaselineDetectorsForComponent,
     analyzerVersions: baselineAnalyzerVersions(),
+    sourceWideScan: true,
+    sourceWideCisco: {
+      analyzerLockSha256: ciscoSkillScannerLockSha256(),
+      workerConcurrency: resolveCiscoScanConcurrency(runtime.env),
+    },
   };
 }
 

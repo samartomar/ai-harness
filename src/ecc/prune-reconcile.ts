@@ -115,9 +115,15 @@ function targetSelection(
   if (record === undefined) fail(`missing reconciled ECC target record: ${target}`);
   return {
     scope: reconciliation.full ? "full" : "scoped",
-    components: record.components.map((component) => component.id),
+    components: record.components
+      .map((component) => component.id)
+      .filter((componentId) => !componentId.startsWith("module:")),
     mcps: [...record.mcps],
     recommendations: [],
+    moduleIds: record.components
+      .map((component) => component.id)
+      .filter((componentId) => componentId.startsWith("module:"))
+      .map((componentId) => componentId.slice("module:".length)),
   };
 }
 

@@ -1,9 +1,19 @@
 import { Buffer } from "node:buffer";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { command } from "../../src/ecc/index.js";
+import { codexEccActions, command } from "../../src/ecc/index.js";
 import {
   AIH_DIRECT_ECC_INSTALL_TARGETS,
   ECC_INSTALL_TARGETS,
@@ -238,7 +248,7 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
       "--target",
       "claude",
       "--profile",
-      "core",
+      "minimal",
       "typescript",
     ]);
     // the marketplace plugin is still offered as a doc alternative
@@ -295,7 +305,7 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
       "--target",
       "gemini",
       "--profile",
-      "core",
+      "minimal",
     ]);
   });
 
@@ -312,7 +322,7 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
       "--target",
       "cursor",
       "--profile",
-      "core",
+      "minimal",
       "typescript",
       "web",
     ]);
@@ -661,4 +671,138 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
       ]),
     );
   });
+});
+
+describe("Codex managed destination safety", () => {
+  function prepareCodexRepo(home: string): void {
+    const repo = join(tmp, "ecc");
+    const putRepo = (relative: string, contents: string) => {
+      const target = join(repo, relative);
+      mkdirSync(join(target, ".."), { recursive: true });
+      writeFileSync(target, contents);
+    };
+    putRepo("scripts/codex/merge-codex-config.js", "");
+    putRepo("scripts/codex/merge-mcp-config.js", "");
+    putRepo(
+      "scripts/lib/install-executor.js",
+      `exports.createManifestInstallPlan = () => ({ operations: [], statePreview: { operations: [] }, installStatePath: ${JSON.stringify(
+        join(home, ".codex", "ecc-install-state.json"),
+      )} });`,
+    );
+    putRepo(
+      "scripts/lib/install-state.js",
+      'exports.writeInstallState = () => { throw new Error("unsafe writeInstallState reached"); };',
+    );
+    putRepo(
+      ".codex/AGENTS.md",
+      [
+        "## Skills Discovery",
+        "",
+        "Available skills:",
+        "- tdd-workflow",
+        "",
+        "## MCP Servers",
+        "",
+        "none",
+        "",
+        "## External Action Boundaries",
+      ].join("\n"),
+    );
+  }
+
+  function guardedMerge(configPath: string): ReturnType<typeof spawnSync> {
+    const home = join(tmp, "home");
+    const repo = join(tmp, "ecc");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    mkdirSync(repo, { recursive: true });
+    const base = makeCtx({ cli: "codex" });
+    const ctx = {
+      ...base,
+      env: { ...base.env, HOME: home, USERPROFILE: home },
+    };
+    const action = codexEccActions(
+      ctx,
+      { dir: repo, posix: repo.replace(/\\/g, "/"), explicit: true, hasCache: false },
+      "minimal",
+    ).find(
+      (candidate): candidate is ExecAction =>
+        candidate.kind === "exec" && candidate.describe.startsWith("Install ECC for Codex"),
+    );
+    if (action === undefined) throw new Error("missing Codex merge action");
+    expect(action.argv).toContain(configPath);
+    return spawnSync(process.execPath, action.argv.slice(1), {
+      cwd: repo,
+      encoding: "utf8",
+    });
+  }
+
+  it.each(["existing", "dangling"] as const)(
+    "rejects an %s destination symlink before following it",
+    (kind) => {
+      const home = join(tmp, "home");
+      const config = join(home, ".codex", "config.toml");
+      const outside = join(tmp, "outside", "target.toml");
+      mkdirSync(join(outside, ".."), { recursive: true });
+      mkdirSync(join(config, ".."), { recursive: true });
+      if (kind === "existing") writeFileSync(outside, "outside-before\n");
+      symlinkSync(outside, config);
+
+      const result = guardedMerge(config);
+
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toMatch(/unsafe existing Codex destination/);
+      if (kind === "existing") expect(readFileSync(outside, "utf8")).toBe("outside-before\n");
+      else expect(existsSync(outside)).toBe(false);
+    },
+  );
+
+  it("rejects a hard-linked managed destination before truncating its peer", () => {
+    const home = join(tmp, "home");
+    const config = join(home, ".codex", "config.toml");
+    const outside = join(tmp, "outside.toml");
+    mkdirSync(join(config, ".."), { recursive: true });
+    writeFileSync(outside, "outside-before\n");
+    linkSync(outside, config);
+
+    const result = guardedMerge(config);
+
+    expect(result.status).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toMatch(/unsafe existing Codex destination/);
+    expect(readFileSync(outside, "utf8")).toBe("outside-before\n");
+  });
+
+  it("rejects a symlinked managed destination ancestor", () => {
+    const home = join(tmp, "home");
+    const outside = join(tmp, "outside-codex");
+    mkdirSync(home, { recursive: true });
+    mkdirSync(outside, { recursive: true });
+    symlinkSync(outside, join(home, ".codex"), "dir");
+    const config = join(home, ".codex", "config.toml");
+
+    const result = guardedMerge(config);
+
+    expect(result.status).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toMatch(/unsafe Codex destination directory/);
+    expect(existsSync(join(outside, "config.toml"))).toBe(false);
+  });
+
+  it.each(["symlink", "hardlink"] as const)(
+    "rejects a managed upstream install-state %s",
+    (kind) => {
+      const home = join(tmp, "home");
+      const statePath = join(home, ".codex", "ecc-install-state.json");
+      const outside = join(tmp, "outside-install-state.json");
+      mkdirSync(join(statePath, ".."), { recursive: true });
+      writeFileSync(outside, "outside-before\n");
+      if (kind === "symlink") symlinkSync(outside, statePath);
+      else linkSync(outside, statePath);
+      prepareCodexRepo(home);
+
+      const result = guardedMerge(join(home, ".codex", "config.toml"));
+
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toMatch(/unsafe existing Codex destination/);
+      expect(readFileSync(outside, "utf8")).toBe("outside-before\n");
+    },
+  );
 });

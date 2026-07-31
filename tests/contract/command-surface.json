@@ -750,7 +750,7 @@
         },
         {
           "flags": "--profile <profile>",
-          "defaultValue": "core"
+          "defaultValue": "minimal"
         },
         {
           "flags": "--root <dir>"
@@ -882,6 +882,9 @@
             {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
+            },
+            {
+              "flags": "--profile <id>"
             },
             {
               "flags": "--root <dir>"

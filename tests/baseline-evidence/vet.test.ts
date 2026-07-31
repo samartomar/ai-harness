@@ -14,6 +14,13 @@ import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
 import { defaultComponentScanner, vetBaselineCatalog } from "../../src/baseline-evidence/vet.js";
 import type { Check } from "../../src/internals/verify.js";
+import {
+  buildCiscoShardManifest,
+  buildCiscoShardResult,
+  type CiscoShardManifest,
+  joinCiscoShardResults,
+} from "../../src/trust/cisco-shards.js";
+import { TRUST_POLICY_VERSION } from "../../src/trust/evidence.js";
 
 let root: string;
 
@@ -150,6 +157,47 @@ describe("vetBaselineCatalog", () => {
     ]);
   });
 
+  it("holds REVIEW dispositions and binds them to raw occurrence fingerprints", async () => {
+    const evidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent: async ({ component }) => {
+        const fingerprint = `finding:${component.id}`;
+        const rawFingerprint = `raw:${component.id}`;
+        return {
+          analyzersRun: ["aih-native"],
+          checks: [pass("scan")],
+          normalizedFindings: [
+            {
+              fingerprint,
+              code: "trust.external-egress",
+              detail: "authenticated external request",
+              location: { uri: "SKILL.md", startLine: 2 },
+              sourceValue: "curl https://api.example.test",
+              rawOccurrenceFingerprints: [rawFingerprint],
+            },
+          ],
+          policyDispositions: [
+            {
+              findingFingerprint: fingerprint,
+              level: "REVIEW",
+              reason: "reviewed egress",
+              policyVersion: TRUST_POLICY_VERSION,
+            },
+          ],
+        };
+      },
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions: { "aih-native": "2.7.0" },
+    });
+
+    expect(evidence.components.every((component) => component.verdict === "blocked")).toBe(true);
+    expect(evidence.components[0]?.findings).toEqual([
+      expect.objectContaining({
+        code: "trust.external-egress",
+        fingerprints: ["raw:skill:clean"],
+      }),
+    ]);
+  });
+
   it("fails closed when an analyzer ran without an attributable version receipt", async () => {
     await expect(
       vetBaselineCatalog(root, catalog(), {
@@ -253,11 +301,13 @@ describe("vetBaselineCatalog", () => {
 
   it("scans one path-preserving isolated projection per component and removes it", async () => {
     writeFileSync(join(root, "outside.txt"), "must not enter a component scan\n");
+    writeFileSync(join(root, "LICENSE"), "Apache License 2.0\n");
     const projections: string[] = [];
     const scanTree = vi.fn(async (projectionRoot: string) => {
       projections.push(projectionRoot);
       expect(projectionRoot).toContain(join(dirname(root), ".aih-baseline-component-"));
       expect(existsSync(join(projectionRoot, "outside.txt"))).toBe(false);
+      expect(existsSync(join(projectionRoot, "LICENSE"))).toBe(true);
       expect(
         existsSync(join(projectionRoot, "skills", "clean", "SKILL.md")) ||
           existsSync(join(projectionRoot, "skills", "blocked", "SKILL.md")),
@@ -273,6 +323,193 @@ describe("vetBaselineCatalog", () => {
 
     expect(scanTree).toHaveBeenCalledTimes(2);
     expect(projections.every((projection) => !existsSync(projection))).toBe(true);
+  });
+
+  it("scans Cisco source inputs once and projects only each component's validated SARIF", async () => {
+    const seenCiscoUris: string[][] = [];
+    const scanTree = vi.fn(
+      async (_projectionRoot: string, options?: Parameters<typeof defaultComponentScanner>[0]) => {
+        const raw = options?.precomputedDetectorSarif?.cisco;
+        if (raw === undefined) throw new Error("expected precomputed Cisco SARIF");
+        const sarif = JSON.parse(raw) as {
+          runs: Array<{
+            results: Array<{
+              locations: Array<{
+                physicalLocation: { artifactLocation: { uri: string } };
+              }>;
+            }>;
+          }>;
+        };
+        seenCiscoUris.push(
+          sarif.runs.flatMap((run) =>
+            run.results.map(
+              (result) => result.locations[0]?.physicalLocation.artifactLocation.uri ?? "",
+            ),
+          ),
+        );
+        return {
+          analyzersRun: ["aih-native", "cisco@uvx"],
+          checks: [pass("projected source-wide scan")],
+        };
+      },
+    );
+    const dispatch = vi.fn(async (manifest: CiscoShardManifest) =>
+      manifest.shards.map((shard) =>
+        buildCiscoShardResult(manifest, shard.id, (job) => ({
+          version: "2.1.0",
+          runs: [
+            {
+              results: [
+                {
+                  ruleId: "fixture",
+                  message: { text: job.path },
+                  locations: [
+                    {
+                      physicalLocation: {
+                        artifactLocation: { uri: `${job.path}/SKILL.md` },
+                        region: { startLine: 1 },
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        })),
+      ),
+    );
+
+    const evidence = await vetBaselineCatalog(root, catalog(), {
+      scanTree,
+      scanOptions: {
+        env: {},
+        platform: "linux",
+        run: async () => ({ code: 127, stdout: "", stderr: "not used" }),
+      },
+      requiredAnalyzers: ["aih-native", "cisco@uvx"],
+      requiredDetectorsForComponent: () => ["cisco"],
+      analyzerVersions: {
+        "aih-native": "native.test",
+        "cisco@uvx": "2.0.12+uvlock.fixture",
+      },
+      sourceWideCisco: {
+        analyzerLockSha256: "a".repeat(64),
+        shardCount: 2,
+        profile: "ecc-full",
+        dispatch,
+      },
+    });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(scanTree).toHaveBeenCalledTimes(2);
+    expect(seenCiscoUris).toEqual([["skills/clean/SKILL.md"], ["skills/blocked/SKILL.md"]]);
+    expect(evidence.components.every((component) => component.verdict === "pass")).toBe(true);
+  });
+
+  it("does not run a source-wide Cisco scan when every exact receipt is reusable", async () => {
+    const analyzerVersions = {
+      "aih-native": "native.test",
+      "cisco@uvx": "2.0.12+uvlock.fixture",
+    };
+    const first = await vetBaselineCatalog(root, catalog(), {
+      scanComponent: async () => ({
+        analyzersRun: ["aih-native", "cisco@uvx"],
+        checks: [pass("initial scan")],
+      }),
+      requiredAnalyzers: ["aih-native", "cisco@uvx"],
+      analyzerVersions,
+    });
+    const dispatch = vi.fn(async () => {
+      throw new Error("reused evidence must not dispatch Cisco");
+    });
+    const scanTree = vi.fn(async () => {
+      throw new Error("reused evidence must not scan a component");
+    });
+
+    const reused = await vetBaselineCatalog(root, catalog(), {
+      scanTree,
+      requiredAnalyzers: ["aih-native", "cisco@uvx"],
+      analyzerVersions,
+      reuseFrom: { schemaVersion: 1, sources: [first] },
+      sourceWideCisco: {
+        analyzerLockSha256: "a".repeat(64),
+        dispatch,
+      },
+    });
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(scanTree).not.toHaveBeenCalled();
+    expect(reused).toEqual(first);
+  });
+
+  it("refuses to issue a Cisco receipt when shared evidence has no matching component job", async () => {
+    const manifest = buildCiscoShardManifest({
+      source: {
+        id: "ecc",
+        pinnedSha: "d".repeat(40),
+        treeSha256: "a".repeat(64),
+      },
+      analyzer: {
+        name: "cisco",
+        version: "2.0.12",
+        lockSha256: "b".repeat(64),
+      },
+      policy: { version: "native.test", profile: "ecc-full" },
+      jobs: [{ path: "skills/blocked", inputSha256: "c".repeat(64) }],
+      shardCount: 1,
+    });
+    const shard = manifest.shards[0];
+    if (shard === undefined) throw new Error("fixture shard missing");
+    const shared = joinCiscoShardResults(manifest, [
+      buildCiscoShardResult(manifest, shard.id, () => ({
+        version: "2.1.0",
+        runs: [],
+      })),
+    ]);
+    const scanTree = vi.fn(async () => ({
+      analyzersRun: ["aih-native", "cisco@uvx"],
+      checks: [pass("must not run")],
+    }));
+    const component = catalog().components[0];
+    if (component === undefined) throw new Error("fixture component missing");
+
+    await expect(
+      defaultComponentScanner(
+        {},
+        scanTree,
+        () => ["cisco"],
+        shared,
+      )({
+        sourceRoot: root,
+        component,
+      }),
+    ).rejects.toThrow(/requires Cisco.*no exact source-wide Cisco job/i);
+    expect(scanTree).not.toHaveBeenCalled();
+  });
+
+  it("requires an explicit dispatcher before requesting multiple source shards", async () => {
+    await expect(
+      vetBaselineCatalog(root, catalog(), {
+        scanTree: async () => ({
+          analyzersRun: ["aih-native", "cisco@uvx"],
+          checks: [pass("must not run")],
+        }),
+        scanOptions: {
+          env: {},
+          platform: "linux",
+          run: async () => ({ code: 0, stdout: "", stderr: "" }),
+        },
+        requiredAnalyzers: ["aih-native", "cisco@uvx"],
+        analyzerVersions: {
+          "aih-native": "native.test",
+          "cisco@uvx": "2.0.12+uvlock.fixture",
+        },
+        sourceWideCisco: {
+          analyzerLockSha256: "a".repeat(64),
+          shardCount: 2,
+        },
+      }),
+    ).rejects.toThrow(/multiple shards requires an explicit shard dispatcher/i);
   });
 
   it("reports bounded detector timing only as baseline-vet diagnostics", async () => {

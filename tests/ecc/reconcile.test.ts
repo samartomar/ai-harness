@@ -145,6 +145,7 @@ describe("ECC registration reconciliation", () => {
     expect(result.desired).toEqual({
       components: ["baseline:rules", "framework:react", "skill:coding-standards"],
       mcps: ["mcp:sequential-thinking"],
+      moduleIds: [],
     });
     expect(result.removedComponents).toEqual(["lang:cpp"]);
     expect(result.removedMcps).toEqual(["mcp:github"]);
@@ -185,8 +186,48 @@ describe("ECC registration reconciliation", () => {
     expect(first.desired.components).toContain("skill:coding-standards");
 
     const last = reconcileEccRegistrationLedger(input, { projectStatus: () => "missing" });
-    expect(last.desired).toEqual({ components: [], mcps: [] });
+    expect(last.desired).toEqual({ components: [], mcps: [], moduleIds: [] });
     expect(last.ledger.targets[0]?.components).toEqual([]);
+  });
+
+  it("retains a live logical target receipt after its Core contributor retires", () => {
+    const core = {
+      ...project(reactRoot, ["skill:security-review"]),
+      moduleIds: ["agents-core", "security"],
+    };
+    const lean = project(cppRoot, ["skill:security-review"], []);
+    const input = ledger(
+      [core, lean],
+      [target(["module:agents-core", "module:security", "skill:security-review"], [], "codex")],
+    );
+
+    const result = reconcileEccRegistrationLedger(input, {
+      projectStatus: (root) => (root === resolve(reactRoot) ? "missing" : "live"),
+    });
+
+    expect(result.ledger.targets[0]?.components.map((component) => component.id)).toEqual([
+      "skill:security-review",
+    ]);
+    expect(result.desired.moduleIds).toEqual([]);
+  });
+
+  it("retains a live logical target receipt after its Full contributor retires", () => {
+    const full = project(reactRoot, [], [], "full");
+    const lean = project(cppRoot, ["skill:security-review"], []);
+    const input = ledger(
+      [full, lean],
+      [target(["module:security", "skill:security-review"], [], "codex")],
+    );
+
+    const result = reconcileEccRegistrationLedger(input, {
+      projectStatus: (root) => (root === resolve(reactRoot) ? "missing" : "live"),
+    });
+
+    expect(result.full).toBe(false);
+    expect(result.ledger.targets[0]?.components.map((component) => component.id)).toEqual([
+      "skill:security-review",
+    ]);
+    expect(result.desired.components).toEqual(["skill:security-review"]);
   });
 
   it("preserves existing target content while any live project has full scope", () => {

@@ -486,6 +486,8 @@ describe("Check.code — invariants", () => {
       "trust.skill-metadata-license": true,
       "trust.hidden-unicode": true,
       "trust.visible-unicode": true,
+      "trust.external-egress": true,
+      "trust.permission-risk": true,
       "trust.prompt-injection": true,
       "trust.source-changed": true,
       "trust.auto-exec-hook": true,

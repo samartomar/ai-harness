@@ -8,10 +8,12 @@
     "src/secrets/templates.ts",
     "src/skill/license.ts",
     "src/trust/acknowledge.ts",
+    "src/trust/cisco-shards.ts",
     "src/trust/commands.ts",
     "src/trust/depnames.ts",
     "src/trust/detectors.ts",
     "src/trust/docker.ts",
+    "src/trust/evidence.ts",
     "src/trust/fetch.ts",
     "src/trust/fingerprint.ts",
     "src/trust/grade.ts",
@@ -25,5 +27,5 @@
     "src/trust/script-files.ts",
     "src/trust/smoke.ts"
   ],
-  "digest": "cf3d81b037a7"
+  "digest": "29c2c3dd064e"
 }

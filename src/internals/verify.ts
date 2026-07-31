@@ -123,6 +123,8 @@ export type CheckCode =
   | "trust.skill-metadata-license"
   | "trust.hidden-unicode"
   | "trust.visible-unicode"
+  | "trust.external-egress"
+  | "trust.permission-risk"
   | "trust.prompt-injection"
   | "trust.source-changed"
   | "trust.auto-exec-hook"

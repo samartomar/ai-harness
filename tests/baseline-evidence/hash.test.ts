@@ -2,7 +2,7 @@ import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
+import { hashComponentTree, hashSourceTree } from "../../src/baseline-evidence/hash.js";
 
 let root: string;
 
@@ -58,5 +58,20 @@ describe("hashComponentTree", () => {
     rmSync(join(root, "component", "link.txt"));
     linkSync(join(root, "component", "file.txt"), join(root, "component", "hard.txt"));
     expect(() => hashComponentTree(root, ["component"])).toThrow(/hard.link/i);
+  });
+});
+
+describe("hashSourceTree", () => {
+  it("binds a source symlink without following or materializing it", () => {
+    put("CLAUDE.md", "upstream guidance");
+    symlinkSync("CLAUDE.md", join(root, "AGENTS.md"));
+
+    const first = hashSourceTree(root);
+    expect(first.files.map((file) => file.path)).toEqual(["CLAUDE.md"]);
+
+    rmSync(join(root, "AGENTS.md"));
+    symlinkSync("OTHER.md", join(root, "AGENTS.md"));
+    expect(hashSourceTree(root).treeSha256).not.toBe(first.treeSha256);
+    expect(() => hashComponentTree(root, ["AGENTS.md"])).toThrow(/symbolic|symlink/i);
   });
 });

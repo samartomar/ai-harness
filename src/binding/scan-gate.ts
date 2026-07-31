@@ -528,6 +528,7 @@ const DANGER_SEVERITY: Record<string, ScanSeverity> = {
   "trust.hidden-unicode": "high",
 };
 const GRADED_SEVERITY: Record<string, ScanSeverity> = {
+  "trust.external-egress": "medium",
   "trust.visible-unicode": "medium",
 };
 
@@ -1276,7 +1277,7 @@ function rankOf(severity: ScanSeverity): number {
  * ⇒ only `classification === "closure"` blocks, and a visible-typography `advisory`
  * demotion is non-gating even though its file is in the closure. */
 function isBlockingFinding(finding: ScanFinding, closureApplied: boolean): boolean {
-  if (!closureApplied) return true;
+  if (!closureApplied) return finding.advisory === undefined;
   return finding.classification === "closure" && finding.advisory === undefined;
 }
 
@@ -1388,8 +1389,17 @@ function decide(
   );
 
   const findings = collected.map((finding) => {
-    let marked = finding;
-    let blockingHere = true;
+    let marked =
+      finding.code === "trust.visible-unicode"
+        ? {
+            ...finding,
+            advisory: {
+              reclassifiedFrom: finding.severity,
+              contextClass: "visible-typography",
+            },
+          }
+        : finding;
+    let blockingHere = marked.advisory === undefined;
     if (closure !== undefined) {
       // A pathless finding (e.g. malicious-code) can never be proven inert — it
       // has no file to classify — so it fails closed to blocking `closure`.
@@ -1414,7 +1424,7 @@ function decide(
           ? advisoryByPath.get(finding.path)
           : undefined;
       if (advisory !== undefined) marked = { ...marked, advisory };
-      blockingHere = classification === "closure" && advisory === undefined;
+      blockingHere = classification === "closure" && marked.advisory === undefined;
     }
     // Acceptance only marks a BLOCKING finding — accepting an inert finding is a
     // structural no-op (it never gated), so the mark is withheld to keep the

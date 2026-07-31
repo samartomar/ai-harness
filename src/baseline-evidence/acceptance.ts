@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import type { TRUST_POLICY_VERSION } from "../trust/evidence.js";
 import acceptanceDecisionsJson from "./acceptance-decisions.json";
 
 /**
@@ -25,6 +26,8 @@ import acceptanceDecisionsJson from "./acceptance-decisions.json";
  */
 
 export const ACCEPTANCE_POLICY_VERSION = 1;
+/** Corrected active-profile policy. No shipped record currently claims this version. */
+export const CORRECTED_ACCEPTANCE_POLICY_VERSION = 2;
 
 /**
  * Codes no acceptance decision may waive, ever: behavioral / supply-chain
@@ -34,9 +37,17 @@ export const ACCEPTANCE_POLICY_VERSION = 1;
 export const UNWAIVABLE_FINDING_CODES: ReadonlySet<string> = new Set([
   "trust.malicious-code",
   "trust.auto-exec-hook",
+  "trust.prompt-injection",
+  "trust.hidden-unicode",
+  "trust.unpinned-dependency",
   "trust.dependency-confusion",
   "trust.typosquat",
   "trust.source-changed",
+  "trust.source-drift",
+  "trust.unsigned-source",
+  "trust.detector-unavailable",
+  "trust.sandbox-smoke-unavailable",
+  "trust.sandbox-smoke-failed",
 ]);
 
 const SHA40 = /^[0-9a-f]{40}$/;
@@ -47,6 +58,12 @@ const AcceptedComponentSchema = z
     evidenceComponentId: z.string().min(1).max(240),
     treeSha256: z.string().regex(SHA256_HEX),
     acceptedFindingCodes: z.array(z.string().min(1).max(120)).min(1).max(64),
+    acceptedOccurrenceFingerprints: z
+      .array(z.string().min(1).max(500))
+      .min(1)
+      .max(2_000)
+      .optional(),
+    analyzerVersions: z.array(z.string().min(1).max(240)).min(1).max(32).optional(),
   })
   .strict();
 
@@ -55,7 +72,11 @@ const AcceptanceDecisionSchema = z
     decisionId: z.string().min(1).max(240),
     decision: z.literal("accepted-with-conditions"),
     owner: z.string().min(1).max(240),
-    policyVersion: z.literal(ACCEPTANCE_POLICY_VERSION),
+    policyVersion: z.union([
+      z.literal(ACCEPTANCE_POLICY_VERSION),
+      z.literal(CORRECTED_ACCEPTANCE_POLICY_VERSION),
+    ]),
+    trustPolicyVersion: z.number().int().positive().optional(),
     framework: z.string().min(1).max(120),
     profile: z.string().min(1).max(120),
     host: z.string().min(1).max(120),
@@ -69,7 +90,33 @@ const AcceptanceDecisionSchema = z
     expiresAt: z.string().datetime().optional(),
     recordSha256: z.string().regex(SHA256_HEX),
   })
-  .strict();
+  .strict()
+  .superRefine((decision, ctx) => {
+    if (decision.policyVersion !== CORRECTED_ACCEPTANCE_POLICY_VERSION) return;
+    if (decision.trustPolicyVersion === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["trustPolicyVersion"],
+        message: "corrected acceptance requires the exact trust normalization policy version",
+      });
+    }
+    for (const [index, component] of decision.components.entries()) {
+      if (component.acceptedOccurrenceFingerprints === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["components", index, "acceptedOccurrenceFingerprints"],
+          message: "corrected acceptance requires exact occurrence fingerprints",
+        });
+      }
+      if (component.analyzerVersions === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["components", index, "analyzerVersions"],
+          message: "corrected acceptance requires exact analyzer versions",
+        });
+      }
+    }
+  });
 
 const AcceptanceArtifactSchema = z
   .object({
@@ -129,6 +176,8 @@ export interface ComponentAcceptanceCandidate {
   componentId: string;
   componentTreeSha256: string;
   findingCodes: readonly string[];
+  /** Set by corrected callers so legacy code-only decisions cannot cross policy versions. */
+  policyVersion?: number;
 }
 
 export interface ComponentAcceptanceMatch {
@@ -154,6 +203,15 @@ export function matchComponentAcceptance(
   const codes = candidate.findingCodes.length > 0 ? candidate.findingCodes : ["trust.finding"];
   if (codes.some((code) => UNWAIVABLE_FINDING_CODES.has(code))) return undefined;
   for (const decision of decisions) {
+    if (
+      candidate.policyVersion !== undefined &&
+      decision.policyVersion !== candidate.policyVersion
+    ) {
+      continue;
+    }
+    // The legacy join cannot prove occurrence, analyzer, policy, and source-tree
+    // bindings. Never let it partially evaluate a corrected v2 decision.
+    if (decision.policyVersion !== ACCEPTANCE_POLICY_VERSION) continue;
     // Defense in depth: an unsigned or content-tampered record never matches,
     // regardless of how the decision list reached this function.
     if (acceptanceRecordSha256(decision) !== decision.recordSha256) continue;
@@ -192,6 +250,69 @@ export interface AcceptanceTuple {
   profile: string;
   host: string;
   adapter: string;
+}
+
+export interface CorrectedComponentAcceptanceCandidate extends ComponentAcceptanceCandidate {
+  profile: string;
+  host: string;
+  adapter: string;
+  sourceTreeDigest: string;
+  occurrenceFingerprints: readonly string[];
+  analyzerVersions: readonly string[];
+  policyVersion: typeof CORRECTED_ACCEPTANCE_POLICY_VERSION;
+  trustPolicyVersion: typeof TRUST_POLICY_VERSION;
+}
+
+function sameSet(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false;
+  if (new Set(left).size !== left.length || new Set(right).size !== right.length) return false;
+  const expected = new Set(right);
+  return left.every((value) => expected.has(value));
+}
+
+/**
+ * Corrected active-profile acceptance. Legacy code-only decisions are
+ * deliberately ineligible: a match requires the exact source/component trees,
+ * profile tuple, policy version, analyzer versions, and occurrence fingerprints.
+ */
+export function matchCorrectedComponentAcceptance(
+  decisions: readonly AcceptanceDecision[],
+  candidate: CorrectedComponentAcceptanceCandidate,
+  now: Date = new Date(),
+): ComponentAcceptanceMatch | undefined {
+  const codes = candidate.findingCodes.length > 0 ? candidate.findingCodes : ["trust.finding"];
+  if (codes.some((code) => UNWAIVABLE_FINDING_CODES.has(code))) return undefined;
+  for (const decision of decisions) {
+    if (decision.policyVersion !== candidate.policyVersion) continue;
+    if (decision.trustPolicyVersion !== candidate.trustPolicyVersion) continue;
+    if (acceptanceRecordSha256(decision) !== decision.recordSha256) continue;
+    if (decision.framework !== candidate.framework) continue;
+    if (decision.profile !== candidate.profile) continue;
+    if (decision.host !== candidate.host) continue;
+    if (decision.adapter !== candidate.adapter) continue;
+    if (decision.repository !== candidate.repository) continue;
+    if (decision.commitSha !== candidate.commitSha) continue;
+    if (decision.treeDigest !== candidate.sourceTreeDigest) continue;
+    if (decision.expiresAt !== undefined && now.getTime() >= Date.parse(decision.expiresAt))
+      continue;
+    const component = decision.components.find(
+      (entry) => entry.evidenceComponentId === candidate.componentId,
+    );
+    if (component === undefined || component.treeSha256 !== candidate.componentTreeSha256) continue;
+    if (component.acceptedOccurrenceFingerprints === undefined) continue;
+    if (component.analyzerVersions === undefined) continue;
+    if (!sameSet(component.acceptedFindingCodes, codes)) continue;
+    if (!sameSet(component.acceptedOccurrenceFingerprints, candidate.occurrenceFingerprints)) {
+      continue;
+    }
+    if (!sameSet(component.analyzerVersions, candidate.analyzerVersions)) continue;
+    return {
+      decisionId: decision.decisionId,
+      recordSha256: decision.recordSha256,
+      acceptedFindingCodes: [...component.acceptedFindingCodes],
+    };
+  }
+  return undefined;
 }
 
 /**

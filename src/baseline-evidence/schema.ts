@@ -39,6 +39,7 @@ export const BaselineEvidenceFindingSchema = z
     count: z.number().int().min(2).optional(),
     detail: z.string().trim().min(1).max(2_000),
     fingerprint: z.string().trim().min(1).max(500).optional(),
+    fingerprints: z.array(z.string().trim().min(1).max(500)).min(1).max(2_000).optional(),
   })
   .strict();
 
@@ -79,6 +80,7 @@ export const BaselineSourceEvidenceSchema = z
     owner: z.string().regex(SAFE_REPO_PART),
     repo: z.string().regex(SAFE_REPO_PART),
     pinnedSha: z.string().regex(GIT_SHA),
+    sourceTreeSha256: z.string().regex(SHA256).optional(),
     components: z.array(BaselineComponentEvidenceSchema).min(1),
   })
   .strict()

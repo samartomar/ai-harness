@@ -2,6 +2,7 @@ import { z } from "zod";
 import eccModulesJson from "../baseline-evidence/ecc-modules.json";
 import eccProfilesJson from "../baseline-evidence/ecc-profiles.json";
 import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
+import { AihError } from "../errors.js";
 import type { Cli } from "../internals/clis.js";
 import type { EccComponentId, EccComponentSelection } from "./components.js";
 import { eccComponentInstallDescriptor } from "./materialize.js";
@@ -65,10 +66,9 @@ function addWithDependencies(selected: Set<string>, id: string): void {
   selected.add(id);
 }
 
-export function eccEvidenceComponentIds(
+export function eccProfileModuleIds(
   profileId: string,
-  target: Cli,
-  packs: readonly EccLanguagePack[],
+  packs: readonly EccLanguagePack[] = [],
 ): string[] {
   const profile = profiles[profileId];
   if (profile === undefined)
@@ -78,6 +78,15 @@ export function eccEvidenceComponentIds(
   for (const pack of packs) {
     for (const id of PACK_MODULES[pack]) addWithDependencies(selected, id);
   }
+  return modules.filter((module) => selected.has(module.id)).map((module) => module.id);
+}
+
+export function eccEvidenceComponentIds(
+  profileId: string,
+  target: Cli,
+  packs: readonly EccLanguagePack[],
+): string[] {
+  const selected = new Set(eccProfileModuleIds(profileId, packs));
   return [
     "runtime:ecc-installer",
     ...modules
@@ -102,20 +111,26 @@ export function authorizedEccSelection(
   targets: readonly Cli[] = [],
 ): EccComponentSelection {
   const authorizedIds = new Set(authorizations.map((authorization) => authorization.componentId));
-  if (
-    selection.scope === "full" &&
-    targets.length > 0 &&
-    targets.every((target) =>
-      eccEvidenceComponentIdsForSelection(target, selection).every((componentId) =>
-        authorizedIds.has(componentId),
+  const atomic = selection.scope === "full" || (selection.moduleIds?.length ?? 0) > 0;
+  if (atomic && targets.length > 0) {
+    const required = [
+      ...new Set(
+        targets.flatMap((target) => eccEvidenceComponentIdsForSelection(target, selection)),
       ),
-    )
-  ) {
+    ];
+    const missing = required.filter((componentId) => !authorizedIds.has(componentId));
+    if (missing.length > 0) {
+      throw new AihError(
+        `refusing partial ECC ${selection.scope === "full" ? "Full" : "Core"} install; held evidence components: ${missing.join(", ")}`,
+        "AIH_TRUST",
+      );
+    }
     return {
-      scope: "full",
+      scope: selection.scope,
       components: [...selection.components],
       mcps: [...selection.mcps],
       recommendations: [...selection.recommendations],
+      ...(selection.moduleIds === undefined ? {} : { moduleIds: [...selection.moduleIds] }),
     };
   }
   const authorized = (componentId: EccComponentId | EccComponentSelection["mcps"][number]) =>
@@ -134,6 +149,9 @@ export function eccEvidenceComponentIdsForSelection(
 ): string[] {
   if (selection.scope === "full") return eccEvidenceComponentIds("full", target, []);
   const selected = new Set<string>(["runtime:ecc-installer"]);
+  for (const moduleId of selection.moduleIds ?? []) {
+    if (moduleSupportsTarget(moduleId, target)) selected.add(`module:${moduleId}`);
+  }
   for (const componentId of scopedComponentIds(selection)) {
     const descriptor = eccComponentInstallDescriptor(componentId);
     if (!moduleSupportsTarget(descriptor.containingModuleId, target)) continue;
@@ -151,11 +169,27 @@ export function installedEccComponentRegistrations(
     authorizations.map((authorization) => [authorization.componentId, authorization]),
   );
   const installed: InstalledComponentRegistration[] = [];
+  if (selection.scope === "full" || (selection.moduleIds?.length ?? 0) > 0) {
+    installed.push(
+      ...eccEvidenceComponentIdsForSelection(target, selection)
+        .filter((componentId) => componentId.startsWith("module:"))
+        .map((componentId) => {
+          const authorization = authorizationById.get(componentId);
+          if (authorization === undefined) {
+            throw new Error(`missing ECC evidence authorization for ${componentId}`);
+          }
+          return { id: componentId as EccComponentId, authorization };
+        }),
+    );
+  }
   for (const componentId of scopedComponentIds(selection)) {
     const descriptor = eccComponentInstallDescriptor(componentId);
     if (!moduleSupportsTarget(descriptor.containingModuleId, target)) continue;
-    const exact = authorizationById.get(componentId);
-    const containing = authorizationById.get(`module:${descriptor.containingModuleId}`);
+    const exact = authorizationById.get(descriptor.evidenceComponentId);
+    const containing =
+      selection.scope === "full"
+        ? authorizationById.get(`module:${descriptor.containingModuleId}`)
+        : undefined;
     const authorization = exact ?? containing;
     if (authorization === undefined) {
       throw new Error(`missing ECC evidence authorization for ${componentId}`);

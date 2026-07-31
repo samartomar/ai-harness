@@ -146,7 +146,7 @@ export interface EccRegistrationRequest extends VerifiedEccRequest {
 export function buildEccRegistrationRequest(ctx: PlanContext, clis: Cli[]): EccRegistrationRequest {
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const language = eccLanguages(stack);
-  const profile = String(ctx.options.profile ?? "core");
+  const profile = String(ctx.options.profile ?? "minimal");
   const selected = selectEccComponents({
     stack,
     posture: postureFromContext(ctx),
@@ -163,6 +163,7 @@ export function buildEccRegistrationRequest(ctx: PlanContext, clis: Cli[]): EccR
     scope: selected.scope,
     components: [...selected.components],
     mcps: projectMcps,
+    moduleIds: [...(selected.moduleIds ?? [])],
   };
   const preview = mergeRegistrationLedger(ledger, project, []);
   const union = machineRegistrationUnion(preview);
@@ -176,6 +177,7 @@ export function buildEccRegistrationRequest(ctx: PlanContext, clis: Cli[]): EccR
       components: union.components as EccComponentId[],
       mcps: orgAllowedEccMcpComponents(union.mcps as EccMcpComponentId[], policy),
       recommendations: [...selected.recommendations],
+      moduleIds: [...union.moduleIds],
     },
     project,
     ledger,
@@ -240,7 +242,8 @@ export async function executeEccEvidencePipeline(
       catalog,
       source,
       componentIds: componentIds(request),
-      allowPartial: true,
+      allowPartial:
+        request.selection?.scope !== "full" && (request.selection?.moduleIds?.length ?? 0) === 0,
       acceptanceTuple: deps.acceptanceTuple,
       buildInstallPlan: (sourceRoot, authorizations) =>
         buildInstallPlan(ctx, sourceRoot, request, authorizations),
