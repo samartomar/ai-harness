@@ -1,5 +1,6 @@
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { bootloadersFor, REGISTRY_IDS } from "../internals/cli-registry.js";
 
 /** Heuristic: ~4 chars/token for mostly-ASCII markdown. A rough estimate, not a tokenizer. */
 const CHARS_PER_TOKEN = 4;
@@ -7,17 +8,33 @@ const CHARS_PER_TOKEN = 4;
 /** Default context budget (tokens) above which agent prompts start paying long-context cost. */
 export const DEFAULT_CONTEXT_BUDGET_TOKENS = 40_000;
 
-/** Root-level agent bootloaders an AI CLI loads as system context. */
-const ROOT_CONTEXT_FILES = [
-  "CLAUDE.md",
-  "AGENTS.md",
-  "GEMINI.md",
-  ".windsurfrules",
-  ".github/copilot-instructions.md",
-] as const;
+/**
+ * Agent bootloaders an AI CLI loads as system context, derived from the CLI registry
+ * so a newly registered target is measured without editing this file. A hand-kept list
+ * here silently under-reported every target it forgot (issue #553).
+ */
+const ROOT_CONTEXT_FILES: readonly string[] = bootloadersFor(REGISTRY_IDS);
 
-/** Extra subtrees (beyond the canonical context dir) whose files load as agent context. */
+/**
+ * Extra subtrees (beyond the canonical context dir) whose files load as agent context.
+ * This is the directory-load semantic — Cursor loads every rule in the tree, not just
+ * the bootloader aih writes — which the registry does not model today, so it stays
+ * explicit rather than derived. Registry bootloaders are covered above as direct files.
+ */
 const EXTRA_CONTEXT_DIRS = [".cursor/rules"] as const;
+
+/** Basenames that are OS/file-manager metadata, never agent context (issue #553). */
+const OS_METADATA_NAMES = new Set([".ds_store", "thumbs.db", "desktop.ini"]);
+
+/**
+ * True when `rel` is OS metadata — a Finder/Explorer sidecar carrying no AI instruction
+ * or project canon. Tracked copies count too: being committed does not make Finder
+ * metadata part of the agent's context corpus.
+ */
+function isOsMetadata(rel: string): boolean {
+  const base = rel.slice(rel.lastIndexOf("/") + 1);
+  return OS_METADATA_NAMES.has(base.toLowerCase()) || base.startsWith("._");
+}
 
 /** Compact contract files that v1 made the steady-state context target. */
 const CONTRACT_CONTEXT_FILES = ["RULE_ROUTER.md", "project.json", "project.md"] as const;
@@ -56,6 +73,12 @@ export interface ScanOptions {
    * Runner) so the footprint doesn't double-count generated copies or ignored files.
    */
   accept?: (rel: string) => boolean;
+  /**
+   * Count OS metadata (`.DS_Store` and peers) as context. Default false — it is never
+   * agent instruction. `--all-files` sets this true to keep its documented
+   * "every file on disk" contract literal (issue #553).
+   */
+  includeOsMetadata?: boolean;
 }
 
 /** The agent context an AI CLI loads from this repo, with an estimated token footprint. */
@@ -200,7 +223,9 @@ export function scanContextBloat(
   }
 
   const files: ContextFile[] = [];
+  const keepOsMetadata = opts.includeOsMetadata === true;
   for (const rel of [...rels].sort()) {
+    if (!keepOsMetadata && isOsMetadata(rel)) continue; // Finder/Explorer sidecars
     if (!accept(rel)) continue; // drop ignored / untracked-generated / out-of-diff files
     const f = fileFootprint(root, rel); // missing / non-regular files are skipped
     if (f) files.push(f);

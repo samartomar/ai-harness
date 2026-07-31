@@ -221,7 +221,13 @@ async function buildReport(ctx: PlanContext): Promise<Built> {
   // to files changed vs the ref.
   const since =
     typeof ctx.options.since === "string" ? await changedSince(ctx, ctx.options.since) : undefined;
-  const scanOpts = { accept: acceptChanged(allow, since) };
+  // OS metadata (`.DS_Store` and peers) is never agent context, so it stays out of the
+  // default corpus even when tracked. `--all-files` keeps its literal every-file
+  // contract and counts it (issue #553).
+  const scanOpts = {
+    accept: acceptChanged(allow, since),
+    includeOsMetadata: ctx.options.allFiles === true,
+  };
   const bloat = scanContextBloat(ctx.root, ctx.contextDir, budget, scanOpts);
   const model = scanLoadGroups(ctx.root, ctx.contextDir, budget, scanOpts);
   const panels = await localPanels(ctx);
