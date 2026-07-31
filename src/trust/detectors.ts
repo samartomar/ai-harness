@@ -742,14 +742,12 @@ async function checkCiscoAvailable(
   });
   const reason = runFailureReason(version, `uvx exit ${version.code ?? "signal"}`);
   if (reason !== undefined) return reason;
-  const output = `${version.stdout}${version.stderr}`.trim();
-  if (output.length === 0) {
+  const reportedVersion = version.stdout.trim();
+  if (reportedVersion.length === 0) {
     return "skill-scanner version check emitted no output";
   }
-  const reportedVersions: string[] =
-    output.match(/[0-9]+(?:\.[0-9]+)+(?:[-+][0-9A-Za-z.-]+)?/g) ?? [];
-  if (expectedVersion !== undefined && !reportedVersions.includes(expectedVersion)) {
-    return `skill-scanner version ${JSON.stringify(output)} does not match ${expectedVersion}`;
+  if (expectedVersion !== undefined && reportedVersion !== `skill-scanner ${expectedVersion}`) {
+    return `skill-scanner version ${JSON.stringify(reportedVersion)} does not match ${expectedVersion}`;
   }
   return undefined;
 }
@@ -782,14 +780,12 @@ async function checkSemgrepAvailable(
   });
   const reason = runFailureReason(version, `semgrep exit ${version.code ?? "signal"}`);
   if (reason !== undefined) return reason;
-  const output = `${version.stdout}${version.stderr}`.trim();
-  if (output.length === 0) {
+  const reportedVersion = version.stdout.trim();
+  if (reportedVersion.length === 0) {
     return "semgrep version check emitted no output";
   }
-  const reportedVersions: string[] =
-    output.match(/[0-9]+(?:\.[0-9]+)+(?:[-+][0-9A-Za-z.-]+)?/g) ?? [];
-  if (!reportedVersions.includes(SEMGREP_VERSION)) {
-    return `semgrep version ${JSON.stringify(output)} does not match ${SEMGREP_VERSION}`;
+  if (reportedVersion !== SEMGREP_VERSION) {
+    return `semgrep version ${JSON.stringify(reportedVersion)} does not match ${SEMGREP_VERSION}`;
   }
   return undefined;
 }

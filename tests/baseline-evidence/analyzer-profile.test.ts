@@ -144,6 +144,25 @@ describe("checkDetectorsAvailable", () => {
       [],
     );
   });
+
+  it("rejects a different Semgrep version that merely mentions the pinned version", async () => {
+    const run = fakeRunner((argv) =>
+      argv.includes("--version") ? { code: 0, stdout: "9.9.9\nupgrade from 1.172.0\n" } : undefined,
+    );
+    const probes = await checkDetectorsAvailable(["semgrep"], {
+      run,
+      platform: "linux",
+      env: {},
+    });
+
+    expect(probes).toEqual([
+      {
+        name: "semgrep",
+        analyzerLabel: "semgrep@uv:1.172.0",
+        reason: expect.stringContaining("does not match 1.172.0"),
+      },
+    ]);
+  });
 });
 
 describe("preflightRequiredBaselineAnalyzers", () => {
