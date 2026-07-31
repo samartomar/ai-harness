@@ -11,10 +11,15 @@ import { fakeRunner } from "../../src/internals/proc.js";
 import { jsonFile } from "../../src/internals/render.js";
 import { bakedCatalogPins } from "../../src/mcp/currency.js";
 import { mcpPackagePinDriftProbe } from "../../src/mcp/hygiene.js";
-import { command, mcpApproveCommand } from "../../src/mcp/index.js";
+import { command, mcpApproveCommand, RETIRED_AWS_CORE_MCP_SERVER } from "../../src/mcp/index.js";
 import { hasExactPackagePin, mcpResolverPinState, uvxPrimaryPin } from "../../src/mcp/pins.js";
 import { mcpApprovalSubject } from "../../src/mcp/policy.js";
-import { existingMcpTomlNames, removeMcpTomlServers } from "../../src/mcp/render.js";
+import {
+  existingMcpTomlNames,
+  mcpEntries,
+  mcpTomlBody,
+  removeMcpTomlServers,
+} from "../../src/mcp/render.js";
 import type { McpServer } from "../../src/mcp/servers.js";
 import type { Platform } from "../../src/platform/base.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -415,7 +420,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
       "--offline",
       "--no-python-downloads",
       "--no-env-file",
-      "code-review-graph@2.3.6",
+      "code-review-graph@2.3.7",
       "serve",
     ]);
     expect(typeof graph.description).toBe("string");
@@ -433,7 +438,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
       "--offline",
       "--no-python-downloads",
       "--no-env-file",
-      "codebase-memory-mcp@0.8.1",
+      "codebase-memory-mcp@0.9.0",
     ]);
     expect(typeof memory.description).toBe("string");
   });
@@ -455,7 +460,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     expect(names.some((n) => n.startsWith("better-"))).toBe(false);
   });
 
-  it("is project-aware: an AWS repo gets the awslabs server, a web repo gets Playwright", async () => {
+  it("does not generate the retired AWS core package while a web repo still gets Playwright", async () => {
     const awsRoot = makeTmp();
     writeFileSync(
       join(awsRoot, "package.json"),
@@ -465,7 +470,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
       (a) => a.kind === "write",
     ) as WriteAction;
     const awsServers = serversOf(awsW);
-    expect(awsServers["awslabs.core-mcp-server"]).toBeDefined();
+    expect(awsServers["awslabs.core-mcp-server"]).toBeUndefined();
     expect(awsServers.playwright).toBeUndefined();
 
     const webRoot = makeTmp();
@@ -489,17 +494,10 @@ describe("aih mcp — generated mcpServers blueprint", () => {
       (a) => a.kind === "write",
     ) as WriteAction;
     const servers = serversOf(w);
-    const aws = pick(servers, "awslabs.core-mcp-server");
     const pw = pick(servers, "playwright");
-    if (aws.type !== "stdio" || pw.type !== "stdio") throw new Error("expected stdio servers");
-    expect(aws.args).toEqual([
-      "--offline",
-      "--no-python-downloads",
-      "--no-env-file",
-      "awslabs.core-mcp-server@1.0.27",
-    ]);
-    expect(pw.args).toEqual(["@playwright/mcp@0.0.76"]);
-    expect(`${aws.args.join(" ")} ${pw.args.join(" ")}`).not.toContain("@latest");
+    if (pw.type !== "stdio") throw new Error("expected stdio server");
+    expect(pw.args).toEqual(["@playwright/mcp@0.0.78"]);
+    expect(pw.args.join(" ")).not.toContain("@latest");
   });
 
   it("hardens every generated uvx MCP launcher against startup fetches and .env reads", async () => {
@@ -607,7 +605,7 @@ describe("aih mcp — risk classification (P1-B)", () => {
     expect(pick(serversOf(w), "code-review-graph").classification).toBe("local");
   });
 
-  it("labels stack-added stdio servers (aws, playwright) `local`", async () => {
+  it("labels the supported stack-added Playwright stdio server `local`", async () => {
     const awsRoot = makeTmp();
     writeFileSync(
       join(awsRoot, "package.json"),
@@ -616,7 +614,7 @@ describe("aih mcp — risk classification (P1-B)", () => {
     const awsW = (await command.plan(makeCtx({ root: awsRoot }))).actions.find(
       (a) => a.kind === "write",
     ) as WriteAction;
-    expect(pick(serversOf(awsW), "awslabs.core-mcp-server").classification).toBe("local");
+    expect(serversOf(awsW)["awslabs.core-mcp-server"]).toBeUndefined();
 
     const webRoot = makeTmp();
     writeFileSync(
@@ -675,7 +673,9 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
     expect(gh.type).toBe("stdio");
     if (gh.type !== "stdio") throw new Error("expected stdio server");
     expect(gh.command).toBe("docker");
-    expect(gh.args).toContain("ghcr.io/github/github-mcp-server:v1.5.0");
+    expect(gh.args).toContain(
+      "ghcr.io/github/github-mcp-server@sha256:c491ffdf6f4c85cb5397021bc655edb8ab825c6f5f568e7597d77a1bd7c4d308",
+    );
     expect(gh.env?.GITHUB_PERSONAL_ACCESS_TOKEN).toMatch(/^\$\{GITHUB_PERSONAL_ACCESS_TOKEN\}$/);
     expect(gh.credentials).toBe("token");
     expect(gh.supplyChain).toBe("pinned");
@@ -915,6 +915,42 @@ describe("aih mcp — curated default servers (secret-free, on by default)", () 
 });
 
 describe("aih mcp — merge preserves user config", () => {
+  it("removes only the exact retired AIH-generated AWS core JSON entry", async () => {
+    const retired = mcpEntries("claude", {
+      "awslabs.core-mcp-server": RETIRED_AWS_CORE_MCP_SERVER,
+    })["awslabs.core-mcp-server"];
+    if (retired === undefined || retired.type !== "stdio" || !Array.isArray(retired.args)) {
+      throw new Error("missing retired AWS fixture");
+    }
+
+    const exactRoot = makeTmp();
+    writeFileSync(
+      join(exactRoot, ".mcp.json"),
+      jsonFile({ mcpServers: { "awslabs.core-mcp-server": retired } }),
+    );
+    const exactPlan = await command.plan(makeCtx({ root: exactRoot }));
+    const exactWrite = exactPlan.actions.find((action) => action.kind === "write") as WriteAction;
+    const exactMerged = JSON.parse(resolveContents(exactWrite, join(exactRoot, ".mcp.json"))) as {
+      mcpServers: Record<string, unknown>;
+    };
+    expect(exactMerged.mcpServers["awslabs.core-mcp-server"]).toBeUndefined();
+
+    const customRoot = makeTmp();
+    const customized = { ...retired, args: [...retired.args, "--operator-mode"] };
+    writeFileSync(
+      join(customRoot, ".mcp.json"),
+      jsonFile({ mcpServers: { "awslabs.core-mcp-server": customized } }),
+    );
+    const customPlan = await command.plan(makeCtx({ root: customRoot }));
+    const customWrite = customPlan.actions.find((action) => action.kind === "write") as WriteAction;
+    const customMerged = JSON.parse(
+      resolveContents(customWrite, join(customRoot, ".mcp.json")),
+    ) as {
+      mcpServers: Record<string, unknown>;
+    };
+    expect(customMerged.mcpServers["awslabs.core-mcp-server"]).toEqual(customized);
+  });
+
   it("keeps a planted user server (mcpServers.myServer) on merge", async () => {
     const root = makeTmp();
     const existing = {
@@ -1224,9 +1260,9 @@ describe("aih mcp — MCP write hygiene", () => {
       if (argv[0] === "uv") return { code: 0, stdout: "uv 0.5.0\n" };
       if (
         argv.join(" ") ===
-        "npm view @modelcontextprotocol/server-sequential-thinking@2025.12.18 version"
+        "npm view @modelcontextprotocol/server-sequential-thinking@2026.7.4 version"
       ) {
-        return { code: 0, stdout: "2025.12.19\n" };
+        return { code: 0, stdout: "2026.7.5\n" };
       }
       return undefined;
     });
@@ -1240,7 +1276,7 @@ describe("aih mcp — MCP write hygiene", () => {
     expect(check?.verdict).toBe("fail");
     expect(check?.code).toBe("mcp.version-drift");
     expect(check?.detail).toContain(
-      "@modelcontextprotocol/server-sequential-thinking pinned 2025.12.18 but registry resolved 2025.12.19",
+      "@modelcontextprotocol/server-sequential-thinking pinned 2026.7.4 but registry resolved 2026.7.5",
     );
   });
 
@@ -1251,9 +1287,9 @@ describe("aih mcp — MCP write hygiene", () => {
       if (argv[0] === "uv") return { code: 0, stdout: "uv 0.5.0\n" };
       if (
         argv.join(" ") ===
-        "cmd /c npm view @modelcontextprotocol/server-sequential-thinking@2025.12.18 version"
+        "cmd /c npm view @modelcontextprotocol/server-sequential-thinking@2026.7.4 version"
       ) {
-        return { code: 0, stdout: "2025.12.18\n" };
+        return { code: 0, stdout: "2026.7.4\n" };
       }
       return undefined;
     });
@@ -1270,7 +1306,7 @@ describe("aih mcp — MCP write hygiene", () => {
       "/c",
       "npm",
       "view",
-      "@modelcontextprotocol/server-sequential-thinking@2025.12.18",
+      "@modelcontextprotocol/server-sequential-thinking@2026.7.4",
       "version",
     ]);
   });
@@ -1632,6 +1668,32 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     expect(codex?.contents).toContain("[mcp_servers.github]");
     expect(codex?.contents).toContain("https://github.internal.example/mcp/");
     expect(codex?.contents).not.toContain("[mcp_servers.context7]");
+  });
+
+  it("removes a retired AWS server from the AIH-managed TOML block", async () => {
+    const root = makeTmp();
+    const home = makeTmp();
+    const codexDir = join(home, ".codex");
+    mkdirSync(codexDir, { recursive: true });
+    const retired = mcpTomlBody({
+      "awslabs.core-mcp-server": RETIRED_AWS_CORE_MCP_SERVER,
+    });
+    writeFileSync(
+      join(codexDir, "config.toml"),
+      upsertTextBlock('model = "gpt-5"\n', "mcp", retired),
+    );
+
+    const p = await command.plan(
+      makeCtx({ root, env: { HOME: home, USERPROFILE: home }, options: { cli: "codex" } }),
+    );
+    const codex = p.actions.find(
+      (action): action is WriteAction =>
+        action.kind === "write" && action.path.replace(/\\/g, "/").endsWith(".codex/config.toml"),
+    );
+
+    expect(codex?.contents).toContain('model = "gpt-5"');
+    expect(codex?.contents).not.toContain("awslabs.core-mcp-server");
+    expect(codex?.contents).toContain('[mcp_servers."code-review-graph"]');
   });
 
   it("preserves Codex managed TOML block markers while pruning the final disabled table", () => {
@@ -2029,7 +2091,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     expect(managed).toBeDefined();
     expect(managed?.merge).toBe(true);
     expect(managed?.json).toMatchObject({ allowManagedMcpServersOnly: true });
-    expect(JSON.stringify(managed?.json)).toContain("code-review-graph@2.3.6");
+    expect(JSON.stringify(managed?.json)).toContain("code-review-graph@2.3.7");
   });
 
   it("emits a ready-to-merge allowedServers snippet for generated servers the policy leaves undeclared", async () => {
@@ -2289,7 +2351,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     if (dotMcp === undefined) throw new Error("expected .mcp.json write");
     expect(Object.keys(serversOf(dotMcp))).not.toContain("sequential-thinking");
     const managedJson = JSON.stringify(managed?.json);
-    expect(managedJson).toContain("code-review-graph@2.3.6");
+    expect(managedJson).toContain("code-review-graph@2.3.7");
     expect(managedJson).not.toContain("server-sequential-thinking");
   });
 

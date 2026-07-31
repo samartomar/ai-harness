@@ -7,7 +7,7 @@
         "--offline",
         "--no-python-downloads",
         "--no-env-file",
-        "code-review-graph@2.3.6",
+        "code-review-graph@2.3.7",
         "serve"
       ],
       "description": "Local code-review knowledge graph (impact radius, affected flows) served over stdio via uvx.",
@@ -23,7 +23,7 @@
         "--offline",
         "--no-python-downloads",
         "--no-env-file",
-        "codebase-memory-mcp@0.8.1"
+        "codebase-memory-mcp@0.9.0"
       ],
       "description": "Local codebase memory/knowledge graph (index_repository, search_graph, query_graph, trace_path) — the memory companion to code-review-graph, served over stdio via uvx.",
       "classification": "local",
@@ -38,11 +38,11 @@
         "tools/repo-ai-tools.mjs",
         "serena-mcp"
       ],
-      "description": "Repo-local Serena 1.5.3 semantic symbol navigation and refactoring, with memory and duplicate basic tools disabled.",
+      "description": "Repo-local Serena 1.6.1 semantic symbol navigation and refactoring, with memory and duplicate basic tools disabled.",
       "classification": "local",
       "egress": "none",
       "credentials": "none",
-      "supplyChain": "serena-agent==1.5.3 with exact patched transitive overrides (repo-local uv tool)"
+      "supplyChain": "serena-agent==1.6.1 with exact patched transitive overrides (repo-local uv tool)"
     },
     "token-savior": {
       "type": "stdio",
@@ -51,18 +51,18 @@
         "tools/repo-ai-tools.mjs",
         "token-savior-mcp"
       ],
-      "description": "Repo-local Token Savior 4.4.1 compact structural navigation using the optimized profile; memory and shell hooks are disabled.",
+      "description": "Repo-local Token Savior 4.21.0 compact structural navigation using the optimized profile; memory and shell hooks are disabled.",
       "classification": "local",
       "egress": "none",
       "credentials": "none",
-      "supplyChain": "token-savior-recall[mcp]==4.4.1 (repo-local uv tool)"
+      "supplyChain": "token-savior-recall[mcp]==4.21.0 (repo-local uv tool)"
     },
     "sequential-thinking": {
       "type": "stdio",
       "command": "npx",
       "args": [
         "-y",
-        "@modelcontextprotocol/server-sequential-thinking@2025.12.18"
+        "@modelcontextprotocol/server-sequential-thinking@2026.7.4"
       ],
       "description": "Structured step-by-step reasoning scratchpad — no network, no filesystem, no credentials. Safe in any repo.",
       "classification": "local",

@@ -197,7 +197,9 @@ describe("riskGatesWorkflowYaml() — the generated CI consumer", () => {
   });
 
   it("SHA-pins actions and shares the exact checkout pin with the SCA workflow", () => {
-    expect(yaml).toMatch(/uses: actions\/checkout@[0-9a-f]{40} # v/);
+    expect(yaml).toContain(
+      "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
+    );
     const pin = (source: string) => source.match(/actions\/checkout@[0-9a-f]{40} # v[\w.]+/g);
     const scaPins = pin(scaWorkflowYaml()) ?? [];
     const riskPins = pin(yaml) ?? [];

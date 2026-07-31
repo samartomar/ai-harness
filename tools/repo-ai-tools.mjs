@@ -17,14 +17,14 @@ const cacheRoot =
 const installRoot = join(cacheRoot, "aih", "repo-ai-tools", repoKey);
 const uvToolRoot = join(installRoot, "uv");
 const binRoot = join(installRoot, "bin");
-const tokenOptimizerRoot = join(installRoot, "token-optimizer", "v5.11.44");
+const tokenOptimizerRoot = join(installRoot, "token-optimizer", "v5.11.68");
 const tokenOptimizerClaudeScope = join(installRoot, "token-optimizer", "claude-scope");
 const serenaOverridesPath = join(installRoot, "serena-security-overrides.txt");
 
 const plan = {
   pins: {
     serena: {
-      package: "serena-agent==1.5.3",
+      package: "serena-agent==1.6.1",
       license: "MIT",
       source: "https://github.com/oraios/serena",
       securityOverrides: [
@@ -34,13 +34,13 @@ const plan = {
       ],
     },
     tokenOptimizer: {
-      tag: "v5.11.44",
-      commit: "bbe6c9a4bc2694be5c718b4ef77a729f3a8646dc",
+      tag: "v5.11.68",
+      commit: "0968d8e0a4afe07d3de37ac6a720e5fcc02e4987",
       license: "PolyForm-Noncommercial-1.0.0",
       source: "https://github.com/alexgreensh/token-optimizer",
     },
     tokenSavior: {
-      package: "token-savior-recall[mcp]==4.4.1",
+      package: "token-savior-recall[mcp]==4.21.0",
       license: "MIT",
       source: "https://github.com/mibayy/token-savior",
     },
@@ -163,7 +163,7 @@ function verify() {
     capture: true,
     env: localToolEnv(),
   });
-  for (const expected of ["token-savior-recall v4.4.1", "serena-agent v1.5.3"]) {
+  for (const expected of ["token-savior-recall v4.21.0", "serena-agent v1.6.1"]) {
     if (!installed.includes(expected)) throw new Error(`missing repo-local tool: ${expected}`);
   }
   for (const name of ["token-savior", "serena"]) {

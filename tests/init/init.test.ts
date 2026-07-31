@@ -165,7 +165,7 @@ describe("aih init — command surface", () => {
     const allowlist = JSON.stringify(merged.allowedMcpServers);
 
     expect(merged.sandbox).toMatchObject({ keep: true });
-    expect(allowlist).toContain("code-review-graph@2.3.6");
+    expect(allowlist).toContain("code-review-graph@2.3.7");
     expect(allowlist).not.toContain("stale-denied-mcp");
   });
 

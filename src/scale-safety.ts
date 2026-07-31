@@ -7,7 +7,7 @@ import type { Check } from "./internals/verify.js";
 import { aihWorkspaceGraphRepo } from "./workspace/templates.js";
 
 export const LARGE_REPO_FILE_THRESHOLD = 1000;
-const CODE_REVIEW_GRAPH_PACKAGE = "code-review-graph@2.3.6";
+const CODE_REVIEW_GRAPH_PACKAGE = "code-review-graph@2.3.7";
 const UVX_OFFLINE_FLAGS = ["--offline", "--no-python-downloads", "--no-env-file"] as const;
 
 async function onPath(ctx: PlanContext, bin: string): Promise<boolean> {
