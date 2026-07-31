@@ -211,6 +211,24 @@ describe("vetBaselineCatalog", () => {
     ).rejects.toThrow(/skillspector.*version/i);
   });
 
+  it("keeps optional analyzer availability out of deterministic component receipts", async () => {
+    const evidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent: async () => ({
+        analyzersRun: ["aih-native", "mcp-scanner@uv:4.8.1"],
+        checks: [pass("scan")],
+      }),
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions: {
+        "aih-native": "native.aaaaaaaaaaaa",
+        "mcp-scanner@uv:4.8.1": "4.8.1+uvlock.bbbbbbbbbbbb",
+      },
+    });
+
+    expect(evidence.components[0]?.analyzers).toEqual([
+      { name: "aih-native", version: "native.aaaaaaaaaaaa" },
+    ]);
+  });
+
   it("fails closed when a component is missing any required baseline analyzer", async () => {
     await expect(
       vetBaselineCatalog(root, catalog(), {

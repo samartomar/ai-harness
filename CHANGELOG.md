@@ -45,6 +45,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Trust scanning no longer advertises or accepts AgentShield as a governed
+  detector while its upstream source is unavailable. Existing org policies that
+  name `agentshield` must remove it. The pinned Cisco MCP scanner now requests
+  only the YARA analyzer supported by its static mode and fails closed unless
+  every submitted tool has explicit YARA coverage.
+
 - The ECC baseline now pins the merged `affaan-m/ECC` upstream source instead of
   the temporary `samartomar/ECC` fork bridge, with regenerated component inventory,
   install preview, and analyzer evidence at the exact upstream commit. Closes #440

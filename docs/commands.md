@@ -429,7 +429,7 @@ For multi-skill sources, `vet <src> --name <skill> --apply` writes scoped eviden
 one logical skill; `card --name <skill>` and `approve --name <skill>` require that matching
 scoped evidence rather than a source-wide report.
 The deep-scan ladder records detector availability in evidence via `analyzersRun`: aih-native,
-SkillSpector, Cisco AI Defense skill-scanner, Semgrep, Snyk Agent Scan, AgentShield, and the
+SkillSpector, Cisco AI Defense skill-scanner, Semgrep, Snyk Agent Scan, and the
 MCP scanner when MCP config is present; detector findings escalate the verdict, while unavailable
 required detectors fail closed at enterprise posture.
 Ordinary visible Unicode is retained as a non-blocking warning; actual bidi, zero-width, tag,
@@ -824,7 +824,8 @@ network egress from a read-only command, so it is opt-in. A pin whose registry p
 release warns (`mcp.pin-stale`); a current pin set passes. A newer release is a bump **candidate**,
 never an instruction: the refresh path is (1) vet the new version through the trust gate
 (`aih trust scan <owner>/<repo> --pin <sha>`, which fails closed at enterprise posture unless the
-required analyzers — the pinned SkillSpector image and the Cisco skill-scanner — are available),
+required analyzers — the pinned SkillSpector image, locked Semgrep, and the Cisco skill-scanner —
+are available),
 (2) bump the catalog pin in an aih release, (3) re-project each repo with `aih mcp --apply` (at
 enterprise, also `aih policy project --apply` so the managed allowlist tracks the new launch
 shape), and (4) re-attest with `aih doctor --attest-mcp-pins`.

@@ -1,12 +1,23 @@
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readdirSync, readFileSync, type Stats } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { lstatSync, readdirSync, readFileSync, type Stats } from "node:fs";
+import { basename, join } from "node:path";
 import type { Runner } from "../internals/proc.js";
 import type { Platform } from "../platform/base.js";
 import {
+  CISCO_MCP_SCANNER_ANALYZER,
+  CISCO_MCP_SCANNER_PROJECT,
+  CISCO_MCP_SCANNER_VERSION,
+  CISCO_SKILL_SCANNER_ANALYZER,
+  CISCO_SKILL_SCANNER_PROJECT,
+  CISCO_SKILL_SCANNER_VERSION,
   checkDetectorsAvailable,
   resolveCiscoScanConcurrency,
+  SEMGREP_ANALYZER,
+  SEMGREP_PROJECT,
+  SEMGREP_VERSION,
+  SNYK_AGENT_SCAN_ANALYZER,
+  SNYK_AGENT_SCAN_PROJECT,
+  SNYK_AGENT_SCAN_VERSION,
   type TrustDetectorName,
 } from "../trust/detectors.js";
 import {
@@ -18,37 +29,43 @@ import type { BaselineCatalogComponent } from "./catalog.js";
 import { nativeAnalyzerIdentity } from "./native-identity.js";
 import type { VetBaselineCatalogOptions } from "./vet.js";
 
-export const CISCO_SKILL_SCANNER_VERSION = "2.0.12";
+export {
+  CISCO_MCP_SCANNER_PROJECT,
+  CISCO_MCP_SCANNER_VERSION,
+  CISCO_SKILL_SCANNER_PROJECT,
+  CISCO_SKILL_SCANNER_VERSION,
+  SEMGREP_PROJECT,
+  SEMGREP_VERSION,
+  SNYK_AGENT_SCAN_PROJECT,
+  SNYK_AGENT_SCAN_VERSION,
+};
+
 export const CISCO_SKILL_SCANNER_SPEC = `cisco-ai-skill-scanner==${CISCO_SKILL_SCANNER_VERSION}`;
 
-const moduleDir = dirname(fileURLToPath(import.meta.url));
-const ciscoProjectCandidates = [
-  resolve(moduleDir, "..", "tools", "cisco-skill-scanner"),
-  resolve(moduleDir, "..", "..", "tools", "cisco-skill-scanner"),
-];
-
-export const CISCO_SKILL_SCANNER_PROJECT =
-  ciscoProjectCandidates.find((candidate) => existsSync(join(candidate, "uv.lock"))) ??
-  resolve(moduleDir, "..", "tools", "cisco-skill-scanner");
 export const CISCO_SKILL_SCANNER_LOCK = join(CISCO_SKILL_SCANNER_PROJECT, "uv.lock");
+export const CISCO_MCP_SCANNER_LOCK = join(CISCO_MCP_SCANNER_PROJECT, "uv.lock");
+export const SEMGREP_LOCK = join(SEMGREP_PROJECT, "uv.lock");
+export const SNYK_AGENT_SCAN_LOCK = join(SNYK_AGENT_SCAN_PROJECT, "uv.lock");
 
 export function ciscoSkillScannerLockSha256(): string {
   return createHash("sha256").update(readFileSync(CISCO_SKILL_SCANNER_LOCK)).digest("hex");
 }
 
-function ciscoSkillScannerIdentity(): string {
-  const lockDigest = ciscoSkillScannerLockSha256();
-  return `${CISCO_SKILL_SCANNER_VERSION}+uvlock.${lockDigest.slice(0, 12)}`;
+function uvLockIdentity(version: string, lock: string): string {
+  const lockDigest = createHash("sha256").update(readFileSync(lock)).digest("hex");
+  return `${version}+uvlock.${lockDigest.slice(0, 12)}`;
 }
 
 export const REQUIRED_BASELINE_DETECTORS = [
   "skillspector",
+  "semgrep",
   "cisco",
 ] as const satisfies readonly TrustDetectorName[];
 
 export const REQUIRED_BASELINE_ANALYZERS = [
   "aih-native",
   "skillspector@docker",
+  "semgrep@uv:1.172.0",
   "cisco@uvx",
 ] as const;
 
@@ -101,7 +118,7 @@ export function requiredBaselineDetectorsForComponent(
 ): readonly TrustDetectorName[] {
   return containsSkillContent(component, sourceRoot)
     ? REQUIRED_BASELINE_DETECTORS
-    : ["skillspector"];
+    : REQUIRED_BASELINE_DETECTORS.filter((name) => name !== "cisco");
 }
 
 export function baselineAnalyzerVersions(): Readonly<Record<string, string>> {
@@ -112,7 +129,13 @@ export function baselineAnalyzerVersions(): Readonly<Record<string, string>> {
     // detector source changed, forcing a full re-vet in every release PR.
     "aih-native": nativeAnalyzerIdentity(),
     "skillspector@docker": `${SKILLSPECTOR_SOURCE_REVISION}@${SKILLSPECTOR_IMAGE_DIGEST}`,
-    "cisco@uvx": ciscoSkillScannerIdentity(),
+    [CISCO_SKILL_SCANNER_ANALYZER]: uvLockIdentity(
+      CISCO_SKILL_SCANNER_VERSION,
+      CISCO_SKILL_SCANNER_LOCK,
+    ),
+    [CISCO_MCP_SCANNER_ANALYZER]: uvLockIdentity(CISCO_MCP_SCANNER_VERSION, CISCO_MCP_SCANNER_LOCK),
+    [SEMGREP_ANALYZER]: uvLockIdentity(SEMGREP_VERSION, SEMGREP_LOCK),
+    [SNYK_AGENT_SCAN_ANALYZER]: uvLockIdentity(SNYK_AGENT_SCAN_VERSION, SNYK_AGENT_SCAN_LOCK),
   };
 }
 
@@ -149,10 +172,13 @@ export interface BaselinePreflightRuntime {
 
 function analyzerProvisioningHint(analyzerLabel: string): string {
   if (analyzerLabel === "cisco@uvx") {
-    return "warm the committed Cisco runtime once online (`uv run --project tools/cisco-skill-scanner --locked --isolated --no-env-file --no-python-downloads skill-scanner --version`); the trust scan itself always runs --offline";
+    return "warm the committed Cisco runtime once online (`uv run --project tools/cisco-skill-scanner --locked --isolated --python 3.12 --no-env-file --no-python-downloads skill-scanner --version`); the trust scan itself always runs --offline";
   }
   if (analyzerLabel === "skillspector@docker") {
     return "build and load the pinned SkillSpector image per docs/security/skillspector.md";
+  }
+  if (analyzerLabel === "semgrep@uv:1.172.0") {
+    return "warm the committed Semgrep runtime once online (`uv run --project tools/trust-scanners/semgrep --locked --isolated --python 3.12 --no-env-file --no-python-downloads semgrep --version`); the trust scan itself always runs --offline";
   }
   return "provision the analyzer toolchain before vetting";
 }

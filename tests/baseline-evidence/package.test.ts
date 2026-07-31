@@ -35,6 +35,12 @@ describe("baseline evidence release payload", () => {
     expect(files).toContain("src/baseline-evidence/vendor-lock.json");
     expect(files).toContain("tools/cisco-skill-scanner/pyproject.toml");
     expect(files).toContain("tools/cisco-skill-scanner/uv.lock");
+    expect(files).toContain("tools/trust-scanners/cisco-mcp/pyproject.toml");
+    expect(files).toContain("tools/trust-scanners/cisco-mcp/uv.lock");
+    expect(files).toContain("tools/trust-scanners/semgrep/pyproject.toml");
+    expect(files).toContain("tools/trust-scanners/semgrep/uv.lock");
+    expect(files).toContain("tools/trust-scanners/snyk-agent-scan/pyproject.toml");
+    expect(files).toContain("tools/trust-scanners/snyk-agent-scan/uv.lock");
   });
 
   it("exposes explicit write and check scripts for the same deterministic generator", () => {
@@ -87,9 +93,18 @@ describe("baseline evidence release payload", () => {
       join(repo, ".github", "workflows", "baseline-evidence.yml"),
       "utf8",
     );
-    expect(workflow).toContain("cache-dependency-glob: tools/cisco-skill-scanner/uv.lock");
+    expect(workflow).toContain("tools/cisco-skill-scanner/uv.lock");
+    expect(workflow).toContain("tools/trust-scanners/semgrep/uv.lock");
+    expect(workflow).toContain("tools/trust-scanners/cisco-mcp/uv.lock");
+    expect(workflow).toContain("actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97");
+    expect(workflow).toContain('python-version: "3.12"');
+    expect(workflow.match(/--python 3\.12/g)?.length).toBeGreaterThanOrEqual(6);
     expect(workflow).toContain("uv run");
     expect(workflow).toContain("--project tools/cisco-skill-scanner");
+    expect(workflow).toContain("--project tools/trust-scanners/semgrep");
+    expect(workflow).toContain("--project tools/trust-scanners/cisco-mcp");
+    expect(workflow).toContain('test "$semgrep_version" = "1.172.0"');
+    expect(workflow).toContain("mcp-scanner --help");
     expect(workflow).toContain("--locked");
     expect(workflow).toContain("--offline");
     expect(workflow).toContain("npm run baseline:vet");
@@ -102,7 +117,11 @@ describe("baseline evidence release payload", () => {
     expect(existsSync(path)).toBe(true);
     const dockerfile = readFileSync(path, "utf8");
     expect(dockerfile).toContain(
-      "python:3.12-slim-bookworm@sha256:8a7e7cc04fd3e2bd787f7f24e22d5d119aa590d429b50c95dfe12b3abe52f48b",
+      "python:3.12-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b",
+    );
+    expect(dockerfile).toContain("uv==0.12.0");
+    expect(dockerfile).toContain(
+      'org.opencontainers.image.revision="34f60308522f45447cd343da0aad77bcea308ad4"',
     );
     expect(dockerfile).toContain("COPY pyproject.toml uv.lock README.md ./");
     expect(dockerfile).toContain("uv sync --frozen --no-dev --no-editable");

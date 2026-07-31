@@ -1,12 +1,12 @@
-ARG PYTHON_IMAGE=python:3.12-slim-bookworm@sha256:8a7e7cc04fd3e2bd787f7f24e22d5d119aa590d429b50c95dfe12b3abe52f48b
+ARG PYTHON_IMAGE=python:3.12-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b
 
 FROM ${PYTHON_IMAGE} AS builder
 
-ARG SOURCE_DATE_EPOCH=1782883813
+ARG SOURCE_DATE_EPOCH=1785167267
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} \
     UV_NO_PROGRESS=1
 WORKDIR /app
-RUN pip install --no-cache-dir uv==0.11.14
+RUN pip install --no-cache-dir uv==0.12.0
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
 RUN uv sync --frozen --no-dev --no-editable \
@@ -21,8 +21,8 @@ RUN uv sync --frozen --no-dev --no-editable \
 
 FROM ${PYTHON_IMAGE}
 
-ARG SOURCE_DATE_EPOCH=1782883813
-LABEL org.opencontainers.image.revision="326a2b489411a20ed742ff13701be39ba00063c8"
+ARG SOURCE_DATE_EPOCH=1785167267
+LABEL org.opencontainers.image.revision="34f60308522f45447cd343da0aad77bcea308ad4"
 ENV PATH="/app/.venv/bin:$PATH" \
     SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 RUN --mount=from=builder,source=/venv.tar,target=/tmp/venv.tar \

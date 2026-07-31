@@ -262,11 +262,15 @@ would write for the same server. This JSON shape passes `aih policy validate`:
 }
 ```
 
-`mcp-scanner` is intentionally opt-in until your team has verified the local static
-scanner path on managed workstations. If you keep it in `requiredDetectors`, set
-`AIH_ENABLE_MCP_SCANNER=1` in the verification environment and confirm the local
-`uvx --offline` scanner can run. Otherwise omit `mcp-scanner` and treat its result
-as an explicit degraded-coverage skip.
+`mcp-scanner` runs by default when an incoming source contains an MCP
+configuration. AIH invokes the exact `cisco-ai-mcp-scanner==4.8.1` committed uv
+project and lock with `--locked --isolated --offline --no-python-downloads
+--no-env-file`, passes only statically extracted tool names/descriptions, and
+uses the static mode's local `yara` analyzer; pinned 4.8.1 does not execute its
+`prompt_defense` or `readiness` analyzers in static mode. Verify the locked
+project once online and then offline on each managed workstation. If policy
+lists `mcp-scanner` in `requiredDetectors`, an unavailable runtime fails closed
+at enterprise posture; otherwise it remains an explicit degraded-coverage skip.
 
 For GitHub MCP, treat incumbency as an org fact. If github.com is reachable and approved, include
 `api.githubcopilot.com` in `mcp.incumbentHosts`; if you use GHES, set `mcp.githubHost` to that
