@@ -81,9 +81,9 @@ Before relying on offline MCP startup, warm the pinned `uvx` package cache on th
 workstation or base image:
 
 ```powershell
-uvx code-review-graph@2.3.6 --version
-uvx codebase-memory-mcp@0.8.1 --help
-uvx --offline --no-python-downloads --no-env-file code-review-graph@2.3.6 --version
+uvx code-review-graph@2.3.7 --version
+uvx codebase-memory-mcp@0.9.0 --help
+uvx --offline --no-python-downloads --no-env-file code-review-graph@2.3.7 --version
 ```
 
 If `uvx` is not found, run `aih heal --scope path` and add the reported user-bin

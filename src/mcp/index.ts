@@ -74,6 +74,27 @@ const MCP_ENV_SCOPE = "mcp-env";
 
 const MCP_APPROVED_AT_PREVIEW = "0000-00-00T00:00:00.000Z";
 
+/**
+ * Exact final AIH-generated shape for the retired AWS core server. This is not
+ * an active catalog entry; reconciliation uses it only to remove an unchanged
+ * historical projection while preserving operator-modified entries.
+ */
+export const RETIRED_AWS_CORE_MCP_SERVER = {
+  type: "stdio",
+  command: "uvx",
+  args: ["--offline", "--no-python-downloads", "--no-env-file", "awslabs.core-mcp-server@1.0.27"],
+  description:
+    "AWS Labs core MCP server (AWS docs, service guidance). Added because the repo targets AWS.",
+  classification: "local",
+  egress: "local-only",
+  credentials: "none",
+  supplyChain: "pinned",
+} as const satisfies McpServer;
+
+const RETIRED_GENERATED_SERVERS = {
+  "awslabs.core-mcp-server": RETIRED_AWS_CORE_MCP_SERVER,
+} as const;
+
 /** Commands that resolve/download a package at runtime — unsafe for a true air-gap. */
 const NETWORK_RESOLVERS = new Set(["npx", "uvx", "uv", "bunx", "pnpm", "yarn", "pipx"]);
 
@@ -786,6 +807,13 @@ function planMcpOffline(ctx: PlanContext): ReturnType<typeof plan> {
     {},
     source,
   );
+  const retired = matchingGeneratedJsonServerNames(
+    mcpPath,
+    "mcpServers",
+    mcpEntries("claude", RETIRED_GENERATED_SERVERS),
+    {},
+    source,
+  );
   return plan(
     "mcp",
     withExpectedContents(
@@ -793,7 +821,12 @@ function planMcpOffline(ctx: PlanContext): ReturnType<typeof plan> {
         ".mcp.json",
         { mcpServers: stdio },
         "local stdio MCP servers (offline) — mirror/vendor these; some still resolve packages at runtime until vendored (see the offline verify probe)",
-        { merge: true, removeJsonKeys: serverConfigRemovals(undefined, "mcpServers", stale) },
+        {
+          merge: true,
+          removeJsonKeys: serverConfigRemovals(undefined, "mcpServers", [
+            ...new Set([...stale, ...retired]),
+          ]),
+        },
       ),
       source,
     ),
@@ -1009,6 +1042,14 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         generatedDeniedAlternates,
         source,
       );
+      const retiredGeneratedNames = matchingGeneratedJsonServerNames(
+        abs,
+        p.configKey,
+        mcpEntries(cli, RETIRED_GENERATED_SERVERS),
+        {},
+        source,
+      );
+      const removalNames = [...new Set([...staleGeneratedNames, ...retiredGeneratedNames])];
       for (const name of staleGeneratedNames) {
         const policy = deniedGeneratedPoliciesByName.get(name);
         if (policy !== undefined) quarantinedPolicies.set(name, policy);
@@ -1029,7 +1070,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
             merge: true,
             external,
             replaceJsonChildKeys: { [p.configKey]: Object.keys(renderedEntries) },
-            removeJsonKeys: serverConfigRemovals(undefined, p.configKey, staleGeneratedNames),
+            removeJsonKeys: serverConfigRemovals(undefined, p.configKey, removalNames),
           }),
           source,
         ),

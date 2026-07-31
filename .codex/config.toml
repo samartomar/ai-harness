@@ -1,6 +1,6 @@
 [mcp_servers."code-review-graph"]
 command = "uvx"
-args = ["--offline", "--no-python-downloads", "--no-env-file", "code-review-graph@2.3.6", "serve"]
+args = ["--offline", "--no-python-downloads", "--no-env-file", "code-review-graph@2.3.7", "serve"]
 
 [mcp_servers."serena"]
 command = "node"

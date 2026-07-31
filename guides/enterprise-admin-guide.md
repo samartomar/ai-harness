@@ -172,14 +172,16 @@ Developers can consume this policy by setting `AIH_ORG_POLICY` to the cloned fil
 
 `aih trust scan` can evaluate sources without Docker for checks that do not require a containerized detector. Docker becomes part of the admin setup when policy requires a detector such as `skillspector`, or when the organization wants scanner images built and signed before use. If `aih-org-policy.json` lists `skillspector` in `trust.requiredDetectors`, do not treat scanner coverage as complete until the detector path is available and recorded.
 
-Build the reviewed SkillSpector image from a fixed commit:
+From the checked-out AI-Harness root, build the reviewed SkillSpector image from a fixed commit:
 
 ```powershell
-git clone https://github.com/NVIDIA/SkillSpector.git
-Set-Location SkillSpector
-git checkout 326a2b489411a20ed742ff13701be39ba00063c8
-docker build --label org.opencontainers.image.revision=326a2b489411a20ed742ff13701be39ba00063c8 -t skillspector:aih-326a2b489411 .
-docker image inspect skillspector:aih-326a2b489411 --format "{{.Id}}"
+$AihRoot = (Resolve-Path .).Path
+$SkillSpectorRoot = Join-Path ([System.IO.Path]::GetTempPath()) "aih-skillspector-34f60308522f"
+git clone https://github.com/NVIDIA/SkillSpector.git $SkillSpectorRoot
+Set-Location $SkillSpectorRoot
+git checkout 34f60308522f45447cd343da0aad77bcea308ad4
+docker buildx build --platform linux/amd64 --provenance=false --sbom=false --build-arg SOURCE_DATE_EPOCH=1785167267 -f (Join-Path $AihRoot "tools\skillspector.Dockerfile") -t skillspector:aih-34f60308522f --load .
+docker image inspect skillspector:aih-34f60308522f --format "{{.Id}}"
 ```
 
 Use AI-Harness to report the currently pinned analyzer image metadata before changing policy or detector requirements:
@@ -191,10 +193,10 @@ aih trust skillspector-pin
 If the local image ID differs from the controlled digest reported by `aih trust skillspector-pin`, record an explicit reviewed local digest before requiring `skillspector` in enterprise policy:
 
 ```powershell
-$SkillSpectorDigest = docker image inspect skillspector:aih-326a2b489411 --format "{{.Id}}"
+$SkillSpectorDigest = docker image inspect skillspector:aih-34f60308522f --format "{{.Id}}"
 aih trust skillspector-pin `
-  --candidate-revision 326a2b489411a20ed742ff13701be39ba00063c8 `
-  --candidate-tag skillspector:aih-326a2b489411 `
+  --candidate-revision 34f60308522f45447cd343da0aad77bcea308ad4 `
+  --candidate-tag skillspector:aih-34f60308522f `
   --candidate-digest $SkillSpectorDigest `
   --approve-local-digest `
   --reason "Reviewed local Docker build from pinned SkillSpector source." `
@@ -212,8 +214,8 @@ aih trust skillspector-pin --candidate-revision <40-char-sha> --candidate-tag <i
 The source commit pin is the review anchor; the image ID verifies the local build output. If the image will be shared beyond the admin machine, tag it into the approved registry and sign the registry reference or immutable digest according to the organization's signing policy:
 
 ```powershell
-$ImageRef = "<registry>/<namespace>/skillspector:aih-326a2b489411"
-docker tag skillspector:aih-326a2b489411 $ImageRef
+$ImageRef = "<registry>/<namespace>/skillspector:aih-34f60308522f"
+docker tag skillspector:aih-34f60308522f $ImageRef
 docker push $ImageRef
 cosign sign --key <cosign-key-ref> $ImageRef
 cosign verify --key <cosign-public-key-ref> $ImageRef
@@ -251,10 +253,9 @@ Warm pinned `uvx` MCP packages before relying on offline startup in managed imag
 or disconnected workstations:
 
 ```powershell
-uvx code-review-graph@2.3.6 --version
-uvx codebase-memory-mcp@0.8.1 --help
-uvx awslabs.core-mcp-server@1.0.27 --help
-uvx --offline --no-python-downloads --no-env-file code-review-graph@2.3.6 --version
+uvx code-review-graph@2.3.7 --version
+uvx codebase-memory-mcp@0.9.0 --help
+uvx --offline --no-python-downloads --no-env-file code-review-graph@2.3.7 --version
 ```
 
 If `uvx` is missing, `aih heal --scope path` diagnoses the PATH gap and emits
@@ -289,7 +290,13 @@ aih verify-bundle --bundle .aih/evidence-bundle --require-signature
 
 ### External Skill Authoring And Approval
 
-Use a full commit SHA for every external source. The pins below were resolved on 2026-07-07 as review examples; re-verify the upstream source, license, package behavior, and current commit before approving them in an organization.
+Use a full commit SHA for every external source. The pins below remain the
+previously reviewed examples. On 2026-07-29, newer candidates
+`anthropics/skills@b29e7cf65e5cb78a5ac33d582270551bc74a14eb` and
+`nextlevelbuilder/ui-ux-pro-max-skill@4857a2c5ef989794751a0f66b8545a4a49566286`
+both produced RED, degraded enterprise scans and were not promoted. Re-verify
+the source, license, package behavior, and complete detector coverage before
+approving any newer commit.
 
 | Source | Pin | Notes |
 |---|---|---|
@@ -373,9 +380,9 @@ If the organization chooses the upstream CLI installer path, pin and review the 
 |---|---|---|---|
 | Figma | `figma` | `https://mcp.figma.com/mcp`; desktop fallback `http://127.0.0.1:3845/mcp` only when approved. | Figma OAuth, plan/seat/file permissions, and explicit file or selection links. |
 | Jira / Atlassian | `atlassian` unless the org intentionally names the server `jira` | `https://mcp.atlassian.com/v1/mcp/authv2` | OAuth 2.1 preferred. API token only if Atlassian admin enables it; never commit `JIRA_API_TOKEN`. |
-| AWS generated core | `awslabs.core-mcp-server` | AI-Harness generated `uvx awslabs.core-mcp-server@1.0.27` when AWS stack is detected. | No credential in config. |
+| AWS retired core | `awslabs.core-mcp-server` | Not generated: the latest package depends on an entirely yanked diagram-server distribution. Use the hosted Knowledge endpoint after egress approval, or qualify the Agent Toolkit for AWS successor. | Fresh uv resolution fails; do not preserve a stale cached launch. |
 | AWS Knowledge | `aws-knowledge-mcp-server` | `https://knowledge-mcp.global.api.aws` | Remote AWS-hosted endpoint. Review data egress and IAM/org controls. |
-| AWS docs/IaC from [awslabs/mcp](https://github.com/awslabs/mcp) | `awslabs.aws-documentation-mcp-server`, `awslabs.aws-iac-mcp-server` | Pin `awslabs/mcp` at `0e96fa1d3a6c5bbf84fcd89ab02ff70a34d061a5`; package examples currently use `uvx awslabs.aws-documentation-mcp-server@latest` and `uvx awslabs.aws-iac-mcp-server@latest`, so enterprise should replace floating `@latest` with a reviewed version or internal mirror. | AWS profile/role comes from local environment or SSO, not committed config. |
+| AWS docs/IaC from [awslabs/mcp](https://github.com/awslabs/mcp) | `awslabs.aws-documentation-mcp-server`, `awslabs.aws-iac-mcp-server` | Legacy review source: tag `2026.07.20260728181317` at `536db49a5a5883ab26f8210af90dfc714fee89e7`. For new production adoption, prefer the Agent Toolkit for AWS successor. Package examples in the legacy repo use floating `@latest`; replace them with a reviewed version or internal mirror. | AWS profile/role comes from local environment or SSO, not committed config. |
 
 Approval commands:
 
@@ -457,9 +464,8 @@ For generated local Python MCP servers, AI-Harness starts pinned packages throug
 managed image before expecting MCP clients to start offline:
 
 ```powershell
-uvx code-review-graph@2.3.6 --version
-uvx codebase-memory-mcp@0.8.1 --help
-uvx awslabs.core-mcp-server@1.0.27 --help
+uvx code-review-graph@2.3.7 --version
+uvx codebase-memory-mcp@0.9.0 --help
 ```
 
 ### Admin Finalization Checklist

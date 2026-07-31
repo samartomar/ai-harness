@@ -10,8 +10,9 @@ import { mcpResolverPinState } from "./pins.js";
  *  - `github` + `context7` — on-by-default remote servers (GitHub via the client's
  *    OAuth by default, or an env-sourced token header when requested; Context7 hosted docs). Each names its
  *    egress in its own description so it is visible in `.mcp.json` at a glance;
- *  - real, current servers added per stack: AWS (`awslabs.core-mcp-server`) when
- *    the repo targets AWS, Playwright (`@playwright/mcp`) for a web frontend;
+ *  - Playwright (`@playwright/mcp`) is added for a web frontend; the retired
+ *    `awslabs.core-mcp-server` is not generated for AWS repos because its
+ *    required diagram-server distribution is yanked;
  *  - the hosted `n24q02m` toolset ONLY under `scope === "remote"` (opt-in gateway).
  * Every entry is configuration the client dials later — emitting it contacts nothing.
  */
@@ -101,7 +102,8 @@ export const N24Q02M_HOST = "n24q02m.com";
 const WEB_FRAMEWORKS = new Set(["Next.js", "React", "Vue", "Svelte", "Angular"]);
 
 /** Pinned GitHub MCP Docker image for the `--self-host` opt-out (bump deliberately). */
-const GITHUB_MCP_IMAGE = "ghcr.io/github/github-mcp-server:v1.5.0";
+const GITHUB_MCP_IMAGE =
+  "ghcr.io/github/github-mcp-server@sha256:c491ffdf6f4c85cb5397021bc655edb8ab825c6f5f568e7597d77a1bd7c4d308";
 
 /** Hosted GitHub MCP endpoint used when no org-specific host is configured. */
 export const DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/";
@@ -154,7 +156,7 @@ export function mcpServers(
         "--offline",
         "--no-python-downloads",
         "--no-env-file",
-        "code-review-graph@2.3.6",
+        "code-review-graph@2.3.7",
         "serve",
       ],
       description:
@@ -170,7 +172,7 @@ export function mcpServers(
       // Pinned (not @latest); bump deliberately. Bare invocation runs the stdio MCP
       // server. Keep uvx offline/no-env so locked-down sandboxes never fetch or read
       // project .env files while starting the local memory companion.
-      args: ["--offline", "--no-python-downloads", "--no-env-file", "codebase-memory-mcp@0.8.1"],
+      args: ["--offline", "--no-python-downloads", "--no-env-file", "codebase-memory-mcp@0.9.0"],
       description:
         "Local codebase memory/knowledge graph (index_repository, search_graph, query_graph, trace_path) — memory companion to code-review-graph, served over stdio via uvx.",
       classification: "local",
@@ -182,7 +184,7 @@ export function mcpServers(
       type: "stdio",
       command: "npx",
       // Pinned (not @latest) for reproducible installs; bump deliberately.
-      args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.12.18"],
+      args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.7.4"],
       description:
         "Structured step-by-step reasoning scratchpad — no network, no filesystem, no credentials. Safe in any repo.",
       classification: "local",
@@ -192,34 +194,16 @@ export function mcpServers(
     },
   };
 
-  // Stack-specific, real, current servers.
-  if (stack.cloud.includes("AWS")) {
-    servers["awslabs.core-mcp-server"] = {
-      type: "stdio",
-      command: "uvx",
-      // Pinned and launched through the same hardened uvx flags as other local
-      // Python MCP servers: no project .env reads and no interpreter/package fetch
-      // while starting in a locked-down sandbox.
-      args: [
-        "--offline",
-        "--no-python-downloads",
-        "--no-env-file",
-        "awslabs.core-mcp-server@1.0.27",
-      ],
-      description:
-        "AWS Labs core MCP server (AWS docs, service guidance). Added because the repo targets AWS.",
-      classification: "local",
-      egress: "local-only",
-      credentials: "none",
-      supplyChain: "pinned",
-    };
-  }
+  // AWS repos deliberately receive no local core-server launch. The latest
+  // awslabs.core-mcp-server depends on a yanked diagram-server distribution;
+  // operators can explicitly approve the hosted AWS Knowledge endpoint or
+  // adopt the successor Agent Toolkit after their own egress/tool review.
   if (stack.frameworks.some((f) => WEB_FRAMEWORKS.has(f))) {
     servers.playwright = {
       type: "stdio",
       command: "npx",
       // Pinned (not @latest) for reproducible installs; bump deliberately.
-      args: ["@playwright/mcp@0.0.76"],
+      args: ["@playwright/mcp@0.0.78"],
       description:
         "Playwright browser automation MCP (navigate, snapshot, interact). Added for a web frontend. The browser it drives can reach any URL — point it at trusted origins.",
       classification: "local",

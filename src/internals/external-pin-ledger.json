@@ -1,0 +1,302 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-07-29",
+  "historicalEvidencePolicy": "Archived receipts, dated plans, prior releases, and old acceptance evidence are immutable history and are not repinned by this ledger.",
+  "entries": [
+    {
+      "surface": "ecc",
+      "identity": "affaan-m/ECC",
+      "version": "v2.1.0",
+      "commit": "4da6deac1888690e7fb8572d097ee23db630f7a0",
+      "integrity": "npm-sha512:+WiK+Ray5/xUtPbzrNkiNCG90ZeKXXSOXGMUPkcPAt1U473jSkSiurH69Kqy4AWZDvKRWZ6ZeA6Vx3cNsMOiCg==",
+      "disposition": "active"
+    },
+    {
+      "surface": "superpowers",
+      "identity": "obra/Superpowers",
+      "commit": "d884ae04edebef577e82ff7c4e143debd0bbec99",
+      "disposition": "active",
+      "reason": "Retains the approved exact source pin already qualified and merged on main; the preserved refresh candidate is not promoted by this reconciliation."
+    },
+    {
+      "surface": "gstack",
+      "identity": "garrytan/gstack",
+      "commit": "11de390be1be6849eb9a15f91ff4922dd16c589a",
+      "disposition": "retained",
+      "reason": "The adapter is dormant and not CLI-selectable; the untagged upstream head is not requalified into an active baseline."
+    },
+    {
+      "surface": "code-review-graph",
+      "identity": "code-review-graph",
+      "version": "2.3.7",
+      "commit": "6a1ee1c7063cc35cfa5ff12b8198c29360f3e4ad",
+      "integrity": "sha256:12196dce3e673bdec7fba97ae5c4dff7589adee73a721374f62efae76e0fdd88",
+      "disposition": "active",
+      "reason": "The exact wheel and CLI identify 2.3.7, but its MCP initialize response reports FastMCP 3.4.5 because upstream does not pass its package version to FastMCP. Keep the fail-closed mcp.version-drift warning until upstream self-attestation is corrected."
+    },
+    {
+      "surface": "codebase-memory-mcp",
+      "identity": "codebase-memory-mcp",
+      "version": "0.9.0",
+      "commit": "b637e3330c96cfe452da623db068c241aaa3ec01",
+      "integrity": "sha256:10b86b08d5e330360cf4cfd3354d9507787e3c35f37e8c0d896a2757c843a9d4",
+      "disposition": "active"
+    },
+    {
+      "surface": "serena",
+      "identity": "serena-agent",
+      "version": "1.6.1",
+      "commit": "bcac0969fb8685783ea6d0f2642468fcc47e6395",
+      "integrity": "sha256:04ddd985bd3feb25598ab8732bf3a998f961d5b46dce271b816126c0a68a91e1",
+      "disposition": "active",
+      "reason": "The exact MIT package installed in the project-keyed user cache on Python 3.13 with the three pinned security overrides, completed an offline MCP initialize in no-memories IDE mode, and returned a symbol overview from the qualification checkout."
+    },
+    {
+      "surface": "token-savior",
+      "identity": "token-savior-recall[mcp]",
+      "version": "4.21.0",
+      "commit": "1e5984b452c5b98e6376a7250b3213f5c3500626",
+      "integrity": "sha256:36529b132d658225ad6df7c9ec4ca0cbcf0fb48ebb0054099a0284c793fc9363",
+      "disposition": "active",
+      "reason": "The exact MIT package installed in the project-keyed user cache on Python 3.13 with memory and shell hooks disabled, completed MCP initialize, and returned a bounded entry-point query. Its ignored project index cache was confirmed as runtime cache rather than a tracked source change."
+    },
+    {
+      "surface": "token-optimizer",
+      "identity": "alexgreensh/token-optimizer",
+      "version": "v5.11.68",
+      "commit": "0968d8e0a4afe07d3de37ac6a720e5fcc02e4987",
+      "disposition": "active",
+      "reason": "The exact source commit retains the PolyForm Noncommercial 1.0.0 boundary, produced local reports in isolated Codex and Claude scopes, completed the quiet Stop path, and passed a reversible cache-root rollback/restore probe."
+    },
+    {
+      "surface": "sequential-thinking",
+      "identity": "@modelcontextprotocol/server-sequential-thinking",
+      "version": "2026.7.4",
+      "commit": "6dd0a683e198783e30feabf7abaf42f925bd18b1",
+      "integrity": "sha512-tmR/ieGaeweffLNBrDp1H1w4sn4M6TN5yWSbMS+YMfS+0GDyPjnNKzqCl2uqfdRiX3D44PJUhwiDGqtJp6tFhw==",
+      "disposition": "active",
+      "reason": "The exact npm package completed MCP initialize online and from the npm offline cache. Its serverInfo reports the upstream server version 0.2.0 rather than the npm release 2026.7.4, so package integrity remains the authoritative pin identity."
+    },
+    {
+      "surface": "playwright-mcp",
+      "identity": "@playwright/mcp",
+      "version": "0.0.78",
+      "commit": "5f8fc00210b27b4407c375b59cda4838045d429c",
+      "integrity": "sha512-XLTUeA6mEN9sQ+hJ4dfG8EIkDbxS0K3Trc2RBkUJuf02TgE2FQRNTMtq/aJfhyRMINsRl/Ybc4sxcWLtFn4/TQ==",
+      "disposition": "active",
+      "reason": "The exact npm package completed MCP initialize online and from the npm offline cache. Its serverInfo reports the embedded Playwright build 1.62.0-alpha-1783623505000 rather than the wrapper package 0.0.78, so package integrity remains the authoritative pin identity."
+    },
+    {
+      "surface": "github-mcp-container",
+      "identity": "ghcr.io/github/github-mcp-server",
+      "version": "v1.7.0",
+      "commit": "eb088dfe9d854dab6453a8d4ae5871a5ced20974",
+      "integrity": "sha256:c491ffdf6f4c85cb5397021bc655edb8ab825c6f5f568e7597d77a1bd7c4d308",
+      "disposition": "active"
+    },
+    {
+      "surface": "aws-core-mcp-server",
+      "identity": "awslabs.core-mcp-server",
+      "version": "1.0.27",
+      "integrity": "sha256:991c7220f249b6e512946e949115ecf514599a34c1f7e1545b46af0083539aa1",
+      "disposition": "blocked",
+      "reason": "PyPI still reports 1.0.27 as latest, but its awslabs-aws-diagram-mcp-server>=1.0.5 dependency is entirely yanked in favor of the deploy-on-AWS Agent Toolkit plugin. Fresh uv resolution fails, so AIH no longer generates this launch."
+    },
+    {
+      "surface": "skillspector",
+      "identity": "NVIDIA/SkillSpector",
+      "version": "2.5.0",
+      "commit": "34f60308522f45447cd343da0aad77bcea308ad4",
+      "integrity": "sha256:eb100b229ec5b25f74d5f6c1ac31e2d0466f08dbc0726af4239dccadbd7f1b1c",
+      "disposition": "active",
+      "reason": "Two clean cache-disabled OCI exports from the exact source, committed uv.lock, uv 0.12.0, and digest-pinned Python base were byte-identical; networkless read-only clean/adversarial fixtures stayed at 0/2 findings with the same P1/YR1 rule and exit-code behavior as the prior accepted image."
+    },
+    {
+      "surface": "skillspector-python-base",
+      "identity": "docker.io/library/python",
+      "version": "3.12-slim-bookworm",
+      "integrity": "sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b",
+      "disposition": "active",
+      "reason": "The exact base digest was pulled and used for the reproducible SkillSpector v2.5.0 OCI build."
+    },
+    {
+      "surface": "cisco-skill-scanner",
+      "identity": "cisco-ai-skill-scanner",
+      "version": "2.0.12",
+      "integrity": "sha256:e49f979e97b7842549b1f531dc5f426c9780d798a0b21f0125044e3b5ae4a1f7",
+      "disposition": "active",
+      "reason": "PyPI still reports 2.0.12 as the latest stable release; the 103-package committed uv lock re-resolves unchanged, Linux online warm-up and offline startup passed with uv 0.12.0, and the clean/adversarial fixtures produced the expected 0/2 findings."
+    },
+    {
+      "surface": "cisco-mcp-scanner",
+      "identity": "cisco-ai-mcp-scanner",
+      "version": "4.8.1",
+      "commit": "94e61145a5bd6ae39eabcc52a686830e1ec73be0",
+      "integrity": "sha256:9e17507995dc7acf2c103be84ca952b73f8a63819025ce42339f56b2805b01a8",
+      "disposition": "active",
+      "reason": "The exact 106-package lock, Linux online warm-up, and offline startup passed with uv 0.12.0. Fixture qualification exposed the 4.8.1 CLI JSON/analyzer contract change; AIH invokes supported raw static mode with the local YARA analyzer, requires exact submitted-tool result coverage, and fails closed while translating aggregated findings."
+    },
+    {
+      "surface": "snyk-agent-scan",
+      "identity": "snyk-agent-scan",
+      "version": "0.5.15",
+      "integrity": "sha256:4983e6d54168fc10237677478255826ab7d474e934e88c6bbb5c8d8928127017",
+      "disposition": "blocked",
+      "reason": "The exact 62-package lock, online help, and offline help are green, but behavioral scan qualification requires SNYK_TOKEN and was not run; no token was inferred or requested from local secret files."
+    },
+    {
+      "surface": "semgrep",
+      "identity": "semgrep",
+      "version": "1.172.0",
+      "commit": "651f37efa397bf066e1cf627414eeabe40b07e27",
+      "integrity": "sha256:7bcac633a0ffb7dfe75b7b99e44876f839590f2c01cd159c44caecc35e591df4",
+      "disposition": "active"
+    },
+    {
+      "surface": "agentshield",
+      "identity": "agentshield",
+      "version": "0.1.2",
+      "integrity": "sha256:6305b787abbcef506a061e0137d21bacbf393b4f1116aab16f9c03b547369797",
+      "disposition": "blocked",
+      "reason": "The package-advertised GitHub source repository returned HTTP 404, so its exact source provenance cannot be verified and it is removed from governed detector choices."
+    },
+    {
+      "surface": "anthropic-skills-guide",
+      "identity": "anthropics/skills",
+      "commit": "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
+      "disposition": "retained",
+      "reason": "Maintained guidance keeps the previously reviewed pin. The b29e7cf candidate produced a RED, degraded enterprise scan with 201 failing checks. Cisco and Semgrep completed; SkillSpector timed out after isolated OSV fallback retries, and Snyk remained unavailable without a token, so the candidate was not promoted or approved."
+    },
+    {
+      "surface": "anthropic-skills",
+      "identity": "anthropics/skills",
+      "commit": "b29e7cf65e5cb78a5ac33d582270551bc74a14eb",
+      "disposition": "blocked",
+      "reason": "The exact candidate produced a RED, degraded enterprise scan with 201 failing checks: 131 hidden-Unicode, 40 prompt-injection, 16 visible-Unicode, 9 Cisco, 3 skill-license, and 2 Semgrep findings. Cisco and Semgrep completed; SkillSpector timed out after isolated OSV fallback retries, and Snyk remained unavailable without a token. It remains quarantined and unapproved."
+    },
+    {
+      "surface": "ui-ux-pro-max-skill-guide",
+      "identity": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "commit": "12b486b22e67f5d887962ef8351c1ac863bfaeb9",
+      "disposition": "retained",
+      "reason": "Maintained guidance keeps the previously reviewed pin. The v2.11.3 candidate produced a RED, degraded enterprise scan with 186 failing checks. Cisco and Semgrep completed; SkillSpector timed out, and Snyk remained unavailable without a token, so the candidate was not promoted or approved."
+    },
+    {
+      "surface": "ui-ux-pro-max-skill",
+      "identity": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "version": "v2.11.3",
+      "commit": "4857a2c5ef989794751a0f66b8545a4a49566286",
+      "integrity": "npm-sha512:tg6ABZP/L4rUlJGCfUYWnRdrkMiPI1oEKmWG9SeICRVkO7CFFfB11cEiNoW8s5wRHnquZhqbo40x/yCgSxSAGg==",
+      "disposition": "blocked",
+      "reason": "The exact candidate produced a RED, degraded enterprise scan with 186 failing checks: 112 hidden-Unicode, 29 visible-Unicode, 28 Cisco, 10 unpinned-dependency, 5 skill-license, and 2 auto-exec-hook findings. Cisco and Semgrep completed; SkillSpector timed out, and Snyk remained unavailable without a token. It remains quarantined and unapproved."
+    },
+    {
+      "surface": "aws-mcp-guide-source",
+      "identity": "awslabs/mcp",
+      "version": "2026.07.20260728181317",
+      "commit": "536db49a5a5883ab26f8210af90dfc714fee89e7",
+      "disposition": "active",
+      "reason": "Maintained legacy-source guidance is refreshed to the latest tagged commit, while new production adoption is directed to the Agent Toolkit for AWS successor."
+    },
+    {
+      "surface": "uv",
+      "identity": "uv",
+      "version": "0.12.0",
+      "disposition": "active"
+    },
+    {
+      "surface": "actions-checkout",
+      "identity": "actions/checkout",
+      "version": "v7.0.1",
+      "commit": "3d3c42e5aac5ba805825da76410c181273ba90b1",
+      "disposition": "active"
+    },
+    {
+      "surface": "setup-python-action",
+      "identity": "actions/setup-python",
+      "version": "v7.0.0",
+      "commit": "5fda3b95a4ea91299a34e894583c3862153e4b97",
+      "disposition": "active",
+      "reason": "The baseline workflow provisions the explicit Python 3.12 scanner ABI so a newly installed newer interpreter cannot silently change offline uv cache selection."
+    },
+    {
+      "surface": "claude-code-action",
+      "identity": "anthropics/claude-code-action",
+      "version": "v1.0.183",
+      "commit": "be7b93b1907a4abad570368f3c74b6fe3807510b",
+      "disposition": "active"
+    },
+    {
+      "surface": "setup-node-action",
+      "identity": "actions/setup-node",
+      "version": "v7.0.0",
+      "commit": "820762786026740c76f36085b0efc47a31fe5020",
+      "disposition": "retained",
+      "reason": "Latest stable action release resolves to the existing immutable SHA."
+    },
+    {
+      "surface": "upload-artifact-action",
+      "identity": "actions/upload-artifact",
+      "version": "v7.0.1",
+      "commit": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+      "disposition": "retained",
+      "reason": "Latest stable action release resolves to the existing immutable SHA."
+    },
+    {
+      "surface": "codeql-action",
+      "identity": "github/codeql-action",
+      "version": "v4.37.3",
+      "commit": "e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81",
+      "disposition": "retained",
+      "reason": "Latest stable action tag resolves to the existing dereferenced immutable SHA."
+    },
+    {
+      "surface": "scorecard-action",
+      "identity": "ossf/scorecard-action",
+      "version": "v2.4.4",
+      "commit": "2d1146689b8cda280b9bc96326124645441f03bc",
+      "disposition": "retained",
+      "reason": "Latest stable action tag resolves to the existing dereferenced immutable SHA."
+    },
+    {
+      "surface": "codecov-action",
+      "identity": "codecov/codecov-action",
+      "version": "v7.0.0",
+      "commit": "fb8b3582c8e4def4969c97caa2f19720cb33a72f",
+      "disposition": "retained",
+      "reason": "Latest stable action tag resolves to the existing dereferenced immutable SHA."
+    },
+    {
+      "surface": "sbom-action",
+      "identity": "anchore/sbom-action",
+      "version": "v0.24.0",
+      "commit": "e22c389904149dbc22b58101806040fa8d37a610",
+      "disposition": "retained",
+      "reason": "Latest stable action release resolves to the existing immutable SHA."
+    },
+    {
+      "surface": "attest-build-provenance-action",
+      "identity": "actions/attest-build-provenance",
+      "version": "v4.1.1",
+      "commit": "0f67c3f4856b2e3261c31976d6725780e5e4c373",
+      "disposition": "retained",
+      "reason": "Latest stable action release resolves to the existing immutable SHA."
+    },
+    {
+      "surface": "cosign-installer-action",
+      "identity": "sigstore/cosign-installer",
+      "version": "v4.1.2",
+      "commit": "6f9f17788090df1f26f669e9d70d6ae9567deba6",
+      "disposition": "retained",
+      "reason": "Latest stable action release resolves to the existing immutable SHA."
+    },
+    {
+      "surface": "setup-uv-action",
+      "identity": "astral-sh/setup-uv",
+      "version": "v9.0.0",
+      "commit": "c771a70e6277c0a99b617c7a806ffedaca235ff9",
+      "disposition": "retained",
+      "reason": "Latest stable action release resolves to the existing immutable SHA."
+    }
+  ]
+}

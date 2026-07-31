@@ -15,7 +15,7 @@ const CODE_REVIEW_GRAPH_ARGS = [
   "--offline",
   "--no-python-downloads",
   "--no-env-file",
-  "code-review-graph@2.3.6",
+  "code-review-graph@2.3.7",
   "serve",
 ] as const;
 
@@ -352,7 +352,7 @@ describe("enterprise baseline attestation", () => {
     writeMcp({
       "sequential-thinking": {
         command: "npx",
-        args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.12.18"],
+        args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.7.4"],
         env: { PATH: 7 },
       },
     });
@@ -416,7 +416,7 @@ describe("enterprise baseline attestation", () => {
           "--rm",
           "-e",
           "GITHUB_PERSONAL_ACCESS_TOKEN",
-          "ghcr.io/github/github-mcp-server:v1.5.0",
+          "ghcr.io/github/github-mcp-server@sha256:c491ffdf6f4c85cb5397021bc655edb8ab825c6f5f568e7597d77a1bd7c4d308",
         ],
         env: { GITHUB_PERSONAL_ACCESS_TOKEN: "$" + "{GITHUB_PERSONAL_ACCESS_TOKEN}" },
       },
@@ -607,7 +607,7 @@ describe("enterprise baseline attestation", () => {
           "--offline",
           "--no-python-downloads",
           "--no-env-file",
-          "code-review-graph@2.3.6",
+          "code-review-graph@2.3.7",
           "serve",
           "--repo",
           resolve(dir, "rogue"),

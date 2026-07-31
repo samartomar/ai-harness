@@ -8,6 +8,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Governed external-tool configuration now records a source-bound acceptance ledger,
+  refreshes the approved local MCP and repository-tool runtimes at exact versions,
+  pins the self-hosted GitHub MCP container by digest, and removes only the exact
+  historical AIH-generated AWS core MCP launch whose dependency can no longer resolve.
+  Operator-modified AWS entries remain untouched.
+
 - Baseline qualification now retains one source-wide occurrence ledger, evaluates
   exact active-profile closures separately from unselected inventory, groups
   residual administrator decisions, and supports deterministic Cisco source

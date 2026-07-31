@@ -344,7 +344,7 @@ describe("verifiedEccInstallPlan", () => {
         "sequential-thinking": {
           type: "stdio",
           command: "npx",
-          args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.12.18"],
+          args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.7.4"],
         },
         github: {
           type: "http",
@@ -659,7 +659,7 @@ describe("verifiedEccInstallPlan", () => {
           "sequential-thinking": {
             type: "stdio",
             command: "npx",
-            args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.12.18"],
+            args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.7.4"],
           },
         },
       },

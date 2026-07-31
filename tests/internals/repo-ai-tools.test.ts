@@ -25,7 +25,7 @@ describe("ai-harness repo AI tooling", () => {
     expect(toolingPlan()).toMatchObject({
       pins: {
         serena: {
-          package: "serena-agent==1.5.3",
+          package: "serena-agent==1.6.1",
           license: "MIT",
           securityOverrides: [
             "cryptography==49.0.0",
@@ -34,11 +34,11 @@ describe("ai-harness repo AI tooling", () => {
           ],
         },
         tokenOptimizer: {
-          tag: "v5.11.44",
-          commit: "bbe6c9a4bc2694be5c718b4ef77a729f3a8646dc",
+          tag: "v5.11.68",
+          commit: "0968d8e0a4afe07d3de37ac6a720e5fcc02e4987",
           license: "PolyForm-Noncommercial-1.0.0",
         },
-        tokenSavior: { package: "token-savior-recall[mcp]==4.4.1", license: "MIT" },
+        tokenSavior: { package: "token-savior-recall[mcp]==4.21.0", license: "MIT" },
       },
       runtime: {
         serena: { context: "ide", mode: "no-memories" },
@@ -87,7 +87,7 @@ describe("ai-harness repo AI tooling", () => {
     expect(codexConfig).toContain('args = ["tools/repo-ai-tools.mjs", "serena-mcp"]');
     expect(codexConfig).toContain('args = ["tools/repo-ai-tools.mjs", "token-savior-mcp"]');
     expect(codexConfig).toContain(
-      'args = ["--offline", "--no-python-downloads", "--no-env-file", "code-review-graph@2.3.6", "serve"]',
+      'args = ["--offline", "--no-python-downloads", "--no-env-file", "code-review-graph@2.3.7", "serve"]',
     );
 
     const stopCommands = (hooks.hooks.Stop ?? [])

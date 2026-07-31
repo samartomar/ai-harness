@@ -6,9 +6,19 @@ const GRAPH_BASE_ARGS = [
   "--offline",
   "--no-python-downloads",
   "--no-env-file",
+  "code-review-graph@2.3.7",
+  "serve",
+] as const;
+
+const PREVIOUS_GRAPH_BASE_ARGS = [
+  "--offline",
+  "--no-python-downloads",
+  "--no-env-file",
   "code-review-graph@2.3.6",
   "serve",
 ] as const;
+
+const MANAGED_GRAPH_BASE_ARGS = [GRAPH_BASE_ARGS, PREVIOUS_GRAPH_BASE_ARGS] as const;
 
 /** The workspace marker — lets `aih doctor` recognize a multi-repo workspace root. */
 export function workspaceMarker(repos: string[], dir: string, git = false): unknown {
@@ -89,7 +99,10 @@ export function isAihLegacyCodeReviewGraphMcpServer(value: unknown): boolean {
   const server = mcpServer(value);
   if (server?.command !== "uvx") return false;
   const args = stringArgs(server.args);
-  return args !== undefined && argsEqual(args, GRAPH_BASE_ARGS);
+  return (
+    args !== undefined &&
+    MANAGED_GRAPH_BASE_ARGS.some((managedArgs) => argsEqual(args, managedArgs))
+  );
 }
 
 export function aihWorkspaceGraphRepo(value: unknown): string | undefined {
@@ -97,7 +110,13 @@ export function aihWorkspaceGraphRepo(value: unknown): string | undefined {
   if (server?.command !== "uvx") return undefined;
   const args = stringArgs(server.args);
   if (args === undefined || args.length !== GRAPH_BASE_ARGS.length + 2) return undefined;
-  if (!argsEqual(args.slice(0, GRAPH_BASE_ARGS.length), GRAPH_BASE_ARGS)) return undefined;
+  if (
+    !MANAGED_GRAPH_BASE_ARGS.some((managedArgs) =>
+      argsEqual(args.slice(0, managedArgs.length), managedArgs),
+    )
+  ) {
+    return undefined;
+  }
   if (args[GRAPH_BASE_ARGS.length] !== "--repo") return undefined;
   const repo = args[GRAPH_BASE_ARGS.length + 1];
   return typeof repo === "string" && repo.length > 0 ? repo : undefined;

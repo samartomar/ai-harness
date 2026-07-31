@@ -90,7 +90,7 @@ export const GITLEAKS_LINUX_X64_TAR_SHA256 =
  * between generated workflows.
  */
 export const CHECKOUT_ACTION_PIN =
-  "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0";
+  "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1";
 
 function matrixComment(): string[] {
   const rows = LICENSE_MATRIX.map(

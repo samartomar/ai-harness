@@ -47,8 +47,19 @@ describe("baseline source registry", () => {
   });
 
   it("describes delegated sources with owner/repo and short pins", () => {
-    expect(describeBaselineSource(resolveBaselineSource({ baseline: "ecc" }))).toContain(
-      "affaan-m/ecc@",
-    );
+    const source = resolveBaselineSource({ baseline: "ecc" });
+    expect(source.sources).toEqual([
+      {
+        owner: "affaan-m",
+        repo: "ecc",
+        pinnedSha: "4da6deac1888690e7fb8572d097ee23db630f7a0",
+      },
+      {
+        owner: "obra",
+        repo: "Superpowers",
+        pinnedSha: "d884ae04edebef577e82ff7c4e143debd0bbec99",
+      },
+    ]);
+    expect(describeBaselineSource(source)).toContain("affaan-m/ecc@");
   });
 });
