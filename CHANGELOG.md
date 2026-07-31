@@ -8,6 +8,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Baseline qualification now retains one source-wide occurrence ledger, evaluates
+  exact active-profile closures separately from unselected inventory, groups
+  residual administrator decisions, and supports deterministic Cisco source
+  shards with a fail-closed evidence join. Refs #549
+
 - Added `aih change-profile --input <file>`, a canonical read-only adapter over the
   pure deterministic change-profile classifier. It accepts one bounded strict-UTF-8
   regular JSON file and emits one standard digest; every invalid-input class shares
@@ -39,6 +44,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   full profile is untouched. Refs #527
 
 ### Fixed
+
+- The ECC baseline now pins the merged `affaan-m/ECC` upstream source instead of
+  the temporary `samartomar/ECC` fork bridge, with regenerated component inventory,
+  install preview, and analyzer evidence at the exact upstream commit. Closes #440
 
 - Bare first-run CLI targeting now follows the documented `claude` default instead
   of silently widening to every runnable CLI on `PATH`. Existing repositories still
@@ -88,6 +97,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Successful actions attach nothing. Refs #538
 
 ### Security
+
+- Trust normalization now separates raw scanner occurrences from AIH findings and
+  policy dispositions, deduplicates repeated evidence, and classifies lexical HTTP
+  examples, boolean negation, visible prose Unicode, and documentation-only
+  third-party heuristics without turning them into executable-risk blocks.
+  Actual control characters, credential extraction, destructive automation, and
+  unresolved executable permission or egress risk remain fail-closed. Refs #549
 
 - Two output-hardening gaps closed in the shared workspace manifest validation
   layer (`src/workspace/manifest.ts`), inherited identically by the snapshot,

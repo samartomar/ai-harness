@@ -14,7 +14,7 @@ function registryPin(owner: string, repo: string): string {
 describe("production baseline catalogs", () => {
   it("binds ECC components to the existing registry pin and locked common baseline", () => {
     const catalog = baselineCatalogById("ecc");
-    expect(catalog.pinnedSha).toBe(registryPin("samartomar", "ECC"));
+    expect(catalog.pinnedSha).toBe(registryPin("affaan-m", "ecc"));
     const ids = catalog.components.map((component) => component.id);
     expect(ids).toEqual(
       expect.arrayContaining([
@@ -30,6 +30,11 @@ describe("production baseline catalogs", () => {
         "module:security",
         "module:orchestration",
         "module:document-processing",
+        "baseline:rules",
+        "baseline:agents",
+        "lang:typescript",
+        "framework:react",
+        "capability:documents",
         "skill:tdd-workflow",
         "skill:verification-loop",
         "skill:strategic-compact",
@@ -55,7 +60,7 @@ describe("production baseline catalogs", () => {
     expect(ids.filter((id) => id.startsWith("module:"))).toEqual(
       eccProfiles.profiles.full.modules.map((id) => `module:${id}`),
     );
-    expect(ids.filter((id) => id.startsWith("module:"))).toHaveLength(23);
+    expect(ids.filter((id) => id.startsWith("module:"))).toHaveLength(25);
     expect(ids.some((id) => id.startsWith("module:docs-"))).toBe(false);
     expect(
       catalog.components.some((component) =>
@@ -76,6 +81,15 @@ describe("production baseline catalogs", () => {
     expect(
       catalog.components.find((component) => component.id === "runtime:ecc-installer"),
     ).not.toHaveProperty("skillContent");
+    expect(
+      catalog.components.find((component) => component.id === "baseline:agents")?.paths,
+    ).toEqual([".agents/plugins/marketplace.json", "AGENTS.md"]);
+    expect(catalog.components.find((component) => component.id === "agent:planner")?.paths).toEqual(
+      ["agents/planner.md"],
+    );
+    expect(
+      catalog.components.find((component) => component.id === "framework:react")?.paths,
+    ).not.toContain("skills/frontend-slides");
   });
 
   it("binds Superpowers runtime and installable skills to its registry pin", () => {

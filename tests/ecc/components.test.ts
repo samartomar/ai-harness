@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { COMMON_ECC_COMPONENTS, selectEccComponents } from "../../src/ecc/components.js";
+import {
+  COMMON_ECC_COMPONENTS,
+  LEAN_ECC_COMPONENTS,
+  selectEccComponents,
+  UPSTREAM_CORE_ECC_MODULE_IDS,
+} from "../../src/ecc/components.js";
 import type { RepoStack } from "../../src/profile/scan.js";
 
 function stack(overrides: Partial<RepoStack> = {}): RepoStack {
@@ -46,7 +51,21 @@ const COMMON = [
 ] as const;
 
 describe("selectEccComponents", () => {
-  it("returns the exact common baseline and local MCP for an empty vibe project", () => {
+  it("keeps the default minimal closure deliberate and free of automatic platform or MCP surfaces", () => {
+    const selected = selectEccComponents({
+      stack: stack({ languages: ["TypeScript"], frameworks: ["React"] }),
+      posture: "enterprise",
+      profile: "minimal",
+      declaredMcps: ["code-review-graph"],
+    });
+
+    expect(selected.components).toEqual(LEAN_ECC_COMPONENTS);
+    expect(selected.components).not.toContain("baseline:platform");
+    expect(selected.mcps).toEqual([]);
+    expect(selected.recommendations).toEqual(["capability:security"]);
+  });
+
+  it("returns the exact upstream Core module closure without implicit MCPs", () => {
     const selected = selectEccComponents({
       stack: stack(),
       posture: "vibe",
@@ -56,13 +75,14 @@ describe("selectEccComponents", () => {
     expect(COMMON_ECC_COMPONENTS).toEqual(COMMON);
     expect(selected).toEqual({
       scope: "scoped",
-      components: [...COMMON],
-      mcps: ["mcp:sequential-thinking"],
+      components: [],
+      mcps: [],
       recommendations: [],
+      moduleIds: [...UPSTREAM_CORE_ECC_MODULE_IDS],
     });
   });
 
-  it("adds TypeScript and React riders, including the web agents", () => {
+  it("does not silently add detected language or framework catalogs to upstream Core", () => {
     const selected = selectEccComponents({
       stack: stack({
         languages: ["TypeScript/Node.js"],
@@ -73,16 +93,8 @@ describe("selectEccComponents", () => {
       profile: "core",
     });
 
-    expect(selected.components).toEqual([
-      ...COMMON,
-      "lang:typescript",
-      "agent:typescript-reviewer",
-      "framework:react",
-      "agent:react-reviewer",
-      "agent:react-build-resolver",
-      "agent:e2e-runner",
-      "agent:a11y-architect",
-    ]);
+    expect(selected.components).toEqual([]);
+    expect(selected.moduleIds).toEqual(UPSTREAM_CORE_ECC_MODULE_IDS);
   });
 
   it("treats repeatable advance declarations as additive and stable", () => {
@@ -94,7 +106,6 @@ describe("selectEccComponents", () => {
     });
 
     expect(selected.components).toEqual([
-      ...COMMON,
       "lang:cpp",
       "agent:cpp-reviewer",
       "agent:cpp-build-resolver",
@@ -109,7 +120,7 @@ describe("selectEccComponents", () => {
       profile: "core",
     });
 
-    expect(selected.components).toEqual([...COMMON]);
+    expect(selected.components).toEqual([]);
   });
 
   it("keeps detected PHP and Vue-family identities distinct", () => {
@@ -119,14 +130,7 @@ describe("selectEccComponents", () => {
       profile: "core",
     });
 
-    expect(selected.components).toEqual([
-      ...COMMON,
-      "lang:php",
-      "agent:php-reviewer",
-      "framework:nuxt",
-      "agent:e2e-runner",
-      "agent:a11y-architect",
-    ]);
+    expect(selected.components).toEqual([]);
     expect(selected.components).not.toContain("framework:nextjs");
   });
 
@@ -138,7 +142,7 @@ describe("selectEccComponents", () => {
       declarations: ["tdd-workflow", "security-review"],
     });
 
-    expect(selected.components).toEqual([...COMMON, "skill:security-review"]);
+    expect(selected.components).toEqual(["skill:tdd-workflow", "skill:security-review"]);
   });
 
   it("modulates security content and GitHub MCP by posture without defaulting egress", () => {
@@ -154,19 +158,14 @@ describe("selectEccComponents", () => {
       profile: "core",
     });
 
-    expect(team.components).toEqual([...COMMON]);
+    expect(team.components).toEqual([]);
     expect(team.recommendations).toEqual(["capability:security"]);
-    expect(team.mcps).toEqual([
-      "mcp:sequential-thinking",
-      "mcp:code-review-graph",
-      "mcp:codebase-memory-mcp",
-      "mcp:github",
-    ]);
+    expect(team.mcps).toEqual([]);
     expect(team.mcps).not.toContain("mcp:context7");
     expect(team.mcps).not.toContain("mcp:exa");
-    expect(enterprise.components).toEqual([...COMMON, "capability:security"]);
-    expect(enterprise.recommendations).toEqual([]);
-    expect(enterprise.mcps).toEqual(["mcp:sequential-thinking", "mcp:github"]);
+    expect(enterprise.components).toEqual([]);
+    expect(enterprise.recommendations).toEqual(["capability:security"]);
+    expect(enterprise.mcps).toEqual([]);
   });
 
   it("uses full only when explicitly requested", () => {

@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdtempSync,
@@ -10,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
 import { CISCO_SKILL_SCANNER_PROJECT } from "../baseline-evidence/analyzer-profile.js";
+import { hashComponentTree } from "../baseline-evidence/hash.js";
 import type { Posture } from "../config/posture.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { Runner, RunResult } from "../internals/proc.js";
@@ -17,7 +19,15 @@ import type { Check, CheckCode } from "../internals/verify.js";
 import type { Platform } from "../platform/base.js";
 import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { execArgv } from "../tools/install.js";
+import {
+  buildCiscoShardManifest,
+  buildCiscoShardResultAsync,
+  type CiscoShardManifest,
+  type CiscoShardResult,
+  type JoinedCiscoShardEvidence,
+} from "./cisco-shards.js";
 import { dockerBindMountArg } from "./docker.js";
+import type { RawScannerOccurrence } from "./evidence.js";
 import { scrubDockerClientEnv, scrubFetchEnv } from "./fetch.js";
 import { contentFindingFingerprint } from "./fingerprint.js";
 import { gradeTrustCheck } from "./grade.js";
@@ -31,6 +41,7 @@ import {
   classifyUnicodeRisk,
   detectorReportedHiddenUnicodeRisk,
   isStrictUnicodeSurface,
+  scanTrustDocument,
   type UnicodeRisk,
 } from "./lint.js";
 import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
@@ -81,12 +92,19 @@ export interface TrustDetectorOptions {
   run: Runner;
   skillspectorImageApprovals?: readonly SkillSpectorImageApproval[];
   inventory?: TrustFileInventory;
+  /** Restrict execution to this detector set. Omitted means the complete set for the scan kind. */
+  detectors?: readonly TrustDetectorName[];
+  /** Exact, coordinator-validated SARIF that replaces local execution for the named detector. */
+  precomputedSarif?: Readonly<Partial<Record<TrustDetectorName, string>>>;
+  /** Native AIH findings that can corroborate an elevated third-party rule on the same line. */
+  corroboratedChecks?: readonly Check[];
   progress?: (message: string) => void;
 }
 
 export interface TrustDetectorResult {
   checks: Check[];
   analyzersRun: string[];
+  rawOccurrences: RawScannerOccurrence[];
 }
 
 const DETECTOR_UNAVAILABLE = "trust.detector-unavailable";
@@ -241,6 +259,7 @@ interface SarifResult {
 }
 
 interface SarifRun {
+  invocations?: Array<Record<string, unknown>>;
   results?: SarifResult[];
 }
 
@@ -412,14 +431,31 @@ export function skillspectorDockerRunArgv(
   platform: Platform,
   tree: string,
   image: string = SKILLSPECTOR_IMAGE,
+  containerName = `aih-skillspector-${randomUUID()}`,
 ): string[] {
   // Native Windows Docker bind mounts can reject drive-letter paths; that fails safe to skip.
   return execArgv(platform, [
     "docker",
     "run",
     "--rm",
+    "--name",
+    containerName,
     "--network",
     "none",
+    "--cpus",
+    "2",
+    "--memory",
+    "4g",
+    "--memory-swap",
+    "4g",
+    "--pids-limit",
+    "256",
+    "--cap-drop",
+    "ALL",
+    "--cap-add",
+    "DAC_OVERRIDE",
+    "--security-opt",
+    "no-new-privileges",
     "--read-only",
     "--tmpfs",
     "/tmp:rw,noexec,nosuid,size=64m",
@@ -432,6 +468,10 @@ export function skillspectorDockerRunArgv(
     "--format",
     "sarif",
   ]);
+}
+
+function skillspectorDockerCleanupArgv(platform: Platform, containerName: string): string[] {
+  return execArgv(platform, ["docker", "rm", "--force", "--volumes", containerName]);
 }
 
 function ciscoSkillScannerBaseArgv(): string[] {
@@ -618,14 +658,32 @@ async function runSkillspectorScan(
     runtimeOptions.skillspectorImageApprovals,
   );
   if ("reason" in image) throw new Error(image.reason);
-  const scan = await run(skillspectorDockerRunArgv(platform, tree, image.image), {
-    env: scrubDockerClientEnv(env),
-    timeoutMs: 120_000,
+  const containerName = `aih-skillspector-${randomUUID()}`;
+  const dockerEnv = scrubDockerClientEnv(env);
+  const scan = await run(skillspectorDockerRunArgv(platform, tree, image.image, containerName), {
+    env: dockerEnv,
+    // Full pinned catalogs are CPU-bound in SkillSpector and exceed the old
+    // two-minute budget even on the dedicated 6-vCPU vet hosts. Keep the
+    // external process bounded while allowing one exact source-wide run.
+    timeoutMs: 900_000,
   });
   const exitLabel = scan.code ?? "signal";
-  if (scan.spawnError) {
+  if (scan.spawnError || scan.truncated) {
+    const cleanup = await run(skillspectorDockerCleanupArgv(platform, containerName), {
+      env: dockerEnv,
+      timeoutMs: 30_000,
+    });
+    const cleanupDetail =
+      cleanup.spawnError || cleanup.code !== 0
+        ? `; container cleanup failed: ${
+            runFailureReason(cleanup, `docker exit ${cleanup.code ?? "signal"}`) ??
+            `docker exit ${cleanup.code ?? "signal"}`
+          }`
+        : "";
     throw new Error(
-      runFailureReason(scan, `detector exit ${exitLabel}`) ?? `detector exit ${exitLabel}`,
+      `${
+        runFailureReason(scan, `detector exit ${exitLabel}`) ?? `detector exit ${exitLabel}`
+      }${cleanupDetail}`,
     );
   }
   if (scan.code !== 0 && scan.code !== 1) {
@@ -642,15 +700,26 @@ async function checkCiscoAvailable(
   run: Runner,
   platform: Platform,
   env: NodeJS.ProcessEnv,
+  runtimeOptionsOrExpectedVersion?: TrustDetectorRuntimeOptions | string,
 ): Promise<string | undefined> {
+  const expectedVersion =
+    typeof runtimeOptionsOrExpectedVersion === "string"
+      ? runtimeOptionsOrExpectedVersion
+      : undefined;
   const version = await run(ciscoSkillScannerVersionArgv(platform), {
     env: scrubFetchEnv(env),
     timeoutMs: 30_000,
   });
   const reason = runFailureReason(version, `uvx exit ${version.code ?? "signal"}`);
   if (reason !== undefined) return reason;
-  if (`${version.stdout}${version.stderr}`.trim().length === 0) {
+  const output = `${version.stdout}${version.stderr}`.trim();
+  if (output.length === 0) {
     return "skill-scanner version check emitted no output";
+  }
+  const reportedVersions: string[] =
+    output.match(/[0-9]+(?:\.[0-9]+)+(?:[-+][0-9A-Za-z.-]+)?/g) ?? [];
+  if (expectedVersion !== undefined && !reportedVersions.includes(expectedVersion)) {
+    return `skill-scanner version ${JSON.stringify(output)} does not match ${expectedVersion}`;
   }
   return undefined;
 }
@@ -760,6 +829,14 @@ function prefixCiscoSarifUris(sarifText: string, root: string, skillRoot: string
     ...parsed,
     runs: parsed.runs?.map((run) => ({
       ...run,
+      invocations: run.invocations?.map((invocation) => {
+        const {
+          startTimeUtc: _startTimeUtc,
+          endTimeUtc: _endTimeUtc,
+          ...stableInvocation
+        } = invocation;
+        return stableInvocation;
+      }),
       results: run.results?.map((result) => ({
         ...result,
         locations: result.locations?.map((location) => ({
@@ -783,7 +860,182 @@ function prefixCiscoSarifUris(sarifText: string, root: string, skillRoot: string
   };
 }
 
-const CISCO_SCAN_CONCURRENCY = 4;
+const DEFAULT_CISCO_SCAN_CONCURRENCY = 4;
+const MAX_CISCO_SCAN_CONCURRENCY = 64;
+
+export function resolveCiscoScanConcurrency(env: NodeJS.ProcessEnv): number {
+  const raw = env.AIH_CISCO_SCAN_CONCURRENCY?.trim();
+  if (raw === undefined || raw.length === 0) return DEFAULT_CISCO_SCAN_CONCURRENCY;
+  if (!/^[1-9][0-9]*$/.test(raw)) return DEFAULT_CISCO_SCAN_CONCURRENCY;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed <= MAX_CISCO_SCAN_CONCURRENCY
+    ? parsed
+    : DEFAULT_CISCO_SCAN_CONCURRENCY;
+}
+
+export interface CiscoSourceShardManifestOptions {
+  source: {
+    id: string;
+    pinnedSha: string;
+  };
+  analyzer: {
+    version: string;
+    lockSha256: string;
+  };
+  policy: {
+    version: string;
+    profile: string;
+  };
+  shardCount: number;
+  inventory?: TrustFileInventory;
+}
+
+export interface CiscoSourceShardRunOptions {
+  run: Runner;
+  platform: Platform;
+  env: NodeJS.ProcessEnv;
+  concurrency?: number;
+}
+
+export function buildCiscoSourceShardManifest(
+  root: string,
+  options: CiscoSourceShardManifestOptions,
+): CiscoShardManifest {
+  const safeRoot = realpathSync(root);
+  const paths = collectCiscoSkillDirs(safeRoot, options.inventory).map((skillDir) =>
+    toPosix(relative(safeRoot, skillDir)),
+  );
+  if (paths.length === 0) throw new Error("no SKILL.md directories found for Cisco scan");
+  const sourceTree = hashComponentTree(safeRoot, paths);
+  return buildCiscoShardManifest({
+    source: {
+      ...options.source,
+      treeSha256: sourceTree.treeSha256,
+    },
+    analyzer: {
+      name: "cisco",
+      ...options.analyzer,
+    },
+    policy: options.policy,
+    jobs: paths.map((path) => ({
+      path,
+      inputSha256: hashComponentTree(safeRoot, [path]).treeSha256,
+    })),
+    shardCount: options.shardCount,
+  });
+}
+
+async function scanCiscoSkillDirectory(
+  run: Runner,
+  platform: Platform,
+  env: NodeJS.ProcessEnv,
+  root: string,
+  skillDir: string,
+): Promise<SarifLog> {
+  const tmp = mkdtempSync(join(tmpdir(), "aih-cisco-sarif-"));
+  const output = join(tmp, "results.sarif");
+  try {
+    const scan = await run(ciscoSkillScannerRunArgv(platform, skillDir, output), {
+      cwd: skillDir,
+      env: scrubFetchEnv(env),
+      timeoutMs: 120_000,
+    });
+    const reason = runFailureReason(scan, `detector exit ${scan.code ?? "signal"}`);
+    if (reason !== undefined) throw new Error(reason);
+    return prefixCiscoSarifUris(readFileSync(output, "utf8"), root, skillDir);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+function verifyCiscoShardSource(root: string, manifest: CiscoShardManifest): void {
+  const paths = manifest.jobs.map((job) => job.path);
+  const sourceTree = hashComponentTree(root, paths);
+  if (sourceTree.treeSha256 !== manifest.source.treeSha256) {
+    throw new Error("Cisco shard source tree does not match the exact manifest identity");
+  }
+  for (const job of manifest.jobs) {
+    if (hashComponentTree(root, [job.path]).treeSha256 !== job.inputSha256) {
+      throw new Error(`Cisco shard input identity changed: ${job.path}`);
+    }
+  }
+}
+
+export async function runCiscoSourceShard(
+  root: string,
+  manifest: CiscoShardManifest,
+  shardId: string,
+  options: CiscoSourceShardRunOptions,
+): Promise<CiscoShardResult> {
+  const safeRoot = realpathSync(root);
+  verifyCiscoShardSource(safeRoot, manifest);
+  const expectedVersion = manifest.analyzer.version.split("+", 1)[0] ?? manifest.analyzer.version;
+  const localLockSha256 = createHash("sha256")
+    .update(readFileSync(join(CISCO_SKILL_SCANNER_PROJECT, "uv.lock")))
+    .digest("hex");
+  if (localLockSha256 !== manifest.analyzer.lockSha256) {
+    throw new Error(
+      `Cisco shard analyzer lock does not match manifest identity: ${localLockSha256}`,
+    );
+  }
+  const unavailable = await checkCiscoAvailable(
+    options.run,
+    options.platform,
+    options.env,
+    expectedVersion,
+  );
+  if (unavailable !== undefined)
+    throw new Error(`Cisco shard analyzer unavailable: ${unavailable}`);
+  const result = await buildCiscoShardResultAsync(
+    manifest,
+    shardId,
+    async (job) => {
+      const skillDir = join(safeRoot, ...job.path.split("/"));
+      if (hashComponentTree(safeRoot, [job.path]).treeSha256 !== job.inputSha256) {
+        throw new Error(`Cisco shard input identity changed before scan: ${job.path}`);
+      }
+      const sarif = await scanCiscoSkillDirectory(
+        options.run,
+        options.platform,
+        options.env,
+        safeRoot,
+        skillDir,
+      );
+      if (hashComponentTree(safeRoot, [job.path]).treeSha256 !== job.inputSha256) {
+        throw new Error(`Cisco shard input identity changed during scan: ${job.path}`);
+      }
+      return sarif;
+    },
+    options.concurrency ?? resolveCiscoScanConcurrency(options.env),
+  );
+  verifyCiscoShardSource(safeRoot, manifest);
+  return result;
+}
+
+function sourcePathsIntersect(left: string, right: string): boolean {
+  return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
+}
+
+export function joinedCiscoShardSarif(
+  joined: JoinedCiscoShardEvidence,
+  includedPaths?: readonly string[],
+): string {
+  const runs: SarifRun[] = [];
+  for (const output of joined.outputs) {
+    if (
+      includedPaths !== undefined &&
+      !includedPaths.some((path) => sourcePathsIntersect(output.path, path))
+    ) {
+      continue;
+    }
+    const parsed = parseSarifLog(JSON.stringify(output.evidence));
+    if (parsed === undefined) {
+      throw new Error(`Cisco shard job ${output.path} did not retain valid SARIF evidence`);
+    }
+    runs.push(...(parsed.runs ?? []));
+  }
+  return JSON.stringify({ version: "2.1.0", runs });
+}
 
 async function mapConcurrentStable<T, R>(
   items: readonly T[],
@@ -824,24 +1076,9 @@ async function runCiscoSkillScan(
   if (skillDirs.length === 0) throw new Error("no SKILL.md directories found for Cisco scan");
   const runsBySkill = await mapConcurrentStable(
     skillDirs,
-    CISCO_SCAN_CONCURRENCY,
-    async (skillDir): Promise<SarifRun[]> => {
-      const tmp = mkdtempSync(join(tmpdir(), "aih-cisco-sarif-"));
-      const output = join(tmp, "results.sarif");
-      try {
-        const scan = await run(ciscoSkillScannerRunArgv(platform, skillDir, output), {
-          cwd: skillDir,
-          env: scrubFetchEnv(env),
-          timeoutMs: 120_000,
-        });
-        const reason = runFailureReason(scan, `detector exit ${scan.code ?? "signal"}`);
-        if (reason !== undefined) throw new Error(reason);
-        const prefixed = prefixCiscoSarifUris(readFileSync(output, "utf8"), tree, skillDir);
-        return prefixed.runs ?? [];
-      } finally {
-        rmSync(tmp, { recursive: true, force: true });
-      }
-    },
+    resolveCiscoScanConcurrency(env),
+    async (skillDir): Promise<SarifRun[]> =>
+      (await scanCiscoSkillDirectory(run, platform, env, tree, skillDir)).runs ?? [],
   );
   return JSON.stringify({ version: "2.1.0", runs: runsBySkill.flat() });
 }
@@ -1314,6 +1551,7 @@ const COREPACK_PACKAGE_MANAGER_INTEGRITY = /^[A-Za-z0-9._-]+@[^+\s"]+\+sha512\.[
 const CISCO_MISSING_LICENSE_RULE_ID = "MANIFEST_MISSING_LICENSE";
 const CISCO_MISSING_LICENSE_MESSAGE =
   /\bskill manifest does not include a ['"‘’]?license['"‘’]?\s+field\b/i;
+const REPOSITORY_LICENSE_FILES = ["LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING"] as const;
 // SkillSpector YR4 (`agent_skill_mcp_tool_poisoning_metadata`) fires when
 // `any of ($schema_*)` (ubiquitous manifest keys like `"description":`) is
 // present AND at least one Gate-B poisoning co-signal matches. The carve-out
@@ -1407,11 +1645,24 @@ function skillspectorAdvisory(
 // merely quotes the license phrase can never be relabelled. Only the Cisco
 // skill-scanner, only that rule id, only the manifest surface (SKILL.md), only
 // that exact wording — never the mcp-scanner or any other Cisco finding.
-function ciscoMetadataLicenseCode(
+function repositoryLicensePath(root: string): string | undefined {
+  for (const name of REPOSITORY_LICENSE_FILES) {
+    const candidate = join(root, name);
+    try {
+      if (existsSync(candidate) && statSync(candidate).isFile()) return name;
+    } catch {
+      // An unreadable or unstable path is not accepted as license evidence.
+    }
+  }
+  return undefined;
+}
+
+function ciscoMetadataLicenseClassification(
   result: SarifResult,
   detector: TrustDetector,
+  root: string,
   location: NonNullable<Check["location"]>,
-): CheckCode | undefined {
+): DetectorRuleClassification | undefined {
   if (detector.name !== "cisco") return undefined;
   const ruleId = resultRuleId(result);
   if (ruleId !== CISCO_MISSING_LICENSE_RULE_ID) return undefined;
@@ -1419,9 +1670,13 @@ function ciscoMetadataLicenseCode(
   // somehow shared the benign rule id string.
   if (detector.ruleMap[ruleId] !== undefined) return undefined;
   if (basename(location.uri) !== "SKILL.md") return undefined;
-  return CISCO_MISSING_LICENSE_MESSAGE.test(resultMessage(result, detector))
-    ? "trust.skill-metadata-license"
-    : undefined;
+  if (!CISCO_MISSING_LICENSE_MESSAGE.test(resultMessage(result, detector))) return undefined;
+  const inherited = repositoryLicensePath(root);
+  return inherited === undefined
+    ? { code: "trust.skill-metadata-license" }
+    : {
+        advisory: `${resultMessage(result, detector)}; repository-level license inheritance resolved by ${inherited}`,
+      };
 }
 
 function ruleCode(
@@ -1429,6 +1684,7 @@ function ruleCode(
   detector: TrustDetector,
   root: string,
   location: NonNullable<Check["location"]>,
+  corroboratedDangerLocations: ReadonlySet<string>,
 ): DetectorRuleClassification | undefined {
   const raw = resultRuleId(result);
   if (raw === undefined) return undefined;
@@ -1446,13 +1702,49 @@ function ruleCode(
       const risk = hiddenUnicodeRiskForDetectorResult(result, detector, root, location);
       return risk === undefined ? undefined : { code: risk.code };
     }
+    if (mapped === "trust.prompt-injection") {
+      const source = sourceTextForLocation(root, location);
+      if (source === undefined) return { code: "trust.detector-finding" };
+      const native = scanTrustDocument(location.uri, source).filter(
+        (check) => check.location?.startLine === location.startLine,
+      );
+      if (native.some((check) => check.code === "trust.prompt-injection")) {
+        return { code: "trust.prompt-injection" };
+      }
+      if (native.some((check) => check.code === "trust.external-egress")) {
+        return { code: "trust.external-egress" };
+      }
+      return { code: "trust.detector-finding" };
+    }
+    if (
+      mapped === "trust.malicious-code" &&
+      !corroboratedDangerLocations.has(
+        `trust.malicious-code:${location.uri}:${String(location.startLine ?? 1)}`,
+      )
+    ) {
+      return detector.name === "agentshield" &&
+        isStrictUnicodeSurface(location.uri) &&
+        /\b(?:Overly permissive allow rule|excessive permissions?)\b/i.test(
+          resultMessage(result, detector),
+        )
+        ? { code: "trust.permission-risk" }
+        : { code: "trust.detector-finding" };
+    }
+    if (
+      mapped === "trust.auto-exec-hook" &&
+      !corroboratedDangerLocations.has(
+        `trust.auto-exec-hook:${location.uri}:${String(location.startLine ?? 1)}`,
+      )
+    ) {
+      return { code: "trust.detector-finding" };
+    }
     return {
       code: mapped,
     };
   }
   // Only an UNMAPPED Cisco rule id reaches the benign missing-license reclass.
-  const metadataLicense = ciscoMetadataLicenseCode(result, detector, location);
-  if (metadataLicense !== undefined) return { code: metadataLicense };
+  const metadataLicense = ciscoMetadataLicenseClassification(result, detector, root, location);
+  if (metadataLicense !== undefined) return metadataLicense;
   const legalText = reviewableLegalTextContent(root, location);
   if (
     detector.name === "skillspector" ||
@@ -1460,6 +1752,12 @@ function ruleCode(
     detector.name === "snyk-agent-scan" ||
     detector.name === "agentshield"
   ) {
+    if (
+      detector.name === "skillspector" &&
+      /\bExternal Transmission\b/i.test(resultMessage(result, detector))
+    ) {
+      return { code: "trust.external-egress" };
+    }
     return legalText === undefined
       ? { code: "trust.detector-finding" }
       : { code: "trust.legal-text-detector-finding" };
@@ -1579,15 +1877,56 @@ function sarifChecks(
   root: string,
   posture: Posture,
   detector: TrustDetector,
-): Check[] | undefined {
+  corroboratedDangerLocations: ReadonlySet<string>,
+): { checks: Check[]; rawOccurrences: RawScannerOccurrence[] } | undefined {
   const parsed = parseSarifLog(stdout);
   if (parsed === undefined) return undefined;
   const checks: Check[] = [];
+  const rawOccurrences: RawScannerOccurrence[] = [];
   const occurrences = new Map<string, number>();
+  const rawOccurrenceCounts = new Map<string, number>();
+  const seen = new Set<string>();
   for (const run of parsed.runs) {
     for (const result of run.results ?? []) {
       const location = sarifLocation(result, detector);
-      const classification = ruleCode(result, detector, root, location);
+      const rawRuleId = resultRuleId(result) ?? "unknown-rule";
+      const rawMessage = resultMessage(result, detector);
+      const rawKey = JSON.stringify([
+        detector.name,
+        rawRuleId,
+        location.uri,
+        location.startLine ?? 1,
+        rawMessage,
+      ]);
+      const rawOccurrence = rawOccurrenceCounts.get(rawKey) ?? 0;
+      rawOccurrenceCounts.set(rawKey, rawOccurrence + 1);
+      const sourceValue = fileLine(join(root, location.uri), location.startLine ?? 1);
+      rawOccurrences.push({
+        fingerprint: `trust-raw:${createHash("sha256")
+          .update(JSON.stringify([rawKey, rawOccurrence]), "utf8")
+          .digest("hex")}`,
+        analyzer: detector.analyzerLabel,
+        ruleId: rawRuleId,
+        message: rawMessage,
+        ...(typeof result.level === "string" ? { level: result.level } : {}),
+        location,
+        ...(sourceValue === undefined ? {} : { sourceValue }),
+      });
+      const duplicateKey = JSON.stringify([
+        detector.name,
+        rawRuleId,
+        location.uri,
+        location.startLine ?? 1,
+      ]);
+      if (seen.has(duplicateKey)) continue;
+      seen.add(duplicateKey);
+      const classification = ruleCode(
+        result,
+        detector,
+        root,
+        location,
+        corroboratedDangerLocations,
+      );
       if (classification === undefined) continue;
       if (classification.advisory !== undefined) {
         checks.push({
@@ -1636,7 +1975,7 @@ function sarifChecks(
       );
     }
   }
-  return checks;
+  return { checks, rawOccurrences };
 }
 
 function analyzerPassCheck(detector: TrustDetector, analyzersRun: readonly string[]): Check {
@@ -1799,53 +2138,78 @@ async function runDetectorList(
   const required = options.requiredDetectors ?? [];
   const checks: Check[] = [];
   const analyzersRun: string[] = [];
+  const rawOccurrences: RawScannerOccurrence[] = [];
   const runtimeOptions: TrustDetectorRuntimeOptions = {
     skillspectorImageApprovals: options.skillspectorImageApprovals ?? [],
     inventory: options.inventory,
   };
+  const fallbackMalicious =
+    options.corroboratedChecks === undefined
+      ? scanNativeMaliciousCode(root, options.inventory)
+      : [];
+  const corroboratedDangerLocations = new Set(
+    [...(options.corroboratedChecks ?? []), ...fallbackMalicious]
+      .filter(
+        (check) =>
+          check.location !== undefined &&
+          (check.code === "trust.malicious-code" || check.code === "trust.auto-exec-hook"),
+      )
+      .map(
+        (check) =>
+          `${check.code ?? ""}:${check.location?.uri ?? ""}:${String(check.location?.startLine ?? 1)}`,
+      ),
+  );
 
   for (const detector of detectors) {
     options.progress?.(`trust scan: detector ${detector.name} started`);
-    const unavailable = await detector.checkAvailable(
-      options.run,
-      options.platform,
-      options.env,
-      runtimeOptions,
-    );
-    if (unavailable !== undefined) {
-      checks.push(
-        unavailableCheck(
-          detector.name,
-          unavailable,
-          options.posture,
-          isRequired(detector.name, required),
-        ),
-      );
-      continue;
-    }
-
-    let sarifText: string;
-    try {
-      sarifText = await detector.runScan(
+    let sarifText = options.precomputedSarif?.[detector.name];
+    if (sarifText === undefined) {
+      const unavailable = await detector.checkAvailable(
         options.run,
         options.platform,
         options.env,
-        root,
         runtimeOptions,
       );
-    } catch (error) {
-      checks.push(
-        unavailableCheck(
-          detector.name,
-          (error as Error).message,
-          options.posture,
-          isRequired(detector.name, required),
-        ),
-      );
-      continue;
+      if (unavailable !== undefined) {
+        checks.push(
+          unavailableCheck(
+            detector.name,
+            unavailable,
+            options.posture,
+            isRequired(detector.name, required),
+          ),
+        );
+        continue;
+      }
+
+      try {
+        sarifText = await detector.runScan(
+          options.run,
+          options.platform,
+          options.env,
+          root,
+          runtimeOptions,
+        );
+      } catch (error) {
+        checks.push(
+          unavailableCheck(
+            detector.name,
+            (error as Error).message,
+            options.posture,
+            isRequired(detector.name, required),
+          ),
+        );
+        continue;
+      }
     }
 
-    const mapped = sarifChecks(sarifText, root, options.posture, detector);
+    const mapped = sarifChecks(
+      sarifText,
+      root,
+      options.posture,
+      detector,
+      corroboratedDangerLocations,
+    );
     if (mapped === undefined) {
       checks.push(
         unavailableCheck(
@@ -1859,26 +2223,35 @@ async function runDetectorList(
     }
 
     analyzersRun.push(detector.analyzerLabel);
+    rawOccurrences.push(...mapped.rawOccurrences);
     const completedAnalyzers = ["aih-native", ...analyzersRun];
-    checks.push(analyzerPassCheck(detector, completedAnalyzers), ...mapped);
+    checks.push(analyzerPassCheck(detector, completedAnalyzers), ...mapped.checks);
     options.progress?.(`trust scan: detector ${detector.name} complete`);
   }
 
-  return { checks, analyzersRun };
+  return { checks, analyzersRun, rawOccurrences };
 }
 
 export async function runTrustDetectors(
   root: string,
   options: TrustDetectorOptions,
 ): Promise<TrustDetectorResult> {
-  return runDetectorList(SKILL_TRUST_DETECTORS, root, options);
+  const selected =
+    options.detectors === undefined
+      ? SKILL_TRUST_DETECTORS
+      : SKILL_TRUST_DETECTORS.filter((detector) => options.detectors?.includes(detector.name));
+  return runDetectorList(selected, root, options);
 }
 
 export async function runMcpConfigDetectors(
   root: string,
   options: TrustDetectorOptions,
 ): Promise<TrustDetectorResult> {
-  return runDetectorList(MCP_CONFIG_DETECTORS, root, options);
+  const selected =
+    options.detectors === undefined
+      ? MCP_CONFIG_DETECTORS
+      : MCP_CONFIG_DETECTORS.filter((detector) => options.detectors?.includes(detector.name));
+  return runDetectorList(selected, root, options);
 }
 
 export function trustRuntimeAdvisory(analyzersRun: readonly string[]): string {

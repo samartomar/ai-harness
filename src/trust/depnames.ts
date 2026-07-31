@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { basename, relative } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import type { Posture } from "../config/posture.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check, CheckCode } from "../internals/verify.js";
@@ -94,9 +94,12 @@ function lineText(source: string, line: number): string {
   return linesOf(source)[line - 1] ?? "";
 }
 
-function lineForDependency(source: string, name: string): number {
+function lineForDependency(source: string, name: string, spec?: string): number {
   const quoted = `"${name.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-  const found = linesOf(source).findIndex((line) => line.includes(quoted));
+  const quotedSpec = spec === undefined ? undefined : JSON.stringify(spec);
+  const found = linesOf(source).findIndex(
+    (line) => line.includes(quoted) && (quotedSpec === undefined || line.includes(quotedSpec)),
+  );
   return found >= 0 ? found + 1 : 1;
 }
 
@@ -310,6 +313,48 @@ function unpinnedDependencyReason(name: string, spec: string): string | undefine
   return `direct dependency ${name} uses unpinned version spec ${JSON.stringify(spec)}`;
 }
 
+function readColocatedNpmLock(packageJsonPath: string): string | undefined {
+  try {
+    return readFileSync(join(dirname(packageJsonPath), "package-lock.json"), "utf8");
+  } catch {
+    try {
+      return readFileSync(join(dirname(packageJsonPath), "npm-shrinkwrap.json"), "utf8");
+    } catch {
+      return undefined;
+    }
+  }
+}
+
+function isResolvedByIntegrityBoundNpmLock(
+  lockSource: string | undefined,
+  dependency: DirectDependencySpec,
+): boolean {
+  if (lockSource === undefined) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(lockSource);
+  } catch {
+    return false;
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.packages)) return false;
+  const root = parsed.packages[""];
+  if (!isRecord(root)) return false;
+  const rootBlock = root[dependency.blockName];
+  if (!isRecord(rootBlock) || rootBlock[dependency.name] !== dependency.spec) {
+    return false;
+  }
+  const resolved = parsed.packages[`node_modules/${dependency.name}`];
+  if (!isRecord(resolved)) return false;
+  const version = resolved.version;
+  const integrity = resolved.integrity;
+  return (
+    typeof version === "string" &&
+    isExactVersionSpec(version) &&
+    typeof integrity === "string" &&
+    /^sha(?:1|256|384|512)-[A-Za-z0-9+/=]+$/.test(integrity)
+  );
+}
+
 function unpinnedDependencyCheck(
   occurrences: Map<string, number>,
   rel: string,
@@ -330,6 +375,7 @@ function scanPackageJson(
   source: string,
   internalScopes: ReadonlySet<string>,
   posture: Posture,
+  npmLockSource?: string,
 ): PackageScanResult {
   let parsed: unknown;
   try {
@@ -344,7 +390,8 @@ function scanPackageJson(
   for (const dependency of dependencySpecs) {
     const reason = unpinnedDependencyReason(dependency.name, dependency.spec);
     if (reason === undefined) continue;
-    const line = lineForDependency(source, dependency.name);
+    if (isResolvedByIntegrityBoundNpmLock(npmLockSource, dependency)) continue;
+    const line = lineForDependency(source, dependency.name, dependency.spec);
     const text = lineText(source, line);
     checks.push(unpinnedDependencyCheck(occurrences, rel, line, text, reason, posture));
   }
@@ -415,7 +462,14 @@ export function scanTrustDependencyNames(
   for (const abs of packageJsonFiles(root, inventory)) {
     const rel = toPosix(relative(root, abs));
     const source = readFileSync(abs, "utf8");
-    const result = scanPackageJson(occurrences, rel, source, scopes, posture);
+    const result = scanPackageJson(
+      occurrences,
+      rel,
+      source,
+      scopes,
+      posture,
+      readColocatedNpmLock(abs),
+    );
     checks.push(...result.checks);
     if (result.declaresDependencies && firstPackageWithDependencies === undefined) {
       firstPackageWithDependencies = { rel, source };

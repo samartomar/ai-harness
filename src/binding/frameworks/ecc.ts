@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
 import {
+  CORRECTED_ACCEPTANCE_POLICY_VERSION,
   findAcceptanceDecision,
   readAcceptanceDecisions,
 } from "../../baseline-evidence/acceptance.js";
@@ -222,8 +223,8 @@ export class EccLeanInstallerUnavailableError extends AihError {
 }
 
 /**
- * samartomar/ECC pin — the maintainer-locked commit this binding is pinned to.
- * MIRRORS (deliberately does not import) the "samartomar"/"ECC" entry in
+ * affaan-m/ecc pin — the maintainer-locked commit this binding is pinned to.
+ * MIRRORS (deliberately does not import) the "affaan-m"/"ecc" entry in
  * `src/internals/baseline-sources.ts` — also the pin of the shipped
  * `src/baseline-evidence/ecc-install-preview.json` and of
  * `baselineCatalogById("ecc").pinnedSha`. Mirrored rather than imported for the
@@ -235,7 +236,7 @@ export class EccLeanInstallerUnavailableError extends AihError {
  * source cross-checks this constant against the live catalog, so a silent drift
  * fails closed rather than binding the wrong commit.
  */
-export const ECC_PIN_COMMIT = "16563d4a30f17d097cc4629f6d97e02adf823016";
+export const ECC_PIN_COMMIT = "4da6deac1888690e7fb8572d097ee23db630f7a0";
 
 /**
  * The ECC adapter version (W7 §C.2) — bumped when this adapter's provisioning /
@@ -247,7 +248,7 @@ export const ECC_PIN_COMMIT = "16563d4a30f17d097cc4629f6d97e02adf823016";
 export const ADAPTER_VERSION = 1 as const;
 
 /** The pinned git source location (`owner/repo` shape; see `isPlausibleGitRepository`). */
-export const ECC_REPOSITORY = "samartomar/ECC";
+export const ECC_REPOSITORY = "affaan-m/ecc";
 
 /** The single ECC install target for the `claude` host (the preview's `target`). */
 export const ECC_HOST_TARGET = "claude";
@@ -1134,9 +1135,25 @@ function reportEccLean(deps: EccLeanAdapterDeps, context: BindingContext): Bindi
     `allowlist: ${ECC_LEAN_ALLOWLIST.join(", ")}`,
     `excluded: ${ECC_LEAN_EXCLUDED.join(", ")}`,
   ];
-  const decision = findAcceptanceDecision(readAcceptanceDecisions(), ECC_LEAN_ACCEPTANCE_TUPLE);
+  const decisions = readAcceptanceDecisions();
+  const decision = findAcceptanceDecision(
+    decisions.filter(
+      (candidate) => candidate.policyVersion === CORRECTED_ACCEPTANCE_POLICY_VERSION,
+    ),
+    ECC_LEAN_ACCEPTANCE_TUPLE,
+  );
+  const legacyDecision = findAcceptanceDecision(
+    decisions.filter(
+      (candidate) => candidate.policyVersion !== CORRECTED_ACCEPTANCE_POLICY_VERSION,
+    ),
+    ECC_LEAN_ACCEPTANCE_TUPLE,
+  );
   if (decision === undefined) {
-    disclosures.push("vet acceptance: none shipped — blocked evidence components stay held");
+    disclosures.push(
+      legacyDecision === undefined
+        ? "vet acceptance: none shipped — blocked evidence components stay held"
+        : `vet acceptance: legacy decision ${legacyDecision.decisionId} retained as historical evidence but ineligible under corrected policy v${CORRECTED_ACCEPTANCE_POLICY_VERSION}`,
+    );
   } else {
     const codes = [
       ...new Set(decision.components.flatMap((component) => component.acceptedFindingCodes)),

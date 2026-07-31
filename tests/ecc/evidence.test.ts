@@ -5,6 +5,7 @@ import {
   authorizedEccSelection,
   eccEvidenceComponentIds,
   eccEvidenceComponentIdsForSelection,
+  eccProfileModuleIds,
   installedEccComponentRegistrations,
 } from "../../src/ecc/evidence.js";
 
@@ -41,9 +42,11 @@ function scopedSelection(): EccComponentSelection {
 describe("ECC evidence component selection", () => {
   it("filters the requested surface to components covered by authorization receipts", () => {
     const authorized = authorizedEccSelection(scopedSelection(), [
-      authorization("module:agents-core"),
+      authorization("baseline:agents"),
+      authorization("baseline:platform"),
       authorization("module:platform-configs"),
       authorization("skill:tdd-workflow"),
+      authorization("agent:typescript-reviewer"),
     ]);
 
     expect(authorized).toEqual({
@@ -59,15 +62,13 @@ describe("ECC evidence component selection", () => {
     });
   });
 
-  it("downgrades a partially authorized full request to a filtered scoped selection", () => {
+  it("refuses a partially authorized full request", () => {
     const requested = scopedSelection();
     requested.scope = "full";
 
-    const authorized = authorizedEccSelection(requested, [authorization("module:rules-core")]);
-
-    expect(authorized.scope).toBe("scoped");
-    expect(authorized.components).toEqual(["baseline:rules"]);
-    expect(authorized.mcps).toEqual([]);
+    expect(() =>
+      authorizedEccSelection(requested, [authorization("baseline:rules")], ["claude"]),
+    ).toThrow(/refusing partial ECC Full install/);
   });
 
   it("preserves a fully authorized full request", () => {
@@ -81,6 +82,15 @@ describe("ECC evidence component selection", () => {
   });
 
   it("covers the complete existing core profile plus installer runtime", () => {
+    expect(eccProfileModuleIds("core")).toEqual([
+      "rules-core",
+      "agents-core",
+      "commands-core",
+      "hooks-runtime",
+      "platform-configs",
+      "skill-unified-memory",
+      "workflow-quality",
+    ]);
     expect(eccEvidenceComponentIds("core", "claude", [])).toEqual([
       "runtime:ecc-installer",
       "module:rules-core",
@@ -88,8 +98,31 @@ describe("ECC evidence component selection", () => {
       "module:commands-core",
       "module:hooks-runtime",
       "module:platform-configs",
+      "module:skill-unified-memory",
       "module:workflow-quality",
     ]);
+  });
+
+  it("binds the product Core selector to the same exact upstream module closure", () => {
+    const selection: EccComponentSelection = {
+      scope: "scoped",
+      components: [],
+      mcps: [],
+      recommendations: [],
+      moduleIds: eccProfileModuleIds("core"),
+    };
+    expect(eccEvidenceComponentIdsForSelection("claude", selection)).toEqual(
+      eccEvidenceComponentIds("core", "claude", []),
+    );
+    expect(() =>
+      authorizedEccSelection(
+        selection,
+        eccEvidenceComponentIds("core", "claude", [])
+          .filter((id) => id !== "module:hooks-runtime")
+          .map(authorization),
+        ["claude"],
+      ),
+    ).toThrow(/refusing partial ECC Core install.*module:hooks-runtime/);
   });
 
   it("adds the framework-language module for current stack pack aliases", () => {
@@ -101,6 +134,7 @@ describe("ECC evidence component selection", () => {
       "module:hooks-runtime",
       "module:platform-configs",
       "module:framework-language",
+      "module:skill-unified-memory",
       "module:workflow-quality",
     ]);
   });
@@ -114,10 +148,10 @@ describe("ECC evidence component selection", () => {
     expect(antigravity).not.toContain("module:orchestration");
   });
 
-  it("covers all 23 modules selected by the pinned full profile for Claude", () => {
+  it("covers all 25 modules selected by the pinned full profile for Claude", () => {
     const full = eccEvidenceComponentIds("full", "claude", []);
     expect(full[0]).toBe("runtime:ecc-installer");
-    expect(full.filter((id) => id.startsWith("module:"))).toHaveLength(23);
+    expect(full.filter((id) => id.startsWith("module:"))).toHaveLength(25);
   });
 
   it("rejects a profile absent from the pinned profile snapshot", () => {
@@ -127,21 +161,25 @@ describe("ECC evidence component selection", () => {
   it("requests precise scoped evidence and omits modules unsupported by the target", () => {
     expect(eccEvidenceComponentIdsForSelection("codex", scopedSelection())).toEqual([
       "runtime:ecc-installer",
-      "module:agents-core",
-      "module:platform-configs",
+      "baseline:agents",
+      "baseline:platform",
       "skill:tdd-workflow",
       "agent:code-reviewer",
-      "module:framework-language",
+      "lang:typescript",
+      "agent:typescript-reviewer",
+      "module:platform-configs",
     ]);
     expect(eccEvidenceComponentIdsForSelection("claude", scopedSelection())).toEqual([
       "runtime:ecc-installer",
-      "module:rules-core",
-      "module:agents-core",
-      "module:platform-configs",
-      "module:commands-core",
+      "baseline:rules",
+      "baseline:agents",
+      "baseline:platform",
+      "baseline:commands",
       "skill:tdd-workflow",
       "agent:code-reviewer",
-      "module:framework-language",
+      "lang:typescript",
+      "agent:typescript-reviewer",
+      "module:platform-configs",
     ]);
   });
 
@@ -154,30 +192,75 @@ describe("ECC evidence component selection", () => {
     };
     expect(eccEvidenceComponentIdsForSelection("codex", selection)).toEqual([
       "runtime:ecc-installer",
-      "module:swift-apple",
+      "lang:swift",
     ]);
   });
 
-  it("projects exact leaf and containing-module receipts into installed records", () => {
+  it("requires exact logical receipts for installed records", () => {
     const records = installedEccComponentRegistrations("codex", scopedSelection(), [
-      authorization("module:agents-core"),
+      authorization("baseline:agents"),
+      authorization("baseline:platform"),
       authorization("module:platform-configs"),
-      authorization("module:workflow-quality"),
-      authorization("module:framework-language"),
+      authorization("skill:tdd-workflow"),
+      authorization("agent:code-reviewer"),
+      authorization("lang:typescript"),
+      authorization("agent:typescript-reviewer"),
     ]);
 
     expect(records.map((record) => [record.id, record.authorization.componentId])).toEqual([
-      ["baseline:agents", "module:agents-core"],
-      ["baseline:platform", "module:platform-configs"],
-      ["skill:tdd-workflow", "module:workflow-quality"],
-      ["agent:code-reviewer", "module:agents-core"],
-      ["lang:typescript", "module:framework-language"],
-      ["agent:typescript-reviewer", "module:agents-core"],
+      ["baseline:agents", "baseline:agents"],
+      ["baseline:platform", "baseline:platform"],
+      ["skill:tdd-workflow", "skill:tdd-workflow"],
+      ["agent:code-reviewer", "agent:code-reviewer"],
+      ["lang:typescript", "lang:typescript"],
+      ["agent:typescript-reviewer", "agent:typescript-reviewer"],
       ["mcp:sequential-thinking", "module:platform-configs"],
     ]);
   });
 
-  it("prefers exact leaf evidence over its containing module", () => {
+  it("retains additive logical receipts alongside exact Core module receipts", () => {
+    const selection: EccComponentSelection = {
+      scope: "scoped",
+      components: ["lang:swift", "skill:security-review"],
+      mcps: [],
+      recommendations: [],
+      moduleIds: eccProfileModuleIds("core"),
+    };
+    const receipts = eccEvidenceComponentIdsForSelection("codex", selection).map(authorization);
+
+    const records = installedEccComponentRegistrations("codex", selection, receipts);
+
+    expect(records.map((record) => record.id)).toEqual(
+      expect.arrayContaining([
+        "module:agents-core",
+        "module:platform-configs",
+        "module:skill-unified-memory",
+        "lang:swift",
+        "skill:security-review",
+      ]),
+    );
+  });
+
+  it("retains live logical receipts alongside an atomic Full module authorization", () => {
+    const selection: EccComponentSelection = {
+      scope: "full",
+      components: ["skill:security-review"],
+      mcps: [],
+      recommendations: [],
+    };
+    const receipts = eccEvidenceComponentIdsForSelection("codex", selection).map(authorization);
+
+    const records = installedEccComponentRegistrations("codex", selection, receipts);
+
+    expect(records.map((record) => record.id)).toEqual(
+      expect.arrayContaining(["module:security", "skill:security-review"]),
+    );
+    expect(
+      records.find((record) => record.id === "skill:security-review")?.authorization.componentId,
+    ).toBe("module:security");
+  });
+
+  it("uses exact leaf evidence instead of its containing module", () => {
     const selection: EccComponentSelection = {
       scope: "scoped",
       components: ["skill:tdd-workflow"],
@@ -191,7 +274,7 @@ describe("ECC evidence component selection", () => {
     expect(record?.authorization.componentId).toBe("skill:tdd-workflow");
   });
 
-  it("fails closed when no exact or containing-module receipt covers a component", () => {
+  it("fails closed when an exact logical receipt is missing", () => {
     expect(() =>
       installedEccComponentRegistrations("codex", scopedSelection(), [
         authorization("module:security"),

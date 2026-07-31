@@ -11,7 +11,6 @@ import {
   type PlanContext,
   plan,
   probe,
-  writeText,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import type { McpServer } from "../mcp/servers.js";
@@ -244,6 +243,37 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   "const [repoRoot, profileId, homeDir, mergeCodexConfig, mergeMcpConfig, configPath, sourceAgents, targetAgents, statePath, stateB64, specB64, mcpB64] = process.argv.slice(1);",
   'if (!repoRoot || !profileId || !homeDir || !mergeCodexConfig || !mergeMcpConfig || !configPath || !sourceAgents || !targetAgents || !statePath || !stateB64) { console.error("usage: codex-install-merge <repo-root> <profile> <home-dir> <merge-config> <merge-mcp> <config> <source-agents> <target-agents> <state-path> <state-b64>"); process.exit(1); }',
   'const normalize = (value) => String(value || "").replace(/\\\\/g, "/");',
+  "const declaredHome = path.resolve(homeDir);",
+  "const trustedHome = fs.realpathSync(declaredHome);",
+  "function assertInsideHome(target) {",
+  "  const declaredTarget = path.resolve(target);",
+  "  const declaredRelative = path.relative(declaredHome, declaredTarget);",
+  "  const trustedRelative = path.relative(trustedHome, declaredTarget);",
+  '  const isInside = (value) => Boolean(value) && value !== ".." && !value.startsWith(".." + path.sep) && !path.isAbsolute(value);',
+  "  const relative = isInside(declaredRelative) ? declaredRelative : trustedRelative;",
+  '  if (!isInside(relative)) throw new Error("refusing Codex destination outside trusted home: " + declaredTarget);',
+  "  return { absolute: path.join(trustedHome, relative), parts: relative.split(path.sep) };",
+  "}",
+  "function ensureSafeDirectory(directory) {",
+  "  const { parts } = assertInsideHome(directory);",
+  "  let cursor = trustedHome;",
+  "  for (const part of parts) {",
+  "    cursor = path.join(cursor, part);",
+  "    if (!fs.existsSync(cursor)) fs.mkdirSync(cursor);",
+  "    const stats = fs.lstatSync(cursor);",
+  '    if (stats.isSymbolicLink() || !stats.isDirectory()) throw new Error("refusing unsafe Codex destination directory: " + cursor);',
+  "  }",
+  "}",
+  "function prepareDestination(target) {",
+  "  const { absolute } = assertInsideHome(target);",
+  "  ensureSafeDirectory(path.dirname(absolute));",
+  "  let stats;",
+  '  try { stats = fs.lstatSync(absolute); } catch (error) { if (!error || error.code !== "ENOENT") throw error; }',
+  "  if (stats) {",
+  '    if (stats.isSymbolicLink() || !stats.isFile() || stats.nlink > 1) throw new Error("refusing unsafe existing Codex destination: " + absolute);',
+  "  }",
+  "  return absolute;",
+  "}",
   'const spec = specB64 ? JSON.parse(Buffer.from(specB64, "base64").toString("utf8")) : null;',
   'const mcpSpec = mcpB64 ? JSON.parse(Buffer.from(mcpB64, "base64").toString("utf8")) : null;',
   "function isSharedCodexOperation(operation) {",
@@ -254,6 +284,10 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   '  if (!spec || spec.scope === "full") return true;',
   "  if (new Set(spec.wholeModules).has(operation.moduleId)) return true;",
   "  const source = normalize(operation.sourceRelativePath);",
+  "  for (const sourceRoot of new Set(spec.sourceRoots || [])) {",
+  "    const root = normalize(sourceRoot);",
+  '    if (source === root || source.startsWith(root + "/")) return true;',
+  "  }",
   '  if (spec.agentScaffolding && (source === "AGENTS.md" || source === ".agents/plugins/marketplace.json")) return true;',
   "  const agent = /^agents\\/([^/]+)\\.md$/.exec(source);",
   "  if (agent && new Set(spec.agents).has(agent[1])) return true;",
@@ -273,13 +307,13 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   '    if (sourceStats.isSymbolicLink()) throw new Error("refusing symlink in verified ECC skill: " + path.join(skill, relative));',
   '    const destinationPath = path.join(homeDir, ".codex", "skills", skill, relative);',
   "    if (sourceStats.isDirectory()) {",
-  "      fs.mkdirSync(destinationPath, { recursive: true });",
+  "      ensureSafeDirectory(destinationPath);",
   "      for (const child of fs.readdirSync(sourcePath).sort()) copyTree(skill, path.join(relative, child));",
   "      return;",
   "    }",
   '    if (!sourceStats.isFile()) throw new Error("refusing non-regular file in verified ECC skill: " + path.join(skill, relative));',
   "    if (existingDestinations.has(destinationPath)) return;",
-  "    fs.mkdirSync(path.dirname(destinationPath), { recursive: true });",
+  "    prepareDestination(destinationPath);",
   "    fs.copyFileSync(sourcePath, destinationPath);",
   "    existingDestinations.add(destinationPath);",
   "    operations.push({",
@@ -305,7 +339,7 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   "  plan.statePreview.operations = operations;",
   "  for (const operation of operations) {",
   '    if (operation.kind !== "copy-file") { console.error("unsupported Codex managed operation: " + operation.kind); process.exit(1); }',
-  "    fs.mkdirSync(path.dirname(operation.destinationPath), { recursive: true });",
+  "    prepareDestination(operation.destinationPath);",
   "    fs.copyFileSync(operation.sourcePath, operation.destinationPath);",
   "  }",
   "  const skillOperations = materializeSelectedCodexSkills(",
@@ -313,6 +347,7 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   "  );",
   "  plan.operations = [...operations, ...skillOperations];",
   "  plan.statePreview.operations = plan.operations;",
+  "  prepareDestination(plan.installStatePath);",
   "  if (fs.existsSync(plan.installStatePath)) {",
   '    const prior = JSON.parse(fs.readFileSync(plan.installStatePath, "utf8"));',
   '    if (typeof prior.installedAt === "string" && prior.installedAt.length > 0) plan.statePreview.installedAt = prior.installedAt;',
@@ -336,6 +371,8 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   "  return next;",
   "}",
   "const mergeSteps = [[process.execPath, mergeCodexConfig, configPath]];",
+  "prepareDestination(configPath);",
+  'if (!fs.existsSync(configPath)) fs.writeFileSync(configPath, "", { flag: "wx" });',
   "if (!mcpSpec) mergeSteps.push([process.execPath, mergeMcpConfig, configPath]);",
   "for (const argv of mergeSteps) {",
   '  const result = child.spawnSync(argv[0], argv.slice(1), { stdio: "inherit" });',
@@ -347,6 +384,7 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   'const begin = "<!-- BEGIN " + marker + " (generated from affaan-m/ECC .codex/AGENTS.md) -->";',
   'const end = "<!-- END " + marker + " -->";',
   'const rendered = begin + "\\n\\n" + source + "\\n\\n" + end;',
+  "prepareDestination(targetAgents);",
   'const existing = fs.existsSync(targetAgents) ? fs.readFileSync(targetAgents, "utf8") : "";',
   "const usesCrlf = /\\r\\n/.test(existing);",
   'const normalized = existing.replace(/\\r\\n/g, "\\n");',
@@ -361,7 +399,6 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   "}",
   'if (!next.endsWith("\\n")) next += "\\n";',
   'if (usesCrlf) next = next.replace(/\\n/g, "\\r\\n");',
-  "fs.mkdirSync(path.dirname(targetAgents), { recursive: true });",
   'fs.writeFileSync(targetAgents, next, "utf8");',
   "function installScopedMcps() {",
   "  if (!mcpSpec) return [];",
@@ -402,7 +439,7 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   "const installedMcps = installScopedMcps();",
   'const state = JSON.parse(Buffer.from(stateB64, "base64").toString("utf8"));',
   "if (installedMcps.length > 0) state.codexToml.mcpServers = [...new Set([...(state.codexToml.mcpServers || []), ...installedMcps])].sort();",
-  "fs.mkdirSync(path.dirname(statePath), { recursive: true });",
+  "prepareDestination(statePath);",
   'fs.writeFileSync(statePath, JSON.stringify(state, null, 2) + "\\n", "utf8");',
   "installCodexManagedFiles();",
 ].join("\n");
@@ -432,10 +469,6 @@ export function codexEccActions(
     ? Buffer.from(JSON.stringify({ servers: scopedMcps }), "utf8").toString("base64")
     : undefined;
   return [
-    writeText(codexConfig, "", "seed Codex config.toml for ECC add-only merge", {
-      external: true,
-      once: true,
-    }),
     exec(
       `Install ECC Node dependencies for Codex merge helpers — npm ci --omit=dev --ignore-scripts in ${repo.posix} (lockfile-based, under --apply)`,
       execArgv(ctx.host.platform, [
@@ -529,7 +562,7 @@ function summaryDoc(clis: string[], inputs: EccInstallInputs, stack: RepoStack):
 async function eccPlan(ctx: PlanContext): Promise<Plan> {
   const { clis, detectFellBack } = await resolveTargets(ctx);
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-  const profile = String(ctx.options.profile ?? "core");
+  const profile = String(ctx.options.profile ?? "minimal");
   const languageSelection = eccLanguages(stack);
   const installVersion = normalizeEccInstallVersion(ctx.env.AIH_ECC_INSTALL_VERSION);
   const eccRef = (ctx.env.AIH_ECC_REF ?? "").trim() || undefined;
@@ -584,7 +617,7 @@ export const command: CommandSpec = {
     {
       flags: "--profile <profile>",
       description: "ECC install profile: minimal|core|full",
-      default: "core",
+      default: "minimal",
     },
     {
       flags: "--with <component>",

@@ -65,10 +65,8 @@ interface UpstreamTargetRegistry {
 }
 
 function destinationTemplate(path: string): string {
-  return path
-    .replace(HOME_FIXTURE, "<home>")
-    .replace(PROJECT_FIXTURE, "<project>")
-    .replace(/\\/g, "/");
+  const normalized = path.replace(/\\/g, "/");
+  return normalized.replace(HOME_FIXTURE, "<home>").replace(PROJECT_FIXTURE, "<project>");
 }
 
 function configDestinationTemplate(path: string): string {
@@ -234,7 +232,7 @@ export function generateEccInstallPreviewArtifact(
   operations.sort((left, right) => operationKey(left).localeCompare(operationKey(right)));
   return parseEccInstallPreview({
     schemaVersion: 1,
-    source: { owner: "samartomar", repo: "ECC", pinnedSha },
+    source: { owner: "affaan-m", repo: "ecc", pinnedSha },
     operations,
   });
 }

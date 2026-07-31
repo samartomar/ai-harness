@@ -134,6 +134,7 @@ export function spliceReusedComponent(prior: BaselineComponentEvidence): Baselin
       ...(finding.count !== undefined ? { count: finding.count } : {}),
       detail: finding.detail,
       ...(finding.fingerprint !== undefined ? { fingerprint: finding.fingerprint } : {}),
+      ...(finding.fingerprints !== undefined ? { fingerprints: [...finding.fingerprints] } : {}),
     })),
   };
 }

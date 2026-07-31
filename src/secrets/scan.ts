@@ -119,6 +119,7 @@ export const MCP_CONFIG_FILES: readonly string[] = [
   ".mcp.json",
   ".cursor/mcp.json",
   ".kiro/settings/mcp.json",
+  "mcp-configs/mcp-servers.json",
   ".vscode/mcp.json",
   "opencode.json",
 ];

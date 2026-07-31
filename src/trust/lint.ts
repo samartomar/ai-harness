@@ -5,7 +5,10 @@ import { contentFindingFingerprint } from "./fingerprint.js";
 
 type TrustLintCode = Extract<
   CheckCode,
-  "trust.hidden-unicode" | "trust.prompt-injection" | "trust.visible-unicode"
+  | "trust.external-egress"
+  | "trust.hidden-unicode"
+  | "trust.prompt-injection"
+  | "trust.visible-unicode"
 >;
 
 type UnicodeCategory =
@@ -336,6 +339,10 @@ function isDecorativeCodePoint(cp: number): boolean {
   );
 }
 
+function isVariationSelector(cp: number): boolean {
+  return (cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0xe0100 && cp <= 0xe01ef);
+}
+
 function hiddenCategory(cp: number): UnicodeCategory | undefined {
   if (ZERO_WIDTH.has(cp)) return "zero-width";
   if (BIDI_CONTROLS.has(cp)) return "bidi-control";
@@ -344,29 +351,135 @@ function hiddenCategory(cp: number): UnicodeCategory | undefined {
   return undefined;
 }
 
-function isAsciiWordCodeUnit(value: number): boolean {
-  return (
-    (value >= 0x30 && value <= 0x39) ||
-    (value >= 0x41 && value <= 0x5a) ||
-    (value >= 0x61 && value <= 0x7a) ||
-    value === 0x5f
-  );
-}
-
 function isHomoglyphConfusable(cp: number): boolean {
+  const fullwidthIdentifier =
+    (cp >= 0xff10 && cp <= 0xff19) ||
+    (cp >= 0xff21 && cp <= 0xff3a) ||
+    cp === 0xff3f ||
+    (cp >= 0xff41 && cp <= 0xff5a);
   return (
     EXTRA_CONFUSABLES.has(cp) ||
     (cp >= 0x0370 && cp <= 0x03ff) ||
     (cp >= 0x0400 && cp <= 0x052f) ||
     (cp >= 0x1d400 && cp <= 0x1d7ff) ||
-    (cp >= 0xff01 && cp <= 0xff5e)
+    fullwidthIdentifier
   );
 }
 
-function hasAsciiWordNeighbor(source: string, index: number, width: number): boolean {
-  const before = index > 0 ? source.charCodeAt(index - 1) : Number.NaN;
-  const after = index + width < source.length ? source.charCodeAt(index + width) : Number.NaN;
-  return isAsciiWordCodeUnit(before) || isAsciiWordCodeUnit(after);
+const IDENTIFIER_CONTINUE_BEFORE = /[\p{ID_Continue}$]*$/u;
+const IDENTIFIER_CONTINUE_AFTER = /^[\p{ID_Continue}$]*/u;
+
+function isMixedAsciiIdentifier(source: string, index: number, width: number): boolean {
+  const lineStart = source.lastIndexOf("\n", Math.max(0, index - 1)) + 1;
+  const lineEndIndex = source.indexOf("\n", index);
+  const lineEnd = lineEndIndex === -1 ? source.length : lineEndIndex;
+  const before = source.slice(lineStart, index).match(IDENTIFIER_CONTINUE_BEFORE)?.[0] ?? "";
+  const after = source.slice(index + width, lineEnd).match(IDENTIFIER_CONTINUE_AFTER)?.[0] ?? "";
+  return /[A-Za-z0-9]/.test(`${before}${after}`);
+}
+
+function sourceLineAt(source: string, index: number): string {
+  const start = source.lastIndexOf("\n", Math.max(0, index - 1)) + 1;
+  const end = source.indexOf("\n", index);
+  return source.slice(start, end === -1 ? source.length : end);
+}
+
+function isInsideMarkdownFence(source: string, index: number): boolean {
+  const prefix = source.slice(0, index);
+  const fences = prefix.match(/^\s*(?:```|~~~)/gm);
+  return (fences?.length ?? 0) % 2 === 1;
+}
+
+type LineLexicalContext = "code" | "comment" | "string";
+
+function lineLexicalContext(path: string, source: string, index: number): LineLexicalContext {
+  const start = source.lastIndexOf("\n", Math.max(0, index - 1)) + 1;
+  const before = source.slice(start, index);
+  const name = pathParts(path).at(-1) ?? "";
+  const hashComments =
+    name.endsWith(".py") ||
+    name.endsWith(".sh") ||
+    name.endsWith(".bash") ||
+    name.endsWith(".zsh") ||
+    name.endsWith(".ps1") ||
+    name.endsWith(".rb") ||
+    name.endsWith(".pl") ||
+    name.endsWith(".md");
+  let quote: "'" | '"' | "`" | undefined;
+  let escaped = false;
+  for (let offset = 0; offset < before.length; offset++) {
+    const ch = before[offset];
+    const next = before[offset + 1];
+    if (quote !== undefined) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === quote) {
+        quote = undefined;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === "`") {
+      quote = ch;
+      continue;
+    }
+    if (ch === "/" && next === "/") return "comment";
+    if (hashComments && ch === "#" && (offset === 0 || /\s/.test(before[offset - 1] ?? ""))) {
+      return "comment";
+    }
+  }
+  return quote === undefined ? "code" : "string";
+}
+
+function isProseOrCommentOccurrence(path: string, source: string, index: number): boolean {
+  const line = sourceLineAt(source, index).trimStart();
+  const name = pathParts(path).at(-1) ?? "";
+  if (isReviewableDocumentationPath(path)) return true;
+  if (name.endsWith(".md") && !isInsideMarkdownFence(source, index)) return true;
+  if (lineLexicalContext(path, source, index) === "comment") return true;
+  if (/^(?:\/\/|\/\*|\*|<!--|#(?![!]))/.test(line)) return true;
+  return false;
+}
+
+function isMachineParsedConfigKey(path: string, source: string, index: number): boolean {
+  const name = pathParts(path).at(-1) ?? "";
+  if (!name.endsWith(".json") && !name.endsWith(".jsonc")) return false;
+  const start = source.lastIndexOf("\n", Math.max(0, index - 1)) + 1;
+  const endIndex = source.indexOf("\n", index);
+  const end = endIndex === -1 ? source.length : endIndex;
+  const line = source.slice(start, end);
+  const relative = index - start;
+  const quoteStart = Math.max(line.lastIndexOf('"', relative), line.lastIndexOf("'", relative));
+  if (quoteStart < 0) return false;
+  const quote = line[quoteStart];
+  const quoteEnd = line.indexOf(quote ?? "", relative + 1);
+  return quoteEnd > relative && /^\s*:/.test(line.slice(quoteEnd + 1));
+}
+
+function isExecutableTokenOccurrence(path: string, source: string, index: number): boolean {
+  if (path.includes("#")) return true;
+  if (!isStrictUnicodeSurface(path) || isProseOrCommentOccurrence(path, source, index)) {
+    return false;
+  }
+  return (
+    lineLexicalContext(path, source, index) !== "string" ||
+    isMachineParsedConfigKey(path, source, index)
+  );
+}
+
+function isBenignVariationSelector(path: string, source: string, index: number): boolean {
+  if (!isVariationSelector(source.codePointAt(index) ?? 0)) return false;
+  // Variation selectors are expected when they render an emoji, including in
+  // quoted shell output and fenced Markdown prompt examples. They are only a
+  // hidden-token concern when detached from visible prose/emoji and embedded in
+  // a machine-parsed token.
+  const prefix = source.slice(0, index);
+  const previous = Array.from(prefix).at(-1);
+  return (
+    isProseOrCommentOccurrence(path, source, index) ||
+    (previous !== undefined && EXTENDED_PICTOGRAPHIC.test(previous))
+  );
 }
 
 function pathParts(path: string): string[] {
@@ -426,14 +539,18 @@ export function isStrictUnicodeSurface(path: string): boolean {
 }
 
 function isReviewableDocumentationPath(path: string): boolean {
-  if (isStrictUnicodeSurface(path)) return false;
   const parts = pathParts(path);
   const name = parts.at(-1) ?? "";
-  return (
-    parts.some((part) =>
-      ["docs", "doc", "design", "designs", "reference", "references"].includes(part),
-    ) || /(?:^|[-_.])(readme|design|reference|docs?)(?:[-_.]|$)/.test(name)
+  const inDocumentationTree = parts.some((part) =>
+    ["docs", "doc", "design", "designs", "reference", "references"].includes(part),
   );
+  if (
+    (inDocumentationTree && name.endsWith(".md")) ||
+    /(?:^|[-_.])(readme|design|reference|docs?)(?:[-_.]|$)/.test(name)
+  ) {
+    return true;
+  }
+  return !isStrictUnicodeSurface(path) && name.endsWith(".md");
 }
 
 function unicodeRiskForVisibleTypography(path: string): UnicodeRisk {
@@ -446,8 +563,8 @@ function unicodeRiskForVisibleTypography(path: string): UnicodeRisk {
   }
   return {
     category: "visible-typography",
-    code: "trust.hidden-unicode",
-    reason: "Unicode appears on instruction/config/executable surface",
+    code: "trust.visible-unicode",
+    reason: "ordinary visible Unicode on instruction/config/executable surface",
   };
 }
 
@@ -459,14 +576,18 @@ export function classifyUnicodeRisk(path: string, source: string): UnicodeRisk |
     if (cp === undefined) break;
     const width = cp > 0xffff ? 2 : 1;
     const hidden = hiddenCategory(cp);
-    if (hidden !== undefined) {
+    if (hidden !== undefined && !isBenignVariationSelector(path, source, index)) {
       return {
         category: hidden,
         code: "trust.hidden-unicode",
         reason: "invisible/control Unicode can smuggle model-readable instructions",
       };
     }
-    if (isHomoglyphConfusable(cp) && hasAsciiWordNeighbor(source, index, width)) {
+    if (
+      isHomoglyphConfusable(cp) &&
+      isMixedAsciiIdentifier(source, index, width) &&
+      isExecutableTokenOccurrence(path, source, index)
+    ) {
       return {
         category: "homoglyph-confusable",
         code: "trust.hidden-unicode",
@@ -497,7 +618,7 @@ function hiddenUnicodeFindings(path: string, source: string): TrustLintFinding[]
     if (cp === undefined) break;
     const width = cp > 0xffff ? 2 : 1;
     const hidden = hiddenCategory(cp);
-    if (hidden !== undefined) {
+    if (hidden !== undefined && !isBenignVariationSelector(path, source, index)) {
       const message = `character category: ${hidden}; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+${cp.toString(16).toUpperCase()}`;
       out.push(
         finding(
@@ -510,7 +631,11 @@ function hiddenUnicodeFindings(path: string, source: string): TrustLintFinding[]
           message,
         ),
       );
-    } else if (isHomoglyphConfusable(cp) && hasAsciiWordNeighbor(source, index, width)) {
+    } else if (
+      isHomoglyphConfusable(cp) &&
+      isMixedAsciiIdentifier(source, index, width) &&
+      isExecutableTokenOccurrence(path, source, index)
+    ) {
       const message = `character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+${cp.toString(16).toUpperCase()}`;
       out.push(
         finding(
@@ -550,25 +675,472 @@ function hiddenUnicodeFindings(path: string, source: string): TrustLintFinding[]
   return out;
 }
 
+const AUTHENTICATED_REQUEST_METHOD =
+  /(?:\b(?:GET|POST|PUT|PATCH|DELETE)\b|(?:-X|--request(?:=|\s+))(?:GET|POST|PUT|PATCH|DELETE)\b)/i;
+const AUTHENTICATED_BEARER_ENV = /\bAuthorization\s*:\s*Bearer\s+\$(?:\{)?[A-Z_][A-Z0-9_]*(?:\})?/i;
+const CURL_UPLOAD_ARGUMENT =
+  /(?:^|\s)(?:-d|-F|-T|--data(?:-raw|-binary|-urlencode)?|--form|--upload-file)(?:\s+|=)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s\\]+)/gim;
+const SENSITIVE_UPLOAD_ENV =
+  /\$(?:\{)?[A-Z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API_?KEY|PRIVATE_?KEY|CREDENTIAL)[A-Z0-9_]*(?:\})?/i;
+const SENSITIVE_UPLOAD_FILE =
+  /(?:@|[\\/])(?:\.env(?:\.[A-Za-z0-9_.-]+)?|\.ssh[\\/](?:id_[A-Za-z0-9_.-]+|authorized_keys)|[^/\\\s"'=]*(?:secret|credential|private[_-]?key)[^/\\\s"'=]*)/i;
+const AUTH_PARAMETER_ENV =
+  /\b(?:access_?token|api_?key|token|key)\s*=\s*\$(?:\{)?([A-Z][A-Z0-9_]*)(?:\})?/i;
+function shellWords(source: string): string[] | undefined {
+  if (/`|\$\(/.test(source)) return undefined;
+  const words: string[] = [];
+  let word = "";
+  let started = false;
+  let quote: "'" | '"' | undefined;
+  const push = (): void => {
+    if (!started) return;
+    words.push(word);
+    word = "";
+    started = false;
+  };
+  for (let index = 0; index < source.length; index++) {
+    const char = source[index] as string;
+    if (quote !== undefined) {
+      if (char === quote) {
+        quote = undefined;
+        continue;
+      }
+      if (quote === '"' && char === "\\") {
+        const next = source[index + 1];
+        if (next === undefined) return undefined;
+        word += next;
+        index++;
+        continue;
+      }
+      word += char;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      started = true;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      push();
+      continue;
+    }
+    if (char === "\\") {
+      const next = source[index + 1];
+      if (next === "\n") {
+        index++;
+        continue;
+      }
+      if (next === "\r" && source[index + 2] === "\n") {
+        index += 2;
+        continue;
+      }
+      if (next === undefined) return undefined;
+      word += next;
+      started = true;
+      index++;
+      continue;
+    }
+    if (/[;|&<>()#$*?[\]{}!~]/.test(char)) return undefined;
+    word += char;
+    started = true;
+  }
+  if (quote !== undefined) return undefined;
+  push();
+  return words;
+}
+
+function exactDuckDnsCurlPayloads(context: string): string[] | undefined {
+  const words = shellWords(context);
+  if (words?.[0]?.toLowerCase() !== "curl") return undefined;
+  const flags = new Set<string>();
+  const payloads: string[] = [];
+  let destinationSeen = false;
+  for (let index = 1; index < words.length; index++) {
+    const word = words[index] as string;
+    if (["--fail", "--silent", "--show-error", "--get"].includes(word)) {
+      flags.add(word);
+      continue;
+    }
+    if (word === "--max-time" || word.startsWith("--max-time=")) {
+      const value = word === "--max-time" ? words[++index] : word.slice("--max-time=".length);
+      if (value === undefined || !/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 60) {
+        return undefined;
+      }
+      flags.add("--max-time");
+      continue;
+    }
+    if (word === "--data-urlencode" || word.startsWith("--data-urlencode=")) {
+      const payload =
+        word === "--data-urlencode" ? words[++index] : word.slice("--data-urlencode=".length);
+      if (payload === undefined || payload.includes("@")) return undefined;
+      payloads.push(payload);
+      continue;
+    }
+    if (word === "https://www.duckdns.org/update" && !destinationSeen) {
+      destinationSeen = true;
+      continue;
+    }
+    return undefined;
+  }
+  if (
+    !destinationSeen ||
+    !["--fail", "--silent", "--show-error", "--get", "--max-time"].every((flag) => flags.has(flag))
+  ) {
+    return undefined;
+  }
+  const fields = new Map<string, string>();
+  for (const payload of payloads) {
+    const separator = payload.indexOf("=");
+    if (separator < 1) return undefined;
+    const key = payload.slice(0, separator);
+    if (!["domains", "token", "ip"].includes(key) || fields.has(key)) return undefined;
+    fields.set(key, payload.slice(separator + 1));
+  }
+  if (
+    fields.size !== 3 ||
+    fields.get("domains") !== "myhome" ||
+    fields.get("token") !== "${DUCKDNS_TOKEN}" ||
+    fields.get("ip") !== ""
+  ) {
+    return undefined;
+  }
+  return payloads;
+}
+
+/**
+ * Some APIs authenticate with a form/query token instead of an Authorization
+ * header (for example DuckDNS `token=${DUCKDNS_TOKEN}`). Treat that shape as
+ * reviewed authenticated egress only when the credential is service-specific
+ * and its prefix equals an exact destination hostname label. Generic secrets,
+ * mismatched destinations, sensitive files, and multiple sensitive payloads
+ * remain blocking.
+ */
+function isServiceBoundCredentialRequest(context: string): boolean {
+  const payloads = exactDuckDnsCurlPayloads(context);
+  if (payloads === undefined) return false;
+
+  const sensitiveVariables = [
+    ...context.matchAll(new RegExp(SENSITIVE_UPLOAD_ENV.source, "gi")),
+  ].map((match) => match[0].replace(/^\$\{?/, "").replace(/\}?$/, ""));
+  if (sensitiveVariables.length !== 1) return false;
+  const sensitiveVariable = sensitiveVariables[0] as string;
+
+  const authVariables: string[] = [];
+  for (const payload of payloads) {
+    const authVariable = AUTH_PARAMETER_ENV.exec(payload)?.[1];
+    if (authVariable !== undefined) authVariables.push(authVariable);
+  }
+  if (authVariables.length !== 1 || authVariables[0] !== sensitiveVariable) return false;
+
+  const service =
+    /^([A-Z][A-Z0-9_]*?)_(?:ACCESS_)?TOKEN$/.exec(sensitiveVariable)?.[1] ??
+    /^([A-Z][A-Z0-9_]*?)_API_?KEY$/.exec(sensitiveVariable)?.[1];
+  return service?.toUpperCase() === "DUCKDNS";
+}
+
+function externalRequestContext(
+  source: string,
+  match: RegExpExecArray,
+): { context: string; start: number } {
+  const start = source.lastIndexOf("\n", Math.max(0, match.index - 1)) + 1;
+  let lineEnd = source.indexOf("\n", match.index);
+  if (lineEnd === -1) lineEnd = source.length;
+  let end = lineEnd;
+  while (source.slice(start, end).trimEnd().endsWith("\\") && end < source.length) {
+    const nextEnd = source.indexOf("\n", end + 1);
+    end = nextEnd === -1 ? source.length : nextEnd;
+  }
+  return { context: source.slice(start, end), start };
+}
+
+function sensitiveUploadPayloadIndex(source: string, match: RegExpExecArray): number | undefined {
+  const { context, start } = externalRequestContext(source, match);
+  if (isServiceBoundCredentialRequest(context)) return undefined;
+  CURL_UPLOAD_ARGUMENT.lastIndex = 0;
+  for (
+    let payload = CURL_UPLOAD_ARGUMENT.exec(context);
+    payload !== null;
+    payload = CURL_UPLOAD_ARGUMENT.exec(context)
+  ) {
+    if (SENSITIVE_UPLOAD_ENV.test(payload[0]) || SENSITIVE_UPLOAD_FILE.test(payload[0])) {
+      return start + payload.index;
+    }
+    if (payload.index === CURL_UPLOAD_ARGUMENT.lastIndex) CURL_UPLOAD_ARGUMENT.lastIndex++;
+  }
+  return undefined;
+}
+
+function curlCommandContexts(source: string): Array<{ context: string; start: number }> {
+  const commands: Array<{ context: string; start: number }> = [];
+  const linePattern = /(^|\n)([^\n]*\bcurl\b[^\n]*)/gim;
+  for (let line = linePattern.exec(source); line !== null; line = linePattern.exec(source)) {
+    const start = line.index + (line[1]?.length ?? 0);
+    let end = start + (line[2]?.length ?? 0);
+    while (source.slice(start, end).trimEnd().endsWith("\\") && end < source.length) {
+      const nextEnd = source.indexOf("\n", end + 1);
+      end = nextEnd === -1 ? source.length : nextEnd;
+    }
+    commands.push({ context: source.slice(start, end), start });
+    if (line.index === linePattern.lastIndex) linePattern.lastIndex++;
+  }
+  return commands;
+}
+
+function sensitiveCurlUploadIndices(source: string): number[] {
+  const indices: number[] = [];
+  for (const { context, start } of curlCommandContexts(source)) {
+    if (isServiceBoundCredentialRequest(context)) continue;
+    CURL_UPLOAD_ARGUMENT.lastIndex = 0;
+    for (
+      let payload = CURL_UPLOAD_ARGUMENT.exec(context);
+      payload !== null;
+      payload = CURL_UPLOAD_ARGUMENT.exec(context)
+    ) {
+      if (SENSITIVE_UPLOAD_ENV.test(payload[0]) || SENSITIVE_UPLOAD_FILE.test(payload[0])) {
+        indices.push(start + payload.index);
+      }
+      if (payload.index === CURL_UPLOAD_ARGUMENT.lastIndex) CURL_UPLOAD_ARGUMENT.lastIndex++;
+    }
+  }
+  return [...new Set(indices)];
+}
+
+function authenticatedCurlRequests(
+  source: string,
+): Array<{ findingIndex: number; lineStart: number }> {
+  const requests: Array<{ findingIndex: number; lineStart: number }> = [];
+  for (const { context, start } of curlCommandContexts(source)) {
+    CURL_UPLOAD_ARGUMENT.lastIndex = 0;
+    const requestShaped =
+      AUTHENTICATED_REQUEST_METHOD.test(context) || CURL_UPLOAD_ARGUMENT.test(context);
+    if (
+      requestShaped &&
+      /https?:\/\//i.test(context) &&
+      (AUTHENTICATED_BEARER_ENV.test(context) || isServiceBoundCredentialRequest(context))
+    ) {
+      requests.push({
+        findingIndex: start + Math.max(0, context.search(/\bcurl\b/i)),
+        lineStart: start,
+      });
+    }
+  }
+  return requests;
+}
+
+/**
+ * The secret-exfil heuristic also matches ordinary `curl -X POST` examples
+ * because POST is an exfil verb and the command contains both a URL and an API
+ * token variable. Keep that behavior visible, but classify the narrow,
+ * authenticated-request shape as reviewed egress instead of credential theft.
+ * Literal credentials, imperative "send the key" text, and requests without an
+ * Authorization header remain prompt-injection danger findings.
+ */
+function isAuthenticatedExternalRequest(source: string, match: RegExpExecArray): boolean {
+  const { context } = externalRequestContext(source, match);
+  if (
+    /\b(?:send|upload|post|leak|steal|exfiltrate)\s+(?:the\s+)?(?:credential|secret|token|password|api[\s_-]?key)\b[\s\S]{0,160}https?:\/\//i.test(
+      match[0],
+    )
+  ) {
+    return false;
+  }
+  return (
+    /\bcurl\b/i.test(context) &&
+    (AUTHENTICATED_REQUEST_METHOD.test(context) ||
+      (() => {
+        CURL_UPLOAD_ARGUMENT.lastIndex = 0;
+        return CURL_UPLOAD_ARGUMENT.test(context);
+      })()) &&
+    /https?:\/\//i.test(context) &&
+    (AUTHENTICATED_BEARER_ENV.test(context) || isServiceBoundCredentialRequest(context))
+  );
+}
+
+const DIRECT_NEGATION_BEFORE_VERB =
+  /(?:\b(?:do(?:es)?\s+not|do(?:es)?n['’]?t|never|must\s+not|mustn['’]?t|may\s+not|might\s+not|shall\s+not|should\s+not|shouldn['’]?t|will\s+not|won['’]?t|cannot|can\s?not|can['’]?t)\s+)$/i;
+
+function isDirectlyNegatedExfil(source: string, match: RegExpExecArray): boolean {
+  const prefix = source.slice(Math.max(0, match.index - 120), match.index);
+  const negation = DIRECT_NEGATION_BEFORE_VERB.exec(prefix);
+  if (negation === null) return false;
+  const before = prefix[negation.index - 1];
+  if (before !== undefined && /["'`‘’“”]/.test(before)) return false;
+  const beforeNegation = prefix.slice(Math.max(0, negation.index - 40), negation.index);
+  if (
+    /\b(?:do(?:es)?\s+not|do(?:es)?n['’]?t|never|must\s+not|cannot|can['’]?t)\s*$/i.test(
+      beforeNegation,
+    )
+  ) {
+    return false;
+  }
+  return !/(?:[,.!?;:\u0085\u2028\u2029]|\bthen\b)\s*(?:then\s+)?(?:send|upload|post|leak|steal|exfiltrate)\b/i.test(
+    match[0],
+  );
+}
+
+function isHttpDeclarationOrLexicalExample(source: string, match: RegExpExecArray): boolean {
+  const line = sourceLineAt(source, match.index).trim();
+  return (
+    /(?:@\w+(?:\.\w+)*|\b\w+(?:\.\w+)+)\.(?:get|post|put|patch|delete)\s*\(/i.test(line) ||
+    /\b\w+(?:\.\w+)*\.upload\s*\(/i.test(line) ||
+    /\bfunction\s+(?:GET|POST|PUT|PATCH|DELETE)\s*\(/.test(line) ||
+    /^#{1,6}\s+.*\b(?:post|upload)\b/i.test(line) ||
+    /https?:\/\/upload\.[^\s"'`]+/i.test(line) ||
+    /^(?:post a tweet|upload coverage)\b/i.test(line)
+  );
+}
+
+const EXFIL_CREDENTIAL =
+  /\b(?:api[\s_-]?(?:keys?|tokens?)|access\s+tokens?|auth(?:entication)?\s+tokens?|bearer\s+tokens?|credentials?|passwords?|secrets?|tokens?|sensitive\s+data|confidential\s+data)\b/i;
+const EXFIL_DESTINATION = /\b(?:to|into|onto|via|at)\b|https?:\/\//i;
+const EXPLICIT_CREDENTIAL_EXFIL =
+  /\b(?:send|upload|post|leak|steal|exfiltrate)\s+(?:the\s+)?(?:credential|secret|token|password|api[\s_-]?key)\b[\s\S]{0,160}(?:\bto\b|\bvia\b|https?:\/\/)/i;
+
+function explicitCredentialExfilIndex(source: string, match: RegExpExecArray): number | undefined {
+  const matchedContext = source.slice(
+    match.index,
+    Math.min(source.length, match.index + match[0].length + 240),
+  );
+  const explicit = EXPLICIT_CREDENTIAL_EXFIL.exec(matchedContext);
+  return explicit === null ? undefined : match.index + explicit.index;
+}
+
+function isActualExfilIntent(_path: string, source: string, match: RegExpExecArray): boolean {
+  const matchedContext = source.slice(
+    match.index,
+    Math.min(source.length, match.index + match[0].length + 240),
+  );
+  if (EXPLICIT_CREDENTIAL_EXFIL.test(matchedContext)) {
+    return true;
+  }
+  const sourceLine = sourceLineAt(source, match.index);
+  if (/^\s*Attack example:/i.test(sourceLine) && /\bdemonstrates?\b/i.test(sourceLine)) {
+    return false;
+  }
+  if (isHttpDeclarationOrLexicalExample(source, match)) return false;
+  if (isDirectlyNegatedExfil(source, match) || isNegatedProhibitionExfil(source, match))
+    return false;
+  const line = sourceLineAt(source, match.index);
+  if (
+    /\b(?:credentials?|secrets?|tokens?|passwords?|data)\b/i.test(line) &&
+    (/\b(?:risk|guidance|prevent|avoid|hardcod|safeguard|protect)\b/i.test(line) ||
+      /^\s*(?:[-*]\s+)?do\s+not\s+follow\s+instructions?\s+that\s+ask\b/i.test(line)) &&
+    !/\b(?:send|upload|post)\s+(?:the\s+)?(?:credential|secret|token|password|api[\s_-]?key)\s+(?:to|into|via|at)\b/i.test(
+      line,
+    )
+  ) {
+    return false;
+  }
+  const verb = /^\w+/.exec(match[0])?.[0]?.toLowerCase() ?? "";
+  const around = source.slice(Math.max(0, match.index - 120), match.index + match[0].length + 220);
+  if (
+    /(?:[,.!?;:\u0085\u2028\u2029]|\bthen\b)\s*(?:then\s+)?(?:send|upload|post|leak|steal|exfiltrate)\b[\s\S]{0,120}(?:https?:\/\/|\b(?:tokens?|secrets?|credentials?|passwords?|api[\s_-]?(?:keys?|tokens?))\b)/i.test(
+      match[0],
+    )
+  ) {
+    return true;
+  }
+  if (verb === "exfiltrate" || verb === "steal") {
+    return EXFIL_CREDENTIAL.test(around) || EXFIL_DESTINATION.test(around);
+  }
+  if (EXFIL_CREDENTIAL.test(line) && EXFIL_DESTINATION.test(line)) return true;
+  if (
+    EXFIL_CREDENTIAL.test(line) &&
+    /^(?:\s*(?:[-*]\s+|\d+[.)]\s+)?)?(?:send|upload|post|leak)\b/i.test(line)
+  ) {
+    return true;
+  }
+  return (
+    /\b(?:send|upload|post)\s+(?:it|them|this|that)\b/i.test(line) &&
+    EXFIL_DESTINATION.test(line) &&
+    EXFIL_CREDENTIAL.test(around)
+  );
+}
+
 function promptInjectionFindings(path: string, source: string): TrustLintFinding[] {
   const out: TrustLintFinding[] = [];
   const occurrences = new Map<string, number>();
   const lines = indexSourceLines(source);
+  const sensitiveCurlIndices = new Set(sensitiveCurlUploadIndices(source));
+  const authenticatedRequests = authenticatedCurlRequests(source);
+  const authenticatedRequestLines = new Set(
+    authenticatedRequests.map((request) => request.lineStart),
+  );
+  for (const index of sensitiveCurlIndices) {
+    out.push(
+      finding(
+        occurrences,
+        "trust.prompt-injection",
+        "prompt-injection.secret-exfil",
+        path,
+        lines,
+        index,
+        "instruction may cause secret exfiltration",
+      ),
+    );
+  }
+  for (const request of authenticatedRequests) {
+    const contextMatch = {
+      index: request.lineStart,
+      0: sourceLineAt(source, request.lineStart),
+    } as RegExpExecArray;
+    if (sensitiveUploadPayloadIndex(source, contextMatch) !== undefined) continue;
+    out.push(
+      finding(
+        occurrences,
+        "trust.external-egress",
+        "external-egress.authenticated-request",
+        path,
+        lines,
+        request.findingIndex,
+        "authenticated external request uses an environment-provided credential; requires reviewed egress",
+      ),
+    );
+  }
   for (const rule of PROMPT_INJECTION_PATTERNS) {
     const re = new RegExp(rule.pattern.source, rule.pattern.flags);
     for (let match = re.exec(source); match !== null; match = re.exec(source)) {
+      const sensitivePayloadIndex =
+        rule.id === "prompt-injection.secret-exfil"
+          ? sensitiveUploadPayloadIndex(source, match)
+          : undefined;
+      if (sensitivePayloadIndex !== undefined && sensitiveCurlIndices.has(sensitivePayloadIndex)) {
+        if (match.index === re.lastIndex) re.lastIndex++;
+        continue;
+      }
+      const authenticatedEgress =
+        rule.id === "prompt-injection.secret-exfil" &&
+        sensitivePayloadIndex === undefined &&
+        isAuthenticatedExternalRequest(source, match);
+      if (
+        authenticatedEgress &&
+        authenticatedRequestLines.has(externalRequestContext(source, match).start)
+      ) {
+        if (match.index === re.lastIndex) re.lastIndex++;
+        continue;
+      }
       const isRecognizedGuardrail =
-        rule.id === "prompt-injection.secret-exfil" && isNegatedProhibitionExfil(source, match);
+        rule.id === "prompt-injection.secret-exfil" &&
+        sensitivePayloadIndex === undefined &&
+        !authenticatedEgress &&
+        !isActualExfilIntent(path, source, match);
       if (!isRecognizedGuardrail) {
+        const findingIndex =
+          sensitivePayloadIndex ??
+          (!authenticatedEgress && rule.id === "prompt-injection.secret-exfil"
+            ? (explicitCredentialExfilIndex(source, match) ?? match.index)
+            : match.index);
         out.push(
           finding(
             occurrences,
-            "trust.prompt-injection",
-            rule.id,
+            authenticatedEgress ? "trust.external-egress" : "trust.prompt-injection",
+            authenticatedEgress ? "external-egress.authenticated-request" : rule.id,
             path,
             lines,
-            match.index,
-            rule.message,
+            findingIndex,
+            authenticatedEgress
+              ? "authenticated external request uses an environment-provided credential; requires reviewed egress"
+              : rule.message,
           ),
         );
       }

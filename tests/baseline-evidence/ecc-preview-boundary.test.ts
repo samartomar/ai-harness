@@ -138,6 +138,51 @@ describe("ECC install preview execution boundary", () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
+  it("requires runtime evidence before executing the generator", () => {
+    const generate = vi.fn(() => artifact());
+    const missingRuntime = { ...evidence(root), components: [] };
+
+    expect(() =>
+      generateAuthorizedEccInstallPreview(
+        { eccRoot: root, catalog: catalog(), evidence: missingRuntime },
+        { generate },
+      ),
+    ).toThrow("evidence is required");
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("requires evidence bound to the active catalog pin", () => {
+    const generate = vi.fn(() => artifact());
+    const wrongOwner = { ...evidence(root), owner: "unexpected-owner" };
+
+    expect(() =>
+      generateAuthorizedEccInstallPreview(
+        { eccRoot: root, catalog: catalog(), evidence: wrongOwner },
+        { generate },
+      ),
+    ).toThrow("not bound to the active catalog pin");
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("requires evidence paths to match the catalog closure", () => {
+    const generate = vi.fn(() => artifact());
+    const mismatchedPaths = evidence(root);
+    const runtime = mismatchedPaths.components[0];
+    if (runtime === undefined) throw new Error("fixture runtime evidence missing");
+    mismatchedPaths.components[0] = {
+      ...runtime,
+      paths: [...RUNTIME_PATHS].reverse(),
+    };
+
+    expect(() =>
+      generateAuthorizedEccInstallPreview(
+        { eccRoot: root, catalog: catalog(), evidence: mismatchedPaths },
+        { generate },
+      ),
+    ).toThrow("evidence paths do not match");
+    expect(generate).not.toHaveBeenCalled();
+  });
+
   it("does not execute the generator when the vetted tree drifts", () => {
     const vetted = evidence(root);
     writeFileSync(resolve(root, "scripts/lib/helper.js"), "module.exports = { drift: true };\n");
@@ -170,6 +215,32 @@ describe("ECC install preview execution boundary", () => {
     expect(generate).toHaveBeenCalledOnce();
   });
 
+  it("rehashes the vetted tree before propagating a generator failure", () => {
+    const generate = vi.fn(() => {
+      throw new Error("fixture generation failed");
+    });
+
+    expect(() =>
+      generateAuthorizedEccInstallPreview(
+        { eccRoot: root, catalog: catalog(), evidence: evidence(root) },
+        { generate },
+      ),
+    ).toThrow("fixture generation failed");
+    expect(generate).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed when the generator returns no artifact", () => {
+    const generate = vi.fn(() => undefined as never);
+
+    expect(() =>
+      generateAuthorizedEccInstallPreview(
+        { eccRoot: root, catalog: catalog(), evidence: evidence(root) },
+        { generate },
+      ),
+    ).toThrow("returned no artifact");
+    expect(generate).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ['require("unvetted-package")', "unvetted package import"],
     ["require(process.env.MODULE)", "dynamic require"],
@@ -196,5 +267,29 @@ describe("ECC install preview execution boundary", () => {
     expect(() => assertPreviewGeneratorDependenciesCovered(root, RUNTIME_PATHS)).toThrow(
       "outside runtime:ecc-installer",
     );
+  });
+
+  it("rejects a missing relative dependency", () => {
+    writeFileSync(
+      resolve(root, "scripts/lib/install-executor.js"),
+      'module.exports = require("./missing.js");\n',
+    );
+
+    expect(() => assertPreviewGeneratorDependenciesCovered(root, RUNTIME_PATHS)).toThrow(
+      "could not resolve preview generator dependency",
+    );
+  });
+
+  it("accepts literal import and export dependencies within the vetted runtime paths", () => {
+    writeFileSync(
+      resolve(root, "scripts/lib/install-executor.js"),
+      [
+        'import "./helper.js";',
+        'export * from "./helper.js";',
+        'export { default as helper } from "./helper.js";',
+      ].join("\n"),
+    );
+
+    expect(() => assertPreviewGeneratorDependenciesCovered(root, RUNTIME_PATHS)).not.toThrow();
   });
 });

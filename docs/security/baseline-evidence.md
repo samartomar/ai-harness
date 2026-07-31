@@ -9,6 +9,30 @@ declared components. Each component binds an exact source commit, a fixed list
 of source-relative paths, and a deterministic tree hash to analyzer receipts and
 a `pass` or `blocked` verdict.
 
+## Occurrences, findings, policy, and profile verdicts
+
+These are separate records and must not be read as synonyms:
+
+1. a **raw scanner occurrence** preserves the analyzer, rule, message, location,
+   exact source-line value, and occurrence fingerprint, including duplicate rows;
+2. a **normalized AIH finding** applies native/contextual semantics and joins
+   duplicate raw rows without deleting them;
+3. a **policy disposition** assigns `BLOCK`, `REVIEW`, `WARN`, `INFORMATIONAL`, or
+   `SUPPRESSED` to one normalized finding;
+4. an **active-profile verdict** is calculated only over explicitly selected
+   component closure.
+
+`aih evidence vet-baseline` keeps the concise component lock and writes a separate
+occurrence sidecar. Its primary output reports source integrity, active profile,
+selected components, pass/review/block counts, genuine reasons with source line
+and value, the policy decision, and runtime restrictions.
+
+ECC Lean is `ecc-lean-v1`: the installer plus the exact nine-component Lean
+allowlist. Superpowers standard is `superpowers-standard-v1`: its plugin runtime
+and 14 shipped skills. Every other catalog component remains disclosed as
+`DISCOVERED / NOT SELECTED / NOT AUTHORIZED / NOT INSTALLED`; its findings cannot
+hold or block the active profile.
+
 ## Two evidence tiers
 
 The npm release ships `src/baseline-evidence/vendor-lock.json`. It is generated
@@ -61,7 +85,8 @@ Analyzer provisioning may fetch those exact inputs. Analyzer execution is
 no-egress: SkillSpector runs with Docker `--network none`, a read-only source
 mount and root filesystem, and `--no-llm`; Cisco runs with `uvx --offline
 --no-python-downloads --no-env-file`. The component scanner uses a path-preserving
-projection and does not follow symlinks when deciding whether Cisco is required.
+projection, includes one regular top-level repository license file for license
+inheritance, and does not follow symlinks when deciding whether Cisco is required.
 The canonical catalog persists that decision as `skillContent: true`, allowing
 the pure release gate to enforce Cisco receipts without a vendor checkout. Vet
 discovery and the catalog marker must agree: either a missing required receipt
@@ -75,6 +100,28 @@ Because the Docker scan is intentionally networkless, the exact SC4 “OSV.dev
 unreachable, using static fallback” note remains visible as incomplete advisory
 coverage; actual vulnerable-dependency findings remain blocking. No findings is
 not a claim that content is safe.
+
+### Source-wide Cisco execution
+
+Baseline vet inventories Cisco skill inputs once per exact source instead of
+rerunning the same skill directory through every overlapping component. The
+coordinator creates a deterministic manifest bound to the source commit, the
+complete scanner-input tree digest, every skill-directory digest, the Cisco
+version and full lock digest, the native policy identity, and the selected
+profile. Each worker re-hashes its assigned inputs before and after scanning.
+The evidence join refuses a missing, duplicate, unexpected, source-drifted, or
+digest-mismatched shard before component verdicts are calculated.
+Cisco's volatile SARIF invocation start/end timestamps are removed before
+evidence hashing; rules, findings, locations, fingerprints, and non-time
+invocation metadata remain intact.
+
+On one host, `AIH_CISCO_SCAN_CONCURRENCY` controls independent Cisco processes
+and defaults to four. A value from 1 through 64 is accepted; invalid values fall
+back to four. Multi-host execution must provide an explicit dispatcher for
+disjoint manifest shards. Requesting multiple shards without a dispatcher fails
+closed rather than launching several complete scans on one host. Joined SARIF is
+then filtered to each component's declared paths and evaluated in that
+component's native context; raw scanner evidence is retained.
 
 ## Install-time gate
 
@@ -126,13 +173,16 @@ is labeled first-party rather than Superpowers vendor evidence.
 | Exact `blocked` verdict | deny | deny | deny |
 | Invalid configured org bundle/signature | deny | deny | deny |
 
-Danger-class findings remain a floor at every posture. In particular,
-auto-execution hooks, prompt injection, hidden Unicode, and secret findings are
-not made installable by selecting `vibe` or adding org evidence for the same
-blocked bytes. Recognized negated-prohibition guardrail text is a true negative
-for the prompt-injection heuristic — it produces no finding at all rather than a
-downgraded one — so the danger floor continues to apply to every genuine
-prompt-injection finding.
+Danger-class findings remain a floor at every posture. In particular, unpinned
+executable dependencies, destructive automatic execution, genuine credential
+extraction, actual hidden/control Unicode, source drift, and unavailable
+mandatory coverage are not made installable by selecting `vibe` or adding org
+evidence for the same blocked bytes. Review-required findings may be accepted
+only by exact occurrence fingerprints against the reviewed source commit,
+component tree, analyzer versions, policy version, and profile. Any drift voids
+the decision. Legacy code-only acceptance does not match the corrected policy,
+and acceptance is never used to hide a detector bug. Visible Unicode and other
+warning findings remain disclosed without blocking.
 
 ## Vet and sign an org override
 

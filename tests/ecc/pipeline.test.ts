@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
 import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
+import { UPSTREAM_CORE_ECC_MODULE_IDS } from "../../src/ecc/components.js";
+import { eccEvidenceComponentIdsForSelection } from "../../src/ecc/evidence.js";
 import type { EccInstallPreviewArtifact } from "../../src/ecc/install-preview.js";
 import { buildEccRegistrationRequest, executeEccEvidencePipeline } from "../../src/ecc/pipeline.js";
 import {
@@ -138,8 +140,8 @@ function mixedCatalog() {
     pinnedSha: "a".repeat(40),
     components: [
       { id: "runtime:ecc-installer", paths: ["install.sh"] },
-      { id: "module:rules-core", paths: ["rules-core"] },
-      { id: "module:hooks-runtime", paths: ["hooks-runtime"] },
+      { id: "baseline:rules", paths: ["rules-core"] },
+      { id: "baseline:hooks", paths: ["hooks-runtime"] },
     ],
   });
 }
@@ -167,7 +169,7 @@ function mixedVendorLock() {
             findings: [],
           },
           {
-            id: "module:rules-core",
+            id: "baseline:rules",
             paths: ["rules-core"],
             treeSha256: hashComponentTree(sourceRoot, ["rules-core"]).treeSha256,
             verdict: "pass",
@@ -175,7 +177,7 @@ function mixedVendorLock() {
             findings: [],
           },
           {
-            id: "module:hooks-runtime",
+            id: "baseline:hooks",
             paths: ["hooks-runtime"],
             treeSha256: hashComponentTree(sourceRoot, ["hooks-runtime"]).treeSha256,
             verdict: "blocked",
@@ -194,6 +196,29 @@ function mixedVendorLock() {
 }
 
 describe("ECC baseline evidence pipeline", () => {
+  it("preserves the exact atomic upstream Core module closure across ledger reruns", () => {
+    const home = join(root, "home");
+    mkdirSync(home, { recursive: true });
+    const context = ctx(false);
+    context.options = { profile: "core" };
+    context.env = { HOME: home, USERPROFILE: home };
+    context.host = makeHostAdapter({ platform: "linux", run: context.run, env: context.env });
+
+    const first = buildEccRegistrationRequest(context, ["claude"]);
+    expect(first.project.moduleIds).toEqual(UPSTREAM_CORE_ECC_MODULE_IDS);
+    const sortedCoreModules = [...UPSTREAM_CORE_ECC_MODULE_IDS].sort();
+    expect(first.selection.moduleIds).toEqual(sortedCoreModules);
+    expect(eccEvidenceComponentIdsForSelection("claude", first.selection)).toEqual([
+      "runtime:ecc-installer",
+      ...sortedCoreModules.map((moduleId) => `module:${moduleId}`),
+    ]);
+
+    writeRegistrationLedgerAtomic(home, mergeRegistrationLedger(first.ledger, first.project, []));
+    const second = buildEccRegistrationRequest(context, ["claude"]);
+    expect(second.project.moduleIds).toEqual(UPSTREAM_CORE_ECC_MODULE_IDS);
+    expect(second.selection.moduleIds).toEqual(sortedCoreModules);
+  });
+
   it("applies the active managed-only allowlist to ECC MCP registration", () => {
     const home = join(root, "home");
     mkdirSync(home, { recursive: true });
@@ -213,6 +238,7 @@ describe("ECC baseline evidence pipeline", () => {
       }),
     );
     const context = ctx(false);
+    context.options = { profile: "core", with: ["mcp:code-review-graph"] };
     context.env = { HOME: home };
     context.host = makeHostAdapter({ platform: "linux", run: context.run, env: context.env });
 
@@ -230,12 +256,10 @@ describe("ECC baseline evidence pipeline", () => {
       }),
     );
     const unrestricted = buildEccRegistrationRequest(context, ["claude"]);
-    expect(unrestricted.project.mcps).toEqual(
-      expect.arrayContaining(["mcp:code-review-graph", "mcp:github", "mcp:sequential-thinking"]),
-    );
+    expect(unrestricted.project.mcps).toEqual(["mcp:code-review-graph"]);
   });
 
-  it("builds the additive machine union from scan, declarations, MCP defaults, and prior projects", () => {
+  it("builds the additive machine union from explicit declarations and prior projects", () => {
     const home = join(root, "home");
     const cpp = join(root, "cpp-project");
     mkdirSync(home, { recursive: true });
@@ -278,25 +302,17 @@ describe("ECC baseline evidence pipeline", () => {
 
     const request = buildEccRegistrationRequest(context, ["claude"]);
 
-    expect(request.project.components).toEqual(
-      expect.arrayContaining(["lang:typescript", "framework:react", "skill:security-review"]),
-    );
+    expect(request.project.components).toEqual(["skill:security-review"]);
     expect(request.project.components).not.toContain("lang:cpp");
     expect(request.selection.components).toEqual(
       expect.arrayContaining([
-        "lang:typescript",
-        "framework:react",
         "skill:security-review",
         "lang:cpp",
         "agent:cpp-reviewer",
         "agent:cpp-build-resolver",
       ]),
     );
-    expect(request.selection.mcps).toEqual([
-      "mcp:code-review-graph",
-      "mcp:github",
-      "mcp:sequential-thinking",
-    ]);
+    expect(request.selection.mcps).toEqual(["mcp:sequential-thinking"]);
     expect(request.selection.mcps).not.toContain("mcp:context7");
     expect(request.ledger.projects).toHaveLength(1);
   });
@@ -346,7 +362,7 @@ describe("ECC baseline evidence pipeline", () => {
       partialRequest,
       [
         expect.objectContaining({ componentId: "runtime:ecc-installer" }),
-        expect.objectContaining({ componentId: "module:rules-core" }),
+        expect.objectContaining({ componentId: "baseline:rules" }),
       ],
     );
     expect(result.docs).toEqual([expect.objectContaining({ describe: "install" })]);
@@ -356,7 +372,7 @@ describe("ECC baseline evidence pipeline", () => {
         expect.objectContaining({
           verdict: "skip",
           code: "baseline.evidence-blocked",
-          detail: expect.stringContaining("module:hooks-runtime"),
+          detail: expect.stringContaining("baseline:hooks"),
         }),
       ]),
     );
@@ -367,7 +383,7 @@ describe("ECC baseline evidence pipeline", () => {
           data: {
             held: [
               expect.objectContaining({
-                componentId: "module:hooks-runtime",
+                componentId: "baseline:hooks",
                 routeCode: "baseline.evidence-blocked",
                 codes: ["trust.auto-exec-hook"],
               }),

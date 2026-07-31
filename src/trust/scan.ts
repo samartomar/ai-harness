@@ -23,6 +23,14 @@ import {
   trustRuntimeAdvisory,
 } from "./detectors.js";
 import {
+  dispositionForTrustFinding,
+  type NormalizedTrustFinding,
+  normalizeTrustFindings,
+  type RawScannerOccurrence,
+  rawNativeOccurrences,
+  type TrustPolicyDisposition,
+} from "./evidence.js";
+import {
   assertTrustTreeSafe,
   cleanupQuarantine,
   readTrustFetchMetadata,
@@ -67,6 +75,8 @@ export interface ScanTrustTreeOptions {
   posture?: Posture;
   mcpPolicy?: OrgPolicy["mcp"];
   requiredDetectors?: readonly TrustDetectorName[];
+  detectors?: readonly TrustDetectorName[];
+  precomputedDetectorSarif?: Readonly<Partial<Record<TrustDetectorName, string>>>;
   run?: Runner;
   sandboxSmokeShape?: SandboxSmokeShape;
   skillspectorImageApprovals?: readonly SkillSpectorImageApproval[];
@@ -77,6 +87,12 @@ export interface ScanTrustTreeOptions {
 export interface TrustScanResult {
   checks: Check[];
   analyzersRun: string[];
+  /** One row per analyzer emission, before de-duplication or policy. */
+  rawOccurrences?: RawScannerOccurrence[];
+  /** AIH's contextual, de-duplicated interpretation of the raw rows. */
+  normalizedFindings?: NormalizedTrustFinding[];
+  /** Policy level for each normalized finding; never an install/profile verdict. */
+  policyDispositions?: TrustPolicyDisposition[];
 }
 
 interface IncomingMcpServerMap {
@@ -260,6 +276,8 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
   platform?: Platform;
   posture: Posture;
   requiredDetectors: readonly TrustDetectorName[];
+  detectors?: readonly TrustDetectorName[];
+  precomputedDetectorSarif?: Readonly<Partial<Record<TrustDetectorName, string>>>;
   run?: Runner;
   sandboxSmokeShape?: SandboxSmokeShape;
   skillspectorImageApprovals: readonly SkillSpectorImageApproval[];
@@ -273,6 +291,8 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
     platform: options.platform,
     posture: options.posture ?? "vibe",
     requiredDetectors: options.requiredDetectors ?? [],
+    detectors: options.detectors,
+    precomputedDetectorSarif: options.precomputedDetectorSarif,
     run: options.run,
     sandboxSmokeShape: options.sandboxSmokeShape,
     skillspectorImageApprovals: options.skillspectorImageApprovals ?? [],
@@ -387,12 +407,18 @@ function mcpServerConfigFingerprint(server: McpServer): string {
   return contentHash(normalized).slice(0, 8);
 }
 
-function descriptionChecks(rel: string, mapKey: string, name: string, rawServer: unknown): Check[] {
+function descriptionChecks(
+  rel: string,
+  mapKey: string,
+  name: string,
+  rawServer: unknown,
+  posture: Posture,
+): Check[] {
   if (!isRecord(rawServer) || typeof rawServer.description !== "string") return [];
   return scanTrustDocument(
     `${rel}#${mapKey}.${safeMcpName(name)}.description`,
     rawServer.description,
-  );
+  ).map((check) => gradeTrustCheck(check, posture));
 }
 
 function mcpPolicyChecks(
@@ -501,7 +527,7 @@ function incomingMcpChecks(
       for (const [name, rawServer] of Object.entries(map.servers).sort(([a], [b]) =>
         a.localeCompare(b),
       )) {
-        checks.push(...descriptionChecks(rel, map.key, name, rawServer));
+        checks.push(...descriptionChecks(rel, map.key, name, rawServer, posture));
         checks.push(
           ...skillsProviderEvidenceChecks(rel, map.key, name, classifyIncomingMcp(rawServer)),
         );
@@ -670,6 +696,8 @@ export async function scanTrustTreeWithAnalyzers(
     platform,
     posture,
     requiredDetectors,
+    detectors,
+    precomputedDetectorSarif,
     run,
     sandboxSmokeShape,
     skillspectorImageApprovals,
@@ -721,14 +749,18 @@ export async function scanTrustTreeWithAnalyzers(
         platform,
         posture,
         requiredDetectors,
+        detectors,
+        precomputedSarif: precomputedDetectorSarif,
         run,
         skillspectorImageApprovals,
         inventory,
+        corroboratedChecks: checks,
         progress,
       })
     : {
         checks: missingDetectorRuntimeChecks(requiredDetectors ?? [], posture),
         analyzersRun: [],
+        rawOccurrences: [],
       };
   const mcpDetectorResult =
     mcpConfigFiles.length > 0 && hasDetectorRuntime
@@ -737,12 +769,15 @@ export async function scanTrustTreeWithAnalyzers(
           platform,
           posture,
           requiredDetectors,
+          detectors,
+          precomputedSarif: precomputedDetectorSarif,
           run,
           skillspectorImageApprovals,
           inventory,
+          corroboratedChecks: checks,
           progress,
         })
-      : { checks: [], analyzersRun: [] };
+      : { checks: [], analyzersRun: [], rawOccurrences: [] };
   const effectiveSandboxSmokeShape =
     sandboxSmokeShape ?? sandboxSmokeShapeForTrustScan(safeRoot, inventory);
   const sandboxSmokeChecks = [
@@ -758,9 +793,18 @@ export async function scanTrustTreeWithAnalyzers(
     nonSmokeChecks.length > 0
       ? [...nonSmokeChecks, ...sandboxSmokeChecks]
       : [passCheck(safeRoot, trustDocumentCount), ...sandboxSmokeChecks];
+  const rawOccurrences = [
+    ...rawNativeOccurrences(safeRoot, checks),
+    ...detectorResult.rawOccurrences,
+    ...mcpDetectorResult.rawOccurrences,
+  ];
+  const normalizedFindings = normalizeTrustFindings(safeRoot, allChecks, rawOccurrences);
   return {
     analyzersRun: ["aih-native", ...detectorResult.analyzersRun, ...mcpDetectorResult.analyzersRun],
     checks: allChecks,
+    rawOccurrences,
+    normalizedFindings,
+    policyDispositions: normalizedFindings.map(dispositionForTrustFinding),
   };
 }
 

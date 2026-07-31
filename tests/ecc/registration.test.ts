@@ -90,6 +90,7 @@ describe("ECC registration ledger", () => {
     expect(machineRegistrationUnion(second)).toEqual({
       components: ["baseline:rules", "framework:react", "lang:cpp"],
       mcps: ["mcp:code-review-graph", "mcp:sequential-thinking"],
+      moduleIds: [],
     });
     expect(second.targets).toEqual([
       expect.objectContaining({

@@ -804,6 +804,11 @@ describe("workspace add acquisition plans", () => {
       JSON.stringify({ dependencies: { "@acme/tool": "1.0.0" } }),
       "utf8",
     );
+    writeFileSync(
+      join(sourceRoot, "package-lock.json"),
+      JSON.stringify({ lockfileVersion: 3, packages: {} }),
+      "utf8",
+    );
     const withoutScope: string[] = [];
 
     expect(

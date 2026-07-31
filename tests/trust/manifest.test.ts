@@ -26,52 +26,80 @@ function codes(): string[] {
 
 describe("scanTrustManifests", () => {
   it.each([
-    ["array Bash(*)", "skills/bash-array/SKILL.md", "---\nallowed-tools:\n  - Bash(*)\n---\n# X\n"],
-    ["flow Bash(*)", "agents/bash-flow.md", "---\nallowed-tools: [Read, Bash(*)]\n---\n# Agent\n"],
+    [
+      "array Bash(*)",
+      "skills/bash-array/SKILL.md",
+      "---\nallowed-tools:\n  - Bash(*)\n---\n# X\n",
+      "trust.permission-risk",
+    ],
+    [
+      "flow Bash(*)",
+      "agents/bash-flow.md",
+      "---\nallowed-tools: [Read, Bash(*)]\n---\n# Agent\n",
+      "trust.permission-risk",
+    ],
     [
       "quoted Bash(*)",
       "commands/bash-quoted.md",
       "---\nallowed-tools: ['Bash(*)']\n---\n# Command\n",
+      "trust.permission-risk",
     ],
     [
       "comma-scalar Bash(*)",
       "skills/bash-comma/SKILL.md",
       "---\nallowed-tools: Read, Write, Bash(*)\n---\n# X\n",
+      "trust.permission-risk",
     ],
     [
       "scoped Bash wildcard",
       "skills/bash-scoped/SKILL.md",
       "---\nallowed-tools: Bash(rm:*)\n---\n# X\n",
+      "trust.permission-risk",
     ],
     [
       "block scalar Bash(*)",
       "skills/bash-block/SKILL.md",
       "---\nallowed-tools: |\n  Read, Write, Bash(*)\n---\n# X\n",
+      "trust.permission-risk",
     ],
-    ["bare Bash", "skills/bash-bare/SKILL.md", "---\nallowed-tools: Bash\n---\n# X\n"],
+    [
+      "bare Bash",
+      "skills/bash-bare/SKILL.md",
+      "---\nallowed-tools: Bash\n---\n# X\n",
+      "trust.permission-risk",
+    ],
     [
       "permissionMode bypass",
       "skills/bypass/SKILL.md",
       "---\npermissionMode: bypassPermissions\n---\n# X\n",
+      "trust.auto-exec-hook",
     ],
     [
       "dangerously skip permissions",
       "skills/danger/SKILL.md",
       "---\ndangerously-skip-permissions: true\n---\n# X\n",
+      "trust.auto-exec-hook",
     ],
-    ["bang auto-run", "skills/bang/SKILL.md", "# Bang\n\n  !npm install\n"],
-    ["malformed frontmatter", "skills/bad-yaml/SKILL.md", "---\nallowed-tools: [\n---\n# X\n"],
-  ])("flags skill frontmatter/body auto-exec tell: %s", (_name, rel, content) => {
+    ["bang auto-run", "skills/bang/SKILL.md", "# Bang\n\n  !npm install\n", "trust.auto-exec-hook"],
+    [
+      "malformed frontmatter",
+      "skills/bad-yaml/SKILL.md",
+      "---\nallowed-tools: [\n---\n# X\n",
+      "trust.auto-exec-hook",
+    ],
+  ])("classifies skill frontmatter/body behavior: %s", (_name, rel, content, code) => {
     write(rel, content);
 
     const [check] = scanTrustManifests(dir);
 
     expect(check).toMatchObject({
       verdict: "fail",
-      code: "trust.auto-exec-hook",
+      code,
       location: expect.objectContaining({ uri: rel }),
     });
-    expect(check?.fingerprint).toMatch(/^trust-auto-exec-hook:.+:[0-9a-f]{64}$/);
+    expect(check?.fingerprint).toMatch(
+      /^trust-(?:auto-exec-hook|permission-risk):.+:[0-9a-f]{64}$/,
+    );
   });
 
   it("keeps auto-exec identity stable when only its display line shifts", () => {
@@ -153,11 +181,21 @@ describe("scanTrustManifests", () => {
     ["install", { scripts: { install: "node setup.js" } }],
     ["prepare", { scripts: { prepare: "node setup.js" } }],
     ["prepublish", { scripts: { prepublish: "node setup.js" } }],
-    ["prepublishOnly", { scripts: { prepublishOnly: "node setup.js" } }],
   ])("flags package lifecycle script %s", (_script, pkg) => {
     write("package.json", JSON.stringify(pkg));
 
     expect(codes()).toContain("trust.auto-exec-hook");
+  });
+
+  it("classifies prepublishOnly as reviewable publish permission, not install auto-exec", () => {
+    write("package.json", JSON.stringify({ scripts: { prepublishOnly: "npm run build" } }));
+
+    expect(scanTrustManifests(dir)).toEqual([
+      expect.objectContaining({
+        code: "trust.permission-risk",
+        detail: expect.stringContaining("prepublishOnly"),
+      }),
+    ]);
   });
 
   it("fails closed on unparseable package.json", () => {
@@ -186,6 +224,42 @@ describe("scanTrustManifests", () => {
 
   it("does not treat markdown image syntax as bang auto-run", () => {
     write("skills/image/SKILL.md", "# Image\n\n![diagram](./x.png)\n");
+
+    expect(scanTrustManifests(dir)).toEqual([]);
+  });
+
+  it.each(["!input.is_empty()", "!isOwner(user)"])(
+    "does not treat boolean negation as a bang auto-run directive: %s",
+    (expression) => {
+      write("skills/boolean/SKILL.md", `# Boolean example\n\n\`\`\`rust\n${expression}\n\`\`\`\n`);
+
+      expect(scanTrustManifests(dir)).toEqual([]);
+    },
+  );
+
+  it("does not treat a multiline boolean-negation continuation as bang auto-run", () => {
+    write(
+      "skills/quarkus-security/SKILL.md",
+      [
+        "# Quarkus authorization example",
+        "```java",
+        'if (!securityIdentity.hasRole("admin") &&',
+        "    !isOwner(id, securityIdentity.getPrincipal().getName())) {",
+        "  throw new ForbiddenException();",
+        "}",
+        "```",
+      ].join("\n"),
+    );
+
+    expect(scanTrustManifests(dir)).toEqual([]);
+  });
+
+  it("does not interpret translated documentation mirrors as executable manifests", () => {
+    write("docs/ja-JP/agents/go-reviewer.md", "---\nname: [invalid\n---\n# Translation\n");
+    write(
+      "docs/tr/skills/quarkus-security/SKILL.md",
+      "# Translation\n```java\n!isOwner(id, principal)) {\n```\n",
+    );
 
     expect(scanTrustManifests(dir)).toEqual([]);
   });

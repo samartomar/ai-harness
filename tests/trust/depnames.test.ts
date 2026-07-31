@@ -160,7 +160,7 @@ describe("scanTrustDependencyNames", () => {
     expect(scanTrustDependencyNames(dir, [])).toEqual([]);
   });
 
-  it("grades floating direct dependency specs by posture", () => {
+  it("blocks floating direct dependency specs at every posture", () => {
     lockfile();
     write(
       "package.json",
@@ -180,11 +180,8 @@ describe("scanTrustDependencyNames", () => {
       (check) => check.name === "trust.unpinned-dependency",
     );
     expect(vibe).toHaveLength(4);
-    expect(vibe.every((check) => check.verdict === "pass")).toBe(true);
-    expect(vibe.every((check) => check.code === undefined)).toBe(true);
-    expect(vibe.map((check) => check.detail ?? "").join("\n")).toContain(
-      "warning-only (vibe posture)",
-    );
+    expect(vibe.every((check) => check.verdict === "fail")).toBe(true);
+    expect(vibe.every((check) => check.code === "trust.unpinned-dependency")).toBe(true);
     expect(vibe.map((check) => check.detail ?? "").join("\n")).not.toContain("exact");
     expect(vibe.map((check) => check.detail ?? "").join("\n")).not.toContain("gitPinned");
 
@@ -193,6 +190,53 @@ describe("scanTrustDependencyNames", () => {
     );
     expect(enterprise).toHaveLength(4);
     expect(enterprise.every((check) => check.verdict === "fail")).toBe(true);
+  });
+
+  it("recognizes exact integrity-bound resolutions in a colocated npm lockfile", () => {
+    write(
+      ".opencode/package.json",
+      JSON.stringify({
+        peerDependencies: { "@opencode-ai/plugin": ">=1.0.0" },
+        devDependencies: {
+          "@opencode-ai/plugin": "^1.4.3",
+          "@types/node": "^20.0.0",
+          typescript: "^5.3.0",
+        },
+      }),
+    );
+    write(
+      ".opencode/package-lock.json",
+      JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          "": {
+            peerDependencies: { "@opencode-ai/plugin": ">=1.0.0" },
+            devDependencies: {
+              "@opencode-ai/plugin": "^1.4.3",
+              "@types/node": "^20.0.0",
+              typescript: "^5.3.0",
+            },
+          },
+          "node_modules/@opencode-ai/plugin": {
+            version: "1.4.3",
+            resolved: "https://registry.npmjs.org/@opencode-ai/plugin/-/plugin-1.4.3.tgz",
+            integrity: "sha512-plugin",
+          },
+          "node_modules/@types/node": {
+            version: "20.19.33",
+            resolved: "https://registry.npmjs.org/@types/node/-/node-20.19.33.tgz",
+            integrity: "sha512-node",
+          },
+          "node_modules/typescript": {
+            version: "5.9.3",
+            resolved: "https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz",
+            integrity: "sha512-typescript",
+          },
+        },
+      }),
+    );
+
+    expect(scanTrustDependencyNames(dir, [], "enterprise")).toEqual([]);
   });
 
   it("flags bare git shorthand unless it has a lowercase full SHA pin", () => {

@@ -19,11 +19,7 @@ import { lines } from "../internals/render.js";
 import { execArgv } from "../tools/install.js";
 import { codexMcpCollisionActions } from "./codex.js";
 import type { EccComponentSelection } from "./components.js";
-import {
-  authorizedEccSelection,
-  eccEvidenceComponentIdsForSelection,
-  installedEccComponentRegistrations,
-} from "./evidence.js";
+import { authorizedEccSelection, installedEccComponentRegistrations } from "./evidence.js";
 import { codexEccActions, type EccRepoCheckout, kiroEccActions } from "./index.js";
 import { eccActionsForCli, eccToolsDoc, isAihDirectEccInstallTarget } from "./install.js";
 import { eccMaterializationSpec } from "./materialize.js";
@@ -118,9 +114,14 @@ if (spec.scope !== "full") {
   const wholeModules = new Set(spec.wholeModules);
   const skills = new Set(spec.skills);
   const agents = new Set(spec.agents);
+  const sourceRoots = new Set(spec.sourceRoots || []);
   const keep = (operation) => {
     if (wholeModules.has(operation.moduleId)) return true;
     const source = normalize(operation.sourceRelativePath);
+    for (const sourceRoot of sourceRoots) {
+      const root = normalize(sourceRoot);
+      if (source === root || source.startsWith(root + "/")) return true;
+    }
     if (spec.agentScaffolding && (source === "AGENTS.md" || source === ".agents/plugins/marketplace.json")) return true;
     const agent = /^agents\/([^/]+)\.md$/.exec(source);
     if (agent && agents.has(agent[1])) return true;
@@ -258,40 +259,6 @@ function evidenceDigest(authorizations: readonly BaselineAuthorization[]): Actio
   );
 }
 
-/**
- * Name the by-design `full` -> `scoped` reduction the acceptance gate performs.
- *
- * Holding unauthorized modules back is correct, but the operator-visible symptom
- * is "I asked for full and got a reduced set" with no stated reason — the
- * downgrade was previously only inferable from the held-baseline-components
- * digest. State it directly at the point it happens. This reports; it does not
- * gate.
- */
-function profileDowngradeDigest(
-  requested: EccComponentSelection,
-  authorized: EccComponentSelection,
-  authorizations: readonly BaselineAuthorization[],
-  targets: readonly Cli[],
-): Action | undefined {
-  if (requested.scope !== "full" || authorized.scope !== "scoped") return undefined;
-  const authorizedIds = new Set(authorizations.map((authorization) => authorization.componentId));
-  const held = [
-    ...new Set(
-      targets.flatMap((target) =>
-        eccEvidenceComponentIdsForSelection(target, requested).filter(
-          (componentId) => !authorizedIds.has(componentId),
-        ),
-      ),
-    ),
-  ].sort();
-  if (held.length === 0) return undefined;
-  return digest(
-    "ECC profile scope",
-    `requested full profile reduced to scoped: ${held.length} module(s) held pending org acceptance — ${held.join(", ")}`,
-    { requestedScope: "full", authorizedScope: "scoped", held },
-  );
-}
-
 function requireAuthorizedRuntime(
   authorizations: readonly BaselineAuthorization[],
   componentId: "runtime:ecc-installer" | "runtime:ecc-kiro",
@@ -337,19 +304,21 @@ export function verifiedEccInstallPlan(
   const evidenceBoundTargets = request.clis.filter(
     (cli) => isAihDirectEccInstallTarget(cli) || cli === "codex",
   );
+  const needsNodeRuntime = evidenceBoundTargets.length > 0;
+  if (needsNodeRuntime) {
+    requireAuthorizedRuntime(authorizations, "runtime:ecc-installer");
+  }
   const selection =
     request.selection === undefined
       ? undefined
       : authorizedEccSelection(request.selection, authorizations, evidenceBoundTargets);
-  const downgrade =
-    request.selection === undefined || selection === undefined
-      ? undefined
-      : profileDowngradeDigest(request.selection, selection, authorizations, evidenceBoundTargets);
   if (
     selection !== undefined &&
+    selection.scope === "scoped" &&
     evidenceBoundTargets.length > 0 &&
     selection.components.length === 0 &&
-    selection.mcps.length === 0
+    selection.mcps.length === 0 &&
+    (selection.moduleIds?.length ?? 0) === 0
   ) {
     throw new AihError(
       "refusing ECC install because no selected ECC component has authorization",
@@ -360,11 +329,7 @@ export function verifiedEccInstallPlan(
   const post: Action[] = [];
   const steps: VerifiedInstallStep[] = [];
   const installedClis: Cli[] = [];
-  const needsNodeRuntime = request.clis.some(
-    (cli) => isAihDirectEccInstallTarget(cli) || cli === "codex",
-  );
   if (needsNodeRuntime) {
-    requireAuthorizedRuntime(authorizations, "runtime:ecc-installer");
     steps.push({
       argv: execArgv(ctx.host.platform, [
         "npm",
@@ -498,6 +463,5 @@ export function verifiedEccInstallPlan(
       `Every mutating ECC step above uses ${sourceRoot.replace(/\\/g, "/")} after component hash verification.`,
     ),
     evidenceDigest(authorizations),
-    ...(downgrade === undefined ? [] : [downgrade]),
   );
 }

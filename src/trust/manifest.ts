@@ -6,9 +6,10 @@ import { contentFindingFingerprint } from "./fingerprint.js";
 import type { TrustFileInventory } from "./inventory.js";
 import { collectFilesUnder } from "./scan.js";
 
-type AutoExecCode = Extract<CheckCode, "trust.auto-exec-hook">;
+type ManifestRiskCode = Extract<CheckCode, "trust.auto-exec-hook" | "trust.permission-risk">;
 
-const AUTO_EXEC_CODE: AutoExecCode = "trust.auto-exec-hook";
+const AUTO_EXEC_CODE: ManifestRiskCode = "trust.auto-exec-hook";
+const PERMISSION_RISK_CODE: ManifestRiskCode = "trust.permission-risk";
 const LIFECYCLE_SCRIPTS = new Set([
   "preinstall",
   "install",
@@ -36,14 +37,33 @@ function lineForNeedle(source: string, needle: string): number {
   return found >= 0 ? found + 1 : 1;
 }
 
-function autoExecCheck(path: string, line: number, _lineTextValue: string, detail: string): Check {
+function manifestRiskCheck(
+  code: ManifestRiskCode,
+  path: string,
+  line: number,
+  _lineTextValue: string,
+  detail: string,
+): Check {
   return {
-    name: AUTO_EXEC_CODE,
+    name: code,
     verdict: "fail",
     detail: `${path}:${line} — ${detail}`,
-    code: AUTO_EXEC_CODE,
+    code,
     location: { uri: path, startLine: line },
   };
+}
+
+function autoExecCheck(path: string, line: number, lineTextValue: string, detail: string): Check {
+  return manifestRiskCheck(AUTO_EXEC_CODE, path, line, lineTextValue, detail);
+}
+
+function permissionRiskCheck(
+  path: string,
+  line: number,
+  lineTextValue: string,
+  detail: string,
+): Check {
+  return manifestRiskCheck(PERMISSION_RISK_CODE, path, line, lineTextValue, detail);
 }
 
 function fingerprintManifestChecks(root: string, checks: readonly Check[]): Check[] {
@@ -52,6 +72,7 @@ function fingerprintManifestChecks(root: string, checks: readonly Check[]): Chec
     const path = check.location?.uri ?? "untrusted-document";
     const line = check.location?.startLine ?? 1;
     const ruleId = check.detail?.split(" — ").at(-1) ?? AUTO_EXEC_CODE;
+    const code = check.code === PERMISSION_RISK_CODE ? PERMISSION_RISK_CODE : AUTO_EXEC_CODE;
     let lineContent = "";
     try {
       lineContent = lineText(readFileSync(join(root, path), "utf8"), line);
@@ -59,13 +80,13 @@ function fingerprintManifestChecks(root: string, checks: readonly Check[]): Chec
       lineContent = path;
     }
     const content = `${lineContent}\0${ruleId}`;
-    const key = JSON.stringify([AUTO_EXEC_CODE, path, ruleId, content]);
+    const key = JSON.stringify([code, path, ruleId, content]);
     const occurrence = occurrences.get(key) ?? 0;
     occurrences.set(key, occurrence + 1);
     return {
       ...check,
       fingerprint: contentFindingFingerprint({
-        code: AUTO_EXEC_CODE,
+        code,
         path,
         ruleId,
         content,
@@ -90,6 +111,10 @@ function isFrontmatterDoc(rel: string): boolean {
 
 function isSkillDoc(rel: string): boolean {
   return rel.split("/").at(-1) === "SKILL.md";
+}
+
+function isDocumentationMirror(rel: string): boolean {
+  return rel.split("/")[0]?.toLowerCase() === "docs";
 }
 
 interface Frontmatter {
@@ -158,14 +183,25 @@ function scanFrontmatter(rel: string, source: string): Check[] {
   if (!isRecord(parsed)) return [];
 
   const checks: Check[] = [];
-  if (containsBashWildcard(parsed["allowed-tools"])) {
+  const allowedTools = parsed["allowed-tools"];
+  if (isRecord(allowedTools)) {
     const line = frontmatterLine(source, "allowed-tools", 1);
     checks.push(
       autoExecCheck(
         rel,
         line,
         lineText(source, line),
-        "frontmatter allowed-tools grants unsafe Bash access",
+        "frontmatter allowed-tools has an invalid map shape",
+      ),
+    );
+  } else if (containsBashWildcard(allowedTools)) {
+    const line = frontmatterLine(source, "allowed-tools", 1);
+    checks.push(
+      permissionRiskCheck(
+        rel,
+        line,
+        lineText(source, line),
+        "frontmatter allowed-tools grants broad Bash permission",
       ),
     );
   }
@@ -201,7 +237,8 @@ function scanBangAutoRun(rel: string, source: string): Check[] {
   const startLine = skillBodyStartLine(source);
   for (let index = startLine - 1; index < lines.length; index++) {
     const text = lines[index] ?? "";
-    if (/^\s*!(?!\[)/.test(text)) {
+    const booleanNegation = /^\s*![A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\(/.test(text);
+    if (/^\s*!(?!\[)/.test(text) && !booleanNegation) {
       checks.push(
         autoExecCheck(rel, index + 1, text, "SKILL body contains a leading ! auto-run line"),
       );
@@ -224,12 +261,19 @@ function scanPackageJson(rel: string, source: string): Check[] {
     if (!LIFECYCLE_SCRIPTS.has(name)) continue;
     const line = lineForNeedle(source, `"${name}"`);
     checks.push(
-      autoExecCheck(
-        rel,
-        line,
-        lineText(source, line),
-        `package.json lifecycle script ${name} can execute during install/publish`,
-      ),
+      name === "prepublishOnly"
+        ? permissionRiskCheck(
+            rel,
+            line,
+            lineText(source, line),
+            "package.json prepublishOnly script executes only during an explicit publish workflow",
+          )
+        : autoExecCheck(
+            rel,
+            line,
+            lineText(source, line),
+            `package.json lifecycle script ${name} can execute during install/publish`,
+          ),
     );
   }
   return checks;
@@ -289,6 +333,7 @@ export function scanTrustManifests(root: string, inventory?: TrustFileInventory)
     : collectFilesUnder(root, () => true);
   for (const abs of files) {
     const rel = toPosix(relative(root, abs));
+    if (isDocumentationMirror(rel)) continue;
     const name = basename(abs);
     const scansFrontmatter = isFrontmatterDoc(rel);
     const scansSkillBody = isSkillDoc(rel);

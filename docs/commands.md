@@ -432,12 +432,16 @@ The deep-scan ladder records detector availability in evidence via `analyzersRun
 SkillSpector, Cisco AI Defense skill-scanner, Semgrep, Snyk Agent Scan, AgentShield, and the
 MCP scanner when MCP config is present; detector findings escalate the verdict, while unavailable
 required detectors fail closed at enterprise posture.
-Generic detector findings in regular, non-executable `LICENSE*`, `COPYING*`, or `NOTICE*` files
-are reported as reviewable `trust.legal-text-detector-finding` checks. They warn-pass only at vibe;
-at team and enterprise posture,
-rerun `vet` with `--acknowledge <fingerprint[,fingerprint...]> --reason <reason>` to bind the
-review to the current full-file content. Known danger rules and findings on instruction, config,
-script, executable, or source-code surfaces remain blocking.
+Ordinary visible Unicode is retained as a non-blocking warning; actual bidi, zero-width, tag,
+unexpected control, and executable-token confusable characters remain blocking. Generic detector
+findings, documentation/code examples, and broad autonomy are warnings unless native/contextual
+evidence elevates them. External network/credential use and unresolved skill-license metadata are
+review-required: they warn below enterprise, while enterprise requires
+`--acknowledge <fingerprint[,fingerprint...]> --reason <reason>`. A top-level repository license
+resolves scanner-only missing-frontmatter findings. Generic results in regular non-executable
+`LICENSE*`, `COPYING*`, or `NOTICE*` files are visible warnings at every posture. Raw scanner
+occurrences remain available even when a duplicate is normalized or an obvious semantic
+contradiction is suppressed. Corroborated danger remains blocking and cannot be acknowledged.
 `card`/`approve --pin --owner` turn that evidence into committed governance: a skill card + a root
 **`aih-skills.lock.json`** entry, behind a fail-closed chain (pin → evidence → approvable verdict →
 license → owner; RED blocked, UNKNOWN refused, YELLOW = the manual review). The lockfile has

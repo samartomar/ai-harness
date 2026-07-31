@@ -1,3 +1,5 @@
+import { ECC_DECLARABLE_COMPONENT_IDS, ECC_EXPLICIT_MCP_COMPONENT_IDS } from "../ecc/components.js";
+import { eccComponentSourcePaths } from "../ecc/materialize.js";
 import { BASELINE_SOURCES } from "../internals/baseline-sources.js";
 import {
   type BaselineCatalog,
@@ -6,25 +8,6 @@ import {
 } from "./catalog.js";
 import eccModules from "./ecc-modules.json";
 import eccProfiles from "./ecc-profiles.json";
-
-const ECC_COMMON_AGENTS = [
-  "code-reviewer",
-  "code-architect",
-  "architect",
-  "planner",
-  "tdd-guide",
-  "build-error-resolver",
-  "refactor-cleaner",
-  "code-simplifier",
-  "silent-failure-hunter",
-  "pr-test-analyzer",
-  "doc-updater",
-  "docs-lookup",
-  "code-explorer",
-  "security-reviewer",
-  "type-design-analyzer",
-  "performance-optimizer",
-] as const;
 
 const SUPERPOWERS_SKILLS = [
   "brainstorming",
@@ -90,6 +73,9 @@ const ECC_COMPONENTS: readonly BaselineCatalogComponent[] = [
       "scripts/lib/cursor-agent-names.js",
       "scripts/lib/mcp-config.js",
       "scripts/lib/path-safety.js",
+      "scripts/codex/merge-codex-config.js",
+      "scripts/codex/merge-mcp-config.js",
+      ".codex/AGENTS.md",
     ],
   },
   { id: "runtime:ecc-kiro", paths: [".kiro"], skillContent: true },
@@ -98,19 +84,17 @@ const ECC_COMPONENTS: readonly BaselineCatalogComponent[] = [
     paths: module.paths,
     ...(moduleContainsSkillContent(module) ? { skillContent: true as const } : {}),
   })),
-  { id: "skill:tdd-workflow", paths: ["skills/tdd-workflow"], skillContent: true },
-  {
-    id: "skill:verification-loop",
-    paths: ["skills/verification-loop"],
-    skillContent: true,
-  },
-  { id: "skill:security-review", paths: ["skills/security-review"], skillContent: true },
-  { id: "skill:strategic-compact", paths: ["skills/strategic-compact"], skillContent: true },
-  { id: "skill:coding-standards", paths: ["skills/coding-standards"], skillContent: true },
-  ...ECC_COMMON_AGENTS.map((name) => ({
-    id: `agent:${name}`,
-    paths: [`agents/${name}.md`],
-  })),
+  ...[...ECC_DECLARABLE_COMPONENT_IDS, ...ECC_EXPLICIT_MCP_COMPONENT_IDS].map((id) => {
+    const paths = eccComponentSourcePaths(id);
+    return {
+      id,
+      paths,
+      ...(id === "baseline:platform" ||
+      paths.some((path) => path.includes("/skills/") || path.startsWith("skills/"))
+        ? { skillContent: true as const }
+        : {}),
+    };
+  }),
 ];
 
 const SUPERPOWERS_COMPONENTS: readonly BaselineCatalogComponent[] = [
@@ -166,7 +150,7 @@ export const BASELINE_CATALOG_IDS = ["ecc", "superpowers"] as const;
 export type BaselineCatalogId = (typeof BASELINE_CATALOG_IDS)[number];
 
 export function baselineCatalogById(id: string, pin?: string): BaselineCatalog {
-  if (id === "ecc") return catalog("ecc", "samartomar", "ECC", ECC_COMPONENTS, pin);
+  if (id === "ecc") return catalog("ecc", "affaan-m", "ecc", ECC_COMPONENTS, pin);
   if (id === "superpowers") {
     return catalog("superpowers", "obra", "Superpowers", SUPERPOWERS_COMPONENTS, pin);
   }

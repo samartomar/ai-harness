@@ -51,7 +51,9 @@ afterEach(() => {
 });
 
 function ctx(apply: boolean, head = "a".repeat(40)): PlanContext {
-  const run = fakeRunner((argv) => (argv[0] === "git" ? { stdout: `${head}\n` } : undefined));
+  const run = fakeRunner((argv) =>
+    argv[0] === "git" ? { stdout: argv.includes("status") ? "" : `${head}\n` } : undefined,
+  );
   return {
     root,
     contextDir: "ai-coding",
@@ -157,7 +159,7 @@ describe("baseline vet command plan", () => {
   it("previews a remote exact-pin fetch without network or report writes", async () => {
     const c = ctx(false);
     c.options = {
-      source: "samartomar/ECC",
+      source: "affaan-m/ecc",
       pin: "a".repeat(40),
       catalog: "ecc",
       components: "runtime:ecc-installer",

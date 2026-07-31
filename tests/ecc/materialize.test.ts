@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { EccComponentSelection } from "../../src/ecc/components.js";
-import { eccManifestOperationSelected, filterEccManifestPlan } from "../../src/ecc/materialize.js";
+import {
+  eccComponentSourcePaths,
+  eccManifestOperationSelected,
+  filterEccManifestPlan,
+} from "../../src/ecc/materialize.js";
 
 interface FixtureOperation {
   kind: "copy-file" | "merge-json" | "remove-tree";
@@ -25,7 +29,11 @@ function operation(
 function fixturePlan() {
   const operations: FixtureOperation[] = [
     operation("rules/common/testing.md", "rules-core"),
+    operation("rules/react/testing.md", "rules-core"),
+    operation("rules/web/security.md", "rules-core"),
+    operation("rules/typescript/testing.md", "rules-core"),
     operation("commands/tdd.md", "commands-core"),
+    operation("hooks/pretooluse.js", "hooks-runtime"),
     operation("mcp-configs/mcp-servers.json", "platform-configs"),
     operation("scaffolds/cursor/hooks.json", "platform-configs", "merge-json"),
     operation("AGENTS.md", "agents-core"),
@@ -40,6 +48,7 @@ function fixturePlan() {
     operation(".agents/skills/react-patterns/SKILL.md", "agents-core"),
     operation(".agents/skills/deep-research/SKILL.md", "agents-core"),
     operation("skills/tdd-workflow/SKILL.md", "workflow-quality"),
+    operation("skills/unified-memory/SKILL.md", "skill-unified-memory"),
     operation("skills/verification-loop/SKILL.md", "workflow-quality"),
     operation("skills/strategic-compact/SKILL.md", "workflow-quality"),
     operation("skills/coding-standards/SKILL.md", "framework-language"),
@@ -47,6 +56,7 @@ function fixturePlan() {
     operation("skills/react-testing/SKILL.md", "framework-language"),
     operation("skills/rust-patterns/SKILL.md", "framework-language"),
     operation("skills/deep-research/SKILL.md", "research-apis"),
+    operation("skills/swiftui-patterns/SKILL.md", "swift-apple"),
   ];
   return {
     operations: [...operations],
@@ -79,6 +89,56 @@ function scopedSelection(): EccComponentSelection {
 }
 
 describe("filterEccManifestPlan", () => {
+  it("materializes exactly the declared upstream Core modules", () => {
+    const selected: EccComponentSelection = {
+      scope: "scoped",
+      components: [],
+      mcps: [],
+      recommendations: [],
+      moduleIds: [
+        "rules-core",
+        "agents-core",
+        "commands-core",
+        "hooks-runtime",
+        "platform-configs",
+        "skill-unified-memory",
+        "workflow-quality",
+      ],
+    };
+    const filtered = fixturePlan();
+    filterEccManifestPlan(filtered, selected);
+
+    expect([...new Set(filtered.operations.map((entry) => entry.moduleId))].sort()).toEqual([
+      "agents-core",
+      "commands-core",
+      "hooks-runtime",
+      "platform-configs",
+      "rules-core",
+      "skill-unified-memory",
+      "workflow-quality",
+    ]);
+    expect(JSON.stringify(filtered)).not.toContain("framework-language");
+    expect(JSON.stringify(filtered)).not.toContain("research-apis");
+    expect(JSON.stringify(filtered)).not.toContain("swift-apple");
+  });
+
+  it("materializes real Swift skill content for the lang:swift selector", () => {
+    const selected: EccComponentSelection = {
+      scope: "scoped",
+      components: ["lang:swift"],
+      mcps: [],
+      recommendations: [],
+    };
+    const filtered = fixturePlan();
+    filterEccManifestPlan(filtered, selected);
+
+    expect(filtered.operations.map((entry) => entry.sourceRelativePath)).toContain(
+      "skills/swiftui-patterns/SKILL.md",
+    );
+    expect(eccComponentSourcePaths("lang:swift")).toContain("skills/swiftui-patterns");
+    expect(eccComponentSourcePaths("lang:swift")).not.toContain("rules/swift");
+  });
+
   it("exposes the same scoped operation predicate for prune reconciliation", () => {
     const selected = scopedSelection();
     expect(
@@ -114,6 +174,8 @@ describe("filterEccManifestPlan", () => {
 
     const expected = [
       "rules/common/testing.md",
+      "rules/react/testing.md",
+      "rules/web/security.md",
       "commands/tdd.md",
       "mcp-configs/mcp-servers.json",
       "scaffolds/cursor/hooks.json",
@@ -138,6 +200,7 @@ describe("filterEccManifestPlan", () => {
     expect(JSON.stringify(plan)).not.toContain("mle-reviewer");
     expect(JSON.stringify(plan)).not.toContain("rust-patterns");
     expect(JSON.stringify(plan)).not.toContain("deep-research");
+    expect(JSON.stringify(plan)).not.toContain("rules/typescript");
   });
 
   it("is idempotent and keeps operations/state preview in lockstep", () => {
@@ -177,5 +240,27 @@ describe("filterEccManifestPlan", () => {
     expect(() => filterEccManifestPlan(plan, scopedSelection())).toThrow(
       /operation\/state preview drift/,
     );
+  });
+
+  it("maps logical selectors to exact source closures", () => {
+    expect(eccComponentSourcePaths("baseline:agents")).toEqual([
+      ".agents/plugins/marketplace.json",
+      "AGENTS.md",
+    ]);
+    expect(eccComponentSourcePaths("agent:code-reviewer")).toEqual(["agents/code-reviewer.md"]);
+    expect(eccComponentSourcePaths("baseline:rules")).toEqual(["rules/common", "rules/README.md"]);
+    expect(eccComponentSourcePaths("framework:react")).toEqual([
+      ".agents/skills/frontend-patterns",
+      "rules/react",
+      "rules/web",
+      "skills/frontend-patterns",
+      "skills/react-patterns",
+      "skills/react-performance",
+      "skills/react-testing",
+    ]);
+    expect(eccComponentSourcePaths("capability:documents")).toEqual([
+      "skills/nutrient-document-processing",
+      "skills/visa-doc-translate",
+    ]);
   });
 });

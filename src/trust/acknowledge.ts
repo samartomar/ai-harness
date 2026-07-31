@@ -1,16 +1,19 @@
 import { AihError } from "../errors.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
-import { TRUST_ORIGIN_CODES } from "./grade.js";
+import { TRUST_REVIEW_CODES } from "./grade.js";
 
 export const TRUST_DANGER_CODES = new Set<string>([
   "trust.auto-exec-hook",
   "trust.malicious-code",
   "trust.prompt-injection",
   "trust.hidden-unicode",
+  "trust.unpinned-dependency",
   "trust.dependency-confusion",
   "trust.typosquat",
   "trust.source-changed",
+  "trust.source-drift",
+  "trust.unsigned-source",
 ]);
 
 export interface AcknowledgementResult {
@@ -54,10 +57,10 @@ function isDanger(check: Check): boolean {
   return check.code !== undefined && TRUST_DANGER_CODES.has(check.code);
 }
 
-function isAcknowledgeableOrigin(check: Check): boolean {
+function isAcknowledgeableReview(check: Check): boolean {
   return (
     check.code !== undefined &&
-    (TRUST_ORIGIN_CODES.has(check.code) || check.code === "mcp.policy-denied")
+    (TRUST_REVIEW_CODES.has(check.code) || check.code === "mcp.policy-denied")
   );
 }
 
@@ -91,15 +94,18 @@ export function applyTrustAcknowledgements(
 
   const danger = selected.find(isDanger);
   if (danger !== undefined) throw refusal(danger);
-  const notOrigin = selected.find((check) => !isAcknowledgeableOrigin(check));
-  if (notOrigin !== undefined) {
+  const notReview = selected.find((check) => !isAcknowledgeableReview(check));
+  if (notReview !== undefined) {
     throw new AihError(
-      `cannot acknowledge ${notOrigin.code ?? notOrigin.name}; only trust-origin findings are overridable`,
+      `cannot acknowledge ${notReview.code ?? notReview.name}; only review-required findings are overridable`,
       "AIH_TRUST",
     );
   }
   if (selected.length > 0 && acknowledgeReason(ctx) === undefined) {
-    throw new AihError("--acknowledge requires --reason for trust-origin overrides", "AIH_TRUST");
+    throw new AihError(
+      "--acknowledge requires --reason for review-required overrides",
+      "AIH_TRUST",
+    );
   }
 
   const selectedFingerprints = new Set(
@@ -131,10 +137,10 @@ export function acknowledgeCommandHint(
 ): string | undefined {
   const fingerprints = checks
     .filter((check) => check.verdict === "fail" && check.fingerprint !== undefined)
-    .filter((check) => !isDanger(check) && isAcknowledgeableOrigin(check))
+    .filter((check) => !isDanger(check) && isAcknowledgeableReview(check))
     .map((check) => check.fingerprint as string);
   if (fingerprints.length === 0) return undefined;
-  return `To acknowledge the current trust-origin finding(s), rerun: aih ${command} ${quoteArg(
+  return `To acknowledge the current review-required finding(s), rerun: aih ${command} ${quoteArg(
     source,
   )} --acknowledge ${quoteArg(fingerprints.join(","))} --reason ${quoteArg("<reason>")}`;
 }

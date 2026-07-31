@@ -126,25 +126,20 @@ function put(path: string, contents: string): void {
 }
 
 describe("verifiedEccInstallPlan", () => {
-  it("names the full-to-scoped downgrade when acceptance authorizes only a subset", () => {
+  it("refuses a partial Full install before any mutation", () => {
     const requested: EccComponentSelection = { ...selection(), scope: "full" };
     const everything = eccEvidenceComponentIdsForSelection("claude", requested);
     const withheld = "module:rules-core";
     expect(everything).toContain(withheld);
 
-    const built = verifiedEccInstallPlan(
-      ctx(),
-      join(root, "quarantine", "tree"),
-      { clis: ["claude"], profile: "full", packs: [], selection: requested },
-      everything.filter((id) => id !== withheld).map(authorization),
-    );
-
-    const text = built.actions
-      .filter((action) => action.kind === "digest")
-      .map((action) => (action as { text: string }).text)
-      .join("\n");
-    expect(text).toMatch(/requested full profile reduced to scoped/);
-    expect(text).toContain(withheld);
+    expect(() =>
+      verifiedEccInstallPlan(
+        ctx(),
+        join(root, "quarantine", "tree"),
+        { clis: ["claude"], profile: "full", packs: [], selection: requested },
+        everything.filter((id) => id !== withheld).map(authorization),
+      ),
+    ).toThrow(new RegExp(`refusing partial ECC Full install.*${withheld}`));
   });
 
   it("does not report a downgrade when the full profile is fully authorized", () => {
@@ -180,7 +175,7 @@ describe("verifiedEccInstallPlan", () => {
             recommendations: [],
           },
         },
-        [authorization("module:rules-core")],
+        [authorization("baseline:rules")],
       ),
     ).toThrow(/unauthorized ECC runtime runtime:ecc-installer/);
   });
@@ -240,11 +235,11 @@ describe("verifiedEccInstallPlan", () => {
         },
         ledger: emptyRegistrationLedger(),
       },
-      [authorization(), authorization("module:rules-core")],
+      [authorization(), authorization("baseline:rules")],
     );
     const steps = driverSteps(built.actions);
     const materializationPayload = JSON.parse(steps[1]?.input ?? "null") as {
-      spec: { wholeModules: string[] };
+      spec: { wholeModules: string[]; sourceRoots: string[] };
     };
     const ledgerPayload = JSON.parse(steps.at(-1)?.input ?? "null") as { contents: string };
     const ledger = JSON.parse(ledgerPayload.contents) as {
@@ -252,7 +247,8 @@ describe("verifiedEccInstallPlan", () => {
       targets: Array<{ components: Array<{ id: string }> }>;
     };
 
-    expect(materializationPayload.spec.wholeModules).toEqual(["rules-core"]);
+    expect(materializationPayload.spec.wholeModules).toEqual([]);
+    expect(materializationPayload.spec.sourceRoots).toEqual(["rules/README.md", "rules/common"]);
     expect(ledger.projects[0]?.components).toEqual(["baseline:hooks", "baseline:rules"]);
     expect(ledger.targets[0]?.components.map((component) => component.id)).toEqual([
       "baseline:rules",
@@ -360,11 +356,8 @@ describe("verifiedEccInstallPlan", () => {
       "chrome-devtools,context7,exa,memory,playwright,supabase",
     );
     expect(steps[1]?.argv[2]).toContain("if (!mcpSpec)");
-    expect(
-      plan.actions.some(
-        (action) => action.kind === "write" && action.describe.includes("Codex config.toml"),
-      ),
-    ).toBe(true);
+    expect(steps[1]?.argv[2]).toContain("prepareDestination(configPath)");
+    expect(steps[1]?.argv[2]).toContain('flag: "wx"');
   });
 
   // #506 F1: the enterprise rollout observed the Codex merge receiving the core
@@ -734,7 +727,7 @@ describe("verifiedEccInstallPlan", () => {
         },
         ledger: emptyRegistrationLedger(),
       },
-      [authorization(), authorization("module:rules-core")],
+      [authorization(), authorization("baseline:rules")],
     );
     const driver = execs(built.actions).find((action) =>
       action.describe.includes("verified ECC checkout"),

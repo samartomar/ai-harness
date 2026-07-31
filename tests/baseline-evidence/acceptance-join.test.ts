@@ -7,15 +7,17 @@ import {
   type AcceptanceDecision,
   acceptanceRecordSha256,
   acceptanceResolutionMismatches,
+  CORRECTED_ACCEPTANCE_POLICY_VERSION,
   matchComponentAcceptance,
+  matchCorrectedComponentAcceptance,
   readAcceptanceDecisions,
-  UNWAIVABLE_FINDING_CODES,
 } from "../../src/baseline-evidence/acceptance.js";
 import artifactJson from "../../src/baseline-evidence/acceptance-decisions.json";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
 import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
 import { verifyBaselineComponents } from "../../src/baseline-evidence/verify.js";
+import { TRUST_POLICY_VERSION } from "../../src/trust/evidence.js";
 
 // W4 maintainer ruling (e): the accepted-with-conditions policy join. Raw vet
 // verdicts are never rewritten; a blocked component is admitted only through
@@ -34,7 +36,7 @@ afterEach(() => {
 });
 
 const PIN = "a".repeat(40);
-const CODES = ["trust.hidden-unicode", "trust.prompt-injection"];
+const CODES = ["trust.external-egress", "trust.permission-risk"];
 
 function subtreeHash(): string {
   return hashComponentTree(root, ["skills/risky"]).treeSha256;
@@ -66,7 +68,12 @@ function blockedLock(hash = subtreeHash()) {
             treeSha256: hash,
             verdict: "blocked",
             analyzers: [{ name: "aih-native", version: "2.7.0" }],
-            findings: CODES.map((code) => ({ code, detail: `${code} present` })),
+            findings: CODES.map((code) => ({
+              code,
+              detail: `${code} present`,
+              fingerprint: `finding:${code}`,
+              fingerprints: [`finding:${code}`],
+            })),
           },
         ],
       },
@@ -98,6 +105,9 @@ function signedDecision(over: Partial<AcceptanceDecision> = {}): AcceptanceDecis
     recordSha256: "0".repeat(64),
     ...over,
   };
+  if (base.policyVersion === CORRECTED_ACCEPTANCE_POLICY_VERSION) {
+    base.trustPolicyVersion = TRUST_POLICY_VERSION;
+  }
   return { ...base, recordSha256: acceptanceRecordSha256(base) };
 }
 
@@ -110,6 +120,12 @@ function verify(decisions: AcceptanceDecision[], lock = blockedLock()) {
     vendorLock: lock,
     vendorLockSha256: "c".repeat(64),
     acceptanceDecisions: decisions,
+    acceptanceTuple: {
+      framework: "ecc",
+      profile: "ecc-lean-v1",
+      host: "claude",
+      adapter: "ecc-lean",
+    },
   });
 }
 
@@ -148,17 +164,12 @@ describe("accepted-with-conditions policy join (W4 ruling (e))", () => {
     expect(result.held.map((entry) => entry.componentId)).toEqual(["skill:risky"]);
   });
 
-  it("admits a blocked component through an exact signed acceptance, preserving both facts", () => {
+  it("does not let a legacy code-only acceptance authorize corrected-policy evidence", () => {
     const result = verify([signedDecision()]);
-    expect(result.held).toHaveLength(0);
-    const authorization = result.authorizations[0];
-    expect(authorization?.effective).toBe("accepted-with-conditions");
-    expect(authorization?.acceptance?.decisionId).toBe("test-decision-1");
+    expect(result.authorizations).toHaveLength(0);
+    expect(result.held.map((entry) => entry.componentId)).toEqual(["skill:risky"]);
     const check = result.checks.find((entry) => entry.name.includes("skill:risky"));
-    expect(check?.verdict).toBe("pass");
-    expect(check?.detail).toContain("BLOCKED");
-    expect(check?.detail).toContain("accepted-with-conditions");
-    expect(check?.detail).not.toMatch(/vet pass\b/i);
+    expect(check?.verdict).toBe("fail");
   });
 
   it("holds on a commit/pin mismatch", () => {
@@ -173,9 +184,11 @@ describe("accepted-with-conditions policy join (W4 ruling (e))", () => {
 
   it("holds on a component tree-digest mismatch (content-pinned)", () => {
     const decision = signedDecision();
+    const [component] = decision.components;
+    if (component === undefined) throw new Error("expected an acceptance component");
     const tampered = {
       ...decision,
-      components: [{ ...decision.components[0]!, treeSha256: "d".repeat(64) }],
+      components: [{ ...component, treeSha256: "d".repeat(64) }],
     };
     const result = verify([{ ...tampered, recordSha256: acceptanceRecordSha256(tampered) }]);
     expect(result.authorizations).toHaveLength(0);
@@ -183,9 +196,11 @@ describe("accepted-with-conditions policy join (W4 ruling (e))", () => {
 
   it("holds when the component is missing from the acceptance", () => {
     const decision = signedDecision();
+    const [component] = decision.components;
+    if (component === undefined) throw new Error("expected an acceptance component");
     const other = {
       ...decision,
-      components: [{ ...decision.components[0]!, evidenceComponentId: "skill:other" }],
+      components: [{ ...component, evidenceComponentId: "skill:other" }],
     };
     const result = verify([{ ...other, recordSha256: acceptanceRecordSha256(other) }]);
     expect(result.authorizations).toHaveLength(0);
@@ -193,9 +208,11 @@ describe("accepted-with-conditions policy join (W4 ruling (e))", () => {
 
   it("holds when the evidence carries a finding code the acceptance does not list", () => {
     const decision = signedDecision();
+    const [component] = decision.components;
+    if (component === undefined) throw new Error("expected an acceptance component");
     const narrower = {
       ...decision,
-      components: [{ ...decision.components[0]!, acceptedFindingCodes: ["trust.hidden-unicode"] }],
+      components: [{ ...component, acceptedFindingCodes: ["trust.hidden-unicode"] }],
     };
     const result = verify([{ ...narrower, recordSha256: acceptanceRecordSha256(narrower) }]);
     expect(result.authorizations).toHaveLength(0);
@@ -213,17 +230,27 @@ describe("accepted-with-conditions policy join (W4 ruling (e))", () => {
     expect(result.authorizations).toHaveLength(0);
   });
 
-  it("never admits an unwaivable finding code, even when the decision lists it", () => {
+  it.each([
+    "trust.auto-exec-hook",
+    "trust.unpinned-dependency",
+    "trust.source-drift",
+    "trust.unsigned-source",
+    "trust.detector-unavailable",
+    "trust.sandbox-smoke-unavailable",
+    "trust.sandbox-smoke-failed",
+  ])("never admits unwaivable finding code %s, even when listed", (unwaivableCode) => {
     const match = matchComponentAcceptance(
       [
         (() => {
           const decision = signedDecision();
+          const [component] = decision.components;
+          if (component === undefined) throw new Error("expected an acceptance component");
           const widened = {
             ...decision,
             components: [
               {
-                ...decision.components[0]!,
-                acceptedFindingCodes: [...CODES, "trust.auto-exec-hook"],
+                ...component,
+                acceptedFindingCodes: [...CODES, unwaivableCode],
               },
             ],
           };
@@ -236,7 +263,7 @@ describe("accepted-with-conditions policy join (W4 ruling (e))", () => {
         commitSha: PIN,
         componentId: "skill:risky",
         componentTreeSha256: subtreeHash(),
-        findingCodes: [...CODES, "trust.auto-exec-hook"],
+        findingCodes: [...CODES, unwaivableCode],
       },
     );
     expect(match).toBeUndefined();
@@ -295,32 +322,120 @@ describe("acceptanceResolutionMismatches (live-composition binding)", () => {
   });
 });
 
+describe("corrected occurrence-bound acceptance", () => {
+  it("requires exact profile, analyzer versions, and occurrence fingerprints", () => {
+    const occurrences = ["trust-raw:a", "trust-raw:b"];
+    const analyzers = ["aih-native@3.1.0", "skillspector@0.9.3"];
+    const decision = signedDecision({
+      policyVersion: CORRECTED_ACCEPTANCE_POLICY_VERSION,
+      components: [
+        {
+          evidenceComponentId: "skill:risky",
+          treeSha256: subtreeHash(),
+          acceptedFindingCodes: [...CODES],
+          acceptedOccurrenceFingerprints: occurrences,
+          analyzerVersions: analyzers,
+        },
+      ],
+    });
+    const candidate = {
+      framework: "ecc",
+      repository: "affaan-m/ECC",
+      commitSha: PIN,
+      componentId: "skill:risky",
+      componentTreeSha256: subtreeHash(),
+      findingCodes: CODES,
+      profile: "ecc-lean-v1",
+      host: "claude",
+      adapter: "ecc-lean",
+      sourceTreeDigest: "b".repeat(64),
+      occurrenceFingerprints: occurrences,
+      analyzerVersions: analyzers,
+      policyVersion: CORRECTED_ACCEPTANCE_POLICY_VERSION,
+      trustPolicyVersion: TRUST_POLICY_VERSION,
+    } as const;
+
+    expect(matchCorrectedComponentAcceptance([decision], candidate)).toBeDefined();
+    expect(
+      matchCorrectedComponentAcceptance([decision], {
+        ...candidate,
+        occurrenceFingerprints: ["trust-raw:a", "trust-raw:drift"],
+      }),
+    ).toBeUndefined();
+    expect(
+      matchCorrectedComponentAcceptance([decision], {
+        ...candidate,
+        analyzerVersions: ["aih-native@3.1.1", "skillspector@0.9.3"],
+      }),
+    ).toBeUndefined();
+  });
+
+  it("does not reuse legacy code-only acceptance in the corrected policy", () => {
+    const legacy = signedDecision();
+    expect(
+      matchCorrectedComponentAcceptance([legacy], {
+        framework: "ecc",
+        repository: "affaan-m/ECC",
+        commitSha: PIN,
+        componentId: "skill:risky",
+        componentTreeSha256: subtreeHash(),
+        findingCodes: CODES,
+        profile: "ecc-lean-v1",
+        host: "claude",
+        adapter: "ecc-lean",
+        sourceTreeDigest: "b".repeat(64),
+        occurrenceFingerprints: ["trust-raw:a"],
+        analyzerVersions: ["aih-native@3.1.0"],
+        policyVersion: CORRECTED_ACCEPTANCE_POLICY_VERSION,
+        trustPolicyVersion: TRUST_POLICY_VERSION,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("does not admit a corrected decision through the legacy code-only join", () => {
+    const decision = signedDecision({
+      policyVersion: CORRECTED_ACCEPTANCE_POLICY_VERSION,
+      components: [
+        {
+          evidenceComponentId: "skill:risky",
+          treeSha256: subtreeHash(),
+          acceptedFindingCodes: [...CODES],
+          acceptedOccurrenceFingerprints: ["trust-raw:a"],
+          analyzerVersions: ["aih-native@3.1.0"],
+        },
+      ],
+    });
+
+    expect(
+      matchComponentAcceptance(
+        [decision],
+        {
+          framework: "ecc",
+          repository: "affaan-m/ECC",
+          commitSha: PIN,
+          componentId: "skill:risky",
+          componentTreeSha256: subtreeHash(),
+          findingCodes: CODES,
+        },
+        new Date(),
+        {
+          framework: "ecc",
+          profile: "ecc-lean-v1",
+          host: "claude",
+          adapter: "ecc-lean",
+        },
+      ),
+    ).toBeUndefined();
+  });
+});
+
 describe("shipped acceptance artifact", () => {
-  it("is schema-valid, signed, and lists no unwaivable code", () => {
-    // Assert against the RAW artifact so an unsigned shipped decision fails
-    // loudly here (readAcceptanceDecisions would silently exclude it).
+  it("contains no stale exact-pin decisions after the ECC fork bridge is retired", () => {
     const raw = artifactJson as {
       decisions: Array<AcceptanceDecision>;
     };
-    expect(raw.decisions.length).toBeGreaterThan(0);
-    for (const decision of raw.decisions) {
-      expect(decision.recordSha256).toBe(acceptanceRecordSha256(decision));
-      for (const component of decision.components) {
-        for (const code of component.acceptedFindingCodes) {
-          expect(UNWAIVABLE_FINDING_CODES.has(code)).toBe(false);
-        }
-      }
-    }
-    expect(readAcceptanceDecisions().length).toBe(raw.decisions.length);
-  });
-
-  it("pins the ECC Lean tuple exactly", () => {
-    const lean = readAcceptanceDecisions().find((d) => d.profile === "ecc-lean-v1");
-    expect(lean?.framework).toBe("ecc");
-    expect(lean?.host).toBe("claude");
-    expect(lean?.adapter).toBe("ecc-lean");
-    expect(lean?.repository).toBe("samartomar/ECC");
-    expect(lean?.commitSha).toMatch(/^[0-9a-f]{40}$/);
+    expect(raw.decisions).toEqual([]);
+    expect(readAcceptanceDecisions()).toEqual([]);
     expect(createHash("sha256")).toBeDefined();
   });
 });

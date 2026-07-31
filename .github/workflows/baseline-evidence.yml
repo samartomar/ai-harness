@@ -69,12 +69,12 @@ jobs:
           # keeps working unmodified. Verification checks RepoDigests rather than
           # `.Id`, so it is correct regardless of the runner's Docker image-store
           # type (containerd snapshotter vs legacy graphdriver).
-          image="ghcr.io/samartomar/skillspector@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
+          image="ghcr.io/samartomar/skillspector@sha256:eb100b229ec5b25f74d5f6c1ac31e2d0466f08dbc0726af4239dccadbd7f1b1c"
           docker pull "$image"
-          docker tag "$image" skillspector:aih-326a2b489411
-          digests="$(docker image inspect skillspector:aih-326a2b489411 --format '{{json .RepoDigests}}')"
+          docker tag "$image" skillspector:aih-34f60308522f
+          digests="$(docker image inspect skillspector:aih-34f60308522f --format '{{json .RepoDigests}}')"
           echo "repo digests: ${digests}"
-          echo "$digests" | grep -q "sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
+          echo "$digests" | grep -q "sha256:eb100b229ec5b25f74d5f6c1ac31e2d0466f08dbc0726af4239dccadbd7f1b1c"
       - name: Set up pinned uv
         if: steps.relevance.outputs.vet == 'true'
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -95,8 +95,8 @@ jobs:
         if: steps.relevance.outputs.vet == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: samartomar/ECC
-          ref: 16563d4a30f17d097cc4629f6d97e02adf823016
+          repository: affaan-m/ecc
+          ref: 4da6deac1888690e7fb8572d097ee23db630f7a0
           path: .baseline-sources/ecc
           persist-credentials: false
       - name: Check out exact Superpowers baseline

@@ -7,6 +7,7 @@ import { generateEccInstallPreviewArtifact } from "../ecc/install-preview-genera
 import { validateEccInstallPreviewArtifact } from "../ecc/install-preview-validate.js";
 import type { BaselineCatalog } from "./catalog.js";
 import { hashComponentTree } from "./hash.js";
+import { componentIdentityPaths } from "./license.js";
 import type { BaselineSourceEvidence } from "./schema.js";
 
 const GENERATOR_ENTRY_PATHS = [
@@ -182,7 +183,8 @@ export function generateAuthorizedEccInstallPreview(
   if (JSON.stringify(evidenceRuntime.paths) !== JSON.stringify(catalogRuntime.paths)) {
     throw new Error("runtime:ecc-installer evidence paths do not match the catalog");
   }
-  const before = hashComponentTree(input.eccRoot, catalogRuntime.paths).treeSha256;
+  const identityPaths = componentIdentityPaths(input.eccRoot, catalogRuntime.paths);
+  const before = hashComponentTree(input.eccRoot, identityPaths).treeSha256;
   if (before !== evidenceRuntime.treeSha256) {
     throw new Error("runtime:ecc-installer changed after vet; preview generation refused");
   }
@@ -197,7 +199,7 @@ export function generateAuthorizedEccInstallPreview(
     generationFailed = true;
     generationError = error;
   }
-  const after = hashComponentTree(input.eccRoot, catalogRuntime.paths).treeSha256;
+  const after = hashComponentTree(input.eccRoot, identityPaths).treeSha256;
   if (after !== before) {
     throw new Error("runtime:ecc-installer changed during preview generation");
   }

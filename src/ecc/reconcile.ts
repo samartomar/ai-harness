@@ -165,7 +165,10 @@ export function reconcileEccRegistrationLedger(
   const droppedTargets = new Set(options.droppedTargets ?? []);
   const full = projects.some((project) => project.scope === "full");
   const desired = machineRegistrationUnion({ schemaVersion: 1, projects, targets: [] });
-  const desiredComponents = new Set(desired.components);
+  const desiredComponents = new Set([
+    ...desired.components,
+    ...desired.moduleIds.map((moduleId) => `module:${moduleId}`),
+  ]);
   const desiredMcps = new Set(desired.mcps);
   const targets = prior.targets
     .filter((target) => !droppedTargets.has(target.target))

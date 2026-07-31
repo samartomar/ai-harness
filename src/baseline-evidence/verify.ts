@@ -1,13 +1,16 @@
 import type { Posture } from "../config/posture.js";
 import type { Check, CheckCode } from "../internals/verify.js";
+import { TRUST_POLICY_VERSION } from "../trust/evidence.js";
 import {
   type AcceptanceDecision,
   type AcceptanceTuple,
-  matchComponentAcceptance,
+  CORRECTED_ACCEPTANCE_POLICY_VERSION,
+  matchCorrectedComponentAcceptance,
   readAcceptanceDecisions,
 } from "./acceptance.js";
 import { type BaselineCatalog, resolveCatalogComponents } from "./catalog.js";
-import { hashComponentTree } from "./hash.js";
+import { hashComponentTree, hashSourceTree } from "./hash.js";
+import { componentIdentityPaths } from "./license.js";
 import type { OrgBaselineEvidence } from "./org.js";
 import type {
   BaselineComponentEvidence,
@@ -139,6 +142,7 @@ export function verifyBaselineComponents(
   const components = resolveCatalogComponents(input.catalog, input.componentIds);
   const sourceName = `${input.catalog.owner}/${input.catalog.repo}`;
   const vendorSource = sourceEvidence(input.vendorLock, input.catalog);
+  const sourceTreeDigest = hashSourceTree(input.sourceRoot).treeSha256;
   const orgSource =
     input.orgEvidence === undefined
       ? undefined
@@ -163,7 +167,10 @@ export function verifyBaselineComponents(
 
   for (const component of components) {
     const name = `baseline evidence ${component.id}`;
-    const actual = hashComponentTree(input.sourceRoot, component.paths).treeSha256;
+    const actual = hashComponentTree(
+      input.sourceRoot,
+      componentIdentityPaths(input.sourceRoot, component.paths),
+    ).treeSha256;
     const vendorEntry = vendorSource?.components.find((candidate) => candidate.id === component.id);
     const exactVendor = exactComponent(vendorSource, component.id, component.paths, actual);
     if (exactVendor?.verdict === "blocked") {
@@ -173,19 +180,37 @@ export function verifyBaselineComponents(
       // component. The check names BOTH facts — the raw block is never
       // reported as a vet pass.
       const rawCodes = [...new Set(exactVendor.findings.map((finding) => finding.code))];
-      const acceptance = matchComponentAcceptance(
-        input.acceptanceDecisions ?? readAcceptanceDecisions(),
-        {
-          framework: input.catalog.id,
-          repository: sourceName,
-          commitSha: input.catalog.pinnedSha,
-          componentId: component.id,
-          componentTreeSha256: actual,
-          findingCodes: rawCodes,
-        },
-        new Date(),
-        input.acceptanceTuple,
+      const fingerprints = exactVendor.findings.flatMap(
+        (finding) =>
+          finding.fingerprints ?? (finding.fingerprint === undefined ? [] : [finding.fingerprint]),
       );
+      const fingerprintCoverage = exactVendor.findings.every(
+        (finding) => finding.fingerprints !== undefined || finding.fingerprint !== undefined,
+      );
+      const acceptance =
+        input.acceptanceTuple === undefined || !fingerprintCoverage
+          ? undefined
+          : matchCorrectedComponentAcceptance(
+              input.acceptanceDecisions ?? readAcceptanceDecisions(),
+              {
+                framework: input.catalog.id,
+                repository: sourceName,
+                commitSha: input.catalog.pinnedSha,
+                componentId: component.id,
+                componentTreeSha256: actual,
+                findingCodes: rawCodes,
+                policyVersion: CORRECTED_ACCEPTANCE_POLICY_VERSION,
+                trustPolicyVersion: TRUST_POLICY_VERSION,
+                profile: input.acceptanceTuple.profile,
+                host: input.acceptanceTuple.host,
+                adapter: input.acceptanceTuple.adapter,
+                sourceTreeDigest,
+                occurrenceFingerprints: fingerprints,
+                analyzerVersions: exactVendor.analyzers
+                  .map((receipt) => `${receipt.name}@${receipt.version}`)
+                  .sort((left, right) => left.localeCompare(right)),
+              },
+            );
       if (acceptance !== undefined) {
         checks.push({
           name,

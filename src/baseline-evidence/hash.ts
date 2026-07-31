@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readdirSync, readFileSync, realpathSync, type Stats } from "node:fs";
+import {
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  type Stats,
+} from "node:fs";
 import { isAbsolute, posix, relative, resolve } from "node:path";
 import { AihError } from "../errors.js";
 
@@ -15,10 +22,11 @@ export interface BaselineTreeHash {
 }
 
 interface TreeEntry {
-  type: "directory" | "file";
+  type: "directory" | "file" | "symlink";
   path: string;
   bytes?: number;
   sha256?: string;
+  target?: string;
 }
 
 function refuse(message: string): never {
@@ -123,6 +131,63 @@ export function hashComponentTree(
   const serialized = JSON.stringify(ordered);
   return {
     treeSha256: createHash("sha256").update(serialized, "utf8").digest("hex"),
+    files: ordered.flatMap((entry) =>
+      entry.type === "file"
+        ? [{ path: entry.path, bytes: entry.bytes ?? 0, sha256: entry.sha256 ?? "" }]
+        : [],
+    ),
+  };
+}
+
+/**
+ * Hash every materialized source entry except Git's administrative directory.
+ *
+ * A Git source tree can legitimately contain symlinks. Source identity records
+ * their literal link target without following it; component hashing remains
+ * stricter and rejects every symlink before materialization.
+ */
+export function hashSourceTree(sourceRoot: string): BaselineTreeHash {
+  let root: string;
+  try {
+    const rootStat = lstatSync(sourceRoot);
+    if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
+      return refuse(`baseline source root must be a real directory: ${sourceRoot}`);
+    }
+    root = realpathSync(sourceRoot);
+  } catch (err) {
+    return refuse(`baseline source root is unavailable: ${sourceRoot} (${(err as Error).message})`);
+  }
+
+  const entries = new Map<string, TreeEntry>();
+  const visit = (path: string): void => {
+    const stat = lstatSync(path);
+    const rel = sourceRelative(root, path);
+    if (entries.has(rel)) refuse(`duplicate baseline tree entry: ${rel}`);
+    if (stat.isSymbolicLink()) {
+      entries.set(rel, { type: "symlink", path: rel, target: readlinkSync(path) });
+      return;
+    }
+    if (stat.isDirectory()) {
+      entries.set(rel, { type: "directory", path: rel });
+      for (const child of readdirSync(path).sort((left, right) => left.localeCompare(right))) {
+        visit(resolve(path, child));
+      }
+      return;
+    }
+    if (!stat.isFile()) refuse(`unsupported baseline source entry type: ${rel}`);
+    if (stat.nlink > 1) refuse(`refusing hard-linked file in baseline source: ${rel}`);
+    entries.set(rel, { type: "file", path: rel, ...fileDigest(path) });
+  };
+
+  const paths = readdirSync(root)
+    .filter((name) => name !== ".git")
+    .sort((left, right) => left.localeCompare(right));
+  if (paths.length === 0) refuse("baseline source tree has no content");
+  for (const path of paths) visit(resolve(root, path));
+
+  const ordered = [...entries.values()].sort((left, right) => left.path.localeCompare(right.path));
+  return {
+    treeSha256: createHash("sha256").update(JSON.stringify(ordered), "utf8").digest("hex"),
     files: ordered.flatMap((entry) =>
       entry.type === "file"
         ? [{ path: entry.path, bytes: entry.bytes ?? 0, sha256: entry.sha256 ?? "" }]

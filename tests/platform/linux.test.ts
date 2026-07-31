@@ -43,6 +43,38 @@ describe("LinuxAdapter", () => {
     expect(a.detectVdi()).toMatchObject({ isVdi: true, kind: "workspaces" });
   });
 
+  it("detects a non-console SESSIONNAME and reports no marker otherwise", () => {
+    const remote = new LinuxAdapter(
+      fakeRunner(() => undefined),
+      { SESSIONNAME: "RDP-Tcp#1" },
+    );
+    const local = new LinuxAdapter(
+      fakeRunner(() => undefined),
+      { SESSIONNAME: "Console" },
+    );
+
+    expect(remote.detectVdi()).toEqual({
+      isVdi: true,
+      reason: "SESSIONNAME=RDP-Tcp#1",
+      kind: "generic",
+    });
+    expect(local.detectVdi()).toEqual({
+      isVdi: false,
+      reason: "no VDI markers",
+    });
+  });
+
+  it("uses the POSIX environment persistence contract", () => {
+    const adapter = new LinuxAdapter(
+      fakeRunner(() => undefined),
+      { HOME: "/home/fixture" },
+    );
+
+    expect(adapter.shellProfilePaths()).toEqual([join("/home/fixture", ".bashrc")]);
+    expect(adapter.envShell()).toBe("posix");
+    expect(adapter.persistentEnvArgv()).toEqual([]);
+  });
+
   it("is marked verified (smoke-tested on real Linux metal)", () => {
     expect(
       new LinuxAdapter(

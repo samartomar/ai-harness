@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Posture } from "../../src/config/posture.js";
 import type { Check } from "../../src/internals/verify.js";
-import { gradeTrustCheck, gradeTrustDanger, TRUST_ORIGIN_CODES } from "../../src/trust/grade.js";
+import {
+  gradeTrustCheck,
+  gradeTrustDanger,
+  TRUST_REVIEW_CODES,
+  TRUST_WARN_CODES,
+} from "../../src/trust/grade.js";
 
 function dangerousCheck(): Check {
   return {
@@ -14,7 +19,7 @@ function dangerousCheck(): Check {
   };
 }
 
-function originCheck(): Check {
+function unpinnedCheck(): Check {
   return {
     name: "trust.unpinned-dependency",
     verdict: "fail",
@@ -22,6 +27,37 @@ function originCheck(): Check {
     code: "trust.unpinned-dependency",
     location: { uri: "package.json", startLine: 2 },
     fingerprint: "trust-unpinned-dependency:package.json:2:abc12345",
+  };
+}
+
+function reviewCheck(): Check {
+  return {
+    name: "trust.external-egress",
+    verdict: "fail",
+    detail: "authenticated external request",
+    code: "trust.external-egress",
+    location: { uri: "skills/example/SKILL.md", startLine: 10 },
+    fingerprint: "trust-external-egress:skills/example/SKILL.md:abc12345",
+  };
+}
+
+function genericDetectorCheck(): Check {
+  return {
+    name: "trust.detector-finding",
+    verdict: "fail",
+    detail: "SkillSpector: broad autonomous behavior",
+    code: "trust.detector-finding",
+  };
+}
+
+function visibleUnicodeCheck(): Check {
+  return {
+    name: "trust.visible-unicode",
+    verdict: "fail",
+    detail: "ordinary Chinese document labels",
+    code: "trust.visible-unicode",
+    location: { uri: "skills/translate/SKILL.md", startLine: 50 },
+    fingerprint: "trust-visible-unicode:skills/translate/SKILL.md:abc12345",
   };
 }
 
@@ -48,43 +84,52 @@ describe("gradeTrustDanger", () => {
 });
 
 describe("gradeTrustCheck", () => {
-  it("keeps the trust-origin code set sealed to reviewable findings", () => {
-    expect([...TRUST_ORIGIN_CODES].sort()).toEqual([
-      "trust.legal-text-detector-finding",
+  it("keeps the review and warning code sets explicit", () => {
+    expect([...TRUST_REVIEW_CODES].sort()).toEqual([
+      "trust.external-egress",
+      "trust.license-missing",
+      "trust.permission-risk",
       "trust.skill-metadata-license",
-      "trust.source-drift",
-      "trust.unpinned-dependency",
-      "trust.unsigned-source",
       "trust.untrusted-publisher",
+    ]);
+    expect([...TRUST_WARN_CODES].sort()).toEqual([
+      "trust.cisco-finding",
+      "trust.detector-finding",
+      "trust.legal-text-detector-finding",
       "trust.visible-unicode",
     ]);
   });
 
-  it("grades origin findings as warning-only at vibe/team and blocking at enterprise", () => {
+  it("grades review findings as warning-only at vibe/team and blocking at enterprise", () => {
     for (const posture of ["vibe", "team"] satisfies Posture[]) {
-      const graded = gradeTrustCheck(originCheck(), posture);
+      const graded = gradeTrustCheck(reviewCheck(), posture);
       expect(graded.verdict).toBe("pass");
       expect(graded.code).toBeUndefined();
       expect(graded.detail).toContain(`warning-only (${posture} posture)`);
-      expect(graded.detail).toContain("direct dependency react");
+      expect(graded.detail).toContain("authenticated external request");
     }
 
-    const enterprise = gradeTrustCheck(originCheck(), "enterprise");
+    const enterprise = gradeTrustCheck(reviewCheck(), "enterprise");
     expect(enterprise.verdict).toBe("fail");
-    expect(enterprise.code).toBe("trust.unpinned-dependency");
+    expect(enterprise.code).toBe("trust.external-egress");
   });
 
-  it.each([
-    ["vibe", "pass"],
-    ["team", "fail"],
-    ["enterprise", "fail"],
-  ] as const)("grades legal-text findings at %s as %s", (posture, verdict) => {
-    const graded = gradeTrustCheck(legalTextCheck(), posture);
+  it("keeps warning findings non-blocking and visible at every posture", () => {
+    for (const check of [genericDetectorCheck(), legalTextCheck(), visibleUnicodeCheck()]) {
+      for (const posture of ["vibe", "team", "enterprise"] satisfies Posture[]) {
+        const graded = gradeTrustCheck(check, posture);
+        expect(graded.verdict).toBe("pass");
+        expect(graded.code).toBeUndefined();
+        expect(graded.detail).toContain(`warning-only (${posture} posture)`);
+      }
+    }
+  });
 
-    expect(graded.verdict).toBe(verdict);
-    if (verdict === "fail") {
-      expect(graded.code).toBe("trust.legal-text-detector-finding");
-      expect(graded.fingerprint).toBe(legalTextCheck().fingerprint);
+  it("keeps unpinned executable dependencies blocking at every posture", () => {
+    for (const posture of ["vibe", "team", "enterprise"] satisfies Posture[]) {
+      const graded = gradeTrustCheck(unpinnedCheck(), posture);
+      expect(graded.verdict).toBe("fail");
+      expect(graded.code).toBe("trust.unpinned-dependency");
     }
   });
 

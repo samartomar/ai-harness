@@ -5,7 +5,8 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   type AcceptanceDecision,
-  matchComponentAcceptance,
+  CORRECTED_ACCEPTANCE_POLICY_VERSION,
+  matchCorrectedComponentAcceptance,
   readAcceptanceDecisions,
 } from "../baseline-evidence/acceptance.js";
 import type { BaselineCatalog } from "../baseline-evidence/catalog.js";
@@ -14,6 +15,13 @@ import {
   type BaselineCatalogId,
   baselineCatalogById,
 } from "../baseline-evidence/catalogs.js";
+import {
+  ECC_LEAN_PROFILE_ID,
+  ECC_UPSTREAM_CORE_PROFILE_ID,
+  ECC_UPSTREAM_FULL_PROFILE_ID,
+  qualificationProfile,
+  SUPERPOWERS_STANDARD_PROFILE_ID,
+} from "../baseline-evidence/profiles.js";
 import type { BaselineEvidenceLock, BaselineSourceEvidence } from "../baseline-evidence/schema.js";
 import { parseBaselineEvidenceLock } from "../baseline-evidence/schema.js";
 import { readVendorBaselineLock } from "../baseline-evidence/vendor.js";
@@ -25,6 +33,7 @@ import {
   registrationLedgerPath,
   writeRegistrationLedgerAtomic,
 } from "../ecc/registration.js";
+import { TRUST_POLICY_VERSION } from "../trust/evidence.js";
 
 const POSTURES: readonly Posture[] = ["vibe", "team", "enterprise"];
 const DEFAULT_CLI = "claude";
@@ -64,6 +73,8 @@ export interface InstallablePostureResult {
 
 export interface InstallableCatalogReport {
   pin: string;
+  profile: string;
+  qualifiedProfiles: string[];
   postures: Record<Posture, InstallablePostureResult>;
   ok: boolean;
 }
@@ -141,12 +152,15 @@ function evaluateCatalog(
   catalog: BaselineCatalog,
   lockSha256: string,
   acceptances: readonly AcceptanceDecision[],
+  selectedComponentIds: readonly string[],
+  profileId: string,
 ): CatalogEvaluation {
   const source = boundSource(lock, catalog);
   const authorizations: BaselineAuthorization[] = [];
   const held: Array<{ componentId: string; codes: string[] }> = [];
 
-  for (const component of catalog.components) {
+  const selected = new Set(selectedComponentIds);
+  for (const component of catalog.components.filter((candidate) => selected.has(candidate.id))) {
     const entry = source?.components.find((candidate) => candidate.id === component.id);
     const exact =
       entry !== undefined && samePaths(entry.paths, component.paths) ? entry : undefined;
@@ -169,14 +183,39 @@ function evaluateCatalog(
       // runtime join against the LOCK's recorded component digest (the release
       // gate has no source tree to re-hash; the runtime path re-verifies
       // against real bytes).
-      const acceptance = matchComponentAcceptance(acceptances, {
-        framework: catalog.id,
-        repository: `${catalog.owner}/${catalog.repo}`,
-        commitSha: catalog.pinnedSha,
-        componentId: component.id,
-        componentTreeSha256: exact.treeSha256,
-        findingCodes: codes,
-      });
+      const fingerprints = exact.findings.flatMap(
+        (finding) =>
+          finding.fingerprints ?? (finding.fingerprint === undefined ? [] : [finding.fingerprint]),
+      );
+      const fingerprintCoverage = exact.findings.every(
+        (finding) => finding.fingerprints !== undefined || finding.fingerprint !== undefined,
+      );
+      const acceptance =
+        source?.sourceTreeSha256 === undefined || !fingerprintCoverage
+          ? undefined
+          : matchCorrectedComponentAcceptance(acceptances, {
+              framework: catalog.id,
+              repository: `${catalog.owner}/${catalog.repo}`,
+              commitSha: catalog.pinnedSha,
+              componentId: component.id,
+              componentTreeSha256: exact.treeSha256,
+              findingCodes: codes,
+              policyVersion: CORRECTED_ACCEPTANCE_POLICY_VERSION,
+              trustPolicyVersion: TRUST_POLICY_VERSION,
+              profile: profileId,
+              host: "claude",
+              adapter:
+                profileId === ECC_LEAN_PROFILE_ID
+                  ? "ecc-lean"
+                  : profileId === ECC_UPSTREAM_FULL_PROFILE_ID
+                    ? "ecc-full"
+                    : "baseline-standard",
+              sourceTreeDigest: source.sourceTreeSha256,
+              occurrenceFingerprints: fingerprints,
+              analyzerVersions: exact.analyzers
+                .map((receipt) => `${receipt.name}@${receipt.version}`)
+                .sort((left, right) => left.localeCompare(right)),
+            });
       if (acceptance !== undefined) {
         authorizations.push({
           componentId: component.id,
@@ -328,6 +367,7 @@ export function postureOkForCatalog(input: {
     return (
       authorizations.length > 0 &&
       installerAuthorized &&
+      held.length === 0 &&
       ledgerMatches &&
       heldAllCoded &&
       previewEscapeCount === 0
@@ -361,6 +401,18 @@ export async function checkInstallableBaseline(
 
   for (const catalogId of BASELINE_CATALOG_IDS) {
     const catalog = baselineCatalogById(catalogId);
+    const activeProfile = qualificationProfile(
+      catalog,
+      catalogId === "ecc" ? ECC_LEAN_PROFILE_ID : SUPERPOWERS_STANDARD_PROFILE_ID,
+    );
+    const qualifiedProfiles =
+      catalogId === "ecc"
+        ? [
+            activeProfile,
+            qualificationProfile(catalog, ECC_UPSTREAM_CORE_PROFILE_ID),
+            qualificationProfile(catalog, ECC_UPSTREAM_FULL_PROFILE_ID),
+          ]
+        : [activeProfile];
     const pin = catalogPin(lock, catalog);
     const preview = previewPlanForCatalog(catalogId);
 
@@ -380,6 +432,8 @@ export async function checkInstallableBaseline(
           catalog,
           lockSha256,
           input.acceptanceDecisions ?? readAcceptanceDecisions(),
+          activeProfile.selectedComponentIds,
+          activeProfile.id,
         );
         const installedComponentIds = authorizations.map((a) => a.componentId).sort();
 
@@ -402,7 +456,26 @@ export async function checkInstallableBaseline(
           ledgerMatches,
           previewEscapeCount: escapes.length,
         });
-        if (!postureOk) catalogOk = false;
+        const allProfilesStructurallyCovered = qualifiedProfiles.every((profile) => {
+          const profileEvaluation = evaluateCatalog(
+            lock,
+            catalog,
+            lockSha256,
+            input.acceptanceDecisions ?? readAcceptanceDecisions(),
+            profile.selectedComponentIds,
+            profile.id,
+          );
+          const covered =
+            profileEvaluation.authorizations.length + profileEvaluation.held.length ===
+            profile.selectedComponentIds.length;
+          const noMissingOrDriftedEvidence = profileEvaluation.held.every(
+            (entry) =>
+              !entry.codes.includes("baseline.evidence-missing") &&
+              !entry.codes.includes("baseline.evidence-mismatch"),
+          );
+          return covered && noMissingOrDriftedEvidence && escapes.length === 0;
+        });
+        if (!postureOk || !allProfilesStructurallyCovered) catalogOk = false;
 
         postures[posture] = {
           installed: authorizations.length,
@@ -420,7 +493,13 @@ export async function checkInstallableBaseline(
     }
 
     if (!catalogOk) ok = false;
-    catalogs[catalogId] = { pin, postures, ok: catalogOk };
+    catalogs[catalogId] = {
+      pin,
+      profile: activeProfile.id,
+      qualifiedProfiles: qualifiedProfiles.map((profile) => profile.id),
+      postures,
+      ok: catalogOk,
+    };
   }
 
   return { catalogs, ok };
@@ -439,7 +518,7 @@ function catalogSummaryLine(
   const verdict = requiresInstaller
     ? `${catalogReport.ok ? "installable" : "NOT installable"} from its own evidence`
     : `evidence ${catalogReport.ok ? "consistent" : "INCONSISTENT"} from its own lock`;
-  return `${catalogId}: ${verdict} (pin ${catalogReport.pin})`;
+  return `${catalogId}/${catalogReport.profile}: ${verdict} (pin ${catalogReport.pin})`;
 }
 
 async function main(): Promise<void> {

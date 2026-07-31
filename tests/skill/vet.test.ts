@@ -221,7 +221,7 @@ function expectSandboxSmokeEvidence(
 }
 
 describe("skillVetCommand", () => {
-  it("promotes a selected skill after acknowledging generic LICENSE.txt findings with a reason", async () => {
+  it("keeps generic LICENSE.txt findings visible without blocking promotion", async () => {
     skill("brand-guidelines", "# Brand guidelines\n\nUse the approved visual language.\n");
     write(
       "skills/brand-guidelines/LICENSE.txt",
@@ -257,43 +257,18 @@ describe("skillVetCommand", () => {
     );
     const initial = await executePlan(await skillVetCommand.plan(initialCtx), initialCtx);
     const findings = initial.report?.checks.filter(
-      (check) => check.code === "trust.legal-text-detector-finding",
+      (check) => check.name === "trust.legal-text-detector-finding",
     );
 
-    expect(initial.report?.exitCode()).toBe(1);
-    expect(vetDigestOf(initial).data.verdict).toBe("YELLOW");
+    expect(initial.report?.exitCode()).toBe(0);
+    expect(vetDigestOf(initial).data.verdict).toBe("GREEN");
     expect(findings).toHaveLength(2);
-    const fingerprints = findings?.map((check) => check.fingerprint);
-    expect(fingerprints).toEqual([expect.any(String), expect.any(String)]);
-
-    const acknowledgedCtx = ctx(
-      {
-        source: sourceRoot,
-        name: "brand-guidelines",
-        acknowledge: fingerprints?.join(","),
-        reason: "reviewed upstream license text",
-      },
-      false,
-      run,
-      env,
-      "enterprise",
-    );
-    const acknowledged = await executePlan(
-      await skillVetCommand.plan(acknowledgedCtx),
-      acknowledgedCtx,
-    );
-
-    expect(acknowledged.report?.ok).toBe(true);
-    expect(vetDigestOf(acknowledged).data.verdict).toBe("GREEN");
-    expect(acknowledged.report?.checks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          verdict: "skip",
-          code: "trust.legal-text-detector-finding",
-          detail: expect.stringContaining("reason: reviewed upstream license text"),
-        }),
-      ]),
-    );
+    expect(findings?.every((check) => check.verdict === "pass")).toBe(true);
+    expect(findings?.every((check) => check.code === undefined)).toBe(true);
+    expect(findings?.map((check) => check.fingerprint)).toEqual([
+      expect.any(String),
+      expect.any(String),
+    ]);
   });
 
   it("grades a clean licensed local source GREEN and writes nothing in dry-run", async () => {

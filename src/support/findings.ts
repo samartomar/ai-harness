@@ -692,10 +692,24 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
   },
   "trust.visible-unicode": {
     audience: "developer",
-    failSeverity: "blocking",
-    title: "visible Unicode found in external skill documentation",
+    failSeverity: "degraded",
+    title: "ordinary visible Unicode found in external content",
     action:
-      "Review the documented visible Unicode characters, remove them if they obscure meaning, or acknowledge the exact finding with a recorded reason before promotion.",
+      "Keep the text when it is legitimate language, typography, or emoji. Review it for readability; only hidden bidi, zero-width, control, or token-confusable characters are blocking.",
+  },
+  "trust.external-egress": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "external network request uses a credential",
+    action:
+      "Review the exact destination, credential source, and side effect. Enterprise promotion requires an exact-finding acceptance tied to the reviewed source pin.",
+  },
+  "trust.permission-risk": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "external component requests broad permissions",
+    action:
+      "Review the exact permission, affected resource, and runtime boundary. Enterprise promotion requires an occurrence-bound acceptance or a narrower upstream permission.",
   },
   "trust.fetch-blocked": {
     audience: "developer",
@@ -716,14 +730,14 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "external trust detector finding",
     action:
-      "Review the detector finding, map the rule to a specific trust check if it is a known-dangerous pattern, or reject the external source until the flagged content is removed.",
+      "Review the exact scanner rule, source path, line, and value. Map known executable danger to a blocking trust code; otherwise enterprise promotion requires exact-pin acceptance.",
   },
   "trust.legal-text-detector-finding": {
     audience: "developer",
-    failSeverity: "blocking",
+    failSeverity: "degraded",
     title: "external detector finding in legal text",
     action:
-      "Review the complete LICENSE, COPYING, or NOTICE file. Remove the flagged text, or acknowledge the exact full-file fingerprint with a recorded reason before promotion.",
+      "Review the complete LICENSE, COPYING, or NOTICE file. Documentation-only heuristic matches remain visible but do not block promotion.",
   },
   "trust.sandbox-smoke-unavailable": {
     audience: "developer",

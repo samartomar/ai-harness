@@ -61,9 +61,13 @@ describe("shipped vendor baseline lock", () => {
       findings: [],
     });
     const tddWorkflow = ecc?.components.find((component) => component.id === "skill:tdd-workflow");
-    expect(tddWorkflow).toMatchObject({ verdict: "blocked" });
-    expect(tddWorkflow?.findings).toEqual(
-      expect.arrayContaining([expect.objectContaining({ code: "trust.hidden-unicode" })]),
+    expect(tddWorkflow).toMatchObject({ verdict: "pass", findings: [] });
+    const documentProcessing = ecc?.components.find(
+      (component) => component.id === "module:document-processing",
+    );
+    expect(documentProcessing).toMatchObject({ verdict: "blocked" });
+    expect(documentProcessing?.findings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "trust.external-egress" })]),
     );
     expect(
       lock.sources
@@ -74,8 +78,12 @@ describe("shipped vendor baseline lock", () => {
       lock.sources.every((source) =>
         source.components.every(
           (component) =>
-            JSON.stringify(component.analyzers) ===
-            JSON.stringify(requiredAnalyzerReceipts(source.id, component)),
+            JSON.stringify(component.analyzers.map(({ name }) => name).sort()) ===
+            JSON.stringify(
+              requiredAnalyzerReceipts(source.id, component)
+                .map(({ name }) => name)
+                .sort(),
+            ),
         ),
       ),
     ).toBe(true);

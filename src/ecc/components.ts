@@ -4,7 +4,7 @@ import type { RepoStack } from "../profile/scan.js";
 export type EccComponentId = `${string}:${string}`;
 export type EccMcpComponentId = `mcp:${string}`;
 
-export const COMMON_ECC_COMPONENTS = [
+export const CORE_ECC_COMPONENTS = [
   "baseline:rules",
   "baseline:agents",
   "baseline:platform",
@@ -30,6 +30,31 @@ export const COMMON_ECC_COMPONENTS = [
   "agent:type-design-analyzer",
   "agent:performance-optimizer",
 ] as const satisfies readonly EccComponentId[];
+
+export const LEAN_ECC_COMPONENTS = [
+  "baseline:rules",
+  "agent:planner",
+  "skill:tdd-workflow",
+  "agent:tdd-guide",
+  "agent:build-error-resolver",
+  "agent:code-reviewer",
+  "agent:security-reviewer",
+  "skill:security-review",
+  "skill:verification-loop",
+] as const satisfies readonly EccComponentId[];
+
+export const UPSTREAM_CORE_ECC_MODULE_IDS = [
+  "rules-core",
+  "agents-core",
+  "commands-core",
+  "hooks-runtime",
+  "platform-configs",
+  "skill-unified-memory",
+  "workflow-quality",
+] as const;
+
+/** Backward-compatible name for callers that mean the explicit Core closure. */
+export const COMMON_ECC_COMPONENTS = CORE_ECC_COMPONENTS;
 
 const LANGUAGE_COMPONENTS: Readonly<Record<string, readonly EccComponentId[]>> = {
   "TypeScript/Node.js": ["lang:typescript", "agent:typescript-reviewer"],
@@ -134,10 +159,11 @@ const EXPLICIT_MCP_COMPONENTS = new Set<EccMcpComponentId>([
   "mcp:exa",
 ]);
 
-const REPO_DECLARED_DEFAULT_MCPS: Readonly<Record<string, EccMcpComponentId>> = {
-  "code-review-graph": "mcp:code-review-graph",
-  "codebase-memory-mcp": "mcp:codebase-memory-mcp",
-};
+export const ECC_DECLARABLE_COMPONENT_IDS = [...DECLARABLE_COMPONENTS] as readonly EccComponentId[];
+
+export const ECC_EXPLICIT_MCP_COMPONENT_IDS = [
+  ...EXPLICIT_MCP_COMPONENTS,
+] as readonly EccMcpComponentId[];
 
 export interface SelectEccComponentsInput {
   stack: RepoStack;
@@ -152,6 +178,8 @@ export interface EccComponentSelection {
   components: EccComponentId[];
   mcps: EccMcpComponentId[];
   recommendations: EccComponentId[];
+  /** Exact upstream modules selected by an upstream profile such as Core. */
+  moduleIds?: string[];
 }
 
 function addAll<T extends string>(target: Set<T>, ordered: T[], values: readonly T[]): void {
@@ -175,32 +203,14 @@ function normalizeDeclaration(value: string): string {
 export function selectEccComponents(input: SelectEccComponentsInput): EccComponentSelection {
   const componentSet = new Set<EccComponentId>();
   const components: EccComponentId[] = [];
-  addAll(componentSet, components, COMMON_ECC_COMPONENTS);
-
-  for (const language of input.stack.languages) {
-    addAll(componentSet, components, LANGUAGE_COMPONENTS[language] ?? []);
-  }
-  for (const framework of input.stack.frameworks) {
-    addAll(componentSet, components, FRAMEWORK_COMPONENTS[framework] ?? []);
-  }
-  if (input.stack.databases.length > 0) {
-    addAll(componentSet, components, ["capability:database", "agent:database-reviewer"]);
-  }
-  if (input.stack.deployment.length > 0) {
-    addAll(componentSet, components, ["capability:devops"]);
-  }
+  const lean = input.profile === "minimal";
+  const full = input.profile === "full";
+  const core = input.profile === "core";
+  if (!lean && !core && !full) throw new Error(`unknown ECC profile: ${input.profile}`);
+  if (lean) addAll(componentSet, components, LEAN_ECC_COMPONENTS);
 
   const mcpSet = new Set<EccMcpComponentId>();
   const mcps: EccMcpComponentId[] = [];
-  addAll(mcpSet, mcps, ["mcp:sequential-thinking"]);
-  for (const name of input.declaredMcps ?? []) {
-    const selected = REPO_DECLARED_DEFAULT_MCPS[name.trim().toLowerCase()];
-    if (selected !== undefined) addAll(mcpSet, mcps, [selected]);
-  }
-  if (input.posture === "team" || input.posture === "enterprise") {
-    addAll(mcpSet, mcps, ["mcp:github"]);
-  }
-
   for (const raw of input.declarations ?? []) {
     const declaration = normalizeDeclaration(raw);
     if (EXPLICIT_MCP_COMPONENTS.has(declaration as EccMcpComponentId)) {
@@ -216,16 +226,18 @@ export function selectEccComponents(input: SelectEccComponentsInput): EccCompone
   }
 
   const recommendations: EccComponentId[] = [];
-  if (input.posture === "enterprise") {
-    addAll(componentSet, components, ["capability:security"]);
-  } else if (input.posture === "team" && !componentSet.has("capability:security")) {
+  if (
+    (input.posture === "team" || input.posture === "enterprise") &&
+    !componentSet.has("capability:security")
+  ) {
     recommendations.push("capability:security");
   }
 
   return {
-    scope: input.profile === "full" ? "full" : "scoped",
+    scope: full ? "full" : "scoped",
     components,
     mcps,
     recommendations,
+    ...(core ? { moduleIds: [...UPSTREAM_CORE_ECC_MODULE_IDS] } : {}),
   };
 }

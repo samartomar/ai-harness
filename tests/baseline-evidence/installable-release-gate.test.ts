@@ -27,54 +27,44 @@ describe("shipped baseline installability", () => {
     expect(report.ok).toBe(false);
   });
 
-  it("installs the current shipped ECC lock at every posture and holds hooks-runtime at enterprise", async () => {
+  it("installs only the current ECC Lean profile at every posture", async () => {
     const lock = readVendorBaselineLock();
     const eccPin = lock.sources.find((source) => source.id === "ecc")?.pinnedSha;
 
     const report = await checkInstallableBaseline({ lock, fixtureOnly: true });
 
     expect(report.catalogs.ecc.pin).toBe(eccPin);
+    expect(report.catalogs.ecc.profile).toBe("ecc-lean-v1");
+    expect(report.catalogs.ecc.qualifiedProfiles).toEqual([
+      "ecc-lean-v1",
+      "ecc-upstream-core-v2.1.0",
+      "ecc-upstream-full-v2.1.0",
+    ]);
     for (const posture of ALL_POSTURES) {
-      expect(report.catalogs.ecc.postures[posture].installed).toBeGreaterThan(0);
-      expect(report.catalogs.ecc.postures[posture].installedComponentIds).toContain(
-        "runtime:ecc-installer",
-      );
+      const result = report.catalogs.ecc.postures[posture];
+      expect(result.installed).toBe(10);
+      expect(result.installedComponentIds).toContain("runtime:ecc-installer");
+      expect(result.held).toEqual([]);
+      expect(result.installedComponentIds).not.toContain("baseline:hooks");
+      expect(result.installedComponentIds).not.toContain("module:hooks-runtime");
     }
-
-    // Enterprise installs the authorized common/project baseline while holding the auto-exec hook
-    // module. The current pinned candidate holds module:hooks-runtime via strict-surface Unicode
-    // findings rather than trust.auto-exec-hook, so assert it is held and named with codes.
-    const heldHooks = report.catalogs.ecc.postures.enterprise.held.find(
-      (entry) => entry.componentId === "module:hooks-runtime",
-    );
-    expect(heldHooks).toBeDefined();
-    expect(heldHooks?.codes.length ?? 0).toBeGreaterThan(0);
 
     expect(report.catalogs.ecc.ok).toBe(true);
   });
 
-  it("evaluates the current shipped Superpowers lock at every posture: honestly 0 installed, 15 held all-coded, gate green", async () => {
+  it("evaluates the corrected Superpowers standard profile at every posture: 15 installed, none held", async () => {
     const lock = readVendorBaselineLock();
     const superpowersPin = lock.sources.find((source) => source.id === "superpowers")?.pinnedSha;
 
     const report = await checkInstallableBaseline({ lock, fixtureOnly: true });
 
     expect(report.catalogs.superpowers.pin).toBe(superpowersPin);
+    expect(report.catalogs.superpowers.profile).toBe("superpowers-standard-v1");
     for (const posture of ALL_POSTURES) {
       const result = report.catalogs.superpowers.postures[posture];
-      expect(result.installed).toBe(0);
-      expect(result.installedComponentIds).toEqual([]);
-      expect(result.held).toHaveLength(15);
-      expect(result.held.every((entry) => entry.codes.length > 0)).toBe(true);
-      // Today's shipped evidence is honestly blocked (real trust findings), not missing/mismatched,
-      // so a zero-installed Superpowers catalog must still be reported green (issue #438).
-      expect(
-        result.held.every(
-          (entry) =>
-            !entry.codes.includes("baseline.evidence-missing") &&
-            !entry.codes.includes("baseline.evidence-mismatch"),
-        ),
-      ).toBe(true);
+      expect(result.installed).toBe(15);
+      expect(result.installedComponentIds).toHaveLength(15);
+      expect(result.held).toEqual([]);
     }
 
     expect(report.catalogs.superpowers.ok).toBe(true);
@@ -160,17 +150,19 @@ describe("shipped baseline installability", () => {
     }
   });
 
-  it("authorizes and ledger round-trips a Superpowers component when its evidence verdict is pass", async () => {
+  it("holds exactly one Superpowers component when its corrected evidence is changed to blocked", async () => {
     const lock = structuredClone(readVendorBaselineLock());
     const source = lock.sources.find((candidate) => candidate.id === "superpowers");
     const component = source?.components.find(
-      (candidate) => candidate.id === "skill:using-superpowers",
+      (candidate) => candidate.id === "skill:brainstorming",
     );
     if (component === undefined) {
-      throw new Error("superpowers skill:using-superpowers evidence missing");
+      throw new Error("superpowers skill:brainstorming evidence missing");
     }
-    component.verdict = "pass";
-    component.findings = [];
+    component.verdict = "blocked";
+    component.findings = [
+      { code: "trust.synthetic-test-block", detail: "synthetic test-only active-profile block" },
+    ];
 
     const report = await checkInstallableBaseline({ lock, fixtureOnly: true });
 
@@ -178,9 +170,14 @@ describe("shipped baseline installability", () => {
     expect(report.ok).toBe(true);
     for (const posture of ALL_POSTURES) {
       const result = report.catalogs.superpowers.postures[posture];
-      expect(result.installed).toBe(1);
-      expect(result.installedComponentIds).toEqual(["skill:using-superpowers"]);
-      expect(result.held).toHaveLength(14);
+      expect(result.installed).toBe(14);
+      expect(result.installedComponentIds).not.toContain("skill:brainstorming");
+      expect(result.held).toEqual([
+        expect.objectContaining({
+          componentId: "skill:brainstorming",
+          codes: ["trust.synthetic-test-block"],
+        }),
+      ]);
     }
   });
 });
