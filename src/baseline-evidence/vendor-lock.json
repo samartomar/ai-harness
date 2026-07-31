@@ -32,7 +32,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -51,11 +55,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -74,7 +82,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -95,11 +107,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -144,7 +160,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -165,7 +185,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -196,11 +220,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -304,11 +332,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -342,11 +374,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -407,11 +443,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -439,11 +479,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -481,11 +525,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -512,11 +560,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -558,11 +610,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -599,11 +655,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -638,11 +698,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -666,11 +730,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -689,11 +757,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -714,11 +786,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -754,11 +830,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -796,11 +876,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -825,11 +909,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -883,11 +971,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -932,11 +1024,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -967,11 +1063,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -997,11 +1097,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1021,11 +1125,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1076,7 +1184,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1096,7 +1208,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1127,11 +1243,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1169,7 +1289,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1189,11 +1313,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1213,11 +1341,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1237,11 +1369,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1261,11 +1397,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1284,7 +1424,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1303,7 +1447,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1322,7 +1470,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1341,7 +1493,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1360,7 +1516,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1379,7 +1539,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1398,7 +1562,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1417,7 +1585,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1436,7 +1608,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1455,7 +1631,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1474,7 +1654,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1493,7 +1677,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1512,7 +1700,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1531,7 +1723,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1550,7 +1746,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1569,7 +1769,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1595,11 +1799,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1618,7 +1826,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1639,11 +1851,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1662,7 +1878,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1683,11 +1903,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1706,7 +1930,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1725,7 +1953,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1745,11 +1977,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1768,7 +2004,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1787,7 +2027,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1811,11 +2055,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1834,7 +2082,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1853,7 +2105,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1874,11 +2130,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1897,7 +2157,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1916,7 +2180,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1941,11 +2209,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1964,7 +2236,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -1983,7 +2259,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2002,7 +2282,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2021,7 +2305,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2040,7 +2328,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2065,11 +2357,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2088,7 +2384,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2107,7 +2407,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2126,7 +2430,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2145,7 +2453,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2172,11 +2484,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2198,11 +2514,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2226,11 +2546,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2255,11 +2579,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2280,11 +2608,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2306,11 +2638,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2329,7 +2665,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2348,7 +2688,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2367,7 +2711,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2389,11 +2737,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2415,11 +2767,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2438,7 +2794,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2461,11 +2821,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2486,11 +2850,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2511,11 +2879,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2536,11 +2908,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2559,7 +2935,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2584,11 +2964,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2610,11 +2994,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2633,7 +3021,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2652,7 +3044,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2671,7 +3067,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2690,7 +3090,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2709,7 +3113,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2728,7 +3136,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2747,7 +3159,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2766,7 +3182,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2787,7 +3207,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2848,11 +3272,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2899,11 +3327,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2930,11 +3362,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -2976,11 +3412,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3017,11 +3457,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3056,11 +3500,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3084,11 +3532,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3109,11 +3561,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3149,11 +3605,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3191,11 +3651,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3249,11 +3713,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3298,11 +3766,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3337,11 +3809,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3361,11 +3837,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3417,11 +3897,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3442,11 +3926,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3465,11 +3953,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3489,11 +3981,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3521,11 +4017,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3545,11 +4045,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3569,11 +4073,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3593,11 +4101,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3617,11 +4129,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3641,11 +4157,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3674,7 +4194,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3703,7 +4227,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3732,7 +4260,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3761,7 +4293,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3790,7 +4326,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3819,7 +4359,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3865,7 +4409,11 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3884,11 +4432,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3907,11 +4459,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3930,11 +4486,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3953,11 +4513,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3976,11 +4540,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -3999,11 +4567,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -4022,11 +4594,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -4045,11 +4621,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -4068,11 +4648,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -4091,11 +4675,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -4114,11 +4702,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -4137,11 +4729,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -4160,11 +4756,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
@@ -4183,11 +4783,15 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.a477c1de0768"
+              "version": "native.f370e71e866c"
             },
             {
               "name": "cisco@uvx",
-              "version": "2.0.12+uvlock.6e440d87a6a5"
+              "version": "2.0.12+uvlock.2de18b7da15c"
+            },
+            {
+              "name": "semgrep@uv:1.172.0",
+              "version": "1.172.0+uvlock.65d64d405ad2"
             },
             {
               "name": "skillspector@docker",
