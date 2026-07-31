@@ -1,6 +1,6 @@
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { bootloadersFor, REGISTRY_IDS } from "../internals/cli-registry.js";
+import { bootloadersFor, loadedDirsFor, REGISTRY_IDS } from "../internals/cli-registry.js";
 
 /** Heuristic: ~4 chars/token for mostly-ASCII markdown. A rough estimate, not a tokenizer. */
 const CHARS_PER_TOKEN = 4;
@@ -16,12 +16,14 @@ export const DEFAULT_CONTEXT_BUDGET_TOKENS = 40_000;
 const ROOT_CONTEXT_FILES: readonly string[] = bootloadersFor(REGISTRY_IDS);
 
 /**
- * Extra subtrees (beyond the canonical context dir) whose files load as agent context.
- * This is the directory-load semantic — Cursor loads every rule in the tree, not just
- * the bootloader aih writes — which the registry does not model today, so it stays
- * explicit rather than derived. Registry bootloaders are covered above as direct files.
+ * Extra subtrees (beyond the canonical context dir) whose files load as agent context —
+ * the directory-load semantic, where a tool reads every rule in the tree rather than only
+ * the bootloader aih writes. Derived from the registry, so a target that declares a rule
+ * tree is measured without editing this file. The former hardcoded `.cursor/rules` list
+ * walked Cursor's tree but never Kiro's, under-reporting every steering file aih did not
+ * itself write — the same failure as the hand-kept bootloader list in issue #553.
  */
-const EXTRA_CONTEXT_DIRS = [".cursor/rules"] as const;
+const EXTRA_CONTEXT_DIRS: readonly string[] = loadedDirsFor(REGISTRY_IDS);
 
 /** Basenames that are OS/file-manager metadata, never agent context (issue #553). */
 const OS_METADATA_NAMES = new Set([".ds_store", "thumbs.db", "desktop.ini"]);
@@ -202,7 +204,7 @@ export function tokenOptimizationIndex(
 
 /**
  * Scan `root` for the agent context an AI CLI loads — root bootloaders, the
- * canonical context dir (`contextDir`) tree, and Cursor rule files — and
+ * canonical context dir (`contextDir`) tree, and every registry-declared rule tree — and
  * estimate its token footprint (bytes / 4). Pure: reads file *sizes* only (never
  * contents), touches no network, mutates nothing; returns repo-relative POSIX
  * paths sorted by path so the rendered digest is byte-stable across runs.

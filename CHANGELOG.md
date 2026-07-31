@@ -51,6 +51,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The context footprint now measures every target's rule tree instead of only Cursor's.
+  Targets that load a whole directory rather than named files declare it in the CLI
+  registry, so `.kiro/steering/` is walked exactly as `.cursor/rules/` already was, and
+  a newly registered target is measured without editing the report. Steering files a
+  repo added by hand were previously invisible to the footprint and to `--gate`.
+
 - Trust scanning no longer advertises or accepts AgentShield as a governed
   detector while its upstream source is unavailable. Existing org policies that
   name `agentshield` must remove it. The pinned Cisco MCP scanner now requests

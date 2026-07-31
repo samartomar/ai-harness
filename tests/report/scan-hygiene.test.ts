@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { bootloadersFor, REGISTRY_IDS } from "../../src/internals/cli-registry.js";
+import { bootloadersFor, loadedDirsFor, REGISTRY_IDS } from "../../src/internals/cli-registry.js";
 import type { DigestAction, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -123,6 +123,20 @@ describe("report — gitignore-honoring footprint", () => {
     // Every target the registry knows about must be measurable. A CLI added to the
     // registry without context coverage fails here instead of going unmeasured.
     for (const rel of bootloaders) expect(paths).toContain(rel);
+  });
+
+  it("counts every registry-declared rule tree as context (no hardcoded dir list)", async () => {
+    const dirs = loadedDirsFor(REGISTRY_IDS);
+    // Guard the guard: a registry that stopped declaring rule trees would make the
+    // loop below vacuously pass, exactly as the #553 bootloader guard protects itself.
+    expect(dirs.length).toBeGreaterThan(1);
+    const rels = dirs.map((d) => `${d}/team-local.md`);
+    for (const rel of rels) put(rel, 100);
+    const tracked = (args: string[]) => (args[0] === "ls-files" ? `${rels.join("\0")}\0` : "");
+    const paths = (await bloatOf(ctx({}, tracked))).files.map((f) => f.path);
+    // A target whose tree aih walks for one CLI but not another under-reports that
+    // CLI's footprint. Declaring the dir in the registry makes coverage automatic.
+    for (const rel of rels) expect(paths).toContain(rel);
   });
 
   it("--since narrows to files changed vs the ref", async () => {
