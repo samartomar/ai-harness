@@ -1581,6 +1581,7 @@ describe("scanTrustTree", () => {
   });
 
   it.each([
+    [0, "", "emitted no SARIF"],
     [1, "not SARIF", "detector did not emit valid SARIF"],
     [2, JSON.stringify(EMPTY_SARIF), "detector exit 2"],
   ])(

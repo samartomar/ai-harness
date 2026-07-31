@@ -161,6 +161,33 @@ describe("checkDetectorsAvailable", () => {
     );
   });
 
+  it("rejects an inexact Cisco version and empty Snyk help output", async () => {
+    const run = fakeRunner((argv) => {
+      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.13" };
+      if (argv.includes("--help")) return { code: 0, stdout: "" };
+      return undefined;
+    });
+
+    const probes = await checkDetectorsAvailable(["cisco", "snyk-agent-scan"], {
+      run,
+      platform: "linux",
+      env: { SNYK_TOKEN: "fixture-token" },
+    });
+
+    expect(probes).toEqual([
+      {
+        name: "cisco",
+        analyzerLabel: "cisco@uvx",
+        reason: expect.stringContaining("does not match 2.0.12"),
+      },
+      {
+        name: "snyk-agent-scan",
+        analyzerLabel: "snyk-agent-scan@uv:0.5.15",
+        reason: "snyk-agent-scan help check emitted no output",
+      },
+    ]);
+  });
+
   it("rejects a different Semgrep version that merely mentions the pinned version", async () => {
     const run = fakeRunner((argv) =>
       argv.includes("--version") ? { code: 0, stdout: "9.9.9\nupgrade from 1.172.0\n" } : undefined,
