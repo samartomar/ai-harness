@@ -260,6 +260,26 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     ).toContain("/plugin install ecc@ecc");
   });
 
+  it("does not promise a rerun re-scopes, since no mechanism replaces installed content (#555)", async () => {
+    const text = docs((await command.plan(makeCtx({ allTools: true }))).actions)
+      .map((d) => d.text)
+      .join("\n");
+    // Kiro's native installer is absence-guarded and Codex's helpers are add-only,
+    // so a blanket "re-run to re-scope" is false for them and meaningless for the
+    // consult-only targets, which install nothing at all.
+    expect(text).not.toMatch(/Re-run after the stack changes to re-scope/);
+  });
+
+  it("states that reruns do not update already-installed Kiro content (#555)", async () => {
+    const text = docs((await command.plan(makeCtx({ cli: "kiro" }))).actions)
+      .map((d) => d.text)
+      .join("\n");
+    // "(idempotent)" reads to operators as "safe to re-run for updates". ECC's
+    // .kiro/install.sh copies only absent destinations, so say so plainly.
+    expect(text).toMatch(/does not update|will not update|untouched/i);
+    expect(text).not.toMatch(/\(idempotent\)/);
+  });
+
   it("always documents the ECC ecosystem tools (consult + agentshield)", async () => {
     const text = docs((await command.plan(makeCtx())).actions)
       .map((d) => d.text)
