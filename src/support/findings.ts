@@ -480,6 +480,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Re-run the org-policy projection (`aih init --posture enterprise --apply`, or the narrower command that owns the drifted file) so managed settings match `aih-org-policy.json`.",
   },
+  "org-policy.dropped-target-residue": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "org policy artifact left behind by a dropped target",
+    action:
+      "The projected file is still present, but the CLI that owns it is no longer a target of this repo, so org-policy projection no longer maintains it. Reconcile it with `aih prune` — re-projecting cannot fix this, because projection emits no actions for an untargeted CLI.",
+  },
   "org-policy.generation-delta": {
     audience: "developer",
     failSeverity: "blocking",

@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { postureGradeCheck } from "../config/governance.js";
 import type { Posture } from "../config/posture.js";
+import { isTargeted } from "../internals/cli-detect.js";
+import { entry, REGISTRY_IDS } from "../internals/cli-registry.js";
+import type { Cli } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { gitRead } from "../internals/git.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
@@ -223,6 +226,48 @@ function generationDeltaCheck(
   // Same severity as the managed-key drift path this refines: a hard fail at
   // team/enterprise (the finding is never suppressed), warning-only at vibe.
   return posture === "vibe" ? postureGradeCheck(check, "verify", posture) : check;
+}
+
+/**
+ * The registry CLI that owns a projected artifact path, resolved from the registry's
+ * declared `configDirs` rather than a hardcoded tool name — so a target added to the
+ * registry is scoped correctly here without editing this file.
+ */
+function owningCli(path: string): Cli | undefined {
+  const norm = path.replace(/\\/g, "/");
+  return REGISTRY_IDS.find((id) =>
+    entry(id).configDirs.some((dir) => norm === dir || norm.startsWith(`${dir}/`)),
+  ) as Cli | undefined;
+}
+
+/**
+ * Verdict for an artifact whose owning CLI is NOT in this repo's target set.
+ *
+ * `aih policy project` deliberately emits zero actions for an untargeted CLI, so the
+ * ordinary "re-run the projection" drift finding would be unsatisfiable by construction
+ * (issue #554). Absent → skip with the target-scope reason. Still on disk → real,
+ * actionable dropped-target residue routed to prune, never to a projection that cannot
+ * run. Nothing is deleted here, and operator-owned config is never assumed to be ours.
+ */
+function untargetedCheck(action: WriteAction, owner: Cli): (ctx: PlanContext) => Check {
+  return (ctx) => {
+    const name = `org-policy drift: ${action.path}`;
+    if (readIfExists(resolve(ctx.root, action.path)) === undefined) {
+      return {
+        name,
+        verdict: "skip",
+        detail: `${owner} is not a target of this repo — org-policy projection writes no ${owner} artifacts, so ${action.path} drift is not evaluated`,
+      };
+    }
+    return {
+      name,
+      verdict: "fail",
+      detail: `dropped-target residue: ${action.path} is still present but ${owner} is not a target of this repo, so org-policy projection no longer maintains it — reconcile it with \`aih prune\` (re-projecting cannot fix this)`,
+      code: "org-policy.dropped-target-residue",
+      location: { uri: action.path },
+      fingerprint: `org-policy-dropped-target:${action.path}`,
+    };
+  };
 }
 
 function driftCheck(action: WriteAction, posture: Posture): (ctx: PlanContext) => Check {
@@ -511,7 +556,18 @@ export function orgPolicyDriftProbes(ctx: PlanContext): ProbeAction[] {
     ...ctx,
     posture: strongerPosture(posture, policy.minimumPosture),
   };
-  return orgPolicyProjectionActions(projectionCtx, policy)
-    .filter((a): a is WriteAction => a.kind === "write")
-    .map((action) => probe(`org-policy drift: ${action.path}`, driftCheck(action, posture)));
+  const actions = orgPolicyProjectionActions(projectionCtx, policy).filter(
+    (a): a is WriteAction => a.kind === "write",
+  );
+  // The projection is owned by a single CLI (it writes that tool's managed settings
+  // plus their examples). Resolve that owner once from the registry and scope the whole
+  // probe set, mirroring policyProjectPlan's all-or-nothing gate — per-path matching
+  // would miss the sibling `.example` files that live outside the tool's config dir.
+  const owner = actions.map((a) => owningCli(a.path)).find((o) => o !== undefined);
+  const untargeted = owner !== undefined && !isTargeted(ctx, owner);
+  return actions.map((action) =>
+    untargeted && owner !== undefined
+      ? probe(`org-policy drift: ${action.path}`, untargetedCheck(action, owner))
+      : probe(`org-policy drift: ${action.path}`, driftCheck(action, posture)),
+  );
 }
