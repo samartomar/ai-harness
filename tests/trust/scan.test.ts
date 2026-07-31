@@ -1514,12 +1514,14 @@ describe("scanTrustTree", () => {
       ],
     };
     const seenDockerRuns: string[][] = [];
-    const detector = fakeRunner((argv) => {
+    const seenDockerTimeouts: Array<number | undefined> = [];
+    const detector = fakeRunner((argv, options) => {
       if (argv[0] !== "docker") return undefined;
       if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
       if (argv[1] === "image" && argv[2] === "inspect") return successfulSkillspector(argv);
       if (argv[1] === "run") {
         seenDockerRuns.push(argv);
+        seenDockerTimeouts.push(options?.timeoutMs);
         return { code: 1, stdout: JSON.stringify(sarif) };
       }
       return undefined;
@@ -1534,6 +1536,7 @@ describe("scanTrustTree", () => {
 
     expect(result.analyzersRun).toEqual(["aih-native", "skillspector@docker"]);
     expect(seenDockerRuns).toHaveLength(1);
+    expect(seenDockerTimeouts).toEqual([900_000]);
     expect(seenDockerRuns[0]).toContain(SKILLSPECTOR_IMAGE_DIGEST);
     expect(seenDockerRuns[0]).not.toContain(SKILLSPECTOR_IMAGE);
     expect(result.checks).toEqual(
@@ -1558,6 +1561,51 @@ describe("scanTrustTree", () => {
           code: undefined,
           detail: expect.stringContaining("auto execution detected by SkillSpector"),
           location: expect.objectContaining({ uri: "skills/clean/SKILL.md", startLine: 2 }),
+        }),
+      ]),
+    );
+  });
+
+  it("force-removes the bounded SkillSpector container after a scanner timeout", async () => {
+    skill("skills/clean", "# Clean\n");
+    let containerName = "";
+    const cleanupRuns: string[][] = [];
+    const detector = fakeRunner((argv) => {
+      if (argv[0] !== "docker") return undefined;
+      if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+      if (argv[1] === "image" && argv[2] === "inspect") return successfulSkillspector(argv);
+      if (argv[1] === "run") {
+        containerName = argv[argv.indexOf("--name") + 1] ?? "";
+        return {
+          code: 1,
+          stderr: "process timed out after 900000ms",
+          spawnError: true,
+        };
+      }
+      if (argv[1] === "rm") {
+        cleanupRuns.push(argv);
+        return { code: 0 };
+      }
+      return undefined;
+    });
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "enterprise",
+      requiredDetectors: ["skillspector"],
+      run: detector,
+    });
+
+    expect(containerName).toMatch(/^aih-skillspector-[0-9a-f-]{36}$/);
+    expect(cleanupRuns).toEqual([["docker", "rm", "--force", "--volumes", containerName]]);
+    expect(result.analyzersRun).toEqual(["aih-native"]);
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.detector-unavailable",
+          detail: expect.stringContaining("process timed out after 900000ms"),
         }),
       ]),
     );
@@ -4896,8 +4944,24 @@ describe("scanTrustTree", () => {
       "docker",
       "run",
       "--rm",
+      "--name",
+      expect.stringMatching(/^aih-skillspector-[0-9a-f-]{36}$/),
       "--network",
       "none",
+      "--cpus",
+      "2",
+      "--memory",
+      "4g",
+      "--memory-swap",
+      "4g",
+      "--pids-limit",
+      "256",
+      "--cap-drop",
+      "ALL",
+      "--cap-add",
+      "DAC_OVERRIDE",
+      "--security-opt",
+      "no-new-privileges",
       "--read-only",
       "--tmpfs",
       "/tmp:rw,noexec,nosuid,size=64m",

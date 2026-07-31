@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdtempSync,
@@ -431,14 +431,31 @@ export function skillspectorDockerRunArgv(
   platform: Platform,
   tree: string,
   image: string = SKILLSPECTOR_IMAGE,
+  containerName = `aih-skillspector-${randomUUID()}`,
 ): string[] {
   // Native Windows Docker bind mounts can reject drive-letter paths; that fails safe to skip.
   return execArgv(platform, [
     "docker",
     "run",
     "--rm",
+    "--name",
+    containerName,
     "--network",
     "none",
+    "--cpus",
+    "2",
+    "--memory",
+    "4g",
+    "--memory-swap",
+    "4g",
+    "--pids-limit",
+    "256",
+    "--cap-drop",
+    "ALL",
+    "--cap-add",
+    "DAC_OVERRIDE",
+    "--security-opt",
+    "no-new-privileges",
     "--read-only",
     "--tmpfs",
     "/tmp:rw,noexec,nosuid,size=64m",
@@ -451,6 +468,10 @@ export function skillspectorDockerRunArgv(
     "--format",
     "sarif",
   ]);
+}
+
+function skillspectorDockerCleanupArgv(platform: Platform, containerName: string): string[] {
+  return execArgv(platform, ["docker", "rm", "--force", "--volumes", containerName]);
 }
 
 function ciscoSkillScannerBaseArgv(): string[] {
@@ -637,14 +658,32 @@ async function runSkillspectorScan(
     runtimeOptions.skillspectorImageApprovals,
   );
   if ("reason" in image) throw new Error(image.reason);
-  const scan = await run(skillspectorDockerRunArgv(platform, tree, image.image), {
-    env: scrubDockerClientEnv(env),
-    timeoutMs: 120_000,
+  const containerName = `aih-skillspector-${randomUUID()}`;
+  const dockerEnv = scrubDockerClientEnv(env);
+  const scan = await run(skillspectorDockerRunArgv(platform, tree, image.image, containerName), {
+    env: dockerEnv,
+    // Full pinned catalogs are CPU-bound in SkillSpector and exceed the old
+    // two-minute budget even on the dedicated 6-vCPU vet hosts. Keep the
+    // external process bounded while allowing one exact source-wide run.
+    timeoutMs: 900_000,
   });
   const exitLabel = scan.code ?? "signal";
-  if (scan.spawnError) {
+  if (scan.spawnError || scan.truncated) {
+    const cleanup = await run(skillspectorDockerCleanupArgv(platform, containerName), {
+      env: dockerEnv,
+      timeoutMs: 30_000,
+    });
+    const cleanupDetail =
+      cleanup.spawnError || cleanup.code !== 0
+        ? `; container cleanup failed: ${
+            runFailureReason(cleanup, `docker exit ${cleanup.code ?? "signal"}`) ??
+            `docker exit ${cleanup.code ?? "signal"}`
+          }`
+        : "";
     throw new Error(
-      runFailureReason(scan, `detector exit ${exitLabel}`) ?? `detector exit ${exitLabel}`,
+      `${
+        runFailureReason(scan, `detector exit ${exitLabel}`) ?? `detector exit ${exitLabel}`
+      }${cleanupDetail}`,
     );
   }
   if (scan.code !== 0 && scan.code !== 1) {

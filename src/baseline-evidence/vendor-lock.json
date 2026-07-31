@@ -32,7 +32,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -51,7 +51,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -74,7 +74,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -95,7 +95,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -144,7 +144,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -165,7 +165,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -196,7 +196,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -304,7 +304,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -342,7 +342,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -407,7 +407,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -439,7 +439,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -481,7 +481,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -512,7 +512,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -558,7 +558,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -599,7 +599,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -638,7 +638,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -666,7 +666,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -689,7 +689,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -714,7 +714,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -754,7 +754,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -796,7 +796,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -825,7 +825,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -883,7 +883,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -932,7 +932,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -967,7 +967,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -997,7 +997,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -1021,7 +1021,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -1076,7 +1076,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1096,7 +1096,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1127,7 +1127,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -1169,7 +1169,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1189,7 +1189,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -1213,7 +1213,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -1237,7 +1237,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -1261,7 +1261,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -1284,7 +1284,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1303,7 +1303,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1322,7 +1322,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1341,7 +1341,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1360,7 +1360,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1379,7 +1379,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1398,7 +1398,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1417,7 +1417,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1436,7 +1436,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1455,7 +1455,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1474,7 +1474,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1493,7 +1493,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1512,7 +1512,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1531,7 +1531,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1550,7 +1550,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1569,7 +1569,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1595,7 +1595,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -1618,7 +1618,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1639,7 +1639,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -1662,7 +1662,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1683,7 +1683,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -1706,7 +1706,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1725,7 +1725,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1745,7 +1745,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -1768,7 +1768,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1787,7 +1787,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1811,7 +1811,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -1834,7 +1834,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1853,7 +1853,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1874,7 +1874,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -1897,7 +1897,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1916,7 +1916,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1941,7 +1941,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -1964,7 +1964,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -1983,7 +1983,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2002,7 +2002,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2021,7 +2021,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2040,7 +2040,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2065,7 +2065,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2088,7 +2088,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2107,7 +2107,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2126,7 +2126,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2145,7 +2145,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2172,7 +2172,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2198,7 +2198,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2226,7 +2226,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2255,7 +2255,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2280,7 +2280,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2306,7 +2306,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2329,7 +2329,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2348,7 +2348,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2367,7 +2367,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2389,7 +2389,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2415,7 +2415,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2438,7 +2438,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2461,7 +2461,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2486,7 +2486,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2511,7 +2511,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2536,7 +2536,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2559,7 +2559,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2584,7 +2584,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2610,7 +2610,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2633,7 +2633,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2652,7 +2652,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2671,7 +2671,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2690,7 +2690,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2709,7 +2709,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2728,7 +2728,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2747,7 +2747,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2766,7 +2766,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2787,7 +2787,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -2848,7 +2848,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2899,7 +2899,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2930,7 +2930,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -2976,7 +2976,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3017,7 +3017,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3056,7 +3056,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3084,7 +3084,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3109,7 +3109,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3149,7 +3149,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3191,7 +3191,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3249,7 +3249,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3298,7 +3298,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3337,7 +3337,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3361,7 +3361,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3417,7 +3417,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3442,7 +3442,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3465,7 +3465,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3489,7 +3489,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3521,7 +3521,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3545,7 +3545,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3569,7 +3569,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3593,7 +3593,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3617,7 +3617,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3641,7 +3641,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3674,7 +3674,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -3703,7 +3703,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -3732,7 +3732,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -3761,7 +3761,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -3790,7 +3790,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -3819,7 +3819,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -3844,7 +3844,7 @@
       "owner": "obra",
       "repo": "Superpowers",
       "pinnedSha": "d884ae04edebef577e82ff7c4e143debd0bbec99",
-      "sourceTreeSha256": "d872b4bd6b6cab2174c88fd1f7816c21ecd6dc85a85116c3d1067a5677e01694",
+      "sourceTreeSha256": "7c586965098c4d32599b72bf278c904ef59bda35ad0e439a11282f6ec67cc796",
       "components": [
         {
           "id": "runtime:superpowers-plugin",
@@ -3860,12 +3860,12 @@
             "package.json",
             "scripts"
           ],
-          "treeSha256": "e7835b4e632916a52bb9ba93f4adcf2e709752e023a6d3f1cddeb814f81fc7fa",
+          "treeSha256": "dea7ebb2156b5c52e305d5a2198c044c64a23df792cc244578426b6e05938019",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "skillspector@docker",
@@ -3879,12 +3879,12 @@
           "paths": [
             "skills/brainstorming"
           ],
-          "treeSha256": "6cfad63099f570ad588c437ef094ada7b8f4b4a33b7d9cae34f76d43fe585f32",
+          "treeSha256": "d1991723a90c289059bfd5c7faf51f6c21b137c019b20424aa4f0550dffb8320",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3902,12 +3902,12 @@
           "paths": [
             "skills/dispatching-parallel-agents"
           ],
-          "treeSha256": "37ebd738212cf0b138acda0ab9961856cad3bb87d16cc6c69e8aaa74dca01a9b",
+          "treeSha256": "b26ad5187a80dfc67a0158066e1c5cc550a48440eed1530844603a96efb3ad4a",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3925,12 +3925,12 @@
           "paths": [
             "skills/executing-plans"
           ],
-          "treeSha256": "c6e04e568a0e51a4df29672074a9e5999897d0d086effb28fd5e44a222860bb6",
+          "treeSha256": "492728ca8c68a3617ffad9cffcfb7274c1f7afaad599bdbaf9d39496e6bb6b24",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3948,12 +3948,12 @@
           "paths": [
             "skills/finishing-a-development-branch"
           ],
-          "treeSha256": "f7053ea7cfbeec69a430d8f719e5ac58cb7eaa8d061deb88111fe4bbb2d1ec27",
+          "treeSha256": "f5b1d639ce7531dcb0ef92f4cd3251985773fdf1d96209417b47399560e5d07b",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3971,12 +3971,12 @@
           "paths": [
             "skills/receiving-code-review"
           ],
-          "treeSha256": "d653f6298afc9ebc510c6774cc8619287fc2dc5c3d05237ce6672ec4a6146dae",
+          "treeSha256": "d8e88c9aaa681784386f6f1c20e90ec9635616b54c2c45ba482063de4466f920",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -3994,12 +3994,12 @@
           "paths": [
             "skills/requesting-code-review"
           ],
-          "treeSha256": "c1afe8d17f8a48db66c0332f9486473a9d29c121288ff48596cf980510c9bdd0",
+          "treeSha256": "a75059ef2a074458a7d61cf7c2d60d66ecdc04e9784b427ec2e12318ef68240e",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -4017,12 +4017,12 @@
           "paths": [
             "skills/subagent-driven-development"
           ],
-          "treeSha256": "2960120653bbf424f1439866a5c5699b25f3b1266fdebbc5e607c9145a382158",
+          "treeSha256": "257ff0d7e2f7c4137a6d9c5641609ab709e3a2cf3ac87fa0acc6c10c5bd60f1f",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -4040,12 +4040,12 @@
           "paths": [
             "skills/systematic-debugging"
           ],
-          "treeSha256": "551855d78072123e8c5dadc280f39f257800a643a3fc56c2f50c06d90a36442e",
+          "treeSha256": "780b308e3c69ac83f62e44e2facd5d1e5562ccd19c271984f8482ef29688f291",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -4063,12 +4063,12 @@
           "paths": [
             "skills/test-driven-development"
           ],
-          "treeSha256": "e540248e4da624ed9d4d61bb7942b5492f64307f044a8da55cafd7e7ef1d0c82",
+          "treeSha256": "55e7b8a2e572c3b95d47017f7d75f16568f81ba3b96c3fe48c0c9685213d814e",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -4086,12 +4086,12 @@
           "paths": [
             "skills/using-git-worktrees"
           ],
-          "treeSha256": "ac2960b006ad82716089cb84d83107fc01d4074805e9576c32c0fa7a55d1a7cd",
+          "treeSha256": "e8770c522911f5a3a4315de7348b069c4aec88dcb7a3c493c3d96499f2dba83b",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -4109,12 +4109,12 @@
           "paths": [
             "skills/using-superpowers"
           ],
-          "treeSha256": "c3dad7049ab0e9c819bf49d0602d26abca6653ec8ced3dcb310c2266e02f9c3b",
+          "treeSha256": "6d43858ee8d39f8c72befd5ddd5564ea09ef79bb3c4e376103930a13f92b559b",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -4132,12 +4132,12 @@
           "paths": [
             "skills/verification-before-completion"
           ],
-          "treeSha256": "be46bb2472627fd01a7a1ee65498a4453963d558c9e58c9e638d3309135b4f15",
+          "treeSha256": "32e836fa8c1faf3f07fcd6a5d7bbad69d90d1f463b238dbc23c7560d2fc11754",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -4155,12 +4155,12 @@
           "paths": [
             "skills/writing-plans"
           ],
-          "treeSha256": "5e60db0a25cf592c255c1eb13755a2648ea2d0e069c4386ef83119c054d0f35e",
+          "treeSha256": "1b5e3be3464a35c7b0c4c69242ccb031c615a667f7b4153a336ab928a80c420b",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
@@ -4178,12 +4178,12 @@
           "paths": [
             "skills/writing-skills"
           ],
-          "treeSha256": "acea67530f4defb7887c24bd7534f28ecf29fbd4517da40ca4a7a22ded4cace6",
+          "treeSha256": "da9a875f5d5504e1f92e22abb8cd3beb985718b78c061fe027f4d9da61d3bdfa",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.faab43e8d3ee"
+              "version": "native.a477c1de0768"
             },
             {
               "name": "cisco@uvx",
