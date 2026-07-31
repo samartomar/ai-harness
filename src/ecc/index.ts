@@ -209,7 +209,8 @@ export function kiroEccActions(ctx: PlanContext, repo: EccRepoCheckout): Action[
         lines(
           `Using the ECC checkout at \`${repo.posix}\`. \`.kiro/install.sh\` copies ECC's curated`,
           "Kiro agents/skills/steering/hooks/scripts/settings into this repo's `.kiro/`",
-          "(idempotent). On Windows it runs via Git Bash.",
+          "— copying only destinations that do not already exist, so a rerun adds missing",
+          "content but does not update files already installed. On Windows it runs via Git Bash.",
         ),
       ),
     ];
@@ -228,7 +229,9 @@ export function kiroEccActions(ctx: PlanContext, repo: EccRepoCheckout): Action[
         `\`${repo.posix}\` — ${checkoutStatus}`,
         "on this run — and runs ECC's native `.kiro/install.sh` to copy its curated Kiro",
         "agents, skills, steering, hooks, scripts, and settings into this repo's `.kiro/`",
-        "(idempotent). Requires git on PATH plus Git for Windows (Git Bash) installed; aih",
+        "— copying only destinations that do not already exist, so pulling a newer ECC and",
+        "re-running adds missing content but leaves already-installed files untouched.",
+        "Requires git on PATH plus Git for Windows (Git Bash) installed; aih",
         "resolves bash.exe from the standard install path. Point at an existing checkout",
         "instead with `--ecc-path <dir>`.",
       ),
@@ -546,7 +549,11 @@ function summaryDoc(clis: string[], inputs: EccInstallInputs, stack: RepoStack):
       "  • Codex → cached git checkout of ECC + add-only config/MCP/AGENTS merge helpers",
       "  • Kiro → cached git checkout of ECC (clone/pull to latest) + native .kiro/install.sh",
       "",
-      "Re-run after the stack changes to re-scope. For finer component control (specific",
+      "Re-running ADDS newly-matched content; it does not replace or remove what is",
+      "already installed. Kiro's native installer copies only absent destinations, the",
+      "Codex helpers are add-only, and consult targets install nothing at all — so a",
+      "rerun cannot re-scope an existing install. For npm targets the update behavior",
+      "is ECC's own installer's, not aih's. For finer component control (specific",
       `skills/agents/capabilities) ask the advisor:  npx ecc consult "${inputs.stackSummary}" --target <cli>`,
     ),
   );
