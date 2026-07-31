@@ -75,18 +75,31 @@ the release vet records exact analyzer receipts before the lock is written:
   detector change always moves the identity even between release version bumps
   (see `src/baseline-evidence/native-identity.ts`) — and pinned SkillSpector
   through Docker are required for every declared component;
-- `cisco-ai-skill-scanner==2.0.12` through offline `uvx` is additionally required
+- `semgrep==1.172.0` through its committed uv project is required for every
+  declared component;
+- `cisco-ai-skill-scanner==2.0.12` through its committed uv project is additionally required
   for every component whose declared bytes contain a regular `SKILL.md` file;
 - SkillSpector is bound to source revision
-  `326a2b489411a20ed742ff13701be39ba00063c8` and controlled image digest
-  `sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec`.
+  `34f60308522f45447cd343da0aad77bcea308ad4` and controlled image digest
+  `sha256:eb100b229ec5b25f74d5f6c1ac31e2d0466f08dbc0726af4239dccadbd7f1b1c`.
+
+Supplemental locked detectors are not part of the minimum release floor, but
+when one completes its receipt is still retained and bound to its exact
+committed uv-lock digest. This prevents an available MCP Scanner or Snyk
+runtime from becoming an unattributed extra analyzer and keeps local and CI
+evidence reproducible.
 
 Analyzer provisioning may fetch those exact inputs. Analyzer execution is
 no-egress: SkillSpector runs with Docker `--network none`, a read-only source
-mount and root filesystem, and `--no-llm`; Cisco runs with `uvx --offline
---no-python-downloads --no-env-file`. The component scanner uses a path-preserving
-projection, includes one regular top-level repository license file for license
-inheritance, and does not follow symlinks when deciding whether Cisco is required.
+mount and root filesystem, and `--no-llm`; Cisco runs with `uv run --project
+tools/cisco-skill-scanner --locked --isolated --python 3.12 --offline
+--no-python-downloads --no-env-file` through the committed scanner project and
+lock; Semgrep uses the equivalent locked, isolated, offline invocation through
+`tools/trust-scanners/semgrep`. The explicit Python minor keeps offline cache
+selection stable when a newer interpreter is installed for an unrelated helper.
+The component scanner uses a path-preserving projection, includes one regular
+top-level repository license file for license inheritance, and does not follow
+symlinks when deciding whether Cisco is required.
 The canonical catalog persists that decision as `skillContent: true`, allowing
 the pure release gate to enforce Cisco receipts without a vendor checkout. Vet
 discovery and the catalog marker must agree: either a missing required receipt

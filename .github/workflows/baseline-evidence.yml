@@ -26,7 +26,9 @@ jobs:
         # file, the evidence generator and committed locks
         # (src/baseline-evidence), the scanners it orchestrates (src/trust),
         # the install-preview producers (src/ecc, src/superpowers), the pinned
-        # scanner project (tools/cisco-skill-scanner), or the dependency graph.
+        # scanner projects/Dockerfile (tools/cisco-skill-scanner,
+        # tools/trust-scanners, tools/skillspector.Dockerfile), or the
+        # dependency graph.
         # Push-to-main and manual dispatch ALWAYS re-vet, so the from-scratch
         # ground truth on main (issue #444) is untouched and any PR-side miss
         # is still caught at merge. This is a step-level gate, not a paths:
@@ -42,7 +44,7 @@ jobs:
           base="${{ github.event.pull_request.base.sha }}"
           changed="$(git diff --name-only "$base" HEAD)"
           printf 'changed files:\n%s\n' "$changed"
-          pattern='^(\.github/workflows/baseline-evidence\.yml$|src/baseline-evidence/|src/trust/|src/ecc/|src/superpowers/|tools/cisco-skill-scanner/|package\.json$|package-lock\.json$)'
+          pattern='^(\.github/workflows/baseline-evidence\.yml$|src/baseline-evidence/|src/trust/|src/ecc/|src/superpowers/|tools/cisco-skill-scanner/|tools/trust-scanners/|tools/skillspector\.Dockerfile$|package\.json$|package-lock\.json$)'
           if printf '%s\n' "$changed" | grep -qE "$pattern"; then
             echo "vet=true" >> "$GITHUB_OUTPUT"
             echo "vetting-relevant changes found: re-vet"
@@ -58,6 +60,11 @@ jobs:
           cache: npm
       - if: steps.relevance.outputs.vet == 'true'
         run: npm ci
+      - name: Set up scanner Python
+        if: steps.relevance.outputs.vet == 'true'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
       - name: Pull and verify pinned SkillSpector image by digest
         if: steps.relevance.outputs.vet == 'true'
         shell: bash
@@ -79,18 +86,37 @@ jobs:
         if: steps.relevance.outputs.vet == 'true'
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          version: "0.11.14"
-          cache-dependency-glob: tools/cisco-skill-scanner/uv.lock
+          version: "0.12.0"
+          cache-dependency-glob: |
+            tools/cisco-skill-scanner/uv.lock
+            tools/trust-scanners/semgrep/uv.lock
+            tools/trust-scanners/cisco-mcp/uv.lock
       - name: Cache and verify pinned Cisco skill-scanner
         if: steps.relevance.outputs.vet == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          uv run --project tools/cisco-skill-scanner --locked --isolated \
+          uv run --project tools/cisco-skill-scanner --locked --isolated --python 3.12 \
             --no-python-downloads --no-env-file skill-scanner --version
-          version="$(uv run --project tools/cisco-skill-scanner --locked --isolated \
+          version="$(uv run --project tools/cisco-skill-scanner --locked --isolated --python 3.12 \
             --offline --no-python-downloads --no-env-file skill-scanner --version)"
           test "$version" = "skill-scanner 2.0.12"
+      - name: Cache and verify supplemental locked scanners
+        if: steps.relevance.outputs.vet == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --project tools/trust-scanners/semgrep --locked --isolated --python 3.12 \
+            --no-python-downloads --no-env-file semgrep --version
+          semgrep_version="$(uv run --project tools/trust-scanners/semgrep \
+            --locked --isolated --python 3.12 --offline --no-python-downloads --no-env-file \
+            semgrep --version)"
+          test "$semgrep_version" = "1.172.0"
+          uv run --project tools/trust-scanners/cisco-mcp --locked --isolated --python 3.12 \
+            --no-python-downloads --no-env-file mcp-scanner --help >/dev/null
+          uv run --project tools/trust-scanners/cisco-mcp --locked --isolated \
+            --python 3.12 --offline --no-python-downloads --no-env-file \
+            mcp-scanner --help >/dev/null
       - name: Check out exact ECC baseline
         if: steps.relevance.outputs.vet == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

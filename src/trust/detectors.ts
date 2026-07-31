@@ -9,8 +9,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
-import { CISCO_SKILL_SCANNER_PROJECT } from "../baseline-evidence/analyzer-profile.js";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { hashComponentTree } from "../baseline-evidence/hash.js";
 import type { Posture } from "../config/posture.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
@@ -57,8 +57,7 @@ export type TrustDetectorName =
   | "cisco"
   | "mcp-scanner"
   | "semgrep"
-  | "snyk-agent-scan"
-  | "agentshield";
+  | "snyk-agent-scan";
 
 export interface TrustDetector {
   name: TrustDetectorName;
@@ -108,8 +107,26 @@ export interface TrustDetectorResult {
 }
 
 const DETECTOR_UNAVAILABLE = "trust.detector-unavailable";
-const CISCO_MCP_SCANNER_PACKAGE = "cisco-ai-mcp-scanner";
-const SNYK_AGENT_SCAN_PACKAGE = "snyk-agent-scan";
+const moduleDir = dirname(fileURLToPath(import.meta.url));
+const trustScannerRootCandidates = [
+  resolve(moduleDir, "..", "tools", "trust-scanners"),
+  resolve(moduleDir, "..", "..", "tools", "trust-scanners"),
+] as const;
+const TRUST_SCANNERS_ROOT =
+  trustScannerRootCandidates.find((candidate) => existsSync(candidate)) ??
+  trustScannerRootCandidates[0];
+const ciscoSkillScannerProjectCandidates = [
+  resolve(moduleDir, "..", "tools", "cisco-skill-scanner"),
+  resolve(moduleDir, "..", "..", "tools", "cisco-skill-scanner"),
+] as const;
+const UV_SCANNER_PYTHON = "3.12";
+const UV_SCANNER_STARTUP_TIMEOUT_MS = 120_000;
+export const CISCO_SKILL_SCANNER_PROJECT =
+  ciscoSkillScannerProjectCandidates.find((candidate) => existsSync(join(candidate, "uv.lock"))) ??
+  ciscoSkillScannerProjectCandidates[0];
+export const CISCO_MCP_SCANNER_PROJECT = join(TRUST_SCANNERS_ROOT, "cisco-mcp");
+export const SEMGREP_PROJECT = join(TRUST_SCANNERS_ROOT, "semgrep");
+export const SNYK_AGENT_SCAN_PROJECT = join(TRUST_SCANNERS_ROOT, "snyk-agent-scan");
 // These Semgrep rules are deliberately small harness-owned safety rules, not a
 // complete substitute for native trust checks. The regexes are line-oriented,
 // including the download-and-execute rule, so a pass is same-line coverage only.
@@ -224,15 +241,6 @@ export const SNYK_AGENT_SCAN_RULE_MAP: Record<string, CheckCode> = {
   W021: "trust.hidden-unicode",
 };
 
-export const AGENTSHIELD_RULE_MAP: Record<string, CheckCode> = {
-  "agentshield.hidden-unicode": "trust.hidden-unicode",
-  "agentshield.malicious-code": "trust.malicious-code",
-  "agentshield.prompt-injection": "trust.prompt-injection",
-  "hidden-unicode": "trust.hidden-unicode",
-  "malicious-code": "trust.malicious-code",
-  "prompt-injection": "trust.prompt-injection",
-};
-
 interface SarifArtifactLocation {
   uri?: unknown;
 }
@@ -306,6 +314,20 @@ interface SnykAgentScanPathResult {
 interface SnykAgentServerResult {
   config_path?: unknown;
   server?: unknown;
+}
+
+interface McpScannerFindingSummary {
+  severity?: unknown;
+  threat_names?: unknown;
+  threat_summary?: unknown;
+  total_findings?: unknown;
+}
+
+interface McpScannerResult {
+  findings?: unknown;
+  is_safe?: unknown;
+  status?: unknown;
+  tool_name?: unknown;
 }
 
 interface MaliciousPattern {
@@ -482,6 +504,8 @@ function ciscoSkillScannerBaseArgv(): string[] {
     CISCO_SKILL_SCANNER_PROJECT,
     "--locked",
     "--isolated",
+    "--python",
+    UV_SCANNER_PYTHON,
     "--offline",
     "--no-python-downloads",
     "--no-env-file",
@@ -491,25 +515,52 @@ function ciscoSkillScannerBaseArgv(): string[] {
 
 function mcpScannerBaseArgv(): string[] {
   return [
-    "uvx",
+    "uv",
+    "run",
+    "--project",
+    CISCO_MCP_SCANNER_PROJECT,
+    "--locked",
+    "--isolated",
+    "--python",
+    UV_SCANNER_PYTHON,
     "--offline",
     "--no-python-downloads",
     "--no-env-file",
-    "--from",
-    CISCO_MCP_SCANNER_PACKAGE,
     "mcp-scanner",
   ];
 }
 
 function snykAgentScanBaseArgv(): string[] {
   return [
-    "uvx",
+    "uv",
+    "run",
+    "--project",
+    SNYK_AGENT_SCAN_PROJECT,
+    "--locked",
+    "--isolated",
+    "--python",
+    UV_SCANNER_PYTHON,
     "--offline",
     "--no-python-downloads",
     "--no-env-file",
-    "--from",
-    SNYK_AGENT_SCAN_PACKAGE,
     "snyk-agent-scan",
+  ];
+}
+
+function semgrepBaseArgv(): string[] {
+  return [
+    "uv",
+    "run",
+    "--project",
+    SEMGREP_PROJECT,
+    "--locked",
+    "--isolated",
+    "--python",
+    UV_SCANNER_PYTHON,
+    "--offline",
+    "--no-python-downloads",
+    "--no-env-file",
+    "semgrep",
   ];
 }
 
@@ -522,15 +573,11 @@ function mcpScannerHelpArgv(platform: Platform): string[] {
 }
 
 function semgrepVersionArgv(platform: Platform): string[] {
-  return execArgv(platform, ["semgrep", "--version"]);
+  return execArgv(platform, [...semgrepBaseArgv(), "--version"]);
 }
 
 function snykAgentScanHelpArgv(platform: Platform): string[] {
   return execArgv(platform, [...snykAgentScanBaseArgv(), "help"]);
-}
-
-function agentshieldHelpArgv(platform: Platform): string[] {
-  return execArgv(platform, ["agentshield", "scan", "--help"]);
 }
 
 export function ciscoSkillScannerRunArgv(
@@ -549,30 +596,21 @@ export function ciscoSkillScannerRunArgv(
   ]);
 }
 
-export function mcpScannerStaticArgv(
-  platform: Platform,
-  inputJson: string,
-  outputSarif: string,
-): string[] {
+export function mcpScannerStaticArgv(platform: Platform, inputJson: string): string[] {
   return execArgv(platform, [
     ...mcpScannerBaseArgv(),
-    "--storage",
-    "memory",
+    "--raw",
+    "--analyzers",
+    "yara,prompt_defense,readiness",
     "static",
     "--tools",
     inputJson,
-    "--format",
-    "sarif",
-    "--output",
-    outputSarif,
-    "--analyzers",
-    "yara,prompt-injection,tool-poisoning,secrets",
   ]);
 }
 
 export function semgrepScanArgv(platform: Platform, tree: string, config: string): string[] {
   return execArgv(platform, [
-    "semgrep",
+    ...semgrepBaseArgv(),
     "scan",
     "--config",
     config,
@@ -592,25 +630,6 @@ export function snykAgentScanArgv(platform: Platform, tree: string): string[] {
     "--json",
     "--no-bootstrap",
     "--suppress-mcpserver-io=true",
-  ]);
-}
-
-export function agentshieldScanArgv(
-  platform: Platform,
-  tree: string,
-  outputSarif: string,
-): string[] {
-  return execArgv(platform, [
-    "agentshield",
-    "scan",
-    "--path",
-    tree,
-    "--format",
-    "sarif",
-    "--output",
-    outputSarif,
-    "--min-severity",
-    "info",
   ]);
 }
 
@@ -708,7 +727,7 @@ async function checkCiscoAvailable(
       : undefined;
   const version = await run(ciscoSkillScannerVersionArgv(platform), {
     env: scrubFetchEnv(env),
-    timeoutMs: 30_000,
+    timeoutMs: UV_SCANNER_STARTUP_TIMEOUT_MS,
   });
   const reason = runFailureReason(version, `uvx exit ${version.code ?? "signal"}`);
   if (reason !== undefined) return reason;
@@ -731,7 +750,7 @@ async function checkMcpScannerAvailable(
 ): Promise<string | undefined> {
   const help = await run(mcpScannerHelpArgv(platform), {
     env: scrubFetchEnv(env),
-    timeoutMs: 30_000,
+    timeoutMs: UV_SCANNER_STARTUP_TIMEOUT_MS,
   });
   const reason = runFailureReason(help, `uvx exit ${help.code ?? "signal"}`);
   if (reason !== undefined) return reason;
@@ -748,7 +767,7 @@ async function checkSemgrepAvailable(
 ): Promise<string | undefined> {
   const version = await run(semgrepVersionArgv(platform), {
     env: scrubFetchEnv(env),
-    timeoutMs: 30_000,
+    timeoutMs: UV_SCANNER_STARTUP_TIMEOUT_MS,
   });
   const reason = runFailureReason(version, `semgrep exit ${version.code ?? "signal"}`);
   if (reason !== undefined) return reason;
@@ -768,29 +787,12 @@ async function checkSnykAgentScanAvailable(
   }
   const help = await run(snykAgentScanHelpArgv(platform), {
     env: scrubFetchEnv(env),
-    timeoutMs: 30_000,
+    timeoutMs: UV_SCANNER_STARTUP_TIMEOUT_MS,
   });
   const reason = runFailureReason(help, `uvx exit ${help.code ?? "signal"}`);
   if (reason !== undefined) return reason;
   if (`${help.stdout}${help.stderr}`.trim().length === 0) {
     return "snyk-agent-scan help check emitted no output";
-  }
-  return undefined;
-}
-
-async function checkAgentShieldAvailable(
-  run: Runner,
-  platform: Platform,
-  env: NodeJS.ProcessEnv,
-): Promise<string | undefined> {
-  const help = await run(agentshieldHelpArgv(platform), {
-    env: scrubFetchEnv(env),
-    timeoutMs: 30_000,
-  });
-  const reason = runFailureReason(help, `agentshield exit ${help.code ?? "signal"}`);
-  if (reason !== undefined) return reason;
-  if (`${help.stdout}${help.stderr}`.trim().length === 0) {
-    return "agentshield help check emitted no output";
   }
   return undefined;
 }
@@ -1250,6 +1252,96 @@ function snykAgentScanSarif(raw: string, tree: string): SarifLog {
   return { version: "2.1.0", runs: [{ results }] };
 }
 
+function mcpScannerRuleId(analyzer: string, threat: string): string {
+  const normalized = threat
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized.length > 0 ? normalized : analyzer;
+}
+
+function mcpScannerToolUri(raw: unknown): string {
+  if (typeof raw !== "string") return "mcp-scanner.json";
+  const separator = raw.lastIndexOf(":");
+  const candidate = separator > 0 ? raw.slice(0, separator) : raw;
+  return isSafeRelativeSarifUri(candidate) ? candidate : "mcp-scanner.json";
+}
+
+function mcpScannerSarif(raw: string): SarifLog {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("mcp-scanner did not emit parseable JSON");
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error("mcp-scanner JSON did not include a result array");
+  }
+
+  const results: SarifResult[] = [];
+  for (const rawResult of parsed) {
+    if (!isRecord(rawResult)) {
+      throw new Error("mcp-scanner JSON included a malformed result");
+    }
+    const result = rawResult as McpScannerResult;
+    if (result.status !== "completed" || typeof result.is_safe !== "boolean") {
+      throw new Error("mcp-scanner JSON included an incomplete result");
+    }
+    if (!isRecord(result.findings)) {
+      throw new Error("mcp-scanner JSON result omitted analyzer findings");
+    }
+
+    let emitted = 0;
+    for (const [analyzer, rawSummary] of Object.entries(result.findings)) {
+      if (!isRecord(rawSummary)) {
+        throw new Error("mcp-scanner JSON included a malformed analyzer finding");
+      }
+      const summary = rawSummary as McpScannerFindingSummary;
+      const total =
+        typeof summary.total_findings === "number" &&
+        Number.isInteger(summary.total_findings) &&
+        summary.total_findings >= 0
+          ? summary.total_findings
+          : undefined;
+      if (total === undefined) {
+        throw new Error("mcp-scanner JSON analyzer finding omitted a valid total");
+      }
+      if (total === 0) continue;
+
+      const threats = Array.isArray(summary.threat_names)
+        ? summary.threat_names.filter((threat): threat is string => typeof threat === "string")
+        : [];
+      const findingNames = threats.length > 0 ? threats : [analyzer];
+      const detail =
+        typeof summary.threat_summary === "string" && summary.threat_summary.length > 0
+          ? summary.threat_summary
+          : `${total} finding(s) from ${analyzer}`;
+      const severity = typeof summary.severity === "string" ? `; severity ${summary.severity}` : "";
+      for (const threat of findingNames) {
+        results.push({
+          ruleId: mcpScannerRuleId(analyzer, threat),
+          message: { text: `${detail}${severity}; analyzer ${analyzer}; count ${total}` },
+          locations: [
+            {
+              physicalLocation: {
+                artifactLocation: { uri: mcpScannerToolUri(result.tool_name) },
+                region: { startLine: 1 },
+              },
+            },
+          ],
+        });
+        emitted += 1;
+      }
+    }
+    if (result.is_safe === false && emitted === 0) {
+      throw new Error("mcp-scanner marked a result unsafe without reporting a finding");
+    }
+  }
+
+  return { version: "2.1.0", runs: [{ results }] };
+}
+
 function safeToolName(raw: string): string {
   const safe = raw.replace(/[^A-Za-z0-9._:-]/g, "_").replace(/^_+|_+$/g, "");
   return safe.length > 0 ? safe.slice(0, 120) : "mcp-server";
@@ -1308,20 +1400,20 @@ async function runMcpScannerScan(
 ): Promise<string> {
   const tmp = mkdtempSync(join(tmpdir(), "aih-mcp-scanner-"));
   const input = join(tmp, "tools.json");
-  const output = join(tmp, "results.sarif");
   try {
     writeFileSync(
       input,
       `${JSON.stringify({ tools: mcpStaticTools(tree, runtimeOptions.inventory) }, null, 2)}\n`,
       "utf8",
     );
-    const scan = await run(mcpScannerStaticArgv(platform, input, output), {
+    const scan = await run(mcpScannerStaticArgv(platform, input), {
       env: scrubFetchEnv(env),
       timeoutMs: 120_000,
     });
     const reason = runFailureReason(scan, `detector exit ${scan.code ?? "signal"}`);
     if (reason !== undefined) throw new Error(reason);
-    return readFileSync(output, "utf8");
+    if (scan.stdout.trim().length === 0) throw new Error("mcp-scanner emitted no JSON");
+    return JSON.stringify(mcpScannerSarif(scan.stdout));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -1385,33 +1477,6 @@ async function runSnykAgentScan(
     throw new Error(scan.stderr || "snyk-agent-scan exited 1 without findings");
   }
   return JSON.stringify(sarif);
-}
-
-async function runAgentShieldScan(
-  run: Runner,
-  platform: Platform,
-  env: NodeJS.ProcessEnv,
-  tree: string,
-): Promise<string> {
-  const tmp = mkdtempSync(join(tmpdir(), "aih-agentshield-"));
-  const output = join(tmp, "results.sarif");
-  try {
-    const scan = await run(agentshieldScanArgv(platform, tree, output), {
-      env: scrubFetchEnv(env),
-      timeoutMs: 120_000,
-    });
-    if (scan.spawnError || (scan.code !== 0 && scan.code !== 2)) {
-      throw new Error(scan.stderr || scan.stdout || `detector exit ${scan.code ?? "signal"}`);
-    }
-    try {
-      return readFileSync(output, "utf8");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`agentshield did not write SARIF to ${output}: ${message}`);
-    }
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
-  }
 }
 
 function unavailableDetail(detector: TrustDetectorName, reason: string): string {
@@ -1722,13 +1787,7 @@ function ruleCode(
         `trust.malicious-code:${location.uri}:${String(location.startLine ?? 1)}`,
       )
     ) {
-      return detector.name === "agentshield" &&
-        isStrictUnicodeSurface(location.uri) &&
-        /\b(?:Overly permissive allow rule|excessive permissions?)\b/i.test(
-          resultMessage(result, detector),
-        )
-        ? { code: "trust.permission-risk" }
-        : { code: "trust.detector-finding" };
+      return { code: "trust.detector-finding" };
     }
     if (
       mapped === "trust.auto-exec-hook" &&
@@ -1749,8 +1808,7 @@ function ruleCode(
   if (
     detector.name === "skillspector" ||
     detector.name === "semgrep" ||
-    detector.name === "snyk-agent-scan" ||
-    detector.name === "agentshield"
+    detector.name === "snyk-agent-scan"
   ) {
     if (
       detector.name === "skillspector" &&
@@ -1771,7 +1829,6 @@ function ruleCode(
 }
 
 function detectorFindingLabel(detector: TrustDetector): string {
-  if (detector.name === "agentshield") return "AgentShield";
   if (detector.name === "skillspector") return "SkillSpector";
   if (detector.name === "mcp-scanner") return "Cisco AI Defense mcp-scanner";
   if (detector.name === "semgrep") return "Semgrep";
@@ -1990,7 +2047,7 @@ function analyzerPassCheck(detector: TrustDetector, analyzersRun: readonly strin
     return {
       name: "trust detector mcp-scanner",
       verdict: "pass",
-      detail: `Cisco AI Defense mcp-scanner static scan completed through uvx --offline defaults-only. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
+      detail: `Cisco AI Defense mcp-scanner static scan completed through the committed uv lock with offline local analyzers. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
     };
   }
   if (detector.name === "semgrep") {
@@ -2005,13 +2062,6 @@ function analyzerPassCheck(detector: TrustDetector, analyzersRun: readonly strin
       name: "trust detector snyk-agent-scan",
       verdict: "pass",
       detail: `Snyk Agent Scan completed with JSON output, --no-bootstrap, and no MCP auto-exec bypass. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
-    };
-  }
-  if (detector.name === "agentshield") {
-    return {
-      name: "trust detector agentshield",
-      verdict: "pass",
-      detail: `AgentShield configuration scan completed with SARIF output and no auto-fix/deep-analysis flags. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
     };
   }
   return {
@@ -2045,24 +2095,17 @@ const SKILL_TRUST_DETECTORS: TrustDetector[] = [
   },
   {
     name: "semgrep",
-    analyzerLabel: "semgrep@local",
+    analyzerLabel: "semgrep@uv:1.172.0",
     checkAvailable: checkSemgrepAvailable,
     runScan: runSemgrepScan,
     ruleMap: SEMGREP_RULE_MAP,
   },
   {
     name: "snyk-agent-scan",
-    analyzerLabel: "snyk-agent-scan@uvx",
+    analyzerLabel: "snyk-agent-scan@uv:0.5.15",
     checkAvailable: checkSnykAgentScanAvailable,
     runScan: runSnykAgentScan,
     ruleMap: SNYK_AGENT_SCAN_RULE_MAP,
-  },
-  {
-    name: "agentshield",
-    analyzerLabel: "agentshield@local",
-    checkAvailable: checkAgentShieldAvailable,
-    runScan: runAgentShieldScan,
-    ruleMap: AGENTSHIELD_RULE_MAP,
   },
 ];
 
@@ -2071,7 +2114,7 @@ const MCP_CONFIG_DETECTORS: TrustDetector[] = [
   // including MCP config files. This list is for MCP-specific detector tools.
   {
     name: "mcp-scanner",
-    analyzerLabel: "mcp-scanner@uvx",
+    analyzerLabel: "mcp-scanner@uv:4.8.1",
     checkAvailable: checkMcpScannerAvailable,
     runScan: runMcpScannerScan,
     ruleMap: MCP_SCANNER_RULE_MAP,

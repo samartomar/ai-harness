@@ -303,7 +303,6 @@ describe("OrgPolicySchema", () => {
               "mcp-scanner",
               "semgrep",
               "snyk-agent-scan",
-              "agentshield",
             ],
           },
         }),
@@ -318,14 +317,7 @@ describe("OrgPolicySchema", () => {
         },
       ],
       requireSignedSource: false,
-      requiredDetectors: [
-        "skillspector",
-        "cisco",
-        "mcp-scanner",
-        "semgrep",
-        "snyk-agent-scan",
-        "agentshield",
-      ],
+      requiredDetectors: ["skillspector", "cisco", "mcp-scanner", "semgrep", "snyk-agent-scan"],
       internalScopes: [],
     });
   });
@@ -361,6 +353,18 @@ describe("OrgPolicySchema", () => {
         approvedAt: "2026-07-08T00:00:00.000Z",
       },
     ]);
+  });
+
+  it("rejects AgentShield as a governed detector while its advertised source is unavailable", () => {
+    expect(() =>
+      parseOrgPolicy(
+        policy({
+          trust: {
+            requiredDetectors: ["agentshield"],
+          },
+        }),
+      ),
+    ).toThrow(/invalid option/i);
   });
 
   it("rejects redefinitions; command policy changes must be deltas", () => {

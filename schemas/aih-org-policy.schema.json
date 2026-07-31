@@ -321,8 +321,7 @@
               "cisco",
               "mcp-scanner",
               "semgrep",
-              "snyk-agent-scan",
-              "agentshield"
+              "snyk-agent-scan"
             ]
           }
         },

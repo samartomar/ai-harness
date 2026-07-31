@@ -5,11 +5,17 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   baselineAnalyzerVersions,
+  CISCO_MCP_SCANNER_LOCK,
+  CISCO_MCP_SCANNER_VERSION,
   CISCO_SKILL_SCANNER_LOCK,
   CISCO_SKILL_SCANNER_VERSION,
   preflightRequiredBaselineAnalyzers,
   requiredBaselineAnalyzersForComponent,
   requiredBaselineDetectorsForComponent,
+  SEMGREP_LOCK,
+  SEMGREP_VERSION,
+  SNYK_AGENT_SCAN_LOCK,
+  SNYK_AGENT_SCAN_VERSION,
 } from "../../src/baseline-evidence/analyzer-profile.js";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { fakeRunner, missingToolRunner } from "../../src/internals/proc.js";
@@ -40,17 +46,20 @@ describe("required baseline analyzer applicability", () => {
     ["module:docs", ["docs/en"], false],
     ["skill:tdd", ["skills/tdd-workflow"], true],
     ["module:quality", ["scripts/check.js", "skills/verification-loop"], true],
-  ])("selects Cisco only for declared skill content in %s", (id, paths, includesCisco) => {
-    const required = requiredBaselineAnalyzersForComponent(component(id, paths));
-    expect(required).toEqual(
-      includesCisco
-        ? ["aih-native", "skillspector@docker", "cisco@uvx"]
-        : ["aih-native", "skillspector@docker"],
-    );
-    expect(requiredBaselineDetectorsForComponent(component(id, paths))).toEqual(
-      includesCisco ? ["skillspector", "cisco"] : ["skillspector"],
-    );
-  });
+  ])(
+    "requires Semgrep everywhere and Cisco only for declared skill content in %s",
+    (id, paths, includesCisco) => {
+      const required = requiredBaselineAnalyzersForComponent(component(id, paths));
+      expect(required).toEqual(
+        includesCisco
+          ? ["aih-native", "skillspector@docker", "semgrep@uv:1.172.0", "cisco@uvx"]
+          : ["aih-native", "skillspector@docker", "semgrep@uv:1.172.0"],
+      );
+      expect(requiredBaselineDetectorsForComponent(component(id, paths))).toEqual(
+        includesCisco ? ["skillspector", "semgrep", "cisco"] : ["skillspector", "semgrep"],
+      );
+    },
+  );
 
   it("requires Cisco when a declared harness root contains SKILL.md content", () => {
     const root = mkdtempSync(join(tmpdir(), "aih-analyzer-profile-"));
@@ -62,9 +71,14 @@ describe("required baseline analyzer applicability", () => {
     expect(requiredBaselineAnalyzersForComponent(nested, root)).toEqual([
       "aih-native",
       "skillspector@docker",
+      "semgrep@uv:1.172.0",
       "cisco@uvx",
     ]);
-    expect(requiredBaselineDetectorsForComponent(nested, root)).toEqual(["skillspector", "cisco"]);
+    expect(requiredBaselineDetectorsForComponent(nested, root)).toEqual([
+      "skillspector",
+      "semgrep",
+      "cisco",
+    ]);
   });
 
   it("binds the Cisco analyzer receipt identity to the committed uv lock", () => {
@@ -75,6 +89,15 @@ describe("required baseline analyzer applicability", () => {
     expect(baselineAnalyzerVersions()["cisco@uvx"]).toBe(
       `${CISCO_SKILL_SCANNER_VERSION}+uvlock.${digest}`,
     );
+  });
+
+  it.each([
+    ["mcp-scanner@uv:4.8.1", CISCO_MCP_SCANNER_VERSION, CISCO_MCP_SCANNER_LOCK],
+    ["semgrep@uv:1.172.0", SEMGREP_VERSION, SEMGREP_LOCK],
+    ["snyk-agent-scan@uv:0.5.15", SNYK_AGENT_SCAN_VERSION, SNYK_AGENT_SCAN_LOCK],
+  ])("binds optional analyzer %s to its committed uv lock", (label, version, lock) => {
+    const digest = createHash("sha256").update(readFileSync(lock)).digest("hex").slice(0, 12);
+    expect(baselineAnalyzerVersions()[label]).toBe(`${version}+uvlock.${digest}`);
   });
 });
 

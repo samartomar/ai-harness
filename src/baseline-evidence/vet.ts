@@ -277,15 +277,9 @@ export function defaultComponentScanner(
         const detectors =
           sharedCiscoEvidence === undefined || usesCisco
             ? scanOptions.detectors
-            : (
-                [
-                  "skillspector",
-                  "mcp-scanner",
-                  "semgrep",
-                  "snyk-agent-scan",
-                  "agentshield",
-                ] as const
-              ).filter((detector) => scanOptions.detectors?.includes(detector) ?? true);
+            : (["skillspector", "mcp-scanner", "semgrep", "snyk-agent-scan"] as const).filter(
+                (detector) => scanOptions.detectors?.includes(detector) ?? true,
+              );
         const scan = await scanTree(projectionRoot, {
           ...scanOptions,
           detectors,

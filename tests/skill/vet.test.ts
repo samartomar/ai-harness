@@ -171,13 +171,11 @@ function detectorRunner(
         return { code: 0, stdout: `Report saved to: ${out}\n` };
       }
     }
-    if (argv[0] === "uvx") {
-      if (argv.includes("snyk-agent-scan")) {
-        if (argv.includes("help")) return { code: 0, stdout: "snyk-agent-scan help\n" };
-        if (argv.includes("scan")) return { code: 0, stdout: JSON.stringify({ findings: [] }) };
-      }
+    if (argv.includes("snyk-agent-scan")) {
+      if (argv.includes("help")) return { code: 0, stdout: "snyk-agent-scan help\n" };
+      if (argv.includes("scan")) return { code: 0, stdout: JSON.stringify({ findings: [] }) };
     }
-    if (argv[0] === "semgrep") {
+    if (argv.includes("semgrep")) {
       if (argv.includes("--version")) return { code: 0, stdout: "1.125.0\n" };
       if (argv.includes("scan")) {
         return { code: 0, stdout: JSON.stringify({ version: "2.1.0", runs: [] }) };
@@ -291,9 +289,8 @@ describe("skillVetCommand", () => {
       "aih-native",
       "skillspector@docker",
       "cisco@uvx",
-      "semgrep@local",
-      "snyk-agent-scan@uvx",
-      "agentshield@local",
+      "semgrep@uv:1.172.0",
+      "snyk-agent-scan@uv:0.5.15",
     ]);
     expect(result.report?.checks).toEqual(
       expect.arrayContaining([
@@ -538,9 +535,8 @@ describe("skillVetCommand", () => {
       "aih-native",
       "skillspector@docker",
       "cisco@uvx",
-      "semgrep@local",
-      "snyk-agent-scan@uvx",
-      "agentshield@local",
+      "semgrep@uv:1.172.0",
+      "snyk-agent-scan@uv:0.5.15",
     ]);
     expect(evidence.checks).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "skill license", verdict: "pass" })]),
