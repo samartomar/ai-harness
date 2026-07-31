@@ -80,6 +80,18 @@ describe("ECC residual review decisions", () => {
     });
   });
 
+  it("does not group a lookalike browser-use hostname", () => {
+    expect(() =>
+      groupEccResidualReviewDecisions([
+        occurrence(
+          "lookalike",
+          "mcp-configs/mcp-servers.json",
+          '"url": "https://evil.example/?next=https://api.browser-use.com/mcp"',
+        ),
+      ]),
+    ).toThrow(/ungrouped/);
+  });
+
   it("fails closed for duplicate or unclassified residual occurrences", () => {
     const duplicate = occurrence("same", "skills/x-api/SKILL.md");
     expect(() => groupEccResidualReviewDecisions([duplicate, duplicate])).toThrow(/duplicate/);

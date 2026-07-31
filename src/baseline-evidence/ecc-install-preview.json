@@ -4737,6 +4737,78 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/foundation-models-on-device/SKILL.md",
+      "destination": "<project>/.agent/skills/foundation-models-on-device/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/ios-icon-gen/scripts/generate_icons.swift",
+      "destination": "<project>/.agent/skills/ios-icon-gen/scripts/generate_icons.swift",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/ios-icon-gen/scripts/iconify_gen.sh",
+      "destination": "<project>/.agent/skills/ios-icon-gen/scripts/iconify_gen.sh",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/ios-icon-gen/SKILL.md",
+      "destination": "<project>/.agent/skills/ios-icon-gen/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/liquid-glass-design/SKILL.md",
+      "destination": "<project>/.agent/skills/liquid-glass-design/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/swift-actor-persistence/SKILL.md",
+      "destination": "<project>/.agent/skills/swift-actor-persistence/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/swift-concurrency-6-2/SKILL.md",
+      "destination": "<project>/.agent/skills/swift-concurrency-6-2/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/swift-protocol-di-testing/SKILL.md",
+      "destination": "<project>/.agent/skills/swift-protocol-di-testing/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/swiftui-patterns/SKILL.md",
+      "destination": "<project>/.agent/skills/swiftui-patterns/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": ".agents/skills/api-design/agents/openai.yaml",
       "destination": "<project>/.agent/.agents/skills/api-design/agents/openai.yaml",
       "componentId": "lang:typescript",
@@ -11707,6 +11779,78 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/foundation-models-on-device/SKILL.md",
+      "destination": "<home>/.claude/skills/foundation-models-on-device/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/ios-icon-gen/scripts/generate_icons.swift",
+      "destination": "<home>/.claude/skills/ios-icon-gen/scripts/generate_icons.swift",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/ios-icon-gen/scripts/iconify_gen.sh",
+      "destination": "<home>/.claude/skills/ios-icon-gen/scripts/iconify_gen.sh",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/ios-icon-gen/SKILL.md",
+      "destination": "<home>/.claude/skills/ios-icon-gen/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/liquid-glass-design/SKILL.md",
+      "destination": "<home>/.claude/skills/liquid-glass-design/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/swift-actor-persistence/SKILL.md",
+      "destination": "<home>/.claude/skills/swift-actor-persistence/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/swift-concurrency-6-2/SKILL.md",
+      "destination": "<home>/.claude/skills/swift-concurrency-6-2/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/swift-protocol-di-testing/SKILL.md",
+      "destination": "<home>/.claude/skills/swift-protocol-di-testing/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/swiftui-patterns/SKILL.md",
+      "destination": "<home>/.claude/skills/swiftui-patterns/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": ".agents/skills/api-design/agents/openai.yaml",
       "destination": "<home>/.claude/.agents/skills/api-design/agents/openai.yaml",
       "componentId": "lang:typescript",
@@ -14616,6 +14760,78 @@
       "source": "skills/returns-reverse-logistics/SKILL.md",
       "destination": "<home>/.codex/skills/returns-reverse-logistics/SKILL.md",
       "componentId": "capability:supply-chain",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/foundation-models-on-device/SKILL.md",
+      "destination": "<home>/.codex/skills/foundation-models-on-device/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/ios-icon-gen/scripts/generate_icons.swift",
+      "destination": "<home>/.codex/skills/ios-icon-gen/scripts/generate_icons.swift",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/ios-icon-gen/scripts/iconify_gen.sh",
+      "destination": "<home>/.codex/skills/ios-icon-gen/scripts/iconify_gen.sh",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/ios-icon-gen/SKILL.md",
+      "destination": "<home>/.codex/skills/ios-icon-gen/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/liquid-glass-design/SKILL.md",
+      "destination": "<home>/.codex/skills/liquid-glass-design/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/swift-actor-persistence/SKILL.md",
+      "destination": "<home>/.codex/skills/swift-actor-persistence/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/swift-concurrency-6-2/SKILL.md",
+      "destination": "<home>/.codex/skills/swift-concurrency-6-2/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/swift-protocol-di-testing/SKILL.md",
+      "destination": "<home>/.codex/skills/swift-protocol-di-testing/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/swiftui-patterns/SKILL.md",
+      "destination": "<home>/.codex/skills/swiftui-patterns/SKILL.md",
+      "componentId": "lang:swift",
       "contingentOn": "evidence-authorization"
     },
     {
@@ -21655,6 +21871,78 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/foundation-models-on-device/SKILL.md",
+      "destination": "<project>/.cursor/skills/foundation-models-on-device/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/ios-icon-gen/scripts/generate_icons.swift",
+      "destination": "<project>/.cursor/skills/ios-icon-gen/scripts/generate_icons.swift",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/ios-icon-gen/scripts/iconify_gen.sh",
+      "destination": "<project>/.cursor/skills/ios-icon-gen/scripts/iconify_gen.sh",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/ios-icon-gen/SKILL.md",
+      "destination": "<project>/.cursor/skills/ios-icon-gen/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/liquid-glass-design/SKILL.md",
+      "destination": "<project>/.cursor/skills/liquid-glass-design/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/swift-actor-persistence/SKILL.md",
+      "destination": "<project>/.cursor/skills/swift-actor-persistence/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/swift-concurrency-6-2/SKILL.md",
+      "destination": "<project>/.cursor/skills/swift-concurrency-6-2/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/swift-protocol-di-testing/SKILL.md",
+      "destination": "<project>/.cursor/skills/swift-protocol-di-testing/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/swiftui-patterns/SKILL.md",
+      "destination": "<project>/.cursor/skills/swiftui-patterns/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": ".agents/skills/api-design/agents/openai.yaml",
       "destination": "<project>/.cursor/.agents/skills/api-design/agents/openai.yaml",
       "componentId": "lang:typescript",
@@ -27336,6 +27624,78 @@
       "source": "skills/rust-testing/SKILL.md",
       "destination": "<project>/.zed/skills/rust-testing/SKILL.md",
       "componentId": "lang:rust",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/foundation-models-on-device/SKILL.md",
+      "destination": "<project>/.zed/skills/foundation-models-on-device/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/ios-icon-gen/scripts/generate_icons.swift",
+      "destination": "<project>/.zed/skills/ios-icon-gen/scripts/generate_icons.swift",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/ios-icon-gen/scripts/iconify_gen.sh",
+      "destination": "<project>/.zed/skills/ios-icon-gen/scripts/iconify_gen.sh",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/ios-icon-gen/SKILL.md",
+      "destination": "<project>/.zed/skills/ios-icon-gen/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/liquid-glass-design/SKILL.md",
+      "destination": "<project>/.zed/skills/liquid-glass-design/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/swift-actor-persistence/SKILL.md",
+      "destination": "<project>/.zed/skills/swift-actor-persistence/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/swift-concurrency-6-2/SKILL.md",
+      "destination": "<project>/.zed/skills/swift-concurrency-6-2/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/swift-protocol-di-testing/SKILL.md",
+      "destination": "<project>/.zed/skills/swift-protocol-di-testing/SKILL.md",
+      "componentId": "lang:swift",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/swiftui-patterns/SKILL.md",
+      "destination": "<project>/.zed/skills/swiftui-patterns/SKILL.md",
+      "componentId": "lang:swift",
       "contingentOn": "evidence-authorization"
     },
     {

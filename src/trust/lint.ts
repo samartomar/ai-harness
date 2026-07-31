@@ -679,17 +679,13 @@ const AUTHENTICATED_REQUEST_METHOD =
   /(?:\b(?:GET|POST|PUT|PATCH|DELETE)\b|(?:-X|--request(?:=|\s+))(?:GET|POST|PUT|PATCH|DELETE)\b)/i;
 const AUTHENTICATED_BEARER_ENV = /\bAuthorization\s*:\s*Bearer\s+\$(?:\{)?[A-Z_][A-Z0-9_]*(?:\})?/i;
 const CURL_UPLOAD_ARGUMENT =
-  /(?:^|\s)(?:(?:-d|-F|-T)(?:\s+|=)?|--(?:data(?:-raw|-binary|-urlencode)?|form|upload-file)(?:\s+|=))(?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|[^\s\\]+)/gim;
+  /(?:^|\s)(?:-d|-F|-T|--data(?:-raw|-binary|-urlencode)?|--form|--upload-file)(?:\s+|=)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s\\]+)/gim;
 const SENSITIVE_UPLOAD_ENV =
   /\$(?:\{)?[A-Z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API_?KEY|PRIVATE_?KEY|CREDENTIAL)[A-Z0-9_]*(?:\})?/i;
 const SENSITIVE_UPLOAD_FILE =
   /(?:@|[\\/])(?:\.env(?:\.[A-Za-z0-9_.-]+)?|\.ssh[\\/](?:id_[A-Za-z0-9_.-]+|authorized_keys)|[^/\\\s"'=]*(?:secret|credential|private[_-]?key)[^/\\\s"'=]*)/i;
 const AUTH_PARAMETER_ENV =
   /\b(?:access_?token|api_?key|token|key)\s*=\s*\$(?:\{)?([A-Z][A-Z0-9_]*)(?:\})?/i;
-const SERVICE_CREDENTIAL_HOSTS: Readonly<Record<string, readonly string[]>> = {
-  DUCKDNS: ["www.duckdns.org"],
-};
-
 function shellWords(source: string): string[] | undefined {
   if (/`|\$\(/.test(source)) return undefined;
   const words: string[] = [];
@@ -839,9 +835,7 @@ function isServiceBoundCredentialRequest(context: string): boolean {
   const service =
     /^([A-Z][A-Z0-9_]*?)_(?:ACCESS_)?TOKEN$/.exec(sensitiveVariable)?.[1] ??
     /^([A-Z][A-Z0-9_]*?)_API_?KEY$/.exec(sensitiveVariable)?.[1];
-  const canonicalHosts =
-    service === undefined ? undefined : SERVICE_CREDENTIAL_HOSTS[service.toUpperCase()];
-  return canonicalHosts?.includes("www.duckdns.org") === true;
+  return service?.toUpperCase() === "DUCKDNS";
 }
 
 function externalRequestContext(

@@ -1,6 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  closeSync,
+  constants,
+  fstatSync,
   lstatSync,
+  openSync,
   readFileSync,
   realpathSync,
   renameSync,
@@ -41,11 +45,29 @@ function safeOutputPath(root: string, value: string): string {
 }
 
 function fileSha256(path: string): string {
-  const inspected = lstatSync(path);
-  if (!inspected.isFile() || inspected.isSymbolicLink()) {
-    throw new Error(`output-manifest entry is not a regular file: ${path}`);
+  const descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const inspected = fstatSync(descriptor);
+    if (!inspected.isFile()) {
+      throw new Error(`output-manifest entry is not a regular file: ${path}`);
+    }
+    return createHash("sha256").update(readFileSync(descriptor)).digest("hex");
+  } finally {
+    closeSync(descriptor);
   }
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function readRegularUtf8(path: string): string {
+  const descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const inspected = fstatSync(descriptor);
+    if (!inspected.isFile()) {
+      throw new Error(`output manifest is not a regular file: ${path}`);
+    }
+    return readFileSync(descriptor, "utf8");
+  } finally {
+    closeSync(descriptor);
+  }
 }
 
 export function parseOutputManifest(text: string): OutputManifestEntry[] {
@@ -150,5 +172,5 @@ export function writeVerifiedOutputManifest(input: {
     }
     throw error;
   }
-  return verifyOutputManifest(absoluteRoot, readFileSync(canonicalManifest, "utf8"));
+  return verifyOutputManifest(absoluteRoot, readRegularUtf8(canonicalManifest));
 }

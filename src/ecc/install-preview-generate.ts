@@ -65,10 +65,8 @@ interface UpstreamTargetRegistry {
 }
 
 function destinationTemplate(path: string): string {
-  return path
-    .replace(HOME_FIXTURE, "<home>")
-    .replace(PROJECT_FIXTURE, "<project>")
-    .replace(/\\/g, "/");
+  const normalized = path.replace(/\\/g, "/");
+  return normalized.replace(HOME_FIXTURE, "<home>").replace(PROJECT_FIXTURE, "<project>");
 }
 
 function configDestinationTemplate(path: string): string {

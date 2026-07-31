@@ -786,6 +786,20 @@ describe("Codex managed destination safety", () => {
     expect(existsSync(join(outside, "config.toml"))).toBe(false);
   });
 
+  it("accepts a declared home alias while retaining canonical destination checks", () => {
+    const realHome = join(tmp, "real-home");
+    const aliasHome = join(tmp, "home");
+    mkdirSync(realHome, { recursive: true });
+    symlinkSync(realHome, aliasHome, "dir");
+    prepareCodexRepo(aliasHome);
+
+    const result = guardedMerge(join(aliasHome, ".codex", "config.toml"));
+
+    expect(result.status).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toMatch(/unsafe writeInstallState reached/);
+    expect(`${result.stdout}${result.stderr}`).not.toMatch(/outside trusted home/);
+  });
+
   it.each(["symlink", "hardlink"] as const)(
     "rejects a managed upstream install-state %s",
     (kind) => {

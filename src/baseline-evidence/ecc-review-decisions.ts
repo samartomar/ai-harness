@@ -73,7 +73,8 @@ const DEFINITIONS: readonly DecisionDefinition[] = [
     decision:
       "REVIEW for the full profile; excluded from ECC Lean. The declaration must not activate unless the MCP component is explicitly selected.",
     matches: ({ path, sourceValue }) =>
-      path === "mcp-configs/mcp-servers.json" && sourceValue.includes("api.browser-use.com"),
+      path === "mcp-configs/mcp-servers.json" &&
+      /"url"\s*:\s*"https:\/\/api\.browser-use\.com\/mcp"/.test(sourceValue),
   },
   {
     id: "jira-uspto-egress",

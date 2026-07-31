@@ -677,10 +677,9 @@ async function checkCiscoAvailable(
   if (output.length === 0) {
     return "skill-scanner version check emitted no output";
   }
-  if (
-    expectedVersion !== undefined &&
-    !new RegExp(`(?:^|\\D)${expectedVersion.replace(/\./g, "\\.")}(?:\\D|$)`).test(output)
-  ) {
+  const reportedVersions: string[] =
+    output.match(/[0-9]+(?:\.[0-9]+)+(?:[-+][0-9A-Za-z.-]+)?/g) ?? [];
+  if (expectedVersion !== undefined && !reportedVersions.includes(expectedVersion)) {
     return `skill-scanner version ${JSON.stringify(output)} does not match ${expectedVersion}`;
   }
   return undefined;
