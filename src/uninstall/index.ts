@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
 import { AIH_CONFIG_FILE, readAihConfig } from "../config/marker.js";
 import { bootloadersFor, entry, REGISTRY_IDS } from "../internals/cli-registry.js";
-import { readIfExists } from "../internals/fsxn.js";
+import { readIfExists, readRegularFile } from "../internals/fsxn.js";
 import { extractManagedBlock } from "../internals/markers.js";
 import {
   type Action,
@@ -24,7 +24,7 @@ import {
   unprovableResidueReason,
 } from "../mcp/managed-projection.js";
 import { isExternalMcp } from "../mcp/render.js";
-import { readTrustLock, type TrustLockSource } from "../trust/lock.js";
+import { parseTrustLockSource, TRUST_LOCK_FILE, type TrustLockSource } from "../trust/lock.js";
 
 type UninstallDisposition = "backup" | "subtract" | "advisory";
 
@@ -216,7 +216,25 @@ function promotedArtifactTarget(
 }
 
 function promotedContextArtifacts(ctx: PlanContext, contextDir: string): string[] {
-  const paths = readTrustLock(ctx.root).sources.flatMap((source) =>
+  const bytes = readRegularFile(join(ctx.root, TRUST_LOCK_FILE));
+  if (bytes === undefined) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    return [];
+  }
+  const rawSources =
+    typeof parsed === "object" && parsed !== null && "sources" in parsed
+      ? (parsed as { sources?: unknown }).sources
+      : undefined;
+  const sources = Array.isArray(rawSources)
+    ? rawSources.flatMap((source) => {
+        const parsedSource = parseTrustLockSource(source);
+        return parsedSource === undefined ? [] : [parsedSource];
+      })
+    : [];
+  const paths = sources.flatMap((source) =>
     source.artifactHashes.flatMap((artifact) => {
       const target = promotedArtifactTarget(contextDir, source, artifact.path);
       return target !== undefined && exists(ctx, target) ? [target] : [];

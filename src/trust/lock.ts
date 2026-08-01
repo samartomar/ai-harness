@@ -1,6 +1,5 @@
-import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { readRegularFile } from "../internals/fsxn.js";
+import { readIfExists } from "../internals/fsxn.js";
 import type { Check } from "../internals/verify.js";
 
 /** Repo-relative trust lockfile path — the promoted-source evidence `trust verify` re-hashes. */
@@ -156,14 +155,8 @@ function trustLockInvalidFinding(detail: string): Check {
 }
 
 export function trustLockValidationFindings(root: string): Check[] {
-  const path = join(root, TRUST_LOCK_FILE);
-  const bytes = readRegularFile(path);
-  if (bytes === undefined) {
-    return existsSync(path)
-      ? [trustLockInvalidFinding(`${TRUST_LOCK_FILE} is not a readable regular file`)]
-      : [];
-  }
-  const raw = bytes.toString("utf8");
+  const raw = readIfExists(join(root, TRUST_LOCK_FILE));
+  if (raw === undefined) return [];
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -181,10 +174,10 @@ export function trustLockValidationFindings(root: string): Check[] {
 }
 
 export function readTrustLock(root: string): TrustLock {
-  const bytes = readRegularFile(join(root, TRUST_LOCK_FILE));
-  if (bytes === undefined) return { schemaVersion: 1, sources: [] };
+  const raw = readIfExists(join(root, TRUST_LOCK_FILE));
+  if (raw === undefined) return { schemaVersion: 1, sources: [] };
   try {
-    const parsed = JSON.parse(bytes.toString("utf8")) as { sources?: unknown };
+    const parsed = JSON.parse(raw) as { sources?: unknown };
     const sources = Array.isArray(parsed.sources) ? parsed.sources : [];
     return {
       schemaVersion: 1,
