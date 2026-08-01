@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import {
+  AIH_CONFIG_FILE,
   isActiveManagedMcpProjectionOwnership,
   type ManagedMcpProjectionOwnership,
 } from "../config/marker.js";
@@ -315,7 +316,9 @@ export function mcpManagedAllowlistCheck(ctx: PlanContext): Check {
         detail:
           `dropped-target residue: ${MANAGED_SETTINGS_PATH} still enforces a managed MCP allowlist ` +
           `but ${owner} is not a target of this repo, so org-policy projection no longer maintains it — ` +
-          "reconcile it with `aih prune` (re-projecting cannot fix this)",
+          `either add ${owner} back to the targets in ${AIH_CONFIG_FILE} to resume maintaining it, or ` +
+          `remove the file if ${owner} is genuinely gone; re-projecting cannot fix this while ${owner} ` +
+          "is untargeted",
         code: "org-policy.dropped-target-residue",
         location: { uri: MANAGED_SETTINGS_PATH },
         fingerprint: `org-policy-dropped-target:${MANAGED_SETTINGS_PATH}`,

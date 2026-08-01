@@ -814,9 +814,14 @@ describe("orgPolicyDriftProbes — target scope (#554)", () => {
       .map((k) => k?.detail ?? "")
       .join(" ");
     expect(details).not.toBe("");
-    // Must route to prune, never to a projection that cannot run here.
-    expect(details).toMatch(/prune/i);
+    // Must name a repair the operator can actually perform, never a projection that
+    // cannot run here. `aih prune` is NOT it: prune reconciles the registered per-CLI
+    // settings path, not this projected managed-settings file (#564), so naming it
+    // would repeat the unsatisfiable-remediation defect this gate exists to fix.
     expect(details).not.toMatch(/policy project --apply/);
+    expect(details).not.toMatch(/aih prune/);
+    expect(details).toMatch(/re-project/i);
+    expect(details).toMatch(/targets in \.aih-config\.json|remove the file/i);
   });
 
   // Reproduction B of the same defect: the managed-allowlist probe is a SEPARATE

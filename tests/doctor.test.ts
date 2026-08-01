@@ -1850,6 +1850,44 @@ describe("doctor — Claude probe target scope from the committed marker (#554)"
     expect(res?.detail ?? "").not.toContain("policy project --apply");
   });
 
+  // `.aih-config.json` is aih's OWN marker — the file that declares the target set.
+  // The projection emits an ownership action for it when managed-MCP is enabled, and
+  // it necessarily exists, so an all-or-nothing owner gate would flag the marker
+  // itself as residue and tell the operator to delete their target declaration.
+  it("never reports aih's own marker as dropped-target residue", async () => {
+    kiroOnlyMarker();
+    writeEnterprisePolicy({ allowedServers: ["code-review-graph"], allowManagedOnly: true });
+    const c = rooted();
+    const probes = (await command.plan(c)).actions.filter(
+      (a): a is ProbeAction => a.kind === "probe" && a.describe.includes(AIH_CONFIG_FILE),
+    );
+    const results = await Promise.all(probes.map((p) => p.run(c)));
+    expect(results.some((r) => r?.verdict === "fail")).toBe(false);
+    for (const r of results) expect(r?.detail ?? "").not.toMatch(/residue|prune/i);
+  });
+
+  // Never name a command that cannot perform the repair — that is the very defect
+  // class this suite exists to prevent. `aih prune` handles `.claude/settings.json`
+  // (src/prune/detect.ts:289-299) but has no managed-settings path, so the residue
+  // finding must state the choices the operator actually has.
+  it("does not prescribe a repair command that cannot remove the residue", async () => {
+    kiroOnlyMarker();
+    writeEnterprisePolicy();
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(join(dir, ".claude", "managed-settings.json"), JSON.stringify({ stale: true }));
+    const c = rooted();
+    const probe = findProbe(
+      (await command.plan(c)).actions,
+      "org-policy drift: .claude/managed-settings.json",
+    );
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("fail");
+    expect(res?.detail ?? "").not.toMatch(/aih prune/);
+    // It must still say re-projection is not the answer, and name a real choice.
+    expect(res?.detail ?? "").toMatch(/re-project/i);
+    expect(res?.detail ?? "").toMatch(/target/i);
+  });
+
   // Narrowing SUPPRESSES findings, so only the committed marker may do it. Weaker
   // signals must never silence an org-policy finding.
   it.each([
