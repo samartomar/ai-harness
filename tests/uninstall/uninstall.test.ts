@@ -109,6 +109,9 @@ async function coOwnedClaudeContextFixture(): Promise<void> {
   };
   await executePlan(await bootstrapAiCommand.plan(bootstrapCtx), bootstrapCtx);
   await executePlan(await contractCommand.plan(bootstrapCtx), bootstrapCtx);
+  put(".claude/workspace-router.md", "# Generated workspace router\n");
+  put(".claude/workspace-contracts.md", "# Generated workspace contracts\n");
+  put(".claude/workspace-lock.json", JSON.stringify({ schemaVersion: 1 }));
   put(".claude/settings.json", JSON.stringify({ hooks: { operator: true } }));
   put(".claude/agents/operator.md", "# Operator agent\n");
   put(".claude/commands/release.md", "# Operator command\n");
@@ -414,6 +417,9 @@ describe("aih uninstall", () => {
     expect(digest?.text).toContain(".claude/project.json");
     expect(digest?.text).toContain(".claude/project.md");
     expect(digest?.text).toContain(".claude/setup.md");
+    expect(digest?.text).toContain(".claude/workspace-router.md");
+    expect(digest?.text).toContain(".claude/workspace-contracts.md");
+    expect(digest?.text).toContain(".claude/workspace-lock.json");
     expect(digest?.text).toContain(".claude/settings.json");
     expect(digest?.text).toContain(".claude/agents/");
     expect(digest?.text).toContain(".claude/commands/");
@@ -437,6 +443,9 @@ describe("aih uninstall", () => {
     expect(existsSync(join(tmp, ".claude", "project.json"))).toBe(true);
     expect(existsSync(join(tmp, ".claude", "project.md"))).toBe(true);
     expect(existsSync(join(tmp, ".claude", "setup.md"))).toBe(true);
+    expect(existsSync(join(tmp, ".claude", "workspace-router.md"))).toBe(true);
+    expect(existsSync(join(tmp, ".claude", "workspace-contracts.md"))).toBe(true);
+    expect(existsSync(join(tmp, ".claude", "workspace-lock.json"))).toBe(true);
     expect(readFileSync(join(tmp, ".claude", "settings.json"), "utf8")).toBe(settings);
     expect(readFileSync(join(tmp, ".claude", "agents", "operator.md"), "utf8")).toBe(agent);
     expect(readFileSync(join(tmp, ".claude", "commands", "release.md"), "utf8")).toBe(command);
