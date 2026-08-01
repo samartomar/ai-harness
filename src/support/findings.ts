@@ -1000,6 +1000,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Advisory: an owned `.claude/settings.json` value diverged from what the bind applied. Conservative removal PRESERVES a drifted value (never silently deletes it). Review the change; re-bind if it was unintended.",
   },
+  "ecc.install-drift": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "ECC installed content has drifted from its installed source",
+    action:
+      "Advisory: aih recorded which files each ECC install created, with a content hash per file. A file still matching its recorded hash but installed from an older ECC source is STALE; a file whose hash changed is yours and is never auto-replaced; a file with no record is not claimed at all. Kiro's installer copies only absent destinations, so a rerun cannot update stale files - replace them deliberately, or leave them.",
+  },
   "binding.mcp-inventory": {
     audience: "developer",
     failSeverity: "degraded",

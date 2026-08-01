@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
+import type { Cli } from "../internals/clis.js";
 import {
   type Action,
   type CommandSpec,
@@ -27,11 +28,16 @@ import {
 import {
   type EccInstallInputs,
   eccActionsForCli,
+  eccInstallMechanism,
+  eccManagedRoot,
+  eccMechanismInstallLines,
+  eccMechanismRerunLines,
   eccSupplyChainDoc,
   eccToolsDoc,
   isAihDirectEccInstallTarget,
   normalizeEccInstallVersion,
 } from "./install.js";
+import { eccInstallDriftForRoot, eccInstallManifestPath } from "./install-manifest.js";
 import type { EccMaterializationSpec } from "./materialize.js";
 import { eccLanguages } from "./select.js";
 
@@ -196,6 +202,197 @@ function kiroInstallActions(ctx: PlanContext, dir: string, posix: string): Actio
         },
       },
     ),
+  ];
+}
+
+/**
+ * Records which destination files an install CREATED, so a later run can prove ownership
+ * (#555). aih does not write the bytes for any mechanism — ECC's own installer does — so
+ * "the bytes AIH wrote" is operationalized as "created by this run": snapshot the managed
+ * root before the installer runs, re-walk it after, and hash only what appeared. That is
+ * the only derivation that stays correct under Kiro's absence guard, where a file the
+ * installer SKIPPED because it already existed must never be claimed.
+ *
+ * The writer is deliberately dumb — hash what appeared, record it. Every correctness
+ * decision lives in typed TS (`install-manifest.ts`), whose fail-closed reader rejects
+ * anything malformed this script could produce, so an untyped writer cannot corrupt the
+ * ownership record; it can only fail to add to it.
+ */
+const ECC_CAPTURE_SCRIPT = [
+  'const fs = require("fs");',
+  'const path = require("path");',
+  'const crypto = require("crypto");',
+  'const child = require("child_process");',
+  "const [mode, snapshotPath, managedRoot, manifestPath, target, mechanism, eccRepoDir] = process.argv.slice(1);",
+  'if (!mode || !snapshotPath || !managedRoot) { console.error("usage: ecc-capture <mode> <snapshot> <root> [manifest] [target] [mechanism] [ecc-repo]"); process.exit(1); }',
+  "function walk(dir, prefix, out) {",
+  "  let entries;",
+  "  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }",
+  "  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {",
+  '    const rel = prefix === "" ? entry.name : prefix + "/" + entry.name;',
+  "    if (entry.isSymbolicLink()) continue;",
+  "    if (entry.isDirectory()) walk(path.join(dir, entry.name), rel, out);",
+  "    else if (entry.isFile()) out.push(rel);",
+  "    if (out.length >= 20000) return out;",
+  "  }",
+  "  return out;",
+  "}",
+  "function ensureDir(dir) { fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); }",
+  "function writeAtomic(target, contents) {",
+  "  ensureDir(path.dirname(target));",
+  '  const tmp = path.join(path.dirname(target), "." + path.basename(target) + "." + process.pid + ".tmp");',
+  '  fs.writeFileSync(tmp, contents, { encoding: "utf8", mode: 0o600 });',
+  "  fs.renameSync(tmp, target);",
+  "}",
+  'if (mode === "snapshot") {',
+  '  writeAtomic(snapshotPath, JSON.stringify({ paths: walk(managedRoot, "", []) }) + "\\n");',
+  "  process.exit(0);",
+  "}",
+  'if (mode !== "capture") { console.error("unknown ecc-capture mode: " + mode); process.exit(1); }',
+  "let before = [];",
+  'try { before = JSON.parse(fs.readFileSync(snapshotPath, "utf8")).paths || []; } catch { before = []; }',
+  "const known = new Set(before);",
+  'const created = walk(managedRoot, "", []).filter((rel) => !known.has(rel));',
+  "const files = [];",
+  "for (const rel of created) {",
+  "  try {",
+  "    const full = path.join(managedRoot, rel);",
+  "    if (fs.lstatSync(full).isSymbolicLink()) continue;",
+  '    files.push({ path: rel, sha256: crypto.createHash("sha256").update(fs.readFileSync(full)).digest("hex") });',
+  "  } catch {}",
+  "}",
+  "let commit = null;",
+  'try { commit = child.execFileSync("git", ["-C", eccRepoDir, "rev-parse", "HEAD"], { encoding: "utf8" }).trim() || null; } catch { commit = null; }',
+  "let ref = null;",
+  'try { ref = child.execFileSync("git", ["-C", eccRepoDir, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" }).trim() || null; } catch { ref = null; }',
+  // A manifest that exists but will not parse is DAMAGED ownership evidence. Abort rather
+  // than overwrite it — losing the record silently is worse than failing this capture.
+  'let manifest = { schemaVersion: "aih.ecc.install-manifest.v1", installs: [] };',
+  "if (fs.existsSync(manifestPath)) {",
+  '  try { manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")); } catch { console.error("refusing to overwrite an unparseable ECC install manifest: " + manifestPath); process.exit(1); }',
+  '  if (!manifest || !Array.isArray(manifest.installs)) { console.error("refusing to overwrite a malformed ECC install manifest: " + manifestPath); process.exit(1); }',
+  "}",
+  "const root = path.resolve(managedRoot);",
+  'const installs = manifest.installs.filter((entry) => !(entry && entry.target === target && path.resolve(String(entry.recordRoot || entry.root || "")) === root));',
+  'installs.push({ target, mechanism, root, installedAt: new Date().toISOString(), source: { kind: "git-checkout", ref, commit, package: null, version: null }, files });',
+  '  installs.sort((a, b) => (a.target + "\\u0000" + a.root).localeCompare(b.target + "\\u0000" + b.root));',
+  '  writeAtomic(manifestPath, JSON.stringify({ schemaVersion: "aih.ecc.install-manifest.v1", installs }, null, 2) + "\\n");',
+  "try { fs.rmSync(snapshotPath, { force: true }); } catch {}",
+].join("\n");
+
+/**
+ * Bracket an install with the ownership capture: snapshot before, record after. The
+ * capture only runs when the install itself succeeded (`requiresPriorExecSuccess`), so a
+ * failed install never writes an ownership claim for content it did not put there.
+ */
+function eccOwnershipCaptureActions(
+  ctx: PlanContext,
+  cli: Cli,
+  repo: EccRepoCheckout,
+  installActions: Action[],
+): Action[] {
+  const managed = eccManagedRoot(cli);
+  if (managed === undefined) return installActions;
+  const managedRoot = join(ctx.root, managed);
+  const snapshot = join(ctx.root, ".aih", "ecc", `.pre-install-${cli}.json`);
+  const manifestPath = eccInstallManifestPath(ctx.root);
+  return [
+    exec(
+      `Snapshot ${managed}/ before the ECC install so files this run CREATES can be attributed (under --apply)`,
+      ["node", "-e", ECC_CAPTURE_SCRIPT, "snapshot", snapshot, managedRoot],
+      { allowFailure: true },
+    ),
+    ...installActions,
+    exec(
+      `Record ECC ownership for ${cli} — hash files this run created into ${managed === ".kiro" ? ".aih/ecc/install-manifest.json" : manifestPath} (under --apply)`,
+      [
+        "node",
+        "-e",
+        ECC_CAPTURE_SCRIPT,
+        "capture",
+        snapshot,
+        managedRoot,
+        manifestPath,
+        cli,
+        eccInstallMechanism(cli),
+        repo.dir,
+      ],
+      { requiresPriorExecSuccess: true, allowFailure: true },
+    ),
+  ];
+}
+
+/**
+ * Report installed-source drift for one target: which AIH-owned files are now behind the
+ * fetched ECC source (STALE), which the operator has since edited (never auto-replaced),
+ * and how much of the tree has no ownership evidence at all.
+ *
+ * Advisory by design (a coded `skip`, the `binding.settings-drift` pattern): reporting
+ * drift is this issue's scope, and the repair path that could CLEAR a stale finding is
+ * explicitly out of it. Kiro's copy path can never update an existing file, so failing
+ * the run would wedge every Kiro repo red with no way out.
+ */
+function eccDriftProbe(ctx: PlanContext, cli: Cli, repo: EccRepoCheckout): Action[] {
+  const managed = eccManagedRoot(cli);
+  if (managed === undefined) return [];
+  const name = `ECC installed-source drift (${cli})`;
+  return [
+    probe(name, async () => {
+      const head = await ctx.run(["git", "-C", repo.dir, "rev-parse", "HEAD"]);
+      const commit = head.code === 0 ? head.stdout.trim() || null : null;
+      const drift = eccInstallDriftForRoot(ctx.root, cli, join(ctx.root, managed), {
+        kind: "git-checkout",
+        ref: repo.ref ?? null,
+        commit,
+        package: null,
+        version: null,
+      });
+      const total = Object.values(drift.counts).reduce((sum, count) => sum + count, 0);
+      if (total === 0) {
+        return { name, verdict: "pass", detail: `${managed}/ has no installed ECC content` };
+      }
+      if (!drift.provenanceKnown) {
+        return {
+          name,
+          verdict: "skip",
+          code: "ecc.install-drift",
+          detail:
+            `${drift.counts["unknown-provenance"]} file(s) under ${managed}/ have no ownership ` +
+            "record, so aih cannot tell ECC-installed content from your own — this install " +
+            "predates the manifest. Re-run `aih ecc --cli " +
+            `${cli} --apply` +
+            "` to establish ownership; until then nothing here is claimed or touched.",
+        };
+      }
+      const parts = [
+        `${drift.counts.stale} stale`,
+        `${drift.counts["user-modified"]} locally modified`,
+        `${drift.counts.removed} removed`,
+        `${drift.counts["unknown-provenance"]} unowned`,
+        `${drift.counts["aih-owned"]} current`,
+      ].join(", ");
+      if (!drift.stale && drift.counts["user-modified"] === 0 && drift.counts.removed === 0) {
+        return {
+          name,
+          verdict: "pass",
+          detail: `${managed}/ matches the installed source (${parts})`,
+        };
+      }
+      const samples = drift.samples
+        .filter((sample) => sample.state === "stale" || sample.state === "user-modified")
+        .map((sample) => `${sample.path} (${sample.state})`)
+        .join(", ");
+      return {
+        name,
+        verdict: "skip",
+        code: "ecc.install-drift",
+        detail:
+          `${managed}/ ${parts}. Installed from ECC ${drift.recordedSource?.commit?.slice(0, 12) ?? "unknown"}, ` +
+          `checkout is now ${drift.currentSource?.commit?.slice(0, 12) ?? "unknown"}. ` +
+          `${drift.counts.stale > 0 ? "Kiro's installer copies only absent destinations, so a rerun cannot update these. " : ""}` +
+          `Locally modified files are never replaced. ${samples === "" ? "" : `e.g. ${samples}`}`,
+      };
+    }),
   ];
 }
 
@@ -539,22 +736,22 @@ function summaryDoc(clis: string[], inputs: EccInstallInputs, stack: RepoStack):
     : packs.length > 0
       ? `stack packs: ${packs.join(", ")}`
       : "baseline stack (no language pack matched)";
+  // Both claim blocks derive from the per-CLI mechanism registry, so a target only ever
+  // receives the claim true for ITS mechanism, and a newly registered tool cannot
+  // inherit one by default (#555 acceptance: registry-driven coverage).
+  const targets = clis as Cli[];
   return doc(
     "ECC install summary (affaan-m/ECC — latest, via ECC's own installer)",
     lines(
       `Target CLIs: ${clis.join(", ")}.  Profile: ${inputs.profile}.  Detected ${scope}.`,
       "",
       "aih runs ECC's OWN installer at the LATEST version — it assembles nothing itself:",
-      `  • npm targets → npx --package ecc-universal ecc-install --target <cli> --profile ${inputs.profile}  (no clone)`,
-      "  • Codex → cached git checkout of ECC + add-only config/MCP/AGENTS merge helpers",
-      "  • Kiro → cached git checkout of ECC (clone/pull to latest) + native .kiro/install.sh",
+      ...eccMechanismInstallLines(targets, inputs.profile),
       "",
-      "Re-running ADDS newly-matched content; it does not replace or remove what is",
-      "already installed. Kiro's native installer copies only absent destinations, the",
-      "Codex helpers are add-only, and consult targets install nothing at all — so a",
-      "rerun cannot re-scope an existing install. For npm targets the update behavior",
-      "is ECC's own installer's, not aih's. For finer component control (specific",
-      `skills/agents/capabilities) ask the advisor:  npx ecc consult "${inputs.stackSummary}" --target <cli>`,
+      ...eccMechanismRerunLines(targets),
+      "",
+      "For finer component control (specific skills/agents/capabilities) ask the advisor:",
+      `  npx ecc consult "${inputs.stackSummary}" --target <cli>`,
     ),
   );
 }
@@ -597,7 +794,10 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
   let npmInstallerPlanned = false;
   for (const cli of clis) {
     if (cli === "kiro") {
-      if (repo) actions.push(...kiroEccActions(ctx, repo));
+      if (repo) {
+        actions.push(...eccOwnershipCaptureActions(ctx, cli, repo, kiroEccActions(ctx, repo)));
+        actions.push(...eccDriftProbe(ctx, cli, repo));
+      }
     } else if (cli === "codex") {
       if (codexBlockers.length > 0) actions.push(...codexBlockers);
       else if (repo) actions.push(...codexEccActions(ctx, repo, profile));
