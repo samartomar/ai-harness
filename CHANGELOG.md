@@ -38,10 +38,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   revoke, and naming the file would tell an agent to re-run a command designed to
   refuse. `aih doctor` owns that case instead. `organizationPolicy` and
   `sandbox` are never removed — no provenance is recorded for them, and `sandbox` is
-  co-written by `aih guardrails` and `aih sandbox`. Every ownership decision and every
-  apply-time pin reads the path as a regular file with no symlink follow, so a symlink
-  (including a dangling one), a directory, or anything else there is reported and the
-  claim revoked rather than the file read or edited. The residue is detected from the committed
+  co-written by `aih guardrails` and `aih sandbox`. Every ownership decision reads the
+  path as a regular file with no symlink follow, so a symlink (including a dangling
+  one), a directory, or anything else there is reported and the claim revoked rather
+  than any subtraction being planned. The residue is detected from the committed
   target set rather than the adapter files on disk, so an earlier prune that already
   removed the adapter cannot strand it. Because prune can now do the job, `aih doctor`
   names it: a marker-proven residue reports `org-policy.dropped-target-residue` with

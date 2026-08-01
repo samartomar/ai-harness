@@ -135,7 +135,7 @@ function absolute(root: string, rel: string): string {
  * the stale ownership claim would survive untouched) and never a content read (which
  * throws EISDIR on a directory).
  */
-function occupied(abs: string): boolean {
+export function occupied(abs: string): boolean {
   try {
     lstatSync(abs);
     return true;

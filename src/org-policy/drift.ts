@@ -28,6 +28,7 @@ import {
   MANAGED_MCP_PROJECTION_KEYS,
   MANAGED_SETTINGS_PATH,
   managedMcpProjectionOnDisk,
+  occupied,
   unprovableResidueReason,
 } from "../mcp/managed-projection.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
@@ -275,7 +276,10 @@ function untargetedCheck(action: WriteAction, owner: Cli): (ctx: PlanContext) =>
         detail: `${owner} is not a target of this repo, so the managed-MCP projection this marker would record is not active; ${AIH_CONFIG_FILE} is aih's own target declaration, not a projected artifact`,
       };
     }
-    if (readIfExists(resolve(ctx.root, action.path)) === undefined) {
+    // PRESENCE only, no-follow: a content read here throws EISDIR on a directory
+    // planted at the projected path and would make the classification below —
+    // the whole point of this probe — unreachable.
+    if (!occupied(resolve(ctx.root, action.path))) {
       return {
         name,
         verdict: "skip",

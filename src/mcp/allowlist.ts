@@ -248,34 +248,26 @@ export function mcpManagedAllowlistCheck(ctx: PlanContext): Check {
         detail: "no managed MCP allowlist is enforced in .claude/managed-settings.json",
       };
     }
-    const policy = readOrgPolicy(ctx.root, ctx.env);
-    const desired = mcpCommands(ctx.root, policy);
-    // A malformed `.mcp.json` is a hard error about a DIFFERENT file, and it stays
-    // first so this probe never stops reporting a case it used to report.
-    if (desired.kind === "invalid") {
-      return {
-        name,
-        verdict: "fail",
-        detail: `invalid .mcp.json: ${desired.message}`,
-        code: "mcp.allowlist-drift",
-      };
-    }
     // The allowlist lives in ONE tool's config dir, and org-policy projection writes it
     // only when that tool is targeted. With the owner untargeted, every repair below is
     // unsatisfiable by construction, so report dropped-target residue naming a repair the
     // operator can actually perform — the same disposition `orgPolicyDriftProbes` gives
     // the file itself (issues #554, #564, #566).
     //
-    // The REPAIRABLE verdict is decided before any comparison against `.mcp.json` —
-    // before the equality pass AND before the "nothing to compare" skip. Marker-proven
-    // ownership does not depend on `.mcp.json` at all, and such an allowlist is not
-    // harmless once its owner is dropped: it keeps enforcing a projection nothing
-    // maintains, and `aih prune` can now subtract it. This is also the ONLY surface
-    // that sees the case in a repo with no committed `aih-org-policy.json` — there are
-    // no org-policy drift probes at all there, so anything skipped here is reported by
-    // nothing. The UNOWNED verdict deliberately stays below the equality pass: aih
-    // cannot prove it wrote any of it, so failing a still-consistent allowlist on mere
-    // presence would misclassify operator config as ours for no available repair.
+    // The REPAIRABLE verdict is decided FIRST — before the org policy is loaded, before
+    // `.mcp.json` is read, before the equality pass, and before the "nothing to compare"
+    // skip. Marker-proven ownership depends on none of those inputs, and each of them
+    // can fail in a way that would otherwise mask it: a malformed policy or `.mcp.json`
+    // diverts to a generic drift verdict, and a server-less `.mcp.json` skips outright.
+    // Only ONE Check can be returned, and this is the one worth returning: it names
+    // exactly one runnable command that fixes it, and a malformed policy or `.mcp.json`
+    // is separately reported by its own probe. It is also the ONLY surface that sees
+    // this case in a repo with no committed `aih-org-policy.json`, where there are no
+    // org-policy drift probes at all — anything masked here is reported by nothing.
+    //
+    // The UNOWNED verdict deliberately stays below the equality pass: aih cannot prove
+    // it wrote any of it, so failing a still-consistent allowlist on mere presence would
+    // misclassify operator config as ours for no available repair.
     const owner = owningCli(MANAGED_SETTINGS_PATH);
     const untargeted = owner !== undefined && !isTargeted(ctx, owner as Cli);
     const residue = untargeted ? managedMcpProjectionOnDisk(ctx.root) : undefined;
@@ -290,6 +282,16 @@ export function mcpManagedAllowlistCheck(ctx: PlanContext): Check {
         code: "org-policy.dropped-target-residue",
         location: { uri: MANAGED_SETTINGS_PATH },
         fingerprint: `org-policy-dropped-target:${MANAGED_SETTINGS_PATH}`,
+      };
+    }
+    const policy = readOrgPolicy(ctx.root, ctx.env);
+    const desired = mcpCommands(ctx.root, policy);
+    if (desired.kind === "invalid") {
+      return {
+        name,
+        verdict: "fail",
+        detail: `invalid .mcp.json: ${desired.message}`,
+        code: "mcp.allowlist-drift",
       };
     }
     if (desired.kind !== "commands") {

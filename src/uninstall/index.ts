@@ -182,11 +182,6 @@ function kiroExtraArtifacts(ctx: PlanContext, owned: boolean): UninstallArtifact
   return artifacts;
 }
 
-/** The projected managed-settings path, normalized to the repo-relative POSIX form. */
-function managedMcpSettingsPath(): string {
-  return cleanRel(MANAGED_SETTINGS_PATH);
-}
-
 /** Repo-relative paths this run would remove wholesale (directories included). */
 function removedTrees(artifacts: readonly UninstallArtifact[]): string[] {
   return artifacts.filter((a) => a.disposition === "backup").map((a) => cleanRel(a.path));
@@ -194,14 +189,18 @@ function removedTrees(artifacts: readonly UninstallArtifact[]): string[] {
 
 /**
  * True when `path` IS `tree` or lives beneath it — segment-wise, never a substring.
- * Case-INSENSITIVE on purpose: `canonicalExistingRel` preserves the on-disk casing, so
- * a `.CLAUDE` context tree on a case-insensitive filesystem would otherwise slip past
- * a case-sensitive compare. This guard only ever SUPPRESSES work, so over-matching is
- * safe and under-matching is not.
+ *
+ * Both sides are resolved through {@link canonicalExistingRel} first, so the compare is
+ * EXACT rather than case-folded. `canonicalExistingRel` walks the real directory
+ * entries and prefers an exact-case match before falling back to a case-insensitive
+ * one, which gets both filesystems right: on a case-insensitive one a `.CLAUDE` tree
+ * and `.claude/managed-settings.json` resolve to the same casing and match, while on a
+ * case-sensitive one where BOTH exist they resolve distinctly and do not — so a blunt
+ * `toLowerCase()` compare would have suppressed a real subtraction there.
  */
-function isUnderTree(path: string, tree: string): boolean {
-  const a = path.toLowerCase();
-  const b = tree.toLowerCase();
+function isUnderTree(ctx: PlanContext, path: string, tree: string): boolean {
+  const a = canonicalExistingRel(ctx, path) ?? cleanRel(path);
+  const b = canonicalExistingRel(ctx, tree) ?? cleanRel(tree);
   return a === b || a.startsWith(`${b}/`);
 }
 
@@ -279,7 +278,7 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
   // futile and at worst a false promise in the preview ("every other key is
   // preserved" while the whole directory goes to backup).
   const managedMcp = removedTrees(artifacts).some((tree) =>
-    isUnderTree(managedMcpSettingsPath(), tree),
+    isUnderTree(ctx, MANAGED_SETTINGS_PATH, tree),
   )
     ? undefined
     : managedMcpProjectionOnDisk(ctx.root);
