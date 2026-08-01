@@ -139,7 +139,10 @@ function existingPathIdentity(ctx: PlanContext, relPath: string): string | undef
 const CONTEXT_ARTIFACT_CANDIDATES = [
   "RULE_ROUTER.md",
   "adapters/_shared-canonical-block.md",
+  "adapters/other-tools.md",
   "rules/agent-behavior-core.md",
+  "REGENERATION.md",
+  "harness-update.md",
   "project.json",
   "project.md",
   "setup.md",
@@ -162,6 +165,8 @@ const CONTEXT_ARTIFACT_CANDIDATES = [
   "workspace-router.md",
   "workspace-contracts.md",
   "workspace-lock.json",
+  "telemetry/collector.yaml",
+  "telemetry/fetch-analytics.mjs",
   "crispy/",
   "skill-cards/",
 ] as const;

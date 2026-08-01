@@ -112,6 +112,11 @@ async function coOwnedClaudeContextFixture(): Promise<void> {
   put(".claude/workspace-router.md", "# Generated workspace router\n");
   put(".claude/workspace-contracts.md", "# Generated workspace contracts\n");
   put(".claude/workspace-lock.json", JSON.stringify({ schemaVersion: 1 }));
+  put(".claude/adapters/other-tools.md", "# Generated adapter guide\n");
+  put(".claude/REGENERATION.md", "# Generated regeneration guide\n");
+  put(".claude/harness-update.md", "# Generated harness update guide\n");
+  put(".claude/telemetry/collector.yaml", "# Generated collector\n");
+  put(".claude/telemetry/fetch-analytics.mjs", "// Generated analytics fetcher\n");
   put(".claude/settings.json", JSON.stringify({ hooks: { operator: true } }));
   put(".claude/agents/operator.md", "# Operator agent\n");
   put(".claude/commands/release.md", "# Operator command\n");
@@ -420,6 +425,11 @@ describe("aih uninstall", () => {
     expect(digest?.text).toContain(".claude/workspace-router.md");
     expect(digest?.text).toContain(".claude/workspace-contracts.md");
     expect(digest?.text).toContain(".claude/workspace-lock.json");
+    expect(digest?.text).toContain(".claude/adapters/other-tools.md");
+    expect(digest?.text).toContain(".claude/REGENERATION.md");
+    expect(digest?.text).toContain(".claude/harness-update.md");
+    expect(digest?.text).toContain(".claude/telemetry/collector.yaml");
+    expect(digest?.text).toContain(".claude/telemetry/fetch-analytics.mjs");
     expect(digest?.text).toContain(".claude/settings.json");
     expect(digest?.text).toContain(".claude/agents/");
     expect(digest?.text).toContain(".claude/commands/");
@@ -446,6 +456,11 @@ describe("aih uninstall", () => {
     expect(existsSync(join(tmp, ".claude", "workspace-router.md"))).toBe(true);
     expect(existsSync(join(tmp, ".claude", "workspace-contracts.md"))).toBe(true);
     expect(existsSync(join(tmp, ".claude", "workspace-lock.json"))).toBe(true);
+    expect(existsSync(join(tmp, ".claude", "adapters", "other-tools.md"))).toBe(true);
+    expect(existsSync(join(tmp, ".claude", "REGENERATION.md"))).toBe(true);
+    expect(existsSync(join(tmp, ".claude", "harness-update.md"))).toBe(true);
+    expect(existsSync(join(tmp, ".claude", "telemetry", "collector.yaml"))).toBe(true);
+    expect(existsSync(join(tmp, ".claude", "telemetry", "fetch-analytics.mjs"))).toBe(true);
     expect(readFileSync(join(tmp, ".claude", "settings.json"), "utf8")).toBe(settings);
     expect(readFileSync(join(tmp, ".claude", "agents", "operator.md"), "utf8")).toBe(agent);
     expect(readFileSync(join(tmp, ".claude", "commands", "release.md"), "utf8")).toBe(command);
