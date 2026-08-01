@@ -145,24 +145,15 @@ const CONTEXT_ARTIFACT_CANDIDATES = [
   "rules/agent-behavior-core.md",
   "REGENERATION.md",
   "harness-update.md",
-  "project.json",
   "project.md",
-  "setup.md",
-  "INDEX.md",
-  "architecture.md",
-  "conventions.md",
-  "tasks.md",
   "SETUP-TASKS.md",
   "VALIDATION.md",
-  "project-guardrails.md",
-  "skills/example-skill/SKILL.md",
   "guardrails-taxonomy.md",
   "command-policy.md",
   "risk-gates.json",
   "hardware-profile.txt",
   "mcp-fallback.md",
   "mcp-gateway-rbac.json",
-  "cross-repo-architecture.md",
   "repo-discipline.md",
   "workspace-router.md",
   "workspace-contracts.md",
@@ -171,6 +162,25 @@ const CONTEXT_ARTIFACT_CANDIDATES = [
   "telemetry/fetch-analytics.mjs",
   "skill-cards/",
 ] as const;
+
+// These are seeded by aih but are operator-owned or co-owned immediately: their
+// writers either preserve the whole file after creation or merge operator keys.
+// Existence alone can therefore never prove that the current file is safe cleanup.
+const OPERATOR_CONTEXT_ARTIFACT_CANDIDATES = [
+  "project.json",
+  "setup.md",
+  "INDEX.md",
+  "architecture.md",
+  "conventions.md",
+  "tasks.md",
+  "project-guardrails.md",
+  "skills/example-skill/SKILL.md",
+  "cross-repo-architecture.md",
+] as const;
+
+// Uninstall needs only enough bytes to prove an unchanged receipt hash. Refuse
+// pathological files before allocation; an unproven file stays operator-owned.
+const MAX_UNINSTALL_OWNERSHIP_FILE_BYTES = 64 * 1024 * 1024;
 
 interface PromotedSkillRoute {
   skill: string;
@@ -245,7 +255,9 @@ function promotedArtifactTargets(
 }
 
 function promotedContextArtifacts(ctx: PlanContext, contextDir: string): string[] {
-  const bytes = readRegularFile(join(ctx.root, TRUST_LOCK_FILE));
+  const bytes = readRegularFile(join(ctx.root, TRUST_LOCK_FILE), {
+    maxBytes: MAX_UNINSTALL_OWNERSHIP_FILE_BYTES,
+  });
   if (bytes === undefined) return [];
   let parsed: unknown;
   try {
@@ -267,7 +279,9 @@ function promotedContextArtifacts(ctx: PlanContext, contextDir: string): string[
     const layout = promotedSourceLayout(source);
     return source.artifactHashes.flatMap((artifact) => {
       return promotedArtifactTargets(contextDir, source, layout, artifact.path).filter((target) => {
-        const bytes = readRegularFile(join(ctx.root, target));
+        const bytes = readRegularFile(join(ctx.root, target), {
+          maxBytes: MAX_UNINSTALL_OWNERSHIP_FILE_BYTES,
+        });
         return (
           bytes !== undefined &&
           createHash("sha256").update(bytes).digest("hex") === artifact.sha256
@@ -285,6 +299,9 @@ function coOwnedContextReason(ctx: PlanContext, contextDir: string, cli: string)
     ...promotedContextArtifacts(ctx, contextDir),
   ].filter((path) => exists(ctx, path));
   const operatorSiblings = [
+    ...OPERATOR_CONTEXT_ARTIFACT_CANDIDATES.map((path) => `${contextDir}/${path}`)
+      .filter((path) => exists(ctx, path))
+      .map((path) => `${path} (seeded or merged; operator/co-owned)`),
     ...(cleanRel(contextDir) === ".claude"
       ? [
           `${contextDir}/settings.json`,

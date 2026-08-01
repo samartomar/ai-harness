@@ -1,6 +1,14 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  truncateSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -112,6 +120,14 @@ async function coOwnedClaudeContextFixture(): Promise<void> {
   };
   await executePlan(await bootstrapAiCommand.plan(bootstrapCtx), bootstrapCtx);
   await executePlan(await contractCommand.plan(bootstrapCtx), bootstrapCtx);
+  put(".claude/setup.md", "# Operator-edited setup checklist\n");
+  put(".claude/INDEX.md", "# Operator context index\n");
+  put(".claude/architecture.md", "# Operator architecture notes\n");
+  put(".claude/conventions.md", "# Operator conventions\n");
+  put(".claude/tasks.md", "# Operator task ledger\n");
+  put(".claude/project-guardrails.md", "# Operator project guardrails\n");
+  put(".claude/skills/example-skill/SKILL.md", "# Operator-edited example skill\n");
+  put(".claude/cross-repo-architecture.md", "# Operator cross-repo architecture\n");
   put(".claude/workspace-router.md", "# Generated workspace router\n");
   put(".claude/workspace-contracts.md", "# Generated workspace contracts\n");
   put(".claude/workspace-lock.json", JSON.stringify({ schemaVersion: 1 }));
@@ -492,6 +508,20 @@ describe("aih uninstall", () => {
     expect(generatedReason).not.toContain(".claude/crispy/");
     expect(operatorReason).toContain(".claude/crispy/");
     expect(operatorReason).toContain("CRISPY working notes");
+    for (const operatorOwned of [
+      ".claude/project.json",
+      ".claude/setup.md",
+      ".claude/INDEX.md",
+      ".claude/architecture.md",
+      ".claude/conventions.md",
+      ".claude/tasks.md",
+      ".claude/project-guardrails.md",
+      ".claude/skills/example-skill/SKILL.md",
+      ".claude/cross-repo-architecture.md",
+    ]) {
+      expect(generatedReason).not.toContain(operatorOwned);
+      expect(operatorReason).toContain(operatorOwned);
+    }
   });
 
   it("leaves a co-owned .claude context in place under --apply", async () => {
@@ -542,6 +572,22 @@ describe("aih uninstall", () => {
       ".claude/skills/reviewed-source/source-root/skills/reviewer/SKILL.md",
     );
     expect(digest?.text).toContain("all other content under .claude/ not listed as aih-generated");
+  });
+
+  it("refuses an oversized promoted artifact before reading its contents", async () => {
+    await coOwnedClaudeContextFixture();
+    truncateSync(
+      join(tmp, ".claude", "skills", "reviewed-source", "reviewer", "SKILL.md"),
+      2 * 1024 * 1024 * 1024 + 1,
+    );
+
+    const ctx: PlanContext = { ...makeCtx(), contextDir: ".claude" };
+    const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("core install footprint"),
+    );
+
+    expect(digest?.text).not.toContain(".claude/skills/reviewed-source/reviewer/SKILL.md");
   });
 
   it.each(["ai-coding", ".ai-context"])(
