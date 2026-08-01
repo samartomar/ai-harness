@@ -24,6 +24,7 @@ import {
   unprovableResidueReason,
 } from "../mcp/managed-projection.js";
 import { isExternalMcp } from "../mcp/render.js";
+import { readTrustLock, type TrustLockSource } from "../trust/lock.js";
 
 type UninstallDisposition = "backup" | "subtract" | "advisory";
 
@@ -171,10 +172,64 @@ const CONTEXT_ARTIFACT_CANDIDATES = [
   "skill-cards/",
 ] as const;
 
+function sortedPromotedSkills(promotedSkills: readonly string[]): string[] {
+  return [...promotedSkills].sort((left, right) => {
+    const depthDelta = right.split("/").length - left.split("/").length;
+    return depthDelta === 0 ? right.length - left.length : depthDelta;
+  });
+}
+
+function promotedArtifactTarget(
+  contextDir: string,
+  source: TrustLockSource,
+  artifactPath: string,
+): string | undefined {
+  const skills = sortedPromotedSkills(source.promotedSkills);
+  for (const skill of skills) {
+    for (const prefix of [`${skill}/`, `skills/${skill}/`]) {
+      if (artifactPath.startsWith(prefix)) {
+        return `${contextDir}/skills/${source.id}/${skill}/${artifactPath.slice(prefix.length)}`;
+      }
+    }
+  }
+
+  const parts = artifactPath.split("/");
+  for (let index = 1; index <= parts.length - 2; index += 1) {
+    if (parts[index - 1] !== "skills") continue;
+    for (const skill of skills) {
+      const skillParts = skill.split("/");
+      if (
+        index + skillParts.length < parts.length &&
+        skillParts.every((part, offset) => parts[index + offset] === part)
+      ) {
+        return `${contextDir}/skills/${source.id}/${skill}/${parts
+          .slice(index + skillParts.length)
+          .join("/")}`;
+      }
+    }
+  }
+
+  const onlySkill = skills.length === 1 ? skills[0] : undefined;
+  return onlySkill === undefined
+    ? undefined
+    : `${contextDir}/skills/${source.id}/${onlySkill}/${artifactPath}`;
+}
+
+function promotedContextArtifacts(ctx: PlanContext, contextDir: string): string[] {
+  const paths = readTrustLock(ctx.root).sources.flatMap((source) =>
+    source.artifactHashes.flatMap((artifact) => {
+      const target = promotedArtifactTarget(contextDir, source, artifact.path);
+      return target !== undefined && exists(ctx, target) ? [target] : [];
+    }),
+  );
+  return [...new Set(paths)].sort((left, right) => left.localeCompare(right));
+}
+
 function coOwnedContextReason(ctx: PlanContext, contextDir: string, cli: string): string {
   const generated = [
     ...CONTEXT_ARTIFACT_CANDIDATES.map((path) => `${contextDir}/${path}`),
     ...REGISTRY_IDS.map((target) => `${contextDir}/adapters/${target}.md`),
+    ...promotedContextArtifacts(ctx, contextDir),
   ].filter((path) => exists(ctx, path));
   const operatorSiblings =
     cleanRel(contextDir) === ".claude"
