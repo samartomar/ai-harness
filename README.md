@@ -58,6 +58,10 @@ aih verify-release 3.2.0   # checks npm signatures, GitHub release sums, and cos
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs
 pass. A skipped leg is incomplete evidence, not a successful rollout gate.
 
+Per-version release notes — what changed, and why — live in
+[CHANGELOG.md](https://github.com/samartomar/ai-harness/blob/main/CHANGELOG.md). It ships inside the
+npm tarball too, so an evaluator can read the version history straight from the unpacked package.
+
 <details><summary>From source (contributors)</summary>
 
 ```bash

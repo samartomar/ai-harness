@@ -120,6 +120,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
+          # Lead with the curated changelog, then let GitHub append its PR list. The
+          # link is pinned to this tag so it can never drift or 404 (#563).
+          notes="Curated release notes: [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md)"
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --notes "$notes" \
             ./*.tgz SHA256SUMS.txt SHA256SUMS.txt.sigstore.json \
             provenance.intoto.jsonl aih-sbom.spdx.json
