@@ -1,8 +1,9 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AIH_CONFIG_FILE } from "../src/config/marker.js";
+import { AIH_CONFIG_FILE, managedMcpProjectionOwnership } from "../src/config/marker.js";
 import { command } from "../src/doctor.js";
 import { executePlan } from "../src/internals/execute.js";
 import type { Action, PlanContext, ProbeAction } from "../src/internals/plan.js";
@@ -1887,6 +1888,39 @@ describe("doctor — Claude probe target scope from the committed marker (#554)"
     expect(res?.detail ?? "").toMatch(/re-project/i);
     expect(res?.detail ?? "").toMatch(/target/i);
   });
+
+  it.skipIf(process.platform === "win32")(
+    "classifies a FIFO projection as unowned non-regular residue without hanging",
+    async () => {
+      const expected = {
+        allowManagedMcpServersOnly: true as const,
+        allowedMcpServers: [{ serverCommand: ["uvx", "code-review-graph@2.2.0", "serve"] }],
+      };
+      writeFileSync(
+        join(dir, AIH_CONFIG_FILE),
+        JSON.stringify({
+          schemaVersion: 1,
+          contextDir: "ai-coding",
+          targets: ["kiro"],
+          managedMcpProjection: managedMcpProjectionOwnership(expected),
+        }),
+      );
+      writeEnterprisePolicy({ allowedServers: ["code-review-graph"], allowManagedOnly: true });
+      mkdirSync(join(dir, ".claude"), { recursive: true });
+      execFileSync("mkfifo", [join(dir, ".claude", "managed-settings.json")]);
+
+      const c = rooted();
+      const probe = findProbe(
+        (await command.plan(c)).actions,
+        "org-policy drift: .claude/managed-settings.json",
+      );
+      const res = await probe?.run(c);
+
+      expect(res?.verdict).toBe("fail");
+      expect(res?.code).toBe("org-policy.dropped-target-unowned");
+      expect(res?.detail).toContain("not a readable regular file");
+    },
+  );
 
   // Narrowing SUPPRESSES findings, so only the committed marker may do it. Weaker
   // signals must never silence an org-policy finding.
