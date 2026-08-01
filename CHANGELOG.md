@@ -18,6 +18,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `aih uninstall` now treats a generated context tree that is also a registered
+  live CLI config directory, such as `.claude`, as co-owned. Preview and `--apply`
+  leave the complete directory in place, name the generated canon files left for
+  manual cleanup, and distinguish operator-owned settings, agents, commands, and
+  managed-settings content that remains untouched. Distinct context directories
+  such as `ai-coding` and `.ai-context` keep their existing reversible wholesale
+  backup behavior. Refs #570
 - Regular-file reads now open with `O_NONBLOCK` as well as `O_NOFOLLOW` where
   available, so a FIFO is rejected before it can block `aih doctor`, `aih prune`,
   `aih uninstall`, or any bundle reader. The no-follow identity fallback, regular

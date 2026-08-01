@@ -100,6 +100,29 @@ async function managedMcpProjectionFixture(): Promise<void> {
   await executePlan(await policyProjectCommand.plan(projectCtx), projectCtx);
 }
 
+async function coOwnedClaudeContextFixture(): Promise<void> {
+  put("package.json", JSON.stringify({ name: "fixture" }));
+  const bootstrapCtx: PlanContext = {
+    ...makeCtx({ cli: "claude", canon: "compact" }, { apply: true }),
+    contextDir: ".claude",
+  };
+  await executePlan(await bootstrapAiCommand.plan(bootstrapCtx), bootstrapCtx);
+  put(".claude/settings.json", JSON.stringify({ hooks: { operator: true } }));
+  put(".claude/agents/operator.md", "# Operator agent\n");
+  put(".claude/commands/release.md", "# Operator command\n");
+  put(".claude/managed-settings.json", JSON.stringify({ operatorOnly: true }));
+  put(
+    "aih-org-policy.json",
+    JSON.stringify({
+      schemaVersion: 1,
+      minimumPosture: "enterprise",
+      references: { repoContract: ".claude/project.json" },
+      mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+    }),
+  );
+  await executePlan(await policyProjectCommand.plan(bootstrapCtx), bootstrapCtx);
+}
+
 const managedSettings = (): Record<string, unknown> =>
   JSON.parse(readFileSync(join(tmp, ".claude", "managed-settings.json"), "utf8")) as Record<
     string,
@@ -362,44 +385,78 @@ describe("aih uninstall", () => {
     expect(result.writes.map((w) => w.path)).not.toContain(".claude/managed-settings.json");
   });
 
-  it("does not promise a key subtraction inside a tree it removes wholesale", async () => {
-    // A repo bootstrapped with `--context-dir .claude` puts the projected
-    // managed-settings file INSIDE the context tree uninstall backs up whole.
-    // Subtracting two keys from it first is futile, and the preview line "every other
-    // key is preserved" would be a false promise while the directory goes to backup.
-    put("package.json", JSON.stringify({ name: "fixture" }));
-    const bootstrapCtx: PlanContext = {
-      ...makeCtx({ cli: "claude", canon: "compact" }, { apply: true }),
-      contextDir: ".claude",
-    };
-    await executePlan(await bootstrapAiCommand.plan(bootstrapCtx), bootstrapCtx);
-    put(
-      "aih-org-policy.json",
-      JSON.stringify({
-        schemaVersion: 1,
-        minimumPosture: "enterprise",
-        references: { repoContract: ".claude/project.json" },
-        mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
-      }),
-    );
-    const projectCtx: PlanContext = { ...bootstrapCtx };
-    await executePlan(await policyProjectCommand.plan(projectCtx), projectCtx);
-    expect(managedSettings()).toHaveProperty("allowManagedMcpServersOnly");
-
+  it("previews a co-owned .claude context as advisory and names both sides of the boundary", async () => {
+    await coOwnedClaudeContextFixture();
     const ctx: PlanContext = { ...makeCtx(), contextDir: ".claude" };
     const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
     const digest = result.digests.find((d) => d.describe.includes("core install footprint"));
-    const artifacts =
-      (digest?.data as { artifacts?: Array<{ path: string; kind: string }> } | undefined)
-        ?.artifacts ?? [];
+    const artifacts = (
+      digest?.data as
+        | { artifacts?: Array<{ path: string; kind: string; disposition: string }> }
+        | undefined
+    )?.artifacts;
 
-    // `.claude` is removed wholesale, so no subtraction is planned or promised for a
-    // file inside it.
-    expect(artifacts.map((a) => a.path)).toContain(".claude");
-    expect(artifacts.some((a) => a.kind === "managed-settings")).toBe(false);
-    expect(result.writes.map((w) => w.path)).not.toContain(".claude/managed-settings.json");
-    expect(digest?.text ?? "").not.toContain("every other key is preserved");
+    expect(result.removed.map((r) => r.path)).not.toContain(".claude");
+    expect(artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: ".claude",
+          kind: "context-dir",
+          disposition: "advisory",
+        }),
+      ]),
+    );
+    expect(digest?.text).toContain(".claude/RULE_ROUTER.md");
+    expect(digest?.text).toContain(".claude/adapters/_shared-canonical-block.md");
+    expect(digest?.text).toContain(".claude/rules/agent-behavior-core.md");
+    expect(digest?.text).toContain(".claude/settings.json");
+    expect(digest?.text).toContain(".claude/agents/");
+    expect(digest?.text).toContain(".claude/commands/");
+    expect(digest?.text).toContain("operator-owned content in .claude/managed-settings.json");
+    expect(digest?.text).toContain("[subtract] .claude/managed-settings.json");
   });
+
+  it("leaves a co-owned .claude context in place under --apply", async () => {
+    await coOwnedClaudeContextFixture();
+    const settings = readFileSync(join(tmp, ".claude", "settings.json"), "utf8");
+    const agent = readFileSync(join(tmp, ".claude", "agents", "operator.md"), "utf8");
+    const command = readFileSync(join(tmp, ".claude", "commands", "release.md"), "utf8");
+
+    const ctx: PlanContext = { ...makeCtx({}, { apply: true }), contextDir: ".claude" };
+    const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+
+    expect(result.removed.map((r) => r.path)).not.toContain(".claude");
+    expect(existsSync(join(tmp, ".claude"))).toBe(true);
+    expect(existsSync(join(tmp, ".claude.aih.bak"))).toBe(false);
+    expect(existsSync(join(tmp, ".claude", "RULE_ROUTER.md"))).toBe(true);
+    expect(readFileSync(join(tmp, ".claude", "settings.json"), "utf8")).toBe(settings);
+    expect(readFileSync(join(tmp, ".claude", "agents", "operator.md"), "utf8")).toBe(agent);
+    expect(readFileSync(join(tmp, ".claude", "commands", "release.md"), "utf8")).toBe(command);
+    expect(managedSettings()).toMatchObject({ operatorOnly: true });
+    expect(managedSettings()).not.toHaveProperty("allowManagedMcpServersOnly");
+    expect(managedSettings()).not.toHaveProperty("allowedMcpServers");
+  });
+
+  it.each(["ai-coding", ".ai-context"])(
+    "keeps the existing wholesale-backup behavior for distinct context dir %s",
+    async (contextDir) => {
+      put("package.json", JSON.stringify({ name: "fixture" }));
+      const bootstrapCtx: PlanContext = {
+        ...makeCtx({ cli: "claude", canon: "compact" }, { apply: true }),
+        contextDir,
+      };
+      await executePlan(await bootstrapAiCommand.plan(bootstrapCtx), bootstrapCtx);
+
+      const ctx: PlanContext = {
+        ...makeCtx({}, { apply: true }),
+        contextDir,
+      };
+      await executePlan(await uninstallCommand.plan(ctx), ctx);
+
+      expect(existsSync(join(tmp, contextDir))).toBe(false);
+      expect(existsSync(join(tmp, `${contextDir}.aih.bak`))).toBe(true);
+    },
+  );
 
   it("uses the on-disk casing for removable context dirs", async () => {
     await bootstrapFixture();
