@@ -297,6 +297,38 @@ describe("aih uninstall", () => {
     expect(removed.has(".kiro/hooks/team-custom.kiro.hook")).toBe(false);
   });
 
+  it("keeps Kiro extras inside a co-owned .kiro context in preview and apply", async () => {
+    put("package.json", JSON.stringify({ name: "fixture" }));
+    const bootstrapCtx: PlanContext = {
+      ...makeCtx({ cli: "kiro", canon: "compact" }, { apply: true }),
+      contextDir: ".kiro",
+    };
+    await executePlan(await bootstrapAiCommand.plan(bootstrapCtx), bootstrapCtx);
+    put(".kiro/hooks/team-custom.kiro.hook", "{}\n");
+
+    const previewCtx: PlanContext = { ...bootstrapCtx, apply: false };
+    const preview = await executePlan(await uninstallCommand.plan(previewCtx), previewCtx);
+    expect(preview.removed.map((entry) => entry.path)).not.toContain(
+      ".kiro/steering/agent-tools.md",
+    );
+    expect(preview.removed.map((entry) => entry.path)).not.toContain(
+      ".kiro/hooks/aih-secret-scan-on-create.kiro.hook",
+    );
+
+    const applied = await executePlan(await uninstallCommand.plan(bootstrapCtx), bootstrapCtx);
+    expect(applied.removed.map((entry) => entry.path)).not.toContain(
+      ".kiro/steering/agent-tools.md",
+    );
+    expect(applied.removed.map((entry) => entry.path)).not.toContain(
+      ".kiro/hooks/aih-secret-scan-on-create.kiro.hook",
+    );
+    expect(existsSync(join(tmp, ".kiro", "steering", "agent-tools.md"))).toBe(true);
+    expect(existsSync(join(tmp, ".kiro", "hooks", "aih-secret-scan-on-create.kiro.hook"))).toBe(
+      true,
+    );
+    expect(existsSync(join(tmp, ".kiro", "hooks", "team-custom.kiro.hook"))).toBe(true);
+  });
+
   it("does not back up Kiro-looking extras without generated Kiro ownership evidence", async () => {
     put(
       ".aih-config.json",

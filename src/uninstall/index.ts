@@ -575,12 +575,14 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
   const markerContextDir = marker ? removableContextDir(marker.contextDir) : undefined;
   const artifacts: UninstallArtifact[] = [];
   let ownsContextDir = false;
+  let coOwnedContextDir: string | undefined;
 
   if (markerContextDir !== undefined) {
     const contextDir = canonicalExistingRel(ctx, markerContextDir);
     if (contextDir !== undefined && hasManagedContextEvidence(ctx, contextDir)) {
       ownsContextDir = true;
       const configOwner = registeredConfigDirOwner(ctx, contextDir);
+      if (configOwner !== undefined) coOwnedContextDir = contextDir;
       artifacts.push({
         path: contextDir,
         kind: "context-dir",
@@ -642,7 +644,10 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
   artifacts.push(...repoMcpAdvisories(ctx));
   artifacts.push(...bootloaderAdvisories(ctx));
   artifacts.push(
-    ...kiroExtraArtifacts(ctx, markerTargets.has("kiro") && hasKiroOwnershipEvidence(ctx)),
+    ...kiroExtraArtifacts(ctx, markerTargets.has("kiro") && hasKiroOwnershipEvidence(ctx)).filter(
+      (artifact) =>
+        coOwnedContextDir === undefined || !isUnderTree(ctx, artifact.path, coOwnedContextDir),
+    ),
   );
 
   if (exists(ctx, ".aih") && ownsContextDir) {
