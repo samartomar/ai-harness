@@ -169,52 +169,77 @@ const CONTEXT_ARTIFACT_CANDIDATES = [
   "workspace-lock.json",
   "telemetry/collector.yaml",
   "telemetry/fetch-analytics.mjs",
-  "crispy/",
   "skill-cards/",
 ] as const;
 
-function artifactRelForSkill(skill: string, artifactPath: string): string | undefined {
-  for (const prefix of [`${skill}/`, `skills/${skill}/`]) {
+interface PromotedSkillRoute {
+  skill: string;
+  prefixes: [string, string];
+  parts: string[];
+}
+
+interface PromotedSourceLayout {
+  routes: PromotedSkillRoute[];
+  rootSkill?: string;
+}
+
+function artifactRelForSkill(route: PromotedSkillRoute, artifactPath: string): string | undefined {
+  for (const prefix of route.prefixes) {
     if (artifactPath.startsWith(prefix)) return artifactPath.slice(prefix.length);
   }
 
   const parts = artifactPath.split("/");
-  const skillParts = skill.split("/");
   for (let index = 1; index <= parts.length - 2; index += 1) {
     if (
       parts[index - 1] === "skills" &&
-      index + skillParts.length < parts.length &&
-      skillParts.every((part, offset) => parts[index + offset] === part)
+      index + route.parts.length < parts.length &&
+      route.parts.every((part, offset) => parts[index + offset] === part)
     ) {
-      return parts.slice(index + skillParts.length).join("/");
+      return parts.slice(index + route.parts.length).join("/");
     }
   }
   return undefined;
 }
 
+function promotedSourceLayout(source: TrustLockSource): PromotedSourceLayout {
+  const routes = source.promotedSkills.map(
+    (skill): PromotedSkillRoute => ({
+      skill,
+      prefixes: [`${skill}/`, `skills/${skill}/`],
+      parts: skill.split("/"),
+    }),
+  );
+  const prefixedSkills = new Set<string>();
+  for (const artifact of source.artifactHashes) {
+    for (const route of routes) {
+      if (artifactRelForSkill(route, artifact.path) !== undefined) {
+        prefixedSkills.add(route.skill);
+      }
+    }
+  }
+  const rootSkills = routes.filter((route) => !prefixedSkills.has(route.skill));
+  return {
+    routes,
+    rootSkill: rootSkills.length === 1 ? rootSkills[0]?.skill : undefined,
+  };
+}
+
 function promotedArtifactTargets(
   contextDir: string,
   source: TrustLockSource,
+  layout: PromotedSourceLayout,
   artifactPath: string,
 ): string[] {
-  const targets = source.promotedSkills.flatMap((skill) => {
-    const rel = artifactRelForSkill(skill, artifactPath);
-    return rel === undefined ? [] : [`${contextDir}/skills/${source.id}/${skill}/${rel}`];
+  const targets = layout.routes.flatMap((route) => {
+    const rel = artifactRelForSkill(route, artifactPath);
+    return rel === undefined ? [] : [`${contextDir}/skills/${source.id}/${route.skill}/${rel}`];
   });
-  const prefixedSkills = new Set(
-    source.promotedSkills.filter((skill) =>
-      source.artifactHashes.some(
-        (artifact) => artifactRelForSkill(skill, artifact.path) !== undefined,
-      ),
-    ),
-  );
   // A source-root skill has no source-path prefix: its receipts are `SKILL.md`,
   // README.md, or paths through nested skills. Promotion copies every such file
   // beneath the one promoted skill name not represented by a receipt prefix.
   // More than one unmatched name is ambiguous lock evidence, so claim neither.
-  const rootSkills = source.promotedSkills.filter((skill) => !prefixedSkills.has(skill));
-  if (rootSkills.length === 1) {
-    targets.push(`${contextDir}/skills/${source.id}/${rootSkills[0]}/${artifactPath}`);
+  if (layout.rootSkill !== undefined) {
+    targets.push(`${contextDir}/skills/${source.id}/${layout.rootSkill}/${artifactPath}`);
   }
   return [...new Set(targets)];
 }
@@ -238,17 +263,18 @@ function promotedContextArtifacts(ctx: PlanContext, contextDir: string): string[
         return parsedSource === undefined ? [] : [parsedSource];
       })
     : [];
-  const paths = sources.flatMap((source) =>
-    source.artifactHashes.flatMap((artifact) => {
-      return promotedArtifactTargets(contextDir, source, artifact.path).filter((target) => {
+  const paths = sources.flatMap((source) => {
+    const layout = promotedSourceLayout(source);
+    return source.artifactHashes.flatMap((artifact) => {
+      return promotedArtifactTargets(contextDir, source, layout, artifact.path).filter((target) => {
         const bytes = readRegularFile(join(ctx.root, target));
         return (
           bytes !== undefined &&
           createHash("sha256").update(bytes).digest("hex") === artifact.sha256
         );
       });
-    }),
-  );
+    });
+  });
   return [...new Set(paths)].sort((left, right) => left.localeCompare(right));
 }
 
@@ -258,16 +284,20 @@ function coOwnedContextReason(ctx: PlanContext, contextDir: string, cli: string)
     ...REGISTRY_IDS.map((target) => `${contextDir}/adapters/${target}.md`),
     ...promotedContextArtifacts(ctx, contextDir),
   ].filter((path) => exists(ctx, path));
-  const operatorSiblings =
-    cleanRel(contextDir) === ".claude"
+  const operatorSiblings = [
+    ...(cleanRel(contextDir) === ".claude"
       ? [
           `${contextDir}/settings.json`,
           `${contextDir}/agents/`,
           `${contextDir}/commands/`,
           `operator-owned content in ${contextDir}/managed-settings.json`,
-          `all other content under ${contextDir}/ not listed as aih-generated`,
         ]
-      : [`all other content under ${contextDir}/ not listed as aih-generated`];
+      : []),
+    ...(exists(ctx, `${contextDir}/crispy`)
+      ? [`${contextDir}/crispy/ (co-owned CRISPY working notes)`]
+      : []),
+    `all other content under ${contextDir}/ not listed as aih-generated`,
+  ];
   return [
     `co-owned ${entry(cli).label} config directory; aih leaves the complete directory in place`,
     `aih-generated context artifacts left for manual cleanup: ${generated.join(", ")}`,
