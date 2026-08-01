@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { command as bootstrapAiCommand } from "../../src/bootstrap-ai/index.js";
+import { command as contractCommand } from "../../src/contract/index.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { defaultRunner, fakeRunner, type Runner } from "../../src/internals/proc.js";
@@ -107,6 +108,7 @@ async function coOwnedClaudeContextFixture(): Promise<void> {
     contextDir: ".claude",
   };
   await executePlan(await bootstrapAiCommand.plan(bootstrapCtx), bootstrapCtx);
+  await executePlan(await contractCommand.plan(bootstrapCtx), bootstrapCtx);
   put(".claude/settings.json", JSON.stringify({ hooks: { operator: true } }));
   put(".claude/agents/operator.md", "# Operator agent\n");
   put(".claude/commands/release.md", "# Operator command\n");
@@ -409,6 +411,9 @@ describe("aih uninstall", () => {
     expect(digest?.text).toContain(".claude/RULE_ROUTER.md");
     expect(digest?.text).toContain(".claude/adapters/_shared-canonical-block.md");
     expect(digest?.text).toContain(".claude/rules/agent-behavior-core.md");
+    expect(digest?.text).toContain(".claude/project.json");
+    expect(digest?.text).toContain(".claude/project.md");
+    expect(digest?.text).toContain(".claude/setup.md");
     expect(digest?.text).toContain(".claude/settings.json");
     expect(digest?.text).toContain(".claude/agents/");
     expect(digest?.text).toContain(".claude/commands/");
@@ -429,6 +434,9 @@ describe("aih uninstall", () => {
     expect(existsSync(join(tmp, ".claude"))).toBe(true);
     expect(existsSync(join(tmp, ".claude.aih.bak"))).toBe(false);
     expect(existsSync(join(tmp, ".claude", "RULE_ROUTER.md"))).toBe(true);
+    expect(existsSync(join(tmp, ".claude", "project.json"))).toBe(true);
+    expect(existsSync(join(tmp, ".claude", "project.md"))).toBe(true);
+    expect(existsSync(join(tmp, ".claude", "setup.md"))).toBe(true);
     expect(readFileSync(join(tmp, ".claude", "settings.json"), "utf8")).toBe(settings);
     expect(readFileSync(join(tmp, ".claude", "agents", "operator.md"), "utf8")).toBe(agent);
     expect(readFileSync(join(tmp, ".claude", "commands", "release.md"), "utf8")).toBe(command);
@@ -471,4 +479,30 @@ describe("aih uninstall", () => {
     expect(result.removed.map((r) => r.path)).toContain("ai-coding");
     expect(result.removed.map((r) => r.path)).not.toContain("AI-CODING");
   });
+
+  it.skipIf(process.platform !== "darwin")(
+    "treats a case-variant live config directory as co-owned on case-insensitive macOS",
+    async () => {
+      put("package.json", JSON.stringify({ name: "fixture" }));
+      const bootstrapCtx: PlanContext = {
+        ...makeCtx({ cli: "claude", canon: "compact" }, { apply: true }),
+        contextDir: ".Claude",
+        host: makeHostAdapter({ platform: "darwin", run: fakeRunner(() => undefined), env: {} }),
+      };
+      await executePlan(await bootstrapAiCommand.plan(bootstrapCtx), bootstrapCtx);
+      put(
+        ".aih-config.json",
+        JSON.stringify({ schemaVersion: 1, contextDir: ".claude", targets: ["claude"] }),
+      );
+
+      const result = await executePlan(await uninstallCommand.plan(bootstrapCtx), bootstrapCtx);
+      const digest = result.digests.find((entry) =>
+        entry.describe.includes("core install footprint"),
+      );
+
+      expect(result.removed.map((entry) => entry.path)).not.toContain(".Claude");
+      expect(digest?.text).toContain("[advisory] .Claude");
+      expect(digest?.text).toContain("co-owned Claude Code config directory");
+    },
+  );
 });
