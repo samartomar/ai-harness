@@ -18,6 +18,8 @@ import { readAihConfigDiagnostic } from "./config/marker.js";
 import { contractTruthCheck } from "./contract/check.js";
 import { classifyTool, versionArgv } from "./heal/common.js";
 import { detectInstall } from "./internals/cli-detect.js";
+import { REGISTRY_IDS } from "./internals/cli-registry.js";
+import type { Cli } from "./internals/clis.js";
 import { readIfExists } from "./internals/fsxn.js";
 import { gitRead } from "./internals/git.js";
 import {
@@ -98,16 +100,21 @@ export const command: CommandSpec = {
     // Tool-specific probes must be scoped to the tools this repo actually targets.
     // `aih doctor` runs standalone, so nothing injects `ctx.targets` the way `aih init`
     // does — leaving `isTargeted` open and failing e.g. a Kiro-only repo for a Claude
-    // projection whose repair writes nothing there (issue #554). Resolve the same
-    // marker-authoritative set the loadability probe already uses; with no marker it
-    // falls back to `claude`, preserving the strict default. Scoped deliberately to the
-    // Claude-owned probes rather than the whole ctx, which other probes read differently.
-    // An INVALID marker narrows nothing: `resolveTargetSet` would throw on it, and
-    // trusting a half-read target set could hide real findings. Fall back to the
-    // unscoped behavior and let the config-marker probe report the marker itself.
-    const scopedCtx: PlanContext = marker.invalid
-      ? ctx
-      : { ...ctx, targets: resolveTargetSet({ ...ctx, contextDir }).targeted };
+    // projection whose repair writes nothing there (issue #554).
+    //
+    // Narrowing a governance probe SUPPRESSES findings, so it takes the strongest
+    // evidence this repo has: the COMMITTED marker, and only when every id in it is
+    // recognized. Deliberately not `resolveTargetSet` — its weaker fallbacks (a `--cli`
+    // flag, `--detect`, or inferring targets from `<contextDir>/adapters/*.md` on disk)
+    // are fine for grading a report, but they would let a deleted adapter file or a
+    // command-line flag silence an org-policy finding. No marker, an invalid marker, an
+    // empty list, or an unrecognized id all narrow NOTHING and keep the strict default;
+    // the config-marker probe reports the marker itself.
+    const declared = cfg?.targets ?? [];
+    const scopedCtx: PlanContext =
+      declared.length > 0 && declared.every((t) => REGISTRY_IDS.includes(t))
+        ? { ...ctx, targets: declared as Cli[] }
+        : ctx;
     const base: Action[] = [
       probe("node runtime >= 20", () => {
         const major = Number.parseInt(process.versions.node.split(".")[0] ?? "0", 10);

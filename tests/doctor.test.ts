@@ -1850,6 +1850,43 @@ describe("doctor — Claude probe target scope from the committed marker (#554)"
     expect(res?.detail ?? "").not.toContain("policy project --apply");
   });
 
+  // Narrowing SUPPRESSES findings, so only the committed marker may do it. Weaker
+  // signals must never silence an org-policy finding.
+  it.each([
+    ["no marker at all", undefined],
+    ["an empty target list", [] as string[]],
+    ["an unrecognized id beside a valid one", ["kiro", "not-a-real-cli"]],
+  ])("does not narrow Claude probes on %s", async (_label, targets) => {
+    if (targets !== undefined) {
+      writeFileSync(
+        join(dir, AIH_CONFIG_FILE),
+        JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets }),
+      );
+    }
+    writeEnterprisePolicy();
+    const c = rooted();
+    const probe = findProbe(
+      (await command.plan(c)).actions,
+      "org-policy drift: .claude/managed-settings.json",
+    );
+    expect((await probe?.run(c))?.verdict).toBe("fail");
+  });
+
+  // On-disk adapter files are how `resolveTargetSet` infers targets for REPORT
+  // grading. That inference must not reach a governance probe: deleting
+  // `adapters/claude.md` would otherwise silence org-policy drift.
+  it("does not narrow Claude probes on inferred on-disk adapters", async () => {
+    mkdirSync(join(dir, "ai-coding", "adapters"), { recursive: true });
+    writeFileSync(join(dir, "ai-coding", "adapters", "kiro.md"), "# kiro");
+    writeEnterprisePolicy();
+    const c = rooted();
+    const probe = findProbe(
+      (await command.plan(c)).actions,
+      "org-policy drift: .claude/managed-settings.json",
+    );
+    expect((await probe?.run(c))?.verdict).toBe("fail");
+  });
+
   // The control case: a Claude-targeted repo keeps the strict finding and its repair.
   it("still fails a Claude-targeted repo when the projection is missing", async () => {
     writeFileSync(
