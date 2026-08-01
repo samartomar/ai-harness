@@ -40,8 +40,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `sandbox` are never removed — no provenance is recorded for them, and `sandbox` is
   co-written by `aih guardrails` and `aih sandbox`. Every ownership decision reads the
   path as a regular file with no symlink follow, so a symlink (including a dangling
-  one), a directory, or anything else there is reported and the claim revoked rather
-  than any subtraction being planned. The residue is detected from the committed
+  one), a directory, or a path reached through a symlinked parent is reported and the
+  claim revoked rather than any subtraction being planned — the parent case included
+  because the executor refuses those, so calling it repairable would name a command
+  guaranteed to refuse. The residue is detected from the committed
   target set rather than the adapter files on disk, so an earlier prune that already
   removed the adapter cannot strand it. Because prune can now do the job, `aih doctor`
   names it: a marker-proven residue reports `org-policy.dropped-target-residue` with

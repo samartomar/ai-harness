@@ -116,7 +116,7 @@ export function unprovableResidueReason(reason: UnprovableReason): string {
     case "no-ownership-record":
       return `${AIH_CONFIG_FILE} records no active managed-MCP ownership (absent, malformed, revoked, or hash-invalid), so no aih command can prove which keys aih wrote`;
     case "not-a-regular-file":
-      return "the path is not a readable regular file (symlink or directory), and aih never edits through one";
+      return "the path is not a readable regular file (a symlink, a directory, or reached through a symlinked parent), and aih never edits through one";
     case "settings-absent":
       return "the projected file is no longer on disk, so there is nothing to subtract";
     case "pair-drifted":
@@ -142,6 +142,29 @@ export function occupied(abs: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * True when any PARENT directory between `root` and the file is a symlink. The
+ * no-follow read guards only the leaf, but the executor refuses a symlinked parent
+ * outright (`assertNoSymlinkParents`) — so classifying such a path as repairable
+ * would name `aih prune` for a finding prune is guaranteed to refuse, breaking the
+ * one agent-facing promise this lifecycle makes: the command it names clears it.
+ */
+function hasSymlinkParent(root: string, rel: string): boolean {
+  const parts = rel.split("/").filter((part) => part.length > 0);
+  let current = root;
+  for (const part of parts.slice(0, -1)) {
+    current = join(current, part);
+    let info: ReturnType<typeof lstatSync>;
+    try {
+      info = lstatSync(current);
+    } catch {
+      return false; // absent parent — nothing to redirect through
+    }
+    if (info.isSymbolicLink()) return true;
+  }
+  return false;
 }
 
 /**
@@ -184,7 +207,12 @@ export function managedMcpProjectionOnDisk(
   if (!isActiveManagedMcpProjectionOwnership(ownership)) return undefined;
   const base = { path: settingsRel, ownership, markerSource };
   const abs = absolute(root, settingsRel);
-  const settingsSource = readRegularFile(abs)?.toString("utf8");
+  // The leaf read is no-follow, but a symlinked PARENT would still redirect it — and
+  // the executor refuses those, so a residue behind one can never be repaired by the
+  // command a repairable finding names. Treat it as unprovable up front.
+  const settingsSource = hasSymlinkParent(root, settingsRel)
+    ? undefined
+    : readRegularFile(abs)?.toString("utf8");
   if (settingsSource === undefined) {
     // PRESENCE only, and NO-FOLLOW. A content read would throw EISDIR on a directory
     // planted here, taking down the whole command before it could report the residue

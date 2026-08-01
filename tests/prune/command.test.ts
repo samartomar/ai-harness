@@ -267,6 +267,32 @@ describe("aih prune command", () => {
       });
     });
 
+    it("never names a repair for a residue behind a symlinked parent", async () => {
+      // The leaf read is no-follow, but a symlinked PARENT would still redirect it —
+      // and the executor refuses those outright. Classifying such a path as repairable
+      // would name `aih prune` for a finding prune is guaranteed to refuse, breaking
+      // the one promise this lifecycle makes: the command it names clears it.
+      await droppedClaudeProjection();
+      const elsewhere = join(dir, "elsewhere");
+      mkdirSync(elsewhere, { recursive: true });
+      const real = readFileSync(managedPath(), "utf8");
+      writeFileSync(join(elsewhere, "managed-settings.json"), real);
+      rmSync(join(dir, ".claude"), { recursive: true, force: true });
+      symlinkSync(elsewhere, join(dir, ".claude"), "junction");
+
+      const applyCtx = ctx({ apply: true });
+      const actions = (await command.plan(applyCtx)).actions;
+      await executePlan({ capability: "prune", actions }, applyCtx);
+
+      expect(writeOf(actions, MANAGED)).toBeUndefined();
+      expect(digestText(actions)).toContain("symlinked parent");
+      // The redirected file is untouched, and the claim is given up rather than kept.
+      expect(readFileSync(join(elsewhere, "managed-settings.json"), "utf8")).toBe(real);
+      expect(readJson(join(dir, ".aih-config.json"))).toMatchObject({
+        managedMcpProjection: { state: "revoked" },
+      });
+    });
+
     it("revokes rather than overwrites a drifted pair", async () => {
       await droppedClaudeProjection();
       const operatorPair = [{ serverCommand: ["operator-mcp", "serve"] }];
