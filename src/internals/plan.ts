@@ -235,8 +235,6 @@ export interface RemoveAction {
   hardDelete?: boolean;
   /** Archive root for the reversible move. Closed union — never an arbitrary path. */
   archiveRoot?: ".aih/legacy" | ".aih/quarantine";
-  /** Apply-time content pin for removals selected from generated-file inspection. */
-  expect?: { sha256: string };
 }
 
 export type Action =
@@ -592,11 +590,7 @@ export function envBlock(
 export function remove(
   path: string,
   describe: string,
-  opts: {
-    hardDelete?: boolean;
-    archiveRoot?: RemoveAction["archiveRoot"];
-    expect?: RemoveAction["expect"];
-  } = {},
+  opts: { hardDelete?: boolean; archiveRoot?: RemoveAction["archiveRoot"] } = {},
 ): RemoveAction {
   return {
     kind: "remove",
@@ -604,7 +598,6 @@ export function remove(
     describe,
     hardDelete: opts.hardDelete,
     archiveRoot: opts.archiveRoot,
-    expect: opts.expect,
   };
 }
 
