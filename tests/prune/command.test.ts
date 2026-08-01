@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -237,6 +237,24 @@ describe("aih prune command", () => {
       await droppedClaudeProjection();
       rmSync(managedPath());
       mkdirSync(managedPath(), { recursive: true });
+
+      const applyCtx = ctx({ apply: true });
+      const actions = (await command.plan(applyCtx)).actions;
+      await executePlan({ capability: "prune", actions }, applyCtx);
+
+      expect(writeOf(actions, MANAGED)).toBeUndefined();
+      expect(digestText(actions)).toContain("not a readable regular file");
+      expect(readJson(join(dir, ".aih-config.json"))).toMatchObject({
+        managedMcpProjection: { state: "revoked" },
+      });
+    });
+
+    it("revokes a claim whose projected path is a dangling symlink", async () => {
+      // Presence must be NO-FOLLOW: `existsSync` calls a dangling link absent, which
+      // would leave the stale ownership claim standing forever with nothing reported.
+      await droppedClaudeProjection();
+      rmSync(managedPath());
+      symlinkSync(join(dir, "nowhere.json"), managedPath());
 
       const applyCtx = ctx({ apply: true });
       const actions = (await command.plan(applyCtx)).actions;

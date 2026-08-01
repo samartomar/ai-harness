@@ -1,5 +1,3 @@
-import { join } from "node:path";
-import { readIfExists } from "../internals/fsxn.js";
 import { type Action, type PlanContext, writeJson } from "../internals/plan.js";
 import { managedMcpAllowlistSettings } from "../mcp/allowlist.js";
 import { managedMcpExample } from "../mcp/enterprise.js";
@@ -9,6 +7,7 @@ import {
   MANAGED_SETTINGS_PATH,
   managedMcpProjectionOnDisk,
   managedMcpProjectionOwnershipAction,
+  readManagedSettings,
   revokeManagedMcpProjectionOwnershipAction,
   withExpectedContents,
 } from "../mcp/managed-projection.js";
@@ -99,8 +98,10 @@ export function orgPolicyProjectionActions(ctx: PlanContext, policy: OrgPolicy):
   // managed-settings write this projection already emits — the executor collapses
   // repeated writes to one path, so a second write action would be dropped.
   const onDisk = managedMcpEnabled ? undefined : managedMcpProjectionOnDisk(ctx.root);
-  const settingsSource =
-    onDisk?.settingsSource ?? readIfExists(join(ctx.root, ".claude", "managed-settings.json"));
+  // The apply-time pin comes from a regular-file, no-follow read — never a plain
+  // content read, which throws EISDIR on a directory planted at the projected path
+  // and would take the whole projection down before it could plan anything.
+  const settingsSource = onDisk?.settingsSource ?? readManagedSettings(ctx.root);
   const actions: Action[] = [
     withExpectedContents(
       writeJson(

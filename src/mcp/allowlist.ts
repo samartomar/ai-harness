@@ -248,21 +248,37 @@ export function mcpManagedAllowlistCheck(ctx: PlanContext): Check {
         detail: "no managed MCP allowlist is enforced in .claude/managed-settings.json",
       };
     }
+    const policy = readOrgPolicy(ctx.root, ctx.env);
+    const desired = mcpCommands(ctx.root, policy);
+    // A malformed `.mcp.json` is a hard error about a DIFFERENT file, and it stays
+    // first so this probe never stops reporting a case it used to report.
+    if (desired.kind === "invalid") {
+      return {
+        name,
+        verdict: "fail",
+        detail: `invalid .mcp.json: ${desired.message}`,
+        code: "mcp.allowlist-drift",
+      };
+    }
     // The allowlist lives in ONE tool's config dir, and org-policy projection writes it
     // only when that tool is targeted. With the owner untargeted, every repair below is
     // unsatisfiable by construction, so report dropped-target residue naming a repair the
     // operator can actually perform — the same disposition `orgPolicyDriftProbes` gives
     // the file itself (issues #554, #564, #566).
+    //
+    // The REPAIRABLE verdict is decided before any comparison against `.mcp.json` —
+    // before the equality pass AND before the "nothing to compare" skip. Marker-proven
+    // ownership does not depend on `.mcp.json` at all, and such an allowlist is not
+    // harmless once its owner is dropped: it keeps enforcing a projection nothing
+    // maintains, and `aih prune` can now subtract it. This is also the ONLY surface
+    // that sees the case in a repo with no committed `aih-org-policy.json` — there are
+    // no org-policy drift probes at all there, so anything skipped here is reported by
+    // nothing. The UNOWNED verdict deliberately stays below the equality pass: aih
+    // cannot prove it wrote any of it, so failing a still-consistent allowlist on mere
+    // presence would misclassify operator config as ours for no available repair.
     const owner = owningCli(MANAGED_SETTINGS_PATH);
     const untargeted = owner !== undefined && !isTargeted(ctx, owner as Cli);
     const residue = untargeted ? managedMcpProjectionOnDisk(ctx.root) : undefined;
-    // A marker-PROVEN residue is classified BEFORE anything that reads `.mcp.json` —
-    // both the equality pass and the "nothing to compare" skip. Its ownership does not
-    // depend on `.mcp.json` at all, and an allowlist that still matches is not harmless
-    // once the owner is dropped: it keeps enforcing a projection nothing maintains, and
-    // `aih prune` can now subtract it. This is also the ONLY surface that sees the case
-    // in a repo with no committed `aih-org-policy.json` — there are no org-policy drift
-    // probes at all there, so anything skipped here is reported by nothing.
     if (untargeted && owner !== undefined && residue?.matches === true) {
       return {
         name,
@@ -276,16 +292,6 @@ export function mcpManagedAllowlistCheck(ctx: PlanContext): Check {
         fingerprint: `org-policy-dropped-target:${MANAGED_SETTINGS_PATH}`,
       };
     }
-    const policy = readOrgPolicy(ctx.root, ctx.env);
-    const desired = mcpCommands(ctx.root, policy);
-    if (desired.kind === "invalid") {
-      return {
-        name,
-        verdict: "fail",
-        detail: `invalid .mcp.json: ${desired.message}`,
-        code: "mcp.allowlist-drift",
-      };
-    }
     if (desired.kind !== "commands") {
       return { name, verdict: "skip", detail: "no .mcp.json stdio servers to compare" };
     }
@@ -294,8 +300,6 @@ export function mcpManagedAllowlistCheck(ctx: PlanContext): Check {
     const missing = desiredKeys.filter((key) => !actualKeys.includes(key));
     const extra = actualKeys.filter((key) => !desiredKeys.includes(key));
     if (missing.length === 0 && extra.length === 0) {
-      // Unowned and matching stays `pass`: failing on mere presence would misclassify
-      // operator-owned config as ours, and there is no automated removal path for it.
       return {
         name,
         verdict: "pass",

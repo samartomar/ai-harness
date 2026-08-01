@@ -192,9 +192,17 @@ function removedTrees(artifacts: readonly UninstallArtifact[]): string[] {
   return artifacts.filter((a) => a.disposition === "backup").map((a) => cleanRel(a.path));
 }
 
-/** True when `path` IS `tree` or lives beneath it — segment-wise, never a substring. */
+/**
+ * True when `path` IS `tree` or lives beneath it — segment-wise, never a substring.
+ * Case-INSENSITIVE on purpose: `canonicalExistingRel` preserves the on-disk casing, so
+ * a `.CLAUDE` context tree on a case-insensitive filesystem would otherwise slip past
+ * a case-sensitive compare. This guard only ever SUPPRESSES work, so over-matching is
+ * safe and under-matching is not.
+ */
 function isUnderTree(path: string, tree: string): boolean {
-  return path === tree || path.startsWith(`${tree}/`);
+  const a = path.toLowerCase();
+  const b = tree.toLowerCase();
+  return a === b || a.startsWith(`${b}/`);
 }
 
 /**

@@ -19,11 +19,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   operator-authored content, `organizationPolicy`, `sandbox` — keeps its value, and
   the file itself is never deleted, because the marker proves two keys and never the
   file. (As with every aih JSON merge-write, the file is re-serialized, so JSONC
-  comments and hand formatting are not preserved.) When ownership cannot be proven
-  (absent, malformed,
-  revoked, or hash-invalid marker; a drifted pair; a path that is not a regular file)
-  nothing is touched and the dry run names what is about to become unattributable.
-  Refs #567
+  comments and hand formatting are not preserved.) A drifted pair — or a path that is
+  not a readable regular file — is left untouched and the dry run names what is about
+  to become unattributable; an absent, malformed, revoked, or hash-invalid marker was
+  never a provable claim, so there is nothing to reconcile and nothing is reported.
+  The subtraction is also skipped when the projected file sits inside a tree the same
+  run removes wholesale — a repo bootstrapped with `--context-dir .claude` — rather
+  than promising to preserve keys in a file that is about to move to backup. Refs #567
 - `aih prune` now reconciles the projected `.claude/managed-settings.json` left behind
   when a repo drops Claude from its committed targets. Nothing did: `aih policy
   project` returns an empty plan for an untargeted CLI, prune only knew the registered
@@ -36,8 +38,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   revoke, and naming the file would tell an agent to re-run a command designed to
   refuse. `aih doctor` owns that case instead. `organizationPolicy` and
   `sandbox` are never removed — no provenance is recorded for them, and `sandbox` is
-  co-written by `aih guardrails` and `aih sandbox`. A symlink substituted for the
-  projected path is refused, not followed. The residue is detected from the committed
+  co-written by `aih guardrails` and `aih sandbox`. Every ownership decision and every
+  apply-time pin reads the path as a regular file with no symlink follow, so a symlink
+  (including a dangling one), a directory, or anything else there is reported and the
+  claim revoked rather than the file read or edited. The residue is detected from the committed
   target set rather than the adapter files on disk, so an earlier prune that already
   removed the adapter cannot strand it. Because prune can now do the job, `aih doctor`
   names it: a marker-proven residue reports `org-policy.dropped-target-residue` with

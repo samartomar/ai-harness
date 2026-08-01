@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import { join } from "node:path";
 import {
   type ActiveManagedMcpProjectionOwnership,
@@ -130,6 +130,34 @@ function absolute(root: string, rel: string): string {
 }
 
 /**
+ * NO-FOLLOW presence: does anything at all occupy this path? `lstat`, never
+ * `existsSync` (which follows links, so a DANGLING symlink would read as absent and
+ * the stale ownership claim would survive untouched) and never a content read (which
+ * throws EISDIR on a directory).
+ */
+function occupied(abs: string): boolean {
+  try {
+    lstatSync(abs);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The projected managed-settings bytes, or `undefined` when the path is anything
+ * other than a readable regular file. Callers that need the on-disk content for an
+ * apply-time pin must use THIS, not `readIfExists`: a directory planted at the path
+ * makes a plain content read throw EISDIR and take the whole command down.
+ */
+export function readManagedSettings(
+  root: string,
+  settingsRel: string = MANAGED_SETTINGS_PATH,
+): string | undefined {
+  return readRegularFile(absolute(root, settingsRel))?.toString("utf8");
+}
+
+/**
  * The on-disk managed-MCP ownership state, or `undefined` when the marker records no
  * ACTIVE claim (absent / malformed / revoked / hash-invalid) — the case where aih has
  * nothing to reconcile and must not touch the file.
@@ -158,13 +186,14 @@ export function managedMcpProjectionOnDisk(
   const abs = absolute(root, settingsRel);
   const settingsSource = readRegularFile(abs)?.toString("utf8");
   if (settingsSource === undefined) {
-    // PRESENCE only — never a content read. `readIfExists` would throw EISDIR on a
-    // directory planted at this path, taking down the whole command before it could
-    // report the residue it exists to report.
+    // PRESENCE only, and NO-FOLLOW. A content read would throw EISDIR on a directory
+    // planted here, taking down the whole command before it could report the residue
+    // it exists to report; `existsSync` would call a dangling symlink absent and
+    // silently leave the stale ownership claim standing.
     return {
       ...base,
       matches: false,
-      unprovable: existsSync(abs) ? "not-a-regular-file" : "settings-absent",
+      unprovable: occupied(abs) ? "not-a-regular-file" : "settings-absent",
       settingsSource: undefined,
     };
   }
