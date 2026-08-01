@@ -8,6 +8,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- ECC Kiro installs now carry an ownership record, so a copy left behind by a newer
+  ECC source becomes visible instead of silently passing. A run snapshots the target
+  directory, then hashes only the files it created into repo-local
+  `.aih/ecc/install-manifest.json` alongside the ECC commit they came from. A later
+  run separates content still matching its record from content the operator has since
+  edited — which is never auto-replaced — from content with no record at all, which is
+  never claimed. The finding is advisory; a missing or unreadable record fails closed
+  to "not proven ours", and installs predating the record report as unknown provenance
+  until reinstalled. Per-mechanism install claims now derive from the target registry,
+  so a newly registered tool cannot inherit a claim that is untrue for it. Refs #555
+
 - Governed external-tool configuration now records a source-bound acceptance ledger,
   refreshes the approved local MCP and repository-tool runtimes at exact versions,
   pins the self-hosted GitHub MCP container by digest, and removes only the exact
@@ -56,6 +67,37 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   registry, so `.kiro/steering/` is walked exactly as `.cursor/rules/` already was, and
   a newly registered target is measured without editing the report. Steering files a
   repo added by hand were previously invisible to the footprint and to `--gate`.
+
+- `aih ecc` no longer promises an upgrade path its installers cannot deliver. The blanket
+  "re-run after the stack changes to re-scope" line was emitted once for every target, but
+  installation dispatches to four mechanisms that do not share those semantics, and on every
+  path aih controls a rerun *adds* newly-matched content while leaving already-installed
+  files untouched. Each group now states its own rerun behavior, consult-only targets no
+  longer receive re-scope guidance at all, and both Kiro doc paths say plainly that the copy
+  adds only what is missing instead of calling it "(idempotent)" — technically true, but read
+  by operators as "safe to re-run for updates". Output text only; no behavior changed.
+  Refs #555
+
+- Org-policy drift probes now honor the repo's configured target set. Doctor evaluated the
+  Claude-owned org-policy projection for every repository regardless of its targets, then
+  prescribed `aih policy project --apply`, which deliberately emits zero actions when Claude
+  is not targeted — so the finding was unsatisfiable by construction for all ten non-Claude
+  targets. The asymmetry was structural rather than an oversight: the write half gates on an
+  async target resolve that the synchronous probe half could not call. The projection's
+  owning CLI is now resolved once from the registry's declared `configDirs` rather than a
+  hardcoded tool name, scoping the whole probe set to match the write half's all-or-nothing
+  semantics and covering the sibling `.example` files that live outside the tool's config
+  dir. Closes #554
+
+- The generated Codex merge script seeds its config atomically instead of check-then-create.
+  The seed write guarded an already-atomic `wx` open with a preceding `existsSync` check,
+  which added nothing but a TOCTOU window — and the two disagreed whenever the path traversed
+  a directory symlink. With a symlinked HOME on Windows, `existsSync` reported absent while
+  `open()` found the file, turning a benign already-exists into a hard `EEXIST` crash that
+  aborted the install before its own safety guards ran. The pre-check is dropped, `wx` is
+  kept, and `EEXIST` is treated as the benign outcome it is. Context-report sources are also
+  now derived from the CLI registry rather than a hand-kept per-tool list that was wrong in
+  both directions. Closes #553
 
 - Trust scanning no longer advertises or accepts AgentShield as a governed
   detector while its upstream source is unavailable. Existing org policies that

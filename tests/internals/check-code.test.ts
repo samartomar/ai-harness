@@ -522,6 +522,7 @@ describe("Check.code — invariants", () => {
       "binding.hook-chain": true,
       "binding.settings-drift": true,
       "binding.mcp-inventory": true,
+      "ecc.install-drift": true,
     };
     const srcDir = join(process.cwd(), "src");
     const src = (readdirSync(srcDir, { recursive: true }) as string[])

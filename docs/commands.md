@@ -336,6 +336,31 @@ target. Every row is marked `contingent on evidence authorization`: it previews 
 install phase would attempt and does not claim that evidence has passed.
 Installed Codex skills are invoked on demand with `$<skill-name>` from
 `~/.codex/skills/<name>/SKILL.md`; they are not an auto-loaded `.agents/skills` surface.
+Per-mechanism claims are registry-driven. Each target declares how ECC installs for it — ECC's npm
+installer, the cached checkout plus add-only Codex merge helpers, ECC's native `.kiro/install.sh`, or
+consult-only — and the summary emits only the claims true for the selected targets. An unmapped
+target defaults to consult, so a newly registered CLI installs nothing rather than inheriting a claim
+that is false for it. No mechanism replaces already-installed content, so a rerun cannot re-scope an
+existing install.
+
+Kiro installs are ownership-tracked so a stale copy is visible. Because ECC's own installer writes
+the bytes, aih attributes ownership by what a run CREATES: it snapshots `.kiro/` before the
+installer, re-walks it after a successful install, and records each created file's sha256 plus the
+ECC commit it came from into repo-local `.aih/ecc/install-manifest.json`. That location survives
+target-directory cleanup and is never committed. A later run re-checks each recorded path: a matching
+hash from an older commit is *stale*, a changed hash is *locally modified* and is never
+auto-replaced, a recorded path that is gone is *removed*, and anything with no record is *unknown
+provenance* and is never claimed or touched. Kiro's installer copies only absent destinations, so a
+rerun cannot clear a stale finding — replacing that content is deliberate operator work and is not
+automated.
+
+The finding is advisory (`ecc.install-drift`), so it reports without failing the run. Installs
+predating the manifest have no record and report as unknown provenance until reinstalled; ownership
+is never inferred from a content match, which cannot distinguish an aih-written file from a
+user-authored identical one. A missing or unreadable manifest fails closed the same way. Codex and
+the npm targets install into home-scoped directories shared by every repo on the machine, so they
+declare no managed root and receive no ownership claim at all.
+
 See [Baseline Component Evidence](security/baseline-evidence.md) for posture behavior and org
 overrides. <!-- aih:claim CM-21 -->
 

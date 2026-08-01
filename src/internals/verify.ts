@@ -163,7 +163,11 @@ export type CheckCode =
   | "binding.deny-stale" // B5: a pinned skill is no longer denied — deny list is stale (fail)
   | "binding.hook-chain" // B6: per-event hook chain inventory (advisory)
   | "binding.settings-drift" // B7: an AIH-owned settings value changed since bind (advisory)
-  | "binding.mcp-inventory"; // B8: resolved MCP server inventory (advisory)
+  | "binding.mcp-inventory" // B8: resolved MCP server inventory (advisory)
+  // ECC installed-source drift (#555). Advisory: reporting drift is in scope, the repair
+  // path that could CLEAR a stale finding is not — and Kiro's absence-guarded installer
+  // can never update an existing file, so failing the run would wedge the repo red.
+  | "ecc.install-drift";
 
 export interface Check {
   name: string;

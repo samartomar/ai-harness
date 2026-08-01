@@ -17,14 +17,24 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { codexEccActions, command } from "../../src/ecc/index.js";
 import {
   AIH_DIRECT_ECC_INSTALL_TARGETS,
+  ECC_INSTALL_MECHANISM_LABELS,
   ECC_INSTALL_TARGETS,
   ECC_NPM_BINS,
   eccInstallerArgv,
+  eccInstallMechanism,
   isAihDirectEccInstallTarget,
   isEccInstallTarget,
   normalizeEccInstallVersion,
 } from "../../src/ecc/install.js";
+import {
+  ECC_INSTALL_MANIFEST_SCHEMA_VERSION,
+  hashManagedFile,
+  readEccInstallManifest,
+  writeEccInstallManifestAtomic,
+} from "../../src/ecc/install-manifest.js";
 import { eccLanguages } from "../../src/ecc/select.js";
+import { REGISTRY_IDS } from "../../src/internals/cli-registry.js";
+import type { Cli } from "../../src/internals/clis.js";
 import type {
   Action,
   DocAction,
@@ -280,6 +290,27 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     expect(text).not.toMatch(/\(idempotent\)/);
   });
 
+  it("derives the mechanism claims from the registry, not a hand-written literal (#555)", async () => {
+    // windsurf is consult-only: it installs nothing, so it must not be handed the
+    // npm / Codex / Kiro mechanism claims a hardcoded literal emitted on every run.
+    const text = docs((await command.plan(makeCtx({ cli: "windsurf" }))).actions)
+      .map((d) => d.text)
+      .join("\n");
+    expect(text).not.toMatch(/ecc-install --target <cli>/);
+    expect(text).not.toMatch(/Kiro → cached git checkout/);
+    expect(text).not.toMatch(/Codex → cached git checkout/);
+    expect(text).toMatch(/install nothing/i);
+  });
+
+  it("emits only the selected target's mechanism claim (#555)", async () => {
+    const text = docs((await command.plan(makeCtx({ cli: "kiro" }))).actions)
+      .map((d) => d.text)
+      .join("\n");
+    expect(text).toMatch(/Kiro → cached git checkout/);
+    expect(text).not.toMatch(/ecc-install --target <cli>/);
+    expect(text).not.toMatch(/Codex → cached git checkout/);
+  });
+
   it("always documents the ECC ecosystem tools (consult + agentshield)", async () => {
     const text = docs((await command.plan(makeCtx())).actions)
       .map((d) => d.text)
@@ -403,7 +434,9 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     put("package.json", JSON.stringify({ name: "svc" }));
     const actions = (await command.plan(makeCtx({ allTools: true }))).actions;
     for (const a of actions) {
-      expect(["doc", "exec", "write"]).toContain(a.kind);
+      // probe is read-only verification (this command is alwaysVerify); the boundary
+      // this test guards is WRITES, constrained below.
+      expect(["doc", "exec", "write", "probe"]).toContain(a.kind);
       if (a.kind === "write") {
         const write = a as WriteAction;
         expect(write.external).toBe(true);
@@ -845,4 +878,205 @@ describe("Codex managed destination safety", () => {
       expect(readFileSync(outside, "utf8")).toBe("outside-before\n");
     },
   );
+});
+
+describe("ECC install mechanism registry (#555)", () => {
+  it("resolves a mechanism for every registered CLI", () => {
+    for (const cli of REGISTRY_IDS) {
+      expect(ECC_INSTALL_MECHANISM_LABELS[eccInstallMechanism(cli as Cli)]).toBeTypeOf("string");
+    }
+  });
+
+  it("defaults an unregistered target to consult, so it cannot inherit an install claim", () => {
+    // The #553/#555 failure mode: a newly registered tool silently inheriting a claim
+    // that is false for it. Anything not explicitly mapped installs nothing.
+    expect(eccInstallMechanism("some-future-cli" as Cli)).toBe("consult");
+  });
+
+  it("maps each mechanism to exactly the targets that use it", () => {
+    expect(eccInstallMechanism("kiro")).toBe("native-script");
+    expect(eccInstallMechanism("codex")).toBe("checkout-merge");
+    expect(eccInstallMechanism("claude")).toBe("npm");
+    expect(eccInstallMechanism("windsurf")).toBe("consult");
+    for (const cli of AIH_DIRECT_ECC_INSTALL_TARGETS) {
+      expect(eccInstallMechanism(cli)).toBe("npm");
+    }
+  });
+
+  it("agrees with the routing predicates it replaces", () => {
+    for (const cli of REGISTRY_IDS as Cli[]) {
+      expect(eccInstallMechanism(cli) === "npm").toBe(isAihDirectEccInstallTarget(cli));
+      expect(["npm", "checkout-merge"].includes(eccInstallMechanism(cli))).toBe(
+        isEccInstallTarget(cli),
+      );
+    }
+  });
+});
+
+describe("ECC installed-source drift detection (#555)", () => {
+  /** A kiro plan context whose ECC checkout reports `commit` for `git rev-parse HEAD`. */
+  function kiroCtx(commit: string): PlanContext {
+    const run = fakeRunner((argv) =>
+      argv.includes("rev-parse")
+        ? {
+            code: 0,
+            stdout: `${commit}
+`,
+          }
+        : undefined,
+    );
+    return {
+      root: tmp,
+      contextDir: ".ai-context",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: { HOME: tmp, USERPROFILE: tmp },
+      options: { cli: "kiro" },
+    };
+  }
+
+  const driftProbe = async (ctx: PlanContext) => {
+    const found = (await command.plan(ctx)).actions.filter(
+      (a): a is ProbeAction => a.kind === "probe" && a.describe.includes("installed-source drift"),
+    );
+    expect(found).toHaveLength(1);
+    const probeAction = found[0];
+    if (probeAction === undefined) throw new Error("missing drift probe");
+    return probeAction.run(ctx);
+  };
+
+  const installKiroContent = (): void => {
+    put(".kiro/steering/00-canon.md", "canon body\n");
+    put(".kiro/agents/reviewer.md", "reviewer body\n");
+  };
+
+  const recordManifestAt = (commit: string): void => {
+    writeEccInstallManifestAtomic(tmp, {
+      schemaVersion: ECC_INSTALL_MANIFEST_SCHEMA_VERSION,
+      installs: [
+        {
+          target: "kiro",
+          mechanism: "native-script",
+          root: join(tmp, ".kiro"),
+          installedAt: "2026-07-31T00:00:00.000Z",
+          source: { kind: "git-checkout", ref: "main", commit, package: null, version: null },
+          files: [
+            {
+              path: "agents/reviewer.md",
+              sha256: hashManagedFile(join(tmp, ".kiro"), "agents/reviewer.md") ?? "",
+            },
+            {
+              path: "steering/00-canon.md",
+              sha256: hashManagedFile(join(tmp, ".kiro"), "steering/00-canon.md") ?? "",
+            },
+          ],
+        },
+      ],
+    });
+  };
+
+  it("ACCEPTANCE: installed from source A, re-run at source B surfaces a drift finding", async () => {
+    installKiroContent();
+    recordManifestAt("a".repeat(40));
+    const check = await driftProbe(kiroCtx("b".repeat(40)));
+    expect(check.verdict).toBe("skip"); // advisory: reporting is in scope, repair is not
+    expect(check.code).toBe("ecc.install-drift");
+    expect(check.detail).toMatch(/2 stale/);
+    expect(check.detail).toMatch(/cannot update these/);
+  });
+
+  it("reports no drift when the checkout still matches the recorded source", async () => {
+    installKiroContent();
+    recordManifestAt("a".repeat(40));
+    const check = await driftProbe(kiroCtx("a".repeat(40)));
+    expect(check.verdict).toBe("pass");
+    expect(check.detail).toMatch(/matches the installed source/);
+  });
+
+  it("never reports a locally edited file as stale, even when the source moved on", async () => {
+    installKiroContent();
+    recordManifestAt("a".repeat(40));
+    put(".kiro/steering/00-canon.md", "the operator rewrote this\n");
+    const check = await driftProbe(kiroCtx("b".repeat(40)));
+    expect(check.detail).toMatch(/1 stale/);
+    expect(check.detail).toMatch(/1 locally modified/);
+    expect(check.detail).toContain("steering/00-canon.md (user-modified)");
+  });
+
+  it("reports an install predating the manifest as unknown provenance, never stale", async () => {
+    installKiroContent(); // content on disk, no manifest — the pre-#555 install
+    const check = await driftProbe(kiroCtx("b".repeat(40)));
+    expect(check.verdict).toBe("skip");
+    expect(check.code).toBe("ecc.install-drift");
+    expect(check.detail).toMatch(/no ownership record/);
+    expect(check.detail).not.toMatch(/stale/);
+  });
+
+  it("passes cleanly when nothing is installed yet", async () => {
+    const check = await driftProbe(kiroCtx("a".repeat(40)));
+    expect(check.verdict).toBe("pass");
+  });
+
+  it("brackets the Kiro install with a snapshot before and an ownership capture after", async () => {
+    const argvs = execs((await command.plan(kiroCtx("a".repeat(40)))).actions).map((e) => e.argv);
+    const snapshot = argvs.findIndex((argv) => argv.includes("snapshot"));
+    const install = argvs.findIndex((argv) => argv.some((v) => v.includes("install.sh")));
+    const capture = argvs.findIndex((argv) => argv.includes("capture"));
+    expect(snapshot).toBeGreaterThanOrEqual(0);
+    expect(install).toBeGreaterThan(snapshot);
+    expect(capture).toBeGreaterThan(install);
+  });
+
+  it("only records ownership after a SUCCESSFUL install", async () => {
+    const capture = execs((await command.plan(kiroCtx("a".repeat(40)))).actions).find((e) =>
+      e.argv.includes("capture"),
+    );
+    expect(capture?.requiresPriorExecSuccess).toBe(true);
+  });
+
+  // The capture script is generated source inside a string, so CodeQL cannot see it and
+  // the exec-ordering tests above never run it. Run the real argv the plan emits: the
+  // hash IS the ownership proof, so a symlink planted while the external installer runs
+  // must never be hashed into the manifest as AIH-owned content.
+  it("records created regular files but never hashes a planted symlink (runs the real capture script)", async () => {
+    const planned = execs((await command.plan(kiroCtx("a".repeat(40)))).actions);
+    const snapshot = planned.find((e) => e.argv.includes("snapshot"));
+    const capture = planned.find((e) => e.argv.includes("capture"));
+    if (snapshot === undefined || capture === undefined) throw new Error("missing capture wiring");
+
+    const runScript = (argv: readonly string[]): void => {
+      const result = spawnSync(argv[0] ?? "node", argv.slice(1), { encoding: "utf8" });
+      expect(result.status).toBe(0);
+    };
+
+    runScript(snapshot.argv); // .kiro/ is empty at this point
+
+    // Stand in for the installer: one real file, plus a symlink pointing outside the root.
+    const outside = mkdtempSync(join(tmpdir(), "aih-ecc-capture-outside-"));
+    try {
+      writeFileSync(join(outside, "secret.md"), "content outside the managed root\n", "utf8");
+      put(".kiro/agents/reviewer.md", "reviewer body\n");
+      try {
+        symlinkSync(join(outside, "secret.md"), join(tmp, ".kiro", "agents", "linked.md"), "file");
+      } catch {
+        return; // unprivileged Windows cannot create symlinks; nothing to assert
+      }
+
+      runScript(capture.argv);
+
+      const read = readEccInstallManifest(tmp);
+      expect(read.present).toBe(true);
+      const install = read.present ? read.manifest.installs[0] : undefined;
+      const paths = (install?.files ?? []).map((f) => f.path);
+      expect(paths).toContain("agents/reviewer.md");
+      expect(paths).not.toContain("agents/linked.md");
+      const outsideHash = hashManagedFile(outside, "secret.md");
+      expect((install?.files ?? []).some((f) => f.sha256 === outsideHash)).toBe(false);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
 });

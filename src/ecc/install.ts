@@ -4,6 +4,7 @@ import { type Action, doc, exec } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import type { Platform } from "../platform/base.js";
 import { execArgv } from "../tools/install.js";
+import type { EccInstallMechanism } from "./install-manifest.js";
 import type { EccLanguagePack } from "./select.js";
 
 /**
@@ -45,6 +46,101 @@ export function isEccInstallTarget(cli: Cli): boolean {
 
 export function isAihDirectEccInstallTarget(cli: Cli): boolean {
   return AIH_DIRECT_ECC_INSTALL_TARGETS.includes(cli);
+}
+
+/** A mechanism that writes files, or `consult` — the advisor path, which installs nothing. */
+export type EccMechanism = EccInstallMechanism | "consult";
+
+/**
+ * How each registered CLI actually gets ECC installed — the SINGLE source of truth for
+ * both routing and the user-facing per-mechanism claim.
+ *
+ * The four mechanisms have genuinely different rerun semantics (#555), so one blanket
+ * promise is false for at least one of them. The mapping is EXPLICIT and the default is
+ * `consult`: a newly registered tool installs nothing until someone deliberately maps
+ * it, so it can never INHERIT a claim that is untrue for it. That is the hand-kept-list
+ * failure #553 hit and #559 fixed structurally for directory loading.
+ */
+const ECC_INSTALL_MECHANISMS_BY_CLI: Partial<Record<Cli, EccInstallMechanism>> = {
+  ...Object.fromEntries(AIH_DIRECT_ECC_INSTALL_TARGETS.map((cli) => [cli, "npm" as const])),
+  codex: "checkout-merge",
+  kiro: "native-script",
+};
+
+export function eccInstallMechanism(cli: Cli): EccMechanism {
+  return ECC_INSTALL_MECHANISMS_BY_CLI[cli] ?? "consult";
+}
+
+/**
+ * Repo-relative directory an install writes into, for targets whose written surface aih
+ * can bound. Declared, never derived — and deliberately REPO-LOCAL only.
+ *
+ * Codex and the npm targets install into HOME-scoped dirs (`~/.codex`, `~/.claude`)
+ * shared by every repo on the machine, so a repo-local manifest could not honestly claim
+ * ownership of what it finds there — another repo's install may have written it. Those
+ * targets therefore declare no managed root and receive no ownership claim at all, which
+ * is the fail-closed answer rather than a false one. Kiro installs into the repo's own
+ * `.kiro/`, is absence-guarded, and is the target this drift detection exists for (#555).
+ */
+const ECC_MANAGED_ROOTS: Partial<Record<Cli, string>> = { kiro: ".kiro" };
+
+/** The repo-relative root aih can prove ownership within, when there is one. */
+export function eccManagedRoot(cli: Cli): string | undefined {
+  return ECC_MANAGED_ROOTS[cli];
+}
+
+/** Short human label per mechanism (reports and the coverage test key off this). */
+export const ECC_INSTALL_MECHANISM_LABELS: Record<EccMechanism, string> = {
+  npm: "ECC's npm installer",
+  "checkout-merge": "cached ECC checkout + add-only merge helpers",
+  "native-script": "cached ECC checkout + ECC's native .kiro/install.sh",
+  consult: "consult advisor — installs nothing",
+};
+
+/** The mechanisms a CLI selection actually uses, in canonical order. */
+export function eccMechanismsFor(clis: readonly Cli[]): EccMechanism[] {
+  const order: EccMechanism[] = ["npm", "checkout-merge", "native-script", "consult"];
+  const used = new Set(clis.map(eccInstallMechanism));
+  return order.filter((mechanism) => used.has(mechanism));
+}
+
+/** How the install runs, per mechanism — emitted ONLY for the mechanisms in play. */
+export function eccMechanismInstallLines(clis: readonly Cli[], profile: string): string[] {
+  const claim: Record<EccMechanism, string> = {
+    npm: `  • npm targets → npx --package ecc-universal ecc-install --target <cli> --profile ${profile}  (no clone)`,
+    "checkout-merge":
+      "  • Codex → cached git checkout of ECC + add-only config/MCP/AGENTS merge helpers",
+    "native-script":
+      "  • Kiro → cached git checkout of ECC (clone/pull to latest) + native .kiro/install.sh",
+    consult: "  • consult targets → npx ecc consult — advisory only, they install nothing",
+  };
+  return eccMechanismsFor(clis).map((mechanism) => claim[mechanism]);
+}
+
+/**
+ * What a RERUN does, per mechanism (#558's honesty half, now registry-driven). No
+ * mechanism replaces already-installed content, so none can re-scope an existing
+ * install — but the REASON differs per mechanism, and only the reasons true for the
+ * SELECTED targets are emitted.
+ */
+export function eccMechanismRerunLines(clis: readonly Cli[]): string[] {
+  const claim: Record<EccMechanism, string> = {
+    npm: "For npm targets the update behavior is ECC's own installer's, not aih's.",
+    "checkout-merge": "The Codex merge helpers are add-only.",
+    "native-script": "Kiro's native installer copies only absent destinations.",
+    consult: "Consult targets install nothing at all.",
+  };
+  const mechanisms = eccMechanismsFor(clis);
+  const writes = mechanisms.filter((mechanism) => mechanism !== "consult");
+  return [
+    ...(writes.length > 0
+      ? [
+          "Re-running ADDS newly-matched content; it does not replace or remove what is",
+          "already installed — so a rerun cannot re-scope an existing install.",
+        ]
+      : []),
+    ...mechanisms.map((mechanism) => claim[mechanism]),
+  ];
 }
 
 export interface EccInstallInputs {
