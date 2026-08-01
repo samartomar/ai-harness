@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { adapterNote } from "../../src/bootstrap-ai/canon.js";
 import { command } from "../../src/bootstrap-ai/index.js";
 import { executePlan, resolveContents } from "../../src/internals/execute.js";
 import { LOADABILITY_SENTINEL } from "../../src/internals/loadability-sentinel.js";
@@ -309,7 +310,8 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
       )}\n`,
     );
     put("GEMINI.md", "# stale gemini bootloader\n");
-    put(".ai-context/adapters/gemini.md", "# stale gemini adapter\n");
+    const generatedAdapter = adapterNote("gemini", ".ai-context", "legacy");
+    put(".ai-context/adapters/gemini.md", generatedAdapter);
     const applyCtx = makeCtx({}, { apply: true });
     const result = await executePlan(await command.plan(applyCtx), applyCtx);
     const w = writesByPath((await command.plan(makeCtx())).actions);
@@ -321,11 +323,58 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     expect(readFileSync(join(tmp, "GEMINI.md"), "utf8")).toBe("# stale gemini bootloader\n");
     expect(
       readFileSync(join(tmp, ".aih", "legacy", ".ai-context", "adapters", "gemini.md"), "utf8"),
-    ).toBe("# stale gemini adapter\n");
+    ).toBe(generatedAdapter);
 
     const converged = await executePlan(await command.plan(applyCtx), applyCtx);
     expect(converged.removed.map((entry) => entry.path)).not.toContain(
       ".ai-context/adapters/gemini.md",
+    );
+  });
+
+  it("preserves an operator-authored adapter outside the resolved target set", async () => {
+    put(
+      ".aih-config.json",
+      `${JSON.stringify(
+        { schemaVersion: 1, contextDir: ".ai-context", targets: ["claude", "codex"] },
+        null,
+        2,
+      )}\n`,
+    );
+    const operatorAdapter = "# Gemini adapter\n\nOperator-owned instructions.\n";
+    put(".ai-context/adapters/gemini.md", operatorAdapter);
+
+    const applyCtx = makeCtx({}, { apply: true });
+    const result = await executePlan(await command.plan(applyCtx), applyCtx);
+
+    expect(result.removed.map((entry) => entry.path)).not.toContain(
+      ".ai-context/adapters/gemini.md",
+    );
+    expect(readFileSync(join(tmp, ".ai-context", "adapters", "gemini.md"), "utf8")).toBe(
+      operatorAdapter,
+    );
+  });
+
+  it("refuses to archive a generated adapter edited after planning", async () => {
+    put(
+      ".aih-config.json",
+      `${JSON.stringify(
+        { schemaVersion: 1, contextDir: ".ai-context", targets: ["claude", "codex"] },
+        null,
+        2,
+      )}\n`,
+    );
+    put(
+      ".ai-context/adapters/gemini.md",
+      adapterNote("gemini", ".ai-context", "legacy"),
+    );
+    const applyCtx = makeCtx({}, { apply: true });
+    const planned = await command.plan(applyCtx);
+    const operatorEdit = "# Gemini adapter\n\nEdited after preview.\n";
+    put(".ai-context/adapters/gemini.md", operatorEdit);
+
+    await expect(executePlan(planned, applyCtx)).rejects.toThrow(/changed after the plan/);
+    expect(readFileSync(join(tmp, ".ai-context", "adapters", "gemini.md"), "utf8")).toBe(
+      operatorEdit,
     );
   });
 

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { adapterNote } from "../../src/bootstrap-ai/canon.js";
 import { command } from "../../src/bootstrap-ai/index.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
@@ -55,7 +56,7 @@ describe("bootstrap-ai fleet regeneration (#507)", () => {
       const root = mkdtempSync(join(tmpdir(), "aih-bootstrap-fleet-"));
       roots.push(root);
       put(root, manifest, manifestContents);
-      put(root, "ai-coding/adapters/gemini.md", "# orphan generated adapter\n");
+      put(root, "ai-coding/adapters/gemini.md", adapterNote("gemini", "ai-coding", "compact"));
       const bootloader = cli === "claude" ? "CLAUDE.md" : "AGENTS.md";
       put(root, bootloader, "# Operator header\n\nKeep this note.\n");
       const ctx = context(root, cli);

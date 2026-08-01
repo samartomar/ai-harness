@@ -1,4 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -235,6 +236,22 @@ describe("FsTransaction — removals (aih prune)", () => {
     expect(() => t.commit()).toThrow(/both writes and removes/);
     // Fail-closed: nothing happened.
     expect(readFileSync(p, "utf8")).toBe("hi");
+  });
+
+  it("preserves a removal target whose bytes changed after staging", () => {
+    const original = "generated";
+    const edited = "operator edit";
+    const src = put("codex.md", original);
+    const legacy = join(dir, ".aih", "legacy", "codex.md");
+    const t = new FsTransaction();
+    t.stageRemoval(src, legacy, {
+      expect: { sha256: createHash("sha256").update(original).digest("hex") },
+    });
+    writeFileSync(src, edited, "utf8");
+
+    expect(() => t.commit()).toThrow(/removal target changed before commit/);
+    expect(readFileSync(src, "utf8")).toBe(edited);
+    expect(existsSync(legacy)).toBe(false);
   });
 
   it("rolls an applied removal BACK when a later removal fails", () => {
