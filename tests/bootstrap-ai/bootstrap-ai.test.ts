@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -9,6 +9,7 @@ import { LOADABILITY_SENTINEL } from "../../src/internals/loadability-sentinel.j
 import type { Action, PlanContext, ProbeAction, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { stalePruneSet } from "../../src/prune/detect.js";
 
 let tmp: string;
 beforeEach(() => {
@@ -23,6 +24,32 @@ function put(relPath: string, contents: string): void {
   mkdirSync(join(full, ".."), { recursive: true });
   writeFileSync(full, contents, "utf8");
 }
+
+const PREVIOUS_GEMINI_ADAPTER = `# Gemini CLI adapter
+
+Gemini CLI-specific files are bootloaders and local wiring only — not the
+source of repo truth.
+
+## Entry points
+
+- root \`GEMINI.md\`
+- \`.ai-context/RULE_ROUTER.md\` — layered model, detected stack, task routing
+- \`.ai-context/INDEX.md\` — repo context (run \`aih scaffold\` if absent)
+
+## How it loads rules
+
+- Gemini CLI reads \`GEMINI.md\`; global rules live in \`~/.gemini/GEMINI.md\`.
+
+## Boundaries
+
+Gemini CLI may propose, implement when assigned, and review. It must not push,
+merge, bypass CI, or approve a merge without explicit human approval.
+
+## Baseline layer
+
+ECC + Superpowers install the generic baseline at \`~/.gemini/\`; repo canon
+under \`.ai-context/\` overrides it on conflict (see \`RULE_ROUTER.md\` § Layered model).
+`;
 
 function makeCtx(
   options: Record<string, unknown> = {},
@@ -300,7 +327,7 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     expect(merged.targets).toEqual(["claude", "codex"]);
   });
 
-  it("a marker-scoped re-run removes generated adapters outside the recorded target set", async () => {
+  it("a marker-scoped re-run leaves dropped adapters as prune membership evidence", async () => {
     put(
       ".aih-config.json",
       `${JSON.stringify(
@@ -310,8 +337,7 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
       )}\n`,
     );
     put("GEMINI.md", "# stale gemini bootloader\n");
-    const generatedAdapter = adapterNote("gemini", ".ai-context", "legacy");
-    put(".ai-context/adapters/gemini.md", generatedAdapter);
+    put(".ai-context/adapters/gemini.md", PREVIOUS_GEMINI_ADAPTER);
     const applyCtx = makeCtx({}, { apply: true });
     const result = await executePlan(await command.plan(applyCtx), applyCtx);
     const w = writesByPath((await command.plan(makeCtx())).actions);
@@ -319,11 +345,19 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     expect(w.has("AGENTS.md")).toBe(true);
     expect(w.has("GEMINI.md")).toBe(false);
     expect(w.has(".ai-context/adapters/gemini.md")).toBe(false);
-    expect(result.removed.map((entry) => entry.path)).toContain(".ai-context/adapters/gemini.md");
+    expect(result.removed.map((entry) => entry.path)).not.toContain(
+      ".ai-context/adapters/gemini.md",
+    );
     expect(readFileSync(join(tmp, "GEMINI.md"), "utf8")).toBe("# stale gemini bootloader\n");
-    expect(
-      readFileSync(join(tmp, ".aih", "legacy", ".ai-context", "adapters", "gemini.md"), "utf8"),
-    ).toBe(generatedAdapter);
+    expect(readFileSync(join(tmp, ".ai-context", "adapters", "gemini.md"), "utf8")).toBe(
+      PREVIOUS_GEMINI_ADAPTER,
+    );
+    const stale = stalePruneSet(applyCtx);
+    expect(stale.dropped).toEqual(["gemini"]);
+    expect(stale.artifacts.map((artifact) => artifact.path)).toEqual([
+      ".ai-context/adapters/gemini.md",
+      "GEMINI.md",
+    ]);
 
     const converged = await executePlan(await command.plan(applyCtx), applyCtx);
     expect(converged.removed.map((entry) => entry.path)).not.toContain(
@@ -354,7 +388,7 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     );
   });
 
-  it("refuses to archive a generated adapter edited after planning", async () => {
+  it("preserves a dropped adapter edited after preview for explicit prune", async () => {
     put(
       ".aih-config.json",
       `${JSON.stringify(
@@ -369,10 +403,44 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     const operatorEdit = "# Gemini adapter\n\nEdited after preview.\n";
     put(".ai-context/adapters/gemini.md", operatorEdit);
 
-    await expect(executePlan(planned, applyCtx)).rejects.toThrow(/changed after the plan/);
+    await expect(executePlan(planned, applyCtx)).resolves.toBeDefined();
     expect(readFileSync(join(tmp, ".ai-context", "adapters", "gemini.md"), "utf8")).toBe(
       operatorEdit,
     );
+  });
+
+  it("does not inspect a dropped adapter through a symlinked parent", async () => {
+    put(
+      ".aih-config.json",
+      `${JSON.stringify(
+        { schemaVersion: 1, contextDir: ".ai-context", targets: ["claude", "codex"] },
+        null,
+        2,
+      )}\n`,
+    );
+    const outside = mkdtempSync(join(tmpdir(), "aih-bootai-outside-"));
+    try {
+      writeFileSync(
+        join(outside, "gemini.md"),
+        adapterNote("gemini", ".ai-context", "legacy"),
+        "utf8",
+      );
+      mkdirSync(join(tmp, ".ai-context"), { recursive: true });
+      try {
+        symlinkSync(outside, join(tmp, ".ai-context", "adapters"), "junction");
+      } catch {
+        return;
+      }
+
+      const actions = (await command.plan(makeCtx())).actions;
+      expect(
+        actions.some(
+          (action) => action.kind === "remove" && action.path === ".ai-context/adapters/gemini.md",
+        ),
+      ).toBe(false);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it("--all-tools dedupes AGENTS.md to a single write", async () => {

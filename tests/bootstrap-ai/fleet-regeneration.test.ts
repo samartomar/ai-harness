@@ -8,6 +8,7 @@ import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { command as pruneCommand } from "../../src/prune/index.js";
 
 const roots: string[] = [];
 
@@ -48,29 +49,53 @@ function generatedBytes(root: string, cli: string): Map<string, string> {
 
 describe("bootstrap-ai fleet regeneration (#507)", () => {
   it.each([
-    ["TypeScript repo", "claude", "package.json", JSON.stringify({ scripts: { test: "vitest" } })],
-    ["Python repo", "codex", "pyproject.toml", '[project]\nname = "service"\n'],
+    [
+      "TypeScript repo",
+      "claude",
+      "package.json",
+      JSON.stringify({ scripts: { test: "vitest" } }),
+      "gemini",
+    ],
+    ["Python repo", "codex", "pyproject.toml", '[project]\nname = "service"\n', "kiro"],
   ])(
     "converges %s idempotently, preserves bootloader hand edits, and sweeps orphan adapters",
-    async (_label, cli, manifest, manifestContents) => {
+    async (_label, cli, manifest, manifestContents, orphan) => {
       const root = mkdtempSync(join(tmpdir(), "aih-bootstrap-fleet-"));
       roots.push(root);
       put(root, manifest, manifestContents);
-      put(root, "ai-coding/adapters/gemini.md", adapterNote("gemini", "ai-coding", "compact"));
+      put(
+        root,
+        `ai-coding/adapters/${orphan}.md`,
+        adapterNote(orphan as "gemini" | "kiro", "ai-coding", "compact"),
+      );
+      const orphanExtras =
+        orphan === "kiro"
+          ? [".kiro/steering/agent-tools.md", ".kiro/hooks/aih-session.kiro.hook"]
+          : [];
+      for (const path of orphanExtras) put(root, path, "generated orphan\n");
       const bootloader = cli === "claude" ? "CLAUDE.md" : "AGENTS.md";
       put(root, bootloader, "# Operator header\n\nKeep this note.\n");
       const ctx = context(root, cli);
 
       const first = await executePlan(await command.plan(ctx), ctx);
       const firstBytes = generatedBytes(root, cli);
-      expect(first.removed.map((entry) => entry.path)).toContain("ai-coding/adapters/gemini.md");
-      expect(existsSync(join(root, "ai-coding", "adapters", "gemini.md"))).toBe(false);
+      expect(first.removed.map((entry) => entry.path)).not.toContain(
+        `ai-coding/adapters/${orphan}.md`,
+      );
+      expect(existsSync(join(root, "ai-coding", "adapters", `${orphan}.md`))).toBe(true);
       expect(readFileSync(join(root, bootloader), "utf8")).toContain("Keep this note.");
+
+      const swept = await executePlan(await pruneCommand.plan(ctx), ctx);
+      expect(swept.removed.map((entry) => entry.path)).toEqual(
+        expect.arrayContaining([`ai-coding/adapters/${orphan}.md`, ...orphanExtras]),
+      );
+      expect(existsSync(join(root, "ai-coding", "adapters", `${orphan}.md`))).toBe(false);
+      for (const path of orphanExtras) expect(existsSync(join(root, path))).toBe(false);
 
       const second = await executePlan(await command.plan(ctx), ctx);
       expect(generatedBytes(root, cli)).toEqual(firstBytes);
       expect(second.removed.map((entry) => entry.path)).not.toContain(
-        "ai-coding/adapters/gemini.md",
+        `ai-coding/adapters/${orphan}.md`,
       );
       expect(readFileSync(join(root, bootloader), "utf8")).toContain("Keep this note.");
     },
