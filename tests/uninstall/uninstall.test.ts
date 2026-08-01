@@ -21,6 +21,7 @@ import { defaultRunner, fakeRunner, type Runner } from "../../src/internals/proc
 import { command as mcpCommand } from "../../src/mcp/index.js";
 import { policyProjectCommand } from "../../src/org-policy/validate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { command as profileCommand } from "../../src/profile/index.js";
 import { command as uninstallCommand } from "../../src/uninstall/index.js";
 import { hermeticGitEnv } from "../git-fixture-env.js";
 
@@ -577,6 +578,49 @@ describe("aih uninstall", () => {
     expect(digest?.text).toContain("all other content under .claude/ not listed as aih-generated");
   });
 
+  it("maps a source-root skill whose name collides with a top-level artifact directory", async () => {
+    await coOwnedClaudeContextFixture();
+    const rootSkill = "# Colliding source-root skill\n";
+    const guide = "# Generated guide\n";
+    put(".claude/skills/collision/docs/SKILL.md", rootSkill);
+    put(".claude/skills/collision/docs/docs/guide.md", guide);
+    put(".claude/skills/collision/docs/guide.md", guide);
+    put(
+      ".aih/trust-lock.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        sources: [
+          {
+            id: "collision",
+            kind: "local",
+            source: "../docs",
+            promotedAt: "2026-08-01T00:00:00.000Z",
+            promotedSkills: ["docs"],
+            analyzersRun: ["semgrep"],
+            artifactHashes: [
+              { path: "SKILL.md", sha256: createHash("sha256").update(rootSkill).digest("hex") },
+              {
+                path: "docs/guide.md",
+                sha256: createHash("sha256").update(guide).digest("hex"),
+              },
+            ],
+            findings: [],
+          },
+        ],
+      }),
+    );
+
+    const ctx: PlanContext = { ...makeCtx(), contextDir: ".claude" };
+    const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("core install footprint"),
+    );
+
+    expect(digest?.text).toContain(".claude/skills/collision/docs/SKILL.md");
+    expect(digest?.text).toContain(".claude/skills/collision/docs/docs/guide.md");
+    expect(digest?.text).not.toContain(".claude/skills/collision/docs/guide.md");
+  });
+
   it("refuses an oversized promoted artifact before reading its contents", async () => {
     await coOwnedClaudeContextFixture();
     truncateSync(
@@ -645,6 +689,30 @@ describe("aih uninstall", () => {
       expect(existsSync(join(tmp, `${contextDir}.aih.bak`))).toBe(true);
     },
   );
+
+  it("inventories fixed Cursor profile outputs inside a co-owned .cursor context", async () => {
+    put(
+      "package.json",
+      JSON.stringify({ name: "fixture", dependencies: { typescript: "latest" } }),
+    );
+    const bootstrapCtx: PlanContext = {
+      ...makeCtx({ cli: "cursor", canon: "compact" }, { apply: true }),
+      contextDir: ".cursor",
+    };
+    await executePlan(await bootstrapAiCommand.plan(bootstrapCtx), bootstrapCtx);
+    const profileCtx: PlanContext = { ...bootstrapCtx, targets: ["cursor"] };
+    await executePlan(await profileCommand.plan(profileCtx), profileCtx);
+
+    const previewCtx: PlanContext = { ...bootstrapCtx, apply: false };
+    const result = await executePlan(await uninstallCommand.plan(previewCtx), previewCtx);
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("core install footprint"),
+    );
+
+    expect(result.removed.map((entry) => entry.path)).not.toContain(".cursor");
+    expect(digest?.text).toContain(".cursor/rules/01-stack.mdc");
+    expect(digest?.text).toContain(".cursor/rules/02-node.mdc");
+  });
 
   it("uses the on-disk casing for removable context dirs", async () => {
     await bootstrapFixture();

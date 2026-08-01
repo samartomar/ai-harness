@@ -179,6 +179,34 @@ const OPERATOR_CONTEXT_ARTIFACT_CANDIDATES = [
   "cross-repo-architecture.md",
 ] as const;
 
+const FIXED_GENERATED_CLI_ARTIFACTS: Readonly<Record<string, readonly string[]>> = {
+  cursor: [
+    ".cursor/rules/01-stack.mdc",
+    ".cursor/rules/02-node.mdc",
+    ".cursor/rules/03-serverless.mdc",
+    ".cursor/rules/03-efcore.mdc",
+  ],
+  opencode: [".opencode/plugins/aih-usage-metering.js"],
+  kiro: [
+    ".kiro/steering/agent-tools.md",
+    ".kiro/steering/superpowers-methodology.md",
+    ".kiro/hooks/aih-secret-scan-on-create.kiro.hook",
+    ".kiro/hooks/aih-tests-on-edit.kiro.hook",
+    ".kiro/hooks/aih-metrics-on-stop.kiro.hook",
+    ".kiro/hooks/aih-quality-gate.kiro.hook",
+    ".kiro/hooks/aih-usage-metering.kiro.hook",
+  ],
+};
+
+const FIXED_COOWNED_CLI_ARTIFACTS: Readonly<Record<string, readonly string[]>> = {
+  codex: [".codex/hooks.json"],
+  cursor: [".cursor/hooks.json", ".cursor/mcp.json"],
+  gemini: [".gemini/settings.json"],
+  windsurf: [".windsurf/hooks.json"],
+  kimi: [".kimi/config.toml"],
+  kiro: [".kiro/settings/mcp.json"],
+};
+
 // Uninstall needs only enough bytes to prove an unchanged receipt hash. Refuse
 // pathological files before allocation; an unproven file stays operator-owned.
 const MAX_UNINSTALL_OWNERSHIP_FILE_BYTES = 64 * 1024 * 1024;
@@ -263,9 +291,20 @@ function promotedSourceLayout(source: TrustLockSource): PromotedSourceLayout {
       parts: skill.split("/"),
     }),
   );
+  const sourceName = cleanRel(source.source)
+    .split("/")
+    .at(-1)
+    ?.replace(/\.git$/i, "");
+  const receiptProvesSourceRoot = source.artifactHashes.some(
+    (artifact) => artifact.path === "SKILL.md",
+  );
+  const explicitSourceRoot = receiptProvesSourceRoot
+    ? routes.find((route) => route.skill === sourceName)?.skill
+    : undefined;
   const prefixedSkills = new Set<string>();
   for (const artifact of source.artifactHashes) {
     for (const route of routes) {
+      if (route.skill === explicitSourceRoot) continue;
       if (artifactRelForSkill(route, artifact.path) !== undefined) {
         prefixedSkills.add(route.skill);
       }
@@ -274,7 +313,7 @@ function promotedSourceLayout(source: TrustLockSource): PromotedSourceLayout {
   const rootSkills = routes.filter((route) => !prefixedSkills.has(route.skill));
   return {
     routes,
-    rootSkill: rootSkills.length === 1 ? rootSkills[0]?.skill : undefined,
+    rootSkill: explicitSourceRoot ?? (rootSkills.length === 1 ? rootSkills[0]?.skill : undefined),
   };
 }
 
@@ -285,6 +324,7 @@ function promotedArtifactTargets(
   artifactPath: string,
 ): string[] {
   const targets = layout.routes.flatMap((route) => {
+    if (route.skill === layout.rootSkill) return [];
     const rel = artifactRelForSkill(route, artifactPath);
     return rel === undefined ? [] : [`${contextDir}/skills/${source.id}/${route.skill}/${rel}`];
   });
@@ -333,15 +373,24 @@ function promotedContextArtifacts(ctx: PlanContext, contextDir: string): string[
 }
 
 function coOwnedContextReason(ctx: PlanContext, contextDir: string, cli: string): string {
+  const contextPrefix = `${cleanRel(contextDir)}/`;
+  const fixedGenerated = (FIXED_GENERATED_CLI_ARTIFACTS[cli] ?? []).filter((path) =>
+    path.startsWith(contextPrefix),
+  );
   const generated = [
     ...CONTEXT_ARTIFACT_CANDIDATES.map((path) => `${contextDir}/${path}`),
     ...REGISTRY_IDS.map((target) => `${contextDir}/adapters/${target}.md`),
+    ...fixedGenerated,
     ...promotedContextArtifacts(ctx, contextDir),
   ].filter((path) => isContainedOwnershipFile(ctx, path));
+  const fixedCoOwned = (FIXED_COOWNED_CLI_ARTIFACTS[cli] ?? []).filter(
+    (path) => path.startsWith(contextPrefix) && exists(ctx, path),
+  );
   const operatorSiblings = [
     ...OPERATOR_CONTEXT_ARTIFACT_CANDIDATES.map((path) => `${contextDir}/${path}`)
       .filter((path) => exists(ctx, path))
       .map((path) => `${path} (seeded or merged; operator/co-owned)`),
+    ...fixedCoOwned.map((path) => `${path} (merged tool-native config; co-owned)`),
     ...(cleanRel(contextDir) === ".claude"
       ? [
           `${contextDir}/settings.json`,
