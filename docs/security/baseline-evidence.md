@@ -116,6 +116,34 @@ unreachable, using static fallback” note remains visible as incomplete advisor
 coverage; actual vulnerable-dependency findings remain blocking. No findings is
 not a claim that content is safe.
 
+### Vet does not evaluate runtime cost or platform behavior
+
+Every analyzer in the release profile reads bytes. SkillSpector, Semgrep, and
+Cisco establish content provenance and static safety; none of them executes the
+component, counts the processes it spawns, or evaluates how it behaves on a
+specific operating system. A clean receipt set is evidence about *content*, not
+about whether the component is operationally sound where it runs.
+
+That gap is not theoretical. The vetted ECC pin
+`affaan-m/ECC@4da6deac1888690e7fb8572d097ee23db630f7a0` declares 21 hook entries in
+`hooks/hooks.json`, every one registered as a `command` string and none using the
+`args` exec form — so the harness runs each through a shell, which then launches
+`node`, which spawns the hook itself. Four of those entries sit under matcher `*`
+on a tool event that fires on success (two `PreToolUse`, two `PostToolUse`), so
+even a `Read` walks that chain four times; a failing call adds the wildcard
+`PostToolUseFailure` entry. On Windows the cost is visible rather than merely
+wasteful: `node.exe` is a console-subsystem binary, and a child launched from a GUI
+parent with no console to inherit gets a freshly allocated one, which appears as a
+window for the ~50–150 ms the hook lives. One assistant response measured fourteen.
+Every analyzer passed on that same commit, because nothing in the receipt set asks
+the question.
+
+Read a receipt set accordingly: passing vet means the declared analyzers scanned
+the bytes at that exact source identity. It does not mean the component was
+executed, profiled, or exercised on the target platform. Runtime process cost,
+per-tool-call spawn fan-out, and platform-specific execution behavior fall outside
+the evidence closure and remain an operator judgment.
+
 ### Source-wide Cisco execution
 
 Baseline vet inventories Cisco skill inputs once per exact source instead of
@@ -271,6 +299,33 @@ npm run baseline:check -- \
 Use `npm run baseline:vet -- ...` only when intentionally regenerating the lock
 for a reviewed pin change. A release or pin bump must review the resulting lock
 diff; a signed `blocked` entry is not a successful install baseline.
+
+### The vetted identity is one exact upstream commit
+
+Every receipt is keyed to the exact file content at the pinned commit, so the
+identity that was vetted is the only identity the evidence covers. Two rules
+follow, and both are load-bearing:
+
+1. **Vet what you ship, from upstream.** The pin names an upstream repository and
+   a full commit SHA — currently `affaan-m/ECC@4da6deac…` and
+   `obra/Superpowers@d884ae04…` in `src/internals/baseline-sources.ts`, recorded
+   with their acceptance disposition in `src/internals/external-pin-ledger.json`.
+   Any working checkout used to reproduce a baseline — a local clone, a personal
+   fork, a CI runner tree — must be on that same commit. A fork sitting on a
+   different SHA is a different artifact, and evidence generated from it does not
+   describe the shipped pin, however similar the trees look.
+2. **Fixes go upstream, not into the pin's blast radius.** When a defect is found
+   in a pinned component, the change is raised against the upstream project and
+   the pin moves only after the new commit passes a full re-vet with fresh human
+   review of every finding. Patching a local or forked checkout in place produces
+   a tree no receipt describes; `src/binding/scan-acceptance.json` is keyed to
+   exact file-content sha256, so any rebind — even to an upstream merge of the
+   very change already vetted on a fork — voids the acceptance set and is its own
+   work package, never a pin swap.
+
+The maintainer drift check above exists to enforce exactly this: it re-runs the
+vetter against the canonical upstream SHAs and fails on any hash, receipt, or
+verdict divergence.
 
 ### Incremental reuse and `--full`
 
