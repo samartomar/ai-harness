@@ -438,6 +438,9 @@ function sameBigIntFileIdentity(
   return a.ino === b.ino;
 }
 
-export function readRegularFile(abs: string): Buffer | undefined {
-  return readRegularFileWithStats(abs)?.contents;
+export function readRegularFile(
+  abs: string,
+  options: { maxBytes?: number } = {},
+): Buffer | undefined {
+  return readRegularFileWithStats(abs, options)?.contents;
 }
