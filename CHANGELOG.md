@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-08-01
+
 ### Added
 
 - ECC Kiro installs now carry an ownership record, so a copy left behind by a newer
@@ -59,6 +61,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `{ requestedScope, authorizedScope, held }`. This reports only: the gating is
   unchanged, unauthorized modules still do not install, and a fully-authorized
   full profile is untouched. Refs #527
+
+### Changed
+
+- `docs/security/baseline-evidence.md` now states two limits of the evidence model
+  that were true but undocumented. First, vet is a content gate only: every release
+  analyzer reads bytes, so a clean receipt set says nothing about runtime process
+  cost or platform behavior. The shipped ECC pin is the worked example — it declares
+  21 hook entries, all `command` strings with no `args` exec form, four of them bound
+  to a wildcard tool event that fires on success, which on Windows surfaces as a
+  console window per hook; every analyzer passed that commit because nothing in the
+  receipt set asks the question. Second, the vetted identity is exactly one upstream
+  commit: any checkout used to reproduce a baseline must sit on that SHA, and a fix
+  to a pinned component goes upstream rather than into a local or forked tree,
+  because `src/binding/scan-acceptance.json` is keyed to exact file-content sha256
+  and any rebind voids the acceptance set.
 
 ### Fixed
 
@@ -1588,7 +1605,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/samartomar/ai-harness/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/samartomar/ai-harness/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/samartomar/ai-harness/compare/v2.11.0...v3.0.0
 [2.11.0]: https://github.com/samartomar/ai-harness/compare/v2.10.0...v2.11.0
