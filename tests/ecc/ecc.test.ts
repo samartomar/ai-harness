@@ -29,6 +29,7 @@ import {
 import {
   ECC_INSTALL_MANIFEST_SCHEMA_VERSION,
   hashManagedFile,
+  readEccInstallManifest,
   writeEccInstallManifestAtomic,
 } from "../../src/ecc/install-manifest.js";
 import { eccLanguages } from "../../src/ecc/select.js";
@@ -1034,5 +1035,48 @@ describe("ECC installed-source drift detection (#555)", () => {
       e.argv.includes("capture"),
     );
     expect(capture?.requiresPriorExecSuccess).toBe(true);
+  });
+
+  // The capture script is generated source inside a string, so CodeQL cannot see it and
+  // the exec-ordering tests above never run it. Run the real argv the plan emits: the
+  // hash IS the ownership proof, so a symlink planted while the external installer runs
+  // must never be hashed into the manifest as AIH-owned content.
+  it("records created regular files but never hashes a planted symlink (runs the real capture script)", async () => {
+    const planned = execs((await command.plan(kiroCtx("a".repeat(40)))).actions);
+    const snapshot = planned.find((e) => e.argv.includes("snapshot"));
+    const capture = planned.find((e) => e.argv.includes("capture"));
+    if (snapshot === undefined || capture === undefined) throw new Error("missing capture wiring");
+
+    const runScript = (argv: readonly string[]): void => {
+      const result = spawnSync(argv[0] ?? "node", argv.slice(1), { encoding: "utf8" });
+      expect(result.status).toBe(0);
+    };
+
+    runScript(snapshot.argv); // .kiro/ is empty at this point
+
+    // Stand in for the installer: one real file, plus a symlink pointing outside the root.
+    const outside = mkdtempSync(join(tmpdir(), "aih-ecc-capture-outside-"));
+    try {
+      writeFileSync(join(outside, "secret.md"), "content outside the managed root\n", "utf8");
+      put(".kiro/agents/reviewer.md", "reviewer body\n");
+      try {
+        symlinkSync(join(outside, "secret.md"), join(tmp, ".kiro", "agents", "linked.md"), "file");
+      } catch {
+        return; // unprivileged Windows cannot create symlinks; nothing to assert
+      }
+
+      runScript(capture.argv);
+
+      const read = readEccInstallManifest(tmp);
+      expect(read.present).toBe(true);
+      const install = read.present ? read.manifest.installs[0] : undefined;
+      const paths = (install?.files ?? []).map((f) => f.path);
+      expect(paths).toContain("agents/reviewer.md");
+      expect(paths).not.toContain("agents/linked.md");
+      const outsideHash = hashManagedFile(outside, "secret.md");
+      expect((install?.files ?? []).some((f) => f.sha256 === outsideHash)).toBe(false);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });
