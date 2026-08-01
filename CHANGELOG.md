@@ -18,6 +18,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Regular-file reads now open with `O_NONBLOCK` as well as `O_NOFOLLOW` where
+  available, so a FIFO is rejected before it can block `aih doctor`, `aih prune`,
+  `aih uninstall`, or any bundle reader. The no-follow identity fallback, regular
+  files, directories, dangling links, size limits, and descriptor-bound race checks
+  are unchanged. Refs #571
 - `aih uninstall` no longer destroys the evidence for content it leaves behind. It
   removes `.aih-config.json`, and that marker is the only record of which keys aih
   wrote into `.claude/managed-settings.json` — so removing it first made any residue

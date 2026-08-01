@@ -377,6 +377,8 @@ export function readIfExists(path: string): string | undefined {
 /** `O_NOFOLLOW` where the platform has it (absent at runtime on Windows despite the typings). */
 const O_NOFOLLOW = (fsConstants as Record<string, number | undefined>).O_NOFOLLOW ?? 0;
 const HAS_O_NOFOLLOW = O_NOFOLLOW !== 0;
+/** `O_NONBLOCK` where exposed; a no-op for regular files and prompt refusal for FIFOs. */
+const O_NONBLOCK = (fsConstants as Record<string, number | undefined>).O_NONBLOCK ?? 0;
 
 /**
  * Open-then-read on ONE file descriptor: the regular-file check (`fstat` on the
@@ -399,7 +401,7 @@ export function readRegularFileWithStats(
 ): { contents: Buffer; stats: Stats } | undefined {
   let fd: number;
   try {
-    fd = openSync(abs, fsConstants.O_RDONLY | O_NOFOLLOW);
+    fd = openSync(abs, fsConstants.O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
   } catch {
     return undefined;
   }

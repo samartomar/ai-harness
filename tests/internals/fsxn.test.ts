@@ -1,3 +1,4 @@
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -9,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   FsTransaction,
@@ -339,6 +341,41 @@ describe("readRegularFile — the fd-guarded read for scan-discovered paths", ()
     mkdirSync(join(dir, "sub"));
     expect(readRegularFile(join(dir, "sub"))).toBeUndefined();
   });
+
+  it.skipIf(process.platform === "win32")(
+    "refuses a FIFO promptly in a bounded child process",
+    () => {
+      const fifo = join(dir, "managed-settings.json");
+      const child = join(dir, "read-fifo.mjs");
+      execFileSync("mkfifo", [fifo]);
+      writeFileSync(
+        child,
+        [
+          "const { readRegularFile, readRegularFileWithStats } = await import(process.argv[2]);",
+          "const fifo = process.argv[3];",
+          "if (readRegularFile(fifo) !== undefined) process.exit(2);",
+          "if (readRegularFileWithStats(fifo) !== undefined) process.exit(3);",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const result = spawnSync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          child,
+          pathToFileURL(join(process.cwd(), "src", "internals", "fsxn.ts")).href,
+          fifo,
+        ],
+        { encoding: "utf8", timeout: 3_000 },
+      );
+
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(0);
+    },
+    10_000,
+  );
 
   it("refuses a symlink instead of following it", () => {
     writeFileSync(join(dir, "target.json"), "secret\n", "utf8");

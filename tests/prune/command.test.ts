@@ -249,6 +249,26 @@ describe("aih prune command", () => {
       });
     });
 
+    it.skipIf(process.platform === "win32")(
+      "classifies a FIFO as non-regular and revokes the ownership claim",
+      async () => {
+        await droppedClaudeProjection();
+        rmSync(managedPath());
+        const made = spawnSync("mkfifo", [managedPath()]);
+        expect(made.status, made.stderr?.toString()).toBe(0);
+
+        const applyCtx = ctx({ apply: true });
+        const actions = (await command.plan(applyCtx)).actions;
+        await executePlan({ capability: "prune", actions }, applyCtx);
+
+        expect(writeOf(actions, MANAGED)).toBeUndefined();
+        expect(digestText(actions)).toContain("not a readable regular file");
+        expect(readJson(join(dir, ".aih-config.json"))).toMatchObject({
+          managedMcpProjection: { state: "revoked" },
+        });
+      },
+    );
+
     it("revokes a claim whose projected path is a dangling symlink", async () => {
       // Presence must be NO-FOLLOW: `existsSync` calls a dangling link absent, which
       // would leave the stale ownership claim standing forever with nothing reported.
