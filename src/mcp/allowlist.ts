@@ -1,8 +1,12 @@
 import { join } from "node:path";
 import {
+  AIH_CONFIG_FILE,
   isActiveManagedMcpProjectionOwnership,
   type ManagedMcpProjectionOwnership,
 } from "../config/marker.js";
+import { isTargeted } from "../internals/cli-detect.js";
+import { owningCli } from "../internals/cli-registry.js";
+import type { Cli } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
@@ -19,6 +23,9 @@ export interface ManagedMcpAllowlistSettings {
 }
 
 const MANAGED_MCP_PROJECTION_KEYS = ["allowManagedMcpServersOnly", "allowedMcpServers"] as const;
+
+/** The managed-settings file this check reads; its owning CLI scopes the whole probe. */
+const MANAGED_SETTINGS_PATH = ".claude/managed-settings.json";
 
 function stdioCommand(server: StdioServer): string[] {
   return [server.command, ...server.args];
@@ -295,6 +302,29 @@ export function mcpManagedAllowlistCheck(ctx: PlanContext): Check {
         name,
         verdict: "pass",
         detail: `${actual.commands.length} managed MCP command${actual.commands.length === 1 ? "" : "s"} match .mcp.json`,
+      };
+    }
+    // The allowlist lives in ONE tool's config dir, and org-policy projection writes it
+    // only when that tool is targeted. With the owner untargeted, every repair below is
+    // unsatisfiable by construction, so report dropped-target residue naming a repair the
+    // operator can actually perform — the same disposition `orgPolicyDriftProbes` gives
+    // the file itself (issues #554, #564). An exactly-matching allowlist stays `pass`
+    // above: it is harmless, and failing on mere presence could misclassify
+    // operator-owned config as ours when no automated removal path exists.
+    const owner = owningCli(MANAGED_SETTINGS_PATH);
+    if (owner !== undefined && !isTargeted(ctx, owner as Cli)) {
+      return {
+        name,
+        verdict: "fail",
+        detail:
+          `dropped-target residue: ${MANAGED_SETTINGS_PATH} still enforces a managed MCP allowlist ` +
+          `but ${owner} is not a target of this repo, so org-policy projection no longer maintains it — ` +
+          `either add ${owner} back to the targets in ${AIH_CONFIG_FILE} to resume maintaining it, or ` +
+          `remove the file if ${owner} is genuinely gone; re-projecting cannot fix this while ${owner} ` +
+          "is untargeted",
+        code: "org-policy.dropped-target-residue",
+        location: { uri: MANAGED_SETTINGS_PATH },
+        fingerprint: `org-policy-dropped-target:${MANAGED_SETTINGS_PATH}`,
       };
     }
     // #501 — attribute the mismatch to aih's own generation history before

@@ -1747,3 +1747,197 @@ describe("doctor — MCP pin currency (issue #504)", () => {
     expect(res?.code).toBeUndefined();
   });
 });
+
+/**
+ * #554 — doctor must honor the repo's COMMITTED target set, not just a `targets`
+ * array an orchestrator injected. `aih doctor` runs standalone, so `ctx.targets` is
+ * undefined and the drift/allowlist gates fall open: a Kiro-only repo gets Claude
+ * projection findings whose prescribed repair (`aih policy project --apply`) emits
+ * zero actions there. The marker is the authority (`resolveTargetSet`).
+ */
+describe("doctor — Claude probe target scope from the committed marker (#554)", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aih-doctor-target-scope-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function rooted(): PlanContext {
+    const run = fakeRunner(() => ({ code: 1, spawnError: true }));
+    return {
+      root: dir,
+      contextDir: "ai-coding",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: {},
+      options: {},
+    };
+  }
+
+  /** Commit a Kiro-only target set, exactly as `aih init --cli kiro` records it. */
+  function kiroOnlyMarker(): void {
+    writeFileSync(
+      join(dir, AIH_CONFIG_FILE),
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["kiro"] }),
+    );
+  }
+
+  function writeEnterprisePolicy(mcp?: Record<string, unknown>): void {
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        command: { deny: { add: [{ pattern: "terraform destroy*" }] } },
+        ...(mcp === undefined ? {} : { mcp }),
+      }),
+    );
+  }
+
+  // Reproduction A: no Claude artifacts at all, so there is nothing to reconcile.
+  it("does not fail a Kiro-only repo for a missing Claude projection", async () => {
+    kiroOnlyMarker();
+    writeEnterprisePolicy();
+    const c = rooted();
+    const probe = findProbe(
+      (await command.plan(c)).actions,
+      "org-policy drift: .claude/managed-settings.json",
+    );
+    const res = await probe?.run(c);
+    expect(res?.verdict).not.toBe("fail");
+  });
+
+  // Reproduction B: stale Claude allowlist residue must route to prune, never to a
+  // projection that emits zero actions for this repo's targets.
+  it("does not prescribe policy projection for a Kiro-only repo's stale allowlist", async () => {
+    kiroOnlyMarker();
+    writeEnterprisePolicy({ allowedServers: ["code-review-graph"], allowManagedOnly: true });
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "code-review-graph": {
+            type: "stdio",
+            command: "uvx",
+            args: [
+              "--offline",
+              "--no-python-downloads",
+              "--no-env-file",
+              "code-review-graph@2.2.0",
+              "serve",
+            ],
+          },
+        },
+      }),
+    );
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(
+      join(dir, ".claude", "managed-settings.json"),
+      JSON.stringify({
+        allowManagedMcpServersOnly: true,
+        allowedMcpServers: [{ serverCommand: ["uvx", "code-review-graph@2.1.0", "serve"] }],
+      }),
+    );
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
+    const res = await probe?.run(c);
+    expect(res?.detail ?? "").not.toContain("policy project --apply");
+  });
+
+  // `.aih-config.json` is aih's OWN marker — the file that declares the target set.
+  // The projection emits an ownership action for it when managed-MCP is enabled, and
+  // it necessarily exists, so an all-or-nothing owner gate would flag the marker
+  // itself as residue and tell the operator to delete their target declaration.
+  it("never reports aih's own marker as dropped-target residue", async () => {
+    kiroOnlyMarker();
+    writeEnterprisePolicy({ allowedServers: ["code-review-graph"], allowManagedOnly: true });
+    const c = rooted();
+    const probes = (await command.plan(c)).actions.filter(
+      (a): a is ProbeAction => a.kind === "probe" && a.describe.includes(AIH_CONFIG_FILE),
+    );
+    const results = await Promise.all(probes.map((p) => p.run(c)));
+    expect(results.some((r) => r?.verdict === "fail")).toBe(false);
+    for (const r of results) expect(r?.detail ?? "").not.toMatch(/residue|prune/i);
+  });
+
+  // Never name a command that cannot perform the repair — that is the very defect
+  // class this suite exists to prevent. `aih prune` handles `.claude/settings.json`
+  // (src/prune/detect.ts:289-299) but has no managed-settings path, so the residue
+  // finding must state the choices the operator actually has.
+  it("does not prescribe a repair command that cannot remove the residue", async () => {
+    kiroOnlyMarker();
+    writeEnterprisePolicy();
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(join(dir, ".claude", "managed-settings.json"), JSON.stringify({ stale: true }));
+    const c = rooted();
+    const probe = findProbe(
+      (await command.plan(c)).actions,
+      "org-policy drift: .claude/managed-settings.json",
+    );
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("fail");
+    expect(res?.detail ?? "").not.toMatch(/aih prune/);
+    // It must still say re-projection is not the answer, and name a real choice.
+    expect(res?.detail ?? "").toMatch(/re-project/i);
+    expect(res?.detail ?? "").toMatch(/target/i);
+  });
+
+  // Narrowing SUPPRESSES findings, so only the committed marker may do it. Weaker
+  // signals must never silence an org-policy finding.
+  it.each([
+    ["no marker at all", undefined],
+    ["an empty target list", [] as string[]],
+    ["an unrecognized id beside a valid one", ["kiro", "not-a-real-cli"]],
+  ])("does not narrow Claude probes on %s", async (_label, targets) => {
+    if (targets !== undefined) {
+      writeFileSync(
+        join(dir, AIH_CONFIG_FILE),
+        JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets }),
+      );
+    }
+    writeEnterprisePolicy();
+    const c = rooted();
+    const probe = findProbe(
+      (await command.plan(c)).actions,
+      "org-policy drift: .claude/managed-settings.json",
+    );
+    expect((await probe?.run(c))?.verdict).toBe("fail");
+  });
+
+  // On-disk adapter files are how `resolveTargetSet` infers targets for REPORT
+  // grading. That inference must not reach a governance probe: deleting
+  // `adapters/claude.md` would otherwise silence org-policy drift.
+  it("does not narrow Claude probes on inferred on-disk adapters", async () => {
+    mkdirSync(join(dir, "ai-coding", "adapters"), { recursive: true });
+    writeFileSync(join(dir, "ai-coding", "adapters", "kiro.md"), "# kiro");
+    writeEnterprisePolicy();
+    const c = rooted();
+    const probe = findProbe(
+      (await command.plan(c)).actions,
+      "org-policy drift: .claude/managed-settings.json",
+    );
+    expect((await probe?.run(c))?.verdict).toBe("fail");
+  });
+
+  // The control case: a Claude-targeted repo keeps the strict finding and its repair.
+  it("still fails a Claude-targeted repo when the projection is missing", async () => {
+    writeFileSync(
+      join(dir, AIH_CONFIG_FILE),
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["claude"] }),
+    );
+    writeEnterprisePolicy();
+    const c = rooted();
+    const probe = findProbe(
+      (await command.plan(c)).actions,
+      "org-policy drift: .claude/managed-settings.json",
+    );
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("fail");
+  });
+});

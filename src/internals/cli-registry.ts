@@ -330,6 +330,20 @@ export function entry(cli: string): CliEntry {
   return e;
 }
 
+/**
+ * The registered CLI whose config dir owns `path`, or `undefined` when no target does.
+ *
+ * Lets a check that inspects a tool-specific artifact scope itself to the repo's target
+ * set instead of hardcoding a tool name — a finding about an untargeted tool's file
+ * cannot be repaired by a command that writes nothing for that tool (issue #554).
+ */
+export function owningCli(path: string): string | undefined {
+  const norm = path.replace(/\\/g, "/");
+  return REGISTRY_IDS.find((id) =>
+    entry(id).configDirs.some((dir) => norm === dir || norm.startsWith(`${dir}/`)),
+  );
+}
+
 /** The deduped, order-stable set of bootloader files for a CLI selection. */
 export function bootloadersFor(clis: readonly string[]): string[] {
   const seen: string[] = [];

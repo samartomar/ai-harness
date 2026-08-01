@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { postureGradeCheck } from "../config/governance.js";
+import { AIH_CONFIG_FILE } from "../config/marker.js";
 import type { Posture } from "../config/posture.js";
 import { isTargeted } from "../internals/cli-detect.js";
-import { entry, REGISTRY_IDS } from "../internals/cli-registry.js";
+import { owningCli as registryOwningCli } from "../internals/cli-registry.js";
 import type { Cli } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { gitRead } from "../internals/git.js";
@@ -234,10 +235,7 @@ function generationDeltaCheck(
  * registry is scoped correctly here without editing this file.
  */
 function owningCli(path: string): Cli | undefined {
-  const norm = path.replace(/\\/g, "/");
-  return REGISTRY_IDS.find((id) =>
-    entry(id).configDirs.some((dir) => norm === dir || norm.startsWith(`${dir}/`)),
-  ) as Cli | undefined;
+  return registryOwningCli(path) as Cli | undefined;
 }
 
 /**
@@ -245,13 +243,27 @@ function owningCli(path: string): Cli | undefined {
  *
  * `aih policy project` deliberately emits zero actions for an untargeted CLI, so the
  * ordinary "re-run the projection" drift finding would be unsatisfiable by construction
- * (issue #554). Absent → skip with the target-scope reason. Still on disk → real,
- * actionable dropped-target residue routed to prune, never to a projection that cannot
- * run. Nothing is deleted here, and operator-owned config is never assumed to be ours.
+ * (issue #554). Absent → skip with the target-scope reason. Still on disk → real
+ * dropped-target residue naming a repair the operator can actually perform, never a
+ * projection that cannot run — and never `aih prune`, which reconciles the registered
+ * per-CLI settings path rather than this projected file (issue #564). aih's own marker
+ * is never residue: it DECLARES the target set. Nothing is deleted here, and
+ * operator-owned config is never assumed to be ours.
  */
 function untargetedCheck(action: WriteAction, owner: Cli): (ctx: PlanContext) => Check {
   return (ctx) => {
     const name = `org-policy drift: ${action.path}`;
+    // aih's OWN marker is never dropped-target residue. It is the file that DECLARES
+    // the target set, and the projection emits an ownership action for it whenever
+    // managed-MCP is enabled — so an owner gate that treated it like a projected
+    // artifact would tell the operator to delete their own target declaration.
+    if (action.path === AIH_CONFIG_FILE) {
+      return {
+        name,
+        verdict: "skip",
+        detail: `${owner} is not a target of this repo, so the managed-MCP projection this marker would record is not active; ${AIH_CONFIG_FILE} is aih's own target declaration, not a projected artifact`,
+      };
+    }
     if (readIfExists(resolve(ctx.root, action.path)) === undefined) {
       return {
         name,
@@ -259,10 +271,14 @@ function untargetedCheck(action: WriteAction, owner: Cli): (ctx: PlanContext) =>
         detail: `${owner} is not a target of this repo — org-policy projection writes no ${owner} artifacts, so ${action.path} drift is not evaluated`,
       };
     }
+    // Do NOT name a repair that cannot perform it: `aih prune` reconciles the
+    // registered per-CLI settings path, not this projected managed-settings file, so
+    // prescribing it here would repeat the unsatisfiable-remediation defect this gate
+    // exists to fix (issue #564). State the two choices the operator actually has.
     return {
       name,
       verdict: "fail",
-      detail: `dropped-target residue: ${action.path} is still present but ${owner} is not a target of this repo, so org-policy projection no longer maintains it — reconcile it with \`aih prune\` (re-projecting cannot fix this)`,
+      detail: `dropped-target residue: ${action.path} is still present but ${owner} is not a target of this repo, so org-policy projection no longer maintains it — either add ${owner} back to the targets in ${AIH_CONFIG_FILE} to resume maintaining it, or remove the file if ${owner} is genuinely gone; re-projecting cannot fix this while ${owner} is untargeted`,
       code: "org-policy.dropped-target-residue",
       location: { uri: action.path },
       fingerprint: `org-policy-dropped-target:${action.path}`,

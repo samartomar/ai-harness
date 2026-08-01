@@ -6,6 +6,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `aih doctor` now scopes Claude-owned policy checks to the target set the repo
+  actually committed. A repo that targets only Kiro (or any other non-Claude tool)
+  is no longer failed for a missing `.claude/managed-settings.json` projection that
+  `aih policy project` would never write there — the check reports why it did not
+  apply instead. When Claude artifacts are still on disk after Claude was dropped as
+  a target, both the org-policy drift probe and the managed MCP allowlist probe now
+  report dropped-target residue naming a repair the operator can actually perform —
+  add the tool back to the targets, or remove the file — instead of prescribing a
+  re-projection that emits no actions for that repo. `aih prune` is deliberately not
+  named: it reconciles the registered per-CLI settings path, not this projected
+  managed-settings file. `.aih-config.json` itself is never reported as residue, so a
+  repo is never told to delete its own target declaration. Because narrowing a governance
+  check suppresses findings, it takes the strongest evidence available: the committed
+  `.aih-config.json`, and only when every target id in it is recognized. A missing,
+  malformed, or empty marker — and weaker signals such as a `--cli` flag, `--detect`,
+  or targets inferred from adapter files on disk — narrow nothing and keep the
+  previous strict behavior, so a deleted file or a command-line flag cannot silence
+  an org-policy finding. Refs #554
+
 ## [3.2.0] - 2026-08-01
 
 ### Added

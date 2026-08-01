@@ -485,7 +485,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "org policy artifact left behind by a dropped target",
     action:
-      "The projected file is still present, but the CLI that owns it is no longer a target of this repo, so org-policy projection no longer maintains it. Reconcile it with `aih prune` — re-projecting cannot fix this, because projection emits no actions for an untargeted CLI.",
+      "The projected file is still present, but the CLI that owns it is no longer a target of this repo, so org-policy projection no longer maintains it. Either add that CLI back to the targets in `.aih-config.json` to resume maintaining the file, or remove the file if the CLI is genuinely gone. Re-projecting cannot fix this, because projection emits no actions for an untargeted CLI, and `aih prune` reconciles the per-CLI settings path rather than this projected managed-settings file.",
   },
   "org-policy.generation-delta": {
     audience: "developer",
