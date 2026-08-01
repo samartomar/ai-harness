@@ -17,6 +17,7 @@ import {
 import { lines } from "../internals/render.js";
 import {
   MANAGED_MCP_PROJECTION_KEYS,
+  MANAGED_SETTINGS_PATH,
   type ManagedMcpProjectionResidue,
   managedMcpProjectionOnDisk,
   managedMcpSubtractionAction,
@@ -181,6 +182,21 @@ function kiroExtraArtifacts(ctx: PlanContext, owned: boolean): UninstallArtifact
   return artifacts;
 }
 
+/** The projected managed-settings path, normalized to the repo-relative POSIX form. */
+function managedMcpSettingsPath(): string {
+  return cleanRel(MANAGED_SETTINGS_PATH);
+}
+
+/** Repo-relative paths this run would remove wholesale (directories included). */
+function removedTrees(artifacts: readonly UninstallArtifact[]): string[] {
+  return artifacts.filter((a) => a.disposition === "backup").map((a) => cleanRel(a.path));
+}
+
+/** True when `path` IS `tree` or lives beneath it — segment-wise, never a substring. */
+function isUnderTree(path: string, tree: string): boolean {
+  return path === tree || path.startsWith(`${tree}/`);
+}
+
 /**
  * The managed-MCP artifact, if any. The projected `.claude/managed-settings.json`
  * is not in the registered per-CLI artifact set, so nothing else here would ever
@@ -248,7 +264,17 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
   // in the plan: once `.aih-config.json` is gone nothing can attribute these keys
   // again (issue #567). An absent/malformed/revoked/hash-invalid marker yields no
   // residue at all — there was never a provable claim to reconcile.
-  const managedMcp = managedMcpProjectionOnDisk(ctx.root);
+  //
+  // Skipped entirely when the projected file sits INSIDE a tree this run already
+  // removes — a repo bootstrapped with `--context-dir .claude` is the real case.
+  // Subtracting two keys from a file that is about to be moved wholesale is at best
+  // futile and at worst a false promise in the preview ("every other key is
+  // preserved" while the whole directory goes to backup).
+  const managedMcp = removedTrees(artifacts).some((tree) =>
+    isUnderTree(managedMcpSettingsPath(), tree),
+  )
+    ? undefined
+    : managedMcpProjectionOnDisk(ctx.root);
   if (managedMcp !== undefined && managedMcp.unprovable !== "settings-absent") {
     artifacts.push(managedMcpArtifact(managedMcp));
   }

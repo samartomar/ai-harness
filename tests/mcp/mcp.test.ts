@@ -1603,6 +1603,29 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     expect(check.detail ?? "").toMatch(/aih prune/);
   });
 
+  it("fails a marker-proven allowlist for a dropped target with no .mcp.json to compare", async () => {
+    // Ownership does not depend on `.mcp.json`, so a missing or server-less one must
+    // not skip the classification — with no committed org policy there are no
+    // org-policy drift probes either, and the residue would be reported by nothing.
+    const root = makeTmp();
+    const ctx = makeCtx({ root, options: { posture: "enterprise" } });
+    await executePlan(await command.plan(ctx), { ...ctx, apply: true });
+    const marker = JSON.parse(readFileSync(join(root, ".aih-config.json"), "utf8")) as Record<
+      string,
+      unknown
+    >;
+    writeFileSync(
+      join(root, ".aih-config.json"),
+      jsonFile({ ...marker, targets: ["kiro"] as unknown as string[] }),
+    );
+    rmSync(join(root, ".mcp.json"));
+
+    const check = mcpManagedAllowlistCheck({ ...ctx, targets: ["kiro"] });
+    expect(check.verdict).toBe("fail");
+    expect(check.code).toBe("org-policy.dropped-target-residue");
+    expect(check.detail ?? "").toMatch(/aih prune/);
+  });
+
   it("modifies no existing Claude managed settings when the committed targets exclude claude", async () => {
     const root = makeTmp();
     const managedPath = join(root, ".claude", "managed-settings.json");

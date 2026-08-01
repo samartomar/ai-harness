@@ -29,9 +29,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   project` returns an empty plan for an untargeted CLI, prune only knew the registered
   per-CLI settings path, and uninstall never included the file. Prune now subtracts
   exactly the two marker-proven managed-MCP keys and clears the ownership record, in
-  that order, in one rollback-capable transaction; a drifted pair is preserved and its
-  ownership revoked rather than overwritten; an absent, malformed, revoked, or
-  hash-invalid marker yields a report and never a mutation. `organizationPolicy` and
+  that order, in one rollback-capable transaction; a drifted pair — or a path that is
+  not a readable regular file — is preserved and its ownership revoked rather than
+  overwritten. With no active ownership record at all (absent, malformed, revoked, or
+  hash-invalid marker) prune stays silent: it has nothing to subtract and nothing to
+  revoke, and naming the file would tell an agent to re-run a command designed to
+  refuse. `aih doctor` owns that case instead. `organizationPolicy` and
   `sandbox` are never removed — no provenance is recorded for them, and `sandbox` is
   co-written by `aih guardrails` and `aih sandbox`. A symlink substituted for the
   projected path is refused, not followed. The residue is detected from the committed

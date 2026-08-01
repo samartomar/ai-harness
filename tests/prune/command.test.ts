@@ -230,6 +230,25 @@ describe("aih prune command", () => {
       });
     });
 
+    it("revokes rather than crashing when a directory sits at the projected path", async () => {
+      // Presence must be probed with a stat, not a content read: `readFileSync` throws
+      // EISDIR on a directory, which took the whole command down before it could report
+      // the residue it exists to report.
+      await droppedClaudeProjection();
+      rmSync(managedPath());
+      mkdirSync(managedPath(), { recursive: true });
+
+      const applyCtx = ctx({ apply: true });
+      const actions = (await command.plan(applyCtx)).actions;
+      await executePlan({ capability: "prune", actions }, applyCtx);
+
+      expect(writeOf(actions, MANAGED)).toBeUndefined();
+      expect(digestText(actions)).toContain("not a readable regular file");
+      expect(readJson(join(dir, ".aih-config.json"))).toMatchObject({
+        managedMcpProjection: { state: "revoked" },
+      });
+    });
+
     it("revokes rather than overwrites a drifted pair", async () => {
       await droppedClaudeProjection();
       const operatorPair = [{ serverCommand: ["operator-mcp", "serve"] }];

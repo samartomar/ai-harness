@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   type ActiveManagedMcpProjectionOwnership,
@@ -157,10 +158,13 @@ export function managedMcpProjectionOnDisk(
   const abs = absolute(root, settingsRel);
   const settingsSource = readRegularFile(abs)?.toString("utf8");
   if (settingsSource === undefined) {
+    // PRESENCE only — never a content read. `readIfExists` would throw EISDIR on a
+    // directory planted at this path, taking down the whole command before it could
+    // report the residue it exists to report.
     return {
       ...base,
       matches: false,
-      unprovable: readIfExists(abs) === undefined ? "settings-absent" : "not-a-regular-file",
+      unprovable: existsSync(abs) ? "not-a-regular-file" : "settings-absent",
       settingsSource: undefined,
     };
   }

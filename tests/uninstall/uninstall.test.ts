@@ -362,6 +362,45 @@ describe("aih uninstall", () => {
     expect(result.writes.map((w) => w.path)).not.toContain(".claude/managed-settings.json");
   });
 
+  it("does not promise a key subtraction inside a tree it removes wholesale", async () => {
+    // A repo bootstrapped with `--context-dir .claude` puts the projected
+    // managed-settings file INSIDE the context tree uninstall backs up whole.
+    // Subtracting two keys from it first is futile, and the preview line "every other
+    // key is preserved" would be a false promise while the directory goes to backup.
+    put("package.json", JSON.stringify({ name: "fixture" }));
+    const bootstrapCtx: PlanContext = {
+      ...makeCtx({ cli: "claude", canon: "compact" }, { apply: true }),
+      contextDir: ".claude",
+    };
+    await executePlan(await bootstrapAiCommand.plan(bootstrapCtx), bootstrapCtx);
+    put(
+      "aih-org-policy.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: ".claude/project.json" },
+        mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+      }),
+    );
+    const projectCtx: PlanContext = { ...bootstrapCtx };
+    await executePlan(await policyProjectCommand.plan(projectCtx), projectCtx);
+    expect(managedSettings()).toHaveProperty("allowManagedMcpServersOnly");
+
+    const ctx: PlanContext = { ...makeCtx(), contextDir: ".claude" };
+    const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+    const digest = result.digests.find((d) => d.describe.includes("core install footprint"));
+    const artifacts =
+      (digest?.data as { artifacts?: Array<{ path: string; kind: string }> } | undefined)
+        ?.artifacts ?? [];
+
+    // `.claude` is removed wholesale, so no subtraction is planned or promised for a
+    // file inside it.
+    expect(artifacts.map((a) => a.path)).toContain(".claude");
+    expect(artifacts.some((a) => a.kind === "managed-settings")).toBe(false);
+    expect(result.writes.map((w) => w.path)).not.toContain(".claude/managed-settings.json");
+    expect(digest?.text ?? "").not.toContain("every other key is preserved");
+  });
+
   it("uses the on-disk casing for removable context dirs", async () => {
     await bootstrapFixture();
     put(

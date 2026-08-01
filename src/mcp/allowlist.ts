@@ -248,6 +248,34 @@ export function mcpManagedAllowlistCheck(ctx: PlanContext): Check {
         detail: "no managed MCP allowlist is enforced in .claude/managed-settings.json",
       };
     }
+    // The allowlist lives in ONE tool's config dir, and org-policy projection writes it
+    // only when that tool is targeted. With the owner untargeted, every repair below is
+    // unsatisfiable by construction, so report dropped-target residue naming a repair the
+    // operator can actually perform — the same disposition `orgPolicyDriftProbes` gives
+    // the file itself (issues #554, #564, #566).
+    const owner = owningCli(MANAGED_SETTINGS_PATH);
+    const untargeted = owner !== undefined && !isTargeted(ctx, owner as Cli);
+    const residue = untargeted ? managedMcpProjectionOnDisk(ctx.root) : undefined;
+    // A marker-PROVEN residue is classified BEFORE anything that reads `.mcp.json` —
+    // both the equality pass and the "nothing to compare" skip. Its ownership does not
+    // depend on `.mcp.json` at all, and an allowlist that still matches is not harmless
+    // once the owner is dropped: it keeps enforcing a projection nothing maintains, and
+    // `aih prune` can now subtract it. This is also the ONLY surface that sees the case
+    // in a repo with no committed `aih-org-policy.json` — there are no org-policy drift
+    // probes at all there, so anything skipped here is reported by nothing.
+    if (untargeted && owner !== undefined && residue?.matches === true) {
+      return {
+        name,
+        verdict: "fail",
+        detail:
+          `dropped-target residue: ${MANAGED_SETTINGS_PATH} still enforces the aih-owned managed MCP ` +
+          `allowlist but ${owner} is not a target of this repo — run \`aih prune\` to subtract exactly ` +
+          `${MANAGED_MCP_PROJECTION_KEYS.join(" + ")}; re-projecting cannot fix this while ${owner} is untargeted`,
+        code: "org-policy.dropped-target-residue",
+        location: { uri: MANAGED_SETTINGS_PATH },
+        fingerprint: `org-policy-dropped-target:${MANAGED_SETTINGS_PATH}`,
+      };
+    }
     const policy = readOrgPolicy(ctx.root, ctx.env);
     const desired = mcpCommands(ctx.root, policy);
     if (desired.kind === "invalid") {
@@ -265,33 +293,6 @@ export function mcpManagedAllowlistCheck(ctx: PlanContext): Check {
     const actualKeys = actual.commands.map(commandKey);
     const missing = desiredKeys.filter((key) => !actualKeys.includes(key));
     const extra = actualKeys.filter((key) => !desiredKeys.includes(key));
-    // The allowlist lives in ONE tool's config dir, and org-policy projection writes it
-    // only when that tool is targeted. With the owner untargeted, every repair below is
-    // unsatisfiable by construction, so report dropped-target residue naming a repair the
-    // operator can actually perform — the same disposition `orgPolicyDriftProbes` gives
-    // the file itself (issues #554, #564, #566).
-    const owner = owningCli(MANAGED_SETTINGS_PATH);
-    const untargeted = owner !== undefined && !isTargeted(ctx, owner as Cli);
-    const residue = untargeted ? managedMcpProjectionOnDisk(ctx.root) : undefined;
-    // A marker-PROVEN residue is classified BEFORE the equality pass below. An allowlist
-    // that still matches `.mcp.json` is not harmless once the owner is dropped: it keeps
-    // enforcing a projection nothing maintains, and `aih prune` can now subtract it. This
-    // is also the only surface that sees the case at all — a repo with no committed
-    // `aih-org-policy.json` gets no org-policy drift probes, so `aih mcp --apply` could
-    // leave a marker-proven residue that nothing ever reported.
-    if (untargeted && owner !== undefined && residue?.matches === true) {
-      return {
-        name,
-        verdict: "fail",
-        detail:
-          `dropped-target residue: ${MANAGED_SETTINGS_PATH} still enforces the aih-owned managed MCP ` +
-          `allowlist but ${owner} is not a target of this repo — run \`aih prune\` to subtract exactly ` +
-          `${MANAGED_MCP_PROJECTION_KEYS.join(" + ")}; re-projecting cannot fix this while ${owner} is untargeted`,
-        code: "org-policy.dropped-target-residue",
-        location: { uri: MANAGED_SETTINGS_PATH },
-        fingerprint: `org-policy-dropped-target:${MANAGED_SETTINGS_PATH}`,
-      };
-    }
     if (missing.length === 0 && extra.length === 0) {
       // Unowned and matching stays `pass`: failing on mere presence would misclassify
       // operator-owned config as ours, and there is no automated removal path for it.
