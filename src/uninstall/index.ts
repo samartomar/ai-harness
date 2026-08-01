@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
 import { AIH_CONFIG_FILE, readAihConfig } from "../config/marker.js";
@@ -111,15 +111,57 @@ function hasManagedContextEvidence(ctx: PlanContext, contextDir: string): boolea
 
 function registeredConfigDirOwner(ctx: PlanContext, contextDir: string): string | undefined {
   const rel = cleanRel(contextDir);
+  const contextIdentity = existingPathIdentity(ctx, rel);
   return REGISTRY_IDS.find((cli) =>
     entry(cli).configDirs.some((configDir) => {
       const registered = cleanRel(configDir);
+      const registeredIdentity = existingPathIdentity(ctx, registered);
+      if (contextIdentity !== undefined && registeredIdentity !== undefined) {
+        return ctx.host.platform === "windows"
+          ? contextIdentity.toLowerCase() === registeredIdentity.toLowerCase()
+          : contextIdentity === registeredIdentity;
+      }
       return ctx.host.platform === "windows"
         ? rel.toLowerCase() === registered.toLowerCase()
         : rel === registered;
     }),
   );
 }
+
+function existingPathIdentity(ctx: PlanContext, relPath: string): string | undefined {
+  try {
+    return realpathSync.native(join(ctx.root, relPath));
+  } catch {
+    return undefined;
+  }
+}
+
+const CONTEXT_ARTIFACT_CANDIDATES = [
+  "RULE_ROUTER.md",
+  "adapters/_shared-canonical-block.md",
+  "rules/agent-behavior-core.md",
+  "project.json",
+  "project.md",
+  "setup.md",
+  "INDEX.md",
+  "architecture.md",
+  "conventions.md",
+  "tasks.md",
+  "SETUP-TASKS.md",
+  "VALIDATION.md",
+  "project-guardrails.md",
+  "skills/example-skill/SKILL.md",
+  "guardrails-taxonomy.md",
+  "command-policy.md",
+  "risk-gates.json",
+  "hardware-profile.txt",
+  "mcp-fallback.md",
+  "mcp-gateway-rbac.json",
+  "cross-repo-architecture.md",
+  "repo-discipline.md",
+  "crispy/",
+  "skill-cards/",
+] as const;
 
 function coOwnedContextReason(
   ctx: PlanContext,
@@ -128,9 +170,7 @@ function coOwnedContextReason(
   targets: ReadonlySet<string>,
 ): string {
   const generated = [
-    `${contextDir}/RULE_ROUTER.md`,
-    `${contextDir}/adapters/_shared-canonical-block.md`,
-    `${contextDir}/rules/agent-behavior-core.md`,
+    ...CONTEXT_ARTIFACT_CANDIDATES.map((path) => `${contextDir}/${path}`),
     ...REGISTRY_IDS.filter((target) => targets.has(target)).map(
       (target) => `${contextDir}/adapters/${target}.md`,
     ),
@@ -142,11 +182,12 @@ function coOwnedContextReason(
           `${contextDir}/agents/`,
           `${contextDir}/commands/`,
           `operator-owned content in ${contextDir}/managed-settings.json`,
+          `all other content under ${contextDir}/ not listed as aih-generated`,
         ]
-      : [`all other siblings under ${contextDir}/`];
+      : [`all other content under ${contextDir}/ not listed as aih-generated`];
   return [
     `co-owned ${entry(cli).label} config directory; aih leaves the complete directory in place`,
-    `aih-generated canon files left for manual cleanup: ${generated.join(", ")}`,
+    `aih-generated context artifacts left for manual cleanup: ${generated.join(", ")}`,
     `operator-owned siblings left untouched: ${operatorSiblings.join(", ")}`,
   ].join("; ");
 }
