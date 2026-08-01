@@ -173,7 +173,7 @@ describe("bootstrap-ai — compact canon (default)", () => {
     expect(router).toContain("project.json");
     expect(router).not.toContain("INDEX.md");
     const adapter = w.get(".ai-context/adapters/claude.md")?.contents ?? "";
-    expect(adapter).toContain("project.md");
+    expect(adapter).toContain("RULE_ROUTER.md");
     expect(adapter).not.toContain("INDEX.md");
     // Core canon still ships.
     expect(w.has(".ai-context/adapters/_shared-canonical-block.md")).toBe(true);
@@ -299,7 +299,7 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     expect(merged.targets).toEqual(["claude", "codex"]);
   });
 
-  it("a marker-scoped re-run regenerates only the recorded CLIs (no gemini resurrection)", async () => {
+  it("a marker-scoped re-run removes generated adapters outside the recorded target set", async () => {
     put(
       ".aih-config.json",
       `${JSON.stringify(
@@ -310,11 +310,23 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     );
     put("GEMINI.md", "# stale gemini bootloader\n");
     put(".ai-context/adapters/gemini.md", "# stale gemini adapter\n");
+    const applyCtx = makeCtx({}, { apply: true });
+    const result = await executePlan(await command.plan(applyCtx), applyCtx);
     const w = writesByPath((await command.plan(makeCtx())).actions);
     expect(w.has("CLAUDE.md")).toBe(true);
     expect(w.has("AGENTS.md")).toBe(true);
     expect(w.has("GEMINI.md")).toBe(false);
     expect(w.has(".ai-context/adapters/gemini.md")).toBe(false);
+    expect(result.removed.map((entry) => entry.path)).toContain(".ai-context/adapters/gemini.md");
+    expect(readFileSync(join(tmp, "GEMINI.md"), "utf8")).toBe("# stale gemini bootloader\n");
+    expect(
+      readFileSync(join(tmp, ".aih", "legacy", ".ai-context", "adapters", "gemini.md"), "utf8"),
+    ).toBe("# stale gemini adapter\n");
+
+    const converged = await executePlan(await command.plan(applyCtx), applyCtx);
+    expect(converged.removed.map((entry) => entry.path)).not.toContain(
+      ".ai-context/adapters/gemini.md",
+    );
   });
 
   it("--all-tools dedupes AGENTS.md to a single write", async () => {
