@@ -95,6 +95,19 @@ export const command: CommandSpec = {
     const marker = readAihConfigDiagnostic(ctx.root);
     const cfg = marker.present && !marker.invalid ? marker.config : undefined;
     const contextDir = cfg?.contextDir ?? ctx.contextDir;
+    // Tool-specific probes must be scoped to the tools this repo actually targets.
+    // `aih doctor` runs standalone, so nothing injects `ctx.targets` the way `aih init`
+    // does — leaving `isTargeted` open and failing e.g. a Kiro-only repo for a Claude
+    // projection whose repair writes nothing there (issue #554). Resolve the same
+    // marker-authoritative set the loadability probe already uses; with no marker it
+    // falls back to `claude`, preserving the strict default. Scoped deliberately to the
+    // Claude-owned probes rather than the whole ctx, which other probes read differently.
+    // An INVALID marker narrows nothing: `resolveTargetSet` would throw on it, and
+    // trusting a half-read target set could hide real findings. Fall back to the
+    // unscoped behavior and let the config-marker probe report the marker itself.
+    const scopedCtx: PlanContext = marker.invalid
+      ? ctx
+      : { ...ctx, targets: resolveTargetSet({ ...ctx, contextDir }).targeted };
     const base: Action[] = [
       probe("node runtime >= 20", () => {
         const major = Number.parseInt(process.versions.node.split(".")[0] ?? "0", 10);
@@ -322,7 +335,7 @@ export const command: CommandSpec = {
       probe("binding mcp inventory", () => bindingMcpInventoryCheck(ctx)),
       probe("large-repo graph safety", () => scaleSafetyCheck(ctx)),
       probe("VDI compatibility matrix", () => vdiCompatibilityCheck(ctx)),
-      probe("MCP managed allowlist", () => mcpManagedAllowlistCheck(ctx)),
+      probe("MCP managed allowlist", () => mcpManagedAllowlistCheck(scopedCtx)),
       // Resolved-artifact attestation for uvx pins (issue #502): the allowlist
       // proves config SHAPE; this row proves (or honestly refuses to claim) what
       // the pinned artifact self-reports at runtime. Live launch is opt-in.
@@ -335,7 +348,7 @@ export const command: CommandSpec = {
         trustLockLocalDriftChecks(probeCtx),
       ),
       ...orgPolicyIntegrityProbes({ ...ctx, contextDir }),
-      ...orgPolicyDriftProbes({ ...ctx, contextDir }),
+      ...orgPolicyDriftProbes({ ...scopedCtx, contextDir }),
       probe("enterprise baseline attestation", () =>
         enterpriseBaselineAttestationCheck({ ...ctx, contextDir }),
       ),

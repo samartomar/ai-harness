@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { postureGradeCheck } from "../config/governance.js";
 import type { Posture } from "../config/posture.js";
 import { isTargeted } from "../internals/cli-detect.js";
-import { entry, REGISTRY_IDS } from "../internals/cli-registry.js";
+import { owningCli as registryOwningCli } from "../internals/cli-registry.js";
 import type { Cli } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { gitRead } from "../internals/git.js";
@@ -234,10 +234,7 @@ function generationDeltaCheck(
  * registry is scoped correctly here without editing this file.
  */
 function owningCli(path: string): Cli | undefined {
-  const norm = path.replace(/\\/g, "/");
-  return REGISTRY_IDS.find((id) =>
-    entry(id).configDirs.some((dir) => norm === dir || norm.startsWith(`${dir}/`)),
-  ) as Cli | undefined;
+  return registryOwningCli(path) as Cli | undefined;
 }
 
 /**

@@ -7,6 +7,7 @@ import { executePlan, resolveContents } from "../../src/internals/execute.js";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { plan } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { mcpManagedAllowlistCheck } from "../../src/mcp/allowlist.js";
 import { composeOrgPolicy } from "../../src/org-policy/compose.js";
 import {
   orgPolicyDriftProbes,
@@ -816,6 +817,52 @@ describe("orgPolicyDriftProbes — target scope (#554)", () => {
     // Must route to prune, never to a projection that cannot run here.
     expect(details).toMatch(/prune/i);
     expect(details).not.toMatch(/policy project --apply/);
+  });
+
+  // Reproduction B of the same defect: the managed-allowlist probe is a SEPARATE
+  // code path from the drift probes above, and #501's generation-delta migration
+  // prescribes the same `aih policy project --apply` that emits zero actions here.
+  it("does not prescribe policy projection for an untargeted managed allowlist", async () => {
+    writeScopePolicy(
+      policy({
+        minimumPosture: "enterprise",
+        mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+      }),
+    );
+    // Current .mcp.json: the hardened uvx launch shape this generation emits.
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "code-review-graph": {
+            type: "stdio",
+            command: "uvx",
+            args: [
+              "--offline",
+              "--no-python-downloads",
+              "--no-env-file",
+              "code-review-graph@2.2.0",
+              "serve",
+            ],
+          },
+        },
+      }),
+    );
+    // Residue: a Claude managed allowlist left by an earlier aih generation.
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(
+      join(dir, ".claude", "managed-settings.json"),
+      JSON.stringify({
+        allowManagedMcpServersOnly: true,
+        allowedMcpServers: [{ serverCommand: ["uvx", "code-review-graph@2.1.0", "serve"] }],
+      }),
+    );
+
+    const check = mcpManagedAllowlistCheck(scopeCtx(["kiro"]));
+
+    // `aih policy project --cli kiro` emits zero actions, so prescribing it is
+    // unsatisfiable by construction — route to prune like the drift probes do.
+    expect(check.detail ?? "").not.toMatch(/policy project --apply/);
   });
 });
 
