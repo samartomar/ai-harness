@@ -363,10 +363,7 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
         2,
       )}\n`,
     );
-    put(
-      ".ai-context/adapters/gemini.md",
-      adapterNote("gemini", ".ai-context", "legacy"),
-    );
+    put(".ai-context/adapters/gemini.md", adapterNote("gemini", ".ai-context", "legacy"));
     const applyCtx = makeCtx({}, { apply: true });
     const planned = await command.plan(applyCtx);
     const operatorEdit = "# Gemini adapter\n\nEdited after preview.\n";
