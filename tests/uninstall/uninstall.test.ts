@@ -621,6 +621,51 @@ describe("aih uninstall", () => {
     expect(digest?.text).not.toContain(".claude/skills/collision/docs/guide.md");
   });
 
+  it("maps a GitHub source-root skill named for the quarantine tree", async () => {
+    await coOwnedClaudeContextFixture();
+    const rootSkill = "# GitHub source-root skill\n";
+    const guide = "# Generated GitHub guide\n";
+    put(".claude/skills/github-collision/tree/SKILL.md", rootSkill);
+    put(".claude/skills/github-collision/tree/tree/guide.md", guide);
+    put(".claude/skills/github-collision/tree/guide.md", guide);
+    put(
+      ".aih/trust-lock.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        sources: [
+          {
+            id: "github-collision",
+            kind: "github",
+            source: "owner/repo",
+            ref: "main",
+            pinnedSha: "a".repeat(40),
+            promotedAt: "2026-08-01T00:00:00.000Z",
+            promotedSkills: ["tree"],
+            analyzersRun: ["semgrep"],
+            artifactHashes: [
+              { path: "SKILL.md", sha256: createHash("sha256").update(rootSkill).digest("hex") },
+              {
+                path: "tree/guide.md",
+                sha256: createHash("sha256").update(guide).digest("hex"),
+              },
+            ],
+            findings: [],
+          },
+        ],
+      }),
+    );
+
+    const ctx: PlanContext = { ...makeCtx(), contextDir: ".claude" };
+    const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("core install footprint"),
+    );
+
+    expect(digest?.text).toContain(".claude/skills/github-collision/tree/SKILL.md");
+    expect(digest?.text).toContain(".claude/skills/github-collision/tree/tree/guide.md");
+    expect(digest?.text).not.toContain(".claude/skills/github-collision/tree/guide.md");
+  });
+
   it("refuses an oversized promoted artifact before reading its contents", async () => {
     await coOwnedClaudeContextFixture();
     truncateSync(

@@ -265,6 +265,10 @@ interface PromotedSourceLayout {
   rootSkill?: string;
 }
 
+// GitHub acquisition promotes from `<quarantine>/tree`; unlike a local source,
+// the lock's owner/repo origin does not preserve that filesystem basename.
+const GITHUB_PROMOTION_ROOT_SKILL = "tree";
+
 function artifactRelForSkill(route: PromotedSkillRoute, artifactPath: string): string | undefined {
   for (const prefix of route.prefixes) {
     if (artifactPath.startsWith(prefix)) return artifactPath.slice(prefix.length);
@@ -291,10 +295,15 @@ function promotedSourceLayout(source: TrustLockSource): PromotedSourceLayout {
       parts: skill.split("/"),
     }),
   );
-  const sourceName = cleanRel(source.source)
-    .split("/")
-    .at(-1)
-    ?.replace(/\.git$/i, "");
+  // GitHub promotions originate at the fixed quarantine tree directory; the
+  // lock's `source` is owner/repo and therefore cannot recover that basename.
+  const sourceName =
+    source.kind === "github"
+      ? GITHUB_PROMOTION_ROOT_SKILL
+      : cleanRel(source.source)
+          .split("/")
+          .at(-1)
+          ?.replace(/\.git$/i, "");
   const receiptProvesSourceRoot = source.artifactHashes.some(
     (artifact) => artifact.path === "SKILL.md",
   );
