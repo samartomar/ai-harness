@@ -109,6 +109,48 @@ function hasManagedContextEvidence(ctx: PlanContext, contextDir: string): boolea
   );
 }
 
+function registeredConfigDirOwner(ctx: PlanContext, contextDir: string): string | undefined {
+  const rel = cleanRel(contextDir);
+  return REGISTRY_IDS.find((cli) =>
+    entry(cli).configDirs.some((configDir) => {
+      const registered = cleanRel(configDir);
+      return ctx.host.platform === "windows"
+        ? rel.toLowerCase() === registered.toLowerCase()
+        : rel === registered;
+    }),
+  );
+}
+
+function coOwnedContextReason(
+  ctx: PlanContext,
+  contextDir: string,
+  cli: string,
+  targets: ReadonlySet<string>,
+): string {
+  const generated = [
+    `${contextDir}/RULE_ROUTER.md`,
+    `${contextDir}/adapters/_shared-canonical-block.md`,
+    `${contextDir}/rules/agent-behavior-core.md`,
+    ...REGISTRY_IDS.filter((target) => targets.has(target)).map(
+      (target) => `${contextDir}/adapters/${target}.md`,
+    ),
+  ].filter((path) => exists(ctx, path));
+  const operatorSiblings =
+    cleanRel(contextDir) === ".claude"
+      ? [
+          `${contextDir}/settings.json`,
+          `${contextDir}/agents/`,
+          `${contextDir}/commands/`,
+          `operator-owned content in ${contextDir}/managed-settings.json`,
+        ]
+      : [`all other siblings under ${contextDir}/`];
+  return [
+    `co-owned ${entry(cli).label} config directory; aih leaves the complete directory in place`,
+    `aih-generated canon files left for manual cleanup: ${generated.join(", ")}`,
+    `operator-owned siblings left untouched: ${operatorSiblings.join(", ")}`,
+  ].join("; ");
+}
+
 function bootloaderAdvisories(ctx: PlanContext): UninstallArtifact[] {
   return bootloadersFor(REGISTRY_IDS).flatMap((path): UninstallArtifact[] => {
     const text = read(ctx, path);
@@ -239,11 +281,15 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
     const contextDir = canonicalExistingRel(ctx, markerContextDir);
     if (contextDir !== undefined && hasManagedContextEvidence(ctx, contextDir)) {
       ownsContextDir = true;
+      const configOwner = registeredConfigDirOwner(ctx, contextDir);
       artifacts.push({
         path: contextDir,
         kind: "context-dir",
-        disposition: "backup",
-        reason: "aih-managed canon/context tree with marker-backed ownership evidence",
+        disposition: configOwner === undefined ? "backup" : "advisory",
+        reason:
+          configOwner === undefined
+            ? "aih-managed canon/context tree with marker-backed ownership evidence"
+            : coOwnedContextReason(ctx, contextDir, configOwner, markerTargets),
       });
     } else if (contextDir !== undefined) {
       artifacts.push({
