@@ -81,6 +81,7 @@ export interface AppliedWrite {
 interface StagedRemoval {
   path: string;
   legacyPath: string;
+  expect?: { sha256: string };
   /**
    * Backup-sibling destination (hard-delete's `<path>.aih.bak`). Like the default
    * `.aih/legacy/` archive it NEVER overwrites an occupied destination — an existing
@@ -133,8 +134,17 @@ export class FsTransaction {
    * never-overwrite, but a taken slot falls back to `<path>.N.aih.bak` (matches the
    * gitignored `*.aih.bak` glob) instead of the archive's `<path>.N`.
    */
-  stageRemoval(path: string, legacyPath: string, opts: { backupSibling?: boolean } = {}): void {
-    this.stagedRemovals.push({ path, legacyPath, backupSibling: opts.backupSibling });
+  stageRemoval(
+    path: string,
+    legacyPath: string,
+    opts: { backupSibling?: boolean; expect?: { sha256: string } } = {},
+  ): void {
+    this.stagedRemovals.push({
+      path,
+      legacyPath,
+      backupSibling: opts.backupSibling,
+      expect: opts.expect,
+    });
   }
 
   preview(): ReadonlyArray<StagedWrite> {
@@ -208,6 +218,13 @@ export class FsTransaction {
         // silently re-establishes the escape. The executor also rejects this earlier.
         if (info.isSymbolicLink()) {
           throw new Error(`refusing to remove a symlink: ${r.path}`);
+        }
+        if (r.expect !== undefined) {
+          const live = readRegularFile(r.path);
+          const hash = live && createHash("sha256").update(live).digest("hex");
+          if (hash !== r.expect.sha256) {
+            throw new FsTxnError(`removal target changed before commit: ${r.path}`);
+          }
         }
         mkdirSync(dirname(r.legacyPath), { recursive: true });
         // NEVER overwrite an occupied destination — for BOTH modes. An aborted prune

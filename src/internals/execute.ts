@@ -24,7 +24,7 @@ import type {
 } from "../verification/types.js";
 import { isWellFormedUtf16 } from "../verification/validation.js";
 import { upsertManagedBlock } from "./envfile.js";
-import { FsTransaction, readIfExists } from "./fsxn.js";
+import { FsTransaction, readIfExists, readRegularFile } from "./fsxn.js";
 import { deepMerge, isPlainObject, parseJsoncText } from "./merge.js";
 import type {
   DigestAction,
@@ -809,6 +809,16 @@ export async function executePlan(
       if (info === undefined) {
         removes.push({ path: action.path, describe: action.describe, effect: "absent" });
       } else {
+        if (ctx.apply && action.expect !== undefined) {
+          const live = readRegularFile(absPath);
+          const hash = live && createHash("sha256").update(live).digest("hex");
+          if (hash !== action.expect.sha256) {
+            throw new AihError(
+              `refusing to remove ${action.path} — it changed after the plan was computed; re-run the command`,
+              "AIH_TRUST",
+            );
+          }
+        }
         // Default = reversible archive move (to `archiveRoot`, a closed union that
         // defaults to `.aih/legacy`); `hardDelete` = the explicit opt-out, a
         // single-slot rename to the sibling `<path>.aih.bak` (the same latest-wins
@@ -823,7 +833,12 @@ export async function executePlan(
         // ancestor, so a symlinked parent — or a `..` surviving in the path — trips it.
         assertContained(ctx.root, destAbs);
         assertNoSymlinkParents(ctx.root, destAbs, destRel);
-        if (ctx.apply) txn.stageRemoval(absPath, destAbs, { backupSibling: action.hardDelete });
+        if (ctx.apply) {
+          txn.stageRemoval(absPath, destAbs, {
+            backupSibling: action.hardDelete,
+            expect: action.expect,
+          });
+        }
         removes.push({
           path: action.path,
           describe: action.describe,

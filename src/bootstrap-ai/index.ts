@@ -1,4 +1,4 @@
-import { lstatSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { basename, join, posix, resolve } from "node:path";
 import { aihConfigJson, readAihConfigBaseline } from "../config/marker.js";
 import {
@@ -15,7 +15,7 @@ import {
   unmanagedBootloaders,
 } from "../internals/cli-detect.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
-import { readIfExists } from "../internals/fsxn.js";
+import { readIfExists, readRegularFile } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
 import { extractManagedBlock, type ManagedBlock, mergeManagedBlock } from "../internals/markers.js";
 import {
@@ -52,17 +52,21 @@ function orphanedGeneratedAdapterActions(
   ctx: PlanContext,
   dir: string,
   clis: readonly Cli[],
+  canon: CanonMode,
+  baseline: ReturnType<typeof resolveBaselineSource>,
 ): Action[] {
   const targeted = new Set<Cli>(clis);
   return SUPPORTED_CLIS.flatMap((cli): Action[] => {
     if (targeted.has(cli)) return [];
     const path = posix.join(dir, "adapters", `${cli}.md`);
-    try {
-      if (!lstatSync(join(ctx.root, path)).isFile()) return [];
-    } catch {
-      return [];
-    }
-    return [remove(path, `generated ${cli} adapter is outside the resolved target set`)];
+    const expected = Buffer.from(adapterNote(cli, dir, canon, baseline), "utf8");
+    const existing = readRegularFile(join(ctx.root, path), { maxBytes: expected.byteLength });
+    if (existing === undefined || !existing.equals(expected)) return [];
+    return [
+      remove(path, `generated ${cli} adapter is outside the resolved target set`, {
+        expect: { sha256: createHash("sha256").update(existing).digest("hex") },
+      }),
+    ];
   });
 }
 
@@ -235,7 +239,7 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
     aihIgnoreWrite(ctx.root),
   ];
 
-  actions.push(...orphanedGeneratedAdapterActions(ctx, dir, clis));
+  actions.push(...orphanedGeneratedAdapterActions(ctx, dir, clis, canon, baseline));
 
   // One tool-specific adapter note per selected CLI.
   for (const cli of clis) {
