@@ -803,6 +803,43 @@ describe("orgPolicyDriftProbes — target scope (#554)", () => {
     expect(checks.some((k) => k?.verdict === "fail")).toBe(true);
   });
 
+  // #566 — the agent-facing contract. These commands are invoked by agents, so a
+  // repairable finding must name EXACTLY ONE runnable command, and a non-repairable
+  // one must carry a DISTINCT code so an agent escalates instead of looping.
+  it("names aih prune for a marker-proven dropped-target residue", async () => {
+    const managedOnly = policy({
+      minimumPosture: "enterprise",
+      mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+    });
+    writeScopePolicy(managedOnly);
+    // Build the owned projection with the real projection path, then drop claude.
+    const projectCtx: PlanContext = { ...ctx(), posture: "enterprise", apply: true };
+    await executePlan(
+      plan("org-policy", ...orgPolicyProjectionActions(projectCtx, parseOrgPolicy(managedOnly))),
+      projectCtx,
+    );
+
+    const c = scopeCtx(["kiro"]);
+    const checks = await Promise.all(orgPolicyDriftProbes(c).map((p) => p.run(c)));
+    const residue = checks.find((k) => k?.code === "org-policy.dropped-target-residue");
+    expect(residue?.verdict).toBe("fail");
+    expect(residue?.detail ?? "").toMatch(/aih prune/);
+    expect(residue?.location?.uri).toBe(".claude/managed-settings.json");
+  });
+
+  it("uses a distinct code when the dropped-target residue is not repairable", async () => {
+    writeScopePolicy(denyPolicy());
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(join(dir, ".claude", "managed-settings.json"), JSON.stringify({ stale: true }));
+    const c = scopeCtx(["kiro"]);
+    const checks = await Promise.all(orgPolicyDriftProbes(c).map((p) => p.run(c)));
+    const unowned = checks.find((k) => k?.code === "org-policy.dropped-target-unowned");
+    expect(unowned?.verdict).toBe("fail");
+    expect(unowned?.detail ?? "").toMatch(/no active managed-MCP ownership/);
+    expect(unowned?.detail ?? "").not.toMatch(/aih prune/);
+    expect(checks.some((k) => k?.code === "org-policy.dropped-target-residue")).toBe(false);
+  });
+
   it("reports dropped-target residue when an untargeted artifact is still on disk", async () => {
     writeScopePolicy(denyPolicy());
     mkdirSync(join(dir, ".claude"), { recursive: true });

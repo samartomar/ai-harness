@@ -8,6 +8,7 @@ import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { defaultRunner, fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { command as mcpCommand } from "../../src/mcp/index.js";
+import { policyProjectCommand } from "../../src/org-policy/validate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command as uninstallCommand } from "../../src/uninstall/index.js";
 import { hermeticGitEnv } from "../git-fixture-env.js";
@@ -76,6 +77,34 @@ async function bootstrapFixture(cli = "claude"): Promise<void> {
   await executePlan(await mcpCommand.plan(mcpCtx), mcpCtx);
   put(".aih/runs/one.jsonl", "{}\n");
 }
+
+/**
+ * A repo whose `.claude/managed-settings.json` carries an EXACT aih-owned
+ * managed-MCP pair, recorded in the `.aih-config.json` marker — the only state in
+ * which those two keys are provably aih's. Built by the real projection command so
+ * the fixture cannot drift from what production writes.
+ */
+async function managedMcpProjectionFixture(): Promise<void> {
+  put("package.json", JSON.stringify({ name: "fixture" }));
+  put(".claude/managed-settings.json", JSON.stringify({ operatorOnly: true }));
+  put(
+    "aih-org-policy.json",
+    JSON.stringify({
+      schemaVersion: 1,
+      minimumPosture: "enterprise",
+      references: { repoContract: "ai-coding/project.json" },
+      mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+    }),
+  );
+  const projectCtx = makeCtx({}, { apply: true });
+  await executePlan(await policyProjectCommand.plan(projectCtx), projectCtx);
+}
+
+const managedSettings = (): Record<string, unknown> =>
+  JSON.parse(readFileSync(join(tmp, ".claude", "managed-settings.json"), "utf8")) as Record<
+    string,
+    unknown
+  >;
 
 describe("aih uninstall", () => {
   it("previews the core install footprint without mutating disk in dry-run", async () => {
@@ -279,6 +308,97 @@ describe("aih uninstall", () => {
         expect.objectContaining({ path: ".aih", disposition: "advisory" }),
       ]),
     );
+  });
+
+  it("subtracts the marker-proven managed-MCP keys before removing the marker", async () => {
+    await managedMcpProjectionFixture();
+    expect(managedSettings()).toHaveProperty("allowManagedMcpServersOnly");
+
+    const ctx = makeCtx({}, { apply: true });
+    const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+    const after = managedSettings();
+
+    expect(existsSync(join(tmp, ".aih-config.json"))).toBe(false);
+    expect(after).not.toHaveProperty("allowManagedMcpServersOnly");
+    expect(after).not.toHaveProperty("allowedMcpServers");
+    // Only the two marker-proven keys go: operator content and the projection keys
+    // aih records no provenance for are never subtracted.
+    expect(after.operatorOnly).toBe(true);
+    expect(after).toHaveProperty("organizationPolicy");
+    expect(after).toHaveProperty("sandbox");
+    expect(result.writes.map((w) => w.path)).toContain(".claude/managed-settings.json");
+  });
+
+  it("names the managed-MCP keys it will subtract in a dry run without touching disk", async () => {
+    await managedMcpProjectionFixture();
+
+    const ctx = makeCtx();
+    const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+    const digest = result.digests.find((d) => d.describe.includes("core install footprint"));
+
+    expect(digest?.text).toContain(".claude/managed-settings.json");
+    expect(digest?.text).toContain("allowManagedMcpServersOnly");
+    expect(managedSettings()).toHaveProperty("allowManagedMcpServersOnly");
+    expect(existsSync(join(tmp, ".aih-config.json"))).toBe(true);
+  });
+
+  it("reports an unprovable managed-MCP projection instead of subtracting it", async () => {
+    await managedMcpProjectionFixture();
+    const managedPath = join(tmp, ".claude", "managed-settings.json");
+    const operatorPair = { serverCommand: ["operator-mcp", "serve"] };
+    writeFileSync(
+      managedPath,
+      JSON.stringify({ ...managedSettings(), allowedMcpServers: [operatorPair] }),
+      "utf8",
+    );
+
+    const ctx = makeCtx({}, { apply: true });
+    const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+    const digest = result.digests.find((d) => d.describe.includes("core install footprint"));
+
+    expect(digest?.text).toContain("unattributable");
+    expect(digest?.text).toContain(".claude/managed-settings.json");
+    expect(managedSettings().allowedMcpServers).toEqual([operatorPair]);
+    expect(result.writes.map((w) => w.path)).not.toContain(".claude/managed-settings.json");
+  });
+
+  it("does not promise a key subtraction inside a tree it removes wholesale", async () => {
+    // A repo bootstrapped with `--context-dir .claude` puts the projected
+    // managed-settings file INSIDE the context tree uninstall backs up whole.
+    // Subtracting two keys from it first is futile, and the preview line "every other
+    // key is preserved" would be a false promise while the directory goes to backup.
+    put("package.json", JSON.stringify({ name: "fixture" }));
+    const bootstrapCtx: PlanContext = {
+      ...makeCtx({ cli: "claude", canon: "compact" }, { apply: true }),
+      contextDir: ".claude",
+    };
+    await executePlan(await bootstrapAiCommand.plan(bootstrapCtx), bootstrapCtx);
+    put(
+      "aih-org-policy.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: ".claude/project.json" },
+        mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+      }),
+    );
+    const projectCtx: PlanContext = { ...bootstrapCtx };
+    await executePlan(await policyProjectCommand.plan(projectCtx), projectCtx);
+    expect(managedSettings()).toHaveProperty("allowManagedMcpServersOnly");
+
+    const ctx: PlanContext = { ...makeCtx(), contextDir: ".claude" };
+    const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+    const digest = result.digests.find((d) => d.describe.includes("core install footprint"));
+    const artifacts =
+      (digest?.data as { artifacts?: Array<{ path: string; kind: string }> } | undefined)
+        ?.artifacts ?? [];
+
+    // `.claude` is removed wholesale, so no subtraction is planned or promised for a
+    // file inside it.
+    expect(artifacts.map((a) => a.path)).toContain(".claude");
+    expect(artifacts.some((a) => a.kind === "managed-settings")).toBe(false);
+    expect(result.writes.map((w) => w.path)).not.toContain(".claude/managed-settings.json");
+    expect(digest?.text ?? "").not.toContain("every other key is preserved");
   });
 
   it("uses the on-disk casing for removable context dirs", async () => {

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
@@ -9,6 +9,7 @@ import { executePlan, resolveContents } from "../../src/internals/execute.js";
 import type { DigestAction, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { jsonFile } from "../../src/internals/render.js";
+import { mcpManagedAllowlistCheck } from "../../src/mcp/allowlist.js";
 import { bakedCatalogPins } from "../../src/mcp/currency.js";
 import { mcpPackagePinDriftProbe } from "../../src/mcp/hygiene.js";
 import { command, mcpApproveCommand, RETIRED_AWS_CORE_MCP_SERVER } from "../../src/mcp/index.js";
@@ -1545,6 +1546,118 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     expect(JSON.parse(readFileSync(join(root, ".aih-config.json"), "utf8"))).toMatchObject({
       managedMcpProjection: { state: "revoked" },
     });
+  });
+
+  it("writes no Claude managed allowlist when the committed targets exclude claude", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, ".aih-config.json"),
+      jsonFile({ schemaVersion: 1, contextDir: "ai-coding", targets: ["kiro"] }),
+    );
+    writeMcpPolicy(root, { allowedServers: ["code-review-graph"], allowManagedOnly: true });
+
+    const ctx = makeCtx({ root, options: { posture: "enterprise" } });
+    const planned = await command.plan(ctx);
+    await executePlan(planned, { ...ctx, apply: true });
+
+    const paths = planned.actions
+      .filter((a): a is WriteAction => a.kind === "write")
+      .map((w) => w.path.replace(/\\/g, "/"));
+    expect(paths).not.toContain(".claude/managed-settings.json");
+    // The tool-agnostic MCP generation still runs for the repo's real targets.
+    expect(paths).toContain(".kiro/settings/mcp.json");
+    expect(existsSync(join(root, ".claude", "managed-settings.json"))).toBe(false);
+    // It says WHY, rather than failing silently.
+    const explained = planned.actions
+      .filter((a): a is DigestAction => a.kind === "digest")
+      .some((a) => (a.text ?? "").includes("was NOT written"));
+    expect(explained).toBe(true);
+    // The ownership marker records no claim it never made.
+    expect(JSON.parse(readFileSync(join(root, ".aih-config.json"), "utf8"))).not.toHaveProperty(
+      "managedMcpProjection",
+    );
+  });
+
+  it("fails a marker-proven allowlist for a dropped target even when it still matches .mcp.json", async () => {
+    // Without a committed org policy there are no org-policy drift probes at all, so
+    // this check is the ONLY surface that sees the residue `aih mcp --apply` left. An
+    // allowlist that still matches `.mcp.json` is not harmless once its owner is
+    // dropped: it keeps enforcing a projection nothing maintains, and prune can now
+    // subtract it — so equality must not shadow the dropped-target classification.
+    const root = makeTmp();
+    const ctx = makeCtx({ root, options: { posture: "enterprise" } });
+    await executePlan(await command.plan(ctx), { ...ctx, apply: true });
+    const marker = JSON.parse(readFileSync(join(root, ".aih-config.json"), "utf8")) as Record<
+      string,
+      unknown
+    >;
+    expect(marker.managedMcpProjection).toMatchObject({ state: "active" });
+    writeFileSync(
+      join(root, ".aih-config.json"),
+      jsonFile({ ...marker, targets: ["kiro"] as unknown as string[] }),
+    );
+
+    const check = mcpManagedAllowlistCheck({ ...ctx, targets: ["kiro"] });
+    expect(check.verdict).toBe("fail");
+    expect(check.code).toBe("org-policy.dropped-target-residue");
+    expect(check.detail ?? "").toMatch(/aih prune/);
+  });
+
+  it("fails a marker-proven allowlist for a dropped target with no .mcp.json to compare", async () => {
+    // Ownership does not depend on `.mcp.json`, so a missing or server-less one must
+    // not skip the classification — with no committed org policy there are no
+    // org-policy drift probes either, and the residue would be reported by nothing.
+    const root = makeTmp();
+    const ctx = makeCtx({ root, options: { posture: "enterprise" } });
+    await executePlan(await command.plan(ctx), { ...ctx, apply: true });
+    const marker = JSON.parse(readFileSync(join(root, ".aih-config.json"), "utf8")) as Record<
+      string,
+      unknown
+    >;
+    writeFileSync(
+      join(root, ".aih-config.json"),
+      jsonFile({ ...marker, targets: ["kiro"] as unknown as string[] }),
+    );
+    rmSync(join(root, ".mcp.json"));
+
+    const check = mcpManagedAllowlistCheck({ ...ctx, targets: ["kiro"] });
+    expect(check.verdict).toBe("fail");
+    expect(check.code).toBe("org-policy.dropped-target-residue");
+    expect(check.detail ?? "").toMatch(/aih prune/);
+  });
+
+  it("modifies no existing Claude managed settings when the committed targets exclude claude", async () => {
+    const root = makeTmp();
+    const managedPath = join(root, ".claude", "managed-settings.json");
+    mkdirSync(join(root, ".claude"), { recursive: true });
+    const operatorOwned = jsonFile({
+      operatorOnly: true,
+      allowManagedMcpServersOnly: true,
+      allowedMcpServers: [{ serverCommand: ["operator-mcp", "serve"] }],
+    });
+    writeFileSync(managedPath, operatorOwned);
+    writeFileSync(
+      join(root, ".aih-config.json"),
+      jsonFile({ schemaVersion: 1, contextDir: "ai-coding", targets: ["kiro"] }),
+    );
+    writeMcpPolicy(root, { allowedServers: ["code-review-graph"], allowManagedOnly: true });
+
+    const ctx = makeCtx({ root, options: { posture: "enterprise" } });
+    await executePlan(await command.plan(ctx), { ...ctx, apply: true });
+
+    expect(readFileSync(managedPath, "utf8")).toBe(operatorOwned);
+  });
+
+  it("keeps writing the Claude managed allowlist for a repo with no committed marker", async () => {
+    const root = makeTmp();
+    writeMcpPolicy(root, { allowedServers: ["code-review-graph"], allowManagedOnly: true });
+
+    const ctx = makeCtx({ root, options: { posture: "enterprise" } });
+    await executePlan(await command.plan(ctx), { ...ctx, apply: true });
+
+    expect(
+      JSON.parse(readFileSync(join(root, ".claude", "managed-settings.json"), "utf8")),
+    ).toMatchObject({ allowManagedMcpServersOnly: true });
   });
 
   it("refuses deactivation when an operator changes an owned managed-MCP projection after planning", async () => {

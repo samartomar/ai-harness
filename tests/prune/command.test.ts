@@ -1,8 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
 import { SHARED_MARKER, sharedBlock } from "../../src/bootstrap-ai/canon.js";
 import { CODEX_AGENTS_BLOCK_MARKER, CODEX_INSTALL_STATE_FILE } from "../../src/ecc/codex.js";
 import { registrationLedgerPath } from "../../src/ecc/registration.js";
@@ -10,6 +11,7 @@ import { executePlan } from "../../src/internals/execute.js";
 import { mergeManagedBlock } from "../../src/internals/markers.js";
 import type { Action, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { policyProjectCommand } from "../../src/org-policy/validate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/prune/index.js";
 
@@ -125,6 +127,228 @@ describe("aih prune command", () => {
       "--target",
       "cursor",
     ]);
+  });
+
+  describe("dropped-target managed-MCP residue", () => {
+    const MANAGED = ".claude/managed-settings.json";
+    const managedPath = (): string => join(dir, ".claude", "managed-settings.json");
+    const readJson = (path: string): Record<string, unknown> =>
+      JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    const writeOf = (
+      actions: Action[],
+      path: string,
+    ): Extract<Action, { kind: "write" }> | undefined =>
+      actions.find(
+        (a): a is Extract<Action, { kind: "write" }> => a.kind === "write" && a.path === path,
+      );
+
+    /**
+     * Project a real AIH-owned managed-MCP pair for claude, then drop claude from the
+     * committed targets — the exact state issue #566 describes. Built with the real
+     * projection command so the fixture cannot drift from what production writes.
+     */
+    async function droppedClaudeProjection(keep = ["kiro"]): Promise<void> {
+      write("ai-coding/adapters/claude.md");
+      write("ai-coding/adapters/kiro.md");
+      write(".claude/managed-settings.json", JSON.stringify({ operatorOnly: true }));
+      writeFileSync(
+        join(dir, "aih-org-policy.json"),
+        JSON.stringify({
+          schemaVersion: 1,
+          minimumPosture: "enterprise",
+          references: { repoContract: "ai-coding/project.json" },
+          mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+        }),
+      );
+      marker("claude", "kiro");
+      const projectCtx = ctx({ apply: true });
+      await executePlan(await policyProjectCommand.plan(projectCtx), projectCtx);
+      const cfg = readJson(join(dir, ".aih-config.json"));
+      writeFileSync(join(dir, ".aih-config.json"), JSON.stringify({ ...cfg, targets: keep }));
+    }
+
+    it("subtracts exactly the two marker-proven keys, ownership last, never a delete", async () => {
+      await droppedClaudeProjection();
+      const actions = await actionsOf();
+
+      const subtract = writeOf(actions, MANAGED);
+      const ownership = writeOf(actions, ".aih-config.json");
+      expect(subtract?.removeJsonTopLevelKeys).toEqual([
+        "allowManagedMcpServersOnly",
+        "allowedMcpServers",
+      ]);
+      expect(ownership?.removeJsonTopLevelKeys).toEqual(["managedMcpProjection"]);
+      // Owned content first, ownership state second (src/ecc/reconcile-driver.ts:485, :511).
+      expect(actions.indexOf(subtract as Action)).toBeLessThan(
+        actions.indexOf(ownership as Action),
+      );
+      // FILE DELETION IS NEVER AUTHORIZED — the marker proves two keys, not the file.
+      expect(actions.filter((a) => a.kind === "remove").map((a) => a.path)).not.toContain(MANAGED);
+      expect(digestText(actions)).toContain(MANAGED);
+    });
+
+    it("leaves every other key's value unchanged under --apply", async () => {
+      await droppedClaudeProjection();
+      const before = readJson(managedPath());
+
+      const applyCtx = ctx({ apply: true });
+      await executePlan(await command.plan(applyCtx), applyCtx);
+      const after = readJson(managedPath());
+
+      expect(after).not.toHaveProperty("allowManagedMcpServersOnly");
+      expect(after).not.toHaveProperty("allowedMcpServers");
+      expect(after.operatorOnly).toBe(true);
+      // organizationPolicy / sandbox carry no provenance and are NEVER subtracted.
+      expect(after.organizationPolicy).toEqual(before.organizationPolicy);
+      expect(after.sandbox).toEqual(before.sandbox);
+      expect(readJson(join(dir, ".aih-config.json"))).not.toHaveProperty("managedMcpProjection");
+    });
+
+    it("reconciles the residue even after the dropped CLI's adapter is already gone", async () => {
+      await droppedClaudeProjection();
+      rmSync(join(dir, "ai-coding", "adapters", "claude.md"));
+
+      const applyCtx = ctx({ apply: true });
+      await executePlan(await command.plan(applyCtx), applyCtx);
+
+      expect(readJson(managedPath())).not.toHaveProperty("allowManagedMcpServersOnly");
+    });
+
+    it("never weakens the projection for a still-committed but unrunnable claude", async () => {
+      // --unrunnable prunes per-CLI FILES on a weaker signal (no binary on PATH). A
+      // missing binary is not evidence the repo dropped Claude, so it must never
+      // subtract an enforcement control.
+      await droppedClaudeProjection(["claude", "kiro"]);
+      const before = readFileSync(managedPath(), "utf8");
+
+      const applyCtx = ctx({ apply: true, options: { unrunnable: true } });
+      await executePlan(await command.plan(applyCtx), applyCtx);
+
+      expect(readFileSync(managedPath(), "utf8")).toBe(before);
+      expect(readJson(join(dir, ".aih-config.json"))).toMatchObject({
+        managedMcpProjection: { state: "active" },
+      });
+    });
+
+    it("revokes rather than crashing when a directory sits at the projected path", async () => {
+      // Presence must be probed with a stat, not a content read: `readFileSync` throws
+      // EISDIR on a directory, which took the whole command down before it could report
+      // the residue it exists to report.
+      await droppedClaudeProjection();
+      rmSync(managedPath());
+      mkdirSync(managedPath(), { recursive: true });
+
+      const applyCtx = ctx({ apply: true });
+      const actions = (await command.plan(applyCtx)).actions;
+      await executePlan({ capability: "prune", actions }, applyCtx);
+
+      expect(writeOf(actions, MANAGED)).toBeUndefined();
+      expect(digestText(actions)).toContain("not a readable regular file");
+      expect(readJson(join(dir, ".aih-config.json"))).toMatchObject({
+        managedMcpProjection: { state: "revoked" },
+      });
+    });
+
+    it("revokes a claim whose projected path is a dangling symlink", async () => {
+      // Presence must be NO-FOLLOW: `existsSync` calls a dangling link absent, which
+      // would leave the stale ownership claim standing forever with nothing reported.
+      await droppedClaudeProjection();
+      rmSync(managedPath());
+      symlinkSync(join(dir, "nowhere.json"), managedPath());
+
+      const applyCtx = ctx({ apply: true });
+      const actions = (await command.plan(applyCtx)).actions;
+      await executePlan({ capability: "prune", actions }, applyCtx);
+
+      expect(writeOf(actions, MANAGED)).toBeUndefined();
+      expect(digestText(actions)).toContain("not a readable regular file");
+      expect(readJson(join(dir, ".aih-config.json"))).toMatchObject({
+        managedMcpProjection: { state: "revoked" },
+      });
+    });
+
+    it("never names a repair for a residue behind a symlinked parent", async () => {
+      // The leaf read is no-follow, but a symlinked PARENT would still redirect it —
+      // and the executor refuses those outright. Classifying such a path as repairable
+      // would name `aih prune` for a finding prune is guaranteed to refuse, breaking
+      // the one promise this lifecycle makes: the command it names clears it.
+      await droppedClaudeProjection();
+      const elsewhere = join(dir, "elsewhere");
+      mkdirSync(elsewhere, { recursive: true });
+      const real = readFileSync(managedPath(), "utf8");
+      writeFileSync(join(elsewhere, "managed-settings.json"), real);
+      rmSync(join(dir, ".claude"), { recursive: true, force: true });
+      symlinkSync(elsewhere, join(dir, ".claude"), "junction");
+
+      const applyCtx = ctx({ apply: true });
+      const actions = (await command.plan(applyCtx)).actions;
+      await executePlan({ capability: "prune", actions }, applyCtx);
+
+      expect(writeOf(actions, MANAGED)).toBeUndefined();
+      expect(digestText(actions)).toContain("symlinked parent");
+      // The redirected file is untouched, and the claim is given up rather than kept.
+      expect(readFileSync(join(elsewhere, "managed-settings.json"), "utf8")).toBe(real);
+      expect(readJson(join(dir, ".aih-config.json"))).toMatchObject({
+        managedMcpProjection: { state: "revoked" },
+      });
+    });
+
+    it("revokes rather than overwrites a drifted pair", async () => {
+      await droppedClaudeProjection();
+      const operatorPair = [{ serverCommand: ["operator-mcp", "serve"] }];
+      writeFileSync(
+        managedPath(),
+        JSON.stringify({ ...readJson(managedPath()), allowedMcpServers: operatorPair }),
+      );
+
+      const applyCtx = ctx({ apply: true });
+      await executePlan(await command.plan(applyCtx), applyCtx);
+
+      expect(readJson(managedPath()).allowedMcpServers).toEqual(operatorPair);
+      expect(readJson(join(dir, ".aih-config.json"))).toMatchObject({
+        managedMcpProjection: { state: "revoked" },
+      });
+    });
+
+    it("stays silent and mutates nothing when no ownership marker proves the residue", async () => {
+      // Prune must advertise only what prune can act on. With no active claim there is
+      // nothing to subtract AND nothing to revoke, so naming the file here would tell an
+      // agent to re-run a command designed to refuse — forever. `aih doctor`'s
+      // `org-policy.dropped-target-unowned` owns this case and says to escalate.
+      write("ai-coding/adapters/claude.md");
+      write("ai-coding/adapters/kiro.md");
+      const operatorOwned = JSON.stringify({
+        allowManagedMcpServersOnly: true,
+        allowedMcpServers: [{ serverCommand: ["operator-mcp", "serve"] }],
+      });
+      write(".claude/managed-settings.json", operatorOwned);
+      marker("kiro");
+
+      const applyCtx = ctx({ apply: true });
+      const actions = (await command.plan(applyCtx)).actions;
+      await executePlan({ capability: "prune", actions }, applyCtx);
+
+      expect(writeOf(actions, MANAGED)).toBeUndefined();
+      expect(readFileSync(managedPath(), "utf8")).toBe(operatorOwned);
+      expect(digestText(actions)).not.toContain(MANAGED);
+    });
+
+    it("converges — a second prune says nothing about an already-reconciled residue", async () => {
+      await droppedClaudeProjection();
+      const first = ctx({ apply: true });
+      await executePlan(await command.plan(first), first);
+
+      const second = ctx({ apply: true });
+      const actions = (await command.plan(second)).actions;
+      const after = readFileSync(managedPath(), "utf8");
+      await executePlan({ capability: "prune", actions }, second);
+
+      expect(writeOf(actions, MANAGED)).toBeUndefined();
+      expect(digestText(actions)).not.toContain(MANAGED);
+      // organizationPolicy / sandbox legitimately remain and are never touched.
+      expect(readFileSync(managedPath(), "utf8")).toBe(after);
+      expect(readJson(managedPath())).toHaveProperty("organizationPolicy");
+    });
   });
 
   it("does not call ECC's upstream codex uninstall path when codex is dropped", async () => {

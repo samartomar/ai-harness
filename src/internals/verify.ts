@@ -74,6 +74,7 @@ export type CheckCode =
   // org policy
   | "org-policy.drift"
   | "org-policy.dropped-target-residue"
+  | "org-policy.dropped-target-unowned"
   | "org-policy.generation-delta"
   | "org-policy.invalid"
   | "org-policy.bundle-invalid"

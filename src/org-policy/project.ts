@@ -1,22 +1,16 @@
-import { createHash } from "node:crypto";
-import { join } from "node:path";
-import {
-  AIH_CONFIG_FILE,
-  AihConfigSchema,
-  isActiveManagedMcpProjectionOwnership,
-  type ManagedMcpProjectionOwnership,
-  managedMcpProjectionConfigJsonFromRaw,
-  managedMcpProjectionOwnership,
-  revokedManagedMcpProjectionOwnership,
-} from "../config/marker.js";
-import { readIfExists } from "../internals/fsxn.js";
-import { parseJsoncText } from "../internals/merge.js";
-import { type Action, type PlanContext, type WriteAction, writeJson } from "../internals/plan.js";
-import {
-  managedMcpAllowlistSettings,
-  matchesManagedMcpProjectionOwnership,
-} from "../mcp/allowlist.js";
+import { type Action, type PlanContext, writeJson } from "../internals/plan.js";
+import { managedMcpAllowlistSettings } from "../mcp/allowlist.js";
 import { managedMcpExample } from "../mcp/enterprise.js";
+import {
+  clearManagedMcpProjectionOwnershipAction,
+  MANAGED_MCP_PROJECTION_KEYS,
+  MANAGED_SETTINGS_PATH,
+  managedMcpProjectionOnDisk,
+  managedMcpProjectionOwnershipAction,
+  readManagedSettings,
+  revokeManagedMcpProjectionOwnershipAction,
+  withExpectedContents,
+} from "../mcp/managed-projection.js";
 import { mcpServers, type StdioServer } from "../mcp/servers.js";
 import { scanRepo } from "../profile/scan.js";
 import { composeOrgPolicy } from "./compose.js";
@@ -89,97 +83,6 @@ function managedSettings(
   };
 }
 
-function withExpectedContents(action: WriteAction, contents: string | undefined): WriteAction {
-  return {
-    ...action,
-    expect:
-      contents === undefined
-        ? { absent: true }
-        : { sha256: createHash("sha256").update(contents, "utf8").digest("hex") },
-  };
-}
-
-function managedMcpProjectionOwnershipOnDisk(ctx: PlanContext):
-  | {
-      ownership: ManagedMcpProjectionOwnership;
-      matches: boolean;
-      markerSource: string | undefined;
-      settingsSource: string | undefined;
-    }
-  | undefined {
-  const markerSource = readIfExists(join(ctx.root, AIH_CONFIG_FILE));
-  let ownership: ManagedMcpProjectionOwnership | undefined;
-  try {
-    ownership =
-      markerSource === undefined
-        ? undefined
-        : AihConfigSchema.parse(JSON.parse(markerSource)).managedMcpProjection;
-  } catch {
-    return undefined;
-  }
-  if (!isActiveManagedMcpProjectionOwnership(ownership)) return undefined;
-  const settingsSource = readIfExists(join(ctx.root, ".claude", "managed-settings.json"));
-  if (settingsSource === undefined) {
-    return { ownership, matches: false, markerSource, settingsSource };
-  }
-  try {
-    return {
-      ownership,
-      matches: matchesManagedMcpProjectionOwnership(parseJsoncText(settingsSource), ownership),
-      markerSource,
-      settingsSource,
-    };
-  } catch {
-    return { ownership, matches: false, markerSource, settingsSource };
-  }
-}
-
-function managedMcpProjectionOwnershipAction(
-  ctx: PlanContext,
-  generated: ReturnType<typeof managedMcpAllowlistSettings>,
-): Action {
-  const source = readIfExists(join(ctx.root, AIH_CONFIG_FILE));
-  return withExpectedContents(
-    writeJson(
-      AIH_CONFIG_FILE,
-      managedMcpProjectionConfigJsonFromRaw(
-        source,
-        ctx.contextDir,
-        ctx.targets ?? ["claude"],
-        managedMcpProjectionOwnership(generated),
-      ),
-      "record Claude managed-MCP projection ownership",
-      { merge: true },
-    ),
-    source,
-  );
-}
-
-function clearManagedMcpProjectionOwnershipAction(source: string | undefined): Action {
-  return withExpectedContents(
-    writeJson(AIH_CONFIG_FILE, {}, "clear Claude managed-MCP projection ownership", {
-      merge: true,
-      removeJsonTopLevelKeys: ["managedMcpProjection"],
-    }),
-    source,
-  );
-}
-
-function revokeManagedMcpProjectionOwnershipAction(
-  ownership: ManagedMcpProjectionOwnership,
-  source: string | undefined,
-): Action {
-  return withExpectedContents(
-    writeJson(
-      AIH_CONFIG_FILE,
-      { managedMcpProjection: revokedManagedMcpProjectionOwnership(ownership) },
-      "revoke Claude managed-MCP projection ownership after operator change",
-      { merge: true },
-    ),
-    source,
-  );
-}
-
 export function orgPolicyProjectionActions(ctx: PlanContext, policy: OrgPolicy): Action[] {
   const posture = ctx.posture ?? policy.minimumPosture;
   if (posture === "vibe") return [];
@@ -188,25 +91,27 @@ export function orgPolicyProjectionActions(ctx: PlanContext, policy: OrgPolicy):
     policy,
   );
   const owned = managedMcpEnabled
-    ? managedMcpProjectionOwnershipAction(ctx, managedMcpSettings)
+    ? managedMcpProjectionOwnershipAction(ctx, ctx.targets ?? ["claude"], managedMcpSettings)
     : undefined;
-  const onDisk = managedMcpEnabled ? undefined : managedMcpProjectionOwnershipOnDisk(ctx);
-  const settingsSource =
-    onDisk?.settingsSource ?? readIfExists(join(ctx.root, ".claude", "managed-settings.json"));
+  // The deactivation branch reuses the shared managed-MCP lifecycle
+  // (`src/mcp/managed-projection.ts`), but folds the key subtraction into the
+  // managed-settings write this projection already emits — the executor collapses
+  // repeated writes to one path, so a second write action would be dropped.
+  const onDisk = managedMcpEnabled ? undefined : managedMcpProjectionOnDisk(ctx.root);
+  // The apply-time pin comes from a regular-file, no-follow read — never a plain
+  // content read, which throws EISDIR on a directory planted at the projected path
+  // and would take the whole projection down before it could plan anything.
+  const settingsSource = onDisk?.settingsSource ?? readManagedSettings(ctx.root);
   const actions: Action[] = [
     withExpectedContents(
       writeJson(
-        ".claude/managed-settings.json",
+        MANAGED_SETTINGS_PATH,
         settings,
         "project managed-settings compiled from aih-org-policy.json",
         {
           merge: true,
-          replaceJsonKeys: managedMcpEnabled
-            ? ["allowManagedMcpServersOnly", "allowedMcpServers"]
-            : undefined,
-          removeJsonTopLevelKeys: onDisk?.matches
-            ? ["allowManagedMcpServersOnly", "allowedMcpServers"]
-            : undefined,
+          replaceJsonKeys: managedMcpEnabled ? [...MANAGED_MCP_PROJECTION_KEYS] : undefined,
+          removeJsonTopLevelKeys: onDisk?.matches ? [...MANAGED_MCP_PROJECTION_KEYS] : undefined,
         },
       ),
       settingsSource,

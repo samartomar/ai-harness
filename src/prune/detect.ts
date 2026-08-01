@@ -5,6 +5,11 @@ import { bootloadersFor, entry } from "../internals/cli-registry.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import type { PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import {
+  MANAGED_SETTINGS_PATH,
+  type ManagedMcpProjectionResidue,
+  managedMcpProjectionOnDisk,
+} from "../mcp/managed-projection.js";
 import { isExternalMcp } from "../mcp/render.js";
 
 /**
@@ -54,6 +59,7 @@ export type PruneArtifactKind =
   | "bootloader"
   | "mcp"
   | "settings"
+  | "managed-settings"
   | "kiro-steering"
   | "kiro-hook";
 
@@ -84,6 +90,15 @@ export interface StalePruneSet {
   unknownTargets: string[];
   /** The concrete stale artifacts, in canonical (kind, then declared) order. */
   artifacts: PruneArtifact[];
+  /**
+   * The org-policy-PROJECTED Claude managed-settings ownership state, when claude is
+   * no longer a kept target. This file is not a registered per-CLI artifact (the
+   * registry's Claude settings path is `.claude/settings.json`), so nothing else here
+   * would ever see it — yet it is the one dropped-target artifact aih records
+   * per-key provenance for, and therefore the one it can safely subtract (issue #566).
+   * `undefined` when claude is kept, or when the marker records no active claim.
+   */
+  managedMcp?: ManagedMcpProjectionResidue;
 }
 
 const VALID = new Set<string>(SUPPORTED_CLIS);
@@ -167,6 +182,48 @@ function kiroHookFiles(root: string): string[] {
 }
 
 /**
+ * The projected Claude managed-settings artifact for a repo that no longer keeps
+ * claude, or none. Deliberately keyed on the COMMITTED TARGET SET rather than on the
+ * adapter-derived `dropped` list: the adapter may already have been pruned by an
+ * earlier run, and if that made the residue invisible it would become permanently
+ * unreconcilable — the trap issue #567 closes on the uninstall side.
+ *
+ *  - `block`    — the marker proves an EXACT pair, so aih subtracts just those two
+ *                 keys in place. Never `file`: the marker proves keys, not the file.
+ *  - `advisory` — an ACTIVE claim aih can no longer prove (drifted pair, or a path
+ *                 that is not a regular file). The settings file is never touched;
+ *                 the stale ownership CLAIM is revoked, which writes only the marker.
+ *
+ * Nothing is emitted when the marker records no active claim — including after a
+ * successful prune, when `organizationPolicy` / `sandbox` remain. Prune can never act
+ * on those, so listing them here would tell an agent to re-run a command designed to
+ * refuse, forever. `aih doctor`'s `org-policy.dropped-target-unowned` owns that case
+ * and tells the agent to escalate instead. Every branch therefore converges: one run
+ * subtracts or revokes the claim, and the next run is silent.
+ */
+function managedMcpArtifacts(residue: ManagedMcpProjectionResidue | undefined): PruneArtifact[] {
+  if (residue === undefined || residue.unprovable === "settings-absent") return [];
+  if (residue.matches) {
+    return [
+      {
+        kind: "managed-settings",
+        path: MANAGED_SETTINGS_PATH,
+        disposition: "block",
+        clis: ["claude"],
+      },
+    ];
+  }
+  return [
+    {
+      kind: "managed-settings",
+      path: MANAGED_SETTINGS_PATH,
+      disposition: "advisory",
+      clis: ["claude"],
+    },
+  ];
+}
+
+/**
  * The TARGETED CLIs (committed intent) that are wired into this repo but whose binary
  * is not on PATH — `aih prune --unrunnable`'s opt-in input. A CLI is unrunnable only
  * when NONE of its registry binaries resolve (`which`/`where`, the same read-only
@@ -242,8 +299,24 @@ export function stalePruneSet(
   const keptSet = new Set<Cli>(targeted);
   const dropped = onDiskClis(ctx).filter((c) => !keptSet.has(c));
   const unrunnable = dropped.filter((c) => treatAsDropped.has(c));
+  // Keyed on COMMITTED intent, never on `--unrunnable`: the managed-MCP allowlist is an
+  // enforcement control, and a missing binary (fresh shell, VDI, not-yet-installed
+  // tool) is not evidence the repo dropped Claude. `--unrunnable` may prune per-CLI
+  // FILES on that weaker signal; it may not weaken a policy projection.
+  const claudeCommitted = committed.includes("claude");
+  const managedMcp = claudeCommitted ? undefined : managedMcpProjectionOnDisk(ctx.root);
+  const managed = managedMcpArtifacts(managedMcp);
+  const managedField = managedMcp === undefined ? {} : { managedMcp };
   if (dropped.length === 0) {
-    return { targeted, source, dropped, unrunnable, unknownTargets: [], artifacts: [] };
+    return {
+      targeted,
+      source,
+      dropped,
+      unrunnable,
+      unknownTargets: [],
+      artifacts: managed,
+      ...managedField,
+    };
   }
 
   const kept = keptPaths(targeted);
@@ -314,7 +387,9 @@ export function stalePruneSet(
     }
   }
 
-  return { targeted, source, dropped, unrunnable, unknownTargets: [], artifacts };
+  artifacts.push(...managed);
+
+  return { targeted, source, dropped, unrunnable, unknownTargets: [], artifacts, ...managedField };
 }
 
 /**
@@ -326,10 +401,13 @@ export function stalePruneSet(
 export function staleAdvisory(set: StalePruneSet): string | undefined {
   if (set.artifacts.length === 0) return undefined;
   const n = set.artifacts.length;
+  const who =
+    set.dropped.length > 0
+      ? `for ${set.dropped.length} dropped CLI(s) (${set.dropped.join(", ")}) no longer targeted`
+      : "for a CLI this repo no longer targets";
   return lines(
     "",
-    `  STALE — ${n} artifact${n === 1 ? "" : "s"} for ${set.dropped.length} dropped CLI(s) ` +
-      `(${set.dropped.join(", ")}) no longer targeted.`,
+    `  STALE — ${n} artifact${n === 1 ? "" : "s"} ${who}.`,
     "  Preview what aih would prune:  aih prune   (aih leaves these untouched until you apply)",
   );
 }

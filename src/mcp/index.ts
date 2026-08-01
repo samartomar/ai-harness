@@ -1,16 +1,7 @@
 import { createHash } from "node:crypto";
 import { join, posix } from "node:path";
-import {
-  AIH_CONFIG_FILE,
-  AihConfigSchema,
-  isActiveManagedMcpProjectionOwnership,
-  type ManagedMcpProjectionOwnership,
-  managedMcpProjectionConfigJsonFromRaw,
-  managedMcpProjectionOwnership,
-  revokedManagedMcpProjectionOwnership,
-} from "../config/marker.js";
 import { SettingsError } from "../errors.js";
-import { homeDir, resolveTargets } from "../internals/cli-detect.js";
+import { homeDir, isTargeted, resolveTargets } from "../internals/cli-detect.js";
 import { type CliEntry, entry } from "../internals/cli-registry.js";
 import type { Cli } from "../internals/clis.js";
 import { upsertTextBlock } from "../internals/envfile.js";
@@ -30,7 +21,7 @@ import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
 import { type OrgPolicy, parseOrgPolicy } from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
-import { managedMcpAllowlistSettings, matchesManagedMcpProjectionOwnership } from "./allowlist.js";
+import { managedMcpAllowlistSettings } from "./allowlist.js";
 import { type PolicyAwareMcpCatalog, policyAwareMcpCatalog } from "./catalog.js";
 import {
   enterpriseMcpDoc,
@@ -45,6 +36,13 @@ import {
   mcpHygieneIssues,
   mcpPackagePinDriftProbe,
 } from "./hygiene.js";
+import {
+  MANAGED_MCP_PROJECTION_KEYS,
+  MANAGED_SETTINGS_PATH,
+  managedMcpDeactivationActions,
+  managedMcpProjectionOnDisk,
+  managedMcpProjectionOwnershipAction,
+} from "./managed-projection.js";
 import {
   asPosture,
   deniedServers,
@@ -212,91 +210,6 @@ function orgAllowedServers(
   return Object.fromEntries(Object.entries(enabled).filter(([name]) => allowedSet.has(name)));
 }
 
-function managedMcpProjectionOwnershipOnDisk(
-  absPath: string,
-  root: string,
-):
-  | {
-      ownership: ManagedMcpProjectionOwnership;
-      matches: boolean;
-      markerSource: string | undefined;
-      settingsSource: string | undefined;
-    }
-  | undefined {
-  const markerSource = readIfExists(join(root, AIH_CONFIG_FILE));
-  let ownership: ManagedMcpProjectionOwnership | undefined;
-  try {
-    ownership =
-      markerSource === undefined
-        ? undefined
-        : AihConfigSchema.parse(JSON.parse(markerSource)).managedMcpProjection;
-  } catch {
-    return undefined;
-  }
-  if (!isActiveManagedMcpProjectionOwnership(ownership)) return undefined;
-  const settingsSource = readIfExists(absPath);
-  if (settingsSource === undefined) {
-    return { ownership, matches: false, markerSource, settingsSource };
-  }
-  try {
-    return {
-      ownership,
-      matches: matchesManagedMcpProjectionOwnership(parseJsoncText(settingsSource), ownership),
-      markerSource,
-      settingsSource,
-    };
-  } catch {
-    return { ownership, matches: false, markerSource, settingsSource };
-  }
-}
-
-function managedMcpProjectionOwnershipAction(
-  ctx: PlanContext,
-  targets: readonly Cli[],
-  generated: ReturnType<typeof managedMcpAllowlistSettings>,
-): Action {
-  const source = readIfExists(join(ctx.root, AIH_CONFIG_FILE));
-  return withExpectedContents(
-    writeJson(
-      AIH_CONFIG_FILE,
-      managedMcpProjectionConfigJsonFromRaw(
-        source,
-        ctx.contextDir,
-        [...targets],
-        managedMcpProjectionOwnership(generated),
-      ),
-      "record Claude managed-MCP projection ownership",
-      { merge: true },
-    ),
-    source,
-  );
-}
-
-function clearManagedMcpProjectionOwnershipAction(source: string | undefined): Action {
-  return withExpectedContents(
-    writeJson(AIH_CONFIG_FILE, {}, "clear Claude managed-MCP projection ownership", {
-      merge: true,
-      removeJsonTopLevelKeys: ["managedMcpProjection"],
-    }),
-    source,
-  );
-}
-
-function revokeManagedMcpProjectionOwnershipAction(
-  ownership: ManagedMcpProjectionOwnership,
-  source: string | undefined,
-): Action {
-  return withExpectedContents(
-    writeJson(
-      AIH_CONFIG_FILE,
-      { managedMcpProjection: revokedManagedMcpProjectionOwnership(ownership) },
-      "revoke Claude managed-MCP projection ownership after operator change",
-      { merge: true },
-    ),
-    source,
-  );
-}
-
 interface DeniedGeneratedServer extends ServerPolicy {
   server: McpServer;
 }
@@ -354,6 +267,23 @@ function quarantinedMcpServersDoc(denied: readonly ServerPolicy[]): string {
     "",
     "Remediate by self-hosting, approving reviewed third-party egress in org policy, pinning supply-chain inputs, or leaving the server disabled.",
     "Verify the compliant plan with `aih mcp --posture enterprise --mcp-compliant --verify`.",
+  ].join("\n");
+}
+
+/**
+ * #568 — say WHY nothing was written, rather than writing a Claude artifact into a
+ * repo that does not target Claude (or failing silently). The `.mcp.json` generation
+ * above is tool-agnostic and still ran for the repo's real targets; only this
+ * Claude-specific projection is scoped.
+ */
+function untargetedManagedAllowlistDoc(targets: readonly Cli[]): string {
+  return [
+    `This repo targets ${targets.join(", ") || "no CLI"}, so ${MANAGED_SETTINGS_PATH} was NOT written.`,
+    "",
+    "The managed MCP allowlist is a Claude artifact; `aih policy project` scopes itself the",
+    "same way. Existing operator-owned Claude configuration is left untouched — this only",
+    "stops aih CREATING it. Add `claude` to the targets in .aih-config.json to project it,",
+    "or run `aih prune` to reconcile an allowlist a previous run left behind.",
   ].join("\n");
 }
 
@@ -1164,46 +1094,39 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     const policyProbeServers = mcpCompliant ? writeServers : servers;
     const managedMcpActive =
       catalog.policy === undefined || catalog.policy.mcp?.allowManagedOnly === true;
-    if (managedMcpActive) {
+    // #568 — the managed allowlist is a CLAUDE artifact, so generating it is scoped to
+    // the resolved target set, exactly as `aih policy project` already scopes itself
+    // (`src/org-policy/validate.ts:294-296`). Without this gate a Kiro-only repo gets
+    // `.claude/managed-settings.json` created by a command that should emit nothing for
+    // it, undoing #360's boundary and re-creating the residue `aih prune` just
+    // subtracted (#566). Deactivation below stays UNSCOPED on purpose: subtracting keys
+    // aih can prove it wrote is cleanup, and cleanup must not require the target back.
+    const claudeTargeted = isTargeted({ ...ctx, targets: clis }, "claude");
+    if (managedMcpActive && claudeTargeted) {
       const generated = managedMcpAllowlistSettings(
         orgAllowedServers(writeServers, catalog.policy),
       );
       actions.push(
         writeJson(
-          ".claude/managed-settings.json",
+          MANAGED_SETTINGS_PATH,
           generated,
           "Enforce Claude managed MCP allowlist (fixed server commands from .mcp.json)",
-          {
-            merge: true,
-            replaceJsonKeys: ["allowManagedMcpServersOnly", "allowedMcpServers"],
-          },
+          { merge: true, replaceJsonKeys: [...MANAGED_MCP_PROJECTION_KEYS] },
         ),
         managedMcpProjectionOwnershipAction(ctx, clis, generated),
       );
-    } else {
-      const onDisk = managedMcpProjectionOwnershipOnDisk(
-        join(ctx.root, ".claude", "managed-settings.json"),
-        ctx.root,
+    } else if (managedMcpActive) {
+      actions.push(
+        digest("Claude managed MCP allowlist not projected", untargetedManagedAllowlistDoc(clis)),
       );
-      if (onDisk?.matches) {
+    } else {
+      const onDisk = managedMcpProjectionOnDisk(ctx.root);
+      if (onDisk !== undefined) {
         actions.push(
-          withExpectedContents(
-            writeJson(
-              ".claude/managed-settings.json",
-              {},
-              "Remove AIH-generated Claude managed MCP allowlist after policy deactivation",
-              {
-                merge: true,
-                removeJsonTopLevelKeys: ["allowManagedMcpServersOnly", "allowedMcpServers"],
-              },
-            ),
-            onDisk.settingsSource,
+          ...managedMcpDeactivationActions(
+            onDisk,
+            "Remove AIH-generated Claude managed MCP allowlist after policy deactivation",
           ),
-          clearManagedMcpProjectionOwnershipAction(onDisk.markerSource),
-        );
-      } else if (onDisk !== undefined) {
-        actions.push(
-          revokeManagedMcpProjectionOwnershipAction(onDisk.ownership, onDisk.markerSource),
         );
       }
     }

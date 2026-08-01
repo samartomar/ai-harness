@@ -15,19 +15,41 @@ import {
   remove,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import {
+  MANAGED_MCP_PROJECTION_KEYS,
+  MANAGED_SETTINGS_PATH,
+  type ManagedMcpProjectionResidue,
+  managedMcpProjectionOnDisk,
+  managedMcpSubtractionAction,
+  unprovableResidueReason,
+} from "../mcp/managed-projection.js";
 import { isExternalMcp } from "../mcp/render.js";
 
-type UninstallDisposition = "backup" | "advisory";
+type UninstallDisposition = "backup" | "subtract" | "advisory";
 
 interface UninstallArtifact {
   path: string;
-  kind: "context-dir" | "marker" | "mcp" | "cache" | "bootloader" | "kiro-steering" | "kiro-hook";
+  kind:
+    | "context-dir"
+    | "marker"
+    | "mcp"
+    | "cache"
+    | "bootloader"
+    | "kiro-steering"
+    | "kiro-hook"
+    | "managed-settings";
   disposition: UninstallDisposition;
   reason: string;
 }
 
 interface UninstallSet {
   artifacts: UninstallArtifact[];
+  /**
+   * Content whose ownership ONLY the marker proves. Uninstall removes that marker,
+   * so this must be reconciled — or reported as about to become unattributable —
+   * BEFORE the marker goes (issue #567).
+   */
+  managedMcp?: ManagedMcpProjectionResidue;
 }
 
 function cleanRel(path: string): string {
@@ -160,6 +182,52 @@ function kiroExtraArtifacts(ctx: PlanContext, owned: boolean): UninstallArtifact
   return artifacts;
 }
 
+/** Repo-relative paths this run would remove wholesale (directories included). */
+function removedTrees(artifacts: readonly UninstallArtifact[]): string[] {
+  return artifacts.filter((a) => a.disposition === "backup").map((a) => cleanRel(a.path));
+}
+
+/**
+ * True when `path` IS `tree` or lives beneath it — segment-wise, never a substring.
+ *
+ * Both sides are resolved through {@link canonicalExistingRel} first, so the compare is
+ * EXACT rather than case-folded. `canonicalExistingRel` walks the real directory
+ * entries and prefers an exact-case match before falling back to a case-insensitive
+ * one, which gets both filesystems right: on a case-insensitive one a `.CLAUDE` tree
+ * and `.claude/managed-settings.json` resolve to the same casing and match, while on a
+ * case-sensitive one where BOTH exist they resolve distinctly and do not — so a blunt
+ * `toLowerCase()` compare would have suppressed a real subtraction there.
+ */
+function isUnderTree(ctx: PlanContext, path: string, tree: string): boolean {
+  const a = canonicalExistingRel(ctx, path) ?? cleanRel(path);
+  const b = canonicalExistingRel(ctx, tree) ?? cleanRel(tree);
+  return a === b || a.startsWith(`${b}/`);
+}
+
+/**
+ * The managed-MCP artifact, if any. The projected `.claude/managed-settings.json`
+ * is not in the registered per-CLI artifact set, so nothing else here would ever
+ * look at it — yet the marker uninstall is about to remove is the ONLY record of
+ * which of its keys aih wrote. Exact match → subtract those two keys. Anything
+ * else → report what is about to become unattributable, and touch nothing.
+ */
+function managedMcpArtifact(residue: ManagedMcpProjectionResidue): UninstallArtifact {
+  if (residue.matches) {
+    return {
+      path: residue.path,
+      kind: "managed-settings",
+      disposition: "subtract",
+      reason: `marker-proven aih managed-MCP keys (${MANAGED_MCP_PROJECTION_KEYS.join(", ")}); every other key is preserved`,
+    };
+  }
+  return {
+    path: residue.path,
+    kind: "managed-settings",
+    disposition: "advisory",
+    reason: `aih managed-MCP residue becomes unattributable once the marker is removed — ${unprovableResidueReason(residue.unprovable ?? "pair-drifted")}`,
+  };
+}
+
 function coreUninstallSet(ctx: PlanContext): UninstallSet {
   const marker = readAihConfig(ctx.root);
   const markerTargets = new Set((marker?.targets ?? []).map((target) => target.toLowerCase()));
@@ -199,6 +267,25 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
     }
   }
 
+  // Marker-proven content comes BEFORE the marker itself, in the artifact list and
+  // in the plan: once `.aih-config.json` is gone nothing can attribute these keys
+  // again (issue #567). An absent/malformed/revoked/hash-invalid marker yields no
+  // residue at all — there was never a provable claim to reconcile.
+  //
+  // Skipped entirely when the projected file sits INSIDE a tree this run already
+  // removes — a repo bootstrapped with `--context-dir .claude` is the real case.
+  // Subtracting two keys from a file that is about to be moved wholesale is at best
+  // futile and at worst a false promise in the preview ("every other key is
+  // preserved" while the whole directory goes to backup).
+  const managedMcp = removedTrees(artifacts).some((tree) =>
+    isUnderTree(ctx, MANAGED_SETTINGS_PATH, tree),
+  )
+    ? undefined
+    : managedMcpProjectionOnDisk(ctx.root);
+  if (managedMcp !== undefined && managedMcp.unprovable !== "settings-absent") {
+    artifacts.push(managedMcpArtifact(managedMcp));
+  }
+
   if (exists(ctx, AIH_CONFIG_FILE)) {
     artifacts.push({
       path: AIH_CONFIG_FILE,
@@ -230,7 +317,7 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
     });
   }
 
-  return { artifacts };
+  return { artifacts, ...(managedMcp === undefined ? {} : { managedMcp }) };
 }
 
 function body(set: UninstallSet): string {
@@ -251,14 +338,32 @@ function body(set: UninstallSet): string {
       : []),
     "",
     "Dry-run by default; pass --apply to move owned paths to reversible *.aih.bak backups.",
+    ...(set.artifacts.some((a) => a.disposition === "subtract")
+      ? ["Keys marked [subtract] are removed in place; their file is never deleted."]
+      : []),
   );
 }
 
 function uninstallPlan(ctx: PlanContext): Plan {
   const set = coreUninstallSet(ctx);
   const actions: Action[] = [];
+  // Owned content whose ownership only the marker proves is subtracted FIRST — the
+  // established owned-content -> ownership-state -> ledger-last order
+  // (`src/ecc/reconcile-driver.ts:485`, `:511`, `:514`). The executor stages this
+  // write and the removals below in ONE transaction (writes commit before removals,
+  // and a failure rolls both back), so an interrupted uninstall can never leave a
+  // removed marker beside unsubtracted content. Clearing the marker's ownership
+  // record is unnecessary here: the whole marker is being removed.
+  if (set.managedMcp?.matches === true) {
+    actions.push(
+      managedMcpSubtractionAction(
+        set.managedMcp,
+        "subtract the aih-owned Claude managed-MCP keys before removing the ownership marker",
+      ),
+    );
+  }
   for (const artifact of set.artifacts) {
-    if (artifact.disposition === "advisory") continue;
+    if (artifact.disposition !== "backup") continue;
     actions.push(remove(artifact.path, artifact.reason, { hardDelete: true }));
   }
   actions.push(digest("core install footprint", body(set), set));
