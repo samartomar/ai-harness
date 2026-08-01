@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
@@ -239,9 +240,13 @@ function promotedContextArtifacts(ctx: PlanContext, contextDir: string): string[
     : [];
   const paths = sources.flatMap((source) =>
     source.artifactHashes.flatMap((artifact) => {
-      return promotedArtifactTargets(contextDir, source, artifact.path).filter((target) =>
-        exists(ctx, target),
-      );
+      return promotedArtifactTargets(contextDir, source, artifact.path).filter((target) => {
+        const bytes = readRegularFile(join(ctx.root, target));
+        return (
+          bytes !== undefined &&
+          createHash("sha256").update(bytes).digest("hex") === artifact.sha256
+        );
+      });
     }),
   );
   return [...new Set(paths)].sort((left, right) => left.localeCompare(right));

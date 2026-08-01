@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -102,6 +103,8 @@ async function managedMcpProjectionFixture(): Promise<void> {
 }
 
 async function coOwnedClaudeContextFixture(): Promise<void> {
+  const rootSkill = "# Reviewed root skill\n";
+  const reviewerSkill = "# Reviewed promoted skill\n";
   put("package.json", JSON.stringify({ name: "fixture" }));
   const bootstrapCtx: PlanContext = {
     ...makeCtx({ cli: "claude", canon: "compact" }, { apply: true }),
@@ -118,12 +121,9 @@ async function coOwnedClaudeContextFixture(): Promise<void> {
   put(".claude/harness-update.md", "# Generated harness update guide\n");
   put(".claude/telemetry/collector.yaml", "# Generated collector\n");
   put(".claude/telemetry/fetch-analytics.mjs", "// Generated analytics fetcher\n");
-  put(".claude/skills/reviewed-source/source-root/SKILL.md", "# Reviewed root skill\n");
-  put(
-    ".claude/skills/reviewed-source/source-root/skills/reviewer/SKILL.md",
-    "# Reviewed nested skill through root promotion\n",
-  );
-  put(".claude/skills/reviewed-source/reviewer/SKILL.md", "# Reviewed promoted skill\n");
+  put(".claude/skills/reviewed-source/source-root/SKILL.md", rootSkill);
+  put(".claude/skills/reviewed-source/source-root/skills/reviewer/SKILL.md", reviewerSkill);
+  put(".claude/skills/reviewed-source/reviewer/SKILL.md", reviewerSkill);
   put(".claude/skills/operator/SKILL.md", "# Operator skill\n");
   put(
     ".aih/trust-lock.json",
@@ -138,8 +138,14 @@ async function coOwnedClaudeContextFixture(): Promise<void> {
           promotedSkills: ["source-root", "reviewer"],
           analyzersRun: ["semgrep"],
           artifactHashes: [
-            { path: "SKILL.md", sha256: "0".repeat(64) },
-            { path: "skills/reviewer/SKILL.md", sha256: "0".repeat(64) },
+            {
+              path: "SKILL.md",
+              sha256: createHash("sha256").update(rootSkill).digest("hex"),
+            },
+            {
+              path: "skills/reviewer/SKILL.md",
+              sha256: createHash("sha256").update(reviewerSkill).digest("hex"),
+            },
           ],
           findings: [],
         },
@@ -504,6 +510,23 @@ describe("aih uninstall", () => {
     expect(managedSettings()).toMatchObject({ operatorOnly: true });
     expect(managedSettings()).not.toHaveProperty("allowManagedMcpServersOnly");
     expect(managedSettings()).not.toHaveProperty("allowedMcpServers");
+  });
+
+  it("does not claim an operator-modified promoted skill as AIH-generated", async () => {
+    await coOwnedClaudeContextFixture();
+    put(".claude/skills/reviewed-source/reviewer/SKILL.md", "# Operator-modified skill\n");
+
+    const ctx: PlanContext = { ...makeCtx(), contextDir: ".claude" };
+    const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("core install footprint"),
+    );
+
+    expect(digest?.text).not.toContain(".claude/skills/reviewed-source/reviewer/SKILL.md");
+    expect(digest?.text).toContain(
+      ".claude/skills/reviewed-source/source-root/skills/reviewer/SKILL.md",
+    );
+    expect(digest?.text).toContain("all other content under .claude/ not listed as aih-generated");
   });
 
   it.each(["ai-coding", ".ai-context"])(
