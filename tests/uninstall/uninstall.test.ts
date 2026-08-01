@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   truncateSync,
   writeFileSync,
 } from "node:fs";
@@ -590,6 +591,38 @@ describe("aih uninstall", () => {
     );
 
     expect(digest?.text).not.toContain(".claude/skills/reviewed-source/reviewer/SKILL.md");
+  });
+
+  it("does not claim promoted artifacts reached through a symlinked parent", async () => {
+    await coOwnedClaudeContextFixture();
+    const redirected = mkdtempSync(join(tmpdir(), "aih-uninstall-redirect-"));
+    try {
+      put(".claude/skills/operator/SKILL.md", "# Operator skill still local\n");
+      mkdirSync(join(redirected, "reviewer"), { recursive: true });
+      writeFileSync(
+        join(redirected, "reviewer", "SKILL.md"),
+        "# Reviewed promoted skill\n",
+        "utf8",
+      );
+      writeFileSync(join(redirected, "collector.yaml"), "# Redirected collector\n", "utf8");
+      const sourceDir = join(tmp, ".claude", "skills", "reviewed-source");
+      rmSync(sourceDir, { recursive: true });
+      symlinkSync(redirected, sourceDir, process.platform === "win32" ? "junction" : "dir");
+      const telemetryDir = join(tmp, ".claude", "telemetry");
+      rmSync(telemetryDir, { recursive: true });
+      symlinkSync(redirected, telemetryDir, process.platform === "win32" ? "junction" : "dir");
+
+      const ctx: PlanContext = { ...makeCtx(), contextDir: ".claude" };
+      const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+      const digest = result.digests.find((entry) =>
+        entry.describe.includes("core install footprint"),
+      );
+
+      expect(digest?.text).not.toContain(".claude/skills/reviewed-source/reviewer/SKILL.md");
+      expect(digest?.text).not.toContain(".claude/telemetry/collector.yaml");
+    } finally {
+      rmSync(redirected, { recursive: true, force: true });
+    }
   });
 
   it.each(["ai-coding", ".ai-context"])(

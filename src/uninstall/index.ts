@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
 import { AIH_CONFIG_FILE, readAihConfig } from "../config/marker.js";
 import { bootloadersFor, entry, REGISTRY_IDS } from "../internals/cli-registry.js";
+import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { readIfExists, readRegularFile } from "../internals/fsxn.js";
 import { extractManagedBlock } from "../internals/markers.js";
 import {
@@ -182,6 +183,49 @@ const OPERATOR_CONTEXT_ARTIFACT_CANDIDATES = [
 // pathological files before allocation; an unproven file stays operator-owned.
 const MAX_UNINSTALL_OWNERSHIP_FILE_BYTES = 64 * 1024 * 1024;
 
+function hasUnsafeOwnershipParent(root: string, relPath: string): boolean {
+  const parts = cleanRel(relPath).split("/");
+  let current = root;
+  for (const part of parts.slice(0, -1)) {
+    current = join(current, part);
+    try {
+      const stats = lstatSync(current);
+      if (stats.isSymbolicLink() || !stats.isDirectory()) return true;
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isContainedOwnershipFile(ctx: PlanContext, relPath: string): boolean {
+  const inspected = inspectContainedRelativePath(ctx.root, relPath);
+  return (
+    inspected.state === "present" &&
+    inspected.kind === "file" &&
+    !hasUnsafeOwnershipParent(ctx.root, relPath)
+  );
+}
+
+function readContainedOwnershipFile(ctx: PlanContext, relPath: string): Buffer | undefined {
+  const before = inspectContainedRelativePath(ctx.root, relPath);
+  if (
+    before.state !== "present" ||
+    before.kind !== "file" ||
+    hasUnsafeOwnershipParent(ctx.root, relPath)
+  ) {
+    return undefined;
+  }
+  const bytes = readRegularFile(before.realPath, {
+    maxBytes: MAX_UNINSTALL_OWNERSHIP_FILE_BYTES,
+  });
+  if (bytes === undefined || hasUnsafeOwnershipParent(ctx.root, relPath)) return undefined;
+  const after = inspectContainedRelativePath(ctx.root, relPath);
+  return after.state === "present" && after.kind === "file" && after.realPath === before.realPath
+    ? bytes
+    : undefined;
+}
+
 interface PromotedSkillRoute {
   skill: string;
   prefixes: [string, string];
@@ -255,9 +299,7 @@ function promotedArtifactTargets(
 }
 
 function promotedContextArtifacts(ctx: PlanContext, contextDir: string): string[] {
-  const bytes = readRegularFile(join(ctx.root, TRUST_LOCK_FILE), {
-    maxBytes: MAX_UNINSTALL_OWNERSHIP_FILE_BYTES,
-  });
+  const bytes = readContainedOwnershipFile(ctx, TRUST_LOCK_FILE);
   if (bytes === undefined) return [];
   let parsed: unknown;
   try {
@@ -279,9 +321,7 @@ function promotedContextArtifacts(ctx: PlanContext, contextDir: string): string[
     const layout = promotedSourceLayout(source);
     return source.artifactHashes.flatMap((artifact) => {
       return promotedArtifactTargets(contextDir, source, layout, artifact.path).filter((target) => {
-        const bytes = readRegularFile(join(ctx.root, target), {
-          maxBytes: MAX_UNINSTALL_OWNERSHIP_FILE_BYTES,
-        });
+        const bytes = readContainedOwnershipFile(ctx, target);
         return (
           bytes !== undefined &&
           createHash("sha256").update(bytes).digest("hex") === artifact.sha256
@@ -297,7 +337,7 @@ function coOwnedContextReason(ctx: PlanContext, contextDir: string, cli: string)
     ...CONTEXT_ARTIFACT_CANDIDATES.map((path) => `${contextDir}/${path}`),
     ...REGISTRY_IDS.map((target) => `${contextDir}/adapters/${target}.md`),
     ...promotedContextArtifacts(ctx, contextDir),
-  ].filter((path) => exists(ctx, path));
+  ].filter((path) => isContainedOwnershipFile(ctx, path));
   const operatorSiblings = [
     ...OPERATOR_CONTEXT_ARTIFACT_CANDIDATES.map((path) => `${contextDir}/${path}`)
       .filter((path) => exists(ctx, path))
