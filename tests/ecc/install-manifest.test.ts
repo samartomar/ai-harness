@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -11,6 +11,7 @@ import {
   type EccManifestSource,
   eccInstallManifestPath,
   evaluateEccInstallDrift,
+  hashManagedFile,
   readEccInstallManifest,
   upsertEccInstall,
   writeEccInstallManifestAtomic,
@@ -32,6 +33,41 @@ afterEach(() => {
 function sha256(text: string): string {
   return createHash("sha256").update(Buffer.from(text, "utf8")).digest("hex");
 }
+
+describe("hashManagedFile — ownership hashing reads regular files only", () => {
+  it("hashes a regular file's exact bytes", () => {
+    writeFileSync(join(kiroRoot, "agent.md"), "hello\n");
+    expect(hashManagedFile(kiroRoot, "agent.md")).toBe(sha256("hello\n"));
+  });
+
+  it("returns undefined for an absent path", () => {
+    expect(hashManagedFile(kiroRoot, "nope.md")).toBeUndefined();
+  });
+
+  it("returns undefined for a directory rather than hashing it", () => {
+    mkdirSync(join(kiroRoot, "skills"), { recursive: true });
+    expect(hashManagedFile(kiroRoot, "skills")).toBeUndefined();
+  });
+
+  // The guard that matters: ownership is decided by this hash, so following a symlink
+  // would let content outside the managed root be recorded as AIH-owned, or let a
+  // swapped link mask a stale file as current. Never follow, never hash the target.
+  it("returns undefined for a symlink instead of hashing its target", () => {
+    const outside = mkdtempSync(join(tmpdir(), "aih-ecc-outside-"));
+    try {
+      writeFileSync(join(outside, "real.md"), "outside\n");
+      try {
+        symlinkSync(join(outside, "real.md"), join(kiroRoot, "link.md"), "file");
+      } catch {
+        return; // unprivileged Windows cannot create symlinks; nothing to assert
+      }
+      expect(hashManagedFile(kiroRoot, "link.md")).toBeUndefined();
+      expect(hashManagedFile(kiroRoot, "link.md")).not.toBe(sha256("outside\n"));
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+});
 
 function sourceA(): EccManifestSource {
   return {

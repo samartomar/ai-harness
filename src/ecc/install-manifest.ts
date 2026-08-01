@@ -6,7 +6,6 @@ import {
   lstatSync,
   mkdirSync,
   readdirSync,
-  readFileSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -14,7 +13,7 @@ import {
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { AihError } from "../errors.js";
-import { readIfExists, retryTransient } from "../internals/fsxn.js";
+import { readIfExists, readRegularFile, retryTransient } from "../internals/fsxn.js";
 
 /**
  * ECC install manifest — the ownership record that lets a rerun tell an AIH-written
@@ -248,15 +247,19 @@ export function walkManagedRoot(root: string, limit = 20_000): string[] {
   return found;
 }
 
-/** sha256 of one root-relative file, or `undefined` when it is absent or not a regular file. */
+/**
+ * sha256 of one root-relative file, or `undefined` when it is absent or not a regular file.
+ *
+ * Reads through `readRegularFile`, which does the regular-file check with `fstat` on the
+ * OPEN descriptor rather than a second lookup by name. Checking the path and then hashing
+ * it are otherwise two separate resolutions of the same name (CWE-367): a symlink swapped
+ * in between them would redirect the hash to a file outside the managed root, and this
+ * walks a directory an external installer populates.
+ */
 export function hashManagedFile(root: string, relativePath: string): string | undefined {
-  const full = join(root, relativePath);
-  try {
-    if (lstatSync(full).isSymbolicLink()) return undefined;
-    return createHash("sha256").update(readFileSync(full)).digest("hex");
-  } catch {
-    return undefined;
-  }
+  const contents = readRegularFile(join(root, relativePath));
+  if (contents === undefined) return undefined;
+  return createHash("sha256").update(contents).digest("hex");
 }
 
 /** Evaluate one target root straight off disk — the rerun path. */
