@@ -99,7 +99,8 @@ export function scanLoadGroups(
   const worstTokens = worst?.tokens ?? 0;
 
   // On-demand = everything the bloat scan sees minus the always-loaded bootloaders
-  // (so the canon tree + non-canon Cursor rules show as pointer-loaded, not per-turn).
+  // (so the canon tree + the non-bootloader files in each tool's rule tree show as
+  // pointer-loaded, not per-turn).
   const bootloaderSet = new Set<string>(Object.values(CLI_BOOTLOADERS).flat());
   const onDemandFiles = scanContextBloat(root, contextDir, budgetTokens, opts).files.filter(
     (f) => !bootloaderSet.has(f.path),

@@ -95,6 +95,19 @@ const CliEntry = z.object({
    * with `AGENTS.md` in `bootloaders` are readers by definition — no flag needed.
    */
   readsAgentsMd: z.boolean().optional(),
+  /**
+   * Repo-relative directory whose WHOLE tree the tool loads as agent context, not just
+   * the bootloader aih writes into it (Cursor reads every rule in `.cursor/rules/`; Kiro
+   * reads every steering file in `.kiro/steering/`). Absent → the tool loads named files
+   * only, so no tree is walked on its behalf.
+   *
+   * Declared, never derived. The dirname of a bootloader is the repo root for `CLAUDE.md`
+   * and `.github` for Copilot — deriving would swallow whole unrelated trees. This models
+   * directory-load semantics ONLY; it says nothing about whether the tool follows a
+   * symlink at that path, which is an empirical per-target fact established by field
+   * verification, not inferred from this field.
+   */
+  loadsDirectory: z.string().optional(),
   /** Home-relative machine-level skill discovery dir, when the tool has one aih can sync. */
   machineSkillDir: z.string().optional(),
   mcp: McpProfile,
@@ -170,6 +183,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     configDirs: [".cursor"],
     binaries: ["cursor"],
     bootloaders: [".cursor/rules/00-canon.mdc"],
+    loadsDirectory: ".cursor/rules",
     mcp: {
       support: "native",
       configPath: ".cursor/mcp.json",
@@ -289,6 +303,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     configDirs: [".kiro"],
     binaries: ["kiro"],
     bootloaders: [".kiro/steering/00-canon.md"],
+    loadsDirectory: ".kiro/steering",
     readsAgentsMd: true,
     mcp: {
       support: "native",
@@ -320,6 +335,21 @@ export function bootloadersFor(clis: readonly string[]): string[] {
   const seen: string[] = [];
   for (const cli of clis) {
     for (const p of entry(cli).bootloaders) if (!seen.includes(p)) seen.push(p);
+  }
+  return seen;
+}
+
+/**
+ * The deduped, order-stable set of directories whose whole tree loads as agent context
+ * for a CLI selection. File-only targets contribute nothing. Consumers derive their
+ * walk set from this instead of hardcoding tool paths, so a newly registered target is
+ * measured without editing them (the hand-kept-list failure of issue #553).
+ */
+export function loadedDirsFor(clis: readonly string[]): string[] {
+  const seen: string[] = [];
+  for (const cli of clis) {
+    const dir = entry(cli).loadsDirectory;
+    if (dir !== undefined && !seen.includes(dir)) seen.push(dir);
   }
   return seen;
 }

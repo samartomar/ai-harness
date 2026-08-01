@@ -656,7 +656,10 @@ and making the relevant jobs required checks on protected branches. <!-- aih:cla
 Read-only analytics digest. Local: a dev console — agent **context footprint** (token bloat) plus a
 **per-turn load-group** panel (the heaviest single tool's always-loaded bootloaders — what one tool
 actually pays per turn, not the union sum; `--gate --token-budget <n>` exits non-zero in CI when
-it's exceeded). The footprint is **gitignore-honoring** (counts only tracked/untracked-not-ignored
+it's exceeded). The footprint spans every registered CLI's bootloaders, the canon context dir, and
+each target's whole **rule tree** where the tool loads a directory rather than named files
+(Cursor's `.cursor/rules/`, Kiro's `.kiro/steering/`) — so files you added by hand next to the ones
+aih writes are counted too. It is **gitignore-honoring** (counts only tracked/untracked-not-ignored
 source, never generated per-CLI copies — `--all-files` to override; `--since <ref>` narrows to
 files changed in a PR), **repo & branch status** (current branch, ahead/behind vs main, dirty;
 `--team` adds in-progress team branches via a `gh` → `git ls-remote` → last-fetched ladder that

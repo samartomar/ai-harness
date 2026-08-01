@@ -71,7 +71,7 @@ export function contextBloatDigest(bloat: ContextBloat, perTurn?: LoadGroupModel
 
   return lines(
     "All agent-context files on disk (union of every tool's bootloaders + context",
-    "dir + Cursor rules — see the per-turn panel for what one tool actually loads):",
+    "dir + rule trees — see the per-turn panel for what one tool actually loads):",
     "",
     `  Files:  ${files.length}`,
     `  Bytes:  ${thousands(totalBytes)}`,

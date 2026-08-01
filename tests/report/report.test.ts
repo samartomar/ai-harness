@@ -46,14 +46,19 @@ describe("scanContextBloat", () => {
     expect(claude?.tokens).toBe(100);
   });
 
-  it("walks the context-dir tree and Cursor rule files", () => {
+  it("walks the context-dir tree and every registry-declared rule tree", () => {
     mkdirSync(join(dir, "ai-coding"), { recursive: true });
     writeFileSync(join(dir, "ai-coding", "INDEX.md"), "hello");
     mkdirSync(join(dir, ".cursor", "rules"), { recursive: true });
     writeFileSync(join(dir, ".cursor", "rules", "stack.mdc"), "rules");
+    mkdirSync(join(dir, ".kiro", "steering"), { recursive: true });
+    writeFileSync(join(dir, ".kiro", "steering", "product.md"), "steering");
     const paths = scanContextBloat(dir, "ai-coding").files.map((f) => f.path);
     expect(paths).toContain("ai-coding/INDEX.md");
     expect(paths).toContain(".cursor/rules/stack.mdc");
+    // Kiro loads its whole steering tree exactly as Cursor loads its rule tree; the
+    // hardcoded Cursor-only list left every non-bootloader steering file unmeasured.
+    expect(paths).toContain(".kiro/steering/product.md");
   });
 
   it("scans a custom context-dir name", () => {

@@ -3,6 +3,7 @@ import {
   bootloadersFor,
   CLI_REGISTRY,
   entry,
+  loadedDirsFor,
   REGISTRY_IDS,
   SUPPORT_LEVELS,
 } from "../../src/internals/cli-registry.js";
@@ -78,6 +79,38 @@ describe("CLI registry", () => {
     expect(bootloadersFor(["codex", "opencode", "zed", "kimi"])).toEqual(["AGENTS.md"]);
     expect(bootloadersFor(["antigravity"])).toEqual(["AGENTS.md", "GEMINI.md"]);
     expect(bootloadersFor(["claude"])).toEqual(["CLAUDE.md"]);
+  });
+
+  it("declares the directory-loading targets so no consumer hardcodes them", () => {
+    // Cursor and Kiro both load a whole rule tree, not just the bootloader aih writes.
+    // Before this field, `report/bloat.ts` hardcoded ".cursor/rules" and never walked
+    // `.kiro/steering` — the same hand-kept-list class of bug as #553.
+    expect(entry("cursor").loadsDirectory).toBe(".cursor/rules");
+    expect(entry("kiro").loadsDirectory).toBe(".kiro/steering");
+    // A root bootloader is a single file, never a directory load — `CLAUDE.md`'s parent
+    // is the repo root, so a dirname-derived value would swallow the entire tree.
+    expect(entry("claude").loadsDirectory).toBeUndefined();
+    // `.github` holds workflows and far more than agent context; Copilot's instruction
+    // file is a file load, so the directory stays undeclared rather than guessed.
+    expect(entry("copilot").loadsDirectory).toBeUndefined();
+  });
+
+  it("keeps every declared loadsDirectory the parent of that CLI's own bootloader", () => {
+    // Structural invariant: the declared tree must actually be the one aih writes into,
+    // so a typo ('.cursor/rule') fails here instead of silently measuring nothing.
+    const declared = REGISTRY_IDS.filter((id) => entry(id).loadsDirectory !== undefined);
+    expect(declared.length).toBeGreaterThan(0); // guard the guard
+    for (const id of declared) {
+      const dir = entry(id).loadsDirectory as string;
+      expect(dir).not.toMatch(/\/$/); // no trailing slash — paths join predictably
+      expect(entry(id).bootloaders.some((b) => b.startsWith(`${dir}/`))).toBe(true);
+    }
+  });
+
+  it("loadedDirsFor dedupes and preserves canonical order, skipping file-only targets", () => {
+    expect(loadedDirsFor(["claude", "codex"])).toEqual([]); // neither loads a tree
+    expect(loadedDirsFor(["kiro", "cursor"])).toEqual([".kiro/steering", ".cursor/rules"]);
+    expect(loadedDirsFor(["cursor", "claude", "cursor"])).toEqual([".cursor/rules"]);
   });
 
   it("throws on an unknown CLI id", () => {
