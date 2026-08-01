@@ -243,9 +243,12 @@ function owningCli(path: string): Cli | undefined {
  *
  * `aih policy project` deliberately emits zero actions for an untargeted CLI, so the
  * ordinary "re-run the projection" drift finding would be unsatisfiable by construction
- * (issue #554). Absent → skip with the target-scope reason. Still on disk → real,
- * actionable dropped-target residue routed to prune, never to a projection that cannot
- * run. Nothing is deleted here, and operator-owned config is never assumed to be ours.
+ * (issue #554). Absent → skip with the target-scope reason. Still on disk → real
+ * dropped-target residue naming a repair the operator can actually perform, never a
+ * projection that cannot run — and never `aih prune`, which reconciles the registered
+ * per-CLI settings path rather than this projected file (issue #564). aih's own marker
+ * is never residue: it DECLARES the target set. Nothing is deleted here, and
+ * operator-owned config is never assumed to be ours.
  */
 function untargetedCheck(action: WriteAction, owner: Cli): (ctx: PlanContext) => Check {
   return (ctx) => {

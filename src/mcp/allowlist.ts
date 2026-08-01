@@ -306,8 +306,11 @@ export function mcpManagedAllowlistCheck(ctx: PlanContext): Check {
     }
     // The allowlist lives in ONE tool's config dir, and org-policy projection writes it
     // only when that tool is targeted. With the owner untargeted, every repair below is
-    // unsatisfiable by construction, so report the residue and route to prune instead —
-    // the same disposition `orgPolicyDriftProbes` gives the file itself (issue #554).
+    // unsatisfiable by construction, so report dropped-target residue naming a repair the
+    // operator can actually perform — the same disposition `orgPolicyDriftProbes` gives
+    // the file itself (issues #554, #564). An exactly-matching allowlist stays `pass`
+    // above: it is harmless, and failing on mere presence could misclassify
+    // operator-owned config as ours when no automated removal path exists.
     const owner = owningCli(MANAGED_SETTINGS_PATH);
     if (owner !== undefined && !isTargeted(ctx, owner as Cli)) {
       return {
