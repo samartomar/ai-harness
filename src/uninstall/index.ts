@@ -159,6 +159,9 @@ const CONTEXT_ARTIFACT_CANDIDATES = [
   "mcp-gateway-rbac.json",
   "cross-repo-architecture.md",
   "repo-discipline.md",
+  "workspace-router.md",
+  "workspace-contracts.md",
+  "workspace-lock.json",
   "crispy/",
   "skill-cards/",
 ] as const;
