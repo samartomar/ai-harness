@@ -130,3 +130,66 @@ it.skipIf(process.platform === "win32")(
   },
   10_000,
 );
+
+it("plans a large promoted-source inventory within a bounded child process", () => {
+  put(
+    ".aih-config.json",
+    JSON.stringify({ schemaVersion: 1, contextDir: ".claude", targets: ["claude"] }),
+  );
+  put(".claude/adapters/_shared-canonical-block.md", sharedCanonicalBlockBody(".claude"));
+  put(".claude/RULE_ROUTER.md", "# Generated router\n");
+  put(".claude/rules/agent-behavior-core.md", "# Generated behavior core\n");
+  put(
+    ".aih/trust-lock.json",
+    JSON.stringify({
+      schemaVersion: 1,
+      sources: [
+        {
+          id: "large-source",
+          kind: "local",
+          source: "../large-source",
+          promotedAt: "2026-08-01T00:00:00.000Z",
+          promotedSkills: ["alpha", "beta", "gamma", "delta"],
+          analyzersRun: ["semgrep"],
+          artifactHashes: Array.from({ length: 12_000 }, (_, index) => ({
+            path: `docs/file-${index}.md`,
+            sha256: "0".repeat(64),
+          })),
+          findings: [],
+        },
+      ],
+    }),
+  );
+  const child = join(root, "large-trust-lock.mjs");
+  writeFileSync(
+    child,
+    [
+      "const { command } = await import(process.argv[2]);",
+      "const { fakeRunner } = await import(process.argv[3]);",
+      "const { makeHostAdapter } = await import(process.argv[4]);",
+      "const root = process.argv[5];",
+      "const run = fakeRunner(() => undefined);",
+      "const platform = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'darwin' : 'linux';",
+      "const ctx = { root, contextDir: '.claude', apply: false, verify: false, json: false, run, host: makeHostAdapter({ platform, run, env: {} }), env: {}, options: {} };",
+      "await command.plan(ctx);",
+    ].join("\n"),
+    "utf8",
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      child,
+      pathToFileURL(join(process.cwd(), "src", "uninstall", "index.ts")).href,
+      pathToFileURL(join(process.cwd(), "src", "internals", "proc.ts")).href,
+      pathToFileURL(join(process.cwd(), "src", "platform", "detect.ts")).href,
+      root,
+    ],
+    { encoding: "utf8", timeout: 6_000 },
+  );
+
+  expect(result.error).toBeUndefined();
+  expect(result.status, result.stderr).toBe(0);
+}, 15_000);

@@ -121,6 +121,7 @@ async function coOwnedClaudeContextFixture(): Promise<void> {
   put(".claude/harness-update.md", "# Generated harness update guide\n");
   put(".claude/telemetry/collector.yaml", "# Generated collector\n");
   put(".claude/telemetry/fetch-analytics.mjs", "// Generated analytics fetcher\n");
+  put(".claude/crispy/2-research.md", "## Working notes\n\nOperator research\n");
   put(".claude/skills/reviewed-source/source-root/SKILL.md", rootSkill);
   put(".claude/skills/reviewed-source/source-root/skills/reviewer/SKILL.md", reviewerSkill);
   put(".claude/skills/reviewed-source/reviewer/SKILL.md", reviewerSkill);
@@ -437,7 +438,14 @@ describe("aih uninstall", () => {
     const digest = result.digests.find((d) => d.describe.includes("core install footprint"));
     const artifacts = (
       digest?.data as
-        | { artifacts?: Array<{ path: string; kind: string; disposition: string }> }
+        | {
+            artifacts?: Array<{
+              path: string;
+              kind: string;
+              disposition: string;
+              reason: string;
+            }>;
+          }
         | undefined
     )?.artifacts;
 
@@ -477,6 +485,13 @@ describe("aih uninstall", () => {
     expect(digest?.text).toContain(".claude/commands/");
     expect(digest?.text).toContain("operator-owned content in .claude/managed-settings.json");
     expect(digest?.text).toContain("[subtract] .claude/managed-settings.json");
+    const contextReason = artifacts?.find((artifact) => artifact.path === ".claude")?.reason;
+    const [generatedReason, operatorReason] = contextReason?.split(
+      "; operator-owned siblings left untouched: ",
+    ) ?? ["", ""];
+    expect(generatedReason).not.toContain(".claude/crispy/");
+    expect(operatorReason).toContain(".claude/crispy/");
+    expect(operatorReason).toContain("CRISPY working notes");
   });
 
   it("leaves a co-owned .claude context in place under --apply", async () => {
