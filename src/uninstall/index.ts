@@ -256,12 +256,17 @@ function readContainedOwnershipFile(ctx: PlanContext, relPath: string): Buffer |
 
 interface PromotedSkillRoute {
   skill: string;
-  prefixes: [string, string];
   parts: string[];
+}
+
+interface PromotedRouteTrie {
+  routes: PromotedSkillRoute[];
+  children: Map<string, PromotedRouteTrie>;
 }
 
 interface PromotedSourceLayout {
   routes: PromotedSkillRoute[];
+  routeTrie: PromotedRouteTrie;
   rootSkill?: string;
 }
 
@@ -269,32 +274,57 @@ interface PromotedSourceLayout {
 // the lock's owner/repo origin does not preserve that filesystem basename.
 const GITHUB_PROMOTION_ROOT_SKILL = "tree";
 
-function artifactRelForSkill(route: PromotedSkillRoute, artifactPath: string): string | undefined {
-  for (const prefix of route.prefixes) {
-    if (artifactPath.startsWith(prefix)) return artifactPath.slice(prefix.length);
+function promotedRouteTrie(routes: PromotedSkillRoute[]): PromotedRouteTrie {
+  const root: PromotedRouteTrie = { routes: [], children: new Map() };
+  for (const route of routes) {
+    let node = root;
+    for (const part of route.parts) {
+      let child = node.children.get(part);
+      if (child === undefined) {
+        child = { routes: [], children: new Map() };
+        node.children.set(part, child);
+      }
+      node = child;
+    }
+    node.routes.push(route);
   }
+  return root;
+}
 
+function matchingPromotedRoutes(
+  routeTrie: PromotedRouteTrie,
+  artifactPath: string,
+): Array<{ route: PromotedSkillRoute; rel: string }> {
   const parts = artifactPath.split("/");
+  const starts = [0];
   for (let index = 1; index <= parts.length - 2; index += 1) {
-    if (
-      parts[index - 1] === "skills" &&
-      index + route.parts.length < parts.length &&
-      route.parts.every((part, offset) => parts[index + offset] === part)
-    ) {
-      return parts.slice(index + route.parts.length).join("/");
+    if (parts[index - 1] === "skills") starts.push(index);
+  }
+  const matches = new Map<string, { route: PromotedSkillRoute; rel: string }>();
+  for (const start of starts) {
+    let node = routeTrie;
+    for (let index = start; index < parts.length - 1; index += 1) {
+      const child = node.children.get(parts[index] ?? "");
+      if (child === undefined) break;
+      node = child;
+      for (const route of node.routes) {
+        if (!matches.has(route.skill)) {
+          matches.set(route.skill, { route, rel: parts.slice(index + 1).join("/") });
+        }
+      }
     }
   }
-  return undefined;
+  return [...matches.values()];
 }
 
 function promotedSourceLayout(source: TrustLockSource): PromotedSourceLayout {
-  const routes = source.promotedSkills.map(
+  const routes = [...new Set(source.promotedSkills)].map(
     (skill): PromotedSkillRoute => ({
       skill,
-      prefixes: [`${skill}/`, `skills/${skill}/`],
       parts: skill.split("/"),
     }),
   );
+  const routeTrie = promotedRouteTrie(routes);
   // GitHub promotions originate at the fixed quarantine tree directory; the
   // lock's `source` is owner/repo and therefore cannot recover that basename.
   const sourceName =
@@ -312,16 +342,15 @@ function promotedSourceLayout(source: TrustLockSource): PromotedSourceLayout {
     : undefined;
   const prefixedSkills = new Set<string>();
   for (const artifact of source.artifactHashes) {
-    for (const route of routes) {
+    for (const { route } of matchingPromotedRoutes(routeTrie, artifact.path)) {
       if (route.skill === explicitSourceRoot) continue;
-      if (artifactRelForSkill(route, artifact.path) !== undefined) {
-        prefixedSkills.add(route.skill);
-      }
+      prefixedSkills.add(route.skill);
     }
   }
   const rootSkills = routes.filter((route) => !prefixedSkills.has(route.skill));
   return {
     routes,
+    routeTrie,
     rootSkill: explicitSourceRoot ?? (rootSkills.length === 1 ? rootSkills[0]?.skill : undefined),
   };
 }
@@ -332,11 +361,12 @@ function promotedArtifactTargets(
   layout: PromotedSourceLayout,
   artifactPath: string,
 ): string[] {
-  const targets = layout.routes.flatMap((route) => {
-    if (route.skill === layout.rootSkill) return [];
-    const rel = artifactRelForSkill(route, artifactPath);
-    return rel === undefined ? [] : [`${contextDir}/skills/${source.id}/${route.skill}/${rel}`];
-  });
+  const targets = matchingPromotedRoutes(layout.routeTrie, artifactPath).flatMap(
+    ({ route, rel }) => {
+      if (route.skill === layout.rootSkill) return [];
+      return [`${contextDir}/skills/${source.id}/${route.skill}/${rel}`];
+    },
+  );
   // A source-root skill has no source-path prefix: its receipts are `SKILL.md`,
   // README.md, or paths through nested skills. Promotion copies every such file
   // beneath the one promoted skill name not represented by a receipt prefix.

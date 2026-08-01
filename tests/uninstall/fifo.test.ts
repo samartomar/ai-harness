@@ -132,6 +132,7 @@ it.skipIf(process.platform === "win32")(
 );
 
 it("plans a large promoted-source inventory within a bounded child process", () => {
+  const promotedSkills = Array.from({ length: 5_000 }, (_, index) => `skill-${index}`);
   put(
     ".aih-config.json",
     JSON.stringify({ schemaVersion: 1, contextDir: ".claude", targets: ["claude"] }),
@@ -149,10 +150,10 @@ it("plans a large promoted-source inventory within a bounded child process", () 
           kind: "local",
           source: "../large-source",
           promotedAt: "2026-08-01T00:00:00.000Z",
-          promotedSkills: ["alpha", "beta", "gamma", "delta"],
+          promotedSkills,
           analyzersRun: ["semgrep"],
-          artifactHashes: Array.from({ length: 12_000 }, (_, index) => ({
-            path: `docs/file-${index}.md`,
+          artifactHashes: promotedSkills.map((skill) => ({
+            path: `${skill}/SKILL.md`,
             sha256: "0".repeat(64),
           })),
           findings: [],
