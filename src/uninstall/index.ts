@@ -172,47 +172,50 @@ const CONTEXT_ARTIFACT_CANDIDATES = [
   "skill-cards/",
 ] as const;
 
-function sortedPromotedSkills(promotedSkills: readonly string[]): string[] {
-  return [...promotedSkills].sort((left, right) => {
-    const depthDelta = right.split("/").length - left.split("/").length;
-    return depthDelta === 0 ? right.length - left.length : depthDelta;
-  });
-}
-
-function promotedArtifactTarget(
-  contextDir: string,
-  source: TrustLockSource,
-  artifactPath: string,
-): string | undefined {
-  const skills = sortedPromotedSkills(source.promotedSkills);
-  for (const skill of skills) {
-    for (const prefix of [`${skill}/`, `skills/${skill}/`]) {
-      if (artifactPath.startsWith(prefix)) {
-        return `${contextDir}/skills/${source.id}/${skill}/${artifactPath.slice(prefix.length)}`;
-      }
-    }
+function artifactRelForSkill(skill: string, artifactPath: string): string | undefined {
+  for (const prefix of [`${skill}/`, `skills/${skill}/`]) {
+    if (artifactPath.startsWith(prefix)) return artifactPath.slice(prefix.length);
   }
 
   const parts = artifactPath.split("/");
+  const skillParts = skill.split("/");
   for (let index = 1; index <= parts.length - 2; index += 1) {
-    if (parts[index - 1] !== "skills") continue;
-    for (const skill of skills) {
-      const skillParts = skill.split("/");
-      if (
-        index + skillParts.length < parts.length &&
-        skillParts.every((part, offset) => parts[index + offset] === part)
-      ) {
-        return `${contextDir}/skills/${source.id}/${skill}/${parts
-          .slice(index + skillParts.length)
-          .join("/")}`;
-      }
+    if (
+      parts[index - 1] === "skills" &&
+      index + skillParts.length < parts.length &&
+      skillParts.every((part, offset) => parts[index + offset] === part)
+    ) {
+      return parts.slice(index + skillParts.length).join("/");
     }
   }
+  return undefined;
+}
 
-  const onlySkill = skills.length === 1 ? skills[0] : undefined;
-  return onlySkill === undefined
-    ? undefined
-    : `${contextDir}/skills/${source.id}/${onlySkill}/${artifactPath}`;
+function promotedArtifactTargets(
+  contextDir: string,
+  source: TrustLockSource,
+  artifactPath: string,
+): string[] {
+  const targets = source.promotedSkills.flatMap((skill) => {
+    const rel = artifactRelForSkill(skill, artifactPath);
+    return rel === undefined ? [] : [`${contextDir}/skills/${source.id}/${skill}/${rel}`];
+  });
+  const prefixedSkills = new Set(
+    source.promotedSkills.filter((skill) =>
+      source.artifactHashes.some(
+        (artifact) => artifactRelForSkill(skill, artifact.path) !== undefined,
+      ),
+    ),
+  );
+  // A source-root skill has no source-path prefix: its receipts are `SKILL.md`,
+  // README.md, or paths through nested skills. Promotion copies every such file
+  // beneath the one promoted skill name not represented by a receipt prefix.
+  // More than one unmatched name is ambiguous lock evidence, so claim neither.
+  const rootSkills = source.promotedSkills.filter((skill) => !prefixedSkills.has(skill));
+  if (rootSkills.length === 1) {
+    targets.push(`${contextDir}/skills/${source.id}/${rootSkills[0]}/${artifactPath}`);
+  }
+  return [...new Set(targets)];
 }
 
 function promotedContextArtifacts(ctx: PlanContext, contextDir: string): string[] {
@@ -236,8 +239,9 @@ function promotedContextArtifacts(ctx: PlanContext, contextDir: string): string[
     : [];
   const paths = sources.flatMap((source) =>
     source.artifactHashes.flatMap((artifact) => {
-      const target = promotedArtifactTarget(contextDir, source, artifact.path);
-      return target !== undefined && exists(ctx, target) ? [target] : [];
+      return promotedArtifactTargets(contextDir, source, artifact.path).filter((target) =>
+        exists(ctx, target),
+      );
     }),
   );
   return [...new Set(paths)].sort((left, right) => left.localeCompare(right));
