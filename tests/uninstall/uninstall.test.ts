@@ -127,6 +127,7 @@ async function coOwnedClaudeContextFixture(): Promise<void> {
   put(".claude/tasks.md", "# Operator task ledger\n");
   put(".claude/project-guardrails.md", "# Operator project guardrails\n");
   put(".claude/skills/example-skill/SKILL.md", "# Operator-edited example skill\n");
+  put(".claude/skill-cards/reviewer.md", "# Operator-approved skill card\n");
   put(".claude/cross-repo-architecture.md", "# Operator cross-repo architecture\n");
   put(".claude/workspace-router.md", "# Generated workspace router\n");
   put(".claude/workspace-contracts.md", "# Generated workspace contracts\n");
@@ -517,6 +518,7 @@ describe("aih uninstall", () => {
       ".claude/tasks.md",
       ".claude/project-guardrails.md",
       ".claude/skills/example-skill/SKILL.md",
+      ".claude/skill-cards/",
       ".claude/cross-repo-architecture.md",
     ]) {
       expect(generatedReason).not.toContain(operatorOwned);

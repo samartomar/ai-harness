@@ -160,7 +160,6 @@ const CONTEXT_ARTIFACT_CANDIDATES = [
   "workspace-lock.json",
   "telemetry/collector.yaml",
   "telemetry/fetch-analytics.mjs",
-  "skill-cards/",
 ] as const;
 
 // These are seeded by aih but are operator-owned or co-owned immediately: their
@@ -175,6 +174,7 @@ const OPERATOR_CONTEXT_ARTIFACT_CANDIDATES = [
   "tasks.md",
   "project-guardrails.md",
   "skills/example-skill/SKILL.md",
+  "skill-cards/",
   "cross-repo-architecture.md",
 ] as const;
 
