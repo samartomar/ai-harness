@@ -113,6 +113,7 @@ async function coOwnedClaudeContextFixture(): Promise<void> {
   put(".claude/workspace-contracts.md", "# Generated workspace contracts\n");
   put(".claude/workspace-lock.json", JSON.stringify({ schemaVersion: 1 }));
   put(".claude/adapters/other-tools.md", "# Generated adapter guide\n");
+  put(".claude/adapters/codex.md", "# Generated adapter from a prior target\n");
   put(".claude/REGENERATION.md", "# Generated regeneration guide\n");
   put(".claude/harness-update.md", "# Generated harness update guide\n");
   put(".claude/telemetry/collector.yaml", "# Generated collector\n");
@@ -426,6 +427,7 @@ describe("aih uninstall", () => {
     expect(digest?.text).toContain(".claude/workspace-contracts.md");
     expect(digest?.text).toContain(".claude/workspace-lock.json");
     expect(digest?.text).toContain(".claude/adapters/other-tools.md");
+    expect(digest?.text).toContain(".claude/adapters/codex.md");
     expect(digest?.text).toContain(".claude/REGENERATION.md");
     expect(digest?.text).toContain(".claude/harness-update.md");
     expect(digest?.text).toContain(".claude/telemetry/collector.yaml");
@@ -457,6 +459,7 @@ describe("aih uninstall", () => {
     expect(existsSync(join(tmp, ".claude", "workspace-contracts.md"))).toBe(true);
     expect(existsSync(join(tmp, ".claude", "workspace-lock.json"))).toBe(true);
     expect(existsSync(join(tmp, ".claude", "adapters", "other-tools.md"))).toBe(true);
+    expect(existsSync(join(tmp, ".claude", "adapters", "codex.md"))).toBe(true);
     expect(existsSync(join(tmp, ".claude", "REGENERATION.md"))).toBe(true);
     expect(existsSync(join(tmp, ".claude", "harness-update.md"))).toBe(true);
     expect(existsSync(join(tmp, ".claude", "telemetry", "collector.yaml"))).toBe(true);

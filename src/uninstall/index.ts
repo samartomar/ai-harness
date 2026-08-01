@@ -171,17 +171,10 @@ const CONTEXT_ARTIFACT_CANDIDATES = [
   "skill-cards/",
 ] as const;
 
-function coOwnedContextReason(
-  ctx: PlanContext,
-  contextDir: string,
-  cli: string,
-  targets: ReadonlySet<string>,
-): string {
+function coOwnedContextReason(ctx: PlanContext, contextDir: string, cli: string): string {
   const generated = [
     ...CONTEXT_ARTIFACT_CANDIDATES.map((path) => `${contextDir}/${path}`),
-    ...REGISTRY_IDS.filter((target) => targets.has(target)).map(
-      (target) => `${contextDir}/adapters/${target}.md`,
-    ),
+    ...REGISTRY_IDS.map((target) => `${contextDir}/adapters/${target}.md`),
   ].filter((path) => exists(ctx, path));
   const operatorSiblings =
     cleanRel(contextDir) === ".claude"
@@ -338,7 +331,7 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
         reason:
           configOwner === undefined
             ? "aih-managed canon/context tree with marker-backed ownership evidence"
-            : coOwnedContextReason(ctx, contextDir, configOwner, markerTargets),
+            : coOwnedContextReason(ctx, contextDir, configOwner),
       });
     } else if (contextDir !== undefined) {
       artifacts.push({
