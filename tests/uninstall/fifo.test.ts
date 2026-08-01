@@ -1,7 +1,8 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
@@ -79,4 +80,42 @@ it.skipIf(process.platform === "win32")(
     expect(existsSync(managedPath)).toBe(true);
     expect(existsSync(join(root, ".aih-config.json"))).toBe(false);
   },
+);
+
+it.skipIf(process.platform === "win32")(
+  "the trust-lock reader used by co-owned uninstall refuses a FIFO promptly",
+  () => {
+    put(".aih/.keep", "");
+    const lockPath = join(root, ".aih", "trust-lock.json");
+    const child = join(root, "read-trust-lock.mjs");
+    execFileSync("mkfifo", [lockPath]);
+    writeFileSync(
+      child,
+      [
+        "const { readTrustLock, trustLockValidationFindings } = await import(process.argv[2]);",
+        "const root = process.argv[3];",
+        "if (readTrustLock(root).sources.length !== 0) process.exit(2);",
+        "const findings = trustLockValidationFindings(root);",
+        "if (findings.length !== 1) process.exit(3);",
+        "if (!findings[0]?.detail?.includes('not a readable regular file')) process.exit(4);",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        child,
+        pathToFileURL(join(process.cwd(), "src", "trust", "lock.ts")).href,
+        root,
+      ],
+      { encoding: "utf8", timeout: 3_000 },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+  },
+  10_000,
 );
