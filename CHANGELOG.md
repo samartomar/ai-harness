@@ -18,14 +18,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Generated per-CLI adapter notes now contain only the tool-specific entry, loading,
-  and baseline delta plus one router pointer. Bootstrap generates only the resolved
-  target set and leaves existing dropped adapters as membership evidence until the
-  explicit `aih prune` sweep classifies their complete artifact set. The last split
-  invariant wordings now share one authored template source across the compact block
-  and behavior core, with fleet idempotency, template-partition, hand-edit, and
-  orphan-sweep proofs. Bootloader paths, `ai-canonical:shared`, full managed blocks,
-  and the wired `risk-gates.json` consumer are unchanged. Refs #507
+- Compact per-CLI adapter notes now contain only the tool-specific entry, loading,
+  and baseline delta plus one router pointer; `--canon legacy` retains the previous
+  full adapter bytes. Bootstrap generates only the resolved target set and leaves
+  existing dropped adapters as membership evidence until the explicit `aih prune`
+  sweep classifies their complete artifact set. The last split invariant wordings
+  now share one authored template source across the compact block and behavior core,
+  with fleet idempotency, template-partition, hand-edit, and orphan-sweep proofs.
+  Bootloader paths, `ai-canonical:shared`, full managed blocks, and the wired
+  `risk-gates.json` consumer are unchanged. Refs #507
 
 ### Fixed
 

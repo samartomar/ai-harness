@@ -89,6 +89,10 @@ function probeNamed(actions: Action[], needle: string): ProbeAction | undefined 
 }
 
 describe("bootstrap-ai — canon files", () => {
+  it("keeps the previous full adapter byte-identical in legacy mode", () => {
+    expect(adapterNote("gemini", ".ai-context", "legacy")).toBe(PREVIOUS_GEMINI_ADAPTER);
+  });
+
   it("writes the router, shared block, behavior core, adapter note, and REGENERATION", async () => {
     put("package.json", JSON.stringify({ name: "svc" }));
     put("tsconfig.json", "{}");

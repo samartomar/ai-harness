@@ -697,10 +697,48 @@ const CLI_META: Record<Cli, CliMeta> = {
 export function adapterNote(
   cli: Cli,
   dir: string,
-  _canon: CanonMode = "legacy",
+  canon: CanonMode = "legacy",
   baseline: BaselineSource = resolveBaselineSource({}),
 ): string {
   const m = CLI_META[cli];
+  if (canon === "legacy") {
+    const baselineLayer =
+      baseline.id === "ecc"
+        ? [
+            `ECC + Superpowers install the generic baseline at ${m.baseline}; repo canon`,
+            `under \`${dir}/\` overrides it on conflict (see \`RULE_ROUTER.md\` § Layered model).`,
+          ]
+        : [
+            `${baseline.label} provides the generic baseline (${describeBaselineSource(baseline)}) via`,
+            `${baseline.installVerb}; repo canon under \`${dir}/\` overrides it on conflict`,
+            "(see `RULE_ROUTER.md` § Layered model).",
+          ];
+    return lines(
+      `# ${m.label} adapter`,
+      "",
+      `${m.label}-specific files are bootloaders and local wiring only — not the`,
+      "source of repo truth.",
+      "",
+      "## Entry points",
+      "",
+      `- ${m.entry}`,
+      `- \`${dir}/RULE_ROUTER.md\` — layered model, detected stack, task routing`,
+      `- \`${dir}/INDEX.md\` — repo context (run \`aih scaffold\` if absent)`,
+      "",
+      "## How it loads rules",
+      "",
+      `- ${m.loads}`,
+      "",
+      "## Boundaries",
+      "",
+      `${m.label} may propose, implement when assigned, and review. It must not push,`,
+      "merge, bypass CI, or approve a merge without explicit human approval.",
+      "",
+      "## Baseline layer",
+      "",
+      baselineLayer,
+    );
+  }
   const baselineLocation =
     baseline.id === "ecc" ? m.baseline : `${baseline.label} via ${baseline.installVerb}`;
   return lines(
