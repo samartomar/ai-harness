@@ -157,7 +157,12 @@ describe("generated canon — single-source discipline (#507)", () => {
     const block = sharedCanonicalBlockBody(DIR);
     const core = agentBehaviorCoreDoc(DIR);
     const shared = DISCIPLINE_INVARIANTS.filter((inv) => "shared" in inv);
-    expect(shared.map((inv) => inv.id)).toEqual(["secrets", "graph-advisory"]);
+    expect(shared.map((inv) => inv.id)).toEqual([
+      "boundary-validation",
+      "error-handling",
+      "secrets",
+      "graph-advisory",
+    ]);
     for (const inv of shared) {
       for (const line of inv.shared) {
         expect(block).toContain(`\n${line}\n`);
@@ -180,6 +185,52 @@ describe("generated canon — single-source discipline (#507)", () => {
     // Reporting: one authored pair, two renderings (compact summary vs itemized report).
     expect(block).toContain(reportingSectionLines("compact").join("\n"));
     expect(core).toContain(reportingSectionLines("longForm").join("\n"));
+  });
+
+  it("partitions invariant template text from per-repository stack facts", () => {
+    const nodeStack: RepoStack = {
+      ...emptyStack(),
+      languages: ["TypeScript"],
+      hasTypeScript: true,
+      verifyCommand: "npm run verify",
+      testRunner: "npm test",
+    };
+    const pythonStack: RepoStack = {
+      ...emptyStack(),
+      languages: ["Python"],
+      verifyCommand: "pytest",
+      testRunner: "pytest",
+    };
+    const node = ruleRouterDoc(DIR, "node-repo", nodeStack, ["AGENTS.md"], {
+      canon: "compact",
+    });
+    const python = ruleRouterDoc(DIR, "python-repo", pythonStack, ["CLAUDE.md"], {
+      canon: "compact",
+    });
+
+    expect(DISCIPLINE_INVARIANTS.every((invariant) => "shared" in invariant)).toBe(true);
+    expect(invariantLines("compact")).toEqual(invariantLines("longForm"));
+    expect(section(sharedCanonicalBlockBody(DIR), "Invariants")).toEqual(invariantLines("compact"));
+    expect(section(node, "External action boundary")).toEqual(
+      section(python, "External action boundary"),
+    );
+    expect(node).toContain("- Languages: TypeScript");
+    expect(python).toContain("- Languages: Python");
+  });
+});
+
+describe("generated canon — adapter delta (#507)", () => {
+  it("keeps every compact adapter to the actual tool-specific delta", () => {
+    for (const cli of SUPPORTED_CLIS) {
+      const note = adapterNote(cli, DIR, "compact");
+      expect(note.split("\n").filter(Boolean).length).toBeLessThanOrEqual(6);
+      expect(note).toContain("- Entry:");
+      expect(note).toContain("- Rule loading:");
+      expect(note).toContain("- Baseline:");
+      expect(note).toContain(`${DIR}/RULE_ROUTER.md`);
+      expect(note).not.toContain("## Boundaries");
+      expect(note).not.toContain("## Entry points");
+    }
   });
 });
 

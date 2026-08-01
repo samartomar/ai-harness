@@ -192,34 +192,23 @@ export function disciplineSectionLines(id: DisciplinePrincipleId): string[] {
   return [`## ${principle.section.heading}`, "", ...principle.section.lines];
 }
 
-/**
- * One invariant, authored once. `shared` entries render byte-identical in both
- * documents (the drift-guard posture that fixed the secrets split). The
- * boundary/error entries still carry a historical wording split between the two
- * renderings; the pair is co-located here so the variance is visible at one
- * authored site — unifying the wording is an output-changing follow-up (#507),
- * deliberately not taken in this byte-frozen single-sourcing pass.
- */
-export type DisciplineInvariant = { readonly id: string } & (
-  | { readonly shared: readonly string[] }
-  | { readonly compact: readonly string[]; readonly longForm: readonly string[] }
-);
+/** One invariant, authored once and rendered byte-identically at both depths. */
+export interface DisciplineInvariant {
+  readonly id: string;
+  readonly shared: readonly string[];
+}
 
 /** Every invariant both documents list, in emission order. */
 export const DISCIPLINE_INVARIANTS: readonly DisciplineInvariant[] = [
   {
     id: "boundary-validation",
-    compact: [
+    shared: [
       "- Validate at boundaries; reject malformed or hostile input — never coerce it. Fail closed on ambiguity.",
-    ],
-    longForm: [
-      "- Validate at boundaries; reject malformed/hostile input — never coerce. Fail closed on ambiguity.",
     ],
   },
   {
     id: "error-handling",
-    compact: ["- Handle errors explicitly; no silent failures."],
-    longForm: ["- Explicit error handling; no silent failures."],
+    shared: ["- Handle errors explicitly; no silent failures."],
   },
   {
     // Once diverged into "config" vs "prompts" variants; byte-identical ever since.
@@ -239,9 +228,8 @@ export const DISCIPLINE_INVARIANTS: readonly DisciplineInvariant[] = [
 
 /** The invariant list in one rendering, in authored order. */
 export function invariantLines(rendering: "compact" | "longForm"): string[] {
-  return DISCIPLINE_INVARIANTS.flatMap((inv) =>
-    "shared" in inv ? [...inv.shared] : [...inv[rendering]],
-  );
+  void rendering;
+  return DISCIPLINE_INVARIANTS.flatMap((inv) => [...inv.shared]);
 }
 
 /**
@@ -709,59 +697,19 @@ const CLI_META: Record<Cli, CliMeta> = {
 export function adapterNote(
   cli: Cli,
   dir: string,
-  canon: CanonMode = "legacy",
+  _canon: CanonMode = "legacy",
   baseline: BaselineSource = resolveBaselineSource({}),
 ): string {
   const m = CLI_META[cli];
-  const contextRef =
-    canon === "compact"
-      ? `- \`${dir}/project.md\` — the repo contract (stack, commands, scale, gaps)`
-      : `- \`${dir}/INDEX.md\` — repo context (run \`aih scaffold\` if absent)`;
-  // Compact: a one-line pointer (the boundary is already in the floor + RULE_ROUTER, so
-  // restating it in all 5 adapters is pure duplication). Legacy: the full paragraph, frozen.
-  const boundaries =
-    canon === "compact"
-      ? [
-          `${m.label} may propose, implement when assigned, and review — boundaries in \`${dir}/RULE_ROUTER.md\` § External action boundary (push / PR / merge need explicit human approval).`,
-        ]
-      : [
-          `${m.label} may propose, implement when assigned, and review. It must not push,`,
-          "merge, bypass CI, or approve a merge without explicit human approval.",
-        ];
-  const baselineLayer =
-    baseline.id === "ecc"
-      ? [
-          `ECC + Superpowers install the generic baseline at ${m.baseline}; repo canon`,
-          `under \`${dir}/\` overrides it on conflict (see \`RULE_ROUTER.md\` § Layered model).`,
-        ]
-      : [
-          `${baseline.label} provides the generic baseline (${describeBaselineSource(baseline)}) via`,
-          `${baseline.installVerb}; repo canon under \`${dir}/\` overrides it on conflict`,
-          "(see `RULE_ROUTER.md` § Layered model).",
-        ];
+  const baselineLocation =
+    baseline.id === "ecc" ? m.baseline : `${baseline.label} via ${baseline.installVerb}`;
   return lines(
     `# ${m.label} adapter`,
     "",
-    `${m.label}-specific files are bootloaders and local wiring only — not the`,
-    "source of repo truth.",
-    "",
-    "## Entry points",
-    "",
-    `- ${m.entry}`,
-    `- \`${dir}/RULE_ROUTER.md\` — layered model, detected stack, task routing`,
-    contextRef,
-    "",
-    "## How it loads rules",
-    "",
-    `- ${m.loads}`,
-    "",
-    "## Boundaries",
-    "",
-    ...boundaries,
-    "",
-    "## Baseline layer",
-    "",
-    baselineLayer,
+    `- Entry: ${m.entry}`,
+    `- Rule loading: ${m.loads}`,
+    `- Baseline: ${baselineLocation}`,
+    `- Repo canon and contract: \`${dir}/RULE_ROUTER.md\`; boundaries: § External action boundary (repo rules override the baseline).`,
   );
 }
 
