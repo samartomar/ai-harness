@@ -24,6 +24,12 @@ import {
   managedAllowlistGenerationDelta,
   managedServerDisplayName,
 } from "../mcp/allowlist.js";
+import {
+  MANAGED_MCP_PROJECTION_KEYS,
+  MANAGED_SETTINGS_PATH,
+  managedMcpProjectionOnDisk,
+  unprovableResidueReason,
+} from "../mcp/managed-projection.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import { orgPolicyProjectionActions } from "./project.js";
 import { OrgPolicyError, orgPolicyPath, readOrgPolicy } from "./schema.js";
@@ -111,8 +117,6 @@ function removedProjectionParts(
     .filter((key) => Object.hasOwn(actual, key))
     .map((key) => `${key} should be absent`);
 }
-
-const MANAGED_MCP_PROJECTION_KEYS = ["allowManagedMcpServersOnly", "allowedMcpServers"] as const;
 
 function serverCommands(value: unknown): string[][] | undefined {
   if (!Array.isArray(value)) return undefined;
@@ -243,12 +247,19 @@ function owningCli(path: string): Cli | undefined {
  *
  * `aih policy project` deliberately emits zero actions for an untargeted CLI, so the
  * ordinary "re-run the projection" drift finding would be unsatisfiable by construction
- * (issue #554). Absent → skip with the target-scope reason. Still on disk → real
- * dropped-target residue naming a repair the operator can actually perform, never a
- * projection that cannot run — and never `aih prune`, which reconciles the registered
- * per-CLI settings path rather than this projected file (issue #564). aih's own marker
- * is never residue: it DECLARES the target set. Nothing is deleted here, and
- * operator-owned config is never assumed to be ours.
+ * (issue #554). Absent → skip with the target-scope reason. aih's own marker is never
+ * residue: it DECLARES the target set. Nothing is deleted here, and operator-owned
+ * config is never assumed to be ours.
+ *
+ * Still on disk splits by whether aih can PROVE what it wrote (issue #566). These
+ * commands are invoked by agents, so the two cases must never share a code:
+ *
+ *  - `org-policy.dropped-target-residue` — the marker proves an exact managed-MCP
+ *    pair, so the finding names EXACTLY ONE runnable command, `aih prune`, and
+ *    running it clears this finding. (#564/#565 removed `aih prune` from this
+ *    message because it could not do the job; #566 makes it able, so it returns.)
+ *  - `org-policy.dropped-target-unowned` — a DISTINCT code plus the explicit reason,
+ *    so an agent escalates instead of re-running the same command forever.
  */
 function untargetedCheck(action: WriteAction, owner: Cli): (ctx: PlanContext) => Check {
   return (ctx) => {
@@ -271,15 +282,33 @@ function untargetedCheck(action: WriteAction, owner: Cli): (ctx: PlanContext) =>
         detail: `${owner} is not a target of this repo — org-policy projection writes no ${owner} artifacts, so ${action.path} drift is not evaluated`,
       };
     }
-    // Do NOT name a repair that cannot perform it: `aih prune` reconciles the
-    // registered per-CLI settings path, not this projected managed-settings file, so
-    // prescribing it here would repeat the unsatisfiable-remediation defect this gate
-    // exists to fix (issue #564). State the two choices the operator actually has.
+    // Name a repair ONLY when it can actually perform it. `aih prune` subtracts the
+    // two marker-proven managed-MCP keys from the projected managed-settings file and
+    // nothing else, so it is the right prescription exactly when that ownership record
+    // matches the live pair (#566) — and the wrong one everywhere else (#564).
+    const residue =
+      action.path === MANAGED_SETTINGS_PATH ? managedMcpProjectionOnDisk(ctx.root) : undefined;
+    if (residue?.matches === true) {
+      return {
+        name,
+        verdict: "fail",
+        detail: `dropped-target residue: ${action.path} still carries the aih-owned managed-MCP keys (${MANAGED_MCP_PROJECTION_KEYS.join(", ")}) but ${owner} is not a target of this repo — run \`aih prune\` to subtract exactly those keys; re-projecting cannot fix this while ${owner} is untargeted, and every other key in the file is left untouched`,
+        code: "org-policy.dropped-target-residue",
+        location: { uri: action.path },
+        fingerprint: `org-policy-dropped-target:${action.path}`,
+      };
+    }
+    // Not repairable by any aih command. A DISTINCT code plus the explicit reason, so
+    // an agent escalates rather than re-running a command designed to refuse here.
+    const reason =
+      action.path === MANAGED_SETTINGS_PATH
+        ? unprovableResidueReason(residue?.unprovable ?? "no-ownership-record")
+        : "aih records no per-key provenance for this artifact, so no part of it is provably aih's";
     return {
       name,
       verdict: "fail",
-      detail: `dropped-target residue: ${action.path} is still present but ${owner} is not a target of this repo, so org-policy projection no longer maintains it — either add ${owner} back to the targets in ${AIH_CONFIG_FILE} to resume maintaining it, or remove the file if ${owner} is genuinely gone; re-projecting cannot fix this while ${owner} is untargeted`,
-      code: "org-policy.dropped-target-residue",
+      detail: `dropped-target residue: ${action.path} is still present but ${owner} is not a target of this repo, so org-policy projection no longer maintains it — re-projecting cannot fix this while ${owner} is untargeted, and aih cannot remove it either because ${reason}; either add ${owner} back to the targets in ${AIH_CONFIG_FILE} to resume maintaining it, or remove the file by hand if ${owner} is genuinely gone`,
+      code: "org-policy.dropped-target-unowned",
       location: { uri: action.path },
       fingerprint: `org-policy-dropped-target:${action.path}`,
     };

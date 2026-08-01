@@ -485,7 +485,14 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "org policy artifact left behind by a dropped target",
     action:
-      "The projected file is still present, but the CLI that owns it is no longer a target of this repo, so org-policy projection no longer maintains it. Either add that CLI back to the targets in `.aih-config.json` to resume maintaining the file, or remove the file if the CLI is genuinely gone. Re-projecting cannot fix this, because projection emits no actions for an untargeted CLI, and `aih prune` reconciles the per-CLI settings path rather than this projected managed-settings file.",
+      "Run `aih prune --apply`. The `.aih-config.json` marker proves aih wrote the managed-MCP keys still on disk, so prune subtracts exactly those two keys and clears the ownership record, leaving every operator-authored key untouched. Re-projecting cannot fix this — projection emits no actions for an untargeted CLI. If you meant to keep the CLI, add it back to the targets in `.aih-config.json` instead.",
+  },
+  "org-policy.dropped-target-unowned": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "dropped-target artifact aih cannot prove it owns",
+    action:
+      "No aih command can remove this: the ownership marker does not prove which of its keys aih wrote (absent, malformed, revoked, hash-invalid, or the live values have drifted), and `organizationPolicy` / `sandbox` never carry provenance at all. Do NOT re-run `aih prune` — it is designed to refuse here. Either add the owning CLI back to the targets in `.aih-config.json` to resume maintaining the file, or remove the residue by hand if that CLI is genuinely gone.",
   },
   "org-policy.generation-delta": {
     audience: "developer",

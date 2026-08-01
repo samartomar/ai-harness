@@ -8,6 +8,50 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `aih uninstall` no longer destroys the evidence for content it leaves behind. It
+  removes `.aih-config.json`, and that marker is the only record of which keys aih
+  wrote into `.claude/managed-settings.json` — so removing it first made any residue
+  permanently unattributable. Uninstall now reconciles marker-proven content FIRST:
+  when the recorded managed-MCP pair exactly matches what is on disk, it subtracts
+  exactly `allowManagedMcpServersOnly` and `allowedMcpServers` and then removes the
+  marker, both staged in one rollback-capable transaction so an interrupted run can
+  never leave a removed marker beside unsubtracted content. Every other key —
+  operator-authored content, `organizationPolicy`, `sandbox` — keeps its value, and
+  the file itself is never deleted, because the marker proves two keys and never the
+  file. (As with every aih JSON merge-write, the file is re-serialized, so JSONC
+  comments and hand formatting are not preserved.) When ownership cannot be proven
+  (absent, malformed,
+  revoked, or hash-invalid marker; a drifted pair; a path that is not a regular file)
+  nothing is touched and the dry run names what is about to become unattributable.
+  Refs #567
+- `aih prune` now reconciles the projected `.claude/managed-settings.json` left behind
+  when a repo drops Claude from its committed targets. Nothing did: `aih policy
+  project` returns an empty plan for an untargeted CLI, prune only knew the registered
+  per-CLI settings path, and uninstall never included the file. Prune now subtracts
+  exactly the two marker-proven managed-MCP keys and clears the ownership record, in
+  that order, in one rollback-capable transaction; a drifted pair is preserved and its
+  ownership revoked rather than overwritten; an absent, malformed, revoked, or
+  hash-invalid marker yields a report and never a mutation. `organizationPolicy` and
+  `sandbox` are never removed — no provenance is recorded for them, and `sandbox` is
+  co-written by `aih guardrails` and `aih sandbox`. A symlink substituted for the
+  projected path is refused, not followed. The residue is detected from the committed
+  target set rather than the adapter files on disk, so an earlier prune that already
+  removed the adapter cannot strand it. Because prune can now do the job, `aih doctor`
+  names it: a marker-proven residue reports `org-policy.dropped-target-residue` with
+  exactly one runnable command, and running it clears that finding. A residue aih
+  cannot prove it owns reports the new distinct code
+  `org-policy.dropped-target-unowned` with the explicit reason, so an agent escalates
+  instead of retrying the same command forever. Refs #566
+- `aih mcp` at enterprise posture no longer writes the Claude managed MCP allowlist
+  into a repo that does not target Claude. It resolved the repo's CLI targets and then
+  wrote `.claude/managed-settings.json` regardless — re-creating the residue `aih init`
+  stopped writing in #360, and overwriting operator-owned managed-MCP configuration in
+  a Kiro-only repo. The write is now scoped to the resolved target set, matching `aih
+  policy project`, and the run states why nothing was projected instead of failing
+  silently. Existing operator-owned Claude configuration is never suppressed or
+  deleted — this only stops aih creating it — and `.mcp.json` generation for the
+  repo's real targets is unchanged. This is what makes the #566 repair durable: a
+  later `aih mcp --apply` no longer re-creates what prune just removed. Refs #568
 - `aih doctor` now scopes Claude-owned policy checks to the target set the repo
   actually committed. A repo that targets only Kiro (or any other non-Claude tool)
   is no longer failed for a missing `.claude/managed-settings.json` projection that
@@ -16,9 +60,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a target, both the org-policy drift probe and the managed MCP allowlist probe now
   report dropped-target residue naming a repair the operator can actually perform —
   add the tool back to the targets, or remove the file — instead of prescribing a
-  re-projection that emits no actions for that repo. `aih prune` is deliberately not
-  named: it reconciles the registered per-CLI settings path, not this projected
-  managed-settings file. `.aih-config.json` itself is never reported as residue, so a
+  re-projection that emits no actions for that repo. (Since the #566 entry above,
+  `aih prune` reconciles the projected managed-settings file too, so a marker-proven
+  residue now names it; a residue aih cannot prove it owns still names neither.)
+  `.aih-config.json` itself is never reported as residue, so a
   repo is never told to delete its own target declaration. Because narrowing a governance
   check suppresses findings, it takes the strongest evidence available: the committed
   `.aih-config.json`, and only when every target id in it is recognized. A missing,

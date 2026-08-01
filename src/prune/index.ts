@@ -28,6 +28,11 @@ import {
   writeText,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import {
+  MANAGED_MCP_PROJECTION_KEYS,
+  managedMcpDeactivationActions,
+  unprovableResidueReason,
+} from "../mcp/managed-projection.js";
 import { execArgv } from "../tools/install.js";
 import {
   type PruneArtifact,
@@ -69,6 +74,7 @@ const KIND_LABEL: Record<PruneArtifact["kind"], string> = {
   bootloader: "bootloader canon block",
   mcp: "MCP config",
   settings: "settings",
+  "managed-settings": "projected managed-MCP allowlist",
   "kiro-steering": "Kiro steering",
   "kiro-hook": "Kiro hook",
 };
@@ -94,7 +100,9 @@ function bootloaderMinusBlock(ctx: PlanContext, rel: string): string | undefined
 
 /** The manual-review advisory lines for the artifacts aih can't safely auto-edit. */
 function advisoryLines(set: StalePruneSet): string[] {
-  const advisory = set.artifacts.filter((a) => a.disposition === "advisory");
+  const advisory = set.artifacts.filter(
+    (a) => a.disposition === "advisory" && a.kind !== "managed-settings",
+  );
   if (advisory.length === 0) return [];
   return [
     "",
@@ -103,6 +111,35 @@ function advisoryLines(set: StalePruneSet): string[] {
     ...advisory.map(
       (a) => `  [manual] ${a.path}  — remove ${a.clis.join(", ")}'s entries by hand if unused`,
     ),
+  ];
+}
+
+/**
+ * The projected managed-MCP allowlist for a dropped Claude target (issue #566). This
+ * is the ONE dropped-target artifact aih records per-key provenance for, so it gets
+ * its own section rather than the generic manual-review list: either it is repairable
+ * right here, or the reason it is not is stated explicitly so an agent escalates
+ * instead of re-running prune forever.
+ */
+function managedMcpLines(set: StalePruneSet): string[] {
+  const artifact = set.artifacts.find((a) => a.kind === "managed-settings");
+  if (artifact === undefined) return [];
+  if (artifact.disposition === "block") {
+    return [
+      "",
+      `Dropped-target managed-MCP residue — ${artifact.path}:`,
+      `  [subtract] exactly ${MANAGED_MCP_PROJECTION_KEYS.join(" + ")}, proven by ${AIH_CONFIG_FILE}.`,
+      "  Every other key (operator content, organizationPolicy, sandbox) is preserved, and",
+      "  the file is never deleted — the ownership record proves two keys, not the file.",
+    ];
+  }
+  const reason = unprovableResidueReason(set.managedMcp?.unprovable ?? "pair-drifted");
+  return [
+    "",
+    `Dropped-target managed-MCP residue — ${artifact.path}:`,
+    `  [manual] aih will NOT touch the file: ${reason}.`,
+    "  Add claude back to the targets to resume maintaining it, or remove the residue by hand.",
+    "  aih's own stale ownership claim is revoked here, so no later run treats it as ours.",
   ];
 }
 
@@ -169,6 +206,7 @@ function contextBody(
       "No stale per-CLI artifacts — every CLI wired into this repo is still targeted.",
       `Kept (${SOURCE_LABEL[set.source]}): ${set.targeted.join(", ") || "none"}.`,
       ...ignoredSelectionLines(ignoredFlags),
+      ...managedMcpLines(set),
     );
   }
   const disposal = hardDelete
@@ -183,12 +221,16 @@ function contextBody(
     disposal,
     "subtracted in place; the actions above list each. Pass --apply to execute.",
     ...advisoryLines(set),
+    ...managedMcpLines(set),
   );
 }
 
 /** The action for one artifact, or `undefined` when there is nothing safe/needed to do. */
 function actionFor(ctx: PlanContext, a: PruneArtifact, hardDelete: boolean): Action | undefined {
   const who = `${a.clis.join(", ")} dropped`;
+  // The projected managed-MCP allowlist is reconciled by the shared lifecycle helper
+  // in prunePlan (an ordered subtract → ownership pair), not by this per-artifact map.
+  if (a.kind === "managed-settings") return undefined;
   if (a.disposition === "file") {
     return remove(a.path, `stale ${KIND_LABEL[a.kind]} (${who})`, { hardDelete });
   }
@@ -238,6 +280,22 @@ async function prunePlan(ctx: PlanContext): Promise<Plan> {
     actions.push(action);
     if (action.kind === "remove") moved += 1;
     else if (action.kind === "write") subtracted += 1;
+  }
+  // The dropped-target managed-MCP residue (#566). An exact marker-proven pair is
+  // subtracted key-by-key and its ownership record cleared, IN THAT ORDER
+  // (`src/ecc/reconcile-driver.ts:485`, `:511`, `:514`) — clearing first would destroy
+  // the only evidence the keys were ever aih's. Anything unprovable yields the revoke
+  // alone: the settings file is never touched. Both writes carry apply-time content
+  // pins and land in the executor's single transaction, so an interrupted apply leaves
+  // either the old state or the new one. This is the one part of the marker prune ever
+  // rewrites, and it rewrites only `managedMcpProjection` — never the target set.
+  if (set.managedMcp !== undefined) {
+    const deactivation = managedMcpDeactivationActions(
+      set.managedMcp,
+      `subtract the aih-owned Claude managed-MCP keys from ${set.managedMcp.path} (claude dropped)`,
+    );
+    actions.push(...deactivation);
+    if (set.managedMcp.matches) subtracted += 1;
   }
   const coordinatedEccPrune = hasEccRegistrationLedger(ctx);
   const coordinatedCodexPrune = coordinatedEccPrune && hasEccRegisteredTarget(ctx, "codex");
