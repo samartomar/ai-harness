@@ -118,6 +118,11 @@ async function coOwnedClaudeContextFixture(): Promise<void> {
   put(".claude/harness-update.md", "# Generated harness update guide\n");
   put(".claude/telemetry/collector.yaml", "# Generated collector\n");
   put(".claude/telemetry/fetch-analytics.mjs", "// Generated analytics fetcher\n");
+  put(".claude/skills/reviewed-source/source-root/SKILL.md", "# Reviewed root skill\n");
+  put(
+    ".claude/skills/reviewed-source/source-root/skills/reviewer/SKILL.md",
+    "# Reviewed nested skill through root promotion\n",
+  );
   put(".claude/skills/reviewed-source/reviewer/SKILL.md", "# Reviewed promoted skill\n");
   put(".claude/skills/operator/SKILL.md", "# Operator skill\n");
   put(
@@ -130,9 +135,12 @@ async function coOwnedClaudeContextFixture(): Promise<void> {
           kind: "local",
           source: "../reviewed-source",
           promotedAt: "2026-08-01T00:00:00.000Z",
-          promotedSkills: ["reviewer"],
+          promotedSkills: ["source-root", "reviewer"],
           analyzersRun: ["semgrep"],
-          artifactHashes: [{ path: "skills/reviewer/SKILL.md", sha256: "0".repeat(64) }],
+          artifactHashes: [
+            { path: "SKILL.md", sha256: "0".repeat(64) },
+            { path: "skills/reviewer/SKILL.md", sha256: "0".repeat(64) },
+          ],
           findings: [],
         },
       ],
@@ -452,6 +460,10 @@ describe("aih uninstall", () => {
     expect(digest?.text).toContain(".claude/harness-update.md");
     expect(digest?.text).toContain(".claude/telemetry/collector.yaml");
     expect(digest?.text).toContain(".claude/telemetry/fetch-analytics.mjs");
+    expect(digest?.text).toContain(".claude/skills/reviewed-source/source-root/SKILL.md");
+    expect(digest?.text).toContain(
+      ".claude/skills/reviewed-source/source-root/skills/reviewer/SKILL.md",
+    );
     expect(digest?.text).toContain(".claude/skills/reviewed-source/reviewer/SKILL.md");
     expect(digest?.text).not.toContain(".claude/skills/operator/SKILL.md");
     expect(digest?.text).toContain(".claude/settings.json");
