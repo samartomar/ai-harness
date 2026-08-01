@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `CHANGELOG.md` now ships inside the published npm tarball, and both the GitHub
+  Release body and the README link to it. An evaluator working from
+  `npmjs.com/package/@aihq/harness` — which renders only the README — previously had
+  no route to per-version release notes without cloning the repo, and the Release
+  body carried GitHub's auto-generated PR-title list rather than the curated prose
+  that already existed a click away. The Release link is pinned to the tag being
+  published, so it cannot drift or 404. Refs #563
+
 ### Fixed
 
 - `aih uninstall` no longer destroys the evidence for content it leaves behind. It

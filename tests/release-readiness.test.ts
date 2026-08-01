@@ -49,6 +49,24 @@ describe("release readiness metadata", () => {
     expect(pkg.publishConfig).toMatchObject({ access: "public" });
   });
 
+  // #563 — an evaluator starting from the npm package page (which renders only the
+  // README) must be able to reach per-version release notes without cloning.
+  it("ships the curated changelog in the published tarball and links it from both surfaces", () => {
+    const pkg = JSON.parse(read("package.json")) as { files: string[] };
+    expect(pkg.files).toContain("CHANGELOG.md");
+
+    // The Release body leads with a tag-pinned link, so it can never drift or 404.
+    const release = read(".github/workflows/release.yml");
+    expect(release).toContain(
+      'notes="Curated release notes: [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md)"',
+    );
+    expect(release).toContain('--generate-notes --notes "$notes"');
+
+    expect(read("README.md")).toContain(
+      "[CHANGELOG.md](https://github.com/samartomar/ai-harness/blob/main/CHANGELOG.md)",
+    );
+  });
+
   it("names release SBOM artifacts by their actual format", () => {
     const release = read(".github/workflows/release.yml");
     expect(release).toContain("SPDX SBOM");
