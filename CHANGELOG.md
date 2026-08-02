@@ -32,6 +32,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   its trigger (and the router's trigger table) names filing issues, drafting
   PRs, and committing, and the lazy-canon selector includes the rule for
   closeout tasks.
+- `git-ci-discipline.md` records the PR-sizing convention: combine related,
+  file-disjoint small units into one PR (labeled with the max `semver:*` of its
+  parts); keep only broad-blast-radius changes separate, where a clean
+  one-commit revert matters.
 
 ### Fixed
 
