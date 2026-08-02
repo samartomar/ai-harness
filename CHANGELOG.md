@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-08-01
+
 ### Added
 
 - `CHANGELOG.md` now ships inside the published npm tarball, and both the GitHub
@@ -119,6 +121,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   or targets inferred from adapter files on disk — narrow nothing and keep the
   previous strict behavior, so a deleted file or a command-line flag cannot silence
   an org-policy finding. Refs #554
+
+### Security
+
+- Known third-party scanner residual: the exact AIH tool environments for Semgrep
+  1.172.0 and Snyk Agent Scan 0.5.15 retain `mcp` 1.23.3 and 1.27.0 because those
+  vendors pin those versions exactly, leaving six high Dependabot alerts open and
+  unsuppressed. AIH invokes Semgrep as an offline static scan and does not launch
+  the affected MCP server transports or task paths during normal scanner use. No
+  scanner identity or pin was weakened; #574 records the upstream constraints,
+  exposure, and exit condition.
 
 ## [3.2.0] - 2026-08-01
 
@@ -1719,7 +1731,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v3.3.0...HEAD
+[3.3.0]: https://github.com/samartomar/ai-harness/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/samartomar/ai-harness/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/samartomar/ai-harness/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/samartomar/ai-harness/compare/v2.11.0...v3.0.0
