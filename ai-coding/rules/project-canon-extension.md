@@ -32,6 +32,7 @@ re-spelling it; verify against repo evidence before acting.
 | proposing a feature or flag; report / dashboard work | `rules/product-principles.md` |
 | writing docs; filing issues; drafting PRs; committing; choosing where a fact lives | `rules/doc-and-truth-homes.md` |
 | closing out a unit of work; before opening a PR | `rules/tracking-and-done.md` |
+| running a decision session — "decision session", "close decisions", weighing an aih product/governance choice | `.claude/skills/decision-partner/SKILL.md` (repo root; Claude also auto-loads it as `/decision-partner`) |
 
 Precedence: this extension is Layer 2 and wins over the generic baseline on
 conflict. Where a rule points at `CONTRIBUTING.md`, `RELEASING.md`,
