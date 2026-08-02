@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
 import type { Cli } from "../internals/clis.js";
+import { HERMETIC_GIT_ENV_SCRIPT_LINE } from "../internals/git-env.js";
 import {
   type Action,
   type CommandSpec,
@@ -223,6 +224,11 @@ const ECC_CAPTURE_SCRIPT = [
   'const path = require("path");',
   'const crypto = require("crypto");',
   'const child = require("child_process");',
+  // This script runs in its own node process, frequently under a git hook, so it
+  // cannot import internals/git-env.ts and carries the same scrub inline: an
+  // inherited GIT_DIR outranks the `-C eccRepoDir` below and would stamp another
+  // repo's commit/ref into the ownership manifest as ECC's provenance.
+  HERMETIC_GIT_ENV_SCRIPT_LINE,
   "const [mode, snapshotPath, managedRoot, manifestPath, target, mechanism, eccRepoDir] = process.argv.slice(1);",
   'if (!mode || !snapshotPath || !managedRoot) { console.error("usage: ecc-capture <mode> <snapshot> <root> [manifest] [target] [mechanism] [ecc-repo]"); process.exit(1); }',
   "function walk(dir, prefix, out) {",
@@ -281,9 +287,9 @@ const ECC_CAPTURE_SCRIPT = [
   "  if (sha256 !== null) files.push({ path: rel, sha256 });",
   "}",
   "let commit = null;",
-  'try { commit = child.execFileSync("git", ["-C", eccRepoDir, "rev-parse", "HEAD"], { encoding: "utf8" }).trim() || null; } catch { commit = null; }',
+  'try { commit = child.execFileSync("git", ["-C", eccRepoDir, "rev-parse", "HEAD"], { encoding: "utf8", env: gitEnv }).trim() || null; } catch { commit = null; }',
   "let ref = null;",
-  'try { ref = child.execFileSync("git", ["-C", eccRepoDir, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" }).trim() || null; } catch { ref = null; }',
+  'try { ref = child.execFileSync("git", ["-C", eccRepoDir, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8", env: gitEnv }).trim() || null; } catch { ref = null; }',
   // A manifest that exists but will not parse is DAMAGED ownership evidence. Abort rather
   // than overwrite it — losing the record silently is worse than failing this capture.
   'let manifest = { schemaVersion: "aih.ecc.install-manifest.v1", installs: [] };',

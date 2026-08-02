@@ -1,3 +1,4 @@
+import { HERMETIC_GIT_ENV_SCRIPT_LINE } from "../internals/git-env.js";
 import { lines } from "../internals/render.js";
 
 /**
@@ -24,6 +25,12 @@ export function usageRecorderScript(): string {
     'import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";',
     'import { execFileSync } from "node:child_process";',
     'import { homedir } from "node:os";',
+    "",
+    // The recorder's own commit hook runs with an absolute GIT_DIR exported, and
+    // the git reads below rely on cwd (no `-C`). Without this scrub they would
+    // report another repo's HEAD into THIS repo's .aih/usage.jsonl. Inlined
+    // because this file runs as its own node process (see internals/git-env.ts).
+    HERMETIC_GIT_ENV_SCRIPT_LINE,
     "",
     "const argv = process.argv.slice(2);",
     "",
@@ -199,7 +206,7 @@ export function usageRecorderScript(): string {
     "",
     'if (kind === "commit") {',
     "  try {",
-    '    const out = execFileSync("git", ["show", "--numstat", "--format=", "HEAD"], { encoding: "utf8" });',
+    '    const out = execFileSync("git", ["show", "--numstat", "--format=", "HEAD"], { encoding: "utf8", env: gitEnv });',
     "    let added = 0, removed = 0, files = 0;",
     '    for (const line of out.split("\\n")) {',
     '      const [a, r] = line.split("\\t");',
@@ -210,8 +217,8 @@ export function usageRecorderScript(): string {
     "      }",
     "    }",
     "    ev.added = added; ev.removed = removed; ev.files = files;",
-    '    ev.sha = execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();',
-    '    ev.branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" }).trim();',
+    '    ev.sha = execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8", env: gitEnv }).trim();',
+    '    ev.branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8", env: gitEnv }).trim();',
     "  } catch {}",
     "}",
     "",

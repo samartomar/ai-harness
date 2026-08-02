@@ -35,6 +35,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `aih` no longer lets an inherited `GIT_*` environment steer its own `git`
+  subprocesses out of the directory they were pointed at. `git` resolves which
+  repository it operates on from `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`
+  (etc.) *before* `cwd` or `-C`, and it exports an absolute `GIT_DIR` into the
+  process tree of every hook it runs — so `aih` invoked from a pre-commit hook
+  performed its git reads and writes against the caller's real repository
+  instead. Observed: a worktree hook run flipped a shared `.git` to
+  `core.bare=true` and clobbered staged blobs. Every production git spawn now
+  goes through a shared `hermeticGitEnv()` that strips inherited `GIT_*`, so
+  `cwd`/`-C` is the only thing that selects the repository. Transport-only
+  settings (`GIT_SSL_*`, `GIT_PROXY_COMMAND`, `GIT_ASKPASS`,
+  `GIT_TERMINAL_PROMPT`) are preserved, so corporate-CA clones configured by
+  `aih certs` keep working; `GIT_CONFIG_*` is stripped because it can relocate
+  the repo via `core.worktree`. The generated ECC ownership-manifest and usage
+  recorders carry the same scrub inline, since they run as their own node
+  processes under git hooks — previously they could record another repo's
+  commit/branch as provenance.
 - `aih bootstrap-ai --verify` is no longer sensitive to the checkout's folder
   name. The RULE_ROUTER and bootloader headings previously embedded
   `basename(<root>)`, so the drift gate false-failed with
