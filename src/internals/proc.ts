@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { hermeticGitEnv, isGitExecutable } from "./git-env.js";
 
 /**
  * The single external-process seam for the whole harness. PowerShell, nvidia-smi,
@@ -49,6 +50,11 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
       return;
     }
     const maxBufferBytes = opts.maxBufferBytes ?? MAX_BUFFER;
+    // Every production git spawn funnels through here, so the worktree-commit
+    // leak is closed once, centrally: git resolves its repo from an inherited
+    // GIT_DIR/GIT_INDEX_FILE BEFORE `cwd`/`-C`, so a spawn under a git hook
+    // would otherwise escape into the caller's repository (see ./git-env.ts).
+    const baseEnv = opts.env ?? process.env;
     let capturedStdout = "";
     let capturedStderr = "";
     const capture = (chunk: string | Buffer): string =>
@@ -58,7 +64,7 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
       args,
       {
         cwd: opts.cwd,
-        env: opts.env ?? process.env,
+        env: isGitExecutable(cmd) ? hermeticGitEnv(baseEnv) : baseEnv,
         timeout: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         maxBuffer: maxBufferBytes,
         windowsHide: true,

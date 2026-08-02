@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { hermeticGitEnv } from "../internals/git-env.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { Platform } from "../platform/base.js";
 import { resolvePlatform } from "../platform/detect.js";
@@ -89,6 +90,9 @@ function checkoutHead(root: string): string {
   return execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+    // `-C` alone does not pin the repo: an inherited GIT_DIR outranks it and
+    // would pin the baseline to another checkout's HEAD (see internals/git-env.ts).
+    env: hermeticGitEnv(),
   }).trim();
 }
 

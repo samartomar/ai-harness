@@ -14,6 +14,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { hermeticGitEnv, isGitExecutable } from "./git-env.js";
 import { defaultRunner, type Runner } from "./proc.js";
 import {
   type IntentAcknowledgementArtifact,
@@ -350,7 +351,12 @@ export function runPreflight(data: PreflightData): Manifest {
 // Live gathering (not covered by unit tests — kept minimal; logic stays above).
 
 function sh(cmd: string, args: string[]): string {
-  return execFileSync(cmd, args, { encoding: "utf8" });
+  return execFileSync(cmd, args, {
+    encoding: "utf8",
+    // Preflight reads the repo it was invoked in via `cwd`; an inherited GIT_DIR
+    // would silently retarget those reads at another repo (see ./git-env.ts).
+    env: isGitExecutable(cmd) ? hermeticGitEnv() : process.env,
+  });
 }
 
 function shTrimmed(cmd: string, args: string[]): string {
