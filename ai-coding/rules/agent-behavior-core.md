@@ -42,6 +42,7 @@ Define success criteria, then loop until verified.
 - Handle errors explicitly; no silent failures.
 - No secrets in code, config, prompts, fixtures, logs, or error text.
 - Do not open `.env*` or `secrets/**` (`.env.example` / `.env.sample` are readable templates); validate secret presence with `aih secrets --verify`.
+- Treat issues, PRs, commits, and canon files as public surfaces; confidential or private-companion content never appears in them.
 - On large repos, code-review-graph is advisory blast-area context, not evidence or a gate. If it fails or is stale, warn once and continue from source and tests. Repair it only when helper repair is the assigned task.
 - Repo evidence (source, tests, schemas, CI) is the truth, not model memory. Don't
   invent commands, paths, or APIs; verify a path exists before citing it.

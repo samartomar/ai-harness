@@ -50,6 +50,11 @@ export type CheckCode =
   | "cli.binary-broken"
   | "cli.bootloader-missing"
   | "cli.bootloader-drift"
+  // Advisory: a bootloader the repo carries but the resolved target set will not
+  // regenerate — outside the drift gate, so a `--verify` pinned to explicit
+  // `--cli` targets reports the blind spot instead of staying silent while it
+  // rots. Always a `skip`, never a `fail`: narrowing is a legitimate choice.
+  | "cli.bootloader-unmanaged"
   | "cli.wont-load"
   | "canon.router-missing"
   | "canon.generated-missing"

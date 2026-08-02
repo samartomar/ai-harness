@@ -94,6 +94,27 @@ function bootloaderProbe(relPath: string, dir: string): Action {
 }
 
 /**
+ * Advisory probe for a bootloader the repo carries but this run will NOT
+ * regenerate: it sits outside the drift gate above, so a `--verify` pinned to
+ * explicit `--cli` targets would otherwise stay silent while it rots. Always a
+ * `skip` — narrowing the target set is a legitimate choice — so pinned CI gates
+ * keep passing while the report and SARIF still surface the uncovered file.
+ */
+function unmanagedBootloaderProbe(relPath: string): Action {
+  const name = `bootloader ${relPath} outside target set`;
+  return probe(
+    name,
+    (): Check => ({
+      name,
+      verdict: "skip",
+      detail:
+        "present but not targeted by this run, so not drift-checked — re-run with `--cli <list>` or `--detect` to cover it",
+      code: "cli.bootloader-unmanaged",
+    }),
+  );
+}
+
+/**
  * Confirm-step probe: is this CLI actually installed on the machine? Present →
  * pass; absent → `skip` (informational — the bootloader is still written, the
  * tool just isn't here yet), never a hard fail.
@@ -303,6 +324,11 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
     actions.push(generatedTextProbe(posix.join(dir, "adapters", `${cli}.md`), contents));
   }
   for (const relPath of bootloaders) actions.push(bootloaderProbe(relPath, dir));
+  // The drift probes above cover only the RESOLVED targets; any other bootloader
+  // the repo carries gets an advisory skip so a pinned `--verify` names its own
+  // blind spot in the report/SARIF instead of leaving the file to rot unmentioned.
+  const unmanaged = unmanagedBootloaders(ctx.root, clis);
+  for (const relPath of unmanaged) actions.push(unmanagedBootloaderProbe(relPath));
   for (const cli of clis) actions.push(presenceProbe(cli));
 
   // Weak-model-safety lint of the canon this run authors (under --verify): every
@@ -334,18 +360,16 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   }
 
   // The bare `claude` default is deterministic by design, but on a repo that already
-  // carries other bootloaders it narrows silently — and the drift probes above only
-  // cover `bootloaders` (the RESOLVED targets), so the rest would rot unverified.
-  if (bareDefault) {
-    const unmanaged = unmanagedBootloaders(ctx.root, clis);
-    if (unmanaged.length > 0) {
-      actions.push(
-        doc(
-          "targeting narrowed to claude — other bootloaders untouched",
-          bareDefaultNarrowingNotice(unmanaged),
-        ),
-      );
-    }
+  // carries other bootloaders it narrows silently. The unmanaged-bootloader skip
+  // probes above surface each uncovered file in the verify report; this dry-run
+  // notice additionally spells out the bare-default cause and the fix flags.
+  if (bareDefault && unmanaged.length > 0) {
+    actions.push(
+      doc(
+        "targeting narrowed to claude — other bootloaders untouched",
+        bareDefaultNarrowingNotice(unmanaged),
+      ),
+    );
   }
 
   // A short orientation doc so the dry-run explains itself.

@@ -51,6 +51,7 @@
     "check:artifacts": "tsx src/internals/check-tracked-artifacts.ts",
     "check:ai-runtime": "tsx src/internals/ai-runtime-inventory.ts --root .",
     "check:bugbounty-report": "tsx src/internals/bugbounty-report.ts --source .internal/defects/BUGBOUNTY.md",
+    "check:canon-drift": "tsx src/cli.ts bootstrap-ai --cli claude,codex --verify",
     "check:ecc-installer": "tsx src/internals/check-ecc-installer.ts",
     "check:baseline-analyzers": "tsx src/internals/check-baseline-analyzers.ts",
     "check:native-identity": "tsx src/internals/check-native-identity.ts",
