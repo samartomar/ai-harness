@@ -10,11 +10,41 @@ import type {
   PreflightData,
 } from "../../src/internals/release-preflight.js";
 import {
+  associatedMergedPrNumber,
   cancelledReverts,
   nextVersionFrom,
   parseGitLog,
   runPreflight,
 } from "../../src/internals/release-preflight.js";
+
+describe("commit association validation", () => {
+  it("accepts exactly one merged pull request", () => {
+    expect(
+      associatedMergedPrNumber([
+        { number: 431, state: "closed", merged_at: "2026-07-11T09:16:13Z" },
+      ]),
+    ).toEqual({ kind: "resolved", number: "431" });
+  });
+
+  it.each([
+    ["empty", [], "GitHub associates it with no merged pull request"],
+    [
+      "ambiguous",
+      [
+        { number: 431, state: "closed", merged_at: "2026-07-11T09:16:13Z" },
+        { number: 432, state: "closed", merged_at: "2026-07-11T10:16:13Z" },
+      ],
+      "GitHub associates it with 2 merged pull requests (#431, #432) — ambiguous",
+    ],
+    [
+      "malformed",
+      [{ number: "431", state: "closed", merged_at: null }],
+      "GitHub returned untrusted commit association metadata",
+    ],
+  ])("fails closed for %s metadata", (_case, value, reason) => {
+    expect(associatedMergedPrNumber(value)).toEqual({ kind: "unresolved", reason });
+  });
+});
 
 // Heavy child-process/fixture tests: per-test budgets sized for worker
 // contention, not idle hardware — 5s/30s caps flaked under load (#509).

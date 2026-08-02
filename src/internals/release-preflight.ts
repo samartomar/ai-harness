@@ -481,7 +481,7 @@ async function resolveCommitRef(
 
 const COMMIT_ASSOCIATION_EVIDENCE = "gh api repos/{owner}/{repo}/commits/{sha}/pulls";
 
-function associatedMergedPrNumber(
+export function associatedMergedPrNumber(
   value: unknown,
 ): { kind: "resolved"; number: string } | { kind: "unresolved"; reason: string } {
   if (!Array.isArray(value)) {
