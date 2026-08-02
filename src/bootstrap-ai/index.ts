@@ -1,4 +1,4 @@
-import { basename, join, posix, resolve } from "node:path";
+import { join, posix } from "node:path";
 import { aihConfigJson, readAihConfigBaseline } from "../config/marker.js";
 import {
   BASELINE_OPTION,
@@ -28,6 +28,7 @@ import {
   writeJson,
   writeText,
 } from "../internals/plan.js";
+import { repoDisplayName } from "../internals/repo-name.js";
 import type { Check } from "../internals/verify.js";
 import { agentToolsSteering, kiroHooks } from "../kiro/content.js";
 import { type GeneratedDoc, lintProbes } from "../lint/run.js";
@@ -45,12 +46,6 @@ import {
   sharedBlock,
   sharedCanonicalBlockBody,
 } from "./canon.js";
-
-/** A best-effort repo name for the router heading (resolve first: basename(".") is "."). */
-function repoNameOf(root: string): string {
-  const base = basename(resolve(root));
-  return base.length > 0 ? base : "this repo";
-}
 
 /**
  * Probe one bootloader: it must exist, carry the shared canonical block, and the
@@ -185,7 +180,7 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   const { clis, detectFellBack, bareDefault } = await resolveTargets(ctx);
   const baseline = resolveBaselineSource(ctx.options, readAihConfigBaseline(ctx.root));
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-  const repoName = repoNameOf(ctx.root);
+  const repoName = repoDisplayName(ctx.root);
   const bootloaders = bootloaderPaths(clis);
 
   // Keep pointing at a carved project extension once `aih adopt` has written one,

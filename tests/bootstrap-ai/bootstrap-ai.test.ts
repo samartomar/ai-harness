@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -660,6 +668,61 @@ describe("bootstrap-ai — hygiene & detect notice", () => {
     const actions = (await command.plan(makeCtx())).actions;
     expect(actions.some((a) => a.kind === "doc" && a.describe.includes("targeting narrowed"))).toBe(
       false,
+    );
+  });
+});
+
+describe("bootstrap-ai — stable repo display name (env-insensitive verify)", () => {
+  /** A fixture repo whose FOLDER name differs from its git origin repo name. */
+  function repoAt(folderName: string, originUrl: string): string {
+    const dir = join(tmp, folderName);
+    mkdirSync(join(dir, ".git"), { recursive: true });
+    writeFileSync(join(dir, ".git", "config"), `[remote "origin"]\n\turl = ${originUrl}\n`, "utf8");
+    return dir;
+  }
+
+  function ctxAt(root: string, flags: { apply?: boolean; verify?: boolean } = {}): PlanContext {
+    const run = fakeRunner(() => undefined);
+    return {
+      root,
+      contextDir: ".ai-context",
+      apply: flags.apply ?? false,
+      verify: flags.verify ?? false,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: { HOME: root },
+      options: {},
+    };
+  }
+
+  it("heads the router and bootloader with the origin repo name, not the checkout folder name", async () => {
+    const dir = repoAt("worktree-folder-name", "https://github.com/acme/stable-name.git");
+    const w = writesByPath((await command.plan(ctxAt(dir))).actions);
+    expect(w.get(".ai-context/RULE_ROUTER.md")?.contents).toContain(
+      "# stable-name — AI Rule Router",
+    );
+    expect(w.get("CLAUDE.md")?.contents).toContain("# stable-name — Claude bootloader");
+  });
+
+  it("verify stays green from a differently-named copy of an applied checkout", async () => {
+    // The reported defect: canon generated in one checkout, `--verify` run from a
+    // renamed clone or worktree → false `canon.generated-drift` because the router
+    // heading embedded the checkout folder's name. Pin the fix end-to-end.
+    const original = repoAt("original-folder", "https://github.com/acme/moved-repo.git");
+    const applied = ctxAt(original, { apply: true });
+    await executePlan(await command.plan(applied), applied);
+
+    const renamed = join(tmp, "renamed-copy");
+    cpSync(original, renamed, { recursive: true });
+    const verifyCtx = ctxAt(renamed, { verify: true });
+    const res = await executePlan(await command.plan(verifyCtx), verifyCtx);
+    const checks = res.report?.checks ?? [];
+    expect(
+      checks.filter((c) => c.code === "canon.generated-drift" || c.code === "cli.bootloader-drift"),
+    ).toEqual([]);
+    expect(checks.find((c) => c.name === ".ai-context/RULE_ROUTER.md in sync")?.verdict).toBe(
+      "pass",
     );
   });
 });
