@@ -10,11 +10,41 @@ import type {
   PreflightData,
 } from "../../src/internals/release-preflight.js";
 import {
+  associatedMergedPrNumber,
   cancelledReverts,
   nextVersionFrom,
   parseGitLog,
   runPreflight,
 } from "../../src/internals/release-preflight.js";
+
+describe("commit association validation", () => {
+  it("accepts exactly one merged pull request", () => {
+    expect(
+      associatedMergedPrNumber([
+        { number: 431, state: "closed", merged_at: "2026-07-11T09:16:13Z" },
+      ]),
+    ).toEqual({ kind: "resolved", number: "431" });
+  });
+
+  it.each([
+    ["empty", [], "GitHub associates it with no merged pull request"],
+    [
+      "ambiguous",
+      [
+        { number: 431, state: "closed", merged_at: "2026-07-11T09:16:13Z" },
+        { number: 432, state: "closed", merged_at: "2026-07-11T10:16:13Z" },
+      ],
+      "GitHub associates it with 2 merged pull requests (#431, #432) — ambiguous",
+    ],
+    [
+      "malformed",
+      [{ number: "431", state: "closed", merged_at: null }],
+      "GitHub returned untrusted commit association metadata",
+    ],
+  ])("fails closed for %s metadata", (_case, value, reason) => {
+    expect(associatedMergedPrNumber(value)).toEqual({ kind: "unresolved", reason });
+  });
+});
 
 // Heavy child-process/fixture tests: per-test budgets sized for worker
 // contention, not idle hardware — 5s/30s caps flaked under load (#509).
@@ -502,6 +532,7 @@ if (command === "git.exe") {
 
   const REAL_PR_SHA = "4".repeat(40);
   const ISSUE_REF_SHA = "5".repeat(40);
+  const ASSOCIATED_SHA = "6".repeat(40);
 
   /** git stub shared by all three scenarios: only `log`'s payload differs. */
   function gitStub(logLines: string[]): string {
@@ -603,6 +634,120 @@ if (args.startsWith("repo view ")) {
       expect(manifest.findings.map((f: { code: string }) => f.code)).not.toContain(
         "unresolved-pr-ref",
       );
+    } finally {
+      removeTempDir(dir);
+    }
+  });
+
+  it("attributes a rebase-merged follow-up commit through GitHub and deduplicates its PR", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aih-release-associated-commit-"));
+    try {
+      const gLog = [
+        `${ISSUE_REF_SHA}\x1ffeat: first slice (#424)`,
+        `${ASSOCIATED_SHA}\x1ffix: follow-up slice without a subject ref`,
+      ];
+      const gh = `
+const { writeSync } = require("node:fs");
+const out = (value) => writeSync(1, String(value) + "\\n");
+const args = process.argv.slice(2).join(" ");
+if (args.startsWith("repo view ")) {
+  out("samartomar/ai-harness");
+} else if (args.startsWith("pr view 424 ")) {
+  writeSync(2, "GraphQL: Could not resolve to a PullRequest with the number of 424.\\n");
+  process.exit(1);
+} else if (args.startsWith("api graphql ")) {
+  out(JSON.stringify({
+    data: { repository: { issue: { timelineItems: { nodes: [
+      { closer: {
+          __typename: "PullRequest",
+          number: 431,
+          title: "feat: complete the sliced change",
+          merged: true,
+          labels: { nodes: [{ name: "semver:minor" }] },
+          milestone: { title: "v2.9.0" },
+      } },
+    ] } } } },
+  }));
+} else if (args === "api repos/{owner}/{repo}/commits/${ASSOCIATED_SHA}/pulls") {
+  out(JSON.stringify([{ number: 431, state: "closed", merged_at: "2026-07-11T09:16:13Z" }]));
+} else if (args.startsWith("pr view 431 ")) {
+  out(JSON.stringify({
+    number: 431,
+    title: "feat: complete the sliced change",
+    labels: [{ name: "semver:minor" }],
+    milestone: { title: "v2.9.0" },
+  }));
+} else if (args === "api repos/{owner}/{repo}/milestones?state=all&per_page=100") {
+  out(JSON.stringify([{ number: 1, title: "v2.9.0" }]));
+} else if (args === "api repos/{owner}/{repo}/issues?milestone=1&state=all&per_page=100") {
+  out(JSON.stringify([
+    { number: 431, state: "closed", title: "feat: complete the sliced change", labels: [],
+      pull_request: { merged_at: "2026-07-11T09:16:13Z" } },
+    ${TRACKER_ITEM},
+  ]));
+} else {
+  writeSync(2, "unexpected gh invocation: " + args + "\\n");
+  process.exit(2);
+}
+`;
+
+      const result = runPreflightCliWithStubs(dir, gitStub(gLog), gh, [
+        "--milestone",
+        "v2.9.0",
+        "--intent",
+        "minor",
+      ]);
+
+      expect(result.stdout, result.stderr).not.toBe("");
+      const manifest = JSON.parse(result.stdout);
+      expect(result.status, JSON.stringify(manifest, null, 2)).toBe(0);
+      expect(manifest.mergedPrs.map((p: { number: number }) => p.number)).toEqual([431]);
+      expect(manifest.resolvedCommitRefs).toEqual([
+        {
+          sha: ASSOCIATED_SHA,
+          pr: 431,
+          evidence: "gh api repos/{owner}/{repo}/commits/{sha}/pulls",
+        },
+      ]);
+      expect(manifest.findings.map((f: { code: string }) => f.code)).not.toContain("no-pr-commit");
+    } finally {
+      removeTempDir(dir);
+    }
+  });
+
+  it("still rejects a direct commit when GitHub associates it with no merged PR", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aih-release-direct-commit-"));
+    try {
+      const gh = `
+const { writeSync } = require("node:fs");
+const out = (value) => writeSync(1, String(value) + "\\n");
+const args = process.argv.slice(2).join(" ");
+if (args.startsWith("repo view ")) out("samartomar/ai-harness");
+else if (args === "api repos/{owner}/{repo}/commits/${ASSOCIATED_SHA}/pulls") out("[]");
+else if (args === "api repos/{owner}/{repo}/milestones?state=all&per_page=100") {
+  out(JSON.stringify([{ number: 1, title: "v2.9.0" }]));
+} else if (args === "api repos/{owner}/{repo}/issues?milestone=1&state=all&per_page=100") {
+  out(JSON.stringify([${TRACKER_ITEM}]));
+} else {
+  writeSync(2, "unexpected gh invocation: " + args + "\\n");
+  process.exit(2);
+}
+`;
+      const result = runPreflightCliWithStubs(
+        dir,
+        gitStub([`${ASSOCIATED_SHA}\x1ffix: pushed directly to main`]),
+        gh,
+        ["--milestone", "v2.9.0", "--intent", "patch"],
+      );
+
+      const manifest = JSON.parse(result.stdout);
+      expect(result.status).toBe(1);
+      expect(manifest.resolvedCommitRefs).toEqual([]);
+      expect(manifest.findings).toContainEqual({
+        code: "no-pr-commit",
+        detail:
+          'commit "fix: pushed directly to main" carries no PR reference — it bypassed the semver-label gate',
+      });
     } finally {
       removeTempDir(dir);
     }

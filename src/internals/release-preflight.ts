@@ -51,12 +51,20 @@ export interface ResolvedIssueRef {
   evidence: string;
 }
 
+export interface ResolvedCommitRef {
+  sha: string;
+  pr: number;
+  evidence: string;
+}
+
 export interface PreflightData {
   repository: string;
   previousTag: string;
   candidateSha: string;
   /** Squash-merge subjects since previousTag, e.g. `fix: thing (#123)`. */
   commitSubjects: string[];
+  /** Parallel commit identities for live attribution. Fixture callers may omit them. */
+  commitShas?: string[];
   mergedPrs: MergedPr[];
   cutMilestone: string;
   milestoneItems: MilestoneItem[];
@@ -71,6 +79,8 @@ export interface PreflightData {
   /** Commit-subject `(#N)` refs that named an issue, not a PR, resolved to their
    * unique closing merged PR via GitHub evidence. Recorded for auditability. */
   resolvedIssueRefs?: ResolvedIssueRef[];
+  /** Rebase-merged commits whose subjects omit `(#N)`, attributed by GitHub. */
+  resolvedCommitRefs?: ResolvedCommitRef[];
   /** Diagnostics for commit-subject `(#N)` refs that resolved as neither a PR nor a
    * unique closing merged PR. Never trusted as evidence; always a named finding. */
   unresolvedPrRefFindings?: string[];
@@ -90,6 +100,7 @@ export interface Manifest {
   /** Issue-ref → merged-PR substitutions made during gathering, e.g. a squash title
    * that cites the tracking issue instead of its own PR number (see #382, #424). */
   resolvedIssueRefs: ResolvedIssueRef[];
+  resolvedCommitRefs: ResolvedCommitRef[];
   declaredIntent: SemverClass | undefined;
   computedBump: SemverClass | undefined;
   intentEscalation: boolean;
@@ -223,8 +234,12 @@ export function runPreflight(data: PreflightData): Manifest {
   }
 
   // 5. Commits that bypassed the PR label gate entirely.
-  for (const subject of data.commitSubjects) {
-    if (!/\(#\d+\)\s*$/.test(subject)) {
+  const attributedCommitShas = new Set(
+    (data.resolvedCommitRefs ?? []).map((association) => association.sha),
+  );
+  for (const [index, subject] of data.commitSubjects.entries()) {
+    const sha = data.commitShas?.[index];
+    if (!/\(#\d+\)\s*$/.test(subject) && (sha === undefined || !attributedCommitShas.has(sha))) {
       findings.push({
         code: "no-pr-commit",
         detail: `commit "${subject}" carries no PR reference — it bypassed the semver-label gate`,
@@ -318,6 +333,7 @@ export function runPreflight(data: PreflightData): Manifest {
     mergedPrs: data.mergedPrs,
     cancelledPrs: [...cancelled].sort((a, b) => a - b),
     resolvedIssueRefs: data.resolvedIssueRefs ?? [],
+    resolvedCommitRefs: data.resolvedCommitRefs ?? [],
     declaredIntent,
     computedBump,
     intentEscalation,
@@ -463,6 +479,104 @@ async function resolveCommitRef(
   }
 }
 
+const COMMIT_ASSOCIATION_EVIDENCE = "gh api repos/{owner}/{repo}/commits/{sha}/pulls";
+
+export function associatedMergedPrNumber(
+  value: unknown,
+): { kind: "resolved"; number: string } | { kind: "unresolved"; reason: string } {
+  if (!Array.isArray(value)) {
+    return { kind: "unresolved", reason: "GitHub returned untrusted commit association metadata" };
+  }
+  const merged = new Set<number>();
+  for (const item of value) {
+    if (
+      !isRecord(item) ||
+      !Number.isSafeInteger(item.number) ||
+      (item.number as number) <= 0 ||
+      (item.state !== "open" && item.state !== "closed") ||
+      (item.merged_at !== null && typeof item.merged_at !== "string")
+    ) {
+      return {
+        kind: "unresolved",
+        reason: "GitHub returned untrusted commit association metadata",
+      };
+    }
+    if (item.state === "closed" && typeof item.merged_at === "string") {
+      merged.add(item.number as number);
+    }
+  }
+  if (merged.size === 0) {
+    return { kind: "unresolved", reason: "GitHub associates it with no merged pull request" };
+  }
+  if (merged.size > 1) {
+    return {
+      kind: "unresolved",
+      reason: `GitHub associates it with ${merged.size} merged pull requests (${[...merged]
+        .sort((a, b) => a - b)
+        .map((number) => `#${number}`)
+        .join(", ")}) — ambiguous`,
+    };
+  }
+  return { kind: "resolved", number: String([...merged][0]) };
+}
+
+function resolveUnreferencedCommit(
+  commit: GitCommit,
+):
+  | { kind: "resolved"; pr: MergedPr; resolved: ResolvedCommitRef }
+  | { kind: "unresolved"; finding: string } {
+  let associations: unknown;
+  try {
+    associations = JSON.parse(
+      sh("gh", ["api", `repos/{owner}/{repo}/commits/${commit.sha}/pulls`]),
+    ) as unknown;
+  } catch {
+    return {
+      kind: "unresolved",
+      finding: `commit ${commit.sha} has no subject PR reference and its GitHub association could not be read`,
+    };
+  }
+  const association = associatedMergedPrNumber(associations);
+  if (association.kind === "unresolved") {
+    return {
+      kind: "unresolved",
+      finding: `commit ${commit.sha} has no subject PR reference and ${association.reason}`,
+    };
+  }
+
+  let directOutput: string;
+  try {
+    directOutput = sh("gh", [
+      "pr",
+      "view",
+      association.number,
+      "--json",
+      "number,title,labels,milestone",
+    ]);
+  } catch {
+    return {
+      kind: "unresolved",
+      finding: `commit ${commit.sha} is associated with #${association.number} but its pull request metadata could not be read`,
+    };
+  }
+  try {
+    const pr = trustedDirectPr(JSON.parse(directOutput) as unknown, association.number);
+    if (pr) {
+      return {
+        kind: "resolved",
+        pr,
+        resolved: { sha: commit.sha, pr: pr.number, evidence: COMMIT_ASSOCIATION_EVIDENCE },
+      };
+    }
+  } catch {
+    // Handled below as untrusted cross-boundary metadata.
+  }
+  return {
+    kind: "unresolved",
+    finding: `commit ${commit.sha} is associated with #${association.number} but GitHub returned untrusted pull request metadata`,
+  };
+}
+
 async function gatherLive(
   cutMilestone: string,
   run: Runner = defaultRunner,
@@ -482,22 +596,53 @@ async function gatherLive(
   );
   const subjects = commits.map((c) => c.subject);
 
-  const refs: CommitRef[] = commits
-    .map(({ sha, subject }) => ({ sha, number: /\(#(\d+)\)\s*$/.exec(subject)?.[1] }))
-    .filter((r): r is CommitRef => r.number !== undefined);
-
-  const mergedPrs: MergedPr[] = [];
+  const mergedPrsByNumber = new Map<number, MergedPr>();
+  const referencedOutcomes = new Map<string, Awaited<ReturnType<typeof resolveCommitRef>>>();
   const resolvedIssueRefs: ResolvedIssueRef[] = [];
+  const resolvedCommitRefs: ResolvedCommitRef[] = [];
   const unresolvedPrRefFindings: string[] = [];
-  for (const ref of refs) {
-    const outcome = await resolveCommitRef(ref, run);
+  for (const commit of commits) {
+    const number = /\(#(\d+)\)\s*$/.exec(commit.subject)?.[1];
+    let outcome:
+      | Awaited<ReturnType<typeof resolveCommitRef>>
+      | ReturnType<typeof resolveUnreferencedCommit>;
+    if (number === undefined) {
+      outcome = resolveUnreferencedCommit(commit);
+    } else {
+      const cached = referencedOutcomes.get(number);
+      if (cached !== undefined) {
+        outcome = cached;
+      } else {
+        outcome = await resolveCommitRef({ sha: commit.sha, number }, run);
+        referencedOutcomes.set(number, outcome);
+      }
+    }
     if (outcome.kind === "unresolved") {
       unresolvedPrRefFindings.push(outcome.finding);
       continue;
     }
-    mergedPrs.push(outcome.pr);
-    if (outcome.kind === "resolved") resolvedIssueRefs.push(outcome.resolved);
+    const existing = mergedPrsByNumber.get(outcome.pr.number);
+    if (existing !== undefined && JSON.stringify(existing) !== JSON.stringify(outcome.pr)) {
+      unresolvedPrRefFindings.push(
+        `GitHub returned conflicting metadata for pull request #${outcome.pr.number}`,
+      );
+      continue;
+    }
+    mergedPrsByNumber.set(outcome.pr.number, outcome.pr);
+    if (number === undefined && outcome.kind === "resolved") {
+      resolvedCommitRefs.push(outcome.resolved as ResolvedCommitRef);
+    } else if (number !== undefined && outcome.kind === "resolved") {
+      const resolved = outcome.resolved as ResolvedIssueRef;
+      if (
+        !resolvedIssueRefs.some(
+          (entry) => entry.issue === resolved.issue && entry.pr === resolved.pr,
+        )
+      ) {
+        resolvedIssueRefs.push(resolved);
+      }
+    }
   }
+  const mergedPrs = [...mergedPrsByNumber.values()];
 
   const milestones = JSON.parse(
     sh("gh", ["api", "repos/{owner}/{repo}/milestones?state=all&per_page=100"]),
@@ -539,12 +684,14 @@ async function gatherLive(
     previousTag,
     candidateSha,
     commitSubjects: subjects,
+    commitShas: commits.map((commit) => commit.sha),
     mergedPrs,
     cutMilestone,
     milestoneItems: items,
     packageVersion: pkg.version,
     versionConstant: constant ?? "",
     resolvedIssueRefs,
+    resolvedCommitRefs,
     unresolvedPrRefFindings,
   };
 }
