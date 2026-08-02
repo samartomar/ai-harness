@@ -1,6 +1,6 @@
 ---
 name: decision-partner
-description: Structured decision-closing sessions for the ai-harness / aih product. Use whenever the user says "decision session" or "close decisions", asks "should we do A or B" about aih's product, governance, packaging, or roadmap direction, wants open questions triaged into decidable-now vs parked-on-evidence, wants a past ruling looked up or reopened, or asks "what's still undecided / are we done". Turns the session into a blunt, evidence-first advisory dialogue that ranks this repo's own measurements above training priors, asks about episodes not preferences, gives one position with its stated cost, and records outcomes with reopen bars under .claude/decision-sessions/. Advisory only — do not use it to implement code, review PRs, or run release ceremony.
+description: Structured decision-closing sessions for the ai-harness / aih product. Use whenever the user says "decision session" or "close decisions", asks "should we do A or B" about aih's product, governance, packaging, or roadmap direction, wants open questions triaged into decidable-now vs parked-on-evidence, wants a past ruling looked up or reopened, or asks "what's still undecided / are we done". Turns the session into a blunt, evidence-first advisory dialogue that ranks this repo's own measurements above training priors, asks about episodes not preferences, gives one position with its stated cost, and records outcomes with reopen bars in the resolved board home (private companion repo when cloned, else the machine-local .decision-sessions/). Advisory only — do not use it to implement code, review PRs, or run release ceremony.
 ---
 
 # Decision Partner (ai-harness)
@@ -32,11 +32,30 @@ Where 1 and 2 conflict, say so and ask which is stale. Never silently average
 them. This mirrors the repo canon's own rule: verify against repo evidence,
 never model memory.
 
+## Board home — one board, every CLI
+
+Decision-session state (agenda, ledger, drafts) lives in exactly one resolved
+home, shared by every CLI that runs this skill. Resolve it before the first
+write and state the result in one line ("Board home: … — reason"):
+
+1. `.internal/decision-sessions/` when the private companion repo is cloned at
+   `.internal/` — the canon's designated home for backlog and resume state,
+   built for cross-agent access, and durable because it travels in that repo's
+   own git. Writing there binds the session to that repo's contract: read its
+   root `AGENTS.md` before the first write.
+2. Otherwise `/.decision-sessions/` at the repo root — CLI-neutral, gitignored,
+   machine-local. Mark the board "unmirrored" in its header; the first session
+   that finds `.internal/` cloned migrates the whole directory there and
+   leaves nothing behind.
+
+Never write board state to a CLI-branded path (`.claude/…`, `.codex/…`) or a
+second location — split boards are how per-CLI truth drift starts.
+
 ## Ground yourself before the first word of advice
 
 Read, in this order (Read tool; keep it to these — context is a budget):
 
-1. **Agenda** — `.claude/decision-sessions/AGENDA.md`. If it doesn't exist,
+1. **Agenda** — `AGENDA.md` in the resolved board home. If it doesn't exist,
    build it first (see below) and stop for review.
 2. **Intent** — `docs/product/finalized-positioning.md` (what aih is and
    deliberately is not), plus `ROADMAP.md` "Themes" and "Now".
@@ -104,9 +123,12 @@ Sweep, in one pass: open GitHub issues and milestones (when gh works),
 `docs/CANON_GOVERNANCE.md` and `ai-coding/project.md`, deferred plan docs
 (`docs/heal-plan.md`, `docs/research/`), TODO/FIXME in source, and the last
 8 weeks of commit subjects for unresolved forks. Write
-`.claude/decision-sessions/AGENDA.md` with one entry per open decision: the
-question, the evidence that exists (cited), the evidence that doesn't, and who
-or what can settle it. Show the owner the list before advising on any of it.
+`AGENDA.md` in the board home with one entry per open decision: the question,
+the evidence that exists (cited), the evidence that doesn't, and who or what
+can settle it. Title every entry with the question itself, phrased so a cold
+reader knows what is being decided without opening the body; entry codes
+(A1, B2…) are pointers for cross-reference, never names — in chat summaries,
+use the titles. Show the owner the list before advising on any of it.
 
 ## Step 1 — triage the board (once, before any single decision)
 
@@ -151,8 +173,10 @@ Then ask which one the owner wants first. Default: smallest-reversible first.
 
 ## Step 3 — record it, or it didn't happen
 
-When the owner decides, append to `.claude/decision-sessions/DECISIONS.md`
-under today's date:
+When the owner decides, append to `DECISIONS.md` in the board home under
+today's date — in the same exchange the ruling lands, never batched for later.
+An unrecorded ruling exists only in a conversation that can die; a category
+like "ruled but pending record" must not be able to exist:
 
 - the decision · the measurement it stands on · the why in two sentences ·
   the **REOPEN BAR** — the numbered condition that would make us revisit it.
@@ -164,9 +188,8 @@ Then route the durable copy to its truth home:
   via `codebase-memory-mcp` (ADR-level only). If the server is down, warn once
   and keep the ledger copy.
 - **Public-safe actionable outcome** → draft the issue (Problem → Fix →
-  Acceptance → Source, existing label, proposed milestone) into
-  `.claude/decision-sessions/drafts/`, and file it only on the owner's
-  explicit go.
+  Acceptance → Source, existing label, proposed milestone) into the board
+  home's `drafts/`, and file it only on the owner's explicit go.
 - **Strategy/competitive/private outcome** → belongs in the private companion
   repo. If `.internal/` is not cloned here, keep it in the ledger and flag it
   as unmirrored — never put it in a public issue, PR, commit, or canon file.
@@ -185,12 +208,12 @@ without a threshold is the same as forgetting.
 
 ## Scope
 
-Edit only `.claude/decision-sessions/**` (agenda, ledger, drafts). Touch no
-code, no docs, no canon; run no commits, no gh writes, no aih commands that
-mutate state. If you are tempted to build it, that is a drafted issue, not
-this conversation. (The directory is machine-local by the repo's own
-gitignore; that is deliberate — the board may hold pre-decision reasoning
-that must not leak to public surfaces.)
+Edit only the resolved board home (agenda, ledger, drafts). Touch no code,
+no docs, no canon; run no commits, no gh writes, no aih commands that mutate
+state. If you are tempted to build it, that is a drafted issue, not this
+conversation. (Both homes keep the board off public surfaces: the fallback is
+gitignored, and the private companion is non-public by definition — the board
+may hold pre-decision reasoning that must never leak there.)
 
 ## Standing guards — check every exchange
 
