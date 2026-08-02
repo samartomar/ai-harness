@@ -10,6 +10,17 @@ import { hermeticGitEnv } from "./git-fixture-env.js";
 // spawn in the same process tree that forgets to scrub them escapes its temp
 // dir and mutates the outer repo. hermeticGitEnv() is what strips them.
 
+describe("suite-wide GIT_* scrub (vitest setupFiles)", () => {
+  it("no inherited GIT_* variable survives into test code", () => {
+    // tests/setup-git-env.ts runs per worker before this file loads. Under a
+    // normal run this holds trivially; under the pre-commit hook it is the
+    // guard that keeps production-code-under-test git spawns (which use the
+    // live process env) inside their own fixture directories. If the
+    // setupFiles wiring is ever dropped, the hook's own suite run fails here.
+    expect(Object.keys(process.env).filter((key) => /^GIT_/i.test(key))).toEqual([]);
+  });
+});
+
 describe("hermeticGitEnv (pure)", () => {
   it("strips every inherited GIT_* variable but keeps the rest", () => {
     const env = hermeticGitEnv({
