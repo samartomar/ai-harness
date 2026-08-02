@@ -8,6 +8,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `docs/CANON_GOVERNANCE.md` maps each canon-governance practice (small
+  always-loaded bootloader, generated projections, always-loaded safety
+  invariants, hermetic git spawns, PR sizing) to where it is stated and the
+  machine check or test that enforces it, with the audit's deliberately
+  deferred gaps recorded alongside.
 - CI now runs the canon drift gate against this repo's own bootloaders:
   `npm run check:canon-drift` (`aih bootstrap-ai --cli claude,codex --verify`,
   read-only) fails the build if `CLAUDE.md`, `AGENTS.md`, or the generated canon
