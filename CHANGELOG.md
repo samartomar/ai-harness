@@ -6,6 +6,33 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- CI now runs the canon drift gate against this repo's own bootloaders:
+  `npm run check:canon-drift` (`aih bootstrap-ai --cli claude,codex --verify`,
+  read-only) fails the build if `CLAUDE.md`, `AGENTS.md`, or the generated canon
+  files drift from the generator's output. The self-hosting boundary in
+  `project-canon-extension.md` gained a carve-out naming the read-only drift
+  gate a repository-owned development check; clearing a red gate remains a
+  deliberate maintainer regeneration, never an in-repo apply run.
+- `aih bootstrap-ai --verify` now emits an advisory skip check
+  (`cli.bootloader-unmanaged`) for every bootloader present in the repo but
+  outside the resolved target set, so a drift gate pinned to explicit `--cli`
+  targets reports the coverage gap in its verification report and SARIF instead
+  of a dry-run-only notice.
+- The generated shared canon block gains a `public-surfaces` invariant — issues,
+  PRs, commits, and canon files are treated as public surfaces; confidential or
+  private-companion content never appears in them. The line is generic by design
+  (the canon ships into every bootstrapped repo); the repo-specific detail stays
+  in `doc-and-truth-homes.md`.
+
+### Changed
+
+- The `doc-and-truth-homes` rule now loads at the moments leaks actually happen:
+  its trigger (and the router's trigger table) names filing issues, drafting
+  PRs, and committing, and the lazy-canon selector includes the rule for
+  closeout tasks.
+
 ### Fixed
 
 - `aih` no longer lets an inherited `GIT_*` environment steer its own `git`

@@ -680,6 +680,7 @@ function shouldLoadDocsRule(
 ): boolean {
   return (
     taskKind === "docs" ||
+    taskKind === "closeout" ||
     paths.some((path) => path.startsWith("docs/") || DOC_EXTENSIONS.has(extensionOf(path)))
   );
 }

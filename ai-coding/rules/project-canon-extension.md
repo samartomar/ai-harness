@@ -12,6 +12,10 @@ Never use AIH project-truth or project-governance surfaces to govern the
 through an installed binary or `src/cli.ts`. Validate their product behavior in
 repository tests using temporary fixture roots. Repository-owned development
 checks such as docs lint, version/help smoke tests, build, and test are allowed.
+The read-only canon drift gate is one of them: `npm run check:canon-drift` runs
+`bootstrap-ai --cli claude,codex --verify` without `--apply`, writes nothing, and
+only confirms the committed canon matches its generator. Never clear a red drift
+gate with an in-repo apply run — regeneration is a deliberate maintainer action.
 
 **Load on demand.** This map is the only always-read part. Read a rule file only
 when your task hits its trigger — don't load the set. Each rule is a crisp
@@ -26,7 +30,7 @@ re-spelling it; verify against repo evidence before acting.
 | reviewing a PR, or acting on review/external feedback | `rules/review-protocol.md` |
 | editing `src/` engines, checks, plans, trust, writers | `rules/engine-invariants.md` |
 | proposing a feature or flag; report / dashboard work | `rules/product-principles.md` |
-| writing docs; choosing where a fact lives | `rules/doc-and-truth-homes.md` |
+| writing docs; filing issues; drafting PRs; committing; choosing where a fact lives | `rules/doc-and-truth-homes.md` |
 | closing out a unit of work; before opening a PR | `rules/tracking-and-done.md` |
 
 Precedence: this extension is Layer 2 and wins over the generic baseline on

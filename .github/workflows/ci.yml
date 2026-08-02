@@ -28,6 +28,16 @@ jobs:
         run: npm run check:artifacts
       - name: ECC installer package check
         run: npm run check:ecc-installer
+      # Read-only drift gate (no --apply): the committed ai-coding/ canon and the
+      # generated blocks in CLAUDE.md / AGENTS.md / RULE_ROUTER.md must match their
+      # generator. Ubuntu only: the comparison is OS-independent text, and the
+      # Windows runners' autocrlf=true checkout would false-fail it. The router
+      # heading embeds the checkout directory's basename — the default Actions path
+      # ends in .../ai-harness, which matches; a renamed checkout (or a local
+      # worktree) reports a false RULE_ROUTER.md drift.
+      - name: Canon drift gate
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run check:canon-drift
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Lint & format check
