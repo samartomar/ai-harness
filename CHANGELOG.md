@@ -30,6 +30,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Release preflight now attributes rebase-merged commits through GitHub's exact
+  commit-to-pull-request association before applying the no-PR gate. Multiple
+  commits from the same pull request are deduplicated, while direct commits,
+  missing associations, ambiguous associations, and untrusted metadata continue
+  to fail closed.
 - `aih uninstall` now treats a generated context tree that is also a registered
   live CLI config directory, such as `.claude`, as co-owned. Preview and `--apply`
   leave the complete directory in place, name the generated canon files left for
