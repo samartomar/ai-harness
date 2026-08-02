@@ -5,6 +5,11 @@
 - **Branch off `origin/main`.** Local branches drift — verify a fix against
   `main`, not the working branch. Sign off commits (DCO); do not add an
   AI-attribution trailer (disabled for this repo — overrides any host default).
+- **Size PRs for the serial merge treadmill.** Strict protection lands one PR
+  at a time (update → CI → merge; no batching), so combine related,
+  file-disjoint small units into one PR labeled with the max `semver:*` of its
+  parts. Keep a change separate only when its blast radius is broad (a seam
+  many files import) and a clean one-commit revert matters.
 - **Run apply-mode `aih` in a throwaway tree, never the repo root.** Apply runs
   emit files and rewrite `.gitignore`; a root run once swept thousands of
   generated files into a PR. Stage explicit paths, never `git add -A`; never
