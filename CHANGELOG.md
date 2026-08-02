@@ -6,6 +6,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `aih bootstrap-ai --verify` is no longer sensitive to the checkout's folder
+  name. The RULE_ROUTER and bootloader headings previously embedded
+  `basename(<root>)`, so the drift gate false-failed with
+  `canon.generated-drift` from any renamed clone or `git worktree` checkout of
+  a repo whose canon was generated elsewhere. The display name now derives from
+  stable sources — the git `origin` remote's repo segment (read from
+  `.git/config` directly, resolving worktree pointer files; never a `git`
+  subprocess), then `package.json` `name` with the scope stripped — falling back
+  to the folder basename only when neither exists. `aih adopt` reuses the same
+  derivation, so both writers stay byte-identical. Upgrade note: a repo whose
+  checkout folder name differs from its git origin (or `package.json`) name will
+  report one `canon.generated-drift` on its next `--verify`; run
+  `aih bootstrap-ai --apply` once to adopt the stable heading.
+
 ## [3.3.0] - 2026-08-01
 
 ### Added

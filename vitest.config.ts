@@ -5,6 +5,11 @@ export default defineConfig({
   test: {
     globals: false,
     environment: "node",
+    // Strip inherited GIT_* per worker BEFORE any test file loads: under the
+    // pre-commit hook, `git commit` exports an absolute GIT_DIR that would
+    // steer git spawns of production-code-under-test into the real repo (the
+    // worktree-commit leak — rationale in tests/setup-git-env.ts).
+    setupFiles: ["./tests/setup-git-env.ts"],
     // Ceiling, not a floor: vitest uses an explicit maxWorkers number verbatim
     // (no core-count clamp), so min() keeps low-core CI runners at their
     // derived default while capping high-core dev machines, whose uncapped

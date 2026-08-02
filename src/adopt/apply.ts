@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { basename, join, posix, resolve } from "node:path";
+import { join, posix } from "node:path";
 import {
   bootloaderPaths,
   ruleRouterDoc,
@@ -18,6 +18,7 @@ import { readIfExists } from "../internals/fsxn.js";
 import { extractManagedBlock, splitManagedBody } from "../internals/markers.js";
 import { type Action, type PlanContext, writeJson, writeText } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { repoDisplayName } from "../internals/repo-name.js";
 import { scanRepo } from "../profile/scan.js";
 import type { CanonClassification } from "./classify.js";
 
@@ -128,7 +129,7 @@ export async function adoptApplyActions(
   // and when carving, swap the router for one that references the carved extension —
   // computed from the SAME inputs bootstrap-ai used, so they stay byte-identical
   // apart from that one "Always read first" line.
-  const repoName = basename(resolve(applyCtx.root)) || "this repo";
+  const repoName = repoDisplayName(applyCtx.root);
   const stack = scanRepo(applyCtx.root, { maxDepth: 8, contextDir: dir });
   const bootloaders = bootloaderPaths(clis);
   for (const a of base.actions) {
