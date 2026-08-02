@@ -643,11 +643,14 @@ describe("bootstrap-ai — hygiene & detect notice", () => {
     // marker lost its targets would verify CLAUDE.md and silently let AGENTS.md rot.
     put("CLAUDE.md", "# claude");
     put("AGENTS.md", "# agents");
-    const notice = (await command.plan(makeCtx())).actions.find(
+    const actions = (await command.plan(makeCtx())).actions;
+    const notice = actions.find(
       (a) => a.kind === "doc" && a.describe.includes("targeting narrowed"),
     );
     expect(notice?.kind === "doc" ? notice.text : "").toContain("AGENTS.md");
     expect(notice?.kind === "doc" ? notice.text : "").toContain("--cli");
+    // The dry-run notice has a verify-report counterpart: an advisory probe.
+    expect(probeNamed(actions, "bootloader AGENTS.md outside target set")).toBeDefined();
   });
 
   it("stays quiet when the bare default already covers every bootloader present", async () => {
@@ -667,6 +670,37 @@ describe("bootstrap-ai — hygiene & detect notice", () => {
     );
     const actions = (await command.plan(makeCtx())).actions;
     expect(actions.some((a) => a.kind === "doc" && a.describe.includes("targeting narrowed"))).toBe(
+      false,
+    );
+    expect(probeNamed(actions, "outside target set")).toBeUndefined();
+  });
+});
+
+describe("bootstrap-ai — unmanaged-bootloader advisory (verify)", () => {
+  it("a verify pinned to --cli claude reports other bootloaders as skips and stays green", async () => {
+    // The CI drift gate pins explicit targets; a bootloader outside the pinned set
+    // must surface in the report (skip verdict, coded) without flipping the gate.
+    put("AGENTS.md", "# agents");
+    const applied = makeCtx({ cli: "claude" }, { apply: true });
+    await executePlan(await command.plan(applied), applied);
+
+    const verifyCtx = makeCtx({ cli: "claude" }, { verify: true });
+    const res = await executePlan(await command.plan(verifyCtx), verifyCtx);
+    const advisories = (res.report?.checks ?? []).filter(
+      (c) => c.code === "cli.bootloader-unmanaged",
+    );
+    expect(advisories.map((c) => c.name)).toEqual(["bootloader AGENTS.md outside target set"]);
+    expect(advisories[0]?.verdict).toBe("skip");
+    expect(advisories[0]?.detail).toContain("--cli");
+    expect(res.report?.ok).toBe(true);
+  });
+
+  it("emits no advisory when the target set covers every bootloader present", async () => {
+    put("CLAUDE.md", "# claude");
+    put("AGENTS.md", "# agents");
+    const ctx = makeCtx({ cli: "claude,codex" }, { verify: true });
+    const res = await executePlan(await command.plan(ctx), ctx);
+    expect((res.report?.checks ?? []).some((c) => c.code === "cli.bootloader-unmanaged")).toBe(
       false,
     );
   });

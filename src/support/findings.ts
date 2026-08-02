@@ -339,6 +339,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "CLI bootloader drifted from canon",
     action: "Run `aih bootstrap-ai --apply` to regenerate the managed block.",
   },
+  "cli.bootloader-unmanaged": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "Bootloader present but outside the verified target set",
+    action:
+      "Re-run with `--cli <list>` or `--detect` so the drift gate covers it, or commit the full target set in `.aih-config.json` via `aih init`/`aih bootstrap-ai`.",
+  },
   "cli.wont-load": {
     audience: "developer",
     failSeverity: "blocking",

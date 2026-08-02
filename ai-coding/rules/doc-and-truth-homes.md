@@ -1,6 +1,7 @@
 # Docs & truth homes
 
-> Load when: writing docs, filing issues, or choosing where a fact lives.
+> Load when: writing docs, filing issues, drafting PRs, committing, or choosing
+> where a fact lives.
 
 The GitHub repo is public. The detailed maintainer session contract lives in the
 private companion repo; sessions with maintainer credentials follow it. This is

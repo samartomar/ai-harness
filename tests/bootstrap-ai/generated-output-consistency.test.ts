@@ -161,6 +161,7 @@ describe("generated canon — single-source discipline (#507)", () => {
       "boundary-validation",
       "error-handling",
       "secrets",
+      "public-surfaces",
       "graph-advisory",
     ]);
     for (const inv of shared) {

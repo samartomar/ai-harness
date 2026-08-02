@@ -203,6 +203,21 @@ describe("Check.code — bootstrap-ai emitters", () => {
     expect(codeOf(checks, "claude installed")).toBe("cli.not-detected");
   });
 
+  it("tags a bootloader outside the pinned target set as an advisory skip", async () => {
+    const root = freshTmp();
+    write(root, "AGENTS.md", "# agents");
+    const ctx = makeCtx({
+      root,
+      run: fakeRunner(() => ({ spawnError: true, code: 127 })),
+      options: { cli: "claude" },
+    });
+    const check = (await checksOf(await bootstrapCommand.plan(ctx), ctx)).find(
+      (c) => c.code === "cli.bootloader-unmanaged",
+    );
+    expect(check?.name).toBe("bootloader AGENTS.md outside target set");
+    expect(check?.verdict).toBe("skip");
+  });
+
   it("tags a drifted bootloader", async () => {
     const root = freshTmp();
     const drifted = `# Preamble\n\n${beginLine(SHARED_MARKER, "src")}\n\nOLD DRIFTED BODY\n\n${endLine(SHARED_MARKER)}\n`;
@@ -427,6 +442,7 @@ describe("Check.code — invariants", () => {
       "cli.binary-broken": true,
       "cli.bootloader-missing": true,
       "cli.bootloader-drift": true,
+      "cli.bootloader-unmanaged": true,
       "cli.wont-load": true,
       "canon.router-missing": true,
       "canon.generated-missing": true,

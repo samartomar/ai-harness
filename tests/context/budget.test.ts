@@ -199,4 +199,13 @@ describe("context budget engine", () => {
 
     expect(files.map((file) => file.path)).toContain("ai-coding/rules/environment.md");
   });
+
+  it("loads the docs-and-truth rule for closeout so commit and PR drafting see it", () => {
+    const files = selectLazyCanonFiles({
+      contextDir: "ai-coding",
+      taskKind: "closeout",
+    });
+
+    expect(files.map((file) => file.path)).toContain("ai-coding/rules/doc-and-truth-homes.md");
+  });
 });
