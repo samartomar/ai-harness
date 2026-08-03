@@ -14,10 +14,13 @@ const fixturePath = join(
   "../fixtures/ecc-profile/pinned-source-evidence.json",
 );
 const evidence = JSON.parse(await readFile(fixturePath, "utf8")) as unknown;
+const receiptPath = join(import.meta.dirname, "../fixtures/ecc-profile/review-receipt.json");
+const receiptBytes = await readFile(receiptPath);
 const receipt = {
   id: "pinned-source-evidence-v1",
-  evidencePath: "tests/fixtures/ecc-profile/pinned-source-evidence.json",
+  evidencePath: "tests/fixtures/ecc-profile/review-receipt.json",
   sourceCommit: "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
+  evidenceSha256: "b4bc069efc8c5eca51e6426feb9d59cc469f2b49b681118a6fd26f5c8fab461c",
 };
 const profile = {
   ...AIH_ECC_PROFILE_TEMPLATE,
@@ -31,6 +34,7 @@ function digest(paths: readonly string[]): string {
 describe("manifest-derived AIH ECC profile resolution", () => {
   it("parses a caller-supplied durable receipt and names the release ancestor correctly", () => {
     expect(eccProfileSchema.parse(profile).source.reviewReceipt).toEqual(receipt);
+    expect(createHash("sha256").update(receiptBytes).digest("hex")).toBe(receipt.evidenceSha256);
     expect(profile.source.releaseAncestorCommit).toBe("4da6deac1888690e7fb8572d097ee23db630f7a0");
     expect(profile.source).not.toHaveProperty("releaseCommit");
   });
@@ -120,10 +124,74 @@ describe("manifest-derived AIH ECC profile resolution", () => {
       workflowPaths: string[];
     };
     duplicate.workflowPaths[0] = duplicate.agentPaths[0] ?? "";
-    expect(() => resolveEccProfile(profile, duplicate)).toThrow(/ambiguous.*source path/i);
+    expect(() => resolveEccProfile(profile, duplicate)).toThrow(
+      /ambiguous.*source path|namespace/i,
+    );
     const omitted = structuredClone(evidence) as { workflowPaths: string[] };
     omitted.workflowPaths.pop();
     expect(() => resolveEccProfile(profile, omitted)).toThrow(/workflow.*94/i);
+  });
+
+  it("rejects an invented active leaf absent from pinned skill inventory", () => {
+    const invented = structuredClone(profile);
+    invented.selections.activeSkills[0] = "made-up-leaf";
+    expect(() => resolveEccProfile(invented, evidence)).toThrow(/made-up-leaf|inventory/i);
+  });
+
+  it("rejects an altered embedded manifest payload", () => {
+    const altered = structuredClone(evidence) as {
+      componentsManifest: { components: Array<{ modules: string[] }> };
+    };
+    altered.componentsManifest.components[0]?.modules.push("invented-module");
+    expect(() => resolveEccProfile(profile, altered)).toThrow(/payload hash/i);
+  });
+
+  it.each([
+    ["agent namespace", "agentPaths", "other/code-reviewer.md"],
+    ["workflow namespace", "workflowPaths", "other/code-review.md"],
+    ["duplicate agent identity", "agentPaths", "agents/nested/code-reviewer.md"],
+    ["duplicate workflow identity", "workflowPaths", "commands/nested/code-review.md"],
+  ] as const)("rejects ambiguous derived identity: %s", (_label, collection, path) => {
+    const malformed = structuredClone(evidence) as Record<"agentPaths" | "workflowPaths", string[]>;
+    const paths = malformed[collection];
+    paths[0] = path;
+    expect(() => resolveEccProfile(profile, malformed)).toThrow(/namespace|identity/i);
+  });
+
+  it("rejects malformed review receipt evidence hashes", () => {
+    const malformed = {
+      ...profile,
+      source: {
+        ...profile.source,
+        reviewReceipt: { ...profile.source.reviewReceipt, evidenceSha256: "ABC" },
+      },
+    };
+    expect(() => eccProfileSchema.parse(malformed)).toThrow(/sha|invalid/i);
+    const contradictory = structuredClone(evidence) as {
+      reviewReceipt: { evidenceSha256: string };
+    };
+    contradictory.reviewReceipt.evidenceSha256 = "b".repeat(64);
+    expect(() => resolveEccProfile(profile, contradictory)).toThrow(/receipt/i);
+  });
+
+  it("rejects altered manifest bytes under a supplied source root", async () => {
+    const root = await mkdtemp(join(process.env.TEMP ?? ".", "aih-ecc-profile-tamper-"));
+    try {
+      const initial = resolveEccProfile(profile, evidence);
+      for (const path of initial.consumedSourcePaths) {
+        const full = join(root, ...path.split("/"));
+        if (path.includes(".")) {
+          await mkdir(dirname(full), { recursive: true });
+          await writeFile(full, path);
+        } else await mkdir(full, { recursive: true });
+      }
+      await writeFile(join(root, "manifests", "install-components.json"), '{"version":1}');
+      await expect(resolveEccProfile(profile, evidence, { sourceRoot: root })).rejects.toThrow(
+        /hash|manifest/i,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it.each(["C:escape/file.md", "safe/file.md:stream", "CON/file.md", "safe/trailing. /file.md"])(
@@ -153,7 +221,7 @@ describe("manifest-derived AIH ECC profile resolution", () => {
       await rm(join(root, "manifests"), { recursive: true });
       await symlink(outside, join(root, "manifests"), "junction");
       await expect(resolveEccProfile(profile, evidence, { sourceRoot: root })).rejects.toThrow(
-        /symbolic link|escape/i,
+        /symbolic link|escape|hash/i,
       );
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -163,11 +231,9 @@ describe("manifest-derived AIH ECC profile resolution", () => {
 
   it("is deterministic and byte-stable for equivalent manifest ordering", () => {
     const shuffled = structuredClone(evidence) as {
-      modulesManifest: { modules: unknown[] };
       agentPaths: string[];
       workflowPaths: string[];
     };
-    shuffled.modulesManifest.modules.reverse();
     shuffled.agentPaths.reverse();
     shuffled.workflowPaths.reverse();
     expect(serializeResolvedEccProfile(resolveEccProfile(profile, shuffled))).toBe(
