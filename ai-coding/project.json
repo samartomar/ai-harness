@@ -17,9 +17,9 @@
   "packageManager": "npm",
   "entrypoints": [
     "dist/cli.js",
+    "dist/index.js",
     "src/cli.ts",
-    "src/index.ts",
-    "dist/index.js"
+    "src/index.ts"
   ],
   "commands": {
     "verify": {
@@ -44,23 +44,13 @@
     }
   },
   "scale": {
-    "trackedFiles": 761,
+    "trackedFiles": 863,
     "class": "medium",
     "isMonorepo": true
   },
   "sensitivePaths": [],
-  "knownGaps": [
-    "1 un-imported CLI rule set — review with `aih adopt`"
-  ],
-  "mcpServers": [
-    "code-review-graph",
-    "codebase-memory-mcp",
-    "context7",
-    "github",
-    "sequential-thinking",
-    "serena",
-    "token-savior"
-  ],
+  "knownGaps": [],
+  "mcpServers": [],
   "workspaces": {
     "tools/cisco-skill-scanner": {
       "languages": [
