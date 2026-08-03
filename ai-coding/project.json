@@ -49,15 +49,12 @@
     "isMonorepo": true
   },
   "sensitivePaths": [],
-  "knownGaps": [
-    "1 un-imported CLI rule set — review with `aih adopt`"
-  ],
+  "knownGaps": [],
   "mcpServers": [
     "code-review-graph",
     "codebase-memory-mcp",
     "context7",
     "github",
-    "sequential-thinking",
     "serena",
     "token-savior"
   ],
