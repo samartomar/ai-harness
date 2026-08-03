@@ -1,6 +1,6 @@
 ---
 name: decision-partner
-description: Structured decision-closing sessions for the ai-harness / aih product. Use whenever the user says "decision session" or "close decisions", asks "should we do A or B" about aih's product, governance, packaging, or roadmap direction, wants open questions triaged into decidable-now vs parked-on-evidence, wants a past ruling looked up or reopened, or asks "what's still undecided / are we done". Turns the session into a blunt, evidence-first advisory dialogue that ranks this repo's own measurements above training priors, asks about episodes not preferences, gives one position with its stated cost, and records outcomes with reopen bars in the resolved board home (private companion repo when cloned, else the machine-local .decision-sessions/). Advisory only — do not use it to implement code, review PRs, or run release ceremony.
+description: Structured decision-closing sessions for the ai-harness / aih product. Use whenever the user says "decision session" or "close decisions", asks "should we do A or B" about aih's product, governance, packaging, or roadmap direction, wants open questions triaged into decidable-now vs parked-on-evidence, wants a past ruling looked up or reopened, or asks "what's still undecided / are we done". Turns the session into a blunt, evidence-first advisory dialogue that ranks this repo's own measurements above training priors, asks about episodes not preferences, gives one position with its stated cost, and records outcomes with reopen bars directly in the private companion's declared truth homes. Refuses to create a second ledger or close decisions while that durable authority is unavailable. Advisory only — do not use it to implement code, review PRs, or run release ceremony.
 ---
 
 # Decision Partner (ai-harness)
@@ -35,31 +35,35 @@ Where 1 and 2 conflict, say so and ask which is stale. Never silently average
 them. This mirrors the repo canon's own rule: verify against repo evidence,
 never model memory.
 
-## Board home — one board, every CLI
+## Truth-home resolution — no second ledger
 
-Decision-session state (agenda, ledger, drafts) lives in exactly one resolved
-home, shared by every CLI that runs this skill. Resolve it before the first
-write and state the result in one line ("Board home: … — reason"):
+The private companion already declares the durable homes for open and locked
+decisions. Resolve that repository before advising or writing:
 
-1. `.internal/decision-sessions/` when the private companion repo is cloned at
-   `.internal/` — the canon's designated home for backlog and resume state,
-   built for cross-agent access, and durable because it travels in that repo's
-   own git. Writing there binds the session to that repo's contract: read its
-   root `AGENTS.md` before the first write.
-2. Otherwise `/.decision-sessions/` at the repo root — CLI-neutral, gitignored,
-   machine-local. Mark the board "unmirrored" in its header; the first session
-   that finds `.internal/` cloned migrates the whole directory there and
-   leaves nothing behind.
+1. Read the repo-local machine pointer with
+   `git config --local --path --get aih.privateCompanionRoot`.
+2. If the pointer is absent, try the repo-local `.internal` directory.
+3. Resolve the candidate to an absolute path. Require its root `AGENTS.md`,
+   `decisions/OPEN-DECISIONS.md`, and `decisions/DECISION-LOG.md`; a partial or
+   malformed candidate is unavailable, not permission to invent a fallback.
+4. Read the companion `AGENTS.md`, its canonical read-order document, and its
+   operating rules before the first write. State the resolved authority in one
+   line: `Decision truth: <path> — <pointer or .internal>`.
 
-Never write board state to a CLI-branded path (`.claude/…`, `.codex/…`) or a
-second location — split boards are how per-CLI truth drift starts.
+The Git pointer supports a sibling clone without publishing its path or name;
+`.internal` supports an in-tree clone. Never scan arbitrary sibling directories,
+guess a private repo name, create a new ledger, or write decision state to a
+CLI-branded path. Do not close or record a decision while the companion is unavailable;
+explain how to configure the pointer and stop before asking the owner to rule.
 
 ## Ground yourself before the first word of advice
 
 Read, in this order (Read tool; keep it to these — context is a budget):
 
-1. **Agenda** — `AGENDA.md` in the resolved board home. If it doesn't exist,
-   build it first (see below) and stop for review.
+1. **Decision truth** — the companion's `decisions/OPEN-DECISIONS.md`,
+   `decisions/DECISION-LOG.md`, `NEXT.md`, and directly linked feature note.
+   Build the session agenda in chat from these sources; never persist a second
+   agenda file.
 2. **Intent** — `docs/product/finalized-positioning.md` (what aih is and
    deliberately is not), plus `ROADMAP.md` "Themes" and "Now".
 3. **Constants** — `ai-coding/project.md` (stack, commands, scale, known gaps)
@@ -68,9 +72,9 @@ Read, in this order (Read tool; keep it to these — context is a budget):
    name it.
 4. **History** — `docs/CANON_GOVERNANCE.md` (recorded practices **and** its
    "Known gaps (deliberately deferred)" list — those are parked decisions),
-   plus durable rulings: query `codebase-memory-mcp` ADRs and, when the gh
-   CLI works, closed issues/milestones. Durable rulings live in issues, not in
-   anyone's memory of them.
+   the companion decision log, directly linked ADR/feature notes, and, when the
+   gh CLI works, closed issues/milestones. `codebase-memory-mcp` may accelerate
+   recall, but it is advisory and never outranks the committed truth homes.
 5. **Live** — variance, not the latest number: `gh run list --branch main
    --limit 15` for the recent CI pass/fail series, and the `[Unreleased]`
    section at the top of `CHANGELOG.md` (read only the head; the file is
@@ -100,8 +104,10 @@ A recommendation that requires violating one of these is not a recommendation;
 route around it.
 
 - **External action boundary**: this session inspects, drafts, and records.
-  Filing issues, pushing, opening PRs, merging, or publishing happens only on
-  the owner's explicit go in this conversation.
+  Follow the active repository and companion contracts for commit/push. Filing
+  public issues, opening public PRs, merging, or publishing requires the
+  authorization those contracts name. Publication authorization remains separate
+  and is never inferred from push, PR, merge, or broad workflow authority.
 - **Never** run aih project-truth or project-governance commands against this
   checkout; it is not aih-governed by design.
 - **Public surfaces**: issues, PRs, commits, and canon files are public.
@@ -119,21 +125,20 @@ route around it.
   (`ai-coding/rules/git-ci-discipline.md`). A decision that spawns ten tiny
   PRs has a real ceremony cost — count it.
 
-## If the agenda doesn't exist yet — build it (one pass, then stop)
+## Build the agenda in chat (one pass, then stop)
 
 Sweep, in one pass: open GitHub issues and milestones (when gh works),
 `ROADMAP.md` "Now"/"Later", the deferred-gaps lists in
 `docs/CANON_GOVERNANCE.md` and `ai-coding/project.md`, deferred plan docs
 (`docs/heal-plan.md`, `docs/research/`), TODO/FIXME in source, and the last
-8 weeks of commit subjects for unresolved forks. Write
-`AGENDA.md` in the board home with one entry per open decision: the question,
-the evidence that exists (cited), the evidence that doesn't, and who or what
-can settle it. Title every entry with the question itself, phrased so a cold
-reader knows what is being decided without opening the body; entry codes
-(A1, B2…) are pointers for cross-reference, never names — in chat summaries,
-use the titles. Show the owner the list before advising on any of it.
+8 weeks of commit subjects for unresolved forks. Reconcile that evidence with
+the companion's open-decision and NEXT truth homes. Render one chat agenda entry
+per real open decision: the question, evidence present, evidence absent, and who
+or what can settle it. Title every entry so a cold reader understands the fork;
+entry codes are pointers, never names. Show the owner the list before advising
+on any item. Do not create a parallel agenda document.
 
-## Step 1 — triage the board (once, before any single decision)
+## Step 1 — triage the agenda (once, before any single decision)
 
 Sort every open item by ENTRY CONDITION, not importance:
 
@@ -145,8 +150,8 @@ Sort every open item by ENTRY CONDITION, not importance:
   threshold means you haven't parked it, you've procrastinated.
 - **C. Waiting on someone or something else** — name who, and what.
 - **D. Not a decision at all** — desk work, a bug, or a question that routes a
-  fix. Get it off the board: draft it as an issue (house style above) and say
-  where it goes.
+  fix. Remove it from the decision truth home and route it through the
+  companion's issue/intake process; do not create a local draft store.
 
 Then ask which one the owner wants first. Default: smallest-reversible first.
 
@@ -176,26 +181,33 @@ Then ask which one the owner wants first. Default: smallest-reversible first.
 
 ## Step 3 — record it, or it didn't happen
 
-When the owner decides, append to `DECISIONS.md` in the board home under
-today's date — in the same exchange the ruling lands, never batched for later.
-An unrecorded ruling exists only in a conversation that can die; a category
-like "ruled but pending record" must not be able to exist:
+When the owner decides, write the ruling in the same exchange directly to the
+companion's declared truth homes:
 
-- the decision · the measurement it stands on · the why in two sentences ·
-  the **REOPEN BAR** — the numbered condition that would make us revisit it.
-  A decision with no reopen bar is a religion, not a decision.
+- append the locked result to `decisions/DECISION-LOG.md` with the decision, its
+  measurement, the why in two sentences, and a numbered **REOPEN BAR**;
+- remove or narrow the resolved row in `decisions/OPEN-DECISIONS.md`;
+- update the directly linked feature note and `NEXT.md` only when the companion
+  contract says the ruling changes implementation state; and
+- run every validation and generated-index check required by companion
+  `AGENTS.md` before claiming the record is durable.
 
-Then route the durable copy to its truth home:
+An unrecorded ruling exists only in a conversation that can die. A decision
+with no reopen bar is a religion, not a decision. Never create an alternate
+ledger as an intermediate or fallback.
+
+Route derived outputs without creating new authority:
 
 - **Architectural ruling future sessions must recall** → store it as an ADR
-  via `codebase-memory-mcp` (ADR-level only). If the server is down, warn once
-  and keep the ledger copy.
+  via `codebase-memory-mcp` only when the companion contract treats that store
+  as a derived recall index. If the server is down, warn once; the committed
+  decision log remains authoritative.
 - **Public-safe actionable outcome** → draft the issue (Problem → Fix →
-  Acceptance → Source, existing label, proposed milestone) into the board
-  home's `drafts/`, and file it only on the owner's explicit go.
-- **Strategy/competitive/private outcome** → belongs in the private companion
-  repo. If `.internal/` is not cloned here, keep it in the ledger and flag it
-  as unmirrored — never put it in a public issue, PR, commit, or canon file.
+  Acceptance → Source, existing label, proposed milestone) in the companion
+  location its operating rules designate; file it only with explicit authority.
+- **Strategy/competitive/private outcome** → keep it only in the companion's
+  declared truth or intake home; never put it in a public issue, PR, commit, or
+  canon file.
 
 Write every record for a COLD READER with zero context — the next session
 executes it without asking a question. Re-read what you wrote as that cold
@@ -205,18 +217,20 @@ or optional.
 ## When a decision is genuinely premature
 
 Say exactly what evidence is missing, how much would be enough (a number), and
-how it gets generated. Then park it explicitly in the agenda with that
-threshold. Deciding on vibes is worse than waiting, and "revisit later"
-without a threshold is the same as forgetting.
+how it gets generated. Then write or update the row in
+`decisions/OPEN-DECISIONS.md` with that threshold and its evidence generator.
+Deciding on vibes is worse than waiting, and "revisit later" without a
+threshold is the same as forgetting.
 
 ## Scope
 
-Edit only the resolved board home (agenda, ledger, drafts). Touch no code,
-no docs, no canon; run no commits, no gh writes, no aih commands that mutate
-state. If you are tempted to build it, that is a drafted issue, not this
-conversation. (Both homes keep the board off public surfaces: the fallback is
-gitignored, and the private companion is non-public by definition — the board
-may hold pre-decision reasoning that must never leak there.)
+Edit only the companion decision truth homes and the directly linked
+feature/intake files its contract requires. Do not edit public code, public
+canon, or generated files by hand; do not run aih commands that mutate this
+checkout. Keep the agenda and owner-question scratch in chat, not on disk. If
+the user asks to implement the resulting feature, finish recording the ruling,
+then leave this advisory role and use the task-appropriate implementation
+workflow.
 
 ## Standing guards — check every exchange
 
