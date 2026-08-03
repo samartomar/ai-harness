@@ -23,9 +23,11 @@ temporary fixture roots in tests.
 
 **Precedence: Layer 2 wins.** Repo canon overrides the generic baseline on conflict.
 
-## Detected stack
+## Repository stack
 
-- Languages: TypeScript/Node.js, Python
+- Product implementation: TypeScript/Node.js
+- Auxiliary assets: one packaged Python skill script and four pinned uv
+  analyzer/runtime manifests; these are not repository workspaces
 - Commands: verify `npm run verify` · typecheck `npm run typecheck` · test `npm test` · build `npm run build` · lint `npm run lint`
 
 ## Always read first

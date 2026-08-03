@@ -21,8 +21,8 @@ the current facts without letting AIH manage itself:
 | Canon mode | compact | router + behavior core + project extension |
 | Context directory | `ai-coding` | all durable repo AI truth stays under `ai-coding/` |
 | Targets | Claude and Codex | `CLAUDE.md`, `AGENTS.md`, and two adapters only |
-| Stack | TypeScript/Node.js + Python | npm root contract plus the bounded uv workspace |
-| Repository shape | medium monorepo | tracked count and workspace facts stay mirrored in `project.json` / `project.md` |
+| Stack | TypeScript/Node.js product + auxiliary Python assets | npm owns the root lifecycle; pinned uv analyzer manifests are runtime inputs, not workspaces |
+| Repository shape | medium single-package repository | tracked count and package-shape facts stay mirrored in `project.json` / `project.md` |
 | Root MCP config | absent | `mcpServers: []`; local MCP projection remains operator-owned |
 | Client hooks/config | uncommitted | no client-specific launcher, settings, or hook registry becomes repo truth |
 | Brownfield extension | present | `rules/project-canon-extension.md` remains repo-owned and manually maintained |

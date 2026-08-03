@@ -9,6 +9,8 @@
 - Install dependencies: `npm install`.
 - Run the completion gate: `npm run verify`.
 - Fast partial checks: `npm run typecheck`, `npm test`, `npm run build`, `npm run lint`.
+- Treat the root as one npm package. The pinned `uv` manifests under `tools/`
+  are analyzer runtime inputs, not independently managed repository workspaces.
 
 ## 2. Turn on the guardrails (once per clone)
 

@@ -69,7 +69,7 @@ describe("ai-harness self-hosting boundary", () => {
       mcpServers: string[];
       knownGaps: string[];
       scale: { trackedFiles: number; class: string; isMonorepo: boolean };
-      workspaces: Record<string, { languages: string[]; packageManager?: string }>;
+      workspaces?: Record<string, { languages: string[]; packageManager?: string }>;
     };
     const markdown = read("ai-coding/project.md");
     const tracked = execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" })
@@ -77,19 +77,18 @@ describe("ai-harness self-hosting boundary", () => {
       .filter(Boolean).length;
 
     expect(contract.targets).toEqual(["claude", "codex"]);
-    expect(contract.languages).toEqual(["TypeScript/Node.js", "Python"]);
-    expect(contract.scale).toEqual({ trackedFiles: tracked, class: "medium", isMonorepo: true });
+    expect(contract.languages).toEqual(["TypeScript/Node.js"]);
+    expect(contract.scale).toEqual({ trackedFiles: tracked, class: "medium", isMonorepo: false });
     expect(contract.mcpServers).toEqual([]);
     expect(contract.knownGaps).toEqual([]);
-    expect(contract.workspaces["tools/cisco-skill-scanner"]).toEqual({
-      languages: ["Python"],
-      packageManager: "uv",
-      commands: {},
-    });
+    expect(contract.workspaces).toBeUndefined();
     expect(existsSync(resolve(root, ".mcp.json"))).toBe(false);
 
-    expect(markdown).toContain(contract.description);
-    expect(markdown).toContain(`- ${tracked} tracked files · ${contract.scale.class} · monorepo`);
+    expect(markdown.replace(/\s+/g, " ")).toContain(contract.description);
+    expect(markdown).toContain(
+      `- ${tracked} tracked files · ${contract.scale.class} · single-package repository`,
+    );
+    expect(markdown).toContain("Auxiliary Python assets are not repository workspaces");
     for (const entrypoint of contract.entrypoints)
       expect(markdown).toContain(`- \`${entrypoint}\``);
     expect(markdown).toContain("_No root `.mcp.json` servers detected._");
