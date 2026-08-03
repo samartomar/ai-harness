@@ -1,0 +1,52 @@
+{
+  "evidenceVersion": 1,
+  "source": {
+    "repository": "affaan-m/ECC",
+    "commit": "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
+    "package": "ecc-universal",
+    "packageVersion": "2.1.0",
+    "releaseAncestorCommit": "4da6deac1888690e7fb8572d097ee23db630f7a0",
+    "license": "MIT",
+    "licensePath": "LICENSE",
+    "manifestHashes": {
+      "manifests/install-components.json": "8eac72d3ab4eb41dc6feabadc7f80603999631186aeeb74b0e31019496054ed5",
+      "manifests/install-modules.json": "9293e36a93d62d9016cf8eb13e852a882ac5b68503a5842de230c7d21431bbb7",
+      "manifests/install-profiles.json": "fddc15a7ea59c5069686eacd5ef90da805b867bed39ddad3ca391363329270f1"
+    }
+  },
+  "profilesManifest": {
+    "version": 1,
+    "profiles": {
+      "core": {
+        "modules": ["rules-core", "agents-core", "commands-core", "hooks-runtime", "platform-configs", "workflow-quality"]
+      }
+    }
+  },
+  "componentsManifest": {
+    "version": 1,
+    "components": [
+      { "id": "lang:typescript", "family": "language", "modules": ["framework-language"] }
+    ]
+  },
+  "modulesManifest": {
+    "version": 1,
+    "modules": [
+      { "id": "rules-core", "kind": "rules", "paths": ["rules"], "dependencies": [] },
+      { "id": "agents-core", "kind": "agents", "paths": [".agents", "agents", "AGENTS.md"], "dependencies": [] },
+      { "id": "commands-core", "kind": "commands", "paths": ["commands", "scripts/harness-audit.js", "scripts/skills-health.js"], "dependencies": [] },
+      { "id": "hooks-runtime", "kind": "hooks", "paths": ["hooks", "scripts/hooks", "scripts/lib"], "dependencies": [] },
+      { "id": "platform-configs", "kind": "platform", "paths": [".claude-plugin", ".codex", ".cursor", ".gemini", ".opencode", ".qwen", ".zed", "mcp-configs", "scripts/auto-update.js", "scripts/setup-package-manager.js", ".hermes", ".openclaw", ".kimi"], "dependencies": [] },
+      { "id": "skill-unified-memory", "kind": "skills", "paths": ["skills/unified-memory"], "dependencies": ["platform-configs"] },
+      {
+        "id": "workflow-quality", "kind": "skills", "dependencies": ["skill-unified-memory"],
+        "paths": ["skills/agent-sort", "skills/agent-introspection-debugging", "skills/ai-regression-testing", "skills/configure-ecc", "skills/code-tour", "skills/continuous-learning", "skills/continuous-learning-v2", "skills/council", "skills/e2e-testing", "skills/error-handling", "skills/eval-harness", "skills/hookify-rules", "skills/iterative-retrieval", "skills/plan-canvas", "skills/plankton-code-quality", "skills/production-audit", "skills/skill-scout", "skills/skill-stocktake", "skills/strategic-compact", "skills/tdd-workflow", "skills/verification-loop", "skills/windows-desktop-e2e", "skills/agent-self-evaluation", "skills/architecture-decision-records", "skills/browser-qa", "skills/ck", "skills/click-path-audit", "skills/codebase-onboarding", "skills/codehealth-mcp", "skills/config-gc", "skills/context-budget", "skills/delivery-gate", "skills/ecc-guide", "skills/ecc-recipes", "skills/growth-log", "skills/inherit-legacy-style", "skills/intent-driven-development", "skills/loop-design-check", "skills/product-lens", "skills/repo-scan", "skills/rules-distill", "skills/santa-method", "skills/git-workflow"]
+      },
+      {
+        "id": "framework-language", "kind": "skills", "dependencies": ["rules-core", "agents-core", "commands-core", "platform-configs"],
+        "paths": ["skills/android-clean-architecture", "skills/angular-developer", "skills/api-design", "skills/backend-patterns", "skills/coding-standards", "skills/compose-multiplatform-patterns", "skills/contract-first", "skills/csharp-testing", "skills/fsharp-testing", "skills/cpp-coding-standards", "skills/cpp-testing", "skills/dart-flutter-patterns", "skills/django-patterns", "skills/django-tdd", "skills/django-verification", "skills/dotnet-patterns", "skills/fastapi-patterns", "skills/frontend-design-direction", "skills/frontend-patterns", "skills/frontend-slides", "skills/make-interfaces-feel-better", "skills/motion-ui", "skills/golang-patterns", "skills/golang-testing", "skills/java-coding-standards", "skills/kotlin-coroutines-flows", "skills/kotlin-exposed-patterns", "skills/kotlin-ktor-patterns", "skills/kotlin-patterns", "skills/kotlin-testing", "skills/laravel-plugin-discovery", "skills/laravel-patterns", "skills/laravel-tdd", "skills/laravel-verification", "skills/mcp-server-patterns", "skills/nestjs-patterns", "skills/perl-patterns", "skills/perl-testing", "skills/python-patterns", "skills/python-testing", "skills/quarkus-patterns", "skills/quarkus-tdd", "skills/quarkus-verification", "skills/react-patterns", "skills/react-performance", "skills/react-testing", "skills/rust-patterns", "skills/rust-testing", "skills/springboot-patterns", "skills/springboot-tdd", "skills/springboot-verification", "skills/ui-to-vue", "skills/vue-patterns", "skills/accessibility", "skills/bun-runtime", "skills/design-system", "skills/django-celery", "skills/flutter-dart-code-review", "skills/frontend-a11y", "skills/generating-python-installer", "skills/hexagonal-architecture", "skills/motion-advanced", "skills/motion-foundations", "skills/motion-patterns", "skills/nextjs-turbopack", "skills/nuxt4-patterns", "skills/react-native-patterns", "skills/tinystruct-patterns", "skills/vite-patterns"]
+      }
+    ]
+  },
+  "agentPaths": ["agents/a11y-architect.md","agents/agent-evaluator.md","agents/architect.md","agents/build-error-resolver.md","agents/chief-of-staff.md","agents/code-architect.md","agents/code-explorer.md","agents/code-reviewer.md","agents/code-simplifier.md","agents/comment-analyzer.md","agents/conversation-analyzer.md","agents/cpp-build-resolver.md","agents/cpp-reviewer.md","agents/csharp-reviewer.md","agents/dart-build-resolver.md","agents/database-reviewer.md","agents/django-build-resolver.md","agents/django-reviewer.md","agents/doc-updater.md","agents/docs-lookup.md","agents/e2e-runner.md","agents/fastapi-reviewer.md","agents/flutter-reviewer.md","agents/fsharp-reviewer.md","agents/gan-evaluator.md","agents/gan-generator.md","agents/gan-planner.md","agents/go-build-resolver.md","agents/go-reviewer.md","agents/harmonyos-app-resolver.md","agents/harness-optimizer.md","agents/healthcare-reviewer.md","agents/homelab-architect.md","agents/java-build-resolver.md","agents/java-reviewer.md","agents/kotlin-build-resolver.md","agents/kotlin-reviewer.md","agents/loop-operator.md","agents/marketing-agent.md","agents/mle-reviewer.md","agents/network-architect.md","agents/network-config-reviewer.md","agents/network-troubleshooter.md","agents/opensource-forker.md","agents/opensource-packager.md","agents/opensource-sanitizer.md","agents/performance-optimizer.md","agents/php-reviewer.md","agents/planner.md","agents/pr-test-analyzer.md","agents/python-reviewer.md","agents/pytorch-build-resolver.md","agents/react-build-resolver.md","agents/react-reviewer.md","agents/refactor-cleaner.md","agents/rust-build-resolver.md","agents/rust-reviewer.md","agents/security-reviewer.md","agents/seo-specialist.md","agents/silent-failure-hunter.md","agents/spec-miner.md","agents/swift-build-resolver.md","agents/swift-reviewer.md","agents/tdd-guide.md","agents/type-design-analyzer.md","agents/typescript-reviewer.md","agents/vue-reviewer.md"],
+  "workflowPaths": ["commands/aside.md","commands/auto-update.md","commands/build-fix.md","commands/checkpoint.md","commands/code-review.md","commands/cost-report.md","commands/cpp-build.md","commands/cpp-review.md","commands/cpp-test.md","commands/ecc-guide.md","commands/epic-claim.md","commands/epic-decompose.md","commands/epic-publish.md","commands/epic-review.md","commands/epic-sync.md","commands/epic-unblock.md","commands/epic-validate.md","commands/evolve.md","commands/fastapi-review.md","commands/feature-dev.md","commands/flutter-build.md","commands/flutter-review.md","commands/flutter-test.md","commands/gan-build.md","commands/gan-design.md","commands/go-build.md","commands/go-review.md","commands/go-test.md","commands/gradle-build.md","commands/harness-audit.md","commands/hookify-configure.md","commands/hookify-help.md","commands/hookify-list.md","commands/hookify.md","commands/instinct-export.md","commands/instinct-import.md","commands/instinct-status.md","commands/jira.md","commands/kotlin-build.md","commands/kotlin-review.md","commands/kotlin-test.md","commands/learn-eval.md","commands/learn.md","commands/loop-start.md","commands/loop-status.md","commands/marketing-campaign.md","commands/model-route.md","commands/multi-backend.md","commands/multi-execute.md","commands/multi-frontend.md","commands/multi-plan.md","commands/multi-workflow.md","commands/orch-add-feature.md","commands/orch-build-mvp.md","commands/orch-change-feature.md","commands/orch-fix-defect.md","commands/orch-refine-code.md","commands/orch-review.md","commands/plan-canvas.md","commands/plan-prd.md","commands/plan.md","commands/pm2.md","commands/pr.md","commands/project-init.md","commands/projects.md","commands/promote.md","commands/prp-commit.md","commands/prp-implement.md","commands/prp-plan.md","commands/prp-pr.md","commands/prp-prd.md","commands/prune.md","commands/python-review.md","commands/quality-gate.md","commands/react-build.md","commands/react-review.md","commands/react-test.md","commands/refactor-clean.md","commands/resume-session.md","commands/review-pr.md","commands/rust-build.md","commands/rust-review.md","commands/rust-test.md","commands/santa-loop.md","commands/save-session.md","commands/security-scan.md","commands/sessions.md","commands/setup-pm.md","commands/skill-create.md","commands/skill-health.md","commands/test-coverage.md","commands/update-codemaps.md","commands/update-docs.md","commands/vue-review.md"]
+}
