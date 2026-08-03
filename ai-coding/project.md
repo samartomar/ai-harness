@@ -21,7 +21,7 @@ Enterprise AI Bootstrapping Harness — governed AI-assisted coding for enterpri
 
 ## Scale
 
-- 765 tracked files · medium · monorepo
+- 866 tracked files · medium · monorepo
 
 ## Entry points
 
