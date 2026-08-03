@@ -1,8 +1,9 @@
 # Repo contract
 
-> Facts about how this repo is built and run — rendered from `ai-coding/project.json`.
-> Do not hand-edit; re-run `aih contract` to refresh. Working agreements live in the
-> agent canon (`RULE_ROUTER.md` → ECC / Superpowers), not here.
+> Facts about how this repo is built and run — manually mirrored from
+> `ai-coding/project.json` under the permanent self-hosting boundary. Never run AIH
+> against this checkout; update both files in the same reviewed change. Working
+> agreements live in the agent canon (`RULE_ROUTER.md` → ECC / Superpowers).
 
 Enterprise AI Bootstrapping Harness — governed AI-assisted coding for enterprise workstations and repos: TLS trust, repo canon, skill supply chain, evidence
 
@@ -21,7 +22,7 @@ Enterprise AI Bootstrapping Harness — governed AI-assisted coding for enterpri
 
 ## Scale
 
-- 761 tracked files · medium · monorepo
+- 866 tracked files · medium · monorepo
 
 ## Entry points
 
@@ -32,20 +33,14 @@ Enterprise AI Bootstrapping Harness — governed AI-assisted coding for enterpri
 
 ## MCP servers
 
-- `code-review-graph`
-- `codebase-memory-mcp`
-- `context7`
-- `github`
-- `sequential-thinking`
-- `serena`
-- `token-savior`
+_No root `.mcp.json` servers detected._
 
 ## Sensitive paths
 
-_Never read or log these — `aih` denies agent reads of them._
+_Never read or log these. Inventory path names only through repository-owned checks._
 
 _None detected._
 
 ## Known gaps
 
-- 1 un-imported CLI rule set — review with `aih adopt`
+_None — the contract is clean._

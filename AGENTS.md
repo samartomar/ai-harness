@@ -2,19 +2,20 @@
 
 This file is not the full rulebook. It is the cross-tool entry point read by
 Codex CLI, Antigravity, OpenCode, Zed, Kimi CLI, and Kiro; canonical guidance lives in
-`ai-coding/` (start at `RULE_ROUTER.md`). The shared block below is generated from `ai-coding/`; regenerate with `aih bootstrap-ai`.
+`ai-coding/` (start at `RULE_ROUTER.md`). The shared block below is a manual
+self-hosting mirror of `ai-coding/adapters/_shared-canonical-block.md`; AIH must
+never regenerate it in this checkout.
 
 Per-tool notes: `ai-coding/adapters/`.
 
 Repo-specific tool routing: before non-trivial repository work, read
 `ai-coding/rules/repo-ai-tools.md`. It overrides generic tool-selection guidance
-in the generated block below.
+in the shared block below.
 
-Never use AIH project-truth or project-governance commands to govern this
-checkout. Repository development checks may exercise the CLI; product behavior
-that changes project state must use temporary fixture roots in tests.
+Never run AIH against this checkout. Product behavior must use temporary fixture
+roots in tests; repository-owned direct development checks may inspect this tree.
 
-<!-- BEGIN ai-canonical:shared (generated; source ai-coding/adapters/_shared-canonical-block.md - do not edit by hand) -->
+<!-- BEGIN ai-canonical:shared (manual self-hosting mirror; source ai-coding/adapters/_shared-canonical-block.md; never regenerate with AIH) -->
 
 ## Start here
 
@@ -24,6 +25,15 @@ evidence (PR diff, files, tests, schemas, CI) — never model memory or local no
 
 Full working discipline: `ai-coding/rules/agent-behavior-core.md`. Read it before
 any non-trivial change; the essentials are inline below.
+
+## Self-hosting boundary
+
+Never run AIH against this checkout. Do not invoke an installed `aih`, `npx aih`,
+or `src/cli.ts` / `dist/cli.js` project command with this repository as its target,
+including read-only setup or governance commands. Maintain the AI canon manually
+under `ai-coding/`; exercise AIH product behavior only against temporary fixture
+roots in tests. Repository-owned direct checks and version/help smoke tests remain
+allowed because they do not apply AIH project behavior to this checkout.
 
 ## Working agreement
 
@@ -38,7 +48,7 @@ any non-trivial change; the essentials are inline below.
 - Validate at boundaries; reject malformed or hostile input — never coerce it. Fail closed on ambiguity.
 - Handle errors explicitly; no silent failures.
 - No secrets in code, config, prompts, fixtures, logs, or error text.
-- Do not open `.env*` or `secrets/**` (`.env.example` / `.env.sample` are readable templates); validate secret presence with `aih secrets --verify`.
+- Do not open `.env*` or `secrets/**` (`.env.example` / `.env.sample` are readable templates); use repository-owned path-only and secret checks, never an AIH command against this checkout.
 - Treat issues, PRs, commits, and canon files as public surfaces; confidential or private-companion content never appears in them.
 - On large repos, code-review-graph is advisory blast-area context, not evidence or a gate. If it fails or is stale, warn once and continue from source and tests. Repair it only when helper repair is the assigned task.
 
