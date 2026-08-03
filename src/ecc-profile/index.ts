@@ -1,4 +1,6 @@
-import { posix } from "node:path";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join, posix } from "node:path";
 import { z } from "zod";
 import { hashComponentTree } from "../baseline-evidence/hash.js";
 
@@ -6,6 +8,11 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT = /^[0-9a-f]{40}$/;
 const ID = /^\/?[a-z0-9][a-z0-9._:/-]*$/;
 const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+const MANIFEST_PATHS = [
+  "manifests/install-components.json",
+  "manifests/install-modules.json",
+  "manifests/install-profiles.json",
+] as const;
 
 const sourcePathSchema = z
   .string()
@@ -38,6 +45,7 @@ const reviewReceiptSchema = z
     id: z.string().min(1),
     evidencePath: sourcePathSchema,
     sourceCommit: z.string().regex(COMMIT),
+    evidenceSha256: hashSchema,
   })
   .strict();
 const ownershipSchema = z
@@ -285,7 +293,9 @@ const evidenceSchema = z
       license: z.literal("MIT"),
       licensePath: sourcePathSchema,
       manifestHashes: z.record(sourcePathSchema, hashSchema),
+      manifestPayloadHashes: z.record(sourcePathSchema, hashSchema),
     }),
+    reviewReceipt: reviewReceiptSchema,
     profilesManifest: z.object({
       version: z.literal(1),
       profiles: z.record(idSchema, z.object({ modules: z.array(idSchema) }).passthrough()),
@@ -295,6 +305,7 @@ const evidenceSchema = z
       components: z.array(z.object({ id: idSchema, modules: z.array(idSchema) }).passthrough()),
     }),
     modulesManifest: z.object({ version: z.literal(1), modules: z.array(moduleSchema) }),
+    availableSkillPaths: z.array(sourcePathSchema),
     agentPaths: z.array(sourcePathSchema),
     workflowPaths: z.array(sourcePathSchema),
   })
@@ -328,6 +339,30 @@ function assertUniquePaths(groups: readonly (readonly string[])[]): void {
     throw new Error("ambiguous duplicate source path in pinned evidence");
 }
 
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+function assertDerivedIdentities(paths: readonly string[], namespace: "agents" | "commands"): void {
+  const pattern = namespace === "agents" ? /^agents\/[^/]+\.md$/ : /^commands\/[^/]+\.md$/;
+  if (paths.some((sourcePath) => !pattern.test(sourcePath)))
+    throw new Error(`${namespace} source path is outside the expected namespace`);
+  const ids = paths.map((sourcePath) => posix.basename(sourcePath, ".md"));
+  if (new Set(ids).size !== ids.length)
+    throw new Error(`ambiguous derived ${namespace} identity in pinned evidence`);
+}
+
 function containmentRoots(paths: readonly string[]): string[] {
   return ordered(
     new Set(
@@ -338,7 +373,11 @@ function containmentRoots(paths: readonly string[]): string[] {
   );
 }
 
-function resolveBase(profileInput: unknown, evidenceInput: unknown): ResolvedEccProfile {
+function resolveBase(
+  profileInput: unknown,
+  evidenceInput: unknown,
+  verifyEmbeddedPayloads = true,
+): ResolvedEccProfile {
   const profile = eccProfileSchema.parse(profileInput);
   const evidence: PinnedEvidence = evidenceSchema.parse(evidenceInput);
   if (
@@ -350,14 +389,40 @@ function resolveBase(profileInput: unknown, evidenceInput: unknown): ResolvedEcc
     evidence.source.license !== profile.source.license
   )
     throw new Error("pinned evidence contradicts profile source metadata");
+  if (
+    evidence.reviewReceipt.id !== profile.source.reviewReceipt.id ||
+    evidence.reviewReceipt.evidencePath !== profile.source.reviewReceipt.evidencePath ||
+    evidence.reviewReceipt.sourceCommit !== profile.source.reviewReceipt.sourceCommit ||
+    evidence.reviewReceipt.evidenceSha256 !== profile.source.reviewReceipt.evidenceSha256
+  )
+    throw new Error("review receipt contradicts pinned evidence");
   if (profile.source.componentPath !== "manifests/install-components.json")
     throw new Error("componentPath contradicts pinned manifest evidence");
   const componentHash = evidence.source.manifestHashes[profile.source.componentPath];
+  if (
+    ordered(Object.keys(evidence.source.manifestHashes)).join("\n") !==
+      ordered(MANIFEST_PATHS).join("\n") ||
+    ordered(Object.keys(evidence.source.manifestPayloadHashes)).join("\n") !==
+      ordered(MANIFEST_PATHS).join("\n")
+  )
+    throw new Error("pinned evidence must declare exactly the consumed manifests");
   if (
     componentHash !== profile.source.sourceHash ||
     componentHash !== profile.source.normalizedHash
   ) {
     throw new Error("profile source hashes contradict pinned component manifest");
+  }
+  const payloads = {
+    "manifests/install-components.json": evidence.componentsManifest,
+    "manifests/install-modules.json": evidence.modulesManifest,
+    "manifests/install-profiles.json": evidence.profilesManifest,
+  } as const;
+  for (const [sourcePath, payload] of Object.entries(payloads)) {
+    if (
+      verifyEmbeddedPayloads &&
+      sha256(canonicalJson(payload)) !== evidence.source.manifestPayloadHashes[sourcePath]
+    )
+      throw new Error(`embedded manifest payload hash mismatch: ${sourcePath}`);
   }
 
   const modules = new Map(evidence.modulesManifest.modules.map((module) => [module.id, module]));
@@ -385,7 +450,20 @@ function resolveBase(profileInput: unknown, evidenceInput: unknown): ResolvedEcc
   );
   if (baselinePaths.length !== 113)
     throw new Error(`baseline skill accounting expected 113, received ${baselinePaths.length}`);
-  const leafPaths = profile.selections.activeSkills.map((id) => `skills/${id}`);
+  const availableSkillPaths = new Set(evidence.availableSkillPaths);
+  if (
+    evidence.availableSkillPaths.some(
+      (sourcePath) => !/^skills\/[a-z0-9][a-z0-9._-]*$/.test(sourcePath),
+    ) ||
+    availableSkillPaths.size !== evidence.availableSkillPaths.length
+  )
+    throw new Error("ambiguous selected skill inventory path");
+  const leafPaths = profile.selections.activeSkills.map((id) => {
+    const sourcePath = `skills/${id}`;
+    if (!availableSkillPaths.has(sourcePath))
+      throw new Error(`selected leaf is absent from pinned skill inventory: ${id}`);
+    return sourcePath;
+  });
   const skillPaths = ordered(new Set([...baselinePaths, ...leafPaths]));
   if (skillPaths.length !== profile.expected.skills)
     throw new Error(
@@ -399,6 +477,8 @@ function resolveBase(profileInput: unknown, evidenceInput: unknown): ResolvedEcc
     throw new Error(
       `workflow accounting expected ${profile.expected.workflows}, received ${evidence.workflowPaths.length}`,
     );
+  assertDerivedIdentities(evidence.agentPaths, "agents");
+  assertDerivedIdentities(evidence.workflowPaths, "commands");
   assertUniquePaths([skillPaths, evidence.agentPaths, evidence.workflowPaths]);
 
   const adapted = new Set<string>(profile.aihAdaptedWorkflows);
@@ -460,9 +540,27 @@ export function resolveEccProfile(
   evidence: unknown,
   options?: { sourceRoot: string },
 ): ResolvedEccProfile | Promise<ResolvedEccProfile> {
-  const resolved = resolveBase(profile, evidence);
-  if (!options) return resolved;
-  return Promise.resolve().then(() => {
+  if (!options) return resolveBase(profile, evidence);
+  return Promise.resolve().then(async () => {
+    const parsedEvidence: PinnedEvidence = evidenceSchema.parse(evidence);
+    const manifests = await Promise.all(
+      Object.entries(parsedEvidence.source.manifestHashes).map(
+        async ([sourcePath, expectedHash]) => {
+          const bytes = await readFile(join(options.sourceRoot, ...sourcePath.split("/")), "utf8");
+          if (sha256(bytes) !== expectedHash)
+            throw new Error(`source manifest hash mismatch: ${sourcePath}`);
+          return [sourcePath, JSON.parse(bytes) as unknown] as const;
+        },
+      ),
+    );
+    const manifestByPath = new Map(manifests);
+    const verifiedEvidence = {
+      ...parsedEvidence,
+      componentsManifest: manifestByPath.get("manifests/install-components.json"),
+      modulesManifest: manifestByPath.get("manifests/install-modules.json"),
+      profilesManifest: manifestByPath.get("manifests/install-profiles.json"),
+    };
+    const resolved = resolveBase(profile, verifiedEvidence, false);
     hashComponentTree(options.sourceRoot, containmentRoots(resolved.consumedSourcePaths));
     return resolved;
   });
