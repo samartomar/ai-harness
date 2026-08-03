@@ -1,51 +1,101 @@
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
 import { posix } from "node:path";
 import { parse as parseYaml } from "yaml";
 import {
-  assertPortableSourcePath,
-  checkedPath,
-  checkedRoot,
   type EccProfile,
+  eccProfileSchema,
   type ResolvedEntry,
   type ResolvedSkill,
   resolveEccProfile,
 } from "./index.js";
+import {
+  type ClaudeRolePolicy,
+  claudeRolePolicy,
+  claudeRoleTools,
+  normalizeCodexRoleBody,
+  normalizeCodexRoleDescription,
+  normalizeCodexWorkflowBody,
+  normalizeCodexWorkflowDescription,
+  type WorkflowTransport,
+  workflowProjectionPolicies,
+} from "./projection-policy.js";
+import {
+  acquireProjectionSourceClosure,
+  type ProjectionSourceTrust,
+  TRUSTED_PROJECTED_SOURCE,
+  type VerifiedProjectedSource,
+  type VerifiedProjectionSourceClosure,
+} from "./source-closure.js";
+
+export { PROJECTED_SOURCE_LIMITS, type ProjectionSourceTrust } from "./source-closure.js";
 
 type CapabilityOwner = ResolvedEntry["owner"];
 type MergeStrategy = "replace" | "toml-merge";
+type OutputMode = "100644" | "100755";
 
 export interface ProjectedEntry extends ResolvedEntry {
   destination: string;
+}
+
+export interface ProjectedRole extends ProjectedEntry {
+  policy: ClaudeRolePolicy;
 }
 
 export interface ProjectedSkill extends ResolvedSkill {
   destination: string;
 }
 
+export interface ProjectedWorkflow extends ProjectedEntry {
+  transport: WorkflowTransport;
+  unavailableReason?: string;
+  fallback?: string;
+}
+
 export interface ClientProjection {
   client: "claude" | "codex";
   skills: ProjectedSkill[];
-  roles: ProjectedEntry[];
-  workflows: ProjectedEntry[];
+  roles: ProjectedRole[];
+  workflows: ProjectedWorkflow[];
+}
+
+interface PinnedFileProvenance {
+  kind: "pinned-file";
+  sourcePin: string;
+  path: string;
+  rawSha256: string;
+  fileType: "regular";
+  mode: OutputMode;
+}
+
+interface DerivedProvenance {
+  kind: "derived";
+  sourcePin: string;
+  derivation: "codex-agent-registry";
+  aggregateSha256: string;
+  inputs: Array<{ path: string; rawSha256: string }>;
 }
 
 export interface RenderedProjectionFile {
-  sourcePin: string;
-  sourcePath: string;
-  sourceSha256: string;
+  provenance: PinnedFileProvenance | DerivedProvenance;
   normalizedSha256: string;
   destination: string;
   owner: "aih";
   capabilityOwner: CapabilityOwner;
   mergeStrategy: MergeStrategy;
   previousHash: null;
+  mode: OutputMode;
   content: string;
 }
 
 export interface EccProjection {
   version: 1;
   source: EccProfile["source"];
+  sourceClosure: {
+    id: string;
+    aggregateSha256: string;
+    fileCount: number;
+    totalBytes: number;
+  };
   clients: {
     claude: ClientProjection;
     codex: ClientProjection;
@@ -57,11 +107,6 @@ interface MarkdownSource {
   attributes: Record<string, unknown>;
   description: string;
   body: string;
-}
-
-interface SourceFile {
-  sourcePath: string;
-  bytes: Buffer;
 }
 
 const ADAPTATIONS: Record<string, { description: string; body: string }> = {
@@ -116,8 +161,8 @@ function normalizeText(bytes: Uint8Array, label: string): string {
   let decoded: string;
   try {
     decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch (error) {
-    throw new Error(`${label} is not valid UTF-8: ${(error as Error).message}`);
+  } catch {
+    throw new Error(`${label} is not valid UTF-8`);
   }
   const normalized = decoded
     .replace(/^\uFEFF/, "")
@@ -142,11 +187,7 @@ function parseMarkdownSource(
   const attributes = parsed as Record<string, unknown>;
   if (typeof attributes.description !== "string" || attributes.description.trim() === "")
     throw new Error(`${label} must declare a description`);
-  if (
-    expectedName &&
-    attributes.name !== undefined &&
-    (typeof attributes.name !== "string" || attributes.name !== expectedName)
-  )
+  if (expectedName && attributes.name !== expectedName)
     throw new Error(`${label} declares an ambiguous identity`);
   const body = `${lines
     .slice(closing + 1)
@@ -160,70 +201,60 @@ function parseMarkdownSource(
   };
 }
 
-function readSourceFile(sourceRoot: string, sourcePath: string): SourceFile {
-  assertPortableSourcePath(sourcePath);
-  const absolute = checkedPath(sourceRoot, sourcePath, "file", "projection source");
-  return { sourcePath, bytes: readFileSync(absolute) };
-}
-
-function readSourceTree(sourceRoot: string, sourceDirectory: string): SourceFile[] {
-  assertPortableSourcePath(sourceDirectory);
-  checkedPath(sourceRoot, sourceDirectory, "directory", "projection source");
-  const files: SourceFile[] = [];
-  const visit = (relativeDirectory: string): void => {
-    const directoryPath = relativeDirectory
-      ? posix.join(sourceDirectory, relativeDirectory)
-      : sourceDirectory;
-    const absoluteDirectory = checkedPath(
-      sourceRoot,
-      directoryPath,
-      "directory",
-      "projection source",
-    );
-    const entries = readdirSync(absoluteDirectory, { withFileTypes: true }).sort((left, right) =>
-      left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
-    );
-    for (const entry of entries) {
-      const relativePath = relativeDirectory
-        ? posix.join(relativeDirectory, entry.name)
-        : entry.name;
-      const sourcePath = assertPortableSourcePath(posix.join(sourceDirectory, relativePath));
-      if (entry.isSymbolicLink())
-        throw new Error(`projection source uses a symbolic link: ${sourcePath}`);
-      if (entry.isDirectory()) {
-        checkedPath(sourceRoot, sourcePath, "directory", "projection source");
-        visit(relativePath);
-      } else if (entry.isFile()) {
-        const absolute = checkedPath(sourceRoot, sourcePath, "file", "projection source");
-        files.push({ sourcePath, bytes: readFileSync(absolute) });
-      } else {
-        throw new Error(`projection source is not a regular file or directory: ${sourcePath}`);
-      }
-    }
-  };
-  visit("");
-  return files;
-}
-
-function renderedFile(
+function pinnedRenderedFile(
   sourcePin: string,
-  source: SourceFile,
+  source: VerifiedProjectedSource,
   destination: string,
   content: string,
   capabilityOwner: CapabilityOwner,
-  mergeStrategy: MergeStrategy = "replace",
+  options: { mode?: OutputMode; mergeStrategy?: MergeStrategy } = {},
 ): RenderedProjectionFile {
-  assertPortableSourcePath(destination);
   return {
-    sourcePin,
-    sourcePath: source.sourcePath,
-    sourceSha256: sha256(source.bytes),
+    provenance: {
+      kind: "pinned-file",
+      sourcePin,
+      path: source.path,
+      rawSha256: source.rawSha256,
+      fileType: source.fileType,
+      mode: source.mode,
+    },
     normalizedSha256: sha256(content),
     destination,
     owner: "aih",
     capabilityOwner,
-    mergeStrategy,
+    mergeStrategy: options.mergeStrategy ?? "replace",
     previousHash: null,
+    mode: options.mode ?? source.mode,
+    content,
+  };
+}
+
+function derivedRenderedFile(
+  sourcePin: string,
+  sources: readonly VerifiedProjectedSource[],
+  destination: string,
+  content: string,
+): RenderedProjectionFile {
+  const inputs = sources
+    .map((source) => ({ path: source.path, rawSha256: source.rawSha256 }))
+    .sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+  return {
+    provenance: {
+      kind: "derived",
+      sourcePin,
+      derivation: "codex-agent-registry",
+      aggregateSha256: sha256(
+        inputs.map((input) => `${input.path}\0${input.rawSha256}`).join("\n"),
+      ),
+      inputs,
+    },
+    normalizedSha256: sha256(content),
+    destination,
+    owner: "aih",
+    capabilityOwner: "upstream",
+    mergeStrategy: "toml-merge",
+    previousHash: null,
+    mode: "100644",
     content,
   };
 }
@@ -242,23 +273,61 @@ function adaptationMarkdown(id: string): string {
   ].join("\n");
 }
 
-function codexWorkflowSkill(id: string, source: MarkdownSource, adapted: boolean): string {
-  const workflowName = id.slice(1);
-  const adaptation = ADAPTATIONS[id];
-  const description = adapted ? adaptation?.description : source.description;
-  const body = adapted
-    ? adaptation?.body
-    : source.body.replaceAll("$ARGUMENTS", "the user's workflow arguments").trimEnd();
-  if (!description || !body) throw new Error(`workflow ${id} cannot be projected`);
+function unavailableCodexWorkflow(
+  id: string,
+  description: string,
+  reason: string,
+  fallback: string,
+): string {
   return [
     "---",
-    `name: ecc-workflow-${workflowName}`,
+    `name: ecc-workflow-${id.slice(1)}`,
     `description: ${JSON.stringify(description)}`,
     "---",
     "",
     `# Workflow ${id}`,
     "",
-    body,
+    "## Unavailable in this projection",
+    "",
+    reason,
+    "",
+    "## Actionable fallback",
+    "",
+    fallback,
+    "",
+  ].join("\n");
+}
+
+function codexWorkflowSkill(id: string, description: string, body: string): string {
+  return [
+    "---",
+    `name: ecc-workflow-${id.slice(1)}`,
+    `description: ${JSON.stringify(description)}`,
+    "---",
+    "",
+    `# Workflow ${id}`,
+    "",
+    body.trimEnd(),
+    "",
+  ].join("\n");
+}
+
+function claudeRoleMarkdown(
+  id: string,
+  description: string,
+  body: string,
+  policy: ClaudeRolePolicy,
+): string {
+  return [
+    "---",
+    `name: ${id}`,
+    `description: ${JSON.stringify(description)}`,
+    "model: inherit",
+    "tools:",
+    ...claudeRoleTools(policy).map((tool) => `  - ${tool}`),
+    "---",
+    "",
+    body.trim(),
     "",
   ].join("\n");
 }
@@ -294,46 +363,57 @@ function assertProjectionFiles(files: RenderedProjectionFile[]): RenderedProject
   return ordered;
 }
 
-export async function renderEccProjection(
-  profile: unknown,
+function requireSource(
+  closure: VerifiedProjectionSourceClosure,
+  sourcePath: string,
+): VerifiedProjectedSource {
+  const source = closure.files.get(sourcePath);
+  if (!source) throw new Error(`authenticated source closure omitted consumed path: ${sourcePath}`);
+  return source;
+}
+
+async function renderWithTrust(
+  profileInput: unknown,
   evidence: unknown,
   options: { sourceRoot: string; evidenceRoot: string },
+  trust: ProjectionSourceTrust,
 ): Promise<EccProjection> {
-  const resolved = await resolveEccProfile(profile, evidence, options);
-  const sourceRoot = checkedRoot(options.sourceRoot, "ECC projection source root");
+  const resolved = await resolveEccProfile(profileInput, evidence, options);
+  const profile = eccProfileSchema.parse(profileInput);
+  const closure = acquireProjectionSourceClosure(profile, resolved, options, trust);
   const files: RenderedProjectionFile[] = [];
+  const consumed = new Set<string>();
   const sourcePin = resolved.source.commit;
 
   const claudeSkills: ProjectedSkill[] = [];
   const codexSkills: ProjectedSkill[] = [];
   for (const skill of resolved.skills) {
-    const sourceFiles = readSourceTree(sourceRoot, skill.sourcePath);
-    const primaryPath = posix.join(skill.sourcePath, "SKILL.md");
-    const primary = sourceFiles.find((file) => file.sourcePath === primaryPath);
-    if (!primary) throw new Error(`selected skill is missing SKILL.md: ${skill.id}`);
-    parseMarkdownSource(
-      normalizeText(primary.bytes, primary.sourcePath),
-      primary.sourcePath,
-      skill.id,
+    const sourceFiles = [...closure.files.values()].filter((source) =>
+      source.path.startsWith(`${skill.sourcePath}/`),
     );
+    const primaryPath = posix.join(skill.sourcePath, "SKILL.md");
+    const primary = sourceFiles.find((source) => source.path === primaryPath);
+    if (!primary) throw new Error(`selected skill is missing SKILL.md: ${skill.id}`);
+    parseMarkdownSource(normalizeText(primary.contents, primary.path), primary.path, skill.id);
     const claudeDestination = `.claude/skills/${skill.id}`;
     const codexDestination = `.agents/skills/${skill.id}`;
     claudeSkills.push({ ...skill, destination: claudeDestination });
     codexSkills.push({ ...skill, destination: codexDestination });
-    for (const sourceFile of sourceFiles) {
-      const relativePath = posix.relative(skill.sourcePath, sourceFile.sourcePath);
-      const content = normalizeText(sourceFile.bytes, sourceFile.sourcePath);
+    for (const source of sourceFiles) {
+      consumed.add(source.path);
+      const relativePath = posix.relative(skill.sourcePath, source.path);
+      const content = normalizeText(source.contents, source.path);
       files.push(
-        renderedFile(
+        pinnedRenderedFile(
           sourcePin,
-          sourceFile,
+          source,
           posix.join(claudeDestination, relativePath),
           content,
           skill.owner,
         ),
-        renderedFile(
+        pinnedRenderedFile(
           sourcePin,
-          sourceFile,
+          source,
           posix.join(codexDestination, relativePath),
           content,
           skill.owner,
@@ -342,74 +422,135 @@ export async function renderEccProjection(
     }
   }
 
-  const claudeRoles: ProjectedEntry[] = [];
-  const codexRoles: ProjectedEntry[] = [];
+  const rolePolicies = claudeRolePolicy(resolved.roles);
+  const claudeRoles: ProjectedRole[] = [];
+  const codexRoles: ProjectedRole[] = [];
   const roleDescriptions: { id: string; description: string }[] = [];
-  const roleSources: SourceFile[] = [];
+  const roleSources: VerifiedProjectedSource[] = [];
   for (const role of resolved.roles) {
-    const source = readSourceFile(sourceRoot, role.sourcePath);
-    const normalized = normalizeText(source.bytes, source.sourcePath);
-    const parsed = parseMarkdownSource(normalized, source.sourcePath, role.id);
+    const source = requireSource(closure, role.sourcePath);
+    consumed.add(source.path);
+    const normalized = normalizeText(source.contents, source.path);
+    const parsed = parseMarkdownSource(normalized, source.path, role.id);
+    const policy = rolePolicies.get(role.id);
+    if (!policy) throw new Error(`missing reviewed role policy: ${role.id}`);
     const claudeDestination = `.claude/agents/${role.id}.md`;
     const codexDestination = `.codex/agents/${role.id}.toml`;
-    claudeRoles.push({ ...role, destination: claudeDestination });
-    codexRoles.push({ ...role, destination: codexDestination });
-    roleDescriptions.push({ id: role.id, description: parsed.description });
+    claudeRoles.push({ ...role, destination: claudeDestination, policy });
+    codexRoles.push({ ...role, destination: codexDestination, policy });
+    roleDescriptions.push({
+      id: role.id,
+      description: normalizeCodexRoleDescription(role.id, parsed.description),
+    });
     roleSources.push(source);
     files.push(
-      renderedFile(sourcePin, source, claudeDestination, normalized, role.owner),
-      renderedFile(sourcePin, source, codexDestination, codexRoleConfig(parsed.body), role.owner),
+      pinnedRenderedFile(
+        sourcePin,
+        source,
+        claudeDestination,
+        claudeRoleMarkdown(role.id, parsed.description, parsed.body, policy),
+        role.owner,
+        { mode: "100644" },
+      ),
+      pinnedRenderedFile(
+        sourcePin,
+        source,
+        codexDestination,
+        codexRoleConfig(normalizeCodexRoleBody(role.id, parsed.body)),
+        role.owner,
+        { mode: "100644" },
+      ),
     );
   }
-  const codexConfig = codexAgentsConfig(roleDescriptions);
-  const configSource = {
-    sourcePath: "agents",
-    bytes: Buffer.from(roleSources.map((source) => sha256(source.bytes)).join("\n")),
-  };
   files.push(
-    renderedFile(
+    derivedRenderedFile(
       sourcePin,
-      configSource,
+      roleSources,
       ".codex/config.toml",
-      codexConfig,
-      "upstream",
-      "toml-merge",
+      codexAgentsConfig(roleDescriptions),
     ),
   );
 
-  const claudeWorkflows: ProjectedEntry[] = [];
-  const codexWorkflows: ProjectedEntry[] = [];
+  const policies = workflowProjectionPolicies(resolved.workflows);
+  const workflowIds = resolved.workflows.map((workflow) => workflow.id);
+  const claudeWorkflows: ProjectedWorkflow[] = [];
+  const codexWorkflows: ProjectedWorkflow[] = [];
   for (const workflow of resolved.workflows) {
-    const source = readSourceFile(sourceRoot, workflow.sourcePath);
-    const normalized = normalizeText(source.bytes, source.sourcePath);
-    const parsed = parseMarkdownSource(normalized, source.sourcePath);
+    const source = requireSource(closure, workflow.sourcePath);
+    consumed.add(source.path);
+    const normalized = normalizeText(source.contents, source.path);
+    const parsed = parseMarkdownSource(normalized, source.path);
+    const policy = policies.get(workflow.id);
+    if (!policy) throw new Error(`missing reviewed workflow policy: ${workflow.id}`);
     const workflowName = workflow.id.slice(1);
     const adapted = workflow.owner === "aih-adaptation";
+    const codexDescription = normalizeCodexWorkflowDescription(parsed.description, workflowIds);
     const claudeDestination = `.claude/commands/${workflowName}.md`;
     const codexDestination = `.agents/skills/ecc-workflow-${workflowName}/SKILL.md`;
-    claudeWorkflows.push({ ...workflow, destination: claudeDestination });
-    codexWorkflows.push({ ...workflow, destination: codexDestination });
+    claudeWorkflows.push({
+      ...workflow,
+      destination: claudeDestination,
+      transport: policy.claude.transport,
+    });
+    codexWorkflows.push({
+      ...workflow,
+      destination: codexDestination,
+      transport: policy.codex.transport,
+      ...(policy.codex.unavailableReason
+        ? { unavailableReason: policy.codex.unavailableReason }
+        : {}),
+      ...(policy.codex.fallback ? { fallback: policy.codex.fallback } : {}),
+    });
+
+    let codexContent: string;
+    if (adapted) {
+      const adaptation = ADAPTATIONS[workflow.id];
+      if (!adaptation) throw new Error(`missing AIH workflow adaptation: ${workflow.id}`);
+      codexContent = codexWorkflowSkill(workflow.id, adaptation.description, adaptation.body);
+    } else if (policy.codex.transport === "unavailable") {
+      const { fallback, unavailableReason } = policy.codex;
+      if (!fallback || !unavailableReason)
+        throw new Error(`unavailable workflow lacks actionable policy: ${workflow.id}`);
+      codexContent = unavailableCodexWorkflow(
+        workflow.id,
+        codexDescription,
+        unavailableReason,
+        fallback,
+      );
+    } else {
+      codexContent = codexWorkflowSkill(
+        workflow.id,
+        codexDescription,
+        normalizeCodexWorkflowBody(parsed.body, workflowIds),
+      );
+    }
     files.push(
-      renderedFile(
+      pinnedRenderedFile(
         sourcePin,
         source,
         claudeDestination,
         adapted ? adaptationMarkdown(workflow.id) : normalized,
         workflow.owner,
+        { mode: "100644" },
       ),
-      renderedFile(
-        sourcePin,
-        source,
-        codexDestination,
-        codexWorkflowSkill(workflow.id, parsed, adapted),
-        workflow.owner,
-      ),
+      pinnedRenderedFile(sourcePin, source, codexDestination, codexContent, workflow.owner, {
+        mode: "100644",
+      }),
     );
   }
+
+  if (consumed.size !== closure.files.size)
+    throw new Error("authenticated projected source closure was not completely consumed");
 
   return {
     version: 1,
     source: resolved.source,
+    sourceClosure: {
+      id: closure.id,
+      aggregateSha256: closure.aggregateSha256,
+      fileCount: closure.fileCount,
+      totalBytes: closure.totalBytes,
+    },
     clients: {
       claude: {
         client: "claude",
@@ -417,15 +558,39 @@ export async function renderEccProjection(
         roles: claudeRoles,
         workflows: claudeWorkflows,
       },
-      codex: {
-        client: "codex",
-        skills: codexSkills,
-        roles: codexRoles,
-        workflows: codexWorkflows,
-      },
+      codex: { client: "codex", skills: codexSkills, roles: codexRoles, workflows: codexWorkflows },
     },
     files: assertProjectionFiles(files),
   };
+}
+
+export async function renderEccProjection(
+  profile: unknown,
+  evidence: unknown,
+  options: { sourceRoot: string; evidenceRoot: string },
+): Promise<EccProjection> {
+  return renderWithTrust(profile, evidence, options, TRUSTED_PROJECTED_SOURCE);
+}
+
+/** Internal hermetic-test seam. This module is not exported from the package or CLI. */
+export async function renderEccProjectionWithTrust(
+  profile: unknown,
+  evidence: unknown,
+  options: { sourceRoot: string; evidenceRoot: string },
+  trust: ProjectionSourceTrust,
+): Promise<EccProjection> {
+  return renderWithTrust(profile, evidence, options, trust);
+}
+
+export function projectionFilesDigest(files: readonly RenderedProjectionFile[]): string {
+  return sha256(
+    [...files]
+      .sort((left, right) =>
+        left.destination < right.destination ? -1 : left.destination > right.destination ? 1 : 0,
+      )
+      .map((file) => `${file.destination}\0${file.normalizedSha256}\0${file.mode}`)
+      .join("\n"),
+  );
 }
 
 export function serializeEccProjection(projection: EccProjection): string {
