@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, extname, join, relative } from "node:path";
+import { dirname, extname, isAbsolute, join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   AIH_ECC_PROFILE_TEMPLATE,
@@ -304,9 +304,11 @@ describe("manifest-derived AIH ECC profile resolution", () => {
   it("rejects a relative source root before filesystem acquisition", async () => {
     const roots = await fixtureRoots();
     try {
+      const relativeTemporaryRoot = relative(dirname(roots.sourceRoot), roots.sourceRoot);
+      expect(isAbsolute(relativeTemporaryRoot)).toBe(false);
       await expect(
         resolveEccProfile(profile, evidence, {
-          sourceRoot: relative(process.cwd(), roots.sourceRoot),
+          sourceRoot: relativeTemporaryRoot,
           evidenceRoot: roots.evidenceRoot,
         }),
       ).rejects.toThrow(/source root.*absolute/i);
