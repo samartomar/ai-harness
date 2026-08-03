@@ -2,7 +2,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -304,41 +304,6 @@ function tokenOptimizerStop() {
   );
 }
 
-function graphRefreshLauncher() {
-  const mcp = JSON.parse(readFileSync(join(repoRoot, ".mcp.json"), "utf8"));
-  const server = mcp.mcpServers?.["code-review-graph"];
-  const serveArgs = Array.isArray(server?.args) ? server.args : [];
-  if (!server?.command || serveArgs[serveArgs.length - 1] !== "serve") {
-    throw new Error(".mcp.json has no pinned code-review-graph serve launcher to derive from");
-  }
-  const args = [...serveArgs.slice(0, -1), "update"];
-  const origHead = spawnSync("git", ["rev-parse", "-q", "--verify", "ORIG_HEAD"], {
-    cwd: repoRoot,
-    encoding: "utf8",
-  });
-  if (origHead.status === 0) args.push("--base", origHead.stdout.trim());
-  return { command: server.command, args };
-}
-
-function graphRefresh({ print = false } = {}) {
-  const launcher = graphRefreshLauncher();
-  if (print) {
-    process.stdout.write(`${JSON.stringify(launcher, null, 2)}\n`);
-    return;
-  }
-  // Advisory refresh: detach so git hooks and shells never wait on the update.
-  const child = spawn(launcher.command, launcher.args, {
-    cwd: repoRoot,
-    detached: true,
-    stdio: "ignore",
-  });
-  child.on("error", (error) => {
-    process.stderr.write(`[repo-ai-tools] graph-refresh skipped: ${error.message}\n`);
-  });
-  child.unref();
-  process.stdout.write("[repo-ai-tools] code-review-graph incremental refresh started\n");
-}
-
 const command = process.argv[2];
 try {
   if (command === "plan") process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
@@ -349,10 +314,9 @@ try {
   else if (command === "token-optimizer-stop") tokenOptimizerStop();
   else if (command === "token-optimizer-report") runTokenOptimizer(["report"]);
   else if (command === "token-optimizer-coach") runTokenOptimizer(["coach"]);
-  else if (command === "graph-refresh") graphRefresh({ print: process.argv.includes("--print") });
   else {
     fail(
-      "usage: repo-ai-tools.mjs <plan|install|verify|token-savior-mcp|serena-mcp|token-optimizer-stop|token-optimizer-report|token-optimizer-coach|graph-refresh>",
+      "usage: repo-ai-tools.mjs <plan|install|verify|token-savior-mcp|serena-mcp|token-optimizer-stop|token-optimizer-report|token-optimizer-coach>",
     );
   }
 } catch (error) {

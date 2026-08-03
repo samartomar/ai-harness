@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -59,75 +59,32 @@ describe("ai-harness repo AI tooling", () => {
     });
   });
 
-  it("wires only repo-local MCP and hook launchers", () => {
-    const mcp = JSON.parse(readFileSync(resolve(root, ".mcp.json"), "utf8")) as {
-      mcpServers: Record<string, { command?: string; args?: string[] }>;
-    };
-    const hooks = JSON.parse(readFileSync(resolve(root, ".codex/hooks.json"), "utf8")) as {
-      hooks: Record<string, Array<{ hooks?: Array<{ command?: string }> }>>;
-    };
-    const codexConfig = readFileSync(resolve(root, ".codex/config.toml"), "utf8");
-    const claudeSettings = JSON.parse(
-      readFileSync(resolve(root, ".claude/settings.json"), "utf8"),
-    ) as {
-      hooks: Record<string, Array<{ hooks?: Array<{ command?: string }> }>>;
-    };
-
-    expect(mcp.mcpServers.serena).toMatchObject({
-      command: "node",
-      args: ["tools/repo-ai-tools.mjs", "serena-mcp"],
-    });
-    expect(mcp.mcpServers["token-savior"]).toMatchObject({
-      command: "node",
-      args: ["tools/repo-ai-tools.mjs", "token-savior-mcp"],
-    });
-    expect(codexConfig).toContain('[mcp_servers."serena"]');
-    expect(codexConfig).toContain('[mcp_servers."token-savior"]');
-    expect(codexConfig).toContain('[mcp_servers."code-review-graph"]');
-    expect(codexConfig).toContain('args = ["tools/repo-ai-tools.mjs", "serena-mcp"]');
-    expect(codexConfig).toContain('args = ["tools/repo-ai-tools.mjs", "token-savior-mcp"]');
-    expect(codexConfig).toContain(
-      'args = ["--offline", "--no-python-downloads", "--no-env-file", "code-review-graph@2.3.7", "serve"]',
-    );
-
-    const stopCommands = (hooks.hooks.Stop ?? [])
-      .flatMap((group) => group.hooks ?? [])
-      .map((hook) => hook.command ?? "");
-    expect(stopCommands).toContain("node tools/repo-ai-tools.mjs token-optimizer-stop");
-
-    const claudeStopCommands = (claudeSettings.hooks.Stop ?? [])
-      .flatMap((group) => group.hooks ?? [])
-      .map((hook) => hook.command ?? "");
-    expect(claudeStopCommands).toContain("node tools/repo-ai-tools.mjs token-optimizer-stop");
+  it("keeps client-specific MCP and hook launchers out of the repository", () => {
+    for (const file of [
+      ".mcp.json",
+      ".codex/config.toml",
+      ".codex/hooks.json",
+      ".claude/settings.json",
+    ]) {
+      expect(existsSync(resolve(root, file)), file).toBe(false);
+    }
   });
 
-  it("wires a fail-open post-merge hook that refreshes the advisory review graph", () => {
-    const hook = readFileSync(resolve(root, ".githooks/post-merge"), "utf8");
+  it("keeps the repository hook path limited to the non-AI pre-commit guardrail", () => {
+    const hook = readFileSync(resolve(root, ".githooks/pre-commit"), "utf8");
     const routing = readFileSync(resolve(root, "ai-coding/rules/repo-ai-tools.md"), "utf8");
 
     expect(hook.startsWith("#!/bin/sh")).toBe(true);
-    expect(hook).toContain("node tools/repo-ai-tools.mjs graph-refresh");
-    expect(hook).toContain("|| true");
-    expect(routing).toContain(".githooks/post-merge");
+    expect(hook).toContain("pre-commit: policy + lint + test");
+    expect(existsSync(resolve(root, ".githooks/post-merge"))).toBe(false);
+    expect(routing).not.toContain(".githooks/post-merge");
   });
 
-  it("derives the graph-refresh launcher from the pinned .mcp.json serve entry", () => {
-    const printed = JSON.parse(
-      execFileSync(process.execPath, ["tools/repo-ai-tools.mjs", "graph-refresh", "--print"], {
-        cwd: root,
-        encoding: "utf8",
-      }),
-    ) as { command: string; args: string[] };
-    const mcp = JSON.parse(readFileSync(resolve(root, ".mcp.json"), "utf8")) as {
-      mcpServers: Record<string, { command: string; args: string[] }>;
-    };
-    const serve = mcp.mcpServers["code-review-graph"];
-    if (!serve) throw new Error(".mcp.json is missing the code-review-graph server");
+  it("does not expose the removed automatic graph-refresh path", () => {
+    const launcher = readFileSync(resolve(root, "tools/repo-ai-tools.mjs"), "utf8");
 
-    expect(printed.command).toBe(serve.command);
-    expect(printed.args.slice(0, serve.args.length - 1)).toEqual(serve.args.slice(0, -1));
-    expect(printed.args).toContain("update");
-    expect(printed.args).not.toContain("serve");
+    expect(launcher).not.toContain('command === "graph-refresh"');
+    expect(launcher).not.toContain("graphRefreshLauncher");
   });
 
   it("routes overlapping tools in the repo-owned canon", () => {
@@ -181,11 +138,10 @@ describe("ai-harness repo AI tooling", () => {
     expect(shared).toContain("warn once and continue");
   });
 
-  it("keeps Serena runtime artifacts out of the product diff", () => {
-    const serenaIgnore = readFileSync(resolve(root, ".serena/.gitignore"), "utf8");
-
-    expect(serenaIgnore).toContain("/cache");
-    expect(serenaIgnore).toContain("/logs");
+  it("keeps Serena configuration and runtime artifacts out of the product diff", () => {
+    expect(existsSync(resolve(root, ".serena/project.yml"))).toBe(false);
+    expect(existsSync(resolve(root, ".serena/.gitignore"))).toBe(false);
+    expect(toolingPlan()).toMatchObject({ installRoot: "project-keyed user cache" });
   });
 
   it("keeps Token Savior from indexing or dirtying the worktree with its own cache", () => {

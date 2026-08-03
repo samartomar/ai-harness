@@ -1,8 +1,10 @@
 # Repo AI tools
 
-This is the repo-owned routing contract for AI tooling in `ai-harness`. It is
-available to Claude and Codex through their project configuration and overrides
-generic baseline advice when the two conflict.
+This is the repo-owned routing contract for AI tooling in `ai-harness`. It
+overrides generic baseline advice when the two conflict. The repository does
+not commit client-specific MCP or hook launchers; these helpers are optional
+local projections and source plus tests remain authoritative when they are
+absent.
 
 ## Default decision path
 
@@ -30,8 +32,8 @@ continue from committed source, tests, schemas, and CI.
 1. Localize cheaply with source search or Token Savior.
 2. For broad changes only, use one graph impact query to focus review.
 3. Use Serena only for exact cross-symbol inspection or semantic edits.
-4. Verify with repository evidence. Token Optimizer runs the quiet project
-   `Stop` checkpoint automatically; it is not a correctness or completion gate.
+4. Verify with repository evidence. Token Optimizer is an explicit on-demand
+   audit only; it is not a correctness or completion gate.
 
 ## Failure and evidence boundary
 
@@ -45,20 +47,17 @@ This rule specifically overrides generic large-repo graph advice for this repo:
 review cost, but it is never a start, correctness, security, test, merge, or
 release gate.
 
-Graph currency is kept automatically: the repo-local `.githooks/post-merge`
-hook (enabled once per clone via `git config core.hooksPath .githooks`) starts
-a detached incremental `code-review-graph` update after every merge or pull. A
-missed refresh only ages the advisory context — run
-`node tools/repo-ai-tools.mjs graph-refresh` by hand to catch up.
+Graph currency is not maintained by a committed hook. If a locally projected
+graph is stale or absent, warn once and continue from source and tests.
 
 ## Installation and licensing
 
 Run `node tools/repo-ai-tools.mjs install` from the repository root, then
 `node tools/repo-ai-tools.mjs verify`. Installation is confined to a
 project-keyed user cache outside the worktree, so third-party source cannot be
-mistaken for product topology. Claude reads `.mcp.json` and
-`.claude/settings.json`; Codex reads `.codex/config.toml` and
-`.codex/hooks.json`.
+mistaken for product topology. The helper does not register MCP servers or
+hooks for any client; an operator-owned local projection is required before a
+client can call them.
 
 For an on-demand local audit, run
 `node tools/repo-ai-tools.mjs token-optimizer-report`. For repo-scoped coaching,

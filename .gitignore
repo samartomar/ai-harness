@@ -25,10 +25,9 @@ Thumbs.db
 .internal/
 
 # Claude Code session artifacts (agent worktrees and machine-local state).
-# Committed exception: the reviewed project hook config. Project-curated,
-# cross-CLI skills live under ai-coding/curated-skills/ and route via the canon.
+# Project-curated, cross-CLI skills live under ai-coding/curated-skills/ and
+# route via the canon; client-specific projections stay local.
 .claude/*
-!.claude/settings.json
 
 # decision-partner board fallback home (CLI-neutral, machine-local) used when
 # the private companion (.internal/) is not cloned; see the skill's Board home
