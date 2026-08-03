@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { join, posix } from "node:path";
+import { lstatSync, readFileSync, realpathSync, type Stats } from "node:fs";
+import { isAbsolute, posix, relative, resolve } from "node:path";
 import { z } from "zod";
-import { hashComponentTree } from "../baseline-evidence/hash.js";
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT = /^[0-9a-f]{40}$/;
@@ -13,6 +12,20 @@ const MANIFEST_PATHS = [
   "manifests/install-modules.json",
   "manifests/install-profiles.json",
 ] as const;
+const TRUSTED_MANIFEST_PINS = {
+  "manifests/install-components.json": {
+    rawSha256: "8eac72d3ab4eb41dc6feabadc7f80603999631186aeeb74b0e31019496054ed5",
+    canonicalSha256: "2a16746d95a3ee19dc448ccdfdc0e54ef983085245f2d804f615df277ea14665",
+  },
+  "manifests/install-modules.json": {
+    rawSha256: "9293e36a93d62d9016cf8eb13e852a882ac5b68503a5842de230c7d21431bbb7",
+    canonicalSha256: "917a4f6961252078a9e8f43eccbe241ef1793f4d8d9d1f170873b824da6bb238",
+  },
+  "manifests/install-profiles.json": {
+    rawSha256: "fddc15a7ea59c5069686eacd5ef90da805b867bed39ddad3ca391363329270f1",
+    canonicalSha256: "ec57372aa886af63f6b847eee2c285d672dc35ff48b9ca2da939e215e566c2cb",
+  },
+} as const;
 
 const sourcePathSchema = z
   .string()
@@ -39,6 +52,34 @@ const sourcePathSchema = z
   });
 const hashSchema = z.string().regex(SHA256);
 const idSchema = z.string().regex(ID);
+const manifestPinsSchema = z
+  .object({
+    "manifests/install-components.json": z
+      .object({
+        rawSha256: z.literal(TRUSTED_MANIFEST_PINS["manifests/install-components.json"].rawSha256),
+        canonicalSha256: z.literal(
+          TRUSTED_MANIFEST_PINS["manifests/install-components.json"].canonicalSha256,
+        ),
+      })
+      .strict(),
+    "manifests/install-modules.json": z
+      .object({
+        rawSha256: z.literal(TRUSTED_MANIFEST_PINS["manifests/install-modules.json"].rawSha256),
+        canonicalSha256: z.literal(
+          TRUSTED_MANIFEST_PINS["manifests/install-modules.json"].canonicalSha256,
+        ),
+      })
+      .strict(),
+    "manifests/install-profiles.json": z
+      .object({
+        rawSha256: z.literal(TRUSTED_MANIFEST_PINS["manifests/install-profiles.json"].rawSha256),
+        canonicalSha256: z.literal(
+          TRUSTED_MANIFEST_PINS["manifests/install-profiles.json"].canonicalSha256,
+        ),
+      })
+      .strict(),
+  })
+  .strict();
 
 const reviewReceiptSchema = z
   .object({
@@ -73,6 +114,7 @@ export const eccProfileSchema = z
         componentPath: sourcePathSchema,
         sourceHash: hashSchema,
         normalizedHash: hashSchema,
+        manifestPins: manifestPinsSchema,
         license: z.literal("MIT"),
         reviewReceipt: reviewReceiptSchema,
       })
@@ -225,6 +267,7 @@ export const AIH_ECC_PROFILE_TEMPLATE = {
     componentPath: "manifests/install-components.json",
     sourceHash: "8eac72d3ab4eb41dc6feabadc7f80603999631186aeeb74b0e31019496054ed5",
     normalizedHash: "8eac72d3ab4eb41dc6feabadc7f80603999631186aeeb74b0e31019496054ed5",
+    manifestPins: TRUSTED_MANIFEST_PINS,
     license: "MIT",
   },
   selections: {
@@ -339,7 +382,7 @@ function assertUniquePaths(groups: readonly (readonly string[])[]): void {
     throw new Error("ambiguous duplicate source path in pinned evidence");
 }
 
-function sha256(value: string): string {
+function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
@@ -363,14 +406,49 @@ function assertDerivedIdentities(paths: readonly string[], namespace: "agents" |
     throw new Error(`ambiguous derived ${namespace} identity in pinned evidence`);
 }
 
-function containmentRoots(paths: readonly string[]): string[] {
-  return ordered(
-    new Set(
-      paths.map((sourcePath) =>
-        sourcePath.slice(0, sourcePath.indexOf("/") === -1 ? undefined : sourcePath.indexOf("/")),
-      ),
-    ),
-  );
+function checkedRoot(rootInput: string, label: string): string {
+  if (!isAbsolute(rootInput)) throw new Error(`${label} must be an absolute path`);
+  let stat: Stats;
+  try {
+    stat = lstatSync(rootInput);
+  } catch (error) {
+    throw new Error(`${label} is unavailable: ${(error as Error).message}`);
+  }
+  if (stat.isSymbolicLink() || !stat.isDirectory())
+    throw new Error(`${label} must be a real directory`);
+  return realpathSync(rootInput);
+}
+
+function checkedPath(
+  root: string,
+  sourcePath: string,
+  expectedType: "file" | "directory",
+  label: string,
+): string {
+  let current = root;
+  for (const segment of sourcePath.split("/")) {
+    current = resolve(current, segment);
+    let stat: Stats;
+    try {
+      stat = lstatSync(current);
+    } catch (error) {
+      throw new Error(
+        `${label} is missing or unreadable: ${sourcePath} (${(error as Error).message})`,
+      );
+    }
+    if (stat.isSymbolicLink()) throw new Error(`${label} uses a symbolic link: ${sourcePath}`);
+    const actual = realpathSync(current);
+    const rel = relative(root, actual);
+    if (rel === ".." || rel.startsWith("../") || rel.startsWith("..\\") || isAbsolute(rel))
+      throw new Error(`${label} escapes its trusted root: ${sourcePath}`);
+    current = actual;
+  }
+  const finalStat = lstatSync(current);
+  if (expectedType === "file" && (!finalStat.isFile() || finalStat.nlink > 1))
+    throw new Error(`${label} must be a regular non-linked file: ${sourcePath}`);
+  if (expectedType === "directory" && !finalStat.isDirectory())
+    throw new Error(`${label} must be a directory: ${sourcePath}`);
+  return current;
 }
 
 function resolveBase(
@@ -406,6 +484,14 @@ function resolveBase(
       ordered(MANIFEST_PATHS).join("\n")
   )
     throw new Error("pinned evidence must declare exactly the consumed manifests");
+  for (const sourcePath of MANIFEST_PATHS) {
+    const pin = profile.source.manifestPins[sourcePath];
+    if (
+      evidence.source.manifestHashes[sourcePath] !== pin.rawSha256 ||
+      evidence.source.manifestPayloadHashes[sourcePath] !== pin.canonicalSha256
+    )
+      throw new Error(`evidence contradicts trusted manifest pin: ${sourcePath}`);
+  }
   if (
     componentHash !== profile.source.sourceHash ||
     componentHash !== profile.source.normalizedHash
@@ -420,7 +506,8 @@ function resolveBase(
   for (const [sourcePath, payload] of Object.entries(payloads)) {
     if (
       verifyEmbeddedPayloads &&
-      sha256(canonicalJson(payload)) !== evidence.source.manifestPayloadHashes[sourcePath]
+      sha256(canonicalJson(payload)) !==
+        profile.source.manifestPins[sourcePath as (typeof MANIFEST_PATHS)[number]].canonicalSha256
     )
       throw new Error(`embedded manifest payload hash mismatch: ${sourcePath}`);
   }
@@ -529,41 +616,64 @@ function resolveBase(
   };
 }
 
-export function resolveEccProfile(profile: unknown, evidence: unknown): ResolvedEccProfile;
-export function resolveEccProfile(
+export function deriveEccProfile(profile: unknown, evidence: unknown): ResolvedEccProfile {
+  return resolveBase(profile, evidence);
+}
+
+export async function resolveEccProfile(
   profile: unknown,
   evidence: unknown,
-  options: { sourceRoot: string },
-): Promise<ResolvedEccProfile>;
-export function resolveEccProfile(
-  profile: unknown,
-  evidence: unknown,
-  options?: { sourceRoot: string },
-): ResolvedEccProfile | Promise<ResolvedEccProfile> {
-  if (!options) return resolveBase(profile, evidence);
-  return Promise.resolve().then(async () => {
-    const parsedEvidence: PinnedEvidence = evidenceSchema.parse(evidence);
-    const manifests = await Promise.all(
-      Object.entries(parsedEvidence.source.manifestHashes).map(
-        async ([sourcePath, expectedHash]) => {
-          const bytes = await readFile(join(options.sourceRoot, ...sourcePath.split("/")), "utf8");
-          if (sha256(bytes) !== expectedHash)
-            throw new Error(`source manifest hash mismatch: ${sourcePath}`);
-          return [sourcePath, JSON.parse(bytes) as unknown] as const;
-        },
-      ),
+  options: { sourceRoot: string; evidenceRoot: string },
+): Promise<ResolvedEccProfile> {
+  const parsedProfile = eccProfileSchema.parse(profile);
+  const parsedEvidence: PinnedEvidence = evidenceSchema.parse(evidence);
+  const derived = resolveBase(parsedProfile, parsedEvidence);
+  const sourceRoot = checkedRoot(options.sourceRoot, "ECC source root");
+  const evidenceRoot = checkedRoot(options.evidenceRoot, "ECC evidence root");
+
+  const receiptPath = checkedPath(
+    evidenceRoot,
+    parsedProfile.source.reviewReceipt.evidencePath,
+    "file",
+    "review receipt",
+  );
+  const receiptHash = sha256(readFileSync(receiptPath));
+  if (receiptHash !== parsedProfile.source.reviewReceipt.evidenceSha256)
+    throw new Error("review receipt content hash does not match the trusted profile");
+
+  const filePaths = new Set([
+    parsedEvidence.source.licensePath,
+    ...MANIFEST_PATHS,
+    ...parsedEvidence.agentPaths,
+    ...parsedEvidence.workflowPaths,
+  ]);
+  for (const sourcePath of derived.consumedSourcePaths) {
+    checkedPath(
+      sourceRoot,
+      sourcePath,
+      filePaths.has(sourcePath) || posix.extname(sourcePath) !== "" ? "file" : "directory",
+      "declared source path",
     );
-    const manifestByPath = new Map(manifests);
-    const verifiedEvidence = {
+  }
+
+  const manifests = MANIFEST_PATHS.map((sourcePath) => {
+    const manifestPath = checkedPath(sourceRoot, sourcePath, "file", "source manifest");
+    const bytes = readFileSync(manifestPath);
+    if (sha256(bytes) !== parsedProfile.source.manifestPins[sourcePath].rawSha256)
+      throw new Error(`source manifest hash mismatch: ${sourcePath}`);
+    return [sourcePath, JSON.parse(bytes.toString("utf8")) as unknown] as const;
+  });
+  const manifestByPath = new Map(manifests);
+  return resolveBase(
+    parsedProfile,
+    {
       ...parsedEvidence,
       componentsManifest: manifestByPath.get("manifests/install-components.json"),
       modulesManifest: manifestByPath.get("manifests/install-modules.json"),
       profilesManifest: manifestByPath.get("manifests/install-profiles.json"),
-    };
-    const resolved = resolveBase(profile, verifiedEvidence, false);
-    hashComponentTree(options.sourceRoot, containmentRoots(resolved.consumedSourcePaths));
-    return resolved;
-  });
+    },
+    false,
+  );
 }
 
 export function serializeResolvedEccProfile(profile: ResolvedEccProfile): string {
