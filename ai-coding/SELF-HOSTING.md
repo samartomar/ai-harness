@@ -26,6 +26,7 @@ the current facts without letting AIH manage itself:
 | Root MCP config | absent | `mcpServers: []`; local MCP projection remains operator-owned |
 | Client hooks/config | uncommitted | no client-specific launcher, settings, or hook registry becomes repo truth |
 | Brownfield extension | present | `rules/project-canon-extension.md` remains repo-owned and manually maintained |
+| Repo-curated skills | decision-partner + BetterDoc | `curated-skills/` holds manually adopted, CLI-neutral copies; AIH does not project or refresh them |
 
 ## Truth and mirror homes
 
@@ -35,6 +36,9 @@ the current facts without letting AIH manage itself:
 - `RULE_ROUTER.md` is the cross-tool routing authority.
 - `rules/agent-behavior-core.md` is the full shared working discipline.
 - `rules/project-canon-extension.md` owns repository-specific overrides.
+- `curated-skills/` owns manually adopted, repository-specific skill copies
+  shared by every supported client; their task routes live in the project canon
+  extension.
 - `adapters/_shared-canonical-block.md` is the manual source copied byte-for-byte
   into the fenced blocks in `AGENTS.md` and `CLAUDE.md`.
 - `adapters/claude.md` and `adapters/codex.md` contain only client-loading notes.

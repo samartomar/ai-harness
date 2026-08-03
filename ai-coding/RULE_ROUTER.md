@@ -62,6 +62,14 @@ steps remain direct checks rather than AIH CLI commands. Use `npm test` for
 narrower TDD loops. Product CLI behavior must target temporary fixture roots;
 new behavior needs a test, and the implementation—not the test—gets fixed.
 
+### Public documentation
+Load `ai-coding/rules/doc-and-truth-homes.md`, `PUBLIC_DOCS_POLICY.md`, and the
+repo-curated `ai-coding/curated-skills/betterdoc/SKILL.md`. Ground claims in
+current source, schemas, tests, generated artifacts, and reproducible checks;
+preserve commands and generated boundaries exactly. Run `npm run docs:lint`
+and any direct checks owned by the changed document. Never run AIH to lint,
+project, regenerate, or validate documentation in this checkout.
+
 ### Security / secrets
 Follow the Invariants in `ai-coding/rules/agent-behavior-core.md` (secrets, input validation,
 cloud-setup safety). Use repository-owned hooks, path-only sensitive-file
