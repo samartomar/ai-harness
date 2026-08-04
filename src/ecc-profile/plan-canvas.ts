@@ -407,11 +407,12 @@ export function materializePlanCanvasRuntime(options: {
   destinationRoot: string;
 }): VerifiedPlanCanvasRuntime {
   const source = verifyPlanCanvasSourceRoot(options.sourceRoot, options.verifiedIntegrity);
-  const destination = resolve(options.destinationRoot);
   if (!isAbsolute(options.destinationRoot)) {
     throw new Error("Plan Canvas materialized runtime destination must be absolute");
   }
-  const parent = directory(dirname(destination), "Plan Canvas runtime destination parent");
+  const requestedDestination = resolve(options.destinationRoot);
+  const parent = directory(dirname(requestedDestination), "Plan Canvas runtime destination parent");
+  const destination = join(parent, basename(requestedDestination));
   assertContained(parent, destination, "Plan Canvas runtime destination");
   try {
     const current = lstatSync(destination);
@@ -498,11 +499,14 @@ function safeArtifact(options: ArtifactSnapshotOptions): {
   originalPath: string;
   contents: Buffer;
 } {
-  const artifactRoot = directory(resolve(options.artifactRoot), "Plan Canvas artifact root");
+  const requestedRoot = resolve(options.artifactRoot);
+  const artifactRoot = directory(requestedRoot, "Plan Canvas artifact root");
   const stateRoot = directory(resolve(options.stateRoot), "Plan Canvas state root");
-  const requested = isAbsolute(options.artifactPath)
+  const lexicalRequested = isAbsolute(options.artifactPath)
     ? resolve(options.artifactPath)
-    : resolve(artifactRoot, options.artifactPath);
+    : resolve(requestedRoot, options.artifactPath);
+  assertContained(requestedRoot, lexicalRequested, "Plan Canvas artifact");
+  const requested = resolve(artifactRoot, relative(requestedRoot, lexicalRequested));
   assertContained(artifactRoot, requested, "Plan Canvas artifact");
   assertNoLinkedParents(artifactRoot, requested, "Plan Canvas artifact");
   const requestedStats = lstatSync(requested);

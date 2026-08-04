@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -212,6 +220,35 @@ describe("Plan Canvas runtime pin", () => {
 });
 
 describe("Plan Canvas artifact boundary", () => {
+  it.skipIf(process.platform === "win32")(
+    "rebases trusted children through a canonical POSIX root alias",
+    () => {
+      const { root } = fixture();
+      const target = join(root, "target");
+      const alias = join(root, "alias");
+      const artifacts = join(target, "artifacts");
+      const state = join(target, "state");
+      mkdirSync(artifacts, { recursive: true });
+      mkdirSync(state);
+      writeFileSync(join(artifacts, "feature.plan.md"), "# Aliased plan\n", "utf8");
+      symlinkSync(target, alias, "dir");
+
+      const review = createPlanCanvasArtifactSnapshot({
+        artifactRoot: join(alias, "artifacts"),
+        artifactPath: join(alias, "artifacts", "feature.plan.md"),
+        stateRoot: join(alias, "state"),
+      });
+      const runtime = materializePlanCanvasRuntime({
+        sourceRoot: runtimeSourceFixture,
+        verifiedIntegrity: PLAN_CANVAS_RUNTIME_PIN.integrity,
+        destinationRoot: join(alias, "state", "runtime"),
+      });
+
+      expect(review.originalPath).toBe(realpathSync(join(artifacts, "feature.plan.md")));
+      expect(runtime.root).toBe(realpathSync(join(state, "runtime")));
+    },
+  );
+
   it("creates a deterministic immutable revision snapshot under managed state", () => {
     const { artifacts, state, plan } = fixture();
     const first = createPlanCanvasArtifactSnapshot({
