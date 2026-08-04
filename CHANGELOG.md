@@ -23,13 +23,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   invariants, hermetic git spawns, PR sizing) to where it is stated and the
   machine check or test that enforces it, with the audit's deliberately
   deferred gaps recorded alongside.
-- CI now runs the canon drift gate against this repo's own bootloaders:
-  `npm run check:canon-drift` (`aih bootstrap-ai --cli claude,codex --verify`,
-  read-only) fails the build if `CLAUDE.md`, `AGENTS.md`, or the generated canon
-  files drift from the generator's output. The self-hosting boundary in
-  `project-canon-extension.md` gained a carve-out naming the read-only drift
-  gate a repository-owned development check; clearing a red gate remains a
-  deliberate maintainer regeneration, never an in-repo apply run.
+- CI now runs the direct self-hosting canon gate
+  (`npm run check:self-hosting-canon`) without invoking AIH against its own
+  checkout. It checks the manual shared-block/bootloader byte mirror, current
+  repository contract facts, package-script and CI wiring, and the absence of
+  self-targeting setup instructions. Product repositories retain
+  `aih bootstrap-ai --verify`; this repository adopts relevant generator changes
+  manually and verifies the resulting source relationships directly.
 - `aih bootstrap-ai --verify` now emits an advisory skip check
   (`cli.bootloader-unmanaged`) for every bootloader present in the repo but
   outside the resolved target set, so a drift gate pinned to explicit `--cli`
