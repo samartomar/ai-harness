@@ -3,11 +3,12 @@ import { lstatSync, mkdirSync, realpathSync, renameSync, rmSync, writeFileSync }
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { redactSecrets } from "../guardrails/redact.js";
 import { readRegularFile, retryTransient } from "../internals/fsxn.js";
-import type {
-  HookHandler,
-  HookHandlerDecision,
-  LogicalHookEvent,
-  NormalizedHookEvent,
+import {
+  HOOK_INPUT_LIMITS,
+  type HookHandler,
+  type HookHandlerDecision,
+  type LogicalHookEvent,
+  type NormalizedHookEvent,
 } from "./hook-core.js";
 
 export const CONTINUITY_LIMITS = {
@@ -41,10 +42,32 @@ const CONTINUITY_EVENTS = [
   "stop",
 ] as const;
 const MCP_HEALTH_EVENTS = ["session-start", "before-tool"] as const;
+const AUTHENTICATION_HEADER =
+  /\b(proxy-authorization|authorization|proxy-authentication-info|authentication-info|www-authenticate|x-api-key|api-key|x-auth-token|x-client-secret|client-secret|private-token|set-cookie|cookie)\s*:\s*[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*/gi;
 
 function boundedText(value: string, maxCharacters: number): string {
   const characters = Array.from(value);
   return characters.length <= maxCharacters ? value : characters.slice(0, maxCharacters).join("");
+}
+
+function boundedUtf8Text(value: string, maxBytes: number): string {
+  if (Buffer.byteLength(value, "utf8") <= maxBytes) return value;
+  const characters: string[] = [];
+  let bytes = 0;
+  for (const character of value) {
+    const characterBytes = Buffer.byteLength(character, "utf8");
+    if (bytes + characterBytes > maxBytes) break;
+    characters.push(character);
+    bytes += characterBytes;
+  }
+  return characters.join("");
+}
+
+function boundedDiagnosticContext(value: string): string {
+  return boundedUtf8Text(
+    boundedText(value, CONTINUITY_LIMITS.maxInjectedCharacters),
+    HOOK_INPUT_LIMITS.maxDiagnosticBytes,
+  );
 }
 
 function safeConfiguredText(value: string, name: string, maxCharacters: number): string {
@@ -96,6 +119,12 @@ function shellTokens(command: string): ShellToken[] {
     }
     if (char === "'" || char === '"') {
       quote = char;
+      continue;
+    }
+    if (char === "\r" || char === "\n") {
+      flush();
+      if (char === "\r" && command[index + 1] === "\n") index += 1;
+      tokens.push({ value: char, separator: true });
       continue;
     }
     if (/\s/.test(char)) {
@@ -408,9 +437,11 @@ export function createFileContinuityStore(options: FileContinuityStoreOptions): 
   };
 
   const write = (records: readonly ContinuityRecord[]) => {
-    const sorted = [...records].sort(
-      (a, b) => a.updatedAtEpochMs - b.updatedAtEpochMs || a.sessionId.localeCompare(b.sessionId),
-    );
+    const sorted = [...records]
+      .sort(
+        (a, b) => a.updatedAtEpochMs - b.updatedAtEpochMs || a.sessionId.localeCompare(b.sessionId),
+      )
+      .slice(-CONTINUITY_LIMITS.maxRecords);
     const contents = `${JSON.stringify(sorted, null, 2)}\n`;
     if (Buffer.byteLength(contents, "utf8") > maxFileBytes) {
       throw new Error("continuity state exceeds its file limit");
@@ -530,7 +561,11 @@ function validateRecord(record: ContinuityRecord): void {
 }
 
 function redactedSummary(value: string): string {
-  return boundedText(redactSecrets(value), CONTINUITY_LIMITS.maxSummaryCharacters);
+  const withoutAuthenticationHeaders = value.replace(AUTHENTICATION_HEADER, "$1: [REDACTED]");
+  return boundedText(
+    redactSecrets(withoutAuthenticationHeaders),
+    CONTINUITY_LIMITS.maxSummaryCharacters,
+  );
 }
 
 export function createContinuityHandler(options: ContinuityHandlerOptions): HookHandler {
@@ -602,9 +637,8 @@ export function createContinuityHandler(options: ContinuityHandlerOptions): Hook
               b.updatedAtEpochMs - a.updatedAtEpochMs || a.sessionId.localeCompare(b.sessionId),
           )[0];
         if (!previous) return { action: "continue" };
-        const context = boundedText(
+        const context = boundedDiagnosticContext(
           `Resume the previous exact-worktree checkpoint:\n${previous.summary}`,
-          CONTINUITY_LIMITS.maxInjectedCharacters,
         );
         return { action: "continue", context };
       }
@@ -652,9 +686,8 @@ export function createContinuityHandler(options: ContinuityHandlerOptions): Hook
         });
         return {
           action: "continue",
-          context: boundedText(
+          context: boundedDiagnosticContext(
             "Before compaction, preserve decisions, unresolved risks, exact verification evidence, the next action, and this exact worktree identity. Do not include secrets or complete tool output.",
-            CONTINUITY_LIMITS.maxInjectedCharacters,
           ),
         };
       }
@@ -789,11 +822,10 @@ export function createMcpHealthHandler(options: McpHealthHandlerOptions): HookHa
       if (unavailable.length === 0) return { action: "continue" };
       return {
         action: "continue",
-        context: boundedText(
+        context: boundedDiagnosticContext(
           unavailable
             .map((server) => `MCP ${server.id} unavailable. ${server.fallback}`)
             .join("\n"),
-          4_000,
         ),
       };
     },

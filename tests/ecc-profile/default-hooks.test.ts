@@ -11,7 +11,7 @@ import {
   createMcpHealthHandler,
   createRepositoryProtectionHandler,
 } from "../../src/ecc-profile/default-hooks.js";
-import type { NormalizedHookEvent } from "../../src/ecc-profile/hook-core.js";
+import { HOOK_INPUT_LIMITS, type NormalizedHookEvent } from "../../src/ecc-profile/hook-core.js";
 
 const WORKTREE = "C:/fixtures/project";
 
@@ -68,6 +68,8 @@ describe("ECC repository-protection hook", () => {
     "bash -c 'git commit --no-verify'",
     'pwsh -Command "git commit -n"',
     'cmd /c "git commit --no-verify"',
+    "printf ok\ngit commit --no-verify",
+    "Write-Output ok\r\ngit commit -n",
     'git merge "--no-verify"',
     "git -c core.hooksPath=/tmp/empty commit -m test",
     "git -c 'CORE.HOOKSPATH=/tmp/empty' status",
@@ -128,12 +130,15 @@ describe("ECC continuity hook", () => {
     const { handler, store } = setup();
     await handler.run(
       event("after-compact", {
-        compactSummary: "Keep plan. API_TOKEN=super-secret-value and continue tests.",
+        compactSummary:
+          "Keep plan. API_TOKEN=super-secret-value.\nAuthorization: Basic dXNlcjpwYXNz\nProxy-Authorization: Digest hidden-value\nContinue tests.",
       }),
       signal,
     );
     expect(store.records).toHaveLength(1);
     expect(JSON.stringify(store.records)).not.toContain("super-secret-value");
+    expect(JSON.stringify(store.records)).not.toContain("dXNlcjpwYXNz");
+    expect(JSON.stringify(store.records)).not.toContain("hidden-value");
     expect(JSON.stringify(store.records)).not.toContain("session-1");
 
     const resumed = await handler.run(
@@ -145,6 +150,18 @@ describe("ECC continuity hook", () => {
       context: expect.stringContaining("Keep plan"),
     });
     expect(resumed.context?.length).toBeLessThanOrEqual(CONTINUITY_LIMITS.maxInjectedCharacters);
+  });
+
+  it("bounds resumed multibyte context to the dispatcher's UTF-8 byte limit", async () => {
+    const { handler } = setup();
+    await handler.run(event("after-compact", { compactSummary: "🧭".repeat(3_000) }), signal);
+    const resumed = await handler.run(
+      event("session-start", { sessionId: "multibyte-resume" }),
+      signal,
+    );
+    expect(Buffer.byteLength(resumed.context ?? "", "utf8")).toBeLessThanOrEqual(
+      HOOK_INPUT_LIMITS.maxDiagnosticBytes,
+    );
   });
 
   it("checkpoints the latest response before compaction and resumes it after compaction", async () => {
@@ -444,6 +461,40 @@ describe("ECC continuity hook", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("evicts the oldest continuity record before the durable cap is exceeded", () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-continuity-cap-"));
+    const stateRoot = join(root, "state");
+    const worktree = join(root, "project");
+    mkdirSync(stateRoot);
+    mkdirSync(worktree);
+    try {
+      const store = createFileContinuityStore({
+        stateRoot,
+        canonicalWorktree: worktree,
+        repositoryId: "repo",
+        harness: "codex",
+      });
+      for (let index = 0; index <= CONTINUITY_LIMITS.maxRecords; index += 1) {
+        store.save({
+          version: 1,
+          repositoryId: "repo",
+          canonicalWorktree: worktree,
+          harness: "codex",
+          sessionId: `session-${index.toString().padStart(3, "0")}`,
+          updatedAtEpochMs: index,
+          summary: `checkpoint ${index}`,
+          activity: [],
+        });
+      }
+      const records = store.list();
+      expect(records).toHaveLength(CONTINUITY_LIMITS.maxRecords);
+      expect(records.some((record) => record.sessionId === "session-000")).toBe(false);
+      expect(records.some((record) => record.sessionId === "session-128")).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 15_000);
 });
 
 describe("ECC MCP-health hook", () => {
