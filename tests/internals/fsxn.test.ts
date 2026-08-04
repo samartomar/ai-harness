@@ -1,4 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   closeSync,
   existsSync,
@@ -257,6 +258,21 @@ describe("FsTransaction — removals (aih prune)", () => {
     // A was restored to its original location, not stranded in legacy.
     expect(readFileSync(a, "utf8")).toBe("AAA");
     expect(existsSync(legacyA)).toBe(false);
+  });
+
+  it("restores a removal target when its apply-time content pin no longer matches", () => {
+    const source = put("owned.md", "operator changed bytes\n");
+    const legacy = join(dir, ".aih", "legacy", "owned.md");
+    const transaction = new FsTransaction();
+    transaction.stageRemoval(source, legacy, {
+      expect: {
+        sha256: createHash("sha256").update("planned owned bytes\n", "utf8").digest("hex"),
+      },
+    });
+
+    expect(() => transaction.commit()).toThrow(/changed before commit/);
+    expect(readFileSync(source, "utf8")).toBe("operator changed bytes\n");
+    expect(existsSync(legacy)).toBe(false);
   });
 });
 

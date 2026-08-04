@@ -91,6 +91,7 @@ interface StagedRemoval {
    * gitignored `*.aih.bak` glob.
    */
   backupSibling?: boolean;
+  expect?: { sha256: string };
 }
 
 interface AppliedRemoval {
@@ -134,8 +135,17 @@ export class FsTransaction {
    * never-overwrite, but a taken slot falls back to `<path>.N.aih.bak` (matches the
    * gitignored `*.aih.bak` glob) instead of the archive's `<path>.N`.
    */
-  stageRemoval(path: string, legacyPath: string, opts: { backupSibling?: boolean } = {}): void {
-    this.stagedRemovals.push({ path, legacyPath, backupSibling: opts.backupSibling });
+  stageRemoval(
+    path: string,
+    legacyPath: string,
+    opts: { backupSibling?: boolean; expect?: { sha256: string } } = {},
+  ): void {
+    this.stagedRemovals.push({
+      path,
+      legacyPath,
+      backupSibling: opts.backupSibling,
+      expect: opts.expect,
+    });
   }
 
   preview(): ReadonlyArray<StagedWrite> {
@@ -210,6 +220,9 @@ export class FsTransaction {
         if (info.isSymbolicLink()) {
           throw new Error(`refusing to remove a symlink: ${r.path}`);
         }
+        if (r.expect !== undefined && !info.isFile()) {
+          throw new FsTxnError(`removal target is not a regular file: ${r.path}`);
+        }
         mkdirSync(dirname(r.legacyPath), { recursive: true });
         // NEVER overwrite an occupied destination — for BOTH modes. An aborted prune
         // rolls its move back (so it leaves nothing here), which means an existing file
@@ -220,6 +233,14 @@ export class FsTransaction {
         const dest = r.backupSibling ? freeBackupDest(r.legacyPath) : freeLegacyDest(r.legacyPath);
         retryTransient(() => renameSync(r.path, dest));
         removed.push({ path: r.path, legacyPath: dest });
+        if (r.expect !== undefined) {
+          const moved = readRegularFile(dest);
+          const actual =
+            moved === undefined ? undefined : createHash("sha256").update(moved).digest("hex");
+          if (actual !== r.expect.sha256) {
+            throw new FsTxnError(`removal target changed before commit: ${r.path}`);
+          }
+        }
       }
       return {
         written: applied.map((a) => a.path),

@@ -823,7 +823,11 @@ export async function executePlan(
         // ancestor, so a symlinked parent — or a `..` surviving in the path — trips it.
         assertContained(ctx.root, destAbs);
         assertNoSymlinkParents(ctx.root, destAbs, destRel);
-        if (ctx.apply) txn.stageRemoval(absPath, destAbs, { backupSibling: action.hardDelete });
+        if (ctx.apply)
+          txn.stageRemoval(absPath, destAbs, {
+            backupSibling: action.hardDelete,
+            expect: action.expect,
+          });
         removes.push({
           path: action.path,
           describe: action.describe,
