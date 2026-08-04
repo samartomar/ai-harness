@@ -58,6 +58,12 @@ describe("ai-harness self-hosting boundary", () => {
     const ci = read(".github/workflows/ci.yml");
     expect(ci).toContain("npm run check:self-hosting-canon");
     expect(ci).not.toContain("npm run check:canon-drift");
+
+    for (const path of ["CHANGELOG.md", "docs/CANON_GOVERNANCE.md"]) {
+      const publicSurface = read(path);
+      expect(publicSurface, path).toContain("check:self-hosting-canon");
+      expect(publicSurface, path).not.toContain("check:canon-drift");
+    }
   });
 
   it("keeps the manual contract mirror aligned with live repository facts", () => {

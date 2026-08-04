@@ -6,20 +6,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-08-04
+
 ### Added
 
+- `aih ecc --lifecycle` now provides a preview-first, authenticated Claude and
+  Codex ECC profile lifecycle: install, update, repair, rollback, and uninstall
+  project-local projections together with field-owned native hook and selected-
+  MCP registration. Exact pinned source closure, client transport policy,
+  deterministic ownership/parity receipts, compound transactional recovery,
+  operator-config preservation, bounded native runtimes, fail-open operational
+  handlers, opt-in personal state, Token Savior qualification, and guarded Plan
+  Canvas support are verified in disposable projects and client homes.
 - `docs/CANON_GOVERNANCE.md` maps each canon-governance practice (small
   always-loaded bootloader, generated projections, always-loaded safety
   invariants, hermetic git spawns, PR sizing) to where it is stated and the
   machine check or test that enforces it, with the audit's deliberately
   deferred gaps recorded alongside.
-- CI now runs the canon drift gate against this repo's own bootloaders:
-  `npm run check:canon-drift` (`aih bootstrap-ai --cli claude,codex --verify`,
-  read-only) fails the build if `CLAUDE.md`, `AGENTS.md`, or the generated canon
-  files drift from the generator's output. The self-hosting boundary in
-  `project-canon-extension.md` gained a carve-out naming the read-only drift
-  gate a repository-owned development check; clearing a red gate remains a
-  deliberate maintainer regeneration, never an in-repo apply run.
+- CI now runs the direct self-hosting canon gate
+  (`npm run check:self-hosting-canon`) without invoking AIH against its own
+  checkout. It checks the manual shared-block/bootloader byte mirror, current
+  repository contract facts, package-script and CI wiring, and the absence of
+  self-targeting setup instructions. Product repositories retain
+  `aih bootstrap-ai --verify`; this repository adopts relevant generator changes
+  manually and verifies the resulting source relationships directly.
 - `aih bootstrap-ai --verify` now emits an advisory skip check
   (`cli.bootloader-unmanaged`) for every bootloader present in the repo but
   outside the resolved target set, so a drift gate pinned to explicit `--cli`
@@ -1814,7 +1824,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/samartomar/ai-harness/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/samartomar/ai-harness/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/samartomar/ai-harness/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/samartomar/ai-harness/compare/v3.0.0...v3.1.0
