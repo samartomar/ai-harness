@@ -406,7 +406,11 @@ function assertDerivedIdentities(paths: readonly string[], namespace: "agents" |
     throw new Error(`ambiguous derived ${namespace} identity in pinned evidence`);
 }
 
-function checkedRoot(rootInput: string, label: string): string {
+export function assertPortableSourcePath(sourcePath: string): string {
+  return sourcePathSchema.parse(sourcePath);
+}
+
+export function checkedRoot(rootInput: string, label: string): string {
   if (!isAbsolute(rootInput)) throw new Error(`${label} must be an absolute path`);
   let stat: Stats;
   try {
@@ -419,7 +423,7 @@ function checkedRoot(rootInput: string, label: string): string {
   return realpathSync(rootInput);
 }
 
-function checkedPath(
+export function checkedPath(
   root: string,
   sourcePath: string,
   expectedType: "file" | "directory",

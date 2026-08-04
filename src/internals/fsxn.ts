@@ -11,6 +11,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readSync,
   renameSync,
   rmSync,
   type Stats,
@@ -410,10 +411,36 @@ export function readRegularFileWithStats(
     if (!stats.isFile()) return undefined;
     if (options.maxBytes !== undefined && stats.size > options.maxBytes) return undefined;
     if (!HAS_O_NOFOLLOW && !openedPathStillNamesFile(abs, fd)) return undefined;
-    return { contents: readFileSync(fd), stats };
+    const contents =
+      options.maxBytes === undefined
+        ? readFileSync(fd)
+        : readBoundedFileDescriptor(fd, options.maxBytes);
+    return contents === undefined ? undefined : { contents, stats };
   } finally {
     closeSync(fd);
   }
+}
+
+/**
+ * Read at most `maxBytes + 1` bytes from an already-open descriptor. The extra
+ * byte distinguishes an exact-boundary file from one that grew after an earlier
+ * `fstat`; returning `undefined` keeps the caller's byte cap effective during
+ * the read instead of only before it.
+ */
+export function readBoundedFileDescriptor(fd: number, maxBytes: number): Buffer | undefined {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0)
+    throw new RangeError("maxBytes must be a non-negative safe integer");
+  const chunks: Buffer[] = [];
+  let total = 0;
+  while (total <= maxBytes) {
+    const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, maxBytes - total + 1));
+    const bytesRead = readSync(fd, chunk, 0, chunk.length, null);
+    if (bytesRead === 0) return Buffer.concat(chunks, total);
+    total += bytesRead;
+    if (total > maxBytes) return undefined;
+    chunks.push(bytesRead === chunk.length ? chunk : chunk.subarray(0, bytesRead));
+  }
+  return undefined;
 }
 
 function openedPathStillNamesFile(path: string, fd: number): boolean {

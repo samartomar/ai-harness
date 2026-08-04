@@ -1,8 +1,10 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import {
+  closeSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -14,6 +16,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   FsTransaction,
+  readBoundedFileDescriptor,
   readIfExists,
   readRegularFile,
   readRegularFileWithStats,
@@ -324,6 +327,17 @@ describe("readRegularFile — the fd-guarded read for scan-discovered paths", ()
     expect(
       readRegularFileWithStats(join(dir, "large.txt"), { maxBytes: "small".length }),
     ).toBeUndefined();
+  });
+
+  it("enforces the byte cap while reading an already-open descriptor", () => {
+    const path = join(dir, "grown-after-stat.txt");
+    writeFileSync(path, "small-then-concurrently-grown", "utf8");
+    const fd = openSync(path, "r");
+    try {
+      expect(readBoundedFileDescriptor(fd, "small".length)).toBeUndefined();
+    } finally {
+      closeSync(fd);
+    }
   });
 
   it("keeps the no-O_NOFOLLOW identity fallback on exact BigInt stats", () => {
