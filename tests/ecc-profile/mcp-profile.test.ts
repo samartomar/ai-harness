@@ -129,6 +129,12 @@ describe("ECC MCP profile projection", () => {
     expect(() =>
       buildEccMcpProfileProjection({ ...input(), canonicalWorktree: "../project" }),
     ).toThrow(/absolute/i);
+    expect(() =>
+      buildEccMcpProfileProjection({
+        ...input(),
+        canonicalWorktree: `${input().canonicalWorktree}\ninvalid`,
+      }),
+    ).toThrow(/control character/i);
     const traversal = input();
     expect(() =>
       buildEccMcpProfileProjection({
@@ -152,6 +158,15 @@ describe("ECC MCP profile projection", () => {
     expect(() =>
       buildEccMcpProfileProjection({ ...input(), context7Attestation: undefined }),
     ).toThrow(/attestation/i);
+    expect(() =>
+      buildEccMcpProfileProjection({
+        ...input(),
+        context7Attestation: {
+          ...input().context7Attestation,
+          reviewedAt: "August 3, 2026",
+        },
+      }),
+    ).toThrow(/ISO timestamp/i);
   });
 
   it("enforces the Serena tool boundary even when a client filter is absent", () => {

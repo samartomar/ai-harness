@@ -115,6 +115,14 @@ function requireSha256(value: string, label: string): void {
 function requireAbsoluteSafePath(value: string, label: string): string {
   if (!isAbsolute(value)) throw new Error(`${label} must be absolute`);
   if (value.includes("\0")) throw new Error(`${label} contains a NUL byte`);
+  if (
+    [...value].some((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return (codePoint >= 1 && codePoint <= 31) || codePoint === 127;
+    })
+  ) {
+    throw new Error(`${label} contains a control character`);
+  }
   const segments = value.split(/[\\/]/);
   if (segments.includes("..")) throw new Error(`${label} contains traversal`);
   const withoutDrive = value.replace(/^[A-Za-z]:[\\/]/, "");
@@ -155,7 +163,11 @@ function validateContext7Attestation(
   if (value.subjectSha256 !== CONTEXT7_SUBJECT_SHA256) {
     throw new Error("Context7 attestation subject does not match the reviewed server contract");
   }
-  if (!Number.isFinite(Date.parse(value.reviewedAt))) {
+  if (
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value.reviewedAt) ||
+    !Number.isFinite(Date.parse(value.reviewedAt)) ||
+    new Date(value.reviewedAt).toISOString() !== value.reviewedAt
+  ) {
     throw new Error("Context7 attestation reviewedAt must be an ISO timestamp");
   }
   return { ...value };
