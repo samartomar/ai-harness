@@ -319,6 +319,19 @@ hash-authenticated installed bytes and source identity, so a later package pin c
 older managed installation. Legacy selection flags such as `--profile`, `--with`, and `--cli`
 cannot be combined with `--lifecycle`.
 
+The same lifecycle manages project-local Claude and Codex hook/MCP registration without claiming
+either client's whole shared settings file. It adds one AIH composite hook per supported native
+event, registers the reviewed MCP identities, preserves unrelated operator entries, and records
+the exact Node/AIH launcher bytes plus each owned config fragment in
+`.aih/ecc-profile/native-registration-v1.json`. Native state stays outside the project under the
+platform state directory; set `AIH_ECC_STATE_ROOT` to an absolute external directory to override
+that location. Conflicting server identities, linked launchers, overlapping state roots, modified
+managed fragments, and partial second-phase installs fail closed; a failed registration after a
+projection install triggers compensating projection recovery. Serena starts only through the AIH
+protocol guard with the exact reviewed package pin, offline resolution, isolated `SERENA_HOME`,
+telemetry disabled, and the reviewed tool allowlist. Ordinary MCP-health failures remain visible
+and advisory rather than blocking unrelated work.
+
 The primary registration ledger is `~/.aih/ecc/registration-ledger.json`. It records each project's
 component/MCP contribution and each target's installed union plus evidence provenance. The ledger is
 written atomically only after all selected target installs succeed. Re-running is idempotent; adding
