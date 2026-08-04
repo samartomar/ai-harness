@@ -1,5 +1,3 @@
-import { isAbsolute, win32 } from "node:path";
-
 export const HOOK_INPUT_LIMITS = {
   maxBytes: 1024 * 1024,
   maxDepth: 32,
@@ -327,9 +325,12 @@ function optionalNullableString(
 
 function portableAbsolutePath(value: string): boolean {
   if (value.includes("\0")) return false;
-  if (!isAbsolute(value) && !win32.isAbsolute(value)) return false;
-  const windowsStyle = /^[a-zA-Z]:[\\/]/.test(value) || value.startsWith("\\\\");
-  const body = windowsStyle && /^[a-zA-Z]:/.test(value) ? value.slice(2) : value;
+  const posixStyle = value.startsWith("/") && !value.startsWith("//");
+  const driveQualified = /^[a-zA-Z]:[\\/]/.test(value);
+  const completeUnc = /^(?:\\\\|\/\/)[^\\/]+[\\/][^\\/]+(?:[\\/]|$)/.test(value);
+  if (!posixStyle && !driveQualified && !completeUnc) return false;
+  const windowsStyle = driveQualified || completeUnc;
+  const body = driveQualified ? value.slice(2) : value;
   if (windowsStyle && body.includes(":")) return false;
   const segments = value.split(/[\\/]/).filter(Boolean);
   if (segments.some((segment) => segment === "." || segment === "..")) return false;
@@ -593,21 +594,32 @@ function assertNormalizedEvent(input: unknown): asserts input is NormalizedHookE
     input.event === "tool-failure"
   ) {
     if (!isPlainObject(input.tool)) throw new Error("normalized hook tool content is required");
-    if (
-      Object.keys(input.tool).some(
-        (key) => !new Set(["name", "id", "input", "response", "error", "interrupted"]).has(key),
-      )
-    ) {
+    const allowedToolFields = new Set(["name", "id", "input"]);
+    if (input.event === "after-tool") allowedToolFields.add("response");
+    if (input.event === "tool-failure") {
+      allowedToolFields.add("error");
+      allowedToolFields.add("interrupted");
+    }
+    if (Object.keys(input.tool).some((key) => !allowedToolFields.has(key))) {
       throw new Error("normalized hook tool contains an unknown field");
     }
     requiredString(input.tool, "name");
     if (!("input" in input.tool)) throw new Error("normalized hook tool input is required");
     assertJsonValue(input.tool.input, { nodes: 0 });
-    if (input.event !== "permission-request") requiredString(input.tool, "id");
-    if (input.event === "after-tool" && !("response" in input.tool)) {
-      throw new Error("normalized hook tool response is required");
+    if (input.event === "permission-request") optionalString(input.tool, "id");
+    else requiredString(input.tool, "id");
+    if (input.event === "after-tool") {
+      if (!("response" in input.tool)) {
+        throw new Error("normalized hook tool response is required");
+      }
+      assertJsonValue(input.tool.response, { nodes: 0 });
     }
-    if (input.event === "tool-failure") requiredString(input.tool, "error");
+    if (input.event === "tool-failure") {
+      requiredString(input.tool, "error");
+      if ("interrupted" in input.tool && typeof input.tool.interrupted !== "boolean") {
+        throw new Error("normalized hook tool interrupted state must be boolean");
+      }
+    }
   }
 
   if (input.event === "session-start") {

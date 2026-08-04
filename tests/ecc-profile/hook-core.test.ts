@@ -78,6 +78,21 @@ describe("ECC hook input normalization", () => {
     });
   });
 
+  it("accepts complete UNC roots without accepting drive-dependent roots", () => {
+    expect(
+      normalizeClaudeHookInput({
+        session_id: "session-1",
+        transcript_path: "\\\\fixture-server\\fixture-share\\transcript.jsonl",
+        cwd: "\\\\fixture-server\\fixture-share\\project",
+        hook_event_name: "SessionStart",
+        source: "startup",
+      }),
+    ).toMatchObject({
+      cwd: "\\\\fixture-server\\fixture-share\\project",
+      transcriptPath: "\\\\fixture-server\\fixture-share\\transcript.jsonl",
+    });
+  });
+
   it("preserves reviewed Claude metadata used by later handlers", () => {
     expect(
       normalizeClaudeHookInput({
@@ -259,6 +274,7 @@ describe("ECC hook input normalization", () => {
     const malformed = [
       { ...beforeTool, prompt_id: null },
       { ...beforeTool, cwd: "C:/fixtures/CON/project" },
+      { ...beforeTool, cwd: "\\fixtures\\project" },
       { ...beforeTool, transcript_path: "relative/transcript.jsonl" },
       { ...beforeTool, effort: { level: "high", extra: true } },
       { ...beforeTool, tool_input: undefined },
@@ -404,8 +420,12 @@ describe("ECC composite hook dispatcher", () => {
       { ...event, turnId: undefined },
       { ...event, tool: { ...event.tool, invented: true } },
       { ...event, tool: { name: "Shell", id: "tool-1" } },
+      { ...event, tool: { ...event.tool, response: { output: "unexpected" } } },
       { ...afterTool, tool: { ...afterTool.tool, response: undefined } },
+      { ...afterTool, tool: { ...afterTool.tool, interrupted: "yes" } },
+      { ...afterTool, tool: { ...afterTool.tool, error: "wrong event" } },
       { ...toolFailure, tool: { ...toolFailure.tool, error: undefined } },
+      { ...toolFailure, tool: { ...toolFailure.tool, response: { output: "wrong event" } } },
     ];
     for (const input of malformed) {
       await expect(dispatchHookEvent(input as NormalizedHookEvent, [])).rejects.toThrow();
