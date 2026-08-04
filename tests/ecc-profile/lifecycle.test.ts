@@ -315,6 +315,48 @@ describe("AIH-owned ECC projection lifecycle", () => {
     );
   });
 
+  it("rejects rollback replacement bytes whose installed hash contradicts normalized content", async () => {
+    await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    const next = projection(COMMIT_B, "# example v2\n");
+    await executePlan(planEccProfileLifecycle(root, next, "update"), ctx(true));
+    const receiptPath = join(root, ECC_PROFILE_OWNERSHIP_PATH);
+    const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as {
+      rollback: {
+        files: Array<{ mergeStrategy: string; content: string; normalizedHash: string }>;
+      };
+    };
+    const replacement = receipt.rollback.files.find((file) => file.mergeStrategy === "replace");
+    if (replacement === undefined) throw new Error("fixture rollback has no replacement file");
+    replacement.content = "# forged but normalized snapshot\n";
+    replacement.normalizedHash = sha256(replacement.content);
+    writeFileSync(receiptPath, `${JSON.stringify(receipt)}\n`, "utf8");
+
+    expect(() => planEccProfileLifecycle(root, next, "rollback")).toThrow(
+      /rollback installed hash/i,
+    );
+  });
+
+  it("rejects rollback TOML whose managed block contradicts normalized content", async () => {
+    await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    const next = projection(COMMIT_B, "# example v2\n");
+    await executePlan(planEccProfileLifecycle(root, next, "update"), ctx(true));
+    const receiptPath = join(root, ECC_PROFILE_OWNERSHIP_PATH);
+    const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as {
+      rollback: {
+        files: Array<{ mergeStrategy: string; content: string; normalizedHash: string }>;
+      };
+    };
+    const merge = receipt.rollback.files.find((file) => file.mergeStrategy === "toml-merge");
+    if (merge === undefined) throw new Error("fixture rollback has no TOML merge file");
+    merge.content = '[agents.forged]\nconfig_file = "agents/forged.toml"\n';
+    merge.normalizedHash = sha256(merge.content);
+    writeFileSync(receiptPath, `${JSON.stringify(receipt)}\n`, "utf8");
+
+    expect(() => planEccProfileLifecycle(root, next, "rollback")).toThrow(
+      /rollback managed-block hash/i,
+    );
+  });
+
   it("rejects an update whose rollback receipt would exceed its read boundary", async () => {
     const bytes = `${"x".repeat(4 * 1024 * 1024 - 1025)}\n`;
     const initial = projection();
@@ -461,5 +503,142 @@ describe("AIH-owned ECC projection lifecycle", () => {
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }
+  });
+
+  it("rejects malformed projection identities, boundaries, and destination ambiguity", () => {
+    const wrongRepository = projection();
+    (wrongRepository.source as { repository: string }).repository = "example.invalid/ECC";
+    expect(() => planEccProfileLifecycle(root, wrongRepository, "install")).toThrow(
+      /projection identity/i,
+    );
+
+    const wrongReceipt = projection();
+    wrongReceipt.source.reviewReceipt.sourceCommit = COMMIT_B;
+    expect(() => planEccProfileLifecycle(root, wrongReceipt, "install")).toThrow(
+      /review receipt identity/i,
+    );
+
+    const empty = projection();
+    empty.files = [];
+    expect(() => planEccProfileLifecycle(root, empty, "install")).toThrow(/file count/i);
+
+    const outside = projection();
+    const outsideFile = outside.files.at(0);
+    if (outsideFile === undefined) throw new Error("fixture projection has no files");
+    outside.files[0] = { ...outsideFile, destination: "outside/file.md" };
+    expect(() => planEccProfileLifecycle(root, outside, "install")).toThrow(
+      /outside the managed client namespaces/i,
+    );
+
+    const duplicate = projection();
+    const duplicateFile = duplicate.files.at(0);
+    if (duplicateFile === undefined) throw new Error("fixture projection has no files");
+    duplicate.files.push({ ...duplicateFile });
+    expect(() => planEccProfileLifecycle(root, duplicate, "install")).toThrow(/ambiguous/i);
+
+    const oversized = projection();
+    const oversizedFile = oversized.files.at(0);
+    if (oversizedFile === undefined) throw new Error("fixture projection has no files");
+    const oversizedContent = "x".repeat(4 * 1024 * 1024 + 1);
+    oversized.files[0] = {
+      ...oversizedFile,
+      content: oversizedContent,
+      normalizedSha256: sha256(oversizedContent),
+    };
+    expect(() => planEccProfileLifecycle(root, oversized, "install")).toThrow(/projected bytes/i);
+  });
+
+  it("rejects ambiguous and contradictory ownership receipt metadata", async () => {
+    await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    const receiptPath = join(root, ECC_PROFILE_OWNERSHIP_PATH);
+    const original = JSON.parse(readFileSync(receiptPath, "utf8")) as {
+      files: Array<{
+        destination: string;
+        sourcePaths: string[];
+        sourcePin: string;
+        mergeStrategy: string;
+        managedBlockHash: string | null;
+      }>;
+    };
+    const expectRejected = (mutate: (receipt: typeof original) => void, pattern: RegExp) => {
+      const receipt = structuredClone(original);
+      mutate(receipt);
+      writeFileSync(receiptPath, `${JSON.stringify(receipt)}\n`, "utf8");
+      expect(() => readEccProfileOwnership(root)).toThrow(pattern);
+    };
+    const firstFile = (receipt: typeof original) => {
+      const file = receipt.files.at(0);
+      if (file === undefined) throw new Error("fixture receipt has no files");
+      return file;
+    };
+
+    expectRejected((receipt) => receipt.files.push({ ...firstFile(receipt) }), /ambiguous active/i);
+    expectRejected((receipt) => {
+      firstFile(receipt).destination = "outside/file.md";
+    }, /unmanaged active/i);
+    expectRejected((receipt) => {
+      const file = firstFile(receipt);
+      const sourcePath = file.sourcePaths.at(0);
+      if (sourcePath === undefined) throw new Error("fixture receipt file has no source path");
+      file.sourcePaths = [sourcePath, sourcePath.toUpperCase()];
+    }, /ambiguous active source paths/i);
+    expectRejected((receipt) => {
+      firstFile(receipt).sourcePin = COMMIT_B;
+    }, /contradictory source pin/i);
+    expectRejected((receipt) => {
+      firstFile(receipt).managedBlockHash = "f".repeat(64);
+    }, /contradictory merge metadata/i);
+  });
+
+  it("enforces lifecycle operation and ownership preconditions", async () => {
+    expect(() => planEccProfileLifecycle(root, projection(COMMIT_B), "update")).toThrow(
+      /update requires an ownership receipt/i,
+    );
+    expect(() => planEccProfileLifecycle(root, projection(), "repair")).toThrow(
+      /repair requires an ownership receipt/i,
+    );
+    expect(() => planEccProfileLifecycle(root, projection(), "rollback")).toThrow(
+      /rollback requires an ownership receipt/i,
+    );
+
+    await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    expect(() => planEccProfileLifecycle(root, projection(COMMIT_B), "install")).toThrow(
+      /already owned at a different pin/i,
+    );
+    expect(() => planEccProfileLifecycle(root, projection(), "update")).toThrow(
+      /exact new source pin/i,
+    );
+    expect(() => planEccProfileLifecycle(root, projection(COMMIT_B), "repair")).toThrow(
+      /repair projection contradicts/i,
+    );
+    expect(() => planEccProfileLifecycle(root, projection(COMMIT_B), "rollback")).toThrow(
+      /rollback projection contradicts/i,
+    );
+    expect(() => planEccProfileLifecycle(root, projection(), "rollback")).toThrow(
+      /no rollback snapshot/i,
+    );
+  });
+
+  it("refuses unowned destinations and incomplete owned state", async () => {
+    put(".agents/skills/example/SKILL.md", "operator-owned skill\n");
+    expect(() => planEccProfileLifecycle(root, projection(), "install")).toThrow(
+      /existing unowned/i,
+    );
+    rmSync(join(root, ".agents/skills/example/SKILL.md"));
+
+    put(
+      ".codex/config.toml",
+      "# >>> aih managed (ecc-profile) >>>\n[agents.operator]\n# <<< aih managed (ecc-profile) <<<\n",
+    );
+    expect(() => planEccProfileLifecycle(root, projection(), "install")).toThrow(
+      /ambiguous existing.*managed block/i,
+    );
+    rmSync(join(root, ".codex/config.toml"));
+
+    await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    rmSync(join(root, ".agents/skills/example/SKILL.md"));
+    expect(() => planEccProfileLifecycle(root, projection(COMMIT_B), "update")).toThrow(
+      /missing; repair before update/i,
+    );
   });
 });

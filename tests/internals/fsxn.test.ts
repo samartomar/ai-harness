@@ -290,6 +290,20 @@ describe("FsTransaction — removals (aih prune)", () => {
     expect(existsSync(generated)).toBe(false);
     expect(readFileSync(authority, "utf8")).toBe("changed authority\n");
   });
+
+  it("rejects a transaction that both asserts and mutates the same authority path", () => {
+    const authority = put("ownership.json", "owned bytes\n");
+    const transaction = new FsTransaction();
+    transaction.stage(authority, "replacement bytes\n");
+    transaction.stageAssertion(
+      authority,
+      createHash("sha256").update("owned bytes\n", "utf8").digest("hex"),
+      "ownership receipt",
+    );
+
+    expect(() => transaction.commit()).toThrow(/both asserts and mutates.*ownership\.json/i);
+    expect(readFileSync(authority, "utf8")).toBe("owned bytes\n");
+  });
 });
 
 describe("FsTransaction — hard-delete removals (backupSibling)", () => {
