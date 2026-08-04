@@ -156,6 +156,18 @@ describe("ECC profile lifecycle command", () => {
       expect(installed.applied).toBe(true);
       expect(existsSync(join(target, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(true);
 
+      const codexConfig = join(target, ".codex", "config.toml");
+      rmSync(codexConfig);
+      const installedSource = readEccProfileOwnership(target)?.source;
+      await executeEccProfileLifecycleCommand(realGitContext(target, "repair"), {
+        installedSourceTrust: installedSource ? [installedSource] : [],
+      });
+      expect(readFileSync(codexConfig, "utf8")).toMatch(/\[agents\./u);
+      expect(readFileSync(codexConfig, "utf8")).toMatch(/\[mcp_servers\./u);
+      await executeEccProfileLifecycleCommand(realGitContext(target, "repair"), {
+        installedSourceTrust: installedSource ? [installedSource] : [],
+      });
+
       const next = structuredClone(projection);
       next.source.commit = "b".repeat(40);
       next.source.reviewReceipt.sourceCommit = next.source.commit;
@@ -170,15 +182,22 @@ describe("ECC profile lifecycle command", () => {
       const nextSource = readEccProfileOwnership(target)?.source;
       expect(nextSource?.commit).toBe(next.source.commit);
 
+      rmSync(codexConfig);
       await executeEccProfileLifecycleCommand(realGitContext(target, "rollback"), {
         installedSourceTrust: nextSource ? [nextSource] : [],
       });
       const originalSource = readEccProfileOwnership(target)?.source;
       expect(originalSource?.commit).toBe(projection.source.commit);
+      expect(readFileSync(codexConfig, "utf8")).toMatch(/\[agents\./u);
+      expect(readFileSync(codexConfig, "utf8")).toMatch(/\[mcp_servers\./u);
+      await executeEccProfileLifecycleCommand(realGitContext(target, "repair"), {
+        installedSourceTrust: originalSource ? [originalSource] : [],
+      });
 
       await executeEccProfileLifecycleCommand(realGitContext(target, "uninstall"), {
         installedSourceTrust: originalSource ? [originalSource] : [],
       });
+      expect(existsSync(codexConfig)).toBe(false);
       expect(existsSync(join(target, ECC_PROFILE_OWNERSHIP_PATH))).toBe(false);
       expect(existsSync(join(target, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(false);
     } finally {

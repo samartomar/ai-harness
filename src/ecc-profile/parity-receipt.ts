@@ -37,9 +37,11 @@ export interface EccProfileParityReceipt {
   native: {
     hooks: Record<"claude" | "codex", string[]>;
     mcp: { selected: string[]; disabled: string[] };
+    policySha256: string;
     registrationFiles: Array<{
       destination: string;
       ownership: "json-array-children" | "json-object-children" | "toml-block";
+      policySha256: string;
     }>;
   };
 }
@@ -164,6 +166,40 @@ function selectedMcpNames(registration: NativeEccRegistration): string[] {
   return claude;
 }
 
+function policyPathVariants(value: string): string[] {
+  return uniqueSorted(
+    [
+      value,
+      value.replace(/\\/g, "/"),
+      value.replace(/\\/g, "\\\\"),
+      JSON.stringify(value).slice(1, -1),
+    ].filter(
+      (candidate, index, values) => candidate.length > 0 && values.indexOf(candidate) === index,
+    ),
+    "native policy path variant",
+  ).sort((left, right) => right.length - left.length);
+}
+
+function canonicalPolicyContent(content: string, registration: NativeEccRegistration): string {
+  const replacements: Array<readonly [string, string]> = [
+    [registration.runtime.serena.pyproject.path, "<serena-pyproject>"],
+    [registration.runtime.serena.uvLock.path, "<serena-uv-lock>"],
+    [registration.runtime.executable.path, "<aih-executable>"],
+    [registration.runtime.cliScript.path, "<aih-cli-script>"],
+    [registration.runtime.serena.root, "<serena-runtime-root>"],
+    [registration.stateRoot, "<aih-state-root>"],
+    [registration.root, "<project-root>"],
+  ] as const;
+  let canonical = content.replace(/\r\n/g, "\n");
+  for (const [value, token] of replacements.sort(
+    (left, right) => right[0].length - left[0].length,
+  )) {
+    for (const variant of policyPathVariants(value))
+      canonical = canonical.replaceAll(variant, token);
+  }
+  return canonical;
+}
+
 export function buildEccProfileParityReceipt(
   projection: EccProjection,
   registration: NativeEccRegistration,
@@ -175,7 +211,11 @@ export function buildEccProfileParityReceipt(
   assertComplete("workflow", claude.workflows, codex.workflows);
   assertAdaptationOwnership([claude, codex]);
   const registrationFiles = nativeRegistrationFiles(registration)
-    .map(({ destination, ownership }) => ({ destination, ownership }))
+    .map(({ destination, ownership, content }) => ({
+      destination,
+      ownership,
+      policySha256: sha256(canonicalPolicyContent(content, registration)),
+    }))
     .sort((left, right) => left.destination.localeCompare(right.destination));
   uniqueSorted(
     registrationFiles.map((entry) => entry.destination),
@@ -201,6 +241,11 @@ export function buildEccProfileParityReceipt(
         selected: selectedMcpNames(registration),
         disabled: uniqueSorted(registration.mcp.disabled, "disabled MCP identity"),
       },
+      policySha256: sha256(
+        registrationFiles
+          .map((file) => `${file.destination}\0${file.ownership}\0${file.policySha256}`)
+          .join("\n"),
+      ),
       registrationFiles,
     },
   };

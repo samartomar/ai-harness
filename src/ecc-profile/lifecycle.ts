@@ -16,7 +16,8 @@ import {
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT = /^[0-9a-f]{40}$/;
-const MANAGED_SCOPE = "ecc-profile";
+export const ECC_PROFILE_MANAGED_SCOPE = "ecc-profile";
+const MANAGED_SCOPE = ECC_PROFILE_MANAGED_SCOPE;
 const MAX_PROJECTED_FILES = 2_000;
 const MAX_PROJECTED_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PROJECTED_BYTES = 64 * 1024 * 1024;

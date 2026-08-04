@@ -105,6 +105,20 @@ describe("ECC profile parity receipt", () => {
       );
       expect(eccProfileParityReceiptDigest(first)).toMatch(/^[a-f0-9]{64}$/);
 
+      const hookDrift = registration(firstTarget);
+      const preCompact = hookDrift.hooks.claude.hooks.PreCompact?.[0]?.hooks[0];
+      if (!preCompact) throw new Error("fixture has no Claude PreCompact handler");
+      preCompact.timeout += 1;
+      expect(
+        eccProfileParityReceiptDigest(buildEccProfileParityReceipt(projection, hookDrift)),
+      ).not.toBe(eccProfileParityReceiptDigest(first));
+
+      const mcpDrift = registration(firstTarget);
+      mcpDrift.mcp.codexToml += "# reviewed-policy-drift\n";
+      expect(
+        eccProfileParityReceiptDigest(buildEccProfileParityReceipt(projection, mcpDrift)),
+      ).not.toBe(eccProfileParityReceiptDigest(first));
+
       const omitted = structuredClone(projection);
       omitted.clients.codex.skills.pop();
       expect(() => buildEccProfileParityReceipt(omitted, registration(firstTarget))).toThrow(
