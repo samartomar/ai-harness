@@ -177,6 +177,8 @@ describe("ECC MCP profile projection", () => {
     expect(() =>
       filterSerenaToolsList({ tools: [{ name: "find_symbol" }, { name: "find_symbol" }] }),
     ).toThrow(/duplicate/i);
+    expect(() => filterSerenaToolsList(null)).toThrow(/malformed/i);
+    expect(() => filterSerenaToolsList({ tools: [null] })).toThrow(/malformed tool/i);
     expect(() =>
       filterSerenaToolsList({
         tools: SERENA_ALLOWED_TOOLS.filter((name) => name !== "find_implementations").map(
@@ -215,9 +217,21 @@ describe("ECC MCP profile projection", () => {
         params: { name: "find_symbol", arguments: {} },
       }),
     ).toEqual({ forward: true });
+    expect(guard.inspectClientRequest({ jsonrpc: "2.0", id: 10, method: "tools/list" })).toEqual({
+      forward: true,
+    });
     expect(() =>
       guard.inspectClientRequest({ jsonrpc: "2.0", id: 9, method: "tools/call", params: {} }),
     ).toThrow(/malformed/i);
+    expect(() => guard.inspectClientRequest([])).toThrow(/malformed/i);
+    expect(() =>
+      guard.inspectClientRequest({
+        jsonrpc: "2.0",
+        id: { ambiguous: true },
+        method: "tools/call",
+        params: { name: "find_symbol" },
+      }),
+    ).toThrow(/request id/i);
   });
 
   it("merge-preserves unrelated operator servers and rejects selected-name conflicts", () => {
