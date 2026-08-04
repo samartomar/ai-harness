@@ -20,6 +20,13 @@ describe("decision-partner truth routing", () => {
     expect(skill).toContain("Publication authorization remains separate");
   });
 
+  it("honors the unconditional manual self-hosting contract", () => {
+    expect(skill).toContain("Never run AIH against this checkout.");
+    expect(skill).toContain("ai-coding/SELF-HOSTING.md");
+    expect(skill).not.toContain("routes through the generator");
+    expect(skill).not.toMatch(/do not run aih commands that mutate this checkout/i);
+  });
+
   it("does not hide an accidental local decision board", () => {
     expect(gitignore).not.toMatch(/^\/?\.decision-sessions\/?$/m);
   });

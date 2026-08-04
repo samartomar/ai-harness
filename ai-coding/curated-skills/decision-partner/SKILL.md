@@ -108,16 +108,18 @@ route around it.
   public issues, opening public PRs, merging, or publishing requires the
   authorization those contracts name. Publication authorization remains separate
   and is never inferred from push, PR, merge, or broad workflow authority.
-- **Never** run aih project-truth or project-governance commands against this
-  checkout; it is not aih-governed by design.
+- **Never run AIH against this checkout.** This includes installed, `npx`,
+  source, or built project/governance commands, whether read-only or mutating.
+  Follow `ai-coding/SELF-HOSTING.md`.
 - **Public surfaces**: issues, PRs, commits, and canon files are public.
   Strategy, competitive analysis, pricing, and maintainer runbooks belong only
   in the private companion repo. Public text avoids the banned claim words in
   `PUBLIC_DOCS_POLICY.md` (enterprise-grade, production-ready, guaranteed,
   secure by default, compliant).
-- **Generated docs** (`CLAUDE.md`/`AGENTS.md` blocks, `ai-coding/project.md`)
-  are never hand-edited — a decision that changes them routes through the
-  generator, which makes it a backlog item, not an edit.
+- **Self-hosted canon** (`CLAUDE.md`/`AGENTS.md` blocks,
+  `ai-coding/project.json`, `ai-coding/project.md`, and related mirrors) is
+  maintained manually through `ai-coding/SELF-HOSTING.md`; never route a canon
+  change through an AIH generator against this checkout.
 - **Issue discipline**: existing label taxonomy only (never invent one), body
   in Problem → Fix → Acceptance → Source form, milestone proposed not assumed.
 - **Merge mechanics**: strict branch protection forces a serial
@@ -225,12 +227,13 @@ threshold is the same as forgetting.
 ## Scope
 
 Edit only the companion decision truth homes and the directly linked
-feature/intake files its contract requires. Do not edit public code, public
-canon, or generated files by hand; do not run aih commands that mutate this
-checkout. Keep the agenda and owner-question scratch in chat, not on disk. If
-the user asks to implement the resulting feature, finish recording the ruling,
-then leave this advisory role and use the task-appropriate implementation
-workflow.
+feature/intake files its contract requires. If a ruling requires a public canon
+change, record or draft that follow-up; the later implementation workflow must
+maintain it manually under `ai-coding/SELF-HOSTING.md`. Never run AIH against
+this checkout. Keep the agenda and owner-question scratch in chat, not on disk.
+If the user asks to implement the resulting feature, finish recording the
+ruling, then leave this advisory role and use the task-appropriate
+implementation workflow.
 
 ## Standing guards — check every exchange
 
