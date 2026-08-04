@@ -304,19 +304,14 @@ describe("manifest-derived AIH ECC profile resolution", () => {
   });
 
   it("rejects a relative source root before filesystem acquisition", async () => {
-    const roots = await fixtureRoots();
-    try {
-      const relativeTemporaryRoot = relative(dirname(roots.sourceRoot), roots.sourceRoot);
-      expect(isAbsolute(relativeTemporaryRoot)).toBe(false);
-      await expect(
-        resolveEccProfile(profile, evidence, {
-          sourceRoot: relativeTemporaryRoot,
-          evidenceRoot: roots.evidenceRoot,
-        }),
-      ).rejects.toThrow(/source root.*absolute/i);
-    } finally {
-      await roots.cleanup();
-    }
+    const relativeTemporaryRoot = relative(tmpdir(), join(tmpdir(), "aih-ecc-relative-root"));
+    expect(isAbsolute(relativeTemporaryRoot)).toBe(false);
+    await expect(
+      resolveEccProfile(profile, evidence, {
+        sourceRoot: relativeTemporaryRoot,
+        evidenceRoot: join(tmpdir(), "aih-ecc-unused-evidence-root"),
+      }),
+    ).rejects.toThrow(/source root.*absolute/i);
   });
 
   it.each(["missing", "modified", "substituted", "symlinked", "hash-mismatched"])(

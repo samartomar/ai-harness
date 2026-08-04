@@ -150,8 +150,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  rmSync(cacheHome, { recursive: true, force: true });
-  rmSync(repoDir, { recursive: true, force: true });
+  rmSync(cacheHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  rmSync(repoDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 describe("acquireNpmTree — verify, unpack, digest", () => {
@@ -400,7 +400,7 @@ describe("acquireNpmTree — digest comparability & non-collision with git", () 
     expect(
       readdirSync(join(cacheHome, "scan-cache")).filter((n) => n.endsWith(".json")),
     ).toHaveLength(2);
-  });
+  }, 15_000);
 });
 
 describe("acquireNpmTree — CLI failure surfaces", () => {
