@@ -309,7 +309,7 @@ describe("Plan Canvas artifact boundary", () => {
     });
 
     expect(second).toEqual(first);
-    expect(first.originalPath).toBe(plan);
+    expect(first.originalPath).toBe(realpathSync(plan));
     const snapshotRelative = relative(resolve(state), first.snapshotPath);
     expect(snapshotRelative.startsWith("..")).toBe(false);
     expect(isAbsolute(snapshotRelative)).toBe(false);
