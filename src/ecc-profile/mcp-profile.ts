@@ -84,8 +84,12 @@ export interface EccMcpProjectionInput {
   client: "claude" | "codex";
   canonicalWorktree: string;
   serenaHome: string;
+  /** Absolute root containing the authenticated pyproject.toml and uv.lock closure. */
+  serenaRuntimeRoot: string;
   /** Absolute path to the later AIH-owned launcher/protocol guard. */
   wrapperCommand: string;
+  /** Reviewed argv needed to reach the launcher within wrapperCommand. */
+  wrapperArgsPrefix?: readonly string[];
   /** Digest verified by the later acquisition/materialization boundary. */
   wrapperSha256: string;
   /** Authenticated resolver-lock digest produced by the acquisition boundary. */
@@ -110,6 +114,13 @@ export interface EccMcpProjection {
 
 function requireSha256(value: string, label: string): void {
   if (!SHA256.test(value)) throw new Error(`${label} must be a lowercase SHA-256 digest`);
+}
+
+function requireSafeArg(value: string, label: string): string {
+  if (value.length === 0 || value.includes("\0") || /[\r\n]/u.test(value)) {
+    throw new Error(`${label} must be a non-empty safe argument`);
+  }
+  return value;
 }
 
 function requireAbsoluteSafePath(value: string, label: string): string {
@@ -173,7 +184,7 @@ function validateContext7Attestation(
   return { ...value };
 }
 
-function serenaConfig(): string {
+export function renderSerenaConfig(): string {
   return [
     "language_backend: LSP",
     "gui_log_window: false",
@@ -213,16 +224,29 @@ function localServers(): Pick<
 export function buildEccMcpProfileProjection(input: EccMcpProjectionInput): EccMcpProjection {
   const canonicalWorktree = requireAbsoluteSafePath(input.canonicalWorktree, "canonicalWorktree");
   const serenaHome = requireAbsoluteSafePath(input.serenaHome, "serenaHome");
+  const serenaRuntimeRoot = requireAbsoluteSafePath(input.serenaRuntimeRoot, "serenaRuntimeRoot");
   const wrapperCommand = requireAbsoluteSafePath(input.wrapperCommand, "wrapperCommand");
-  requireDistinctPaths({ canonicalWorktree, serenaHome, wrapperCommand });
+  requireDistinctPaths({ canonicalWorktree, serenaHome, serenaRuntimeRoot, wrapperCommand });
   if (isWithinEccMcpRoot(canonicalWorktree, serenaHome)) {
     throw new Error("serenaHome must be outside the canonical worktree");
+  }
+  if (
+    isWithinEccMcpRoot(canonicalWorktree, serenaRuntimeRoot) ||
+    isWithinEccMcpRoot(serenaRuntimeRoot, canonicalWorktree) ||
+    isWithinEccMcpRoot(serenaHome, serenaRuntimeRoot) ||
+    isWithinEccMcpRoot(serenaRuntimeRoot, serenaHome)
+  ) {
+    throw new Error("serenaRuntimeRoot must be outside and disjoint from worktree and state");
   }
   if (isWithinEccMcpRoot(canonicalWorktree, wrapperCommand)) {
     throw new Error("wrapperCommand must be outside the canonical worktree");
   }
   requireSha256(input.serenaDependencyLockSha256, "Serena dependency lock");
   requireSha256(input.wrapperSha256, "Serena wrapper");
+  const wrapperArgsPrefix = (input.wrapperArgsPrefix ?? []).map((value, index) =>
+    requireSafeArg(value, `wrapperArgsPrefix[${index}]`),
+  );
+  if (wrapperArgsPrefix.length > 16) throw new Error("wrapperArgsPrefix exceeds its limit");
   const context7Attestation = validateContext7Attestation(input.context7Attestation);
   const servers: EccMcpProjection["servers"] = {
     ...localServers(),
@@ -231,11 +255,14 @@ export function buildEccMcpProfileProjection(input: EccMcpProjectionInput): EccM
       type: "stdio",
       command: wrapperCommand,
       args: [
+        ...wrapperArgsPrefix,
         "serena",
         "--package",
         SERENA_RUNTIME_PIN.package,
         "--dependency-lock-sha256",
         input.serenaDependencyLockSha256,
+        "--lock-root",
+        serenaRuntimeRoot,
         "--context",
         input.client === "claude" ? "claude-code" : "codex",
         "--mode",
@@ -263,7 +290,7 @@ export function buildEccMcpProfileProjection(input: EccMcpProjectionInput): EccM
     activation: "prepared-not-registered",
     servers,
     disabled: ECC_MCP_DISABLED,
-    serenaConfig: serenaConfig(),
+    serenaConfig: renderSerenaConfig(),
     provenance: {
       serena: {
         ...SERENA_RUNTIME_PIN,

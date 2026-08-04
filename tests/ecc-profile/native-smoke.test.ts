@@ -4,7 +4,15 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
+import {
+  buildNativeEccRegistration,
+  planNativeEccRegistration,
+} from "../../src/ecc-profile/native-registration.js";
 import { renderEccProjection } from "../../src/ecc-profile/render.js";
+import { executePlan } from "../../src/internals/execute.js";
+import type { PlanContext } from "../../src/internals/plan.js";
+import { fakeRunner } from "../../src/internals/proc.js";
+import { makeHostAdapter } from "../../src/platform/detect.js";
 import { evidence, fixtureDirectory, profile, receipt } from "./render-fixture.js";
 
 const pinnedSourceRoot = process.env.AIH_ECC_PINNED_SOURCE_ROOT;
@@ -75,15 +83,46 @@ async function copyEvidence(root: string): Promise<void> {
   }
 }
 
+function applyContext(root: string): PlanContext {
+  const run = fakeRunner(() => undefined);
+  return {
+    root,
+    contextDir: "ai-coding",
+    posture: "enterprise",
+    apply: true,
+    verify: false,
+    json: false,
+    run,
+    host: makeHostAdapter({
+      platform:
+        process.platform === "win32"
+          ? "windows"
+          : process.platform === "darwin"
+            ? "darwin"
+            : "linux",
+      run,
+      env: {},
+    }),
+    env: {},
+    options: {},
+  };
+}
+
 describe.skipIf(!nativeEnabled)("disposable native-client ECC projection smoke", () => {
   it("checks root config and doctor parsing with materialized canaries", async () => {
     const root = await mkdtemp(join(tmpdir(), "aih-ecc-native-smoke-"));
     const project = join(root, "project");
     const home = join(root, "home");
     const evidenceRoot = join(root, "evidence-root");
+    const stateRoot = join(root, "state");
+    const runtimeRoot = join(root, "runtime");
     try {
       await mkdir(project, { recursive: true });
       await mkdir(home, { recursive: true });
+      await mkdir(stateRoot, { recursive: true });
+      await mkdir(runtimeRoot, { recursive: true });
+      const runtimeCli = join(runtimeRoot, "cli.js");
+      await writeFile(runtimeCli, "// disposable native smoke runtime\n");
       await copyEvidence(evidenceRoot);
       const projection = await renderEccProjection(profile, evidence, {
         sourceRoot: pinnedSourceRoot ?? "",
@@ -95,6 +134,17 @@ describe.skipIf(!nativeEnabled)("disposable native-client ECC projection smoke",
         await writeFile(destination, file.content, { flag: "wx" });
         if (file.mode === "100755" && process.platform !== "win32") await chmod(destination, 0o755);
       }
+
+      const registration = buildNativeEccRegistration({
+        root: project,
+        stateRoot,
+        executable: process.execPath,
+        cliScript: runtimeCli,
+      });
+      await executePlan(
+        planNativeEccRegistration(project, registration, "install"),
+        applyContext(project),
+      );
 
       const markdown = projection.files.filter((file) => file.content.startsWith("---\n"));
       for (const document of markdown) {
@@ -120,6 +170,13 @@ describe.skipIf(!nativeEnabled)("disposable native-client ECC projection smoke",
         timeout: 30_000,
       });
       expect(claude.status, boundedOutput(claude)).toBe(0);
+      expect(await readFile(join(project, ".claude", "settings.json"), "utf8")).toContain(
+        "AIH ECC profile policies",
+      );
+      expect(await readFile(join(project, ".mcp.json"), "utf8")).toContain('"serena"');
+      expect(await readFile(join(project, ".codex", "config.toml"), "utf8")).toContain(
+        "ecc-native-registration",
+      );
 
       for (const destination of [
         ".agents/skills/accessibility/SKILL.md",

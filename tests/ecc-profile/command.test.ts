@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +11,10 @@ import {
   ECC_PROFILE_OWNERSHIP_PATH,
   readEccProfileOwnership,
 } from "../../src/ecc-profile/lifecycle.js";
+import {
+  buildNativeEccRegistration,
+  NATIVE_ECC_REGISTRATION_RECEIPT,
+} from "../../src/ecc-profile/native-registration.js";
 import { renderEccProjectionWithTrust } from "../../src/ecc-profile/render.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -69,9 +73,17 @@ describe("ECC profile lifecycle command", () => {
         await sources.createTrust(),
       );
       const loadProjection = vi.fn(async () => projection);
+      const stateRoot = mkdtempSync(join(tmpdir(), "aih-ecc-profile-command-state-"));
+      roots.push(stateRoot);
+      const executable = join(stateRoot, process.platform === "win32" ? "node.exe" : "node");
+      const cliScript = join(stateRoot, "cli.js");
+      writeFileSync(executable, "runtime", { mode: 0o755 });
+      writeFileSync(cliScript, "cli\n");
+      const loadNativeRegistration = () =>
+        buildNativeEccRegistration({ root: target, stateRoot, executable, cliScript });
 
       const preview = await executeEccCommand(context(target, "install", false), {
-        profileLifecycle: { loadProjection },
+        profileLifecycle: { loadProjection, loadNativeRegistration },
       });
       expect(preview.applied).toBe(false);
       expect(preview.writes.length).toBeGreaterThan(0);
@@ -79,17 +91,106 @@ describe("ECC profile lifecycle command", () => {
 
       const installed = await executeEccProfileLifecycleCommand(context(target, "install", true), {
         loadProjection,
+        loadNativeRegistration,
       });
       expect(installed.applied).toBe(true);
+      expect(existsSync(join(target, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(true);
       const installedSource = readEccProfileOwnership(target)?.source;
       expect(installedSource).toBeDefined();
 
       await executeEccProfileLifecycleCommand(context(target, "uninstall", true), {
         loadProjection,
+        loadNativeRegistration,
         installedSourceTrust: installedSource ? [installedSource] : [],
       });
       expect(existsSync(join(target, ECC_PROFILE_OWNERSHIP_PATH))).toBe(false);
+      expect(existsSync(join(target, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(false);
       expect(loadProjection).toHaveBeenCalledTimes(2);
+    } finally {
+      await sources.cleanup();
+    }
+  }, 120_000);
+
+  it("keeps native registration installed when projection uninstall preflight fails", async () => {
+    const sources = await projectionRoots();
+    const target = mkdtempSync(join(tmpdir(), "aih-ecc-profile-command-atomic-uninstall-"));
+    const stateRoot = mkdtempSync(join(tmpdir(), "aih-ecc-profile-command-atomic-state-"));
+    roots.push(target, stateRoot);
+    try {
+      const projection = await renderEccProjectionWithTrust(
+        profile,
+        evidence,
+        sources,
+        await sources.createTrust(),
+      );
+      const executable = join(stateRoot, process.platform === "win32" ? "node.exe" : "node");
+      const cliScript = join(stateRoot, "cli.js");
+      writeFileSync(executable, "runtime", { mode: 0o755 });
+      writeFileSync(cliScript, "cli\n");
+      const loadNativeRegistration = () =>
+        buildNativeEccRegistration({ root: target, stateRoot, executable, cliScript });
+      await executeEccProfileLifecycleCommand(context(target, "install", true), {
+        loadProjection: async () => projection,
+        loadNativeRegistration,
+      });
+      const managed = projection.files.find((file) => file.mergeStrategy === "replace");
+      if (!managed) throw new Error("fixture has no replace-owned projected file");
+      writeFileSync(join(target, ...managed.destination.split("/")), "operator drift\n");
+      const installedSource = readEccProfileOwnership(target)?.source;
+
+      await expect(
+        executeEccProfileLifecycleCommand(context(target, "uninstall", true), {
+          loadProjection: async () => projection,
+          loadNativeRegistration,
+          installedSourceTrust: installedSource ? [installedSource] : [],
+        }),
+      ).rejects.toThrow(/modified|ownership|drift|hash/i);
+
+      expect(existsSync(join(target, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(true);
+      expect(readFileSync(join(target, ".mcp.json"), "utf8")).toContain("serena");
+    } finally {
+      await sources.cleanup();
+    }
+  }, 120_000);
+
+  it("compensates a completed projection install when native registration fails", async () => {
+    const sources = await projectionRoots();
+    const target = mkdtempSync(join(tmpdir(), "aih-ecc-profile-command-compensation-"));
+    const stateRoot = mkdtempSync(join(tmpdir(), "aih-ecc-profile-command-compensation-state-"));
+    roots.push(target, stateRoot);
+    try {
+      const projection = await renderEccProjectionWithTrust(
+        profile,
+        evidence,
+        sources,
+        await sources.createTrust(),
+      );
+      const executable = join(stateRoot, process.platform === "win32" ? "node.exe" : "node");
+      const cliScript = join(stateRoot, "cli.js");
+      writeFileSync(executable, "runtime", { mode: 0o755 });
+      writeFileSync(cliScript, "cli\n");
+      writeFileSync(
+        join(target, ".mcp.json"),
+        `${JSON.stringify({ mcpServers: { serena: { command: "operator-owned" } } })}\n`,
+      );
+      const projectedDestination = projection.files.find(
+        (file) => file.mergeStrategy === "replace",
+      );
+      expect(projectedDestination).toBeDefined();
+
+      await expect(
+        executeEccProfileLifecycleCommand(context(target, "install", true), {
+          loadProjection: async () => projection,
+          loadNativeRegistration: () =>
+            buildNativeEccRegistration({ root: target, stateRoot, executable, cliScript }),
+        }),
+      ).rejects.toThrow(/serena.*owned|ownership.*serena|conflict/i);
+
+      expect(existsSync(join(target, ECC_PROFILE_OWNERSHIP_PATH))).toBe(false);
+      expect(
+        existsSync(join(target, ...(projectedDestination?.destination.split("/") ?? []))),
+      ).toBe(false);
+      expect(readFileSync(join(target, ".mcp.json"), "utf8")).toContain("operator-owned");
     } finally {
       await sources.cleanup();
     }

@@ -99,7 +99,12 @@ describe("coverage policy", () => {
 
   it("covers source files with the expected explicit exclusions", () => {
     expect(coverage.include).toEqual(["src/**/*.ts"]);
-    expect(coverage.exclude).toEqual(["src/**/command.ts", "src/cli.ts", "**/*.d.ts"]);
+    expect(coverage.exclude).toEqual([
+      "src/**/command.ts",
+      "src/cli.ts",
+      "src/ecc-runtime.ts",
+      "**/*.d.ts",
+    ]);
   });
 
   it("enforces all four global coverage metrics at or above the ratchet floors", () => {

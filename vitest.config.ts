@@ -22,7 +22,9 @@ export default defineConfig({
       // lcov feeds the Codecov upload in CI; text/html stay for humans.
       reporter: ["text", "html", "lcov"],
       include: ["src/**/*.ts"],
-      exclude: ["src/**/command.ts", "src/cli.ts", "**/*.d.ts"],
+      // Executable-only entry wrappers are exercised by published-bin checks; unit tests target
+      // their imported builders/runtimes without executing process-global argv handling.
+      exclude: ["src/**/command.ts", "src/cli.ts", "src/ecc-runtime.ts", "**/*.d.ts"],
       // Enforced floor: set just below the current achieved levels so coverage can
       // only ratchet UP — CI/release fail on regression. Branches are at ~79%; the
       // remaining gap to the 80% bar is concentrated in doctor.ts (verification
