@@ -1,8 +1,9 @@
 import { EventEmitter } from "node:events";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { SERENA_DEPENDENCY_LOCK_SHA256 } from "../../src/ecc-profile/native-registration.js";
 import { executeNativeEccHook } from "../../src/ecc-profile/native-runtime.js";
@@ -10,6 +11,9 @@ import { runNativeEccRuntime } from "../../src/ecc-profile/native-runtime-cli.js
 import { buildProgram } from "../../src/program.js";
 
 const roots: string[] = [];
+const serenaRuntimeRoot = fileURLToPath(
+  new URL("../../src/ecc-profile/serena-runtime", import.meta.url),
+);
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -201,6 +205,8 @@ describe("native ECC hook runtime", () => {
       "wrong-package",
       "--dependency-lock-sha256",
       SERENA_DEPENDENCY_LOCK_SHA256,
+      "--lock-root",
+      serenaRuntimeRoot,
       "--context",
       "codex",
       "--mode",
@@ -370,6 +376,8 @@ describe("native ECC hook runtime", () => {
         "serena-agent==1.6.1",
         "--dependency-lock-sha256",
         SERENA_DEPENDENCY_LOCK_SHA256,
+        "--lock-root",
+        serenaRuntimeRoot,
         "--context",
         "codex",
         "--mode",
@@ -393,14 +401,15 @@ describe("native ECC hook runtime", () => {
       },
     );
     expect(exit).toBe(0);
-    expect(spawnArgs.slice(0, 6)).toEqual([
+    expect(spawnArgs.slice(0, 5)).toEqual([
       "--offline",
       "--no-python-downloads",
       "--no-env-file",
-      "--from",
-      "serena-agent==1.6.1",
-      "serena",
+      "--frozen",
+      "--project",
     ]);
+    expect(spawnArgs[5]).toBe(realpathSync(serenaRuntimeRoot));
+    expect(spawnArgs).toContain("serena");
     expect(spawnEnv?.OPENAI_API_KEY).toBeUndefined();
     expect(spawnEnv?.NPM_TOKEN).toBeUndefined();
     expect(spawnEnv?.DATABASE_URL).toBeUndefined();
@@ -419,6 +428,45 @@ describe("native ECC hook runtime", () => {
     expect(messages.find((message) => message.id === 2)?.error.code).toBe(-32601);
   });
 
+  it("rejects modified packaged Serena lock bytes before spawning the runtime", async () => {
+    const scope = fixture();
+    const lockRoot = join(scope.stateRoot, "tampered-lock");
+    mkdirSync(lockRoot);
+    copyFileSync(join(serenaRuntimeRoot, "pyproject.toml"), join(lockRoot, "pyproject.toml"));
+    copyFileSync(join(serenaRuntimeRoot, "uv.lock"), join(lockRoot, "uv.lock"));
+    writeFileSync(join(lockRoot, "uv.lock"), "forged dependency closure\n");
+    let spawned = false;
+
+    await expect(
+      runNativeEccRuntime(
+        [
+          "serena",
+          "--package",
+          "serena-agent==1.6.1",
+          "--dependency-lock-sha256",
+          SERENA_DEPENDENCY_LOCK_SHA256,
+          "--lock-root",
+          lockRoot,
+          "--context",
+          "codex",
+          "--mode",
+          "no-memories",
+          "--project",
+          scope.root,
+        ],
+        {
+          stdin: Readable.from([]),
+          env: { SERENA_HOME: join(scope.stateRoot, "serena") },
+          spawnProcess: (() => {
+            spawned = true;
+            throw new Error("must not spawn");
+          }) as never,
+        },
+      ),
+    ).rejects.toThrow(/uv\.lock failed authentication/i);
+    expect(spawned).toBe(false);
+  });
+
   it("rejects Serena roots that are relative, linked, or overlap project state", async () => {
     const scope = fixture();
     const args = [
@@ -427,6 +475,8 @@ describe("native ECC hook runtime", () => {
       "serena-agent==1.6.1",
       "--dependency-lock-sha256",
       SERENA_DEPENDENCY_LOCK_SHA256,
+      "--lock-root",
+      serenaRuntimeRoot,
       "--context",
       "codex",
       "--mode",

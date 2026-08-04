@@ -29,6 +29,7 @@ function input(client: "claude" | "codex" = "claude") {
     client,
     canonicalWorktree: join(root, "project"),
     serenaHome: join(root, "serena-home"),
+    serenaRuntimeRoot: join(root, "serena-runtime"),
     wrapperCommand: join(
       root,
       process.platform === "win32" ? "aih-mcp-wrapper.exe" : "aih-mcp-wrapper",
@@ -97,6 +98,8 @@ describe("ECC MCP profile projection", () => {
       SERENA_RUNTIME_PIN.package,
       "--dependency-lock-sha256",
       SHA,
+      "--lock-root",
+      request.serenaRuntimeRoot,
       "--context",
       "codex",
       "--mode",

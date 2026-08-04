@@ -111,6 +111,48 @@ describe("ECC profile lifecycle command", () => {
     }
   }, 120_000);
 
+  it("keeps native registration installed when projection uninstall preflight fails", async () => {
+    const sources = await projectionRoots();
+    const target = mkdtempSync(join(tmpdir(), "aih-ecc-profile-command-atomic-uninstall-"));
+    const stateRoot = mkdtempSync(join(tmpdir(), "aih-ecc-profile-command-atomic-state-"));
+    roots.push(target, stateRoot);
+    try {
+      const projection = await renderEccProjectionWithTrust(
+        profile,
+        evidence,
+        sources,
+        await sources.createTrust(),
+      );
+      const executable = join(stateRoot, process.platform === "win32" ? "node.exe" : "node");
+      const cliScript = join(stateRoot, "cli.js");
+      writeFileSync(executable, "runtime", { mode: 0o755 });
+      writeFileSync(cliScript, "cli\n");
+      const loadNativeRegistration = () =>
+        buildNativeEccRegistration({ root: target, stateRoot, executable, cliScript });
+      await executeEccProfileLifecycleCommand(context(target, "install", true), {
+        loadProjection: async () => projection,
+        loadNativeRegistration,
+      });
+      const managed = projection.files.find((file) => file.mergeStrategy === "replace");
+      if (!managed) throw new Error("fixture has no replace-owned projected file");
+      writeFileSync(join(target, ...managed.destination.split("/")), "operator drift\n");
+      const installedSource = readEccProfileOwnership(target)?.source;
+
+      await expect(
+        executeEccProfileLifecycleCommand(context(target, "uninstall", true), {
+          loadProjection: async () => projection,
+          loadNativeRegistration,
+          installedSourceTrust: installedSource ? [installedSource] : [],
+        }),
+      ).rejects.toThrow(/modified|ownership|drift|hash/i);
+
+      expect(existsSync(join(target, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(true);
+      expect(readFileSync(join(target, ".mcp.json"), "utf8")).toContain("serena");
+    } finally {
+      await sources.cleanup();
+    }
+  }, 120_000);
+
   it("compensates a completed projection install when native registration fails", async () => {
     const sources = await projectionRoots();
     const target = mkdtempSync(join(tmpdir(), "aih-ecc-profile-command-compensation-"));

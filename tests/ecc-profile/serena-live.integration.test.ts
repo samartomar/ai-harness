@@ -3,18 +3,21 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   buildEccMcpProfileProjection,
   CONTEXT7_SUBJECT_SHA256,
   SERENA_ALLOWED_TOOLS,
   SERENA_REQUIRED_TOOLS,
-  SERENA_RUNTIME_PIN,
   SerenaMcpPolicyGuard,
 } from "../../src/ecc-profile/mcp-profile.js";
 
 const enabled = process.env.AIH_RUN_SERENA_INTEGRATION === "1";
 const roots: string[] = [];
+const serenaRuntimeRoot = fileURLToPath(
+  new URL("../../src/ecc-profile/serena-runtime", import.meta.url),
+);
 
 afterAll(() => {
   for (const root of roots)
@@ -43,6 +46,7 @@ async function runClient(client: "claude" | "codex"): Promise<void> {
     client,
     canonicalWorktree: project,
     serenaHome,
+    serenaRuntimeRoot,
     wrapperCommand: join(root, "aih-mcp-wrapper"),
     wrapperSha256: "c".repeat(64),
     serenaDependencyLockSha256: "a".repeat(64),
@@ -54,12 +58,13 @@ async function runClient(client: "claude" | "codex"): Promise<void> {
   });
   writeFileSync(join(serenaHome, "serena_config.yml"), projection.serenaConfig, "utf8");
 
-  const executable = process.env.AIH_UVX_PATH ?? "uvx";
+  const executable = process.env.AIH_UV_PATH ?? "uv";
   const child = spawn(
     executable,
     [
-      "--from",
-      SERENA_RUNTIME_PIN.package,
+      "--frozen",
+      "--project",
+      serenaRuntimeRoot,
       "serena",
       "start-mcp-server",
       "--context",

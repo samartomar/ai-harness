@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -11,6 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildNativeEccRegistration,
@@ -25,6 +27,9 @@ import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
 const roots: string[] = [];
+const packagedSerenaRuntimeRoot = fileURLToPath(
+  new URL("../../src/ecc-profile/serena-runtime", import.meta.url),
+);
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -84,6 +89,12 @@ describe("native ECC registration", () => {
     for (const groups of Object.values(registration.hooks.claude.hooks)) {
       expect(groups).toHaveLength(1);
       expect(groups[0]?.hooks).toHaveLength(1);
+      const handler = groups[0]?.hooks[0];
+      expect(handler).not.toHaveProperty("args");
+      expect(handler?.command).toContain(input.executable);
+      expect(handler?.command).toContain(input.cliScript);
+      expect(handler?.command).toContain("--client");
+      expect(handler?.command).toContain("claude");
     }
     expect(Object.keys(registration.mcp.claude.mcpServers)).toEqual([
       "code-review-graph",
@@ -198,6 +209,34 @@ describe("native ECC registration", () => {
     writeFileSync(settings, readFileSync(settings, "utf8").replace("AIH ECC", "tampered ECC"));
     expect(() => planNativeEccRegistration(input.root, registration, "uninstall")).toThrow(
       /modified|missing.*managed|contradict/i,
+    );
+  });
+
+  it("rejects Codex TOML that already owns a selected MCP server table", async () => {
+    const input = fixture();
+    mkdirSync(join(input.root, ".codex"));
+    writeFileSync(
+      join(input.root, ".codex", "config.toml"),
+      '[mcp_servers."serena"]\ncommand = "operator-serena"\n',
+    );
+
+    expect(() =>
+      planNativeEccRegistration(input.root, buildNativeEccRegistration(input), "install"),
+    ).toThrow(/TOML.*serena.*ownership|ownership.*serena|conflict/i);
+
+    rmSync(join(input.root, ".codex", "config.toml"));
+    const registration = buildNativeEccRegistration(input);
+    await executePlan(
+      planNativeEccRegistration(input.root, registration, "install"),
+      context(input.root),
+    );
+    const configPath = join(input.root, ".codex", "config.toml");
+    writeFileSync(
+      configPath,
+      `${readFileSync(configPath, "utf8")}\n[mcp_servers.serena]\ncommand = "late-operator"\n`,
+    );
+    expect(() => planNativeEccRegistration(input.root, registration, "install")).toThrow(
+      /TOML.*serena.*ownership|ownership.*serena|conflict/i,
     );
   });
 
@@ -419,7 +458,7 @@ describe("native ECC registration", () => {
     writeFileSync(configPath, `${config}${config}`);
     expect(() =>
       planNativeEccRegistration(duplicateToml.root, duplicateTomlRegistration, "install"),
-    ).toThrow(/modified native registration TOML block/i);
+    ).toThrow(/modified native registration TOML block|TOML MCP ownership conflicts/i);
   });
 
   it("canonicalizes a future external state directory without creating it during planning", () => {
@@ -448,6 +487,31 @@ describe("native ECC registration", () => {
     expect(readFileSync(join(input.root, ".codex", "hooks.json"), "utf8")).toContain(
       "Running AIH ECC profile policies",
     );
+  });
+
+  it("can uninstall from trusted receipt identity after the original package lock root is gone", async () => {
+    const input = fixture();
+    const serenaRuntimeRoot = realpathSync(
+      mkdtempSync(join(tmpdir(), "aih-ecc-native-serena-lock-")),
+    );
+    roots.push(serenaRuntimeRoot);
+    copyFileSync(
+      join(packagedSerenaRuntimeRoot, "pyproject.toml"),
+      join(serenaRuntimeRoot, "pyproject.toml"),
+    );
+    copyFileSync(join(packagedSerenaRuntimeRoot, "uv.lock"), join(serenaRuntimeRoot, "uv.lock"));
+    const registration = buildNativeEccRegistration({ ...input, serenaRuntimeRoot });
+    await executePlan(
+      planNativeEccRegistration(input.root, registration, "install"),
+      context(input.root),
+    );
+    rmSync(serenaRuntimeRoot, { recursive: true, force: true });
+
+    await executePlan(
+      planInstalledNativeEccRegistration(input.root, "uninstall"),
+      context(input.root),
+    );
+    expect(existsSync(join(input.root, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(false);
   });
 
   it("rejects project-contained state, linked launchers, and mutable or ambiguous runtime paths", () => {

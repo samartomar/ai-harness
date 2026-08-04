@@ -332,18 +332,21 @@ export async function executeEccProfileLifecycleCommand(
     deps.loadProjection === undefined || deps.loadNativeRegistration !== undefined;
   if (operation === "repair" || operation === "uninstall" || operation === "rollback") {
     if (operation === "uninstall") {
-      const native = nativeEnabled
-        ? await executePlan(planInstalledNativeEccRegistration(ctx.root, operation), ctx)
-        : undefined;
-      const projection = await executePlan(
-        planInstalledEccProfileLifecycle(
-          ctx.root,
-          operation,
-          deps.installedSourceTrust ?? PACKAGED_ECC_PROFILE_INSTALLATION_TRUST,
+      const projectionPlan = planInstalledEccProfileLifecycle(
+        ctx.root,
+        operation,
+        deps.installedSourceTrust ?? PACKAGED_ECC_PROFILE_INSTALLATION_TRUST,
+      );
+      if (!nativeEnabled) return executePlan(projectionPlan, ctx);
+      const nativePlan = planInstalledNativeEccRegistration(ctx.root, operation);
+      return executePlan(
+        plan(
+          "ecc-profile: atomic projection and native registration uninstall",
+          ...projectionPlan.actions,
+          ...nativePlan.actions,
         ),
         ctx,
       );
-      return native === undefined ? projection : combineResults(native, projection);
     }
     const projection = await executePlan(
       planInstalledEccProfileLifecycle(

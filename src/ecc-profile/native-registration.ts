@@ -1,32 +1,38 @@
 import { createHash } from "node:crypto";
 import { lstatSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { removeManagedBlock, upsertTextBlock } from "../internals/envfile.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import { type Action, type Plan, plan, remove, type WriteAction } from "../internals/plan.js";
 import { beginMarker, endMarker } from "../internals/render.js";
+import { existingMcpTomlNames } from "../mcp/render.js";
 import {
   buildEccMcpProfileProjection,
   CONTEXT7_SUBJECT_SHA256,
   ECC_MCP_DISABLED,
   type EccMcpProjection,
-  SERENA_RUNTIME_PIN,
 } from "./mcp-profile.js";
 
 const MAX_RUNTIME_FILE_BYTES = 128 * 1024 * 1024;
 
-export const SERENA_DEPENDENCY_LOCK_SHA256 = createHash("sha256")
-  .update(
-    [
-      SERENA_RUNTIME_PIN.package,
-      SERENA_RUNTIME_PIN.sourceCommit,
-      SERENA_RUNTIME_PIN.wheelSha256,
-      SERENA_RUNTIME_PIN.metadataSha256,
-    ].join("\0"),
-  )
-  .digest("hex");
+export const SERENA_RUNTIME_PYPROJECT_SHA256 =
+  "25dbee035cd2c3ce2e65110eda0cc20f066ec37aea37210fab9569b81ca6a5ba";
+export const SERENA_RUNTIME_UV_LOCK_SHA256 =
+  "ba888b113354c146cc8ecd925e6821d4284ebfad984a8544163be2803295f460";
+export const SERENA_DEPENDENCY_LOCK_SHA256 =
+  "1eaf5dcffef9426f9024d03e6875ccbaf2a6857cbcfecf22127a7d1876ebf5b0";
+
+/** Append-only identities that newer packages may use to recover older registrations. */
+const TRUSTED_SERENA_RUNTIME_LOCKS = [
+  {
+    pyprojectSha256: SERENA_RUNTIME_PYPROJECT_SHA256,
+    uvLockSha256: SERENA_RUNTIME_UV_LOCK_SHA256,
+    aggregateSha256: SERENA_DEPENDENCY_LOCK_SHA256,
+  },
+] as const;
 
 const CLAUDE_EVENTS = [
   "SessionStart",
@@ -56,7 +62,6 @@ interface RuntimeFileIdentity {
 interface NativeCommandHook {
   type: "command";
   command: string;
-  args?: string[];
   commandWindows?: string;
   timeout: number;
   statusMessage: string;
@@ -76,6 +81,8 @@ export interface NativeEccRegistrationInput {
   stateRoot: string;
   executable: string;
   cliScript: string;
+  /** Override only for hermetic package-layout tests; production discovers the packaged lock. */
+  serenaRuntimeRoot?: string;
 }
 
 export interface NativeEccRegistration {
@@ -85,6 +92,12 @@ export interface NativeEccRegistration {
   runtime: {
     executable: RuntimeFileIdentity;
     cliScript: RuntimeFileIdentity;
+    serena: {
+      root: string;
+      pyproject: RuntimeFileIdentity;
+      uvLock: RuntimeFileIdentity;
+      aggregateSha256: string;
+    };
   };
   hooks: { claude: NativeHooks; codex: NativeHooks };
   mcp: {
@@ -137,7 +150,18 @@ const registrationReceiptSchema = z
     root: z.string().min(1).max(4_096),
     stateRoot: z.string().min(1).max(4_096),
     runtime: z
-      .object({ executable: runtimeIdentitySchema, cliScript: runtimeIdentitySchema })
+      .object({
+        executable: runtimeIdentitySchema,
+        cliScript: runtimeIdentitySchema,
+        serena: z
+          .object({
+            root: z.string().min(1).max(4_096),
+            pyproject: runtimeIdentitySchema,
+            uvLock: runtimeIdentitySchema,
+            aggregateSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+          })
+          .strict(),
+      })
       .strict(),
     files: z.array(registrationFileSchema).length(4),
   })
@@ -206,6 +230,72 @@ function windowsCommandArg(value: string): string {
   return `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, "$1$1")}"`;
 }
 
+function packagedSerenaRuntimeRoot(): string {
+  const moduleRoot = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    resolve(moduleRoot, "serena-runtime"),
+    resolve(moduleRoot, "../src/ecc-profile/serena-runtime"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      return canonicalDirectory(candidate, "packaged Serena runtime root");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  throw new Error("packaged Serena runtime lock is missing");
+}
+
+function serenaRuntimeIdentity(rootInput?: string): NativeEccRegistration["runtime"]["serena"] {
+  const root = canonicalDirectory(
+    rootInput ?? packagedSerenaRuntimeRoot(),
+    "Serena runtime lock root",
+  );
+  const pyproject = runtimeFile(resolve(root, "pyproject.toml"), "Serena runtime pyproject");
+  const uvLock = runtimeFile(resolve(root, "uv.lock"), "Serena runtime uv.lock");
+  if (pyproject.sha256 !== SERENA_RUNTIME_PYPROJECT_SHA256) {
+    throw new Error("Serena runtime pyproject does not match the authenticated package pin");
+  }
+  if (uvLock.sha256 !== SERENA_RUNTIME_UV_LOCK_SHA256) {
+    throw new Error("Serena runtime uv.lock does not match the authenticated dependency closure");
+  }
+  const aggregateSha256 = sha256(`${pyproject.sha256}\0${uvLock.sha256}`);
+  if (aggregateSha256 !== SERENA_DEPENDENCY_LOCK_SHA256) {
+    throw new Error("Serena runtime dependency-lock aggregate is invalid");
+  }
+  return { root, pyproject, uvLock, aggregateSha256 };
+}
+
+function assertTrustedSerenaReceiptIdentity(
+  value: NativeEccRegistration["runtime"]["serena"],
+  projectRoot: string,
+  stateRoot: string,
+): void {
+  if (
+    !isAbsolute(value.root) ||
+    contains(projectRoot, value.root) ||
+    contains(value.root, projectRoot) ||
+    contains(stateRoot, value.root) ||
+    contains(value.root, stateRoot) ||
+    value.pyproject.path !== resolve(value.root, "pyproject.toml") ||
+    value.uvLock.path !== resolve(value.root, "uv.lock")
+  ) {
+    throw new Error("native registration ownership receipt has an invalid Serena runtime root");
+  }
+  const trusted = TRUSTED_SERENA_RUNTIME_LOCKS.some(
+    (identity) =>
+      identity.pyprojectSha256 === value.pyproject.sha256 &&
+      identity.uvLockSha256 === value.uvLock.sha256 &&
+      identity.aggregateSha256 === value.aggregateSha256,
+  );
+  if (
+    !trusted ||
+    sha256(`${value.pyproject.sha256}\0${value.uvLock.sha256}`) !== value.aggregateSha256
+  ) {
+    throw new Error("native registration ownership receipt has an unauthenticated Serena runtime");
+  }
+}
+
 function hooksFor(
   client: "claude" | "codex",
   runtime: NativeEccRegistration["runtime"],
@@ -228,8 +318,7 @@ function hooksFor(
     client === "claude"
       ? {
           type: "command",
-          command: runtime.executable.path,
-          args,
+          command,
           timeout: 30,
           statusMessage: "Running AIH ECC profile policies",
         }
@@ -266,8 +355,14 @@ export function buildNativeEccRegistration(
   if (executable.path.toLowerCase() === cliScript.path.toLowerCase()) {
     throw new Error("runtime executable and CLI script must be distinct and unambiguous");
   }
-  const runtime = { executable, cliScript };
-  for (const identity of Object.values(runtime)) {
+  const serena = serenaRuntimeIdentity(input.serenaRuntimeRoot);
+  const runtime = { executable, cliScript, serena };
+  for (const identity of [
+    runtime.executable,
+    runtime.cliScript,
+    runtime.serena.pyproject,
+    runtime.serena.uvLock,
+  ]) {
     if (contains(root, identity.path)) {
       throw new Error("native registration runtime files must be outside the project root");
     }
@@ -287,6 +382,7 @@ function registrationFromIdentities(
     wrapperArgsPrefix: [runtime.cliScript.path],
     wrapperSha256: runtime.cliScript.sha256,
     serenaDependencyLockSha256: SERENA_DEPENDENCY_LOCK_SHA256,
+    serenaRuntimeRoot: runtime.serena.root,
     context7Attestation: {
       endpoint: "https://mcp.context7.com/mcp",
       subjectSha256: CONTEXT7_SUBJECT_SHA256,
@@ -496,15 +592,33 @@ function installedContent(current: CurrentFile | undefined, file: NativeRegistra
     if (existing.includes(beginMarker(NATIVE_REGISTRATION_SCOPE))) {
       throw new Error(`native registration TOML ownership is ambiguous: ${file.destination}`);
     }
+    const conflicts = tomlMcpOwnershipConflicts(existing, file);
+    if (conflicts.length > 0) {
+      throw new Error(
+        `native registration TOML MCP ownership conflicts at ${file.destination}: ${conflicts.join(", ")}`,
+      );
+    }
     return upsertTextBlock(existing, NATIVE_REGISTRATION_SCOPE, file.content);
   }
   return mergeJsonFragment(current, file);
+}
+
+function tomlMcpOwnershipConflicts(existing: string, file: NativeRegistrationFile): string[] {
+  const existingNames = existingMcpTomlNames(existing, NATIVE_REGISTRATION_SCOPE);
+  const managedNames = existingMcpTomlNames(file.content, NATIVE_REGISTRATION_SCOPE);
+  return [...managedNames].filter((name) => existingNames.has(name)).sort();
 }
 
 function assertInstalled(current: CurrentFile | undefined, file: NativeRegistrationFile): void {
   if (current === undefined)
     throw new Error(`missing native registration destination: ${file.destination}`);
   if (file.ownership === "toml-block") {
+    const conflicts = tomlMcpOwnershipConflicts(current.contents, file);
+    if (conflicts.length > 0) {
+      throw new Error(
+        `native registration TOML MCP ownership conflicts at ${file.destination}: ${conflicts.join(", ")}`,
+      );
+    }
     const begin = beginMarker(NATIVE_REGISTRATION_SCOPE);
     const endToken = endMarker(NATIVE_REGISTRATION_SCOPE);
     const expected = `${begin}\n${file.content}\n${endToken}`;
@@ -565,15 +679,22 @@ function parseReceipt(
   if (contains(receipt.root, receipt.stateRoot) || contains(receipt.stateRoot, receipt.root)) {
     throw new Error("native registration ownership receipt has a conflicting state root");
   }
-  const runtimePaths = Object.values(receipt.runtime).map((identity) => identity.path);
+  const runtimePaths = [
+    receipt.runtime.executable.path,
+    receipt.runtime.cliScript.path,
+    receipt.runtime.serena.pyproject.path,
+    receipt.runtime.serena.uvLock.path,
+  ];
   if (
     runtimePaths.some(
       (runtimePath) => !isAbsolute(runtimePath) || contains(receipt.root, runtimePath),
     ) ||
-    runtimePaths[0]?.toLowerCase() === runtimePaths[1]?.toLowerCase()
+    new Set(runtimePaths.map((runtimePath) => runtimePath.toLowerCase())).size !==
+      runtimePaths.length
   ) {
     throw new Error("native registration ownership receipt has ambiguous runtime paths");
   }
+  assertTrustedSerenaReceiptIdentity(receipt.runtime.serena, receipt.root, receipt.stateRoot);
   const expectedOwnership = new Map<string, NativeRegistrationFile["ownership"]>([
     [".claude/settings.json", "json-array-children"],
     [".mcp.json", "json-object-children"],
@@ -712,7 +833,17 @@ export function planNativeEccRegistration(
       found.receipt.runtime.cliScript.path,
       "installed runtime CLI script",
     );
-    if (!sameJson({ executable, cliScript }, found.receipt.runtime)) {
+    const serena = serenaRuntimeIdentity(found.receipt.runtime.serena.root);
+    if (
+      !sameJson(
+        { executable, cliScript, serena },
+        {
+          executable: found.receipt.runtime.executable,
+          cliScript: found.receipt.runtime.cliScript,
+          serena: found.receipt.runtime.serena,
+        },
+      )
+    ) {
       throw new Error(
         "installed native registration runtime bytes contradict the ownership receipt; run update",
       );
@@ -796,7 +927,17 @@ function planInstalledRegistrationFromReceipt(
       found.receipt.runtime.cliScript.path,
       "installed runtime CLI script",
     );
-    if (!sameJson({ executable, cliScript }, found.receipt.runtime)) {
+    const serena = serenaRuntimeIdentity(found.receipt.runtime.serena.root);
+    if (
+      !sameJson(
+        { executable, cliScript, serena },
+        {
+          executable: found.receipt.runtime.executable,
+          cliScript: found.receipt.runtime.cliScript,
+          serena: found.receipt.runtime.serena,
+        },
+      )
+    ) {
       throw new Error(
         "installed native registration runtime bytes contradict the ownership receipt; run update",
       );

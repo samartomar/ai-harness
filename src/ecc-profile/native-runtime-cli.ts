@@ -1,10 +1,15 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { lstatSync, realpathSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { readRegularFile } from "../internals/fsxn.js";
+import { readRegularFile, readRegularFileWithStats } from "../internals/fsxn.js";
 import { HOOK_INPUT_LIMITS, type HookClient } from "./hook-core.js";
 import { renderSerenaConfig, SERENA_RUNTIME_PIN, SerenaMcpPolicyGuard } from "./mcp-profile.js";
-import { SERENA_DEPENDENCY_LOCK_SHA256 } from "./native-registration.js";
+import {
+  SERENA_DEPENDENCY_LOCK_SHA256,
+  SERENA_RUNTIME_PYPROJECT_SHA256,
+  SERENA_RUNTIME_UV_LOCK_SHA256,
+} from "./native-registration.js";
 import { executeNativeEccHook, prepareOwnedStateDirectory } from "./native-runtime.js";
 
 const MAX_MCP_LINE_BYTES = 1024 * 1024;
@@ -73,6 +78,42 @@ function canonicalProject(value: string): string {
   return realpathSync(value);
 }
 
+function authenticatedSerenaRuntimeRoot(value: string, project: string, home: string): string {
+  if (!isAbsolute(value)) throw new Error("Serena runtime lock root must be absolute");
+  const stats = lstatSync(value);
+  if (stats.isSymbolicLink() || !stats.isDirectory()) {
+    throw new Error("Serena runtime lock root must be a real directory");
+  }
+  const root = realpathSync(value);
+  if (
+    containsPath(project, root) ||
+    containsPath(root, project) ||
+    containsPath(home, root) ||
+    containsPath(root, home)
+  ) {
+    throw new Error("Serena runtime lock root must be disjoint from project and state roots");
+  }
+  const identities = [
+    ["pyproject.toml", SERENA_RUNTIME_PYPROJECT_SHA256],
+    ["uv.lock", SERENA_RUNTIME_UV_LOCK_SHA256],
+  ] as const;
+  const verified: string[] = [];
+  for (const [name, expected] of identities) {
+    const opened = readRegularFileWithStats(join(root, name), { maxBytes: 4 * 1024 * 1024 });
+    if (!opened || opened.stats.nlink > 1) {
+      throw new Error(`Serena runtime ${name} must be an unambiguous regular file`);
+    }
+    const actual = createHash("sha256").update(opened.contents).digest("hex");
+    if (actual !== expected) throw new Error(`Serena runtime ${name} failed authentication`);
+    verified.push(actual);
+  }
+  const aggregate = createHash("sha256").update(verified.join("\0")).digest("hex");
+  if (aggregate !== SERENA_DEPENDENCY_LOCK_SHA256) {
+    throw new Error("Serena runtime dependency closure failed authentication");
+  }
+  return root;
+}
+
 function safeSerenaHome(env: NodeJS.ProcessEnv, project: string): string {
   const value = env.SERENA_HOME;
   if (typeof value !== "string" || value.length === 0 || !/^(?:[A-Za-z]:[\\/]|\/)/u.test(value)) {
@@ -99,7 +140,7 @@ function safeSerenaHome(env: NodeJS.ProcessEnv, project: string): string {
   return home;
 }
 
-function isolatedSerenaEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+function isolatedSerenaEnvironment(env: NodeJS.ProcessEnv, home: string): NodeJS.ProcessEnv {
   const next: NodeJS.ProcessEnv = {};
   for (const key of [
     "PATH",
@@ -129,6 +170,7 @@ function isolatedSerenaEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   if (next.PATH === undefined && next.Path !== undefined) next.PATH = next.Path;
   next.UV_OFFLINE = "1";
   next.UV_NO_ENV_FILE = "1";
+  next.UV_PROJECT_ENVIRONMENT = join(home, "runtime-env");
   next.SERENA_USAGE_REPORTING = "false";
   return next;
 }
@@ -253,6 +295,7 @@ export async function runNativeEccRuntime(
   exactOptions(options, [
     "--package",
     "--dependency-lock-sha256",
+    "--lock-root",
     "--context",
     "--mode",
     "--project",
@@ -266,15 +309,17 @@ export async function runNativeEccRuntime(
     throw new Error("Serena context is not accepted");
   if (options.get("--mode") !== "no-memories") throw new Error("Serena mode is not accepted");
   const project = canonicalProject(options.get("--project") ?? "");
-  safeSerenaHome(env, project);
+  const home = safeSerenaHome(env, project);
+  const lockRoot = authenticatedSerenaRuntimeRoot(options.get("--lock-root") ?? "", project, home);
   const child = (io.spawnProcess ?? spawn)(
-    "uvx",
+    "uv",
     [
       "--offline",
       "--no-python-downloads",
       "--no-env-file",
-      "--from",
-      SERENA_RUNTIME_PIN.package,
+      "--frozen",
+      "--project",
+      lockRoot,
       "serena",
       "start-mcp-server",
       "--context",
@@ -284,7 +329,11 @@ export async function runNativeEccRuntime(
       "--project",
       project,
     ],
-    { stdio: ["pipe", "pipe", "pipe"], env: isolatedSerenaEnvironment(env), windowsHide: true },
+    {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: isolatedSerenaEnvironment(env, home),
+      windowsHide: true,
+    },
   ) as ChildProcessWithoutNullStreams;
   return proxySerena(child, { stdin, stdout, stderr });
 }

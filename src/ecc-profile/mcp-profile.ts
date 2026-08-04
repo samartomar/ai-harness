@@ -84,6 +84,8 @@ export interface EccMcpProjectionInput {
   client: "claude" | "codex";
   canonicalWorktree: string;
   serenaHome: string;
+  /** Absolute root containing the authenticated pyproject.toml and uv.lock closure. */
+  serenaRuntimeRoot: string;
   /** Absolute path to the later AIH-owned launcher/protocol guard. */
   wrapperCommand: string;
   /** Reviewed argv needed to reach the launcher within wrapperCommand. */
@@ -222,10 +224,19 @@ function localServers(): Pick<
 export function buildEccMcpProfileProjection(input: EccMcpProjectionInput): EccMcpProjection {
   const canonicalWorktree = requireAbsoluteSafePath(input.canonicalWorktree, "canonicalWorktree");
   const serenaHome = requireAbsoluteSafePath(input.serenaHome, "serenaHome");
+  const serenaRuntimeRoot = requireAbsoluteSafePath(input.serenaRuntimeRoot, "serenaRuntimeRoot");
   const wrapperCommand = requireAbsoluteSafePath(input.wrapperCommand, "wrapperCommand");
-  requireDistinctPaths({ canonicalWorktree, serenaHome, wrapperCommand });
+  requireDistinctPaths({ canonicalWorktree, serenaHome, serenaRuntimeRoot, wrapperCommand });
   if (isWithinEccMcpRoot(canonicalWorktree, serenaHome)) {
     throw new Error("serenaHome must be outside the canonical worktree");
+  }
+  if (
+    isWithinEccMcpRoot(canonicalWorktree, serenaRuntimeRoot) ||
+    isWithinEccMcpRoot(serenaRuntimeRoot, canonicalWorktree) ||
+    isWithinEccMcpRoot(serenaHome, serenaRuntimeRoot) ||
+    isWithinEccMcpRoot(serenaRuntimeRoot, serenaHome)
+  ) {
+    throw new Error("serenaRuntimeRoot must be outside and disjoint from worktree and state");
   }
   if (isWithinEccMcpRoot(canonicalWorktree, wrapperCommand)) {
     throw new Error("wrapperCommand must be outside the canonical worktree");
@@ -250,6 +261,8 @@ export function buildEccMcpProfileProjection(input: EccMcpProjectionInput): EccM
         SERENA_RUNTIME_PIN.package,
         "--dependency-lock-sha256",
         input.serenaDependencyLockSha256,
+        "--lock-root",
+        serenaRuntimeRoot,
         "--context",
         input.client === "claude" ? "claude-code" : "codex",
         "--mode",
