@@ -1,6 +1,18 @@
 import type { ResolvedEntry } from "./index.js";
 
 export type WorkflowTransport = "native" | "normalized" | "unavailable";
+export type SkillTransport = WorkflowTransport;
+
+interface ClientTransportPolicy {
+  transport: SkillTransport;
+  unavailableReason?: string;
+  fallback?: string;
+}
+
+export interface SkillProjectionPolicy {
+  claude: ClientTransportPolicy;
+  codex: ClientTransportPolicy;
+}
 
 export interface WorkflowProjectionPolicy {
   claude: { transport: WorkflowTransport };
@@ -12,6 +24,293 @@ export interface WorkflowProjectionPolicy {
 }
 
 export type ClaudeRolePolicy = "read-only" | "operator" | "editor";
+
+const REVIEWED_SKILL_IDS = `
+accessibility
+agent-architecture-audit
+agent-eval
+agent-harness-construction
+agent-introspection-debugging
+agent-self-evaluation
+agent-sort
+agentic-engineering
+ai-first-engineering
+ai-regression-testing
+android-clean-architecture
+angular-developer
+api-connector-builder
+api-design
+architecture-decision-records
+automation-audit-ops
+backend-patterns
+browser-qa
+bun-runtime
+ck
+click-path-audit
+code-tour
+codebase-onboarding
+codehealth-mcp
+coding-standards
+compose-multiplatform-patterns
+config-gc
+configure-ecc
+connections-optimizer
+content-hash-cache-pattern
+context-budget
+continuous-learning
+continuous-learning-v2
+contract-first
+council
+cpp-coding-standards
+cpp-testing
+csharp-testing
+dart-flutter-patterns
+delivery-gate
+design-system
+django-celery
+django-patterns
+django-tdd
+django-verification
+docker-patterns
+documentation-lookup
+dotnet-patterns
+dynamic-workflow-mode
+e2e-testing
+ecc-guide
+ecc-recipes
+ecc-tools-cost-audit
+enterprise-agent-ops
+error-handling
+eval-harness
+fastapi-patterns
+flutter-dart-code-review
+frontend-a11y
+frontend-design-direction
+frontend-patterns
+frontend-slides
+fsharp-testing
+generating-python-installer
+git-workflow
+github-ops
+golang-patterns
+golang-testing
+growth-log
+hexagonal-architecture
+hookify-rules
+inherit-legacy-style
+intent-driven-development
+iterative-retrieval
+java-coding-standards
+kotlin-coroutines-flows
+kotlin-exposed-patterns
+kotlin-ktor-patterns
+kotlin-patterns
+kotlin-testing
+laravel-patterns
+laravel-plugin-discovery
+laravel-tdd
+laravel-verification
+loop-design-check
+make-interfaces-feel-better
+mcp-server-patterns
+motion-advanced
+motion-foundations
+motion-patterns
+motion-ui
+nestjs-patterns
+nextjs-turbopack
+nuxt4-patterns
+opensource-pipeline
+perl-patterns
+perl-testing
+plan-canvas
+plankton-code-quality
+product-lens
+production-audit
+python-patterns
+python-testing
+quarkus-patterns
+quarkus-tdd
+quarkus-verification
+react-native-patterns
+react-patterns
+react-performance
+react-testing
+regex-vs-llm-structured-text
+repo-scan
+rules-distill
+rust-patterns
+rust-testing
+santa-method
+search-first
+security-bounty-hunter
+security-review
+security-scan
+skill-scout
+skill-stocktake
+springboot-patterns
+springboot-tdd
+springboot-verification
+strategic-compact
+tdd-workflow
+tinystruct-patterns
+token-budget-advisor
+ui-to-vue
+unified-memory
+verification-loop
+vite-patterns
+vue-patterns
+windows-desktop-e2e
+workspace-surface-audit
+`
+  .trim()
+  .split(/\s+/);
+
+const CODEX_NORMALIZED_SKILLS = new Set(
+  `
+agent-eval
+agent-self-evaluation
+ai-regression-testing
+architecture-decision-records
+browser-qa
+codebase-onboarding
+council
+documentation-lookup
+dynamic-workflow-mode
+eval-harness
+inherit-legacy-style
+loop-design-check
+mcp-server-patterns
+opensource-pipeline
+plankton-code-quality
+product-lens
+santa-method
+search-first
+tdd-workflow
+token-budget-advisor
+verification-loop
+windows-desktop-e2e
+workspace-surface-audit
+`
+    .trim()
+    .split(/\s+/),
+);
+
+const SHARED_UNAVAILABLE_SKILLS: Record<string, { reason: string; fallback: string }> = {
+  "agent-sort": {
+    reason:
+      "Agent sorting depends on hook and client-registry lifecycle that is not active in renderer slice 3.",
+    fallback:
+      "Review the projected role inventory without registering hooks or rewriting client state.",
+  },
+  ck: {
+    reason: "The ck capability depends on unmanaged continuity state and SessionStart hooks.",
+    fallback:
+      "Keep continuity in the current conversation until the AIH-owned continuity lifecycle ships.",
+  },
+  "codehealth-mcp": {
+    reason: "The CodeHealth MCP is not selected or registered by the canonical MCP profile.",
+    fallback:
+      "Use repository-native checks and report that CodeHealth MCP findings are unavailable.",
+  },
+  "config-gc": {
+    reason: "Client-global configuration cleanup requires the later ownership-aware lifecycle.",
+    fallback:
+      "Inventory candidate configuration only; do not delete or rewrite client-owned state.",
+  },
+  "configure-ecc": {
+    reason:
+      "Direct ECC installation would bypass AIH lifecycle ownership and is unavailable in renderer slice 3.",
+    fallback: "Prepare a reviewed AIH profile change for the later preview/apply lifecycle.",
+  },
+  "continuous-learning": {
+    reason:
+      "Continuous learning is an explicit opt-in capability whose hooks and state are not active.",
+    fallback: "Propose a candidate lesson for human review without persisting or promoting it.",
+  },
+  "continuous-learning-v2": {
+    reason:
+      "Continuous learning v2 requires inactive hooks, observers, and unmanaged client-global state.",
+    fallback: "Evaluate the current material without retaining, observing, or self-promoting it.",
+  },
+  "delivery-gate": {
+    reason:
+      "The delivery gate depends on hook registration that belongs to the later composite-hook slice.",
+    fallback:
+      "Run repository-native verification commands directly and report their exact results.",
+  },
+  "ecc-guide": {
+    reason:
+      "The upstream ECC guide can direct unmanaged installation outside AIH lifecycle ownership.",
+    fallback:
+      "Explain the pinned AIH profile and defer installation to the later managed lifecycle.",
+  },
+  "ecc-recipes": {
+    reason:
+      "Upstream ECC recipes include installation and hook/configuration actions not owned by this renderer.",
+    fallback: "Use recipes as review input only and route changes through the later AIH lifecycle.",
+  },
+  "hookify-rules": {
+    reason:
+      "Hookify rules require the AIH composite-hook registry and dispatcher, which are not implemented yet.",
+    fallback: "Draft a hook rule proposal without registering or activating it.",
+  },
+  "laravel-plugin-discovery": {
+    reason: "LaraPlugins MCP is not selected or registered in the canonical MCP profile.",
+    fallback: "Use repository and official Laravel package evidence without adding an MCP server.",
+  },
+  "plan-canvas": {
+    reason: "Plan Canvas requires its separately pinned runtime and on-demand lifecycle.",
+    fallback: "Create a plain-text plan without starting a browser or daemon.",
+  },
+  "repo-scan": {
+    reason: "Repo-scan directs an unmanaged skill installation outside AIH lifecycle ownership.",
+    fallback:
+      "Inspect a pinned source in a disposable quarantine without installing it into client state.",
+  },
+  "rules-distill": {
+    reason:
+      "Rules-distill scripts assume Claude-specific directories and unmanaged rule projection.",
+    fallback: "Review repository rules directly without running or installing the bundled scripts.",
+  },
+  "security-scan": {
+    reason:
+      "The upstream security-scan skill assumes client-specific scripts and configuration not activated here.",
+    fallback: "Run the repository-owned security checks directly and report their scope.",
+  },
+  "skill-stocktake": {
+    reason:
+      "Skill-stocktake scripts assume unmanaged Claude installation paths and client-global inventory.",
+    fallback: "Inspect the authenticated projection inventory without executing those scripts.",
+  },
+  "strategic-compact": {
+    reason:
+      "Strategic compact depends on Claude hooks and client-global memory that are not active.",
+    fallback:
+      "Summarize the current conversation manually without installing hooks or writing memory.",
+  },
+  "unified-memory": {
+    reason:
+      "Upstream unified-memory behavior is replaced by the later AIH continuity and selected memory profile.",
+    fallback:
+      "Use current conversation and repository evidence without writing unmanaged memory state.",
+  },
+};
+
+const CODEX_UNAVAILABLE_SKILLS: Record<string, { reason: string; fallback: string }> = {
+  "context-budget": {
+    reason:
+      "The source assumes Claude-specific context telemetry, environment, and subagent runtime behavior.",
+    fallback:
+      "Use Codex-native context indicators and keep the task bounded without claiming exact token telemetry.",
+  },
+  "skill-scout": {
+    reason:
+      "The source scans Claude client-global skill and plugin stores that are not Codex-native paths.",
+    fallback:
+      "Inspect the authenticated project skill inventory and any explicitly configured Codex skill roots.",
+  },
+};
 
 const REVIEWED_WORKFLOW_IDS = [
   "/aside",
@@ -159,6 +458,34 @@ const CODEX_UNAVAILABLE: Record<string, { reason: string; fallback: string }> = 
     reason: "Persistent loop state depends on the later continuity lifecycle.",
     fallback: "State that no managed loop is active and summarize current conversational progress.",
   },
+  "/multi-backend": {
+    reason:
+      "The external ccg-workflow runtime has not been independently qualified for this Codex projection.",
+    fallback:
+      "Use the projected planning, implementation, and review roles directly without invoking ccg-workflow.",
+  },
+  "/multi-execute": {
+    reason:
+      "The external ccg-workflow runtime has not been independently qualified for this Codex projection.",
+    fallback:
+      "Execute the reviewed plan directly with projected Codex roles and repository-native checks.",
+  },
+  "/multi-frontend": {
+    reason:
+      "The external ccg-workflow runtime has not been independently qualified for this Codex projection.",
+    fallback: "Use the projected frontend and review roles directly without invoking ccg-workflow.",
+  },
+  "/multi-plan": {
+    reason:
+      "The external ccg-workflow runtime has not been independently qualified for this Codex projection.",
+    fallback: "Create and review a plan with projected Codex roles without invoking ccg-workflow.",
+  },
+  "/multi-workflow": {
+    reason:
+      "The external ccg-workflow runtime has not been independently qualified for this Codex projection.",
+    fallback:
+      "Run a bounded native Codex workflow using projected roles and repository-native verification.",
+  },
   "/plan-canvas": {
     reason: "Plan Canvas requires its separately pinned runtime and on-demand lifecycle.",
     fallback: "Produce a plain-text plan in the current conversation.",
@@ -190,6 +517,11 @@ const CODEX_UNAVAILABLE: Record<string, { reason: string; fallback: string }> = 
   "/setup-pm": {
     reason: "Client configuration writes are outside renderer slice 3.",
     fallback: "Detect the package manager from committed project evidence without writing config.",
+  },
+  "/skill-create": {
+    reason: "Client-global skill installation requires the later ownership-aware lifecycle.",
+    fallback:
+      "Draft a project-local skill for review without installing it into client-global state.",
   },
 };
 
@@ -310,6 +642,56 @@ function exactPolicySet(
     throw new Error(`${label} changed and requires a new reviewed projection policy`);
 }
 
+function unavailablePolicy(policy: { reason: string; fallback: string }): ClientTransportPolicy {
+  return {
+    transport: "unavailable",
+    unavailableReason: policy.reason,
+    fallback: policy.fallback,
+  };
+}
+
+export function skillProjectionPolicies(
+  skills: readonly ResolvedEntry[],
+): ReadonlyMap<string, SkillProjectionPolicy> {
+  exactPolicySet(
+    skills.map((skill) => skill.id),
+    REVIEWED_SKILL_IDS,
+    "pinned skill surface",
+  );
+  const reviewed = new Set(REVIEWED_SKILL_IDS);
+  const unavailable = new Set([
+    ...Object.keys(SHARED_UNAVAILABLE_SKILLS),
+    ...Object.keys(CODEX_UNAVAILABLE_SKILLS),
+  ]);
+  for (const id of CODEX_NORMALIZED_SKILLS) {
+    if (unavailable.has(id)) {
+      throw new Error(`skill policy has ambiguous transport classification: ${id}`);
+    }
+  }
+  for (const id of [
+    ...CODEX_NORMALIZED_SKILLS,
+    ...Object.keys(SHARED_UNAVAILABLE_SKILLS),
+    ...Object.keys(CODEX_UNAVAILABLE_SKILLS),
+  ]) {
+    if (!reviewed.has(id)) throw new Error(`skill policy references unreviewed identity: ${id}`);
+  }
+  return new Map(
+    skills.map((skill) => {
+      const unavailable = SHARED_UNAVAILABLE_SKILLS[skill.id];
+      const codexUnavailable = unavailable ?? CODEX_UNAVAILABLE_SKILLS[skill.id];
+      return [
+        skill.id,
+        {
+          claude: unavailable ? unavailablePolicy(unavailable) : { transport: "native" },
+          codex: codexUnavailable
+            ? unavailablePolicy(codexUnavailable)
+            : { transport: CODEX_NORMALIZED_SKILLS.has(skill.id) ? "normalized" : "native" },
+        },
+      ];
+    }),
+  );
+}
+
 export function workflowProjectionPolicies(
   workflows: readonly ResolvedEntry[],
 ): ReadonlyMap<string, WorkflowProjectionPolicy> {
@@ -366,6 +748,32 @@ function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function normalizeProjectLocalClaudePaths(line: string): string {
+  return line
+    .replace(
+      /(^|[^A-Za-z0-9_~/$])\.claude\/commands\/([a-z0-9-]+)\.md/g,
+      "$1.agents/skills/ecc-workflow-$2/SKILL.md",
+    )
+    .replace(/(^|[^A-Za-z0-9_~/$])\.claude\/skills\//g, "$1.agents/skills/")
+    .replace(/(^|[^A-Za-z0-9_~/$])\.claude\/agents\//g, "$1.codex/agents/")
+    .replace(
+      /(^|[^A-Za-z0-9_~/$])\.claude\/([A-Za-z0-9_./${}-]*)/g,
+      "$1<project-artifact-path>/$2",
+    );
+}
+
+function normalizeWorkflowArguments(line: string, codeContext: boolean): string {
+  if (codeContext) return line.replace(/\$ARGUMENTS/g, "<workflow-arguments>");
+  const segments = line.split(/(`+[^`]*`+)/g);
+  return segments
+    .map((segment) =>
+      segment.startsWith("`")
+        ? segment.replace(/\$ARGUMENTS/g, "<workflow-arguments>")
+        : segment.replace(/\$ARGUMENTS/g, "the supplied workflow arguments"),
+    )
+    .join("");
+}
+
 export function normalizeCodexWorkflowBody(body: string, workflowIds: readonly string[]): string {
   const hadMcpSyntax = /\bmcp__[a-z0-9_-]+\b/i.test(body);
   let fenced = false;
@@ -373,17 +781,8 @@ export function normalizeCodexWorkflowBody(body: string, workflowIds: readonly s
     const marker = sourceLine.trimStart().startsWith("```");
     const codeContext = fenced || marker;
     let line = sourceLine;
-    line = line.replace(
-      /\.claude\/commands\/([a-z0-9-]+)\.md/g,
-      ".agents/skills/ecc-workflow-$1/SKILL.md",
-    );
-    line = line.replace(/\.claude\/skills\//g, ".agents/skills/");
-    line = line.replace(/\.claude\/agents\//g, ".codex/agents/");
-    line = line.replace(/\.claude\/([A-Za-z0-9_./${}-]*)/g, "<project-artifact-path>/$1");
-    line = line.replace(
-      /\$ARGUMENTS/g,
-      codeContext ? "<workflow-arguments>" : "the supplied workflow arguments",
-    );
+    line = normalizeProjectLocalClaudePaths(line);
+    line = normalizeWorkflowArguments(line, codeContext);
     line = line.replace(/\bAskUserQuestion\b/g, "Ask the user");
     line = line.replace(/\bsubagent_type\s*:\s*[`"']?([a-z0-9-]+)[`"']?/gi, "$1 role");
     line = line.replace(/\b(?:Codex\s+)?(?:Opus|Sonnet|Haiku)\b/gi, "reviewed Codex model");
@@ -409,6 +808,42 @@ export function normalizeCodexWorkflowBody(body: string, workflowIds: readonly s
     );
   }
   return `${normalized.join("\n").trim()}\n`;
+}
+
+export function normalizeCodexSkillBody(id: string, body: string): string {
+  const hadMcpSyntax = /\bmcp__[a-z0-9_-]+\b/i.test(body);
+  let normalized = body
+    .replace(
+      new RegExp(`(?:~|\\$HOME)/\\.claude/skills/${escapeRegex(id)}/`, "g"),
+      `.agents/skills/${id}/`,
+    )
+    .replace(/(?:~|\$HOME)\/\.claude\/settings\.json/g, "$CODEX_HOME/config.toml")
+    .replace(/~\/\.claude\.json/g, "$CODEX_HOME/config.toml")
+    .replace(/(?:~|\$HOME)\/\.claude\/skills/g, "$CODEX_HOME/skills")
+    .replace(/(?:~|\$HOME)\/\.claude/g, "$CODEX_HOME")
+    .split("\n")
+    .map(normalizeProjectLocalClaudePaths)
+    .join("\n")
+    .replace(/\bAskUserQuestion\b/g, "Ask the user")
+    .replace(/\bsubagent_type\s*[:=]\s*[`"']?([a-z0-9-]+)[`"']?/gi, "$1 role")
+    .replace(/\b(?:Agent|Task)(?: tool)?\b/g, "Codex agent delegation")
+    .replace(/\bmcp__[a-z0-9_-]+\b/gi, "optional client integration")
+    .replace(/\bCLAUDE\.md\b/g, "the repository client bootloader")
+    .replace(/\bCLAUDE_PACKAGE_MANAGER\b/g, "PACKAGE_MANAGER")
+    .replace(/\bClaude Code\b/g, "Codex")
+    .replace(/\bClaude\b/g, "Codex");
+  for (const workflowId of [...REVIEWED_WORKFLOW_IDS].sort(
+    (left, right) => right.length - left.length,
+  )) {
+    normalized = normalized.replace(
+      new RegExp(`(^|[^A-Za-z0-9/_-])${escapeRegex(workflowId)}(?=$|[^A-Za-z0-9/_-])`, "g"),
+      `$1ecc-workflow-${workflowId.slice(1)}`,
+    );
+  }
+  if (hadMcpSyntax) {
+    normalized = `${normalized.trim()}\n\n## Optional integration fallback\n\nUse the optional integration only when it is configured for the current client; otherwise use repository evidence or official documentation and state the limitation.\n`;
+  }
+  return `${normalized.trim()}\n`;
 }
 
 export function normalizeCodexWorkflowDescription(

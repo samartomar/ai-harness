@@ -107,7 +107,11 @@ export interface ProjectionRoots {
 }
 
 export async function projectionRoots(
-  options: { workflowBodies?: Record<string, string>; roleBodies?: Record<string, string> } = {},
+  options: {
+    skillBodies?: Record<string, string>;
+    workflowBodies?: Record<string, string>;
+    roleBodies?: Record<string, string>;
+  } = {},
 ): Promise<ProjectionRoots> {
   const sourceRoot = await mkdtemp(join(tmpdir(), "aih-ecc-render-source-"));
   const evidenceRoot = await mkdtemp(join(tmpdir(), "aih-ecc-render-evidence-"));
@@ -129,7 +133,11 @@ export async function projectionRoots(
     await mkdir(dirname(skillFile), { recursive: true });
     await writeFile(
       skillFile,
-      sourceFile(skill.id, `Use the ${skill.id} capability.`, `Apply ${skill.id} when relevant.`),
+      sourceFile(
+        skill.id,
+        `Use the ${skill.id} capability.`,
+        options.skillBodies?.[skill.id] ?? `Apply ${skill.id} when relevant.`,
+      ),
     );
   }
   for (const role of resolved.roles) {

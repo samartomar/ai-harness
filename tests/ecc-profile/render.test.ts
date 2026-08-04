@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 import { deriveEccProfile } from "../../src/ecc-profile/index.js";
+import { normalizeCodexWorkflowBody } from "../../src/ecc-profile/projection-policy.js";
 import {
   PROJECTED_SOURCE_LIMITS,
   renderEccProjection,
@@ -49,6 +50,21 @@ function sha256(content: string): string {
 }
 
 describe("native ECC profile projection", () => {
+  it("distinguishes project artifacts from client-global and external runtime paths", () => {
+    const normalized = normalizeCodexWorkflowBody(
+      [
+        "Project: .claude/plans/example.md",
+        "Client global: ~/.claude/settings.json",
+        "External runtime: ~/.claude/bin/codeagent-wrapper",
+      ].join("\n"),
+      [],
+    );
+    expect(normalized).toContain("Project: <project-artifact-path>/plans/example.md");
+    expect(normalized).toContain("Client global: ~/.claude/settings.json");
+    expect(normalized).toContain("External runtime: ~/.claude/bin/codeagent-wrapper");
+    expect(normalized).not.toContain("<project-artifact-path>/bin/codeagent-wrapper");
+  });
+
   it("renders exact Claude and Codex parity from the verified resolver", async () => {
     const roots = await projectionRoots();
     try {
@@ -350,9 +366,10 @@ describe("native ECC profile projection", () => {
     const roots = await projectionRoots({
       workflowBodies: {
         "/code-review": [
-          "Review $ARGUMENTS and then run /security-scan.",
+          "Review $ARGUMENTS, preserve inline `$ARGUMENTS`, and then run /security-scan.",
           "",
           "```sh",
+          'if [ -z "$ARGUMENTS" ]; then exit 2; fi',
           'mv "$ARGUMENTS" ".claude/reviews/$ARGUMENTS.md"',
           "```",
           "",
@@ -385,6 +402,9 @@ describe("native ECC profile projection", () => {
         (file) => file.destination === ".agents/skills/ecc-workflow-code-review/SKILL.md",
       );
       expect(codexReviewFile?.content).toContain("supplied workflow arguments");
+      expect(codexReviewFile?.content).toContain("inline `<workflow-arguments>`");
+      expect(codexReviewFile?.content).not.toContain("`the supplied workflow arguments`");
+      expect(codexReviewFile?.content).toContain('[ -z "<workflow-arguments>" ]');
       expect(codexReviewFile?.content).toContain('mv "<workflow-arguments>"');
       expect(codexReviewFile?.content).toContain("ecc-workflow-security-scan");
       expect(codexReviewFile?.content).toContain("Ask the user");
@@ -405,6 +425,56 @@ describe("native ECC profile projection", () => {
       );
       expect(unavailableFile?.content).toContain("Unavailable in this projection");
       expect(unavailableFile?.content).not.toMatch(/\.claude\/|\$ARGUMENTS/);
+    } finally {
+      await roots.cleanup();
+    }
+  }, 30_000);
+
+  it("classifies every selected skill and prevents inactive or client-specific behavior from masquerading as native", async () => {
+    const roots = await projectionRoots({
+      skillBodies: {
+        "browser-qa":
+          "Use mcp__chrome-devtools__take_snapshot from .claude/skills/browser-qa and AskUserQuestion when blocked.",
+        "configure-ecc":
+          "Run npx ecc-install and write ~/.claude/settings.json without an ownership check.",
+        "context-budget":
+          "Ask the Task tool to inspect CLAUDE.md and .claude/settings.json before continuing.",
+      },
+    });
+    try {
+      const projection = await renderFixture(roots);
+      for (const client of [projection.clients.claude, projection.clients.codex]) {
+        expect(client.skills.every((skill) => skill.transport !== undefined)).toBe(true);
+        expect(client.skills.map((skill) => skill.owner)).toEqual(
+          roots.resolved.skills.map((skill) => skill.owner),
+        );
+      }
+
+      expect(
+        projection.clients.codex.skills.find((skill) => skill.id === "accessibility")?.transport,
+      ).toBe("native");
+      expect(
+        projection.clients.codex.skills.find((skill) => skill.id === "browser-qa")?.transport,
+      ).toBe("normalized");
+      const unavailable = projection.clients.codex.skills.find(
+        (skill) => skill.id === "configure-ecc",
+      );
+      expect(unavailable?.transport).toBe("unavailable");
+      expect(unavailable?.unavailableReason).toMatch(/AIH|lifecycle|ownership/i);
+      expect(unavailable?.fallback).toBeTruthy();
+
+      const normalized = projection.files.find(
+        (file) => file.destination === ".agents/skills/browser-qa/SKILL.md",
+      );
+      expect(normalized?.content).not.toMatch(/mcp__|\.claude\/|AskUserQuestion/);
+      expect(normalized?.content).toContain("Optional integration fallback");
+
+      const blocked = projection.files.find(
+        (file) => file.destination === ".agents/skills/configure-ecc/SKILL.md",
+      );
+      expect(blocked?.content).toContain("Unavailable in this projection");
+      expect(blocked?.content).not.toContain("npx ecc-install");
+      expect(blocked?.capabilityOwner).toBe("upstream");
     } finally {
       await roots.cleanup();
     }

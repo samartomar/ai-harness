@@ -14,8 +14,11 @@ import {
   claudeRoleTools,
   normalizeCodexRoleBody,
   normalizeCodexRoleDescription,
+  normalizeCodexSkillBody,
   normalizeCodexWorkflowBody,
   normalizeCodexWorkflowDescription,
+  type SkillTransport,
+  skillProjectionPolicies,
   type WorkflowTransport,
   workflowProjectionPolicies,
 } from "./projection-policy.js";
@@ -43,6 +46,9 @@ export interface ProjectedRole extends ProjectedEntry {
 
 export interface ProjectedSkill extends ResolvedSkill {
   destination: string;
+  transport: SkillTransport;
+  unavailableReason?: string;
+  fallback?: string;
 }
 
 export interface ProjectedWorkflow extends ProjectedEntry {
@@ -273,16 +279,11 @@ function adaptationMarkdown(id: string): string {
   ].join("\n");
 }
 
-function unavailableCodexWorkflow(
-  id: string,
-  description: string,
-  reason: string,
-  fallback: string,
-): string {
+function unavailableCodexWorkflow(id: string, reason: string, fallback: string): string {
   return [
     "---",
     `name: ecc-workflow-${id.slice(1)}`,
-    `description: ${JSON.stringify(description)}`,
+    `description: ${JSON.stringify(`${id} is retained but unavailable in this projection.`)}`,
     "---",
     "",
     `# Workflow ${id}`,
@@ -308,6 +309,38 @@ function codexWorkflowSkill(id: string, description: string, body: string): stri
     `# Workflow ${id}`,
     "",
     body.trimEnd(),
+    "",
+  ].join("\n");
+}
+
+function projectedSkillMarkdown(id: string, description: string, body: string): string {
+  return [
+    "---",
+    `name: ${id}`,
+    `description: ${JSON.stringify(description)}`,
+    "---",
+    "",
+    body.trimEnd(),
+    "",
+  ].join("\n");
+}
+
+function unavailableSkillMarkdown(id: string, reason: string, fallback: string): string {
+  return [
+    "---",
+    `name: ${id}`,
+    `description: ${JSON.stringify(`${id} is retained but unavailable in this projection.`)}`,
+    "---",
+    "",
+    `# Skill ${id}`,
+    "",
+    "## Unavailable in this projection",
+    "",
+    reason,
+    "",
+    "## Actionable fallback",
+    "",
+    fallback,
     "",
   ].join("\n");
 }
@@ -387,6 +420,7 @@ async function renderWithTrust(
 
   const claudeSkills: ProjectedSkill[] = [];
   const codexSkills: ProjectedSkill[] = [];
+  const skillPolicies = skillProjectionPolicies(resolved.skills);
   for (const skill of resolved.skills) {
     const sourceFiles = [...closure.files.values()].filter((source) =>
       source.path.startsWith(`${skill.sourcePath}/`),
@@ -394,28 +428,75 @@ async function renderWithTrust(
     const primaryPath = posix.join(skill.sourcePath, "SKILL.md");
     const primary = sourceFiles.find((source) => source.path === primaryPath);
     if (!primary) throw new Error(`selected skill is missing SKILL.md: ${skill.id}`);
-    parseMarkdownSource(normalizeText(primary.contents, primary.path), primary.path, skill.id);
+    const primaryParsed = parseMarkdownSource(
+      normalizeText(primary.contents, primary.path),
+      primary.path,
+      skill.id,
+    );
+    const policy = skillPolicies.get(skill.id);
+    if (!policy) throw new Error(`missing reviewed skill policy: ${skill.id}`);
     const claudeDestination = `.claude/skills/${skill.id}`;
     const codexDestination = `.agents/skills/${skill.id}`;
-    claudeSkills.push({ ...skill, destination: claudeDestination });
-    codexSkills.push({ ...skill, destination: codexDestination });
+    claudeSkills.push({
+      ...skill,
+      destination: claudeDestination,
+      transport: policy.claude.transport,
+      ...(policy.claude.unavailableReason
+        ? { unavailableReason: policy.claude.unavailableReason }
+        : {}),
+      ...(policy.claude.fallback ? { fallback: policy.claude.fallback } : {}),
+    });
+    codexSkills.push({
+      ...skill,
+      destination: codexDestination,
+      transport: policy.codex.transport,
+      ...(policy.codex.unavailableReason
+        ? { unavailableReason: policy.codex.unavailableReason }
+        : {}),
+      ...(policy.codex.fallback ? { fallback: policy.codex.fallback } : {}),
+    });
     for (const source of sourceFiles) {
       consumed.add(source.path);
       const relativePath = posix.relative(skill.sourcePath, source.path);
       const content = normalizeText(source.contents, source.path);
+      const primarySource = source.path === primaryPath;
+      const claudeContent =
+        policy.claude.transport === "unavailable" && primarySource
+          ? unavailableSkillMarkdown(
+              skill.id,
+              policy.claude.unavailableReason ?? "The capability is unavailable.",
+              policy.claude.fallback ?? "State the limitation and stop.",
+            )
+          : content;
+      let codexContent = content;
+      if (policy.codex.transport === "unavailable" && primarySource) {
+        codexContent = unavailableSkillMarkdown(
+          skill.id,
+          policy.codex.unavailableReason ?? "The capability is unavailable.",
+          policy.codex.fallback ?? "State the limitation and stop.",
+        );
+      } else if (policy.codex.transport === "normalized" && primarySource) {
+        codexContent = projectedSkillMarkdown(
+          skill.id,
+          normalizeCodexSkillBody(skill.id, primaryParsed.description).replace(/\s+/g, " ").trim(),
+          normalizeCodexSkillBody(skill.id, primaryParsed.body),
+        );
+      } else if (policy.codex.transport === "normalized" && source.path.endsWith(".md")) {
+        codexContent = normalizeCodexSkillBody(skill.id, content);
+      }
       files.push(
         pinnedRenderedFile(
           sourcePin,
           source,
           posix.join(claudeDestination, relativePath),
-          content,
+          claudeContent,
           skill.owner,
         ),
         pinnedRenderedFile(
           sourcePin,
           source,
           posix.join(codexDestination, relativePath),
-          content,
+          codexContent,
           skill.owner,
         ),
       );
@@ -511,12 +592,7 @@ async function renderWithTrust(
       const { fallback, unavailableReason } = policy.codex;
       if (!fallback || !unavailableReason)
         throw new Error(`unavailable workflow lacks actionable policy: ${workflow.id}`);
-      codexContent = unavailableCodexWorkflow(
-        workflow.id,
-        codexDescription,
-        unavailableReason,
-        fallback,
-      );
+      codexContent = unavailableCodexWorkflow(workflow.id, unavailableReason, fallback);
     } else {
       codexContent = codexWorkflowSkill(
         workflow.id,

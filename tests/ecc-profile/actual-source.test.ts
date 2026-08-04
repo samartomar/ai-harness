@@ -66,6 +66,77 @@ describe.skipIf(!pinnedSourceRoot)("actual pinned ECC projection receipt", () =>
           /\$ARGUMENTS|\.claude\/|mcp__|AskUserQuestion|subagent_type/,
         );
       }
+      for (const workflow of [
+        "multi-backend",
+        "multi-execute",
+        "multi-frontend",
+        "multi-plan",
+        "multi-workflow",
+      ]) {
+        const entry = projection.clients.codex.workflows.find(
+          (candidate) => candidate.id === `/${workflow}`,
+        );
+        expect(entry?.transport, workflow).toBe("unavailable");
+        expect(entry?.unavailableReason, workflow).toMatch(/ccg-workflow/i);
+        expect(entry?.fallback, workflow).toBeTruthy();
+        const file = projection.files.find(
+          (candidate) =>
+            candidate.destination === `.agents/skills/ecc-workflow-${workflow}/SKILL.md`,
+        );
+        expect(file?.content, workflow).not.toContain("<project-artifact-path>/bin");
+        expect(file?.content, workflow).not.toContain("codeagent-wrapper");
+      }
+      const projectLocal = projection.files.find(
+        (file) => file.destination === ".agents/skills/ecc-workflow-code-review/SKILL.md",
+      );
+      expect(projectLocal?.content).toContain("<project-artifact-path>");
+      const clientGlobal = projection.clients.codex.workflows.find(
+        (workflow) => workflow.id === "/skill-create",
+      );
+      expect(clientGlobal?.transport).toBe("unavailable");
+      expect(clientGlobal?.unavailableReason).toMatch(/client-global|lifecycle/i);
+
+      const codexSkills = projection.files.filter(
+        (file) =>
+          file.destination.startsWith(".agents/skills/") &&
+          !file.destination.includes("ecc-workflow-"),
+      );
+      for (const skill of projection.clients.codex.skills) {
+        expect(skill.transport, skill.id).toMatch(/^(native|normalized|unavailable)$/);
+        if (skill.transport === "unavailable") {
+          expect(skill.unavailableReason, skill.id).toBeTruthy();
+          expect(skill.fallback, skill.id).toBeTruthy();
+        }
+        if (skill.transport === "normalized") {
+          const normalizedFiles = codexSkills.filter(
+            (file) =>
+              file.destination.startsWith(`${skill.destination}/`) &&
+              file.destination.endsWith(".md"),
+          );
+          for (const file of normalizedFiles) {
+            expect(file.content, file.destination).not.toMatch(
+              /\.claude\b|CLAUDE_|Claude Code|mcp__|AskUserQuestion|subagent_type|\b(?:Task|Agent) tool\b/,
+            );
+          }
+        }
+      }
+      expect(codexSkills).not.toHaveLength(0);
+      const reviewedCanaries = {
+        "agent-sort": "unavailable",
+        "browser-qa": "normalized",
+        ck: "unavailable",
+        "codehealth-mcp": "unavailable",
+        "config-gc": "unavailable",
+        "configure-ecc": "unavailable",
+        "context-budget": "unavailable",
+        "continuous-learning-v2": "unavailable",
+      } as const;
+      for (const [id, transport] of Object.entries(reviewedCanaries)) {
+        expect(
+          projection.clients.codex.skills.find((skill) => skill.id === id)?.transport,
+          id,
+        ).toBe(transport);
+      }
       const codexRoles = projection.files.filter((file) =>
         file.destination.startsWith(".codex/agents/"),
       );

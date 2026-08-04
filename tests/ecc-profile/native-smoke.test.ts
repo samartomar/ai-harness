@@ -12,6 +12,51 @@ const codexEntrypoint = process.env.AIH_CODEX_NATIVE_ENTRYPOINT;
 const claudeExecutable = process.env.AIH_CLAUDE_NATIVE_EXECUTABLE;
 const nativeEnabled = Boolean(pinnedSourceRoot && codexEntrypoint && claudeExecutable);
 
+function nativeSmokeEnvironment(
+  inherited: NodeJS.ProcessEnv,
+  home: string,
+  project: string,
+): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = {
+    HOME: home,
+    USERPROFILE: home,
+    APPDATA: join(home, "AppData", "Roaming"),
+    LOCALAPPDATA: join(home, "AppData", "Local"),
+    XDG_CACHE_HOME: join(home, ".cache"),
+    XDG_CONFIG_HOME: join(home, ".config"),
+    XDG_DATA_HOME: join(home, ".local", "share"),
+    CODEX_HOME: join(project, ".codex"),
+    CLAUDE_CONFIG_DIR: join(home, ".claude"),
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    DISABLE_AUTOUPDATER: "1",
+    HTTP_PROXY: "http://127.0.0.1:9",
+    HTTPS_PROXY: "http://127.0.0.1:9",
+    ALL_PROXY: "http://127.0.0.1:9",
+    NO_PROXY: "",
+    no_proxy: "",
+  };
+  for (const key of [
+    "PATH",
+    "Path",
+    "PATHEXT",
+    "SystemRoot",
+    "SYSTEMROOT",
+    "ComSpec",
+    "COMSPEC",
+    "WINDIR",
+    "TEMP",
+    "TMP",
+    "LANG",
+    "LC_ALL",
+  ]) {
+    if (inherited[key] !== undefined) environment[key] = inherited[key];
+  }
+  if (environment.PATH === undefined && environment.Path !== undefined) {
+    environment.PATH = environment.Path;
+  }
+  return environment;
+}
+
 function boundedOutput(result: ReturnType<typeof spawnSync>): string {
   return `${result.stdout ?? ""}\n${result.stderr ?? ""}`.slice(0, 8_192);
 }
@@ -31,7 +76,7 @@ async function copyEvidence(root: string): Promise<void> {
 }
 
 describe.skipIf(!nativeEnabled)("disposable native-client ECC projection smoke", () => {
-  it("parses the authenticated projection with installed Claude and Codex clients", async () => {
+  it("checks root config and doctor parsing with materialized canaries", async () => {
     const root = await mkdtemp(join(tmpdir(), "aih-ecc-native-smoke-"));
     const project = join(root, "project");
     const home = join(root, "home");
@@ -59,20 +104,7 @@ describe.skipIf(!nativeEnabled)("disposable native-client ECC projection smoke",
         expect(parsed, document.destination).toBeTypeOf("object");
       }
 
-      const nativeEnvironment = {
-        ...process.env,
-        HOME: home,
-        USERPROFILE: home,
-        CODEX_HOME: join(project, ".codex"),
-        CLAUDE_CONFIG_DIR: join(home, ".claude"),
-        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-        DISABLE_AUTOUPDATER: "1",
-        HTTP_PROXY: "http://127.0.0.1:9",
-        HTTPS_PROXY: "http://127.0.0.1:9",
-        ALL_PROXY: "http://127.0.0.1:9",
-        NO_PROXY: "",
-        no_proxy: "",
-      };
+      const nativeEnvironment = nativeSmokeEnvironment(process.env, home, project);
       const codex = spawnSync(
         process.execPath,
         [codexEntrypoint ?? "", "debug", "prompt-input", "native-smoke"],
@@ -105,4 +137,27 @@ describe.skipIf(!nativeEnabled)("disposable native-client ECC projection smoke",
       await rm(root, { recursive: true, force: true });
     }
   }, 120_000);
+});
+
+describe("native smoke environment boundary", () => {
+  it("does not inherit provider credentials or unrelated caller variables", () => {
+    const environment = nativeSmokeEnvironment(
+      {
+        PATH: "fixture-path",
+        SystemRoot: "fixture-system-root",
+        ANTHROPIC_API_KEY: "must-not-cross-boundary",
+        OPENAI_API_KEY: "must-not-cross-boundary",
+        AWS_SECRET_ACCESS_KEY: "must-not-cross-boundary",
+        UNRELATED_CALLER_VALUE: "must-not-cross-boundary",
+      },
+      "fixture-home",
+      "fixture-project",
+    );
+    expect(environment.PATH).toBe("fixture-path");
+    expect(environment.SystemRoot).toBe("fixture-system-root");
+    expect(environment.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(environment.OPENAI_API_KEY).toBeUndefined();
+    expect(environment.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    expect(environment.UNRELATED_CALLER_VALUE).toBeUndefined();
+  });
 });
