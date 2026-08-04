@@ -368,10 +368,21 @@ export function createFileContinuityStore(options: FileContinuityStoreOptions): 
     .update(`${repositoryId}\0${worktree}\0${harness}`, "utf8")
     .digest("hex");
   const file = join(canonicalDirectory, `${key}.json`);
+  const resolvesToWorktree = (candidate: string): boolean => {
+    if (!isAbsolute(candidate)) return false;
+    try {
+      return (
+        comparablePath(existingDirectory(resolve(candidate), "continuity record worktree")) ===
+        comparablePath(worktree)
+      );
+    } catch {
+      return false;
+    }
+  };
   const assertScope = (record: ContinuityRecord) => {
     if (
       record.repositoryId !== repositoryId ||
-      comparablePath(record.canonicalWorktree) !== comparablePath(worktree) ||
+      !resolvesToWorktree(record.canonicalWorktree) ||
       record.harness !== harness
     ) {
       throw new Error("continuity record conflicts with its store scope");

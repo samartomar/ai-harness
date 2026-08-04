@@ -287,6 +287,41 @@ describe("ECC continuity hook", () => {
     }
   });
 
+  it("treats an existing real-path alias as the same canonical worktree scope", () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-continuity-alias-"));
+    const alias = `${root}-alias`;
+    const stateRoot = join(root, "state");
+    const worktree = join(root, "project");
+    mkdirSync(stateRoot);
+    mkdirSync(worktree);
+    symlinkSync(root, alias, process.platform === "win32" ? "junction" : "dir");
+    try {
+      const store = createFileContinuityStore({
+        stateRoot,
+        canonicalWorktree: worktree,
+        repositoryId: "github.com/example/project",
+        harness: "codex",
+      });
+      const aliasedWorktree = join(alias, "project");
+      expect(() =>
+        store.save({
+          version: 1,
+          repositoryId: "github.com/example/project",
+          canonicalWorktree: aliasedWorktree,
+          harness: "codex",
+          sessionId: "session-alias",
+          updatedAtEpochMs: 10,
+          summary: "same physical worktree",
+          activity: [],
+        }),
+      ).not.toThrow();
+      expect(store.list()[0]?.canonicalWorktree).toBe(aliasedWorktree);
+    } finally {
+      rmSync(alias, { force: true });
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects in-worktree state, linked state files, malformed state, and byte overflow", () => {
     const root = mkdtempSync(join(tmpdir(), "aih-continuity-boundary-"));
     const stateRoot = join(root, "state");
@@ -348,6 +383,63 @@ describe("ECC continuity hook", () => {
           activity: [],
         }),
       ).toThrow(/file limit/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed on invalid continuity store roots, limits, scope paths, and prune times", () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-continuity-invalid-"));
+    const stateRoot = join(root, "state");
+    const worktree = join(root, "project");
+    mkdirSync(stateRoot);
+    mkdirSync(worktree);
+    try {
+      expect(() =>
+        createFileContinuityStore({
+          stateRoot: "relative-state",
+          canonicalWorktree: worktree,
+          repositoryId: "repo",
+          harness: "codex",
+        }),
+      ).toThrow(/absolute/);
+      expect(() =>
+        createFileContinuityStore({
+          stateRoot: root,
+          canonicalWorktree: worktree,
+          repositoryId: "repo",
+          harness: "codex",
+        }),
+      ).toThrow(/outside/);
+      expect(() =>
+        createFileContinuityStore({
+          stateRoot,
+          canonicalWorktree: worktree,
+          repositoryId: "repo",
+          harness: "codex",
+          maxFileBytes: 0,
+        }),
+      ).toThrow(/maxFileBytes/);
+
+      const store = createFileContinuityStore({
+        stateRoot,
+        canonicalWorktree: worktree,
+        repositoryId: "repo",
+        harness: "codex",
+      });
+      expect(() => store.prune(1.5)).toThrow(/prune time/);
+      expect(() =>
+        store.save({
+          version: 1,
+          repositoryId: "repo",
+          canonicalWorktree: join(root, "missing-worktree"),
+          harness: "codex",
+          sessionId: "missing",
+          updatedAtEpochMs: 1,
+          summary: "not same scope",
+          activity: [],
+        }),
+      ).toThrow(/store scope/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -417,5 +509,55 @@ describe("ECC MCP-health hook", () => {
       signal,
     );
     expect(probe).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on invalid MCP inventory, timing, probe, and reconnect contracts", async () => {
+    expect(() =>
+      createMcpHealthHandler({
+        selectedServers: Array.from({ length: 65 }, (_, index) => ({
+          id: `server-${index}`,
+          fallback: "Use the local fallback.",
+        })),
+        probe: vi.fn(),
+      }),
+    ).toThrow(/too many/);
+    expect(() =>
+      createMcpHealthHandler({
+        selectedServers: [{ id: "not_valid", fallback: "Use the local fallback." }],
+        probe: vi.fn(),
+      }),
+    ).toThrow(/malformed/);
+    expect(() =>
+      createMcpHealthHandler({
+        selectedServers: [],
+        probe: vi.fn(),
+        successCacheMs: 0,
+      }),
+    ).toThrow(/positive/);
+    expect(() =>
+      createMcpHealthHandler({
+        selectedServers: [],
+        probe: vi.fn(),
+        initialBackoffMs: 2,
+        maxBackoffMs: 1,
+      }),
+    ).toThrow(/range/);
+
+    const invalidProbe = createMcpHealthHandler({
+      selectedServers: [{ id: "serena", fallback: "Use repository search." }],
+      probe: vi.fn(async () => ({ ok: "yes" }) as never),
+    });
+    await expect(invalidProbe.run(event("session-start"), signal)).rejects.toThrow(
+      /invalid result/,
+    );
+
+    const invalidReconnect = createMcpHealthHandler({
+      selectedServers: [{ id: "serena", fallback: "Use repository search.", reconnect: true }],
+      probe: vi.fn(async () => ({ ok: false })),
+      reconnect: vi.fn(async () => "yes" as never),
+    });
+    await expect(invalidReconnect.run(event("session-start"), signal)).rejects.toThrow(
+      /reconnect returned an invalid result/,
+    );
   });
 });
