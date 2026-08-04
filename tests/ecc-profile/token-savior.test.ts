@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -268,6 +276,28 @@ describe("Token Savior direct compaction adapter", () => {
     expect(store.list()[0]?.originalText).toBe(originalText);
   });
 
+  it("matches a worktree reached through a canonical parent-directory alias", async () => {
+    const { project, state, root } = fixture();
+    const aliasRoot = `${root}-alias`;
+    symlinkSync(root, aliasRoot, process.platform === "win32" ? "junction" : "dir");
+    roots.push(aliasRoot);
+    const store = createFileTokenSaviorRetentionStore({
+      stateRoot: state,
+      canonicalWorktree: project,
+      repositoryId: "github.com/example/project",
+    });
+
+    await expect(
+      createTokenSaviorCompactionAdapter({
+        canonicalWorktree: project,
+        repositoryId: "github.com/example/project",
+        store,
+        compact: async () => compacted,
+        timeoutMs: 25,
+      }).run(event("claude", join(aliasRoot, "project"))),
+    ).resolves.toMatchObject({ status: "compacted", originalRetained: true });
+  });
+
   it("fails open to the original output on timeout, runner failure, malformed results, or no match", async () => {
     const { project, state } = fixture();
     const store = createFileTokenSaviorRetentionStore({
@@ -486,6 +516,7 @@ describe("optional Token Savior audit MCP", () => {
   it("is Claude-only, consent-bound, sanitized, unregistered, and hard-limited to ts_discover", () => {
     const { project, state, transcripts, root } = fixture();
     const wrapper = join(root, process.platform === "win32" ? "wrapper.exe" : "wrapper");
+    writeFileSync(wrapper, "reviewed wrapper", { encoding: "utf8", mode: 0o700 });
     const projection = buildTokenSaviorAuditProjection({
       client: "claude",
       enabled: true,
@@ -510,7 +541,7 @@ describe("optional Token Savior audit MCP", () => {
       TS_MEMORY_DISABLE: "1",
       TS_RESOURCES_DISABLED: "1",
       TS_CAPTURE_DISABLED: "1",
-      TOKEN_SAVIOR_DATA_DIR: state,
+      TOKEN_SAVIOR_DATA_DIR: realpathSync(state),
     });
     expect(JSON.stringify(projection.env)).not.toMatch(/ANTHROPIC|OPENAI|API_KEY|AUTH_TOKEN/);
     expect(() => guardTokenSaviorAuditCall("ts_discover", { since_days: 7 })).not.toThrow();
@@ -560,6 +591,8 @@ describe("optional Token Savior audit MCP", () => {
 
   it("fails closed without consent, for Codex, or for unsafe roots and evidence", () => {
     const { project, state, transcripts, root } = fixture();
+    const wrapper = join(root, "wrapper.exe");
+    writeFileSync(wrapper, "reviewed wrapper", { encoding: "utf8", mode: 0o700 });
     const base = {
       client: "claude" as const,
       enabled: true,
@@ -567,7 +600,7 @@ describe("optional Token Savior audit MCP", () => {
       canonicalWorktree: project,
       stateRoot: state,
       transcriptRoot: transcripts,
-      wrapperCommand: join(root, "wrapper.exe"),
+      wrapperCommand: wrapper,
       wrapperSha256: "b".repeat(64),
     };
     expect(() => buildTokenSaviorAuditProjection({ ...base, explicitConsent: undefined })).toThrow(
@@ -581,8 +614,10 @@ describe("optional Token Savior audit MCP", () => {
     expect(() =>
       buildTokenSaviorAuditProjection({ ...base, wrapperSha256: "B".repeat(64) }),
     ).toThrow(/SHA-256/i);
+    const projectWrapper = join(project, "wrapper.exe");
+    writeFileSync(projectWrapper, "unsafe wrapper", { encoding: "utf8", mode: 0o700 });
     expect(() =>
-      buildTokenSaviorAuditProjection({ ...base, wrapperCommand: join(project, "wrapper.exe") }),
+      buildTokenSaviorAuditProjection({ ...base, wrapperCommand: projectWrapper }),
     ).toThrow(/outside/i);
   });
 });

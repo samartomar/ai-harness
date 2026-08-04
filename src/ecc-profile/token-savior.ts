@@ -197,6 +197,18 @@ function comparablePath(path: string): string {
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
+function sameExistingDirectory(path: string, canonicalDirectory: string): boolean {
+  try {
+    const canonicalCandidate = existingDirectory(
+      safeAbsolutePath(path, "Token Savior hook working directory"),
+      "Token Savior hook working directory",
+    );
+    return comparablePath(canonicalCandidate) === comparablePath(canonicalDirectory);
+  } catch {
+    return false;
+  }
+}
+
 function safeAbsolutePath(path: string, label: string): string {
   if (typeof path !== "string" || !isAbsolute(path)) throw new Error(`${label} must be absolute`);
   if (/\p{Cc}/u.test(path)) throw new Error(`${label} contains a control character`);
@@ -586,8 +598,7 @@ export function createTokenSaviorCompactionAdapter(
   return {
     async run(event) {
       const original = event.tool?.response ?? null;
-      if (comparablePath(event.cwd) !== comparablePath(worktree))
-        return unchanged("ineligible", original);
+      if (!sameExistingDirectory(event.cwd, worktree)) return unchanged("ineligible", original);
       const input = shellParts(event);
       if (!input || !event.tool?.id) return unchanged("ineligible", original);
       if (
@@ -741,7 +752,7 @@ export function buildTokenSaviorAuditProjection(
   ) {
     throw new Error("Token Savior audit roots must remain outside the canonical worktree");
   }
-  const command = safeAbsolutePath(input.wrapperCommand, "Token Savior wrapper command");
+  const command = regularExecutable(input.wrapperCommand, "Token Savior wrapper command");
   if (containsPath(worktree, command)) {
     throw new Error("Token Savior wrapper command must remain outside the canonical worktree");
   }
