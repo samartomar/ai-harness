@@ -314,8 +314,10 @@ constructing a target plan. Dry-run is the default and may acquire the exact rem
 disposable quarantine so the preview is based on real rendered bytes; it never writes the target.
 `--ecc-path <dir>` supplies an existing exact checkout to the same boundary. Lifecycle receipts live
 under `.aih/ecc-profile/` and make repeat install, repair, update, rollback, and uninstall fail closed
-on foreign or operator-modified files. Legacy selection flags such as `--profile`, `--with`, and
-`--cli` cannot be combined with `--lifecycle`.
+on foreign or operator-modified files. Repair, rollback, and uninstall use the receipt's bounded,
+hash-authenticated installed bytes and source identity, so a later package pin cannot strand an
+older managed installation. Legacy selection flags such as `--profile`, `--with`, and `--cli`
+cannot be combined with `--lifecycle`.
 
 The primary registration ledger is `~/.aih/ecc/registration-ledger.json`. It records each project's
 component/MCP contribution and each target's installed union plus evidence provenance. The ledger is

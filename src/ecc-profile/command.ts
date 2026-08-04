@@ -17,7 +17,12 @@ import {
   trustFetchExec,
 } from "../trust/fetch.js";
 import { AIH_ECC_PROFILE_TEMPLATE, type EccProfile, eccProfileSchema } from "./index.js";
-import { type EccProfileLifecycleOperation, planEccProfileLifecycle } from "./lifecycle.js";
+import {
+  type EccProfileInstalledSourceTrust,
+  type EccProfileLifecycleOperation,
+  planEccProfileLifecycle,
+  planInstalledEccProfileLifecycle,
+} from "./lifecycle.js";
 import { type EccProjection, renderEccProjection } from "./render.js";
 import { TRUSTED_PROJECTED_SOURCE } from "./source-closure.js";
 
@@ -50,9 +55,22 @@ export interface PackagedEccProfileEvidence {
 export interface EccProfileLifecycleCommandDeps {
   /** Internal hermetic-test seam; the public command always uses authenticated acquisition. */
   loadProjection?: (ctx: PlanContext) => Promise<EccProjection>;
+  /** Internal future-pin seam; shipped packages use the append-only trust registry below. */
+  installedSourceTrust?: readonly EccProfileInstalledSourceTrust[];
 }
 
 const PACKAGED_EVIDENCE = pinnedEvidenceJson as unknown as PackagedPinnedEvidence;
+
+/** Append-only identities for installations that this package can recover or remove offline. */
+export const PACKAGED_ECC_PROFILE_INSTALLATION_TRUST = [
+  {
+    repository: "affaan-m/ECC",
+    commit: "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
+    sourceClosureId: TRUSTED_PROJECTED_SOURCE.id,
+    sourceClosureSha256: TRUSTED_PROJECTED_SOURCE.aggregateSha256,
+    projectionSha256: "8bfa1837b2f7d4239b69955540c20a76a795c4ef86dc3555390d5d18e30bc585",
+  },
+] as const satisfies readonly EccProfileInstalledSourceTrust[];
 
 function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
@@ -218,6 +236,16 @@ export async function executeEccProfileLifecycleCommand(
 ): Promise<PlanResult> {
   const operation = lifecycleOperation(ctx);
   assertLifecycleOptions(ctx);
+  if (operation === "repair" || operation === "uninstall" || operation === "rollback") {
+    return executePlan(
+      planInstalledEccProfileLifecycle(
+        ctx.root,
+        operation,
+        deps.installedSourceTrust ?? PACKAGED_ECC_PROFILE_INSTALLATION_TRUST,
+      ),
+      ctx,
+    );
+  }
   const projection = await (deps.loadProjection ?? acquirePackagedProjection)(ctx);
   return executePlan(planEccProfileLifecycle(ctx.root, projection, operation), ctx);
 }
