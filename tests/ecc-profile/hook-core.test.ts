@@ -239,6 +239,48 @@ describe("ECC hook input normalization", () => {
     expect(() => normalizeClaudeHookInput(withoutInstructions)).toThrow(/custom_instructions/);
     expect(() => normalizeClaudeHookInput(withoutSummary)).toThrow(/compact_summary/);
   });
+
+  it("fails closed on malformed optional fields and bounded JSON structure", () => {
+    const beforeTool = vectors.cases.find((vector) => vector.id === "before-tool")?.claude;
+    const afterTool = vectors.cases.find((vector) => vector.id === "after-tool")?.claude;
+    const toolFailure = {
+      session_id: "session-1",
+      transcript_path: "C:/fixtures/transcript.jsonl",
+      cwd: "C:/fixtures/project",
+      hook_event_name: "PostToolUseFailure",
+      tool_name: "Bash",
+      tool_use_id: "tool-1",
+      tool_input: { command: "npm test" },
+      error: "failed",
+    };
+    const agentStop = vectors.cases.find((vector) => vector.id === "agent-stop")?.claude;
+    if (!beforeTool || !afterTool || !agentStop) throw new Error("missing hook vector");
+
+    const malformed = [
+      { ...beforeTool, prompt_id: null },
+      { ...beforeTool, cwd: "C:/fixtures/CON/project" },
+      { ...beforeTool, transcript_path: "relative/transcript.jsonl" },
+      { ...beforeTool, effort: { level: "high", extra: true } },
+      { ...beforeTool, tool_input: undefined },
+      { ...afterTool, tool_response: undefined },
+      { ...toolFailure, is_interrupt: "false" },
+      { ...agentStop, agent_transcript_path: undefined },
+      new Date(),
+    ];
+    for (const input of malformed) expect(() => normalizeClaudeHookInput(input)).toThrow();
+
+    const tooDeep: Record<string, unknown> = {};
+    let cursor = tooDeep;
+    for (let depth = 0; depth <= HOOK_INPUT_LIMITS.maxDepth; depth += 1) {
+      cursor.child = {};
+      cursor = cursor.child as Record<string, unknown>;
+    }
+    expect(() => normalizeClaudeHookInput(tooDeep)).toThrow(/depth limit/i);
+
+    const tooManyNodes = Array.from({ length: HOOK_INPUT_LIMITS.maxNodes }, () => null);
+    expect(() => normalizeClaudeHookInput({ nodes: tooManyNodes })).toThrow(/node limit/i);
+    expect(() => normalizeClaudeHookInput([])).toThrow(/object/i);
+  });
 });
 
 describe("ECC composite hook dispatcher", () => {
@@ -337,6 +379,37 @@ describe("ECC composite hook dispatcher", () => {
     await expect(dispatchHookEvent(missingTool as NormalizedHookEvent, [])).rejects.toThrow(
       /tool/i,
     );
+  });
+
+  it("rejects contradictory normalized fields before handler execution", async () => {
+    const afterTool = normalizeClaudeHookInput(
+      vectors.cases.find((vector) => vector.id === "after-tool")?.claude,
+    );
+    const toolFailure = normalizeClaudeHookInput({
+      session_id: "session-1",
+      transcript_path: "C:/fixtures/transcript.jsonl",
+      cwd: "C:/fixtures/project",
+      hook_event_name: "PostToolUseFailure",
+      tool_name: "Bash",
+      tool_use_id: "tool-1",
+      tool_input: { command: "npm test" },
+      error: "failed",
+    });
+    const malformed = [
+      { ...event, invented: true },
+      { ...event, version: 2 },
+      { ...event, cwd: "relative/project" },
+      { ...event, transcriptPath: "relative/transcript.jsonl" },
+      { ...event, permissionMode: "future-mode" },
+      { ...event, turnId: undefined },
+      { ...event, tool: { ...event.tool, invented: true } },
+      { ...event, tool: { name: "Shell", id: "tool-1" } },
+      { ...afterTool, tool: { ...afterTool.tool, response: undefined } },
+      { ...toolFailure, tool: { ...toolFailure.tool, error: undefined } },
+    ];
+    for (const input of malformed) {
+      await expect(dispatchHookEvent(input as NormalizedHookEvent, [])).rejects.toThrow();
+    }
   });
 
   it("fails open or closed according to each handler's reviewed policy", async () => {
@@ -573,6 +646,29 @@ describe("ECC composite hook dispatcher", () => {
       ...variant,
     }));
     await expect(dispatchHookEvent(event, handlers)).rejects.toThrow();
+  });
+
+  it("rejects incomplete or ambiguous handler contracts", async () => {
+    const base: HookHandler = {
+      id: "reviewed",
+      events: ["before-tool"],
+      enabled: true,
+      order: 10,
+      timeoutMs: 100,
+      failurePolicy: "open",
+      ...noDataPolicy,
+      run: () => ({ action: "continue" }),
+    };
+    const malformed = [
+      { ...base, events: [] },
+      { ...base, events: ["before-tool", "before-tool"] },
+      { ...base, events: ["future-event"] },
+      { ...base, enabled: "yes" },
+      { ...base, run: null },
+    ];
+    for (const handler of malformed) {
+      await expect(dispatchHookEvent(event, [handler as unknown as HookHandler])).rejects.toThrow();
+    }
   });
 
   it("rejects a handler block on an informational event", async () => {
