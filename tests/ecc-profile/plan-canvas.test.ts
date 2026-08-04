@@ -310,7 +310,7 @@ describe("Plan Canvas artifact boundary", () => {
 
     expect(second).toEqual(first);
     expect(first.originalPath).toBe(realpathSync(plan));
-    const snapshotRelative = relative(resolve(state), first.snapshotPath);
+    const snapshotRelative = relative(realpathSync(state), first.snapshotPath);
     expect(snapshotRelative.startsWith("..")).toBe(false);
     expect(isAbsolute(snapshotRelative)).toBe(false);
     expect(readFileSync(first.snapshotPath, "utf8")).toBe(readFileSync(plan, "utf8"));
