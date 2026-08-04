@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
@@ -185,6 +185,12 @@ describe("native ECC hook runtime", () => {
     await expect(
       runNativeEccRuntime(
         ["hook", "--client", "codex", "--root", scope.root, "--state-root", scope.stateRoot],
+        { stdin: Readable.from([Buffer.alloc(1024 * 1024 + 1, "x")]) },
+      ),
+    ).rejects.toThrow(/stdin exceeds its byte limit/i);
+    await expect(
+      runNativeEccRuntime(
+        ["hook", "--client", "codex", "--root", scope.root, "--state-root", scope.stateRoot],
         { stdin: Readable.from(["not-json"]) },
       ),
     ).rejects.toThrow(/stdin is not valid JSON/i);
@@ -210,6 +216,12 @@ describe("native ECC hook runtime", () => {
     ).rejects.toThrow(/package pin is not accepted/i);
     await expect(
       runNativeEccRuntime(
+        serenaArgs.map((value) => (value === "wrong-package" ? "serena-agent==1.6.1" : value)),
+        { stdin: Readable.from([]), env: {} },
+      ),
+    ).rejects.toThrow(/SERENA_HOME.*absolute/i);
+    await expect(
+      runNativeEccRuntime(
         serenaArgs
           .map((value) => (value === "wrong-package" ? "serena-agent==1.6.1" : value))
           .map((value) => (value === SERENA_DEPENDENCY_LOCK_SHA256 ? "0".repeat(64) : value)),
@@ -228,6 +240,70 @@ describe("native ECC hook runtime", () => {
         { stdin: Readable.from([]), env: { SERENA_HOME: scope.stateRoot } },
       ),
     ).rejects.toThrow(/context is not accepted/i);
+    await expect(
+      runNativeEccRuntime(
+        serenaArgs
+          .map((value) => (value === "wrong-package" ? "serena-agent==1.6.1" : value))
+          .map((value) => (value === "no-memories" ? "memory-enabled" : value)),
+        { stdin: Readable.from([]), env: { SERENA_HOME: join(scope.stateRoot, "serena") } },
+      ),
+    ).rejects.toThrow(/mode is not accepted/i);
+
+    const projectFile = join(scope.stateRoot, "not-a-project");
+    writeFileSync(projectFile, "fixture\n");
+    await expect(
+      runNativeEccRuntime(
+        serenaArgs
+          .map((value) => (value === "wrong-package" ? "serena-agent==1.6.1" : value))
+          .map((value) => (value === scope.root ? projectFile : value)),
+        { stdin: Readable.from([]), env: { SERENA_HOME: join(scope.stateRoot, "serena") } },
+      ),
+    ).rejects.toThrow(/project must be a real directory/i);
+
+    const serenaHome = join(scope.stateRoot, "conflicting-serena");
+    mkdirSync(serenaHome);
+    writeFileSync(join(serenaHome, "serena_config.yml"), "operator-owned: true\n");
+    await expect(
+      runNativeEccRuntime(
+        serenaArgs.map((value) => (value === "wrong-package" ? "serena-agent==1.6.1" : value)),
+        { stdin: Readable.from([]), env: { SERENA_HOME: serenaHome } },
+      ),
+    ).rejects.toThrow(/config conflicts/i);
+  });
+
+  it("fails closed on inaccessible event roots and reports indeterminate MCP health honestly", async () => {
+    const scope = fixture();
+    const missing = join(scope.root, "missing-event-root");
+    await expect(
+      executeNativeEccHook({
+        client: "codex",
+        root: scope.root,
+        stateRoot: scope.stateRoot,
+        input: {
+          session_id: "session-missing-root",
+          transcript_path: join(scope.stateRoot, "transcript.jsonl"),
+          cwd: missing,
+          permission_mode: "default",
+          hook_event_name: "SessionStart",
+          source: "startup",
+        },
+      }),
+    ).rejects.toThrow(/event cwd is not an accessible project root/i);
+
+    const output = await executeNativeEccHook({
+      client: "codex",
+      root: scope.root,
+      stateRoot: scope.stateRoot,
+      input: {
+        session_id: "session-default-health",
+        transcript_path: join(scope.stateRoot, "transcript.jsonl"),
+        cwd: scope.root,
+        permission_mode: "default",
+        hook_event_name: "SessionStart",
+        source: "startup",
+      },
+    });
+    expect(JSON.stringify(output)).toContain("MCP serena unavailable");
   });
 
   it("runs the exact offline Serena pin behind the protocol guard with provider credentials scrubbed", async () => {

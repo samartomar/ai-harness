@@ -238,6 +238,16 @@ describe("native ECC registration", () => {
       planNativeEccRegistration(malformed.root, buildNativeEccRegistration(malformed), "install"),
     ).toThrow(/JSON must be an object/i);
 
+    const invalidJson = fixture();
+    writeFileSync(join(invalidJson.root, ".mcp.json"), "{\n");
+    expect(() =>
+      planNativeEccRegistration(
+        invalidJson.root,
+        buildNativeEccRegistration(invalidJson),
+        "install",
+      ),
+    ).toThrow(/JSON is malformed/i);
+
     const conflicting = fixture();
     writeFileSync(join(conflicting.root, ".mcp.json"), '{"mcpServers":"operator"}\n');
     expect(() =>
@@ -261,6 +271,155 @@ describe("native ECC registration", () => {
     expect(() => planInstalledNativeEccRegistration(installed.root, "uninstall")).toThrow(
       /relative state root/i,
     );
+  });
+
+  it("rejects foreign, conflicting, ambiguous, and self-inconsistent ownership receipts", async () => {
+    async function installedFixture() {
+      const input = fixture();
+      await executePlan(
+        planNativeEccRegistration(input.root, buildNativeEccRegistration(input), "install"),
+        context(input.root),
+      );
+      const receiptPath = join(input.root, NATIVE_ECC_REGISTRATION_RECEIPT);
+      const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as {
+        root: string;
+        stateRoot: string;
+        runtime: {
+          executable: { path: string; sha256: string };
+          cliScript: { path: string; sha256: string };
+        };
+        files: Array<{
+          destination: string;
+          ownership: string;
+          content: string;
+          normalizedSha256: string;
+        }>;
+      };
+      return { input, receiptPath, receipt };
+    }
+
+    const foreign = await installedFixture();
+    foreign.receipt.root = fixture().root;
+    writeFileSync(foreign.receiptPath, `${JSON.stringify(foreign.receipt, null, 2)}\n`);
+    expect(() => planInstalledNativeEccRegistration(foreign.input.root, "uninstall")).toThrow(
+      /malformed or foreign/i,
+    );
+
+    const conflicting = await installedFixture();
+    conflicting.receipt.stateRoot = conflicting.input.root;
+    writeFileSync(conflicting.receiptPath, `${JSON.stringify(conflicting.receipt, null, 2)}\n`);
+    expect(() => planInstalledNativeEccRegistration(conflicting.input.root, "uninstall")).toThrow(
+      /conflicting state root/i,
+    );
+
+    const ambiguousRuntime = await installedFixture();
+    ambiguousRuntime.receipt.runtime.cliScript.path =
+      ambiguousRuntime.receipt.runtime.executable.path;
+    writeFileSync(
+      ambiguousRuntime.receiptPath,
+      `${JSON.stringify(ambiguousRuntime.receipt, null, 2)}\n`,
+    );
+    expect(() =>
+      planInstalledNativeEccRegistration(ambiguousRuntime.input.root, "uninstall"),
+    ).toThrow(/ambiguous runtime paths/i);
+
+    const ambiguousFiles = await installedFixture();
+    const duplicatedFile = ambiguousFiles.receipt.files[0];
+    if (!duplicatedFile) throw new Error("fixture receipt has no managed files");
+    ambiguousFiles.receipt.files[1] = { ...duplicatedFile };
+    writeFileSync(
+      ambiguousFiles.receiptPath,
+      `${JSON.stringify(ambiguousFiles.receipt, null, 2)}\n`,
+    );
+    expect(() =>
+      planInstalledNativeEccRegistration(ambiguousFiles.input.root, "uninstall"),
+    ).toThrow(/ambiguous file ownership/i);
+
+    const invalidContent = await installedFixture();
+    const modifiedFile = invalidContent.receipt.files[0];
+    if (!modifiedFile) throw new Error("fixture receipt has no managed files");
+    modifiedFile.content += "\n";
+    writeFileSync(
+      invalidContent.receiptPath,
+      `${JSON.stringify(invalidContent.receipt, null, 2)}\n`,
+    );
+    expect(() =>
+      planInstalledNativeEccRegistration(invalidContent.input.root, "uninstall"),
+    ).toThrow(/content hash is invalid/i);
+  });
+
+  it("covers fail-closed installed lifecycle boundaries without weakening operator ownership", async () => {
+    const absent = fixture();
+    const absentRegistration = buildNativeEccRegistration(absent);
+    expect(() => planNativeEccRegistration(absent.root, absentRegistration, "update")).toThrow(
+      /update requires an ownership receipt/i,
+    );
+    expect(() => planNativeEccRegistration(absent.root, absentRegistration, "rollback")).toThrow(
+      /rollback requires an ownership receipt/i,
+    );
+
+    const unsafe = fixture();
+    mkdirSync(join(unsafe.root, ".mcp.json"));
+    expect(() =>
+      planNativeEccRegistration(unsafe.root, buildNativeEccRegistration(unsafe), "install"),
+    ).toThrow(/destination is unsafe/i);
+
+    const repaired = fixture();
+    const repairedRegistration = buildNativeEccRegistration(repaired);
+    await executePlan(
+      planNativeEccRegistration(repaired.root, repairedRegistration, "install"),
+      context(repaired.root),
+    );
+    expect(
+      planNativeEccRegistration(repaired.root, repairedRegistration, "update").actions,
+    ).toEqual([]);
+    rmSync(join(repaired.root, ".codex", "hooks.json"));
+    const repair = planInstalledNativeEccRegistration(repaired.root, "repair");
+    expect(repair.actions).toHaveLength(1);
+    await executePlan(repair, context(repaired.root));
+    expect(readFileSync(join(repaired.root, ".codex", "hooks.json"), "utf8")).toContain(
+      "Running AIH ECC profile policies",
+    );
+
+    const modifiedMcp = fixture();
+    const modifiedMcpRegistration = buildNativeEccRegistration(modifiedMcp);
+    await executePlan(
+      planNativeEccRegistration(modifiedMcp.root, modifiedMcpRegistration, "install"),
+      context(modifiedMcp.root),
+    );
+    writeFileSync(join(modifiedMcp.root, ".mcp.json"), '{"mcpServers":"operator"}\n');
+    expect(() =>
+      planNativeEccRegistration(modifiedMcp.root, modifiedMcpRegistration, "uninstall"),
+    ).toThrow(/modified native registration managed content/i);
+
+    const modifiedHook = fixture();
+    const modifiedHookRegistration = buildNativeEccRegistration(modifiedHook);
+    await executePlan(
+      planNativeEccRegistration(modifiedHook.root, modifiedHookRegistration, "install"),
+      context(modifiedHook.root),
+    );
+    const settingsPath = join(modifiedHook.root, ".claude", "settings.json");
+    const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
+      hooks: Record<string, unknown>;
+    };
+    settings.hooks.SessionStart = "operator";
+    writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+    expect(() =>
+      planNativeEccRegistration(modifiedHook.root, modifiedHookRegistration, "uninstall"),
+    ).toThrow(/modified native registration managed hook/i);
+
+    const duplicateToml = fixture();
+    const duplicateTomlRegistration = buildNativeEccRegistration(duplicateToml);
+    await executePlan(
+      planNativeEccRegistration(duplicateToml.root, duplicateTomlRegistration, "install"),
+      context(duplicateToml.root),
+    );
+    const configPath = join(duplicateToml.root, ".codex", "config.toml");
+    const config = readFileSync(configPath, "utf8");
+    writeFileSync(configPath, `${config}${config}`);
+    expect(() =>
+      planNativeEccRegistration(duplicateToml.root, duplicateTomlRegistration, "install"),
+    ).toThrow(/modified native registration TOML block/i);
   });
 
   it("canonicalizes a future external state directory without creating it during planning", () => {
