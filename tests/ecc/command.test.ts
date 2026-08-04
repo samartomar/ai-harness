@@ -45,6 +45,7 @@ describe("registered ECC command", () => {
       profile: "core",
       with: ["tdd-workflow", "security-review"],
     });
+    expect(ecc?.options.map((option) => option.flags)).toContain("--lifecycle <operation>");
   });
 
   it("previews exact-pin contingent install operations without acquisition before apply", async () => {

@@ -298,6 +298,27 @@ security, and validated MCPs. Use `--profile full` only for an explicit full-sur
 Unknown declarations fail closed. Kiro and unsupported targets remain consult-only guidance because
 their installers cannot yet materialize the scoped union safely.
 
+The AIH-owned Claude/Codex profile has a separate, explicit lifecycle mode on the same command:
+
+```sh
+aih ecc --lifecycle install <project>
+aih ecc --lifecycle update <project> --apply
+aih ecc --lifecycle repair <project> --apply
+aih ecc --lifecycle rollback <project> --apply
+aih ecc --lifecycle uninstall <project> --apply
+```
+
+Lifecycle mode always projects the reviewed Claude and Codex surface together. It authenticates the
+exact ECC pin, the committed review receipt, every manifest, and every projected source byte before
+constructing a target plan. Dry-run is the default and may acquire the exact remote source into a
+disposable quarantine so the preview is based on real rendered bytes; it never writes the target.
+`--ecc-path <dir>` supplies an existing exact checkout to the same boundary. Lifecycle receipts live
+under `.aih/ecc-profile/` and make repeat install, repair, update, rollback, and uninstall fail closed
+on foreign or operator-modified files. Repair, rollback, and uninstall use the receipt's bounded,
+hash-authenticated installed bytes and source identity, so a later package pin cannot strand an
+older managed installation. Legacy selection flags such as `--profile`, `--with`, and `--cli`
+cannot be combined with `--lifecycle`.
+
 The primary registration ledger is `~/.aih/ecc/registration-ledger.json`. It records each project's
 component/MCP contribution and each target's installed union plus evidence provenance. The ledger is
 written atomically only after all selected target installs succeed. Re-running is idempotent; adding

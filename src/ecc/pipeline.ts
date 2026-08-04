@@ -14,6 +14,10 @@ import {
 } from "../baseline-evidence/pipeline.js";
 import type { BaselineEvidenceLock } from "../baseline-evidence/schema.js";
 import { postureFromContext } from "../config/posture.js";
+import {
+  type EccProfileLifecycleCommandDeps,
+  executeEccProfileLifecycleCommand,
+} from "../ecc-profile/command.js";
 import { AihError } from "../errors.js";
 import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
 import type { Cli } from "../internals/clis.js";
@@ -58,6 +62,14 @@ export interface EccEvidencePipelineDeps extends BaselineEvidencePipelineDeps {
     input: Parameters<typeof resolveOrgBaselineEvidence>[0],
   ) => Promise<ResolveOrgBaselineEvidenceResult>;
   installPreview?: EccInstallPreviewArtifact;
+}
+
+export interface EccCommandDeps extends EccEvidencePipelineDeps {
+  executeProfileLifecycle?: (
+    ctx: PlanContext,
+    deps?: EccProfileLifecycleCommandDeps,
+  ) => Promise<PlanResult>;
+  profileLifecycle?: EccProfileLifecycleCommandDeps;
 }
 
 function requestedCatalog(ctx: PlanContext): BaselineCatalog {
@@ -253,11 +265,20 @@ export async function executeEccEvidencePipeline(
 }
 
 /** Resolve the ordinary ECC command inputs once, then route mutating targets through evidence. */
-export async function executeEccCommand(ctx: PlanContext): Promise<PlanResult> {
+export async function executeEccCommand(
+  ctx: PlanContext,
+  deps: EccCommandDeps = {},
+): Promise<PlanResult> {
   assertOrgPolicyMutationSource({ ...ctx, posture: postureFromContext(ctx) });
+  if (ctx.options.lifecycle !== undefined) {
+    return (deps.executeProfileLifecycle ?? executeEccProfileLifecycleCommand)(
+      ctx,
+      deps.profileLifecycle,
+    );
+  }
   const { clis, detectFellBack } = await resolveTargets(ctx);
   const request = buildEccRegistrationRequest(ctx, clis);
-  if (clis.some(isMutatingEccTarget)) return executeEccEvidencePipeline(ctx, request);
+  if (clis.some(isMutatingEccTarget)) return executeEccEvidencePipeline(ctx, request, deps);
 
   const actions = clis.flatMap((cli) =>
     eccActionsForCli(cli, {

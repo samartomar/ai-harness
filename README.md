@@ -140,7 +140,7 @@ still initialize under the vendor CLI. Aih does not attest those customizations 
 | [`aih adopt`](docs/commands.md#aih-adopt) | Converge an existing AI canon onto aih's managed model without overwriting your work (brownfield migration). |
 | [`aih prune`](docs/commands.md#aih-prune) | Remove stale per-CLI artifacts and reconcile orphaned aih-managed ECC components from the machine registration ledger. <!-- aih:claim CM-22 --> |
 | [`aih uninstall`](docs/commands.md#aih-uninstall) | Remove the marker-backed core aih install footprint from a repo; `aih clean` is an alias. |
-| [`aih ecc`](docs/commands.md#aih-ecc) | Register the additive common + project-scoped ECC/MCP union from an evidence-verified exact pin. <!-- aih:claim CM-21 --> |
+| [`aih ecc`](docs/commands.md#aih-ecc) | Register the additive ECC union, or manage the reviewed Claude/Codex profile with `--lifecycle`, from authenticated exact-pin bytes. <!-- aih:claim CM-21 --> |
 | [`aih superpowers`](docs/commands.md#aih-superpowers) | Verify exact-pinned Superpowers components and emit evidence-bound target guidance. |
 | [`aih crispy`](docs/commands.md#aih-crispy) | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |
 | [`aih workspace`](docs/commands.md#aih-workspace) | Scaffold and restore a multi-repo workspace at the parent folder: cross-repo map, declared-repo graph MCP, snapshots, hydrate. |

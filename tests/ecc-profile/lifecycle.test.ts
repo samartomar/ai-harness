@@ -276,10 +276,10 @@ describe("AIH-owned ECC projection lifecycle", () => {
     writeFileSync(receiptPath, `${JSON.stringify(receipt)}\n`, "utf8");
 
     expect(() => planEccProfileLifecycle(root, projection(), "install")).toThrow(
-      /does not close over the pinned projection/i,
+      /(does not close over the pinned projection|projection digest mismatch)/i,
     );
     expect(() => planEccProfileLifecycle(root, projection(), "repair")).toThrow(
-      /does not close over the pinned projection/i,
+      /(does not close over the pinned projection|projection digest mismatch)/i,
     );
   });
 
@@ -293,7 +293,7 @@ describe("AIH-owned ECC projection lifecycle", () => {
     writeFileSync(receiptPath, `${JSON.stringify(receipt)}\n`, "utf8");
 
     expect(() => planEccProfileLifecycle(root, next, "rollback")).toThrow(
-      /does not close over the pinned projection/i,
+      /(does not close over the pinned projection|projection digest mismatch)/i,
     );
   });
 
@@ -360,12 +360,12 @@ describe("AIH-owned ECC projection lifecycle", () => {
   it("rejects an update whose rollback receipt would exceed its read boundary", async () => {
     const bytes = `${"x".repeat(4 * 1024 * 1024 - 1025)}\n`;
     const initial = projection();
-    initial.files = Array.from({ length: 9 }, (_, index) =>
+    initial.files = Array.from({ length: 16 }, (_, index) =>
       projectedFile(COMMIT_A, `.agents/skills/large-${index}/SKILL.md`, bytes),
     );
     await executePlan(planEccProfileLifecycle(root, initial, "install"), ctx(true));
     const next = projection(COMMIT_B);
-    next.files = Array.from({ length: 9 }, (_, index) =>
+    next.files = Array.from({ length: 16 }, (_, index) =>
       projectedFile(
         COMMIT_B,
         `.agents/skills/large-${index}/SKILL.md`,

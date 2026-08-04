@@ -865,6 +865,11 @@ export const command: CommandSpec = {
       flags: "--ecc-path <dir>",
       description: "use an existing exact local ECC checkout as the evidence-gated source",
     },
+    {
+      flags: "--lifecycle <operation>",
+      description:
+        "manage the AIH-owned Claude/Codex profile: install|update|repair|rollback|uninstall",
+    },
   ],
   plan: eccPlan,
   alwaysVerify: true,

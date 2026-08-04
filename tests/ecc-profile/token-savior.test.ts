@@ -182,7 +182,7 @@ describe("Token Savior direct compaction adapter", () => {
         { command: "test", stdout: "ordinary output", stderr: "" },
         new AbortController().signal,
       ),
-    ).rejects.toThrow(/process failed/i);
+    ).rejects.toThrow(/process (?:could not start|failed)/i);
   });
 
   it("routes the isolated compactor through the bounded runner seam", async () => {

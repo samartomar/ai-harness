@@ -20,7 +20,7 @@ const MANAGED_SCOPE = "ecc-profile";
 const MAX_PROJECTED_FILES = 2_000;
 const MAX_PROJECTED_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PROJECTED_BYTES = 64 * 1024 * 1024;
-const MAX_RECEIPT_BYTES = 32 * 1024 * 1024;
+const MAX_RECEIPT_BYTES = 96 * 1024 * 1024;
 const DESTINATION_PREFIXES = [".agents/", ".claude/", ".codex/"] as const;
 
 export const ECC_PROFILE_OWNERSHIP_PATH = ".aih/ecc-profile/ownership-v1.json";
@@ -48,11 +48,10 @@ const ownershipFileSchema = z
     capabilityOwner: z.enum(["upstream", "aih-adaptation"]),
     mergeStrategy: z.enum(["replace", "toml-merge"]),
     mode: z.enum(["100644", "100755"]),
+    content: z.string().max(MAX_PROJECTED_FILE_BYTES),
   })
   .strict();
-const rollbackFileSchema = ownershipFileSchema
-  .extend({ content: z.string().max(MAX_PROJECTED_FILE_BYTES) })
-  .strict();
+const rollbackFileSchema = ownershipFileSchema;
 const rollbackSchema = z
   .object({ source: sourceSchema, files: z.array(rollbackFileSchema).max(MAX_PROJECTED_FILES) })
   .strict();
@@ -68,6 +67,7 @@ const ownershipSchema = z
   .strict();
 
 export type EccProfileOwnership = z.infer<typeof ownershipSchema>;
+export type EccProfileInstalledSourceTrust = EccProfileOwnership["source"];
 type OwnershipFile = EccProfileOwnership["files"][number];
 type RollbackFile = NonNullable<EccProfileOwnership["rollback"]>["files"][number];
 export type EccProfileLifecycleOperation =
@@ -76,6 +76,10 @@ export type EccProfileLifecycleOperation =
   | "repair"
   | "uninstall"
   | "rollback";
+export type EccProfileInstalledLifecycleOperation = Extract<
+  EccProfileLifecycleOperation,
+  "repair" | "uninstall" | "rollback"
+>;
 
 interface CurrentFile {
   contents: string;
@@ -262,6 +266,7 @@ function ownershipEntry(
     capabilityOwner: file.capabilityOwner,
     mergeStrategy: file.mergeStrategy,
     mode: file.mode,
+    content: file.content,
   };
 }
 
@@ -328,8 +333,13 @@ function parseReceipt(contents: string, root: string): EccProfileOwnership {
   if (receipt.canonicalRoot !== canonicalRoot(root))
     throw new Error("invalid ECC profile ownership receipt: foreign worktree root");
   validateReceiptFiles(receipt.files, receipt.source.commit, "active");
-  if (receipt.rollback !== undefined)
+  if (ownershipFilesDigest(receipt.files) !== receipt.source.projectionSha256)
+    throw new Error("invalid ECC profile ownership receipt: active projection digest mismatch");
+  if (receipt.rollback !== undefined) {
     validateReceiptFiles(receipt.rollback.files, receipt.rollback.source.commit, "rollback");
+    if (ownershipFilesDigest(receipt.rollback.files) !== receipt.rollback.source.projectionSha256)
+      throw new Error("invalid ECC profile ownership receipt: rollback projection digest mismatch");
+  }
   return receipt;
 }
 
@@ -358,22 +368,29 @@ function validateReceiptFiles(
       (file.mergeStrategy === "toml-merge" && file.managedBlockHash === null)
     )
       throw new Error("invalid ECC profile ownership receipt: contradictory merge metadata");
-    if ("content" in file) {
-      if (
-        Buffer.byteLength(file.content, "utf8") > MAX_PROJECTED_FILE_BYTES ||
-        sha256(file.content) !== file.normalizedHash
-      ) {
-        throw new Error("invalid ECC profile rollback content hash");
-      }
-      if (file.mergeStrategy === "replace" && sha256(file.content) !== file.installedHash)
-        throw new Error("invalid ECC profile rollback installed hash");
-      if (file.mergeStrategy === "toml-merge") {
-        const block = managedBlock(upsertTextBlock("", MANAGED_SCOPE, file.content));
-        if (block === undefined || sha256(block) !== file.managedBlockHash)
-          throw new Error("invalid ECC profile rollback managed-block hash");
-      }
+    if (
+      Buffer.byteLength(file.content, "utf8") > MAX_PROJECTED_FILE_BYTES ||
+      sha256(file.content) !== file.normalizedHash
+    ) {
+      throw new Error(`invalid ECC profile ${label} content hash`);
+    }
+    if (file.mergeStrategy === "replace" && sha256(file.content) !== file.installedHash)
+      throw new Error(`invalid ECC profile ${label} installed hash`);
+    if (file.mergeStrategy === "toml-merge") {
+      const block = managedBlock(upsertTextBlock("", MANAGED_SCOPE, file.content));
+      if (block === undefined || sha256(block) !== file.managedBlockHash)
+        throw new Error(`invalid ECC profile ${label} managed-block hash`);
     }
   }
+}
+
+function ownershipFilesDigest(files: readonly OwnershipFile[]): string {
+  return sha256(
+    [...files]
+      .sort(comparePaths)
+      .map((file) => `${file.destination}\0${file.normalizedHash}\0${file.mode}`)
+      .join("\n"),
+  );
 }
 
 function assertReceiptMatchesProjection(
@@ -392,6 +409,7 @@ function assertReceiptMatchesProjection(
       entry.capabilityOwner !== file.capabilityOwner ||
       entry.mergeStrategy !== file.mergeStrategy ||
       entry.mode !== file.mode ||
+      entry.content !== file.content ||
       JSON.stringify(entry.sourcePaths) !== JSON.stringify(sourcePaths(file))
     )
       throw new Error(`ECC profile ownership receipt contradicts ${entry.destination}`);
@@ -495,11 +513,13 @@ function rollbackSnapshot(root: string, receipt: EccProfileOwnership): RollbackF
       throw new Error(
         `owned ECC profile destination is missing; repair before update: ${entry.destination}`,
       );
-    const content =
+    const currentProjected =
       entry.mergeStrategy === "replace" ? current.contents : managedBody(current.contents);
-    if (content === undefined)
+    if (currentProjected === undefined)
       throw new Error(`owned ECC profile managed block is missing: ${entry.destination}`);
-    return { ...entry, content };
+    if (currentProjected !== entry.content)
+      throw new Error(`owned ECC profile content contradicts receipt: ${entry.destination}`);
+    return { ...entry };
   });
 }
 
@@ -601,37 +621,41 @@ function repairPlan(
   if (!sameSource(receiptFile.receipt.source, expectedSource))
     throw new Error("ECC profile repair projection contradicts the ownership receipt");
   assertReceiptMatchesProjection(receiptFile.receipt, files);
-  const owned = new Map(receiptFile.receipt.files.map((entry) => [entry.destination, entry]));
+  return repairInstalledPlan(root, receiptFile);
+}
+
+function repairInstalledPlan(
+  root: string,
+  receiptFile: { receipt: EccProfileOwnership; current: CurrentFile },
+): Plan {
   const actions: Action[] = [];
-  for (const file of files) {
-    const entry = owned.get(file.destination);
-    if (!entry) throw new Error(`ECC profile ownership receipt omits ${file.destination}`);
-    const current = readCurrent(root, file.destination);
+  for (const entry of receiptFile.receipt.files) {
+    const current = readCurrent(root, entry.destination);
     if (current === undefined) {
       const repaired =
-        file.mergeStrategy === "replace"
-          ? file.content
-          : upsertTextBlock("", MANAGED_SCOPE, file.content);
+        entry.mergeStrategy === "replace"
+          ? entry.content
+          : upsertTextBlock("", MANAGED_SCOPE, entry.content);
       actions.push(
         pinnedWrite(
-          file.destination,
+          entry.destination,
           repaired,
-          file.mode,
+          entry.mode,
           undefined,
-          `repair ECC profile ${file.destination}`,
+          `repair ECC profile ${entry.destination}`,
         ),
       );
       continue;
     }
     assertOwnedCurrent(root, entry);
-    if (current.mode !== file.mode && file.mergeStrategy === "replace") {
+    if (current.mode !== entry.mode && entry.mergeStrategy === "replace") {
       actions.push(
         pinnedWrite(
-          file.destination,
+          entry.destination,
           current.contents,
-          file.mode,
+          entry.mode,
           current,
-          `repair ECC profile mode ${file.destination}`,
+          `repair ECC profile mode ${entry.destination}`,
         ),
       );
     }
@@ -661,6 +685,13 @@ function uninstallPlan(
   if (!sameSource(receiptFile.receipt.source, sourceIdentity(projection)))
     throw new Error("ECC profile uninstall projection contradicts the ownership receipt");
   assertReceiptMatchesProjection(receiptFile.receipt, files);
+  return uninstallInstalledPlan(root, receiptFile);
+}
+
+function uninstallInstalledPlan(
+  root: string,
+  receiptFile: { receipt: EccProfileOwnership; current: CurrentFile },
+): Plan {
   const actions: Action[] = [];
   for (const entry of receiptFile.receipt.files) {
     const current = assertOwnedCurrent(root, entry);
@@ -714,10 +745,18 @@ function rollbackPlan(
   const receiptFile = readReceiptFile(root);
   if (receiptFile === undefined)
     throw new Error("ECC profile rollback requires an ownership receipt");
-  const { receipt, current: currentReceipt } = receiptFile;
+  const { receipt } = receiptFile;
   if (!sameSource(receipt.source, sourceIdentity(projection)))
     throw new Error("ECC profile rollback projection contradicts the ownership receipt");
   assertReceiptMatchesProjection(receipt, files);
+  return rollbackInstalledPlan(root, receiptFile);
+}
+
+function rollbackInstalledPlan(
+  root: string,
+  receiptFile: { receipt: EccProfileOwnership; current: CurrentFile },
+): Plan {
+  const { receipt, current: currentReceipt } = receiptFile;
   if (!receipt.rollback) throw new Error("ECC profile ownership receipt has no rollback snapshot");
   const currentEntries = new Map(receipt.files.map((entry) => [entry.destination, entry]));
   const previousEntries = new Map(
@@ -765,9 +804,8 @@ function rollbackPlan(
         ),
       );
     }
-    const { content: _content, ...entry } = previous;
     restored.push({
-      ...entry,
+      ...previous,
       installedHash: sha256(installed),
       managedBlockHash:
         previous.mergeStrategy === "toml-merge" ? sha256(managedBlock(installed) ?? "") : null,
@@ -790,10 +828,7 @@ export function planEccProfileLifecycle(
   projection: EccProjection,
   operation: EccProfileLifecycleOperation,
 ): Plan {
-  if (!isAbsolute(root)) throw new Error("ECC profile lifecycle root must be absolute");
-  const rootStats = lstatSync(root);
-  if (rootStats.isSymbolicLink() || !rootStats.isDirectory())
-    throw new Error("ECC profile lifecycle root must be a real directory");
+  assertLifecycleRoot(root);
   const files = validateProjection(root, projection);
   switch (operation) {
     case "install":
@@ -806,5 +841,37 @@ export function planEccProfileLifecycle(
       return uninstallPlan(root, projection, files);
     case "rollback":
       return rollbackPlan(root, projection, files);
+  }
+}
+
+function assertLifecycleRoot(root: string): void {
+  if (!isAbsolute(root)) throw new Error("ECC profile lifecycle root must be absolute");
+  const rootStats = lstatSync(root);
+  if (rootStats.isSymbolicLink() || !rootStats.isDirectory())
+    throw new Error("ECC profile lifecycle root must be a real directory");
+}
+
+/** Recover or remove the exact installed projection authenticated by its bounded ownership receipt. */
+export function planInstalledEccProfileLifecycle(
+  root: string,
+  operation: EccProfileInstalledLifecycleOperation,
+  trustedSources: readonly EccProfileInstalledSourceTrust[],
+): Plan {
+  assertLifecycleRoot(root);
+  const receiptFile = readReceiptFile(root);
+  if (operation === "uninstall" && receiptFile === undefined) return plan("ecc-profile: uninstall");
+  if (receiptFile === undefined)
+    throw new Error(`ECC profile ${operation} requires an ownership receipt`);
+  if (!trustedSources.some((source) => sameSource(source, receiptFile.receipt.source)))
+    throw new Error(
+      `ECC profile ${operation} does not trust the installed source identity; use a package version that supports its exact pin`,
+    );
+  switch (operation) {
+    case "repair":
+      return repairInstalledPlan(root, receiptFile);
+    case "uninstall":
+      return uninstallInstalledPlan(root, receiptFile);
+    case "rollback":
+      return rollbackInstalledPlan(root, receiptFile);
   }
 }
