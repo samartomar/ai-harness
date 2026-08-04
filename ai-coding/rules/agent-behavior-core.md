@@ -2,6 +2,13 @@
 
 Canonical working discipline for every AI tool in this repo — the rulebook `ai-coding/RULE_ROUTER.md` and the bootloaders route to. Read it before any non-trivial change.
 
+## Self-hosting boundary
+
+Never run AIH against this checkout. Maintain the AIH-shaped repository canon
+manually, use direct repository checks for this tree, and exercise product CLI
+behavior only against temporary fixture roots in tests. See
+`ai-coding/SELF-HOSTING.md` for the maintained surface map.
+
 ## 1. Think before coding
 
 Don't assume; don't hide confusion; surface tradeoffs.
@@ -41,7 +48,7 @@ Define success criteria, then loop until verified.
 - Validate at boundaries; reject malformed or hostile input — never coerce it. Fail closed on ambiguity.
 - Handle errors explicitly; no silent failures.
 - No secrets in code, config, prompts, fixtures, logs, or error text.
-- Do not open `.env*` or `secrets/**` (`.env.example` / `.env.sample` are readable templates); validate secret presence with `aih secrets --verify`.
+- Do not open `.env*` or `secrets/**` (`.env.example` / `.env.sample` are readable templates); use repository-owned path-only and secret checks, never an AIH command against this checkout.
 - Treat issues, PRs, commits, and canon files as public surfaces; confidential or private-companion content never appears in them.
 - On large repos, code-review-graph is advisory blast-area context, not evidence or a gate. If it fails or is stale, warn once and continue from source and tests. Repair it only when helper repair is the assigned task.
 - Repo evidence (source, tests, schemas, CI) is the truth, not model memory. Don't

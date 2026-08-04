@@ -51,7 +51,7 @@
     "check:artifacts": "tsx src/internals/check-tracked-artifacts.ts",
     "check:ai-runtime": "tsx src/internals/ai-runtime-inventory.ts --root .",
     "check:bugbounty-report": "tsx src/internals/bugbounty-report.ts --source .internal/defects/BUGBOUNTY.md",
-    "check:canon-drift": "tsx src/cli.ts bootstrap-ai --cli claude,codex --verify",
+    "check:self-hosting-canon": "vitest run tests/self-hosting/self-hosting.test.ts",
     "check:ecc-installer": "tsx src/internals/check-ecc-installer.ts",
     "check:baseline-analyzers": "tsx src/internals/check-baseline-analyzers.ts",
     "check:native-identity": "tsx src/internals/check-native-identity.ts",
@@ -63,13 +63,13 @@
     "release:preflight": "tsx src/internals/release-preflight.ts",
     "check:published-bin": "node dist/cli.js --version && node dist/cli.js --help",
     "check:published-library": "node -e \"import('@aihq/harness').then((m)=>{ if (typeof m.runSessionGuardrails !== 'function') throw new Error('missing library export'); })\"",
-    "docs:lint": "tsx src/cli.ts docs-lint",
+    "docs:lint": "tsx src/internals/check-repo-docs.ts",
     "lint": "biome check src tests",
     "lint:fix": "biome check --write src tests",
     "lint:ci": "biome ci src tests",
     "format": "biome format --write src tests",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run check:artifacts && npm run check:ecc-installer && npm run check:baseline-analyzers && npm run check:native-identity && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run typecheck && npm run lint:ci && npm run test:cov && npm run build && npm run check:published-bin && npm run check:published-library"
+    "verify": "npm run check:artifacts && npm run check:self-hosting-canon && npm run check:ecc-installer && npm run check:baseline-analyzers && npm run check:native-identity && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run typecheck && npm run lint:ci && npm run test:cov && npm run build && npm run check:published-bin && npm run check:published-library"
   },
   "keywords": [
     "ai",

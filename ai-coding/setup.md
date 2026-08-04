@@ -1,19 +1,26 @@
 # Setup
 
-> First-run setup for this repo, derived from `ai-coding/project.json`. Write-once:
-> edit it freely — `aih` will not overwrite your changes. The full contract is in
-> `ai-coding/project.md`.
+> First-run setup for this repo, manually maintained from
+> `ai-coding/project.json`. Never run AIH against this checkout. The maintenance
+> boundary and current conditional shape are in `ai-coding/SELF-HOSTING.md`.
 
 ## 1. Install & verify
 
 - Install dependencies: `npm install`.
 - Run the completion gate: `npm run verify`.
 - Fast partial checks: `npm run typecheck`, `npm test`, `npm run build`, `npm run lint`.
+- Treat the root as one npm package. The pinned `uv` manifests under `tools/`
+  are analyzer runtime inputs, not independently managed repository workspaces.
 
 ## 2. Turn on the guardrails (once per clone)
 
-- `git config core.hooksPath .githooks` — enables the pre-commit lint/test/secret hook.
-- `aih secrets --verify` — confirm no plaintext secrets are committed.
+- `git config core.hooksPath .githooks` — enables the repo-owned pre-commit
+  lint/test hook.
+- `git ls-files -- ".env" ".env.*" "secrets/**"` — inspect tracked sensitive
+  path names only; readable `.env.example` / `.env.sample` templates are the only
+  expected exceptions.
+- `npm run check:self-hosting-canon` — verify bootloader mirrors, contract facts,
+  and the no-self-application boundary.
 
 ## 3. MCP and AI tooling
 
@@ -24,6 +31,11 @@
 - Installation alone does not register those tools with Claude, Codex, or any
   other client; local projection remains operator-owned.
 
-## 4. Close the known gaps
+## 4. Maintain the AIH-shaped canon
 
-- [ ] 1 un-imported CLI rule set — review with `aih adopt`
+- Update `project.json`, `project.md`, and this setup file together when detected
+  repository facts change.
+- Edit `adapters/_shared-canonical-block.md` first, then copy its body exactly into
+  the fenced blocks in `AGENTS.md` and `CLAUDE.md`.
+- Inspect generator source and fixture tests for useful upstream behavior, but
+  adopt it manually; never execute a product project command against this tree.

@@ -4,7 +4,7 @@ _Generated 2026-06-26. Grounded in the live source: the coverage surfaces, the C
 
 > Companion: the capability registry lives in [src/internals/cli-registry.ts](../../src/internals/cli-registry.ts) and the scorecard in [src/report/scorecard.ts](../../src/report/scorecard.ts) — the REG/SCORE surfaces this plan builds on.
 >
-> **Reviewed 2026-06-26** (external review, code-grounded). Verdict: proceed — this fixes a product trust gap, not scope creep. The review endorsed the defaults for D0/D1/D3/D4/D5/D6/D7/D8 and added three deltas now folded in: a **target-source** field (§3), a **dual KPI** (structurally configured vs proven loadable, §5/D8), and a locked **Installed/Targeted/Wired vocabulary** (§2). D2 accepted (annotate). The review's "validate MCP content in Phase 1" note was already satisfied — the writable-MCP content check is Phase 1, not deferred.
+> **Reviewed 2026-06-26** (external review, code-grounded). Verdict: proceed — this fixes a product trust gap, not scope creep. The review endorsed the defaults for D0/D1/D3/D4/D5/D6/D7/D8 and added three deltas now folded in: a **target-source** field (§3), a **dual KPI** (structurally configured vs proven loadable, §5/D8), and a locked **Installed/Targeted/Wired vocabulary** (§2). The review's "validate MCP content in Phase 1" note was already satisfied — the writable-MCP content check is Phase 1, not deferred. **Correction 2026-08-03:** D2's two-manual-client premise is obsolete because Copilot and OpenCode now have native MCP registry entries with content-aware coverage; no separate file-present hint remains to decide.
 >
 > **✅ IMPLEMENTED 2026-06-26** — all phases shipped on branch `feat/cli-coverage-matrix` (4 commits; since merged to main — `src/report/cli-coverage.ts`, `src/report/cli-loadability.ts`). Phase 1: `cli-coverage.ts` matrix + dashboard + terminal. Phase 1.5: `cli-loadability.ts` (`loads`/`wontLoad`/`unverified`) + "Loads?" column + "proven loadable" KPI + fail-closed doctor probe. Phase 2: scorecard `harnessWiring` consumes the model (per-CLI, `wontLoad` fails). Phase 3: `status`/`configPanel` narrowed to repo-global. Verified: typecheck + biome clean, 862 tests green (incl. new `cli-coverage`/`cli-loadability` suites + Phase-2 scorecard tests).
 >
@@ -266,7 +266,7 @@ Status legend: **RESOLVED** = default accepted (endorsed by the 2026-06-26 revie
 | # | Decision | Recommended default | Status |
 |---|---|---|---|
 | **D1** | `configPanel` fate: (a) narrow to repo-global artifacts, matrix owns per-CLI (Phase 3); (b) leave alongside (more redundancy) | **(a)** — one source per fact | **RESOLVED** — review endorsed the Phase 3 split |
-| **D2** | `manual` MCP weak-signal: for the 2 repo-relative manual tools (Copilot `.vscode/mcp.json`, OpenCode `opencode.json`) annotate the `manual` cell with file-present, or keep purely `manual` | **annotate** (file-present as a hint, still `manual`) | **OPEN** ← the only decision the review left open |
+| **D2** | Historical `manual` MCP weak-signal for Copilot and OpenCode | **No separate hint** — the current registry models both clients as native and checks their MCP maps | **RESOLVED (obsolete premise, 2026-08-03)** — reopen only if a repo-relative fallback/manual MCP entry returns |
 | **D3** | `aih status` scope: fold the matrix into `status` (Phase 3), or keep this report/scorecard-only for now | **report/scorecard-only now**, status in Phase 3 | **RESOLVED** — matches review's Phase 3 |
 | **D4** | Tier-1 loadability surface: `doctor` + matrix only, or also gate `aih bootstrap-ai --verify` | **doctor + matrix now**; `--verify` later | **RESOLVED** — review agreed |
 | **D5** | YAML frontmatter: add a dep, or hand-parse the `---` block | **hand-parse** (no new dep) | **RESOLVED** — review agreed |
@@ -278,4 +278,4 @@ Status legend: **RESOLVED** = default accepted (endorsed by the 2026-06-26 revie
 
 ---
 
-_All phases shipped 2026-06-26 (see banner). D2 (annotate the two manual-MCP cells) was the only open call and blocks nothing — revisit only if the MCP column needs the file-present hint._
+_All phases shipped 2026-06-26 (see banner). The former D2 call is obsolete because the two affected clients are now native; reopen only if a repo-relative fallback/manual MCP entry returns._
