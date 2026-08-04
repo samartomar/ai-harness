@@ -118,6 +118,54 @@ export interface McpServersOptions {
   githubIncumbent?: boolean;
 }
 
+/**
+ * The exact-pinned, repository-agnostic local catalog. Profile-specific
+ * projections select from this shared constructor instead of copying pins.
+ */
+export function coreLocalMcpServers(): Record<string, McpServer> {
+  return normalizeResolverSupplyChains({
+    "code-review-graph": {
+      type: "stdio",
+      command: "uvx",
+      args: [
+        "--offline",
+        "--no-python-downloads",
+        "--no-env-file",
+        "code-review-graph@2.3.7",
+        "serve",
+      ],
+      description:
+        "Local code-review knowledge graph (impact radius, affected flows) served over stdio via uvx.",
+      classification: "local",
+      egress: "none",
+      credentials: "none",
+      supplyChain: "pinned",
+    },
+    "codebase-memory-mcp": {
+      type: "stdio",
+      command: "uvx",
+      args: ["--offline", "--no-python-downloads", "--no-env-file", "codebase-memory-mcp@0.9.0"],
+      description:
+        "Local codebase memory/knowledge graph (index_repository, search_graph, query_graph, trace_path) — memory companion to code-review-graph, served over stdio via uvx.",
+      classification: "local",
+      egress: "none",
+      credentials: "none",
+      supplyChain: "pinned",
+    },
+    "sequential-thinking": {
+      type: "stdio",
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.7.4"],
+      description:
+        "Structured step-by-step reasoning scratchpad — no network, no filesystem, no credentials. Safe in any repo.",
+      classification: "local",
+      egress: "none",
+      credentials: "none",
+      supplyChain: "pinned",
+    },
+  });
+}
+
 function githubMcpUrl(host: string | undefined): string {
   if (host === undefined) return DEFAULT_GITHUB_MCP_URL;
   return `${host}/mcp/`;
@@ -146,53 +194,7 @@ export function mcpServers(
   stack: RepoStack,
   opts: McpServersOptions = {},
 ): Record<string, McpServer> {
-  const servers: Record<string, McpServer> = {
-    "code-review-graph": {
-      type: "stdio",
-      command: "uvx",
-      // Pinned (not @latest) for reproducible installs; bump deliberately. `uvx`
-      // runs offline so locked-down sandboxes never fetch while starting the MCP.
-      args: [
-        "--offline",
-        "--no-python-downloads",
-        "--no-env-file",
-        "code-review-graph@2.3.7",
-        "serve",
-      ],
-      description:
-        "Local code-review knowledge graph (impact radius, affected flows) served over stdio via uvx.",
-      classification: "local",
-      egress: "none",
-      credentials: "none",
-      supplyChain: "pinned",
-    },
-    "codebase-memory-mcp": {
-      type: "stdio",
-      command: "uvx",
-      // Pinned (not @latest); bump deliberately. Bare invocation runs the stdio MCP
-      // server. Keep uvx offline/no-env so locked-down sandboxes never fetch or read
-      // project .env files while starting the local memory companion.
-      args: ["--offline", "--no-python-downloads", "--no-env-file", "codebase-memory-mcp@0.9.0"],
-      description:
-        "Local codebase memory/knowledge graph (index_repository, search_graph, query_graph, trace_path) — memory companion to code-review-graph, served over stdio via uvx.",
-      classification: "local",
-      egress: "none",
-      credentials: "none",
-      supplyChain: "pinned",
-    },
-    "sequential-thinking": {
-      type: "stdio",
-      command: "npx",
-      // Pinned (not @latest) for reproducible installs; bump deliberately.
-      args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.7.4"],
-      description:
-        "Structured step-by-step reasoning scratchpad — no network, no filesystem, no credentials. Safe in any repo.",
-      classification: "local",
-      egress: "none",
-      credentials: "none",
-      supplyChain: "pinned",
-    },
-  };
+  const servers: Record<string, McpServer> = { ...coreLocalMcpServers() };
 
   // AWS repos deliberately receive no local core-server launch. The latest
   // awslabs.core-mcp-server depends on a yanked diagram-server distribution;
