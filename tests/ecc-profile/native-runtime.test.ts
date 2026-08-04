@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
@@ -16,8 +16,9 @@ afterEach(() => {
 });
 
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), "aih-ecc-native-runtime-project-"));
-  const stateRoot = mkdtempSync(join(tmpdir(), "aih-ecc-native-runtime-state-"));
+  // macOS exposes /var as a system alias; production registration stores canonical paths.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "aih-ecc-native-runtime-project-")));
+  const stateRoot = realpathSync(mkdtempSync(join(tmpdir(), "aih-ecc-native-runtime-state-")));
   roots.push(root, stateRoot);
   mkdirSync(join(stateRoot, "continuity"));
   return { root, stateRoot };
