@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -30,8 +31,9 @@ afterEach(() => {
 });
 
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), "aih-ecc-native-registration-"));
-  const stateRoot = mkdtempSync(join(tmpdir(), "aih-ecc-native-state-"));
+  // macOS exposes /var as a system alias; production registration stores canonical paths.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "aih-ecc-native-registration-")));
+  const stateRoot = realpathSync(mkdtempSync(join(tmpdir(), "aih-ecc-native-state-")));
   roots.push(root, stateRoot);
   const runtimeRoot = join(stateRoot, "runtime");
   mkdirSync(runtimeRoot);
