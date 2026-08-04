@@ -8,7 +8,6 @@ import {
   readdir,
   readFile,
   rm,
-  stat,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -19,6 +18,7 @@ import {
   type ResolvedEccProfile,
 } from "../../src/ecc-profile/index.js";
 import type { ProjectionSourceTrust } from "../../src/ecc-profile/render.js";
+import { readRegularFileWithStats } from "../../src/internals/fsxn.js";
 
 export const fixtureDirectory = join(import.meta.dirname, "../fixtures/ecc-profile");
 export const evidence = JSON.parse(
@@ -179,8 +179,9 @@ export async function projectionRoots(
       const entries: ClosureEntry[] = [];
       for (const path of await projectedPaths(sourceRoot, resolved)) {
         const absolute = join(sourceRoot, ...path.split("/"));
-        const info = await stat(absolute);
-        const bytes = await readFile(absolute);
+        const opened = readRegularFileWithStats(absolute);
+        if (!opened) throw new Error(`fixture source is not a regular file: ${path}`);
+        const { contents: bytes, stats: info } = opened;
         entries.push({
           path,
           rawSha256: sha256(bytes),

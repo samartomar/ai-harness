@@ -15,7 +15,10 @@ vi.mock("../../src/internals/fsxn.js", async (importOriginal) => {
   return {
     ...actual,
     readRegularFileWithStats(path: string, options?: { maxBytes?: number }) {
-      if (substitution.armed && path === substitution.target) {
+      const targetsSubstitution =
+        substitution.armed &&
+        fs.realpathSync.native(path) === fs.realpathSync.native(substitution.target);
+      if (targetsSubstitution) {
         substitution.armed = false;
         fs.rmSync(path);
         fs.linkSync(substitution.replacement, path);
