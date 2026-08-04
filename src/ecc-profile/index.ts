@@ -155,7 +155,7 @@ export const eccProfileSchema = z
           z.literal("sequential-thinking"),
           z.literal("token-savior"),
         ]),
-        activation: z.literal("future-aih-owned-projection"),
+        activation: z.literal("aih-owned-native-registration"),
       })
       .strict(),
     aihAdaptedWorkflows: z.tuple([
@@ -167,9 +167,7 @@ export const eccProfileSchema = z
     localPlannedSkills: z.tuple([z.literal("learn-eval"), z.literal("session-continuity")]),
     repoCuratedSkills: z.tuple([z.literal("betterdoc"), z.literal("decision-partner")]),
     ownership: z.array(ownershipSchema).min(1),
-    state: z
-      .object({ schemaVersion: z.literal(1), lifecycle: z.literal("implementation-pending") })
-      .strict(),
+    state: z.object({ schemaVersion: z.literal(1), lifecycle: z.literal("active") }).strict(),
   })
   .strict()
   .superRefine((profile, context) => {
@@ -297,7 +295,7 @@ export const AIH_ECC_PROFILE_TEMPLATE = {
   mcpPolicy: {
     selected: ["code-review-graph", "codebase-memory-mcp", "context7", "serena"],
     disabled: ["ecc-memory-mcp", "github", "sequential-thinking", "token-savior"],
-    activation: "future-aih-owned-projection",
+    activation: "aih-owned-native-registration",
   },
   aihAdaptedWorkflows: ["/auto-update", "/hookify", "/hookify-configure", "/project-init"],
   localPlannedSkills: ["learn-eval", "session-continuity"],
@@ -313,7 +311,7 @@ export const AIH_ECC_PROFILE_TEMPLATE = {
       previousHash: null,
     },
   ],
-  state: { schemaVersion: 1, lifecycle: "implementation-pending" },
+  state: { schemaVersion: 1, lifecycle: "active" },
 } as const;
 
 const moduleSchema = z

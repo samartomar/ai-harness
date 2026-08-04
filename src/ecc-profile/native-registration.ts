@@ -117,7 +117,8 @@ export interface NativeRegistrationFile {
 }
 
 export const NATIVE_ECC_REGISTRATION_RECEIPT = ".aih/ecc-profile/native-registration-v1.json";
-const NATIVE_REGISTRATION_SCOPE = "ecc-native-registration";
+export const NATIVE_ECC_REGISTRATION_SCOPE = "ecc-native-registration";
+const NATIVE_REGISTRATION_SCOPE = NATIVE_ECC_REGISTRATION_SCOPE;
 const MAX_CONFIG_BYTES = 4 * 1024 * 1024;
 
 interface RegistrationReceipt {

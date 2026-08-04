@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,7 +18,7 @@ import {
 } from "../../src/ecc-profile/native-registration.js";
 import { renderEccProjectionWithTrust } from "../../src/ecc-profile/render.js";
 import type { PlanContext } from "../../src/internals/plan.js";
-import { fakeRunner } from "../../src/internals/proc.js";
+import { defaultRunner, fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { evidence, profile, projectionRoots } from "./render-fixture.js";
 
@@ -38,6 +39,23 @@ function context(root: string, operation: string, apply: boolean): PlanContext {
     json: false,
     run,
     host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    env: {},
+    options: { lifecycle: operation },
+  };
+}
+
+function realGitContext(root: string, operation: string): PlanContext {
+  const platform =
+    process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
+  return {
+    root,
+    contextDir: "ai-coding",
+    posture: "enterprise",
+    apply: true,
+    verify: false,
+    json: false,
+    run: defaultRunner,
+    host: makeHostAdapter({ platform, run: defaultRunner, env: {} }),
     env: {},
     options: { lifecycle: operation },
   };
@@ -111,6 +129,82 @@ describe("ECC profile lifecycle command", () => {
     }
   }, 120_000);
 
+  it("uses receipt-bound ownership for the compound lifecycle in a real Git worktree", async () => {
+    const sources = await projectionRoots();
+    const target = mkdtempSync(join(tmpdir(), "aih-ecc-profile-command-git-"));
+    const stateRoot = mkdtempSync(join(tmpdir(), "aih-ecc-profile-command-git-state-"));
+    roots.push(target, stateRoot);
+    try {
+      execFileSync("git", ["init"], { cwd: target, stdio: "ignore" });
+      const projection = await renderEccProjectionWithTrust(
+        profile,
+        evidence,
+        sources,
+        await sources.createTrust(),
+      );
+      const executable = join(stateRoot, process.platform === "win32" ? "node.exe" : "node");
+      const cliScript = join(stateRoot, "cli.js");
+      writeFileSync(executable, "runtime", { mode: 0o755 });
+      writeFileSync(cliScript, "cli\n");
+
+      const installed = await executeEccProfileLifecycleCommand(realGitContext(target, "install"), {
+        loadProjection: async () => projection,
+        loadNativeRegistration: () =>
+          buildNativeEccRegistration({ root: target, stateRoot, executable, cliScript }),
+      });
+
+      expect(installed.applied).toBe(true);
+      expect(existsSync(join(target, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(true);
+
+      const codexConfig = join(target, ".codex", "config.toml");
+      rmSync(codexConfig);
+      const installedSource = readEccProfileOwnership(target)?.source;
+      await executeEccProfileLifecycleCommand(realGitContext(target, "repair"), {
+        installedSourceTrust: installedSource ? [installedSource] : [],
+      });
+      expect(readFileSync(codexConfig, "utf8")).toMatch(/\[agents\./u);
+      expect(readFileSync(codexConfig, "utf8")).toMatch(/\[mcp_servers\./u);
+      await executeEccProfileLifecycleCommand(realGitContext(target, "repair"), {
+        installedSourceTrust: installedSource ? [installedSource] : [],
+      });
+
+      const next = structuredClone(projection);
+      next.source.commit = "b".repeat(40);
+      next.source.reviewReceipt.sourceCommit = next.source.commit;
+      next.sourceClosure.id = "next-closure";
+      next.sourceClosure.aggregateSha256 = "b".repeat(64);
+      for (const file of next.files) file.provenance.sourcePin = next.source.commit;
+      await executeEccProfileLifecycleCommand(realGitContext(target, "update"), {
+        loadProjection: async () => next,
+        loadNativeRegistration: () =>
+          buildNativeEccRegistration({ root: target, stateRoot, executable, cliScript }),
+      });
+      const nextSource = readEccProfileOwnership(target)?.source;
+      expect(nextSource?.commit).toBe(next.source.commit);
+
+      rmSync(codexConfig);
+      await executeEccProfileLifecycleCommand(realGitContext(target, "rollback"), {
+        installedSourceTrust: nextSource ? [nextSource] : [],
+      });
+      const originalSource = readEccProfileOwnership(target)?.source;
+      expect(originalSource?.commit).toBe(projection.source.commit);
+      expect(readFileSync(codexConfig, "utf8")).toMatch(/\[agents\./u);
+      expect(readFileSync(codexConfig, "utf8")).toMatch(/\[mcp_servers\./u);
+      await executeEccProfileLifecycleCommand(realGitContext(target, "repair"), {
+        installedSourceTrust: originalSource ? [originalSource] : [],
+      });
+
+      await executeEccProfileLifecycleCommand(realGitContext(target, "uninstall"), {
+        installedSourceTrust: originalSource ? [originalSource] : [],
+      });
+      expect(existsSync(codexConfig)).toBe(false);
+      expect(existsSync(join(target, ECC_PROFILE_OWNERSHIP_PATH))).toBe(false);
+      expect(existsSync(join(target, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(false);
+    } finally {
+      await sources.cleanup();
+    }
+  }, 120_000);
+
   it("keeps native registration installed when projection uninstall preflight fails", async () => {
     const sources = await projectionRoots();
     const target = mkdtempSync(join(tmpdir(), "aih-ecc-profile-command-atomic-uninstall-"));
@@ -152,6 +246,69 @@ describe("ECC profile lifecycle command", () => {
       await sources.cleanup();
     }
   }, 120_000);
+
+  it.each(["repair", "rollback"] as const)(
+    "preflights projection and native %s recovery before applying either plan",
+    async (operation) => {
+      const sources = await projectionRoots();
+      const target = mkdtempSync(join(tmpdir(), `aih-ecc-profile-command-atomic-${operation}-`));
+      const stateRoot = mkdtempSync(join(tmpdir(), `aih-ecc-profile-command-state-${operation}-`));
+      roots.push(target, stateRoot);
+      try {
+        const projection = await renderEccProjectionWithTrust(
+          profile,
+          evidence,
+          sources,
+          await sources.createTrust(),
+        );
+        const executable = join(stateRoot, process.platform === "win32" ? "node.exe" : "node");
+        const cliScript = join(stateRoot, "cli.js");
+        writeFileSync(executable, "runtime", { mode: 0o755 });
+        writeFileSync(cliScript, "cli\n");
+        const loadNativeRegistration = () =>
+          buildNativeEccRegistration({ root: target, stateRoot, executable, cliScript });
+        await executeEccProfileLifecycleCommand(context(target, "install", true), {
+          loadProjection: async () => projection,
+          loadNativeRegistration,
+        });
+        const managed = projection.files.find((file) => file.mergeStrategy === "replace");
+        if (!managed) throw new Error("fixture has no replace-owned projected file");
+        const destination = join(target, ...managed.destination.split("/"));
+        let expectedSourceCommit = projection.source.commit;
+        if (operation === "repair") {
+          rmSync(destination);
+        } else {
+          const next = structuredClone(projection);
+          next.source.commit = "b".repeat(40);
+          next.source.reviewReceipt.sourceCommit = next.source.commit;
+          next.sourceClosure.id = "next-closure";
+          next.sourceClosure.aggregateSha256 = "b".repeat(64);
+          for (const file of next.files) file.provenance.sourcePin = next.source.commit;
+          await executeEccProfileLifecycleCommand(context(target, "update", true), {
+            loadProjection: async () => next,
+            loadNativeRegistration,
+          });
+          expectedSourceCommit = next.source.commit;
+        }
+        writeFileSync(executable, "modified runtime", { mode: 0o755 });
+        const installedSource = readEccProfileOwnership(target)?.source;
+
+        await expect(
+          executeEccProfileLifecycleCommand(context(target, operation, true), {
+            loadProjection: async () => projection,
+            loadNativeRegistration,
+            installedSourceTrust: installedSource ? [installedSource] : [],
+          }),
+        ).rejects.toThrow(/runtime bytes|ownership receipt|run update/i);
+
+        if (operation === "repair") expect(existsSync(destination)).toBe(false);
+        else expect(readEccProfileOwnership(target)?.source.commit).toBe(expectedSourceCommit);
+      } finally {
+        await sources.cleanup();
+      }
+    },
+    120_000,
+  );
 
   it("compensates a completed projection install when native registration fails", async () => {
     const sources = await projectionRoots();

@@ -1,15 +1,20 @@
 import { spawnSync } from "node:child_process";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
+import { executeEccProfileLifecycleCommand } from "../../src/ecc-profile/command.js";
+import {
+  ECC_PROFILE_OWNERSHIP_PATH,
+  readEccProfileOwnership,
+} from "../../src/ecc-profile/lifecycle.js";
 import {
   buildNativeEccRegistration,
-  planNativeEccRegistration,
+  NATIVE_ECC_REGISTRATION_RECEIPT,
 } from "../../src/ecc-profile/native-registration.js";
 import { renderEccProjection } from "../../src/ecc-profile/render.js";
-import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -83,7 +88,7 @@ async function copyEvidence(root: string): Promise<void> {
   }
 }
 
-function applyContext(root: string): PlanContext {
+function applyContext(root: string, operation: string): PlanContext {
   const run = fakeRunner(() => undefined);
   return {
     root,
@@ -104,7 +109,7 @@ function applyContext(root: string): PlanContext {
       env: {},
     }),
     env: {},
-    options: {},
+    options: { lifecycle: operation },
   };
 }
 
@@ -128,24 +133,36 @@ describe.skipIf(!nativeEnabled)("disposable native-client ECC projection smoke",
         sourceRoot: pinnedSourceRoot ?? "",
         evidenceRoot,
       });
-      for (const file of projection.files) {
-        const destination = join(project, ...file.destination.split("/"));
-        await mkdir(dirname(destination), { recursive: true });
-        await writeFile(destination, file.content, { flag: "wx" });
-        if (file.mode === "100755" && process.platform !== "win32") await chmod(destination, 0o755);
-      }
-
       const registration = buildNativeEccRegistration({
         root: project,
         stateRoot,
         executable: process.execPath,
         cliScript: runtimeCli,
       });
-      await executePlan(
-        planNativeEccRegistration(project, registration, "install"),
-        applyContext(project),
+      const deps = {
+        loadProjection: async () => projection,
+        loadNativeRegistration: () => registration,
+      };
+      const installed = await executeEccProfileLifecycleCommand(
+        applyContext(project, "install"),
+        deps,
       );
+      expect(installed.applied).toBe(true);
+      const repeated = await executeEccProfileLifecycleCommand(
+        applyContext(project, "install"),
+        deps,
+      );
+      expect(repeated.writes).toEqual([]);
+      const installedSource = readEccProfileOwnership(project)?.source;
+      expect(installedSource).toBeDefined();
 
+      const repairCanary = join(project, ".claude", "skills", "accessibility", "SKILL.md");
+      await rm(repairCanary);
+      await executeEccProfileLifecycleCommand(applyContext(project, "repair"), {
+        ...deps,
+        installedSourceTrust: installedSource ? [installedSource] : [],
+      });
+      expect(await readFile(repairCanary, "utf8")).not.toBe("");
       const markdown = projection.files.filter((file) => file.content.startsWith("---\n"));
       for (const document of markdown) {
         const closing = document.content.indexOf("\n---\n", 4);
@@ -190,6 +207,14 @@ describe.skipIf(!nativeEnabled)("disposable native-client ECC projection smoke",
       ]) {
         expect(await readFile(join(project, ...destination.split("/")), "utf8")).not.toBe("");
       }
+
+      await executeEccProfileLifecycleCommand(applyContext(project, "uninstall"), {
+        ...deps,
+        installedSourceTrust: installedSource ? [installedSource] : [],
+      });
+      expect(existsSync(join(project, ECC_PROFILE_OWNERSHIP_PATH))).toBe(false);
+      expect(existsSync(join(project, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(false);
+      expect(existsSync(repairCanary)).toBe(false);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

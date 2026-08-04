@@ -74,6 +74,8 @@ describe("manifest-derived AIH ECC profile resolution", () => {
     expect(createHash("sha256").update(receiptBytes).digest("hex")).toBe(receipt.evidenceSha256);
     expect(profile.source.releaseAncestorCommit).toBe("4da6deac1888690e7fb8572d097ee23db630f7a0");
     expect(profile.source).not.toHaveProperty("releaseCommit");
+    expect(profile.state.lifecycle).toBe("active");
+    expect(profile.mcpPolicy.activation).toBe("aih-owned-native-registration");
   });
 
   it("derives the exact module closure and complete pinned path sets", () => {
@@ -126,11 +128,11 @@ describe("manifest-derived AIH ECC profile resolution", () => {
     });
   });
 
-  it("encodes selected and explicitly disabled MCP defaults without activating them", () => {
+  it("encodes selected and explicitly disabled MCP defaults under AIH native registration", () => {
     expect(profile.mcpPolicy).toEqual({
       selected: ["code-review-graph", "codebase-memory-mcp", "context7", "serena"],
       disabled: ["ecc-memory-mcp", "github", "sequential-thinking", "token-savior"],
-      activation: "future-aih-owned-projection",
+      activation: "aih-owned-native-registration",
     });
   });
 
@@ -302,19 +304,14 @@ describe("manifest-derived AIH ECC profile resolution", () => {
   });
 
   it("rejects a relative source root before filesystem acquisition", async () => {
-    const roots = await fixtureRoots();
-    try {
-      const relativeTemporaryRoot = relative(dirname(roots.sourceRoot), roots.sourceRoot);
-      expect(isAbsolute(relativeTemporaryRoot)).toBe(false);
-      await expect(
-        resolveEccProfile(profile, evidence, {
-          sourceRoot: relativeTemporaryRoot,
-          evidenceRoot: roots.evidenceRoot,
-        }),
-      ).rejects.toThrow(/source root.*absolute/i);
-    } finally {
-      await roots.cleanup();
-    }
+    const relativeTemporaryRoot = relative(tmpdir(), join(tmpdir(), "aih-ecc-relative-root"));
+    expect(isAbsolute(relativeTemporaryRoot)).toBe(false);
+    await expect(
+      resolveEccProfile(profile, evidence, {
+        sourceRoot: relativeTemporaryRoot,
+        evidenceRoot: join(tmpdir(), "aih-ecc-unused-evidence-root"),
+      }),
+    ).rejects.toThrow(/source root.*absolute/i);
   });
 
   it.each(["missing", "modified", "substituted", "symlinked", "hash-mismatched"])(

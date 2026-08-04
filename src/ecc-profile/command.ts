@@ -7,8 +7,18 @@ import pinnedEvidenceJson from "../../tests/fixtures/ecc-profile/pinned-source-e
 import sourceClosureJson from "../../tests/fixtures/ecc-profile/projected-source-closure.json";
 import reviewReceiptJson from "../../tests/fixtures/ecc-profile/review-receipt.json";
 import { AihError } from "../errors.js";
+import { removeManagedBlock, upsertTextBlock } from "../internals/envfile.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
-import { type PlanContext, plan } from "../internals/plan.js";
+import {
+  type Action,
+  type Plan,
+  type PlanContext,
+  plan,
+  type RemoveAction,
+  remove,
+  type WriteAction,
+} from "../internals/plan.js";
+import { beginMarker, endMarker } from "../internals/render.js";
 import {
   assertTrustTreeSafe,
   cleanupQuarantine,
@@ -19,6 +29,7 @@ import {
 } from "../trust/fetch.js";
 import { AIH_ECC_PROFILE_TEMPLATE, type EccProfile, eccProfileSchema } from "./index.js";
 import {
+  ECC_PROFILE_MANAGED_SCOPE,
   type EccProfileInstalledSourceTrust,
   type EccProfileLifecycleOperation,
   planEccProfileLifecycle,
@@ -27,6 +38,7 @@ import {
 } from "./lifecycle.js";
 import {
   buildNativeEccRegistration,
+  NATIVE_ECC_REGISTRATION_SCOPE,
   type NativeEccRegistration,
   planInstalledNativeEccRegistration,
   planNativeEccRegistration,
@@ -88,6 +100,125 @@ function sha256(value: string | Uint8Array): string {
 
 function stableJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+type FileMutation = WriteAction | RemoveAction;
+
+function isFileMutation(action: Action): action is FileMutation {
+  return action.kind === "write" || action.kind === "remove";
+}
+
+function mutationExpect(action: FileMutation): string {
+  return JSON.stringify(action.expect ?? null);
+}
+
+function managedTextBody(contents: string, scope: string): string {
+  const normalized = contents.replace(/\r\n/g, "\n");
+  const begin = `${beginMarker(scope)}\n`;
+  const end = `\n${endMarker(scope)}`;
+  const start = normalized.indexOf(begin);
+  const finish = normalized.indexOf(end, start + begin.length);
+  if (
+    start < 0 ||
+    finish < 0 ||
+    normalized.indexOf(begin, start + begin.length) >= 0 ||
+    normalized.indexOf(end, finish + end.length) >= 0
+  ) {
+    throw new Error(`ECC lifecycle managed block is missing or ambiguous: ${scope}`);
+  }
+  return normalized.slice(start + begin.length, finish);
+}
+
+function composeOverlappingConfigMutation(
+  projection: FileMutation,
+  native: FileMutation,
+  operation: "repair" | "rollback" | "uninstall",
+): FileMutation {
+  if (
+    projection.path !== ".codex/config.toml" ||
+    native.path !== projection.path ||
+    mutationExpect(projection) !== mutationExpect(native)
+  ) {
+    throw new Error("ECC lifecycle plans have ambiguous overlapping file ownership");
+  }
+  if (operation === "uninstall") {
+    if (projection.kind === "remove") {
+      if (native.kind !== "remove") {
+        throw new Error("ECC lifecycle uninstall has contradictory overlapping mutations");
+      }
+      return projection;
+    }
+    if (typeof projection.contents !== "string") {
+      throw new Error("ECC lifecycle uninstall has a non-text projection mutation");
+    }
+    const contents = removeManagedBlock(projection.contents, NATIVE_ECC_REGISTRATION_SCOPE);
+    if (contents.trim().length > 0) return { ...projection, contents };
+    const expected =
+      projection.expect && "sha256" in projection.expect
+        ? { sha256: projection.expect.sha256 }
+        : undefined;
+    if (expected === undefined) {
+      throw new Error("ECC lifecycle uninstall overlap lacks an apply-time content pin");
+    }
+    return remove(projection.path, "uninstall composed ECC profile configuration", {
+      expect: expected,
+    });
+  }
+  if (
+    projection.kind !== "write" ||
+    native.kind !== "write" ||
+    typeof projection.contents !== "string" ||
+    typeof native.contents !== "string" ||
+    projection.json !== undefined ||
+    native.json !== undefined
+  ) {
+    throw new Error("ECC lifecycle recovery has contradictory overlapping mutations");
+  }
+  const nativeBody = managedTextBody(native.contents, NATIVE_ECC_REGISTRATION_SCOPE);
+  const contents = upsertTextBlock(projection.contents, NATIVE_ECC_REGISTRATION_SCOPE, nativeBody);
+  if (!contents.includes(beginMarker(ECC_PROFILE_MANAGED_SCOPE))) {
+    throw new Error("ECC lifecycle recovery composition omitted the projection block");
+  }
+  return { ...projection, contents };
+}
+
+function composeInstalledLifecyclePlan(
+  capability: string,
+  projectionPlan: Plan,
+  nativePlan: Plan,
+  operation: "repair" | "rollback" | "uninstall",
+): Plan {
+  const actions = [...projectionPlan.actions];
+  const projectionMutations = new Map<string, number>();
+  for (const [index, action] of actions.entries()) {
+    if (!isFileMutation(action)) continue;
+    if (projectionMutations.has(action.path)) {
+      throw new Error(`ECC projection lifecycle plan repeats a mutation: ${action.path}`);
+    }
+    projectionMutations.set(action.path, index);
+  }
+  const nativeMutations = new Set<string>();
+  for (const action of nativePlan.actions) {
+    if (!isFileMutation(action)) {
+      actions.push(action);
+      continue;
+    }
+    if (nativeMutations.has(action.path)) {
+      throw new Error(`ECC native lifecycle plan repeats a mutation: ${action.path}`);
+    }
+    nativeMutations.add(action.path);
+    const existingIndex = projectionMutations.get(action.path);
+    if (existingIndex === undefined) {
+      projectionMutations.set(action.path, actions.push(action) - 1);
+      continue;
+    }
+    const existing = actions[existingIndex];
+    if (!existing || !isFileMutation(existing)) {
+      throw new Error("ECC lifecycle overlap lost its projection mutation");
+    }
+    actions[existingIndex] = composeOverlappingConfigMutation(existing, action, operation);
+  }
+  return plan(capability, ...actions);
 }
 
 function sourceClosureBytes(): string {
@@ -312,6 +443,7 @@ async function compensateProjectionAfterRegistrationFailure(
         [source],
       ),
       ctx,
+      { skipWorktreeGate: true },
     );
   } catch (recoveryError) {
     throw new AggregateError(
@@ -340,31 +472,41 @@ export async function executeEccProfileLifecycleCommand(
       if (!nativeEnabled) return executePlan(projectionPlan, ctx);
       const nativePlan = planInstalledNativeEccRegistration(ctx.root, operation);
       return executePlan(
-        plan(
+        composeInstalledLifecyclePlan(
           "ecc-profile: atomic projection and native registration uninstall",
-          ...projectionPlan.actions,
-          ...nativePlan.actions,
+          projectionPlan,
+          nativePlan,
+          operation,
         ),
         ctx,
+        // Receipt-bound lifecycle planning rejects unowned or drifted bytes;
+        // the generic gate would misclassify the managed projection as dirt.
+        { skipWorktreeGate: true },
       );
     }
-    const projection = await executePlan(
-      planInstalledEccProfileLifecycle(
-        ctx.root,
+    const projectionPlan = planInstalledEccProfileLifecycle(
+      ctx.root,
+      operation,
+      deps.installedSourceTrust ?? PACKAGED_ECC_PROFILE_INSTALLATION_TRUST,
+    );
+    if (!nativeEnabled) return executePlan(projectionPlan, ctx);
+    const nativePlan = planInstalledNativeEccRegistration(ctx.root, operation);
+    return executePlan(
+      composeInstalledLifecyclePlan(
+        `ecc-profile: atomic projection and native registration ${operation}`,
+        projectionPlan,
+        nativePlan,
         operation,
-        deps.installedSourceTrust ?? PACKAGED_ECC_PROFILE_INSTALLATION_TRUST,
       ),
       ctx,
+      { skipWorktreeGate: true },
     );
-    const native = nativeEnabled
-      ? await executePlan(planInstalledNativeEccRegistration(ctx.root, operation), ctx)
-      : undefined;
-    return native === undefined ? projection : combineResults(native, projection);
   }
   const projection = await (deps.loadProjection ?? acquirePackagedProjection)(ctx);
   const projected = await executePlan(
     planEccProfileLifecycle(ctx.root, projection, operation),
     ctx,
+    { skipWorktreeGate: true },
   );
   if (!nativeEnabled) return projected;
   try {
@@ -372,6 +514,10 @@ export async function executeEccProfileLifecycleCommand(
     const registered = await executePlan(
       planNativeEccRegistration(ctx.root, registration, operation),
       ctx,
+      // The projection phase already passed the operator-dirt gate. Its owned
+      // writes are now intentionally dirty and are the input to this second,
+      // separately transactional half of the same lifecycle command.
+      { skipWorktreeGate: true },
     );
     return combineResults(projected, registered);
   } catch (error) {
