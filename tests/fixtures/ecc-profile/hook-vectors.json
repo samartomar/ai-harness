@@ -1,0 +1,376 @@
+{
+  "version": 1,
+  "sources": {
+    "claude": "https://code.claude.com/docs/en/hooks",
+    "codex": "https://learn.chatgpt.com/docs/hooks",
+    "reviewedOn": "2026-08-03"
+  },
+  "cases": [
+    {
+      "id": "session-start",
+      "claude": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "SessionStart",
+        "source": "startup"
+      },
+      "codex": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "SessionStart",
+        "model": "test-model",
+        "source": "startup"
+      },
+      "expected": {
+        "version": 1,
+        "event": "session-start",
+        "sessionId": "session-1",
+        "transcriptPath": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permissionMode": "default",
+        "source": "startup"
+      }
+    },
+    {
+      "id": "before-tool",
+      "claude": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_use_id": "tool-1",
+        "tool_input": { "command": "npm test" }
+      },
+      "codex": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "model": "test-model",
+        "turn_id": "turn-1",
+        "tool_name": "Bash",
+        "tool_use_id": "tool-1",
+        "tool_input": { "command": "npm test" }
+      },
+      "expected": {
+        "version": 1,
+        "event": "before-tool",
+        "sessionId": "session-1",
+        "transcriptPath": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permissionMode": "default",
+        "tool": {
+          "name": "Bash",
+          "id": "tool-1",
+          "input": { "command": "npm test" }
+        }
+      }
+    },
+    {
+      "id": "before-compact",
+      "claude": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "PreCompact",
+        "trigger": "auto",
+        "custom_instructions": "Preserve the active plan."
+      },
+      "codex": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "PreCompact",
+        "model": "test-model",
+        "turn_id": "turn-1",
+        "trigger": "auto"
+      },
+      "expected": {
+        "version": 1,
+        "event": "before-compact",
+        "sessionId": "session-1",
+        "transcriptPath": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permissionMode": "default",
+        "trigger": "auto"
+      }
+    },
+    {
+      "id": "user-prompt",
+      "claude": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "UserPromptSubmit",
+        "prompt": "Fix the failing test."
+      },
+      "codex": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "UserPromptSubmit",
+        "model": "test-model",
+        "turn_id": "turn-1",
+        "prompt": "Fix the failing test."
+      },
+      "expected": {
+        "version": 1,
+        "event": "user-prompt",
+        "sessionId": "session-1",
+        "transcriptPath": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permissionMode": "default",
+        "prompt": "Fix the failing test."
+      }
+    },
+    {
+      "id": "session-end",
+      "claude": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "hook_event_name": "SessionEnd",
+        "reason": "other"
+      },
+      "codex": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "hook_event_name": "SessionEnd",
+        "reason": "other"
+      },
+      "expected": {
+        "version": 1,
+        "event": "session-end",
+        "sessionId": "session-1",
+        "transcriptPath": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "reason": "other"
+      }
+    },
+    {
+      "id": "permission-request",
+      "claude": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "PermissionRequest",
+        "tool_name": "Bash",
+        "tool_input": { "command": "npm test" }
+      },
+      "codex": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "PermissionRequest",
+        "model": "test-model",
+        "turn_id": "turn-1",
+        "tool_name": "Bash",
+        "tool_input": { "command": "npm test" }
+      },
+      "expected": {
+        "version": 1,
+        "event": "permission-request",
+        "sessionId": "session-1",
+        "transcriptPath": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permissionMode": "default",
+        "tool": { "name": "Bash", "input": { "command": "npm test" } }
+      }
+    },
+    {
+      "id": "after-tool",
+      "claude": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_use_id": "tool-1",
+        "tool_input": { "command": "npm test" },
+        "tool_response": { "stdout": "ok" }
+      },
+      "codex": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "PostToolUse",
+        "model": "test-model",
+        "turn_id": "turn-1",
+        "tool_name": "Bash",
+        "tool_use_id": "tool-1",
+        "tool_input": { "command": "npm test" },
+        "tool_response": { "stdout": "ok" }
+      },
+      "expected": {
+        "version": 1,
+        "event": "after-tool",
+        "sessionId": "session-1",
+        "transcriptPath": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permissionMode": "default",
+        "tool": {
+          "name": "Bash",
+          "id": "tool-1",
+          "input": { "command": "npm test" },
+          "response": { "stdout": "ok" }
+        }
+      }
+    },
+    {
+      "id": "after-compact",
+      "claude": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "PostCompact",
+        "trigger": "auto",
+        "compact_summary": "Durable summary."
+      },
+      "codex": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "PostCompact",
+        "model": "test-model",
+        "turn_id": "turn-1",
+        "trigger": "auto"
+      },
+      "expected": {
+        "version": 1,
+        "event": "after-compact",
+        "sessionId": "session-1",
+        "transcriptPath": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permissionMode": "default",
+        "trigger": "auto"
+      }
+    },
+    {
+      "id": "agent-start",
+      "claude": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "SubagentStart",
+        "agent_id": "agent-1",
+        "agent_type": "reviewer"
+      },
+      "codex": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "SubagentStart",
+        "model": "test-model",
+        "turn_id": "turn-1",
+        "agent_id": "agent-1",
+        "agent_type": "reviewer"
+      },
+      "expected": {
+        "version": 1,
+        "event": "agent-start",
+        "sessionId": "session-1",
+        "transcriptPath": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permissionMode": "default",
+        "agent": { "id": "agent-1", "type": "reviewer" }
+      }
+    },
+    {
+      "id": "agent-stop",
+      "claude": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "SubagentStop",
+        "agent_id": "agent-1",
+        "agent_type": "reviewer",
+        "agent_transcript_path": "C:/fixtures/agent.jsonl",
+        "stop_hook_active": false,
+        "last_assistant_message": "Review complete."
+      },
+      "codex": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "SubagentStop",
+        "model": "test-model",
+        "turn_id": "turn-1",
+        "agent_id": "agent-1",
+        "agent_type": "reviewer",
+        "agent_transcript_path": "C:/fixtures/agent.jsonl",
+        "stop_hook_active": false,
+        "last_assistant_message": "Review complete."
+      },
+      "expected": {
+        "version": 1,
+        "event": "agent-stop",
+        "sessionId": "session-1",
+        "transcriptPath": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permissionMode": "default",
+        "agent": {
+          "id": "agent-1",
+          "type": "reviewer",
+          "transcriptPath": "C:/fixtures/agent.jsonl"
+        },
+        "stopHookActive": false,
+        "lastAssistantMessage": "Review complete."
+      }
+    },
+    {
+      "id": "stop",
+      "claude": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "Stop",
+        "stop_hook_active": false,
+        "last_assistant_message": "Implementation complete."
+      },
+      "codex": {
+        "session_id": "session-1",
+        "transcript_path": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permission_mode": "default",
+        "hook_event_name": "Stop",
+        "model": "test-model",
+        "turn_id": "turn-1",
+        "stop_hook_active": false,
+        "last_assistant_message": "Implementation complete."
+      },
+      "expected": {
+        "version": 1,
+        "event": "stop",
+        "sessionId": "session-1",
+        "transcriptPath": "C:/fixtures/transcript.jsonl",
+        "cwd": "C:/fixtures/project",
+        "permissionMode": "default",
+        "stopHookActive": false,
+        "lastAssistantMessage": "Implementation complete."
+      }
+    }
+  ]
+}
