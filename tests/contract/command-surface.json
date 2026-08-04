@@ -742,6 +742,9 @@
           "flags": "--json"
         },
         {
+          "flags": "--lifecycle <operation>"
+        },
+        {
           "flags": "--no-log"
         },
         {
