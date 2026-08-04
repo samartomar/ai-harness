@@ -5,10 +5,9 @@
     "claude",
     "codex"
   ],
-  "description": "Enterprise AI Bootstrapping Harness — governed AI-assisted coding for enterprise workstations and repos: TLS trust, repo canon, skill supply chain, evidence",
+  "description": "aih is a cross-platform TypeScript CLI that prepares developer workstations and repositories for reviewable, governed AI-assisted coding using dry-run plans, local guardrails, repo canon, skill approval records, and offline report and evidence artifacts.",
   "languages": [
-    "TypeScript/Node.js",
-    "Python"
+    "TypeScript/Node.js"
   ],
   "frameworks": [],
   "cloud": [],
@@ -17,9 +16,9 @@
   "packageManager": "npm",
   "entrypoints": [
     "dist/cli.js",
+    "dist/index.js",
     "src/cli.ts",
-    "src/index.ts",
-    "dist/index.js"
+    "src/index.ts"
   ],
   "commands": {
     "verify": {
@@ -44,30 +43,11 @@
     }
   },
   "scale": {
-    "trackedFiles": 866,
+    "trackedFiles": 876,
     "class": "medium",
-    "isMonorepo": true
+    "isMonorepo": false
   },
   "sensitivePaths": [],
-  "knownGaps": [
-    "1 un-imported CLI rule set — review with `aih adopt`"
-  ],
-  "mcpServers": [
-    "code-review-graph",
-    "codebase-memory-mcp",
-    "context7",
-    "github",
-    "sequential-thinking",
-    "serena",
-    "token-savior"
-  ],
-  "workspaces": {
-    "tools/cisco-skill-scanner": {
-      "languages": [
-        "Python"
-      ],
-      "packageManager": "uv",
-      "commands": {}
-    }
-  }
+  "knownGaps": [],
+  "mcpServers": []
 }
