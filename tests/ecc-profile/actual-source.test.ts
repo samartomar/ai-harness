@@ -1,7 +1,12 @@
-import { copyFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { buildNativeEccRegistration } from "../../src/ecc-profile/native-registration.js";
+import {
+  buildEccProfileParityReceipt,
+  eccProfileParityReceiptDigest,
+} from "../../src/ecc-profile/parity-receipt.js";
 import { projectionFilesDigest, renderEccProjection } from "../../src/ecc-profile/render.js";
 import { evidence, fixtureDirectory, profile, receipt } from "./render-fixture.js";
 
@@ -15,6 +20,7 @@ const projectionReceipt = JSON.parse(
   sourceClosureSha256: string;
   projectedFileCount: number;
   projectionSha256: string;
+  parityReceiptSha256: string;
 };
 
 async function actualEvidenceRoot(): Promise<{ root: string; cleanup(): Promise<void> }> {
@@ -144,6 +150,23 @@ describe.skipIf(!pinnedSourceRoot)("actual pinned ECC projection receipt", () =>
         expect(file.content, file.destination).not.toMatch(/\.claude\/rules|mcp__/);
       }
       expect(projectionFilesDigest(projection.files)).toBe(projectionReceipt.projectionSha256);
+
+      const target = await mkdtemp(join(tmpdir(), "aih-ecc-actual-parity-target-"));
+      const stateRoot = await mkdtemp(join(tmpdir(), "aih-ecc-actual-parity-state-"));
+      try {
+        const executable = join(stateRoot, process.platform === "win32" ? "node.exe" : "node");
+        const cliScript = join(stateRoot, "cli.js");
+        await writeFile(executable, "runtime", { mode: 0o755 });
+        await writeFile(cliScript, "cli\n");
+        const parity = buildEccProfileParityReceipt(
+          projection,
+          buildNativeEccRegistration({ root: target, stateRoot, executable, cliScript }),
+        );
+        expect(eccProfileParityReceiptDigest(parity)).toBe(projectionReceipt.parityReceiptSha256);
+      } finally {
+        await rm(target, { recursive: true, force: true });
+        await rm(stateRoot, { recursive: true, force: true });
+      }
     } finally {
       await evidenceRoot.cleanup();
     }

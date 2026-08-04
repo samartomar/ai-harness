@@ -4,5 +4,6 @@
   "sourceClosureId": "ecc-projected-source-closure-v1",
   "sourceClosureSha256": "8dadd2c412511d690555243773f8bc4a0ed1e7ba43fc0804bc1d955b3b7bca37",
   "projectedFileCount": 759,
-  "projectionSha256": "8bfa1837b2f7d4239b69955540c20a76a795c4ef86dc3555390d5d18e30bc585"
+  "projectionSha256": "8bfa1837b2f7d4239b69955540c20a76a795c4ef86dc3555390d5d18e30bc585",
+  "parityReceiptSha256": "697a517f0571940d8f34af899834c8cffb514d8e468958a48b25780f98d142c8"
 }

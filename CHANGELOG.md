@@ -44,6 +44,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- ECC profile repair and rollback now preflight the authenticated projection and
+  native hook/MCP registration together, then apply both through one filesystem
+  transaction. A stale or modified native runtime therefore cannot leave a
+  partially repaired or rolled-back projection. Install and update now retain
+  receipt-bound ownership authority across their projection and registration
+  phases, so the generic dirt gate does not reject AIH-managed files as operator
+  changes. Update, repair, rollback, and uninstall use the same stronger
+  per-file ownership and content-pin checks.
+  The canonical profile records
+  the active AIH-owned lifecycle/registration state, and a deterministic parity
+  receipt accounts for every projected client mapping plus the native hook and
+  MCP policy; exact-pinned-source and disposable installed-client tests bind the
+  receipt and exercise install, repeat install, repair, native parsing, and
+  uninstall.
 - `aih` no longer lets an inherited `GIT_*` environment steer its own `git`
   subprocesses out of the directory they were pointed at. `git` resolves which
   repository it operates on from `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`

@@ -312,6 +312,7 @@ async function compensateProjectionAfterRegistrationFailure(
         [source],
       ),
       ctx,
+      { skipWorktreeGate: true },
     );
   } catch (recoveryError) {
     throw new AggregateError(
@@ -346,25 +347,33 @@ export async function executeEccProfileLifecycleCommand(
           ...nativePlan.actions,
         ),
         ctx,
+        // Receipt-bound lifecycle planning rejects unowned or drifted bytes;
+        // the generic gate would misclassify the managed projection as dirt.
+        { skipWorktreeGate: true },
       );
     }
-    const projection = await executePlan(
-      planInstalledEccProfileLifecycle(
-        ctx.root,
-        operation,
-        deps.installedSourceTrust ?? PACKAGED_ECC_PROFILE_INSTALLATION_TRUST,
+    const projectionPlan = planInstalledEccProfileLifecycle(
+      ctx.root,
+      operation,
+      deps.installedSourceTrust ?? PACKAGED_ECC_PROFILE_INSTALLATION_TRUST,
+    );
+    if (!nativeEnabled) return executePlan(projectionPlan, ctx);
+    const nativePlan = planInstalledNativeEccRegistration(ctx.root, operation);
+    return executePlan(
+      plan(
+        `ecc-profile: atomic projection and native registration ${operation}`,
+        ...projectionPlan.actions,
+        ...nativePlan.actions,
       ),
       ctx,
+      { skipWorktreeGate: true },
     );
-    const native = nativeEnabled
-      ? await executePlan(planInstalledNativeEccRegistration(ctx.root, operation), ctx)
-      : undefined;
-    return native === undefined ? projection : combineResults(native, projection);
   }
   const projection = await (deps.loadProjection ?? acquirePackagedProjection)(ctx);
   const projected = await executePlan(
     planEccProfileLifecycle(ctx.root, projection, operation),
     ctx,
+    { skipWorktreeGate: true },
   );
   if (!nativeEnabled) return projected;
   try {
@@ -372,6 +381,10 @@ export async function executeEccProfileLifecycleCommand(
     const registered = await executePlan(
       planNativeEccRegistration(ctx.root, registration, operation),
       ctx,
+      // The projection phase already passed the operator-dirt gate. Its owned
+      // writes are now intentionally dirty and are the input to this second,
+      // separately transactional half of the same lifecycle command.
+      { skipWorktreeGate: true },
     );
     return combineResults(projected, registered);
   } catch (error) {

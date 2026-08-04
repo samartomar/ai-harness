@@ -327,7 +327,11 @@ the exact Node/AIH launcher bytes plus each owned config fragment in
 platform state directory; set `AIH_ECC_STATE_ROOT` to an absolute external directory to override
 that location. Conflicting server identities, linked launchers, overlapping state roots, modified
 managed fragments, and partial second-phase installs fail closed; a failed registration after a
-projection install triggers compensating projection recovery. Serena starts only through the AIH
+projection install triggers compensating projection recovery. Repair and rollback preflight the
+projection and native registration before applying either surface, so recovery runs as one
+filesystem transaction. The compound lifecycle uses its receipt-bound per-file ownership and
+content-pin checks instead of treating its own managed projection as generic worktree dirt;
+unowned files and intervening drift still fail closed. Serena starts only through the AIH
 protocol guard with the exact reviewed package pin, offline resolution, isolated `SERENA_HOME`,
 telemetry disabled, and the reviewed tool allowlist. Ordinary MCP-health failures remain visible
 and advisory rather than blocking unrelated work.
