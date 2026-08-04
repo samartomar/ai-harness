@@ -101,6 +101,22 @@ describe.skipIf(sourceRoot === undefined)("installed Plan Canvas runtime", () =>
       const key = url.pathname.split("/").pop();
       expect(key).toMatch(/^[a-f0-9]{12}$/);
 
+      const competingState = join(root, "competing-state");
+      mkdirSync(competingState);
+      const competingReview = createPlanCanvasArtifactSnapshot({
+        artifactRoot: artifacts,
+        artifactPath: artifact,
+        stateRoot: competingState,
+      });
+      const competingAdapter = createPlanCanvasAdapter({
+        runtime,
+        stateRoot: competingState,
+        port,
+      });
+      await expect(
+        competingAdapter.open(competingReview, { launchBrowser: false }),
+      ).rejects.toThrow(/runtime command failed/i);
+
       await expect(
         httpRequest(port, "GET", "/health", { Host: "attacker.example" }),
       ).resolves.toMatchObject({ status: 403 });

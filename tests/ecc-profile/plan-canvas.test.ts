@@ -7,6 +7,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -68,7 +69,12 @@ function authenticatedRuntime(stateRoot: string) {
 describe("Plan Canvas runtime pin", () => {
   it("applies the reviewed server hardening transform exactly once", () => {
     const source = [
+      "const { EventEmitter } = require('events');",
       "const MAX_BODY_BYTES = 1024 * 1024;",
+      `  if (!store) throw new Error('createPlanCanvasServer requires a session store');
+
+  const allowedHostnames = buildAllowedHostnames(host);`,
+      "return sendJson(res, 200, { ok: true, app: 'ecc-plan-canvas', version });",
       `  function watchSession(session) {
     if (watchers.has(session.key)) return;
     const dir = path.dirname(session.file);`,
@@ -115,7 +121,7 @@ describe("Plan Canvas runtime pin", () => {
       license: "MIT",
       entrypoint: "scripts/plan-canvas.js",
       sourceClosureSha256: "ffafd7303cff4728bbe39b0921d03b3e2d5e63c1f8afe4116b9f8297bb96a947",
-      closureSha256: "49a23db55afab57cae37ece5426544fcdbf5c03165603d813a3529bdad720bdf",
+      closureSha256: "5f096b2e8678c1daad44268001cab5e73b0eb1bf13a4bf7b283cffb2d90339ac",
       hardeningOverlay: {
         sourceCommit: "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
         path: "scripts/lib/loopback-guard.js",
@@ -125,7 +131,7 @@ describe("Plan Canvas runtime pin", () => {
       serverHardening: {
         sourcePath: "scripts/lib/plan-canvas/server.js",
         sourceSha256: "cf60c4a2f295355bf1173a9cd2beb043a76a4e09322471572316d8b1eb95db5b",
-        outputSha256: "d250a6cd4945f6763202e8a233a87da54e51b269ae8943b34b9cddee44691919",
+        outputSha256: "31dc01d3f5911afe92a5b46b7386bc644d05944429527593d95cc2ab88f16d9d",
       },
     });
     expect(PLAN_CANVAS_RUNTIME_PIN.files).toHaveLength(8);
@@ -139,7 +145,7 @@ describe("Plan Canvas runtime pin", () => {
       "scripts/lib/plan-canvas/sessions.js",
       "scripts/lib/plan-canvas/ui.js",
     ]);
-    expect(PLAN_CANVAS_RUNTIME_PIN.files.reduce((sum, file) => sum + file.bytes, 0)).toBe(110_448);
+    expect(PLAN_CANVAS_RUNTIME_PIN.files.reduce((sum, file) => sum + file.bytes, 0)).toBe(112_130);
   });
 
   it("fails closed before reading an unverified, incomplete, modified, or linked runtime", () => {
@@ -192,6 +198,22 @@ describe("Plan Canvas runtime pin", () => {
     expect(
       readFileSync(join(first.root, "scripts", "lib", "plan-canvas", "server.js"), "utf8"),
     ).toContain("AIH_PLAN_CANVAS_ARTIFACT_ROOT");
+    const cli = readFileSync(join(first.root, "scripts", "plan-canvas.js"), "utf8");
+    const markdown = readFileSync(
+      join(first.root, "scripts", "lib", "plan-canvas", "markdown.js"),
+      "utf8",
+    );
+    const sessions = readFileSync(
+      join(first.root, "scripts", "lib", "plan-canvas", "sessions.js"),
+      "utf8",
+    );
+    const ui = readFileSync(join(first.root, "scripts", "lib", "plan-canvas", "ui.js"), "utf8");
+    expect(cli).toContain("AIH_PLAN_CANVAS_DAEMON_TOKEN");
+    expect(cli).toContain("aihTokenProof");
+    expect(markdown).toContain("if (kind !== 'relative') return alt;");
+    expect(ui).toContain("msg.item.kind === 'annotation'");
+    expect(sessions).toContain("error.code === 'ENOENT'");
+    expect(sessions).toContain("Plan Canvas session state is corrupt or unreadable");
     expect(() =>
       materializePlanCanvasRuntime({
         sourceRoot: runtimeSourceFixture,
@@ -216,6 +238,30 @@ describe("Plan Canvas runtime pin", () => {
         stateRoot: join(root, "state"),
       }),
     ).toThrow(/authenticated runtime acquisition/i);
+  });
+
+  it("blocks remote Markdown image egress and preserves corrupt session state", () => {
+    const { root } = fixture();
+    const runtime = authenticatedRuntime(root);
+    const requireRuntime = createRequire(import.meta.url);
+    const markdown = requireRuntime(
+      join(runtime.root, "scripts", "lib", "plan-canvas", "markdown.js"),
+    ) as { renderMarkdown(value: string): string };
+    const rendered = markdown.renderMarkdown(
+      "![remote](https://attacker.example/pixel.png) ![local](asset.png)",
+    );
+    expect(rendered).not.toContain("attacker.example");
+    expect(rendered).toContain('<img src="asset.png"');
+
+    const stateDir = join(root, "corrupt-state");
+    mkdirSync(stateDir);
+    const stateFile = join(stateDir, "sessions.json");
+    writeFileSync(stateFile, "{not-json", "utf8");
+    const sessions = requireRuntime(
+      join(runtime.root, "scripts", "lib", "plan-canvas", "sessions.js"),
+    ) as { createSessionStore(options: { stateDir: string }): unknown };
+    expect(() => sessions.createSessionStore({ stateDir })).toThrow(/corrupt or unreadable/i);
+    expect(readFileSync(stateFile, "utf8")).toBe("{not-json");
   });
 });
 
@@ -366,8 +412,28 @@ describe("Plan Canvas on-demand adapter", () => {
       ECC_PLAN_CANVAS_STATE_DIR: expect.stringContaining("runtime-state"),
     });
     expect(call?.options?.env?.ECC_PLAN_CANVAS_MERMAID_URL).toMatch(/^data:/);
+    expect(call?.options?.env?.AIH_PLAN_CANVAS_DAEMON_TOKEN).toMatch(/^[a-f0-9]{64}$/);
     expect(Object.keys(call?.options?.env ?? {})).not.toEqual(
       expect.arrayContaining(["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]),
+    );
+
+    const secondCalls: Array<{ command: string[]; options?: RunOptions }> = [];
+    const secondAdapter = createPlanCanvasAdapter({
+      runtime,
+      stateRoot,
+      run: async (command, options) => {
+        secondCalls.push({ command, options });
+        return {
+          code: 0,
+          stdout: JSON.stringify({ status: "open", url: "/canvas/abc" }),
+          stderr: "",
+          truncated: false,
+        };
+      },
+    });
+    await secondAdapter.open(item, { launchBrowser: false });
+    expect(secondCalls[0]?.options?.env?.AIH_PLAN_CANVAS_DAEMON_TOKEN).toBe(
+      call?.options?.env?.AIH_PLAN_CANVAS_DAEMON_TOKEN,
     );
   });
 
@@ -489,6 +555,9 @@ describe("Plan Canvas on-demand adapter", () => {
     await expect(adapter.stop()).rejects.toThrow(/did not stop/i);
     await expect(
       adapter.awaitFeedback(item, "x".repeat(PLAN_CANVAS_LIMITS.maxReplyBytes + 1)),
+    ).rejects.toThrow(/size limit/i);
+    await expect(
+      adapter.awaitFeedback(item, "x".repeat(PLAN_CANVAS_LIMITS.maxReplyCharacters + 1)),
     ).rejects.toThrow(/size limit/i);
 
     await expect(adapter.awaitFeedback({ ...item, id: "not-an-id" })).rejects.toThrow(/identity/i);

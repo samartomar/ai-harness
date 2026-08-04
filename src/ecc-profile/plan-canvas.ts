@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   chmodSync,
   lstatSync,
@@ -83,19 +83,47 @@ interface RuntimeFileReceipt {
 
 const HARDENED_SERVER_SOURCE_SHA256 =
   "cf60c4a2f295355bf1173a9cd2beb043a76a4e09322471572316d8b1eb95db5b";
-const HARDENED_SERVER_SHA256 = "d250a6cd4945f6763202e8a233a87da54e51b269ae8943b34b9cddee44691919";
-const HARDENED_SERVER_BYTES = 21_700;
+const HARDENED_SERVER_SHA256 = "31dc01d3f5911afe92a5b46b7386bc644d05944429527593d95cc2ab88f16d9d";
+const HARDENED_SERVER_BYTES = 22_191;
 
-const runtimeFiles = sourceRuntimeFiles.map((file) =>
-  file.path === "scripts/lib/plan-canvas/server.js"
-    ? {
+const hardenedRuntimeFiles: Readonly<
+  Record<string, { readonly rawSha256: string; readonly bytes: number }>
+> = {
+  "scripts/plan-canvas.js": {
+    rawSha256: "e37714ae644f10d0acbae77aa9d934c0d3f371f9c4eff9b5c57433804c0af166",
+    bytes: 14_299,
+  },
+  "scripts/lib/plan-canvas/markdown.js": {
+    rawSha256: "01504785dc09bd3132e2fae103507fb21902e0d8c86b717c26cebcd85dc3b4b7",
+    bytes: 9_638,
+  },
+  "scripts/lib/plan-canvas/server.js": {
+    rawSha256: HARDENED_SERVER_SHA256,
+    bytes: HARDENED_SERVER_BYTES,
+  },
+  "scripts/lib/plan-canvas/sessions.js": {
+    rawSha256: "9227b8c5445ac2ba27f9c5d89269244290f16795cb96657743cf7287411a4793",
+    bytes: 8_640,
+  },
+  "scripts/lib/plan-canvas/ui.js": {
+    rawSha256: "92a8317b46b06d454358b7b35feb4dfc49752e40066e2c2f413e2360fb58a15d",
+    bytes: 28_117,
+  },
+};
+
+const runtimeFiles = sourceRuntimeFiles.map((file) => {
+  const hardened = hardenedRuntimeFiles[file.path];
+  return hardened === undefined
+    ? file
+    : {
         ...file,
-        rawSha256: HARDENED_SERVER_SHA256,
-        bytes: HARDENED_SERVER_BYTES,
-        modeIntent: "aih-hardened-commonjs-module",
-      }
-    : file,
-) as readonly RuntimeFileReceipt[];
+        ...hardened,
+        modeIntent:
+          file.modeIntent === "node-entrypoint"
+            ? "aih-hardened-node-entrypoint"
+            : "aih-hardened-commonjs-module",
+      };
+}) as readonly RuntimeFileReceipt[];
 
 export const PLAN_CANVAS_RUNTIME_PIN = {
   package: "ecc-universal",
@@ -107,7 +135,7 @@ export const PLAN_CANVAS_RUNTIME_PIN = {
   license: "MIT",
   entrypoint: "scripts/plan-canvas.js",
   sourceClosureSha256: "ffafd7303cff4728bbe39b0921d03b3e2d5e63c1f8afe4116b9f8297bb96a947",
-  closureSha256: "49a23db55afab57cae37ece5426544fcdbf5c03165603d813a3529bdad720bdf",
+  closureSha256: "5f096b2e8678c1daad44268001cab5e73b0eb1bf13a4bf7b283cffb2d90339ac",
   hardeningOverlay: {
     sourceCommit: "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
     path: "scripts/lib/loopback-guard.js",
@@ -129,6 +157,7 @@ export const PLAN_CANVAS_LIMITS = {
   maxArtifactBytes: 2 * 1024 * 1024,
   maxOutputBytes: 1024 * 1024,
   maxReplyBytes: 16 * 1024,
+  maxReplyCharacters: 4_000,
   maxCommandTimeoutMs: 5 * 60 * 1000,
   idleTimeoutMs: 30 * 60 * 1000,
 } as const;
@@ -262,7 +291,7 @@ function readRuntimeClosure(
 function replaceExactlyOnce(source: string, needle: string, replacement: string): string {
   const first = source.indexOf(needle);
   if (first < 0 || source.indexOf(needle, first + needle.length) >= 0) {
-    throw new Error("Plan Canvas server source does not match its reviewed hardening transform");
+    throw new Error("Plan Canvas source does not match its reviewed hardening transform");
   }
   return `${source.slice(0, first)}${replacement}${source.slice(first + needle.length)}`;
 }
@@ -274,6 +303,12 @@ function replaceExactlyOnce(source: string, needle: string, replacement: string)
  */
 export function applyReviewedPlanCanvasServerTransform(source: string): string {
   let output = source;
+  output = replaceExactlyOnce(
+    output,
+    "const { EventEmitter } = require('events');",
+    `const crypto = require('crypto');
+const { EventEmitter } = require('events');`,
+  );
   output = replaceExactlyOnce(
     output,
     "const MAX_BODY_BYTES = 1024 * 1024;",
@@ -324,6 +359,27 @@ function readContainedFile(file, { baseDir = null, maxBytes = MAX_ARTIFACT_BYTES
     fs.closeSync(fd);
   }
 }`,
+  );
+  output = replaceExactlyOnce(
+    output,
+    `  if (!store) throw new Error('createPlanCanvasServer requires a session store');
+
+  const allowedHostnames = buildAllowedHostnames(host);`,
+    `  if (!store) throw new Error('createPlanCanvasServer requires a session store');
+  const daemonToken = String(process.env.AIH_PLAN_CANVAS_DAEMON_TOKEN || '');
+  if (!/^[a-f0-9]{64}$/.test(daemonToken)) {
+    throw new Error('AIH Plan Canvas daemon token is missing or invalid');
+  }
+  const allowedHostnames = buildAllowedHostnames(host);`,
+  );
+  output = replaceExactlyOnce(
+    output,
+    "return sendJson(res, 200, { ok: true, app: 'ecc-plan-canvas', version });",
+    `const challenge = url.searchParams.get('challenge') || '';
+          const aihTokenProof = /^[a-f0-9]{64}$/.test(challenge)
+            ? crypto.createHmac('sha256', daemonToken).update(challenge).digest('hex')
+            : null;
+          return sendJson(res, 200, { ok: true, app: 'ecc-plan-canvas', version, aihTokenProof });`,
   );
   output = replaceExactlyOnce(
     output,
@@ -383,12 +439,143 @@ function readContainedFile(file, { baseDir = null, maxBytes = MAX_ARTIFACT_BYTES
   return output;
 }
 
-/** Apply the transform only to the exact independently pinned source bytes. */
-function hardenPlanCanvasServer(source: Buffer): Buffer {
-  if (sha256(source) !== HARDENED_SERVER_SOURCE_SHA256) {
-    throw new Error("Plan Canvas server source is not the reviewed pinned revision");
+function applyReviewedPlanCanvasCliTransform(source: string): string {
+  let output = replaceExactlyOnce(
+    source,
+    "const fs = require('fs');",
+    `const crypto = require('crypto');
+const fs = require('fs');`,
+  );
+  output = replaceExactlyOnce(
+    output,
+    `async function healthCheck(port) {
+  try {
+    const res = await request(port, 'GET', '/health');
+    return res.body && res.body.app === 'ecc-plan-canvas' ? res.body : null;
+  } catch {
+    return null;
   }
-  return Buffer.from(applyReviewedPlanCanvasServerTransform(source.toString("utf8")), "utf8");
+}`,
+    `function daemonToken() {
+  const token = String(process.env.AIH_PLAN_CANVAS_DAEMON_TOKEN || '');
+  if (!/^[a-f0-9]{64}$/.test(token)) {
+    throw new Error('AIH Plan Canvas daemon token is missing or invalid');
+  }
+  return token;
+}
+
+async function healthCheck(port) {
+  try {
+    const challenge = crypto.randomBytes(32).toString('hex');
+    const res = await request(port, 'GET', \`/health?challenge=\${challenge}\`);
+    if (!res.body || res.body.app !== 'ecc-plan-canvas') return null;
+    const expectedProof = crypto.createHmac('sha256', daemonToken()).update(challenge).digest('hex');
+    if (res.body.aihTokenProof !== expectedProof) {
+      throw new Error('refusing unauthenticated Plan Canvas daemon reuse');
+    }
+    return res.body;
+  } catch (error) {
+    if (error && error.message === 'refusing unauthenticated Plan Canvas daemon reuse') throw error;
+    return null;
+  }
+}`,
+  );
+  return output;
+}
+
+function applyReviewedPlanCanvasMarkdownTransform(source: string): string {
+  return replaceExactlyOnce(
+    source,
+    "if (kind !== 'http' && kind !== 'relative') return alt;",
+    "if (kind !== 'relative') return alt;",
+  );
+}
+
+function applyReviewedPlanCanvasSessionsTransform(source: string): string {
+  return replaceExactlyOnce(
+    source,
+    `  function load() {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      if (parsed && typeof parsed === 'object' && parsed.sessions) {
+        state = {
+          sessions: parsed.sessions,
+          feedbackCounter: Number(parsed.feedbackCounter) || 0
+        };
+      }
+    } catch {
+      // Missing or corrupt state starts fresh; queued feedback loss on a
+      // corrupt file beats refusing to start at all.
+    }
+  }`,
+    `  function load() {
+    let raw;
+    try {
+      raw = fs.readFileSync(stateFile, 'utf8');
+    } catch (error) {
+      if (error && error.code === 'ENOENT') return;
+      throw new Error('Plan Canvas session state is corrupt or unreadable', { cause: error });
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (
+        !parsed ||
+        typeof parsed !== 'object' ||
+        !parsed.sessions ||
+        typeof parsed.sessions !== 'object' ||
+        Array.isArray(parsed.sessions) ||
+        !Number.isSafeInteger(parsed.feedbackCounter) ||
+        parsed.feedbackCounter < 0
+      ) {
+        throw new Error('invalid session state shape');
+      }
+      state = { sessions: parsed.sessions, feedbackCounter: parsed.feedbackCounter };
+    } catch (error) {
+      throw new Error('Plan Canvas session state is corrupt or unreadable', { cause: error });
+    }
+  }`,
+  );
+}
+
+function applyReviewedPlanCanvasUiTransform(source: string): string {
+  return replaceExactlyOnce(
+    source,
+    `    if (msg.type === 'pc:queue' && msg.item) addToQueue(msg.item);
+    else if (msg.type === 'pc:queue-and-send' && msg.item) { addToQueue(msg.item); send(); }`,
+    `    const isAnnotation = msg.item && msg.item.kind === 'annotation';
+    if (msg.type === 'pc:queue' && isAnnotation) addToQueue(msg.item);
+    else if (msg.type === 'pc:queue-and-send' && isAnnotation) { addToQueue(msg.item); send(); }`,
+  );
+}
+
+/** Apply only reviewed, deterministic transport hardening to pinned runtime files. */
+export function applyReviewedPlanCanvasRuntimeTransform(path: string, source: string): string {
+  switch (path) {
+    case "scripts/plan-canvas.js":
+      return applyReviewedPlanCanvasCliTransform(source);
+    case "scripts/lib/plan-canvas/markdown.js":
+      return applyReviewedPlanCanvasMarkdownTransform(source);
+    case "scripts/lib/plan-canvas/server.js":
+      return applyReviewedPlanCanvasServerTransform(source);
+    case "scripts/lib/plan-canvas/sessions.js":
+      return applyReviewedPlanCanvasSessionsTransform(source);
+    case "scripts/lib/plan-canvas/ui.js":
+      return applyReviewedPlanCanvasUiTransform(source);
+    default:
+      return source;
+  }
+}
+
+/** Apply the transform only to the exact independently pinned source bytes. */
+function hardenPlanCanvasRuntimeFile(path: string, source: Buffer): Buffer {
+  const expected = sourceRuntimeFiles.find((file) => file.path === path);
+  if (expected === undefined || sha256(source) !== expected.rawSha256) {
+    throw new Error("Plan Canvas runtime source is not the reviewed pinned revision");
+  }
+  return Buffer.from(
+    applyReviewedPlanCanvasRuntimeTransform(path, source.toString("utf8")),
+    "utf8",
+  );
 }
 
 function verifyPlanCanvasSourceRoot(runtimeRoot: string, verifiedIntegrity: string) {
@@ -432,10 +619,7 @@ export function materializePlanCanvasRuntime(options: {
       const sourceBytes = source.files.get(expected.path);
       if (sourceBytes === undefined)
         throw new Error("Plan Canvas source closure became incomplete");
-      const contents =
-        expected.path === PLAN_CANVAS_RUNTIME_PIN.serverHardening.sourcePath
-          ? hardenPlanCanvasServer(sourceBytes)
-          : sourceBytes;
+      const contents = hardenPlanCanvasRuntimeFile(expected.path, sourceBytes);
       writeFileSync(target, contents, {
         flag: "wx",
         mode: expected.modeIntent === "node-entrypoint" ? 0o700 : 0o600,
@@ -634,6 +818,7 @@ function processEnvironment(
   stateRoot: string,
   renderingEgress: "disabled" | "pinned-mermaid",
   port: number | undefined,
+  daemonToken: string,
 ): NodeJS.ProcessEnv {
   return {
     SYSTEMROOT: process.env.SYSTEMROOT,
@@ -644,12 +829,34 @@ function processEnvironment(
     TEMP: stateRoot,
     TMP: stateRoot,
     AIH_PLAN_CANVAS_ARTIFACT_ROOT: join(stateRoot, "reviews"),
+    AIH_PLAN_CANVAS_DAEMON_TOKEN: daemonToken,
     ECC_PLAN_CANVAS_STATE_DIR: join(stateRoot, "runtime-state"),
     ECC_PLAN_CANVAS_IDLE_MS: String(PLAN_CANVAS_LIMITS.idleTimeoutMs),
     ...(port !== undefined ? { ECC_PLAN_CANVAS_PORT: String(port) } : {}),
     ECC_PLAN_CANVAS_MERMAID_URL:
       renderingEgress === "pinned-mermaid" ? PINNED_MERMAID_URL : NO_EGRESS_MERMAID_MODULE,
   };
+}
+
+function resolveDaemonToken(runtimeState: string): string {
+  const tokenPath = join(runtimeState, "daemon-token");
+  let tokenBytes = readRegularFile(tokenPath, { maxBytes: 64 });
+  if (tokenBytes === undefined) {
+    try {
+      writeFileSync(tokenPath, randomBytes(32).toString("hex"), {
+        flag: "wx",
+        mode: 0o600,
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    tokenBytes = readRegularFile(tokenPath, { maxBytes: 64 });
+  }
+  const token = tokenBytes?.toString("utf8") ?? "";
+  if (!SHA256.test(token)) {
+    throw new Error("Plan Canvas daemon token is missing, linked, or invalid");
+  }
+  return token;
 }
 
 /**
@@ -674,7 +881,13 @@ export function createPlanCanvasAdapter(options: AdapterOptions): PlanCanvasAdap
   ) {
     throw new Error("Plan Canvas port must be an unprivileged TCP port");
   }
-  const env = processEnvironment(stateRoot, options.renderingEgress ?? "disabled", options.port);
+  const daemonToken = resolveDaemonToken(runtimeState);
+  const env = processEnvironment(
+    stateRoot,
+    options.renderingEgress ?? "disabled",
+    options.port,
+    daemonToken,
+  );
   const pendingCleanup = new Set<string>();
 
   const removeReviewRoot = (managedRoot: string): boolean => {
@@ -730,7 +943,8 @@ export function createPlanCanvasAdapter(options: AdapterOptions): PlanCanvasAdap
     async awaitFeedback(review, reply) {
       if (
         reply !== undefined &&
-        Buffer.byteLength(reply, "utf8") > PLAN_CANVAS_LIMITS.maxReplyBytes
+        (reply.length > PLAN_CANVAS_LIMITS.maxReplyCharacters ||
+          Buffer.byteLength(reply, "utf8") > PLAN_CANVAS_LIMITS.maxReplyBytes)
       ) {
         throw new Error("Plan Canvas reply exceeds its size limit");
       }
