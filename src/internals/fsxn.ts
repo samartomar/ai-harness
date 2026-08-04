@@ -91,11 +91,18 @@ interface StagedRemoval {
    * gitignored `*.aih.bak` glob.
    */
   backupSibling?: boolean;
+  expect?: { sha256: string };
 }
 
 interface AppliedRemoval {
   path: string;
   legacyPath: string;
+}
+
+interface StagedAssertion {
+  path: string;
+  sha256: string;
+  describe: string;
 }
 
 export interface FsTxnResult {
@@ -115,6 +122,7 @@ export interface FsTxnResult {
 export class FsTransaction {
   private staged: StagedWrite[] = [];
   private stagedRemovals: StagedRemoval[] = [];
+  private stagedAssertions: StagedAssertion[] = [];
 
   stage(
     path: string,
@@ -134,8 +142,21 @@ export class FsTransaction {
    * never-overwrite, but a taken slot falls back to `<path>.N.aih.bak` (matches the
    * gitignored `*.aih.bak` glob) instead of the archive's `<path>.N`.
    */
-  stageRemoval(path: string, legacyPath: string, opts: { backupSibling?: boolean } = {}): void {
-    this.stagedRemovals.push({ path, legacyPath, backupSibling: opts.backupSibling });
+  stageRemoval(
+    path: string,
+    legacyPath: string,
+    opts: { backupSibling?: boolean; expect?: { sha256: string } } = {},
+  ): void {
+    this.stagedRemovals.push({
+      path,
+      legacyPath,
+      backupSibling: opts.backupSibling,
+      expect: opts.expect,
+    });
+  }
+
+  stageAssertion(path: string, sha256: string, describe: string): void {
+    this.stagedAssertions.push({ path, sha256, describe });
   }
 
   preview(): ReadonlyArray<StagedWrite> {
@@ -150,6 +171,7 @@ export class FsTransaction {
     // overwrite that backup with the second — making a later rollback non-restorative.
     const staged = dedupeByPath(this.staged);
     const removals = dedupeRemovals(this.stagedRemovals);
+    const assertions = dedupeAssertions(this.stagedAssertions);
     // A path cannot be both written AND removed in one transaction — the on-disk
     // outcome (write, then move-to-legacy) would contradict the reported writes[].
     // No shipping command produces this; fail closed so a future one can't silently.
@@ -159,7 +181,14 @@ export class FsTransaction {
         throw new FsTxnError(`transaction both writes and removes the same path: ${r.path}`);
       }
     }
+    for (const assertion of assertions) {
+      if (writePaths.has(assertion.path) || removals.some((item) => item.path === assertion.path))
+        throw new FsTxnError(
+          `transaction both asserts and mutates the same path: ${assertion.path}`,
+        );
+    }
     try {
+      validateAssertions(assertions);
       for (const w of staged) {
         mkdirSync(dirname(w.path), { recursive: true });
         // Refuse to write THROUGH an existing symlink — it can redirect the write
@@ -210,6 +239,9 @@ export class FsTransaction {
         if (info.isSymbolicLink()) {
           throw new Error(`refusing to remove a symlink: ${r.path}`);
         }
+        if (r.expect !== undefined && !info.isFile()) {
+          throw new FsTxnError(`removal target is not a regular file: ${r.path}`);
+        }
         mkdirSync(dirname(r.legacyPath), { recursive: true });
         // NEVER overwrite an occupied destination — for BOTH modes. An aborted prune
         // rolls its move back (so it leaves nothing here), which means an existing file
@@ -220,7 +252,16 @@ export class FsTransaction {
         const dest = r.backupSibling ? freeBackupDest(r.legacyPath) : freeLegacyDest(r.legacyPath);
         retryTransient(() => renameSync(r.path, dest));
         removed.push({ path: r.path, legacyPath: dest });
+        if (r.expect !== undefined) {
+          const moved = readRegularFile(dest);
+          const actual =
+            moved === undefined ? undefined : createHash("sha256").update(moved).digest("hex");
+          if (actual !== r.expect.sha256) {
+            throw new FsTxnError(`removal target changed before commit: ${r.path}`);
+          }
+        }
       }
+      validateAssertions(assertions);
       return {
         written: applied.map((a) => a.path),
         backups: applied.flatMap((a) => (a.backup ? [a.backup] : [])),
@@ -235,6 +276,24 @@ export class FsTransaction {
           : `preserved concurrent changes at ${preserved.join(", ")}`;
       throw new FsTxnError(`transaction failed and ${suffix}: ${(err as Error).message}`);
     }
+  }
+}
+
+function dedupeAssertions(staged: StagedAssertion[]): StagedAssertion[] {
+  const byPath = new Map<string, StagedAssertion>();
+  for (const assertion of staged) byPath.set(assertion.path, assertion);
+  return [...byPath.values()];
+}
+
+function validateAssertions(assertions: StagedAssertion[]): void {
+  for (const assertion of assertions) {
+    const opened = readRegularFileWithStats(assertion.path);
+    const actual =
+      opened === undefined || opened.stats.nlink > 1
+        ? undefined
+        : createHash("sha256").update(opened.contents).digest("hex");
+    if (actual !== assertion.sha256)
+      throw new FsTxnError(`${assertion.describe} changed before commit`);
   }
 }
 

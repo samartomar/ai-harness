@@ -80,6 +80,8 @@ export interface WriteAction {
    * current bytes must hash to `sha256`.
    */
   expect?: { absent: true } | { sha256: string };
+  /** Recheck an unchanged expected file inside the filesystem transaction without rewriting it. */
+  assertUnchanged?: boolean;
   /**
    * Allow this write to land OUTSIDE the target root (home/system files: PEM
    * bundles, shell profiles, VDI redirects). Repo-scoped writes leave this unset
@@ -235,6 +237,8 @@ export interface RemoveAction {
   hardDelete?: boolean;
   /** Archive root for the reversible move. Closed union — never an arbitrary path. */
   archiveRoot?: ".aih/legacy" | ".aih/quarantine";
+  /** Apply-time content pin; the moved regular file must still have this SHA-256. */
+  expect?: { sha256: string };
 }
 
 export type Action =
@@ -590,7 +594,11 @@ export function envBlock(
 export function remove(
   path: string,
   describe: string,
-  opts: { hardDelete?: boolean; archiveRoot?: RemoveAction["archiveRoot"] } = {},
+  opts: {
+    hardDelete?: boolean;
+    archiveRoot?: RemoveAction["archiveRoot"];
+    expect?: RemoveAction["expect"];
+  } = {},
 ): RemoveAction {
   return {
     kind: "remove",
@@ -598,6 +606,7 @@ export function remove(
     describe,
     hardDelete: opts.hardDelete,
     archiveRoot: opts.archiveRoot,
+    ...(opts.expect === undefined ? {} : { expect: opts.expect }),
   };
 }
 
