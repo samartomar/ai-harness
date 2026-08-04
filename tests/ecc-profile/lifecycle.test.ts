@@ -231,6 +231,23 @@ describe("AIH-owned ECC projection lifecycle", () => {
     expect(existsSync(join(root, ECC_PROFILE_OWNERSHIP_PATH))).toBe(false);
   });
 
+  it("preserves an AIH-created merge-file sentinel across update and uninstall", async () => {
+    await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    const next = projection(
+      COMMIT_B,
+      "# example v2\n",
+      '[agents.example]\nconfig_file = "agents/example-v2.toml"\n',
+    );
+    await executePlan(planEccProfileLifecycle(root, next, "update"), ctx(true));
+
+    const configEntry = readEccProfileOwnership(root)?.files.find(
+      (file) => file.destination === ".codex/config.toml",
+    );
+    expect(configEntry?.previousHash).toBeNull();
+    await executePlan(planEccProfileLifecycle(root, next, "uninstall"), ctx(true));
+    expect(existsSync(join(root, ".codex/config.toml"))).toBe(false);
+  });
+
   it("binds uninstall to the exact authenticated projection", async () => {
     await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
 
@@ -265,6 +282,59 @@ describe("AIH-owned ECC projection lifecycle", () => {
       /does not close over the pinned projection/i,
     );
   });
+
+  it("rejects an incomplete active receipt before rollback", async () => {
+    await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    const next = projection(COMMIT_B, "# example v2\n");
+    await executePlan(planEccProfileLifecycle(root, next, "update"), ctx(true));
+    const receiptPath = join(root, ECC_PROFILE_OWNERSHIP_PATH);
+    const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as { files: unknown[] };
+    receipt.files.pop();
+    writeFileSync(receiptPath, `${JSON.stringify(receipt)}\n`, "utf8");
+
+    expect(() => planEccProfileLifecycle(root, next, "rollback")).toThrow(
+      /does not close over the pinned projection/i,
+    );
+  });
+
+  it("rejects altered rollback snapshot bytes", async () => {
+    await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    const next = projection(COMMIT_B, "# example v2\n");
+    await executePlan(planEccProfileLifecycle(root, next, "update"), ctx(true));
+    const receiptPath = join(root, ECC_PROFILE_OWNERSHIP_PATH);
+    const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as {
+      rollback: { files: Array<{ mergeStrategy: string; content: string }> };
+    };
+    const replacement = receipt.rollback.files.find((file) => file.mergeStrategy === "replace");
+    if (replacement === undefined) throw new Error("fixture rollback has no replacement file");
+    replacement.content = "# altered snapshot\n";
+    writeFileSync(receiptPath, `${JSON.stringify(receipt)}\n`, "utf8");
+
+    expect(() => planEccProfileLifecycle(root, next, "rollback")).toThrow(
+      /rollback.*(content|hash)|normalized hash/i,
+    );
+  });
+
+  it("rejects an update whose rollback receipt would exceed its read boundary", async () => {
+    const bytes = `${"x".repeat(4 * 1024 * 1024 - 1025)}\n`;
+    const initial = projection();
+    initial.files = Array.from({ length: 9 }, (_, index) =>
+      projectedFile(COMMIT_A, `.agents/skills/large-${index}/SKILL.md`, bytes),
+    );
+    await executePlan(planEccProfileLifecycle(root, initial, "install"), ctx(true));
+    const next = projection(COMMIT_B);
+    next.files = Array.from({ length: 9 }, (_, index) =>
+      projectedFile(
+        COMMIT_B,
+        `.agents/skills/large-${index}/SKILL.md`,
+        `${"y".repeat(4 * 1024 * 1024 - 1025)}\n`,
+      ),
+    );
+
+    expect(() => planEccProfileLifecycle(root, next, "update")).toThrow(
+      /ownership receipt.*(size|limit|large)/i,
+    );
+  }, 30_000);
 
   it("rejects ownership copied from a foreign worktree root", async () => {
     await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
@@ -326,6 +396,17 @@ describe("AIH-owned ECC projection lifecycle", () => {
       "raced operator file\n",
     );
     expect(existsSync(join(root, ECC_PROFILE_OWNERSHIP_PATH))).toBe(false);
+  });
+
+  it("pins the authorizing ownership receipt during repair", async () => {
+    await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    rmSync(join(root, ".agents/skills/example/SKILL.md"));
+    const planned = planEccProfileLifecycle(root, projection(), "repair");
+    const receiptPath = join(root, ECC_PROFILE_OWNERSHIP_PATH);
+    writeFileSync(receiptPath, `${readFileSync(receiptPath, "utf8")} `, "utf8");
+
+    await expect(executePlan(planned, ctx(true))).rejects.toThrow(/ownership-v1\.json.*changed/i);
+    expect(existsSync(join(root, ".agents/skills/example/SKILL.md"))).toBe(false);
   });
 
   it("pins removals and rolls the whole transaction back on apply-time drift", async () => {

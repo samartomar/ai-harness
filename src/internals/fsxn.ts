@@ -99,6 +99,12 @@ interface AppliedRemoval {
   legacyPath: string;
 }
 
+interface StagedAssertion {
+  path: string;
+  sha256: string;
+  describe: string;
+}
+
 export interface FsTxnResult {
   written: string[];
   backups: string[];
@@ -116,6 +122,7 @@ export interface FsTxnResult {
 export class FsTransaction {
   private staged: StagedWrite[] = [];
   private stagedRemovals: StagedRemoval[] = [];
+  private stagedAssertions: StagedAssertion[] = [];
 
   stage(
     path: string,
@@ -148,6 +155,10 @@ export class FsTransaction {
     });
   }
 
+  stageAssertion(path: string, sha256: string, describe: string): void {
+    this.stagedAssertions.push({ path, sha256, describe });
+  }
+
   preview(): ReadonlyArray<StagedWrite> {
     return [...this.staged];
   }
@@ -160,6 +171,7 @@ export class FsTransaction {
     // overwrite that backup with the second — making a later rollback non-restorative.
     const staged = dedupeByPath(this.staged);
     const removals = dedupeRemovals(this.stagedRemovals);
+    const assertions = dedupeAssertions(this.stagedAssertions);
     // A path cannot be both written AND removed in one transaction — the on-disk
     // outcome (write, then move-to-legacy) would contradict the reported writes[].
     // No shipping command produces this; fail closed so a future one can't silently.
@@ -169,7 +181,14 @@ export class FsTransaction {
         throw new FsTxnError(`transaction both writes and removes the same path: ${r.path}`);
       }
     }
+    for (const assertion of assertions) {
+      if (writePaths.has(assertion.path) || removals.some((item) => item.path === assertion.path))
+        throw new FsTxnError(
+          `transaction both asserts and mutates the same path: ${assertion.path}`,
+        );
+    }
     try {
+      validateAssertions(assertions);
       for (const w of staged) {
         mkdirSync(dirname(w.path), { recursive: true });
         // Refuse to write THROUGH an existing symlink — it can redirect the write
@@ -242,6 +261,7 @@ export class FsTransaction {
           }
         }
       }
+      validateAssertions(assertions);
       return {
         written: applied.map((a) => a.path),
         backups: applied.flatMap((a) => (a.backup ? [a.backup] : [])),
@@ -256,6 +276,24 @@ export class FsTransaction {
           : `preserved concurrent changes at ${preserved.join(", ")}`;
       throw new FsTxnError(`transaction failed and ${suffix}: ${(err as Error).message}`);
     }
+  }
+}
+
+function dedupeAssertions(staged: StagedAssertion[]): StagedAssertion[] {
+  const byPath = new Map<string, StagedAssertion>();
+  for (const assertion of staged) byPath.set(assertion.path, assertion);
+  return [...byPath.values()];
+}
+
+function validateAssertions(assertions: StagedAssertion[]): void {
+  for (const assertion of assertions) {
+    const opened = readRegularFileWithStats(assertion.path);
+    const actual =
+      opened === undefined || opened.stats.nlink > 1
+        ? undefined
+        : createHash("sha256").update(opened.contents).digest("hex");
+    if (actual !== assertion.sha256)
+      throw new FsTxnError(`${assertion.describe} changed before commit`);
   }
 }
 

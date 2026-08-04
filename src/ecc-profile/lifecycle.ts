@@ -286,9 +286,12 @@ function receiptWrite(
   receipt: EccProfileOwnership,
   currentReceipt: CurrentFile | undefined,
 ): WriteAction {
+  const contents = `${JSON.stringify(receipt, null, 2)}\n`;
+  if (Buffer.byteLength(contents, "utf8") > MAX_RECEIPT_BYTES)
+    throw new Error("ECC profile ownership receipt exceeds its size limit");
   return pinnedWrite(
     ECC_PROFILE_OWNERSHIP_PATH,
-    `${JSON.stringify(receipt, null, 2)}\n`,
+    contents,
     "100644",
     currentReceipt,
     "record AIH-owned ECC profile lifecycle ownership",
@@ -355,6 +358,21 @@ function validateReceiptFiles(
       (file.mergeStrategy === "toml-merge" && file.managedBlockHash === null)
     )
       throw new Error("invalid ECC profile ownership receipt: contradictory merge metadata");
+    if ("content" in file) {
+      if (
+        Buffer.byteLength(file.content, "utf8") > MAX_PROJECTED_FILE_BYTES ||
+        sha256(file.content) !== file.normalizedHash
+      ) {
+        throw new Error("invalid ECC profile rollback content hash");
+      }
+      if (file.mergeStrategy === "replace" && sha256(file.content) !== file.installedHash)
+        throw new Error("invalid ECC profile rollback installed hash");
+      if (file.mergeStrategy === "toml-merge") {
+        const block = managedBlock(upsertTextBlock("", MANAGED_SCOPE, file.content));
+        if (block === undefined || sha256(block) !== file.managedBlockHash)
+          throw new Error("invalid ECC profile rollback managed-block hash");
+      }
+    }
   }
 }
 
@@ -538,7 +556,13 @@ function updatePlan(
         ),
       );
     }
-    entries.push(ownershipEntry(file, installed, current?.sha256 ?? null));
+    entries.push(
+      ownershipEntry(
+        file,
+        installed,
+        previous === undefined ? (current?.sha256 ?? null) : previous.previousHash,
+      ),
+    );
   }
 
   for (const entry of receipt.files) {
@@ -612,6 +636,18 @@ function repairPlan(
       );
     }
   }
+  if (actions.length > 0) {
+    actions.push({
+      ...pinnedWrite(
+        ECC_PROFILE_OWNERSHIP_PATH,
+        receiptFile.current.contents,
+        "100644",
+        receiptFile.current,
+        "ECC profile ownership receipt",
+      ),
+      assertUnchanged: true,
+    });
+  }
   return plan("ecc-profile: repair", ...actions);
 }
 
@@ -670,13 +706,18 @@ function planManagedBlockRemoval(
       ];
 }
 
-function rollbackPlan(root: string, projection: EccProjection): Plan {
+function rollbackPlan(
+  root: string,
+  projection: EccProjection,
+  files: RenderedProjectionFile[],
+): Plan {
   const receiptFile = readReceiptFile(root);
   if (receiptFile === undefined)
     throw new Error("ECC profile rollback requires an ownership receipt");
   const { receipt, current: currentReceipt } = receiptFile;
   if (!sameSource(receipt.source, sourceIdentity(projection)))
     throw new Error("ECC profile rollback projection contradicts the ownership receipt");
+  assertReceiptMatchesProjection(receipt, files);
   if (!receipt.rollback) throw new Error("ECC profile ownership receipt has no rollback snapshot");
   const currentEntries = new Map(receipt.files.map((entry) => [entry.destination, entry]));
   const previousEntries = new Map(
@@ -764,6 +805,6 @@ export function planEccProfileLifecycle(
     case "uninstall":
       return uninstallPlan(root, projection, files);
     case "rollback":
-      return rollbackPlan(root, projection);
+      return rollbackPlan(root, projection, files);
   }
 }

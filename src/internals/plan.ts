@@ -80,6 +80,8 @@ export interface WriteAction {
    * current bytes must hash to `sha256`.
    */
   expect?: { absent: true } | { sha256: string };
+  /** Recheck an unchanged expected file inside the filesystem transaction without rewriting it. */
+  assertUnchanged?: boolean;
   /**
    * Allow this write to land OUTSIDE the target root (home/system files: PEM
    * bundles, shell profiles, VDI redirects). Repo-scoped writes leave this unset

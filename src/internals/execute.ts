@@ -751,7 +751,15 @@ export async function executePlan(
               : action.merge
                 ? "merge"
                 : "overwrite";
-        if (ctx.apply && effect !== "unchanged") {
+        if (action.assertUnchanged) {
+          if (action.expect === undefined || "absent" in action.expect || effect !== "unchanged") {
+            throw new AihError(`invalid unchanged-file assertion for ${action.path}`, "AIH_CONFIG");
+          }
+          if (ctx.apply) {
+            const targetTxn = action.requiresPriorExecSuccess ? deferredTxn : txn;
+            targetTxn.stageAssertion(absPath, action.expect.sha256, action.describe);
+          }
+        } else if (ctx.apply && effect !== "unchanged") {
           const targetTxn = action.requiresPriorExecSuccess ? deferredTxn : txn;
           targetTxn.stage(absPath, contents, action.mode, action.expect);
           if (action.sensitive?.path) sensitiveBackupTargets.add(absPath);
