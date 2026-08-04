@@ -70,4 +70,24 @@ describe("proc runner seam", () => {
     expect(res.code).toBe(0);
     expect(res.stdout).toBe("ended");
   }, 15000);
+
+  it("settles safely when a child exits before a large stdin payload is written", async () => {
+    const res = await defaultRunner([process.execPath, "-e", "process.exit(23)"], {
+      input: "x".repeat(8 * 1024 * 1024),
+      timeoutMs: 5000,
+    });
+
+    expect(res.code).not.toBe(0);
+  }, 15000);
+
+  it("aborts a running child through the runner seam", async () => {
+    const controller = new AbortController();
+    const pending = defaultRunner(
+      [process.execPath, "-e", "process.stdin.resume(); setTimeout(() => {}, 5000)"],
+      { signal: controller.signal, timeoutMs: 10_000 },
+    );
+    controller.abort();
+
+    await expect(pending).resolves.toMatchObject({ spawnError: true });
+  }, 15000);
 });

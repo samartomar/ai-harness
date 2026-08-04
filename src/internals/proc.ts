@@ -22,6 +22,8 @@ export interface RunOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
+  /** Abort the child without requiring callers to own process handles. */
+  signal?: AbortSignal;
   /** Optional bounded-output seam for callers and focused tests. */
   maxBufferBytes?: number;
 }
@@ -57,65 +59,123 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
     const baseEnv = opts.env ?? process.env;
     let capturedStdout = "";
     let capturedStderr = "";
+    let settled = false;
+    let removeAbortListener: () => void = () => undefined;
+    const finish = (result: RunResult): void => {
+      if (settled) return;
+      settled = true;
+      removeAbortListener();
+      resolve(result);
+    };
+    if (opts.signal?.aborted) {
+      finish({ code: 1, stdout: "", stderr: "process aborted", spawnError: true });
+      return;
+    }
     const capture = (chunk: string | Buffer): string =>
       typeof chunk === "string" ? chunk : chunk.toString("utf8");
-    const child = execFile(
-      cmd,
-      args,
-      {
-        cwd: opts.cwd,
-        env: isGitExecutable(cmd) ? hermeticGitEnv(baseEnv) : baseEnv,
-        timeout: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        maxBuffer: maxBufferBytes,
-        windowsHide: true,
-      },
-      (err: ProcError, stdout, stderr) => {
-        const stdoutText = stdout && stdout.length > 0 ? stdout : capturedStdout;
-        const stderrText = stderr && stderr.length > 0 ? stderr : capturedStderr;
-        const errno = err?.code;
-        if (errno === "ENOENT") {
-          resolve({
-            code: 127,
-            stdout: "",
-            stderr: String(err?.message ?? "not found"),
-            spawnError: true,
-          });
-          return;
-        }
-        if (errno === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
-          const outputDetail = `process output exceeded ${maxBufferBytes} bytes; captured output is incomplete`;
-          const trimmedStderr = stderrText.trim();
-          resolve({
-            code: typeof errno === "number" ? errno : 1,
-            stdout: stdoutText,
-            stderr: trimmedStderr.length > 0 ? `${trimmedStderr}\n${outputDetail}` : outputDetail,
-            truncated: true,
-          });
-          return;
-        }
-        const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-        if (err?.killed) {
-          const timeoutDetail = `process timed out after ${timeoutMs}ms`;
-          const trimmedStderr = stderrText.trim();
-          resolve({
-            code: typeof errno === "number" ? errno : 1,
-            stdout: stdoutText,
-            stderr: trimmedStderr.length > 0 ? `${trimmedStderr}\n${timeoutDetail}` : timeoutDetail,
-            spawnError: true,
-          });
-          return;
-        }
-        const code = typeof errno === "number" ? errno : err ? 1 : 0;
-        resolve({ code, stdout: stdoutText, stderr: stderrText });
-      },
-    );
+    let child: ReturnType<typeof execFile>;
+    try {
+      child = execFile(
+        cmd,
+        args,
+        {
+          cwd: opts.cwd,
+          env: isGitExecutable(cmd) ? hermeticGitEnv(baseEnv) : baseEnv,
+          timeout: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+          maxBuffer: maxBufferBytes,
+          windowsHide: true,
+        },
+        (err: ProcError, stdout, stderr) => {
+          const stdoutText = stdout && stdout.length > 0 ? stdout : capturedStdout;
+          const stderrText = stderr && stderr.length > 0 ? stderr : capturedStderr;
+          const errno = err?.code;
+          if (errno === "ENOENT") {
+            finish({
+              code: 127,
+              stdout: "",
+              stderr: String(err?.message ?? "not found"),
+              spawnError: true,
+            });
+            return;
+          }
+          if (errno === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+            const outputDetail = `process output exceeded ${maxBufferBytes} bytes; captured output is incomplete`;
+            const trimmedStderr = stderrText.trim();
+            finish({
+              code: typeof errno === "number" ? errno : 1,
+              stdout: stdoutText,
+              stderr: trimmedStderr.length > 0 ? `${trimmedStderr}\n${outputDetail}` : outputDetail,
+              truncated: true,
+            });
+            return;
+          }
+          const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+          if (err?.killed) {
+            const timeoutDetail = `process timed out after ${timeoutMs}ms`;
+            const trimmedStderr = stderrText.trim();
+            finish({
+              code: typeof errno === "number" ? errno : 1,
+              stdout: stdoutText,
+              stderr:
+                trimmedStderr.length > 0 ? `${trimmedStderr}\n${timeoutDetail}` : timeoutDetail,
+              spawnError: true,
+            });
+            return;
+          }
+          const code = typeof errno === "number" ? errno : err ? 1 : 0;
+          finish({ code, stdout: stdoutText, stderr: stderrText });
+        },
+      );
+    } catch {
+      finish({
+        code: 1,
+        stdout: "",
+        stderr: "process could not start",
+        spawnError: true,
+      });
+      return;
+    }
+    const abort = (): void => {
+      child.kill();
+      finish({
+        code: 1,
+        stdout: capturedStdout,
+        stderr: "process aborted",
+        spawnError: true,
+      });
+    };
+    opts.signal?.addEventListener("abort", abort, { once: true });
+    removeAbortListener = () => opts.signal?.removeEventListener("abort", abort);
+    if (opts.signal?.aborted) {
+      abort();
+      return;
+    }
     child.stdout?.on("data", (chunk: string | Buffer) => {
       capturedStdout += capture(chunk);
     });
     child.stderr?.on("data", (chunk: string | Buffer) => {
       capturedStderr += capture(chunk);
     });
-    child.stdin?.end(opts.input);
+    child.stdin?.on("error", () => {
+      child.kill();
+      finish({
+        code: 1,
+        stdout: capturedStdout,
+        stderr: "process stdin write failed",
+        spawnError: true,
+      });
+    });
+    try {
+      child.stdin?.end(opts.input);
+    } catch {
+      child.kill();
+      finish({
+        code: 1,
+        stdout: capturedStdout,
+        stderr: "process stdin write failed",
+        spawnError: true,
+      });
+    }
   });
 
 /**
