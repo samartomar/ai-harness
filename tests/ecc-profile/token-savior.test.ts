@@ -18,11 +18,13 @@ import {
   createTokenSaviorProcessCompactor,
   guardTokenSaviorAuditCall,
   TOKEN_SAVIOR_COMPACTOR_BRIDGE,
+  TOKEN_SAVIOR_LIMITS,
   TOKEN_SAVIOR_NATIVE_TRANSPORTS,
   TOKEN_SAVIOR_RUNTIME_PIN,
   TokenSaviorAuditMcpPolicyGuard,
   type TokenSaviorCompactResult,
 } from "../../src/ecc-profile/token-savior.js";
+import type { RunOptions } from "../../src/internals/proc.js";
 
 const roots: string[] = [];
 
@@ -181,6 +183,79 @@ describe("Token Savior direct compaction adapter", () => {
         new AbortController().signal,
       ),
     ).rejects.toThrow(/process failed/i);
+  });
+
+  it("routes the isolated compactor through the bounded runner seam", async () => {
+    const { project, state } = fixture();
+    const fakePython = join(state, process.platform === "win32" ? "python.exe" : "python");
+    writeFileSync(fakePython, "reviewed runtime", { encoding: "utf8", mode: 0o700 });
+    let call: { argv: string[]; options?: RunOptions } | undefined;
+    const compact = createTokenSaviorProcessCompactor({
+      pythonCommand: fakePython,
+      runtimeRoot: state,
+      tempRoot: project,
+      verifiedWheelSha256: TOKEN_SAVIOR_RUNTIME_PIN.wheelSha256,
+      run: async (argv, options) => {
+        call = { argv, options };
+        return { code: 0, stdout: JSON.stringify(compacted), stderr: "" };
+      },
+    });
+    const controller = new AbortController();
+
+    await expect(
+      compact({ command: "test", stdout: "ordinary output", stderr: "" }, controller.signal),
+    ).resolves.toEqual(compacted);
+    expect(call?.argv).toEqual([
+      realpathSync(fakePython),
+      "-I",
+      "-c",
+      TOKEN_SAVIOR_COMPACTOR_BRIDGE,
+    ]);
+    expect(call?.options).toMatchObject({
+      cwd: realpathSync(project),
+      signal: controller.signal,
+      maxBufferBytes: TOKEN_SAVIOR_LIMITS.maxCompactedBytes + 16 * 1024,
+    });
+    expect(call?.options?.input).toContain('"command":"test"');
+    expect(call?.options?.env).toMatchObject({
+      TEMP: realpathSync(project),
+      TMP: realpathSync(project),
+      PYTHONDONTWRITEBYTECODE: "1",
+      PYTHONNOUSERSITE: "1",
+    });
+    expect(call?.options?.env).not.toHaveProperty("PATH");
+  });
+
+  it("fails closed on runner spawn, truncation, and malformed completion evidence", async () => {
+    const { project, state } = fixture();
+    const fakePython = join(state, process.platform === "win32" ? "python.exe" : "python");
+    writeFileSync(fakePython, "reviewed runtime", { encoding: "utf8", mode: 0o700 });
+    const make = (result: {
+      code: number;
+      stdout: string;
+      stderr: string;
+      spawnError?: boolean;
+      truncated?: boolean;
+    }) =>
+      createTokenSaviorProcessCompactor({
+        pythonCommand: fakePython,
+        runtimeRoot: state,
+        tempRoot: project,
+        verifiedWheelSha256: TOKEN_SAVIOR_RUNTIME_PIN.wheelSha256,
+        run: async () => result,
+      });
+    const input = { command: "test", stdout: "ordinary output", stderr: "" };
+    const signal = new AbortController().signal;
+
+    await expect(
+      make({ code: 1, stdout: "", stderr: "", spawnError: true })(input, signal),
+    ).rejects.toThrow(/could not start/i);
+    await expect(
+      make({ code: 1, stdout: "{}", stderr: "", truncated: true })(input, signal),
+    ).rejects.toThrow(/output exceeds/i);
+    await expect(make({ code: 0, stdout: "{", stderr: "" })(input, signal)).rejects.toThrow(
+      /malformed JSON/i,
+    );
   });
 
   it.each(["claude", "codex"] as const)(
@@ -566,6 +641,25 @@ describe("optional Token Savior audit MCP", () => {
       forward: false,
       response: { error: { code: -32601 } },
     });
+    for (const method of [
+      "initialize",
+      "notifications/initialized",
+      "ping",
+      "tools/list",
+    ] as const) {
+      expect(guard.inspectClientRequest({ jsonrpc: "2.0", id: 10, method })).toEqual({
+        forward: true,
+      });
+    }
+    for (const method of ["resources/read", "prompts/list", "vendor/private"] as const) {
+      expect(guard.inspectClientRequest({ jsonrpc: "2.0", id: 11, method })).toMatchObject({
+        forward: false,
+        response: { error: { code: -32601 } },
+      });
+    }
+    expect(() =>
+      guard.inspectClientRequest({ jsonrpc: "2.0", method: "notifications/vendor" }),
+    ).toThrow(/disabled/i);
     expect(
       guard.filterToolsList({ tools: [{ name: "ts_discover" }, { name: "memory_search" }] }),
     ).toEqual({ tools: [{ name: "ts_discover" }] });

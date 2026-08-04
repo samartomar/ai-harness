@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   type NormalizedHookEvent,
@@ -343,16 +344,9 @@ async function scriptedProvider(client: "claude" | "codex") {
   };
 }
 
-function writeHookScript(file: string, marker: string, output: unknown): void {
-  const body = [
-    '"use strict";',
-    `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "executed", "utf8");`,
-    "process.stdin.resume();",
-    `process.stdin.on("end", () => process.stdout.write(${JSON.stringify(JSON.stringify(output))}));`,
-    "",
-  ].join("\n");
-  writeFileSync(file, body, { encoding: "utf8", flag: "wx", mode: 0o700 });
-}
+const nativeHookFixture = fileURLToPath(
+  new URL("./fixtures/token-savior-native-hook.cjs", import.meta.url),
+);
 
 describe.skipIf(!nativeEnabled)("installed native Token Savior transport qualification", () => {
   it.each(["claude", "codex"] as const)(
@@ -368,9 +362,14 @@ describe.skipIf(!nativeEnabled)("installed native Token Savior transport qualifi
       mkdirSync(state);
       writeFileSync(join(project, "native-source.txt"), originalText, "utf8");
       const hookOutput = await nativeHookOutput(client, project, state);
-      const hook = join(root, "post-tool-hook.cjs");
+      const hook = nativeHookFixture;
       const hookMarker = join(root, "hook-executed.txt");
-      writeHookScript(hook, hookMarker, hookOutput);
+      const hookEnvironment = {
+        AIH_NATIVE_HOOK_MARKER: hookMarker,
+        AIH_NATIVE_HOOK_OUTPUT_BASE64: Buffer.from(JSON.stringify(hookOutput), "utf8").toString(
+          "base64",
+        ),
+      };
       const provider = await scriptedProvider(client);
       try {
         let result: ChildResult;
@@ -430,6 +429,7 @@ describe.skipIf(!nativeEnabled)("installed native Token Savior transport qualifi
               cwd: project,
               env: nativeEnvironment(process.env, home, {
                 AIH_NATIVE_LOCAL_TOKEN: "local-fixture-only",
+                ...hookEnvironment,
               }),
               timeoutMs: 60_000,
             },
@@ -484,6 +484,7 @@ describe.skipIf(!nativeEnabled)("installed native Token Savior transport qualifi
               env: nativeEnvironment(process.env, home, {
                 ANTHROPIC_BASE_URL: provider.url,
                 ANTHROPIC_AUTH_TOKEN: "local-fixture-only",
+                ...hookEnvironment,
               }),
               timeoutMs: 60_000,
             },

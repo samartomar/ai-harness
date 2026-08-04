@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   lstatSync,
@@ -11,6 +10,7 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { readRegularFile, retryTransient } from "../internals/fsxn.js";
+import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { HookClient, JsonValue, NormalizedHookEvent } from "./hook-core.js";
 
 export const TOKEN_SAVIOR_RUNTIME_PIN = {
@@ -99,6 +99,8 @@ interface ProcessCompactorOptions {
   tempRoot: string;
   /** Digest independently verified by the acquisition boundary. */
   verifiedWheelSha256: string;
+  /** Repository-owned subprocess seam; injectable for hermetic tests. */
+  run?: Runner;
 }
 
 export interface TokenSaviorRetentionRecord {
@@ -260,95 +262,47 @@ export function createTokenSaviorProcessCompactor(
   if (containsPath(runtimeRoot, tempRoot) || containsPath(tempRoot, runtimeRoot)) {
     throw new Error("Token Savior temporary root must be separate from its runtime root");
   }
+  const run = options.run ?? defaultRunner;
 
-  return (input, signal) =>
-    new Promise<TokenSaviorCompactResult | null>((resolveResult, reject) => {
-      const payload = JSON.stringify(input);
-      if (Buffer.byteLength(payload, "utf8") > TOKEN_SAVIOR_LIMITS.maxOriginalBytes + 16 * 1024) {
-        reject(new Error("Token Savior compactor input exceeds its process limit"));
-        return;
-      }
-      let child: ReturnType<typeof spawn>;
-      try {
-        child = spawn(executable, ["-I", "-c", TOKEN_SAVIOR_COMPACTOR_BRIDGE], {
-          cwd: tempRoot,
-          env: {
-            SYSTEMROOT: process.env.SYSTEMROOT,
-            SystemRoot: process.env.SystemRoot,
-            TEMP: tempRoot,
-            TMP: tempRoot,
-            PYTHONDONTWRITEBYTECODE: "1",
-            PYTHONIOENCODING: "utf-8",
-            PYTHONNOUSERSITE: "1",
-          },
-          stdio: ["pipe", "pipe", "ignore"],
-          windowsHide: true,
-        });
-      } catch {
-        reject(new Error("Token Savior compactor process could not start"));
-        return;
-      }
-      if (child.stdout === null || child.stdin === null) {
-        child.kill();
-        reject(new Error("Token Savior compactor process has unsafe stdio"));
-        return;
-      }
-      const childStdout = child.stdout;
-      const childStdin = child.stdin;
-      const stdout: Buffer[] = [];
-      let stdoutBytes = 0;
-      let settled = false;
-      const finish = (callback: () => void) => {
-        if (settled) return;
-        settled = true;
-        signal.removeEventListener("abort", abort);
-        callback();
-      };
-      const abort = () => {
-        child.kill();
-        finish(() => reject(new Error("Token Savior compactor was aborted")));
-      };
-      signal.addEventListener("abort", abort, { once: true });
-      if (signal.aborted) {
-        abort();
-        return;
-      }
-      childStdout.on("data", (chunk: Buffer) => {
-        stdoutBytes += chunk.length;
-        if (stdoutBytes > TOKEN_SAVIOR_LIMITS.maxCompactedBytes + 16 * 1024) {
-          child.kill();
-          finish(() =>
-            reject(new Error("Token Savior compactor output exceeds its process limit")),
-          );
-          return;
-        }
-        stdout.push(chunk);
-      });
-      child.on("error", () =>
-        finish(() => reject(new Error("Token Savior compactor process could not start"))),
-      );
-      child.on("exit", (code) => {
-        if (code !== 0) {
-          finish(() => reject(new Error("Token Savior compactor process failed")));
-          return;
-        }
-        finish(() => {
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(Buffer.concat(stdout).toString("utf8"));
-          } catch {
-            reject(new Error("Token Savior compactor process returned malformed JSON"));
-            return;
-          }
-          if (parsed !== null && (typeof parsed !== "object" || Array.isArray(parsed))) {
-            reject(new Error("Token Savior compactor process returned a malformed result"));
-            return;
-          }
-          resolveResult(parsed as TokenSaviorCompactResult | null);
-        });
-      });
-      childStdin.end(payload, "utf8");
+  return async (input, signal) => {
+    const payload = JSON.stringify(input);
+    if (Buffer.byteLength(payload, "utf8") > TOKEN_SAVIOR_LIMITS.maxOriginalBytes + 16 * 1024) {
+      throw new Error("Token Savior compactor input exceeds its process limit");
+    }
+    if (signal.aborted) throw new Error("Token Savior compactor was aborted");
+    const result = await run([executable, "-I", "-c", TOKEN_SAVIOR_COMPACTOR_BRIDGE], {
+      cwd: tempRoot,
+      env: {
+        SYSTEMROOT: process.env.SYSTEMROOT,
+        SystemRoot: process.env.SystemRoot,
+        TEMP: tempRoot,
+        TMP: tempRoot,
+        PYTHONDONTWRITEBYTECODE: "1",
+        PYTHONIOENCODING: "utf-8",
+        PYTHONNOUSERSITE: "1",
+      },
+      input: payload,
+      signal,
+      timeoutMs: TOKEN_SAVIOR_LIMITS.maxTimeoutMs,
+      maxBufferBytes: TOKEN_SAVIOR_LIMITS.maxCompactedBytes + 16 * 1024,
     });
+    if (signal.aborted) throw new Error("Token Savior compactor was aborted");
+    if (result.truncated) {
+      throw new Error("Token Savior compactor output exceeds its process limit");
+    }
+    if (result.spawnError) throw new Error("Token Savior compactor process could not start");
+    if (result.code !== 0) throw new Error("Token Savior compactor process failed");
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(result.stdout);
+    } catch {
+      throw new Error("Token Savior compactor process returned malformed JSON");
+    }
+    if (parsed !== null && (typeof parsed !== "object" || Array.isArray(parsed))) {
+      throw new Error("Token Savior compactor process returned a malformed result");
+    }
+    return parsed as TokenSaviorCompactResult | null;
+  };
 }
 
 function validateRetentionRecord(record: TokenSaviorRetentionRecord): void {
@@ -826,6 +780,9 @@ export class TokenSaviorAuditMcpPolicyGuard {
       throw new Error("malformed Token Savior audit JSON-RPC request");
     }
     const request = value as Record<string, unknown>;
+    if (request.jsonrpc !== "2.0" || typeof request.method !== "string") {
+      throw new Error("malformed Token Savior audit JSON-RPC request");
+    }
     if (request.method === "resources/list") {
       return {
         forward: false,
@@ -836,7 +793,33 @@ export class TokenSaviorAuditMcpPolicyGuard {
         },
       };
     }
-    if (request.method !== "tools/call") return { forward: true };
+    if (
+      [
+        "initialize",
+        "notifications/initialized",
+        "notifications/cancelled",
+        "ping",
+        "tools/list",
+      ].includes(request.method)
+    ) {
+      return { forward: true };
+    }
+    if (request.method !== "tools/call") {
+      if (!("id" in request)) {
+        throw new Error(`Token Savior audit method '${request.method}' is disabled`);
+      }
+      return {
+        forward: false,
+        response: {
+          jsonrpc: "2.0",
+          id: tokenSaviorAuditRequestId(request.id),
+          error: {
+            code: -32601,
+            message: `Token Savior audit method '${request.method}' is disabled by the AIH ECC profile`,
+          },
+        },
+      };
+    }
     const params = request.params;
     if (
       params === null ||
