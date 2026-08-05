@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { EccComponentSelection } from "../../src/ecc/components.js";
 import {
+  classifyGovernedEccOperation,
   eccComponentSourcePaths,
   eccManifestOperationSelected,
+  eccMaterializationSpec,
   filterEccManifestPlan,
+  filterGovernedEccManifestPlan,
 } from "../../src/ecc/materialize.js";
 
 interface FixtureOperation {
@@ -17,12 +20,13 @@ function operation(
   sourceRelativePath: string,
   moduleId: string,
   kind: FixtureOperation["kind"] = "copy-file",
+  destinationPath = `/fixture/${sourceRelativePath}`,
 ): FixtureOperation {
   return {
     kind,
     moduleId,
     sourceRelativePath,
-    destinationPath: `/fixture/${sourceRelativePath}`,
+    destinationPath,
   };
 }
 
@@ -89,6 +93,17 @@ function scopedSelection(): EccComponentSelection {
 }
 
 describe("filterEccManifestPlan", () => {
+  it("deduplicates materialized module ids while retaining the first trusted selection order", () => {
+    const spec = eccMaterializationSpec({
+      ...scopedSelection(),
+      moduleIds: ["rules-core", "rules-core", "agents-core"],
+      components: ["baseline:rules", "baseline:agents"],
+      mcps: [],
+    });
+
+    expect(spec.moduleIds).toEqual(["rules-core", "agents-core"]);
+  });
+
   it("materializes exactly the declared upstream Core modules", () => {
     const selected: EccComponentSelection = {
       scope: "scoped",
@@ -223,6 +238,192 @@ describe("filterEccManifestPlan", () => {
     expect(JSON.stringify(plan)).toBe(before);
   });
 
+  const governedSelections: Array<[string, EccComponentSelection]> = [
+    ["core", { ...scopedSelection(), components: [], mcps: [], moduleIds: ["rules-core"] }],
+    [
+      "platform",
+      { ...scopedSelection(), components: [], mcps: [], moduleIds: ["platform-configs"] },
+    ],
+    ["full", { ...scopedSelection(), scope: "full" }],
+  ];
+
+  it.each(governedSelections)(
+    "filters mixed MCP and host-hook operations for governed %s selection while retaining ECC content",
+    (_name, selection) => {
+      const mixedModule = selection.moduleIds?.[0] ?? "rules-core";
+      const operations: FixtureOperation[] = [
+        operation(
+          "rules/common/testing.md",
+          mixedModule,
+          "copy-file",
+          "/fixture/.claude/rules/common/testing.md",
+        ),
+        operation(
+          "agents/code-reviewer.md",
+          mixedModule,
+          "copy-file",
+          "/fixture/.claude/agents/code-reviewer.md",
+        ),
+        operation(
+          "skills/tdd-workflow/SKILL.md",
+          mixedModule,
+          "copy-file",
+          "/fixture/.claude/skills/tdd-workflow/SKILL.md",
+        ),
+        operation("commands/tdd.md", mixedModule, "copy-file", "/fixture/.claude/commands/tdd.md"),
+        operation("rules/common/mcp.md", mixedModule, "copy-file", "/fixture/.mcp.json"),
+        operation(
+          "commands/settings.md",
+          mixedModule,
+          "copy-file",
+          "/fixture/.claude/settings.json",
+        ),
+        operation(
+          "commands/hook.md",
+          "hooks-runtime",
+          "copy-file",
+          "/fixture/.claude/hooks/post-tool-use.js",
+        ),
+      ];
+      const plan = {
+        operations,
+        statePreview: { operations: operations.map((entry) => ({ ...entry })) },
+      };
+
+      filterGovernedEccManifestPlan(plan, selection, {
+        projectRoot: "/fixture",
+        homeDir: "/home/aih",
+        target: "claude",
+      });
+
+      expect(plan.operations.map((entry) => entry.sourceRelativePath)).toEqual([
+        "rules/common/testing.md",
+        "agents/code-reviewer.md",
+        "skills/tdd-workflow/SKILL.md",
+        "commands/tdd.md",
+      ]);
+      expect(plan.statePreview.operations).toEqual(plan.operations);
+    },
+  );
+
+  it.each([
+    [
+      "unknown destination",
+      operation("commands/tdd.md", "commands-core", "copy-file", "/fixture/package.json"),
+    ],
+    [
+      "unsafe source",
+      operation(
+        "./commands/tdd.md",
+        "commands-core",
+        "copy-file",
+        "/fixture/.claude/commands/tdd.md",
+      ),
+    ],
+    [
+      "unsafe destination",
+      operation(
+        "commands/tdd.md",
+        "commands-core",
+        "copy-file",
+        "//fixture/.claude/commands/tdd.md",
+      ),
+    ],
+    [
+      "outside Windows destination",
+      operation(
+        "skills/tdd/SKILL.md",
+        "workflow-quality",
+        "copy-file",
+        "C:/Windows/skills/tdd/SKILL.md",
+      ),
+    ],
+  ] as const)("fails closed on governed %s", (_name, entry) => {
+    const plan = { operations: [entry], statePreview: { operations: [{ ...entry }] } };
+    expect(() =>
+      filterGovernedEccManifestPlan(
+        plan,
+        { ...scopedSelection(), scope: "full" },
+        {
+          projectRoot: "/fixture",
+          homeDir: "/home/aih",
+          target: "claude",
+        },
+      ),
+    ).toThrow(/unclassifiable governed ECC content operation|unsafe ECC (source|destination) path/);
+  });
+
+  it("rejects a content-looking destination outside the authorized project and home roots", () => {
+    const entry = operation(
+      "skills/tdd-workflow/SKILL.md",
+      "workflow-quality",
+      "copy-file",
+      "/tmp/skills/tdd-workflow/SKILL.md",
+    );
+    const plan = { operations: [entry], statePreview: { operations: [{ ...entry }] } };
+
+    expect(() =>
+      filterGovernedEccManifestPlan(
+        plan,
+        { ...scopedSelection(), scope: "full" },
+        {
+          projectRoot: "/fixture",
+          homeDir: "/home/aih",
+          target: "claude",
+        },
+      ),
+    ).toThrow(/unclassifiable governed ECC content operation/);
+  });
+
+  it("rejects a same-root source-to-target remap and duplicate normalized destination", () => {
+    const remapped = operation(
+      "rules/common/testing.md",
+      "rules-core",
+      "copy-file",
+      "/fixture/.claude/skills/common/testing.md",
+    );
+    const remapPlan = { operations: [remapped], statePreview: { operations: [{ ...remapped }] } };
+    expect(() =>
+      filterGovernedEccManifestPlan(
+        remapPlan,
+        { ...scopedSelection(), scope: "full" },
+        {
+          projectRoot: "/fixture",
+          homeDir: "/home/aih",
+          target: "claude",
+        },
+      ),
+    ).toThrow(/unclassifiable governed ECC content operation/);
+
+    const first = operation(
+      "skills/tdd-workflow/SKILL.md",
+      "workflow-quality",
+      "copy-file",
+      "/fixture/.claude/skills/tdd-workflow/SKILL.md",
+    );
+    const second = operation(
+      "skills/tdd-workflow/SKILL.md",
+      "workflow-quality",
+      "copy-file",
+      "/fixture/.claude/skills/tdd-workflow/SKILL.md",
+    );
+    const collisionPlan = {
+      operations: [first, second],
+      statePreview: { operations: [{ ...first }, { ...second }] },
+    };
+    expect(() =>
+      filterGovernedEccManifestPlan(
+        collisionPlan,
+        { ...scopedSelection(), scope: "full" },
+        {
+          projectRoot: "/fixture",
+          homeDir: "/home/aih",
+          target: "claude",
+        },
+      ),
+    ).toThrow(/normalized governed ECC destination collision/);
+  });
+
   it("fails closed on unsupported operation shapes", () => {
     const plan = fixturePlan();
     plan.operations.push(operation("unknown", "agents-core", "remove-tree"));
@@ -231,6 +432,75 @@ describe("filterEccManifestPlan", () => {
     expect(() => filterEccManifestPlan(plan, scopedSelection())).toThrow(
       /unsupported ECC manifest operation kind: remove-tree/,
     );
+  });
+
+  it("rejects malformed manifest arrays and operation identities before governed filtering", () => {
+    expect(() =>
+      filterEccManifestPlan(
+        { operations: null, statePreview: { operations: [] } } as never,
+        scopedSelection(),
+      ),
+    ).toThrow(/invalid ECC manifest plan operation arrays/);
+
+    const malformed = {
+      operations: [
+        {
+          kind: "copy-file",
+          moduleId: 1,
+          sourceRelativePath: "commands/tdd.md",
+          destinationPath: "/fixture/.claude/commands/tdd.md",
+        },
+      ],
+      statePreview: {
+        operations: [
+          {
+            kind: "copy-file",
+            moduleId: 1,
+            sourceRelativePath: "commands/tdd.md",
+            destinationPath: "/fixture/.claude/commands/tdd.md",
+          },
+        ],
+      },
+    };
+    expect(() => filterEccManifestPlan(malformed as never, scopedSelection())).toThrow(
+      /invalid ECC manifest operation shape/,
+    );
+  });
+
+  it("fails closed on unclassifiable governed operation kinds, identities, and merge forms", () => {
+    const roots = { projectRoot: "/fixture", homeDir: "/home/aih", target: "claude" };
+    expect(() =>
+      classifyGovernedEccOperation(
+        operation("commands/tdd.md", "commands-core", "remove-tree") as never,
+        roots,
+      ),
+    ).toThrow(/unsupported ECC manifest operation kind/);
+    expect(() =>
+      classifyGovernedEccOperation(
+        operation("commands/tdd.md", " ", "copy-file", "/fixture/.claude/commands/tdd.md"),
+        roots,
+      ),
+    ).toThrow(/invalid ECC manifest module identity/);
+    expect(() =>
+      classifyGovernedEccOperation(
+        operation(
+          "commands/tdd.md",
+          "commands-core",
+          "merge-json",
+          "/fixture/.claude/commands/tdd.md",
+        ),
+        roots,
+      ),
+    ).toThrow(/unclassifiable governed ECC merge-json operation/);
+  });
+
+  it("retains the exact home-scoped Codex AGENTS mapping under governed filtering", () => {
+    expect(
+      classifyGovernedEccOperation(
+        operation(".codex/AGENTS.md", "agents-core", "copy-file", "/home/aih/.codex/AGENTS.md"),
+        { projectRoot: "/fixture", homeDir: "/home/aih", target: "codex" },
+      ),
+    ).toBe("ecc-content");
   });
 
   it("fails closed when operation and state-preview inputs drift", () => {

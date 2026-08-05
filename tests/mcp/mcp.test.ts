@@ -2705,6 +2705,37 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     ).toThrow(/AIH_ORG_POLICY is active/);
   });
 
+  it("refuses legacy mcp approve when governance owns authoritative activation", () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          policyVersion: "2026.08.0",
+          catalog: { reviewed: [], custom: [] },
+          activations: [],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+
+    expect(() =>
+      mcpApproveCommand.plan(
+        makeCtx({
+          root,
+          options: {
+            server: "context7",
+            acceptEgress: true,
+            reason: "vendor risk accepted for docs lookup",
+          },
+        }),
+      ),
+    ).toThrow(/externally verified evidence or a signed authority receipt.*aih policy evaluate/);
+  });
+
   it("refuses mcp approve when the server is not in the current catalog", () => {
     expect(() =>
       mcpApproveCommand.plan(

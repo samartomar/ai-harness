@@ -92,9 +92,10 @@ describe("CLI program", () => {
     expect(capability?.commands.map((c) => c.name()).sort()).toEqual(["prune", "resolve"]);
   });
 
-  it("registers policy starter, projection, validation, and pin verification as nested commands", () => {
+  it("registers policy starter, evaluation, projection, validation, and pin verification as nested commands", () => {
     const policy = buildProgram().commands.find((c) => c.name() === "policy");
     expect(policy?.commands.map((c) => c.name()).sort()).toEqual([
+      "evaluate",
       "init",
       "project",
       "validate",

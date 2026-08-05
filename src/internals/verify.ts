@@ -83,6 +83,7 @@ export type CheckCode =
   | "org-policy.generation-delta"
   | "org-policy.invalid"
   | "org-policy.bundle-invalid"
+  | "org-policy.effective-blocked"
   | "bundle.signature"
   // report (analytics-derived advisories)
   | "report.context-over-budget"

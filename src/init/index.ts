@@ -10,7 +10,6 @@ import { CANON_OPTION } from "../internals/canon-mode.js";
 import {
   bareDefaultNarrowingNotice,
   detectFallbackNotice,
-  isTargeted,
   resolveTargets,
   unmanagedBootloaders,
 } from "../internals/cli-detect.js";
@@ -18,7 +17,7 @@ import { deepMerge, isPlainObject } from "../internals/merge.js";
 import type { Action, CommandSpec, PlanContext, WriteAction } from "../internals/plan.js";
 import { doc, plan, writeJson } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
-import { orgPolicyProjectionActions } from "../org-policy/project.js";
+import { verifiedOrgPolicyProjectionActions } from "../org-policy/project.js";
 import { readOrgPolicy } from "../org-policy/schema.js";
 import { sidecarInitActions } from "../truth/index.js";
 import { INIT_PHASES } from "./phases.js";
@@ -171,6 +170,10 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     targets: resolution.clis,
     options: { ...ctx.options, baseline: baseline.id },
   };
+  // Read once before composing leaf plans. A governed inventory exclusively owns
+  // its MCP and usage-hook surfaces, so generic phases must not leave earlier
+  // writes for the policy projector to accidentally merge or conflict with.
+  const policy = readOrgPolicy(baseCtx.root, baseCtx.env);
 
   // If `--detect` found nothing and we defaulted to claude, say so once at the top
   // (the phases short-circuit on `ctx.targets`, so no phase emits this itself).
@@ -195,6 +198,18 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
 
   for (const phase of INIT_PHASES) {
     if (phase.command.name === "superpowers" && baseline.id !== "ecc") continue;
+    if (
+      policy?.governance !== undefined &&
+      (phase.command.name === "mcp" || phase.command.name === "usage")
+    ) {
+      actions.push(
+        doc(
+          `init: ${phase.command.name}`,
+          `governance owns AIH ${phase.command.name === "mcp" ? "MCP" : "usage-hook"} projection; the generic ${phase.command.name} phase is suppressed`,
+        ),
+      );
+      continue;
+    }
     const phaseCtx =
       phase.command.name === "mcp"
         ? { ...baseCtx, options: { ...ctx.options, mode: mcpMode } }
@@ -206,14 +221,13 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     actions.push(...sub.actions);
   }
 
-  const policy = readOrgPolicy(baseCtx.root, baseCtx.env);
-  if (policy !== undefined && isTargeted(baseCtx, "claude")) {
+  if (policy !== undefined) {
     actions.push(
       doc(
         "init: org-policy",
         "org-policy — project the active aih-org-policy.json into managed settings for doctor-compatible regeneration",
       ),
-      ...orgPolicyProjectionActions(baseCtx, policy),
+      ...(await verifiedOrgPolicyProjectionActions(baseCtx, policy)),
     );
   }
 

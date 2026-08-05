@@ -350,6 +350,24 @@ function staleManagedMcpServerKeys(
   }
 }
 
+function workspaceMcpResidue(root: string): { managed: string[]; ambiguous: string[] } {
+  const config = readWorkspaceMcpConfig(resolve(root, ".mcp.json"));
+  if (config.text === undefined) return { managed: [], ambiguous: [] };
+  try {
+    const parsed = JSON.parse(config.text) as { mcpServers?: unknown };
+    if (!isPlainObject(parsed.mcpServers)) return { managed: [], ambiguous: [".mcp.json"] };
+    const managed: string[] = [];
+    const ambiguous: string[] = [];
+    for (const [name, value] of Object.entries(parsed.mcpServers)) {
+      if (isLegacyAihWorkspaceMcpServer(name, value)) managed.push(name);
+      else ambiguous.push(name);
+    }
+    return { managed, ambiguous };
+  } catch {
+    return { managed: [], ambiguous: [".mcp.json"] };
+  }
+}
+
 function withExpectedContents(action: WriteAction, contents: string | undefined): WriteAction {
   return {
     ...action,
@@ -569,13 +587,16 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const policyResult = readMcpOrgPolicy(ctx);
   if (policyResult.error !== undefined) throw invalidOrgPolicyError(policyResult.error);
   const mcpPolicy = policyResult.policy?.mcp;
+  const governedMcp = policyResult.policy?.governance !== undefined;
   const allowWorkspaceGraph =
-    mcpPolicy?.allowManagedOnly !== true ||
-    (mcpPolicy.allowedServers.includes("code-review-graph") &&
-      !mcpPolicy.disabledServers.includes("code-review-graph"));
+    !governedMcp &&
+    (mcpPolicy?.allowManagedOnly !== true ||
+      (mcpPolicy.allowedServers.includes("code-review-graph") &&
+        !mcpPolicy.disabledServers.includes("code-review-graph")));
   const mcp = allowWorkspaceGraph ? spanningMcp(ctx.root, presentRepoPaths) : { mcpServers: {} };
   const mcpKeys = Object.keys(mcp.mcpServers);
   const staleMcp = staleManagedMcpServerKeys(ctx.root, mcpKeys);
+  const governedMcpResidue = governedMcp ? workspaceMcpResidue(ctx.root) : undefined;
   const clis = resolveClis(ctx.options, { strict: true });
   const bootloaders = bootloadersFor(clis);
   assertNoBootstrappedBootloader(ctx, bootloaders);
@@ -611,21 +632,25 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
       "per-repo discipline routing (read a repo's canon before editing it)",
     ),
     ...workspaceBootloaderWrites(bootloaders, bootloaderActivations, name, repoPaths, dir),
-    withExpectedContents(
-      writeJson(
-        ".mcp.json",
-        mcp,
-        `workspace graph MCP scoped to ${repoPaths.length} declared child repo(s), merged into any existing .mcp.json`,
-        {
-          merge: true,
-          replaceJsonChildKeys: { mcpServers: mcpKeys },
-          ...(staleMcp.keys.length > 0
-            ? { pruneJsonChildKeys: { mcpServers: { exact: staleMcp.keys } } }
-            : {}),
-        },
-      ),
-      staleMcp.source,
-    ),
+    ...(governedMcp
+      ? []
+      : [
+          withExpectedContents(
+            writeJson(
+              ".mcp.json",
+              mcp,
+              `workspace graph MCP scoped to ${repoPaths.length} declared child repo(s), merged into any existing .mcp.json`,
+              {
+                merge: true,
+                replaceJsonChildKeys: { mcpServers: mcpKeys },
+                ...(staleMcp.keys.length > 0
+                  ? { pruneJsonChildKeys: { mcpServers: { exact: staleMcp.keys } } }
+                  : {}),
+              },
+            ),
+            staleMcp.source,
+          ),
+        ]),
   ];
   if (enableGit) writes.push(workspaceGitignoreWrite(ctx.root, repoPaths));
 
@@ -660,6 +685,37 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
               "Run `aih workspace hydrate --apply` to restore committed children, or create the child repo before relying on workspace MCP.",
             ].join("\n"),
           ),
+        ]
+      : []),
+    ...(governedMcp
+      ? [
+          doc(
+            "workspace graph MCP suppressed by governance",
+            "Governance exclusively owns AIH MCP projection, so workspace did not write .mcp.json graph servers. Run `aih policy project` for governed MCPs; workspace graph entries are not adopted by this command.",
+          ),
+          probe("workspace graph MCP governance residue", () => {
+            const residue = governedMcpResidue ?? { managed: [], ambiguous: [] };
+            if (residue.managed.length === 0 && residue.ambiguous.length === 0) {
+              return {
+                name: "workspace graph MCP governance residue",
+                verdict: "pass",
+                detail: "no pre-existing workspace MCP entries need governance migration",
+              };
+            }
+            const owned =
+              residue.managed.length > 0 ? `AIH-owned: ${residue.managed.join(", ")}` : "";
+            const ambiguous =
+              residue.ambiguous.length > 0 ? `ambiguous: ${residue.ambiguous.join(", ")}` : "";
+            return {
+              name: "workspace graph MCP governance residue",
+              verdict: "fail",
+              code: "org-policy.effective-blocked",
+              detail:
+                `${[owned, ambiguous].filter(Boolean).join("; ")} remain in .mcp.json; ` +
+                "AIH will not adopt or overwrite them—remove/migrate them manually before relying on policy project",
+              location: { uri: ".mcp.json" },
+            };
+          }),
         ]
       : []),
     doc(

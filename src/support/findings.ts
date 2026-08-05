@@ -522,6 +522,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Re-issue the policy bundle so BOTH layers parse — the envelope (schemaVersion 1, bundleVersion, issuer, ISO-8601 issuedAt) and the embedded org policy. `aih policy validate --bundle <path>` names the failing layer; do not distribute the bundle until it validates.",
   },
+  "org-policy.effective-blocked": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "requested org policy cannot be made effective safely",
+    action:
+      "Run `aih policy evaluate --verify` to inspect requested versus effective candidates. Correct the exact identity, evidence or externally verified approval, target, ownership, or projector finding shown there; unwaivable danger codes cannot be approved. Do not use `aih policy project --apply` until evaluation passes.",
+  },
   "bundle.signature": {
     audience: "developer",
     failSeverity: "blocking",

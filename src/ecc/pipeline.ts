@@ -153,6 +153,8 @@ export interface EccRegistrationRequest extends VerifiedEccRequest {
   selection: EccComponentSelection;
   project: ProjectRegistration;
   ledger: RegistrationLedger;
+  /** Policy governance makes AIH the sole MCP/hook projector. */
+  governance?: true;
 }
 
 export function buildEccRegistrationRequest(ctx: PlanContext, clis: Cli[]): EccRegistrationRequest {
@@ -193,6 +195,7 @@ export function buildEccRegistrationRequest(ctx: PlanContext, clis: Cli[]): EccR
     },
     project,
     ledger,
+    ...(policy?.governance !== undefined ? { governance: true } : {}),
   };
 }
 
@@ -271,6 +274,20 @@ export async function executeEccCommand(
 ): Promise<PlanResult> {
   assertOrgPolicyMutationSource({ ...ctx, posture: postureFromContext(ctx) });
   if (ctx.options.lifecycle !== undefined) {
+    const lifecycle = String(ctx.options.lifecycle);
+    const policy = readOrgPolicy(ctx.root, ctx.env);
+    if (
+      policy?.governance !== undefined &&
+      (lifecycle === "install" ||
+        lifecycle === "update" ||
+        lifecycle === "repair" ||
+        lifecycle === "rollback")
+    ) {
+      throw new AihError(
+        "governance exclusively owns AIH MCP projection; ECC lifecycle install/update/repair/rollback may register native MCPs, so use `aih policy project` after the non-MCP framework lifecycle is designed",
+        "AIH_CONFIG",
+      );
+    }
     return (deps.executeProfileLifecycle ?? executeEccProfileLifecycleCommand)(
       ctx,
       deps.profileLifecycle,

@@ -241,6 +241,36 @@ describe("workspace.plan — generated artifacts", () => {
     ).toEqual(["aih-workspace-graph-ui"]);
   });
 
+  it("suppresses workspace graph MCP writes under governance and reports existing residue", async () => {
+    child("ui");
+    writeFileSync(
+      join(parent, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          policyVersion: "2026.08.0",
+          catalog: { reviewed: [], custom: [] },
+          activations: [],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+    writeFileSync(join(parent, ".mcp.json"), JSON.stringify({ mcpServers: { manual: {} } }));
+    const actions = (await command.plan(makeCtx({ repos: "ui" }))).actions;
+    expect(writesByPath(actions).has(".mcp.json")).toBe(false);
+    const residue = actions.find(
+      (action) =>
+        action.kind === "probe" && action.describe === "workspace graph MCP governance residue",
+    );
+    if (residue?.kind !== "probe") throw new Error("expected governance residue probe");
+    expect(residue.run(makeCtx({ repos: "ui" }))).toMatchObject({
+      verdict: "fail",
+      code: "org-policy.effective-blocked",
+    });
+  });
+
   it("writes workspace bootloaders for every targeted CLI", async () => {
     child("ui");
     const w = writesByPath(

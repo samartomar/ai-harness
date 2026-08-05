@@ -8,7 +8,11 @@ import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js
 import { UPSTREAM_CORE_ECC_MODULE_IDS } from "../../src/ecc/components.js";
 import { eccEvidenceComponentIdsForSelection } from "../../src/ecc/evidence.js";
 import type { EccInstallPreviewArtifact } from "../../src/ecc/install-preview.js";
-import { buildEccRegistrationRequest, executeEccEvidencePipeline } from "../../src/ecc/pipeline.js";
+import {
+  buildEccRegistrationRequest,
+  executeEccCommand,
+  executeEccEvidencePipeline,
+} from "../../src/ecc/pipeline.js";
 import {
   emptyRegistrationLedger,
   mergeRegistrationLedger,
@@ -257,6 +261,104 @@ describe("ECC baseline evidence pipeline", () => {
     );
     const unrestricted = buildEccRegistrationRequest(context, ["claude"]);
     expect(unrestricted.project.mcps).toEqual(["mcp:code-review-graph"]);
+  });
+
+  it("does not let ECC profile or --with MCP choices bypass an active governance inventory", () => {
+    const home = join(root, "home-governed");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowManagedOnly: true, allowedServers: ["code-review-graph"] },
+        governance: {
+          policyVersion: "2026.08.0",
+          catalog: { reviewed: [], custom: [] },
+          activations: [],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+    const context = ctx(false);
+    context.options = { profile: "core", with: ["mcp:code-review-graph"] };
+    context.env = { HOME: home };
+    context.host = makeHostAdapter({ platform: "linux", run: context.run, env: context.env });
+
+    const request = buildEccRegistrationRequest(context, ["claude"]);
+    expect(request.project.mcps).toEqual([]);
+    expect(request.selection.mcps).toEqual([]);
+    expect(request.project.moduleIds?.length).toBeGreaterThan(0);
+  });
+
+  it("keeps governed ECC full operational while marking it for operation-level filtering", () => {
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          policyVersion: "2026.08.0",
+          catalog: { reviewed: [], custom: [] },
+          activations: [],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+    const context = ctx(false);
+    context.options = { profile: "full" };
+    const request = buildEccRegistrationRequest(context, ["claude"]);
+    expect(request.selection.scope).toBe("full");
+    expect(request.governance).toBe(true);
+    expect(request.selection.mcps).toEqual([]);
+  });
+
+  it("blocks governed ECC lifecycle MCP-writing verbs while retaining uninstall cleanup", async () => {
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          policyVersion: "2026.08.0",
+          catalog: { reviewed: [], custom: [] },
+          activations: [],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+    for (const lifecycle of ["install", "update", "repair", "rollback"]) {
+      const context = ctx(false);
+      context.options = { lifecycle };
+      await expect(
+        executeEccCommand(context, {
+          executeProfileLifecycle: async () => {
+            throw new Error("lifecycle must not run");
+          },
+        }),
+      ).rejects.toThrow(/governance exclusively owns AIH MCP projection/);
+    }
+
+    const uninstall = ctx(false);
+    uninstall.options = { lifecycle: "uninstall" };
+    await expect(
+      executeEccCommand(uninstall, {
+        executeProfileLifecycle: async () => ({
+          capability: "ecc lifecycle",
+          applied: false,
+          writes: [],
+          docs: [],
+          probes: [],
+          execs: [],
+          digests: [],
+          backups: [],
+          removed: [],
+        }),
+      }),
+    ).resolves.toMatchObject({ capability: "ecc lifecycle" });
   });
 
   it("builds the additive machine union from explicit declarations and prior projects", () => {

@@ -90,3 +90,57 @@ export function aihIgnoreWrite(root: string): WriteAction {
     "ignore aih data (.aih/*), keep the committed usage-record.mjs tool tracked",
   );
 }
+
+/**
+ * Whether an existing ignore file has no AIH-shaped lines whose ownership is
+ * ambiguous.  Policy hooks use this narrower primitive so their receipt can
+ * later restore the user's exact prior bytes; the general init writer above is
+ * intentionally allowed to migrate older managed blocks instead.
+ */
+export function canAppendPolicyAihIgnore(existing: string | undefined): boolean {
+  if (existing === undefined) return true;
+  return !existing
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .some((line) => isOwnedLine(line));
+}
+
+/**
+ * Append a separately-owned policy hook ignore block without rewriting any
+ * pre-existing bytes.  The matching rollback helper below can therefore put
+ * an unchanged user file back exactly as it was.
+ */
+export function policyAihIgnoreWrite(root: string): WriteAction {
+  const existing = readIfExists(join(root, ".gitignore"));
+  if (!canAppendPolicyAihIgnore(existing)) {
+    throw new Error(".gitignore already contains AIH-shaped lines with ambiguous ownership");
+  }
+  const eol = existing !== undefined && /\r\n/.test(existing) ? "\r\n" : "\n";
+  const block = [MANAGED_HEADER, ...AIH_PATTERNS].join(eol);
+  const contents =
+    existing === undefined
+      ? `${block}${eol}`
+      : `${existing}${existing.endsWith("\n") ? eol : `${eol}${eol}`}${block}${eol}`;
+  return writeText(
+    ".gitignore",
+    contents,
+    "append receipt-owned aih policy hook ignore block without altering existing ignore rules",
+  );
+}
+
+/** Exact inverse of `policyAihIgnoreWrite`; undefined contents means remove the new file. */
+export function policyAihIgnoreRollbackContents(
+  current: string,
+): { contents?: string } | undefined {
+  for (const eol of ["\r\n", "\n"] as const) {
+    const block = `${[MANAGED_HEADER, ...AIH_PATTERNS].join(eol)}${eol}`;
+    if (current === block) return {};
+    const suffix = `${eol}${eol}${block}`;
+    if (current.endsWith(suffix)) return { contents: current.slice(0, -suffix.length) };
+    // Existing content with a final newline gets precisely one extra separator.
+    const newlineSuffix = `${eol}${block}`;
+    if (current.endsWith(newlineSuffix))
+      return { contents: current.slice(0, -newlineSuffix.length) };
+  }
+  return undefined;
+}

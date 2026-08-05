@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { orgPolicyEffectiveDigest } from "../../src/org-policy/evaluate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/report/index.js";
 import {
@@ -68,6 +69,31 @@ describe("configPanel", () => {
 
   it("reports zero present for an empty repo", () => {
     expect(configPanel(ctx()).describe).toMatch(/Configuration — 0 of/);
+  });
+});
+
+describe("orgPolicyEffectiveDigest", () => {
+  it("exports the effective governed-candidate result without treating config presence as activation", async () => {
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "team",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          policyVersion: "2026.08.0",
+          catalog: { reviewed: [], custom: [] },
+          activations: [],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+
+    const digest = await orgPolicyEffectiveDigest(ctx());
+
+    expect(digest?.describe).toContain("Effective org policy — 0 effective · 0 blocked");
+    expect(digest?.text).toContain("Requested vs effective governed candidates");
+    expect(digest?.data).toMatchObject({ policyVersion: "2026.08.0", blocking: false });
   });
 });
 

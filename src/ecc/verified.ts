@@ -38,6 +38,8 @@ export interface VerifiedEccRequest {
   packs: EccLanguagePack[];
   stackSummary?: string;
   selection?: EccComponentSelection;
+  /** Governance makes the verified materializer exclude AIH-owned MCP/hooks. */
+  governance?: true;
   project?: ProjectRegistration;
   ledger?: RegistrationLedger;
 }
@@ -90,7 +92,7 @@ for (const step of steps) {
 const VERIFIED_ECC_MATERIALIZE_DRIVER = String.raw`
 const path = require("node:path");
 const payload = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
-if (!payload || typeof payload.sourceRoot !== "string" || typeof payload.target !== "string" || !payload.spec) {
+if (!payload || typeof payload.sourceRoot !== "string" || typeof payload.target !== "string" || typeof payload.homeDir !== "string" || typeof payload.projectRoot !== "string" || !payload.spec) {
   throw new Error("invalid scoped ECC materialization payload");
 }
 const { createManifestInstallPlan, applyInstallPlan } = require(path.join(payload.sourceRoot, "scripts", "lib", "install-executor.js"));
@@ -103,6 +105,21 @@ const plan = createManifestInstallPlan({
   homeDir: payload.homeDir,
   projectRoot: payload.projectRoot,
 });
+if (spec.excludeAihOwnedSurfaces === true) {
+  const expectedInstallStatePath = {
+    claude: path.join(payload.homeDir, ".claude", "ecc", "install-state.json"),
+    cursor: path.join(payload.projectRoot, ".cursor", "ecc-install-state.json"),
+    gemini: path.join(payload.projectRoot, ".gemini", "ecc-install-state.json"),
+    opencode: path.join(payload.homeDir, ".opencode", "ecc-install-state.json"),
+    zed: path.join(payload.projectRoot, ".zed", "ecc-install-state.json"),
+  }[payload.target];
+  if (!expectedInstallStatePath || typeof plan.installStatePath !== "string" || path.resolve(plan.installStatePath) !== path.resolve(expectedInstallStatePath)) {
+    throw new Error("ECC install-state path is not the exact authorized target state path");
+  }
+  // Do not leave an upstream-provided alias in the object consumed by apply:
+  // the expected path is both authority and the eventual write destination.
+  plan.installStatePath = expectedInstallStatePath;
+}
 const normalize = (value) => String(value || "").replace(/\\/g, "/");
 const identity = (operation) => [operation.kind, operation.moduleId, normalize(operation.sourceRelativePath), normalize(operation.destinationPath)].join("\0");
 if (!Array.isArray(plan.operations) || !plan.statePreview || !Array.isArray(plan.statePreview.operations)) throw new Error("invalid ECC manifest plan operation arrays");
@@ -110,25 +127,92 @@ if (plan.operations.length !== plan.statePreview.operations.length || plan.opera
 for (const operation of plan.operations) {
   if (operation.kind !== "copy-file" && operation.kind !== "merge-json") throw new Error("unsupported ECC manifest operation kind: " + operation.kind);
 }
-if (spec.scope !== "full") {
+const selectOperation = (operation) => {
+  if (spec.scope === "full") return true;
   const wholeModules = new Set(spec.wholeModules);
   const skills = new Set(spec.skills);
   const agents = new Set(spec.agents);
   const sourceRoots = new Set(spec.sourceRoots || []);
-  const keep = (operation) => {
-    if (wholeModules.has(operation.moduleId)) return true;
-    const source = normalize(operation.sourceRelativePath);
-    for (const sourceRoot of sourceRoots) {
-      const root = normalize(sourceRoot);
-      if (source === root || source.startsWith(root + "/")) return true;
+  if (wholeModules.has(operation.moduleId)) return true;
+  const source = normalize(operation.sourceRelativePath);
+  for (const sourceRoot of sourceRoots) {
+    const root = normalize(sourceRoot);
+    if (source === root || source.startsWith(root + "/")) return true;
+  }
+  if (spec.agentScaffolding && (source === "AGENTS.md" || source === ".agents/plugins/marketplace.json")) return true;
+  const agent = /^agents\/([^/]+)\.md$/.exec(source);
+  if (agent && agents.has(agent[1])) return true;
+  const skill = /^(?:skills|\.agents\/skills)\/([^/]+)\//.exec(source);
+  return Boolean(skill && skills.has(skill[1]));
+};
+let operations = plan.operations.filter(selectOperation);
+if (spec.excludeAihOwnedSurfaces === true) {
+  const assertSourcePath = (value) => {
+    const normalized = normalize(value);
+    if (!normalized || normalized.includes(String.fromCharCode(0)) || normalized.startsWith("/") || normalized.startsWith("//") || /^[a-z]:\//i.test(normalized) || normalized.startsWith("./") || normalized.split("/").some((part) => !part || part === "." || part === "..")) {
+      throw new Error("unsafe ECC source path: " + value);
     }
-    if (spec.agentScaffolding && (source === "AGENTS.md" || source === ".agents/plugins/marketplace.json")) return true;
-    const agent = /^agents\/([^/]+)\.md$/.exec(source);
-    if (agent && agents.has(agent[1])) return true;
-    const skill = /^(?:skills|\.agents\/skills)\/([^/]+)\//.exec(source);
-    return Boolean(skill && skills.has(skill[1]));
+    return normalized;
   };
-  const operations = plan.operations.filter(keep);
+  const assertDestinationPath = (value) => {
+    const normalized = normalize(value);
+    const windowsAbsolute = /^[a-z]:\//i.test(normalized);
+    const posixAbsolute = normalized.startsWith("/") && !normalized.startsWith("//");
+    const body = windowsAbsolute ? normalized.slice(3) : posixAbsolute ? normalized.slice(1) : "";
+    if (!normalized || normalized.includes(String.fromCharCode(0)) || (!windowsAbsolute && !posixAbsolute) || !body || body.startsWith("./") || body.split("/").some((part) => !part || part === "." || part === "..")) {
+      throw new Error("unsafe ECC destination path: " + value);
+    }
+    if (containedRelative(payload.projectRoot, normalized) === undefined && containedRelative(payload.homeDir, normalized) === undefined) {
+      throw new Error("ECC destination escapes authorized project/home roots: " + value);
+    }
+    return normalized;
+  };
+  const containedRelative = (root, destination) => {
+    const inside = path.relative(path.resolve(root), path.resolve(destination));
+    if (!inside || inside === ".." || inside.startsWith("../") || inside.startsWith("..\\") || path.isAbsolute(inside)) return undefined;
+    const normalized = normalize(inside);
+    return normalized.split("/").some((part) => !part || part === "." || part === "..") ? undefined : normalized;
+  };
+  const mcpPath = (value) => /(?:^|\/)(?:\.mcp\.json|mcp\.json|mcp-servers\.json)$/i.test(value) || /^(?:mcp-configs|mcp)(?:\/|$)/i.test(value);
+  const hostRuntimePath = (value) => /(?:^|\/)(?:\.claude|\.codex|\.cursor|\.kiro|\.gemini|\.opencode|\.zed)\/(?:hooks(?:\/|$)|(?:settings(?:\.local)?\.json|config\.(?:json|toml)))$/i.test(value) || /^(?:hooks|scripts\/hooks)(?:\/|$)/i.test(value);
+  const eccContentPath = (value) => value === "AGENTS.md" || /^(?:\.agents\/(?:plugins|skills)\/|agents\/|skills\/|commands\/|rules\/|\.claude\/commands\/|\.codex\/AGENTS\.md$)/.test(value);
+  const eccContentDestination = (source, destination) => {
+    const mapping = (() => {
+      if (source === "AGENTS.md") return { root: payload.projectRoot, relative: "AGENTS.md" };
+      if (source === ".codex/AGENTS.md") return { root: payload.homeDir, relative: ".codex/AGENTS.md" };
+      const targetRoot = "." + payload.target;
+      const mappings = [[".agents/plugins/", ".agents/plugins/"], [".agents/skills/", ".agents/skills/"], [".claude/commands/", ".claude/commands/"], ["agents/", targetRoot + "/agents/"], ["skills/", targetRoot + "/skills/"], ["commands/", targetRoot + "/commands/"], ["rules/", targetRoot + "/rules/"]];
+      for (const [sourcePrefix, targetPrefix] of mappings) {
+        if (!source.startsWith(sourcePrefix)) continue;
+        const suffix = source.slice(sourcePrefix.length);
+        return suffix ? { root: payload.projectRoot, relative: targetPrefix + suffix } : undefined;
+      }
+      return undefined;
+    })();
+    return Boolean(mapping) && containedRelative(mapping.root, destination) === mapping.relative;
+  };
+  const classify = (operation) => {
+    if (operation.kind !== "copy-file" && operation.kind !== "merge-json") throw new Error("unsupported ECC manifest operation kind: " + operation.kind);
+    if (typeof operation.moduleId !== "string" || operation.moduleId.trim().length === 0) throw new Error("invalid ECC manifest module identity");
+    const source = assertSourcePath(operation.sourceRelativePath);
+    const destination = assertDestinationPath(operation.destinationPath);
+    if (mcpPath(source) || mcpPath(destination)) return "mcp";
+    if (operation.moduleId === "hooks-runtime" || hostRuntimePath(source) || hostRuntimePath(destination)) return "host-runtime";
+    if (operation.kind === "merge-json") throw new Error("unclassifiable governed ECC merge-json operation: " + operation.moduleId + ":" + destination);
+    if (!eccContentPath(source) || !eccContentDestination(source, destination)) throw new Error("unclassifiable governed ECC content operation: " + operation.moduleId + ":" + source + " -> " + destination);
+    return "ecc-content";
+  };
+  const destinations = new Set();
+  operations = operations.filter((operation) => {
+    if (classify(operation) !== "ecc-content") return false;
+    const destination = normalize(operation.destinationPath);
+    const collisionKey = destination.normalize("NFC").toLowerCase();
+    if (destinations.has(collisionKey)) throw new Error("normalized governed ECC destination collision: " + destination);
+    destinations.add(collisionKey);
+    return true;
+  });
+}
+if (operations.length !== plan.operations.length) {
   plan.operations = operations;
   plan.statePreview.operations = operations;
 }
@@ -206,6 +290,7 @@ function materializeStep(
   sourceRoot: string,
   target: Cli,
   selection: EccComponentSelection,
+  spec: ReturnType<typeof eccMaterializationSpec>,
 ): VerifiedInstallStep {
   const homeDir = ctx.env.HOME || ctx.env.USERPROFILE || homedir();
   const payload = {
@@ -213,8 +298,8 @@ function materializeStep(
     target,
     homeDir,
     projectRoot: ctx.root,
-    ...eccMaterializationSpec(selection),
-    spec: eccMaterializationSpec(selection),
+    ...spec,
+    spec,
   };
   return {
     argv: [process.execPath, "-e", VERIFIED_ECC_MATERIALIZE_DRIVER],
@@ -299,6 +384,12 @@ export function verifiedEccInstallPlan(
   request: VerifiedEccRequest,
   authorizations: readonly BaselineAuthorization[],
 ): Plan {
+  if (request.governance === true && request.selection === undefined) {
+    throw new AihError(
+      "refusing governed ECC install without an authorized component selection; policy project owns AIH MCP and hook projection",
+      "AIH_TRUST",
+    );
+  }
   const pin = authorizations[0]?.pinnedSha;
   const repo = checkout(sourceRoot, pin);
   const evidenceBoundTargets = request.clis.filter(
@@ -312,6 +403,13 @@ export function verifiedEccInstallPlan(
     request.selection === undefined
       ? undefined
       : authorizedEccSelection(request.selection, authorizations, evidenceBoundTargets);
+  const materialization =
+    selection === undefined
+      ? undefined
+      : {
+          ...eccMaterializationSpec(selection),
+          ...(request.governance === true ? { excludeAihOwnedSurfaces: true } : {}),
+        };
   if (
     selection !== undefined &&
     selection.scope === "scoped" &&
@@ -345,8 +443,8 @@ export function verifiedEccInstallPlan(
 
   for (const cli of request.clis) {
     if (isAihDirectEccInstallTarget(cli)) {
-      if (selection !== undefined) {
-        steps.push(materializeStep(ctx, sourceRoot, cli, selection));
+      if (selection !== undefined && materialization !== undefined) {
+        steps.push(materializeStep(ctx, sourceRoot, cli, selection, materialization));
       } else {
         steps.push({
           argv: [
@@ -382,8 +480,9 @@ export function verifiedEccInstallPlan(
         ctx,
         repo,
         request.profile,
-        selection ? eccMaterializationSpec(selection) : undefined,
+        materialization,
         scopedMcps,
+        request.governance === true,
       )) {
         if (action.kind === "exec") {
           if (!action.describe.includes("Node dependencies")) {

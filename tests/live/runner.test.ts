@@ -1,6 +1,14 @@
 import type { SpawnOptions } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -217,6 +225,62 @@ describe("live launch contract", () => {
     chmodSync(decoy, 0o644);
     const executable = install(realRoot, "codex");
     expect(findOnPath("codex", { PATH: `${decoyRoot}:${realRoot}` }, "linux")).toBe(executable);
+  });
+
+  it("excludes repo-contained PATH candidates, including symlink targets, while retaining an external executable", () => {
+    const governedRoot = fixtureRoot();
+    const externalRoot = fixtureRoot();
+    const inRootBin = join(governedRoot, "node_modules", ".bin");
+    mkdirSync(inRootBin, { recursive: true });
+    const name = process.platform === "win32" ? "gh.exe" : "gh";
+    install(inRootBin, name);
+    const external = realpathSync.native(install(externalRoot, name));
+    const separator = process.platform === "win32" ? ";" : ":";
+
+    expect(
+      findOnPath("gh", { PATH: `${inRootBin}${separator}${externalRoot}` }, process.platform, {
+        excludeRoot: governedRoot,
+        windowsExeOnly: true,
+      }),
+    ).toBe(external);
+    expect(
+      findOnPath("gh", { PATH: inRootBin }, process.platform, {
+        excludeRoot: governedRoot,
+        windowsExeOnly: true,
+      }),
+    ).toBeUndefined();
+
+    const linkedBin = join(externalRoot, "linked-in-root-bin");
+    symlinkSync(inRootBin, linkedBin, process.platform === "win32" ? "junction" : "dir");
+    expect(
+      findOnPath("gh", { PATH: `${linkedBin}${separator}${externalRoot}` }, process.platform, {
+        excludeRoot: governedRoot,
+        windowsExeOnly: true,
+      }),
+    ).toBe(external);
+
+    const inRootLinkToExternal = join(governedRoot, "bin-linking-out");
+    symlinkSync(
+      externalRoot,
+      inRootLinkToExternal,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    const laterExternalRoot = fixtureRoot();
+    const laterExternal = realpathSync.native(install(laterExternalRoot, name));
+    expect(
+      findOnPath(
+        "gh",
+        { PATH: `${inRootLinkToExternal}${separator}${laterExternalRoot}` },
+        process.platform,
+        { excludeRoot: governedRoot, windowsExeOnly: true },
+      ),
+    ).toBe(laterExternal);
+    expect(
+      findOnPath("gh", { PATH: inRootLinkToExternal }, process.platform, {
+        excludeRoot: governedRoot,
+        windowsExeOnly: true,
+      }),
+    ).toBeUndefined();
   });
 
   it("executes a temporary fixed cmd fixture through absolute System32 cmd.exe", async () => {

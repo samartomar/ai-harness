@@ -128,7 +128,7 @@ Do not use `aih prune --cli claude --apply` as a retargeting command. `prune` ig
 | Install Superpowers | `aih superpowers --cli <list> --apply` | The selected CLIs should receive the Superpowers skill set through its own install path. |
 | Run CRISPY context engineering | `aih crispy` | A deterministic, gate-ordered context-engineering stage machine is the target. |
 | Add repo hygiene | `aih scaffold --apply`, `aih secrets --verify`, `aih guardrails --apply` | Secret deny rules, pre-commit, `.gitignore`, and license/secret gates are needed. |
-| Configure MCP | `aih mcp --apply` | Supported tools need MCP config. Use `--mode offline` or `--mode none` for constrained environments; warm pinned `uvx` packages such as `code-review-graph@2.3.7` before relying on offline startup. |
+| Configure MCP | `aih mcp --apply` (non-governed) or `aih policy evaluate` then `aih policy project --apply` (governed) | Governance exclusively owns AIH MCP/hook projection: validate external evidence or a signed authority receipt, project the effective policy, and manually remediate any reported legacy workspace MCP residue. Non-governed tools can use `--mode offline` or `--mode none`; warm pinned `uvx` packages such as `code-review-graph@2.3.7` before relying on offline startup. |
 | Apply policy-filtered MCP | `aih mcp --posture enterprise --mcp-compliant --apply`, then `aih mcp --posture enterprise --mcp-compliant --verify` | Generated MCP entries should include only policy-approved servers and fail if denied generated entries remain. |
 | Add sandbox defaults | `aih sandbox --apply` | Devcontainer or sandbox allowlist/fail-if-unavailable settings are needed. |
 | Adopt an existing AI setup | `aih adopt` | A brownfield repo already has AI docs or tool-native files. Preview first. |
@@ -213,6 +213,7 @@ For hand-authored distributed policy, each `mcp.approvals[]` entry needs `server
 | Use case | Primary commands | When to use |
 |---|---|---|
 | Validate org policy | `aih policy validate` | A repo or distributed bundle has `aih-org-policy.json` or policy bundle input. |
+| Evaluate governed candidates | `aih policy evaluate --verify` | Before projection or in CI, show requested versus effective MCP/hook/framework state and fail on identity, evidence/authority, safety, target, or projector blockers. |
 | Check policy drift | `aih policy verify --against <sha-or-bundle>` | Enterprise or CI needs to verify active policy against a trusted channel. |
 | Verify project truth | `aih truth verify` | A sidecar should fail closed on commit/version/claim/decision drift, acceptance blockers, or stale agent-evidence file claims. |
 | Stage a truth pack | `aih truth pack --token-budget <n> --apply` | Agent-proposed truth changes should stage outside the repo before explicit promotion. |

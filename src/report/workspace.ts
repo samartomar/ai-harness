@@ -3,6 +3,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { readOrgPolicy } from "../org-policy/schema.js";
 import { checkWorkspaceChildPath } from "../workspace/detect.js";
 import {
   workspaceGitignoreMissing,
@@ -229,15 +230,19 @@ function mcpFilesystemPackageSpec(server: unknown): string | undefined {
 function workspaceMcpStatus(
   root: string,
   manifest: WorkspaceManifest,
+  governed: boolean,
 ): WorkspaceReportDigest["mcp"] {
   const rootAbs = resolve(root);
+  const governedGuidance =
+    "governance exclusively owns AIH MCP projection—run `aih policy evaluate`, then `aih policy project --apply` after its external evidence/authority checks; `aih workspace --apply` and `aih mcp --apply` are intentionally blocked";
   const text = readIfExists(join(root, ".mcp.json"));
   if (text === undefined) {
     return manifest.repos.length > 0
       ? {
           status: "WARN",
-          detail:
-            "declared workspace repos have no parent .mcp.json; run `aih workspace --apply` to add graph MCP servers",
+          detail: governed
+            ? `declared workspace repos have no parent .mcp.json; ${governedGuidance}`
+            : "declared workspace repos have no parent .mcp.json; run `aih workspace --apply` to add graph MCP servers",
         }
       : { status: "UNKNOWN", detail: "no parent .mcp.json" };
   }
@@ -263,8 +268,9 @@ function workspaceMcpStatus(
   if (isAihLegacyCodeReviewGraphMcpServer(servers["code-review-graph"])) {
     return {
       status: "WARN",
-      detail:
-        "Workspace MCP has a stale parent-root code-review-graph server. Re-run `aih workspace --apply` to scope graph servers per declared repo.",
+      detail: governed
+        ? `Workspace MCP has stale parent-root code-review-graph residue. Remove or migrate the residue manually, then ${governedGuidance}.`
+        : "Workspace MCP has a stale parent-root code-review-graph server. Re-run `aih workspace --apply` to scope graph servers per declared repo.",
     };
   }
   const expectedScopes = workspaceGraphScopes(rootAbs, manifest);
@@ -299,7 +305,9 @@ function workspaceMcpStatus(
       status: "WARN",
       detail: [
         relativeGraphs.length > 0
-          ? `relative workspace graph MCP path: ${reportList(relativeGraphs)}; re-run \`aih workspace --apply\` to root-anchor child repo paths`
+          ? governed
+            ? `relative workspace graph MCP path: ${reportList(relativeGraphs)}; remove or migrate the workspace MCP residue manually, then ${governedGuidance}`
+            : `relative workspace graph MCP path: ${reportList(relativeGraphs)}; re-run \`aih workspace --apply\` to root-anchor child repo paths`
           : undefined,
         missing.length > 0
           ? `missing declared repo graph MCP: ${reportList(
@@ -703,7 +711,14 @@ export async function workspaceReportDigest(ctx: PlanContext): Promise<DigestAct
     childRow(ctx, manifest, repo, missingIgnores),
   );
   const contracts = manifest.edges.map((edge) => contractStatus(ctx.root, edge));
-  const mcp = workspaceMcpStatus(ctx.root, manifest);
+  let governed = false;
+  try {
+    governed = readOrgPolicy(ctx.root, ctx.env)?.governance !== undefined;
+  } catch {
+    // The report already renders malformed workspace state as a finding; an
+    // invalid policy must not be treated as authority for a mutation hint.
+  }
+  const mcp = workspaceMcpStatus(ctx.root, manifest, governed);
   const snapshot = workspaceSnapshot(ctx.root, manifest, rows);
   const data: WorkspaceReportDigest = {
     manifest: {

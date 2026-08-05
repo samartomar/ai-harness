@@ -29,6 +29,7 @@ import { marketplaceValidateCommand } from "../marketplace/validate.js";
 import { command as mcp, mcpApproveCommand } from "../mcp/index.js";
 import { policyInitCommand } from "../org-policy/init.js";
 import {
+  policyEvaluateCommand,
   policyProjectCommand,
   policyValidateCommand,
   policyVerifyCommand,
@@ -200,7 +201,13 @@ export const GROUPED_COMMAND_SPECS = {
     packInstallCommand,
   ],
   marketplace: [marketplaceBuildCommand, marketplaceValidateCommand, marketplacePublishCommand],
-  policy: [policyInitCommand, policyProjectCommand, policyValidateCommand, policyVerifyCommand],
+  policy: [
+    policyInitCommand,
+    policyEvaluateCommand,
+    policyProjectCommand,
+    policyValidateCommand,
+    policyVerifyCommand,
+  ],
   evidence: [evidenceBuildCommand, vetBaselineCommand],
   truth: [truthPackCommand, truthVerifyCommand],
 } as const satisfies Record<(typeof PARENT_GROUPS)[number], readonly CommandSpec[]>;
@@ -745,9 +752,12 @@ export function registerCommands(
   // policy-bundle envelope).
   const policy = program
     .command("policy")
-    .description("Seed, project, validate + verify the org policy and its generated settings");
+    .description(
+      "Seed, evaluate, project, validate + verify the org policy and its generated settings",
+    );
   for (const spec of [
     policyInitCommand,
+    policyEvaluateCommand,
     policyProjectCommand,
     policyValidateCommand,
     policyVerifyCommand,

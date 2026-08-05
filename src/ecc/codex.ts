@@ -354,12 +354,13 @@ function plannedCodexFootprint(
 export function codexInstallStateContents(
   ctx: PlanContext,
   plannedMcpServers?: readonly string[],
+  suppressRuntimeConfig = false,
 ): string {
   const configRaw = readIfExists(join(codexHomeDir(ctx), "config.toml")) ?? "";
   const existing = readCodexInstallState(ctx);
   const codexToml = unionFootprint(
     existing?.codexToml ?? emptyFootprint(),
-    plannedCodexFootprint(configRaw, plannedMcpServers),
+    suppressRuntimeConfig ? emptyFootprint() : plannedCodexFootprint(configRaw, plannedMcpServers),
   );
   const state: CodexInstallState = {
     schemaVersion: 1,

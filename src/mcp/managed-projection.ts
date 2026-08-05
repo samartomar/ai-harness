@@ -6,13 +6,14 @@ import {
   AIH_CONFIG_FILE,
   AihConfigSchema,
   isActiveManagedMcpProjectionOwnership,
+  isManagedMcpProjectionOwnership,
   type ManagedMcpProjectionOwnership,
   managedMcpProjectionConfigJsonFromRaw,
   managedMcpProjectionOwnership,
   revokedManagedMcpProjectionOwnership,
 } from "../config/marker.js";
 import type { Cli } from "../internals/clis.js";
-import { readIfExists, readRegularFile } from "../internals/fsxn.js";
+import { readRegularFile } from "../internals/fsxn.js";
 import { parseJsoncText } from "../internals/merge.js";
 import { type Action, type PlanContext, type WriteAction, writeJson } from "../internals/plan.js";
 import type { ManagedMcpAllowlistSettings } from "./allowlist.js";
@@ -151,7 +152,7 @@ export function occupied(abs: string): boolean {
  * would name `aih prune` for a finding prune is guaranteed to refuse, breaking the
  * one agent-facing promise this lifecycle makes: the command it names clears it.
  */
-function hasSymlinkParent(root: string, rel: string): boolean {
+export function hasSymlinkParent(root: string, rel: string): boolean {
   const parts = rel.split("/").filter((part) => part.length > 0);
   let current = root;
   for (const part of parts.slice(0, -1)) {
@@ -177,7 +178,13 @@ export function readManagedSettings(
   root: string,
   settingsRel: string = MANAGED_SETTINGS_PATH,
 ): string | undefined {
+  if (hasSymlinkParent(root, settingsRel)) return undefined;
   return readRegularFile(absolute(root, settingsRel))?.toString("utf8");
+}
+
+function readManagedProjectionFile(root: string, rel: string): string | undefined {
+  if (hasSymlinkParent(root, rel)) return undefined;
+  return readRegularFile(absolute(root, rel))?.toString("utf8");
 }
 
 /**
@@ -194,7 +201,7 @@ export function managedMcpProjectionOnDisk(
   root: string,
   settingsRel: string = MANAGED_SETTINGS_PATH,
 ): ManagedMcpProjectionResidue | undefined {
-  const markerSource = readIfExists(join(root, AIH_CONFIG_FILE));
+  const markerSource = readManagedProjectionFile(root, AIH_CONFIG_FILE);
   let ownership: ManagedMcpProjectionOwnership | undefined;
   try {
     ownership =
@@ -210,9 +217,7 @@ export function managedMcpProjectionOnDisk(
   // The leaf read is no-follow, but a symlinked PARENT would still redirect it — and
   // the executor refuses those, so a residue behind one can never be repaired by the
   // command a repairable finding names. Treat it as unprovable up front.
-  const settingsSource = hasSymlinkParent(root, settingsRel)
-    ? undefined
-    : readRegularFile(abs)?.toString("utf8");
+  const settingsSource = readManagedSettings(root, settingsRel);
   if (settingsSource === undefined) {
     // PRESENCE only, and NO-FOLLOW. A content read would throw EISDIR on a directory
     // planted here, taking down the whole command before it could report the residue
@@ -232,6 +237,55 @@ export function managedMcpProjectionOnDisk(
     matches = false;
   }
   return { ...base, matches, unprovable: matches ? undefined : "pair-drifted", settingsSource };
+}
+
+/** Read-only ownership verdict shared by policy report and doctor consumers. */
+export function managedMcpProjectionState(root: string): {
+  state: "clean" | "missing" | "altered" | "revoked" | "malformed" | "unsafe-path";
+  detail: string;
+} {
+  if (hasSymlinkParent(root, AIH_CONFIG_FILE)) {
+    return { state: "unsafe-path", detail: `${AIH_CONFIG_FILE} has a symlinked parent` };
+  }
+  const markerPath = absolute(root, AIH_CONFIG_FILE);
+  const marker = readRegularFile(markerPath)?.toString("utf8");
+  if (marker === undefined) {
+    return occupied(markerPath)
+      ? { state: "unsafe-path", detail: `${AIH_CONFIG_FILE} is not a regular file` }
+      : { state: "missing", detail: "no managed-MCP ownership receipt" };
+  }
+  let ownership: ManagedMcpProjectionOwnership | undefined;
+  try {
+    ownership = AihConfigSchema.parse(JSON.parse(marker)).managedMcpProjection;
+  } catch {
+    return { state: "malformed", detail: `${AIH_CONFIG_FILE} is malformed` };
+  }
+  if (ownership === undefined) {
+    return { state: "missing", detail: "no managed-MCP ownership receipt" };
+  }
+  if (!isManagedMcpProjectionOwnership(ownership)) {
+    return { state: "malformed", detail: `${AIH_CONFIG_FILE} has an invalid managed-MCP receipt` };
+  }
+  if (ownership.state === "revoked") {
+    return { state: "revoked", detail: "managed-MCP ownership was revoked after drift" };
+  }
+  const residue = managedMcpProjectionOnDisk(root);
+  if (residue === undefined) {
+    return { state: "malformed", detail: "managed-MCP receipt could not be re-read safely" };
+  }
+  if (residue.matches) {
+    return { state: "clean", detail: "managed-MCP receipt and owned settings match" };
+  }
+  if (residue.unprovable === "not-a-regular-file") {
+    return { state: "unsafe-path", detail: unprovableResidueReason(residue.unprovable) };
+  }
+  if (residue.unprovable === "settings-absent") {
+    return { state: "missing", detail: unprovableResidueReason(residue.unprovable) };
+  }
+  return {
+    state: "altered",
+    detail: unprovableResidueReason(residue.unprovable ?? "pair-drifted"),
+  };
 }
 
 /** Bind a write to the exact bytes observed while planning (apply-time content pin). */
@@ -272,7 +326,7 @@ export function managedMcpProjectionOwnershipAction(
   targets: readonly Cli[] | readonly string[],
   generated: ManagedMcpAllowlistSettings,
 ): Action {
-  const source = readIfExists(join(ctx.root, AIH_CONFIG_FILE));
+  const source = readManagedProjectionFile(ctx.root, AIH_CONFIG_FILE);
   return withExpectedContents(
     writeJson(
       AIH_CONFIG_FILE,

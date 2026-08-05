@@ -315,6 +315,230 @@ describe("verifiedEccInstallPlan", () => {
     expect(JSON.stringify(steps)).not.toContain("install-apply.js");
   });
 
+  it("fails the governed materialization driver when a content-looking manifest destination escapes its roots", () => {
+    const sourceRoot = join(root, "ecc-source");
+    const outside = join(tmpdir(), "aih-ecc-outside", "skills", "tdd-workflow", "SKILL.md");
+    put(
+      join(sourceRoot, "scripts", "lib", "install-executor.js"),
+      `exports.createManifestInstallPlan = ({ homeDir }) => ({
+        operations: [{ kind: "copy-file", moduleId: "workflow-quality", sourceRelativePath: "skills/tdd-workflow/SKILL.md", destinationPath: ${JSON.stringify(outside)} }],
+        statePreview: { operations: [{ kind: "copy-file", moduleId: "workflow-quality", sourceRelativePath: "skills/tdd-workflow/SKILL.md", destinationPath: ${JSON.stringify(outside)} }] },
+        installStatePath: require("node:path").join(homeDir, ".claude", "ecc", "install-state.json")
+      });
+      exports.applyInstallPlan = () => { throw new Error("outside-root operation reached apply"); };\n`,
+    );
+    const selected: EccComponentSelection = {
+      scope: "scoped",
+      components: ["skill:tdd-workflow"],
+      mcps: [],
+      recommendations: [],
+    };
+    const built = verifiedEccInstallPlan(
+      ctx(),
+      sourceRoot,
+      { clis: ["claude"], profile: "minimal", packs: [], selection: selected, governance: true },
+      authorizationsForSelection("claude", selected),
+    );
+    const step = driverSteps(built.actions)[1];
+    if (step === undefined || step.input === undefined)
+      throw new Error("missing materialization step");
+    const executable = step.argv[0];
+    if (executable === undefined) throw new Error("missing materialization executable");
+    const result = spawnSync(executable, step.argv.slice(1), {
+      cwd: step.cwd,
+      input: step.input,
+      encoding: "utf8",
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(`${result.stderr}${result.stdout}`).toContain("escapes authorized project/home roots");
+  });
+
+  it("fails the spawned governed materialization driver on case-normalized destination collisions", () => {
+    const sourceRoot = join(root, "ecc-case-collision");
+    const first = join(root, ".claude", "rules", "common", "Foo.md");
+    const second = join(root, ".claude", "rules", "common", "foo.md");
+    put(
+      join(sourceRoot, "scripts", "lib", "install-executor.js"),
+      `exports.createManifestInstallPlan = ({ homeDir }) => {
+        const operations = [
+          { kind: "copy-file", moduleId: "rules-core", sourceRelativePath: "rules/common/Foo.md", destinationPath: ${JSON.stringify(first)} },
+          { kind: "copy-file", moduleId: "rules-core", sourceRelativePath: "rules/common/foo.md", destinationPath: ${JSON.stringify(second)} },
+        ];
+        return { operations, statePreview: { operations }, installStatePath: require("node:path").join(homeDir, ".claude", "ecc", "install-state.json") };
+      };
+      exports.applyInstallPlan = () => { throw new Error("case-colliding operations reached apply"); };\n`,
+    );
+    const selected: EccComponentSelection = {
+      scope: "scoped",
+      components: ["baseline:rules"],
+      mcps: [],
+      recommendations: [],
+    };
+    const built = verifiedEccInstallPlan(
+      ctx(),
+      sourceRoot,
+      { clis: ["claude"], profile: "minimal", packs: [], selection: selected, governance: true },
+      authorizationsForSelection("claude", selected),
+    );
+    const step = driverSteps(built.actions)[1];
+    if (step === undefined || step.input === undefined || step.argv[0] === undefined) {
+      throw new Error("missing materialization step");
+    }
+    const result = spawnSync(step.argv[0], step.argv.slice(1), {
+      cwd: step.cwd,
+      input: step.input,
+      encoding: "utf8",
+    });
+    expect(result.status).not.toBe(0);
+    expect(`${result.stderr}${result.stdout}`).toContain(
+      "normalized governed ECC destination collision",
+    );
+  });
+
+  it("fails the spawned governed materialization driver on an in-root cross-surface remap", () => {
+    const sourceRoot = join(root, "ecc-cross-map");
+    const remapped = join(root, ".claude", "skills", "common", "x.md");
+    put(
+      join(sourceRoot, "scripts", "lib", "install-executor.js"),
+      `exports.createManifestInstallPlan = ({ homeDir }) => {
+        const operations = [{ kind: "copy-file", moduleId: "rules-core", sourceRelativePath: "rules/common/x.md", destinationPath: ${JSON.stringify(remapped)} }];
+        return { operations, statePreview: { operations }, installStatePath: require("node:path").join(homeDir, ".claude", "ecc", "install-state.json") };
+      };
+      exports.applyInstallPlan = () => { throw new Error("cross-surface remap reached apply"); };\n`,
+    );
+    const selected: EccComponentSelection = {
+      scope: "scoped",
+      components: ["baseline:rules"],
+      mcps: [],
+      recommendations: [],
+    };
+    const built = verifiedEccInstallPlan(
+      ctx(),
+      sourceRoot,
+      { clis: ["claude"], profile: "minimal", packs: [], selection: selected, governance: true },
+      authorizationsForSelection("claude", selected),
+    );
+    const step = driverSteps(built.actions)[1];
+    if (step === undefined || step.input === undefined || step.argv[0] === undefined) {
+      throw new Error("missing materialization step");
+    }
+    const result = spawnSync(step.argv[0], step.argv.slice(1), {
+      cwd: step.cwd,
+      input: step.input,
+      encoding: "utf8",
+    });
+    expect(result.status).not.toBe(0);
+    expect(`${result.stderr}${result.stdout}`).toContain(
+      "unclassifiable governed ECC content operation",
+    );
+  });
+
+  it("refuses governed Claude, Codex, and Kiro plans without an authorized component selection", () => {
+    expect(() =>
+      verifiedEccInstallPlan(
+        ctx(),
+        join(root, "quarantine", "tree"),
+        { clis: ["claude", "codex", "kiro"], profile: "core", packs: [], governance: true },
+        [],
+      ),
+    ).toThrow(/governed ECC install without an authorized component selection/);
+  });
+
+  it("rejects a governed direct materializer whose upstream state path is not the exact target state path", () => {
+    const sourceRoot = join(root, "ecc-state-path");
+    put(
+      join(sourceRoot, "scripts", "lib", "install-executor.js"),
+      `exports.createManifestInstallPlan = ({ homeDir }) => ({
+        operations: [], statePreview: { operations: [] },
+        installStatePath: require("node:path").join(homeDir, ".claude", "settings.json")
+      });
+      exports.applyInstallPlan = () => { throw new Error("malicious state path reached apply"); };\n`,
+    );
+    const selected: EccComponentSelection = {
+      scope: "scoped",
+      components: ["skill:tdd-workflow"],
+      mcps: [],
+      recommendations: [],
+    };
+    const built = verifiedEccInstallPlan(
+      ctx(),
+      sourceRoot,
+      { clis: ["claude"], profile: "minimal", packs: [], selection: selected, governance: true },
+      authorizationsForSelection("claude", selected),
+    );
+    const step = driverSteps(built.actions)[1];
+    if (step === undefined || step.input === undefined)
+      throw new Error("missing materialization step");
+    const executable = step.argv[0];
+    if (executable === undefined) throw new Error("missing materialization executable");
+    const result = spawnSync(executable, step.argv.slice(1), {
+      cwd: step.cwd,
+      input: step.input,
+      encoding: "utf8",
+    });
+    expect(result.status).not.toBe(0);
+    expect(`${result.stderr}${result.stdout}`).toContain("exact authorized target state path");
+  });
+
+  it("rejects a governed Codex merge whose upstream state path aliases config.toml", () => {
+    const sourceRoot = join(root, "codex-state-path");
+    const home = join(root, "codex-home");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(join(home, ".codex", "config.toml"), "user-owned = true\n", "utf8");
+    put(
+      join(sourceRoot, ".codex", "AGENTS.md"),
+      "## Skills Discovery\n\nAvailable skills:\n- tdd-workflow\n\n## MCP Servers\n\n## External Action Boundaries\n",
+    );
+    put(
+      join(sourceRoot, "scripts", "lib", "install-executor.js"),
+      `exports.createManifestInstallPlan = ({ homeDir }) => ({
+        operations: [], statePreview: { operations: [] },
+        installStatePath: require("node:path").join(homeDir, ".codex", "config.toml")
+      });\n`,
+    );
+    put(
+      join(sourceRoot, "scripts", "lib", "install-state.js"),
+      'exports.writeInstallState = () => { throw new Error("malicious state path reached writer"); };\n',
+    );
+    const context: PlanContext = {
+      ...ctx(),
+      env: { HOME: home },
+      host: makeHostAdapter({
+        platform: "linux",
+        run: fakeRunner(() => undefined),
+        env: { HOME: home },
+      }),
+    };
+    const selected: EccComponentSelection = {
+      scope: "scoped",
+      components: ["skill:tdd-workflow"],
+      mcps: [],
+      recommendations: [],
+    };
+    const built = verifiedEccInstallPlan(
+      context,
+      sourceRoot,
+      { clis: ["codex"], profile: "minimal", packs: [], selection: selected, governance: true },
+      authorizationsForSelection("codex", selected),
+    );
+    const step = driverSteps(built.actions).find((candidate) =>
+      candidate.argv.join(" ").includes("codex-install-merge"),
+    );
+    if (step === undefined) throw new Error("missing Codex merge step");
+    const executable = step.argv[0];
+    if (executable === undefined) throw new Error("missing Codex merge executable");
+    const result = spawnSync(executable, step.argv.slice(1), {
+      cwd: step.cwd,
+      env: { ...process.env, ...step.env, HOME: home, USERPROFILE: home },
+      encoding: "utf8",
+    });
+    expect(result.status).not.toBe(0);
+    expect(`${result.stderr}${result.stdout}`).toContain("exact authorized upstream state path");
+    expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toBe("user-owned = true\n");
+    expect(existsSync(join(home, ".codex", "ecc-aih-install-state.json"))).toBe(false);
+  });
+
   it("keeps Codex on the add-only merge path inside the same sequential driver", () => {
     const sourceRoot = join(root, "quarantine", "tree");
     const selected = selection();
@@ -330,14 +554,14 @@ describe("verifiedEccInstallPlan", () => {
     expect(steps[0]?.argv[0]).toBe("npm");
     expect(steps[1]?.argv.slice(0, 2)).toEqual(["node", "-e"]);
     expect(steps[1]?.argv).toContain(join(sourceRoot, "scripts", "codex", "merge-codex-config.js"));
-    const specB64 = steps[1]?.argv.at(-2);
+    const specB64 = steps[1]?.argv.at(-3);
     if (specB64 === undefined) throw new Error("missing Codex materialization spec");
     expect(JSON.parse(Buffer.from(specB64, "base64").toString("utf8"))).toMatchObject({
       scope: "scoped",
       moduleIds: expect.arrayContaining(["agents-core", "platform-configs"]),
       agents: ["code-reviewer"],
     });
-    const mcpB64 = steps[1]?.argv.at(-1);
+    const mcpB64 = steps[1]?.argv.at(-2);
     if (mcpB64 === undefined) throw new Error("missing Codex MCP registration spec");
     expect(JSON.parse(Buffer.from(mcpB64, "base64").toString("utf8"))).toMatchObject({
       servers: {
@@ -380,9 +604,9 @@ describe("verifiedEccInstallPlan", () => {
       step.argv.join(" ").includes("codex-install-merge"),
     );
     if (merge === undefined) throw new Error("missing Codex merge step");
-    // argv: [node, -e, script, repoRoot, profileId, homeDir, …, stateB64, specB64, mcpB64]
+    // argv: [node, -e, script, repoRoot, profileId, homeDir, …, governanceFlag, specB64, mcpB64, stateB64]
     expect(merge.argv[4]).toBe("full");
-    const specB64 = merge.argv.at(-2);
+    const specB64 = merge.argv.at(-3);
     if (specB64 === undefined) throw new Error("missing Codex materialization spec");
     expect(JSON.parse(Buffer.from(specB64, "base64").toString("utf8"))).toMatchObject({
       scope: "full",

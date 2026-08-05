@@ -2,6 +2,7 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 import { AihError } from "../errors.js";
 import { readIfExists } from "../internals/fsxn.js";
+import type { PlanContext } from "../internals/plan.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 
 const PostureSchema = z.enum(["vibe", "team", "enterprise"]);
@@ -175,6 +176,428 @@ const BaselineOverrideSchema = z
   })
   .strict();
 
+/**
+ * Headless Policy Studio contract. These fields are intentionally stricter than
+ * the legacy policy controls: they name immutable candidates that a later UI
+ * can author, while the resolver decides whether any requested activation is
+ * actually effective. Configuration alone is never an activation grant.
+ */
+const SafePolicyTextSchema = z
+  .string()
+  .min(1)
+  .max(500)
+  .refine((value) => value === value.trim(), "must not have leading or trailing whitespace")
+  .refine(
+    (value) => /\S/u.test(value) && !/\p{C}/u.test(value),
+    "must be visible single-line text without control or hidden Unicode characters",
+  );
+
+const SafePolicyIdentifierSchema = z
+  .string()
+  .regex(/^[a-z][a-z0-9-]{0,63}$/, "must be a lowercase stable identifier");
+const PolicyTargetSchema = z.enum(["claude", "codex"]);
+
+const Sha256Schema = z.string().regex(/^sha256:[0-9a-f]{64}$/, "must be a sha256 digest");
+const GitRepositorySchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, "must be an owner/repository identity");
+const GitCommitSchema = z
+  .string()
+  .regex(/^[0-9a-f]{40}$/, "must be a lowercase immutable Git commit or tree digest");
+const ExactPackageVersionSchema = z
+  .string()
+  .regex(
+    /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$/,
+    "must be an exact package version",
+  );
+const SafeCommandTokenSchema = z
+  .string()
+  .min(1)
+  .max(200)
+  .regex(
+    /^[A-Za-z0-9][A-Za-z0-9._@:+-]*$/,
+    "must be a safe command token without paths or shell syntax",
+  );
+const SafeCommandArgumentSchema = z
+  .string()
+  .min(1)
+  .max(500)
+  .refine((value) => {
+    if (value.startsWith("--registry=") || value.startsWith("--index-url=")) {
+      try {
+        const origin = value.startsWith("--registry=")
+          ? value.slice("--registry=".length)
+          : value.slice("--index-url=".length);
+        normalizeHttpsOrigin(origin, "registry argument");
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    return (
+      !value.startsWith("/") &&
+      !value.startsWith("\\") &&
+      !value.includes("..") &&
+      !/[\\/;|&`$<>\p{C}]/u.test(value)
+    );
+  }, "must be a safe relative argument without shell syntax, paths, or hidden Unicode characters");
+const IsoTimestampSchema = z.string().refine((value) => {
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(value)) return false;
+  return Number.isFinite(Date.parse(value));
+}, "must be an ISO-8601 timestamp");
+
+export const CandidateSourceSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("git"),
+      repository: GitRepositorySchema,
+      commit: GitCommitSchema,
+      tree: GitCommitSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("package"),
+      registry: HttpsOriginSchema,
+      package: z.string().regex(/^@?[A-Za-z0-9][A-Za-z0-9._/-]*$/, "must be a package identity"),
+      version: ExactPackageVersionSchema,
+      integrity: Sha256Schema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("command"),
+      command: SafeCommandTokenSchema,
+      args: z.array(SafeCommandArgumentSchema).default([]),
+      executableDigest: Sha256Schema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("stdio"),
+      /** The resolver is an identity selector, never an arbitrary executable. */
+      resolver: z.enum(["npx", "uvx"]),
+      registry: HttpsOriginSchema,
+      package: z.string().regex(/^@?[A-Za-z0-9][A-Za-z0-9._/-]*$/, "must be a package identity"),
+      version: ExactPackageVersionSchema,
+      integrity: Sha256Schema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("mcp"),
+      server: SafePolicyIdentifierSchema,
+      subject: z
+        .string()
+        .regex(/^mcp-server-sha256:[0-9a-f]{64}$/, "must be an MCP server identity digest"),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("hook"),
+      handler: z.literal("usage-metering"),
+      scriptDigest: Sha256Schema,
+    })
+    .strict(),
+]);
+
+const CandidateEvidenceSchema = z
+  .object({
+    /** Locator only: state and detector results come from the verified receipt. */
+    record: SafePolicyIdentifierSchema,
+  })
+  .strict();
+
+export const PolicyDangerCodeSchema = z.enum([
+  "malicious-code",
+  "prompt-injection",
+  "auto-executing-hook",
+  "hidden-unicode",
+  "secrets",
+  "unpinned-source",
+  "dependency-confusion",
+  "mandatory-detector-failed",
+  "evidence-identity-drift",
+  "unsafe-path",
+  "normalized-collision",
+  "missing-projector",
+  "unsupported-target",
+  "ownership-conflict",
+]);
+
+const PolicyCandidateSchema = z
+  .object({
+    id: SafePolicyIdentifierSchema,
+    kind: z.enum(["mcp", "hook", "framework"]),
+    description: SafePolicyTextSchema,
+    capabilities: z.array(SafePolicyTextSchema).max(20).default([]),
+    risks: z.array(SafePolicyTextSchema).max(20).default([]),
+    source: CandidateSourceSchema,
+    targets: z.array(PolicyTargetSchema).min(1).max(2),
+    projector: z.enum([
+      "mcp-managed-settings",
+      "hook-managed-settings",
+      "usage-hook",
+      "framework-contract",
+    ]),
+    lifecycle: z.enum(["supported", "deprecated", "retired"]),
+    evidence: CandidateEvidenceSchema,
+    findings: z.array(PolicyDangerCodeSchema).default([]),
+    autoExecute: z.boolean().default(false),
+    framework: z.enum(["ecc", "superpowers"]).optional(),
+    clarification: SafePolicyTextSchema.optional(),
+    annotation: SafePolicyTextSchema.optional(),
+  })
+  .strict()
+  .superRefine((candidate, ctx) => {
+    if (
+      candidate.kind === "mcp" &&
+      candidate.source.type !== "mcp" &&
+      candidate.source.type !== "stdio"
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "MCP candidates must use an exact catalog or fully pinned stdio package identity",
+      });
+    }
+    if (
+      candidate.kind === "mcp" &&
+      candidate.source.type === "mcp" &&
+      candidate.id !== candidate.source.server
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "built-in MCP candidate id must exactly match source.server",
+      });
+    }
+    if (candidate.kind === "mcp" && candidate.targets.some((target) => target !== "claude")) {
+      ctx.addIssue({
+        code: "custom",
+        message: "MCP managed-settings candidates support Claude targets only",
+      });
+    }
+    if (candidate.kind === "hook" && candidate.source.type !== "hook") {
+      ctx.addIssue({
+        code: "custom",
+        message: "hook candidates must use an AIH-owned hook identity",
+      });
+    }
+    if (
+      candidate.kind === "hook" &&
+      candidate.source.type === "hook" &&
+      candidate.id !== candidate.source.handler
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "AIH-owned hook candidate id must exactly match source.handler",
+      });
+    }
+    if (candidate.kind === "framework" && candidate.framework === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "framework candidates must name ecc or superpowers",
+      });
+    }
+    if (candidate.kind !== "framework" && candidate.framework !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "framework is only valid on framework candidates",
+      });
+    }
+    if (
+      candidate.kind === "framework" &&
+      (candidate.projector !== "framework-contract" ||
+        candidate.autoExecute ||
+        candidate.targets.length !== 1 ||
+        candidate.targets[0] !== "claude")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "framework intents are Claude-only, non-autoexecuting framework-contract records until a binding lifecycle exists",
+      });
+    }
+  });
+
+const PolicyActivationSchema = z
+  .object({
+    candidate: SafePolicyIdentifierSchema,
+    state: z.enum(["active", "disabled"]),
+    targets: z.array(PolicyTargetSchema).min(1).max(2),
+    clarification: SafePolicyTextSchema.optional(),
+  })
+  .strict();
+
+export const PolicyApprovalSchema = z
+  .object({
+    id: SafePolicyIdentifierSchema,
+    candidate: SafePolicyIdentifierSchema,
+    kind: z.enum(["mcp", "hook", "framework"]),
+    /** Exact immutable source, not only a mutable display label or package name. */
+    source: CandidateSourceSchema,
+    issuer: SafePolicyIdentifierSchema,
+    sourceDigest: Sha256Schema,
+    evidenceDigest: Sha256Schema,
+    projector: z.enum([
+      "mcp-managed-settings",
+      "hook-managed-settings",
+      "usage-hook",
+      "framework-contract",
+    ]),
+    policyVersion: SafePolicyTextSchema,
+    reason: SafePolicyTextSchema,
+    scope: z.array(PolicyTargetSchema).min(1).max(2),
+    notBefore: IsoTimestampSchema,
+    expiresAt: IsoTimestampSchema,
+    github: z
+      .object({
+        repository: GitRepositorySchema,
+        attestationId: SafePolicyTextSchema,
+        subjectDigest: Sha256Schema,
+      })
+      .strict(),
+  })
+  .strict();
+
+const PolicyGovernanceSchema = z
+  .object({
+    policyVersion: SafePolicyTextSchema,
+    catalog: z
+      .object({
+        reviewed: z.array(PolicyCandidateSchema).default([]),
+        custom: z.array(PolicyCandidateSchema).default([]),
+      })
+      .strict(),
+    activations: z.array(PolicyActivationSchema).default([]),
+    authority: z
+      .object({
+        /**
+         * These are activation references, not authority. The independently
+         * GitHub-attested authority receipt supplies issuers and revocations and
+         * must contain byte-for-byte equivalent approval subjects.
+         */
+        approvals: z.array(PolicyApprovalSchema).default([]),
+      })
+      .strict()
+      .default({ approvals: [] }),
+  })
+  .strict()
+  .superRefine((governance, ctx) => {
+    for (const [index, candidate] of governance.catalog.reviewed.entries()) {
+      if (candidate.source.type !== "mcp" && candidate.source.type !== "hook") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["catalog", "reviewed", index, "source"],
+          message:
+            "reviewed catalog entries must reference an AIH-shipped MCP or AIH-owned hook; organization additions belong in catalog.custom",
+        });
+      }
+    }
+    for (const [index, candidate] of governance.catalog.custom.entries()) {
+      if (candidate.kind === "mcp" && candidate.source.type !== "stdio") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["catalog", "custom", index, "source"],
+          message:
+            "custom MCP candidates must use a fully pinned stdio package identity; AIH-shipped MCPs belong in catalog.reviewed",
+        });
+      }
+      if (candidate.kind === "hook") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["catalog", "custom", index],
+          message:
+            "custom hook candidates are unsupported; AIH-owned hooks must use their exact reviewed control",
+        });
+      }
+    }
+    const candidateIds = [
+      ...governance.catalog.reviewed.map((candidate) => candidate.id),
+      ...governance.catalog.custom.map((candidate) => candidate.id),
+    ];
+    const duplicate = candidateIds.find((id, index) => candidateIds.indexOf(id) !== index);
+    if (duplicate !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: `candidate id ${duplicate} is duplicated across reviewed/custom catalogs`,
+      });
+    }
+    const activationIds = governance.activations.map((activation) => activation.candidate);
+    const duplicateActivation = activationIds.find(
+      (id, index) => activationIds.indexOf(id) !== index,
+    );
+    if (duplicateActivation !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: `candidate ${duplicateActivation} has more than one activation decision`,
+      });
+    }
+    for (const activation of governance.activations) {
+      if (!candidateIds.includes(activation.candidate)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `activation references unknown candidate ${activation.candidate}`,
+        });
+        continue;
+      }
+      const candidate = [...governance.catalog.reviewed, ...governance.catalog.custom].find(
+        (item) => item.id === activation.candidate,
+      );
+      if (
+        candidate !== undefined &&
+        activation.targets.some((target) => !candidate.targets.includes(target))
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          message: `activation targets exceed candidate target support for ${activation.candidate}`,
+        });
+      }
+    }
+    const activeFrameworks = governance.activations.filter((activation) => {
+      if (activation.state !== "active") return false;
+      return [...governance.catalog.reviewed, ...governance.catalog.custom].some(
+        (candidate) => candidate.id === activation.candidate && candidate.kind === "framework",
+      );
+    });
+    if (activeFrameworks.length > 1) {
+      ctx.addIssue({
+        code: "custom",
+        message: "only one framework intent may be active at a time",
+      });
+    }
+    const approvalIds = governance.authority.approvals.map((approval) => approval.id);
+    const duplicateApproval = approvalIds.find((id, index) => approvalIds.indexOf(id) !== index);
+    if (duplicateApproval !== undefined) {
+      ctx.addIssue({ code: "custom", message: `approval ${duplicateApproval} is duplicated` });
+    }
+  });
+
+/** Stable flattened input leaves for mechanical consumer-completeness contracts. */
+export function schemaLeafPaths(schema: unknown, path = ""): string[] {
+  if (schema === null || typeof schema !== "object" || Array.isArray(schema)) {
+    return path.length > 0 ? [path] : [];
+  }
+  const value = schema as Record<string, unknown>;
+  const properties = value.properties;
+  if (properties !== null && typeof properties === "object" && !Array.isArray(properties)) {
+    return Object.entries(properties as Record<string, unknown>).flatMap(([key, child]) =>
+      schemaLeafPaths(child, path.length === 0 ? key : `${path}.${key}`),
+    );
+  }
+  if (value.items !== undefined) return schemaLeafPaths(value.items, `${path}.*`);
+  const variants = value.oneOf ?? value.anyOf;
+  if (Array.isArray(variants)) return variants.flatMap((child) => schemaLeafPaths(child, path));
+  return path.length > 0 ? [path] : [];
+}
+
+/** Exact authorable governance leaves used by the policy consumer-completeness gate. */
+export function policyGovernanceLeafPaths(): string[] {
+  const jsonSchema = z.toJSONSchema(PolicyGovernanceSchema, { io: "input" });
+  return [...new Set(schemaLeafPaths(jsonSchema, "governance"))].sort((left, right) =>
+    left.localeCompare(right),
+  );
+}
+
 export const OrgPolicySchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -238,6 +661,15 @@ export const OrgPolicySchema = z
       })
       .strict()
       .optional(),
+    /**
+     * Candidate inventory and headless activation decisions. This intentionally
+     * does not replace the established MCP/trust controls above; it gives the
+     * policy engine a strict, reportable contract for new Studio-authored
+     * selections. When present, governance exclusively controls AIH-owned MCP
+     * and hook selection; legacy MCP trust/network fields remain independent
+     * only where their existing consumers still use them.
+     */
+    governance: PolicyGovernanceSchema.optional(),
   })
   .strict();
 
@@ -260,6 +692,18 @@ export function parseOrgPolicy(value: unknown): OrgPolicy {
     }
     throw err;
   }
+}
+
+/**
+ * A governed inventory is the sole authority for AIH-owned MCP and hook
+ * mutations. Generic commands must not union legacy selections into it.
+ */
+export function assertGovernanceOwnsSurface(ctx: PlanContext, surface: "mcp" | "usage"): void {
+  const policy = readOrgPolicy(ctx.root, ctx.env);
+  if (policy?.governance === undefined) return;
+  throw new OrgPolicyError(
+    `governance exclusively owns AIH ${surface} projection; use \`aih policy project\` to evaluate and apply the verified policy`,
+  );
 }
 
 function modulePolicyFormatMessage(path: string, raw: string): string | undefined {

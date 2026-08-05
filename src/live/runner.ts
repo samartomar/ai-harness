@@ -1,5 +1,5 @@
 import { spawn as nodeSpawn, type SpawnOptions } from "node:child_process";
-import { accessSync, constants, statSync } from "node:fs";
+import { accessSync, constants, realpathSync, statSync } from "node:fs";
 import { posix, win32 } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import {
@@ -141,15 +141,53 @@ export function findOnPath(
   name: string,
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
+  options: {
+    /** Reject a candidate (including its symlink target) below this root. */
+    excludeRoot?: string;
+    /** `execFile` callers that cannot safely execute Windows command shims. */
+    windowsExeOnly?: boolean;
+  } = {},
 ): string | undefined {
   const paths = platform === "win32" ? win32 : posix;
   const directories = pathValue(env).split(platform === "win32" ? ";" : ":");
+  const lexicalExcludedRoot =
+    options.excludeRoot === undefined ? undefined : paths.resolve(options.excludeRoot);
+  const excludedRoot =
+    options.excludeRoot === undefined
+      ? undefined
+      : realCanonicalPath(paths.resolve(options.excludeRoot), paths);
+  // Ordinary live-tool discovery retains its lexical fallback below. Authority
+  // discovery cannot: a failed realpath means a symlink/junction target is not
+  // proven outside the governed checkout.
+  if (options.excludeRoot !== undefined && excludedRoot === undefined) return undefined;
+  const outside = (root: string, candidate: string): boolean => {
+    const relative = paths.relative(root, candidate);
+    return relative === ".." || relative.startsWith(`..${paths.sep}`) || paths.isAbsolute(relative);
+  };
+  const selectedCandidate = (candidate: string): string | undefined => {
+    if (!paths.isAbsolute(candidate)) return undefined;
+    if (excludedRoot === undefined)
+      return executableFile(candidate, platform) ? candidate : undefined;
+    // Do not treat a pathname rooted in the governed checkout as external just
+    // because its final leaf happens to resolve elsewhere. Check the lexical
+    // PATH entry first, then its one canonical target; return that exact target.
+    if (lexicalExcludedRoot === undefined || !outside(lexicalExcludedRoot, candidate))
+      return undefined;
+    const canonicalCandidate = realCanonicalPath(candidate, paths);
+    if (canonicalCandidate === undefined) return undefined;
+    if (!outside(excludedRoot, canonicalCandidate)) return undefined;
+    return executableFile(canonicalCandidate, platform) ? canonicalCandidate : undefined;
+  };
   if (platform === "win32") {
-    for (const suffix of [".exe", ".cmd"] as const) {
+    const suffixes: readonly (".exe" | ".cmd")[] = options.windowsExeOnly
+      ? [".exe"]
+      : [".exe", ".cmd"];
+    for (const suffix of suffixes) {
       for (const directory of directories) {
         if (!paths.isAbsolute(directory)) continue;
         const candidate = paths.resolve(paths.join(directory, `${name}${suffix}`));
-        if (paths.isAbsolute(candidate) && executableFile(candidate, platform)) return candidate;
+        const selected = selectedCandidate(candidate);
+        if (selected !== undefined) return selected;
       }
     }
     return undefined;
@@ -157,9 +195,18 @@ export function findOnPath(
   for (const directory of directories) {
     if (!paths.isAbsolute(directory)) continue;
     const candidate = paths.resolve(paths.join(directory, name));
-    if (paths.isAbsolute(candidate) && executableFile(candidate, platform)) return candidate;
+    const selected = selectedCandidate(candidate);
+    if (selected !== undefined) return selected;
   }
   return undefined;
+}
+
+function realCanonicalPath(path: string, paths: typeof posix | typeof win32): string | undefined {
+  try {
+    return paths.resolve(realpathSync.native(path));
+  } catch {
+    return undefined;
+  }
 }
 
 function isCommandShim(path: string): boolean {

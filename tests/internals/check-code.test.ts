@@ -466,6 +466,7 @@ describe("Check.code — invariants", () => {
       "org-policy.generation-delta": true,
       "org-policy.invalid": true,
       "org-policy.bundle-invalid": true,
+      "org-policy.effective-blocked": true,
       "bundle.signature": true,
       "report.context-over-budget": true,
       "report.low-adoption": true,

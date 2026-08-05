@@ -2,14 +2,15 @@ import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { AihError } from "../errors.js";
-import { isTargeted, resolveTargets } from "../internals/cli-detect.js";
+import { resolveTargets } from "../internals/cli-detect.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { type CommandSpec, type Plan, type PlanContext, plan, probe } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { parsePolicyBundle } from "./bundle.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import { assertOrgPolicyMutationSource, sameJson } from "./drift.js";
-import { orgPolicyProjectionActions } from "./project.js";
+import { orgPolicyEffectiveCheck, orgPolicyEffectiveDigest } from "./evaluate.js";
+import { verifiedOrgPolicyProjectionActions } from "./project.js";
 import { orgPolicyPath, readOrgPolicy } from "./schema.js";
 
 /**
@@ -291,12 +292,20 @@ function policyVerifyPlan(ctx: PlanContext): Plan {
   );
 }
 
+async function policyEvaluatePlan(ctx: PlanContext): Promise<Plan> {
+  const effective = await orgPolicyEffectiveDigest(ctx);
+  return plan(
+    "policy evaluate",
+    ...(effective === undefined ? [] : [effective]),
+    probe("org policy effective resolution", (c) => orgPolicyEffectiveCheck(c)),
+  );
+}
+
 async function policyProjectPlan(ctx: PlanContext): Promise<Plan> {
   const { clis } = await resolveTargets(ctx);
-  if (!isTargeted({ ...ctx, targets: clis }, "claude")) return plan("policy project");
-  // The projection writes only Claude artifacts. Record that exact ownership
-  // scope on a new marker; an existing marker's targets are merge-preserved.
-  const projectCtx: PlanContext = { ...ctx, targets: ["claude"] };
+  // Candidate resolution always runs for the selected target set. The managed
+  // MCP adapter owns Claude; the safe usage hook adapter also supports Codex.
+  const projectCtx: PlanContext = { ...ctx, targets: clis };
 
   assertOrgPolicyMutationSource(projectCtx);
   const policy = readOrgPolicy(projectCtx.root, projectCtx.env);
@@ -306,7 +315,7 @@ async function policyProjectPlan(ctx: PlanContext): Promise<Plan> {
       "AIH_ORG_POLICY",
     );
   }
-  return plan("policy project", ...orgPolicyProjectionActions(projectCtx, policy));
+  return plan("policy project", ...(await verifiedOrgPolicyProjectionActions(projectCtx, policy)));
 }
 
 export const policyProjectCommand: CommandSpec = {
@@ -330,6 +339,15 @@ export const policyValidateCommand: CommandSpec = {
     },
   ],
   plan: policyValidatePlan,
+};
+
+export const policyEvaluateCommand: CommandSpec = {
+  name: "evaluate",
+  summary:
+    "Resolve requested governed candidates against live identity, evidence, authority, targets, and projectors (read-only)",
+  readOnly: true,
+  skipOrgPolicyFloor: true,
+  plan: policyEvaluatePlan,
 };
 
 export const policyVerifyCommand: CommandSpec = {

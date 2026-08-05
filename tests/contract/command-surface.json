@@ -1970,6 +1970,39 @@
       "options": [],
       "commands": [
         {
+          "name": "evaluate",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "root",
+              "required": false
+            }
+          ],
+          "options": [
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            }
+          ],
+          "commands": []
+        },
+        {
           "name": "init",
           "hasDescription": true,
           "arguments": [
