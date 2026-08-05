@@ -4,7 +4,7 @@ import { readIfExists } from "../../../internals/fsxn.js";
 import { extractManagedBlock, stripManagedBlock } from "../../../internals/markers.js";
 import { parseJsoncText } from "../../../internals/merge.js";
 import { type Action, remove, writeJson, writeText } from "../../../internals/plan.js";
-import type { BindingLock, BindingOwnershipEntry } from "../../lock.js";
+import type { BindingLockForRemoval, BindingOwnershipEntry } from "../../lock.js";
 import { deepSet } from "./managed-writes.js";
 import {
   CLAUDE_MCP_KEY,
@@ -206,7 +206,9 @@ function classifyOwnershipEntry(root: string, entry: BindingOwnershipEntry): Own
  * in lock-ownership order. `planClaudeRemoval` CALLS this for its `drift`, so the
  * removal planner and the doctor's read-only settings-drift probe cannot disagree.
  */
-export function readClaudeSettingsDrift(root: string, lock: BindingLock): ClaudeDriftEntry[] {
+type RemovalLock = Pick<BindingLockForRemoval, "ownership">;
+
+export function readClaudeSettingsDrift(root: string, lock: RemovalLock): ClaudeDriftEntry[] {
   const drift: ClaudeDriftEntry[] = [];
   for (const entry of lock.ownership) {
     const disposition = classifyOwnershipEntry(root, entry);
@@ -236,7 +238,7 @@ function applyJsonRemoval(
   }
 }
 
-export function planClaudeRemoval(root: string, lock: BindingLock): ClaudeRemovalPlan {
+export function planClaudeRemoval(root: string, lock: RemovalLock): ClaudeRemovalPlan {
   // The drift half is the pure {@link readClaudeSettingsDrift} — one source of the
   // drift decision, shared with the doctor's B7 probe. The action half re-uses the
   // SAME {@link classifyOwnershipEntry} so a drifted entry is preserved identically.

@@ -25,7 +25,12 @@ import {
   isHomeScopedTarget,
   readClaudeSettingsDrift,
 } from "../hosts/claude/index.js";
-import { type BindingLockRead, readBindingLock } from "../lock.js";
+import {
+  type BindingLockRead,
+  type BindingLockReadForRemoval,
+  readBindingLock,
+  readBindingLockForRemoval,
+} from "../lock.js";
 import { type BindingSource, type FrameworkId, readBindingDeclaration } from "../schema.js";
 
 /**
@@ -491,9 +496,9 @@ export function bindingHookChainChecks(ctx: PlanContext): Check[] {
  */
 export function bindingSettingsDriftCheck(ctx: PlanContext): Check {
   const name = "binding settings drift";
-  let read: BindingLockRead;
+  let read: BindingLockReadForRemoval;
   try {
-    read = readBindingLock(ctx.root);
+    read = readBindingLockForRemoval(ctx.root);
   } catch (err) {
     return skip(
       name,

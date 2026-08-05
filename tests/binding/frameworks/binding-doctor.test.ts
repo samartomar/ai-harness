@@ -115,6 +115,28 @@ function bind(
   return lock;
 }
 
+/** A pre-v4 machine receipt, written directly because current writers must reject it. */
+function bindLegacyGstack(ownership: BindingOwnershipEntry[]): void {
+  mkdirSync(join(root, ".aih", "binding"), { recursive: true });
+  writeFileSync(
+    join(root, ".aih", "binding", "lock.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      declaration: {
+        schemaVersion: 1,
+        framework: { id: "gstack", host: "claude" },
+        source: ECC_SOURCE,
+      },
+      writes: [],
+      scannedDigest: SHA_A,
+      loadedDigest: SHA_A,
+      match: true,
+      ownership,
+    }),
+    "utf8",
+  );
+}
+
 /**
  * Seed a user-scope (home) skill — a contamination surface. Content-bearing:
  * the scanner counts an immediate skills/ subdirectory only when it has
@@ -627,6 +649,16 @@ describe("B7 — bindingSettingsDriftCheck + readClaudeSettingsDrift purity (D18
   it("advises (skip + code) when an owned value drifted, preserving it", () => {
     bind("ecc", ECC_SOURCE, { mode: "lean", ownership: [OWNED] });
     writeProjectFile("settings.json", JSON.stringify({ model: "user-edited" }));
+    const res = bindingSettingsDriftCheck(ctx());
+    expect(res.verdict).toBe("skip");
+    expect(res.code).toBe("binding.settings-drift");
+    expect(res.detail).toContain(".claude/settings.json#/model");
+  });
+
+  it("uses a verified legacy GStack receipt only to report ownership drift", () => {
+    bindLegacyGstack([OWNED]);
+    writeProjectFile("settings.json", JSON.stringify({ model: "user-edited" }));
+
     const res = bindingSettingsDriftCheck(ctx());
     expect(res.verdict).toBe("skip");
     expect(res.code).toBe("binding.settings-drift");

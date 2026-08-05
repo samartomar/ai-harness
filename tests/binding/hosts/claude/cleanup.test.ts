@@ -307,6 +307,24 @@ describe("applyClaudeCleanup + rollbackClaudeCleanup — full round-trip", () =>
     // And the contamination returns.
     expect(report().clean).toBe(false);
   });
+
+  it("accepts a prior GStack manifest only while rolling back its backup", () => {
+    seedFrameworkPollution();
+    const applied = applyClaudeCleanup(planClaudeCleanup(report()), { home, runId: "run-legacy" });
+    const manifestPath = join(applied.backupRoot, "manifest.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      entries: { attribution: string }[];
+    };
+    const firstEntry = manifest.entries[0];
+    if (firstEntry === undefined) throw new Error("expected cleanup manifest entry");
+    firstEntry.attribution = "gstack";
+    writeFileSync(manifestPath, JSON.stringify(manifest), "utf8");
+
+    const rolledBack = rollbackClaudeCleanup(applied.backupRoot, { home });
+    expect(rolledBack.skippedDrifted).toEqual([]);
+    expect(rolledBack.restored.length).toBeGreaterThan(0);
+    expect(existsSync(join(home, ".claude", "skills", "ecc-review"))).toBe(true);
+  });
 });
 
 describe("rollbackClaudeCleanup — refuses tampered state", () => {

@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -10,9 +10,11 @@ import {
   parseBindingLock,
   planBindingRemoval,
   readBindingLock,
+  readBindingLockForRemoval,
   writeBindingLockAtomic,
 } from "../../src/binding/lock.js";
 import type { BindingDeclaration } from "../../src/binding/schema.js";
+import { LEGACY_GSTACK_MIGRATION_DIAGNOSTIC } from "../../src/internals/legacy-config.js";
 
 const SHA_A = "a".repeat(64);
 const SHA_B = "b".repeat(64);
@@ -56,6 +58,22 @@ function lock(overrides: Partial<BindingLock> = {}): BindingLock {
     ],
     ...overrides,
   };
+}
+
+function legacyGstackLock(): unknown {
+  const current = lock();
+  return {
+    ...current,
+    declaration: {
+      ...current.declaration,
+      framework: { id: "gstack", host: "claude" },
+    },
+  };
+}
+
+function writeLegacyGstackLock(): void {
+  mkdirSync(join(root, ".aih", "binding"), { recursive: true });
+  writeFileSync(bindingLockPath(root), JSON.stringify(legacyGstackLock()), "utf8");
 }
 
 let root: string;
@@ -142,6 +160,43 @@ describe("binding lock read/write", () => {
     writeBindingLockAtomic(root, lock());
     writeFileSync(bindingLockPath(root), JSON.stringify({ schemaVersion: 1 }));
     expect(() => readBindingLock(root)).toThrow(BindingLockError);
+  });
+
+  it("never parses, writes, or normally reads a legacy GStack receipt", () => {
+    const legacy = legacyGstackLock();
+    expect(() => parseBindingLock(legacy)).toThrow(LEGACY_GSTACK_MIGRATION_DIAGNOSTIC);
+    expect(() => writeBindingLockAtomic(root, legacy as BindingLock)).toThrow(
+      LEGACY_GSTACK_MIGRATION_DIAGNOSTIC,
+    );
+    expect(existsSync(bindingLockPath(root))).toBe(false);
+
+    writeLegacyGstackLock();
+    expect(() => readBindingLock(root)).toThrow(LEGACY_GSTACK_MIGRATION_DIAGNOSTIC);
+  });
+
+  it("reads a verified legacy GStack receipt only for conservative ownership removal", () => {
+    writeLegacyGstackLock();
+    const read = readBindingLockForRemoval(root);
+    expect(read.present).toBe(true);
+    if (read.present) expect(read.lock.declaration.framework.id).toBe("gstack");
+
+    const plan = planBindingRemoval(root);
+    expect(plan.mode).toBe("apply");
+  });
+
+  it("refuses a tampered legacy receipt before producing a removal plan", () => {
+    const tampered = legacyGstackLock() as Record<string, unknown>;
+    tampered.unexpected = true;
+    mkdirSync(join(root, ".aih", "binding"), { recursive: true });
+    writeFileSync(bindingLockPath(root), JSON.stringify(tampered), "utf8");
+
+    const userFile = join(root, ".claude", "user-notes.md");
+    mkdirSync(join(root, ".claude"), { recursive: true });
+    writeFileSync(userFile, "keep me", "utf8");
+
+    expect(() => readBindingLockForRemoval(root)).toThrow(LEGACY_GSTACK_MIGRATION_DIAGNOSTIC);
+    expect(() => planBindingRemoval(root)).toThrow(LEGACY_GSTACK_MIGRATION_DIAGNOSTIC);
+    expect(existsSync(userFile)).toBe(true);
   });
 });
 
