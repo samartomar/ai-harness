@@ -6,7 +6,6 @@ import { AdapterRegistry } from "../../../src/binding/adapter.js";
 import {
   bindingContaminationCheck,
   bindingContextCostCheck,
-  bindingDenyListFreshnessCheck,
   bindingFrameworkDriftCheck,
   bindingHookChainChecks,
   bindingHostTupleCheck,
@@ -16,10 +15,6 @@ import {
   eccDoubleInstallCheck,
   eccModeExclusivityCheck,
 } from "../../../src/binding/frameworks/binding-doctor.js";
-import {
-  GSTACK_PIN_TREE_DIGEST,
-  GSTACK_PINNED_SKILL_INVENTORY,
-} from "../../../src/binding/frameworks/gstack.js";
 import { type HostTuple, SUPPORTED_HOST_TUPLE } from "../../../src/binding/host-tuple.js";
 import { collectHookChain } from "../../../src/binding/hosts/claude/contamination.js";
 import {
@@ -550,49 +545,6 @@ describe("B4 — bindingFrameworkDriftCheck (D8)", () => {
     expect(res?.verdict).toBe("skip");
     expect(res?.code).toBe("binding.no-adapter");
     expect(res?.detail).toContain("ecc");
-  });
-});
-
-describe("B5 — bindingDenyListFreshnessCheck (self-skips off-gstack)", () => {
-  const GSTACK_SOURCE: BindingSource = {
-    kind: "git",
-    repository: "aih/gstack",
-    commitSha: "e".repeat(40),
-    treeDigest: GSTACK_PIN_TREE_DIGEST,
-  };
-
-  it("self-skips when not bound", () => {
-    expect(bindingDenyListFreshnessCheck(ctx()).verdict).toBe("skip");
-  });
-
-  it("self-skips cleanly (no code) when the bound framework is not gstack", () => {
-    bind("ecc", ECC_SOURCE, { mode: "lean" });
-    const res = bindingDenyListFreshnessCheck(ctx());
-    expect(res.verdict).toBe("skip");
-    expect(res.code).toBeUndefined();
-    expect(res.detail).toContain("not gstack");
-  });
-
-  it("fails when a pinned skill is no longer denied (stale deny list)", () => {
-    bind("gstack", GSTACK_SOURCE);
-    const res = bindingDenyListFreshnessCheck(ctx());
-    expect(res.verdict).toBe("fail");
-    expect(res.code).toBe("binding.deny-stale");
-  });
-
-  it("passes with a fresh compare when every pinned skill is denied", () => {
-    bind("gstack", GSTACK_SOURCE);
-    const overrides = Object.fromEntries(
-      GSTACK_PINNED_SKILL_INVENTORY.names.map((n) => [n, "off"]),
-    );
-    writeProjectFile(
-      "settings.json",
-      `${JSON.stringify({ skillOverrides: overrides }, null, 2)}\n`,
-    );
-    const res = bindingDenyListFreshnessCheck(ctx());
-    expect(res.verdict).toBe("pass");
-    expect(res.detail).toContain("all");
-    expect(res.detail).toContain("fresh: true"); // lock treeDigest === pinned inventory sourceDigest
   });
 });
 

@@ -26,7 +26,7 @@ import { CLAUDE_MCP_KEY, CLAUDE_SETTINGS_LOCAL_PATH, CLAUDE_SETTINGS_PATH } from
  */
 
 /** The framework a surface is best-effort attributed to (never guessed beyond this vocabulary). */
-export type FrameworkAttribution = "ecc" | "superpowers" | "gstack" | "gsd" | "unknown";
+export type FrameworkAttribution = "ecc" | "superpowers" | "gsd" | "unknown";
 
 /** The countable user-scope surface kinds (one leakage counter each). */
 export type ContaminationSurface = "skill" | "agent" | "hook" | "rule" | "plugin" | "mcpServer";
@@ -83,7 +83,6 @@ export interface ClaudeContaminationParams {
 const FRAMEWORK_TOKENS: readonly Exclude<FrameworkAttribution, "unknown">[] = [
   "superpowers",
   "ecc",
-  "gstack",
   "gsd",
 ];
 

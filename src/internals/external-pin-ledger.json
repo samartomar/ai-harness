@@ -19,13 +19,6 @@
       "reason": "Retains the approved exact source pin already qualified and merged on main; the preserved refresh candidate is not promoted by this reconciliation."
     },
     {
-      "surface": "gstack",
-      "identity": "garrytan/gstack",
-      "commit": "11de390be1be6849eb9a15f91ff4922dd16c589a",
-      "disposition": "retained",
-      "reason": "The adapter is dormant and not CLI-selectable; the untagged upstream head is not requalified into an active baseline."
-    },
-    {
       "surface": "code-review-graph",
       "identity": "code-review-graph",
       "version": "2.3.7",

@@ -101,6 +101,23 @@ describe("planClaudeRemoval — clean removal restores the world", () => {
     expect(readJson(root, CLAUDE_SETTINGS_PATH)).toEqual({ model: "original" });
   });
 
+  it("restores a pre-existing nested field without replacing its user-owned siblings", async () => {
+    seed(
+      CLAUDE_SETTINGS_PATH,
+      `${JSON.stringify({ hooks: { PreToolUse: ["original"], PostToolUse: ["keep"] } }, null, 2)}\n`,
+    );
+    const built = new ClaudeManagedWriteEngine(root)
+      .jsonField(CLAUDE_SETTINGS_PATH, "/hooks/PreToolUse", ["aih-value"])
+      .build();
+    const lock = await bindAndLock(built);
+
+    await applyActions(root, planClaudeRemoval(root, lock).actions);
+
+    expect(readJson(root, CLAUDE_SETTINGS_PATH)).toEqual({
+      hooks: { PreToolUse: ["original"], PostToolUse: ["keep"] },
+    });
+  });
+
   it("prunes an owned MCP server while preserving unrelated servers", async () => {
     seed(
       CLAUDE_MCP_PATH,
@@ -184,6 +201,45 @@ describe("planClaudeRemoval — drift is preserved and reported, never silently 
     await applyActions(root, removal.actions);
     // The user's value is untouched — never silently deleted.
     expect(readJson(root, CLAUDE_SETTINGS_PATH)).toEqual({ model: "user-edited" });
+  });
+
+  it("preserves an owned JSON field when its shared settings file is malformed", async () => {
+    const built = new ClaudeManagedWriteEngine(root)
+      .jsonField(CLAUDE_SETTINGS_PATH, "/model", "aih-value")
+      .build();
+    const lock = await bindAndLock(built);
+    seed(CLAUDE_SETTINGS_PATH, "{ malformed user content");
+
+    const removal = planClaudeRemoval(root, lock);
+
+    expect(removal.actions).toHaveLength(0);
+    expect(removal.drift).toEqual([
+      expect.objectContaining({
+        target: `${CLAUDE_SETTINGS_PATH}#/model`,
+        reason: "file is not parseable JSON",
+      }),
+    ]);
+    expect(readText(root, CLAUDE_SETTINGS_PATH)).toBe("{ malformed user content");
+  });
+
+  it("preserves an edited managed block and reports drift", async () => {
+    const built = new ClaudeManagedWriteEngine(root).claudeMdBlock("AIH-managed body").build();
+    const lock = await bindAndLock(built);
+    seed(
+      CLAUDE_BOOTLOADER_PATH,
+      readText(root, CLAUDE_BOOTLOADER_PATH).replace("AIH-managed", "user-edited"),
+    );
+
+    const removal = planClaudeRemoval(root, lock);
+
+    expect(removal.actions).toHaveLength(0);
+    expect(removal.drift).toEqual([
+      expect.objectContaining({
+        target: "CLAUDE.md#block:aih-binding:claude",
+        reason: "managed block edited since bind",
+      }),
+    ]);
+    expect(readText(root, CLAUDE_BOOTLOADER_PATH)).toContain("user-edited body");
   });
 
   it("preserves a modified owned file and reports drift", async () => {
@@ -282,11 +338,11 @@ describe("planClaudeRemoval — container ownership (own what AIH created)", () 
   it("removes the whole container AIH created, leaving no empty object behind", async () => {
     seed(CLAUDE_SETTINGS_PATH, `${JSON.stringify({ model: "opus" }, null, 2)}\n`); // enabledPlugins absent
     const built = new ClaudeManagedWriteEngine(root)
-      .jsonField(CLAUDE_SETTINGS_PATH, "/enabledPlugins/gstack@aih-gstack", true)
+      .jsonField(CLAUDE_SETTINGS_PATH, "/enabledPlugins/sample@aih-test", true)
       .build();
     const lock = await bindAndLock(built);
     expect(readJson(root, CLAUDE_SETTINGS_PATH).enabledPlugins).toEqual({
-      "gstack@aih-gstack": true,
+      "sample@aih-test": true,
     });
 
     const removal = planClaudeRemoval(root, lock);
@@ -316,14 +372,14 @@ describe("planClaudeRemoval — container ownership (own what AIH created)", () 
 
   it("preserves a user-added sibling in an AIH-created container and reports drift", async () => {
     const built = new ClaudeManagedWriteEngine(root)
-      .jsonField(CLAUDE_SETTINGS_PATH, "/enabledPlugins/gstack@aih-gstack", true)
+      .jsonField(CLAUDE_SETTINGS_PATH, "/enabledPlugins/sample@aih-test", true)
       .build();
     const lock = await bindAndLock(built);
     // User adds a sibling INTO the container AIH created (container now drifted).
     seed(
       CLAUDE_SETTINGS_PATH,
       `${JSON.stringify(
-        { enabledPlugins: { "gstack@aih-gstack": true, "user@plugin": true } },
+        { enabledPlugins: { "sample@aih-test": true, "user@plugin": true } },
         null,
         2,
       )}\n`,
@@ -335,31 +391,31 @@ describe("planClaudeRemoval — container ownership (own what AIH created)", () 
     await applyActions(root, removal.actions);
     // The whole container + both entries survive — never silently deleted.
     expect(readJson(root, CLAUDE_SETTINGS_PATH).enabledPlugins).toEqual({
-      "gstack@aih-gstack": true,
+      "sample@aih-test": true,
       "user@plugin": true,
     });
   });
 
   it("removes an empty owned directory AIH created once the last owned file is gone", async () => {
-    const rel = ".claude/skills/gstack/SKILL.md";
+    const rel = ".claude/skills/sample/SKILL.md";
     const built = new ClaudeManagedWriteEngine(root).ownedFile(rel, "# skill\n").build();
     const lock = await bindAndLock(built);
-    expect(existsSync(join(root, ".claude", "skills", "gstack"))).toBe(true);
+    expect(existsSync(join(root, ".claude", "skills", "sample"))).toBe(true);
 
     await applyActions(root, planClaudeRemoval(root, lock).actions);
     expect(existsSync(join(root, rel))).toBe(false);
-    expect(existsSync(join(root, ".claude", "skills", "gstack"))).toBe(false);
+    expect(existsSync(join(root, ".claude", "skills", "sample"))).toBe(false);
   });
 
   it("keeps a directory that still holds a user file after the owned file is removed", async () => {
-    const owned = ".claude/skills/gstack/SKILL.md";
+    const owned = ".claude/skills/sample/SKILL.md";
     const built = new ClaudeManagedWriteEngine(root).ownedFile(owned, "# skill\n").build();
     const lock = await bindAndLock(built);
-    seed(".claude/skills/gstack/user-notes.md", "# mine\n"); // user neighbour
+    seed(".claude/skills/sample/user-notes.md", "# mine\n"); // user neighbour
 
     await applyActions(root, planClaudeRemoval(root, lock).actions);
     expect(existsSync(join(root, owned))).toBe(false);
-    expect(existsSync(join(root, ".claude", "skills", "gstack", "user-notes.md"))).toBe(true);
-    expect(existsSync(join(root, ".claude", "skills", "gstack"))).toBe(true);
+    expect(existsSync(join(root, ".claude", "skills", "sample", "user-notes.md"))).toBe(true);
+    expect(existsSync(join(root, ".claude", "skills", "sample"))).toBe(true);
   });
 });

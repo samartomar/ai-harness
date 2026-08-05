@@ -104,7 +104,7 @@ describe("aih adopt --apply — marker-divergent carve + regenerate", () => {
     expect(marker?.json).toMatchObject({ targets: ["claude", "gemini"] });
   });
 
-  it("fails closed on a persisted removed baseline (gstack) rather than carving a stale router", async () => {
+  it("fails closed on a persisted removed baseline rather than carving a stale router", async () => {
     put("CLAUDE.md", divergentBootloader());
     put(
       ".aih-config.json",
@@ -116,11 +116,10 @@ describe("aih adopt --apply — marker-divergent carve + regenerate", () => {
       }),
     );
 
-    // gstack was removed as a CLI-surfaced baseline (2026-07-23); a persisted
-    // gstack marker is a now-invalid governance value and fails closed rather
-    // than silently falling back to the default.
     const ctx = makeCtx({ apply: true });
-    await expect(command.plan(ctx)).rejects.toThrow(/invalid baseline/);
+    await expect(command.plan(ctx)).rejects.toThrow(
+      'unsupported legacy configuration "gstack"; migrate to a supported framework before continuing',
+    );
   });
 
   it("is idempotent: a second adopt run after convergence writes nothing", async () => {

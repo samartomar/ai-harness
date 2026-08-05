@@ -228,7 +228,7 @@ export const FrameworkCardSchema = z
     framework: z.enum(FRAMEWORK_IDS),
     mode: z.enum(["lean", "full"]).optional(),
     host: z.literal("claude"),
-    scope: z.enum(["project", "shared-runtime"]),
+    scope: z.literal("project"),
     supportLabel: SupportLabelSchema,
     targetLabel: SupportLabelSchema,
     source: BindingSourceSchema,
@@ -468,7 +468,7 @@ function uniqueSorted(values: readonly string[]): string[] {
 export interface FrameworkCardBuildInput {
   framework: FrameworkCard["framework"];
   mode?: "lean" | "full";
-  scope: "project" | "shared-runtime";
+  scope: "project";
   /** The framework's aspirational label; downgraded to the support label via `doctor`. */
   targetLabel: SupportLabel;
   source: BindingSource;

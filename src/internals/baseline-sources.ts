@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { SettingsError } from "../errors.js";
+import { isLegacyGstackId, LEGACY_GSTACK_MIGRATION_DIAGNOSTIC } from "./legacy-config.js";
 import type { CommandOption } from "./plan.js";
 
 export interface BaselineRepoSource {
@@ -35,10 +36,6 @@ export const BASELINE_SOURCES = [
     ],
     installVerb: "`aih ecc` / `aih superpowers`",
   },
-  // gstack was removed as a selectable canon baseline by the 2026-07-23 scope
-  // decision (gstack retained but not surfaced from the CLI). --baseline gstack
-  // and a persisted gstack marker now fail closed. The adapter code stays
-  // in-tree (registered dormant); re-entry needs a new maintainer decision.
 ] as const satisfies readonly BaselineSource[];
 
 export type BaselineSourceId = (typeof BASELINE_SOURCES)[number]["id"];
@@ -70,6 +67,9 @@ export function resolveBaselineSource(
   const raw = options.baseline ?? persisted ?? DEFAULT_BASELINE_SOURCE_ID;
   if (isBaselineSourceId(raw)) {
     return BASELINE_SOURCES.find((s) => s.id === raw) ?? BASELINE_SOURCES[0];
+  }
+  if (isLegacyGstackId(raw)) {
+    throw new SettingsError(LEGACY_GSTACK_MIGRATION_DIAGNOSTIC);
   }
   throw new SettingsError(
     `unknown --baseline ${JSON.stringify(raw)}; expected one of: ${baselineSourceIds().join("|")}`,

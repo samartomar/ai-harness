@@ -76,20 +76,20 @@ describe("classifyFileTypography (rule-8 per-file visible-typography demotion)",
 
   it("bash comment and quoted string demote; bash code position blocks", () => {
     expect(
-      classifyFileTypography("bin/gstack-x", `#!/usr/bin/env bash\n# ${BOX.repeat(10)}\necho hi\n`)
+      classifyFileTypography("bin/sample-x", `#!/usr/bin/env bash\n# ${BOX.repeat(10)}\necho hi\n`)
         .demote,
     ).toBe(true);
     expect(
-      classifyFileTypography("bin/gstack-y", `#!/bin/bash\necho "Design ${EM} review"\n`).demote,
+      classifyFileTypography("bin/sample-y", `#!/bin/bash\necho "Design ${EM} review"\n`).demote,
     ).toBe(true);
-    expect(classifyFileTypography("bin/gstack-z", `#!/bin/bash\nfoo=${BOX}\n`).demote).toBe(false);
+    expect(classifyFileTypography("bin/sample-z", `#!/bin/bash\nfoo=${BOX}\n`).demote).toBe(false);
   });
 
   it("cat-fed bash heredoc body now demotes as heredoc-display (ruling point 3b)", () => {
     // CHANGED by the final ruling: a cat-fed heredoc body is DISPLAY, so decorative
     // typography in it is advisory (was blocking pre-ruling).
     const text = `#!/bin/bash\ncat <<EOF\nDesign ${EM} review\nEOF\n`;
-    const verdict = classifyFileTypography("bin/gstack-h", text);
+    const verdict = classifyFileTypography("bin/sample-h", text);
     expect(verdict.demote).toBe(true);
     expect(verdict.contextClass).toBe("heredoc-display");
   });
@@ -298,28 +298,28 @@ describe("scanTsJs template interpolation depth (ruling point 3a)", () => {
 describe("scanBash heredoc feed classification (ruling point 3b)", () => {
   it("cat-fed heredoc (with redirect and quoted delimiter) demotes as heredoc-display", () => {
     const text = `#!/bin/bash\ncat >&2 <<'EOF'\nDesign ${EM} review\nEOF\n`;
-    const verdict = classifyFileTypography("bin/gstack-note", text);
+    const verdict = classifyFileTypography("bin/sample-note", text);
     expect(verdict.demote).toBe(true);
     expect(verdict.contextClass).toBe("heredoc-display");
   });
 
   it("python3-fed heredoc body is tokenized by the python scanner (a comment em-dash demotes)", () => {
     const text = `#!/bin/bash\npython3 - "$A" <<'PYEOF'\n# design ${EM} review\nprint("ok")\nPYEOF\n`;
-    const verdict = classifyFileTypography("bin/gstack-embed", text);
+    const verdict = classifyFileTypography("bin/sample-embed", text);
     expect(verdict.demote).toBe(true);
     expect(verdict.contextClass).toBe("comment");
   });
 
   it("a non-cat/non-python interpreter heredoc (psql) still blocks", () => {
     const text = `#!/bin/bash\npsql <<EOF\nSELECT 'a ${EM} b';\nEOF\n`;
-    const verdict = classifyFileTypography("bin/gstack-sql", text);
+    const verdict = classifyFileTypography("bin/sample-sql", text);
     expect(verdict.demote).toBe(false);
     expect(verdict.blockingReason).toMatch(/heredoc/);
   });
 
   it("a python3-fed heredoc with a code-position char still blocks", () => {
     const text = `#!/bin/bash\npython3 - <<'PYEOF'\nsep = ${DHORIZ}\nPYEOF\n`;
-    expect(classifyFileTypography("bin/gstack-embed2", text).demote).toBe(false);
+    expect(classifyFileTypography("bin/sample-embed2", text).demote).toBe(false);
   });
 });
 
@@ -335,7 +335,7 @@ describe("scanPython file class (ruling point 3c)", () => {
 
   it("a python-shebang file with no .py extension resolves to the python scanner", () => {
     const src = `#!/usr/bin/env python3\n# banner ${EM}\nprint("hi")\n`;
-    expect(classifyFileTypography("bin/gstack-pytool", src).demote).toBe(true);
+    expect(classifyFileTypography("bin/sample-pytool", src).demote).toBe(true);
   });
 });
 
@@ -347,7 +347,7 @@ describe("scanPython file class (ruling point 3c)", () => {
 // as explicit detection/replacement VALUES — regex character classes, .replace()
 // operands, and named sentinel-string constants — and NOT as executable
 // identifiers, commands, paths, keys, or syntax. These are the exact sentinel
-// lines from the pinned garrytan/gstack@11de390b tree, reconstructed with \u
+// lines from a pinned fixture tree, reconstructed with \u
 // escapes (so this file carries no raw hidden characters); the orchestrator's
 // evidence script runs the same helper over the full pinned files.
 const ZW = {

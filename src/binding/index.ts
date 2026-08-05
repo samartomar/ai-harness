@@ -99,13 +99,12 @@ export {
 } from "./evidence.js";
 // W3f — plan-time feature-key validation shared by every W4+ adapter.
 export { assertKnownFeatureKeys, BindingFeatureKeyError } from "./features.js";
-// W7 §B — the binding doctor: the two ECC checks (W4d) PLUS the eight D8/D11/D16/D18
-// read-only probes B1–B8 wired into `aih doctor`. All deterministic (no timestamp/abs
+// W7 §B — the binding doctor: the two ECC checks (W4d) PLUS D8/D16/D18
+// read-only probes wired into `aih doctor`. All deterministic (no timestamp/abs
 // path in any Check.detail), self-skipping when no binding lock/declaration is present.
 export {
   bindingContaminationCheck,
   bindingContextCostCheck,
-  bindingDenyListFreshnessCheck,
   bindingFrameworkDriftCheck,
   bindingHookChainChecks,
   bindingHostTupleCheck,
@@ -169,47 +168,6 @@ export {
   type NormalizedEccOp,
   normalizeEccOperations,
 } from "./frameworks/ecc.js";
-// W5 — the gstack shared-runtime adapter. Composes the W3 skillOverrides
-// deny-list + managed-write + removal primitives over the upstream installer
-// seam; adds no scanning/closure machinery of its own.
-export {
-  applyGstackNamePatch,
-  createDormantGstackAdapter,
-  createGstackAdapter,
-  defaultGstackInstaller,
-  deriveGstackSkillInventory,
-  GSTACK_CONDITIONAL_IDENTITIES,
-  GSTACK_CONFIG_REL,
-  GSTACK_DORMANT_NOTICE,
-  GSTACK_FEATURE_KEYS,
-  GSTACK_HOME_REL,
-  GSTACK_HOOK_STRIP_TARGET,
-  GSTACK_INSTALL_ROOT_REL,
-  GSTACK_LOCKDOWN_ENTRIES,
-  GSTACK_MANIFEST_REL,
-  GSTACK_PIN_COMMIT,
-  GSTACK_PIN_TREE_DIGEST,
-  GSTACK_PINNED_SKILL_INVENTORY,
-  GSTACK_REPOSITORY,
-  GSTACK_RESIDUAL_RISKS,
-  GSTACK_ROOT_ALIAS_DIR,
-  GSTACK_SELECTED_PROFILE,
-  GSTACK_SETUP_COMMAND,
-  type GstackAdapterDeps,
-  GstackBindingError,
-  type GstackChoices,
-  type GstackHookStripResult,
-  type GstackInstalledIdentity,
-  type GstackInstaller,
-  type GstackInstallInput,
-  type GstackInstallResult,
-  type GstackManifestEntry,
-  type GstackRemoveResult,
-  gstackInstalledSubsetIdentity,
-  gstackLockdownConfigYaml,
-  isGstackInstallGenerated,
-  stripGstackHooks,
-} from "./frameworks/gstack.js";
 // W4a — the first real D6 adapter (Superpowers, host-plugin) + its registry
 // assembly point. Composes the W3 Claude host services above; adds no new
 // host mechanism of its own.
@@ -330,7 +288,6 @@ export {
   listPlugins,
   marketplaceAdd,
   marketplaceRemove,
-  type PinnedSkillInventory,
   type PluginCacheLocator,
   type PluginCacheLocatorParams,
   type PluginCliDeps,
@@ -342,16 +299,13 @@ export {
   pluginDetails,
   pluginEnableKey,
   pluginSourceSubtreeDigest,
-  queueSkillDenyList,
   type RemovePluginDeps,
   type RemovePluginRequest,
   type RemovePluginResult,
   readClaudeSettingsDrift,
   removePlugin,
   rollbackClaudeCleanup,
-  type SkillDenyListReport,
   settingsFileForScope,
-  skillDenyListReport,
   uninstallPlugin,
   verifyPluginIdentity,
 } from "./hosts/claude/index.js";

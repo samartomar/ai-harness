@@ -65,6 +65,16 @@ describe("binding declaration schema", () => {
     expect(BindingDeclarationSchema.safeParse(bad).success).toBe(false);
   });
 
+  it("fails closed with the migration diagnostic for a removed framework id", () => {
+    const bad = {
+      ...gitDeclaration(),
+      framework: { id: "gstack", host: "claude" },
+    } as unknown as BindingDeclaration;
+    expect(() => parseBindingDeclaration(bad)).toThrow(
+      'unsupported legacy configuration "gstack"; migrate to a supported framework before continuing',
+    );
+  });
+
   it("rejects a short commit SHA", () => {
     const bad = gitDeclaration();
     bad.source = {
@@ -236,6 +246,11 @@ describe("readBindingDeclaration (committed authority)", () => {
     expect(readBindingDeclaration(root)).toBeUndefined();
   });
 
+  it("returns undefined when the marker is not parseable JSON", () => {
+    writeFileSync(join(root, ".aih-config.json"), "{ malformed marker");
+    expect(readBindingDeclaration(root)).toBeUndefined();
+  });
+
   it("reads a valid committed binding declaration", () => {
     writeFileSync(
       join(root, ".aih-config.json"),
@@ -259,5 +274,22 @@ describe("readBindingDeclaration (committed authority)", () => {
       }),
     );
     expect(() => readBindingDeclaration(root)).toThrow(BindingDeclarationError);
+  });
+
+  it("fails closed with the migration diagnostic when the committed binding names a removed framework", () => {
+    writeFileSync(
+      join(root, ".aih-config.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        contextDir: ".ai",
+        binding: {
+          ...gitDeclaration(),
+          framework: { id: "gstack", host: "claude" },
+        },
+      }),
+    );
+    expect(() => readBindingDeclaration(root)).toThrow(
+      'unsupported legacy configuration "gstack"; migrate to a supported framework before continuing',
+    );
   });
 });

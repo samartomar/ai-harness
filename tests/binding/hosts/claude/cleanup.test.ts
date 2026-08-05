@@ -155,6 +155,46 @@ describe("planClaudeCleanup — preview shape and safety", () => {
     const plan = planClaudeCleanup(report());
     expect(() => JSON.parse(JSON.stringify(plan))).not.toThrow();
   });
+
+  it("refuses a malformed report that tries to remove outside an owned file root", () => {
+    const malformed: ClaudeContaminationReport = {
+      leakage: { skills: 1, agents: 0, hooks: 0, rules: 0, plugins: 0, mcpServers: 0 },
+      entries: [
+        {
+          surface: "skill",
+          name: "not-a-skill",
+          path: ".claude/settings.json",
+          attribution: "ecc",
+        },
+      ],
+      informational: { skillOverrides: [] },
+      warnings: [],
+      clean: false,
+      verdictInput: "contaminated",
+    };
+
+    expect(() => planClaudeCleanup(malformed)).toThrow(ClaudeCleanupError);
+  });
+
+  it("refuses a malformed report that tries to disable an unsupported JSON surface", () => {
+    const malformed: ClaudeContaminationReport = {
+      leakage: { skills: 0, agents: 0, hooks: 0, rules: 0, plugins: 1, mcpServers: 0 },
+      entries: [
+        {
+          surface: "plugin",
+          name: "superpowers@obra",
+          path: ".claude/unsupported.json",
+          attribution: "superpowers",
+        },
+      ],
+      informational: { skillOverrides: [] },
+      warnings: [],
+      clean: false,
+      verdictInput: "contaminated",
+    };
+
+    expect(() => planClaudeCleanup(malformed)).toThrow(ClaudeCleanupError);
+  });
 });
 
 describe("applyClaudeCleanup — backup + manifest are written BEFORE any removal", () => {

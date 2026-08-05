@@ -203,7 +203,7 @@ const CleanupManifestEntrySchema = z
   .object({
     action: z.enum(["backup-then-remove", "backup-then-disable"]),
     surface: z.enum(["skill", "agent", "hook", "rule", "plugin", "mcpServer"]),
-    attribution: z.enum(["ecc", "superpowers", "gstack", "gsd", "unknown"]),
+    attribution: z.enum(["ecc", "superpowers", "gsd", "unknown"]),
     path: z.string().min(1),
     edit: CleanupEditSchema.optional(),
     /** Whether the target existed at apply time (absent -> nothing backed up/removed). */

@@ -16,7 +16,7 @@ import {
 /**
  * The one narrow framework-adapter contract (D6): inspect, resolve, plan,
  * provision, verify, remove, report. There is no general-purpose arbitrary
- * installer — every adapter is one of the five D6 types, and `standalone-host`
+ * installer — every adapter is one of the four D6 types, and `standalone-host`
  * is deferred (registering one throws).
  *
  * `provision` requires a {@link ScanDisposition} BY TYPE — it is not callable
@@ -30,14 +30,12 @@ export type AdapterType =
   | "host-plugin"
   | "project-skills"
   | "upstream-local-installer"
-  | "shared-runtime"
   | "standalone-host";
 
 export const ADAPTER_TYPES: readonly AdapterType[] = [
   "host-plugin",
   "project-skills",
   "upstream-local-installer",
-  "shared-runtime",
   "standalone-host",
 ];
 
@@ -98,10 +96,8 @@ export interface BindingReport {
    * evidence record `lines` is rendered from. `report()` builds it; a `provision()`
    * persists it beside the lock (O8). See {@link FrameworkCard}.
    *
-   * OPTIONAL: the migrated ECC and Superpowers reports always populate it; the
-   * gstack report is EVALUATED_DEFERRED for v1 (maintainer scope reduction,
-   * DECISION-LOG 2026-07-23) and still returns lines-only, so consumers must
-   * treat `card` as possibly-absent until every adapter is migrated.
+   * OPTIONAL: adapters may return lines-only while their card rendering is
+   * being migrated, so consumers must treat `card` as possibly absent.
    */
   card?: FrameworkCard;
   lines: string[];

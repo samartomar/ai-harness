@@ -11,6 +11,10 @@ import {
   isBaselineSourceId,
 } from "../internals/baseline-sources.js";
 import { readIfExists } from "../internals/fsxn.js";
+import {
+  isLegacyGstackId,
+  LEGACY_GSTACK_MIGRATION_DIAGNOSTIC,
+} from "../internals/legacy-config.js";
 import { ContextDir } from "./settings.js";
 
 /**
@@ -103,11 +107,36 @@ export function readAihConfig(root: string): AihConfig | undefined {
   try {
     readAihConfigBaseline(root);
     readAihConfigPosture(root);
+    rejectRemovedBindingConfiguration(root);
   } catch (err) {
     if (err instanceof SettingsError) throw err;
   }
   const diagnostic = readAihConfigDiagnostic(root);
   return diagnostic.present && !diagnostic.invalid ? diagnostic.config : undefined;
+}
+
+/**
+ * The marker reader remains fail-soft for older optional fields, except a removed
+ * framework identifier is a governance boundary: ignoring it could make a stale
+ * binding look unbound and invite an unsafe replacement.
+ */
+function rejectRemovedBindingConfiguration(root: string): void {
+  const raw = readIfExists(join(root, AIH_CONFIG_FILE));
+  if (raw === undefined) return;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (parsed === null || typeof parsed !== "object") return;
+  const binding = (parsed as { binding?: unknown }).binding;
+  if (binding === null || typeof binding !== "object") return;
+  const framework = (binding as { framework?: unknown }).framework;
+  if (framework === null || typeof framework !== "object") return;
+  if (isLegacyGstackId((framework as { id?: unknown }).id)) {
+    throw new SettingsError(LEGACY_GSTACK_MIGRATION_DIAGNOSTIC);
+  }
 }
 
 /**
@@ -145,6 +174,9 @@ export function readAihConfigBaseline(root: string): BaselineSourceId | undefine
   const baseline = (parsed as { baseline?: unknown }).baseline;
   if (baseline === undefined) return undefined;
   if (isBaselineSourceId(baseline)) return baseline;
+  if (isLegacyGstackId(baseline)) {
+    throw new SettingsError(LEGACY_GSTACK_MIGRATION_DIAGNOSTIC);
+  }
   throw new SettingsError(
     `invalid baseline in ${AIH_CONFIG_FILE}: expected one of ${baselineSourceIds().join("|")}`,
   );

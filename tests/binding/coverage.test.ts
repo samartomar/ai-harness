@@ -118,7 +118,7 @@ describe("adapter registry edges", () => {
     expect(() =>
       registry.register(
         createFakeAdapter({
-          framework: "gstack",
+          framework: "superpowers",
           adapterType: "bogus" as unknown as AdapterType,
           resolved: RESOLVED,
         }),
@@ -133,7 +133,7 @@ describe("safeParseBindingDeclaration", () => {
     expect(
       safeParseBindingDeclaration({
         schemaVersion: 1,
-        framework: { id: "gstack", host: "claude" },
+        framework: { id: "unknown", host: "claude" },
         source: {
           kind: "git",
           repository: "o/r",
@@ -141,6 +141,6 @@ describe("safeParseBindingDeclaration", () => {
           treeDigest: "b".repeat(64),
         },
       }).success,
-    ).toBe(true);
+    ).toBe(false);
   });
 });

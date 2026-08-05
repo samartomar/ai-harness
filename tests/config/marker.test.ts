@@ -7,6 +7,8 @@ import {
   aihConfigJson,
   isActiveManagedMcpProjectionOwnership,
   isManagedMcpProjectionOwnership,
+  managedMcpProjectionConfigJson,
+  managedMcpProjectionConfigJsonFromRaw,
   managedMcpProjectionOwnership,
   readAihConfig,
   readAihConfigBaseline,
@@ -112,15 +114,39 @@ describe("aihConfigJson", () => {
     });
   });
 
-  it("fails closed on a persisted gstack baseline (removed as CLI-surfaced by the 2026-07-23 scope decision)", () => {
+  it("fails closed with the migration diagnostic on a persisted removed baseline", () => {
     writeMarker({
       schemaVersion: 1,
       contextDir: "ai-coding",
       targets: ["claude"],
       baseline: "gstack",
     });
-    expect(() => readAihConfig(dir)).toThrow(/invalid baseline/);
-    expect(() => readAihConfigBaseline(dir)).toThrow(/invalid baseline/);
+    expect(() => readAihConfig(dir)).toThrow(
+      'unsupported legacy configuration "gstack"; migrate to a supported framework before continuing',
+    );
+    expect(() => readAihConfigBaseline(dir)).toThrow(
+      'unsupported legacy configuration "gstack"; migrate to a supported framework before continuing',
+    );
+  });
+
+  it("does not silently ignore a persisted removed binding", () => {
+    writeMarker({
+      schemaVersion: 1,
+      contextDir: "ai-coding",
+      binding: {
+        schemaVersion: 1,
+        framework: { id: "gstack", host: "claude" },
+        source: {
+          kind: "git",
+          repository: "example/removed-framework",
+          commitSha: "a".repeat(40),
+          treeDigest: "b".repeat(64),
+        },
+      },
+    });
+    expect(() => readAihConfig(dir)).toThrow(
+      'unsupported legacy configuration "gstack"; migrate to a supported framework before continuing',
+    );
   });
 
   it("fails closed on a persisted gsd baseline (removed by the 2026-07-22 scope decision)", () => {
@@ -153,6 +179,34 @@ describe("managed-MCP projection ownership", () => {
     expect(isManagedMcpProjectionOwnership(revoked)).toBe(true);
     expect(isActiveManagedMcpProjectionOwnership(revoked)).toBe(false);
     expect(isManagedMcpProjectionOwnership({ ...revoked, state: "active" })).toBe(false);
+  });
+
+  it("adds provenance to a valid marker without reusing its unrelated contents", () => {
+    writeMarker({ schemaVersion: 1, contextDir: "ai-coding", targets: ["claude"] });
+    const ownership = managedMcpProjectionOwnership({
+      allowManagedMcpServersOnly: true,
+      allowedMcpServers: [{ serverCommand: ["aih-mcp", "serve"] }],
+    });
+
+    expect(managedMcpProjectionConfigJson(dir, "ai-coding", ["claude"], ownership)).toEqual({
+      managedMcpProjection: ownership,
+    });
+  });
+
+  it("refuses to write managed-MCP provenance through a malformed marker", () => {
+    const ownership = managedMcpProjectionOwnership({
+      allowManagedMcpServersOnly: true,
+      allowedMcpServers: [{ serverCommand: ["aih-mcp", "serve"] }],
+    });
+
+    expect(() =>
+      managedMcpProjectionConfigJsonFromRaw(
+        "{ malformed marker",
+        "ai-coding",
+        ["claude"],
+        ownership,
+      ),
+    ).toThrow(/cannot record Claude managed-MCP provenance/);
   });
 });
 

@@ -192,7 +192,7 @@ describe("assertNoMachineLocalPath (H3)", () => {
           "skill:verification-loop",
         ],
         sharedState: [
-          { label: "install root", kind: "state-dir", note: "home:.claude/skills/gstack" },
+          { label: "install root", kind: "state-dir", note: "home:.claude/skills/sample" },
         ],
       }),
     );
@@ -432,7 +432,7 @@ describe("local verification evidence (§A.4) — abs paths allowed, never in th
       os: { platform: "win32", release: "10.0.26200", arch: "x64" },
       runtime: { node: "24.18.0", bun: "1.3.14", claudeCode: "2.1.217" },
       measuredAt: "2026-07-22T00:00:00.000Z",
-      contamination: [{ framework: "gstack", surface: "hooks", detail: "1 leaked hook" }],
+      contamination: [{ framework: "superpowers", surface: "hooks", detail: "1 leaked hook" }],
       doctorTranscript: [{ code: "binding.contaminated", status: "pass" }],
     });
   }
