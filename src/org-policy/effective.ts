@@ -1,0 +1,776 @@
+import { createHash } from "node:crypto";
+import {
+  isVerifiedPolicyAuthority,
+  type PolicyAuthorityReceipt,
+  type VerifiedPolicyAuthority,
+} from "./authority.js";
+import type { OrgPolicy } from "./schema.js";
+
+/** Machine-enforced findings that no evidence exception or approval may waive. */
+export const UNWAIVABLE_POLICY_DANGER_CODES = [
+  "malicious-code",
+  "prompt-injection",
+  "auto-executing-hook",
+  "hidden-unicode",
+  "secrets",
+  "unpinned-source",
+  "dependency-confusion",
+  "mandatory-detector-failed",
+  "evidence-identity-drift",
+  "unsafe-path",
+  "normalized-collision",
+  "missing-projector",
+  "unsupported-target",
+  "ownership-conflict",
+] as const;
+
+export type PolicyDangerCode = (typeof UNWAIVABLE_POLICY_DANGER_CODES)[number];
+export type ResolutionBlockCode =
+  | PolicyDangerCode
+  | "lifecycle-not-supported"
+  | "evidence-missing"
+  | "evidence-failed"
+  | "authority-receipt-unverified"
+  | "authority-receipt-mismatch"
+  | "approval-missing"
+  | "approval-ambiguous"
+  | "approval-expired"
+  | "approval-not-yet-valid"
+  | "approval-revoked"
+  | "approval-signer-untrusted"
+  | "approval-digest-mismatch"
+  | "approval-scope-mismatch"
+  | "authority-target-coverage-mismatch"
+  | "approval-policy-version-mismatch"
+  | "approval-duration-invalid"
+  | "framework-contract-unavailable";
+
+type Governance = NonNullable<OrgPolicy["governance"]>;
+type Candidate = Governance["catalog"]["reviewed"][number];
+type Approval = Governance["authority"]["approvals"][number];
+type EvidenceRecord = PolicyAuthorityReceipt["evidence"][number];
+
+/** The immutable, action-significant identity of an AIH-shipped reviewed control. */
+export type AiReviewedControl = Pick<
+  Candidate,
+  "id" | "kind" | "source" | "targets" | "projector" | "lifecycle"
+>;
+
+/** Built only from the live AIH catalog and owned adapter records at runtime. */
+export interface RuntimeReviewedControl {
+  control: AiReviewedControl;
+  controlDigest: string;
+}
+
+export interface RuntimeMcpIdentity {
+  subject: string;
+  projectable: boolean;
+}
+
+export interface RuntimeHookIdentity {
+  scriptDigest: string;
+  projectable: boolean;
+}
+
+export interface EffectivePolicyContext {
+  now?: Date;
+  /** Branded only after the fixed receipt passes `gh attestation verify`. */
+  authority?: VerifiedPolicyAuthority;
+  /** Actual adapter target set for this invocation; omitted means Claude's leaf-command default. */
+  targets?: readonly string[];
+  /** Whether this invocation can emit managed adapter actions at all. */
+  projectorsEnabled?: boolean;
+  mcpIdentities?: Readonly<Record<string, RuntimeMcpIdentity>>;
+  hookIdentities?: Readonly<Record<string, RuntimeHookIdentity>>;
+  /** Exact AIH-shipped control identities, built from live catalog + owned hooks. */
+  aihReviewedControls?: Readonly<Record<string, RuntimeReviewedControl>>;
+  projectorFindings?: Readonly<Record<string, readonly PolicyDangerCode[]>>;
+}
+
+export interface CandidateProjectionState {
+  projector: string;
+  requestedTargets: string[];
+  supportedTargets: string[];
+  availableTargets: string[];
+  coverage: "complete" | "blocked";
+  ownership: "managed-settings-receipt" | "usage-hook-receipt" | "unavailable";
+  receipt: "pending-projection" | "unavailable";
+}
+
+export interface EffectivePolicyCandidate {
+  id: string;
+  origin: "reviewed" | "custom";
+  kind: "mcp" | "hook" | "framework";
+  requested: boolean;
+  effective: boolean;
+  sourceDigest: string;
+  source: Candidate["source"];
+  evidence: "verified" | "approved" | "missing" | "failed";
+  evidenceRecord?: EvidenceRecord;
+  approval?: {
+    id: string;
+    issuer: string;
+    repository: string;
+    attestationId: string;
+    reason: string;
+    scope: string[];
+    notBefore: string;
+    expiresAt: string;
+    subjectDigest: string;
+  };
+  revocation?: {
+    issuer: string;
+    revokedAt: string;
+    reason: string;
+  };
+  dangerCodes: PolicyDangerCode[];
+  blockingCodes: ResolutionBlockCode[];
+  clarification?: string;
+  annotation?: string;
+  lifecycle: "supported" | "deprecated" | "retired";
+  projection: CandidateProjectionState;
+}
+
+export interface EffectiveOrgPolicy {
+  policyVersion?: string;
+  candidates: EffectivePolicyCandidate[];
+  activeMcpServerIds: string[];
+  frameworkSelections: Array<{ id: string; framework: "ecc" | "superpowers" }>;
+  blocking: boolean;
+  authority: { verified: boolean; receiptDigest?: string; problem?: string };
+}
+
+export function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/** Digest only immutable source identity, never catalog wording or an activation flag. */
+export function candidateIdentityDigest(candidate: Pick<Candidate, "source">): string {
+  return `sha256:${createHash("sha256").update(stableJson(candidate.source), "utf8").digest("hex")}`;
+}
+
+/** Digest every action-significant field; catalog prose and annotations remain report metadata. */
+export function reviewedControlDigest(control: AiReviewedControl): string {
+  const payload = {
+    id: control.id,
+    kind: control.kind,
+    source: control.source,
+    targets: sortedUnique(control.targets),
+    projector: control.projector,
+    lifecycle: control.lifecycle,
+  };
+  return `sha256:${createHash("sha256").update(stableJson(payload), "utf8").digest("hex")}`;
+}
+
+/**
+ * Full approval subject, deliberately excluding only its post-signing transport
+ * locator (`github.attestationId`) and its derived digest (`subjectDigest`).
+ */
+export function approvalAttestationDigest(
+  approval: Pick<
+    Approval,
+    | "id"
+    | "issuer"
+    | "candidate"
+    | "kind"
+    | "source"
+    | "sourceDigest"
+    | "evidenceDigest"
+    | "projector"
+    | "policyVersion"
+    | "reason"
+    | "scope"
+    | "notBefore"
+    | "expiresAt"
+    | "github"
+  >,
+): string {
+  const payload = {
+    id: approval.id,
+    issuer: approval.issuer,
+    signerRepository: approval.github.repository,
+    candidate: approval.candidate,
+    kind: approval.kind,
+    source: approval.source,
+    sourceDigest: approval.sourceDigest,
+    evidenceDigest: approval.evidenceDigest,
+    projector: approval.projector,
+    policyVersion: approval.policyVersion,
+    reason: approval.reason,
+    scope: sortedUnique(approval.scope),
+    notBefore: approval.notBefore,
+    expiresAt: approval.expiresAt,
+  };
+  return `sha256:${createHash("sha256").update(stableJson(payload), "utf8").digest("hex")}`;
+}
+
+function sortedUnique<T extends string>(values: readonly T[]): T[] {
+  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+}
+
+function sameStrings(left: readonly string[], right: readonly string[]): boolean {
+  return stableJson(sortedUnique(left)) === stableJson(sortedUnique(right));
+}
+
+function isUnwaivable(value: string): value is PolicyDangerCode {
+  return (UNWAIVABLE_POLICY_DANGER_CODES as readonly string[]).includes(value);
+}
+
+function runtimeTargets(context: EffectivePolicyContext): string[] {
+  return sortedUnique(context.targets?.length ? context.targets : ["claude"]);
+}
+
+function projectionCoverage(
+  requested: readonly string[],
+  supportedTargets: readonly string[],
+  availableTargets: readonly string[],
+): "complete" | "blocked" {
+  const supported = new Set(supportedTargets);
+  const available = new Set(availableTargets);
+  return requested.every((target) => supported.has(target) && available.has(target))
+    ? "complete"
+    : "blocked";
+}
+
+function projectorFor(
+  candidate: Candidate,
+  requestedTargets: readonly string[],
+  context: EffectivePolicyContext,
+): CandidateProjectionState {
+  const availableTargets = runtimeTargets(context);
+  const requested = sortedUnique(requestedTargets);
+  if (context.projectorsEnabled === false) {
+    return {
+      projector: candidate.projector,
+      requestedTargets: requested,
+      supportedTargets: [],
+      availableTargets,
+      coverage: "blocked",
+      ownership: "unavailable",
+      receipt: "unavailable",
+    };
+  }
+  if (candidate.kind === "mcp" && candidate.projector === "mcp-managed-settings") {
+    // A package/version/integrity declaration identifies the intended custom
+    // process but is not an integrity-enforcing materializer. Until AIH owns
+    // that lifecycle, it remains authorable/reportable and cannot project.
+    if (candidate.source.type === "stdio") {
+      return {
+        projector: candidate.projector,
+        requestedTargets: requested,
+        supportedTargets: [],
+        availableTargets,
+        coverage: "blocked",
+        ownership: "unavailable",
+        receipt: "unavailable",
+      };
+    }
+    return {
+      projector: candidate.projector,
+      requestedTargets: requested,
+      supportedTargets: ["claude"],
+      availableTargets,
+      coverage: projectionCoverage(requested, ["claude"], availableTargets),
+      ownership: "managed-settings-receipt",
+      receipt: "pending-projection",
+    };
+  }
+  if (candidate.kind === "hook" && candidate.projector === "usage-hook") {
+    return {
+      projector: candidate.projector,
+      requestedTargets: requested,
+      supportedTargets: ["claude", "codex"],
+      availableTargets,
+      coverage: projectionCoverage(requested, ["claude", "codex"], availableTargets),
+      ownership: "usage-hook-receipt",
+      receipt: "pending-projection",
+    };
+  }
+  return {
+    projector: candidate.projector,
+    requestedTargets: requested,
+    supportedTargets: [],
+    availableTargets,
+    coverage: "blocked",
+    ownership: "unavailable",
+    receipt: "unavailable",
+  };
+}
+
+function completeCoverage(projection: CandidateProjectionState, candidate: Candidate): boolean {
+  const supported = new Set(projection.supportedTargets);
+  const available = new Set(projection.availableTargets);
+  return (
+    projection.coverage === "complete" &&
+    projection.requestedTargets.every((target) => supported.has(target) && available.has(target)) &&
+    projection.requestedTargets.every((target) =>
+      candidate.targets.includes(target as "claude" | "codex"),
+    )
+  );
+}
+
+function aihShippedEvidence(
+  candidate: Candidate,
+  context: EffectivePolicyContext,
+): EvidenceRecord | undefined {
+  const sourceDigest = candidateIdentityDigest(candidate);
+  const reviewed = context.aihReviewedControls?.[candidate.id];
+  if (
+    reviewed === undefined ||
+    reviewed.controlDigest !== reviewedControlDigest(reviewed.control) ||
+    reviewed.controlDigest !== reviewedControlDigest(candidate)
+  ) {
+    return undefined;
+  }
+  if (
+    candidate.kind === "mcp" &&
+    (candidate.source.type !== "mcp" || candidate.id !== candidate.source.server)
+  ) {
+    return undefined;
+  }
+  return {
+    id: `aih-${candidate.id}`,
+    candidate: candidate.id,
+    kind: candidate.kind,
+    source: candidate.source,
+    sourceDigest,
+    evidenceDigest: sourceDigest,
+    identityDigest: sourceDigest,
+    state: "verified",
+    waivable: false,
+    detectors: [],
+    findings: [],
+  };
+}
+
+function receiptEvidence(
+  candidate: Candidate,
+  authority: VerifiedPolicyAuthority | undefined,
+): EvidenceRecord | undefined {
+  if (authority === undefined) return undefined;
+  const sourceDigest = candidateIdentityDigest(candidate);
+  const matches = authority.receipt.evidence.filter(
+    (record) => record.id === candidate.evidence.record,
+  );
+  if (matches.length !== 1) return undefined;
+  const record = matches[0];
+  if (
+    record === undefined ||
+    record.candidate !== candidate.id ||
+    record.kind !== candidate.kind ||
+    record.sourceDigest !== sourceDigest ||
+    record.identityDigest !== sourceDigest ||
+    stableJson(record.source) !== stableJson(candidate.source)
+  ) {
+    return undefined;
+  }
+  return record;
+}
+
+function matchingApproval(
+  governance: Governance,
+  candidate: Candidate,
+  evidence: EvidenceRecord,
+  requestedTargets: readonly string[],
+  authority: VerifiedPolicyAuthority | undefined,
+  now: Date,
+): {
+  approval?: Approval;
+  code?: ResolutionBlockCode;
+  revocation?: { issuer: string; revokedAt: string; reason: string };
+} {
+  if (authority === undefined || !isVerifiedPolicyAuthority(authority)) {
+    return { code: "authority-receipt-unverified" };
+  }
+  const sourceDigest = candidateIdentityDigest(candidate);
+  const matches = governance.authority.approvals.filter(
+    (approval) => approval.candidate === candidate.id && approval.sourceDigest === sourceDigest,
+  );
+  if (matches.length === 0) return { code: "approval-missing" };
+  if (matches.length !== 1) return { code: "approval-ambiguous" };
+  const approval = matches[0];
+  if (approval === undefined) return { code: "approval-missing" };
+  if (
+    approval.kind !== candidate.kind ||
+    approval.projector !== candidate.projector ||
+    approval.evidenceDigest !== evidence.evidenceDigest ||
+    stableJson(approval.source) !== stableJson(candidate.source)
+  ) {
+    return { code: "approval-digest-mismatch" };
+  }
+  if (approval.policyVersion !== governance.policyVersion) {
+    return { code: "approval-policy-version-mismatch" };
+  }
+  if (!sameStrings(approval.scope, requestedTargets)) return { code: "approval-scope-mismatch" };
+  if (approval.github.subjectDigest !== approvalAttestationDigest(approval)) {
+    return { code: "approval-digest-mismatch" };
+  }
+  const signed = authority.receipt.approvals.filter(
+    (item) => stableJson(item) === stableJson(approval),
+  );
+  if (signed.length !== 1) return { code: "authority-receipt-mismatch" };
+  const issuer = authority.receipt.trustedIssuers.find((item) => item.id === approval.issuer);
+  if (issuer === undefined || issuer.githubRepository !== approval.github.repository) {
+    return { code: "approval-signer-untrusted" };
+  }
+  const notBefore = Date.parse(approval.notBefore);
+  const expiresAt = Date.parse(approval.expiresAt);
+  if (expiresAt <= notBefore || expiresAt - notBefore > 90 * 24 * 60 * 60 * 1000) {
+    return { code: "approval-duration-invalid" };
+  }
+  if (now.getTime() < notBefore) return { code: "approval-not-yet-valid" };
+  if (now.getTime() >= expiresAt) return { code: "approval-expired" };
+  const revocation = authority.receipt.revocations.find(
+    (item) =>
+      item.approval === approval.id &&
+      item.issuer === approval.issuer &&
+      Date.parse(item.revokedAt) <= now.getTime(),
+  );
+  if (revocation !== undefined) {
+    return {
+      code: "approval-revoked",
+      revocation: {
+        issuer: revocation.issuer,
+        revokedAt: revocation.revokedAt,
+        reason: revocation.reason,
+      },
+    };
+  }
+  if (
+    !requestedTargets.every(
+      (target) =>
+        (target === "claude" || target === "codex") && authority.receipt.targets.includes(target),
+    )
+  ) {
+    return { code: "approval-scope-mismatch" };
+  }
+  return { approval };
+}
+
+function resolveCandidate(
+  policy: OrgPolicy,
+  governance: Governance,
+  candidate: Candidate,
+  origin: "reviewed" | "custom",
+  context: EffectivePolicyContext,
+): EffectivePolicyCandidate {
+  const now = context.now ?? new Date();
+  const activation = governance.activations.find((item) => item.candidate === candidate.id);
+  const requested = activation?.state === "active";
+  const requestedTargets = activation?.targets ?? candidate.targets;
+  const dangerCodes: PolicyDangerCode[] = [];
+  const blockingCodes: ResolutionBlockCode[] = [];
+  const projection = projectorFor(candidate, requestedTargets, context);
+  const sourceDigest = candidateIdentityDigest(candidate);
+
+  for (const finding of candidate.findings) if (isUnwaivable(finding)) dangerCodes.push(finding);
+  for (const finding of context.projectorFindings?.[candidate.id] ?? []) dangerCodes.push(finding);
+  if (candidate.autoExecute) dangerCodes.push("auto-executing-hook");
+  if (!completeCoverage(projection, candidate)) dangerCodes.push("unsupported-target");
+  if (candidate.lifecycle !== "supported") blockingCodes.push("lifecycle-not-supported");
+  if (candidate.kind === "framework") blockingCodes.push("framework-contract-unavailable");
+  if (projection.coverage === "blocked") dangerCodes.push("missing-projector");
+  if (candidate.kind === "mcp" && policy.mcp?.allowManagedOnly !== true) {
+    dangerCodes.push("missing-projector");
+  }
+
+  if (candidate.kind === "mcp" && candidate.source.type === "mcp") {
+    const identity = context.mcpIdentities?.[candidate.source.server];
+    if (identity === undefined || identity.subject !== candidate.source.subject) {
+      dangerCodes.push("evidence-identity-drift");
+    } else if (!identity.projectable) {
+      dangerCodes.push("missing-projector");
+    }
+  } else if (candidate.kind === "mcp" && candidate.source.type === "stdio") {
+    dangerCodes.push("missing-projector");
+  } else if (candidate.kind === "mcp") {
+    dangerCodes.push("evidence-identity-drift");
+  }
+  if (candidate.kind === "hook") {
+    const hook =
+      candidate.source.type === "hook"
+        ? context.hookIdentities?.[candidate.source.handler]
+        : undefined;
+    if (
+      candidate.source.type !== "hook" ||
+      candidate.projector !== "usage-hook" ||
+      hook === undefined ||
+      !hook.projectable ||
+      hook.scriptDigest !== candidate.source.scriptDigest
+    ) {
+      dangerCodes.push("missing-projector");
+    }
+  }
+
+  const authority = isVerifiedPolicyAuthority(context.authority) ? context.authority : undefined;
+  const externalEvidence =
+    origin === "reviewed"
+      ? aihShippedEvidence(candidate, context)
+      : receiptEvidence(candidate, authority);
+  if (externalEvidence === undefined) {
+    blockingCodes.push(
+      authority === undefined ? "authority-receipt-unverified" : "authority-receipt-mismatch",
+    );
+    blockingCodes.push("evidence-missing");
+  }
+  if (
+    origin === "custom" &&
+    externalEvidence !== undefined &&
+    authority !== undefined &&
+    !requestedTargets.every(
+      (target) =>
+        (target === "claude" || target === "codex") && authority.receipt.targets.includes(target),
+    )
+  ) {
+    // Receipt-wide target coverage constrains verified evidence too, not just
+    // explicit approval waivers.
+    blockingCodes.push("authority-target-coverage-mismatch");
+  }
+  let evidence: EffectivePolicyCandidate["evidence"] = externalEvidence?.state ?? "missing";
+  let approval: EffectivePolicyCandidate["approval"];
+  let revocation: EffectivePolicyCandidate["revocation"];
+  let mandatoryEvidenceGap = false;
+  let waivableGap = false;
+  if (externalEvidence !== undefined) {
+    for (const finding of externalEvidence.findings)
+      if (isUnwaivable(finding)) dangerCodes.push(finding);
+    for (const detector of externalEvidence.detectors) {
+      if (detector.required && detector.status === "fail")
+        dangerCodes.push("mandatory-detector-failed");
+      if (detector.required && detector.status === "missing") mandatoryEvidenceGap = true;
+      if (!detector.required && detector.status !== "pass") waivableGap = true;
+    }
+    if (mandatoryEvidenceGap) blockingCodes.push("evidence-missing");
+    const needsApproval =
+      !mandatoryEvidenceGap &&
+      externalEvidence.waivable &&
+      (externalEvidence.state === "missing" ||
+        (externalEvidence.state === "failed" && externalEvidence.waivable) ||
+        waivableGap);
+    if (needsApproval) {
+      const decision = matchingApproval(
+        governance,
+        candidate,
+        externalEvidence,
+        requestedTargets,
+        authority,
+        now,
+      );
+      if (decision.approval === undefined) {
+        blockingCodes.push(decision.code ?? "approval-missing");
+        revocation = decision.revocation;
+      } else {
+        evidence = "approved";
+        approval = {
+          id: decision.approval.id,
+          issuer: decision.approval.issuer,
+          repository: decision.approval.github.repository,
+          attestationId: decision.approval.github.attestationId,
+          reason: decision.approval.reason,
+          scope: sortedUnique(decision.approval.scope),
+          notBefore: decision.approval.notBefore,
+          expiresAt: decision.approval.expiresAt,
+          subjectDigest: decision.approval.github.subjectDigest,
+        };
+      }
+    } else if (externalEvidence.state === "failed") {
+      blockingCodes.push("evidence-failed");
+    } else if (externalEvidence.state === "missing" || waivableGap) {
+      blockingCodes.push("evidence-missing");
+    }
+  }
+
+  const uniqueDangerCodes = sortedUnique(dangerCodes);
+  const uniqueBlockingCodes = sortedUnique(blockingCodes);
+  const effective =
+    requested &&
+    uniqueDangerCodes.length === 0 &&
+    uniqueBlockingCodes.length === 0 &&
+    (evidence === "verified" || evidence === "approved");
+  return {
+    id: candidate.id,
+    origin,
+    kind: candidate.kind,
+    requested,
+    effective,
+    sourceDigest,
+    source: candidate.source,
+    evidence,
+    ...(externalEvidence === undefined ? {} : { evidenceRecord: externalEvidence }),
+    ...(approval === undefined ? {} : { approval }),
+    ...(revocation === undefined ? {} : { revocation }),
+    dangerCodes: uniqueDangerCodes,
+    blockingCodes: uniqueBlockingCodes,
+    ...((activation?.clarification ?? candidate.clarification)
+      ? { clarification: activation?.clarification ?? candidate.clarification }
+      : {}),
+    ...(candidate.annotation === undefined ? {} : { annotation: candidate.annotation }),
+    lifecycle: candidate.lifecycle,
+    projection,
+  };
+}
+
+/** Resolve requested candidates against externally verified authority and live adapters. */
+export function resolveEffectiveOrgPolicy(
+  policy: OrgPolicy,
+  context: EffectivePolicyContext = {},
+): EffectiveOrgPolicy {
+  const governance = policy.governance;
+  const authority = isVerifiedPolicyAuthority(context.authority) ? context.authority : undefined;
+  if (governance === undefined) {
+    return {
+      candidates: [],
+      activeMcpServerIds: [],
+      frameworkSelections: [],
+      blocking: false,
+      authority: {
+        verified: authority !== undefined,
+        ...(authority ? { receiptDigest: authority.receiptDigest } : {}),
+      },
+    };
+  }
+  const candidates = [
+    ...governance.catalog.reviewed.map((candidate) =>
+      resolveCandidate(policy, governance, candidate, "reviewed", context),
+    ),
+    ...governance.catalog.custom.map((candidate) =>
+      resolveCandidate(policy, governance, candidate, "custom", context),
+    ),
+  ].sort((left, right) => left.id.localeCompare(right.id));
+  return {
+    policyVersion: governance.policyVersion,
+    candidates,
+    activeMcpServerIds: candidates
+      .filter((candidate) => candidate.effective && candidate.kind === "mcp")
+      .map((candidate) => candidate.id)
+      .sort((left, right) => left.localeCompare(right)),
+    frameworkSelections: candidates
+      .filter((candidate) => candidate.requested && candidate.kind === "framework")
+      .flatMap((candidate) => {
+        const source = [...governance.catalog.reviewed, ...governance.catalog.custom].find(
+          (item) => item.id === candidate.id,
+        );
+        return source?.framework === undefined
+          ? []
+          : [{ id: candidate.id, framework: source.framework }];
+      })
+      .sort((left, right) => left.id.localeCompare(right.id)),
+    blocking: candidates.some(
+      (candidate) =>
+        candidate.requested &&
+        (candidate.dangerCodes.length > 0 || candidate.blockingCodes.length > 0),
+    ),
+    authority: {
+      verified: authority !== undefined,
+      ...(authority === undefined
+        ? { problem: "authority receipt has not been externally verified" }
+        : { receiptDigest: authority.receiptDigest }),
+    },
+  };
+}
+
+const CANDIDATE_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
+  annotation: "effective report metadata consumer",
+  autoExecute: "effective resolver: uncontrolled hook danger gate",
+  "capabilities.*": "effective report metadata consumer",
+  clarification: "effective report metadata consumer",
+  description: "effective report metadata consumer",
+  "evidence.record": "effective resolver: verified receipt evidence lookup",
+  "findings.*": "effective resolver: local additive unwaivable danger gate",
+  framework: "effective resolver: framework adapter availability gate",
+  id: "effective resolver: candidate identity and activation lookup",
+  kind: "effective resolver: identity, evidence, and projector binding",
+  lifecycle: "effective resolver: lifecycle gate",
+  projector: "effective resolver: projector and approval binding",
+  "risks.*": "effective report metadata consumer",
+  "source.args.*":
+    "effective resolver: immutable stdio curation/evidence identity; no launch projector exists",
+  "source.command":
+    "effective resolver: immutable executable identity; stdio has no launch projector",
+  "source.commit": "effective resolver: immutable git source identity",
+  "source.executableDigest": "effective resolver: executable source identity",
+  "source.handler": "effective resolver: AIH-owned hook identity",
+  "source.integrity": "effective resolver: verified package integrity identity",
+  "source.package":
+    "effective resolver: immutable stdio curation/evidence package identity; no launch projector exists",
+  "source.registry":
+    "effective resolver: immutable stdio curation/evidence registry identity; no launch projector exists",
+  "source.repository": "effective resolver: immutable repository identity",
+  "source.resolver":
+    "effective resolver: immutable stdio curation/evidence resolver identity; no launch projector exists",
+  "source.scriptDigest": "effective resolver: AIH-owned hook script identity",
+  "source.server": "effective resolver: AIH-shipped MCP identity",
+  "source.subject": "effective resolver: AIH-shipped MCP subject identity",
+  "source.tree": "effective resolver: immutable git tree identity",
+  "source.type": "effective resolver: source union and identity gate",
+  "source.version":
+    "effective resolver: immutable stdio curation/evidence version identity; no launch projector exists",
+  "targets.*": "effective resolver: declared target parity gate",
+};
+
+const ACTIVATION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
+  candidate: "effective resolver: candidate activation lookup",
+  clarification: "effective report metadata consumer",
+  state: "effective resolver: requested/effective decision",
+  "targets.*": "effective resolver: runtime target/projector parity gate",
+};
+
+const AUTHORITY_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
+  "approvals.*.candidate": "authority resolver: exact candidate binding",
+  "approvals.*.evidenceDigest": "authority resolver: exact verified evidence binding",
+  "approvals.*.expiresAt": "authority resolver: expiry and maximum-lifetime gate",
+  "approvals.*.github.attestationId":
+    "effective report: externally signed receipt transport locator",
+  "approvals.*.github.repository": "authority resolver: trusted issuer repository binding",
+  "approvals.*.github.subjectDigest": "authority resolver: full canonical approval subject digest",
+  "approvals.*.id": "authority resolver: exact receipt and revocation lookup",
+  "approvals.*.issuer": "authority resolver: externally verified issuer registry lookup",
+  "approvals.*.kind": "authority resolver: candidate kind binding",
+  "approvals.*.notBefore": "authority resolver: not-before and maximum-lifetime gate",
+  "approvals.*.policyVersion": "authority resolver: policy-version binding",
+  "approvals.*.projector": "authority resolver: projector/control binding",
+  "approvals.*.reason": "authority resolver: signed reason binding and report consumer",
+  "approvals.*.scope.*": "authority resolver: signed target-scope binding",
+  "approvals.*.source.args.*": "authority resolver: immutable source binding",
+  "approvals.*.source.command": "authority resolver: immutable source binding",
+  "approvals.*.source.commit": "authority resolver: immutable source binding",
+  "approvals.*.source.executableDigest": "authority resolver: immutable source binding",
+  "approvals.*.source.handler": "authority resolver: immutable source binding",
+  "approvals.*.source.integrity": "authority resolver: immutable source binding",
+  "approvals.*.source.package": "authority resolver: immutable source binding",
+  "approvals.*.source.registry": "authority resolver: immutable source binding",
+  "approvals.*.source.repository": "authority resolver: immutable source binding",
+  "approvals.*.source.resolver": "authority resolver: immutable source binding",
+  "approvals.*.source.scriptDigest": "authority resolver: immutable source binding",
+  "approvals.*.source.server": "authority resolver: immutable source binding",
+  "approvals.*.source.subject": "authority resolver: immutable source binding",
+  "approvals.*.source.tree": "authority resolver: immutable source binding",
+  "approvals.*.source.type": "authority resolver: immutable source binding",
+  "approvals.*.source.version": "authority resolver: immutable source binding",
+  "approvals.*.sourceDigest": "authority resolver: exact source digest binding",
+};
+
+function prefixedConsumers(
+  prefix: string,
+  leaves: Readonly<Record<string, string>>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(leaves).map(([leaf, consumer]) => [`${prefix}.${leaf}`, consumer]),
+  );
+}
+
+/** Exact, mechanically compared schema-leaf consumer contract. */
+export const POLICY_ENGINE_FIELD_CONSUMERS: Readonly<Record<string, string>> = Object.freeze({
+  "governance.policyVersion": "effective resolver: approval policy-version and report consumer",
+  ...prefixedConsumers("governance.activations.*", ACTIVATION_LEAF_CONSUMERS),
+  ...prefixedConsumers("governance.authority", AUTHORITY_LEAF_CONSUMERS),
+  ...prefixedConsumers("governance.catalog.reviewed.*", CANDIDATE_LEAF_CONSUMERS),
+  ...prefixedConsumers("governance.catalog.custom.*", CANDIDATE_LEAF_CONSUMERS),
+});

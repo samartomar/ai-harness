@@ -34,7 +34,8 @@ import { canonLintCheck } from "./lint/run.js";
 import { mcpManagedAllowlistCheck } from "./mcp/allowlist.js";
 import { mcpUvxPinAttestationProbe } from "./mcp/attest.js";
 import { mcpPinCurrencyProbe } from "./mcp/currency.js";
-import { orgPolicyDriftProbes, orgPolicyIntegrityProbes } from "./org-policy/drift.js";
+import { orgPolicyIntegrityProbes, verifiedOrgPolicyDriftProbes } from "./org-policy/drift.js";
+import { orgPolicyEffectiveCheck } from "./org-policy/evaluate.js";
 import { resolveTargetSet } from "./report/cli-coverage.js";
 import { loadabilityForWithDryRun, loadReason } from "./report/cli-loadability.js";
 import { scaleSafetyCheck } from "./scale-safety.js";
@@ -87,7 +88,7 @@ export const command: CommandSpec = {
         "compare each exactly-pinned npx/uvx MCP package launch against its registry's latest release (npm/PyPI metadata only; nothing is downloaded or executed) — network egress, so it is opt-in",
     },
   ],
-  plan: (ctx) => {
+  plan: async (ctx) => {
     // The committed bootstrap marker is the source of truth for which context dir
     // to verify: a repo scaffolded with a custom `--context-dir` must be checked
     // against THAT dir, not the `ai-coding` default doctor would otherwise re-derive
@@ -353,7 +354,8 @@ export const command: CommandSpec = {
         trustLockLocalDriftChecks(probeCtx),
       ),
       ...orgPolicyIntegrityProbes({ ...ctx, contextDir }),
-      ...orgPolicyDriftProbes({ ...scopedCtx, contextDir }),
+      probe("org policy effective resolution", (c) => orgPolicyEffectiveCheck(c)),
+      ...(await verifiedOrgPolicyDriftProbes({ ...scopedCtx, contextDir })),
       probe("enterprise baseline attestation", () =>
         enterpriseBaselineAttestationCheck({ ...ctx, contextDir }),
       ),

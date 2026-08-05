@@ -21,12 +21,13 @@ describe("committed JSON Schemas", () => {
     expect(validate(value)).toBe(false);
   }
 
-  it("emits editor schemas for .aih-config.json and aih-org-policy.json", () => {
+  it("emits editor schemas for config, governed policy, and external authority receipt", () => {
     const schemas = generatedConfigSchemas();
 
     expect(schemas.map((schema) => schema.path)).toEqual([
       "schemas/aih-config.schema.json",
       "schemas/aih-org-policy.schema.json",
+      "schemas/aih-policy-authority-receipt.schema.json",
     ]);
     expect(schemas[0]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -36,6 +37,11 @@ describe("committed JSON Schemas", () => {
     expect(schemas[1]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
       title: "aih-org-policy.json",
+      type: "object",
+    });
+    expect(schemas[2]?.schema).toMatchObject({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      title: ".aih/policy-authority-receipt.json",
       type: "object",
     });
   });

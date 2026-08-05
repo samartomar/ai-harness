@@ -323,6 +323,32 @@ describe("report workspace rollup", () => {
     });
   });
 
+  it("routes governed workspace MCP hints through policy evaluation and projection", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    child("ui");
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      json({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          policyVersion: "2026.08.0",
+          catalog: { reviewed: [], custom: [] },
+          activations: [],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+
+    const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+    expect(data.mcp.detail).toContain("aih policy evaluate");
+    expect(data.mcp.detail).toContain("aih policy project --apply");
+    expect(data.mcp.detail).toContain("workspace --apply");
+    expect(data.mcp.detail).toContain("intentionally blocked");
+  });
+
   it("warns when stale workspace filesystem MCP is still present", async () => {
     writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
     writeFileSync(

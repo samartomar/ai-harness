@@ -3,11 +3,20 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
+import { plan } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import type { Check } from "../../src/internals/verify.js";
-import { policyValidateCommand, policyVerifyCommand } from "../../src/org-policy/validate.js";
+import { verifiedOrgPolicyProjectionActions } from "../../src/org-policy/project.js";
+import { parseOrgPolicy } from "../../src/org-policy/schema.js";
+import {
+  policyEvaluateCommand,
+  policyValidateCommand,
+  policyVerifyCommand,
+} from "../../src/org-policy/validate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { usageRecorderScript } from "../../src/usage/capture.js";
 
 let dir: string;
 beforeEach(() => {
@@ -83,6 +92,15 @@ async function verifyChecks(c: PlanContext): Promise<Check[]> {
   for (const a of p.actions) {
     expect(a.kind).toBe("probe");
     if (a.kind === "probe") out.push(await a.run(c));
+  }
+  return out;
+}
+
+async function evaluateChecks(c: PlanContext): Promise<Check[]> {
+  const p = await policyEvaluateCommand.plan(c);
+  const out: Check[] = [];
+  for (const action of p.actions) {
+    if (action.kind === "probe") out.push(await action.run(c));
   }
   return out;
 }
@@ -192,6 +210,145 @@ describe("policy validate — --bundle envelope mode", () => {
     expect(check?.verdict).toBe("fail");
     expect(check?.code).toBe("org-policy.bundle-invalid");
     expect(check?.detail).toContain("embedded org policy is invalid");
+  });
+});
+
+describe("policy evaluate — effective governed candidates", () => {
+  it("is read-only and exports a deterministic requested-versus-effective digest", async () => {
+    write(
+      "aih-org-policy.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "team",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          policyVersion: "2026.08.0",
+          catalog: { reviewed: [], custom: [] },
+          activations: [],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+    const p = await policyEvaluateCommand.plan(ctx());
+    const report = p.actions.find((action) => action.kind === "digest");
+
+    expect(policyEvaluateCommand.readOnly).toBe(true);
+    expect(report).toMatchObject({
+      kind: "digest",
+      data: { policyVersion: "2026.08.0", blocking: false, candidates: [] },
+    });
+    expect((await evaluateChecks(ctx()))[0]).toMatchObject({ verdict: "pass" });
+  });
+
+  it("fails closed and reports the precise blocked candidate instead of projecting it", async () => {
+    const source = {
+      type: "mcp" as const,
+      server: "missing-mcp",
+      subject: `mcp-server-sha256:${"a".repeat(64)}`,
+    };
+    write(
+      "aih-org-policy.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "team",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          policyVersion: "2026.08.0",
+          catalog: {
+            reviewed: [
+              {
+                id: "missing-mcp",
+                kind: "mcp",
+                description: "Missing MCP catalog entry",
+                capabilities: [],
+                risks: [],
+                source,
+                targets: ["claude"],
+                projector: "mcp-managed-settings",
+                lifecycle: "supported",
+                evidence: { record: "missing-evidence" },
+              },
+            ],
+            custom: [],
+          },
+          activations: [{ candidate: "missing-mcp", state: "active", targets: ["claude"] }],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+
+    const p = await policyEvaluateCommand.plan(ctx());
+    const report = p.actions.find((action) => action.kind === "digest");
+    expect(report).toMatchObject({
+      kind: "digest",
+      data: {
+        blocking: true,
+        candidates: [expect.objectContaining({ id: "missing-mcp", effective: false })],
+      },
+    });
+    expect((await evaluateChecks(ctx()))[0]).toMatchObject({
+      verdict: "fail",
+      code: "org-policy.effective-blocked",
+    });
+  });
+
+  it("reports a retained hook receipt instead of deleting a no-longer-effective host hook", async () => {
+    const scriptDigest = `sha256:${sha256(usageRecorderScript())}`;
+    const active = parseOrgPolicy({
+      schemaVersion: 1,
+      minimumPosture: "team",
+      references: { repoContract: "ai-coding/project.json" },
+      governance: {
+        policyVersion: "2026.08.0",
+        catalog: {
+          reviewed: [
+            {
+              id: "usage-metering",
+              kind: "hook",
+              description: "AIH-owned usage hook",
+              capabilities: [],
+              risks: [],
+              source: { type: "hook", handler: "usage-metering", scriptDigest },
+              targets: ["claude", "codex"],
+              projector: "usage-hook",
+              lifecycle: "supported",
+              evidence: { record: "ignored-self-assertion" },
+            },
+          ],
+          custom: [],
+        },
+        activations: [{ candidate: "usage-metering", state: "active", targets: ["claude"] }],
+        authority: { approvals: [] },
+      },
+    });
+    const applied = ctx({ apply: true });
+    await executePlan(
+      plan(
+        "project valid governed usage hook",
+        ...(await verifiedOrgPolicyProjectionActions(applied, active)),
+      ),
+      applied,
+    );
+    write(
+      "aih-org-policy.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "team",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          policyVersion: "2026.08.0",
+          catalog: { reviewed: [], custom: [] },
+          activations: [],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+
+    expect((await evaluateChecks(ctx()))[0]).toMatchObject({
+      verdict: "fail",
+      code: "org-policy.effective-blocked",
+      detail: expect.stringContaining("conservative rollback"),
+    });
   });
 });
 

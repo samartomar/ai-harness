@@ -29,11 +29,17 @@ function mcpName(component: EccMcpComponentId): string {
   return component.slice("mcp:".length);
 }
 
-/** Apply the managed-only and disabled-server policy to ECC MCP registrations. */
+/**
+ * Apply legacy MCP policy only when the headless governance inventory is absent.
+ * Under governance, AIH policy project is the exclusive MCP projector; ECC still
+ * owns its agents, skills, commands, and profile selection, but never registers
+ * an MCP component as a side effect of `--with` or a profile.
+ */
 export function orgAllowedEccMcpComponents(
   components: readonly EccMcpComponentId[],
   policy: OrgPolicy | undefined,
 ): EccMcpComponentId[] {
+  if (policy?.governance !== undefined) return [];
   const disabled = new Set(policy?.mcp?.disabledServers ?? []);
   const allowManagedOnly = policy?.mcp?.allowManagedOnly === true;
   const allowed = new Set(policy?.mcp?.allowedServers ?? []);

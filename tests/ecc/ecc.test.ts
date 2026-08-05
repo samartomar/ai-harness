@@ -47,6 +47,24 @@ import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import type { RepoStack } from "../../src/profile/scan.js";
 
+function supportsSymlinks(): boolean {
+  const probe = mkdtempSync(join(tmpdir(), "aih-ecc-symlink-"));
+  try {
+    const target = join(probe, "target");
+    const link = join(probe, "link");
+    writeFileSync(target, "probe\n", "utf8");
+    symlinkSync(target, link);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EPERM") return false;
+    throw error;
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+}
+
+const symlinksAvailable = supportsSymlinks();
+
 let tmp: string;
 beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), "aih-ecc-"));
@@ -795,7 +813,7 @@ describe("Codex managed destination safety", () => {
     });
   }
 
-  it.each(["existing", "dangling"] as const)(
+  it.skipIf(!symlinksAvailable).each(["existing", "dangling"] as const)(
     "rejects an %s destination symlink before following it",
     (kind) => {
       const home = join(tmp, "home");
@@ -830,7 +848,7 @@ describe("Codex managed destination safety", () => {
     expect(readFileSync(outside, "utf8")).toBe("outside-before\n");
   });
 
-  it("rejects a symlinked managed destination ancestor", () => {
+  it.skipIf(!symlinksAvailable)("rejects a symlinked managed destination ancestor", () => {
     const home = join(tmp, "home");
     const outside = join(tmp, "outside-codex");
     mkdirSync(home, { recursive: true });
@@ -845,39 +863,47 @@ describe("Codex managed destination safety", () => {
     expect(existsSync(join(outside, "config.toml"))).toBe(false);
   });
 
-  it("accepts a declared home alias while retaining canonical destination checks", () => {
-    const realHome = join(tmp, "real-home");
-    const aliasHome = join(tmp, "home");
-    mkdirSync(realHome, { recursive: true });
-    symlinkSync(realHome, aliasHome, "dir");
-    prepareCodexRepo(aliasHome);
+  it.skipIf(!symlinksAvailable)(
+    "accepts a declared home alias while retaining canonical destination checks",
+    () => {
+      const realHome = join(tmp, "real-home");
+      const aliasHome = join(tmp, "home");
+      mkdirSync(realHome, { recursive: true });
+      symlinkSync(realHome, aliasHome, "dir");
+      prepareCodexRepo(aliasHome);
 
-    const result = guardedMerge(join(aliasHome, ".codex", "config.toml"));
-
-    expect(result.status).not.toBe(0);
-    expect(`${result.stdout}${result.stderr}`).toMatch(/unsafe writeInstallState reached/);
-    expect(`${result.stdout}${result.stderr}`).not.toMatch(/outside trusted home/);
-  });
-
-  it.each(["symlink", "hardlink"] as const)(
-    "rejects a managed upstream install-state %s",
-    (kind) => {
-      const home = join(tmp, "home");
-      const statePath = join(home, ".codex", "ecc-install-state.json");
-      const outside = join(tmp, "outside-install-state.json");
-      mkdirSync(join(statePath, ".."), { recursive: true });
-      writeFileSync(outside, "outside-before\n");
-      if (kind === "symlink") symlinkSync(outside, statePath);
-      else linkSync(outside, statePath);
-      prepareCodexRepo(home);
-
-      const result = guardedMerge(join(home, ".codex", "config.toml"));
+      const result = guardedMerge(join(aliasHome, ".codex", "config.toml"));
 
       expect(result.status).not.toBe(0);
-      expect(`${result.stdout}${result.stderr}`).toMatch(/unsafe existing Codex destination/);
-      expect(readFileSync(outside, "utf8")).toBe("outside-before\n");
+      expect(`${result.stdout}${result.stderr}`).toMatch(/unsafe writeInstallState reached/);
+      expect(`${result.stdout}${result.stderr}`).not.toMatch(/outside trusted home/);
     },
   );
+
+  const assertRejectedManagedUpstreamInstallState = (kind: "symlink" | "hardlink") => {
+    const home = join(tmp, "home");
+    const statePath = join(home, ".codex", "ecc-install-state.json");
+    const outside = join(tmp, "outside-install-state.json");
+    mkdirSync(join(statePath, ".."), { recursive: true });
+    writeFileSync(outside, "outside-before\n");
+    if (kind === "symlink") symlinkSync(outside, statePath);
+    else linkSync(outside, statePath);
+    prepareCodexRepo(home);
+
+    const result = guardedMerge(join(home, ".codex", "config.toml"));
+
+    expect(result.status).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toMatch(/unsafe existing Codex destination/);
+    expect(readFileSync(outside, "utf8")).toBe("outside-before\n");
+  };
+
+  it.skipIf(!symlinksAvailable)("rejects a managed upstream install-state symlink", () => {
+    assertRejectedManagedUpstreamInstallState("symlink");
+  });
+
+  it("rejects a managed upstream install-state hardlink", () => {
+    assertRejectedManagedUpstreamInstallState("hardlink");
+  });
 });
 
 describe("ECC install mechanism registry (#555)", () => {

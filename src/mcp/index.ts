@@ -19,7 +19,12 @@ import { beginMarker, endMarker } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
-import { type OrgPolicy, parseOrgPolicy } from "../org-policy/schema.js";
+import {
+  assertGovernanceOwnsSurface,
+  type OrgPolicy,
+  parseOrgPolicy,
+  readOrgPolicy,
+} from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
 import { managedMcpAllowlistSettings } from "./allowlist.js";
 import { type PolicyAwareMcpCatalog, policyAwareMcpCatalog } from "./catalog.js";
@@ -558,6 +563,11 @@ function guardMcpPlan(ctx: PlanContext, planned: ReturnType<typeof plan>): Retur
 }
 
 function approveMcpPlan(ctx: PlanContext): ReturnType<typeof plan> {
+  if (readOrgPolicy(ctx.root, ctx.env)?.governance !== undefined) {
+    throw new SettingsError(
+      "governance exclusively owns AIH MCP activation; `aih mcp approve` would only write a legacy approval with no governed effect. Record externally verified evidence or a signed authority receipt for the exact governed candidate, then run `aih policy evaluate` and `aih policy project`",
+    );
+  }
   const server = approvalText(ctx.options.server, "server");
   if (ctx.options.acceptEgress !== true) {
     throw new SettingsError("--accept-egress is required to approve third-party MCP egress");
@@ -801,6 +811,17 @@ function mcpGuidanceDoc(e: CliEntry, serverNames: string[]): string {
 async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const posture = ctx.posture ?? asPosture(ctx.options.posture);
   assertOrgPolicyMutationSource({ ...ctx, posture });
+  try {
+    assertGovernanceOwnsSurface(ctx, "mcp");
+  } catch (error) {
+    // The catalog path has historically translated malformed policy input to
+    // the public MCP diagnostic. The exclusive-governance guard reads first,
+    // so preserve that boundary rather than leaking an internal read wrapper.
+    if (errorDetail(error).startsWith("aih-org-policy could not be read")) {
+      throw invalidOrgPolicyError(error);
+    }
+    throw error;
+  }
   const githubAuth = githubAuthOption(ctx.options.githubAuth);
   const mode = String(ctx.options.mode ?? "standard");
   if (mode === "none") return planMcpNone(ctx);

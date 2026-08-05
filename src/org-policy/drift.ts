@@ -32,7 +32,7 @@ import {
   unprovableResidueReason,
 } from "../mcp/managed-projection.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
-import { orgPolicyProjectionActions } from "./project.js";
+import { orgPolicyProjectionActions, verifiedOrgPolicyProjectionActions } from "./project.js";
 import { OrgPolicyError, orgPolicyPath, readOrgPolicy } from "./schema.js";
 
 const POSTURE_RANK: Record<Posture, number> = { vibe: 0, team: 1, enterprise: 2 };
@@ -262,7 +262,10 @@ function owningCli(path: string): Cli | undefined {
  *  - `org-policy.dropped-target-unowned` — a DISTINCT code plus the explicit reason,
  *    so an agent escalates instead of re-running the same command forever.
  */
-function untargetedCheck(action: WriteAction, owner: Cli): (ctx: PlanContext) => Check {
+function untargetedCheck(
+  action: Pick<WriteAction, "path">,
+  owner: Cli,
+): (ctx: PlanContext) => Check {
   return (ctx) => {
     const name = `org-policy drift: ${action.path}`;
     // aih's OWN marker is never dropped-target residue. It is the file that DECLARES
@@ -317,6 +320,50 @@ function untargetedCheck(action: WriteAction, owner: Cli): (ctx: PlanContext) =>
       fingerprint: `org-policy-dropped-target:${action.path}`,
     };
   };
+}
+
+/**
+ * `orgPolicyProjectionActions` correctly refuses to plan through an occupied
+ * managed-settings path. Doctor must surface that same refusal instead of
+ * swallowing it while deriving legacy drift actions. This classifier performs
+ * only the established no-follow ownership inspection; it never reads a FIFO,
+ * directory, or symlinked projected path.
+ */
+function unsafeManagedMcpProjectionProbe(
+  ctx: PlanContext,
+  posture: Posture,
+): ProbeAction | undefined {
+  if (managedMcpProjectionOnDisk(ctx.root)?.unprovable !== "not-a-regular-file") {
+    return undefined;
+  }
+  const action = { path: MANAGED_SETTINGS_PATH };
+  // Doctor scopes legacy org-policy probes from the committed marker before
+  // they are scheduled. Preserve that decision: probe execution receives the
+  // caller's original context, whose absent target list means "all targets".
+  const owner = owningCli(action.path);
+  const untargeted = owner !== undefined && !isTargeted(ctx, owner);
+  return probe(`org-policy drift: ${action.path}`, (probeCtx) => {
+    if (owner !== undefined && untargeted) {
+      // Keep target narrowing honest: an existing Claude artifact outside the
+      // committed target set is residue, not an active projection to repair.
+      return untargetedCheck(action, owner)(probeCtx);
+    }
+    return postureGradeCheck(
+      {
+        name: `org-policy drift: ${action.path}`,
+        verdict: "fail",
+        detail:
+          `org-policy drift: ${action.path} is an unsafe managed-MCP projection path; ` +
+          `${unprovableResidueReason("not-a-regular-file")}. ` +
+          "Remove or repair the occupied path manually before re-running policy projection.",
+        code: "org-policy.drift",
+        location: { uri: action.path },
+        fingerprint: `org-policy-drift:unsafe-path:${action.path}`,
+      },
+      "verify",
+      posture,
+    );
+  });
 }
 
 function driftCheck(action: WriteAction, posture: Posture): (ctx: PlanContext) => Check {
@@ -605,9 +652,23 @@ export function orgPolicyDriftProbes(ctx: PlanContext): ProbeAction[] {
     ...ctx,
     posture: strongerPosture(posture, policy.minimumPosture),
   };
-  const actions = orgPolicyProjectionActions(projectionCtx, policy).filter(
-    (a): a is WriteAction => a.kind === "write",
-  );
+  let actions: WriteAction[];
+  try {
+    if (policy.governance !== undefined) return [];
+    // Legacy managed-settings drift has no governance activation. Keep its
+    // historical Claude-residue inspection; governed inventories use the
+    // verified path below with the actual invocation target set.
+    actions = orgPolicyProjectionActions({ ...projectionCtx, targets: ["claude"] }, policy).filter(
+      (a): a is WriteAction => a.kind === "write",
+    );
+  } catch {
+    // `aih doctor` reports the exact fail-closed resolution via
+    // orgPolicyEffectiveCheck. Legacy projection can additionally refuse a
+    // no-follow managed-settings path before producing its usual Claude action;
+    // preserve that unsafe condition as a doctor probe rather than hiding it.
+    const unsafe = unsafeManagedMcpProjectionProbe(projectionCtx, posture);
+    return unsafe === undefined ? [] : [unsafe];
+  }
   // The projection is owned by a single CLI (it writes that tool's managed settings
   // plus their examples). Resolve that owner once from the registry and scope the whole
   // probe set, mirroring policyProjectPlan's all-or-nothing gate — per-path matching
@@ -618,5 +679,32 @@ export function orgPolicyDriftProbes(ctx: PlanContext): ProbeAction[] {
     untargeted && owner !== undefined
       ? probe(`org-policy drift: ${action.path}`, untargetedCheck(action, owner))
       : probe(`org-policy drift: ${action.path}`, driftCheck(action, posture)),
+  );
+}
+
+/** Receipt-verified doctor path for governed inventories. */
+export async function verifiedOrgPolicyDriftProbes(ctx: PlanContext): Promise<ProbeAction[]> {
+  let policy: ReturnType<typeof readOrgPolicy>;
+  try {
+    policy = readOrgPolicy(ctx.root, ctx.env);
+  } catch (err) {
+    return [invalidPolicyProbe(err)];
+  }
+  if (policy === undefined || policy.governance === undefined) return orgPolicyDriftProbes(ctx);
+  const posture = ctx.posture ?? policy.minimumPosture;
+  const projectionCtx: PlanContext = {
+    ...ctx,
+    posture: strongerPosture(posture, policy.minimumPosture),
+  };
+  let actions: WriteAction[];
+  try {
+    actions = (await verifiedOrgPolicyProjectionActions(projectionCtx, policy)).filter(
+      (action): action is WriteAction => action.kind === "write",
+    );
+  } catch {
+    return [];
+  }
+  return actions.map((action) =>
+    probe(`org-policy drift: ${action.path}`, driftCheck(action, posture)),
   );
 }

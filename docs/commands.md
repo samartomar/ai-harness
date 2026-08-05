@@ -570,7 +570,7 @@ build); `validate --require-signature` then
 
 ## aih policy
 
-Starter seeding, schema, projection, and trusted-channel gates for the org policy. Every `policy`
+Starter seeding, effective-resolution, schema, projection, and trusted-channel gates for the org policy. Every `policy`
 subcommand is repo-scoped and accepts the conventional optional `[root]` positional —
 `aih policy validate .` works exactly like `aih init .` (`--root` and `AIH_ROOT` still apply).
 
@@ -586,14 +586,17 @@ apply-time absent pin), an active `AIH_ORG_POLICY` override refuses outright (th
 targets the committed default file), and an unreadable MCP config aborts the plan. The starter
 records the resolved posture as `minimumPosture`, and `--verify` grades the written file with the
 same schema gate as `validate`. Declaring `mcp.allowedServers` records registry membership only;
-reviewed third-party egress approval remains `aih mcp approve`.
+`aih mcp approve` is a legacy, non-governed approval path. Governed operators use an externally
+verified evidence/approval receipt, then `aih policy evaluate` and `aih policy project`.
 
 `project --apply` compiles the
 committed `aih-org-policy.json` into only its generated policy artifacts —
-`.claude/managed-settings.json` and, at enterprise posture, the two system-path examples. It does
-not run `aih init`, regenerate the canon, or modify unrelated settings. This is a Claude projection:
-it writes only when Claude is selected (the default); `--cli cursor`, for example, produces no
-projection. When managed-only MCP is active, it records existing AIH ownership provenance in
+`.claude/managed-settings.json` and, at enterprise posture, the two system-path examples. An active
+AIH-owned `usage-metering` policy hook may also project to the selected Claude or Codex host through
+the existing host-specific generator. It does
+not run `aih init`, regenerate the canon, or modify unrelated settings. The managed settings/MCP
+portion is a Claude projection: it writes only when Claude is selected (the default); `--cli cursor`,
+for example, produces no managed-settings projection. When managed-only MCP is active, it records existing AIH ownership provenance in
 `.aih-config.json` so later deactivation can remove only the exact generated values. It refuses a
 configuration write when `AIH_ORG_POLICY` selects an override; previewing without `--apply` remains
 inspectable, but mutation requires the committed default policy source.
@@ -605,6 +608,39 @@ positively attribute the whole on-disk difference to that generation history, it
 **generation delta** (`org-policy.generation-delta`, `mcp.allowlist-generation-delta`) naming
 `aih policy project --apply` inline rather than implying a local edit; any unattributable
 difference still fails closed under the ordinary drift codes.
+
+`evaluate` is the read-only effective-policy gate. It compares each requested governed candidate with
+the live AIH MCP or hook adapter and reports requested versus effective state, exact source and evidence
+digest, approval reference, target coverage, projection ownership/receipt/drift state, clarification or
+annotation, and the blocking reason. A config entry is not active merely because it is listed. Custom
+stdio MCP candidates name a pinned package identity and HTTPS registry for curation/evidence only. They
+remain blocked by the unwaivable `missing-projector` danger until AIH has an integrity-enforcing
+materialization and rollback lifecycle; policy evaluation and projection never construct or launch their
+commands. Unsafe inputs, collisions, missing projectors, unsupported targets, and all unwaivable danger
+codes remain blocked.
+
+Custom evidence and approvals require `.aih/policy-authority-receipt.json`, a regular-file receipt that
+has passed `gh attestation verify` against the **out-of-band organization authority** named by
+`AIH_POLICY_AUTHORITY_REPOSITORY`; deployments can additionally constrain the exact signing workflow with
+`AIH_POLICY_AUTHORITY_WORKFLOW`. These process-environment values must be supplied by the organization
+admin/runtime, never by `aih-org-policy.json`; the governed repository's remote is not an authority root.
+The strict receipt format is published as `schemas/aih-policy-authority-receipt.schema.json`.
+The receipt is data until that verification succeeds. A signed approval binds candidate id/kind, immutable
+source and evidence digests, projector, policy version, reason, target scope, signer repository, and
+validity window; its post-signing transport locator is not part of the signed digest. Requested ECC or
+Superpowers framework intents remain visibly report-only and hard-blocked until a separately designed
+policy-gated binding lifecycle exists — this command does not select, install, or project ECC/Superpowers
+agents, skills, commands, or bindings. AIH-owned hook rollback removes only unchanged receipt-proven host
+entries and retains drifted user edits for doctor remediation. When `governance` is present it exclusively
+owns AIH MCP and usage-hook projection: `aih mcp` and `aih usage` fail closed, `aih init` suppresses their
+generic phases, workspace graph MCP registration is suppressed, and governed ECC materialization strips MCP and
+host-hook/runtime operations across core, platform, and full scope while retaining eligible agents, skills, and commands.
+Use
+`aih policy evaluate --verify` in CI and inspect the digest before `aih policy project --apply`.
+
+Approvals cover only a missing or failed **waivable** evidence record, require a non-empty signed reason,
+and last at most 90 days. Mandatory detector failures and every unwaivable danger code remain blocked even
+with an otherwise valid approval.
 
 `validate` is the **read-only CI gate** over the active local org policy source: the default
 committed `aih-org-policy.json`, or an explicit `AIH_ORG_POLICY` override. The policy source is
@@ -892,9 +928,11 @@ never an instruction: the refresh path is (1) vet the new version through the tr
 (`aih trust scan <owner>/<repo> --pin <sha>`, which fails closed at enterprise posture unless the
 required analyzers — the pinned SkillSpector image, locked Semgrep, and the Cisco skill-scanner —
 are available),
-(2) bump the catalog pin in an aih release, (3) re-project each repo with `aih mcp --apply` (at
-enterprise, also `aih policy project --apply` so the managed allowlist tracks the new launch
-shape), and (4) re-attest with `aih doctor --attest-mcp-pins`.
+(2) bump the catalog pin in an aih release, (3) re-project each non-governed repo with `aih mcp
+--apply` (when `governance` is present, do not use the blocked legacy MCP/workspace commands:
+validate the external evidence or signed authority receipt with `aih policy evaluate`, then use
+`aih policy project --apply`; manually remediate any reported workspace residue), and (4) re-attest
+with `aih doctor --attest-mcp-pins`.
 
 In the canon markdown lint, `canon-ref-resolves` accepts a reference guarded by an explicit
 existence conditional on the same line ("Read `x.md` only if it exists"): the waiver applies only

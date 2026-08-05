@@ -1922,6 +1922,64 @@ describe("doctor — Claude probe target scope from the committed marker (#554)"
     },
   );
 
+  it("classifies an untargeted directory projection as unowned residue", async () => {
+    const expected = {
+      allowManagedMcpServersOnly: true as const,
+      allowedMcpServers: [{ serverCommand: ["uvx", "code-review-graph@2.2.0", "serve"] }],
+    };
+    writeFileSync(
+      join(dir, AIH_CONFIG_FILE),
+      JSON.stringify({
+        schemaVersion: 1,
+        contextDir: "ai-coding",
+        targets: ["kiro"],
+        managedMcpProjection: managedMcpProjectionOwnership(expected),
+      }),
+    );
+    writeEnterprisePolicy({ allowedServers: ["code-review-graph"], allowManagedOnly: true });
+    mkdirSync(join(dir, ".claude", "managed-settings.json"), { recursive: true });
+
+    const c = rooted();
+    const probe = findProbe(
+      (await command.plan(c)).actions,
+      "org-policy drift: .claude/managed-settings.json",
+    );
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("fail");
+    expect(res?.code).toBe("org-policy.dropped-target-unowned");
+    expect(res?.detail).toContain("not a readable regular file");
+  });
+
+  it("fails a targeted directory projection as an unsafe path", async () => {
+    const expected = {
+      allowManagedMcpServersOnly: true as const,
+      allowedMcpServers: [{ serverCommand: ["uvx", "code-review-graph@2.2.0", "serve"] }],
+    };
+    writeFileSync(
+      join(dir, AIH_CONFIG_FILE),
+      JSON.stringify({
+        schemaVersion: 1,
+        contextDir: "ai-coding",
+        targets: ["claude"],
+        managedMcpProjection: managedMcpProjectionOwnership(expected),
+      }),
+    );
+    writeEnterprisePolicy({ allowedServers: ["code-review-graph"], allowManagedOnly: true });
+    mkdirSync(join(dir, ".claude", "managed-settings.json"), { recursive: true });
+
+    const c = rooted();
+    const probe = findProbe(
+      (await command.plan(c)).actions,
+      "org-policy drift: .claude/managed-settings.json",
+    );
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("fail");
+    expect(res?.code).toBe("org-policy.drift");
+    expect(res?.detail).toContain("not a readable regular file");
+  });
+
   // Narrowing SUPPRESSES findings, so only the committed marker may do it. Weaker
   // signals must never silence an org-policy finding.
   it.each([

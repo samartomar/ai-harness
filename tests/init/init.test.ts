@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +16,7 @@ import { beginLine, endLine } from "../../src/internals/markers.js";
 import type { Action, DocAction, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { usageRecorderScript } from "../../src/usage/capture.js";
 
 let dir: string;
 let home: string;
@@ -63,6 +65,40 @@ function seedOrgPolicy(allowedServers = ["code-review-graph"]): void {
       minimumPosture: "team",
       references: { repoContract: ".ai-context/project.json" },
       mcp: { allowedServers, allowManagedOnly: true },
+    }),
+  );
+}
+
+function seedGovernedUsage(state: "active" | "disabled", targets: string[] = ["claude"]): void {
+  const scriptDigest = `sha256:${createHash("sha256").update(usageRecorderScript(), "utf8").digest("hex")}`;
+  writeFileSync(
+    join(dir, "aih-org-policy.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      minimumPosture: "enterprise",
+      references: { repoContract: ".ai-context/project.json" },
+      governance: {
+        policyVersion: "2026.08.0",
+        catalog: {
+          reviewed: [
+            {
+              id: "usage-metering",
+              kind: "hook",
+              description: "AIH-owned usage hook",
+              capabilities: [],
+              risks: [],
+              source: { type: "hook", handler: "usage-metering", scriptDigest },
+              targets: ["claude", "codex"],
+              projector: "usage-hook",
+              lifecycle: "supported",
+              evidence: { record: "ignored-self-assertion" },
+            },
+          ],
+          custom: [],
+        },
+        activations: [{ candidate: "usage-metering", state, targets }],
+        authority: { approvals: [] },
+      },
     }),
   );
 }
@@ -196,6 +232,44 @@ describe("aih init — command surface", () => {
 
     expect(check.verdict).toBe("pass");
     expect(check.detail).toContain(".claude/managed-settings.json matches");
+  });
+
+  it("lets governed policy exclusively control init usage hooks for disabled and active states", async () => {
+    seedGovernedUsage("disabled");
+    const disabled = await command.plan(ctx({ posture: "enterprise", postureSource: "flag" }));
+    expect(writePaths(disabled.actions)).not.toContain(".aih/usage-record.mjs");
+    expect(writePaths(disabled.actions)).not.toContain(".aih/org-policy-hook-receipt.json");
+    const disabledClaude = disabled.actions.find(
+      (action): action is WriteAction =>
+        action.kind === "write" && action.path === ".claude/settings.json",
+    );
+    expect(JSON.stringify(disabledClaude?.json)).not.toContain("usage-record.mjs");
+
+    seedGovernedUsage("active", ["claude"]);
+    const active = await command.plan(ctx({ posture: "enterprise", postureSource: "flag" }));
+    expect(
+      writePaths(active.actions).filter((path) => path === ".aih/usage-record.mjs"),
+    ).toHaveLength(1);
+    expect(
+      writePaths(active.actions).filter((path) => path === ".aih/org-policy-hook-receipt.json"),
+    ).toHaveLength(1);
+    expect(writePaths(active.actions)).toContain(".claude/settings.json");
+    expect(writePaths(active.actions)).not.toContain(".codex/hooks.json");
+  });
+
+  it("honors governed hook target narrowing without generic Codex hook writes", async () => {
+    seedGovernedUsage("active", ["claude"]);
+    const claudeOnly = await command.plan(
+      ctx({ posture: "enterprise", postureSource: "flag", options: { cli: "claude,codex" } }),
+    );
+    expect(writePaths(claudeOnly.actions)).toContain(".claude/settings.json");
+    expect(writePaths(claudeOnly.actions)).not.toContain(".codex/hooks.json");
+
+    seedGovernedUsage("active", ["claude", "codex"]);
+    const both = await command.plan(
+      ctx({ posture: "enterprise", postureSource: "flag", options: { cli: "claude,codex" } }),
+    );
+    expect(writePaths(both.actions)).toContain(".codex/hooks.json");
   });
 
   it("S1/S2 makes an empty managed allowlist deny all init MCP projections", async () => {

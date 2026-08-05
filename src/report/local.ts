@@ -2,6 +2,7 @@ import { detectInstall } from "../internals/cli-detect.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { orgPolicyIntegrityDigest } from "../org-policy/drift.js";
+import { orgPolicyEffectiveDigest } from "../org-policy/evaluate.js";
 import { scaleSafetyDigest } from "../scale-safety.js";
 import { inventory } from "../status.js";
 import { aggregateUsage } from "../usage/aggregate.js";
@@ -168,6 +169,7 @@ export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
     ...(await contractTruthDigest(ctx)), // REPO CONTRACT: committed project.json (omitted off-contract)
     governanceRollupDigest(ctx), // GOVERNANCE: posture-aware control verdict roll-up
     await orgPolicyIntegrityDigest(ctx), // GOVERNANCE: active org-policy source + local HEAD drift
+    await orgPolicyEffectiveDigest(ctx), // GOVERNANCE: requested vs effective candidate resolution
     leakPreventionsDigest(ctx), // SECURITY: scan-derived leak-prevention posture half
     await qualityDigest(ctx), // CODE QUALITY: test/source file ratio
     ...(await graphDigests(ctx)), // CODE QUALITY/PERF: code-review-graph (gated, Phase 2)

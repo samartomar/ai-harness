@@ -1,3 +1,4 @@
+import { isAbsolute, relative, resolve } from "node:path";
 import eccModules from "../baseline-evidence/ecc-modules.json";
 import type { EccComponentId, EccComponentSelection, EccMcpComponentId } from "./components.js";
 
@@ -31,6 +32,12 @@ export interface EccMaterializationSpec {
   agents: string[];
   sourceRoots: string[];
   agentScaffolding: boolean;
+  /**
+   * Governance leaves ECC's agents, skills, rules, and commands intact, but
+   * AIH is the sole owner of MCP and host-hook/runtime configuration. The
+   * verified upstream materializer receives this explicit operation filter.
+   */
+  excludeAihOwnedSurfaces?: boolean;
 }
 
 const MODULE_PATHS = new Map(
@@ -434,6 +441,210 @@ export function filterEccManifestPlan<Operation extends EccManifestOperation>(
   const operations = plan.operations.filter((operation) =>
     eccManifestOperationSelected(operation, selection),
   );
+  plan.operations = operations;
+  plan.statePreview.operations = operations;
+}
+
+export type GovernedEccOperationClass = "ecc-content" | "mcp" | "host-runtime";
+
+/** Runtime roots used to bind a verified upstream destination to this install. */
+export interface GovernedEccDestinationRoots {
+  projectRoot: string;
+  homeDir: string;
+  target: string;
+}
+
+function assertSourceRelativePath(value: string): string {
+  const normalized = normalizedPath(value);
+  if (
+    normalized.length === 0 ||
+    normalized.includes("\0") ||
+    normalized.startsWith("/") ||
+    normalized.startsWith("//") ||
+    /^[a-z]:\//i.test(normalized) ||
+    normalized.startsWith("./") ||
+    normalized
+      .split("/")
+      .some((segment) => segment.length === 0 || segment === "." || segment === "..")
+  ) {
+    throw new Error(`unsafe ECC source path: ${value}`);
+  }
+  return normalized;
+}
+
+function assertDestinationPath(value: string): string {
+  const normalized = normalizedPath(value);
+  const windowsAbsolute = /^[a-z]:\//i.test(normalized);
+  const posixAbsolute = normalized.startsWith("/") && !normalized.startsWith("//");
+  const body = windowsAbsolute ? normalized.slice(3) : posixAbsolute ? normalized.slice(1) : "";
+  if (
+    normalized.length === 0 ||
+    normalized.includes("\0") ||
+    (!windowsAbsolute && !posixAbsolute) ||
+    body.length === 0 ||
+    body.startsWith("./") ||
+    body.split("/").some((segment) => segment.length === 0 || segment === "." || segment === "..")
+  ) {
+    throw new Error(`unsafe ECC destination path: ${value}`);
+  }
+  return normalized;
+}
+
+function isMcpPath(path: string): boolean {
+  return (
+    /(?:^|\/)(?:\.mcp\.json|mcp\.json|mcp-servers\.json)$/i.test(path) ||
+    /^(?:mcp-configs|mcp)(?:\/|$)/i.test(path)
+  );
+}
+
+function isHostRuntimePath(path: string): boolean {
+  return (
+    /(?:^|\/)(?:\.claude|\.codex|\.cursor|\.kiro|\.gemini|\.opencode|\.zed)\/(?:hooks(?:\/|$)|(?:settings(?:\.local)?\.json|config\.(?:json|toml)))$/i.test(
+      path,
+    ) || /^(?:hooks|scripts\/hooks)(?:\/|$)/i.test(path)
+  );
+}
+
+function isEccContentPath(path: string): boolean {
+  return (
+    path === "AGENTS.md" ||
+    /^(?:\.agents\/(?:plugins|skills)\/|agents\/|skills\/|commands\/|rules\/|\.claude\/commands\/|\.codex\/AGENTS\.md$)/.test(
+      path,
+    )
+  );
+}
+
+function containedRelative(root: string, destination: string): string | undefined {
+  const inside = relative(resolve(root), resolve(destination));
+  if (
+    inside === "" ||
+    inside === ".." ||
+    inside.startsWith("../") ||
+    inside.startsWith("..\\") ||
+    isAbsolute(inside)
+  ) {
+    return undefined;
+  }
+  const normalized = normalizedPath(inside);
+  return normalized
+    .split("/")
+    .some((segment) => segment.length === 0 || segment === "." || segment === "..")
+    ? undefined
+    : normalized;
+}
+
+function isEccContentDestination(
+  source: string,
+  destination: string,
+  roots?: GovernedEccDestinationRoots,
+): boolean {
+  const mapping = contentDestinationMapping(source, roots?.target);
+  if (mapping === undefined) return false;
+  if (roots === undefined) return normalizedPath(destination).endsWith(`/${mapping.relative}`);
+  const root = mapping.scope === "project" ? roots.projectRoot : roots.homeDir;
+  return containedRelative(root, destination) === mapping.relative;
+}
+
+/**
+ * Each retained upstream content source has exactly one owned target path.
+ * Matching a suffix somewhere below an otherwise trusted root is not enough:
+ * it could remap a rule to a skill or overwrite a sibling's content.
+ */
+function contentDestinationMapping(
+  source: string,
+  target: string | undefined,
+): { scope: "project" | "home"; relative: string } | undefined {
+  if (source === "AGENTS.md") return { scope: "project", relative: "AGENTS.md" };
+  if (source === ".codex/AGENTS.md") {
+    return { scope: "home", relative: ".codex/AGENTS.md" };
+  }
+  if (target === undefined) return undefined;
+  const targetRoot = `.${target}`;
+  const mappings: Array<[string, string]> = [
+    [".agents/plugins/", ".agents/plugins/"],
+    [".agents/skills/", ".agents/skills/"],
+    [".claude/commands/", ".claude/commands/"],
+    ["agents/", `${targetRoot}/agents/`],
+    ["skills/", `${targetRoot}/skills/`],
+    ["commands/", `${targetRoot}/commands/`],
+    ["rules/", `${targetRoot}/rules/`],
+  ];
+  for (const [sourcePrefix, targetPrefix] of mappings) {
+    if (!source.startsWith(sourcePrefix)) continue;
+    const suffix = source.slice(sourcePrefix.length);
+    if (suffix.length === 0) return undefined;
+    return { scope: "project", relative: `${targetPrefix}${suffix}` };
+  }
+  return undefined;
+}
+
+/**
+ * Classify an operation from the upstream manifest rather than from an ECC
+ * profile/module. Core and platform modules are intentionally mixed: their
+ * module id is useful identity evidence, but it cannot decide ownership.
+ *
+ * A merge into an unrecognized runtime path is never guessed to be harmless.
+ * New upstream operation forms therefore stop a governed install before apply.
+ */
+export function classifyGovernedEccOperation(
+  operation: EccManifestOperation,
+  roots?: GovernedEccDestinationRoots,
+): GovernedEccOperationClass {
+  if (operation.kind !== "copy-file" && operation.kind !== "merge-json") {
+    throw new Error(`unsupported ECC manifest operation kind: ${operation.kind}`);
+  }
+  if (typeof operation.moduleId !== "string" || operation.moduleId.trim().length === 0) {
+    throw new Error("invalid ECC manifest module identity");
+  }
+  const source = assertSourceRelativePath(operation.sourceRelativePath);
+  const destination = assertDestinationPath(operation.destinationPath);
+
+  if (isMcpPath(source) || isMcpPath(destination)) return "mcp";
+  if (
+    operation.moduleId === "hooks-runtime" ||
+    isHostRuntimePath(source) ||
+    isHostRuntimePath(destination)
+  ) {
+    return "host-runtime";
+  }
+  if (operation.kind === "merge-json") {
+    throw new Error(
+      `unclassifiable governed ECC merge-json operation: ${operation.moduleId}:${destination}`,
+    );
+  }
+  if (!isEccContentPath(source) || !isEccContentDestination(source, destination, roots)) {
+    throw new Error(
+      `unclassifiable governed ECC content operation: ${operation.moduleId}:${source} -> ${destination}`,
+    );
+  }
+  return "ecc-content";
+}
+
+/**
+ * Apply normal component selection first, then remove only the explicitly
+ * classified AIH-owned surfaces. This is intentionally operation-level even
+ * for Core/platform and full scope, whose modules contain mixed ownership.
+ */
+export function filterGovernedEccManifestPlan<Operation extends EccManifestOperation>(
+  plan: EccManifestPlan<Operation>,
+  selection: EccComponentSelection,
+  roots?: GovernedEccDestinationRoots,
+): void {
+  assertPlanShape(plan);
+  const selected = plan.operations.filter((operation) =>
+    eccManifestOperationSelected(operation, selection),
+  );
+  const destinations = new Set<string>();
+  const operations = selected.filter((operation) => {
+    if (classifyGovernedEccOperation(operation, roots) !== "ecc-content") return false;
+    const destination = normalizedPath(operation.destinationPath);
+    const collisionKey = destination.normalize("NFC").toLowerCase();
+    if (destinations.has(collisionKey)) {
+      throw new Error(`normalized governed ECC destination collision: ${destination}`);
+    }
+    destinations.add(collisionKey);
+    return true;
+  });
   plan.operations = operations;
   plan.statePreview.operations = operations;
 }

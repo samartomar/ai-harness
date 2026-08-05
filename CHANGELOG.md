@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `aih policy evaluate --verify` now provides a headless requested-versus-effective
+  governed-candidate gate. It resolves exact MCP and AIH-owned hook identities,
+  receipt-verified external authority, targets, ownership, rollback/drift, and projector
+  coverage; unsafe or unsupported requests remain blocked and visible in reports and doctor.
+
 ## [3.4.0] - 2026-08-04
 
 ### Added

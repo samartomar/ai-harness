@@ -17,6 +17,7 @@ import {
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
+import { assertGovernanceOwnsSurface } from "../org-policy/schema.js";
 import { aggregateUsage } from "./aggregate.js";
 import { gitPostCommitChainSnippet, gitPostCommitHook, usageRecorderScript } from "./capture.js";
 import { readUsage, USAGE_PATH, type UsageEvent } from "./events.js";
@@ -149,6 +150,7 @@ function describeZedSource(dbPath: string, ctx: PlanContext): string {
 async function usagePlan(ctx: PlanContext): Promise<Plan> {
   const roots = rollupRoots(ctx);
   if (roots.length > 0) return usageRollupPlan(ctx, roots);
+  assertGovernanceOwnsSurface(ctx, "usage");
 
   const { clis } = await resolveTargets(ctx);
   const zedDbPath = clis.includes("zed") ? zedThreadsDbPath(ctx) : undefined;

@@ -456,6 +456,1032 @@
         }
       },
       "additionalProperties": false
+    },
+    "governance": {
+      "type": "object",
+      "properties": {
+        "policyVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "catalog": {
+          "type": "object",
+          "properties": {
+            "reviewed": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "mcp",
+                      "hook",
+                      "framework"
+                    ]
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "capabilities": {
+                    "default": [],
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    }
+                  },
+                  "risks": {
+                    "default": [],
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    }
+                  },
+                  "source": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "git"
+                          },
+                          "repository": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$"
+                          },
+                          "commit": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{40}$"
+                          },
+                          "tree": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{40}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "repository",
+                          "commit",
+                          "tree"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "package"
+                          },
+                          "registry": {
+                            "type": "string",
+                            "pattern": "^https:\\/\\/[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::(?:[0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+                          },
+                          "package": {
+                            "type": "string",
+                            "pattern": "^@?[A-Za-z0-9][A-Za-z0-9._/-]*$"
+                          },
+                          "version": {
+                            "type": "string",
+                            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"
+                          },
+                          "integrity": {
+                            "type": "string",
+                            "pattern": "^sha256:[0-9a-f]{64}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "registry",
+                          "package",
+                          "version",
+                          "integrity"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "command"
+                          },
+                          "command": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._@:+-]*$"
+                          },
+                          "args": {
+                            "default": [],
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 500
+                            }
+                          },
+                          "executableDigest": {
+                            "type": "string",
+                            "pattern": "^sha256:[0-9a-f]{64}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "command",
+                          "executableDigest"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "stdio"
+                          },
+                          "resolver": {
+                            "type": "string",
+                            "enum": [
+                              "npx",
+                              "uvx"
+                            ]
+                          },
+                          "registry": {
+                            "type": "string",
+                            "pattern": "^https:\\/\\/[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::(?:[0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+                          },
+                          "package": {
+                            "type": "string",
+                            "pattern": "^@?[A-Za-z0-9][A-Za-z0-9._/-]*$"
+                          },
+                          "version": {
+                            "type": "string",
+                            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"
+                          },
+                          "integrity": {
+                            "type": "string",
+                            "pattern": "^sha256:[0-9a-f]{64}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "resolver",
+                          "registry",
+                          "package",
+                          "version",
+                          "integrity"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "mcp"
+                          },
+                          "server": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                          },
+                          "subject": {
+                            "type": "string",
+                            "pattern": "^mcp-server-sha256:[0-9a-f]{64}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "server",
+                          "subject"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "hook"
+                          },
+                          "handler": {
+                            "type": "string",
+                            "const": "usage-metering"
+                          },
+                          "scriptDigest": {
+                            "type": "string",
+                            "pattern": "^sha256:[0-9a-f]{64}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "handler",
+                          "scriptDigest"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "targets": {
+                    "minItems": 1,
+                    "maxItems": 2,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "claude",
+                        "codex"
+                      ]
+                    }
+                  },
+                  "projector": {
+                    "type": "string",
+                    "enum": [
+                      "mcp-managed-settings",
+                      "hook-managed-settings",
+                      "usage-hook",
+                      "framework-contract"
+                    ]
+                  },
+                  "lifecycle": {
+                    "type": "string",
+                    "enum": [
+                      "supported",
+                      "deprecated",
+                      "retired"
+                    ]
+                  },
+                  "evidence": {
+                    "type": "object",
+                    "properties": {
+                      "record": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                      }
+                    },
+                    "required": [
+                      "record"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "findings": {
+                    "default": [],
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "malicious-code",
+                        "prompt-injection",
+                        "auto-executing-hook",
+                        "hidden-unicode",
+                        "secrets",
+                        "unpinned-source",
+                        "dependency-confusion",
+                        "mandatory-detector-failed",
+                        "evidence-identity-drift",
+                        "unsafe-path",
+                        "normalized-collision",
+                        "missing-projector",
+                        "unsupported-target",
+                        "ownership-conflict"
+                      ]
+                    }
+                  },
+                  "autoExecute": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "framework": {
+                    "type": "string",
+                    "enum": [
+                      "ecc",
+                      "superpowers"
+                    ]
+                  },
+                  "clarification": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "annotation": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "description",
+                  "source",
+                  "targets",
+                  "projector",
+                  "lifecycle",
+                  "evidence"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "custom": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "mcp",
+                      "hook",
+                      "framework"
+                    ]
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "capabilities": {
+                    "default": [],
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    }
+                  },
+                  "risks": {
+                    "default": [],
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    }
+                  },
+                  "source": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "git"
+                          },
+                          "repository": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$"
+                          },
+                          "commit": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{40}$"
+                          },
+                          "tree": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{40}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "repository",
+                          "commit",
+                          "tree"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "package"
+                          },
+                          "registry": {
+                            "type": "string",
+                            "pattern": "^https:\\/\\/[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::(?:[0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+                          },
+                          "package": {
+                            "type": "string",
+                            "pattern": "^@?[A-Za-z0-9][A-Za-z0-9._/-]*$"
+                          },
+                          "version": {
+                            "type": "string",
+                            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"
+                          },
+                          "integrity": {
+                            "type": "string",
+                            "pattern": "^sha256:[0-9a-f]{64}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "registry",
+                          "package",
+                          "version",
+                          "integrity"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "command"
+                          },
+                          "command": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._@:+-]*$"
+                          },
+                          "args": {
+                            "default": [],
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 500
+                            }
+                          },
+                          "executableDigest": {
+                            "type": "string",
+                            "pattern": "^sha256:[0-9a-f]{64}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "command",
+                          "executableDigest"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "stdio"
+                          },
+                          "resolver": {
+                            "type": "string",
+                            "enum": [
+                              "npx",
+                              "uvx"
+                            ]
+                          },
+                          "registry": {
+                            "type": "string",
+                            "pattern": "^https:\\/\\/[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::(?:[0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+                          },
+                          "package": {
+                            "type": "string",
+                            "pattern": "^@?[A-Za-z0-9][A-Za-z0-9._/-]*$"
+                          },
+                          "version": {
+                            "type": "string",
+                            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"
+                          },
+                          "integrity": {
+                            "type": "string",
+                            "pattern": "^sha256:[0-9a-f]{64}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "resolver",
+                          "registry",
+                          "package",
+                          "version",
+                          "integrity"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "mcp"
+                          },
+                          "server": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                          },
+                          "subject": {
+                            "type": "string",
+                            "pattern": "^mcp-server-sha256:[0-9a-f]{64}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "server",
+                          "subject"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "hook"
+                          },
+                          "handler": {
+                            "type": "string",
+                            "const": "usage-metering"
+                          },
+                          "scriptDigest": {
+                            "type": "string",
+                            "pattern": "^sha256:[0-9a-f]{64}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "handler",
+                          "scriptDigest"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "targets": {
+                    "minItems": 1,
+                    "maxItems": 2,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "claude",
+                        "codex"
+                      ]
+                    }
+                  },
+                  "projector": {
+                    "type": "string",
+                    "enum": [
+                      "mcp-managed-settings",
+                      "hook-managed-settings",
+                      "usage-hook",
+                      "framework-contract"
+                    ]
+                  },
+                  "lifecycle": {
+                    "type": "string",
+                    "enum": [
+                      "supported",
+                      "deprecated",
+                      "retired"
+                    ]
+                  },
+                  "evidence": {
+                    "type": "object",
+                    "properties": {
+                      "record": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                      }
+                    },
+                    "required": [
+                      "record"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "findings": {
+                    "default": [],
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "malicious-code",
+                        "prompt-injection",
+                        "auto-executing-hook",
+                        "hidden-unicode",
+                        "secrets",
+                        "unpinned-source",
+                        "dependency-confusion",
+                        "mandatory-detector-failed",
+                        "evidence-identity-drift",
+                        "unsafe-path",
+                        "normalized-collision",
+                        "missing-projector",
+                        "unsupported-target",
+                        "ownership-conflict"
+                      ]
+                    }
+                  },
+                  "autoExecute": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "framework": {
+                    "type": "string",
+                    "enum": [
+                      "ecc",
+                      "superpowers"
+                    ]
+                  },
+                  "clarification": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "annotation": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "description",
+                  "source",
+                  "targets",
+                  "projector",
+                  "lifecycle",
+                  "evidence"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "activations": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "candidate": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,63}$"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "disabled"
+                ]
+              },
+              "targets": {
+                "minItems": 1,
+                "maxItems": 2,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "claude",
+                    "codex"
+                  ]
+                }
+              },
+              "clarification": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "candidate",
+              "state",
+              "targets"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "authority": {
+          "type": "object",
+          "properties": {
+            "approvals": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                  },
+                  "candidate": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "mcp",
+                      "hook",
+                      "framework"
+                    ]
+                  },
+                  "source": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "git"
+                          },
+                          "repository": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$"
+                          },
+                          "commit": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{40}$"
+                          },
+                          "tree": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{40}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "repository",
+                          "commit",
+                          "tree"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "package"
+                          },
+                          "registry": {
+                            "type": "string",
+                            "pattern": "^https:\\/\\/[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::(?:[0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+                          },
+                          "package": {
+                            "type": "string",
+                            "pattern": "^@?[A-Za-z0-9][A-Za-z0-9._/-]*$"
+                          },
+                          "version": {
+                            "type": "string",
+                            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"
+                          },
+                          "integrity": {
+                            "type": "string",
+                            "pattern": "^sha256:[0-9a-f]{64}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "registry",
+                          "package",
+                          "version",
+                          "integrity"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "command"
+                          },
+                          "command": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._@:+-]*$"
+                          },
+                          "args": {
+                            "default": [],
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 500
+                            }
+                          },
+                          "executableDigest": {
+                            "type": "string",
+                            "pattern": "^sha256:[0-9a-f]{64}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "command",
+                          "executableDigest"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "stdio"
+                          },
+                          "resolver": {
+                            "type": "string",
+                            "enum": [
+                              "npx",
+                              "uvx"
+                            ]
+                          },
+                          "registry": {
+                            "type": "string",
+                            "pattern": "^https:\\/\\/[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::(?:[0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+                          },
+                          "package": {
+                            "type": "string",
+                            "pattern": "^@?[A-Za-z0-9][A-Za-z0-9._/-]*$"
+                          },
+                          "version": {
+                            "type": "string",
+                            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"
+                          },
+                          "integrity": {
+                            "type": "string",
+                            "pattern": "^sha256:[0-9a-f]{64}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "resolver",
+                          "registry",
+                          "package",
+                          "version",
+                          "integrity"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "mcp"
+                          },
+                          "server": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                          },
+                          "subject": {
+                            "type": "string",
+                            "pattern": "^mcp-server-sha256:[0-9a-f]{64}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "server",
+                          "subject"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "hook"
+                          },
+                          "handler": {
+                            "type": "string",
+                            "const": "usage-metering"
+                          },
+                          "scriptDigest": {
+                            "type": "string",
+                            "pattern": "^sha256:[0-9a-f]{64}$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "handler",
+                          "scriptDigest"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "issuer": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                  },
+                  "sourceDigest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "evidenceDigest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "projector": {
+                    "type": "string",
+                    "enum": [
+                      "mcp-managed-settings",
+                      "hook-managed-settings",
+                      "usage-hook",
+                      "framework-contract"
+                    ]
+                  },
+                  "policyVersion": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "scope": {
+                    "minItems": 1,
+                    "maxItems": 2,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "claude",
+                        "codex"
+                      ]
+                    }
+                  },
+                  "notBefore": {
+                    "type": "string"
+                  },
+                  "expiresAt": {
+                    "type": "string"
+                  },
+                  "github": {
+                    "type": "object",
+                    "properties": {
+                      "repository": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$"
+                      },
+                      "attestationId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      "subjectDigest": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      }
+                    },
+                    "required": [
+                      "repository",
+                      "attestationId",
+                      "subjectDigest"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "candidate",
+                  "kind",
+                  "source",
+                  "issuer",
+                  "sourceDigest",
+                  "evidenceDigest",
+                  "projector",
+                  "policyVersion",
+                  "reason",
+                  "scope",
+                  "notBefore",
+                  "expiresAt",
+                  "github"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "policyVersion",
+        "catalog"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [
