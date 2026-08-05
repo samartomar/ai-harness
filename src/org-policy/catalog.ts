@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { baselineCatalogById } from "../baseline-evidence/catalogs.js";
+import { CORE_ECC_COMPONENTS } from "../ecc/components.js";
+import { eccProfileModuleIds } from "../ecc/evidence.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
 import { usageRecorderScript } from "../usage/capture.js";
@@ -73,10 +75,29 @@ export interface PolicyAuthoringFramework {
   assets: PolicyAuthoringAsset[];
 }
 
+export interface PolicyAuthoringCompositionPart {
+  id: string;
+  label: string;
+  /** The exact product constructor this part is derived from, stated for review. */
+  rule: string;
+  componentIds: string[];
+}
+
+/**
+ * What a posture composes out of a framework's inventory. It names components;
+ * it never selects them. Nothing framework-owned has an AIH projector, so a
+ * composition is a disclosure of structure, not an activation.
+ */
+export interface PolicyAuthoringComposition {
+  framework: "ecc";
+  parts: PolicyAuthoringCompositionPart[];
+}
+
 export interface PolicyAuthoringCatalog {
   mcp: Array<{ id: string; description: string; server: McpServer; control: AihPolicyControl }>;
   hooks: AihPolicyControl[];
   frameworks: PolicyAuthoringFramework[];
+  enterpriseComposition: PolicyAuthoringComposition;
 }
 
 export function policyAuthoringMcpCatalog(): Record<string, McpServer> {
@@ -155,6 +176,64 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
   };
 }
 
+function eccProfileComponentIds(profileId: string): string[] {
+  return eccProfileModuleIds(profileId).map((moduleId) => `module:${moduleId}`);
+}
+
+/**
+ * The enterprise posture's ECC composition, derived from the product's own
+ * selectors rather than restated. "ECC Core" is deliberately two parts: ECC's
+ * own install profile and AIH's named closure are different objects that the
+ * repository gives the same short name, and hiding either one would leave the
+ * administrator with a word that means two things.
+ */
+function enterpriseComposition(ecc: PolicyAuthoringFramework): PolicyAuthoringComposition {
+  const core = eccProfileComponentIds("core");
+  const inCore = new Set(core);
+  const parts: PolicyAuthoringCompositionPart[] = [
+    {
+      id: "ecc-install-core",
+      label: "ECC install profile: core",
+      rule: 'ecc-profiles.json profile "core", dependency-closed by eccProfileModuleIds()',
+      componentIds: core,
+    },
+    {
+      id: "aih-core-closure",
+      label: "AIH's named ECC Core closure",
+      rule: "CORE_ECC_COMPONENTS — AIH's own curation, not a set ECC declares",
+      componentIds: [...CORE_ECC_COMPONENTS],
+    },
+    {
+      id: "language",
+      label: "Language composition, additive on top of Core",
+      rule: "every ECC component in the lang: namespace",
+      componentIds: ecc.assets.filter((asset) => asset.kind === "lang").map((asset) => asset.id),
+    },
+    {
+      id: "security",
+      label: "Security composition",
+      rule: 'capability:security is what selectEccComponents() recommends at team and enterprise posture; module:security is what ECC\'s "security" profile adds over "core"',
+      componentIds: [
+        "capability:security",
+        ...eccProfileComponentIds("security").filter((id) => !inCore.has(id)),
+      ],
+    },
+  ];
+  const owned = new Set(ecc.assets.map((asset) => asset.id));
+  for (const part of parts) {
+    for (const id of part.componentIds) {
+      // Fail closed the way assetKind() does: a composition that names a
+      // component the pinned catalog does not carry is a claim its own
+      // inventory denies, and it must not ship as an empty-looking group.
+      if (!owned.has(id))
+        throw new Error(
+          `enterprise composition part ${part.id} names ${id}, which the pinned ECC catalog does not contain`,
+        );
+    }
+  }
+  return { framework: "ecc", parts };
+}
+
 /**
  * Serializable, source-controlled authoring data. It is derived directly from
  * the existing pinned MCP and baseline catalog constructors, never copied.
@@ -162,7 +241,9 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
 export function policyAuthoringCatalog(): PolicyAuthoringCatalog {
   const mcp = policyAuthoringMcpCatalog();
   const controls = aihPolicyControls(mcp);
+  const ecc = frameworkCatalog("ecc");
   return {
+    enterpriseComposition: enterpriseComposition(ecc),
     mcp: Object.entries(mcp).flatMap(([id, server]) => {
       const control = controls.find((candidate) => candidate.id === id);
       return control === undefined
@@ -170,6 +251,6 @@ export function policyAuthoringCatalog(): PolicyAuthoringCatalog {
         : [{ id, description: server.description, server, control }];
     }),
     hooks: controls.filter((control) => control.kind === "hook"),
-    frameworks: [frameworkCatalog("ecc"), frameworkCatalog("superpowers")],
+    frameworks: [ecc, frameworkCatalog("superpowers")],
   };
 }

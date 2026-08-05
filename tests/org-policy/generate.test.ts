@@ -780,7 +780,10 @@ describe("policy generate", () => {
           dispatchEvent: (event: unknown) => boolean;
         } | null;
         if (profile === null) throw new Error("expected profile selector");
-        profile.value = "enterprise";
+        // "team" is the remaining posture-only option: vibe and enterprise now
+        // compose a selection, and their contracts live in their own suites.
+        // This assertion is about the selector still working after an import.
+        profile.value = "team";
         profile.dispatchEvent(new window.Event("change", { bubbles: true }));
         expect(announcement?.textContent).toContain("Profile changed.");
       } else {
