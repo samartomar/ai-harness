@@ -6,11 +6,6 @@ import {
   type EccLeanAdapterDeps,
 } from "./ecc.js";
 import {
-  createDormantGstackAdapter,
-  ADAPTER_VERSION as GSTACK_ADAPTER_VERSION,
-  type GstackAdapterDeps,
-} from "./gstack.js";
-import {
   createSuperpowersAdapter,
   ADAPTER_VERSION as SUPERPOWERS_ADAPTER_VERSION,
   type SuperpowersAdapterDeps,
@@ -19,7 +14,7 @@ import {
 /**
  * The one assembly point that wires concrete D6 `FrameworkAdapter`s into an
  * {@link AdapterRegistry}. W4a registered the first (Superpowers, host-plugin);
- * W4b adds ECC Lean (upstream-local-installer); W5 adds gstack (shared-runtime).
+ * W4b adds ECC Lean (upstream-local-installer).
  * Later work packages add their own `create<Framework>Adapter`
  * factory in a sibling module and register it here too; `BindingRegistryDeps`
  * WIDENS additively (a merged shape covering every adapter's construction deps)
@@ -35,25 +30,17 @@ import {
  * (`root`/`runner`/`env`/`cacheHome`/`timeoutMs`, plus the host-plugin
  * `locateCache`/`applyActions`) live on {@link SuperpowersAdapterDeps}; this shape
  * widens to also carry ECC's adapter-specific optionals (`installer`,
- * `installPreview`, and the ECC Full `excludedSurfaces`) and gstack's
- * upstream-installer seam (`installGstack`). Every factory accepts this merged
- * shape (each ignores fields it does not use).
+ * `installPreview`, and the ECC Full `excludedSurfaces`). Every factory accepts
+ * this merged shape (each ignores fields it does not use).
  */
 export type BindingRegistryDeps = SuperpowersAdapterDeps &
-  Pick<EccLeanAdapterDeps, "installer" | "installPreview" | "excludedSurfaces"> &
-  Pick<GstackAdapterDeps, "installGstack">;
+  Pick<EccLeanAdapterDeps, "installer" | "installPreview" | "excludedSurfaces">;
 
 /** Build an {@link AdapterRegistry} with every currently-implemented D6 adapter registered. */
 export function createBindingAdapterRegistry(deps: BindingRegistryDeps): AdapterRegistry {
   const registry = new AdapterRegistry();
   registry.register(createSuperpowersAdapter(deps));
   registry.register(createEccAdapter(deps));
-  // gstack registers DORMANT (2026-07-23 scope decision — EVALUATED_DEFERRED
-  // for v1): new binds refuse with the decision-citing notice while
-  // verify/remove/report keep working, so an existing bind retains its
-  // diagnostics and exit path. The full adapter stays built and tested for a
-  // future re-entry decision.
-  registry.register(createDormantGstackAdapter(deps));
   return registry;
 }
 
@@ -68,5 +55,4 @@ export function createBindingAdapterRegistry(deps: BindingRegistryDeps): Adapter
 export const ADAPTER_VERSIONS: Readonly<Record<FrameworkId, number>> = {
   superpowers: SUPERPOWERS_ADAPTER_VERSION,
   ecc: ECC_ADAPTER_VERSION,
-  gstack: GSTACK_ADAPTER_VERSION,
 };

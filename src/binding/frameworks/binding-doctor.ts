@@ -24,26 +24,27 @@ import {
   type FrameworkAttribution,
   isHomeScopedTarget,
   readClaudeSettingsDrift,
-  type SkillDenyListReport,
-  skillDenyListReport,
 } from "../hosts/claude/index.js";
-import { type BindingLockRead, readBindingLock } from "../lock.js";
+import {
+  type BindingLockRead,
+  type BindingLockReadForRemoval,
+  readBindingLock,
+  readBindingLockForRemoval,
+} from "../lock.js";
 import { type BindingSource, type FrameworkId, readBindingDeclaration } from "../schema.js";
-import { GSTACK_PINNED_SKILL_INVENTORY } from "./gstack.js";
 
 /**
  * The binding doctor — READ-ONLY diagnostics wired into `aih doctor`
  * (`src/doctor.ts`). It carries the two W4d ECC checks
  * ({@link eccDoubleInstallCheck}, {@link eccModeExclusivityCheck}) PLUS the eight
  * W7 §B probes B1–B8 that wire the binding primitives (contamination, host tuple,
- * framework attribution, deny-list, hook chain, settings drift, MCP inventory) into
+ * framework attribution, hook chain, settings drift, MCP inventory) into
  * the health report:
  *
  *  - B1 {@link bindingContaminationCheck} — D13 user-scope leakage (posture-graded).
  *  - B2 {@link bindingContextCostCheck} — informational context-cost projection.
  *  - B3 {@link bindingHostTupleCheck} — D16 host tuple vs the pinned qualified tuple.
  *  - B4 {@link bindingFrameworkDriftCheck} — D8 one-framework drift + no-adapter.
- *  - B5 {@link bindingDenyListFreshnessCheck} — D11 gstack deny-list freshness.
  *  - B6 {@link bindingHookChainChecks} — per-event hook chain inventory.
  *  - B7 {@link bindingSettingsDriftCheck} — D18 owned-settings drift.
  *  - B8 {@link bindingMcpInventoryCheck} — MCP server inventory.
@@ -396,7 +397,6 @@ export async function bindingHostTupleCheck(
 const ADAPTER_BACKED_FRAMEWORKS: ReadonlySet<FrameworkId> = new Set<FrameworkId>([
   "superpowers",
   "ecc",
-  "gstack",
 ]);
 
 /**
@@ -443,58 +443,6 @@ export function bindingFrameworkDriftCheck(
     name,
     verdict: "pass",
     detail: `exactly one methodology framework live: ${attributionOf(declared)}`,
-  };
-}
-
-// -- B5: D11 gstack deny-list freshness (self-skips off-gstack) ---------------
-
-/**
- * B5 — D11 gstack deny-list freshness. Self-skips cleanly when the bound framework
- * is not gstack (the 2026-07-23 scope reduction: gstack is EVALUATED_DEFERRED, but
- * B5 still ships). For a gstack binding it compares the live `skillOverrides` deny
- * list against the pinned skill inventory: any pinned skill no longer denied
- * (`missing`) ⇒ fail (`binding.deny-stale`); a stale read (malformed settings) is a
- * non-routable skip; otherwise pass. `extra`/`fresh` are reported; lists are sorted.
- */
-export function bindingDenyListFreshnessCheck(ctx: PlanContext): Check {
-  const name = "binding deny-list freshness";
-  const info = bindingInfo(ctx);
-  if (info.framework === undefined) {
-    return skip(name, "no readable binding framework — deny-list freshness not evaluated");
-  }
-  if (info.framework !== "gstack") {
-    return skip(
-      name,
-      `bound framework is "${info.framework}", not gstack — deny-list freshness not applicable`,
-    );
-  }
-  const lockedSourceDigest = info.source?.kind === "git" ? info.source.treeDigest : undefined;
-  let report: SkillDenyListReport;
-  try {
-    report = skillDenyListReport(
-      ctx.root,
-      GSTACK_PINNED_SKILL_INVENTORY,
-      lockedSourceDigest !== undefined ? { lockedSourceDigest } : {},
-    );
-  } catch (err) {
-    return skip(name, `deny-list report unavailable: ${(err as Error).message}`);
-  }
-  const extra =
-    report.extra.length > 0
-      ? `; extra (reported only): ${[...report.extra].sort().join(", ")}`
-      : "";
-  if (report.missing.length > 0) {
-    return {
-      name,
-      verdict: "fail",
-      code: "binding.deny-stale",
-      detail: `${report.missing.length}/${report.total} pinned skills no longer denied: ${[...report.missing].sort().join(", ")} (an added/renamed skill leaks until regenerated); fresh: ${String(report.fresh)}${extra}`,
-    };
-  }
-  return {
-    name,
-    verdict: "pass",
-    detail: `deny-list current: all ${report.total} pinned skills denied; fresh: ${String(report.fresh)}${extra}`,
   };
 }
 
@@ -548,9 +496,9 @@ export function bindingHookChainChecks(ctx: PlanContext): Check[] {
  */
 export function bindingSettingsDriftCheck(ctx: PlanContext): Check {
   const name = "binding settings drift";
-  let read: BindingLockRead;
+  let read: BindingLockReadForRemoval;
   try {
-    read = readBindingLock(ctx.root);
+    read = readBindingLockForRemoval(ctx.root);
   } catch (err) {
     return skip(
       name,

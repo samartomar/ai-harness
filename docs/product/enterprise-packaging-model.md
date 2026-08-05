@@ -151,7 +151,6 @@ For UI, UX, product, and frontend repos.
 Includes:
   frontend-design
   stop-slop
-  optional gstack
   Superpowers remains active for implementation discipline
 
 Default:
@@ -186,7 +185,6 @@ Controls:
 ```text
 stop-slop runs as review/rewrite guidance, not hard compliance policy
 frontend-design installs only in frontend/UI repos
-gstack remains optional and Claude-focused
 ```
 
 ## Pack 4: docs-quality
@@ -283,55 +281,7 @@ keep generated video artifacts out of source unless approved
 add media-rights checklist
 ```
 
-## Pack 6: founder-product
-
-Optional startup/founder workflow pack.
-
-```text
-Includes:
-  gstack
-  product-ui pack
-  docs-quality pack
-  optional Superpowers review commands
-
-Default:
-  no
-
-Scope:
-  solo founder / product team / startup environment
-
-Risk:
-  medium because it is opinionated and Claude-focused
-```
-
-Recommended install:
-
-```bash
-# run inside the target UI repo after curating founder-product in aih-packs.json
-aih pack install --pack founder-product --apply
-```
-
-Purpose:
-
-```text
-product interrogation
-CEO-style review
-design review
-engineering review
-QA
-shipping checklist
-security sanity checks
-release docs
-```
-
-Boundary:
-
-```text
-gstack should not be installed by default in a strict baseline.
-Make it a product/founder preset.
-```
-
-## Pack 7: skill-governance
+## Pack 6: skill-governance
 
 This is the differentiator pack.
 
@@ -431,7 +381,6 @@ aih pack install --pack workspace-intel --apply
 | Superpowers | enterprise-core | yes | medium | Main disciplined coding method. |
 | ECC | enterprise-core | yes | medium | Cross-harness skill/memory/security layer. |
 | AgentShield | skill-governance | yes | low/medium | Config and agent security scanning. |
-| gstack | founder-product | optional | medium | Product/design/review/QA workflow. |
 | stop-slop | docs-quality/product-ui | yes for writing/UI | low | Review/rewrite guidance. |
 | frontend-design | product-ui | yes for UI | low/medium | UI taste and frontend design skill. Legal/license review before vendoring. |
 | Understand Anything | workspace-intel | optional | medium/high | Codebase graph and onboarding intelligence. |

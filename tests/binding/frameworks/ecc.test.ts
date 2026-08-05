@@ -327,12 +327,11 @@ describe("createEccAdapter — registers in AdapterRegistry (D6 upstream-local-i
     expect(registry.get("ecc")?.adapterType).toBe("upstream-local-installer");
   });
 
-  it("createBindingAdapterRegistry wires superpowers, ecc, and gstack", () => {
+  it("createBindingAdapterRegistry wires the supported adapters", () => {
     const registry = createBindingAdapterRegistry({ root, runner: spyRunner().runner });
     expect(registry.get("ecc")?.adapterType).toBe("upstream-local-installer");
     expect(registry.get("superpowers")?.adapterType).toBe("host-plugin");
-    expect(registry.get("gstack")?.adapterType).toBe("shared-runtime");
-    expect(registry.frameworks().sort()).toEqual(["ecc", "gstack", "superpowers"]);
+    expect(registry.frameworks().sort()).toEqual(["ecc", "superpowers"]);
   });
 });
 

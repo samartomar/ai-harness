@@ -14,6 +14,7 @@ import { dirname, join } from "node:path";
 import { z } from "zod";
 import { AihError } from "../../../errors.js";
 import { readIfExists, retryTransient } from "../../../internals/fsxn.js";
+import { LEGACY_GSTACK_ID } from "../../../internals/legacy-config.js";
 import { isPlainObject, parseJsoncText } from "../../../internals/merge.js";
 import type {
   ClaudeContaminationReport,
@@ -203,7 +204,7 @@ const CleanupManifestEntrySchema = z
   .object({
     action: z.enum(["backup-then-remove", "backup-then-disable"]),
     surface: z.enum(["skill", "agent", "hook", "rule", "plugin", "mcpServer"]),
-    attribution: z.enum(["ecc", "superpowers", "gstack", "gsd", "unknown"]),
+    attribution: z.enum(["ecc", "superpowers", "gsd", "unknown"]),
     path: z.string().min(1),
     edit: CleanupEditSchema.optional(),
     /** Whether the target existed at apply time (absent -> nothing backed up/removed). */
@@ -224,6 +225,19 @@ const CleanupManifestSchema = z
     entries: z.array(CleanupManifestEntrySchema),
   })
   .strict();
+
+/**
+ * Legacy manifests are readable only during rollback. The cleanup writer still
+ * validates against {@link CleanupManifestSchema}, so it cannot produce a new
+ * GStack-attributed receipt after the framework removal.
+ */
+const CleanupRollbackManifestEntrySchema = CleanupManifestEntrySchema.extend({
+  attribution: z.enum(["ecc", "superpowers", "gsd", "unknown", LEGACY_GSTACK_ID]),
+});
+
+const CleanupRollbackManifestSchema = CleanupManifestSchema.extend({
+  entries: z.array(CleanupRollbackManifestEntrySchema),
+}).strict();
 
 export type ClaudeCleanupManifest = z.infer<typeof CleanupManifestSchema>;
 type CleanupManifestEntry = z.infer<typeof CleanupManifestEntrySchema>;
@@ -480,7 +494,7 @@ export function rollbackClaudeCleanup(
   } catch {
     throw new ClaudeCleanupError(`cleanup manifest is not valid JSON: ${manifestPath}`);
   }
-  const result = CleanupManifestSchema.safeParse(parsed);
+  const result = CleanupRollbackManifestSchema.safeParse(parsed);
   if (!result.success) {
     throw new ClaudeCleanupError(
       `refusing tampered cleanup manifest (schema invalid): ${manifestPath}`,

@@ -202,7 +202,7 @@ describe("profile closure classifier (rule-10 reachability, not location)", () =
     const closure = classifyClosure(
       inputOf({ "qa/SKILL.md": "# qa\nclean body\n", "notes/inert.md": "hidden payload\n" }),
       {
-        profile: "gstack:test",
+        profile: "fixture:test",
         classifierVersion: 1,
         mode: "seeded",
         seeds: [{ path: "qa/SKILL.md", reachability: "model-loaded" }],
@@ -210,18 +210,18 @@ describe("profile closure classifier (rule-10 reachability, not location)", () =
       HOST_FACTS_A,
     );
     const inClosure: AcceptedContentFinding = {
-      repository: "test/gstack",
+      repository: "test/fixture",
       code: "trust.hidden-unicode",
       path: "qa/SKILL.md",
       fileSha256: "a".repeat(64),
-      profile: "gstack:test",
+      profile: "fixture:test",
     };
     const outOfClosure: AcceptedContentFinding = {
-      repository: "test/gstack",
+      repository: "test/fixture",
       code: "trust.hidden-unicode",
       path: "notes/inert.md",
       fileSha256: "b".repeat(64),
-      profile: "gstack:test",
+      profile: "fixture:test",
     };
     const report = scanAcceptanceReport(closure, [inClosure, outOfClosure]);
     expect(report.applicable.map((entry) => entry.path)).toEqual(["qa/SKILL.md"]);
@@ -235,15 +235,15 @@ const ZWSP = String.fromCharCode(0x200b);
 const CLEAN_SKILL = "# qa skill\n\nnothing to see here\n";
 const REF_SKILL = "# qa skill\n\nRun the steps in `sections/detail.md` before shipping.\n";
 const HIDDEN = `body with a zero${ZWSP}width instruction\n`;
-const GSTACK_PROFILE = "gstack:test";
+const FIXTURE_PROFILE = "fixture:test";
 
 function sha256Lf(text: string): string {
   return createHash("sha256").update(text.replace(/\r\n/g, "\n"), "utf8").digest("hex");
 }
 
-function gstackClosureSpec(): ClosureSpec {
+function fixtureClosureSpec(): ClosureSpec {
   return {
-    profile: GSTACK_PROFILE,
+    profile: FIXTURE_PROFILE,
     classifierVersion: 1,
     mode: "seeded",
     seeds: [{ path: "qa/SKILL.md", reachability: "model-loaded" }],
@@ -298,7 +298,7 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
   it("rule 3 — an inert high finding is reported, not gated (ALLOW with FINDINGS_PRESENT)", async () => {
     const disposition = await gateOver(
       { "qa/SKILL.md": CLEAN_SKILL, "notes/inert.md": HIDDEN },
-      { posture: "vibe", closureSpec: gstackClosureSpec(), hostFacts: HOST_FACTS_A },
+      { posture: "vibe", closureSpec: fixtureClosureSpec(), hostFacts: HOST_FACTS_A },
     );
     expect(disposition.selectedProfileGate).toBe("ALLOW");
     expect(disposition.verdict).toBe("allow");
@@ -312,7 +312,7 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
   it("rule 10 — the SAME finding blocks once its file is referenced into the closure", async () => {
     const disposition = await gateOver(
       { "qa/SKILL.md": REF_SKILL, "qa/sections/detail.md": HIDDEN },
-      { posture: "vibe", closureSpec: gstackClosureSpec(), hostFacts: HOST_FACTS_A },
+      { posture: "vibe", closureSpec: fixtureClosureSpec(), hostFacts: HOST_FACTS_A },
     );
     expect(disposition.selectedProfileGate).toBe("BLOCK");
     const reached = disposition.findings.find((f) => f.path === "qa/sections/detail.md");
@@ -322,17 +322,17 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
 
   it("fixture 7 — an accepted runtime finding yields ALLOW_WITH_CONDITIONS and authorizes", async () => {
     const accept: AcceptedContentFinding = {
-      repository: "test/gstack",
+      repository: "test/fixture",
       code: "trust.hidden-unicode",
       path: "qa/sections/detail.md",
       fileSha256: sha256Lf(HIDDEN),
-      profile: GSTACK_PROFILE,
+      profile: FIXTURE_PROFILE,
     };
     const disposition = await gateOver(
       { "qa/SKILL.md": REF_SKILL, "qa/sections/detail.md": HIDDEN },
       {
         posture: "vibe",
-        closureSpec: gstackClosureSpec(),
+        closureSpec: fixtureClosureSpec(),
         hostFacts: HOST_FACTS_A,
         acceptedFindings: [accept],
       },
@@ -347,17 +347,17 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
 
   it("fixture 8a — accepting an inert finding is a structural no-op (still ALLOW, not marked)", async () => {
     const accept: AcceptedContentFinding = {
-      repository: "test/gstack",
+      repository: "test/fixture",
       code: "trust.hidden-unicode",
       path: "notes/inert.md",
       fileSha256: sha256Lf(HIDDEN),
-      profile: GSTACK_PROFILE,
+      profile: FIXTURE_PROFILE,
     };
     const disposition = await gateOver(
       { "qa/SKILL.md": CLEAN_SKILL, "notes/inert.md": HIDDEN },
       {
         posture: "vibe",
-        closureSpec: gstackClosureSpec(),
+        closureSpec: fixtureClosureSpec(),
         hostFacts: HOST_FACTS_A,
         acceptedFindings: [accept],
       },
@@ -371,7 +371,7 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
   it("host fact absent ⇒ the inert file becomes unknown and the gate BLOCKS", async () => {
     const disposition = await gateOver(
       { "qa/SKILL.md": CLEAN_SKILL, "notes/inert.md": HIDDEN },
-      { posture: "vibe", closureSpec: gstackClosureSpec(), hostFacts: undefined },
+      { posture: "vibe", closureSpec: fixtureClosureSpec(), hostFacts: undefined },
     );
     expect(disposition.selectedProfileGate).toBe("BLOCK");
     const nowUnknown = disposition.findings.find((f) => f.path === "notes/inert.md");
@@ -407,7 +407,7 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
       {
         posture: "vibe",
         allowIncompleteAtVibe: true,
-        closureSpec: gstackClosureSpec(),
+        closureSpec: fixtureClosureSpec(),
         hostFacts: HOST_FACTS_A,
       },
       { cacheHome, inspectors: [criticalInInertFile] },
@@ -423,7 +423,7 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
 
   function tsBuildInputSpec(): ClosureSpec {
     return {
-      profile: GSTACK_PROFILE,
+      profile: FIXTURE_PROFILE,
       classifierVersion: 1,
       mode: "seeded",
       seeds: [{ path: "browse/src/index.ts", reachability: "build-input" }],

@@ -2,6 +2,10 @@ import { join } from "node:path";
 import { z } from "zod";
 import { AihError } from "../errors.js";
 import { readIfExists } from "../internals/fsxn.js";
+import {
+  isLegacyGstackId,
+  LEGACY_GSTACK_MIGRATION_DIAGNOSTIC,
+} from "../internals/legacy-config.js";
 
 // Kept in sync with AIH_CONFIG_FILE in ../config/marker.ts by hand: marker.ts
 // imports this schema to add its optional `binding` field, so importing the
@@ -27,12 +31,8 @@ const MARKER_FILE = ".aih-config.json";
 
 export const BINDING_SCHEMA_VERSION = 1 as const;
 
-/** The v1 framework set (W1's enumeration, as amended). Unknown ids are rejected. */
-// gsd-core was removed from the v1 set by the 2026-07-22 maintainer scope decision
-// (a product-value call, superseding D3): a declaration naming it fails closed here
-// rather than reaching a missing adapter. The contamination attributions keep
-// detecting gsd residue independently.
-export const FRAMEWORK_IDS = ["ecc", "superpowers", "gstack"] as const;
+/** The supported methodology framework set. Unknown ids are rejected. */
+export const FRAMEWORK_IDS = ["ecc", "superpowers"] as const;
 export type FrameworkId = (typeof FRAMEWORK_IDS)[number];
 
 /** Only `ecc` carries a lean/full mode; every other framework must omit it. */
@@ -171,7 +171,15 @@ export class BindingFrameworkConflictError extends AihError {
   }
 }
 
+function isLegacyGstackDeclaration(value: unknown): boolean {
+  if (!isObject(value) || !isObject(value.framework)) return false;
+  return isLegacyGstackId(value.framework.id);
+}
+
 export function parseBindingDeclaration(value: unknown): BindingDeclaration {
+  if (isLegacyGstackDeclaration(value)) {
+    throw new BindingDeclarationError(LEGACY_GSTACK_MIGRATION_DIAGNOSTIC);
+  }
   return BindingDeclarationSchema.parse(value);
 }
 
@@ -220,6 +228,9 @@ export function readBindingDeclaration(root: string): BindingDeclaration | undef
   if (!isObject(parsed) || !("binding" in parsed)) return undefined;
   const binding = parsed.binding;
   if (binding === undefined) return undefined;
+  if (isLegacyGstackDeclaration(binding)) {
+    throw new BindingDeclarationError(LEGACY_GSTACK_MIGRATION_DIAGNOSTIC);
+  }
   const result = BindingDeclarationSchema.safeParse(binding);
   if (result.success) return result.data;
   const issue = result.error.issues[0];

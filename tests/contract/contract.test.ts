@@ -139,10 +139,8 @@ describe("PR 1B — project.md + setup.md", () => {
   it("project.md points at the selected baseline without duplicating its rules", async () => {
     seedMindworksLike(dir);
     const c = await synth();
-    // A non-ecc baseline exercises the repo-ref rendering branch. Passed as an
-    // explicit source object rather than a selectable id — gstack was removed as
-    // a CLI baseline (2026-07-23) and ecc (the only selectable id) renders the
-    // "ECC / Superpowers" branch instead.
+    // A non-ecc baseline exercises the repo-ref rendering branch. It is passed as
+    // an explicit source object because ecc is the sole selectable baseline.
     const md = projectContractDoc("ai-coding", c, {
       baseline: {
         id: "example",

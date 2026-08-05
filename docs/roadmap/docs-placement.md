@@ -83,7 +83,7 @@ Historical example pack themes an org could curate in `aih-packs.json`:
 
 - `enterprise-core`: Superpowers + ECC + report/track/usage + guardrails.
 - `workspace-intel`: workspace router, report rollup, snapshots, contracts, codebase intelligence.
-- `product-ui`: frontend-design + stop-slop + optional gstack.
+- `product-ui`: frontend-design + stop-slop.
 - `content-video`: Remotion skills under media/egress policy.
 - `skill-governance`: skill cards, approved-skills lockfile, scanner evidence.
 

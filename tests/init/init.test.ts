@@ -591,10 +591,12 @@ describe("aih init — target-gated tool artifacts (.cursor on cursor, .claude o
     expect(p).toContain(".claudeignore");
   });
 
-  it("rejects --baseline gstack (retained but not CLI-surfaced per the 2026-07-23 scope decision)", async () => {
+  it("rejects a removed baseline with the migration diagnostic", async () => {
     await expect(
       command.plan(ctx({ options: { cli: "kiro", baseline: "gstack" } })),
-    ).rejects.toThrow(/unknown --baseline "gstack"/);
+    ).rejects.toThrow(
+      'unsupported legacy configuration "gstack"; migrate to a supported framework before continuing',
+    );
   });
 
   it("records the resolved targets in the .aih-config.json marker", async () => {

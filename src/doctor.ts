@@ -5,7 +5,6 @@ import { enterpriseBaselineAttestationCheck } from "./baseline/attestation.js";
 import {
   bindingContaminationCheck,
   bindingContextCostCheck,
-  bindingDenyListFreshnessCheck,
   bindingFrameworkDriftCheck,
   bindingHookChainChecks,
   bindingHostTupleCheck,
@@ -330,13 +329,12 @@ export const command: CommandSpec = {
       }),
       probe("ECC double-install", () => eccDoubleInstallCheck(ctx)),
       probe("ECC mode exclusivity", () => eccModeExclusivityCheck(ctx)),
-      // W7 §B — the eight binding doctor probes (B1–B8). Read-only, deterministic,
+      // W7 §B — binding doctor probes. Read-only, deterministic,
       // posture-graded where noted; each self-skips when no binding is present.
       probe("binding contamination", () => bindingContaminationCheck(ctx)),
       probe("binding context cost", () => bindingContextCostCheck(ctx)),
       probe("binding host tuple", () => bindingHostTupleCheck(ctx)),
       probe("binding framework drift", () => bindingFrameworkDriftCheck(ctx)),
-      probe("binding deny-list freshness", () => bindingDenyListFreshnessCheck(ctx)),
       probeMany("binding hook chain", (probeCtx) => bindingHookChainChecks(probeCtx)),
       probe("binding settings drift", () => bindingSettingsDriftCheck(ctx)),
       probe("binding mcp inventory", () => bindingMcpInventoryCheck(ctx)),

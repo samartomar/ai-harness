@@ -3,7 +3,7 @@ import { assertKnownFeatureKeys, BindingFeatureKeyError } from "../../src/bindin
 
 describe("assertKnownFeatureKeys — plan-time feature-key validation (W2 ruling)", () => {
   it("accepts an absent features object (no flags declared)", () => {
-    expect(() => assertKnownFeatureKeys(undefined, ["codexReviews"], "gstack")).not.toThrow();
+    expect(() => assertKnownFeatureKeys(undefined, ["codexReviews"], "sample")).not.toThrow();
   });
 
   it("accepts declared keys the adapter knows", () => {
@@ -11,16 +11,16 @@ describe("assertKnownFeatureKeys — plan-time feature-key validation (W2 ruling
       assertKnownFeatureKeys(
         { codexReviews: true, browser: false },
         ["codexReviews", "browser"],
-        "gstack",
+        "sample",
       ),
     ).not.toThrow();
   });
 
   it("rejects an unknown key, naming it and the known set", () => {
-    expect(() => assertKnownFeatureKeys({ turboMode: true }, ["codexReviews"], "gstack")).toThrow(
+    expect(() => assertKnownFeatureKeys({ turboMode: true }, ["codexReviews"], "sample")).toThrow(
       BindingFeatureKeyError,
     );
-    expect(() => assertKnownFeatureKeys({ turboMode: true }, ["codexReviews"], "gstack")).toThrow(
+    expect(() => assertKnownFeatureKeys({ turboMode: true }, ["codexReviews"], "sample")).toThrow(
       /turboMode.*codexReviews/s,
     );
   });

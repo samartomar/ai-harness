@@ -260,10 +260,6 @@ describe("active external-pin ledger", () => {
   });
 
   it("documents explicit retained and qualified-runner decisions", () => {
-    expect(entry("gstack")).toMatchObject({
-      commit: "11de390be1be6849eb9a15f91ff4922dd16c589a",
-      disposition: "retained",
-    });
     expect(entry("skillspector")).toMatchObject({
       commit: "34f60308522f45447cd343da0aad77bcea308ad4",
       integrity: "sha256:eb100b229ec5b25f74d5f6c1ac31e2d0466f08dbc0726af4239dccadbd7f1b1c",

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   type ClaudeContaminationReport,
   claudeContaminationReport,
+  collectHookChain,
 } from "../../../../src/binding/hosts/claude/contamination.js";
 
 let home: string;
@@ -200,6 +201,31 @@ describe("claudeContaminationReport — malformed user-scope JSON does not crash
     const report = claudeContaminationReport({ home, projectRoot });
     expect(report.warnings.some((w) => w.includes(".mcp.json"))).toBe(true);
     expect(report.leakage.mcpServers).toBe(0);
+  });
+});
+
+describe("Claude hook compatibility shapes", () => {
+  it("collects supported flat string and command-object hook entries", () => {
+    seedJson(".claude/settings.json", {
+      hooks: {
+        PreToolUse: ["superpowers verify"],
+        PostToolUse: [{ command: "ecc check" }],
+      },
+    });
+
+    const report = claudeContaminationReport({ home, projectRoot });
+    expect(report.entries.filter((entry) => entry.surface === "hook")).toEqual([
+      expect.objectContaining({
+        name: "PreToolUse",
+        attribution: "superpowers",
+        command: "superpowers verify",
+      }),
+      expect.objectContaining({ name: "PostToolUse", attribution: "ecc", command: "ecc check" }),
+    ]);
+    expect(collectHookChain({ home, projectRoot })).toEqual([
+      { event: "PreToolUse", command: "superpowers verify", origin: "superpowers", scope: "home" },
+      { event: "PostToolUse", command: "ecc check", origin: "ecc", scope: "home" },
+    ]);
   });
 });
 

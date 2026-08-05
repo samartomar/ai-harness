@@ -117,8 +117,7 @@
               "type": "string",
               "enum": [
                 "ecc",
-                "superpowers",
-                "gstack"
+                "superpowers"
               ]
             },
             "mode": {

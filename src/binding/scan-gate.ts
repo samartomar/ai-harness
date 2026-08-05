@@ -1198,8 +1198,8 @@ export interface ScanAcceptanceReport {
  * Entries scoped to a DIFFERENT profile are skipped entirely; the remainder split
  * into `applicable` (file present AND in the blocking closure) and
  * `staleOutOfClosure` (file removed, or materialized-inert). Mirrors the
- * `skillDenyListReport` missing/extra hygiene model: staleness is a note, not a
- * gate change — the gate already fails toward "the entry does nothing."
+ * acceptance hygiene model: staleness is a note, not a gate change — the gate
+ * already fails toward "the entry does nothing."
  */
 export function scanAcceptanceReport(
   closure: ProfileClosure,

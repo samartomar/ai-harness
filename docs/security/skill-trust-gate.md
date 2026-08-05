@@ -189,7 +189,6 @@ Typical YELLOW examples:
 ```text
 Understand Anything
 Remotion skills
-gstack setup
 skills with install scripts
 skills with MCP servers
 skills with generated code execution

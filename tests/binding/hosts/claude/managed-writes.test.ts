@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ClaudeManagedWriteEngine,
+  carryForwardOwnership,
   finalizeClaudeOwnership,
 } from "../../../../src/binding/hosts/claude/managed-writes.js";
 import {
@@ -12,7 +13,11 @@ import {
   CLAUDE_MCP_PATH,
   CLAUDE_SETTINGS_PATH,
 } from "../../../../src/binding/hosts/claude/surfaces.js";
-import { BindingOwnershipEntrySchema, BindingWriteSchema } from "../../../../src/binding/lock.js";
+import {
+  type BindingLock,
+  BindingOwnershipEntrySchema,
+  BindingWriteSchema,
+} from "../../../../src/binding/lock.js";
 import { applyActions, readJson, readText } from "./support.js";
 
 let root: string;
@@ -107,7 +112,13 @@ describe("jsonField (owned field in a shared JSON file)", () => {
   it("refuses a malformed or too-deep JSON pointer (fail closed)", () => {
     const engine = new ClaudeManagedWriteEngine(root);
     expect(() => engine.jsonField(CLAUDE_SETTINGS_PATH, "model", 1)).toThrow();
+    expect(() => engine.jsonField(CLAUDE_SETTINGS_PATH, "/a//b", 1)).toThrow();
     expect(() => engine.jsonField(CLAUDE_SETTINGS_PATH, "/a/b/c", 1)).toThrow();
+  });
+
+  it("refuses an undefined owned JSON value", () => {
+    const engine = new ClaudeManagedWriteEngine(root);
+    expect(() => engine.jsonField(CLAUDE_SETTINGS_PATH, "/model", undefined)).toThrow();
   });
 });
 
@@ -167,6 +178,12 @@ describe("mcpServer (.mcp.json server ownership)", () => {
     });
   });
 
+  it("refuses undefined and control-character MCP server identifiers", () => {
+    const engine = new ClaudeManagedWriteEngine(root);
+    expect(() => engine.mcpServer("ecc", undefined)).toThrow();
+    expect(() => engine.mcpServer("bad\u0000id", { command: "ignored" })).toThrow();
+  });
+
   it("aggregates two servers into one .mcp.json write AND one parent-container ownership entry", async () => {
     const built = new ClaudeManagedWriteEngine(root)
       .mcpServer("a", { command: "a-mcp" })
@@ -191,14 +208,14 @@ describe("mcpServer (.mcp.json server ownership)", () => {
 describe("container ownership — depth-2 into an absent parent (D18 own what you created)", () => {
   it("owns the PARENT container as one entry for a single leaf into an absent parent", () => {
     const built = new ClaudeManagedWriteEngine(root)
-      .jsonField(CLAUDE_SETTINGS_PATH, "/enabledPlugins/gstack@aih-gstack", true)
+      .jsonField(CLAUDE_SETTINGS_PATH, "/enabledPlugins/sample@aih-test", true)
       .build();
     expect(built.ownership).toHaveLength(1);
     const own = built.ownership[0];
     expect(own?.kind).toBe("json-pointer");
     expect(own?.target).toBe(`${CLAUDE_SETTINGS_PATH}#/enabledPlugins`);
     expect(own?.preExisting).toEqual({ absent: true });
-    expect(own?.applied).toEqual({ "gstack@aih-gstack": true });
+    expect(own?.applied).toEqual({ "sample@aih-test": true });
     // The per-slot write stays; only ownership collapses to the parent.
     expect(built.writes).toHaveLength(1);
     expect(built.writes[0]?.mechanism).toBe("json-pointer");
@@ -227,6 +244,23 @@ describe("container ownership — depth-2 into an absent parent (D18 own what yo
     expect(built.ownership).toHaveLength(1);
     expect(built.ownership[0]?.target).toBe(`${CLAUDE_SETTINGS_PATH}#/skillOverrides/a`);
     expect(built.ownership[0]?.applied).toBe("off");
+  });
+});
+
+describe("carryForwardOwnership — rebind preserves the original pre-existing leaf", () => {
+  it("carries a prior leaf's pre-existing value into the new ownership intent", () => {
+    seed(CLAUDE_SETTINGS_PATH, `${JSON.stringify({ model: "first-bind" }, null, 2)}\n`);
+    const target = `${CLAUDE_SETTINGS_PATH}#/model`;
+    const built = new ClaudeManagedWriteEngine(root)
+      .jsonField(CLAUDE_SETTINGS_PATH, "/model", "rebound")
+      .build();
+    const previousLock = {
+      ownership: [{ target, preExisting: { value: "original" } }],
+    } as BindingLock;
+
+    carryForwardOwnership(built, previousLock, target);
+
+    expect(built.ownership[0]?.preExisting).toEqual({ value: "original" });
   });
 });
 

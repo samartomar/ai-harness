@@ -37,8 +37,7 @@ export default defineConfig({
       // they lower the global statements aggregate to ~91.0% (from the pre-W5 level).
       // The global `statements` floor is set to 90.5 to track that genuine level, and
       // per-file floors below lock these files in so they can only ratchet up as the
-      // dedicated closure/typography path tests land. The gstack adapter itself is at
-      // ~97% and is pinned here too.
+      // dedicated closure/typography path tests land.
       thresholds: {
         statements: 90.5,
         branches: 78,
@@ -79,12 +78,6 @@ export default defineConfig({
           branches: 78,
           functions: 92,
           lines: 84,
-        },
-        "src/binding/frameworks/gstack.ts": {
-          statements: 95,
-          branches: 82,
-          functions: 97,
-          lines: 95,
         },
         // W7 §C scan cache tiers — branch-dense derived-cache + deep-scanner
         // machinery (canonical keys, read-time tuple guard, SARIF mapping). Locked

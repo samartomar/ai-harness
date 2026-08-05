@@ -111,12 +111,6 @@ export {
   readClaudeSettingsDrift,
 } from "./removal.js";
 export {
-  type PinnedSkillInventory,
-  queueSkillDenyList,
-  type SkillDenyListReport,
-  skillDenyListReport,
-} from "./skill-overrides.js";
-export {
   CLAUDE_BINDING_MARKER,
   CLAUDE_BOOTLOADER_PATH,
   CLAUDE_MCP_PATH,

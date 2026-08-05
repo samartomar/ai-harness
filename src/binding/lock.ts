@@ -12,7 +12,12 @@ import { join } from "node:path";
 import { z } from "zod";
 import { AihError } from "../errors.js";
 import { readIfExists, retryTransient } from "../internals/fsxn.js";
-import { BindingDeclarationSchema } from "./schema.js";
+import {
+  isLegacyGstackId,
+  LEGACY_GSTACK_ID,
+  LEGACY_GSTACK_MIGRATION_DIAGNOSTIC,
+} from "../internals/legacy-config.js";
+import { BINDING_SCHEMA_VERSION, BindingDeclarationSchema, BindingSourceSchema } from "./schema.js";
 
 /**
  * Binding lock — the machine-scoped applied-state record (D7 derived state, D18
@@ -100,14 +105,61 @@ export const BindingLockSchema = z
     }
   });
 
+/**
+ * A v3.4 GStack receipt remains readable only by removal/drift code. It is not
+ * a binding declaration: normal lock reads, writes, selection, and provisioning
+ * continue to reject GStack with the one migration diagnostic. Keeping this
+ * narrow local record lets conservative D18 cleanup restore only receipt-proven
+ * AIH-owned state after an upgrade.
+ */
+const LegacyGstackBindingLockSchema = z
+  .object({
+    schemaVersion: z.literal(BINDING_SCHEMA_VERSION),
+    declaration: z
+      .object({
+        schemaVersion: z.literal(BINDING_SCHEMA_VERSION),
+        framework: z
+          .object({
+            id: z.literal(LEGACY_GSTACK_ID),
+            mode: z.never().optional(),
+            host: z.literal("claude"),
+            features: z.record(z.string().min(1), z.boolean()).optional(),
+          })
+          .strict(),
+        source: BindingSourceSchema,
+      })
+      .strict(),
+    writes: z.array(BindingWriteSchema),
+    scannedDigest: z.string().regex(SHA256_HEX),
+    loadedDigest: z.string().regex(SHA256_HEX),
+    match: z.boolean(),
+    ownership: z.array(BindingOwnershipEntrySchema),
+  })
+  .strict()
+  .superRefine((lock, ctx) => {
+    if (lock.match !== (lock.scannedDigest === lock.loadedDigest)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["match"],
+        message:
+          "match must equal (scannedDigest === loadedDigest); a binding fails closed when scanned and loaded digests differ",
+      });
+    }
+  });
+
 export type BindingWrite = z.infer<typeof BindingWriteSchema>;
 export type BindingOwnershipEntry = z.infer<typeof BindingOwnershipEntrySchema>;
 export type BindingLock = z.infer<typeof BindingLockSchema>;
+type LegacyGstackBindingLock = z.infer<typeof LegacyGstackBindingLockSchema>;
+export type BindingLockForRemoval = BindingLock | LegacyGstackBindingLock;
 
 export type BindingLockRead = { present: true; lock: BindingLock } | { present: false };
+export type BindingLockReadForRemoval =
+  | { present: true; lock: BindingLockForRemoval }
+  | { present: false };
 
 export type BindingRemovalPlan =
-  | { mode: "apply"; lock: BindingLock }
+  | { mode: "apply"; lock: BindingLockForRemoval }
   | { mode: "drift-report-only"; reason: string };
 
 /** Corrupt or schema-invalid machine-state lock — fail closed, never guess. */
@@ -118,6 +170,9 @@ export class BindingLockError extends AihError {
 }
 
 export function parseBindingLock(value: unknown): BindingLock {
+  if (isLegacyGstackLock(value)) {
+    throw new BindingLockError(LEGACY_GSTACK_MIGRATION_DIAGNOSTIC);
+  }
   return BindingLockSchema.parse(value);
 }
 
@@ -141,25 +196,70 @@ function assertNotSymlink(path: string): void {
  * that is unparseable or schema-invalid FAILS CLOSED with {@link BindingLockError}
  * — a damaged machine-state record is never silently treated as empty.
  */
-export function readBindingLock(root: string): BindingLockRead {
+function readStoredBindingLock(root: string): { path: string; parsed?: unknown; present: boolean } {
   const path = bindingLockPath(root);
   assertNotSymlink(path);
   const raw = readIfExists(path);
-  if (raw === undefined) return { present: false };
+  if (raw === undefined) return { path, present: false };
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
     throw new BindingLockError(`binding lock is not valid JSON: ${path}`);
   }
-  const result = BindingLockSchema.safeParse(parsed);
+  return { path, parsed, present: true };
+}
+
+function invalidBindingLock(path: string, value: unknown): BindingLockError {
+  if (isLegacyGstackLock(value)) {
+    return new BindingLockError(LEGACY_GSTACK_MIGRATION_DIAGNOSTIC);
+  }
+  const result = BindingLockSchema.safeParse(value);
   if (!result.success) {
     const issue = result.error.issues[0];
     const where =
       issue === undefined ? "" : ` at ${issue.path.join(".") || "(root)"}: ${issue.message}`;
-    throw new BindingLockError(`invalid binding lock ${path}${where}`);
+    return new BindingLockError(`invalid binding lock ${path}${where}`);
   }
+  return new BindingLockError(`invalid binding lock ${path}`);
+}
+
+/** Read a current supported binding receipt; legacy GStack receipts fail closed. */
+export function readBindingLock(root: string): BindingLockRead {
+  const stored = readStoredBindingLock(root);
+  if (!stored.present) return { present: false };
+  const result = BindingLockSchema.safeParse(stored.parsed);
+  if (!result.success) throw invalidBindingLock(stored.path, stored.parsed);
   return { present: true, lock: result.data };
+}
+
+/**
+ * Read a receipt exclusively for conservative removal or ownership-drift
+ * reporting. This is the sole migration exception: an exact old GStack receipt
+ * is never selected, provisioned, verified, rewritten, or treated as current
+ * configuration, but its recorded ownership may still be reconciled safely.
+ */
+export function readBindingLockForRemoval(root: string): BindingLockReadForRemoval {
+  const stored = readStoredBindingLock(root);
+  if (!stored.present) return { present: false };
+  const current = BindingLockSchema.safeParse(stored.parsed);
+  if (current.success) return { present: true, lock: current.data };
+  const legacy = LegacyGstackBindingLockSchema.safeParse(stored.parsed);
+  if (legacy.success) return { present: true, lock: legacy.data };
+  throw invalidBindingLock(stored.path, stored.parsed);
+}
+
+function isLegacyGstackLock(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const declaration = (value as { declaration?: unknown }).declaration;
+  if (typeof declaration !== "object" || declaration === null || Array.isArray(declaration)) {
+    return false;
+  }
+  const framework = (declaration as { framework?: unknown }).framework;
+  if (typeof framework !== "object" || framework === null || Array.isArray(framework)) {
+    return false;
+  }
+  return isLegacyGstackId((framework as { id?: unknown }).id);
 }
 
 function prepareBindingDir(root: string): string {
@@ -199,7 +299,7 @@ export function writeBindingLockAtomic(root: string, lock: BindingLock): void {
  * {@link BindingLockError} from {@link readBindingLock} for the same reason.
  */
 export function planBindingRemoval(root: string): BindingRemovalPlan {
-  const read = readBindingLock(root);
+  const read = readBindingLockForRemoval(root);
   if (!read.present) {
     return {
       mode: "drift-report-only",

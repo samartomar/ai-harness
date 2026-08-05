@@ -483,9 +483,9 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
 });
 
 describe("bootstrap-ai — selectable Layer-1 baseline", () => {
-  it("rejects --baseline gstack (retained but not CLI-surfaced per the 2026-07-23 scope decision)", async () => {
+  it("rejects a removed baseline with the migration diagnostic", async () => {
     await expect(command.plan(makeCtx({ canon: "compact", baseline: "gstack" }))).rejects.toThrow(
-      /unknown --baseline "gstack"/,
+      'unsupported legacy configuration "gstack"; migrate to a supported framework before continuing',
     );
   });
 
@@ -555,7 +555,7 @@ describe("bootstrap-ai — doctor probes (drift gate)", () => {
     await executePlan(await command.plan(applied), applied);
     // Tamper the generated router + adapter so they diverge from a clean
     // regeneration. (The drift used to be induced by switching the marker to a
-    // second baseline; gstack is no longer a selectable baseline to drift
+    // a removed baseline cannot become selectable through configuration drift
     // toward, so the divergence is induced on the generated docs directly — the
     // fail-closed-on-invalid-baseline path is covered by the adopt + marker
     // suites.)
