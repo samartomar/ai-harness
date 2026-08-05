@@ -2003,6 +2003,59 @@
           "commands": []
         },
         {
+          "name": "generate",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--out <path>",
+              "defaultValue": "aih-policy-workbench.html"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
           "name": "init",
           "hasDescription": true,
           "arguments": [

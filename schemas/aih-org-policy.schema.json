@@ -1411,6 +1411,11 @@
                     "minLength": 1,
                     "maxLength": 500
                   },
+                  "clarification": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
                   "scope": {
                     "minItems": 1,
                     "maxItems": 2,
@@ -1475,6 +1480,102 @@
             }
           },
           "additionalProperties": false
+        },
+        "externalCuration": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "framework": {
+                "type": "string",
+                "enum": [
+                  "ecc",
+                  "superpowers"
+                ]
+              },
+              "items": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "agent",
+                        "skill",
+                        "command"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    },
+                    "source": {
+                      "type": "object",
+                      "properties": {
+                        "repository": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$"
+                        },
+                        "commit": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{40}$"
+                        },
+                        "path": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "repository",
+                        "commit",
+                        "path"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "audit": {
+                      "type": "object",
+                      "properties": {
+                        "record": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "digest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        }
+                      },
+                      "required": [
+                        "record",
+                        "digest"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "clarification": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "source",
+                    "audit"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "framework"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

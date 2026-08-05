@@ -8,6 +8,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `aih policy generate --apply` now creates a portable, self-contained Policy Workbench for
+  authoring and downloading the actual org-policy schema without inspecting a target repository,
+  resolving `--root`/`AIH_ROOT` repository state, or writing a repository run ledger.
+  The workbench keeps requested policy intent distinct from evaluated state, preserves authority
+  data as preflight-only until target-repository verification, keeps custom MCP pending and
+  blocked, and records ECC/Superpowers agent, skill, and command curation as pinned external
+  guidance rather than an AIH installer or projector. Signed approval clarification is bound
+  into the approval attestation digest and required when waiving an evidence gap.
 - `aih policy evaluate --verify` now provides a headless requested-versus-effective
   governed-candidate gate. It resolves exact MCP and AIH-owned hook identities,
   receipt-verified external authority, targets, ownership, rollback/drift, and projector

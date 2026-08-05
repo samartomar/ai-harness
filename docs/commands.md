@@ -570,9 +570,22 @@ build); `validate --require-signature` then
 
 ## aih policy
 
-Starter seeding, effective-resolution, schema, projection, and trusted-channel gates for the org policy. Every `policy`
-subcommand is repo-scoped and accepts the conventional optional `[root]` positional —
-`aih policy validate .` works exactly like `aih init .` (`--root` and `AIH_ROOT` still apply).
+Starter seeding, portable authoring, effective-resolution, schema, projection, and trusted-channel gates for the org policy.
+`aih policy generate` is deliberately rootless: it writes a self-contained Policy Workbench and does not inspect a target
+repository, resolve repository state, or append a repository run ledger. Its parsed `--root` and `AIH_ROOT` compatibility
+inputs are ignored; the current directory is used only to contain a relative `--out` path. The remaining `policy`
+subcommands are repo-scoped and accept the conventional optional `[root]` positional — `aih policy validate .` works exactly
+like `aih init .` (`--root` and `AIH_ROOT` still apply).
+
+`generate --apply` writes `aih-policy-workbench.html` (or `--out <path>`). The workbench authors and downloads the actual
+`aih-org-policy.json` schema, with schema-backed audit references for ECC or Superpowers agents, skills, and commands.
+Those records are external curation guidance only: AIH does not install, project, or enforce the external assets. Its
+catalog is an authoring projection of the same pinned AIH controls and framework catalog data used by the engine; it does
+not scan a repository. Browser import/export preserves policy semantics, including pending custom candidates, annotations,
+signed-approval clarification, and external curation intent. The workbench can preflight JSON and preserve an imported
+authority receipt's subjects in `governance.authority.approvals`, but it does not verify a receipt or make any approval
+effective. Target-repository `evaluate` remains the source of effective state. Custom MCP remains a pending, hard-blocked
+candidate with no activation affordance until supported scanning, evidence, and projection exist.
 
 `init` seeds a starter `aih-org-policy.json` from **observed fleet state**, so authoring the policy
 becomes a review exercise instead of a blank page — and a fresh enterprise setup passes baseline
@@ -626,8 +639,8 @@ has passed `gh attestation verify` against the **out-of-band organization author
 admin/runtime, never by `aih-org-policy.json`; the governed repository's remote is not an authority root.
 The strict receipt format is published as `schemas/aih-policy-authority-receipt.schema.json`.
 The receipt is data until that verification succeeds. A signed approval binds candidate id/kind, immutable
-source and evidence digests, projector, policy version, reason, target scope, signer repository, and
-validity window; its post-signing transport locator is not part of the signed digest. Requested ECC or
+source and evidence digests, projector, policy version, reason, signed clarification for a waiver, target scope, signer repository, and
+validity window; legacy receipt inputs may omit clarification but cannot waive a gap, and its post-signing transport locator is not part of the signed digest. Requested ECC or
 Superpowers framework intents remain visibly report-only and hard-blocked until a separately designed
 policy-gated binding lifecycle exists — this command does not select, install, or project ECC/Superpowers
 agents, skills, commands, or bindings. AIH-owned hook rollback removes only unchanged receipt-proven host

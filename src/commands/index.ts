@@ -27,6 +27,7 @@ import { marketplaceBuildCommand } from "../marketplace/build.js";
 import { marketplacePublishCommand } from "../marketplace/publish.js";
 import { marketplaceValidateCommand } from "../marketplace/validate.js";
 import { command as mcp, mcpApproveCommand } from "../mcp/index.js";
+import { policyGenerateCommand, runPolicyGenerate } from "../org-policy/generate.js";
 import { policyInitCommand } from "../org-policy/init.js";
 import {
   policyEvaluateCommand,
@@ -202,6 +203,7 @@ export const GROUPED_COMMAND_SPECS = {
   ],
   marketplace: [marketplaceBuildCommand, marketplaceValidateCommand, marketplacePublishCommand],
   policy: [
+    policyGenerateCommand,
     policyInitCommand,
     policyEvaluateCommand,
     policyProjectCommand,
@@ -744,17 +746,22 @@ export function registerCommands(
     });
   }
 
-  // `policy` subcommands are repo-scoped, so each accepts the conventional
-  // optional `[root]` positional (issue #503) — `aih policy validate .` works
-  // exactly like `aih init .`. `init` seeds a starter policy from observed MCP
-  // surfaces; `project` compiles the committed local policy only; `validate`
-  // is the read-only schema gate over that local policy (or, under --bundle, a
-  // policy-bundle envelope).
+  // `policy generate` is deliberately rootless: it writes only an operator-named
+  // portable authoring artifact and does not inspect a target repo. The remaining
+  // policy subcommands are repo-scoped and keep the conventional optional root.
   const policy = program
     .command("policy")
     .description(
-      "Seed, evaluate, project, validate + verify the org policy and its generated settings",
+      "Generate, seed, evaluate, project, validate + verify the org policy and its generated settings",
     );
+  const policyGenerate = policy
+    .command(policyGenerateCommand.name)
+    .description(policyGenerateCommand.summary);
+  addFlagsForSpec(policyGenerate, policyGenerateCommand);
+  addOptionsForSpec(policyGenerate, policyGenerateCommand);
+  policyGenerate.action(async (_options: Record<string, unknown>, command: Command) => {
+    process.exitCode = await runPolicyGenerate(command);
+  });
   for (const spec of [
     policyInitCommand,
     policyEvaluateCommand,
