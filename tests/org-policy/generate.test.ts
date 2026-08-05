@@ -327,9 +327,15 @@ describe("policy generate", () => {
   it("derives catalog data and embeds all authored workbench surfaces without persistent catalog prose", () => {
     const model = policyStudioModel();
     expect(model.catalog.mcp.length).toBeGreaterThan(0);
-    expect(
-      model.catalog.frameworks.flatMap((framework) => framework.assets.map((asset) => asset.kind)),
-    ).toEqual(expect.arrayContaining(["agent", "skill", "command"]));
+    const assets = model.catalog.frameworks.flatMap((framework) => framework.assets);
+    // Inventory kinds span the whole component-id namespace; the three-kind
+    // vocabulary belongs to external curation and is carried separately.
+    expect(assets.map((asset) => asset.kind)).toEqual(
+      expect.arrayContaining(["agent", "skill", "module", "lang", "framework", "capability"]),
+    );
+    expect(assets.flatMap((asset) => asset.curationKind ?? [])).toEqual(
+      expect.arrayContaining(["agent", "skill", "command"]),
+    );
     const html = policyStudioHtml(model);
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('role="tooltip"');
