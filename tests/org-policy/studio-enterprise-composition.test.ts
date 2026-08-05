@@ -38,6 +38,7 @@ function authoredPolicy(window: Window): {
     catalog: { reviewed: { id: string }[] };
     activations: { candidate: string; state: string }[];
     externalCuration: unknown[];
+    externalSelections: Array<{ framework: string; items: Array<{ id: string }> }>;
   };
 } {
   const preview = window.document.getElementById("config-preview") as unknown as {
@@ -53,8 +54,18 @@ function compositionText(window: Window): string {
   return node.textContent ?? "";
 }
 
+function selectedIds(window: Window): string[] {
+  return authoredPolicy(window).governance.externalSelections.flatMap((group) =>
+    group.items.map((item) => item.id),
+  );
+}
+
 describe("policy studio enterprise composition", () => {
   const composition = model.catalog.enterpriseComposition;
+  const partIds = (selection: "composed" | "additive") =>
+    composition.parts
+      .filter((part) => part.selection === selection)
+      .flatMap((part) => part.componentIds);
 
   // Recorded product failure 2: Enterprise named a posture and exposed nothing,
   // so ECC Core, the language set and the security rule were invisible.
@@ -98,11 +109,24 @@ describe("policy studio enterprise composition", () => {
       expect(text, `${part.id} rule`).toContain(part.rule);
       for (const id of part.componentIds) expect(text, `${id} member`).toContain(id);
     }
-    // Naming is not selection: nothing framework-owned has a projector.
-    expect(text).toContain("no projector");
+    // The composition is no longer a read-only list, so the wording that said
+    // so is gone with it.
+    expect(text).not.toContain("no projector");
+    expect(text).not.toContain("0 selectable");
   });
 
-  it("composes Enterprise into requested intent and states the composition", () => {
+  // Contract item 2: Enterprise exposes ECC Core *and additive choices*, and
+  // the acceptance journey has the administrator select languages and add
+  // security. Both only work if Enterprise leaves those parts unselected.
+  it("marks Core as composed and languages and security as additive", () => {
+    const byId = new Map(composition.parts.map((part) => [part.id, part.selection]));
+    expect(byId.get("ecc-install-core")).toBe("composed");
+    expect(byId.get("aih-core-closure")).toBe("composed");
+    expect(byId.get("language")).toBe("additive");
+    expect(byId.get("security")).toBe("additive");
+  });
+
+  it("composes Enterprise into ECC Core as requested intent and states the composition", () => {
     const window = studio();
     selectProfile(window, "enterprise");
     const policy = authoredPolicy(window);
@@ -113,11 +137,45 @@ describe("policy studio enterprise composition", () => {
         .map((item) => item.candidate)
         .sort(),
     ).toEqual(controls.map((control) => control.id).sort());
-    const named = composition.parts.reduce((total, part) => total + part.componentIds.length, 0);
+    expect(selectedIds(window).sort()).toEqual([...partIds("composed")].sort());
     const announcement = window.document.getElementById("announcement")?.textContent ?? "";
     expect(announcement).toContain(`${controls.length} AIH control`);
-    expect(announcement).toContain(`${named} framework-owned component`);
+    expect(announcement).toContain(`${partIds("composed").length} ECC Core component`);
+    expect(announcement).toContain(`${partIds("additive").length}`);
+    expect(announcement).not.toContain("no projector");
     expect(announcement).toContain("not effective until runtime evaluation");
+  });
+
+  // "The administrator can select languages and then add security" has to be a
+  // control, not a sentence. Adding a part selects exactly its components and
+  // leaves everything else alone.
+  it("lets the administrator add an additive part from the composition", () => {
+    const window = studio();
+    selectProfile(window, "enterprise");
+    const before = selectedIds(window);
+    const button = window.document.querySelector('[data-composition-add="language"]');
+    expect(button, "a control to add the language composition").not.toBeNull();
+    button?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const language = composition.parts.find((part) => part.id === "language")?.componentIds ?? [];
+    expect(selectedIds(window).sort()).toEqual([...before, ...language].sort());
+    window.document
+      .querySelector('[data-composition-add="security"]')
+      ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const security = composition.parts.find((part) => part.id === "security")?.componentIds ?? [];
+    for (const id of security) expect(selectedIds(window)).toContain(id);
+  });
+
+  it("reverses an added part from the same control", () => {
+    const window = studio();
+    selectProfile(window, "enterprise");
+    const before = selectedIds(window).sort();
+    const add = () =>
+      window.document
+        .querySelector('[data-composition-add="language"]')
+        ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    add();
+    add();
+    expect(selectedIds(window).sort()).toEqual(before);
   });
 
   // Row 12's ruling: a preset must never author an audit record it did not

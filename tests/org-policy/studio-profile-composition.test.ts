@@ -209,4 +209,17 @@ describe("policy studio profile composition", () => {
     expect(selectedIds(window)).toHaveLength(frameworkAssetCount);
     expect(announcement(window)).not.toContain("rejected");
   });
+
+  // Composing over an existing selection adds nothing for what is already held.
+  // Reporting the delta made a fully-composed catalog announce a partial one:
+  // Enterprise then Vibe said "120 of 151 selected" while holding all 151.
+  it("announces the resulting selection, not the number newly added", () => {
+    const window = studio();
+    selectProfile(window, "enterprise");
+    selectProfile(window, "vibe");
+    expect(selectedIds(window)).toHaveLength(frameworkAssetCount);
+    expect(announcement(window)).toContain(
+      `${frameworkAssetCount} of ${frameworkAssetCount} framework-owned component`,
+    );
+  });
 });

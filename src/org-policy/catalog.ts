@@ -107,13 +107,22 @@ export interface PolicyAuthoringCompositionPart {
   label: string;
   /** The exact product constructor this part is derived from, stated for review. */
   rule: string;
+  /**
+   * Whether choosing the posture selects this part, or offers it as a choice
+   * the administrator makes. The acceptance contract has Enterprise expose "ECC
+   * Core and additive choices", and its journey has the administrator select
+   * languages and add security — which only works if the posture leaves those
+   * parts unselected.
+   */
+  selection: "composed" | "additive";
   componentIds: string[];
 }
 
 /**
- * What a posture composes out of a framework's inventory. It names components;
- * it never selects them. Nothing framework-owned has an AIH projector, so a
- * composition is a disclosure of structure, not an activation.
+ * What a posture composes out of a framework's inventory. Composed parts become
+ * requested intent when the posture is chosen; additive parts are named so the
+ * administrator can add them. Recording either is not enforcement — ECC installs
+ * and runs these components.
  */
 export interface PolicyAuthoringComposition {
   framework: "ecc";
@@ -241,24 +250,28 @@ function enterpriseComposition(ecc: PolicyAuthoringFramework): PolicyAuthoringCo
       id: "ecc-install-core",
       label: "ECC install profile: core",
       rule: 'ecc-profiles.json profile "core", dependency-closed by eccProfileModuleIds()',
+      selection: "composed",
       componentIds: core,
     },
     {
       id: "aih-core-closure",
       label: "AIH's named ECC Core closure",
       rule: "CORE_ECC_COMPONENTS — AIH's own curation, not a set ECC declares",
+      selection: "composed",
       componentIds: [...CORE_ECC_COMPONENTS],
     },
     {
       id: "language",
       label: "Language composition, additive on top of Core",
       rule: "every ECC component in the lang: namespace",
+      selection: "additive",
       componentIds: ecc.assets.filter((asset) => asset.kind === "lang").map((asset) => asset.id),
     },
     {
       id: "security",
       label: "Security composition",
       rule: 'capability:security is what selectEccComponents() recommends at team and enterprise posture; module:security is what ECC\'s "security" profile adds over "core"',
+      selection: "additive",
       componentIds: [
         "capability:security",
         ...eccProfileComponentIds("security").filter((id) => !inCore.has(id)),
