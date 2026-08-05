@@ -200,6 +200,7 @@ function waivableApproval(overrides: Record<string, unknown> = {}) {
     projector: "mcp-managed-settings",
     policyVersion: "2026.08.0",
     reason: "The external authority approved this waivable evidence gap.",
+    clarification: "The signed exception explains the required follow-up.",
     scope: ["claude"],
     notBefore: new Date(now - 60_000).toISOString(),
     expiresAt: new Date(now + 86_400_000).toISOString(),
@@ -438,6 +439,47 @@ describe("governed candidate projection", () => {
     expect(report?.text).toContain("Runs only against the approved internal package registry.");
   });
 
+  it("reports external framework curation as pinned, audited, and non-enforcing guidance", async () => {
+    const base = customPolicy();
+    if (base.governance === undefined) throw new Error("expected governance");
+    const policy = parseOrgPolicy({
+      ...base,
+      governance: {
+        ...base.governance,
+        externalCuration: [
+          {
+            framework: "ecc",
+            items: [
+              {
+                kind: "agent",
+                id: "security-review-agent",
+                source: {
+                  repository: "acme/ecc-catalog",
+                  commit: "a".repeat(40),
+                  path: "agents/security-review.md",
+                },
+                audit: { record: "audit-2026-08", digest: DIGEST },
+                clarification: "Use as external curation guidance only.",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(policy));
+    const report = await orgPolicyEffectiveDigest(ctx());
+    expect(report?.text).toContain(
+      "External framework curation (report-only; never projected or enforced)",
+    );
+    expect(report?.text).toContain("ecc agent:security-review-agent");
+    expect(report?.text).toContain("status=external-guidance");
+    expect(
+      (report?.data as { externalCuration?: unknown } | undefined)?.externalCuration,
+    ).toMatchObject([
+      { framework: "ecc", status: "external-guidance", items: [{ id: "security-review-agent" }] },
+    ]);
+  });
+
   it("accepts a receipt-backed approval only for a waivable evidence gap with a non-empty signed reason", async () => {
     const approval = waivableApproval();
     writeAuthorityReceipt({
@@ -456,6 +498,24 @@ describe("governed candidate projection", () => {
     expect(report?.text).toContain("platform-security @ acme/governance");
     expect(report?.text).toContain("supported=none; available=claude; blocked");
     expect(report?.text).toContain("Security exception ownership: platform-security.");
+  });
+
+  it("preserves legacy approvals without clarification but never lets them waive an evidence gap", async () => {
+    const legacyApproval = waivableApproval({ clarification: undefined });
+    writeAuthorityReceipt({
+      evidence: { state: "missing", waivable: true },
+      approvals: [legacyApproval],
+      trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+    });
+    const authority = await verifiedAuthority(ctx());
+    const effective = resolveEffectiveOrgPolicy(customPolicy(["claude"], [legacyApproval]), {
+      authority,
+      targets: ["claude"],
+    });
+    expect(effective.candidates[0]).toMatchObject({
+      effective: false,
+      blockingCodes: expect.arrayContaining(["approval-clarification-missing"]),
+    });
   });
 
   it("never lets an approval waive a mandatory detector failure", async () => {

@@ -275,7 +275,7 @@ describe("headless effective org policy", () => {
   });
 
   it("binds the complete approval subject while excluding the post-signing transport locator", () => {
-    const signed = approval();
+    const signed = approval({ clarification: "The signed approval includes this clarification." });
     expect(approvalAttestationDigest(signed as never)).toBe(signed.github.subjectDigest);
     expect(
       approvalAttestationDigest({
@@ -291,6 +291,7 @@ describe("headless effective org policy", () => {
       { evidenceDigest: `sha256:${"d".repeat(64)}` },
       { projector: "usage-hook" },
       { reason: "A changed reason." },
+      { clarification: "A changed signed clarification." },
       { scope: ["codex"] },
       { notBefore: "2026-08-02T00:00:00.000Z" },
       { expiresAt: "2026-08-30T00:00:00.000Z" },

@@ -162,6 +162,7 @@ const RECEIPT_SOURCE_CONSUMERS: Readonly<Record<string, string>> = {
 
 const RECEIPT_APPROVAL_CONSUMERS: Readonly<Record<string, string>> = {
   candidate: "authority resolver: exact candidate binding",
+  clarification: "authority resolver: signed clarification binding and effective report",
   evidenceDigest: "authority resolver: exact verified evidence binding",
   expiresAt: "authority resolver: approval expiry and maximum lifetime gate",
   "github.attestationId": "effective report: signed receipt transport locator",

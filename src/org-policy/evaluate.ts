@@ -33,6 +33,7 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
         candidates: [],
         activeMcpServerIds: [],
         frameworkSelections: [],
+        externalCuration: [],
         blocking: false,
         authority: { verified: false },
       });
@@ -144,7 +145,7 @@ export async function orgPolicyEffectiveDigest(
         const authority =
           approval === undefined
             ? candidate.evidence
-            : `${approval.issuer} @ ${approval.repository}; ${approval.attestationId}; ${approval.reason}`;
+            : `${approval.issuer} @ ${approval.repository}; ${approval.attestationId}; ${approval.reason}; clarification=${approval.clarification}`;
         const projection = `${candidate.projection.requestedTargets.join(",") || "none"} / ${candidate.projection.projector}; supported=${candidate.projection.supportedTargets.join(",") || "none"}; available=${candidate.projection.availableTargets.join(",") || "none"}; ${candidate.projection.coverage}`;
         const receipt =
           candidate.kind === "hook"
@@ -164,6 +165,15 @@ export async function orgPolicyEffectiveDigest(
       "",
       `Hook receipt: ${hookReceipt.state} — ${hookReceipt.detail}.`,
       `Managed-MCP receipt: ${mcpReceipt.state} — ${mcpReceipt.detail}.`,
+      "",
+      "External framework curation (report-only; never projected or enforced):",
+      ...effective.externalCuration.flatMap((curation) =>
+        curation.items.map(
+          (item) =>
+            `- ${curation.framework} ${item.kind}:${item.id}; source=${item.source.repository}@${item.source.commit}:${item.source.path}; audit=${item.audit.record}/${item.audit.digest}; clarification=${item.clarification ?? "—"}; status=${curation.status}`,
+        ),
+      ),
+      ...(effective.externalCuration.length === 0 ? ["- none"] : []),
     );
     return digest(
       `Effective org policy — ${candidates.filter((candidate) => candidate.effective).length} effective · ${candidates.filter((candidate) => candidate.requested && !candidate.effective).length} blocked`,
@@ -174,6 +184,7 @@ export async function orgPolicyEffectiveDigest(
         candidates,
         activeMcpServerIds: effective.activeMcpServerIds,
         frameworkSelections: effective.frameworkSelections,
+        externalCuration: effective.externalCuration,
         authority: effective.authority,
         hookReceipt,
         mcpReceipt,

@@ -193,6 +193,41 @@ describe("committed JSON Schemas", () => {
     }
   });
 
+  it("preserves signed approval clarifications and report-only external curation intent", () => {
+    const base = {
+      schemaVersion: 1,
+      minimumPosture: "enterprise",
+      references: { repoContract: "ai-coding/project.json" },
+    };
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...base,
+      governance: {
+        policyVersion: "2026.08",
+        catalog: { reviewed: [], custom: [] },
+        activations: [],
+        authority: { approvals: [] },
+        externalCuration: [
+          {
+            framework: "ecc",
+            items: [
+              {
+                kind: "agent",
+                id: "external-review-agent",
+                source: {
+                  repository: "acme/ecc-catalog",
+                  commit: "a".repeat(40),
+                  path: "agents/review.md",
+                },
+                audit: { record: "audit-2026-08", digest: `sha256:${"b".repeat(64)}` },
+                clarification: "External guidance only.",
+              },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
   it("validates attributable baseline override evidence in the org policy editor schema", () => {
     validateCommittedSchema("schemas/aih-org-policy.schema.json", {
       schemaVersion: 1,

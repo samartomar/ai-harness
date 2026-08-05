@@ -43,7 +43,8 @@ const LicenseDispositionSchema = z.enum(["auto-approve", "alert", "fail", "block
 const HOST_WITH_OPTIONAL_PORT =
   "[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::(?:[0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?";
 const HOSTNAME_PATTERN = new RegExp(`^${HOST_WITH_OPTIONAL_PORT}$`);
-const HTTPS_ORIGIN_PATTERN = new RegExp(`^https://${HOST_WITH_OPTIONAL_PORT}$`);
+export const POLICY_HTTPS_ORIGIN_PATTERN = `^https://${HOST_WITH_OPTIONAL_PORT}$`;
+const HTTPS_ORIGIN_PATTERN = new RegExp(POLICY_HTTPS_ORIGIN_PATTERN);
 const HTTPS_ORIGIN_MESSAGE = "must be an https origin such as https://github.example.com";
 
 export function normalizePolicyHost(value: string, source = "host"): string {
@@ -218,29 +219,34 @@ const SafeCommandTokenSchema = z
     /^[A-Za-z0-9][A-Za-z0-9._@:+-]*$/,
     "must be a safe command token without paths or shell syntax",
   );
+/** Command arguments that are only safe when they carry an exact HTTPS origin. */
+export const HTTPS_ORIGIN_ARGUMENT_PREFIXES = ["--registry=", "--index-url="] as const;
+
+export function safePolicyCommandArgument(value: string): boolean {
+  const prefix = HTTPS_ORIGIN_ARGUMENT_PREFIXES.find((candidate) => value.startsWith(candidate));
+  if (prefix !== undefined) {
+    try {
+      normalizeHttpsOrigin(value.slice(prefix.length), "registry argument");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return (
+    !value.startsWith("/") &&
+    !value.startsWith("\\") &&
+    !value.includes("..") &&
+    !/[\\/;|&`$<>\p{C}]/u.test(value)
+  );
+}
 const SafeCommandArgumentSchema = z
   .string()
   .min(1)
   .max(500)
-  .refine((value) => {
-    if (value.startsWith("--registry=") || value.startsWith("--index-url=")) {
-      try {
-        const origin = value.startsWith("--registry=")
-          ? value.slice("--registry=".length)
-          : value.slice("--index-url=".length);
-        normalizeHttpsOrigin(origin, "registry argument");
-        return true;
-      } catch {
-        return false;
-      }
-    }
-    return (
-      !value.startsWith("/") &&
-      !value.startsWith("\\") &&
-      !value.includes("..") &&
-      !/[\\/;|&`$<>\p{C}]/u.test(value)
-    );
-  }, "must be a safe relative argument without shell syntax, paths, or hidden Unicode characters");
+  .refine(
+    safePolicyCommandArgument,
+    "must be a safe relative argument without shell syntax, paths, or hidden Unicode characters",
+  );
 const IsoTimestampSchema = z.string().refine((value) => {
   if (!/^\d{4}-\d{2}-\d{2}T/.test(value)) return false;
   return Number.isFinite(Date.parse(value));
@@ -446,6 +452,11 @@ export const PolicyApprovalSchema = z
     ]),
     policyVersion: SafePolicyTextSchema,
     reason: SafePolicyTextSchema,
+    /**
+     * Optional only to preserve legacy receipt parsing. A missing clarification
+     * can never satisfy a waivable evidence gap; when present it is signed.
+     */
+    clarification: SafePolicyTextSchema.optional(),
     scope: z.array(PolicyTargetSchema).min(1).max(2),
     notBefore: IsoTimestampSchema,
     expiresAt: IsoTimestampSchema,
@@ -458,6 +469,54 @@ export const PolicyApprovalSchema = z
       .strict(),
   })
   .strict();
+
+/**
+ * External framework curation is intentionally an authored audit record, not
+ * an AIH install/projection instruction. A source pin plus audit reference
+ * makes the intent portable and reviewable without claiming control over an
+ * upstream agent, skill, or command.
+ */
+const ExternalCurationItemSchema = z
+  .object({
+    kind: z.enum(["agent", "skill", "command"]),
+    id: SafePolicyTextSchema,
+    source: z
+      .object({
+        repository: GitRepositorySchema,
+        commit: GitCommitSchema,
+        path: BaselineOverrideBundleSchema,
+      })
+      .strict(),
+    audit: z
+      .object({
+        record: SafePolicyTextSchema,
+        digest: Sha256Schema,
+      })
+      .strict(),
+    clarification: SafePolicyTextSchema.optional(),
+  })
+  .strict();
+
+const ExternalFrameworkCurationSchema = z
+  .object({
+    framework: z.enum(["ecc", "superpowers"]),
+    items: z.array(ExternalCurationItemSchema).default([]),
+  })
+  .strict()
+  .superRefine((curation, ctx) => {
+    const seen = new Set<string>();
+    for (const [index, item] of curation.items.entries()) {
+      const key = `${item.kind}\0${item.id}`;
+      if (seen.has(key)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["items", index],
+          message: `duplicate external curation item ${item.kind}:${item.id}`,
+        });
+      }
+      seen.add(key);
+    }
+  });
 
 const PolicyGovernanceSchema = z
   .object({
@@ -480,6 +539,8 @@ const PolicyGovernanceSchema = z
       })
       .strict()
       .default({ approvals: [] }),
+    /** Report-only external framework curation; never feeds an installer or projector. */
+    externalCuration: z.array(ExternalFrameworkCurationSchema).default([]),
   })
   .strict()
   .superRefine((governance, ctx) => {
@@ -569,6 +630,16 @@ const PolicyGovernanceSchema = z
     const duplicateApproval = approvalIds.find((id, index) => approvalIds.indexOf(id) !== index);
     if (duplicateApproval !== undefined) {
       ctx.addIssue({ code: "custom", message: `approval ${duplicateApproval} is duplicated` });
+    }
+    const frameworkCuration = governance.externalCuration.map((item) => item.framework);
+    const duplicateCuration = frameworkCuration.find(
+      (framework, index) => frameworkCuration.indexOf(framework) !== index,
+    );
+    if (duplicateCuration !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: `external framework curation ${duplicateCuration} is duplicated`,
+      });
     }
   });
 

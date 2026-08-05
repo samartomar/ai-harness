@@ -40,6 +40,7 @@ export type ResolutionBlockCode =
   | "approval-signer-untrusted"
   | "approval-digest-mismatch"
   | "approval-scope-mismatch"
+  | "approval-clarification-missing"
   | "authority-target-coverage-mismatch"
   | "approval-policy-version-mismatch"
   | "approval-duration-invalid"
@@ -113,6 +114,7 @@ export interface EffectivePolicyCandidate {
     repository: string;
     attestationId: string;
     reason: string;
+    clarification?: string;
     scope: string[];
     notBefore: string;
     expiresAt: string;
@@ -136,6 +138,21 @@ export interface EffectiveOrgPolicy {
   candidates: EffectivePolicyCandidate[];
   activeMcpServerIds: string[];
   frameworkSelections: Array<{ id: string; framework: "ecc" | "superpowers" }>;
+  /**
+   * Admin-authored external framework curation. It is deliberately surfaced
+   * only as report metadata: AIH has no installer or projector for it.
+   */
+  externalCuration: Array<{
+    framework: "ecc" | "superpowers";
+    items: Array<{
+      kind: "agent" | "skill" | "command";
+      id: string;
+      source: { repository: string; commit: string; path: string };
+      audit: { record: string; digest: string };
+      clarification?: string;
+    }>;
+    status: "external-guidance";
+  }>;
   blocking: boolean;
   authority: { verified: boolean; receiptDigest?: string; problem?: string };
 }
@@ -186,6 +203,7 @@ export function approvalAttestationDigest(
     | "projector"
     | "policyVersion"
     | "reason"
+    | "clarification"
     | "scope"
     | "notBefore"
     | "expiresAt"
@@ -204,6 +222,7 @@ export function approvalAttestationDigest(
     projector: approval.projector,
     policyVersion: approval.policyVersion,
     reason: approval.reason,
+    ...(approval.clarification === undefined ? {} : { clarification: approval.clarification }),
     scope: sortedUnique(approval.scope),
     notBefore: approval.notBefore,
     expiresAt: approval.expiresAt,
@@ -397,6 +416,11 @@ function matchingApproval(
   if (matches.length !== 1) return { code: "approval-ambiguous" };
   const approval = matches[0];
   if (approval === undefined) return { code: "approval-missing" };
+  // Existing signed receipt inputs may omit this field for compatibility, but
+  // an approval without a signed clarification cannot waive an evidence gap.
+  if (approval.clarification === undefined) {
+    return { code: "approval-clarification-missing" };
+  }
   if (
     approval.kind !== candidate.kind ||
     approval.projector !== candidate.projector ||
@@ -574,6 +598,9 @@ function resolveCandidate(
           repository: decision.approval.github.repository,
           attestationId: decision.approval.github.attestationId,
           reason: decision.approval.reason,
+          ...(decision.approval.clarification === undefined
+            ? {}
+            : { clarification: decision.approval.clarification }),
           scope: sortedUnique(decision.approval.scope),
           notBefore: decision.approval.notBefore,
           expiresAt: decision.approval.expiresAt,
@@ -629,6 +656,7 @@ export function resolveEffectiveOrgPolicy(
       candidates: [],
       activeMcpServerIds: [],
       frameworkSelections: [],
+      externalCuration: [],
       blocking: false,
       authority: {
         verified: authority !== undefined,
@@ -662,6 +690,11 @@ export function resolveEffectiveOrgPolicy(
           : [{ id: candidate.id, framework: source.framework }];
       })
       .sort((left, right) => left.id.localeCompare(right.id)),
+    externalCuration: governance.externalCuration.map((curation) => ({
+      framework: curation.framework,
+      items: curation.items.map((item) => ({ ...item })),
+      status: "external-guidance" as const,
+    })),
     blocking: candidates.some(
       (candidate) =>
         candidate.requested &&
@@ -724,6 +757,8 @@ const ACTIVATION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
 
 const AUTHORITY_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   "approvals.*.candidate": "authority resolver: exact candidate binding",
+  "approvals.*.clarification":
+    "authority resolver: signed clarification binding and report consumer",
   "approvals.*.evidenceDigest": "authority resolver: exact verified evidence binding",
   "approvals.*.expiresAt": "authority resolver: expiry and maximum-lifetime gate",
   "approvals.*.github.attestationId":
@@ -757,6 +792,18 @@ const AUTHORITY_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   "approvals.*.sourceDigest": "authority resolver: exact source digest binding",
 };
 
+const EXTERNAL_CURATION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
+  framework: "effective report: external framework identity only",
+  "items.*.audit.digest": "effective report: external audit reference digest only",
+  "items.*.audit.record": "effective report: external audit reference locator only",
+  "items.*.clarification": "effective report: external curation clarification only",
+  "items.*.id": "effective report: external curation item identity only",
+  "items.*.kind": "effective report: external curation item kind only",
+  "items.*.source.commit": "effective report: external curation source pin only",
+  "items.*.source.path": "effective report: external curation source path only",
+  "items.*.source.repository": "effective report: external curation source repository only",
+};
+
 function prefixedConsumers(
   prefix: string,
   leaves: Readonly<Record<string, string>>,
@@ -771,6 +818,7 @@ export const POLICY_ENGINE_FIELD_CONSUMERS: Readonly<Record<string, string>> = O
   "governance.policyVersion": "effective resolver: approval policy-version and report consumer",
   ...prefixedConsumers("governance.activations.*", ACTIVATION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.authority", AUTHORITY_LEAF_CONSUMERS),
+  ...prefixedConsumers("governance.externalCuration.*", EXTERNAL_CURATION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.reviewed.*", CANDIDATE_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.custom.*", CANDIDATE_LEAF_CONSUMERS),
 });

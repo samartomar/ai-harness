@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Command } from "commander";
@@ -23,7 +23,7 @@ describe("CLI program", () => {
     }
   });
 
-  it("declares 29 capabilities and 8 read-only commands", () => {
+  it("declares 29 top-level capabilities and 8 read-only commands", () => {
     expect(CAPABILITIES).toHaveLength(29);
     expect(READONLY).toHaveLength(8);
   });
@@ -92,10 +92,11 @@ describe("CLI program", () => {
     expect(capability?.commands.map((c) => c.name()).sort()).toEqual(["prune", "resolve"]);
   });
 
-  it("registers policy starter, evaluation, projection, validation, and pin verification as nested commands", () => {
+  it("registers policy workbench generation, starter, evaluation, projection, validation, and pin verification as nested commands", () => {
     const policy = buildProgram().commands.find((c) => c.name() === "policy");
     expect(policy?.commands.map((c) => c.name()).sort()).toEqual([
       "evaluate",
+      "generate",
       "init",
       "project",
       "validate",
@@ -103,14 +104,69 @@ describe("CLI program", () => {
     ]);
   });
 
-  it("policy subcommands accept an optional [root] like other repo-scoped commands", () => {
+  it("keeps policy generate rootless while repo-scoped policy subcommands accept optional [root]", () => {
     const policy = buildProgram().commands.find((c) => c.name() === "policy");
     expect(policy?.commands.length).toBeGreaterThan(0);
     for (const sub of policy?.commands ?? []) {
+      if (sub.name() === "generate") {
+        expect(sub.registeredArguments).toEqual([]);
+        continue;
+      }
       expect(
         sub.registeredArguments.map((a) => ({ name: a.name(), required: a.required })),
         `policy ${sub.name()} should take an optional [root]`,
       ).toEqual([{ name: "root", required: false }]);
+    }
+  });
+
+  it("generates standalone from cwd despite hostile root markers, AIH_ROOT, and legacy GStack config", async () => {
+    const repo = mkdtempSync(join(tmpdir(), "aih-policy-generate-hostile-root-"));
+    const output = mkdtempSync(join(tmpdir(), "aih-policy-generate-output-"));
+    const priorCwd = process.cwd();
+    const priorRoot = process.env.AIH_ROOT;
+    const priorExitCode = process.exitCode;
+    try {
+      const staleConfig = JSON.stringify({ binding: { framework: { id: "gstack" } } });
+      mkdirSync(join(repo, ".git"));
+      mkdirSync(join(repo, ".aih"));
+      writeFileSync(join(repo, ".aih-config.json"), staleConfig);
+      writeFileSync(join(repo, "aih-org-policy.json"), "{not valid policy");
+      writeFileSync(join(output, ".aih-config.json"), staleConfig);
+      process.chdir(output);
+      process.env.AIH_ROOT = repo;
+      const dryRun = buildProgram();
+      dryRun.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+      await dryRun.parseAsync(["node", "aih", "policy", "generate", "--root", repo, "--no-log"]);
+      expect(process.exitCode).toBe(0);
+      expect(existsSync(join(output, "aih-policy-workbench.html"))).toBe(false);
+      expect(existsSync(join(output, ".aih", "runs"))).toBe(false);
+
+      process.exitCode = undefined;
+      const program = buildProgram();
+      program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+      await program.parseAsync([
+        "node",
+        "aih",
+        "policy",
+        "generate",
+        "--root",
+        repo,
+        "--apply",
+        "--no-log",
+      ]);
+
+      expect(process.exitCode).toBe(0);
+      expect(existsSync(join(output, "aih-policy-workbench.html"))).toBe(true);
+      expect(existsSync(join(output, ".aih", "runs"))).toBe(false);
+      expect(existsSync(join(repo, "aih-policy-workbench.html"))).toBe(false);
+      expect(existsSync(join(repo, ".aih", "runs"))).toBe(false);
+    } finally {
+      process.chdir(priorCwd);
+      if (priorRoot === undefined) delete process.env.AIH_ROOT;
+      else process.env.AIH_ROOT = priorRoot;
+      process.exitCode = priorExitCode;
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(output, { recursive: true, force: true });
     }
   });
 

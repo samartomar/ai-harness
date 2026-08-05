@@ -582,6 +582,11 @@
             "minLength": 1,
             "maxLength": 500
           },
+          "clarification": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
           "scope": {
             "minItems": 1,
             "maxItems": 2,
