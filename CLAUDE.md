@@ -16,6 +16,39 @@ in the shared block below.
 Never run AIH against this checkout. Product behavior must use temporary fixture
 roots in tests; repository-owned direct development checks may inspect this tree.
 
+## Vocabulary — two different things
+
+**ai-harness** (or *aih-harness*) is **this checkout**: the source tree, local
+development on it. **aih** is **the runtime**: the shipped product a user installs
+and runs. Keep them apart in every sentence you write; collapsing them is how
+"never run AIH against this checkout" gets misread.
+
+**ECC and Superpowers are third party to the runtime.** aih *records* their
+components with provenance — repository, pinned commit, path — and ECC or
+Superpowers install and run them. A pin on a third-party item is **provenance,
+not a gate**. Never describe third-party inventory as unsupported, blocked,
+fenced, or unable to become effective: aih is not withholding it, aih simply does
+not install it. Reserve *unsupported* and *blocked* for items where an aih-owned
+gate actually fails — which is aih's own MCP controls, hooks, and custom
+candidates, not someone else's catalog.
+
+Consent happens on the visible inventory: selecting a third-party item records
+requested intent, and absence of aih enforcement is a **label on a selectable
+item**, never a disabled authoring experience.
+
+## Read the source, not a summary of it
+
+When a task hands you a ledger, tracking table, plan, or status file, that is
+**local notes**. The authoritative sources are the repository's own evidence —
+schemas, tests, accepted artifacts, and the private companion's acceptance
+contracts and decision records. Notes summarize; they drift; they collapse
+distinctions the source keeps apart. If a note and the source disagree, the
+source wins and the note is the defect.
+
+If a task file lists required reading, read it before the work queue in the same
+file, not after. Scope discipline limits what you *change*, never what you
+*read*.
+
 <!-- BEGIN ai-canonical:shared (manual self-hosting mirror; source ai-coding/adapters/_shared-canonical-block.md; never regenerate with AIH) -->
 
 ## Start here
