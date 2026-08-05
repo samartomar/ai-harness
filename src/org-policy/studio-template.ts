@@ -28,6 +28,52 @@ summary{min-height:32px}
 /* Boundaries stay quiet while exceeding 3:1 against both panel fills. */
 :root{--line:#68717d}
 [aria-invalid="true"]{border-color:var(--bad)!important}.field-error{display:block;color:#ffc0c0;font-size:.78rem;line-height:1.25}.row-actions{display:flex;gap:.3rem;justify-content:flex-end;flex-wrap:wrap}.row-details{margin:.3rem 0 0;border:0;padding:0}.row-details summary{font-size:.78rem}.row-details p{margin:.25rem 0 0}.toolbar #status{color:var(--muted);font-family:ui-monospace,Consolas,monospace}.receipt-record{white-space:pre-wrap;max-width:100%;max-height:22rem;overflow:auto}
+/* Sahara - warm minimalism. Burnt sienna on warm linen, a serif display face
+   against a sans for labels, mono kept for ids. Light is canonical and is the
+   default; dark is warm charcoal, never blue-black.
+   Colors and typography only, by instruction: no padding, radius, spacing or
+   effect changes, and nothing here introduces a blur, a backdrop-filter or an
+   animation. Every rule below is a repaint of the existing surface.
+   The fonts are stacks, not webfonts: this artifact is portable and opens with
+   no repository and no network, so a remote font would be a dependency it must
+   not have. The families are named first and fall back to system faces. */
+:root{
+  color-scheme:light dark;
+  --bg:#faf5ee;--panel:#fffcf7;--panel2:#f2ebe1;
+  --fg:#3a302a;--muted:#6b5d52;--line:#8a7d6d;
+  --accent:#a8541f;--focus:#c2652a;
+  --ok:#8f4517;--warn:#8a6316;--bad:#8c3c3c;
+  --display:"EB Garamond",Georgia,"Times New Roman",serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  font-family:"Manrope","Segoe UI Variable","Segoe UI",system-ui,sans-serif;
+  --b-pending-bg:#f5e9c8;--b-pending-fg:#6b4c08;
+  --b-blocked-bg:#f3dcdc;--b-blocked-fg:#7a2f2f;
+  --b-external-bg:#eae3d8;--b-external-fg:#544a3e;
+  --b-requested-bg:#f7e0cf;--b-requested-fg:#8f4517;
+  --shadow:0 6px 18px rgba(58,48,42,.18);
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#1c1714;--panel:#2a231e;--panel2:#231d19;
+    --fg:#f4ece1;--muted:#cbbdad;--line:#7d7266;
+    --accent:#eda468;--focus:#e08344;
+    --ok:#e08344;--warn:#d9b23f;--bad:#c96363;
+    --b-pending-bg:#40361c;--b-pending-fg:#e8cd7a;
+    --b-blocked-bg:#45272a;--b-blocked-fg:#f0b3b3;
+    --b-external-bg:#332c25;--b-external-fg:#cbbdad;
+    --b-requested-bg:#4a2f1c;--b-requested-fg:#f0a670;
+    --shadow:0 6px 18px rgba(0,0,0,.5);
+  }
+}
+h1,h2,legend{font-family:var(--display);letter-spacing:normal}
+.toolbar h1{font-size:1.05rem}
+.badge,.mono,.toolbar output,.toolbar #status{font-family:var(--mono)}
+.pending{background:var(--b-pending-bg);color:var(--b-pending-fg)}
+.blocked{background:var(--b-blocked-bg);color:var(--b-blocked-fg)}
+.external{background:var(--b-external-bg);color:var(--b-external-fg)}
+.requested{background:var(--b-requested-bg);color:var(--b-requested-fg)}
+.error,.field-error{color:var(--bad)}
+.tooltip{box-shadow:var(--shadow)}
 </style>
 </head>
 <body>
