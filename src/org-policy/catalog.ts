@@ -75,6 +75,33 @@ export interface PolicyAuthoringFramework {
   assets: PolicyAuthoringAsset[];
 }
 
+/**
+ * What an AIH-owned hook does at event time. Hooks are AIH-owned and custom
+ * hooks are unsupported, so the administrator's only lever here is knowing
+ * exactly what runs — disclosure is the whole affordance.
+ */
+export interface AihHookBehaviour {
+  /** The CLI event that fires it. */
+  trigger: string;
+  records: string;
+  /** The repo-relative artifact it writes. */
+  artifact: string;
+  failureMode: string;
+}
+
+/** An AIH control already narrowed to its hook identity, so a disclosure can
+ * read the pinned script digest without re-proving which variant it holds. */
+export type AihHookControl = AihPolicyControl & {
+  source: Extract<AihPolicyControl["source"], { type: "hook" }>;
+};
+
+export interface PolicyAuthoringHook {
+  id: string;
+  description: string;
+  behaviour: AihHookBehaviour;
+  control: AihHookControl;
+}
+
 export interface PolicyAuthoringCompositionPart {
   id: string;
   label: string;
@@ -95,7 +122,7 @@ export interface PolicyAuthoringComposition {
 
 export interface PolicyAuthoringCatalog {
   mcp: Array<{ id: string; description: string; server: McpServer; control: AihPolicyControl }>;
-  hooks: AihPolicyControl[];
+  hooks: PolicyAuthoringHook[];
   frameworks: PolicyAuthoringFramework[];
   enterpriseComposition: PolicyAuthoringComposition;
 }
@@ -117,6 +144,25 @@ function usageMeteringControl(): AihPolicyControl {
     lifecycle: "supported",
   };
 }
+
+/**
+ * Every AIH-owned hook must state what it does before it can ship into the
+ * authoring surface. Keyed by control id so a new hook fails closed here rather
+ * than reaching an administrator as a bare identity.
+ */
+const AIH_HOOK_DISCLOSURES: Record<string, { description: string; behaviour: AihHookBehaviour }> = {
+  "usage-metering": {
+    description:
+      "Appends one usage event per tool call so `aih track` can report this repository's agent activity.",
+    behaviour: {
+      trigger: "PostToolUse",
+      records:
+        "one JSON event per tool call — timestamp, CLI, kind (tool, mcp, skill or subagent), name, and a best-effort source",
+      artifact: ".aih/usage.jsonl",
+      failureMode: "Best-effort: a failure never blocks a commit or an agent turn",
+    },
+  },
+};
 
 /** Shared, runtime-independent AIH control identities for the engine and Studio. */
 export function aihPolicyControls(
@@ -250,7 +296,14 @@ export function policyAuthoringCatalog(): PolicyAuthoringCatalog {
         ? []
         : [{ id, description: server.description, server, control }];
     }),
-    hooks: controls.filter((control) => control.kind === "hook"),
+    hooks: controls
+      .filter((control): control is AihHookControl => control.source.type === "hook")
+      .map((control) => {
+        const disclosure = AIH_HOOK_DISCLOSURES[control.id];
+        if (disclosure === undefined)
+          throw new Error(`AIH hook ${control.id} ships without a behaviour disclosure`);
+        return { id: control.id, ...disclosure, control };
+      }),
     frameworks: [ecc, frameworkCatalog("superpowers")],
   };
 }
