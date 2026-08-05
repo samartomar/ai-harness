@@ -11,10 +11,10 @@ const model = policyStudioModel();
  * shrinking what a profile composes.
  */
 const controls = [...model.catalog.mcp.map((item) => item.control), ...model.catalog.hooks];
-const frameworkAssetCount = model.catalog.frameworks.reduce(
-  (total, framework) => total + framework.assets.length,
-  0,
+const frameworkAssets = model.catalog.frameworks.flatMap((framework) =>
+  framework.assets.map((asset) => ({ framework, asset })),
 );
+const frameworkAssetCount = frameworkAssets.length;
 
 function studio(): Window {
   const window = new Window({ url: "http://localhost/" });
@@ -39,11 +39,18 @@ function selectProfile(window: Window, value: string): void {
 }
 
 /** The authored policy exactly as the surface shows it, not internal state. */
+interface FrameworkGroup {
+  framework: string;
+  items: Array<{ kind: string; id: string; source: Record<string, string> }>;
+}
+
 function authoredPolicy(window: Window): {
   minimumPosture: string;
   governance: {
     catalog: { reviewed: { id: string }[]; custom: { id: string }[] };
     activations: { candidate: string; state: string }[];
+    externalSelections: FrameworkGroup[];
+    externalCuration: Array<{ framework: string; items: Array<{ id: string }> }>;
   };
 } {
   const preview = window.document.getElementById("config-preview") as unknown as {
@@ -55,6 +62,42 @@ function authoredPolicy(window: Window): {
 
 function announcement(window: Window): string {
   return window.document.getElementById("announcement")?.textContent ?? "";
+}
+
+function selectedIds(window: Window): string[] {
+  return authoredPolicy(window).governance.externalSelections.flatMap((group) =>
+    group.items.map((item) => item.id),
+  );
+}
+
+function curatedIds(window: Window): string[] {
+  return authoredPolicy(window).governance.externalCuration.flatMap((group) =>
+    group.items.map((item) => item.id),
+  );
+}
+
+/**
+ * Author one real curation item through the surface's own form, reached the way
+ * an administrator reaches it: the inventory row's prefill button supplies the
+ * pinned identity, and only the audit evidence is typed.
+ */
+function curateFromFirstRow(window: Window): string {
+  const button = window.document.querySelector("[data-curation-prefill]");
+  if (button === null) throw new Error("expected a curatable inventory row");
+  button.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  const field = (id: string) =>
+    window.document.getElementById(id) as unknown as { value: string } | null;
+  const record = field("audit-record");
+  const digest = field("audit-digest");
+  if (record === null || digest === null) throw new Error("expected audit evidence fields");
+  record.value = "audit-vibe-fixture";
+  digest.value = `sha256:${"c".repeat(64)}`;
+  window.document
+    .getElementById("add-curation")
+    ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  const curated = curatedIds(window);
+  if (curated.length !== 1) throw new Error(`expected one curated item, got ${curated.length}`);
+  return curated[0] as string;
 }
 
 describe("policy studio profile composition", () => {
@@ -92,15 +135,55 @@ describe("policy studio profile composition", () => {
     }
   });
 
-  // "Everything this catalog offers" must state what it could not offer, or the
-  // completeness claim hides the ownership boundary rows 10-11 made visible.
-  it("states what Vibe could not enable, with countable inventory", () => {
+  // The artifact's Vibe is "everything this catalog offers". Under the approved
+  // selection model that is finally expressible: a selection carries the
+  // component's pinned source and no audit fields, so a preset composing one
+  // fabricates nothing. Naming the inventory was the compromise this row was
+  // forced into while every third-party row was unselectable.
+  it("selects every framework-owned component as requested intent", () => {
+    const window = studio();
+    selectProfile(window, "vibe");
+    const groups = authoredPolicy(window).governance.externalSelections;
+    expect(selectedIds(window).sort()).toEqual(frameworkAssets.map(({ asset }) => asset.id).sort());
+    for (const { framework, asset } of frameworkAssets) {
+      const group = groups.find((item) => item.framework === framework.id);
+      expect(group?.items, asset.id).toContainEqual({
+        kind: asset.kind,
+        id: asset.id,
+        source: { ...asset.source },
+      });
+    }
+  });
+
+  // This row's real ruling, preserved intact: a preset must never author audit
+  // evidence. External curation needs an audit record and a sha256 digest, and
+  // no preset can invent either.
+  it("authors no external curation, because a preset cannot invent audit evidence", () => {
+    const window = studio();
+    selectProfile(window, "vibe");
+    expect(authoredPolicy(window).governance.externalCuration).toEqual([]);
+  });
+
+  // A curated component already carries its evidence. Composing over it must not
+  // downgrade it to a bare selection, and the grammar forbids holding both.
+  it("leaves an already-curated component curated rather than selecting it", () => {
+    const window = studio();
+    const curated = curateFromFirstRow(window);
+    selectProfile(window, "vibe");
+    expect(curatedIds(window), "stays curated").toContain(curated);
+    expect(selectedIds(window), "not also selected").not.toContain(curated);
+    expect(announcement(window)).not.toContain("rejected");
+    expect(selectedIds(window)).toHaveLength(frameworkAssetCount - 1);
+  });
+
+  it("states what Vibe composed, with countable inventory", () => {
     const window = studio();
     selectProfile(window, "vibe");
     const text = announcement(window);
     expect(text).toContain(`${controls.length} AIH control`);
     expect(text).toContain(`${frameworkAssetCount} framework-owned component`);
-    expect(text).toContain("no projector");
+    expect(text).toContain("ECC and Superpowers install and run");
+    expect(text).not.toContain("no projector");
     expect(text).toContain("not effective until runtime evaluation");
   });
 
@@ -123,6 +206,7 @@ describe("policy studio profile composition", () => {
     const policy = authoredPolicy(window);
     expect(policy.governance.catalog.reviewed).toHaveLength(controls.length);
     expect(policy.governance.activations).toHaveLength(controls.length);
+    expect(selectedIds(window)).toHaveLength(frameworkAssetCount);
     expect(announcement(window)).not.toContain("rejected");
   });
 });
