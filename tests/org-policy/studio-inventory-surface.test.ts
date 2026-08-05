@@ -46,27 +46,35 @@ describe("policy studio framework inventory", () => {
     }
   });
 
+  // The status and reason asserted here changed with the corrected selection
+  // model: `Unsupported` and `no projector` describe an AIH gate that fails,
+  // and no third-party row has one. That was the contract change, not
+  // collateral damage — see the acceptance contract's item 5.
   it("annotates every row with owner, status, reason and next action", () => {
     const { rows } = inventory(studio());
     for (const row of rows) {
       const text = row.textContent ?? "";
       expect(text, "owner").toMatch(/affaan-m\/ecc|obra\/Superpowers/);
-      expect(row.querySelector(".badge")?.textContent ?? "", "status").toContain("Unsupported");
-      expect(text, "reason").toContain("no projector");
-      const action =
-        row.querySelector("[data-curation-prefill]") !== null || text.includes("No next action");
-      expect(action, `next action for ${text.slice(0, 60)}`).toBe(true);
+      expect(row.querySelector(".badge")?.textContent ?? "", "status").toMatch(
+        /Selectable|Selected/,
+      );
+      expect(text, "reason").toContain("installs and runs it");
+      expect(
+        row.querySelector("[data-framework-select]"),
+        `next action for ${text.slice(0, 60)}`,
+      ).not.toBeNull();
     }
   });
 
   // The kinds row 10 recovered are exactly the ones with no curation grammar.
-  // They must say so, not vanish for lacking an affordance.
-  it("keeps kinds that policy cannot curate, with the reason stated", () => {
+  // They stay selectable anyway, and their evidence path is stated rather than
+  // replaced by the dead end this row originally shipped.
+  it("keeps kinds that policy cannot curate, with their evidence path stated", () => {
     const { text } = inventory(studio());
     for (const kind of ["module:", "lang:", "framework:", "capability:", "mcp:", "runtime:"]) {
       expect(text, `${kind} inventory`).toContain(kind);
     }
-    expect(text).toContain("No next action");
+    expect(text).toContain("aih evidence vet-baseline");
   });
 
   it("makes the curatable next action real by prefilling the curation form", () => {

@@ -67,10 +67,13 @@ describe("policy workbench administrator journey", () => {
     );
 
     // 2. SURVEY. Every framework-owned component is visible, not hidden behind
-    //    a dropdown, and each says who owns it and why it cannot be enabled.
+    //    a dropdown, and each says who owns it, that it is selectable, and how
+    //    its evidence is earned. The earlier `Unsupported` / `no projector`
+    //    wording described an AIH gate these rows do not have.
     expect(rowCount(window, "framework-rows"), "full inventory").toBe(inventoryCount);
-    expect(text(window, "framework-rows")).toContain("Unsupported");
-    expect(text(window, "framework-rows")).toContain("no projector");
+    expect(text(window, "framework-rows")).toContain("Selectable");
+    expect(text(window, "framework-rows")).toContain("installs and runs it");
+    expect(text(window, "framework-rows")).toContain("aih evidence vet-baseline");
 
     // 3. COMPOSE. Choosing a posture composes a selection, not a label.
     chooseProfile(window, "enterprise");

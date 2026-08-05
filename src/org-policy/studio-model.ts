@@ -25,6 +25,7 @@ export function defaultStudioPolicy(): OrgPolicy {
       activations: [],
       authority: { approvals: [] },
       externalCuration: [],
+      externalSelections: [],
     },
   });
 }
