@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { policyAuthoringCatalog } from "./catalog.js";
-import { UNWAIVABLE_POLICY_DANGER_CODES } from "./effective.js";
+import {
+  DISPOSITIONABLE_POLICY_FINDING_CODES,
+  FENCED_POLICY_PREREQUISITE_CODES,
+  UNWAIVABLE_POLICY_DANGER_CODES,
+} from "./effective.js";
 import {
   HTTPS_ORIGIN_ARGUMENT_PREFIXES,
   type OrgPolicy,
@@ -49,6 +53,15 @@ export interface PolicyStudioModel {
   catalog: ReturnType<typeof policyAuthoringCatalog>;
   schema: Record<string, unknown>;
   unwaivable: readonly string[];
+  /**
+   * The two halves of the finding model. `unwaivable` stays as their union so
+   * existing consumers keep working, but a surface that tells an administrator
+   * what it may act on must read these, not that.
+   */
+  findings: {
+    dispositionable: readonly string[];
+    fenced: readonly string[];
+  };
   semantics: {
     httpsOriginArgumentPrefixes: readonly string[];
     httpsOriginPattern: string;
@@ -62,6 +75,10 @@ export function policyStudioModel(): PolicyStudioModel {
     catalog: policyAuthoringCatalog(),
     schema: z.toJSONSchema(OrgPolicySchema, { io: "input" }) as Record<string, unknown>,
     unwaivable: UNWAIVABLE_POLICY_DANGER_CODES,
+    findings: {
+      dispositionable: DISPOSITIONABLE_POLICY_FINDING_CODES,
+      fenced: FENCED_POLICY_PREREQUISITE_CODES,
+    },
     semantics: {
       httpsOriginArgumentPrefixes: HTTPS_ORIGIN_ARGUMENT_PREFIXES,
       httpsOriginPattern: POLICY_HTTPS_ORIGIN_PATTERN,

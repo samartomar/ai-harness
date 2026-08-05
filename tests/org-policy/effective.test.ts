@@ -6,12 +6,20 @@ import {
 import {
   approvalAttestationDigest,
   candidateIdentityDigest,
+  DISPOSITIONABLE_POLICY_FINDING_CODES,
+  FENCED_POLICY_PREREQUISITE_CODES,
+  isDispositionableFinding,
+  isFencedPrerequisite,
   POLICY_ENGINE_FIELD_CONSUMERS,
   resolveEffectiveOrgPolicy,
   reviewedControlDigest,
   UNWAIVABLE_POLICY_DANGER_CODES,
 } from "../../src/org-policy/effective.js";
-import { parseOrgPolicy, policyGovernanceLeafPaths } from "../../src/org-policy/schema.js";
+import {
+  PolicyDangerCodeSchema,
+  parseOrgPolicy,
+  policyGovernanceLeafPaths,
+} from "../../src/org-policy/schema.js";
 
 const SUBJECT = `mcp-server-sha256:${"a".repeat(64)}`;
 const DIGEST = `sha256:${"b".repeat(64)}`;
@@ -301,6 +309,56 @@ describe("headless effective org policy", () => {
         signed.github.subjectDigest,
       );
     }
+  });
+
+  // The finding model is a partition, not a new taxonomy: the same 14 codes,
+  // separated where they already differ in kind. Locked 2026-08-05.
+  it("partitions every danger code into exactly one half", () => {
+    const union = [...DISPOSITIONABLE_POLICY_FINDING_CODES, ...FENCED_POLICY_PREREQUISITE_CODES];
+    expect([...union].sort()).toStrictEqual([...UNWAIVABLE_POLICY_DANGER_CODES].sort());
+    expect(new Set(union).size).toBe(union.length);
+    expect(
+      DISPOSITIONABLE_POLICY_FINDING_CODES.filter((code) =>
+        (FENCED_POLICY_PREREQUISITE_CODES as readonly string[]).includes(code),
+      ),
+    ).toStrictEqual([]);
+  });
+
+  // schema.ts repeats the code list for its enum. Drift between the two would
+  // silently un-govern a code, so compare them rather than trusting the copy.
+  it("keeps the partition and the schema enum describing the same code set", () => {
+    expect([...UNWAIVABLE_POLICY_DANGER_CODES].sort()).toStrictEqual(
+      [...PolicyDangerCodeSchema.options].sort(),
+    );
+  });
+
+  it("pins which codes an administrator may dispose of and which stay fenced", () => {
+    expect([...DISPOSITIONABLE_POLICY_FINDING_CODES].sort()).toStrictEqual([
+      "auto-executing-hook",
+      "dependency-confusion",
+      "hidden-unicode",
+      "malicious-code",
+      "prompt-injection",
+      "secrets",
+      "unpinned-source",
+      "unsafe-path",
+    ]);
+    expect([...FENCED_POLICY_PREREQUISITE_CODES].sort()).toStrictEqual([
+      "evidence-identity-drift",
+      "mandatory-detector-failed",
+      "missing-projector",
+      "normalized-collision",
+      "ownership-conflict",
+      "unsupported-target",
+    ]);
+  });
+
+  it("answers both guards for every code, and neither for a code it does not know", () => {
+    for (const code of UNWAIVABLE_POLICY_DANGER_CODES) {
+      expect(isDispositionableFinding(code)).toBe(!isFencedPrerequisite(code));
+    }
+    expect(isDispositionableFinding("not-a-code")).toBe(false);
+    expect(isFencedPrerequisite("not-a-code")).toBe(false);
   });
 
   it.each(UNWAIVABLE_POLICY_DANGER_CODES)("keeps authored danger code %s blocking", (danger) => {
