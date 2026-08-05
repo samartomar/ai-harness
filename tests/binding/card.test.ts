@@ -7,6 +7,7 @@ import {
   buildFrameworkCard,
   CARD_SCHEMA_VERSION,
   contextCostCard,
+  contextCostUnavailable,
   type DoctorCardInput,
   d18SurfaceLabels,
   deriveSupportLabel,
@@ -24,6 +25,7 @@ import {
   writeFrameworkCardAtomic,
 } from "../../src/binding/card.js";
 import {
+  LocalVerificationEvidenceError,
   parseLocalVerificationEvidence,
   readLocalVerificationEvidence,
   writeLocalVerificationEvidenceAtomic,
@@ -325,6 +327,72 @@ describe("renderFrameworkCard (deterministic, sorted)", () => {
       "binding lock: absent (not yet provisioned)",
     );
   });
+
+  it("renders unavailable cost, scan coverage, hooks, and incomplete value evidence", () => {
+    const card = buildFrameworkCard(
+      baseInput({
+        hooks: [
+          { event: "PreToolUse", matcher: "Write", commandOrigin: "z-command", scope: "project" },
+          { event: "PreToolUse", commandOrigin: "a-command", scope: "project" },
+        ],
+        contextCost: contextCostUnavailable("checkout unavailable"),
+        scanCache: scanCardIdentity({
+          rawSourceScan: "CLEAN",
+          selectedProfileGate: "ALLOW",
+          disclosure: DISCLOSURE,
+          coverage: [
+            { dimension: "zeta", status: "missing", reason: "not collected" },
+            { dimension: "alpha", status: "produced" },
+          ],
+        }),
+        valueGate: {
+          verdict: "INCOMPLETE_MEASUREMENT",
+          invocableSurfaceDelta: 0,
+          governanceSurfaceDelta: 0,
+          characteristicWorkflow: {
+            name: "review",
+            succeeded: false,
+            baselineAbsent: false,
+          },
+          dimensionsDelivered: [],
+          minSurfaceDelta: 1,
+          baselineRef: "baseline:empty",
+        },
+      }),
+    );
+
+    const lines = renderFrameworkCard(card);
+    expect(lines).toContain("context-cost estimate: unavailable (checkout unavailable)");
+    expect(lines).toContain("coverage alpha: produced");
+    expect(lines).toContain("coverage zeta: missing (not collected)");
+    expect(lines).toContain("characteristic workflow review: did not succeed in the bound session");
+    expect(lines).toContain("hook PreToolUse: a-command (project)");
+    expect(lines).toContain("hook PreToolUse [Write]: z-command (project)");
+  });
+
+  it("renders when the characteristic workflow is also in the baseline", () => {
+    const card = buildFrameworkCard(
+      baseInput({
+        valueGate: {
+          verdict: "INSUFFICIENT_VALUE",
+          invocableSurfaceDelta: 0,
+          governanceSurfaceDelta: 0,
+          characteristicWorkflow: {
+            name: "review",
+            succeeded: true,
+            baselineAbsent: false,
+          },
+          dimensionsDelivered: [],
+          minSurfaceDelta: 1,
+          baselineRef: "baseline:review",
+        },
+      }),
+    );
+
+    expect(renderFrameworkCard(card)).toContain(
+      "characteristic workflow review surface: also present in the no-framework baseline",
+    );
+  });
 });
 
 describe("shared card fragments (§A.3.1)", () => {
@@ -444,6 +512,15 @@ describe("local verification evidence (§A.4) — abs paths allowed, never in th
 
   it("reports absence for an unwritten digest", () => {
     expect(readLocalVerificationEvidence(root, SHA_B)).toBeUndefined();
+  });
+
+  it("fails closed on a schema-invalid local evidence record", () => {
+    const path = join(root, ".aih", "binding", "evidence", `${SHA_A}.json`);
+    writeLocalVerificationEvidenceAtomic(root, evidence());
+    writeFileSync(path, JSON.stringify({ schemaVersion: 1 }));
+    expect(() => readLocalVerificationEvidence(root, SHA_A)).toThrow(
+      LocalVerificationEvidenceError,
+    );
   });
 
   it("keeps the evidence's absolute paths out of a card for the same binding", () => {
