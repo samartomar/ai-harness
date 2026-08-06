@@ -4,10 +4,11 @@ import { verifyBundleChecksums, verifyGithubBundleAttestation } from "../bundle/
 import { EvidenceBundleSchema } from "../evidence/manifest.js";
 import { readRegularFile } from "../internals/fsxn.js";
 import type { Runner } from "../internals/proc.js";
-import type { Check } from "../internals/verify.js";
+import type { Check, CheckCode } from "../internals/verify.js";
 import type { OrgPolicy } from "../org-policy/schema.js";
 import type { BaselineCatalog } from "./catalog.js";
 import { type BaselineEvidenceLock, parseBaselineEvidenceLock } from "./schema.js";
+import { classifyBaselineLockSkew } from "./skew.js";
 
 export interface OrgBaselineEvidence {
   tier: "org";
@@ -28,9 +29,13 @@ export interface ResolveOrgBaselineEvidenceResult {
   evidence?: OrgBaselineEvidence;
 }
 
-function failure(name: string, detail: string): ResolveOrgBaselineEvidenceResult {
+function failure(
+  name: string,
+  detail: string,
+  code: CheckCode = "baseline.evidence-mismatch",
+): ResolveOrgBaselineEvidenceResult {
   return {
-    checks: [{ name, verdict: "fail", code: "baseline.evidence-mismatch", detail }],
+    checks: [{ name, verdict: "fail", code, detail }],
   };
 }
 
@@ -113,11 +118,37 @@ export async function resolveOrgBaselineEvidence(
   for (const artifact of artifacts) {
     const bytes = readContainedFile(bundleRoot, `files/${artifact.path}`);
     if (bytes === undefined) continue;
+    // The floor runs on every attested baseline artifact, not just the one that
+    // turns out to match this catalog: a lock this build cannot read is a fact
+    // about the build, and skipping it would let the run silently settle for an
+    // older artifact in the same signed bundle.
+    let raw: unknown;
+    try {
+      raw = JSON.parse(bytes.toString("utf8"));
+    } catch (err) {
+      return failure(
+        "org baseline evidence schema",
+        `${artifact.path} is not valid JSON: ${(err as Error).message}`,
+        "baseline.evidence-schema-unsupported",
+      );
+    }
+    const skew = classifyBaselineLockSkew(raw);
+    if (skew.status !== "supported") {
+      return failure(
+        "org baseline evidence schema",
+        `${artifact.path}: ${skew.detail}`,
+        "baseline.evidence-schema-unsupported",
+      );
+    }
     let lock: BaselineEvidenceLock;
     try {
-      lock = parseBaselineEvidenceLock(JSON.parse(bytes.toString("utf8")));
-    } catch {
-      continue;
+      lock = parseBaselineEvidenceLock(raw);
+    } catch (err) {
+      return failure(
+        "org baseline evidence schema",
+        `${artifact.path} declares schema version ${skew.declared} but does not match it: ${(err as Error).message}`,
+        "baseline.evidence-schema-unsupported",
+      );
     }
     if (!matchingSource(lock, input.catalog)) continue;
     return {

@@ -117,6 +117,11 @@ export type CheckCode =
   | "baseline.evidence-missing"
   | "baseline.evidence-mismatch"
   | "baseline.evidence-blocked"
+  // A signed baseline evidence lock this build cannot read — most often one
+  // produced by a NEWER build, now that the lock ships on its own cadence. Kept
+  // distinct from `evidence-missing`/`evidence-mismatch` because the remedy is
+  // upgrading aih, not re-vetting or restoring bytes.
+  | "baseline.evidence-schema-unsupported"
   // trust gate (external repos / skills)
   | "trust.fetch-blocked"
   | "trust.detector-unavailable"
