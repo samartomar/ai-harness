@@ -205,6 +205,12 @@ export function policyAuthoringHosts(): PolicyAuthoringHost[] {
 export interface PolicyAuthoringHookRegistryEntry {
   id: string;
   owner: "aih" | "third-party";
+  /**
+   * The TRUE owner as the workbench ticker names it ("AIH", "ECC",
+   * "Superpowers"). Every registrar-related row files under this label; a row
+   * under the wrong owner or missing from the tally is a product failure.
+   */
+  ownerLabel: string;
   /** Where the behaviour comes from — repository@commit path, or AIH itself. */
   source: string;
   description: string;
@@ -235,7 +241,8 @@ export interface PolicyAuthoringHookRegistry {
   /** The registrations this artifact can price — AIH's own, plus any authored. */
   registrations: HookRegistration[];
   overlaps: ReturnType<typeof hookOverlaps>;
-  spawnCost: ReturnType<typeof hookSpawnProjection>;
+  /** Usage metering, never a cost model: entries and process spawns per event. */
+  spawnProjection: ReturnType<typeof hookSpawnProjection>;
 }
 
 export interface PolicyAuthoringCatalog {
@@ -481,7 +488,7 @@ const DECLARED_THIRD_PARTY_HOOK_CONTROLS: PolicyAuthoringHookControl[] = [
     owner: "ecc",
     enforcedByAih: false,
     detail:
-      "ECC reads this list inside its own launcher, after the operating-system process already exists — a hook named here still costs one process per firing.",
+      "ECC reads this list inside its own launcher, after the operating-system process already exists — a hook named here still spawns one process per firing.",
   },
 ];
 
@@ -508,6 +515,7 @@ function hookRegistry(
     ([id, disclosure]) => ({
       id,
       owner: "aih" as const,
+      ownerLabel: "AIH",
       source: "AIH",
       description: disclosure.description,
       enforcement: "aih-enforced" as const,
@@ -520,6 +528,9 @@ function hookRegistry(
       entries.push({
         id: asset.id,
         owner: "third-party",
+        // The same label the workbench files the framework's inventory rows
+        // under, so the panel annotation and the ticker can never disagree.
+        ownerLabel: framework.id === "superpowers" ? "Superpowers" : "ECC",
         source: `${asset.source.repository}@${asset.source.commit.slice(0, 7)} ${asset.source.path}`,
         description: `Hook registrations ${framework.id} installs and runs. AIH registers and revokes them; ${framework.id} executes them.`,
         // A label on a selectable item: aih does not install or run these, and
@@ -537,7 +548,7 @@ function hookRegistry(
     ),
     registrations,
     overlaps: hookOverlaps(registrations),
-    spawnCost: hookSpawnProjection(registrations),
+    spawnProjection: hookSpawnProjection(registrations),
   };
 }
 
