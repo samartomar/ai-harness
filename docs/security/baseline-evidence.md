@@ -335,8 +335,49 @@ unchanged from the lock currently on disk, and rescan only what changed. Every
 run prints a `baseline reuse [...]` summary naming what was reused and what was
 rescanned, and why. `--full` (`npm run baseline:vet -- --full` /
 `baseline:check -- --full`) disables reuse and rescans every component from
-scratch; CI's vet-once workflow always passes `--full`, so it remains the
-from-scratch ground truth that routine incremental reuse trades away for
-speed. Reuse never fabricates: a spliced receipt is byte-identical to the prior
+scratch. Reuse never fabricates: a spliced receipt is byte-identical to the prior
 one, and a `blocked` verdict can never flip to `pass` without an actual
 rescan.
+
+### Where the from-scratch vet runs, and when
+
+The from-scratch `--full` vet is **anchored to the pin set, not to a schedule**,
+and it does not run in CI.
+
+Every input the vet consumes is content-addressed: sources by commit SHA,
+SkillSpector by image digest, the scanner environments by hash-pinned `uv.lock`,
+and `aih-native` by a content digest over its own detector source closure.
+Between two runs at an unchanged pin set there is nothing that can differ except
+the machine. Re-running the scan therefore does not re-test the supply chain; it
+samples the runner image. Content-addressed evidence does not expire — a receipt
+asserts that these exact bytes, scanned by these exact analyzers, produced this
+verdict, and that does not become less true with time.
+
+So the model is two states:
+
+- **Pins unchanged** — the committed evidence *is* the answer. CI proves two
+  cheap things: `npm run check:baseline-pins` compares the pin set this build
+  declares against the pin set the committed lock recorded, and `baseline:check`
+  proves the lock still reproduces from the pinned sources. Neither rescans
+  unchanged content.
+- **A pin moved** — the committed lock is stale evidence rather than a verdict
+  about what ships. `check:baseline-pins` fails closed and names the re-vet as
+  the remedy. That re-vet is a required, blocking step, not an advisory one.
+
+`check:baseline-pins` replaces an earlier path-pattern gate that inferred
+relevance from which files a diff touched. A path pattern is a proxy; comparing
+recorded identities against declared ones is the fact itself, and it catches the
+case a path pattern is worst at — the sources are untouched but the analyzer
+doing the scanning is no longer the analyzer that scanned.
+
+The pair is also tamper-resistant. Hand-editing the lock's recorded pins to fake
+agreement does not work: `baseline:check` then re-derives evidence at those pins
+and the receipts do not reproduce.
+
+Because the from-scratch run is now rare and blocking rather than routine, it is
+worth making it fast. `baseline:vet --shard <i>/<n> --receipts-out <file>` scans
+one slice of each catalog on one host, and `--reuse-from <a,b,c>` merges the
+resulting receipt bundles for a single assembly run that re-hashes every
+component tree and re-checks every analyzer identity before splicing. Sharding
+distributes the cost of producing a receipt and never the authority to assert
+one.
