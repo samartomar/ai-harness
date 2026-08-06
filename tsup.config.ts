@@ -19,4 +19,13 @@ export default defineConfig({
   minify: true,
   keepNames: true,
   // Templates are pure TS string builders (no asset loading), so nothing to copy.
+  //
+  // The native ECC runtime (`ecc-runtime.js`) is executed from wherever it was
+  // projected, outside the installed package and with no dependency closure
+  // beside it — a bare `import "zod"` in a shared chunk therefore fails ESM
+  // resolution before the runtime handles any command (#611). Bundle zod so the
+  // projected runtime is self-contained; the other runtime dependencies stay
+  // external because nothing in that entry's graph reaches them, and
+  // tests/ecc-profile/projected-runtime.test.ts fails if one ever does.
+  noExternal: ["zod"],
 });
