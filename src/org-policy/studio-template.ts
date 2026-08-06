@@ -194,6 +194,9 @@ input,select,textarea{font:inherit}
   font-size:11px;font-weight:600;transition:background 160ms ease,color 160ms ease}
 .f:hover{color:var(--ink-2)}
 .f[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent-ink);box-shadow:inset 0 0 0 1px var(--accent-line)}
+.f[data-empty="true"]{opacity:.55}
+.f b{font-family:var(--mono);font-weight:700}
+#plane-empty{padding:14px 14px;color:var(--ink-2)}
 .planetop .sp{flex:1}
 .planetop .n{font:500 11px/1 var(--mono);color:var(--ink-3)}
 .planetop .n b{color:var(--ink);font-weight:600}
@@ -413,11 +416,11 @@ summary{min-height:32px}
 
     <main class="plane" id="workbench" tabindex="-1">
       <div class="gcard planetop" role="group" aria-label="Filter inventory">
-        <button type="button" class="f" data-filter="all" aria-pressed="true">All</button>
-        <button type="button" class="f" data-filter="requested" aria-pressed="false">Selected</button>
-        <button type="button" class="f" data-filter="external" aria-pressed="false">Selectable</button>
-        <button type="button" class="f" data-filter="pending" aria-pressed="false">Awaiting</button>
-        <button type="button" class="f" data-filter="blocked" aria-pressed="false">Blocked</button>
+        <button type="button" class="f" data-filter="all" data-label="All" aria-pressed="true">All</button>
+        <button type="button" class="f" data-filter="requested" data-label="Selected" aria-pressed="false">Selected</button>
+        <button type="button" class="f" data-filter="external" data-label="Selectable" aria-pressed="false">Selectable</button>
+        <button type="button" class="f" data-filter="pending" data-label="Awaiting" aria-pressed="false">Awaiting</button>
+        <button type="button" class="f" data-filter="blocked" data-label="Blocked" aria-pressed="false">Blocked</button>
         <span class="sp"></span>
         <button type="button" class="f" id="toggle-groups">Expand all</button>
         <span class="n"><b id="c-shown">0</b> / <b id="c-total">0</b></span>
@@ -427,6 +430,7 @@ summary{min-height:32px}
 
       <section class="gcard grp group" data-open="1" data-groupcard><button type="button" class="grphead" data-group aria-expanded="true"><span class="tw" aria-hidden="true">&#9654;</span><h2>AIH hooks</h2><span class="own">AIH</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody" id="hook-rows"></div><p class="grpnote">Only AIH-owned hook identities are authorable. Custom hooks are not supported. Open a hook to see exactly what it runs, what it writes, and what removing it does.</p></section>
 
+      <p class="gcard grpnote" id="plane-empty" hidden></p>
       <div id="framework-rows"></div>
 
       <section class="gcard grp group" data-open="0" data-groupcard><button type="button" class="grphead" data-group aria-expanded="false"><span class="tw" aria-hidden="true">&#9654;</span><h2>Enterprise composition</h2><span class="own">ECC</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody stack" id="composition-parts"></div></section>
@@ -664,10 +668,19 @@ const tick=function(attr,key,selected,label){return '<button type="button" class
 const frameworkGroups=function(){const groups=[];const index={};
   model.catalog.frameworks.forEach(function(framework){framework.assets.forEach(function(asset){
     const label=assetGroup(framework,asset);
-    if(!index[label]){index[label]={label:label,owner:framework.id==="superpowers"?"Superpowers":"ECC",rows:[]};groups.push(index[label])}
+    if(!index[label]){index[label]={label:label,framework:framework.id,owner:framework.id==="superpowers"?"Superpowers":"ECC",rows:[]};groups.push(index[label])}
     index[label].rows.push({framework:framework,asset:asset})})});
   return groups};
-const frameworkInventoryRows=function(){return frameworkGroups().map(function(group){
+/* Once a framework is chosen the other one's groups come out of the plane: a
+   policy that cannot select them should not present them as inventory to work
+   through. Nothing is lost silently - the count and the way back are stated,
+   and Clear restores the full catalog. */
+const frameworkInventoryRows=function(){const active=activeSelectionFramework(governance());
+  const all=frameworkGroups();const shown=all.filter(function(group){return !active||group.framework===active});
+  const hidden=all.length-shown.length;
+  const hiddenRows=all.filter(function(group){return active&&group.framework!==active}).reduce(function(total,group){return total+group.rows.length},0);
+  const notice=hidden?'<section class="gcard" data-framework-notice><p class="grpnote">A policy selects from one framework at a time, and <b>'+esc(active)+'</b> is selected. The other framework’s <b>'+hiddenRows+'</b> component(s) in '+hidden+' group(s) are not shown while it is. Use <b>Clear</b> to start over and choose the other one.</p></section>':"";
+  return shown.map(function(group){
   const open=openGroups[group.label]?1:0;
   const rows=group.rows.map(function(entry){const framework=entry.framework,asset=entry.asset;
     const selected=isFrameworkSelected(framework.id,asset.id);
@@ -678,7 +691,7 @@ const frameworkInventoryRows=function(){return frameworkGroups().map(function(gr
       tick("data-framework-select",framework.id+"|"+asset.kind+"|"+asset.id,selected,asset.id),
       "Owned by "+framework.repository+" at "+framework.commit+", source "+asset.source.path+". Evidence: "+evidenceCommand(framework,asset),
       asset.id)}).join("");
-  return '<section class="gcard grp group" data-open="'+open+'" data-groupcard><button type="button" class="grphead" data-group aria-expanded="'+(open?"true":"false")+'"><span class="tw" aria-hidden="true">&#9654;</span><h2>'+esc(group.label)+'</h2><span class="own">'+esc(group.owner)+'</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody">'+rows+'</div></section>'}).join("")};
+  return '<section class="gcard grp group" data-open="'+open+'" data-groupcard><button type="button" class="grphead" data-group aria-expanded="'+(open?"true":"false")+'"><span class="tw" aria-hidden="true">&#9654;</span><h2>'+esc(group.label)+'</h2><span class="own">'+esc(group.owner)+'</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody">'+rows+'</div></section>'}).join("")+notice};
 /* A pinned custom candidate must end in an exact command, not in nothing.
    The trust scan command takes a local path or a GitHub owner/repo, so the
    registry package identity is deliberately NOT presented as the scan target -
@@ -718,7 +731,24 @@ const paintShell=function(){const totals={requested:0,pending:0,blocked:0,extern
     const count=group.querySelector(".ct");if(count){count.textContent=rows?(planeFilter==="all"?String(rows):visible+" / "+rows):""}
     const meter=group.querySelector(".meter");if(meter){meter.innerHTML=rows?ROW_STATES.filter(function(s){return counts[s]}).map(function(s){return '<i data-s="'+s+'" style="width:'+(counts[s]/rows*100)+'%"></i>'}).join(""):""}});
   byId("c-shown").textContent=shown;byId("c-total").textContent=total;
-  ROW_STATES.forEach(function(s){const node=byId(s==="requested"?"t-req":s==="pending"?"t-wait":s==="blocked"?"t-blk":"t-ext");if(node){node.textContent=totals[s]}});};
+  ROW_STATES.forEach(function(s){const node=byId(s==="requested"?"t-req":s==="pending"?"t-wait":s==="blocked"?"t-blk":"t-ext");if(node){node.textContent=totals[s]}});
+  /* Every filter states how many rows it would show. A zero is information, not
+     a dead end: Blocked reads 0 because nothing is blocked, and its title says
+     what would put a row there rather than leaving the administrator guessing. */
+  document.querySelectorAll(".f[data-filter]").forEach(function(chip){const key=chip.getAttribute("data-filter");
+    const count=key==="all"?total:(totals[key]||0);
+    chip.innerHTML=esc(chip.getAttribute("data-label")||"")+' <b>'+count+'</b>';
+    /* Deliberately not disabled at zero: a disabled control cannot be focused,
+       so it takes its own explanation with it. An empty filter stays clickable
+       and the plane says why it is empty. */
+    chip.setAttribute("data-empty",count===0?"true":"false");
+    chip.title=count?"":FILTER_EMPTY[key]||"Nothing is in this state right now."});
+  const empty=byId("plane-empty");
+  if(empty){empty.hidden=shown!==0;empty.textContent=shown===0?(FILTER_EMPTY[planeFilter]||"No row is in this state right now."):""}};
+const FILTER_EMPTY={requested:"Nothing is selected yet. Select an item, or compose a preset.",
+  external:"Everything selectable has been selected.",
+  pending:"No AIH control is awaiting a request.",
+  blocked:"Nothing is blocked. A row lands here when an AIH-owned gate fails - a custom source without a completed scan bound to its exact pin is the usual one."};
 document.addEventListener("click",function(event){const head=event.target.closest&&event.target.closest("[data-group]");if(!head){return}const group=head.closest(".grp");const next=group.dataset.open==="1"?"0":"1";group.dataset.open=next;head.setAttribute("aria-expanded",next==="1"?"true":"false");const label=head.querySelector("h2");if(label){openGroups[label.textContent]=next==="1"}});
 /* ── drawer: every detail the compact row deliberately does not carry ────── */
 const drawerNode=byId("drawer"),scrimNode=byId("scrim");

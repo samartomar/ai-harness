@@ -186,14 +186,19 @@ describe("policy studio enterprise composition", () => {
     expect(authoredPolicy(window).governance.externalCuration).toEqual([]);
   });
 
-  // Row 11 guard: exposing a composition must not disturb the full inventory.
-  it("leaves the full framework inventory intact", () => {
+  // Row 11 guard, now bounded by the one-framework rule: exposing a
+  // composition must not disturb the inventory of the framework in play, and
+  // the framework it scopes out must be accounted for rather than dropped.
+  it("leaves the composed framework's inventory intact and accounts for the rest", () => {
     const window = studio();
     selectProfile(window, "enterprise");
     const rows =
       window.document.getElementById("framework-rows")?.querySelectorAll(".row").length ?? 0;
-    expect(rows).toBe(
-      model.catalog.frameworks.reduce((total, framework) => total + framework.assets.length, 0),
-    );
+    expect(rows).toBe(ecc.assets.length);
+    const others = model.catalog.frameworks
+      .filter((framework) => framework.id !== "ecc")
+      .reduce((total, framework) => total + framework.assets.length, 0);
+    const notice = window.document.querySelector("[data-framework-notice]")?.textContent ?? "";
+    expect(notice).toContain(String(others));
   });
 });

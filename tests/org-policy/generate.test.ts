@@ -18,6 +18,19 @@ import { makeHostAdapter } from "../../src/platform/detect.js";
 
 let dir: string;
 
+/**
+ * FileReader resolves on its own schedule, so a fixed sleep is a race the suite
+ * outgrew: these waits passed alone and failed once the file count rose. Poll
+ * the condition instead, with the old delay as the ceiling rather than the bet.
+ */
+async function settle(window: Window, done: () => boolean, budgetMs = 2000): Promise<void> {
+  const deadline = Date.now() + budgetMs;
+  while (Date.now() < deadline) {
+    if (done()) return;
+    await new Promise((resolve) => window.setTimeout(resolve, 10));
+  }
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aih-policy-generate-"));
 });
@@ -640,7 +653,9 @@ describe("policy generate", () => {
       ],
     });
     evidenceFile.dispatchEvent(new window.Event("change", { bubbles: true }));
-    await new Promise((resolve) => window.setTimeout(resolve, 50));
+    await settle(window, () =>
+      (document.getElementById("approval-rows")?.textContent ?? "").includes('"candidate"'),
+    );
     const receiptText = document.getElementById("approval-rows")?.textContent;
     for (const label of [
       '"candidate": "custom-mcp"',

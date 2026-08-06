@@ -92,35 +92,51 @@ describe("policy studio framework exclusivity", () => {
     ).toThrow(/one framework/i);
   });
 
-  it("refuses a Superpowers selection while ECC is selected, and says why", () => {
+  // Once a framework is chosen the other one leaves the plane: a policy that
+  // cannot select it should not present it as inventory to work through. This
+  // is scoping by an explicit reversible choice, not hiding for want of
+  // enforcement, so the count and the way back are both stated.
+  it("takes the other framework out of the plane and states the count", () => {
     const window = studio();
     click(window, selectKey(ecc, eccAsset));
-    expect(selections(window)).toHaveLength(1);
+    expect(window.document.querySelectorAll("#framework-rows .row").length).toBe(ecc.assets.length);
+    const notice = window.document.querySelector("[data-framework-notice]")?.textContent ?? "";
+    expect(notice).toContain(String(superpowers.assets.length));
+    expect(notice.toLowerCase()).toContain("one framework at a time");
+    expect(notice).toContain("Clear");
+  });
+
+  it("scopes to Superpowers when Superpowers is chosen first", () => {
+    const window = studio();
     click(window, selectKey(superpowers, spAsset));
+    expect(window.document.querySelectorAll("#framework-rows .row").length).toBe(
+      superpowers.assets.length,
+    );
+    const notice = window.document.querySelector("[data-framework-notice]")?.textContent ?? "";
+    expect(notice).toContain(String(ecc.assets.length));
+  });
+
+  // The excluded framework stays reachable through search, so the refusal has
+  // to hold on that path too rather than relying on the row simply being gone.
+  it("still refuses the excluded framework from its drawer", () => {
+    const window = studio();
+    click(window, selectKey(ecc, eccAsset));
+    click(window, "#seek");
+    const query = window.document.getElementById("spot-q") as unknown as {
+      value: string;
+      dispatchEvent: (event: unknown) => boolean;
+    } | null;
+    if (query === null) throw new Error("expected the spotlight input");
+    query.value = spAsset.id;
+    query.dispatchEvent(new window.Event("input", { bubbles: true }));
+    click(window, "#hits .hit");
+    const add = window.document.querySelector("#drawer-detail [data-framework-select]");
+    expect(add, "the drawer still offers the item").not.toBeNull();
+    add?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     const groups = selections(window);
     expect(groups, "policy still holds exactly one framework").toHaveLength(1);
     expect(groups[0]?.framework).toBe("ecc");
-    expect(announcement(window).toLowerCase()).toContain("one framework");
-  });
-
-  it("refuses an ECC selection while Superpowers is selected", () => {
-    const window = studio();
-    click(window, selectKey(superpowers, spAsset));
-    click(window, selectKey(ecc, eccAsset));
-    const groups = selections(window);
-    expect(groups).toHaveLength(1);
-    expect(groups[0]?.framework).toBe("superpowers");
-  });
-
-  // Ownership annotates a row; it never removes one. A framework that cannot
-  // currently be selected stays fully listed and fully inspectable.
-  it("keeps the excluded framework's inventory visible", () => {
-    const window = studio();
-    click(window, selectKey(ecc, eccAsset));
-    const rows = window.document.querySelectorAll("#framework-rows .row");
-    expect(rows.length).toBe(ecc.assets.length + superpowers.assets.length);
-    const text = window.document.getElementById("framework-rows")?.textContent ?? "";
-    for (const asset of superpowers.assets) expect(text).toContain(asset.id);
+    expect(announcement(window).toLowerCase()).toContain("one framework at a time");
   });
 
   // Acceptance demonstration step 3 opens with "Reset, select Enterprise, ...".
