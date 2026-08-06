@@ -87,8 +87,11 @@ html[data-theme="dark"]{
 }
 *,*::before,*::after{box-sizing:border-box}
 html,body{height:100%}
-body{margin:0;min-height:100dvh;overflow:hidden;font:400 13px/1.5 var(--sans);color:var(--ink);
-  background:var(--bg);-webkit-font-smoothing:antialiased}
+/* vh first, dvh second: dynamic viewport units resolve to 0 in engines with no
+   live visual viewport, which collapses the whole stage to nothing. The vh
+   declaration is the floor; dvh upgrades it wherever it actually resolves. */
+body{margin:0;min-height:100vh;min-height:100dvh;overflow:hidden;font:400 13px/1.5 var(--sans);
+  color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
 h1,h2,h3,p{margin:0}
 button{font-family:inherit;color:inherit;cursor:pointer;border:0;background:none}
 code{font-family:var(--mono)}
@@ -111,7 +114,7 @@ input,select,textarea{font:inherit}
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.16'/%3E%3C/svg%3E")}
 
 /* ── stage ───────────────────────────────────────────── */
-.stage{position:relative;z-index:1;height:100dvh;display:grid;grid-template-rows:56px auto 1fr 34px}
+.stage{position:relative;z-index:1;height:100vh;height:100dvh;display:grid;grid-template-rows:56px auto minmax(0,1fr) 34px}
 .bar{display:flex;align-items:center;gap:10px;padding:0 16px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:9px;min-width:0}
 .brand-mark{width:26px;height:26px;border-radius:9px;display:grid;place-items:center;flex:0 0 auto;
@@ -178,7 +181,12 @@ input,select,textarea{font:inherit}
 .chip[aria-pressed="true"]{background:var(--cyan-soft);color:var(--cyan);box-shadow:inset 0 0 0 1px var(--cyan)}
 
 /* plane */
-.plane{overflow:auto;padding:2px 2px 8px;display:grid;gap:7px;align-content:start;min-height:0}
+/* flex column, not grid: as direct grid items these cards resolved to a 2px
+   border box while the same markup nested one level deeper laid out correctly.
+   A column stack is what this is, and it sizes to content without ambiguity. */
+.plane{overflow:auto;padding:2px 2px 8px;display:flex;flex-direction:column;gap:7px;min-height:0}
+.plane>*{flex:0 0 auto}
+#framework-rows{display:flex;flex-direction:column;gap:7px}
 .planetop{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:8px 11px}
 .f{height:24px;padding:0 10px;border-radius:999px;background:var(--fill);color:var(--ink-3);
   font-size:11px;font-weight:600;transition:background 160ms ease,color 160ms ease}
