@@ -149,8 +149,10 @@ input,select,textarea{font:inherit}
   color:var(--ink);padding:0 8px;font-size:12px}
 .announce{grid-row:2;min-height:20px;padding:0 18px 4px;font-size:12px;color:var(--ink-2)}
 .announce.error{color:var(--danger)}
-#status{font:500 11px/1 var(--mono);color:var(--ink-3);max-width:34ch;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap}
+/* The announcement is already shown in full under the bar, so a truncated copy
+   of it in the bar was noise. Kept in the DOM as a live region for assistive
+   technology, which is the only reader it was ever serving. */
+#status{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 /* ── body layout ─────────────────────────────────────── */
 .work{display:grid;grid-template-columns:236px minmax(0,1fr);gap:12px;padding:0 16px 10px;min-height:0}
@@ -553,10 +555,16 @@ const candidateStatus=function(candidate){if(candidate.kind==="mcp"&&candidate.s
 const CUSTODY={requested:["fill","fill","ext",""],pending:["fill","fill","wait",""],
   blocked:["fill","struck","",""],external:["","","",""]};
 const custody=function(kind){return (CUSTODY[kind]||CUSTODY.external).map(function(mark){return '<i'+(mark?' data-s="'+mark+'"':"")+'></i>'}).join("")};
-const row=function(title,detail,status,kind,action,note){
+/* The visible label is the component id alone with its namespace dimmed: the
+   group card already states the framework and the owner, so repeating them on
+   every row is noise. The full title stays the drawer key and the accessible
+   name. */
+const ridLabel=function(label){const cut=String(label).indexOf(":");
+  return cut===-1?esc(label):'<u>'+esc(String(label).slice(0,cut+1))+'</u>'+esc(String(label).slice(cut+1))};
+const row=function(title,detail,status,kind,action,note,label){
   return '<div class="row'+(kind==="requested"?" on":"")+'" data-state="'+esc(kind)+'" data-row="'+esc(title)+'">'+
     (action||'<span class="tick" aria-hidden="true"></span>')+
-    '<button type="button" class="rid" data-open="'+esc(title)+'"><strong>'+esc(title)+'</strong></button>'+
+    '<button type="button" class="rid" data-open="'+esc(title)+'" aria-label="'+esc(title)+'"><strong>'+ridLabel(label||title)+'</strong></button>'+
     '<span class="cust" aria-hidden="true">'+custody(kind)+'</span>'+
     '<button type="button" class="more" data-open="'+esc(title)+'" aria-label="Details for '+esc(title)+'">&rsaquo;</button>'+
     '<span class="badge '+kind+'">'+esc(status)+'</span>'+
@@ -652,7 +660,8 @@ const frameworkInventoryRows=function(){return frameworkGroups().map(function(gr
       selected?"Selected - requested intent recorded":"Selectable - "+framework.id+" installs and runs it",
       selected?"requested":"external",
       tick("data-framework-select",framework.id+"|"+asset.kind+"|"+asset.id,selected,asset.id),
-      "Owned by "+framework.repository+" at "+framework.commit+", source "+asset.source.path+". Evidence: "+evidenceCommand(framework,asset))}).join("");
+      "Owned by "+framework.repository+" at "+framework.commit+", source "+asset.source.path+". Evidence: "+evidenceCommand(framework,asset),
+      asset.id)}).join("");
   return '<section class="gcard grp group" data-open="'+open+'" data-groupcard><button type="button" class="grphead" data-group aria-expanded="'+(open?"true":"false")+'"><span class="tw" aria-hidden="true">&#9654;</span><h2>'+esc(group.label)+'</h2><span class="own">'+esc(group.owner)+'</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody">'+rows+'</div></section>'}).join("")};
 /* A pinned custom candidate must end in an exact command, not in nothing.
    The trust scan command takes a local path or a GitHub owner/repo, so the
