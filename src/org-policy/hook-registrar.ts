@@ -455,7 +455,7 @@ export interface HookRegistrarReceipt {
    * The bytes found before AIH first projected. EVIDENCE ONLY — the record of
    * what was there, readable during an investigation. Revocation subtracts the
    * owned key and never replays these bytes, which would reinstate every
-   * adopted entry (v3-7 A4).
+   * adopted entry (governing ADR, A4).
    */
   prior: HookReceiptPrior;
   entries: HookReceiptEntry[];
@@ -786,7 +786,7 @@ export function hookRegistrarRevocationActions(ctx: PlanContext): Action[] {
   // Creating the file does not make AIH the owner of everything later written
   // into it. Removal is authorized only while `hooks` is still the only key
   // present; one operator key and the file is preserved and merely subtracted.
-  // v3.4 R8: preserve conflicts and user-owned config.
+  // Lifecycle rule R8: preserve conflicts and user-owned config.
   const current = parseJsoncText(bytes);
   const onlyHooksRemain =
     isPlainObject(current) && Object.keys(current).length === 1 && Object.hasOwn(current, "hooks");
