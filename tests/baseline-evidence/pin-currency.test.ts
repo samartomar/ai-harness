@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { baselineAnalyzerVersions } from "../../src/baseline-evidence/analyzer-profile.js";
 import type { BaselineCatalog } from "../../src/baseline-evidence/catalog.js";
@@ -124,6 +127,25 @@ describe("baseline pin currency", () => {
   it("passes on the committed lock through the CLI entry point", () => {
     const result = checkBaselinePinCurrency("src/baseline-evidence/vendor-lock.json");
     expect(result.ok).toBe(true);
+    expect(result.report).toContain("matches every declared pin");
+  });
+
+  it("reports not-ok through the CLI entry point when a pin has moved", () => {
+    // The failure path matters more than the passing one: this is the branch
+    // that turns a routine check into a blocking one, and it is what a reader
+    // sees when a re-vet has become mandatory.
+    const dir = mkdtempSync(join(tmpdir(), "aih-pin-currency-"));
+    const lockPath = join(dir, "vendor-lock.json");
+    try {
+      writeFileSync(lockPath, JSON.stringify(withSourcePin("c".repeat(40))), "utf8");
+      const result = checkBaselinePinCurrency(lockPath);
+      expect(result.ok).toBe(false);
+      expect(result.report).toContain("no longer match the committed evidence");
+      expect(result.report).toContain("ecc");
+      expect(result.report).toContain("stale evidence");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("rejects a lock that does not parse rather than reporting no drift", () => {
