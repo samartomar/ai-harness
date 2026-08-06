@@ -26,12 +26,12 @@ export const BASELINE_SOURCES = [
       {
         owner: "affaan-m",
         repo: "ecc",
-        pinnedSha: "4da6deac1888690e7fb8572d097ee23db630f7a0",
+        pinnedSha: "623f2c020f052319657674e4e6c29ab5d0ad566b",
       },
       {
         owner: "obra",
         repo: "Superpowers",
-        pinnedSha: "d884ae04edebef577e82ff7c4e143debd0bbec99",
+        pinnedSha: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
       },
     ],
     installVerb: "`aih ecc` / `aih superpowers`",

@@ -86,7 +86,7 @@ jobs:
         if: steps.relevance.outputs.vet == 'true'
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          version: "0.12.0"
+          version: "0.12.2"
           cache-dependency-glob: |
             tools/cisco-skill-scanner/uv.lock
             tools/trust-scanners/semgrep/uv.lock
@@ -100,7 +100,7 @@ jobs:
             --no-python-downloads --no-env-file skill-scanner --version
           version="$(uv run --project tools/cisco-skill-scanner --locked --isolated --python 3.12 \
             --offline --no-python-downloads --no-env-file skill-scanner --version)"
-          test "$version" = "skill-scanner 2.0.12"
+          test "$version" = "skill-scanner 2.0.13"
       - name: Cache and verify supplemental locked scanners
         if: steps.relevance.outputs.vet == 'true'
         shell: bash
@@ -122,7 +122,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: affaan-m/ecc
-          ref: 4da6deac1888690e7fb8572d097ee23db630f7a0
+          ref: 623f2c020f052319657674e4e6c29ab5d0ad566b
           path: .baseline-sources/ecc
           persist-credentials: false
       - name: Check out exact Superpowers baseline
@@ -130,7 +130,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: obra/Superpowers
-          ref: d884ae04edebef577e82ff7c4e143debd0bbec99
+          ref: 3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9
           path: .baseline-sources/superpowers
           persist-credentials: false
       - name: Re-vet exact pins and fail on evidence drift

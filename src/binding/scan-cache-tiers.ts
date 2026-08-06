@@ -353,7 +353,7 @@ const AVAILABILITY_TIMEOUT_MS = 30_000;
 const MAX_DEEP_FINDINGS = 100;
 
 /** The pinned Cisco skill-scanner package + its console-script (see tools/cisco-skill-scanner). */
-const CISCO_SKILL_SCANNER_SPEC = "cisco-ai-skill-scanner==2.0.12";
+const CISCO_SKILL_SCANNER_SPEC = "cisco-ai-skill-scanner==2.0.13";
 const CISCO_CONSOLE_SCRIPT = "skill-scanner";
 
 function missingReport(dimension: string, reason: string): DimensionReport {
