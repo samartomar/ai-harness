@@ -10,63 +10,59 @@ permissions:
   contents: read
 
 jobs:
+  # The job keeps the name `vet-once` deliberately. It no longer runs the
+  # from-scratch vet, but the name is referenced by required-check
+  # configuration, and renaming it would wedge that list in "expected".
   vet-once:
     runs-on: ubuntu-latest
     steps:
       - name: Check out ai-harness
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # Full history so the relevance gate can diff against the PR base sha.
-          fetch-depth: 0
-      - name: Decide whether this event can change vetting inputs
-        id: relevance
-        shell: bash
-        # The from-scratch re-vet costs ~30 min. On pull_request it runs only
-        # when the diff can affect vetting inputs: the pins in this workflow
-        # file, the evidence generator and committed locks
-        # (src/baseline-evidence), the scanners it orchestrates (src/trust),
-        # the install-preview producers (src/ecc, src/superpowers), the pinned
-        # scanner projects/Dockerfile (tools/cisco-skill-scanner,
-        # tools/trust-scanners, tools/skillspector.Dockerfile), or the
-        # dependency graph.
-        # Push-to-main and manual dispatch ALWAYS re-vet, so the from-scratch
-        # ground truth on main (issue #444) is untouched and any PR-side miss
-        # is still caught at merge. This is a step-level gate, not a paths:
-        # trigger filter, so the vet-once check always reports a conclusion
-        # and can never wedge a required-checks list in "expected".
-        run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "vet=true" >> "$GITHUB_OUTPUT"
-            echo "non-PR event (${{ github.event_name }}): always re-vet"
-            exit 0
-          fi
-          base="${{ github.event.pull_request.base.sha }}"
-          changed="$(git diff --name-only "$base" HEAD)"
-          printf 'changed files:\n%s\n' "$changed"
-          pattern='^(\.github/workflows/baseline-evidence\.yml$|src/baseline-evidence/|src/trust/|src/ecc/|src/superpowers/|tools/cisco-skill-scanner/|tools/trust-scanners/|tools/skillspector\.Dockerfile$|package\.json$|package-lock\.json$)'
-          if printf '%s\n' "$changed" | grep -qE "$pattern"; then
-            echo "vet=true" >> "$GITHUB_OUTPUT"
-            echo "vetting-relevant changes found: re-vet"
-          else
-            echo "vet=false" >> "$GITHUB_OUTPUT"
-            echo "no vetting-relevant changes: skipping the re-vet (pass)"
-          fi
+
+      # The from-scratch re-vet used to run here, on every push and on any PR a
+      # path pattern judged relevant. It no longer does, and the reason is that
+      # it could not tell us anything.
+      #
+      # Every input the vet consumes is content-addressed: sources by commit
+      # SHA, SkillSpector by image digest, the scanner environments by
+      # hash-pinned uv.lock, aih-native by a content digest over its own source
+      # closure. Between two runs at an unchanged pin set there is nothing that
+      # can differ except the machine, so repeating the scan did not re-test the
+      # supply chain -- it sampled the runner image. Content-addressed evidence
+      # does not expire: a receipt asserts "these exact bytes, scanned by these
+      # exact analyzers, produced this verdict", and that does not become less
+      # true with time.
+      #
+      # So a green vet now stands until a pin moves, and the moment one moves it
+      # becomes critical. Two cheap checks below decide which of those we are in:
+      # `check:baseline-pins` compares the pin set this build DECLARES against
+      # the pin set the committed lock RECORDED, and `baseline:check` proves the
+      # lock still reproduces from the pinned sources. The expensive
+      # from-scratch run is owned by the vet fleet and happens exactly when the
+      # first check fires -- see docs/security/baseline-evidence.md.
+      #
+      # Because both checks are cheap, the old path-pattern relevance gate is
+      # gone. It existed only to dodge a ~1 h cost, and inferring "did a pin
+      # move" from which files a diff touched was always a proxy for the fact
+      # that `check:baseline-pins` now measures directly.
       - name: Set up Node.js
-        if: steps.relevance.outputs.vet == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
           cache: npm
-      - if: steps.relevance.outputs.vet == 'true'
-        run: npm ci
+      - run: npm ci
+
+      # Pin currency runs BEFORE any analyzer provisioning: if the committed
+      # evidence describes a different pin set, nothing downstream can be
+      # trusted, and failing here explains that in one cheap step.
+      - name: Fail closed if the committed evidence is not current for the declared pins
+        run: npm run check:baseline-pins
+
       - name: Set up scanner Python
-        if: steps.relevance.outputs.vet == 'true'
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Pull and verify pinned SkillSpector image by digest
-        if: steps.relevance.outputs.vet == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -83,7 +79,6 @@ jobs:
           echo "repo digests: ${digests}"
           echo "$digests" | grep -q "sha256:108b707cb98cb418680782f9745942b1d3904104a45d8f6fd62f102672285d55"
       - name: Set up pinned uv
-        if: steps.relevance.outputs.vet == 'true'
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.12.2"
@@ -92,7 +87,6 @@ jobs:
             tools/trust-scanners/semgrep/uv.lock
             tools/trust-scanners/cisco-mcp/uv.lock
       - name: Cache and verify pinned Cisco skill-scanner
-        if: steps.relevance.outputs.vet == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -102,7 +96,6 @@ jobs:
             --offline --no-python-downloads --no-env-file skill-scanner --version)"
           test "$version" = "skill-scanner 2.0.13"
       - name: Cache and verify supplemental locked scanners
-        if: steps.relevance.outputs.vet == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -118,7 +111,6 @@ jobs:
             --python 3.12 --offline --no-python-downloads --no-env-file \
             mcp-scanner --help >/dev/null
       - name: Check out exact ECC baseline
-        if: steps.relevance.outputs.vet == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: affaan-m/ecc
@@ -126,33 +118,29 @@ jobs:
           path: .baseline-sources/ecc
           persist-credentials: false
       - name: Check out exact Superpowers baseline
-        if: steps.relevance.outputs.vet == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: obra/Superpowers
           ref: 3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9
           path: .baseline-sources/superpowers
           persist-credentials: false
-      - name: Re-vet exact pins and fail on evidence drift
-        if: steps.relevance.outputs.vet == 'true'
-        # CI is always the from-scratch ground truth (issue #444): --full disables
-        # incremental receipt reuse so this run rescans every component, the same
-        # as before I1. Incremental reuse is the human-loop default (baseline:vet /
-        # baseline:check without --full), not the CI gate.
+
+      # Reproduction, not rescan. `baseline:check` re-derives the lock from the
+      # pinned sources with the full required-analyzer floor and byte-compares.
+      # Receipts are reused ONLY where the component tree hash AND the analyzer
+      # identity both match, so any content or analyzer change still forces a
+      # genuine rescan of exactly the affected components. What it stops doing is
+      # re-proving unchanged content, which is the part that cost an hour and
+      # could not have changed.
+      - name: Prove the committed lock still reproduces from the pinned sources
         shell: bash
         run: |
           set -euo pipefail
-          npm run baseline:vet -- \
+          npm run baseline:check -- \
             --ecc-root .baseline-sources/ecc \
-            --superpowers-root .baseline-sources/superpowers \
-            --full
-          git diff --exit-code -- \
-            src/baseline-evidence/vendor-lock.json \
-            src/baseline-evidence/ecc-install-preview.json
+            --superpowers-root .baseline-sources/superpowers
       - name: Upload baseline evidence report
-        # Upload whenever the re-vet actually ran (including on its failure,
-        # for post-mortem); skip when the relevance gate skipped the vet.
-        if: ${{ !cancelled() && steps.relevance.outputs.vet == 'true' }}
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: baseline-evidence-lock

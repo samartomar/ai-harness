@@ -58,7 +58,14 @@ describe("baseline evidence release payload", () => {
     const workflow = readFileSync(path, "utf8");
     expect(workflow).toContain(baselineCatalogById("ecc").pinnedSha);
     expect(workflow).toContain(baselineCatalogById("superpowers").pinnedSha);
-    expect(workflow).toContain("npm run baseline:vet");
+    // CI proves the committed evidence is CURRENT and REPRODUCES; it no longer
+    // rescans from scratch. The inputs are content-addressed, so a repeat scan
+    // at an unchanged pin set could only have sampled the runner image. The
+    // from-scratch run is owned by the vet fleet and triggered by pin drift.
+    expect(workflow).toContain("npm run check:baseline-pins");
+    expect(workflow).toContain("npm run baseline:check");
+    expect(workflow).not.toContain("npm run baseline:vet");
+    expect(workflow).not.toContain("--full");
     expect(workflow).toContain(SKILLSPECTOR_IMAGE_DIGEST);
     // The image is pulled content-addressed by digest from GHCR, then tagged to
     // the local runtime name so SKILLSPECTOR_IMAGE selection (src/trust/images.ts)
@@ -107,9 +114,10 @@ describe("baseline evidence release payload", () => {
     expect(workflow).toContain("mcp-scanner --help");
     expect(workflow).toContain("--locked");
     expect(workflow).toContain("--offline");
-    expect(workflow).toContain("npm run baseline:vet");
-    expect(workflow).toContain("git diff --exit-code");
-    expect(workflow).not.toContain("npm run baseline:check");
+    // `baseline:check` byte-compares the regenerated artifacts itself, so the
+    // separate `git diff --exit-code` the old from-scratch step needed is gone.
+    expect(workflow).toContain("npm run baseline:check");
+    expect(workflow).not.toContain("git diff --exit-code");
   });
 
   it("builds SkillSpector from its committed lock on a digest-pinned base", () => {

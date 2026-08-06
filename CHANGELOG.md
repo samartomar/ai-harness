@@ -6,6 +6,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The from-scratch baseline vet is now **anchored to the pin set rather than to a schedule**,
+  and no longer runs in CI. Every input it consumes is content-addressed — sources by commit
+  SHA, SkillSpector by image digest, the scanner environments by hash-pinned `uv.lock`,
+  `aih-native` by a content digest over its own detector closure — so between two runs at an
+  unchanged pin set nothing can differ except the machine, and repeating the scan sampled the
+  runner image rather than re-testing the supply chain. A green vet now stands until a pin
+  moves, and when one moves it becomes blocking. CI instead runs two cheap checks: the new
+  `check:baseline-pins`, which compares the pin set the build declares against the pin set the
+  committed lock recorded, and `baseline:check`, which proves the lock still reproduces from
+  the pinned sources. `check:baseline-pins` replaces a path-pattern relevance gate that
+  inferred the answer from which files a diff touched — comparing recorded identities against
+  declared ones is the fact rather than a proxy, and it catches the case a path pattern is
+  worst at, where the sources are untouched but the analyzer is no longer the one that
+  scanned. The pair is tamper-resistant: editing the lock's recorded pins to fake agreement
+  fails, because `baseline:check` then re-derives at those pins and the receipts do not
+  reproduce.
+
 ### Added
 
 - The from-scratch baseline vet can now be **fanned out across hosts**. `baseline:vet` accepts
