@@ -76,12 +76,12 @@ jobs:
           # keeps working unmodified. Verification checks RepoDigests rather than
           # `.Id`, so it is correct regardless of the runner's Docker image-store
           # type (containerd snapshotter vs legacy graphdriver).
-          image="ghcr.io/samartomar/skillspector@sha256:eb100b229ec5b25f74d5f6c1ac31e2d0466f08dbc0726af4239dccadbd7f1b1c"
+          image="ghcr.io/samartomar/skillspector@sha256:108b707cb98cb418680782f9745942b1d3904104a45d8f6fd62f102672285d55"
           docker pull "$image"
-          docker tag "$image" skillspector:aih-34f60308522f
-          digests="$(docker image inspect skillspector:aih-34f60308522f --format '{{json .RepoDigests}}')"
+          docker tag "$image" skillspector:aih-0562b964ec5c
+          digests="$(docker image inspect skillspector:aih-0562b964ec5c --format '{{json .RepoDigests}}')"
           echo "repo digests: ${digests}"
-          echo "$digests" | grep -q "sha256:eb100b229ec5b25f74d5f6c1ac31e2d0466f08dbc0726af4239dccadbd7f1b1c"
+          echo "$digests" | grep -q "sha256:108b707cb98cb418680782f9745942b1d3904104a45d8f6fd62f102672285d55"
       - name: Set up pinned uv
         if: steps.relevance.outputs.vet == 'true'
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
