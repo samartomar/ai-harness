@@ -71,6 +71,27 @@ describe("G1 — the policy grammar carries the projector's own registration sha
     );
   });
 
+  it("carries an adoption-emitted unknown owner, hash refusal included", () => {
+    const command = "node ~/.mystery/legacy-hook.js";
+    const registration: HookRegistration = {
+      id: "legacy-stop-hook",
+      event: "Stop",
+      command,
+      functionTags: ["legacy-stop-hook"],
+      spawns: 1,
+      owner: { kind: "unknown", launcherSha256: sha256(command) },
+    };
+    const policy = parseOrgPolicy(governedPolicy({ hookRegistrations: [registration] }));
+    expect(policy.governance?.hookRegistrations[0]?.owner.kind).toBe("unknown");
+    expect(() =>
+      parseOrgPolicy(
+        governedPolicy({
+          hookRegistrations: [{ ...registration, command: `${command} --mutated` }],
+        }),
+      ),
+    ).toThrowError(/launcher hash .* no longer matches its pin/);
+  });
+
   it("refuses a duplicate registration id at parse time", () => {
     const [registration] = eccStopRegistrations();
     if (registration === undefined) throw new Error("expected a registration");

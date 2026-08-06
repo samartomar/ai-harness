@@ -1774,6 +1774,24 @@
                       "pin"
                     ],
                     "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "unknown"
+                      },
+                      "launcherSha256": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "launcherSha256"
+                    ],
+                    "additionalProperties": false
                   }
                 ]
               }

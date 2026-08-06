@@ -897,6 +897,8 @@ const HOOK_REGISTRATION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
     "hook registrar: third-party controls recorded read-only, never implemented or mirrored",
   "owner.framework": "hook registrar: third-party owner identity and the one-framework rule",
   "owner.kind": "hook registrar: owner partition for receipts and drift attribution",
+  "owner.launcherSha256":
+    "hook registrar: adoption-captured launcher hash for an unattributable owner; parse-time refusal and drift detection",
   "owner.pin.commit": "hook registrar: administrator-declared provenance recorded into the receipt",
   "owner.pin.launcherSha256":
     "hook registrar: parse-time launcher hash refusal and drift detection",

@@ -636,6 +636,13 @@ const HookRegistrationOwnerSchema = z.discriminatedUnion("kind", [
       pin: ThirdPartyLauncherPinSchema,
     })
     .strict(),
+  /**
+   * An adoption-emitted entry nobody could attribute. Provenance is
+   * administrator-declared, never inferred, so an unattributable launcher
+   * stays owner `unknown` — but the hash of its exact captured bytes still
+   * binds the policy entry to the launcher, so mutation is still drift.
+   */
+  z.object({ kind: z.literal("unknown"), launcherSha256: Sha256Schema }).strict(),
 ]);
 
 /**
@@ -694,14 +701,20 @@ export function hookRegistrationSetIssues(
       issues.push({ index, message: `hook registration ${registration.id} is declared twice` });
     }
     ids.add(registration.id);
-    if (registration.owner.kind !== "third-party") continue;
+    const pinnedSha256 =
+      registration.owner.kind === "third-party"
+        ? registration.owner.pin.launcherSha256
+        : registration.owner.kind === "unknown"
+          ? registration.owner.launcherSha256
+          : undefined;
+    if (pinnedSha256 === undefined) continue;
     const actual = hookCommandDigest(registration.command);
-    if (actual !== registration.owner.pin.launcherSha256) {
+    if (actual !== pinnedSha256) {
       issues.push({
         index,
         message:
           `hook registration ${registration.id} launcher hash ${actual} no longer matches its pin ` +
-          `${registration.owner.pin.launcherSha256}; this is drift, not a silent update`,
+          `${pinnedSha256}; this is drift, not a silent update`,
       });
     }
   }
