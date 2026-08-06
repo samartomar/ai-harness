@@ -281,6 +281,29 @@ through the repository or another reviewed channel, then bind it in
 repo-relative POSIX paths. Use catalog `superpowers`, owner `obra`, and repo
 `Superpowers` for a Superpowers override.
 
+## Evidence schema version floor
+
+Every baseline evidence lock declares a `schemaVersion`. This build parses
+version 1, and it checks that declared version before it parses anything else in
+the artifact.
+
+An attested bundle can carry a lock produced by a newer aih than the one reading
+it. Such a lock may name fields or component shapes this build's parser rejects.
+aih reports that case as `baseline.evidence-schema-unsupported`, naming the
+declared version and the version it parses, and the run stops. The remedy is to
+upgrade aih.
+
+The floor exists so that skew is never reported as the absence it would otherwise
+cause. Before it, an artifact aih could not parse was skipped, and the run ended
+by saying the bundle carried no evidence for the requested pin — which sent the
+reader to re-vet a pin that was already vetted. An unreadable artifact now fails
+under its own code rather than being passed over, including when another artifact
+in the same signed bundle would have parsed.
+
+Editing a lock's `schemaVersion` to get past this is not a workaround: the bundle
+attestation and `SHA256SUMS` cover the bytes being edited, so verification fails
+first.
+
 ## Maintainer drift check
 
 The vet-once workflow checks out both canonical upstream SHAs, runs the same

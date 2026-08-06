@@ -495,6 +495,7 @@ describe("Check.code — invariants", () => {
       "baseline.evidence-missing": true,
       "baseline.evidence-mismatch": true,
       "baseline.evidence-blocked": true,
+      "baseline.evidence-schema-unsupported": true,
       "trust.fetch-blocked": true,
       "trust.detector-unavailable": true,
       "trust.detector-finding": true,

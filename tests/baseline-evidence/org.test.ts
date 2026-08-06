@@ -48,34 +48,34 @@ function policy(signingRepository = "acme/engineering-governance") {
   });
 }
 
-function seedBundle(): { artifactSha256: string; sumsPath: string } {
+function defaultLock(): unknown {
   const catalog = baselineCatalogById("ecc");
+  return {
+    schemaVersion: 1,
+    sources: [
+      {
+        id: "ecc",
+        owner: catalog.owner,
+        repo: catalog.repo,
+        pinnedSha: catalog.pinnedSha,
+        components: [
+          {
+            id: "skill:verification-loop",
+            paths: ["skills/verification-loop"],
+            treeSha256: "a".repeat(64),
+            verdict: "pass",
+            analyzers: [{ name: "aih-native", version: "2.7.0" }],
+            findings: [],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function seedBundle(lock: unknown = defaultLock()): { artifactSha256: string; sumsPath: string } {
   const artifactPath = ".aih/baseline-reports/ecc.json";
-  const artifact = `${JSON.stringify(
-    {
-      schemaVersion: 1,
-      sources: [
-        {
-          id: "ecc",
-          owner: catalog.owner,
-          repo: catalog.repo,
-          pinnedSha: catalog.pinnedSha,
-          components: [
-            {
-              id: "skill:verification-loop",
-              paths: ["skills/verification-loop"],
-              treeSha256: "a".repeat(64),
-              verdict: "pass",
-              analyzers: [{ name: "aih-native", version: "2.7.0" }],
-              findings: [],
-            },
-          ],
-        },
-      ],
-    },
-    null,
-    2,
-  )}\n`;
+  const artifact = `${JSON.stringify(lock, null, 2)}\n`;
   const artifactSha256 = sha256Hex(artifact);
   const manifest = `${JSON.stringify(
     {
@@ -176,6 +176,40 @@ describe("resolveOrgBaselineEvidence", () => {
     });
     expect(result.evidence).toBeUndefined();
     expect(result.checks.at(-1)).toMatchObject({ verdict: "fail", code: "bundle.signature" });
+  });
+
+  it("rejects a signed lock newer than this build loudly, never as absent evidence", async () => {
+    const lock = defaultLock() as { schemaVersion: number };
+    seedBundle({ ...lock, schemaVersion: 2 });
+    const result = await resolveOrgBaselineEvidence({
+      root,
+      catalog: baselineCatalogById("ecc"),
+      policy: policy(),
+      run: fakeRunner(() => ({ code: 0, stdout: "verified" })),
+    });
+    expect(result.evidence).toBeUndefined();
+    const failure = result.checks.find((check) => check.verdict === "fail");
+    expect(failure?.code).toBe("baseline.evidence-schema-unsupported");
+    expect(failure?.detail).toContain("schema version 2");
+    expect(failure?.detail).toContain("version 1");
+    // The misdiagnosis this floor exists to stop: skew must never be reported
+    // as the absence it causes.
+    expect(failure?.detail).not.toContain("contains no baseline evidence");
+  });
+
+  it("rejects a signed artifact this build cannot parse instead of silently skipping it", async () => {
+    seedBundle({ schemaVersion: 1, sources: [{ id: "ecc", componentsRenamed: [] }] });
+    const result = await resolveOrgBaselineEvidence({
+      root,
+      catalog: baselineCatalogById("ecc"),
+      policy: policy(),
+      run: fakeRunner(() => ({ code: 0, stdout: "verified" })),
+    });
+    expect(result.evidence).toBeUndefined();
+    expect(result.checks.at(-1)).toMatchObject({
+      verdict: "fail",
+      code: "baseline.evidence-schema-unsupported",
+    });
   });
 
   it("does nothing when policy has no override for the requested source pin", async () => {

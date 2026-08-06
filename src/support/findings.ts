@@ -704,6 +704,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Do not install the changed bytes. Restore the exact pinned component or re-vet the new content and issue a signed org evidence bundle.",
   },
+  "baseline.evidence-schema-unsupported": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "signed baseline evidence uses a schema this build cannot read",
+    action:
+      "Upgrade aih to a build that parses the evidence lock's declared schema version, then re-run. Do not install against older evidence to work around it, and do not hand-edit the lock's schemaVersion — the signature covers the bytes you would be changing.",
+  },
   "baseline.evidence-blocked": {
     audience: "developer",
     failSeverity: "blocking",

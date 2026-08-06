@@ -8,6 +8,13 @@ const GIT_SHA = /^[0-9a-f]{40}$/;
 
 export const BASELINE_REPORTS_DIR = ".aih/baseline-reports";
 
+/**
+ * The single lock schema version this build parses. The version-skew floor
+ * (`./skew.ts`) reads it, so the floor and the parser can never disagree about
+ * what "readable" means.
+ */
+export const BASELINE_EVIDENCE_SCHEMA_VERSION = 1;
+
 function isSafeRelativePath(value: string): boolean {
   if (value.length === 0 || value.startsWith("/") || value.startsWith("./")) return false;
   if (value.includes("\\") || value.endsWith("/") || value.includes("//")) return false;
@@ -100,7 +107,7 @@ export const BaselineSourceEvidenceSchema = z
 
 export const BaselineEvidenceLockSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(BASELINE_EVIDENCE_SCHEMA_VERSION),
     sources: z.array(BaselineSourceEvidenceSchema).min(1),
   })
   .strict()
