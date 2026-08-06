@@ -181,6 +181,8 @@ input,select,textarea{font:inherit}
   transition:background 160ms ease,color 160ms ease}
 .chip:hover{background:var(--fill-2);color:var(--ink)}
 .chip[aria-pressed="true"]{background:var(--cyan-soft);color:var(--cyan);box-shadow:inset 0 0 0 1px var(--cyan)}
+.chip[aria-disabled="true"]{opacity:.55;cursor:default}
+.chip[data-host][aria-disabled="false"]{color:var(--cyan);box-shadow:inset 0 0 0 1px var(--cyan)}
 
 /* plane */
 /* flex column, not grid: as direct grid items these cards resolved to a 2px
@@ -313,6 +315,8 @@ summary{cursor:pointer;color:var(--accent-ink);font-size:11.5px;display:flex;ali
 summary{min-height:32px}
 .row-actions{display:flex;gap:5px;flex-wrap:wrap}
 .row-details{margin:0}
+.row-slot{grid-column:1/-1}
+.row-slot:empty{display:none}
 .receipt-record{white-space:pre-wrap;max-width:100%;max-height:20rem;overflow:auto}
 .tip-wrap{display:inline-flex;position:relative;vertical-align:middle;margin-left:.3rem}
 .help-button{min-width:24px;min-height:24px;padding:0;border-radius:999px;font-weight:700;
@@ -408,6 +412,11 @@ summary{min-height:32px}
       <section class="gcard sect"><div class="cap">Frameworks</div><div class="chips" id="rail-frameworks"></div></section>
       <section class="gcard sect"><div class="cap">Capabilities</div><div class="chips" id="rail-caps"></div></section>
       <section class="gcard sect"><div class="cap">ECC modules</div><div class="chips" id="rail-modules"></div></section>
+      <section class="gcard sect">
+        <div class="cap">Hosts <span class="end" id="rail-host-count"></span></div>
+        <div class="chips" id="rail-hosts"></div>
+        <p class="help" id="rail-host-note"></p>
+      </section>
       <section class="gcard sect">
         <div class="cap">Your sources</div>
         <button type="button" class="btn sm" id="open-custom" style="justify-content:center">Add custom MCP</button>
@@ -564,17 +573,34 @@ const custody=function(kind){return (CUSTODY[kind]||CUSTODY.external).map(functi
    group card already states the framework and the owner, so repeating them on
    every row is noise. The full title stays the drawer key and the accessible
    name. */
+/* ECC's catalog carries no per-component description - a component is
+   {id, paths, skillContent} and nothing else - so a per-name tooltip would have
+   to be invented. These are kind-level and true of every member, which is the
+   most that can be said without making prose up. Recorded as ECC_PR_01. */
+const KIND_HELP={agent:"An ECC agent definition: a specialised reviewer or resolver ECC installs and runs.",
+  skill:"A packaged workflow the framework installs and runs.",
+  baseline:"A baseline component group the framework installs as a unit.",
+  module:"An upstream ECC module. Any profile listing it includes it; selectable on its own.",
+  lang:"A declarable language. ECC may declare reviewer and build-resolver agents alongside it.",
+  framework:"A declarable framework. ECC may declare reviewer and web agents alongside it.",
+  capability:"A capability bundle grouping related ECC components.",
+  mcp:"ECC's declaration of an MCP server. Selecting AIH's own server is what makes one effective.",
+  runtime:"A framework runtime surface: installer, plugin or steering directory."};
 const ridLabel=function(label){const cut=String(label).indexOf(":");
   return cut===-1?esc(label):'<u>'+esc(String(label).slice(0,cut+1))+'</u>'+esc(String(label).slice(cut+1))};
 const row=function(title,detail,status,kind,action,note,label){
   return '<div class="row'+(kind==="requested"?" on":"")+'" data-state="'+esc(kind)+'" data-row="'+esc(title)+'">'+
     (action||'<span class="tick" aria-hidden="true"></span>')+
-    '<button type="button" class="rid" data-detail="'+esc(title)+'" aria-label="'+esc(title)+'"><strong>'+ridLabel(label||title)+'</strong></button>'+
+    '<button type="button" class="rid" data-detail="'+esc(title)+'" aria-label="'+esc(title)+'" title="'+esc(detail)+'"><strong>'+ridLabel(label||title)+'</strong></button>'+
     '<span class="cust" aria-hidden="true">'+custody(kind)+'</span>'+
     '<button type="button" class="more" data-detail="'+esc(title)+'" aria-label="Details for '+esc(title)+'">&rsaquo;</button>'+
     '<span class="badge '+kind+'">'+esc(status)+'</span>'+
     (note?'<p class="mono sr">'+esc(note)+'</p>':"")+
     '<span class="sr">'+esc(detail)+'</span>'+
+    /* A full-width slot the enhancement block can append disclosures into. It
+       used to append to the row's first element child, which is the tick in
+       the compact row, so receipt detail landed inside a 24px button. */
+    '<div class="row-slot"></div>'+
     '</div>'};
 const PROVENANCE_PREFIX="Requested by: ";
 /* Every origin that declared a control is kept, not just the first. An
@@ -685,11 +711,11 @@ const frameworkInventoryRows=function(){const active=activeSelectionFramework(go
   const rows=group.rows.map(function(entry){const framework=entry.framework,asset=entry.asset;
     const selected=isFrameworkSelected(framework.id,asset.id);
     return row(framework.id+" / "+asset.kind+": "+asset.id,
-      "AIH records this selection with its pinned source; "+framework.id+" installs and runs it. Recording intent is not enforcement.",
+      (KIND_HELP[asset.kind]||"A framework-owned component.")+" "+framework.id+" installs and runs it; AIH records the selection with its pinned source."+(asset.riders&&asset.riders.length?" Declares "+asset.riders.length+" rider(s): "+asset.riders.join(", ")+".":""),
       selected?"Selected - requested intent recorded":"Selectable - "+framework.id+" installs and runs it",
       selected?"requested":"external",
       tick("data-framework-select",framework.id+"|"+asset.kind+"|"+asset.id,selected,asset.id),
-      "Owned by "+framework.repository+" at "+framework.commit+", source "+asset.source.path+". Evidence: "+evidenceCommand(framework,asset),
+      "Owned by "+framework.repository+" at "+framework.commit+", source "+asset.source.path+"."+(asset.riders&&asset.riders.length?" Also brings in "+asset.riders.join(", ")+".":"")+" Evidence: "+evidenceCommand(framework,asset),
       asset.id)}).join("");
   return '<section class="gcard grp group" data-open="'+open+'" data-groupcard><button type="button" class="grphead" data-group aria-expanded="'+(open?"true":"false")+'"><span class="tw" aria-hidden="true">&#9654;</span><h2>'+esc(group.label)+'</h2><span class="own">'+esc(group.owner)+'</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody">'+rows+'</div></section>'}).join("")+notice};
 /* A pinned custom candidate must end in an exact command, not in nothing.
@@ -782,6 +808,14 @@ const paintDrawer=function(id){
   html+='</div>';
   if(item.desc){html+='<p class="note ok">'+esc(item.desc)+'</p>'}
   if(item.asset){html+='<p class="note">'+esc(item.framework.id)+' owns this component and installs and runs it. AIH records the selection with its pinned source; recording intent is not enforcement.</p>'}
+  /* ECC's own declaration riders, stated before the click rather than
+     discovered after it. Adding them is a separate, explicit action: the
+     policy document has no field in which to refcount who pulled what in, so
+     inventing an implicit cascade would author state it cannot represent. */
+  if(item.asset&&item.asset.riders&&item.asset.riders.length){const missing=item.asset.riders.filter(function(id){return !isFrameworkSelected(item.framework.id,id)});
+    html+='<div class="cap">Brings in with it</div><div class="kv">'+item.asset.riders.map(function(id){return kv(id,isFrameworkSelected(item.framework.id,id)?"selected":"not selected")}).join("")+'</div>'+
+      '<p class="note">'+esc(item.framework.id)+' declares these alongside '+esc(item.asset.id)+'. Selecting it does not pull them in on its own - add them here so every selection in the policy is one you made.</p>'+
+      (missing.length?'<div class="brow"><button type="button" class="btn sm" data-add-riders="'+esc(item.framework.id+"|"+item.asset.id)+'">Add '+missing.length+' rider(s) too</button></div>':"")}
   if(item.hook){html+='<div class="cap">Hook disclosure</div><div class="kv">'+
     kv("Trigger / event",esc(item.hook.behaviour.trigger))+kv("Records",esc(item.hook.behaviour.records))+
     kv("Artifact written",esc(item.hook.behaviour.artifact))+kv("Failure behaviour",esc(item.hook.behaviour.failureMode))+
@@ -805,6 +839,12 @@ scrimNode.addEventListener("click",closeDrawer);
    the toolbar. Distinct attributes for distinct jobs. */
 document.addEventListener("click",function(event){const opener=event.target.closest&&event.target.closest("[data-detail]");if(opener){openDrawer(opener.getAttribute("data-detail"));return}
   if(event.target.closest&&event.target.closest("[data-drawer-close]")){closeDrawer()}});
+document.addEventListener("click",function(event){const rider=event.target.closest&&event.target.closest("[data-add-riders]");if(!rider){return}
+  const parts=String(rider.getAttribute("data-add-riders")).split("|");const found=frameworkAsset(parts[0],parts[1]);if(!found||!found.asset.riders){return}
+  const previous=structuredClone(state.policy);const g=ensureGovernance();if(!Array.isArray(g.externalSelections)){g.externalSelections=[]}
+  let added=0;found.asset.riders.forEach(function(id){const target=frameworkAsset(found.framework.id,id);if(target&&selectFrameworkAsset(g,target.framework,target.asset)){added++}});
+  if(!added){state.policy=previous;announce("Every component "+found.asset.id+" declares is already selected.",true);render();return}
+  commitPolicy(previous,"Added "+added+" component(s) declared by "+found.asset.id+" as requested intent with their pinned sources.")});
 document.addEventListener("click",function(event){const copy=event.target.closest&&event.target.closest("[data-copy]");if(!copy){return}if(navigator.clipboard){navigator.clipboard.writeText(copy.getAttribute("data-copy"))}copy.textContent="COPIED";setTimeout(function(){copy.textContent="COPY"},1400)});
 /* ── theme, sheet, spotlight ─────────────────────────────────────────────── */
 document.addEventListener("click",function(event){const button=event.target.closest&&event.target.closest("[data-theme-set]");if(!button){return}document.documentElement.dataset.theme=button.getAttribute("data-theme-set");document.querySelectorAll("[data-theme-set]").forEach(function(node){node.setAttribute("aria-pressed",node===button?"true":"false")})});
@@ -868,7 +908,7 @@ byId("add-curation").addEventListener("click",function(){const frameworkId=byId(
 byId("custom-form").addEventListener("submit",function(event){event.preventDefault();const id=byId("custom-id").value.trim(),pkg=byId("custom-package").value.trim(),version=byId("custom-version").value.trim(),integrity=byId("custom-integrity").value.trim(),evidence=byId("custom-evidence").value.trim(),note=byId("custom-note").value.trim();const g=governance();if(g.catalog.custom.some(function(item){return item.id===id})){announce("Custom candidate identifier already exists.",true);return}const previous=structuredClone(state.policy);g.catalog.custom.push({id:id,kind:"mcp",description:"Pending custom MCP",capabilities:[],risks:["custom source"],source:{type:"stdio",resolver:"npx",registry:"https://registry.npmjs.org",package:pkg,version:version,integrity:integrity},targets:["claude"],projector:"mcp-managed-settings",lifecycle:"supported",evidence:{record:evidence},clarification:note||undefined});if(commitPolicy(previous,"Pending custom MCP added. It cannot be activated.")){event.target.reset()}});
 const readFile=function(input,callback){const file=input.files&&input.files[0];if(!file){return}const reader=new FileReader();reader.onload=function(){callback(String(reader.result||""))};reader.readAsText(file)};
 byId("import-policy").addEventListener("click",function(){byId("policy-file").click()});byId("policy-file").addEventListener("change",function(event){readFile(event.target,function(text){try{const value=JSON.parse(text);if(!value||typeof value!=="object"||Array.isArray(value)){throw new Error("not an object")}const problems=schemaErrors(model.schema,value,"").concat(policySemantics(value),policyTextSemantics(value));if(problems.length){throw new Error(problems.slice(0,3).join("; "))}state.policy=value;announce("Policy imported without transformation after schema and policy-grammar validation.");render()}catch(error){announce("Policy import rejected: "+(error&&error.message?error.message:"valid policy JSON required"),true)}})});
-byId("import-evidence").addEventListener("click",function(){byId("evidence-file").click()});byId("evidence-file").addEventListener("change",function(event){readFile(event.target,function(text){try{const value=JSON.parse(text);if(!value||typeof value!=="object"||Array.isArray(value)){throw new Error("not an object")}state.receipt=value;announce("Authority/audit data preserved for preflight only; it is not verified and does not create effective approval.");renderReceipt()}catch(error){announce("Evidence import failed: valid JSON object required.",true)}})});
+byId("import-evidence").addEventListener("click",function(){byId("evidence-file").click()});byId("evidence-file").addEventListener("change",function(event){readFile(event.target,function(text){try{const value=JSON.parse(text);if(!value||typeof value!=="object"||Array.isArray(value)){throw new Error("not an object")}state.receipt=value;announce("Authority/audit data preserved for preflight only; it is not verified and does not create effective approval.");renderReceipt();if(typeof window.__aihPolicyWorkbenchEnhanceRows==="function"){window.__aihPolicyWorkbenchEnhanceRows()}}catch(error){announce("Evidence import failed: valid JSON object required.",true)}})});
 byId("copy-approvals").addEventListener("click",function(){if(state.receipt&&Array.isArray(state.receipt.approvals)){const previous=structuredClone(state.policy);governance().authority.approvals=structuredClone(state.receipt.approvals);commitPolicy(previous,"Approval subjects preserved in governance.authority.approvals; no signature or effective-approval claim is made.")}});
 byId("validate").addEventListener("click",function(){const problems=policyProblems();if(problems.length){announce("Schema and policy-grammar validation failed: "+problems.slice(0,3).join("; "),true)}else{announce("Schema and policy-grammar validation passed. Authority, scans, projection, and effective state require the AIH engine in a target repository.")}renderPreview()});
 byId("export").addEventListener("click",function(){const problems=policyProblems();if(problems.length){announce("Export blocked: "+problems.slice(0,3).join("; "),true);return}renderPreview();announce("Policy export preview refreshed from the actual policy schema and grammar.")});
@@ -878,6 +918,15 @@ byId("download").addEventListener("click",function(){const problems=policyProble
    only set dataset.open collapsed again the moment anything was selected. */
 byId("toggle-groups").addEventListener("click",function(event){const groups=[].slice.call(document.querySelectorAll(".grp"));const open=groups.some(function(group){return group.dataset.open!=="1"});groups.forEach(function(group){group.dataset.open=open?"1":"0";const head=group.querySelector("[data-group]");if(head){head.setAttribute("aria-expanded",open?"true":"false");const label=head.querySelector("h2");if(label){openGroups[label.textContent]=open}}});event.target.textContent=open?"Collapse all":"Expand all";paintShell()});
 document.querySelectorAll("[data-group]").forEach(function(head){head.setAttribute("aria-expanded",head.closest(".grp").dataset.open==="1"?"true":"false")});
+/* AIH knows eleven CLIs; an org policy can name two of them as targets. Showing
+   only the two leaves an administrator unable to tell whether the rest are
+   unknown to AIH or merely unprojectable by policy, so both facts are stated. */
+const paintHosts=function(){const hosts=model.catalog.hosts||[];const projectable=hosts.filter(function(host){return host.policyTarget});
+  const list=byId("rail-hosts");if(!list){return}
+  list.innerHTML=hosts.map(function(host){return '<span class="chip" data-host="'+esc(host.id)+'" aria-disabled="'+(host.policyTarget?"false":"true")+'" title="'+esc(host.label+(host.policyTarget?" - a policy activation can target this host":" - AIH supports this CLI, but an org policy cannot target it")+". MCP support: "+host.mcpSupport)+'">'+esc(host.id)+'</span>'}).join("");
+  byId("rail-host-count").textContent=projectable.length+" of "+hosts.length;
+  byId("rail-host-note").textContent="AIH supports "+hosts.length+" CLIs. A policy activation can target "+projectable.map(function(host){return host.id}).join(" and ")+"; the rest are installable by AIH but carry no org-policy projector, so they are listed and not targetable."};
+paintHosts();
 /* The compact row moved detail into the drawer, so the inline help that used to
    sit on every row now sits where authoring actually happens. */
 byId("curation-editor").querySelector("summary").insertAdjacentHTML("beforeend",help("external curation","AIH preserves audited curation intent for agents, skills and commands with a pin and an audit record. It never installs, projects or enforces them - ECC and Superpowers do."));
@@ -924,9 +973,9 @@ byId("copy-approvals").addEventListener("click",function(event){event.preventDef
   byId("add-curation").addEventListener("click",function(event){event.preventDefault();event.stopImmediatePropagation();const result=curationIssues();const values=result.values;const editing=state.editing&&state.editing.kind==="curation"?state.editing:null;const frameworkId=editing?editing.framework:byId("curation-framework").value;const existingGroup=governance().externalCuration.find(function(item){return item.framework===frameworkId});const duplicate=existingGroup&&existingGroup.items.some(function(item,index){return item.kind===values.kind&&item.id===values.id&&(!editing||editing.framework!==existingGroup.framework||editing.index!==index)});if(duplicate){result.issues["curation-id"]="That framework item already exists."}if(Object.keys(result.issues).length){recover("curation",result.issues,"Correct the highlighted curation fields.");return}const previous=structuredClone(state.policy);const g=ensureGovernance();const group=g.externalCuration.find(function(item){return item.framework===frameworkId});const item={kind:values.kind,id:values.id,source:{repository:values.repository,commit:values.commit,path:values.path},audit:{record:values.record,digest:values.digest}};if(values.note){item.clarification=values.note}if(editing){const target=g.externalCuration.find(function(entry){return entry.framework===editing.framework});if(!target||!target.items[editing.index]){state.policy=previous;announce("The curation item changed before it could be saved; nothing was replaced.",true);return}target.items[editing.index]=item}else if(group){group.items.push(item)}else{g.externalCuration.push({framework:frameworkId,items:[item]})}if(commitPolicy(previous,editing?"External curation intent updated; it remains report-only and not enforced by AIH.":"External curation intent added; it is report-only and not enforced by AIH.")){resetCurationEditor();byId("curation-id").value="";byId("curation-note").value=""}},true);
   byId("cancel-curation-edit").addEventListener("click",function(){if(!(state.editing&&state.editing.kind==="curation")){return}resetCurationEditor();announce("Curation edit cancelled. Select a framework to add a new report-only item.")});
   byId("custom-form").addEventListener("submit",function(event){event.preventDefault();event.stopImmediatePropagation();const result=customIssues();const values=result.values;const editing=state.editing&&state.editing.kind==="custom"?state.editing:null;const duplicate=governance().catalog.custom.some(function(item,index){return item.id===values.id&&(!editing||editing.index!==index)});if(duplicate){result.issues["custom-id"]="That pending custom candidate already exists."}if(Object.keys(result.issues).length){recover("custom",result.issues,"Correct the highlighted custom-candidate fields.");return}const previous=structuredClone(state.policy);const g=ensureGovernance();const item={id:values.id,kind:"mcp",description:"Pending custom MCP",capabilities:[],risks:["custom source"],source:{type:"stdio",resolver:"npx",registry:"https://registry.npmjs.org",package:values.pkg,version:values.version,integrity:values.integrity},targets:["claude"],projector:"mcp-managed-settings",lifecycle:"supported",evidence:{record:values.evidence}};if(values.note){item.clarification=values.note}if(editing){g.catalog.custom[editing.index]=item}else{g.catalog.custom.push(item)}if(commitPolicy(previous,editing?"Pending custom MCP updated. It remains blocked and cannot be activated.":"Pending custom MCP added. It cannot be activated.")){state.editing=null;clearFields("custom");event.currentTarget.reset()}},true);
-  const detail=function(row,label,lines){if(row.querySelector(".row-details")){return}const primary=row.firstElementChild;if(!primary){return}const disclosure=document.createElement("details");disclosure.className="row-details";const summary=document.createElement("summary");summary.textContent="Details for "+label;const body=document.createElement("p");body.className="mono";body.textContent=lines.join(" · ");disclosure.append(summary,body);primary.append(disclosure)};
+  const detail=function(row,label,lines){if(row.querySelector(".row-details")){return}const primary=row.querySelector(".row-slot")||row.firstElementChild;if(!primary){return}const disclosure=document.createElement("details");disclosure.className="row-details";const summary=document.createElement("summary");summary.textContent="Details for "+label;const body=document.createElement("p");body.className="mono";body.textContent=lines.join(" · ");disclosure.append(summary,body);primary.append(disclosure)};
   const importedRecordText=function(record){try{return JSON.stringify(record,null,2)}catch(_error){return "[unserializable imported record]"}};
-  const receiptDetail=function(row,label,type,record){if(row.querySelector(".row-details")){return}const primary=row.firstElementChild;if(!primary){return}const disclosure=document.createElement("details");disclosure.className="row-details";const summary=document.createElement("summary");summary.textContent="Details for "+label;const notice=document.createElement("p");notice.className="mono";notice.textContent="Status: preserved/preflight-only; not verified or effective. Full imported "+type+" record (untrusted):";const body=document.createElement("pre");body.className="mono receipt-record";body.textContent=importedRecordText(record);disclosure.append(summary,notice,body);primary.append(disclosure)};
+  const receiptDetail=function(row,label,type,record){if(row.querySelector(".row-details")){return}const primary=row.querySelector(".row-slot")||row.firstElementChild;if(!primary){return}const disclosure=document.createElement("details");disclosure.className="row-details";const summary=document.createElement("summary");summary.textContent="Details for "+label;const notice=document.createElement("p");notice.className="mono";notice.textContent="Status: preserved/preflight-only; not verified or effective. Full imported "+type+" record (untrusted):";const body=document.createElement("pre");body.className="mono receipt-record";body.textContent=importedRecordText(record);disclosure.append(summary,notice,body);primary.append(disclosure)};
   const action=function(row,label,kind,index,framework){let actions=row.querySelector(".row-actions");if(!actions){actions=document.createElement("div");actions.className="row-actions";row.append(actions)}if(actions.querySelector("[data-workbench-action]")){return}[ ["Edit / prefill","edit"],["Remove","remove"] ].forEach(function(item){const button=document.createElement("button");button.type="button";button.textContent=item[0];button.setAttribute("aria-label",item[0]+" "+label);button.dataset.workbenchAction=item[1];button.dataset.workbenchKind=kind;button.dataset.workbenchIndex=String(index);if(framework){button.dataset.workbenchFramework=framework}actions.append(button)})};
   const enhanceRows=function(){setCurationEditState(Boolean(state.editing&&state.editing.kind==="curation"));const g=governance();Array.from(byId("custom-rows").querySelectorAll(".row")).forEach(function(row,index){const item=g.catalog.custom[index];if(!item){return}detail(row,item.id,["Status: pending and blocked; no activation affordance.","Package: "+item.source.package+" @ "+item.source.version,"Registry: "+item.source.registry,"Integrity: "+item.source.integrity,"Evidence record: "+item.evidence.record,"Clarification: "+(item.clarification||"none")]);action(row,item.id,"custom",index)});let curationIndex=0;g.externalCuration.forEach(function(group){group.items.forEach(function(item,index){const row=byId("curation-rows").querySelectorAll(".row")[curationIndex++];if(!row){return}detail(row,group.framework+" "+item.kind+" "+item.id,["Status: report-only external guidance; not enforced by AIH.","Repository: "+item.source.repository,"Commit: "+item.source.commit,"Path: "+item.source.path,"Audit record: "+item.audit.record,"Audit digest: "+item.audit.digest,"Clarification: "+(item.clarification||"none")]);action(row,item.id,"curation",index,group.framework)})});const receipt=state.receipt||{};const approvalItems=Array.isArray(receipt.approvals)?receipt.approvals:[];const evidenceItems=Array.isArray(receipt.evidence)?receipt.evidence:[];const receiptRows=byId("approval-rows").querySelectorAll(".row");approvalItems.forEach(function(item,index){const row=receiptRows[index];if(!row){return}receiptDetail(row,item.id||"approval","approval",item)});evidenceItems.forEach(function(item,index){const row=receiptRows[approvalItems.length+index];if(!row){return}receiptDetail(row,item.id||"evidence","evidence",item)})};
   document.addEventListener("click",function(event){const button=event.target.closest&&event.target.closest('[data-workbench-kind="curation"]');if(!button){return}if(button.dataset.workbenchAction==="edit"){setCurationEditState(true)}if(button.dataset.workbenchAction==="remove"){resetCurationEditor()}});

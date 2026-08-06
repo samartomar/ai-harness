@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { baselineCatalogById } from "../baseline-evidence/catalogs.js";
-import { CORE_ECC_COMPONENTS } from "../ecc/components.js";
+import { CORE_ECC_COMPONENTS, ECC_DECLARATION_RIDERS } from "../ecc/components.js";
 import { eccProfileModuleIds } from "../ecc/evidence.js";
+import { CLI_REGISTRY, REGISTRY_IDS } from "../internals/cli-registry.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
 import { usageRecorderScript } from "../usage/capture.js";
@@ -65,6 +66,12 @@ export interface PolicyAuthoringAsset {
    * stays visible as inventory but cannot be authored into `externalCuration`.
    */
   curationKind?: "agent" | "skill" | "command";
+  /**
+   * Components this one pulls in with it, from ECC's own declaration riders.
+   * Present only where the pinned catalog actually carries every rider, so the
+   * surface never names a component the inventory denies.
+   */
+  riders?: string[];
   source: { repository: string; commit: string; path: string };
 }
 
@@ -129,11 +136,40 @@ export interface PolicyAuthoringComposition {
   parts: PolicyAuthoringCompositionPart[];
 }
 
+/**
+ * Every AI CLI this build knows, and whether an org policy can project onto it.
+ * AIH's registry carries eleven; `PolicyTargetSchema` carries two. Stating that
+ * asymmetry is the point: an administrator who sees only claude and codex has
+ * no way to tell whether the others are unknown or merely unprojectable.
+ */
+export interface PolicyAuthoringHost {
+  id: string;
+  label: string;
+  /** True when an org-policy activation can name this host as a target. */
+  policyTarget: boolean;
+  mcpSupport: string;
+}
+
+export function policyAuthoringHosts(): PolicyAuthoringHost[] {
+  const targets = new Set(["claude", "codex"]);
+  return REGISTRY_IDS.map((id) => {
+    const cli = CLI_REGISTRY[id];
+    if (cli === undefined) throw new Error(`cli registry is missing ${id}`);
+    return {
+      id,
+      label: cli.label,
+      policyTarget: targets.has(id),
+      mcpSupport: cli.mcp?.support ?? "none",
+    };
+  });
+}
+
 export interface PolicyAuthoringCatalog {
   mcp: Array<{ id: string; description: string; server: McpServer; control: AihPolicyControl }>;
   hooks: PolicyAuthoringHook[];
   frameworks: PolicyAuthoringFramework[];
   enterpriseComposition: PolicyAuthoringComposition;
+  hosts: PolicyAuthoringHost[];
 }
 
 export function policyAuthoringMcpCatalog(): Record<string, McpServer> {
@@ -208,6 +244,16 @@ function curationKind(id: string): PolicyAuthoringAsset["curationKind"] {
 
 function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
   const catalog = baselineCatalogById(id);
+  const present = new Set(catalog.components.map((component) => component.id));
+  // Only name riders the pinned catalog actually contains: a relation that
+  // points at a component this framework does not carry is a claim its own
+  // inventory denies, and it must not reach an administrator.
+  const ridersFor = (componentId: string): string[] | undefined => {
+    const declared = ECC_DECLARATION_RIDERS[componentId];
+    if (declared === undefined) return undefined;
+    const usable = declared.filter((rider) => present.has(rider));
+    return usable.length > 0 ? [...usable] : undefined;
+  };
   return {
     id,
     repository: `${catalog.owner}/${catalog.repo}`,
@@ -217,10 +263,12 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
       if (path === undefined)
         throw new Error(`baseline component ${component.id} declares no path`);
       const curation = curationKind(component.id);
+      const riders = ridersFor(component.id);
       return {
         kind: assetKind(component.id),
         id: component.id,
         ...(curation === undefined ? {} : { curationKind: curation }),
+        ...(riders === undefined ? {} : { riders }),
         source: {
           repository: `${catalog.owner}/${catalog.repo}`,
           commit: catalog.pinnedSha,
@@ -302,6 +350,7 @@ export function policyAuthoringCatalog(): PolicyAuthoringCatalog {
   const controls = aihPolicyControls(mcp);
   const ecc = frameworkCatalog("ecc");
   return {
+    hosts: policyAuthoringHosts(),
     enterpriseComposition: enterpriseComposition(ecc),
     mcp: Object.entries(mcp).flatMap(([id, server]) => {
       const control = controls.find((candidate) => candidate.id === id);
