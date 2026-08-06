@@ -249,6 +249,16 @@ input,select,textarea{font:inherit}
 .rid{font:400 11.5px/1.2 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   color:var(--ink-2);text-align:left;min-width:0;padding:5px 0;min-height:26px}
 .row.on .rid{color:var(--ink)}
+/* Verdict is a separate axis from selection, so it reads as a separate mark:
+   a rule on the row's leading edge plus a mono flag, never a restyled tick.
+   Colour alone would not carry it, so the blocked flag also states its code. */
+.row[data-vetted="blocked"]{box-shadow:inset 2px 0 0 var(--warn,#b4541f)}
+.vet{font:400 10px/1 var(--mono);flex:0 0 auto;padding:4px 5px;border-radius:5px;
+  min-height:24px;display:grid;place-items:center;white-space:nowrap}
+.vet[data-vet="pass"]{color:var(--ink-3);background:transparent}
+.vet[data-vet="blocked"]{color:var(--warn,#b4541f);background:color-mix(in srgb,var(--warn,#b4541f) 12%,transparent)}
+.row[data-vetted="blocked"] .rid strong{text-decoration:underline;text-decoration-style:dotted;
+  text-underline-offset:3px;text-decoration-color:var(--warn,#b4541f)}
 .rid strong{font-weight:400}
 .rid u{text-decoration:none;color:var(--ink-3)}
 .tick{width:24px;height:24px;border-radius:6px;background:var(--fill-2);display:grid;place-items:center;
@@ -445,6 +455,10 @@ summary{min-height:32px}
         <button type="button" class="f" data-filter="external" data-label="Selectable" aria-pressed="false">Selectable</button>
         <button type="button" class="f" data-filter="pending" data-label="Awaiting" aria-pressed="false">Awaiting</button>
         <button type="button" class="f" data-filter="blocked" data-label="Blocked" aria-pressed="false">Blocked</button>
+        <!-- A separate axis from the four selection states, and named apart from
+             them: a component the scanners blocked is still selectable, so
+             folding it into "Blocked" would claim aih withheld it. -->
+        <button type="button" class="f" data-filter="vet-blocked" data-label="Vet blocked" aria-pressed="false">Vet blocked</button>
         <span class="sp"></span>
         <button type="button" class="f" id="toggle-groups">Expand all</button>
         <span class="n"><b id="c-shown">0</b> / <b id="c-total">0</b></span>
@@ -603,10 +617,28 @@ const KIND_HELP={agent:"An ECC agent definition: a specialised reviewer or resol
   runtime:"A framework runtime surface: installer, plugin or steering directory."};
 const ridLabel=function(label){const cut=String(label).indexOf(":");
   return cut===-1?esc(label):'<u>'+esc(String(label).slice(0,cut+1))+'</u>'+esc(String(label).slice(cut+1))};
-const row=function(title,detail,status,kind,action,note,label){
-  return '<div class="row'+(kind==="requested"?" on":"")+'" data-state="'+esc(kind)+'" data-row="'+esc(title)+'">'+
+/* The vet flag is deliberately not a second status badge. Selection state and
+   scan verdict are different axes: a component AIH's analyzers blocked is still
+   selectable, because the framework installs it and the governance decision is
+   the administrator's to take. What changed is that they now take it knowing. */
+const vetFlag=function(vet){if(!vet)return "";
+  if(vet.verdict!=="blocked")return '<span class="vet" data-vet="pass" title="Vetted clean by '+esc(vet.analyzers.map(function(a){return a.name}).join(", "))+'" aria-hidden="true">&#10003;</span>';
+  const first=vet.findings[0];
+  /* Not every analyzer reports an occurrence count, so the tally covers only the
+     findings that carry one; inventing the rest would overstate the evidence. */
+  const total=vet.findings.reduce(function(sum,f){return sum+(typeof f.count==="number"?f.count:0)},0);
+  return '<span class="vet" data-vet="blocked" title="'+esc(first?first.detail:"")+'">'+esc(first?first.code:"blocked")+(total>1?"&#183;"+total:"")+'</span>'};
+/* Read aloud, a blocked row must say what failed and who said so; the visual
+   flag alone is a state assistive technology cannot reach. */
+const vetNote=function(vet){if(!vet||vet.verdict!=="blocked")return "";
+  return " Vet: blocked by "+vet.analyzers.map(function(a){return a.name}).join(", ")+" - "+
+    vet.findings.map(function(f){return f.code+(typeof f.count==="number"?" ("+f.count+")":"")+": "+f.detail}).join("; ")+
+    " Selecting it records intent; the finding is yours to accept or reject."};
+const row=function(title,detail,status,kind,action,note,label,vet){
+  return '<div class="row'+(kind==="requested"?" on":"")+'" data-state="'+esc(kind)+'"'+(vet?' data-vetted="'+esc(vet.verdict)+'"':"")+' data-row="'+esc(title)+'">'+
     (action||'<span class="tick" aria-hidden="true"></span>')+
     '<button type="button" class="rid" data-detail="'+esc(title)+'" aria-label="'+esc(title)+'" title="'+esc(detail)+'"><strong>'+ridLabel(label||title)+'</strong></button>'+
+    vetFlag(vet)+
     '<span class="cust" aria-hidden="true">'+custody(kind)+'</span>'+
     '<button type="button" class="more" data-detail="'+esc(title)+'" aria-label="Details for '+esc(title)+'">&rsaquo;</button>'+
     '<span class="badge '+kind+'">'+esc(status)+'</span>'+
@@ -730,8 +762,8 @@ const frameworkInventoryRows=function(){const active=activeSelectionFramework(go
       selected?"Selected - requested intent recorded":"Selectable - "+framework.id+" installs and runs it",
       selected?"requested":"external",
       tick("data-framework-select",framework.id+"|"+asset.kind+"|"+asset.id,selected,asset.id),
-      "Owned by "+framework.repository+" at "+framework.commit+", source "+asset.source.path+"."+(asset.riders&&asset.riders.length?" Also brings in "+asset.riders.join(", ")+".":"")+" Evidence: "+evidenceCommand(framework,asset),
-      asset.id)}).join("");
+      "Owned by "+framework.repository+" at "+framework.commit+", source "+asset.source.path+"."+(asset.riders&&asset.riders.length?" Also brings in "+asset.riders.join(", ")+".":"")+" Evidence: "+evidenceCommand(framework,asset)+(asset.vet?" Already vetted at this pin by "+asset.vet.analyzers.map(function(a){return a.name+" "+a.version}).join(", ")+"; tree "+asset.vet.treeSha256.slice(0,12)+".":"")+vetNote(asset.vet),
+      asset.id,asset.vet)}).join("");
   return '<section class="gcard grp group" data-owner="'+esc(group.owner)+'" data-open="'+open+'" data-groupcard><button type="button" class="grphead" data-group aria-expanded="'+(open?"true":"false")+'"><span class="tw" aria-hidden="true">&#9654;</span><h2>'+esc(group.label)+'</h2><span class="own">'+esc(group.owner)+'</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody">'+rows+'</div></section>'}).join("")+notice};
 /* A pinned custom candidate must end in an exact command, not in nothing.
    The trust scan command takes a local path or a GitHub owner/repo, so the
@@ -778,19 +810,22 @@ const syncRail=function(){const framework=eccFramework();if(!framework){return}c
 /* One pass over the rendered rows: it applies the filter, counts each group,
    paints its meter, and totals the ledger. Reading the DOM keeps the tally
    honest about what an administrator can actually see. */
-const paintShell=function(){const totals={requested:0,pending:0,blocked:0,external:0};let shown=0,total=0;
+const paintShell=function(){const totals={requested:0,pending:0,blocked:0,external:0};let shown=0,total=0,vetBlocked=0;
   document.querySelectorAll(".grp").forEach(function(group){const counts={requested:0,pending:0,blocked:0,external:0};let rows=0,visible=0;
-    group.querySelectorAll(".row[data-state]").forEach(function(node){const kindState=node.getAttribute("data-state");rows++;if(counts[kindState]!==undefined){counts[kindState]++;totals[kindState]++}const match=planeFilter==="all"||planeFilter===kindState;node.hidden=!match;if(match){visible++}});
+    group.querySelectorAll(".row[data-state]").forEach(function(node){const kindState=node.getAttribute("data-state");rows++;if(counts[kindState]!==undefined){counts[kindState]++;totals[kindState]++}
+      const vetted=node.getAttribute("data-vetted")==="blocked";if(vetted){vetBlocked++}
+      const match=planeFilter==="all"||(planeFilter==="vet-blocked"?vetted:planeFilter===kindState);node.hidden=!match;if(match){visible++}});
     total+=rows;shown+=visible;
     const count=group.querySelector(".ct");if(count){count.textContent=rows?(planeFilter==="all"?String(rows):visible+" / "+rows):""}
     const meter=group.querySelector(".meter");if(meter){meter.innerHTML=rows?ROW_STATES.filter(function(s){return counts[s]}).map(function(s){return '<i data-s="'+s+'" style="width:'+(counts[s]/rows*100)+'%"></i>'}).join(""):""}});
   byId("c-shown").textContent=shown;byId("c-total").textContent=total;
   ROW_STATES.forEach(function(s){const node=byId(s==="requested"?"t-req":s==="pending"?"t-wait":s==="blocked"?"t-blk":"t-ext");if(node){node.textContent=totals[s]}});
   /* Every filter states how many rows it would show. A zero is information, not
-     a dead end: Blocked reads 0 because nothing is blocked, and its title says
-     what would put a row there rather than leaving the administrator guessing. */
+     a dead end: its title says what would put a row there rather than leaving the
+     administrator guessing. "Blocked" counts selection state and "Vet blocked"
+     counts scan verdict; they are different axes and must never share a tally. */
   document.querySelectorAll(".f[data-filter]").forEach(function(chip){const key=chip.getAttribute("data-filter");
-    const count=key==="all"?total:(totals[key]||0);
+    const count=key==="all"?total:key==="vet-blocked"?vetBlocked:(totals[key]||0);
     chip.innerHTML=esc(chip.getAttribute("data-label")||"")+' <b>'+count+'</b>';
     /* Deliberately not disabled at zero: a disabled control cannot be focused,
        so it takes its own explanation with it. An empty filter stays clickable

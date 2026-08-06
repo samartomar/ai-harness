@@ -6,6 +6,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The Policy Workbench now shows the **vet verdict AIH's own analyzers reached for every
+  pinned component**, instead of telling an administrator to generate evidence this build
+  already ships. Each row states who scanned it and at exactly what version, plus the
+  content identity of the scanned tree. Components the vet blocked are **visually distinct
+  and stay selectable**: they carry a leading rule, a mono flag naming the finding code, and
+  a screen-reader disclosure listing every finding with its detail. That is deliberate —
+  `blocked` here means an AIH-owned gate failed, which is exactly the case the corrected
+  vocabulary reserves the word for, and the governance decision to accept or reject that
+  finding belongs to the administrator rather than to aih. Verdicts are **pin-bound**: when
+  the shipped evidence was produced against a different commit than the catalog serves, no
+  verdict is shown at all, because a verdict from another commit would launder a stale
+  result into a current claim.
+
 ### Changed
 
 - The from-scratch baseline vet is now **anchored to the pin set rather than to a schedule**,

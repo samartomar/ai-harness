@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { baselineCatalogById } from "../baseline-evidence/catalogs.js";
+import { readVendorBaselineLock } from "../baseline-evidence/vendor.js";
 import { CORE_ECC_COMPONENTS, ECC_DECLARATION_RIDERS } from "../ecc/components.js";
 import { eccProfileModuleIds } from "../ecc/evidence.js";
 import { CLI_REGISTRY, REGISTRY_IDS } from "../internals/cli-registry.js";
@@ -73,6 +74,36 @@ export interface PolicyAuthoringAsset {
    */
   riders?: string[];
   source: { repository: string; commit: string; path: string };
+  /**
+   * The verdict AIH's own analyzers reached for this component at the pinned
+   * commit. Absent only when the shipped evidence was produced against a
+   * different pin, because showing a verdict from another commit would launder a
+   * stale result into a current claim.
+   */
+  vet?: PolicyAuthoringVet;
+}
+
+/** One blocking observation, reduced to what an administrator can act on. */
+export interface PolicyAuthoringVetFinding {
+  code: string;
+  /** Occurrence count where the analyzer reported one; never invented when absent. */
+  count?: number;
+  detail: string;
+}
+
+/**
+ * A vetted component's evidence. `blocked` here means an AIH-owned gate actually
+ * failed — the one thing that word is reserved for. It is never a statement
+ * about provenance, and it never means aih withheld a third-party component.
+ */
+export interface PolicyAuthoringVet {
+  verdict: "pass" | "blocked";
+  /** Content identity of the scanned tree, distinct from the source commit. */
+  treeSha256: string;
+  /** Who reached the verdict, and at exactly what version. */
+  analyzers: Array<{ name: string; version: string }>;
+  /** Empty for `pass`; the lock schema guarantees `blocked` carries at least one. */
+  findings: PolicyAuthoringVetFinding[];
 }
 
 export interface PolicyAuthoringFramework {
@@ -242,9 +273,41 @@ function curationKind(id: string): PolicyAuthoringAsset["curationKind"] {
   return undefined;
 }
 
+/**
+ * Vetted verdicts for one source, keyed by component id, and only when the
+ * evidence was produced against the pin the catalog is serving. A pin mismatch
+ * yields an empty map rather than a stale verdict: silence is honest, a verdict
+ * from another commit is not.
+ */
+function vetVerdicts(sourceId: string, pinnedSha: string): Map<string, PolicyAuthoringVet> {
+  const source = readVendorBaselineLock().sources.find((entry) => entry.id === sourceId);
+  if (source === undefined || source.pinnedSha !== pinnedSha) return new Map();
+  return new Map(
+    source.components.map((component) => [
+      component.id,
+      {
+        verdict: component.verdict,
+        treeSha256: component.treeSha256,
+        analyzers: component.analyzers.map((analyzer) => ({
+          name: analyzer.name,
+          version: analyzer.version,
+        })),
+        // Fingerprints stay internal: they are dedupe keys for the vet, not
+        // something an administrator reviews.
+        findings: component.findings.map((finding) => ({
+          code: finding.code,
+          ...(typeof finding.count === "number" ? { count: finding.count } : {}),
+          detail: finding.detail,
+        })),
+      },
+    ]),
+  );
+}
+
 function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
   const catalog = baselineCatalogById(id);
   const present = new Set(catalog.components.map((component) => component.id));
+  const vetted = vetVerdicts(id, catalog.pinnedSha);
   // Only name riders the pinned catalog actually contains: a relation that
   // points at a component this framework does not carry is a claim its own
   // inventory denies, and it must not reach an administrator.
@@ -264,11 +327,13 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
         throw new Error(`baseline component ${component.id} declares no path`);
       const curation = curationKind(component.id);
       const riders = ridersFor(component.id);
+      const vet = vetted.get(component.id);
       return {
         kind: assetKind(component.id),
         id: component.id,
         ...(curation === undefined ? {} : { curationKind: curation }),
         ...(riders === undefined ? {} : { riders }),
+        ...(vet === undefined ? {} : { vet }),
         source: {
           repository: `${catalog.owner}/${catalog.repo}`,
           commit: catalog.pinnedSha,
