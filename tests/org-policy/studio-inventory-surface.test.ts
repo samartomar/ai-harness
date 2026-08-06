@@ -86,7 +86,7 @@ describe("policy studio framework inventory", () => {
     if (curatable === undefined) throw new Error("expected a curatable asset in the catalog");
     const rowKey = `${curatable.framework.id} / ${curatable.asset.kind}: ${curatable.asset.id}`;
     window.document
-      .querySelector(`[data-open="${rowKey}"]`)
+      .querySelector(`[data-detail="${rowKey}"]`)
       ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     const button = window.document.querySelector("[data-curation-prefill]");
     expect(button).not.toBeNull();

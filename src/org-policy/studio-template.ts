@@ -383,6 +383,7 @@ summary{min-height:32px}
       <button type="button" data-theme-set="light" aria-pressed="true">Light</button>
       <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
     </span>
+    <button type="button" class="btn" id="clear-policy">Clear</button>
     <button type="button" class="btn" id="import-policy">Import</button>
     <button type="button" class="btn" id="import-evidence">Evidence</button>
     <button type="button" class="btn" id="validate">Validate</button>
@@ -564,9 +565,9 @@ const ridLabel=function(label){const cut=String(label).indexOf(":");
 const row=function(title,detail,status,kind,action,note,label){
   return '<div class="row'+(kind==="requested"?" on":"")+'" data-state="'+esc(kind)+'" data-row="'+esc(title)+'">'+
     (action||'<span class="tick" aria-hidden="true"></span>')+
-    '<button type="button" class="rid" data-open="'+esc(title)+'" aria-label="'+esc(title)+'"><strong>'+ridLabel(label||title)+'</strong></button>'+
+    '<button type="button" class="rid" data-detail="'+esc(title)+'" aria-label="'+esc(title)+'"><strong>'+ridLabel(label||title)+'</strong></button>'+
     '<span class="cust" aria-hidden="true">'+custody(kind)+'</span>'+
-    '<button type="button" class="more" data-open="'+esc(title)+'" aria-label="Details for '+esc(title)+'">&rsaquo;</button>'+
+    '<button type="button" class="more" data-detail="'+esc(title)+'" aria-label="Details for '+esc(title)+'">&rsaquo;</button>'+
     '<span class="badge '+kind+'">'+esc(status)+'</span>'+
     (note?'<p class="mono sr">'+esc(note)+'</p>':"")+
     '<span class="sr">'+esc(detail)+'</span>'+
@@ -593,11 +594,17 @@ const addReviewed=function(id){const control=aihControls().find(function(item){r
    profile from offering the catalog while third-party rows were unselectable.
    External curation still needs an audit record and a digest, and no preset may
    author one. */
-const composeVibeProfile=function(){const previous=structuredClone(state.policy);const g=ensureGovernance();if(!Array.isArray(g.externalSelections)){g.externalSelections=[]}const controls=aihControls();controls.forEach(function(control){requestControl(g,control,"vibe profile")});model.catalog.frameworks.forEach(function(framework){framework.assets.forEach(function(asset){selectFrameworkAsset(g,framework,asset)})});state.policy.minimumPosture="vibe";
+const composeVibeProfile=function(){const previous=structuredClone(state.policy);const g=ensureGovernance();if(!Array.isArray(g.externalSelections)){g.externalSelections=[]}const controls=aihControls();controls.forEach(function(control){requestControl(g,control,"vibe profile")});/* Bounded by the one-framework rule: Vibe composes the whole of the framework
+   already in play, or ECC when nothing is selected yet, and states what that
+   leaves out rather than dropping it silently. */
+const chosen=model.catalog.frameworks.find(function(item){return item.id===(activeSelectionFramework(g)||"ecc")})||model.catalog.frameworks[0];
+  chosen.assets.forEach(function(asset){selectFrameworkAsset(g,chosen,asset)});
+  const excluded=model.catalog.frameworks.filter(function(item){return item.id!==chosen.id}).reduce(function(total,item){return total+item.assets.length},0);
+  state.policy.minimumPosture="vibe";
 /* Report the resulting selection, never the delta: composing over an existing
    selection adds nothing for what is already held, and a delta reads as though
    the rest were left out. */
-const selected=g.externalSelections.reduce(function(total,group){return total+group.items.length},0);commitPolicy(previous,"Vibe composed: "+controls.length+" AIH control(s) requested and "+selected+" of "+frameworkAssetCount()+" framework-owned component(s) selected as requested intent with their pinned sources - ECC and Superpowers install and run those, AIH records them. No audit evidence was authored; each selection still owes its own. "+g.catalog.custom.length+" custom candidate(s) stay blocked. Requested intent is not effective until runtime evaluation in a target repository.")};
+const selected=g.externalSelections.reduce(function(total,group){return total+group.items.length},0);commitPolicy(previous,"Vibe composed: "+controls.length+" AIH control(s) requested and "+selected+" of "+chosen.assets.length+" "+chosen.id+" component(s) selected as requested intent with their pinned sources - "+chosen.id+" installs and runs them, AIH records them. A policy selects from only one framework at a time, so "+excluded+" component(s) in the other framework stay listed and unselected. No audit evidence was authored; each selection still owes its own. "+g.catalog.custom.length+" custom candidate(s) stay blocked. Requested intent is not effective until runtime evaluation in a target repository.")};
 /* Enterprise requests the same enforceable set Vibe does - that set is the whole
    of what AIH projects - and selects ECC Core. Its language and security parts
    are deliberately left unselected: the contract says Enterprise exposes Core
@@ -635,8 +642,17 @@ const curatedFrameworkIds=function(g,frameworkId){const group=g.externalCuration
    and neither downgrades a curated component to a bare selection. A curated
    component already holds its audit record and digest; the grammar rejects a
    component that sits in both. */
-const selectFrameworkAsset=function(g,framework,asset){if(curatedFrameworkIds(g,framework.id).indexOf(asset.id)!==-1){return false}let group=g.externalSelections.find(function(item){return item.framework===framework.id});if(group&&group.items.some(function(item){return item.id===asset.id})){return false}if(!group){group={framework:framework.id,items:[]};g.externalSelections.push(group)}group.items.push({kind:asset.kind,id:asset.id,source:{repository:asset.source.repository,commit:asset.source.commit,path:asset.source.path}});return true};
-const toggleFrameworkSelection=function(key){const parts=String(key).split("|");const found=frameworkAsset(parts[0],parts[2]);if(!found){return}const previous=structuredClone(state.policy);const g=ensureGovernance();if(!Array.isArray(g.externalSelections)){g.externalSelections=[]}const group=g.externalSelections.find(function(item){return item.framework===found.framework.id});if(group&&group.items.some(function(item){return item.id===found.asset.id})){group.items=group.items.filter(function(item){return item.id!==found.asset.id});if(!group.items.length){g.externalSelections=g.externalSelections.filter(function(item){return item.framework!==found.framework.id})}commitPolicy(previous,"Deselected "+found.asset.id+"; the exported policy no longer records it.");return}if(!selectFrameworkAsset(g,found.framework,found.asset)){state.policy=previous;announce(found.asset.id+" already carries curation evidence; remove that record first to hold it as a bare selection.",true);render();return}commitPolicy(previous,"Selected "+found.asset.id+": requested intent recorded with its pinned source. "+found.framework.id+" installs and runs it; its audit evidence is still owed.")};
+/* A policy holds one framework at a time. The grammar already says so for
+   framework activations; selections are the same choice one level down, and a
+   surface that let you pick from both would author a policy the grammar
+   rejects. The other framework stays fully listed - this bounds selection, it
+   never hides inventory. */
+const activeSelectionFramework=function(g){const group=(g.externalSelections||[]).find(function(item){return item.items.length});return group?group.framework:null};
+const selectionConflict=function(g,frameworkId){const active=activeSelectionFramework(g);return active&&active!==frameworkId?active:null};
+const selectFrameworkAsset=function(g,framework,asset){if(selectionConflict(g,framework.id)){return false}if(curatedFrameworkIds(g,framework.id).indexOf(asset.id)!==-1){return false}let group=g.externalSelections.find(function(item){return item.framework===framework.id});if(group&&group.items.some(function(item){return item.id===asset.id})){return false}if(!group){group={framework:framework.id,items:[]};g.externalSelections.push(group)}group.items.push({kind:asset.kind,id:asset.id,source:{repository:asset.source.repository,commit:asset.source.commit,path:asset.source.path}});return true};
+const toggleFrameworkSelection=function(key){const parts=String(key).split("|");const found=frameworkAsset(parts[0],parts[2]);if(!found){return}const previous=structuredClone(state.policy);const g=ensureGovernance();if(!Array.isArray(g.externalSelections)){g.externalSelections=[]}const group=g.externalSelections.find(function(item){return item.framework===found.framework.id});if(group&&group.items.some(function(item){return item.id===found.asset.id})){group.items=group.items.filter(function(item){return item.id!==found.asset.id});if(!group.items.length){g.externalSelections=g.externalSelections.filter(function(item){return item.framework!==found.framework.id})}commitPolicy(previous,"Deselected "+found.asset.id+"; the exported policy no longer records it.");return}const conflict=selectionConflict(g,found.framework.id);
+  if(conflict){state.policy=previous;announce("A policy selects from only one framework at a time, and "+conflict+" is already selected. Clear the policy, or deselect the "+conflict+" items, before selecting from "+found.framework.id+".",true);render();return}
+  if(!selectFrameworkAsset(g,found.framework,found.asset)){state.policy=previous;announce(found.asset.id+" already carries curation evidence; remove that record first to hold it as a bare selection.",true);render();return}commitPolicy(previous,"Selected "+found.asset.id+": requested intent recorded with its pinned source. "+found.framework.id+" installs and runs it; its audit evidence is still owed.")};
 /* The inventory is grouped by the catalog's own namespaces, the way the accepted
    artifact groups it, so 151 components read as a structure rather than a list. */
 const GROUP_LABEL={lang:"Languages",framework:"Frameworks",capability:"Capabilities",
@@ -753,7 +769,11 @@ const paintDrawer=function(id){
 const openDrawer=function(id){drawerNode.hidden=false;scrimNode.classList.add("open");paintDrawer(id);drawerNode.dataset.item=id};
 const closeDrawer=function(){scrimNode.classList.remove("open");drawerNode.hidden=true;delete drawerNode.dataset.item};
 scrimNode.addEventListener("click",closeDrawer);
-document.addEventListener("click",function(event){const opener=event.target.closest&&event.target.closest("[data-open]");if(opener){openDrawer(opener.getAttribute("data-open"));return}
+/* data-detail, not data-open: the group cards carry data-open for their own
+   collapsed state, so an opener keyed on it matched the enclosing card from
+   every click inside a group and opened a stub drawer whose scrim then blocked
+   the toolbar. Distinct attributes for distinct jobs. */
+document.addEventListener("click",function(event){const opener=event.target.closest&&event.target.closest("[data-detail]");if(opener){openDrawer(opener.getAttribute("data-detail"));return}
   if(event.target.closest&&event.target.closest("[data-drawer-close]")){closeDrawer()}});
 document.addEventListener("click",function(event){const copy=event.target.closest&&event.target.closest("[data-copy]");if(!copy){return}if(navigator.clipboard){navigator.clipboard.writeText(copy.getAttribute("data-copy"))}copy.textContent="COPIED";setTimeout(function(){copy.textContent="COPY"},1400)});
 /* ── theme, sheet, spotlight ─────────────────────────────────────────────── */
@@ -823,12 +843,21 @@ byId("copy-approvals").addEventListener("click",function(){if(state.receipt&&Arr
 byId("validate").addEventListener("click",function(){const problems=policyProblems();if(problems.length){announce("Schema and policy-grammar validation failed: "+problems.slice(0,3).join("; "),true)}else{announce("Schema and policy-grammar validation passed. Authority, scans, projection, and effective state require the AIH engine in a target repository.")}renderPreview()});
 byId("export").addEventListener("click",function(){const problems=policyProblems();if(problems.length){announce("Export blocked: "+problems.slice(0,3).join("; "),true);return}renderPreview();announce("Policy export preview refreshed from the actual policy schema and grammar.")});
 byId("download").addEventListener("click",function(){const problems=policyProblems();if(problems.length){announce("Download blocked: "+problems.slice(0,3).join("; "),true);return}const blob=new Blob([policyText()],{type:"application/json"});const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="aih-org-policy.json";link.click();URL.revokeObjectURL(url);announce("Policy download started.")});
-byId("toggle-groups").addEventListener("click",function(event){const groups=[].slice.call(document.querySelectorAll(".grp"));const open=groups.some(function(group){return group.dataset.open!=="1"});groups.forEach(function(group){group.dataset.open=open?"1":"0";const head=group.querySelector("[data-group]");if(head){head.setAttribute("aria-expanded",open?"true":"false")}});event.target.textContent=open?"Collapse all":"Expand all"});
+/* Expand all has to record the state, not just paint it: the framework groups
+   are re-rendered from openGroups on every policy change, so a bulk expand that
+   only set dataset.open collapsed again the moment anything was selected. */
+byId("toggle-groups").addEventListener("click",function(event){const groups=[].slice.call(document.querySelectorAll(".grp"));const open=groups.some(function(group){return group.dataset.open!=="1"});groups.forEach(function(group){group.dataset.open=open?"1":"0";const head=group.querySelector("[data-group]");if(head){head.setAttribute("aria-expanded",open?"true":"false");const label=head.querySelector("h2");if(label){openGroups[label.textContent]=open}}});event.target.textContent=open?"Collapse all":"Expand all";paintShell()});
 document.querySelectorAll("[data-group]").forEach(function(head){head.setAttribute("aria-expanded",head.closest(".grp").dataset.open==="1"?"true":"false")});
 /* The compact row moved detail into the drawer, so the inline help that used to
    sit on every row now sits where authoring actually happens. */
 byId("curation-editor").querySelector("summary").insertAdjacentHTML("beforeend",help("external curation","AIH preserves audited curation intent for agents, skills and commands with a pin and an audit record. It never installs, projects or enforces them - ECC and Superpowers do."));
 byId("custom-editor").querySelector("summary").insertAdjacentHTML("beforeend",help("custom sources","A custom MCP is recorded immediately as a fully pinned candidate and stays blocked until a completed scan binds to that exact pin."));
+/* Acceptance step 3 opens with "Reset, select Enterprise, ...", so starting over
+   has to be one control. It restores the generated starting policy exactly,
+   which is also what makes the one-framework rule escapable. */
+document.addEventListener("click",function(event){if(!event.target.closest||!event.target.closest("#clear-policy")){return}
+  state.policy=structuredClone(model.initialPolicy);state.editing=null;
+  announce("Policy cleared. Every selection, requested control and curation record is gone, and either framework can be selected again.");render()});
 byId("presets").innerHTML=PRESETS.map(function(entry){return '<button type="button" class="preset" data-preset="'+esc(entry[0])+'" aria-pressed="false"><b>'+esc(entry[1])+'</b><span>'+esc(entry[2])+'</span></button>'}).join("");
 document.addEventListener("click",function(event){const preset=event.target.closest&&event.target.closest("[data-preset]");if(!preset){return}const select=byId("profile");select.value=preset.getAttribute("data-preset");select.dispatchEvent(new Event("change",{bubbles:true}))});
 buildRail();

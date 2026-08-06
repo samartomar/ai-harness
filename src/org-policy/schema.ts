@@ -719,6 +719,17 @@ const PolicyGovernanceSchema = z
         message: `external framework selection ${duplicateSelection} is duplicated`,
       });
     }
+    // The same contradiction the activation rule above already forbids, one
+    // level down: a policy that selects components from two pinned frameworks
+    // at once has not chosen a framework.
+    const distinctSelection = [...new Set(selectionFrameworks)].sort();
+    if (distinctSelection.length > 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["externalSelections"],
+        message: `only one framework may be selected at a time; this policy selects from ${distinctSelection.join(" and ")}`,
+      });
+    }
     // Selection and curation are two stages of one thing. A component sitting
     // in both is ambiguous about whether its evidence exists, so fail closed
     // rather than leave a surface to guess which record wins.

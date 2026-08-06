@@ -15,6 +15,15 @@ const frameworkAssets = model.catalog.frameworks.flatMap((framework) =>
   framework.assets.map((asset) => ({ framework, asset })),
 );
 const frameworkAssetCount = frameworkAssets.length;
+/**
+ * A policy selects from one framework at a time, so Vibe composes the whole of
+ * the framework in play — ECC when nothing is selected yet — rather than the
+ * whole catalog. The other framework stays listed and unselected.
+ */
+const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc");
+if (ecc === undefined) throw new Error("expected an ecc framework in the catalog");
+const eccAssetCount = ecc.assets.length;
+const excludedCount = frameworkAssetCount - eccAssetCount;
 
 function studio(): Window {
   const window = new Window({ url: "http://localhost/" });
@@ -88,7 +97,7 @@ function curateFromFirstRow(window: Window): string {
   if (curatable === undefined) throw new Error("expected a curatable asset in the catalog");
   const key = `${curatable.framework.id} / ${curatable.asset.kind}: ${curatable.asset.id}`;
   window.document
-    .querySelector(`[data-open="${key}"]`)
+    .querySelector(`[data-detail="${key}"]`)
     ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   const button = window.document.querySelector("[data-curation-prefill]");
   if (button === null) throw new Error("expected a curatable inventory row");
@@ -148,14 +157,14 @@ describe("policy studio profile composition", () => {
   // component's pinned source and no audit fields, so a preset composing one
   // fabricates nothing. Naming the inventory was the compromise this row was
   // forced into while every third-party row was unselectable.
-  it("selects every framework-owned component as requested intent", () => {
+  it("selects every component of the framework in play as requested intent", () => {
     const window = studio();
     selectProfile(window, "vibe");
     const groups = authoredPolicy(window).governance.externalSelections;
-    expect(selectedIds(window).sort()).toEqual(frameworkAssets.map(({ asset }) => asset.id).sort());
-    for (const { framework, asset } of frameworkAssets) {
-      const group = groups.find((item) => item.framework === framework.id);
-      expect(group?.items, asset.id).toContainEqual({
+    expect(groups, "one framework at a time").toHaveLength(1);
+    expect(selectedIds(window).sort()).toEqual(ecc.assets.map((asset) => asset.id).sort());
+    for (const asset of ecc.assets) {
+      expect(groups[0]?.items, asset.id).toContainEqual({
         kind: asset.kind,
         id: asset.id,
         source: { ...asset.source },
@@ -181,16 +190,18 @@ describe("policy studio profile composition", () => {
     expect(curatedIds(window), "stays curated").toContain(curated);
     expect(selectedIds(window), "not also selected").not.toContain(curated);
     expect(announcement(window)).not.toContain("rejected");
-    expect(selectedIds(window)).toHaveLength(frameworkAssetCount - 1);
+    expect(selectedIds(window)).toHaveLength(eccAssetCount - 1);
   });
 
-  it("states what Vibe composed, with countable inventory", () => {
+  it("states what Vibe composed and what the one-framework rule left out", () => {
     const window = studio();
     selectProfile(window, "vibe");
     const text = announcement(window);
     expect(text).toContain(`${controls.length} AIH control`);
-    expect(text).toContain(`${frameworkAssetCount} framework-owned component`);
-    expect(text).toContain("ECC and Superpowers install and run");
+    expect(text).toContain(`${eccAssetCount} ecc component`);
+    expect(text).toContain(`${excludedCount} component(s) in the other framework`);
+    expect(text).toContain("ecc installs and runs them");
+    expect(text.toLowerCase()).toContain("one framework at a time");
     expect(text).not.toContain("no projector");
     expect(text).toContain("not effective until runtime evaluation");
   });
@@ -214,7 +225,7 @@ describe("policy studio profile composition", () => {
     const policy = authoredPolicy(window);
     expect(policy.governance.catalog.reviewed).toHaveLength(controls.length);
     expect(policy.governance.activations).toHaveLength(controls.length);
-    expect(selectedIds(window)).toHaveLength(frameworkAssetCount);
+    expect(selectedIds(window)).toHaveLength(eccAssetCount);
     expect(announcement(window)).not.toContain("rejected");
   });
 
@@ -225,9 +236,7 @@ describe("policy studio profile composition", () => {
     const window = studio();
     selectProfile(window, "enterprise");
     selectProfile(window, "vibe");
-    expect(selectedIds(window)).toHaveLength(frameworkAssetCount);
-    expect(announcement(window)).toContain(
-      `${frameworkAssetCount} of ${frameworkAssetCount} framework-owned component`,
-    );
+    expect(selectedIds(window)).toHaveLength(eccAssetCount);
+    expect(announcement(window)).toContain(`${eccAssetCount} of ${eccAssetCount} ecc component`);
   });
 });
