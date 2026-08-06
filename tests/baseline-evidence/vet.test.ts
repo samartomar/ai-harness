@@ -214,13 +214,13 @@ describe("vetBaselineCatalog", () => {
   it("keeps optional analyzer availability out of deterministic component receipts", async () => {
     const evidence = await vetBaselineCatalog(root, catalog(), {
       scanComponent: async () => ({
-        analyzersRun: ["aih-native", "mcp-scanner@uv:4.8.1"],
+        analyzersRun: ["aih-native", "mcp-scanner@uv:4.8.2"],
         checks: [pass("scan")],
       }),
       requiredAnalyzers: ["aih-native"],
       analyzerVersions: {
         "aih-native": "native.aaaaaaaaaaaa",
-        "mcp-scanner@uv:4.8.1": "4.8.1+uvlock.bbbbbbbbbbbb",
+        "mcp-scanner@uv:4.8.2": "4.8.2+uvlock.bbbbbbbbbbbb",
       },
     });
 
@@ -240,7 +240,7 @@ describe("vetBaselineCatalog", () => {
         analyzerVersions: {
           "aih-native": "2.7.0",
           "skillspector@docker": "326a2b489411@sha256:e82fd471e156",
-          "cisco@uvx": "2.0.12",
+          "cisco@uvx": "2.0.13",
         },
       }),
     ).rejects.toThrow(/missing required baseline analyzers: skillspector@docker, cisco@uvx/i);
@@ -264,7 +264,7 @@ describe("vetBaselineCatalog", () => {
         analyzerVersions: {
           "aih-native": "2.7.0",
           "skillspector@docker": "326a2b489411@sha256:e82fd471e156",
-          "cisco@uvx": "2.0.12",
+          "cisco@uvx": "2.0.13",
         },
       }),
     ).rejects.toThrow(
@@ -282,13 +282,13 @@ describe("vetBaselineCatalog", () => {
       analyzerVersions: {
         "aih-native": "2.7.0",
         "skillspector@docker": "326a2b489411@sha256:e82fd471e156",
-        "cisco@uvx": "2.0.12",
+        "cisco@uvx": "2.0.13",
       },
     });
 
     expect(evidence.components[0]?.analyzers).toEqual([
       { name: "aih-native", version: "2.7.0" },
-      { name: "cisco@uvx", version: "2.0.12" },
+      { name: "cisco@uvx", version: "2.0.13" },
       { name: "skillspector@docker", version: "326a2b489411@sha256:e82fd471e156" },
     ]);
   });
@@ -408,7 +408,7 @@ describe("vetBaselineCatalog", () => {
       requiredDetectorsForComponent: () => ["cisco"],
       analyzerVersions: {
         "aih-native": "native.test",
-        "cisco@uvx": "2.0.12+uvlock.fixture",
+        "cisco@uvx": "2.0.13+uvlock.fixture",
       },
       sourceWideCisco: {
         analyzerLockSha256: "a".repeat(64),
@@ -427,7 +427,7 @@ describe("vetBaselineCatalog", () => {
   it("does not run a source-wide Cisco scan when every exact receipt is reusable", async () => {
     const analyzerVersions = {
       "aih-native": "native.test",
-      "cisco@uvx": "2.0.12+uvlock.fixture",
+      "cisco@uvx": "2.0.13+uvlock.fixture",
     };
     const first = await vetBaselineCatalog(root, catalog(), {
       scanComponent: async () => ({
@@ -469,7 +469,7 @@ describe("vetBaselineCatalog", () => {
       },
       analyzer: {
         name: "cisco",
-        version: "2.0.12",
+        version: "2.0.13",
         lockSha256: "b".repeat(64),
       },
       policy: { version: "native.test", profile: "ecc-full" },
@@ -520,7 +520,7 @@ describe("vetBaselineCatalog", () => {
         requiredAnalyzers: ["aih-native", "cisco@uvx"],
         analyzerVersions: {
           "aih-native": "native.test",
-          "cisco@uvx": "2.0.12+uvlock.fixture",
+          "cisco@uvx": "2.0.13+uvlock.fixture",
         },
         sourceWideCisco: {
           analyzerLockSha256: "a".repeat(64),
@@ -775,7 +775,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
     });
     const requiredAnalyzers = (component: { id: string }) =>
       component.id === "skill:blocked" ? ["aih-native", "cisco@uvx"] : ["aih-native"];
-    const versionsR1 = { "aih-native": "native.aaaaaaaaaaaa", "cisco@uvx": "2.0.12" };
+    const versionsR1 = { "aih-native": "native.aaaaaaaaaaaa", "cisco@uvx": "2.0.13" };
     const scanComponent = scannerFor({
       "skill:clean": { analyzersRun: ["aih-native"], checks: [pass("skill:clean")] },
       "skill:blocked": {

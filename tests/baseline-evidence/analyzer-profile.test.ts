@@ -112,7 +112,7 @@ describe("required baseline analyzer applicability", () => {
   });
 
   it.each([
-    ["mcp-scanner@uv:4.8.1", CISCO_MCP_SCANNER_VERSION, CISCO_MCP_SCANNER_LOCK],
+    ["mcp-scanner@uv:4.8.2", CISCO_MCP_SCANNER_VERSION, CISCO_MCP_SCANNER_LOCK],
     ["semgrep@uv:1.172.0", SEMGREP_VERSION, SEMGREP_LOCK],
     ["snyk-agent-scan@uv:0.5.15", SNYK_AGENT_SCAN_VERSION, SNYK_AGENT_SCAN_LOCK],
   ])("binds optional analyzer %s to its committed uv lock", (label, version, lock) => {
@@ -154,7 +154,7 @@ describe("checkDetectorsAvailable", () => {
 
   it("returns no probe when Cisco resolves offline", async () => {
     const run = fakeRunner((argv) =>
-      argv.includes("--version") ? { code: 0, stdout: "skill-scanner 2.0.12" } : undefined,
+      argv.includes("--version") ? { code: 0, stdout: "skill-scanner 2.0.13" } : undefined,
     );
     expect(await checkDetectorsAvailable(["cisco"], { run, platform: "linux", env: {} })).toEqual(
       [],
@@ -178,7 +178,7 @@ describe("checkDetectorsAvailable", () => {
       {
         name: "cisco",
         analyzerLabel: "cisco@uvx",
-        reason: expect.stringContaining("does not match 2.0.12"),
+        reason: expect.stringContaining("does not match 2.0.13"),
       },
       {
         name: "snyk-agent-scan",

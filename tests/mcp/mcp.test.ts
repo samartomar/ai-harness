@@ -497,7 +497,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     const servers = serversOf(w);
     const pw = pick(servers, "playwright");
     if (pw.type !== "stdio") throw new Error("expected stdio server");
-    expect(pw.args).toEqual(["@playwright/mcp@0.0.78"]);
+    expect(pw.args).toEqual(["@playwright/mcp@0.0.79"]);
     expect(pw.args.join(" ")).not.toContain("@latest");
   });
 
@@ -675,7 +675,7 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
     if (gh.type !== "stdio") throw new Error("expected stdio server");
     expect(gh.command).toBe("docker");
     expect(gh.args).toContain(
-      "ghcr.io/github/github-mcp-server@sha256:c491ffdf6f4c85cb5397021bc655edb8ab825c6f5f568e7597d77a1bd7c4d308",
+      "ghcr.io/github/github-mcp-server@sha256:d5a18c04b92714c309eb46a2305087e91a4dbd80420f6e462656699f95093520",
     );
     expect(gh.env?.GITHUB_PERSONAL_ACCESS_TOKEN).toMatch(/^\$\{GITHUB_PERSONAL_ACCESS_TOKEN\}$/);
     expect(gh.credentials).toBe("token");

@@ -24,7 +24,7 @@ function evidence(catalog: BaselineCatalog): BaselineSourceEvidence {
       verdict: "blocked",
       analyzers: [
         { name: "aih-native", version: "2.8.0" },
-        { name: "cisco@uvx", version: "2.0.12" },
+        { name: "cisco@uvx", version: "2.0.13" },
         { name: "skillspector@docker", version: "pinned-image" },
       ],
       findings: [{ code: "trust.test", detail: "fixture is intentionally blocked" }],

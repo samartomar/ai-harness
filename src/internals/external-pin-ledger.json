@@ -78,7 +78,7 @@
       "commit": "4c5077651542f68525a0b51e97bab2a32abc9290",
       "integrity": "sha512-VpqD4a3vFyGQMY9sh3UJiO6wjcurggkljKfAyCHL0QWGY5m6Ehr3MNsAAHPDHO//n13g0PCjpHatAOiulrqdZQ==",
       "disposition": "active",
-      "reason": "Generated launcher pin moved 0.0.78 -> 0.0.79. Package integrity remains the authoritative identity: the wrapper version does not track the embedded Playwright build it reports."
+      "reason": "The exact npm package completed MCP initialize online and from the npm offline cache. Its serverInfo reports the embedded Playwright build 1.63.0-alpha-2026-08-05 rather than the wrapper package 0.0.79, so package integrity remains the authoritative pin identity. The embedded build moved with the wrapper (0.0.78 reported 1.62.0-alpha-1783623505000), which is why the wrapper version alone cannot be the identity."
     },
     {
       "surface": "github-mcp-container",

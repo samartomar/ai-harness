@@ -167,7 +167,7 @@ describe("git source resolution (D7 exact identity)", () => {
     });
     await expect(
       resolveGitSource(
-        { repository: "obra/superpowers", commitSha: "d884ae04edebef577e82ff7c4e143debd0bbec99" },
+        { repository: "obra/superpowers", commitSha: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9" },
         { runner, cacheHome },
       ),
     ).rejects.toBeInstanceOf(BindingScanError);

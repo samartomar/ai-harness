@@ -119,9 +119,9 @@ describe("baseline evidence release payload", () => {
     expect(dockerfile).toContain(
       "python:3.12-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b",
     );
-    expect(dockerfile).toContain("uv==0.12.0");
+    expect(dockerfile).toContain("uv==0.12.2");
     expect(dockerfile).toContain(
-      'org.opencontainers.image.revision="34f60308522f45447cd343da0aad77bcea308ad4"',
+      'org.opencontainers.image.revision="0562b964ec5ceac67ee15c163738e5404f14a908"',
     );
     expect(dockerfile).toContain("COPY pyproject.toml uv.lock README.md ./");
     expect(dockerfile).toContain("uv sync --frozen --no-dev --no-editable");

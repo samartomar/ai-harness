@@ -247,7 +247,7 @@ describe("ciscoSkillScannerInspector (uvx, produced)", () => {
     expect(seen[1]).toEqual([
       "uvx",
       "--from",
-      "cisco-ai-skill-scanner==2.0.12",
+      "cisco-ai-skill-scanner==2.0.13",
       "skill-scanner",
       "--offline",
       "--format",
