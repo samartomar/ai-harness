@@ -26,6 +26,11 @@ import {
   unprovableResidueReason,
 } from "../mcp/managed-projection.js";
 import { isExternalMcp } from "../mcp/render.js";
+import {
+  HOOK_REGISTRAR_DESTINATION,
+  hookRegistrarRevocationActions,
+  hookRegistrarState,
+} from "../org-policy/hook-registrar.js";
 import { parseTrustLockSource, TRUST_LOCK_FILE, type TrustLockSource } from "../trust/lock.js";
 
 type UninstallDisposition = "backup" | "subtract" | "advisory";
@@ -40,7 +45,8 @@ interface UninstallArtifact {
     | "bootloader"
     | "kiro-steering"
     | "kiro-hook"
-    | "managed-settings";
+    | "managed-settings"
+    | "hook-registrar";
   disposition: UninstallDisposition;
   reason: string;
 }
@@ -53,6 +59,13 @@ interface UninstallSet {
    * BEFORE the marker goes (issue #567).
    */
   managedMcp?: ManagedMcpProjectionResidue;
+  /**
+   * Receipt-proven hook registration revocation (subtract the owned `hooks`
+   * key, remove the receipt). Third-party entries have no removal path of
+   * their own, so this is the only uninstall they get (A2): subtract-only,
+   * never a replay of prior bytes.
+   */
+  hookRegistrarActions?: Action[];
 }
 
 function cleanRel(path: string): string {
@@ -633,6 +646,37 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
     artifacts.push(managedMcpArtifact(managedMcp));
   }
 
+  // Receipt-proven hook registrations are revoked the same owned-content-first
+  // way. The registrar receipt is the only removal authority a projected
+  // third-party entry has — its source ships none — so skipping this here
+  // would make hand editing the uninstall story again.
+  let hookRegistrarActions: Action[] | undefined;
+  const registrarUnderRemovedTree = removedTrees(artifacts).some((tree) =>
+    isUnderTree(ctx, HOOK_REGISTRAR_DESTINATION, tree),
+  );
+  if (!registrarUnderRemovedTree) {
+    const registrar = hookRegistrarState(ctx.root);
+    if (registrar.state === "active") {
+      hookRegistrarActions = hookRegistrarRevocationActions(ctx);
+      const removesCreatedFile = hookRegistrarActions[0]?.kind === "remove";
+      artifacts.push({
+        path: HOOK_REGISTRAR_DESTINATION,
+        kind: "hook-registrar",
+        disposition: "subtract",
+        reason: removesCreatedFile
+          ? "receipt-proven aih hook registration entries; the destination AIH created is removed with them"
+          : "receipt-proven aih hook registration entries (third-party launchers included); every other key is preserved",
+      });
+    } else if (registrar.state === "drifted" || registrar.state === "invalid") {
+      artifacts.push({
+        path: HOOK_REGISTRAR_DESTINATION,
+        kind: "hook-registrar",
+        disposition: "advisory",
+        reason: `aih hook-registrar receipt cannot prove clean ownership — ${registrar.detail}; remediate manually, then repair or uninstall`,
+      });
+    }
+  }
+
   if (exists(ctx, AIH_CONFIG_FILE)) {
     artifacts.push({
       path: AIH_CONFIG_FILE,
@@ -667,7 +711,11 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
     });
   }
 
-  return { artifacts, ...(managedMcp === undefined ? {} : { managedMcp }) };
+  return {
+    artifacts,
+    ...(managedMcp === undefined ? {} : { managedMcp }),
+    ...(hookRegistrarActions === undefined ? {} : { hookRegistrarActions }),
+  };
 }
 
 function body(set: UninstallSet): string {
@@ -711,6 +759,12 @@ function uninstallPlan(ctx: PlanContext): Plan {
         "subtract the aih-owned Claude managed-MCP keys before removing the ownership marker",
       ),
     );
+  }
+  // A2: subtract every receipt-owned hook registration — third-party launchers
+  // included — before the ownership record leaves. The revocation never
+  // replays the recorded prior bytes; adopted entries do not return.
+  if (set.hookRegistrarActions !== undefined) {
+    actions.push(...set.hookRegistrarActions);
   }
   for (const artifact of set.artifacts) {
     if (artifact.disposition !== "backup") continue;
