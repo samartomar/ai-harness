@@ -887,6 +887,30 @@ const EXTERNAL_SELECTION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   "items.*.source.repository": "effective report: requested external source repository only",
 };
 
+const HOOK_REGISTRATION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
+  command:
+    "hook-managed-settings projector: written verbatim into the owned client destination; the effective resolver never reads it",
+  event: "hook registrar: native client event key for projection, drift, and overlap reporting",
+  "functionTags.*": "hook registrar: declared overlap key; never inferred by reading a command",
+  id: "hook registrar: registration identity, duplicate refusal, and receipt lookup",
+  "owner.declaredControls.*":
+    "hook registrar: third-party controls recorded read-only, never implemented or mirrored",
+  "owner.framework": "hook registrar: third-party owner identity and the one-framework rule",
+  "owner.kind": "hook registrar: owner partition for receipts and drift attribution",
+  "owner.pin.commit": "hook registrar: administrator-declared provenance recorded into the receipt",
+  "owner.pin.launcherSha256":
+    "hook registrar: parse-time launcher hash refusal and drift detection",
+  "owner.pin.path": "hook registrar: administrator-declared provenance recorded into the receipt",
+  "owner.pin.repository":
+    "hook registrar: administrator-declared provenance recorded into the receipt",
+  "owner.pin.runtimeVersion":
+    "hook registrar: administrator-declared provenance recorded into the receipt",
+  sourceDisabled:
+    "hook registrar: source-disabled spawn accounting; a disabled hook still spawns a process",
+  spawns: "hook registrar: projected process spawns per firing, nested launcher spawns included",
+  timeout: "hook registrar: projected native entry timeout, transported unchanged",
+};
+
 function prefixedConsumers(
   prefix: string,
   leaves: Readonly<Record<string, string>>,
@@ -903,6 +927,7 @@ export const POLICY_ENGINE_FIELD_CONSUMERS: Readonly<Record<string, string>> = O
   ...prefixedConsumers("governance.authority", AUTHORITY_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.externalCuration.*", EXTERNAL_CURATION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.externalSelections.*", EXTERNAL_SELECTION_LEAF_CONSUMERS),
+  ...prefixedConsumers("governance.hookRegistrations.*", HOOK_REGISTRATION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.reviewed.*", CANDIDATE_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.custom.*", CANDIDATE_LEAF_CONSUMERS),
 });

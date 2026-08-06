@@ -6,7 +6,23 @@ import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 import { type Action, type PlanContext, remove, writeJson } from "../internals/plan.js";
 import { withExpectedContents } from "../mcp/managed-projection.js";
 import { stableJson } from "./effective.js";
-import { OrgPolicyError } from "./schema.js";
+import {
+  type HookRegistration,
+  HookRegistrationSchema,
+  hookCommandDigest,
+  hookRegistrationSetIssues,
+  OrgPolicyError,
+  type ResolvedHookRegistration,
+  type ThirdPartyLauncherPin,
+  ThirdPartyLauncherPinSchema,
+} from "./schema.js";
+
+export {
+  type HookRegistration,
+  type HookRegistrationOwner,
+  hookCommandDigest,
+  type ThirdPartyLauncherPin,
+} from "./schema.js";
 
 /**
  * The `hook-managed-settings` projector.
@@ -43,93 +59,6 @@ export const HOOK_REGISTRAR_RECEIPT_FORMAT = "aih-org-policy-hook-registrar-rece
  */
 export const HOOK_REGISTRAR_TARGETS = ["claude"] as const;
 
-const Sha256Schema = z.string().regex(/^sha256:[0-9a-f]{64}$/, "must be a sha256 digest");
-const EventSchema = z
-  .string()
-  .regex(/^[A-Za-z][A-Za-z0-9]{0,63}$/, "must be a native client hook event name");
-const IdSchema = z
-  .string()
-  .regex(/^[a-z0-9][a-z0-9._:-]{0,119}$/, "must be a safe registration identifier");
-
-/**
- * A launcher is opaque bytes. It is length-bounded and rejected when it carries
- * control or hidden-Unicode characters, because those cannot survive a JSON
- * round trip into a client configuration intact — but it is never otherwise
- * inspected, and never rewritten.
- */
-const LauncherCommandSchema = z
-  .string()
-  .min(1)
-  .max(8192)
-  .refine(
-    (value) => !/\p{C}/u.test(value),
-    "must not contain control or hidden Unicode characters",
-  );
-
-const ThirdPartyLauncherPinSchema = z
-  .object({
-    repository: z
-      .string()
-      .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, "must be an owner/repository identity"),
-    commit: z.string().regex(/^[0-9a-f]{40}$/, "must be an exact commit"),
-    path: z
-      .string()
-      .min(1)
-      .max(1024)
-      .refine(
-        (value) => !value.includes("..") && !value.startsWith("/") && !value.startsWith("\\"),
-        "must be a contained component path",
-      ),
-    launcherSha256: Sha256Schema,
-    runtimeVersion: z.string().min(1).max(120),
-  })
-  .strict();
-
-const HookRegistrationOwnerSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("aih") }).strict(),
-  z
-    .object({
-      kind: z.literal("third-party"),
-      framework: IdSchema,
-      /**
-       * Controls the source declares for its own hooks — recorded read-only.
-       * AIH never implements, mirrors, or overrides them.
-       */
-      declaredControls: z.array(z.string().min(1).max(120)).max(20).default([]),
-      pin: ThirdPartyLauncherPinSchema,
-    })
-    .strict(),
-]);
-
-const HookRegistrationSchema = z
-  .object({
-    id: IdSchema,
-    event: EventSchema,
-    command: LauncherCommandSchema,
-    /**
-     * Declared overlap keys. AIH never infers a function by reading a command:
-     * one AIH composite dispatcher carries several, which is exactly why the
-     * overlap key is per-function and not per-entry.
-     */
-    functionTags: z.array(IdSchema).min(1).max(20),
-    /**
-     * Operating-system processes ONE firing costs, including nested launcher
-     * spawns. Never zero: a source that gates its own hooks does so inside the
-     * launcher, after the process already exists.
-     */
-    spawns: z.number().int().min(1).max(64),
-    timeout: z.number().int().min(1).max(600).optional(),
-    /** The source's own controls report this hook off. It still costs a process. */
-    sourceDisabled: z.boolean().default(false),
-    owner: HookRegistrationOwnerSchema,
-  })
-  .strict();
-
-export type ThirdPartyLauncherPin = z.infer<typeof ThirdPartyLauncherPinSchema>;
-export type HookRegistrationOwner = z.infer<typeof HookRegistrationOwnerSchema>;
-export interface HookRegistration extends z.input<typeof HookRegistrationSchema> {}
-type ResolvedHookRegistration = z.infer<typeof HookRegistrationSchema>;
-
 export interface ProjectedHookCommand {
   type: "command";
   command: string;
@@ -140,10 +69,6 @@ export interface ProjectedHookGroup {
 }
 export interface ProjectedHookSettings {
   hooks: Record<string, ProjectedHookGroup[]>;
-}
-
-export function hookCommandDigest(command: string): string {
-  return `sha256:${createHash("sha256").update(command, "utf8").digest("hex")}`;
 }
 
 function sha256(value: string): string {
@@ -157,8 +82,8 @@ export function hookRegistrationOwnerId(registration: ResolvedHookRegistration):
 /**
  * Validate a registration set at the boundary, and prove every third-party
  * launcher still matches its pin. A launcher whose hash moved is DRIFT — it is
- * refused here rather than projected, because projecting it would be a silent
- * update of code AIH cannot read.
+ * refused here rather than projected. The checks are the grammar's own
+ * `hookRegistrationSetIssues` — one copy, shared with `governance.hookRegistrations`.
  */
 export function assertHookRegistrations(
   registrations: readonly HookRegistration[],
@@ -174,21 +99,8 @@ export function assertHookRegistrations(
     }
     return result.data;
   });
-  const ids = new Set<string>();
-  for (const registration of parsed) {
-    if (ids.has(registration.id)) {
-      throw new OrgPolicyError(`hook registration ${registration.id} is declared twice`);
-    }
-    ids.add(registration.id);
-    if (registration.owner.kind !== "third-party") continue;
-    const actual = hookCommandDigest(registration.command);
-    if (actual !== registration.owner.pin.launcherSha256) {
-      throw new OrgPolicyError(
-        `hook registration ${registration.id} launcher hash ${actual} no longer matches its pin ` +
-          `${registration.owner.pin.launcherSha256}; this is drift, not a silent update`,
-      );
-    }
-  }
+  const [issue] = hookRegistrationSetIssues(parsed);
+  if (issue !== undefined) throw new OrgPolicyError(issue.message);
   return parsed;
 }
 
@@ -478,6 +390,13 @@ function receiptEntry(registration: ResolvedHookRegistration): HookReceiptEntry 
     ...(registration.timeout === undefined ? {} : { timeout: registration.timeout }),
   };
 }
+
+// The grammar's own scalar schemas (schema.ts), referenced — not restated — so
+// the receipt contract cannot drift from the registration contract.
+const IdSchema = HookRegistrationSchema.shape.id;
+const EventSchema = HookRegistrationSchema.shape.event;
+const LauncherCommandSchema = HookRegistrationSchema.shape.command;
+const Sha256Schema = ThirdPartyLauncherPinSchema.shape.launcherSha256;
 
 const HookReceiptSchema = z
   .object({
