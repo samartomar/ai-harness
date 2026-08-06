@@ -13,78 +13,223 @@ export function policyStudioHtml(model: PolicyStudioModel): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AIH Policy Workbench</title>
 <style>
-:root{color-scheme:dark light;--bg:#101216;--panel:#181b20;--panel2:#20242b;--fg:#edf0f3;--muted:#9ca6b4;--line:#343a43;--ok:#63d297;--warn:#f3bd64;--bad:#ff7676;--accent:#82b1ff;--focus:#b9d1ff;--radius:8px;font-family:"Segoe UI Variable","Segoe UI",system-ui,sans-serif}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-size:14px;line-height:1.35}button,input,select,textarea{font:inherit}button,input,select{min-height:32px}button{border:1px solid var(--line);border-radius:5px;background:var(--panel2);color:var(--fg);padding:.3rem .55rem;cursor:pointer}button:hover{border-color:var(--accent)}button:disabled{opacity:.55;cursor:not-allowed}:where(button,input,select,textarea,summary):focus-visible{outline:3px solid var(--focus);outline-offset:2px}input,select,textarea{max-width:100%;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--fg);padding:.32rem .4rem}textarea{width:100%;min-height:9rem;resize:vertical}.skip{position:absolute;left:-9999px}.skip:focus{left:.75rem;top:.75rem;z-index:3;background:var(--panel);padding:.5rem}.shell{max-width:1440px;margin:auto;padding:.75rem}.toolbar{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;padding:.55rem .6rem;border:1px solid var(--line);background:var(--panel);border-radius:var(--radius)}.toolbar h1{font-size:.95rem;margin:0 auto 0 0;letter-spacing:.02em}.toolbar output{color:var(--muted);font-family:ui-monospace,Consolas,monospace}.boundary{margin:.55rem 0;color:var(--muted);font-size:.82rem}.workbench{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:.55rem}.group{grid-column:span 6;border:1px solid var(--line);background:var(--panel);min-width:0}.group.wide{grid-column:span 12}.group h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;margin:0;padding:.48rem .6rem;border-bottom:1px solid var(--line)}.body{padding:.5rem .6rem}.matrix{display:grid;gap:0}.row{display:grid;grid-template-columns:minmax(9rem,1fr) minmax(8rem,2fr) auto;gap:.5rem;align-items:center;min-height:36px;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent);padding:.25rem 0;min-width:0}.row:last-child{border:0}.row p{margin:0;color:var(--muted);overflow-wrap:anywhere;font-size:.82rem}.badge{display:inline-block;border-radius:999px;padding:.12rem .42rem;font-family:ui-monospace,Consolas,monospace;font-size:.72rem;white-space:nowrap}.pending{background:#534426;color:#ffe0a0}.blocked{background:#51282c;color:#ffc0c0}.external{background:#293d56;color:#cbe0ff}.requested{background:#314832;color:#c5f1cb}.form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.45rem}.form-grid label{display:grid;gap:.2rem;color:var(--muted);font-size:.82rem}fieldset{border:1px solid var(--line);border-radius:5px;margin:0;padding:.5rem}legend{padding:0 .25rem;color:var(--muted)}details{border-top:1px solid var(--line);padding-top:.4rem;margin-top:.45rem}summary{cursor:pointer;color:var(--accent)}.announce{min-height:1.35rem;margin:.45rem 0 0;color:var(--muted);font-size:.85rem}.error{color:#ffc0c0}.help{color:var(--muted);max-width:78ch;font-size:.82rem}.mono{font-family:ui-monospace,Consolas,monospace;font-size:.78rem;overflow-wrap:anywhere}.hidden{display:none}.tip-wrap{display:inline-flex;position:relative;vertical-align:middle;margin-left:.25rem}.help-button{min-width:24px;min-height:24px;padding:0;border-radius:999px;font-weight:700;line-height:1}.tooltip{display:none;position:absolute;z-index:4;left:0;top:calc(100% + .25rem);width:min(23rem,calc(100vw - 2rem));padding:.45rem .55rem;border:1px solid var(--line);border-radius:5px;background:var(--panel2);color:var(--fg);font-size:.8rem;line-height:1.35;box-shadow:0 6px 18px #0008}.tip-wrap:hover .tooltip,.tip-wrap:focus-within .tooltip,.tooltip[data-open="true"]{display:block}@media(max-width:768px){.group,.group.wide{grid-column:span 12}.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.toolbar h1{width:100%}}@media(max-width:420px){.shell{padding:.45rem}.toolbar{padding:.45rem}.toolbar button{flex:1 1 45%}}
-summary{min-height:32px}
-.tip-wrap:hover .tooltip,.tip-wrap:focus-within .tooltip{display:none}
-.tooltip{position:fixed;left:1rem;right:auto;width:auto;max-width:calc(100vw - 2rem)}
-.tip-wrap .tooltip[data-open="true"]{display:block}
-.toolbar>*{min-width:0}
-.toolbar>label{display:flex;align-items:center;gap:.35rem;min-width:0}
-.toolbar>label select{min-width:0}
-.toolbar button{min-width:0;overflow-wrap:anywhere;white-space:normal}
-.toolbar output{flex:1 1 12rem;overflow-wrap:anywhere;white-space:normal}
-@media(max-width:420px){.toolbar{display:grid;grid-template-columns:minmax(0,1fr)}.toolbar h1,.toolbar>label,.toolbar output,.toolbar button{width:100%;min-width:0}.toolbar>label{justify-content:space-between}.toolbar>label select{flex:1 1 auto}.toolbar output{flex-basis:auto}.toolbar button{min-height:32px}}
-/* Boundaries stay quiet while exceeding 3:1 against both panel fills. */
-:root{--line:#68717d}
-[aria-invalid="true"]{border-color:var(--bad)!important}.field-error{display:block;color:#ffc0c0;font-size:.78rem;line-height:1.25}.row-actions{display:flex;gap:.3rem;justify-content:flex-end;flex-wrap:wrap}.row-details{margin:.3rem 0 0;border:0;padding:0}.row-details summary{font-size:.78rem}.row-details p{margin:.25rem 0 0}.toolbar #status{color:var(--muted);font-family:ui-monospace,Consolas,monospace}.receipt-record{white-space:pre-wrap;max-width:100%;max-height:22rem;overflow:auto}
-/* Sahara - warm minimalism. Burnt sienna on warm linen, a serif display face
-   against a sans for labels, mono kept for ids. Light is canonical and is the
-   default; dark is warm charcoal, never blue-black.
-   Colors and typography only, by instruction: no padding, radius, spacing or
-   effect changes, and nothing here introduces a blur, a backdrop-filter or an
-   animation. Every rule below is a repaint of the existing surface.
-   The fonts are stacks, not webfonts: this artifact is portable and opens with
-   no repository and no network, so a remote font would be a dependency it must
-   not have. The families are named first and fall back to system faces. */
+/* Policy Workbench - Sahara, warm minimalism, ported from the owner-accepted
+   acceptance artifact. Burnt sienna on warm linen, EB Garamond headings against
+   Manrope labels, IBM Plex Mono for ids, whitespace as the primary tool.
+
+   Two standing instructions bound this and must not be re-litigated:
+   "keep it compact just colors and not effects" - Sahara's 28-32px padding rules
+   were not applied, they fight the measured compactness; and "i don't care for
+   design any more just it should function" - so there is no blur, no
+   backdrop-filter, no animated full-viewport backdrop anywhere. The field is
+   three static radial gradients painted straight onto the background, which is
+   what the artifact measured as costing nothing while looking the same.
+
+   Fonts are stacks, not webfonts: this artifact opens with no repository and no
+   network, so a remote font would be a dependency it must not have. */
 :root{
   color-scheme:light dark;
-  --bg:#faf5ee;--panel:#fffcf7;--panel2:#f2ebe1;
-  --fg:#3a302a;--muted:#6b5d52;--line:#8a7d6d;
-  --accent:#a8541f;--focus:#c2652a;
-  --ok:#8f4517;--warn:#8a6316;--bad:#8c3c3c;
   --display:"EB Garamond",Georgia,"Times New Roman",serif;
+  --sans:"Manrope","Segoe UI Variable","Segoe UI",system-ui,-apple-system,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
-  font-family:"Manrope","Segoe UI Variable","Segoe UI",system-ui,sans-serif;
+  --radius:8px;
+  --bg:#faf5ee;--bg-deep:#f2ebe1;
+  --panel:#fffcf7;--panel2:#f2ebe1;--line:#8a7d6d;--hair:#ded4c6;
+  --fg:#3a302a;--muted:#6b5d52;--faint:#94867a;
+  --accent:#a8541f;--accent-soft:rgba(194,101,42,.1);--focus:#c2652a;
+  --ok:#8f4517;--warn:#8a6316;--bad:#8c3c3c;
+  --fill:rgba(58,48,42,.045);--fill-2:rgba(58,48,42,.09);
+  --blob-1:rgba(194,101,42,.09);--blob-2:rgba(201,162,39,.07);--blob-3:rgba(140,60,60,.06);
+  --shadow:0 2px 16px rgba(58,48,42,.05);--shadow-lg:0 8px 40px -12px rgba(58,48,42,.14);
+  /* one ramp, shared by the group meter and the state badges */
+  --s-sel:#c2652a;--s-req:#dda877;--s-wait:#c9a227;--s-blk:#8c3c3c;--s-uns:#a79c8d;
+  --s-avail:rgba(58,48,42,.13);
   --b-pending-bg:#f5e9c8;--b-pending-fg:#6b4c08;
   --b-blocked-bg:#f3dcdc;--b-blocked-fg:#7a2f2f;
   --b-external-bg:#eae3d8;--b-external-fg:#544a3e;
   --b-requested-bg:#f7e0cf;--b-requested-fg:#8f4517;
-  --shadow:0 6px 18px rgba(58,48,42,.18);
+  font-family:var(--sans);
 }
-@media(prefers-color-scheme:dark){
-  :root{
-    --bg:#1c1714;--panel:#2a231e;--panel2:#231d19;
-    --fg:#f4ece1;--muted:#cbbdad;--line:#7d7266;
-    --accent:#eda468;--focus:#e08344;
-    --ok:#e08344;--warn:#d9b23f;--bad:#c96363;
-    --b-pending-bg:#40361c;--b-pending-fg:#e8cd7a;
-    --b-blocked-bg:#45272a;--b-blocked-fg:#f0b3b3;
-    --b-external-bg:#332c25;--b-external-fg:#cbbdad;
-    --b-requested-bg:#4a2f1c;--b-requested-fg:#f0a670;
-    --shadow:0 6px 18px rgba(0,0,0,.5);
-  }
-}
-h1,h2,legend{font-family:var(--display);letter-spacing:normal}
-.toolbar h1{font-size:1.05rem}
-.badge,.mono,.toolbar output,.toolbar #status{font-family:var(--mono)}
+/* Sahara after sundown: the same warmth, inverted. Warm charcoal, never blue-black. */
+@media(prefers-color-scheme:dark){:root{
+  --bg:#1c1714;--bg-deep:#15110f;
+  --panel:#2a231e;--panel2:#231d19;--line:#7d7266;--hair:#3d342d;
+  --fg:#f4ece1;--muted:#cbbdad;--faint:#9a8b7c;
+  --accent:#eda468;--accent-soft:rgba(224,131,68,.14);--focus:#e08344;
+  --ok:#e08344;--warn:#d9b23f;--bad:#c96363;
+  --fill:rgba(240,228,214,.07);--fill-2:rgba(240,228,214,.13);
+  --blob-1:rgba(224,131,68,.1);--blob-2:rgba(217,178,63,.07);--blob-3:rgba(201,99,99,.06);
+  --shadow:0 2px 16px rgba(0,0,0,.25);--shadow-lg:0 12px 48px -14px rgba(0,0,0,.5);
+  --s-sel:#e08344;--s-req:#a9754c;--s-wait:#d9b23f;--s-blk:#c96363;--s-uns:#8a7f72;
+  --s-avail:rgba(240,228,214,.16);
+  --b-pending-bg:#40361c;--b-pending-fg:#e8cd7a;
+  --b-blocked-bg:#45272a;--b-blocked-fg:#f0b3b3;
+  --b-external-bg:#332c25;--b-external-fg:#cbbdad;
+  --b-requested-bg:#4a2f1c;--b-requested-fg:#f0a670;
+}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;color:var(--fg);font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased;
+  background:
+    radial-gradient(56vw 56vw at 14% -6%,var(--blob-1),transparent 65%),
+    radial-gradient(44vw 44vw at 92% 22%,var(--blob-2),transparent 65%),
+    radial-gradient(40vw 40vw at 44% 118%,var(--blob-3),transparent 65%),
+    var(--bg);
+  background-attachment:fixed}
+h1,h2,legend{font-family:var(--display);letter-spacing:-.01em;margin:0}
+button,input,select,textarea{font:inherit}
+/* 32px interactive floor is this repository's standard and predates the
+   restyle. Sahara's compactness does not get to lower a tap target. */
+button,input,select{min-height:32px}
+summary{min-height:32px}
+button{border:1px solid var(--line);border-radius:6px;background:var(--fill);color:var(--fg);
+  padding:.22rem .5rem;cursor:pointer;font-size:12px;font-weight:600;
+  transition:background 160ms ease,border-color 160ms ease}
+button:hover{background:var(--fill-2);border-color:var(--focus)}
+button:disabled{opacity:.5;cursor:not-allowed}
+:where(button,input,select,textarea,summary):focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+input,select,textarea{max-width:100%;border:1px solid var(--line);border-radius:6px;
+  background:var(--panel);color:var(--fg);padding:.28rem .4rem}
+textarea{width:100%;min-height:9rem;resize:vertical;font-family:var(--mono);font-size:11.5px}
+.skip{position:absolute;left:-9999px}
+.skip:focus{left:.75rem;top:.75rem;z-index:30;background:var(--panel);padding:.5rem}
+.hidden{display:none}
+
+/* ── stage ─────────────────────────────────────────── */
+.stage{max-width:1500px;margin:auto;padding:10px 14px 0;display:grid;gap:9px}
+.bar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:8px 12px;
+  border:1px solid var(--hair);border-radius:14px;background:var(--panel);box-shadow:var(--shadow)}
+.brand{display:flex;align-items:center;gap:8px;margin-right:auto}
+.brand-mark{width:24px;height:24px;border-radius:8px;display:grid;place-items:center;flex:0 0 auto;
+  background:var(--focus)}
+.brand-mark svg{width:14px;height:14px}
+.bar h1{font-size:15px}
+.bar h1 span{color:var(--faint);font-weight:400;font-family:var(--sans);font-size:11.5px}
+.bar label{display:flex;align-items:center;gap:.35rem;font-size:11.5px;color:var(--muted)}
+.bar #status{font-family:var(--mono);font-size:11px;color:var(--faint);
+  flex:1 1 12rem;min-width:0;overflow-wrap:anywhere}
+.announce{min-height:1.3rem;margin:0;padding:0 4px;color:var(--muted);font-size:12px}
+.announce.error{color:var(--bad)}
+.boundary{margin:0 4px;color:var(--faint);font-size:11.5px;max-width:90ch}
+
+/* ── work: rail + plane ────────────────────────────── */
+.work{display:grid;grid-template-columns:232px minmax(0,1fr);gap:10px;align-items:start;
+  padding-bottom:12px}
+.rail{display:grid;gap:8px;align-content:start;position:sticky;top:10px}
+.sect{padding:9px 10px;display:grid;gap:6px;border:1px solid var(--hair);border-radius:14px;
+  background:var(--panel);box-shadow:var(--shadow)}
+.cap{font:600 9.5px/1.3 var(--mono);letter-spacing:.15em;text-transform:uppercase;color:var(--faint);
+  display:flex;align-items:center;gap:6px}
+.cap .end{margin-left:auto;color:var(--accent);font-size:9.5px;text-transform:none;letter-spacing:0}
+.rail select{width:100%}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+/* 24px is the WCAG 2.2 target-size minimum; the artifact's 21px chips would
+   fail it, and a decorative toggle is still a target. */
+.chip{min-height:24px;height:24px;padding:0 9px;border-radius:999px;border:1px solid transparent;
+  background:var(--fill);color:var(--muted);font-size:11px;font-weight:600;line-height:1}
+.chip:hover{background:var(--fill-2);color:var(--fg)}
+.chip[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);border-color:var(--focus)}
+.plane{display:grid;gap:8px;align-content:start;min-width:0}
+.planetop{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:7px 10px;
+  border:1px solid var(--hair);border-radius:14px;background:var(--panel);box-shadow:var(--shadow)}
+.f{min-height:24px;height:24px;padding:0 10px;border-radius:999px;border:1px solid transparent;
+  background:var(--fill);color:var(--muted);font-size:11px}
+.f:hover{background:var(--fill-2);color:var(--fg)}
+.f[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);border-color:var(--focus)}
+.planetop .n{margin-left:auto;font:500 11px/1 var(--mono);color:var(--faint)}
+.planetop .n b{color:var(--fg)}
+
+/* ── group cards ───────────────────────────────────── */
+.group{border:1px solid var(--hair);border-radius:14px;background:var(--panel);
+  box-shadow:var(--shadow);overflow:hidden}
+.grphead{display:flex;align-items:center;gap:9px;width:100%;padding:8px 11px;text-align:left;
+  border:0;border-radius:0;background:none;min-height:0;transition:background 160ms ease}
+.grphead:hover{background:var(--fill);border-color:transparent}
+.grphead .tw{width:9px;color:var(--faint);font-size:8px;flex:0 0 auto;
+  transition:transform 200ms ease}
+.group[data-open="1"] .grphead .tw{transform:rotate(90deg)}
+.grphead h2{font-size:13px;white-space:nowrap;font-weight:600}
+.grphead .ct{margin-left:auto;font:500 11px/1 var(--mono);color:var(--faint);flex:0 0 auto}
+.meter{display:flex;gap:1px;height:5px;width:96px;border-radius:999px;overflow:hidden;
+  background:var(--s-avail);flex:0 0 auto}
+.meter i{display:block;height:100%}
+.meter i[data-s="requested"]{background:var(--s-sel)}
+.meter i[data-s="pending"]{background:var(--s-wait)}
+.meter i[data-s="blocked"]{background:var(--s-blk)}
+.meter i[data-s="external"]{background:var(--s-uns)}
+.group[data-open="0"] .body{display:none}
+.body{padding:2px 11px 10px;display:grid;gap:7px}
+
+/* ── rows ──────────────────────────────────────────── */
+.matrix{display:grid;gap:0}
+.row{display:grid;grid-template-columns:minmax(11rem,1.6fr) minmax(7rem,1.1fr) auto;gap:.55rem;
+  align-items:center;min-height:30px;padding:.2rem 0;min-width:0;
+  border-bottom:1px solid var(--hair)}
+.row:last-child{border:0}
+.row:hover{background:var(--fill)}
+.row strong{font:400 11.5px/1.35 var(--mono);overflow-wrap:anywhere;font-weight:500}
+.row p{margin:0;color:var(--muted);overflow-wrap:anywhere;font-size:11px}
+.row-actions{display:flex;gap:.3rem;justify-content:flex-end;flex-wrap:wrap}
+.badge{display:inline-block;border-radius:999px;padding:.1rem .45rem;font-family:var(--mono);
+  font-size:10.5px;white-space:nowrap}
 .pending{background:var(--b-pending-bg);color:var(--b-pending-fg)}
 .blocked{background:var(--b-blocked-bg);color:var(--b-blocked-fg)}
 .external{background:var(--b-external-bg);color:var(--b-external-fg)}
 .requested{background:var(--b-requested-bg);color:var(--b-requested-fg)}
-.error,.field-error{color:var(--bad)}
-.tooltip{box-shadow:var(--shadow)}
+.mono{font-family:var(--mono);font-size:10.5px;overflow-wrap:anywhere;color:var(--muted)}
+.help{color:var(--muted);max-width:86ch;font-size:11.5px}
+.error{color:var(--bad)}
+.row-details{margin:.25rem 0 0;border:0;padding:0}
+.row-details summary{font-size:10.5px}
+.row-details p{margin:.2rem 0 0}
+
+/* ── forms and disclosure ──────────────────────────── */
+.form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.45rem}
+.form-grid label{display:grid;gap:.2rem;color:var(--muted);font-size:11px}
+fieldset{border:1px solid var(--hair);border-radius:10px;margin:0;padding:.5rem}
+legend{padding:0 .25rem;color:var(--muted);font-size:11.5px}
+details{border-top:1px solid var(--hair);padding-top:.4rem;margin-top:.2rem}
+summary{cursor:pointer;color:var(--accent);min-height:26px;font-size:11.5px}
+[aria-invalid="true"]{border-color:var(--bad)!important}
+.field-error{display:block;color:var(--bad);font-size:10.5px;line-height:1.25}
+.receipt-record{white-space:pre-wrap;max-width:100%;max-height:22rem;overflow:auto}
+.tip-wrap{display:inline-flex;position:relative;vertical-align:middle;margin-left:.25rem}
+.help-button{min-width:24px;min-height:24px;padding:0;border-radius:999px;font-weight:700;
+  line-height:1;font-size:11px}
+.tooltip{display:none;position:fixed;left:1rem;right:auto;width:auto;z-index:40;
+  max-width:calc(100vw - 2rem);padding:.45rem .55rem;border:1px solid var(--line);border-radius:8px;
+  background:var(--panel);color:var(--fg);font-size:11.5px;line-height:1.4;box-shadow:var(--shadow-lg)}
+.tip-wrap .tooltip[data-open="true"]{display:block}
+
+/* ── ledger ────────────────────────────────────────── */
+.ledger{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:7px 14px;margin:0 -14px;border-top:1px solid var(--hair);background:var(--panel);
+  font-size:11.5px}
+.ledger i{font-style:normal;color:var(--faint)}
+.ledger b{font-family:var(--mono);font-weight:700}
+.l-req b{color:var(--s-sel)}.l-wait b{color:var(--warn)}.l-blk b{color:var(--bad)}
+.l-ext b{color:var(--muted)}
+.ledger .eff{margin-left:auto;color:var(--faint)}
+
+@media(max-width:980px){.work{grid-template-columns:1fr}.rail{position:static}
+  .form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}
+  .bar h1{width:100%}.ledger .eff{margin-left:0;width:100%}}
+@media(prefers-reduced-motion:reduce){*{transition-duration:.01ms!important}}
 </style>
 </head>
 <body>
 <a class="skip" href="#workbench">Skip to policy workbench</a>
-<div class="shell">
-  <header class="toolbar" aria-label="Policy workbench toolbar">
-    <h1>AIH Policy Workbench</h1>
-    <label>Profile <select id="profile"><option value="team">Team</option><option value="enterprise">Enterprise</option><option value="vibe">Vibe</option></select></label>
+<div class="stage">
+  <header class="bar" aria-label="Policy workbench toolbar">
+    <span class="brand">
+      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.4" fill="none" stroke="#fffcf7" stroke-opacity=".92" stroke-width="1.7"/><circle cx="12" cy="12" r="2.7" fill="#fffcf7"/><circle cx="17.3" cy="6.7" r="2.1" fill="#fffcf7"/></svg></span>
+      <h1>AIH Policy Workbench <span>&middot; no repository required</span></h1>
+    </span>
+    <label>Preset <select id="profile"><option value="team">Team</option><option value="enterprise">Enterprise</option><option value="vibe">Vibe</option></select></label>
     <span id="status">Ready - no repository is required.</span>
     <button type="button" id="import-policy">Import policy</button>
-    <button type="button" id="import-evidence">Import audit / authority evidence</button>
+    <button type="button" id="import-evidence">Import evidence</button>
     <button type="button" id="validate">Validate</button>
     <button type="button" id="export">Export</button>
     <button type="button" id="download">Download policy</button>
@@ -94,17 +239,45 @@ h1,h2,legend{font-family:var(--display);letter-spacing:normal}
   <p id="announcement" class="announce" aria-live="polite"></p>
   <main id="workbench" tabindex="-1">
     <p class="boundary">Author portable intent without repository access. Imported audit and authority data is preserved/preflight-only here; AIH engine evaluation in a target repository is the only source of effective state.</p>
-    <section class="workbench" aria-label="Policy authoring workbench">
-      <section class="group"><h2>AIH MCP</h2><div class="body"><div id="mcp-rows" class="matrix"></div><details><summary>Control boundary</summary><p class="help">Requested controls require target-repository identity, evidence, authority, safety, ownership, and a supported projector before they can become effective.</p></details></div></section>
-      <section class="group"><h2>AIH hooks</h2><div class="body"><div id="hook-rows" class="matrix"></div><details><summary>Control boundary</summary><p class="help">Only AIH-owned hook identities are authorable. Custom hooks are not supported.</p></details></div></section>
-      <section class="group wide"><h2>ECC / Superpowers curation — external guidance</h2><div class="body"><details><summary>Framework authority</summary><p class="help">AIH preserves audited curation intent for agents, skills, and commands. It does not install, project, or enforce those external assets.</p></details><div class="form-grid"><label><span id="curation-framework-label">Framework</span> <select id="curation-framework"></select></label><label>Catalog prefill (optional) <select id="curation-asset"></select></label><label>Item kind <select id="curation-kind"><option value="agent">Agent</option><option value="skill">Skill</option><option value="command">Command</option></select></label><label>Item identifier <input id="curation-id" required></label><label>Source repository <input id="curation-repository" placeholder="owner/repository" required></label><label>Source commit <input id="curation-commit" placeholder="40-character commit" required></label><label>Source path <input id="curation-path" placeholder="relative/path" required></label><label>Audit record <input id="audit-record" value="external-audit" required></label><label>Audit digest <input id="audit-digest" value="sha256:0000000000000000000000000000000000000000000000000000000000000000" required></label><label>Admin clarification <input id="curation-note"></label></div><p><button type="button" id="add-curation">Add external curation intent</button><button type="button" id="cancel-curation-edit" hidden>Cancel curation edit</button></p><div id="curation-rows" class="matrix"></div></div></section>
-      <section class="group"><h2>Framework inventory (externally owned)</h2><div class="body"><details><summary>What selecting an externally owned item does</summary><p class="help">ECC and Superpowers own these components and install and run them. Selecting one records requested intent in this policy together with the component's repository, pinned commit and source path, so the request stays portable and reviewable. AIH does not install them, and recording intent is not enforcement. Each row carries the evidence command that earns the audit record and digest, which is what moves a selection into external curation.</p></details><div id="framework-rows" class="matrix"></div></div></section>
-      <section class="group wide"><h2>Enterprise composition</h2><div class="body"><details><summary>What a posture composes, and what it does not do</summary><p class="help">These parts are derived from AIH's own ECC selectors, not restated here. They name components so an administrator can see the structure a posture implies; they never select one.</p></details><div id="composition-parts" class="matrix"></div></div></section>
-      <section class="group"><h2>Custom candidates / sources</h2><div class="body"><details><summary>Custom MCP boundary</summary><p class="help">Custom MCP can only be authored as a fully pinned pending candidate. It has no activation affordance until supported scanning, evidence, and projection exist.</p></details><form id="custom-form"><fieldset><legend>Add pending custom MCP</legend><div class="form-grid"><label>Identifier <input id="custom-id" pattern="[a-z][a-z0-9-]{0,63}" required></label><label>Package <input id="custom-package" placeholder="@scope/package" required></label><label>Exact version <input id="custom-version" placeholder="1.2.3" required></label><label>Integrity digest <input id="custom-integrity" placeholder="sha256:..." required></label><label>Evidence record <input id="custom-evidence" required></label><label>Clarification <input id="custom-note"></label></div><p><button type="submit">Add pending custom MCP</button></p></fieldset></form><div id="custom-rows" class="matrix"></div></div></section>
-      <section class="group"><h2>Approval / evidence</h2><div class="body"><p id="receipt-state" class="help">No authority receipt imported.</p><button type="button" id="copy-approvals" disabled>Preserve approval subjects in policy (not effective)</button><div id="approval-rows" class="matrix"></div><details open><summary>Finding model: 8 administrator-dispositionable, 6 hard blockers</summary><p class="help">A completed scan reports these 8. The accountable administrator decides each one, because a detector label is evidence and not a verdict. They stay visible and authorable; this workbench does not dispose of them.</p><p id="dispositionable-findings" class="mono"></p><p class="help">These 6 are missing or untrustworthy prerequisites rather than detector findings. No approval substitutes for one, and this workbench cannot waive, approve, or downgrade them.</p><p id="hard-blockers" class="mono"></p></details></div></section>
-      <section class="group wide"><h2>Authored config / evaluated report</h2><div class="body"><label for="config-preview">Authored policy — actual schema fields</label><textarea id="config-preview" readonly aria-label="Authored policy actual schema fields"></textarea><label for="report-preview">Evaluated report — unavailable without target evaluation</label><textarea id="report-preview" readonly aria-label="Evaluated report unavailable without target evaluation"></textarea></div></section>
-    </section>
+    <div class="work">
+      <aside class="rail" aria-label="Quick selection">
+        <section class="sect">
+          <div class="cap">Preset <span class="end" id="rail-posture">team</span></div>
+          <p class="help" id="rail-preset-note">Team names a posture only. Vibe selects everything this catalog offers; Enterprise selects ECC Core and offers the rest as additive choices.</p>
+        </section>
+        <section class="sect"><div class="cap">Languages</div><div class="chips" id="rail-langs"></div></section>
+        <section class="sect"><div class="cap">Frameworks</div><div class="chips" id="rail-frameworks"></div></section>
+        <section class="sect"><div class="cap">Capabilities</div><div class="chips" id="rail-caps"></div></section>
+        <section class="sect"><div class="cap">ECC modules</div><div class="chips" id="rail-modules"></div></section>
+      </aside>
+      <div class="plane">
+        <div class="planetop" role="group" aria-label="Filter inventory">
+          <button type="button" class="f" data-filter="all" aria-pressed="true">All</button>
+          <button type="button" class="f" data-filter="requested" aria-pressed="false">Selected</button>
+          <button type="button" class="f" data-filter="external" aria-pressed="false">Selectable</button>
+          <button type="button" class="f" data-filter="pending" aria-pressed="false">Awaiting</button>
+          <button type="button" class="f" data-filter="blocked" aria-pressed="false">Blocked</button>
+          <button type="button" class="f" id="toggle-groups">Expand all</button>
+          <span class="n"><b id="c-shown">0</b> / <b id="c-total">0</b> rows</span>
+        </div>
+        <section class="group" data-open="1"><button type="button" class="grphead" data-group><span class="tw" aria-hidden="true">&#9654;</span><h2>AIH MCP</h2><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="body"><div id="mcp-rows" class="matrix"></div><details><summary>Control boundary</summary><p class="help">Requested controls require target-repository identity, evidence, authority, safety, ownership, and a supported projector before they can become effective.</p></details></div></section>
+        <section class="group" data-open="1"><button type="button" class="grphead" data-group><span class="tw" aria-hidden="true">&#9654;</span><h2>AIH hooks</h2><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="body"><div id="hook-rows" class="matrix"></div><details><summary>Control boundary</summary><p class="help">Only AIH-owned hook identities are authorable. Custom hooks are not supported.</p></details></div></section>
+        <section class="group" data-open="1"><button type="button" class="grphead" data-group><span class="tw" aria-hidden="true">&#9654;</span><h2>Framework inventory</h2><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="body"><details><summary>What selecting an externally owned item does</summary><p class="help">ECC and Superpowers own these components and install and run them. Selecting one records requested intent in this policy together with the component's repository, pinned commit and source path, so the request stays portable and reviewable. AIH does not install them, and recording intent is not enforcement. Each row carries the evidence command that earns the audit record and digest, which is what moves a selection into external curation.</p></details><div id="framework-rows" class="matrix"></div></div></section>
+        <section class="group" data-open="0"><button type="button" class="grphead" data-group><span class="tw" aria-hidden="true">&#9654;</span><h2>Enterprise composition</h2><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="body"><details><summary>What a posture composes, and what it offers</summary><p class="help">These parts are derived from AIH's own ECC selectors, not restated here. Composed parts become requested intent when the posture is chosen; additive parts are yours to add.</p></details><div id="composition-parts" class="matrix"></div></div></section>
+        <section class="group" data-open="0"><button type="button" class="grphead" data-group><span class="tw" aria-hidden="true">&#9654;</span><h2>ECC / Superpowers curation &mdash; audited intent</h2><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="body"><details><summary>Framework authority</summary><p class="help">AIH preserves audited curation intent for agents, skills, and commands. It does not install, project, or enforce those external assets. A selection becomes curation once it carries an audit record and digest.</p></details><div class="form-grid"><label><span id="curation-framework-label">Framework</span> <select id="curation-framework"></select></label><label>Catalog prefill (optional) <select id="curation-asset"></select></label><label>Item kind <select id="curation-kind"><option value="agent">Agent</option><option value="skill">Skill</option><option value="command">Command</option></select></label><label>Item identifier <input id="curation-id" required></label><label>Source repository <input id="curation-repository" placeholder="owner/repository" required></label><label>Source commit <input id="curation-commit" placeholder="40-character commit" required></label><label>Source path <input id="curation-path" placeholder="relative/path" required></label><label>Audit record <input id="audit-record" value="external-audit" required></label><label>Audit digest <input id="audit-digest" value="sha256:0000000000000000000000000000000000000000000000000000000000000000" required></label><label>Admin clarification <input id="curation-note"></label></div><p><button type="button" id="add-curation">Add external curation intent</button><button type="button" id="cancel-curation-edit" hidden>Cancel curation edit</button></p><div id="curation-rows" class="matrix"></div></div></section>
+        <section class="group" data-open="0"><button type="button" class="grphead" data-group><span class="tw" aria-hidden="true">&#9654;</span><h2>Your sources</h2><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="body"><details><summary>Custom MCP boundary</summary><p class="help">Custom MCP can only be authored as a fully pinned pending candidate. It has no activation affordance until supported scanning, evidence, and projection exist.</p></details><form id="custom-form"><fieldset><legend>Add pending custom MCP</legend><div class="form-grid"><label>Identifier <input id="custom-id" pattern="[a-z][a-z0-9-]{0,63}" required></label><label>Package <input id="custom-package" placeholder="@scope/package" required></label><label>Exact version <input id="custom-version" placeholder="1.2.3" required></label><label>Integrity digest <input id="custom-integrity" placeholder="sha256:..." required></label><label>Evidence record <input id="custom-evidence" required></label><label>Clarification <input id="custom-note"></label></div><p><button type="submit">Add pending custom MCP</button></p></fieldset></form><div id="custom-rows" class="matrix"></div></div></section>
+        <section class="group" data-open="0"><button type="button" class="grphead" data-group><span class="tw" aria-hidden="true">&#9654;</span><h2>Approval / evidence</h2><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="body"><p id="receipt-state" class="help">No authority receipt imported.</p><button type="button" id="copy-approvals" disabled>Preserve approval subjects in policy (not effective)</button><div id="approval-rows" class="matrix"></div><details open><summary>Finding model: 8 administrator-dispositionable, 6 hard blockers</summary><p class="help">A completed scan reports these 8. The accountable administrator decides each one, because a detector label is evidence and not a verdict. They stay visible and authorable; this workbench does not dispose of them.</p><p id="dispositionable-findings" class="mono"></p><p class="help">These 6 are missing or untrustworthy prerequisites rather than detector findings. No approval substitutes for one, and this workbench cannot waive, approve, or downgrade them.</p><p id="hard-blockers" class="mono"></p></details></div></section>
+        <section class="group" data-open="0"><button type="button" class="grphead" data-group><span class="tw" aria-hidden="true">&#9654;</span><h2>Authored config / evaluated report</h2><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="body"><label for="config-preview">Authored policy &mdash; actual schema fields</label><textarea id="config-preview" readonly aria-label="Authored policy actual schema fields"></textarea><label for="report-preview">Evaluated report &mdash; unavailable without target evaluation</label><textarea id="report-preview" readonly aria-label="Evaluated report unavailable without target evaluation"></textarea></div></section>
+      </div>
+    </div>
   </main>
+  <div class="ledger" aria-label="Policy tally">
+    <span class="l-req"><i>selected</i> <b id="t-req">0</b></span>
+    <span class="l-wait"><i>awaiting</i> <b id="t-wait">0</b></span>
+    <span class="l-blk"><i>blocked</i> <b id="t-blk">0</b></span>
+    <span class="l-ext"><i>selectable</i> <b id="t-ext">0</b></span>
+    <span class="eff">effective: not evaluated &mdash; needs a target repository</span>
+  </div>
 </div>
 <script>
 const model=__AIH_DATA__;
@@ -145,7 +318,7 @@ const commitPolicy=function(previous,message){const problems=policyValidator();i
 const candidateStatus=function(candidate){if(candidate.kind==="mcp"&&candidate.source&&candidate.source.type==="stdio"){return ["Blocked - no supported projector/scanning/evidence","blocked"]}const activation=governance().activations.find(function(item){return item.candidate===candidate.id});return activation&&activation.state==="active"?["Requested intent - runtime evaluation required","requested"]:["Disabled","pending"]};
 /* The note sits inside the first cell so the status badge stays the row's first
    .badge, which is what the inventory contract reads as a row's status. */
-const row=function(title,detail,status,kind,action,note){return '<div class="row"><div><strong>'+esc(title)+'</strong>'+help(title,detail)+(note?'<p class="mono">'+esc(note)+'</p>':"")+'</div><span class="badge '+kind+'">'+esc(status)+'</span>'+(action||"")+'</div>'};
+const row=function(title,detail,status,kind,action,note){return '<div class="row" data-state="'+esc(kind)+'"><div><strong>'+esc(title)+'</strong>'+help(title,detail)+(note?'<p class="mono">'+esc(note)+'</p>':"")+'</div><span class="badge '+kind+'">'+esc(status)+'</span>'+(action||"")+'</div>'};
 const PROVENANCE_PREFIX="Requested by: ";
 /* Every origin that declared a control is kept, not just the first. An
    administrator who removes one reason must be able to see that another still
@@ -228,7 +401,30 @@ const selectedFramework=function(){return model.catalog.frameworks.find(function
 const curatableAssets=function(framework){return framework?framework.assets.filter(function(item){return item.curationKind}):[]};
 const prefillCurationAsset=function(){const framework=selectedFramework();const key=byId("curation-asset").value.split("|");const asset=curatableAssets(framework).find(function(item){return item.curationKind===key[0]&&item.id===key[1]});if(!asset){return}byId("curation-kind").value=asset.curationKind;byId("curation-id").value=asset.id;byId("curation-repository").value=asset.source.repository;byId("curation-commit").value=asset.source.commit;byId("curation-path").value=asset.source.path};
 const syncFrameworkSelect=function(){const framework=byId("curation-framework");const prior=framework.value;framework.innerHTML=model.catalog.frameworks.map(function(item){return '<option value="'+item.id+'">'+item.id.toUpperCase()+" - external guidance"+'</option>'}).join("");framework.value=prior||model.catalog.frameworks[0].id;const current=selectedFramework();byId("curation-asset").innerHTML='<option value="">Manual item</option>'+curatableAssets(current).map(function(item){return '<option value="'+esc(item.curationKind+"|"+item.id)+'">'+esc(item.curationKind+": "+item.id)+'</option>'}).join("")};
-const render=function(){byId("profile").value=state.policy.minimumPosture||"team";syncFrameworkSelect();renderRows();renderComposition();renderReceipt();renderPreview();byId("dispositionable-findings").textContent=model.findings.dispositionable.join(" | ");byId("hard-blockers").textContent=model.findings.fenced.join(" | ");if(typeof window.__aihPolicyWorkbenchEnhanceRows==="function"){window.__aihPolicyWorkbenchEnhanceRows()}};
+/* ── shell: rail, group cards, filter, ledger ──────────────────────────────
+   Ported from the owner-accepted acceptance artifact. The rail exposes the
+   catalog's own selectable namespaces as chips; the chips carry the same
+   data-framework-select key a row does, so they go through one authoring path
+   and cannot drift from the rows they mirror. */
+const ROW_STATES=["requested","pending","blocked","external"];
+let planeFilter="all";
+const railKinds=[["rail-langs","lang"],["rail-frameworks","framework"],["rail-caps","capability"],["rail-modules","module"]];
+const buildRail=function(){const framework=eccFramework();if(!framework){return}railKinds.forEach(function(entry){const host=byId(entry[0]);if(!host){return}host.innerHTML=framework.assets.filter(function(asset){return asset.kind===entry[1]}).map(function(asset){return '<button type="button" class="chip" data-framework-select="'+esc(framework.id+"|"+asset.kind+"|"+asset.id)+'" aria-pressed="false">'+esc(asset.id.slice(asset.id.indexOf(":")+1))+'</button>'}).join("")})};
+const syncRail=function(){const framework=eccFramework();if(!framework){return}const chosen=selectedItems(framework.id).map(function(item){return item.id});document.querySelectorAll(".chip[data-framework-select]").forEach(function(chip){const id=String(chip.getAttribute("data-framework-select")).split("|")[2];chip.setAttribute("aria-pressed",chosen.indexOf(id)===-1?"false":"true")});const posture=byId("rail-posture");if(posture){posture.textContent=state.policy.minimumPosture||"team"}};
+/* One pass over the rendered rows: it applies the filter, counts each group,
+   paints its meter, and totals the ledger. Reading the DOM keeps the tally
+   honest about what an administrator can actually see. */
+const paintShell=function(){const totals={requested:0,pending:0,blocked:0,external:0};let shown=0,total=0;
+  document.querySelectorAll(".group").forEach(function(group){const counts={requested:0,pending:0,blocked:0,external:0};let rows=0,visible=0;
+    group.querySelectorAll(".row[data-state]").forEach(function(node){const kindState=node.getAttribute("data-state");rows++;if(counts[kindState]!==undefined){counts[kindState]++;totals[kindState]++}const match=planeFilter==="all"||planeFilter===kindState;node.hidden=!match;if(match){visible++}});
+    total+=rows;shown+=visible;
+    const count=group.querySelector(".ct");if(count){count.textContent=rows?(planeFilter==="all"?String(rows):visible+" / "+rows):""}
+    const meter=group.querySelector(".meter");if(meter){meter.innerHTML=rows?ROW_STATES.filter(function(s){return counts[s]}).map(function(s){return '<i data-s="'+s+'" style="width:'+(counts[s]/rows*100)+'%"></i>'}).join(""):""}});
+  byId("c-shown").textContent=shown;byId("c-total").textContent=total;
+  ROW_STATES.forEach(function(s){const node=byId(s==="requested"?"t-req":s==="pending"?"t-wait":s==="blocked"?"t-blk":"t-ext");if(node){node.textContent=totals[s]}});};
+document.addEventListener("click",function(event){const head=event.target.closest&&event.target.closest("[data-group]");if(!head){return}const group=head.closest(".group");group.dataset.open=group.dataset.open==="1"?"0":"1";head.setAttribute("aria-expanded",group.dataset.open==="1"?"true":"false")});
+document.addEventListener("click",function(event){const filter=event.target.closest&&event.target.closest(".f[data-filter]");if(!filter){return}planeFilter=filter.getAttribute("data-filter");document.querySelectorAll(".f[data-filter]").forEach(function(node){node.setAttribute("aria-pressed",node===filter?"true":"false")});paintShell()});
+const render=function(){byId("profile").value=state.policy.minimumPosture||"team";syncFrameworkSelect();renderRows();renderComposition();renderReceipt();renderPreview();syncRail();paintShell();byId("dispositionable-findings").textContent=model.findings.dispositionable.join(" | ");byId("hard-blockers").textContent=model.findings.fenced.join(" | ");if(typeof window.__aihPolicyWorkbenchEnhanceRows==="function"){window.__aihPolicyWorkbenchEnhanceRows()}};
 byId("profile").addEventListener("change",function(event){const value=event.target.value;if(value==="vibe"){composeVibeProfile();return}if(value==="enterprise"){composeEnterpriseProfile();return}const previous=structuredClone(state.policy);state.policy.minimumPosture=value;commitPolicy(previous,"Profile changed.")});
 const closeTooltips=function(){document.querySelectorAll(".tooltip[data-open='true']").forEach(function(tip){tip.setAttribute("data-open","false")});document.querySelectorAll("[data-tooltip-button][aria-expanded='true']").forEach(function(button){button.setAttribute("aria-expanded","false")})};
 const openTooltip=function(button){closeTooltips();button.setAttribute("aria-expanded","true");button.removeAttribute("data-tooltip-dismissed");const tip=byId(button.getAttribute("data-tooltip-button"));if(tip){const rect=button.getBoundingClientRect();const width=Math.min(368,Math.max(24,window.innerWidth-32));tip.style.width=width+"px";tip.style.left=Math.max(16,Math.min(rect.left,window.innerWidth-16-width))+"px";tip.style.top=Math.max(16,rect.bottom+4)+"px";tip.setAttribute("data-open","true")}};
@@ -255,6 +451,9 @@ byId("copy-approvals").addEventListener("click",function(){if(state.receipt&&Arr
 byId("validate").addEventListener("click",function(){const problems=policyProblems();if(problems.length){announce("Schema and policy-grammar validation failed: "+problems.slice(0,3).join("; "),true)}else{announce("Schema and policy-grammar validation passed. Authority, scans, projection, and effective state require the AIH engine in a target repository.")}renderPreview()});
 byId("export").addEventListener("click",function(){const problems=policyProblems();if(problems.length){announce("Export blocked: "+problems.slice(0,3).join("; "),true);return}renderPreview();announce("Policy export preview refreshed from the actual policy schema and grammar.")});
 byId("download").addEventListener("click",function(){const problems=policyProblems();if(problems.length){announce("Download blocked: "+problems.slice(0,3).join("; "),true);return}const blob=new Blob([policyText()],{type:"application/json"});const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="aih-org-policy.json";link.click();URL.revokeObjectURL(url);announce("Policy download started.")});
+byId("toggle-groups").addEventListener("click",function(event){const groups=[].slice.call(document.querySelectorAll(".group"));const open=groups.some(function(group){return group.dataset.open!=="1"});groups.forEach(function(group){group.dataset.open=open?"1":"0";const head=group.querySelector("[data-group]");if(head){head.setAttribute("aria-expanded",open?"true":"false")}});event.target.textContent=open?"Collapse all":"Expand all"});
+document.querySelectorAll("[data-group]").forEach(function(head){head.setAttribute("aria-expanded",head.closest(".group").dataset.open==="1"?"true":"false")});
+buildRail();
 render();
 </script>
 <script>
