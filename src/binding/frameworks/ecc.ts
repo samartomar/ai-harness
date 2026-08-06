@@ -236,7 +236,7 @@ export class EccLeanInstallerUnavailableError extends AihError {
  * source cross-checks this constant against the live catalog, so a silent drift
  * fails closed rather than binding the wrong commit.
  */
-export const ECC_PIN_COMMIT = "4da6deac1888690e7fb8572d097ee23db630f7a0";
+export const ECC_PIN_COMMIT = "623f2c020f052319657674e4e6c29ab5d0ad566b";
 
 /**
  * The ECC adapter version (W7 §C.2) — bumped when this adapter's provisioning /

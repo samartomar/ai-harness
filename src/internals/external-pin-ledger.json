@@ -1,22 +1,23 @@
 {
   "schemaVersion": 1,
-  "verifiedAt": "2026-07-29",
+  "verifiedAt": "2026-08-06",
   "historicalEvidencePolicy": "Archived receipts, dated plans, prior releases, and old acceptance evidence are immutable history and are not repinned by this ledger.",
   "entries": [
     {
       "surface": "ecc",
       "identity": "affaan-m/ECC",
-      "version": "v2.1.0",
-      "commit": "4da6deac1888690e7fb8572d097ee23db630f7a0",
-      "integrity": "npm-sha512:+WiK+Ray5/xUtPbzrNkiNCG90ZeKXXSOXGMUPkcPAt1U473jSkSiurH69Kqy4AWZDvKRWZ6ZeA6Vx3cNsMOiCg==",
-      "disposition": "active"
+      "version": "untagged, 32 commits past v2.1.0",
+      "commit": "623f2c020f052319657674e4e6c29ab5d0ad566b",
+      "disposition": "active",
+      "reason": "Rebound to current upstream main for the full re-vet. ECC's own install manifests are byte-identical to the v2.1.0 pin, so the module and profile snapshots are unchanged; the delta is content inside modules. The npm-sha512 integrity of ecc-universal@2.1.0 was dropped from this entry because this commit is past that release and no longer describes it — the published-package lineage is recorded separately as releaseAncestorCommit in src/ecc-profile."
     },
     {
       "surface": "superpowers",
       "identity": "obra/Superpowers",
-      "commit": "d884ae04edebef577e82ff7c4e143debd0bbec99",
+      "commit": "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
       "disposition": "active",
-      "reason": "Retains the approved exact source pin already qualified and merged on main; the preserved refresh candidate is not promoted by this reconciliation."
+      "reason": "Rebound from v6.1.1 to the v6.2.0 release commit, dereferenced from the annotated tag, for the full re-vet.",
+      "version": "v6.2.0"
     },
     {
       "surface": "code-review-graph",
@@ -73,19 +74,20 @@
     {
       "surface": "playwright-mcp",
       "identity": "@playwright/mcp",
-      "version": "0.0.78",
-      "commit": "5f8fc00210b27b4407c375b59cda4838045d429c",
-      "integrity": "sha512-XLTUeA6mEN9sQ+hJ4dfG8EIkDbxS0K3Trc2RBkUJuf02TgE2FQRNTMtq/aJfhyRMINsRl/Ybc4sxcWLtFn4/TQ==",
+      "version": "0.0.79",
+      "commit": "4c5077651542f68525a0b51e97bab2a32abc9290",
+      "integrity": "sha512-VpqD4a3vFyGQMY9sh3UJiO6wjcurggkljKfAyCHL0QWGY5m6Ehr3MNsAAHPDHO//n13g0PCjpHatAOiulrqdZQ==",
       "disposition": "active",
-      "reason": "The exact npm package completed MCP initialize online and from the npm offline cache. Its serverInfo reports the embedded Playwright build 1.62.0-alpha-1783623505000 rather than the wrapper package 0.0.78, so package integrity remains the authoritative pin identity."
+      "reason": "Generated launcher pin moved 0.0.78 -> 0.0.79. Package integrity remains the authoritative identity: the wrapper version does not track the embedded Playwright build it reports."
     },
     {
       "surface": "github-mcp-container",
       "identity": "ghcr.io/github/github-mcp-server",
-      "version": "v1.7.0",
-      "commit": "eb088dfe9d854dab6453a8d4ae5871a5ced20974",
-      "integrity": "sha256:c491ffdf6f4c85cb5397021bc655edb8ab825c6f5f568e7597d77a1bd7c4d308",
-      "disposition": "active"
+      "version": "v1.8.0",
+      "commit": "ca8ab52dcc45b86fae190398178fd22edb7b1362",
+      "integrity": "sha256:d5a18c04b92714c309eb46a2305087e91a4dbd80420f6e462656699f95093520",
+      "disposition": "active",
+      "reason": "Self-host launcher image moved v1.7.0 -> v1.8.0 by digest. The digest was resolved through the GHCR registry API after confirming the same method reproduces the previously committed v1.7.0 digest exactly."
     },
     {
       "surface": "aws-core-mcp-server",
@@ -98,11 +100,11 @@
     {
       "surface": "skillspector",
       "identity": "NVIDIA/SkillSpector",
-      "version": "2.5.0",
-      "commit": "34f60308522f45447cd343da0aad77bcea308ad4",
-      "integrity": "sha256:eb100b229ec5b25f74d5f6c1ac31e2d0466f08dbc0726af4239dccadbd7f1b1c",
+      "version": "2.5.3",
+      "commit": "0562b964ec5ceac67ee15c163738e5404f14a908",
+      "integrity": "sha256:108b707cb98cb418680782f9745942b1d3904104a45d8f6fd62f102672285d55",
       "disposition": "active",
-      "reason": "Two clean cache-disabled OCI exports from the exact source, committed uv.lock, uv 0.12.0, and digest-pinned Python base were byte-identical; networkless read-only clean/adversarial fixtures stayed at 0/2 findings with the same P1/YR1 rule and exit-code behavior as the prior accepted image."
+      "reason": "Rotated 2.5.0 -> 2.5.3 under the four-step procedure. Two clean cache-disabled OCI exports agreed, and three further runners independently reproduced the same digest (five reproductions total). The method was validated against a known answer first: the same recipe on the 2.5.0 revision reproduced its committed digest exactly. The YR4 carve-out needs no change — all five yara_rules blobs carry identical git SHAs at both revisions, so no Gate-B string moved."
     },
     {
       "surface": "skillspector-python-base",
@@ -115,19 +117,19 @@
     {
       "surface": "cisco-skill-scanner",
       "identity": "cisco-ai-skill-scanner",
-      "version": "2.0.12",
-      "integrity": "sha256:e49f979e97b7842549b1f531dc5f426c9780d798a0b21f0125044e3b5ae4a1f7",
+      "version": "2.0.13",
+      "integrity": "sha256:d81fde291d60b6f8134375c33b49a2f41f5bb3072b74153dafea4774d627a837",
       "disposition": "active",
-      "reason": "PyPI still reports 2.0.12 as the latest stable release; the 103-package committed uv lock re-resolves unchanged, Linux online warm-up and offline startup passed with uv 0.12.0, and the clean/adversarial fixtures produced the expected 0/2 findings."
+      "reason": "PyPI now reports 2.0.13. The committed uv lock was regenerated on a vet runner with the pinned uv 0.12.2 and picks up one new direct dependency (click); the `mcp` dependency is unchanged, so the #574 situation is untouched. Verified at the exact lock: skill-scanner reports 2.0.13 online and with --offline."
     },
     {
       "surface": "cisco-mcp-scanner",
       "identity": "cisco-ai-mcp-scanner",
-      "version": "4.8.1",
+      "version": "4.8.2",
       "commit": "94e61145a5bd6ae39eabcc52a686830e1ec73be0",
-      "integrity": "sha256:9e17507995dc7acf2c103be84ca952b73f8a63819025ce42339f56b2805b01a8",
+      "integrity": "sha256:ee96cc8e7d4641a5b96047552c426a9a7d6d2736a65a4bcbd77797f2f1add202",
       "disposition": "active",
-      "reason": "The exact 106-package lock, Linux online warm-up, and offline startup passed with uv 0.12.0. Fixture qualification exposed the 4.8.1 CLI JSON/analyzer contract change; AIH invokes supported raw static mode with the local YARA analyzer, requires exact submitted-tool result coverage, and fails closed while translating aggregated findings."
+      "reason": "Moved 4.8.1 -> 4.8.2. The 106-package lock re-resolves with the `mcp` dependency unchanged, so the #574 situation is untouched. Verified starting from its locked environment on a vet runner with uv 0.12.2."
     },
     {
       "surface": "snyk-agent-scan",
@@ -194,8 +196,9 @@
     {
       "surface": "uv",
       "identity": "uv",
-      "version": "0.12.0",
-      "disposition": "active"
+      "version": "0.12.2",
+      "disposition": "active",
+      "reason": "Toolchain pin for the locked scanner projects and the SkillSpector image build, moved 0.12.0 -> 0.12.2. Runners are provisioned to this exact version via the versioned standalone installer, never `uv self update`."
     },
     {
       "surface": "actions-checkout",

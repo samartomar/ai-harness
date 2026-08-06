@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import { CISCO_SKILL_SCANNER_SPEC } from "../baseline-evidence/analyzer-profile.js";
 import type { Runner } from "../internals/proc.js";
 import { classifyTuple, type HostTuple } from "./host-tuple.js";
 import type { DimensionReport, ResolvedSource, ScanFinding, ScanSeverity } from "./scan-gate.js";
@@ -352,8 +353,12 @@ export const DEEP_SCAN_TIMEOUT_MS = 300_000;
 const AVAILABILITY_TIMEOUT_MS = 30_000;
 const MAX_DEEP_FINDINGS = 100;
 
-/** The pinned Cisco skill-scanner package + its console-script (see tools/cisco-skill-scanner). */
-const CISCO_SKILL_SCANNER_SPEC = "cisco-ai-skill-scanner==2.0.13";
+/**
+ * The pinned Cisco skill-scanner package + its console-script (see
+ * tools/cisco-skill-scanner). Imported rather than restated: this file used to
+ * carry its own copy of the version literal, which is exactly the kind of
+ * second source of truth that goes stale silently during a pin rotation.
+ */
 const CISCO_CONSOLE_SCRIPT = "skill-scanner";
 
 function missingReport(dimension: string, reason: string): DimensionReport {
