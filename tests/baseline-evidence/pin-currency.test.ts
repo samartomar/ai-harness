@@ -8,7 +8,11 @@ import { BASELINE_CATALOG_IDS, baselineCatalogById } from "../../src/baseline-ev
 import { comparePinSets, formatPinCurrency } from "../../src/baseline-evidence/pin-currency.js";
 import type { BaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
 import vendorLock from "../../src/baseline-evidence/vendor-lock.json" with { type: "json" };
-import { checkBaselinePinCurrency } from "../../src/internals/check-baseline-pin-currency.js";
+import {
+  checkBaselinePinCurrency,
+  defaultLockPath,
+  runPinCurrencyCli,
+} from "../../src/internals/check-baseline-pin-currency.js";
 
 const CATALOGS = BASELINE_CATALOG_IDS.map((id) => baselineCatalogById(id));
 const lock = vendorLock as unknown as BaselineEvidenceLock;
@@ -150,6 +154,31 @@ describe("baseline pin currency", () => {
 
   it("rejects a lock that does not parse rather than reporting no drift", () => {
     expect(() => checkBaselinePinCurrency("package.json")).toThrow();
+  });
+
+  it("defaults to the committed lock the check exists to defend", () => {
+    expect(defaultLockPath().replace(/\\/g, "/")).toContain(
+      "src/baseline-evidence/vendor-lock.json",
+    );
+  });
+
+  it("exits 0 and prints the report when the committed evidence is current", () => {
+    const written: string[] = [];
+    expect(runPinCurrencyCli(defaultLockPath(), (text) => written.push(text))).toBe(0);
+    expect(written.join("")).toContain("matches every declared pin");
+  });
+
+  it("exits 1 when a pin has moved, so CI blocks rather than warns", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aih-pin-currency-cli-"));
+    const lockPath = join(dir, "vendor-lock.json");
+    const written: string[] = [];
+    try {
+      writeFileSync(lockPath, JSON.stringify(withSourcePin("e".repeat(40))), "utf8");
+      expect(runPinCurrencyCli(lockPath, (text) => written.push(text))).toBe(1);
+      expect(written.join("")).toContain("no longer match the committed evidence");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

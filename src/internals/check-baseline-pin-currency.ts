@@ -26,15 +26,31 @@ export function checkBaselinePinCurrency(lockPath: string): { ok: boolean; repor
   return { ok: drift.length === 0, report: formatPinCurrency(drift) };
 }
 
-function main(): void {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const lockPath = resolve(here, "..", "baseline-evidence", "vendor-lock.json");
+/** The committed lock this check defends, resolved relative to this module. */
+export function defaultLockPath(): string {
+  return resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "baseline-evidence",
+    "vendor-lock.json",
+  );
+}
+
+/**
+ * The CLI body, exported and parameterized so its reporting and exit behaviour
+ * are testable directly. Returns the exit code rather than setting it, so a
+ * caller — including a test — observes the decision instead of a side effect.
+ */
+export function runPinCurrencyCli(
+  lockPath: string = defaultLockPath(),
+  write: (text: string) => void = (text) => void process.stdout.write(text),
+): number {
   const { ok, report } = checkBaselinePinCurrency(lockPath);
-  process.stdout.write(`${report}\n`);
-  if (!ok) process.exitCode = 1;
+  write(`${report}\n`);
+  return ok ? 0 : 1;
 }
 
 const invokedPath = process.argv[1];
 if (invokedPath && import.meta.url === pathToFileURL(resolve(invokedPath)).href) {
-  main();
+  process.exitCode = runPinCurrencyCli();
 }
