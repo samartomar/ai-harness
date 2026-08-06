@@ -1576,6 +1576,83 @@
             ],
             "additionalProperties": false
           }
+        },
+        "externalSelections": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "framework": {
+                "type": "string",
+                "enum": [
+                  "ecc",
+                  "superpowers"
+                ]
+              },
+              "items": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "agent",
+                        "baseline",
+                        "capability",
+                        "framework",
+                        "lang",
+                        "mcp",
+                        "module",
+                        "runtime",
+                        "skill"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    },
+                    "source": {
+                      "type": "object",
+                      "properties": {
+                        "repository": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$"
+                        },
+                        "commit": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{40}$"
+                        },
+                        "path": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "repository",
+                        "commit",
+                        "path"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "framework"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
