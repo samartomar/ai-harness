@@ -26,7 +26,11 @@ function catalog(id: string, count: number): BaselineCatalog {
   };
 }
 
-function bundle(sourceId: string, componentIds: readonly string[], tree = TREE): BaselineEvidenceLock {
+function bundle(
+  sourceId: string,
+  componentIds: readonly string[],
+  tree = TREE,
+): BaselineEvidenceLock {
   return {
     schemaVersion: 1,
     sources: [
@@ -71,7 +75,12 @@ describe("shardCatalog", () => {
     const seen = [1, 2, 3, 4].flatMap((index) =>
       shardCatalog(source, { index, total: 4 }).components.map((component) => component.id),
     );
-    expect(seen.slice().sort()).toEqual(source.components.map((c) => c.id).slice().sort());
+    expect(seen.slice().sort()).toEqual(
+      source.components
+        .map((c) => c.id)
+        .slice()
+        .sort(),
+    );
     expect(new Set(seen).size).toBe(10);
   });
 
@@ -119,7 +128,10 @@ describe("mergeReceiptBundles", () => {
 
   it("refuses to pick a winner when two hosts disagree about the same component", () => {
     expect(() =>
-      mergeReceiptBundles([bundle("ecc", ["a"], "c".repeat(64)), bundle("ecc", ["a"], "d".repeat(64))]),
+      mergeReceiptBundles([
+        bundle("ecc", ["a"], "c".repeat(64)),
+        bundle("ecc", ["a"], "d".repeat(64)),
+      ]),
     ).toThrow(/different evidence for the same content/);
   });
 
@@ -129,7 +141,9 @@ describe("mergeReceiptBundles", () => {
       ...other,
       sources: other.sources.map((source) => ({ ...source, pinnedSha: "f".repeat(40) })),
     };
-    expect(() => mergeReceiptBundles([bundle("ecc", ["a"]), shifted])).toThrow(/disagree on the pin/);
+    expect(() => mergeReceiptBundles([bundle("ecc", ["a"]), shifted])).toThrow(
+      /disagree on the pin/,
+    );
   });
 
   it("rejects an empty merge rather than producing an empty lock", () => {
@@ -140,7 +154,12 @@ describe("mergeReceiptBundles", () => {
 describe("shardCoverage", () => {
   it("reports complete coverage when every catalog component has a receipt", () => {
     const ecc = catalog("ecc", 3);
-    const merged = mergeReceiptBundles([bundle("ecc", ecc.components.map((c) => c.id))]);
+    const merged = mergeReceiptBundles([
+      bundle(
+        "ecc",
+        ecc.components.map((c) => c.id),
+      ),
+    ]);
     const coverage = shardCoverage([ecc], merged);
     expect(coverage[0]).toMatchObject({ sourceId: "ecc", expected: 3, covered: 3, missing: [] });
     expect(formatShardCoverage(coverage)[0]).toContain("complete");

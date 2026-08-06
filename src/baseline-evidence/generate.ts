@@ -19,9 +19,9 @@ import {
   formatShardCoverage,
   mergeReceiptBundles,
   parseShardSelector,
+  type ShardSelector,
   shardCatalog,
   shardCoverage,
-  type ShardSelector,
 } from "./shard.js";
 import { vetBaselineCatalog } from "./vet.js";
 

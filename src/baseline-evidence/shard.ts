@@ -50,7 +50,9 @@ export function parseShardSelector(value: string): ShardSelector {
   const index = Number.parseInt(rawIndex, 10);
   const total = Number.parseInt(rawTotal, 10);
   if (index > total) {
-    throw new Error(`invalid --shard ${JSON.stringify(value)}; index ${index} exceeds total ${total}`);
+    throw new Error(
+      `invalid --shard ${JSON.stringify(value)}; index ${index} exceeds total ${total}`,
+    );
   }
   return { index, total };
 }
@@ -131,7 +133,10 @@ export function mergeReceiptBundles(
   for (const bundle of bundles) {
     for (const source of bundle.sources) {
       const existing = bySourceId.get(source.id);
-      bySourceId.set(source.id, existing === undefined ? source : mergeSourceEvidence(existing, source));
+      bySourceId.set(
+        source.id,
+        existing === undefined ? source : mergeSourceEvidence(existing, source),
+      );
     }
   }
   return parseBaselineEvidenceLock({
