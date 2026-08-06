@@ -77,8 +77,17 @@ describe("policy studio framework inventory", () => {
     expect(text).toContain("aih evidence vet-baseline");
   });
 
+  // The curation affordance lives in the item's drawer now, which is where the
+  // accepted artifact puts every per-item detail. Opening the row is the step
+  // that used to be unnecessary; the round-trip it guards is unchanged.
   it("makes the curatable next action real by prefilling the curation form", () => {
     const window = studio();
+    const curatable = assets.find(({ asset }) => asset.curationKind !== undefined);
+    if (curatable === undefined) throw new Error("expected a curatable asset in the catalog");
+    const rowKey = `${curatable.framework.id} / ${curatable.asset.kind}: ${curatable.asset.id}`;
+    window.document
+      .querySelector(`[data-open="${rowKey}"]`)
+      ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     const button = window.document.querySelector("[data-curation-prefill]");
     expect(button).not.toBeNull();
     const key = (button?.getAttribute("data-curation-prefill") ?? "").split("|");

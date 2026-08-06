@@ -7,278 +7,497 @@ function safeScriptJson(value: unknown): string {
 /** Portable, dependency-free policy authoring surface. */
 export function policyStudioHtml(model: PolicyStudioModel): string {
   return String.raw`<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AIH Policy Workbench</title>
 <style>
-/* Policy Workbench - Sahara, warm minimalism, ported from the owner-accepted
-   acceptance artifact. Burnt sienna on warm linen, EB Garamond headings against
-   Manrope labels, IBM Plex Mono for ids, whitespace as the primary tool.
+/* Policy Workbench - Sahara, warm minimalism. Ported verbatim in structure from
+   the owner-accepted acceptance artifact and wired to the real catalog.
 
-   Two standing instructions bound this and must not be re-litigated:
-   "keep it compact just colors and not effects" - Sahara's 28-32px padding rules
-   were not applied, they fight the measured compactness; and "i don't care for
-   design any more just it should function" - so there is no blur, no
-   backdrop-filter, no animated full-viewport backdrop anywhere. The field is
-   three static radial gradients painted straight onto the background, which is
-   what the artifact measured as costing nothing while looking the same.
+   Sun-baked simplicity: burnt sienna on warm linen, EB Garamond headings against
+   Manrope labels, whitespace as the primary tool. The whole palette is warm-shifted;
+   even the grays carry warm undertones, and there is no cold white anywhere.
+
+   The state ramp stays semantic while going warm. Selected and requested are the
+   same sienna hue at different strengths, because requested is a weaker form of the
+   same intent; gold means evidence is still owed; the dusty rose tertiary is spent
+   on blocked, which is the one state that must stop you; taupe means the catalog
+   cannot reach it at all.
+
+   No blur anywhere, by measurement rather than taste: three drifting blur(90px)
+   layers cost a 63ms frame per row toggle and 18ms without them. The field is the
+   same three radial gradients painted straight onto the background.
 
    Fonts are stacks, not webfonts: this artifact opens with no repository and no
-   network, so a remote font would be a dependency it must not have. */
+   network, so a remote font would be a dependency it must not have.
+
+   Interactive floors are this repository's, not the artifact's: controls stay at
+   32px and chips at 24px (WCAG 2.2 target size). Compactness does not lower a
+   tap target. */
 :root{
-  color-scheme:light dark;
+  --ease-out:cubic-bezier(.16,1,.3,1);
+  --spring:cubic-bezier(.34,1.35,.44,1);
   --display:"EB Garamond",Georgia,"Times New Roman",serif;
   --sans:"Manrope","Segoe UI Variable","Segoe UI",system-ui,-apple-system,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
-  --radius:8px;
+  --shadow-soft:0 2px 16px rgba(58,48,42,.04);
+}
+html[data-theme="light"]{
+  color-scheme:light;
   --bg:#faf5ee;--bg-deep:#f2ebe1;
-  --panel:#fffcf7;--panel2:#f2ebe1;--line:#8a7d6d;--hair:#ded4c6;
-  --fg:#3a302a;--muted:#6b5d52;--faint:#94867a;
-  --accent:#a8541f;--accent-soft:rgba(194,101,42,.1);--focus:#c2652a;
-  --ok:#8f4517;--warn:#8a6316;--bad:#8c3c3c;
+  --glass:rgba(255,252,247,.72);--glass-strong:#fffcf7;--glass-line:rgba(216,208,200,.6);
   --fill:rgba(58,48,42,.045);--fill-2:rgba(58,48,42,.09);
+  --ink:#3a302a;--ink-2:#6b5d52;--ink-3:#7d6f62;
+  --accent:#c2652a;--accent-ink:#a8541f;--accent-soft:rgba(194,101,42,.1);--accent-line:rgba(194,101,42,.34);
+  --cyan:#a8541f;--cyan-soft:rgba(194,101,42,.1);
+  --amber:#8a6316;--amber-soft:rgba(169,123,31,.12);
+  --danger:#8c3c3c;--danger-soft:rgba(140,60,60,.1);
+  --on-accent:#fffcf7;
+  --s-sel:#c2652a;--s-req:#c98a4f;--s-wait:#a9871f;--s-blk:#8c3c3c;
+  --s-uns:#8f8474;--s-avail:rgba(58,48,42,.13);
   --blob-1:rgba(194,101,42,.09);--blob-2:rgba(201,162,39,.07);--blob-3:rgba(140,60,60,.06);
-  --shadow:0 2px 16px rgba(58,48,42,.05);--shadow-lg:0 8px 40px -12px rgba(58,48,42,.14);
-  /* one ramp, shared by the group meter and the state badges */
-  --s-sel:#c2652a;--s-req:#dda877;--s-wait:#c9a227;--s-blk:#8c3c3c;--s-uns:#a79c8d;
-  --s-avail:rgba(58,48,42,.13);
+  --shadow-lg:0 8px 40px -12px rgba(58,48,42,.14);
   --b-pending-bg:#f5e9c8;--b-pending-fg:#6b4c08;
   --b-blocked-bg:#f3dcdc;--b-blocked-fg:#7a2f2f;
   --b-external-bg:#eae3d8;--b-external-fg:#544a3e;
   --b-requested-bg:#f7e0cf;--b-requested-fg:#8f4517;
-  font-family:var(--sans);
 }
 /* Sahara after sundown: the same warmth, inverted. Warm charcoal, never blue-black. */
-@media(prefers-color-scheme:dark){:root{
+html[data-theme="dark"]{
+  color-scheme:dark;
   --bg:#1c1714;--bg-deep:#15110f;
-  --panel:#2a231e;--panel2:#231d19;--line:#7d7266;--hair:#3d342d;
-  --fg:#f4ece1;--muted:#cbbdad;--faint:#9a8b7c;
-  --accent:#eda468;--accent-soft:rgba(224,131,68,.14);--focus:#e08344;
-  --ok:#e08344;--warn:#d9b23f;--bad:#c96363;
+  --glass:rgba(46,38,33,.66);--glass-strong:#2a231e;--glass-line:rgba(216,208,200,.14);
   --fill:rgba(240,228,214,.07);--fill-2:rgba(240,228,214,.13);
+  --ink:#f4ece1;--ink-2:#cbbdad;--ink-3:#a2937f;
+  --accent:#e08344;--accent-ink:#eda468;--accent-soft:rgba(224,131,68,.14);--accent-line:rgba(224,131,68,.4);
+  --cyan:#eda468;--cyan-soft:rgba(224,131,68,.12);
+  --amber:#d9b23f;--amber-soft:rgba(217,178,63,.14);
+  --danger:#c96363;--danger-soft:rgba(201,99,99,.14);
+  --on-accent:#231c17;
+  --s-sel:#e08344;--s-req:#a9754c;--s-wait:#d9b23f;--s-blk:#c96363;
+  --s-uns:#8a7f72;--s-avail:rgba(240,228,214,.16);
   --blob-1:rgba(224,131,68,.1);--blob-2:rgba(217,178,63,.07);--blob-3:rgba(201,99,99,.06);
-  --shadow:0 2px 16px rgba(0,0,0,.25);--shadow-lg:0 12px 48px -14px rgba(0,0,0,.5);
-  --s-sel:#e08344;--s-req:#a9754c;--s-wait:#d9b23f;--s-blk:#c96363;--s-uns:#8a7f72;
-  --s-avail:rgba(240,228,214,.16);
+  --shadow-lg:0 12px 48px -14px rgba(0,0,0,.5);
   --b-pending-bg:#40361c;--b-pending-fg:#e8cd7a;
   --b-blocked-bg:#45272a;--b-blocked-fg:#f0b3b3;
   --b-external-bg:#332c25;--b-external-fg:#cbbdad;
   --b-requested-bg:#4a2f1c;--b-requested-fg:#f0a670;
-}}
-*{box-sizing:border-box}
+}
+*,*::before,*::after{box-sizing:border-box}
 html,body{height:100%}
-body{margin:0;color:var(--fg);font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased;
+body{margin:0;min-height:100dvh;overflow:hidden;font:400 13px/1.5 var(--sans);color:var(--ink);
+  background:var(--bg);-webkit-font-smoothing:antialiased}
+h1,h2,h3,p{margin:0}
+button{font-family:inherit;color:inherit;cursor:pointer;border:0;background:none}
+code{font-family:var(--mono)}
+input,select,textarea{font:inherit}
+*:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.skip{position:absolute;left:-9999px}
+.skip:focus{left:.75rem;top:.75rem;z-index:999;background:var(--glass-strong);padding:.5rem;
+  border-radius:8px;border:1px solid var(--glass-line)}
+.hidden{display:none}
+
+/* ── field ───────────────────────────────────────────── */
+.field{position:fixed;inset:0;overflow:hidden;
   background:
     radial-gradient(56vw 56vw at 14% -6%,var(--blob-1),transparent 65%),
     radial-gradient(44vw 44vw at 92% 22%,var(--blob-2),transparent 65%),
     radial-gradient(40vw 40vw at 44% 118%,var(--blob-3),transparent 65%),
-    var(--bg);
-  background-attachment:fixed}
-h1,h2,legend{font-family:var(--display);letter-spacing:-.01em;margin:0}
-button,input,select,textarea{font:inherit}
-/* 32px interactive floor is this repository's standard and predates the
-   restyle. Sahara's compactness does not get to lower a tap target. */
-button,input,select{min-height:32px}
-summary{min-height:32px}
-button{border:1px solid var(--line);border-radius:6px;background:var(--fill);color:var(--fg);
-  padding:.22rem .5rem;cursor:pointer;font-size:12px;font-weight:600;
-  transition:background 160ms ease,border-color 160ms ease}
-button:hover{background:var(--fill-2);border-color:var(--focus)}
-button:disabled{opacity:.5;cursor:not-allowed}
-:where(button,input,select,textarea,summary):focus-visible{outline:3px solid var(--focus);outline-offset:2px}
-input,select,textarea{max-width:100%;border:1px solid var(--line);border-radius:6px;
-  background:var(--panel);color:var(--fg);padding:.28rem .4rem}
-textarea{width:100%;min-height:9rem;resize:vertical;font-family:var(--mono);font-size:11.5px}
-.skip{position:absolute;left:-9999px}
-.skip:focus{left:.75rem;top:.75rem;z-index:30;background:var(--panel);padding:.5rem}
-.hidden{display:none}
+    var(--bg)}
+.grain{position:absolute;inset:0;pointer-events:none;opacity:.5;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.16'/%3E%3C/svg%3E")}
 
-/* ── stage ─────────────────────────────────────────── */
-.stage{max-width:1500px;margin:auto;padding:10px 14px 0;display:grid;gap:9px}
-.bar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:8px 12px;
-  border:1px solid var(--hair);border-radius:14px;background:var(--panel);box-shadow:var(--shadow)}
-.brand{display:flex;align-items:center;gap:8px;margin-right:auto}
-.brand-mark{width:24px;height:24px;border-radius:8px;display:grid;place-items:center;flex:0 0 auto;
-  background:var(--focus)}
-.brand-mark svg{width:14px;height:14px}
-.bar h1{font-size:15px}
-.bar h1 span{color:var(--faint);font-weight:400;font-family:var(--sans);font-size:11.5px}
-.bar label{display:flex;align-items:center;gap:.35rem;font-size:11.5px;color:var(--muted)}
-.bar #status{font-family:var(--mono);font-size:11px;color:var(--faint);
-  flex:1 1 12rem;min-width:0;overflow-wrap:anywhere}
-.announce{min-height:1.3rem;margin:0;padding:0 4px;color:var(--muted);font-size:12px}
-.announce.error{color:var(--bad)}
-.boundary{margin:0 4px;color:var(--faint);font-size:11.5px;max-width:90ch}
+/* ── stage ───────────────────────────────────────────── */
+.stage{position:relative;z-index:1;height:100dvh;display:grid;grid-template-rows:56px auto 1fr 34px}
+.bar{display:flex;align-items:center;gap:10px;padding:0 16px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:9px;min-width:0}
+.brand-mark{width:26px;height:26px;border-radius:9px;display:grid;place-items:center;flex:0 0 auto;
+  background:var(--accent);box-shadow:var(--shadow-soft)}
+.brand-mark svg{width:15px;height:15px}
+.brand-name{font:600 13.5px/1.2 var(--display);letter-spacing:-.01em;white-space:nowrap}
+.brand-name span{color:var(--ink-3);font-weight:400;font-family:var(--sans);font-size:11px}
+.pill{display:inline-flex;align-items:center;gap:2px;padding:2px;border-radius:999px;
+  border:1px solid var(--glass-line);background:var(--glass)}
+.pill button{height:26px;min-width:44px;padding:0 11px;border-radius:999px;color:var(--ink-3);
+  font-weight:600;font-size:11.5px;transition:color 180ms ease,background 180ms ease}
+.pill button:hover{color:var(--ink-2)}
+.pill button[aria-pressed="true"]{color:var(--ink);background:var(--fill-2)}
+.bar .sp{flex:1}
+.btn{height:32px;padding:0 12px;border-radius:999px;background:var(--fill);color:var(--ink);
+  font-weight:600;font-size:12px;display:inline-flex;align-items:center;gap:6px;
+  transition:background 180ms ease,transform 120ms var(--ease-out)}
+.btn:hover{background:var(--fill-2)}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--accent);color:var(--on-accent)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.sm{height:32px;padding:0 10px;font-size:11.5px}
+.btn.danger{color:var(--danger);background:var(--danger-soft)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.seek{display:flex;align-items:center;gap:8px;height:32px;padding:0 8px 0 12px;border-radius:999px;
+  border:1px solid var(--glass-line);background:var(--glass);
+  color:var(--ink-3);font-size:12px;min-width:200px;transition:border-color 200ms ease}
+.seek:hover{border-color:var(--accent-line)}
+.seek kbd{font:500 10px/1 var(--mono);background:var(--fill-2);border-radius:4px;padding:3px 6px;margin-left:auto}
+.bar label{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-3)}
+.bar select{height:32px;border-radius:999px;border:1px solid var(--glass-line);background:var(--glass);
+  color:var(--ink);padding:0 8px;font-size:12px}
+.announce{grid-row:2;min-height:20px;padding:0 18px 4px;font-size:12px;color:var(--ink-2)}
+.announce.error{color:var(--danger)}
+#status{font:500 11px/1 var(--mono);color:var(--ink-3);max-width:34ch;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
 
-/* ── work: rail + plane ────────────────────────────── */
-.work{display:grid;grid-template-columns:232px minmax(0,1fr);gap:10px;align-items:start;
-  padding-bottom:12px}
-.rail{display:grid;gap:8px;align-content:start;position:sticky;top:10px}
-.sect{padding:9px 10px;display:grid;gap:6px;border:1px solid var(--hair);border-radius:14px;
-  background:var(--panel);box-shadow:var(--shadow)}
-.cap{font:600 9.5px/1.3 var(--mono);letter-spacing:.15em;text-transform:uppercase;color:var(--faint);
-  display:flex;align-items:center;gap:6px}
-.cap .end{margin-left:auto;color:var(--accent);font-size:9.5px;text-transform:none;letter-spacing:0}
-.rail select{width:100%}
+/* ── body layout ─────────────────────────────────────── */
+.work{display:grid;grid-template-columns:236px minmax(0,1fr);gap:12px;padding:0 16px 10px;min-height:0}
+@media(max-width:880px){.work{grid-template-columns:1fr}.rail{display:none}}
+.gcard{border-radius:16px;border:1px solid var(--glass-line);background:var(--glass);
+  box-shadow:var(--shadow-soft)}
+
+/* rail */
+.rail{overflow:auto;padding:2px 2px 8px;display:grid;gap:8px;align-content:start;min-height:0}
+.rail::-webkit-scrollbar,.plane::-webkit-scrollbar,.drawer::-webkit-scrollbar{width:8px}
+.rail::-webkit-scrollbar-thumb,.plane::-webkit-scrollbar-thumb,.drawer::-webkit-scrollbar-thumb{background:var(--fill-2);border-radius:9px}
+.sect{padding:10px 11px;display:grid;gap:7px}
+.cap{font:600 9.5px/1.3 var(--mono);letter-spacing:.15em;text-transform:uppercase;color:var(--ink-3);
+  display:flex;align-items:center;gap:7px}
+.cap .end{margin-left:auto;color:var(--accent-ink);font-size:9.5px;letter-spacing:0;text-transform:none}
+.preset{display:grid;gap:2px;text-align:left;padding:7px 9px;border-radius:10px;background:var(--fill);
+  transition:background 160ms ease;min-height:32px}
+.preset:hover{background:var(--fill-2)}
+.preset[aria-pressed="true"]{background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent-line)}
+.preset b{font:600 12px/1.3 var(--display)}
+.preset[aria-pressed="true"] b{color:var(--accent-ink)}
+.preset span{font-size:10.5px;color:var(--ink-3);line-height:1.35}
 .chips{display:flex;flex-wrap:wrap;gap:4px}
-/* 24px is the WCAG 2.2 target-size minimum; the artifact's 21px chips would
-   fail it, and a decorative toggle is still a target. */
-.chip{min-height:24px;height:24px;padding:0 9px;border-radius:999px;border:1px solid transparent;
-  background:var(--fill);color:var(--muted);font-size:11px;font-weight:600;line-height:1}
-.chip:hover{background:var(--fill-2);color:var(--fg)}
-.chip[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);border-color:var(--focus)}
-.plane{display:grid;gap:8px;align-content:start;min-width:0}
-.planetop{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:7px 10px;
-  border:1px solid var(--hair);border-radius:14px;background:var(--panel);box-shadow:var(--shadow)}
-.f{min-height:24px;height:24px;padding:0 10px;border-radius:999px;border:1px solid transparent;
-  background:var(--fill);color:var(--muted);font-size:11px}
-.f:hover{background:var(--fill-2);color:var(--fg)}
-.f[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);border-color:var(--focus)}
-.planetop .n{margin-left:auto;font:500 11px/1 var(--mono);color:var(--faint)}
-.planetop .n b{color:var(--fg)}
+.chip{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 9px;border-radius:999px;
+  background:var(--fill);color:var(--ink-2);font-size:11px;font-weight:600;
+  transition:background 160ms ease,color 160ms ease}
+.chip:hover{background:var(--fill-2);color:var(--ink)}
+.chip[aria-pressed="true"]{background:var(--cyan-soft);color:var(--cyan);box-shadow:inset 0 0 0 1px var(--cyan)}
 
-/* ── group cards ───────────────────────────────────── */
-.group{border:1px solid var(--hair);border-radius:14px;background:var(--panel);
-  box-shadow:var(--shadow);overflow:hidden}
-.grphead{display:flex;align-items:center;gap:9px;width:100%;padding:8px 11px;text-align:left;
-  border:0;border-radius:0;background:none;min-height:0;transition:background 160ms ease}
-.grphead:hover{background:var(--fill);border-color:transparent}
-.grphead .tw{width:9px;color:var(--faint);font-size:8px;flex:0 0 auto;
-  transition:transform 200ms ease}
-.group[data-open="1"] .grphead .tw{transform:rotate(90deg)}
-.grphead h2{font-size:13px;white-space:nowrap;font-weight:600}
-.grphead .ct{margin-left:auto;font:500 11px/1 var(--mono);color:var(--faint);flex:0 0 auto}
-.meter{display:flex;gap:1px;height:5px;width:96px;border-radius:999px;overflow:hidden;
+/* plane */
+.plane{overflow:auto;padding:2px 2px 8px;display:grid;gap:7px;align-content:start;min-height:0}
+.planetop{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:8px 11px}
+.f{height:24px;padding:0 10px;border-radius:999px;background:var(--fill);color:var(--ink-3);
+  font-size:11px;font-weight:600;transition:background 160ms ease,color 160ms ease}
+.f:hover{color:var(--ink-2)}
+.f[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent-ink);box-shadow:inset 0 0 0 1px var(--accent-line)}
+.planetop .sp{flex:1}
+.planetop .n{font:500 11px/1 var(--mono);color:var(--ink-3)}
+.planetop .n b{color:var(--ink);font-weight:600}
+
+/* group */
+.grp{overflow:hidden}
+.grphead{display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px;text-align:left;
+  transition:background 160ms ease;min-height:32px}
+.grphead:hover{background:var(--fill)}
+.grphead .tw{width:10px;color:var(--ink-3);font-size:9px;transition:transform 220ms var(--ease-out);flex:0 0 auto}
+.grp[data-open="1"] .grphead .tw{transform:rotate(90deg)}
+.grphead h2{font:600 12.5px/1 var(--display);letter-spacing:-.01em;white-space:nowrap}
+.grphead .own{font:500 9.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.grphead .ct{font:500 11px/1 var(--mono);color:var(--ink-3);margin-left:auto;flex:0 0 auto}
+.meter{display:flex;gap:1px;height:5px;width:104px;border-radius:999px;overflow:hidden;
   background:var(--s-avail);flex:0 0 auto}
 .meter i{display:block;height:100%}
 .meter i[data-s="requested"]{background:var(--s-sel)}
 .meter i[data-s="pending"]{background:var(--s-wait)}
 .meter i[data-s="blocked"]{background:var(--s-blk)}
 .meter i[data-s="external"]{background:var(--s-uns)}
-.group[data-open="0"] .body{display:none}
-.body{padding:2px 11px 10px;display:grid;gap:7px}
+.grp[data-open="0"] .grpbody{display:none}
+.grpbody{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:0 14px;
+  padding:0 11px 8px}
+.grpbody.stack{grid-template-columns:minmax(0,1fr)}
+.grpnote{padding:0 11px 9px;font-size:11.5px;color:var(--ink-2);line-height:1.5;max-width:88ch}
+.grpnote code{font-size:11px;color:var(--cyan)}
 
-/* ── rows ──────────────────────────────────────────── */
-.matrix{display:grid;gap:0}
-.row{display:grid;grid-template-columns:minmax(11rem,1.6fr) minmax(7rem,1.1fr) auto;gap:.55rem;
-  align-items:center;min-height:30px;padding:.2rem 0;min-width:0;
-  border-bottom:1px solid var(--hair)}
-.row:last-child{border:0}
+/* row - compact */
+.row{display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:8px;
+  min-height:26px;padding:0 4px;border-radius:7px;transition:background 130ms ease}
 .row:hover{background:var(--fill)}
-.row strong{font:400 11.5px/1.35 var(--mono);overflow-wrap:anywhere;font-weight:500}
-.row p{margin:0;color:var(--muted);overflow-wrap:anywhere;font-size:11px}
-.row-actions{display:flex;gap:.3rem;justify-content:flex-end;flex-wrap:wrap}
-.badge{display:inline-block;border-radius:999px;padding:.1rem .45rem;font-family:var(--mono);
-  font-size:10.5px;white-space:nowrap}
-.pending{background:var(--b-pending-bg);color:var(--b-pending-fg)}
-.blocked{background:var(--b-blocked-bg);color:var(--b-blocked-fg)}
-.external{background:var(--b-external-bg);color:var(--b-external-fg)}
-.requested{background:var(--b-requested-bg);color:var(--b-requested-fg)}
-.mono{font-family:var(--mono);font-size:10.5px;overflow-wrap:anywhere;color:var(--muted)}
-.help{color:var(--muted);max-width:86ch;font-size:11.5px}
-.error{color:var(--bad)}
-.row-details{margin:.25rem 0 0;border:0;padding:0}
-.row-details summary{font-size:10.5px}
-.row-details p{margin:.2rem 0 0}
+.row.on{background:var(--accent-soft)}
+.row[hidden]{display:none}
+.rid{font:400 11.5px/1.2 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  color:var(--ink-2);text-align:left;min-width:0;padding:5px 0;min-height:26px}
+.row.on .rid{color:var(--ink)}
+.rid strong{font-weight:400}
+.rid u{text-decoration:none;color:var(--ink-3)}
+.tick{width:24px;height:24px;border-radius:6px;background:var(--fill-2);display:grid;place-items:center;
+  font-size:10px;color:transparent;flex:0 0 auto;transition:background 160ms var(--spring),color 160ms ease}
+.row.on .tick{background:var(--accent);color:var(--on-accent)}
+.row.on:hover .tick{background:var(--accent)}
+.more{width:24px;height:24px;border-radius:6px;color:var(--ink-3);font-size:12px;line-height:1;
+  display:grid;place-items:center;opacity:.35;transition:opacity 140ms ease,color 140ms ease}
+.row:hover .more,.row:focus-within .more{opacity:1}
+.more:hover{color:var(--accent-ink);background:var(--fill-2)}
+.badge{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.cust{display:flex;gap:2px;flex:0 0 auto}
+.cust i{width:11px;height:5px;border-radius:2px;background:var(--s-avail);display:block}
+.cust i[data-s="fill"]{background:var(--s-sel)}
+.cust i[data-s="ext"]{background:var(--s-req)}
+.cust i[data-s="wait"]{background:var(--s-wait)}
+.cust i[data-s="struck"]{background:var(--s-blk)}
+.cust i[data-s="hatch"]{background:repeating-linear-gradient(45deg,var(--s-uns) 0 1px,transparent 1px 3px);
+  box-shadow:inset 0 0 0 1px var(--s-uns)}
 
-/* ── forms and disclosure ──────────────────────────── */
-.form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.45rem}
-.form-grid label{display:grid;gap:.2rem;color:var(--muted);font-size:11px}
-fieldset{border:1px solid var(--hair);border-radius:10px;margin:0;padding:.5rem}
-legend{padding:0 .25rem;color:var(--muted);font-size:11.5px}
-details{border-top:1px solid var(--hair);padding-top:.4rem;margin-top:.2rem}
-summary{cursor:pointer;color:var(--accent);min-height:26px;font-size:11.5px}
-[aria-invalid="true"]{border-color:var(--bad)!important}
-.field-error{display:block;color:var(--bad);font-size:10.5px;line-height:1.25}
-.receipt-record{white-space:pre-wrap;max-width:100%;max-height:22rem;overflow:auto}
-.tip-wrap{display:inline-flex;position:relative;vertical-align:middle;margin-left:.25rem}
+/* ── drawer ──────────────────────────────────────────── */
+.scrim{position:fixed;inset:0;z-index:800;background:rgba(58,48,42,.42);
+  opacity:0;pointer-events:none;transition:opacity 200ms var(--ease-out)}
+.scrim.open{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;bottom:0;z-index:810;width:min(460px,94vw);overflow:auto;
+  background:var(--glass-strong);border-left:1px solid var(--glass-line);
+  box-shadow:var(--shadow-lg);padding:16px 18px 28px;display:grid;gap:12px;align-content:start;
+  transform:translateX(24px);opacity:0;transition:transform 260ms var(--spring),opacity 180ms var(--ease-out)}
+.scrim.open+.drawer{transform:none;opacity:1}
+.drawer[hidden]{display:none}
+.dhead{display:flex;align-items:flex-start;gap:10px}
+.dhead h2{font:600 15px/1.25 var(--mono);letter-spacing:-.01em;word-break:break-all}
+.dhead .x{margin-left:auto;color:var(--ink-3);font-size:15px;line-height:1;width:32px;height:32px;
+  display:grid;place-items:center;border-radius:8px;flex:0 0 auto}
+.dhead .x:hover{background:var(--fill-2);color:var(--ink)}
+.badges{display:flex;gap:5px;flex-wrap:wrap}
+.b{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;
+  background:var(--fill);color:var(--ink-2);font:600 10.5px/1 var(--sans)}
+.b.ok{color:var(--cyan);background:var(--cyan-soft)}
+.b.ext{color:var(--accent-ink);background:var(--accent-soft)}
+.b.warn{color:var(--amber);background:var(--amber-soft)}
+.b.bad{color:var(--danger);background:var(--danger-soft)}
+.kv{display:grid;gap:0}
+.kv div{display:flex;justify-content:space-between;gap:14px;padding:7px 0;
+  border-bottom:1px solid var(--glass-line);align-items:baseline}
+.kv div:last-child{border-bottom:0}
+.kv span{color:var(--ink-3);font-size:11.5px;flex:0 0 auto}
+.kv b{font:500 11.5px/1.45 var(--mono);text-align:right;word-break:break-word}
+.note{font-size:12px;line-height:1.55;color:var(--ink-2);border-left:2px solid var(--accent-line);padding-left:9px}
+.note.bad{border-left-color:var(--danger)}
+.note.ok{border-left-color:var(--cyan)}
+.note b{color:var(--ink);font-weight:600}
+.cmdline{display:flex;align-items:center;gap:9px;background:var(--fill);border-radius:10px;padding:8px 10px}
+.cmdline code{color:var(--cyan);font-size:11.5px;flex:1;overflow-wrap:anywhere}
+.copy{border-radius:999px;background:var(--fill-2);color:var(--ink-2);font:700 9.5px/1 var(--sans);
+  letter-spacing:.06em;padding:0 10px;height:32px;transition:color 150ms ease,background 150ms ease}
+.copy:hover{color:var(--accent-ink);background:var(--accent-soft)}
+.brow{display:flex;gap:6px;flex-wrap:wrap}
+.dform{display:grid;gap:7px}
+.dform label{display:grid;gap:3px;color:var(--ink-3);font-size:11px}
+.dform input,.dform select,.form-grid input,.form-grid select{border:1px solid var(--glass-line);border-radius:9px;
+  background:var(--fill);color:var(--ink);font:400 12px/1.4 var(--sans);padding:0 10px;height:32px;width:100%}
+.dform input:focus,.form-grid input:focus{border-color:var(--accent-line);outline:none}
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.form-grid label{display:grid;gap:3px;color:var(--ink-3);font-size:11px}
+fieldset{border:1px solid var(--glass-line);border-radius:12px;margin:0;padding:10px}
+legend{padding:0 5px;color:var(--ink-3);font-size:11px}
+[aria-invalid="true"]{border-color:var(--danger)!important}
+.field-error{display:block;color:var(--danger);font-size:10.5px;line-height:1.3}
+.help{color:var(--ink-2);font-size:11.5px;line-height:1.5;max-width:88ch}
+.mono{font-family:var(--mono);font-size:10.5px;overflow-wrap:anywhere;color:var(--ink-2)}
+.error{color:var(--danger)}
+textarea{width:100%;min-height:8rem;resize:vertical;border:1px solid var(--glass-line);border-radius:10px;
+  background:var(--fill);color:var(--ink);font:400 11px/1.5 var(--mono);padding:8px 10px}
+details{margin:0}
+summary{cursor:pointer;color:var(--accent-ink);font-size:11.5px;display:flex;align-items:center}
+summary{min-height:32px}
+.row-actions{display:flex;gap:5px;flex-wrap:wrap}
+.row-details{margin:0}
+.receipt-record{white-space:pre-wrap;max-width:100%;max-height:20rem;overflow:auto}
+.tip-wrap{display:inline-flex;position:relative;vertical-align:middle;margin-left:.3rem}
 .help-button{min-width:24px;min-height:24px;padding:0;border-radius:999px;font-weight:700;
-  line-height:1;font-size:11px}
-.tooltip{display:none;position:fixed;left:1rem;right:auto;width:auto;z-index:40;
-  max-width:calc(100vw - 2rem);padding:.45rem .55rem;border:1px solid var(--line);border-radius:8px;
-  background:var(--panel);color:var(--fg);font-size:11.5px;line-height:1.4;box-shadow:var(--shadow-lg)}
+  line-height:1;font-size:11px;background:var(--fill-2);color:var(--ink-2)}
+.help-button:hover{color:var(--accent-ink)}
+.tooltip{display:none;position:fixed;left:1rem;right:auto;width:auto;z-index:900;
+  max-width:calc(100vw - 2rem);padding:.5rem .6rem;border:1px solid var(--glass-line);border-radius:9px;
+  background:var(--glass-strong);color:var(--ink);font-size:11.5px;line-height:1.45;box-shadow:var(--shadow-lg)}
 .tip-wrap .tooltip[data-open="true"]{display:block}
 
-/* ── ledger ────────────────────────────────────────── */
-.ledger{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
-  padding:7px 14px;margin:0 -14px;border-top:1px solid var(--hair);background:var(--panel);
-  font-size:11.5px}
-.ledger i{font-style:normal;color:var(--faint)}
-.ledger b{font-family:var(--mono);font-weight:700}
-.l-req b{color:var(--s-sel)}.l-wait b{color:var(--warn)}.l-blk b{color:var(--bad)}
-.l-ext b{color:var(--muted)}
-.ledger .eff{margin-left:auto;color:var(--faint)}
+/* ── spotlight ───────────────────────────────────────── */
+.spot-bd{position:fixed;inset:0;z-index:900;background:rgba(58,48,42,.5);
+  display:grid;place-items:start center;padding:10vh 24px 24px;opacity:0;pointer-events:none;
+  transition:opacity 200ms var(--ease-out)}
+.spot-bd.open{opacity:1;pointer-events:auto}
+.spot{width:min(100%,620px);border-radius:18px;border:1px solid var(--glass-line);
+  background:var(--glass-strong);box-shadow:var(--shadow-lg);
+  padding:16px;display:grid;gap:11px;transform:scale(.95) translateY(10px);opacity:0;
+  transition:transform 220ms var(--spring),opacity 180ms var(--ease-out)}
+.spot-bd.open .spot{transform:none;opacity:1}
+.spot input{border:0;background:transparent;color:var(--ink);font:400 16px/1.5 var(--sans);
+  outline:none;width:100%;border-bottom:1px solid var(--glass-line);padding-bottom:10px}
+.hits{display:grid;gap:2px;max-height:46vh;overflow:auto}
+.hit{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px;text-align:left;
+  min-height:32px;transition:background 130ms ease}
+.hit:hover,.hit.sel{background:var(--fill-2)}
+.hit .hid{font:400 12px/1 var(--mono);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hit .hg{font-size:10.5px;color:var(--ink-3);flex:0 0 auto}
+.spot-foot{display:flex;gap:11px;color:var(--ink-3);font-size:11px;flex-wrap:wrap}
+.spot-foot kbd{font:500 10px/1 var(--mono);background:var(--fill-2);border-radius:4px;padding:3px 5px}
 
-@media(max-width:980px){.work{grid-template-columns:1fr}.rail{position:static}
-  .form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:640px){.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}
-  .bar h1{width:100%}.ledger .eff{margin-left:0;width:100%}}
-@media(prefers-reduced-motion:reduce){*{transition-duration:.01ms!important}}
+/* ── ledger ──────────────────────────────────────────── */
+.ledger{display:flex;align-items:center;gap:14px;padding:0 18px;font-size:11.5px;flex-wrap:wrap;
+  border-top:1px solid var(--glass-line);background:var(--glass)}
+.ledger i{font-style:normal;color:var(--ink-3)}
+.ledger b{font-weight:700;font-family:var(--mono)}
+.l-req b{color:var(--accent-ink)}.l-wait b{color:var(--amber)}.l-blk b{color:var(--danger)}
+.l-ext b{color:var(--ink-2)}
+.ledger .sp{flex:1}
+.ledger .eff{color:var(--ink-3)}
+
+/* ── sheet ───────────────────────────────────────────── */
+.sheet{position:fixed;inset:auto 0 0 0;z-index:850;height:min(70vh,560px);display:none;flex-direction:column;
+  background:var(--glass-strong);border-top:1px solid var(--accent-line);
+  box-shadow:var(--shadow-lg);border-radius:18px 18px 0 0}
+.sheet.open{display:flex}
+.sheet header{display:flex;align-items:center;gap:11px;padding:11px 16px;border-bottom:1px solid var(--glass-line)}
+.sheet h3{font:600 12.5px/1 var(--display)}
+.sheet .sub{font-size:11px;color:var(--ink-3)}
+.sheet .sbody{flex:1;margin:0;overflow:auto;padding:13px 16px;display:grid;gap:10px;align-content:start}
+.sheet textarea{min-height:16rem}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;
+  transition-duration:.01ms!important}}
 </style>
 </head>
 <body>
 <a class="skip" href="#workbench">Skip to policy workbench</a>
+<div class="field" aria-hidden="true"><div class="grain"></div></div>
+
 <div class="stage">
   <header class="bar" aria-label="Policy workbench toolbar">
     <span class="brand">
       <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.4" fill="none" stroke="#fffcf7" stroke-opacity=".92" stroke-width="1.7"/><circle cx="12" cy="12" r="2.7" fill="#fffcf7"/><circle cx="17.3" cy="6.7" r="2.1" fill="#fffcf7"/></svg></span>
-      <h1>AIH Policy Workbench <span>&middot; no repository required</span></h1>
+      <h1 class="brand-name">Policy Workbench <span>&middot; no repository required</span></h1>
     </span>
-    <label>Preset <select id="profile"><option value="team">Team</option><option value="enterprise">Enterprise</option><option value="vibe">Vibe</option></select></label>
+    <button type="button" class="seek" id="seek">Find any item&hellip; <kbd>/</kbd></button>
+    <span class="sp"></span>
     <span id="status">Ready - no repository is required.</span>
-    <button type="button" id="import-policy">Import policy</button>
-    <button type="button" id="import-evidence">Import evidence</button>
-    <button type="button" id="validate">Validate</button>
-    <button type="button" id="export">Export</button>
-    <button type="button" id="download">Download policy</button>
+    <label>Preset <select id="profile"><option value="team">Team</option><option value="enterprise">Enterprise</option><option value="vibe">Vibe</option></select></label>
+    <span class="pill" role="group" aria-label="Theme">
+      <button type="button" data-theme-set="light" aria-pressed="true">Light</button>
+      <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+    </span>
+    <button type="button" class="btn" id="import-policy">Import</button>
+    <button type="button" class="btn" id="import-evidence">Evidence</button>
+    <button type="button" class="btn" id="validate">Validate</button>
+    <button type="button" class="btn" id="download">Download</button>
+    <button type="button" class="btn primary" id="export">Policy JSON</button>
     <input class="hidden" id="policy-file" type="file" accept="application/json">
     <input class="hidden" id="evidence-file" type="file" accept="application/json">
   </header>
+
   <p id="announcement" class="announce" aria-live="polite"></p>
-  <main id="workbench" tabindex="-1">
-    <p class="boundary">Author portable intent without repository access. Imported audit and authority data is preserved/preflight-only here; AIH engine evaluation in a target repository is the only source of effective state.</p>
-    <div class="work">
-      <aside class="rail" aria-label="Quick selection">
-        <section class="sect">
-          <div class="cap">Preset <span class="end" id="rail-posture">team</span></div>
-          <p class="help" id="rail-preset-note">Team names a posture only. Vibe selects everything this catalog offers; Enterprise selects ECC Core and offers the rest as additive choices.</p>
-        </section>
-        <section class="sect"><div class="cap">Languages</div><div class="chips" id="rail-langs"></div></section>
-        <section class="sect"><div class="cap">Frameworks</div><div class="chips" id="rail-frameworks"></div></section>
-        <section class="sect"><div class="cap">Capabilities</div><div class="chips" id="rail-caps"></div></section>
-        <section class="sect"><div class="cap">ECC modules</div><div class="chips" id="rail-modules"></div></section>
-      </aside>
-      <div class="plane">
-        <div class="planetop" role="group" aria-label="Filter inventory">
-          <button type="button" class="f" data-filter="all" aria-pressed="true">All</button>
-          <button type="button" class="f" data-filter="requested" aria-pressed="false">Selected</button>
-          <button type="button" class="f" data-filter="external" aria-pressed="false">Selectable</button>
-          <button type="button" class="f" data-filter="pending" aria-pressed="false">Awaiting</button>
-          <button type="button" class="f" data-filter="blocked" aria-pressed="false">Blocked</button>
-          <button type="button" class="f" id="toggle-groups">Expand all</button>
-          <span class="n"><b id="c-shown">0</b> / <b id="c-total">0</b> rows</span>
-        </div>
-        <section class="group" data-open="1"><button type="button" class="grphead" data-group><span class="tw" aria-hidden="true">&#9654;</span><h2>AIH MCP</h2><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="body"><div id="mcp-rows" class="matrix"></div><details><summary>Control boundary</summary><p class="help">Requested controls require target-repository identity, evidence, authority, safety, ownership, and a supported projector before they can become effective.</p></details></div></section>
-        <section class="group" data-open="1"><button type="button" class="grphead" data-group><span class="tw" aria-hidden="true">&#9654;</span><h2>AIH hooks</h2><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="body"><div id="hook-rows" class="matrix"></div><details><summary>Control boundary</summary><p class="help">Only AIH-owned hook identities are authorable. Custom hooks are not supported.</p></details></div></section>
-        <section class="group" data-open="1"><button type="button" class="grphead" data-group><span class="tw" aria-hidden="true">&#9654;</span><h2>Framework inventory</h2><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="body"><details><summary>What selecting an externally owned item does</summary><p class="help">ECC and Superpowers own these components and install and run them. Selecting one records requested intent in this policy together with the component's repository, pinned commit and source path, so the request stays portable and reviewable. AIH does not install them, and recording intent is not enforcement. Each row carries the evidence command that earns the audit record and digest, which is what moves a selection into external curation.</p></details><div id="framework-rows" class="matrix"></div></div></section>
-        <section class="group" data-open="0"><button type="button" class="grphead" data-group><span class="tw" aria-hidden="true">&#9654;</span><h2>Enterprise composition</h2><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="body"><details><summary>What a posture composes, and what it offers</summary><p class="help">These parts are derived from AIH's own ECC selectors, not restated here. Composed parts become requested intent when the posture is chosen; additive parts are yours to add.</p></details><div id="composition-parts" class="matrix"></div></div></section>
-        <section class="group" data-open="0"><button type="button" class="grphead" data-group><span class="tw" aria-hidden="true">&#9654;</span><h2>ECC / Superpowers curation &mdash; audited intent</h2><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="body"><details><summary>Framework authority</summary><p class="help">AIH preserves audited curation intent for agents, skills, and commands. It does not install, project, or enforce those external assets. A selection becomes curation once it carries an audit record and digest.</p></details><div class="form-grid"><label><span id="curation-framework-label">Framework</span> <select id="curation-framework"></select></label><label>Catalog prefill (optional) <select id="curation-asset"></select></label><label>Item kind <select id="curation-kind"><option value="agent">Agent</option><option value="skill">Skill</option><option value="command">Command</option></select></label><label>Item identifier <input id="curation-id" required></label><label>Source repository <input id="curation-repository" placeholder="owner/repository" required></label><label>Source commit <input id="curation-commit" placeholder="40-character commit" required></label><label>Source path <input id="curation-path" placeholder="relative/path" required></label><label>Audit record <input id="audit-record" value="external-audit" required></label><label>Audit digest <input id="audit-digest" value="sha256:0000000000000000000000000000000000000000000000000000000000000000" required></label><label>Admin clarification <input id="curation-note"></label></div><p><button type="button" id="add-curation">Add external curation intent</button><button type="button" id="cancel-curation-edit" hidden>Cancel curation edit</button></p><div id="curation-rows" class="matrix"></div></div></section>
-        <section class="group" data-open="0"><button type="button" class="grphead" data-group><span class="tw" aria-hidden="true">&#9654;</span><h2>Your sources</h2><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="body"><details><summary>Custom MCP boundary</summary><p class="help">Custom MCP can only be authored as a fully pinned pending candidate. It has no activation affordance until supported scanning, evidence, and projection exist.</p></details><form id="custom-form"><fieldset><legend>Add pending custom MCP</legend><div class="form-grid"><label>Identifier <input id="custom-id" pattern="[a-z][a-z0-9-]{0,63}" required></label><label>Package <input id="custom-package" placeholder="@scope/package" required></label><label>Exact version <input id="custom-version" placeholder="1.2.3" required></label><label>Integrity digest <input id="custom-integrity" placeholder="sha256:..." required></label><label>Evidence record <input id="custom-evidence" required></label><label>Clarification <input id="custom-note"></label></div><p><button type="submit">Add pending custom MCP</button></p></fieldset></form><div id="custom-rows" class="matrix"></div></div></section>
-        <section class="group" data-open="0"><button type="button" class="grphead" data-group><span class="tw" aria-hidden="true">&#9654;</span><h2>Approval / evidence</h2><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="body"><p id="receipt-state" class="help">No authority receipt imported.</p><button type="button" id="copy-approvals" disabled>Preserve approval subjects in policy (not effective)</button><div id="approval-rows" class="matrix"></div><details open><summary>Finding model: 8 administrator-dispositionable, 6 hard blockers</summary><p class="help">A completed scan reports these 8. The accountable administrator decides each one, because a detector label is evidence and not a verdict. They stay visible and authorable; this workbench does not dispose of them.</p><p id="dispositionable-findings" class="mono"></p><p class="help">These 6 are missing or untrustworthy prerequisites rather than detector findings. No approval substitutes for one, and this workbench cannot waive, approve, or downgrade them.</p><p id="hard-blockers" class="mono"></p></details></div></section>
-        <section class="group" data-open="0"><button type="button" class="grphead" data-group><span class="tw" aria-hidden="true">&#9654;</span><h2>Authored config / evaluated report</h2><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="body"><label for="config-preview">Authored policy &mdash; actual schema fields</label><textarea id="config-preview" readonly aria-label="Authored policy actual schema fields"></textarea><label for="report-preview">Evaluated report &mdash; unavailable without target evaluation</label><textarea id="report-preview" readonly aria-label="Evaluated report unavailable without target evaluation"></textarea></div></section>
+
+  <div class="work">
+    <aside class="rail" aria-label="Presets and quick selection">
+      <section class="gcard sect">
+        <div class="cap">Preset <span class="end" id="rail-posture">team</span></div>
+        <div id="presets" style="display:grid;gap:4px"></div>
+      </section>
+      <section class="gcard sect"><div class="cap">Languages</div><div class="chips" id="rail-langs"></div></section>
+      <section class="gcard sect"><div class="cap">Frameworks</div><div class="chips" id="rail-frameworks"></div></section>
+      <section class="gcard sect"><div class="cap">Capabilities</div><div class="chips" id="rail-caps"></div></section>
+      <section class="gcard sect"><div class="cap">ECC modules</div><div class="chips" id="rail-modules"></div></section>
+      <section class="gcard sect">
+        <div class="cap">Your sources</div>
+        <button type="button" class="btn sm" id="open-custom" style="justify-content:center">Add custom MCP</button>
+      </section>
+    </aside>
+
+    <main class="plane" id="workbench" tabindex="-1">
+      <div class="gcard planetop" role="group" aria-label="Filter inventory">
+        <button type="button" class="f" data-filter="all" aria-pressed="true">All</button>
+        <button type="button" class="f" data-filter="requested" aria-pressed="false">Selected</button>
+        <button type="button" class="f" data-filter="external" aria-pressed="false">Selectable</button>
+        <button type="button" class="f" data-filter="pending" aria-pressed="false">Awaiting</button>
+        <button type="button" class="f" data-filter="blocked" aria-pressed="false">Blocked</button>
+        <span class="sp"></span>
+        <button type="button" class="f" id="toggle-groups">Expand all</button>
+        <span class="n"><b id="c-shown">0</b> / <b id="c-total">0</b></span>
       </div>
-    </div>
-  </main>
+
+      <section class="gcard grp group" data-open="1" data-groupcard><button type="button" class="grphead" data-group aria-expanded="true"><span class="tw" aria-hidden="true">&#9654;</span><h2>AIH MCP servers</h2><span class="own">AIH</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody" id="mcp-rows"></div><p class="grpnote">AIH ships and projects these. A requested control still needs target-repository identity, evidence, authority, safety, ownership and a supported projector before it can become effective.</p></section>
+
+      <section class="gcard grp group" data-open="1" data-groupcard><button type="button" class="grphead" data-group aria-expanded="true"><span class="tw" aria-hidden="true">&#9654;</span><h2>AIH hooks</h2><span class="own">AIH</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody" id="hook-rows"></div><p class="grpnote">Only AIH-owned hook identities are authorable. Custom hooks are not supported. Open a hook to see exactly what it runs, what it writes, and what removing it does.</p></section>
+
+      <div id="framework-rows"></div>
+
+      <section class="gcard grp group" data-open="0" data-groupcard><button type="button" class="grphead" data-group aria-expanded="false"><span class="tw" aria-hidden="true">&#9654;</span><h2>Enterprise composition</h2><span class="own">ECC</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody stack" id="composition-parts"></div></section>
+
+      <section class="gcard grp group" data-open="0" data-groupcard><button type="button" class="grphead" data-group aria-expanded="false"><span class="tw" aria-hidden="true">&#9654;</span><h2>Your sources</h2><span class="own">You</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody stack" id="custom-rows"></div><p class="grpnote">Custom MCP can only be authored as a fully pinned pending candidate. It has no activation affordance until supported scanning, evidence and projection exist.</p></section>
+
+      <section class="gcard grp group" data-open="0" data-groupcard><button type="button" class="grphead" data-group aria-expanded="false"><span class="tw" aria-hidden="true">&#9654;</span><h2>ECC / Superpowers curation</h2><span class="own">recorded</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody stack" id="curation-rows"></div><p class="grpnote">AIH preserves audited curation intent for agents, skills and commands. It does not install, project or enforce those external assets. A selection becomes curation once it carries an audit record and digest.</p></section>
+
+      <section class="gcard grp group" data-open="0" data-groupcard><button type="button" class="grphead" data-group aria-expanded="false"><span class="tw" aria-hidden="true">&#9654;</span><h2>Approval / evidence</h2><span class="own">preflight</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody stack" id="approval-rows"></div><div class="grpnote"><p id="receipt-state" class="help">No authority receipt imported.</p><p><button type="button" class="btn sm" id="copy-approvals" disabled>Preserve approval subjects in policy (not effective)</button></p><details><summary>Finding model: 8 administrator-dispositionable, 6 hard blockers</summary><p class="help">A completed scan reports these 8. The accountable administrator decides each one, because a detector label is evidence and not a verdict. They stay visible and authorable; this workbench does not dispose of them.</p><p id="dispositionable-findings" class="mono"></p><p class="help">These 6 are missing or untrustworthy prerequisites rather than detector findings. No approval substitutes for one, and this workbench cannot waive, approve or downgrade them.</p><p id="hard-blockers" class="mono"></p></details></div></section>
+    </main>
+  </div>
+
   <div class="ledger" aria-label="Policy tally">
     <span class="l-req"><i>selected</i> <b id="t-req">0</b></span>
     <span class="l-wait"><i>awaiting</i> <b id="t-wait">0</b></span>
     <span class="l-blk"><i>blocked</i> <b id="t-blk">0</b></span>
     <span class="l-ext"><i>selectable</i> <b id="t-ext">0</b></span>
+    <span class="sp"></span>
     <span class="eff">effective: not evaluated &mdash; needs a target repository</span>
   </div>
 </div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" hidden aria-label="Item detail and authoring">
+  <div id="drawer-detail"></div>
+  <div id="drawer-forms">
+    <details id="curation-editor"><summary>Record external curation intent</summary>
+      <div class="dform" style="margin-top:8px">
+        <p class="help">AIH preserves audited curation intent for agents, skills and commands. It never installs or enforces them.</p>
+        <div class="form-grid">
+          <label><span id="curation-framework-label">Framework</span> <select id="curation-framework"></select></label>
+          <label>Catalog prefill (optional) <select id="curation-asset"></select></label>
+          <label>Item kind <select id="curation-kind"><option value="agent">Agent</option><option value="skill">Skill</option><option value="command">Command</option></select></label>
+          <label>Item identifier <input id="curation-id" required></label>
+          <label>Source repository <input id="curation-repository" placeholder="owner/repository" required></label>
+          <label>Source commit <input id="curation-commit" placeholder="40-character commit" required></label>
+          <label>Source path <input id="curation-path" placeholder="relative/path" required></label>
+          <label>Audit record <input id="audit-record" value="external-audit" required></label>
+          <label>Audit digest <input id="audit-digest" value="sha256:0000000000000000000000000000000000000000000000000000000000000000" required></label>
+          <label>Admin clarification <input id="curation-note"></label>
+        </div>
+        <div class="brow"><button type="button" class="btn sm primary" id="add-curation">Add external curation intent</button><button type="button" class="btn sm" id="cancel-curation-edit" hidden>Cancel curation edit</button></div>
+      </div>
+    </details>
+    <details id="custom-editor"><summary>Add a pending custom MCP</summary>
+      <form id="custom-form" style="margin-top:8px">
+        <fieldset>
+          <legend>Pinned custom source</legend>
+          <p class="help">It is recorded immediately and stays blocked until a completed scan binds to this exact pin.</p>
+          <div class="form-grid">
+            <label>Identifier <input id="custom-id" pattern="[a-z][a-z0-9-]{0,63}" required></label>
+            <label>Package <input id="custom-package" placeholder="@scope/package" required></label>
+            <label>Exact version <input id="custom-version" placeholder="1.2.3" required></label>
+            <label>Integrity digest <input id="custom-integrity" placeholder="sha256:..." required></label>
+            <label>Evidence record <input id="custom-evidence" required></label>
+            <label>Clarification <input id="custom-note"></label>
+          </div>
+          <div class="brow" style="margin-top:8px"><button type="submit" class="btn sm primary">Add pending custom MCP</button></div>
+        </fieldset>
+      </form>
+    </details>
+  </div>
+</aside>
+
+<div class="spot-bd" id="spot-bd" role="dialog" aria-modal="true" aria-label="Find item">
+  <div class="spot">
+    <input id="spot-q" placeholder="Find any item across the whole inventory&hellip;" autocomplete="off">
+    <div class="hits" id="hits"></div>
+    <div class="spot-foot"><span><kbd>esc</kbd> close</span><span><kbd>&#8629;</kbd> open</span><span class="sp"></span><span id="spot-count"></span></div>
+  </div>
+</div>
+
+<section class="sheet" id="sheet" aria-label="Authored policy and evaluated report">
+  <header><h3>Authored policy</h3><span class="sub">exact schema fields</span><span class="sp" style="flex:1"></span><button type="button" class="btn sm" id="sheet-close">Close</button></header>
+  <div class="sbody">
+    <label for="config-preview" class="help">Authored policy &mdash; actual schema fields</label>
+    <textarea id="config-preview" readonly aria-label="Authored policy actual schema fields"></textarea>
+    <label for="report-preview" class="help">Evaluated report &mdash; unavailable without target evaluation</label>
+    <textarea id="report-preview" readonly aria-label="Evaluated report unavailable without target evaluation"></textarea>
+    <p class="help">Author portable intent without repository access. Imported audit and authority data is preserved/preflight-only here; AIH engine evaluation in a target repository is the only source of effective state.</p>
+  </div>
+</section>
 <script>
 const model=__AIH_DATA__;
 const state={policy:structuredClone(model.initialPolicy),receipt:null};
@@ -318,7 +537,24 @@ const commitPolicy=function(previous,message){const problems=policyValidator();i
 const candidateStatus=function(candidate){if(candidate.kind==="mcp"&&candidate.source&&candidate.source.type==="stdio"){return ["Blocked - no supported projector/scanning/evidence","blocked"]}const activation=governance().activations.find(function(item){return item.candidate===candidate.id});return activation&&activation.state==="active"?["Requested intent - runtime evaluation required","requested"]:["Disabled","pending"]};
 /* The note sits inside the first cell so the status badge stays the row's first
    .badge, which is what the inventory contract reads as a row's status. */
-const row=function(title,detail,status,kind,action,note){return '<div class="row" data-state="'+esc(kind)+'"><div><strong>'+esc(title)+'</strong>'+help(title,detail)+(note?'<p class="mono">'+esc(note)+'</p>':"")+'</div><span class="badge '+kind+'">'+esc(status)+'</span>'+(action||"")+'</div>'};
+/* The artifact's compact row: a tick that is the whole selection affordance, the
+   id in mono, a four-mark custody strip, and a chevron into the drawer where all
+   detail lives. The status badge and the provenance note stay in the DOM as
+   screen-reader text - the custody strip is a graphic, and a state an assistive
+   technology cannot read is not a state that was disclosed. */
+const CUSTODY={requested:["fill","fill","ext",""],pending:["fill","fill","wait",""],
+  blocked:["fill","struck","",""],external:["","","",""]};
+const custody=function(kind){return (CUSTODY[kind]||CUSTODY.external).map(function(mark){return '<i'+(mark?' data-s="'+mark+'"':"")+'></i>'}).join("")};
+const row=function(title,detail,status,kind,action,note){
+  return '<div class="row'+(kind==="requested"?" on":"")+'" data-state="'+esc(kind)+'" data-row="'+esc(title)+'">'+
+    (action||'<span class="tick" aria-hidden="true"></span>')+
+    '<button type="button" class="rid" data-open="'+esc(title)+'"><strong>'+esc(title)+'</strong></button>'+
+    '<span class="cust" aria-hidden="true">'+custody(kind)+'</span>'+
+    '<button type="button" class="more" data-open="'+esc(title)+'" aria-label="Details for '+esc(title)+'">&rsaquo;</button>'+
+    '<span class="badge '+kind+'">'+esc(status)+'</span>'+
+    (note?'<p class="mono sr">'+esc(note)+'</p>':"")+
+    '<span class="sr">'+esc(detail)+'</span>'+
+    '</div>'};
 const PROVENANCE_PREFIX="Requested by: ";
 /* Every origin that declared a control is kept, not just the first. An
    administrator who removes one reason must be able to see that another still
@@ -385,13 +621,37 @@ const curatedFrameworkIds=function(g,frameworkId){const group=g.externalCuration
    component that sits in both. */
 const selectFrameworkAsset=function(g,framework,asset){if(curatedFrameworkIds(g,framework.id).indexOf(asset.id)!==-1){return false}let group=g.externalSelections.find(function(item){return item.framework===framework.id});if(group&&group.items.some(function(item){return item.id===asset.id})){return false}if(!group){group={framework:framework.id,items:[]};g.externalSelections.push(group)}group.items.push({kind:asset.kind,id:asset.id,source:{repository:asset.source.repository,commit:asset.source.commit,path:asset.source.path}});return true};
 const toggleFrameworkSelection=function(key){const parts=String(key).split("|");const found=frameworkAsset(parts[0],parts[2]);if(!found){return}const previous=structuredClone(state.policy);const g=ensureGovernance();if(!Array.isArray(g.externalSelections)){g.externalSelections=[]}const group=g.externalSelections.find(function(item){return item.framework===found.framework.id});if(group&&group.items.some(function(item){return item.id===found.asset.id})){group.items=group.items.filter(function(item){return item.id!==found.asset.id});if(!group.items.length){g.externalSelections=g.externalSelections.filter(function(item){return item.framework!==found.framework.id})}commitPolicy(previous,"Deselected "+found.asset.id+"; the exported policy no longer records it.");return}if(!selectFrameworkAsset(g,found.framework,found.asset)){state.policy=previous;announce(found.asset.id+" already carries curation evidence; remove that record first to hold it as a bare selection.",true);render();return}commitPolicy(previous,"Selected "+found.asset.id+": requested intent recorded with its pinned source. "+found.framework.id+" installs and runs it; its audit evidence is still owed.")};
-const frameworkInventoryRows=function(){return model.catalog.frameworks.flatMap(function(framework){return framework.assets.map(function(asset){const selected=isFrameworkSelected(framework.id,asset.id);const action='<button type="button" data-framework-select="'+esc(framework.id+"|"+asset.kind+"|"+asset.id)+'">'+(selected?"Deselect":"Select")+'</button>'+(asset.curationKind?'<button type="button" data-curation-prefill="'+esc(framework.id+"|"+asset.curationKind+"|"+asset.id)+'">Record curation evidence</button>':"");return row(framework.id+" / "+asset.kind+": "+asset.id,"AIH records this selection with its pinned source; "+framework.id+" installs and runs it. Recording intent is not enforcement.",selected?"Selected - requested intent recorded":"Selectable - "+framework.id+" installs and runs it",selected?"requested":"external",action,"Owned by "+framework.repository+" at "+framework.commit+", source "+asset.source.path+". Evidence: "+evidenceCommand(framework,asset))})}).join("")};
+/* The inventory is grouped by the catalog's own namespaces, the way the accepted
+   artifact groups it, so 151 components read as a structure rather than a list. */
+const GROUP_LABEL={lang:"Languages",framework:"Frameworks",capability:"Capabilities",
+  module:"ECC modules",baseline:"ECC baselines",agent:"ECC agents",skill:"ECC skills",
+  mcp:"ECC MCP declarations",runtime:"ECC runtime"};
+const assetGroup=function(framework,asset){return framework.id==="superpowers"?"Superpowers":(GROUP_LABEL[asset.kind]||asset.kind)};
+const openGroups={};
+const tick=function(attr,key,selected,label){return '<button type="button" class="tick" '+attr+'="'+esc(key)+'" aria-pressed="'+(selected?"true":"false")+'" aria-label="'+(selected?"Deselect ":"Select ")+esc(label)+'">&#10003;</button>'};
+const frameworkGroups=function(){const groups=[];const index={};
+  model.catalog.frameworks.forEach(function(framework){framework.assets.forEach(function(asset){
+    const label=assetGroup(framework,asset);
+    if(!index[label]){index[label]={label:label,owner:framework.id==="superpowers"?"Superpowers":"ECC",rows:[]};groups.push(index[label])}
+    index[label].rows.push({framework:framework,asset:asset})})});
+  return groups};
+const frameworkInventoryRows=function(){return frameworkGroups().map(function(group){
+  const open=openGroups[group.label]?1:0;
+  const rows=group.rows.map(function(entry){const framework=entry.framework,asset=entry.asset;
+    const selected=isFrameworkSelected(framework.id,asset.id);
+    return row(framework.id+" / "+asset.kind+": "+asset.id,
+      "AIH records this selection with its pinned source; "+framework.id+" installs and runs it. Recording intent is not enforcement.",
+      selected?"Selected - requested intent recorded":"Selectable - "+framework.id+" installs and runs it",
+      selected?"requested":"external",
+      tick("data-framework-select",framework.id+"|"+asset.kind+"|"+asset.id,selected,asset.id),
+      "Owned by "+framework.repository+" at "+framework.commit+", source "+asset.source.path+". Evidence: "+evidenceCommand(framework,asset))}).join("");
+  return '<section class="gcard grp group" data-open="'+open+'" data-groupcard><button type="button" class="grphead" data-group aria-expanded="'+(open?"true":"false")+'"><span class="tw" aria-hidden="true">&#9654;</span><h2>'+esc(group.label)+'</h2><span class="own">'+esc(group.owner)+'</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody">'+rows+'</div></section>'}).join("")};
 /* A pinned custom candidate must end in an exact command, not in nothing.
    The trust scan command takes a local path or a GitHub owner/repo, so the
    registry package identity is deliberately NOT presented as the scan target -
    emitting it as one would hand over a command that cannot run. */
 const customNextAction=function(item){const source=item.source||{};return "Next: run aih trust scan <local path or owner/repo the package is built from> - a registry package identity is not itself a scan target. Bind the completed scan's evidence to this pinned identity: "+source.package+"@"+source.version+", integrity "+source.integrity+", registry "+source.registry+". Until evidence binds to that pin the candidate stays fenced on mandatory-detector-failed, so it remains authorable and visible but cannot become effective."};
-const renderRows=function(){const g=governance();byId("mcp-rows").innerHTML=model.catalog.mcp.map(function(item){const existing=g.catalog.reviewed.find(function(c){return c.id===item.id});const status=existing?candidateStatus(existing):["Disabled","pending"];return row(item.id,item.description,status[0],status[1],'<button type="button" data-reviewed="'+esc(item.id)+'" '+(existing?"disabled":"")+'>Request intent</button>',controlProvenance(item.id))}).join("");byId("hook-rows").innerHTML=model.catalog.hooks.map(function(item){const existing=g.catalog.reviewed.find(function(c){return c.id===item.id});const status=existing?candidateStatus(existing):["Disabled","pending"];const provenance=controlProvenance(item.id);return row(item.id,item.description,status[0],status[1],'<button type="button" data-reviewed="'+esc(item.id)+'" '+(existing?"disabled":"")+'>Request intent</button>',hookDisclosure(item)+(provenance?" "+provenance:""))}).join("");byId("custom-rows").innerHTML=g.catalog.custom.length?g.catalog.custom.map(function(item){const status=candidateStatus(item);return row(item.id,"Pinned custom source - no activation affordance",status[0],status[1],"",customNextAction(item))}).join(""):"<p class=\"help\">No custom candidates.</p>";byId("curation-rows").innerHTML=g.externalCuration.length?g.externalCuration.flatMap(function(group){return group.items.map(function(item){return row(group.framework+": "+item.kind+" / "+item.id,"Audit "+item.audit.record+" - report-only", "External guidance - not enforced","external")})}).join(""):"<p class=\"help\">No external curation intent.</p>";byId("framework-rows").innerHTML=frameworkInventoryRows()};
+const renderRows=function(){const g=governance();byId("mcp-rows").innerHTML=model.catalog.mcp.map(function(item){const existing=g.catalog.reviewed.find(function(c){return c.id===item.id});const status=existing?candidateStatus(existing):["Disabled","pending"];return row(item.id,item.description,status[0],status[1],tick("data-reviewed",item.id,Boolean(existing),item.id).replace("<button ",existing?"<button disabled ":"<button "),controlProvenance(item.id))}).join("");byId("hook-rows").innerHTML=model.catalog.hooks.map(function(item){const existing=g.catalog.reviewed.find(function(c){return c.id===item.id});const status=existing?candidateStatus(existing):["Disabled","pending"];const provenance=controlProvenance(item.id);return row(item.id,item.description,status[0],status[1],tick("data-reviewed",item.id,Boolean(existing),item.id).replace("<button ",existing?"<button disabled ":"<button "),hookDisclosure(item)+(provenance?" "+provenance:""))}).join("");byId("custom-rows").innerHTML=g.catalog.custom.length?g.catalog.custom.map(function(item){const status=candidateStatus(item);return row(item.id,"Pinned custom source - no activation affordance",status[0],status[1],"",customNextAction(item))}).join(""):"<p class=\"help\">No custom candidates.</p>";byId("curation-rows").innerHTML=g.externalCuration.length?g.externalCuration.flatMap(function(group){return group.items.map(function(item){return row(group.framework+": "+item.kind+" / "+item.id,"Audit "+item.audit.record+" - report-only", "External guidance - not enforced","external")})}).join(""):"<p class=\"help\">No external curation intent.</p>";byId("framework-rows").innerHTML=frameworkInventoryRows()};
 const compositionNamedCount=function(){return model.catalog.enterpriseComposition.parts.reduce(function(total,part){return total+part.componentIds.length},0)};
 const partSelectedCount=function(part){const ids=selectedItems(model.catalog.enterpriseComposition.framework).map(function(item){return item.id});return part.componentIds.filter(function(id){return ids.indexOf(id)!==-1}).length};
 const renderComposition=function(){const composition=model.catalog.enterpriseComposition;byId("composition-parts").innerHTML='<p class="help">Every component below is owned by '+esc(composition.framework)+', which installs and runs it; AIH records the selection with its pinned source. Choosing Enterprise selects the Core parts. The additive parts are yours to add, here or from any inventory row.</p>'+composition.parts.map(function(part){const selected=partSelectedCount(part);const complete=selected===part.componentIds.length;const action=part.selection==="additive"?'<button type="button" data-composition-add="'+esc(part.id)+'">'+(complete?"Remove these":"Add these")+'</button>':"";return '<div class="row"><div><strong>'+esc(part.label)+'</strong><p>Derived from '+esc(part.rule)+'.</p><p class="mono">'+esc(part.componentIds.join(" "))+'</p></div><span class="badge '+(complete?"requested":"external")+'">'+esc(selected+" of "+part.componentIds.length+" selected"+(part.selection==="additive"?" - additive":" - Core"))+'</span>'+action+'</div>'}).join("")};
@@ -408,21 +668,116 @@ const syncFrameworkSelect=function(){const framework=byId("curation-framework");
    and cannot drift from the rows they mirror. */
 const ROW_STATES=["requested","pending","blocked","external"];
 let planeFilter="all";
+const PRESETS=[["vibe","Vibe","Everything this catalog offers. Nothing is hidden for want of AIH enforcement."],
+  ["enterprise","Enterprise","ECC Core selected; languages and security offered as additive choices."],
+  ["team","Team","Posture only. Selections stay exactly as you left them."]];
 const railKinds=[["rail-langs","lang"],["rail-frameworks","framework"],["rail-caps","capability"],["rail-modules","module"]];
 const buildRail=function(){const framework=eccFramework();if(!framework){return}railKinds.forEach(function(entry){const host=byId(entry[0]);if(!host){return}host.innerHTML=framework.assets.filter(function(asset){return asset.kind===entry[1]}).map(function(asset){return '<button type="button" class="chip" data-framework-select="'+esc(framework.id+"|"+asset.kind+"|"+asset.id)+'" aria-pressed="false">'+esc(asset.id.slice(asset.id.indexOf(":")+1))+'</button>'}).join("")})};
-const syncRail=function(){const framework=eccFramework();if(!framework){return}const chosen=selectedItems(framework.id).map(function(item){return item.id});document.querySelectorAll(".chip[data-framework-select]").forEach(function(chip){const id=String(chip.getAttribute("data-framework-select")).split("|")[2];chip.setAttribute("aria-pressed",chosen.indexOf(id)===-1?"false":"true")});const posture=byId("rail-posture");if(posture){posture.textContent=state.policy.minimumPosture||"team"}};
+const syncRail=function(){const framework=eccFramework();if(!framework){return}const chosen=selectedItems(framework.id).map(function(item){return item.id});document.querySelectorAll(".chip[data-framework-select]").forEach(function(chip){const id=String(chip.getAttribute("data-framework-select")).split("|")[2];chip.setAttribute("aria-pressed",chosen.indexOf(id)===-1?"false":"true")});const posture=byId("rail-posture");if(posture){posture.textContent=state.policy.minimumPosture||"team"}
+  document.querySelectorAll("[data-preset]").forEach(function(node){node.setAttribute("aria-pressed",node.getAttribute("data-preset")===(state.policy.minimumPosture||"team")?"true":"false")})};
 /* One pass over the rendered rows: it applies the filter, counts each group,
    paints its meter, and totals the ledger. Reading the DOM keeps the tally
    honest about what an administrator can actually see. */
 const paintShell=function(){const totals={requested:0,pending:0,blocked:0,external:0};let shown=0,total=0;
-  document.querySelectorAll(".group").forEach(function(group){const counts={requested:0,pending:0,blocked:0,external:0};let rows=0,visible=0;
+  document.querySelectorAll(".grp").forEach(function(group){const counts={requested:0,pending:0,blocked:0,external:0};let rows=0,visible=0;
     group.querySelectorAll(".row[data-state]").forEach(function(node){const kindState=node.getAttribute("data-state");rows++;if(counts[kindState]!==undefined){counts[kindState]++;totals[kindState]++}const match=planeFilter==="all"||planeFilter===kindState;node.hidden=!match;if(match){visible++}});
     total+=rows;shown+=visible;
     const count=group.querySelector(".ct");if(count){count.textContent=rows?(planeFilter==="all"?String(rows):visible+" / "+rows):""}
     const meter=group.querySelector(".meter");if(meter){meter.innerHTML=rows?ROW_STATES.filter(function(s){return counts[s]}).map(function(s){return '<i data-s="'+s+'" style="width:'+(counts[s]/rows*100)+'%"></i>'}).join(""):""}});
   byId("c-shown").textContent=shown;byId("c-total").textContent=total;
   ROW_STATES.forEach(function(s){const node=byId(s==="requested"?"t-req":s==="pending"?"t-wait":s==="blocked"?"t-blk":"t-ext");if(node){node.textContent=totals[s]}});};
-document.addEventListener("click",function(event){const head=event.target.closest&&event.target.closest("[data-group]");if(!head){return}const group=head.closest(".group");group.dataset.open=group.dataset.open==="1"?"0":"1";head.setAttribute("aria-expanded",group.dataset.open==="1"?"true":"false")});
+document.addEventListener("click",function(event){const head=event.target.closest&&event.target.closest("[data-group]");if(!head){return}const group=head.closest(".grp");const next=group.dataset.open==="1"?"0":"1";group.dataset.open=next;head.setAttribute("aria-expanded",next==="1"?"true":"false");const label=head.querySelector("h2");if(label){openGroups[label.textContent]=next==="1"}});
+/* ── drawer: every detail the compact row deliberately does not carry ────── */
+const drawerNode=byId("drawer"),scrimNode=byId("scrim");
+const kv=function(key,value){return '<div><span>'+esc(key)+'</span><b>'+value+'</b></div>'};
+const describeRow=function(id){
+  const mcp=model.catalog.mcp.find(function(item){return item.id===id});
+  if(mcp){return {id:id,owner:"AIH",enforce:true,desc:mcp.description,control:mcp.control,server:mcp.server}}
+  const hook=model.catalog.hooks.find(function(item){return item.id===id});
+  if(hook){return {id:id,owner:"AIH",enforce:true,desc:hook.description,control:hook.control,hook:hook}}
+  const marker=String(id).indexOf(" / ");
+  if(marker!==-1){const frameworkId=String(id).slice(0,marker);const componentId=String(id).slice(String(id).indexOf(": ")+2);
+    const found=frameworkAsset(frameworkId,componentId);
+    if(found){return {id:componentId,owner:found.framework.id==="superpowers"?"Superpowers":"ECC",enforce:false,asset:found.asset,framework:found.framework}}}
+  const custom=governance().catalog.custom.find(function(item){return item.id===id});
+  if(custom){return {id:id,owner:"You",enforce:true,custom:custom}}
+  return null};
+const paintDrawer=function(id){
+  const item=describeRow(id);const host=byId("drawer-detail");
+  const close='<button type="button" class="x" data-drawer-close aria-label="Close details">&#10005;</button>';
+  if(!item){host.innerHTML='<div class="dhead"><h2>'+esc(id)+'</h2>'+close+'</div>';return}
+  const selected=item.asset?isFrameworkSelected(item.framework.id,item.asset.id):
+    (item.control?governance().catalog.reviewed.some(function(entry){return entry.id===item.id}):false);
+  const state=item.custom?"blocked":selected?(item.enforce?"selected":"requested"):"available";
+  let html='<div class="dhead"><h2>'+esc(item.id)+'</h2>'+close+'</div>'+
+    '<div class="badges"><span class="b '+(item.owner==="AIH"?"ok":"ext")+'">'+esc(item.owner)+(item.enforce?" enforces":" &mdash; records only")+'</span>'+
+    '<span class="b '+(state==="blocked"?"bad":state==="selected"?"ok":state==="requested"?"ext":"")+'">'+esc(state)+'</span></div>';
+  html+='<div class="kv">'+kv("Availability","in catalog")+kv("Requested",(selected||item.custom)?"yes":"no")+kv("Effective","not evaluated")+
+    kv("Gate",item.custom?"blocked":state==="requested"?"records intent only":state==="selected"?"pass":"n/a");
+  if(item.control){html+=kv("Projector",esc(item.control.projector)+" &rarr; "+esc(item.control.targets.join(", ")))+kv("Lifecycle",esc(item.control.lifecycle))}
+  if(item.asset){html+=kv("Kind",esc(item.asset.kind))+kv("Repository",esc(item.asset.source.repository))+kv("Pinned commit",esc(item.asset.source.commit))+kv("Source path",esc(item.asset.source.path))}
+  html+='</div>';
+  if(item.desc){html+='<p class="note ok">'+esc(item.desc)+'</p>'}
+  if(item.asset){html+='<p class="note">'+esc(item.framework.id)+' owns this component and installs and runs it. AIH records the selection with its pinned source; recording intent is not enforcement.</p>'}
+  if(item.hook){html+='<div class="cap">Hook disclosure</div><div class="kv">'+
+    kv("Trigger / event",esc(item.hook.behaviour.trigger))+kv("Records",esc(item.hook.behaviour.records))+
+    kv("Artifact written",esc(item.hook.behaviour.artifact))+kv("Failure behaviour",esc(item.hook.behaviour.failureMode))+
+    kv("Host targets",esc(item.control.targets.join(", ")))+
+    kv("Script identity","<code>"+esc(item.control.source.scriptDigest)+"</code>")+
+    kv("Ownership","AIH authored, AIH enforced")+'</div>'}
+  if(item.asset){const command=evidenceCommand(item.framework,item.asset);
+    html+='<div class="cmdline"><code>'+esc(command)+'</code><button type="button" class="copy" data-copy="'+esc(command)+'">COPY</button></div>'+
+      '<p class="note">Run this where you have repository access. Evidence returns to <code>.aih/evidence/</code> in the governed repository, and is what moves this selection into external curation.</p>'+
+      '<div class="brow"><button type="button" class="btn sm '+(selected?"danger":"primary")+'" data-framework-select="'+esc(item.framework.id+"|"+item.asset.kind+"|"+item.asset.id)+'">'+(selected?"Remove from policy":"Add to policy")+'</button>'+
+      (item.asset.curationKind?'<button type="button" class="btn sm" data-curation-prefill="'+esc(item.framework.id+"|"+item.asset.curationKind+"|"+item.asset.id)+'">Record curation evidence</button>':"")+'</div>'}
+  if(item.control&&!item.hook){html+='<div class="brow"><button type="button" class="btn sm primary" data-reviewed="'+esc(item.id)+'"'+(selected?" disabled":"")+'>Request intent</button></div>'}
+  if(item.custom){html+='<p class="note bad">'+esc(customNextAction(item.custom))+'</p>'}
+  host.innerHTML=html};
+const openDrawer=function(id){drawerNode.hidden=false;scrimNode.classList.add("open");paintDrawer(id);drawerNode.dataset.item=id};
+const closeDrawer=function(){scrimNode.classList.remove("open");drawerNode.hidden=true;delete drawerNode.dataset.item};
+scrimNode.addEventListener("click",closeDrawer);
+document.addEventListener("click",function(event){const opener=event.target.closest&&event.target.closest("[data-open]");if(opener){openDrawer(opener.getAttribute("data-open"));return}
+  if(event.target.closest&&event.target.closest("[data-drawer-close]")){closeDrawer()}});
+document.addEventListener("click",function(event){const copy=event.target.closest&&event.target.closest("[data-copy]");if(!copy){return}if(navigator.clipboard){navigator.clipboard.writeText(copy.getAttribute("data-copy"))}copy.textContent="COPIED";setTimeout(function(){copy.textContent="COPY"},1400)});
+/* ── theme, sheet, spotlight ─────────────────────────────────────────────── */
+document.addEventListener("click",function(event){const button=event.target.closest&&event.target.closest("[data-theme-set]");if(!button){return}document.documentElement.dataset.theme=button.getAttribute("data-theme-set");document.querySelectorAll("[data-theme-set]").forEach(function(node){node.setAttribute("aria-pressed",node===button?"true":"false")})});
+const sheetNode=byId("sheet");
+const openSheet=function(){sheetNode.classList.add("open")};
+const closeSheet=function(){sheetNode.classList.remove("open")};
+/* Delegated, like every other shell control on this surface. The JSON sheet is
+   opened here rather than from inside the export handler so that opening it
+   never depends on that handler reaching its last statement. */
+document.addEventListener("click",function(event){if(!event.target.closest){return}
+  if(event.target.closest("#sheet-close")){closeSheet();return}
+  if(event.target.closest("#export")){openSheet()}});
+byId("open-custom").addEventListener("click",function(){openDrawer("Your sources");byId("custom-editor").open=true;byId("custom-id").focus()});
+const spotNode=byId("spot-bd"),spotQuery=byId("spot-q"),hitsNode=byId("hits");
+let spotIndex=0;
+const spotItems=function(){const list=[];
+  model.catalog.mcp.forEach(function(item){list.push({id:item.id,group:"AIH MCP servers"})});
+  model.catalog.hooks.forEach(function(item){list.push({id:item.id,group:"AIH hooks"})});
+  model.catalog.frameworks.forEach(function(framework){framework.assets.forEach(function(asset){
+    list.push({id:framework.id+" / "+asset.kind+": "+asset.id,group:assetGroup(framework,asset)})})});
+  return list};
+const spotMatches=function(){const text=spotQuery.value.trim().toLowerCase();
+  return spotItems().filter(function(item){return !text||item.id.toLowerCase().indexOf(text)!==-1}).slice(0,40)};
+const paintHits=function(){const matches=spotMatches();
+  hitsNode.innerHTML=matches.map(function(item,index){return '<button type="button" class="hit'+(index===spotIndex?" sel":"")+'" data-hit="'+esc(item.id)+'"><span class="hid">'+esc(item.id)+'</span><span class="hg">'+esc(item.group)+'</span></button>'}).join("")||'<p class="spot-foot">No item matches. Every id stays searchable.</p>';
+  byId("spot-count").textContent="searches all "+spotItems().length+" items"};
+const openSpot=function(){spotNode.classList.add("open");spotQuery.value="";spotIndex=0;paintHits();spotQuery.focus()};
+const closeSpot=function(){spotNode.classList.remove("open")};
+byId("seek").addEventListener("click",openSpot);
+spotQuery.addEventListener("input",function(){spotIndex=0;paintHits()});
+spotNode.addEventListener("click",function(event){if(event.target===spotNode){closeSpot();return}
+  const hit=event.target.closest&&event.target.closest("[data-hit]");if(hit){closeSpot();openDrawer(hit.getAttribute("data-hit"))}});
+document.addEventListener("keydown",function(event){
+  if(event.key==="/"&&!/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)){event.preventDefault();openSpot();return}
+  if(event.key==="Escape"){closeSpot();closeDrawer();closeSheet();return}
+  if(!spotNode.classList.contains("open")){return}
+  const matches=spotMatches();
+  if(event.key==="ArrowDown"){event.preventDefault();spotIndex=Math.min(spotIndex+1,matches.length-1);paintHits()}
+  if(event.key==="ArrowUp"){event.preventDefault();spotIndex=Math.max(spotIndex-1,0);paintHits()}
+  if(event.key==="Enter"&&matches[spotIndex]){event.preventDefault();closeSpot();openDrawer(matches[spotIndex].id)}});
 document.addEventListener("click",function(event){const filter=event.target.closest&&event.target.closest(".f[data-filter]");if(!filter){return}planeFilter=filter.getAttribute("data-filter");document.querySelectorAll(".f[data-filter]").forEach(function(node){node.setAttribute("aria-pressed",node===filter?"true":"false")});paintShell()});
 const render=function(){byId("profile").value=state.policy.minimumPosture||"team";syncFrameworkSelect();renderRows();renderComposition();renderReceipt();renderPreview();syncRail();paintShell();byId("dispositionable-findings").textContent=model.findings.dispositionable.join(" | ");byId("hard-blockers").textContent=model.findings.fenced.join(" | ");if(typeof window.__aihPolicyWorkbenchEnhanceRows==="function"){window.__aihPolicyWorkbenchEnhanceRows()}};
 byId("profile").addEventListener("change",function(event){const value=event.target.value;if(value==="vibe"){composeVibeProfile();return}if(value==="enterprise"){composeEnterpriseProfile();return}const previous=structuredClone(state.policy);state.policy.minimumPosture=value;commitPolicy(previous,"Profile changed.")});
@@ -451,8 +806,14 @@ byId("copy-approvals").addEventListener("click",function(){if(state.receipt&&Arr
 byId("validate").addEventListener("click",function(){const problems=policyProblems();if(problems.length){announce("Schema and policy-grammar validation failed: "+problems.slice(0,3).join("; "),true)}else{announce("Schema and policy-grammar validation passed. Authority, scans, projection, and effective state require the AIH engine in a target repository.")}renderPreview()});
 byId("export").addEventListener("click",function(){const problems=policyProblems();if(problems.length){announce("Export blocked: "+problems.slice(0,3).join("; "),true);return}renderPreview();announce("Policy export preview refreshed from the actual policy schema and grammar.")});
 byId("download").addEventListener("click",function(){const problems=policyProblems();if(problems.length){announce("Download blocked: "+problems.slice(0,3).join("; "),true);return}const blob=new Blob([policyText()],{type:"application/json"});const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="aih-org-policy.json";link.click();URL.revokeObjectURL(url);announce("Policy download started.")});
-byId("toggle-groups").addEventListener("click",function(event){const groups=[].slice.call(document.querySelectorAll(".group"));const open=groups.some(function(group){return group.dataset.open!=="1"});groups.forEach(function(group){group.dataset.open=open?"1":"0";const head=group.querySelector("[data-group]");if(head){head.setAttribute("aria-expanded",open?"true":"false")}});event.target.textContent=open?"Collapse all":"Expand all"});
-document.querySelectorAll("[data-group]").forEach(function(head){head.setAttribute("aria-expanded",head.closest(".group").dataset.open==="1"?"true":"false")});
+byId("toggle-groups").addEventListener("click",function(event){const groups=[].slice.call(document.querySelectorAll(".grp"));const open=groups.some(function(group){return group.dataset.open!=="1"});groups.forEach(function(group){group.dataset.open=open?"1":"0";const head=group.querySelector("[data-group]");if(head){head.setAttribute("aria-expanded",open?"true":"false")}});event.target.textContent=open?"Collapse all":"Expand all"});
+document.querySelectorAll("[data-group]").forEach(function(head){head.setAttribute("aria-expanded",head.closest(".grp").dataset.open==="1"?"true":"false")});
+/* The compact row moved detail into the drawer, so the inline help that used to
+   sit on every row now sits where authoring actually happens. */
+byId("curation-editor").querySelector("summary").insertAdjacentHTML("beforeend",help("external curation","AIH preserves audited curation intent for agents, skills and commands with a pin and an audit record. It never installs, projects or enforces them - ECC and Superpowers do."));
+byId("custom-editor").querySelector("summary").insertAdjacentHTML("beforeend",help("custom sources","A custom MCP is recorded immediately as a fully pinned candidate and stays blocked until a completed scan binds to that exact pin."));
+byId("presets").innerHTML=PRESETS.map(function(entry){return '<button type="button" class="preset" data-preset="'+esc(entry[0])+'" aria-pressed="false"><b>'+esc(entry[1])+'</b><span>'+esc(entry[2])+'</span></button>'}).join("");
+document.addEventListener("click",function(event){const preset=event.target.closest&&event.target.closest("[data-preset]");if(!preset){return}const select=byId("profile");select.value=preset.getAttribute("data-preset");select.dispatchEvent(new Event("change",{bubbles:true}))});
 buildRail();
 render();
 </script>
@@ -475,7 +836,7 @@ const browserArgumentErrors=function(policy){const errors=[];const governanceVal
   const readInput=function(input,callback){const file=input.files&&input.files[0];if(!file){return}const reader=new FileReader();reader.onload=function(){callback(String(reader.result||""))};reader.readAsText(file)};
   byId("policy-file").addEventListener("change",function(event){event.stopImmediatePropagation();readInput(event.currentTarget,function(text){try{const value=JSON.parse(text);if(!value||typeof value!=="object"||Array.isArray(value)){throw new Error("not an object")}const problems=schemaErrors(model.schema,value,"").concat(browserSemanticErrors(value),policyTextSemantics(value));if(problems.length){throw new Error(problems.slice(0,3).join("; "))}state.policy=value;state.editing=null;announce("Policy imported without transformation after schema and policy-grammar validation.");render()}catch(error){announce("Policy import rejected: "+(error&&error.message?error.message:"valid policy JSON required"),true)}},true);
   },true);
-  const runValidation=function(event,mode){event.preventDefault();event.stopImmediatePropagation();const problems=browserProblems();if(problems.length){announce((mode==="download"?"Download blocked: ":mode==="export"?"Export blocked: ":"Schema and policy-grammar validation failed: ")+problems.slice(0,3).join("; "),true);return false}if(mode==="download"){const blob=new Blob([policyText()],{type:"application/json"});const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="aih-org-policy.json";link.click();URL.revokeObjectURL(url);announce("Policy download started.")}else if(mode==="export"){renderPreview();announce("Policy export preview refreshed from the actual policy schema and grammar.")}else{announce("Schema and policy-grammar validation passed. Authority, scans, projection, and effective state require the AIH engine in a target repository.");renderPreview()}return true};
+  const runValidation=function(event,mode){event.preventDefault();event.stopImmediatePropagation();const problems=browserProblems();if(problems.length){announce((mode==="download"?"Download blocked: ":mode==="export"?"Export blocked: ":"Schema and policy-grammar validation failed: ")+problems.slice(0,3).join("; "),true);return false}if(mode==="download"){const blob=new Blob([policyText()],{type:"application/json"});const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="aih-org-policy.json";link.click();URL.revokeObjectURL(url);announce("Policy download started.")}else if(mode==="export"){renderPreview();openSheet();announce("Policy export preview refreshed from the actual policy schema and grammar.")}else{announce("Schema and policy-grammar validation passed. Authority, scans, projection, and effective state require the AIH engine in a target repository.");renderPreview()}return true};
   ["validate","export","download"].forEach(function(id){byId(id).addEventListener("click",function(event){runValidation(event,id)},true)});
 byId("copy-approvals").addEventListener("click",function(event){event.preventDefault();event.stopImmediatePropagation();if(!(state.receipt&&Array.isArray(state.receipt.approvals))){return}const previous=structuredClone(state.policy);ensureGovernance().authority.approvals=structuredClone(state.receipt.approvals);if(browserProblems().length){state.policy=previous;announce("Approval preservation rejected: imported subjects do not satisfy the actual policy grammar.",true);render();return}announce("Approval subjects preserved in governance.authority.approvals; no signature or effective-approval claim is made.");render()},true);
   const curationIssues=function(){const values={kind:byId("curation-kind").value,id:byId("curation-id").value.trim(),repository:byId("curation-repository").value.trim(),commit:byId("curation-commit").value.trim(),path:byId("curation-path").value.trim(),record:byId("audit-record").value.trim(),digest:byId("audit-digest").value.trim(),note:byId("curation-note").value.trim()};const issues={};if(!/^(agent|skill|command)$/.test(values.kind)){issues["curation-kind"]="Choose agent, skill, or command."}if(!visible(values.id)){issues["curation-id"]="Use visible text with no hidden Unicode."}if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(values.repository)){issues["curation-repository"]="Use owner/repository."}if(!/^[0-9a-f]{40}$/.test(values.commit)){issues["curation-commit"]="Use a lowercase 40-character commit."}if(!values.path||values.path.startsWith("/")||values.path.startsWith("./")||values.path.includes("\\")||values.path.includes("//")||values.path.split("/").some(function(part){return !part||part==="."||part===".."})){issues["curation-path"]="Use a safe repo-relative POSIX path."}if(!visible(values.record)){issues["audit-record"]="Use visible audit-record text."}if(!/^sha256:[0-9a-f]{64}$/.test(values.digest)){issues["audit-digest"]="Use sha256: followed by 64 lowercase hex characters."}if(values.note&&!visible(values.note)){issues["curation-note"]="Use visible clarification text with no hidden Unicode."}return {values:values,issues:issues}};

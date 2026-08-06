@@ -82,6 +82,14 @@ function curatedIds(window: Window): string[] {
  * pinned identity, and only the audit evidence is typed.
  */
 function curateFromFirstRow(window: Window): string {
+  // Per-item authoring lives in the drawer, so open a curatable row before
+  // reaching for its curation control.
+  const curatable = frameworkAssets.find(({ asset }) => asset.curationKind !== undefined);
+  if (curatable === undefined) throw new Error("expected a curatable asset in the catalog");
+  const key = `${curatable.framework.id} / ${curatable.asset.kind}: ${curatable.asset.id}`;
+  window.document
+    .querySelector(`[data-open="${key}"]`)
+    ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   const button = window.document.querySelector("[data-curation-prefill]");
   if (button === null) throw new Error("expected a curatable inventory row");
   button.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
