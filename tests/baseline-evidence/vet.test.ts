@@ -775,7 +775,11 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
     });
     const requiredAnalyzers = (component: { id: string }) =>
       component.id === "skill:blocked" ? ["aih-native", "cisco@uvx"] : ["aih-native"];
-    const versionsR1 = { "aih-native": "native.aaaaaaaaaaaa", "cisco@uvx": "2.0.13" };
+    // The two rounds must disagree about the Cisco version -- that disagreement
+    // is what this test exercises. Opaque sentinels rather than real version
+    // numbers, so a future pin bump cannot collapse R1 and R2 into the same
+    // value and silently stop testing the rescan path.
+    const versionsR1 = { "aih-native": "native.aaaaaaaaaaaa", "cisco@uvx": "cisco-round-1" };
     const scanComponent = scannerFor({
       "skill:clean": { analyzersRun: ["aih-native"], checks: [pass("skill:clean")] },
       "skill:blocked": {
@@ -789,7 +793,7 @@ describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
       analyzerVersions: versionsR1,
     });
 
-    const versionsR2 = { ...versionsR1, "cisco@uvx": "2.0.13" };
+    const versionsR2 = { ...versionsR1, "cisco@uvx": "cisco-round-2" };
     const rescanCiscoOnly = vi.fn(async ({ component }: { component: { id: string } }) => {
       if (component.id !== "skill:blocked") throw new Error(`unexpected rescan of ${component.id}`);
       return { analyzersRun: ["aih-native", "cisco@uvx"], checks: [pass("skill:blocked")] };

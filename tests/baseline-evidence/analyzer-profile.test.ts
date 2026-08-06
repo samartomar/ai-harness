@@ -163,7 +163,10 @@ describe("checkDetectorsAvailable", () => {
 
   it("rejects an inexact Cisco version and empty Snyk help output", async () => {
     const run = fakeRunner((argv) => {
-      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.13" };
+      // Deliberately NOT the pinned version. Kept far ahead of any plausible
+      // real release so a future pin bump cannot silently make this case exact
+      // and turn the rejection assertion into a no-op.
+      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.99.99" };
       if (argv.includes("--help")) return { code: 0, stdout: "" };
       return undefined;
     });
