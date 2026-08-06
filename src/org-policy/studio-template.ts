@@ -114,7 +114,20 @@ input,select,textarea{font:inherit}
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.16'/%3E%3C/svg%3E")}
 
 /* ── stage ───────────────────────────────────────────── */
-.stage{position:relative;z-index:1;height:100vh;height:100dvh;display:grid;grid-template-rows:56px auto minmax(0,1fr) 34px}
+.stage{position:relative;z-index:1;height:100vh;height:100dvh;display:grid;grid-template-rows:56px auto auto minmax(0,1fr) 34px}
+/* Owner ticker: one surface at a time, above everything. Its entries come from
+   a list, not from markup, so a new owner is a data change. */
+.ticker{display:flex;align-items:center;gap:6px;padding:0 18px 8px;flex-wrap:wrap}
+.ticker button{height:28px;padding:0 12px;border-radius:999px;background:transparent;color:var(--ink-3);
+  font:600 12px/1 var(--sans);border:1px solid transparent;display:inline-flex;align-items:center;gap:6px;
+  transition:color 160ms ease,background 160ms ease}
+.ticker button:hover{color:var(--ink);background:var(--fill)}
+.ticker button[aria-pressed="true"]{color:var(--accent-ink);background:var(--accent-soft);border-color:var(--accent-line)}
+.ticker button b{font-family:var(--mono);font-weight:700;font-size:11px}
+.ticker button[data-empty="true"]{opacity:.5}
+.ticker .sep{color:var(--glass-line);user-select:none}
+.ticker .soon{font:600 9.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);opacity:.7;margin-left:auto;display:inline-flex;align-items:center;gap:6px}
 .bar{display:flex;align-items:center;gap:10px;padding:0 16px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:9px;min-width:0}
 .brand-mark{width:26px;height:26px;border-radius:9px;display:grid;place-items:center;flex:0 0 auto;
@@ -402,6 +415,8 @@ summary{min-height:32px}
 
   <p id="announcement" class="announce" aria-live="polite"></p>
 
+  <nav class="ticker" id="owner-ticker" aria-label="Focus one surface"></nav>
+
   <div class="work">
     <aside class="rail" aria-label="Presets and quick selection">
       <section class="gcard sect">
@@ -435,20 +450,20 @@ summary{min-height:32px}
         <span class="n"><b id="c-shown">0</b> / <b id="c-total">0</b></span>
       </div>
 
-      <section class="gcard grp group" data-open="1" data-groupcard><button type="button" class="grphead" data-group aria-expanded="true"><span class="tw" aria-hidden="true">&#9654;</span><h2>AIH MCP servers</h2><span class="own">AIH</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody" id="mcp-rows"></div><p class="grpnote">AIH ships and projects these. A requested control still needs target-repository identity, evidence, authority, safety, ownership and a supported projector before it can become effective. ECC separately declares its own MCP components — see <b>ECC MCP declarations</b>. Those are ECC's declarations, not servers AIH runs: selecting the AIH server above is what makes one effective, and <code>mcp:exa</code> has no AIH server at all.</p></section>
+      <section class="gcard grp group" data-open="1" data-owner="AIH" data-groupcard><button type="button" class="grphead" data-group aria-expanded="true"><span class="tw" aria-hidden="true">&#9654;</span><h2>AIH MCP servers</h2><span class="own">AIH</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody" id="mcp-rows"></div><p class="grpnote">AIH ships and projects these. A requested control still needs target-repository identity, evidence, authority, safety, ownership and a supported projector before it can become effective. ECC separately declares its own MCP components — see <b>ECC MCP declarations</b>. Those are ECC's declarations, not servers AIH runs: selecting the AIH server above is what makes one effective, and <code>mcp:exa</code> has no AIH server at all.</p></section>
 
-      <section class="gcard grp group" data-open="1" data-groupcard><button type="button" class="grphead" data-group aria-expanded="true"><span class="tw" aria-hidden="true">&#9654;</span><h2>AIH hooks</h2><span class="own">AIH</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody" id="hook-rows"></div><p class="grpnote">Only AIH-owned hook identities are authorable. Custom hooks are not supported. Open a hook to see exactly what it runs, what it writes, and what removing it does. AIH ships exactly one hook today. ECC has its own hook surface — <code>baseline:hooks</code> and <code>module:hooks-runtime</code> — which ECC installs and runs; those are listed under ECC baselines and ECC modules because ECC's catalog carries no hook kind, and AIH neither installs nor projects them.</p></section>
+      <section class="gcard grp group" data-open="1" data-owner="AIH" data-groupcard><button type="button" class="grphead" data-group aria-expanded="true"><span class="tw" aria-hidden="true">&#9654;</span><h2>AIH hooks</h2><span class="own">AIH</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody" id="hook-rows"></div><p class="grpnote">Only AIH-owned hook identities are authorable. Custom hooks are not supported. Open a hook to see exactly what it runs, what it writes, and what removing it does. AIH ships exactly one hook today. ECC has its own hook surface — <code>baseline:hooks</code> and <code>module:hooks-runtime</code> — which ECC installs and runs; those are listed under ECC baselines and ECC modules because ECC's catalog carries no hook kind, and AIH neither installs nor projects them.</p></section>
 
       <p class="gcard grpnote" id="plane-empty" hidden></p>
       <div id="framework-rows"></div>
 
-      <section class="gcard grp group" data-open="0" data-groupcard><button type="button" class="grphead" data-group aria-expanded="false"><span class="tw" aria-hidden="true">&#9654;</span><h2>Enterprise composition</h2><span class="own">ECC</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody stack" id="composition-parts"></div></section>
+      <section class="gcard grp group" data-open="0" data-owner="ECC" data-groupcard><button type="button" class="grphead" data-group aria-expanded="false"><span class="tw" aria-hidden="true">&#9654;</span><h2>Enterprise composition</h2><span class="own">ECC</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody stack" id="composition-parts"></div></section>
 
-      <section class="gcard grp group" data-open="0" data-groupcard><button type="button" class="grphead" data-group aria-expanded="false"><span class="tw" aria-hidden="true">&#9654;</span><h2>Your sources</h2><span class="own">You</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody stack" id="custom-rows"></div><p class="grpnote">Custom MCP can only be authored as a fully pinned pending candidate. It has no activation affordance until supported scanning, evidence and projection exist.</p></section>
+      <section class="gcard grp group" data-open="0" data-owner="You" data-groupcard><button type="button" class="grphead" data-group aria-expanded="false"><span class="tw" aria-hidden="true">&#9654;</span><h2>Your sources</h2><span class="own">You</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody stack" id="custom-rows"></div><p class="grpnote">Custom MCP can only be authored as a fully pinned pending candidate. It has no activation affordance until supported scanning, evidence and projection exist.</p></section>
 
-      <section class="gcard grp group" data-open="0" data-groupcard><button type="button" class="grphead" data-group aria-expanded="false"><span class="tw" aria-hidden="true">&#9654;</span><h2>ECC / Superpowers curation</h2><span class="own">recorded</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody stack" id="curation-rows"></div><p class="grpnote">AIH preserves audited curation intent for agents, skills and commands. It does not install, project or enforce those external assets. A selection becomes curation once it carries an audit record and digest.</p></section>
+      <section class="gcard grp group" data-open="0" data-owner="ECC Superpowers" data-groupcard><button type="button" class="grphead" data-group aria-expanded="false"><span class="tw" aria-hidden="true">&#9654;</span><h2>ECC / Superpowers curation</h2><span class="own">recorded</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody stack" id="curation-rows"></div><p class="grpnote">AIH preserves audited curation intent for agents, skills and commands. It does not install, project or enforce those external assets. A selection becomes curation once it carries an audit record and digest.</p></section>
 
-      <section class="gcard grp group" data-open="0" data-groupcard><button type="button" class="grphead" data-group aria-expanded="false"><span class="tw" aria-hidden="true">&#9654;</span><h2>Approval / evidence</h2><span class="own">preflight</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody stack" id="approval-rows"></div><div class="grpnote"><p id="receipt-state" class="help">No authority receipt imported.</p><p><button type="button" class="btn sm" id="copy-approvals" disabled>Preserve approval subjects in policy (not effective)</button></p><details><summary>Finding model: 8 administrator-dispositionable, 6 hard blockers</summary><p class="help">A completed scan reports these 8. The accountable administrator decides each one, because a detector label is evidence and not a verdict. They stay visible and authorable; this workbench does not dispose of them.</p><p id="dispositionable-findings" class="mono"></p><p class="help">These 6 are missing or untrustworthy prerequisites rather than detector findings. No approval substitutes for one, and this workbench cannot waive, approve or downgrade them.</p><p id="hard-blockers" class="mono"></p></details></div></section>
+      <section class="gcard grp group" data-open="0" data-owner="AIH" data-groupcard><button type="button" class="grphead" data-group aria-expanded="false"><span class="tw" aria-hidden="true">&#9654;</span><h2>Approval / evidence</h2><span class="own">preflight</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody stack" id="approval-rows"></div><div class="grpnote"><p id="receipt-state" class="help">No authority receipt imported.</p><p><button type="button" class="btn sm" id="copy-approvals" disabled>Preserve approval subjects in policy (not effective)</button></p><details><summary>Finding model: 8 administrator-dispositionable, 6 hard blockers</summary><p class="help">A completed scan reports these 8. The accountable administrator decides each one, because a detector label is evidence and not a verdict. They stay visible and authorable; this workbench does not dispose of them.</p><p id="dispositionable-findings" class="mono"></p><p class="help">These 6 are missing or untrustworthy prerequisites rather than detector findings. No approval substitutes for one, and this workbench cannot waive, approve or downgrade them.</p><p id="hard-blockers" class="mono"></p></details></div></section>
     </main>
   </div>
 
@@ -717,7 +732,7 @@ const frameworkInventoryRows=function(){const active=activeSelectionFramework(go
       tick("data-framework-select",framework.id+"|"+asset.kind+"|"+asset.id,selected,asset.id),
       "Owned by "+framework.repository+" at "+framework.commit+", source "+asset.source.path+"."+(asset.riders&&asset.riders.length?" Also brings in "+asset.riders.join(", ")+".":"")+" Evidence: "+evidenceCommand(framework,asset),
       asset.id)}).join("");
-  return '<section class="gcard grp group" data-open="'+open+'" data-groupcard><button type="button" class="grphead" data-group aria-expanded="'+(open?"true":"false")+'"><span class="tw" aria-hidden="true">&#9654;</span><h2>'+esc(group.label)+'</h2><span class="own">'+esc(group.owner)+'</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody">'+rows+'</div></section>'}).join("")+notice};
+  return '<section class="gcard grp group" data-owner="'+esc(group.owner)+'" data-open="'+open+'" data-groupcard><button type="button" class="grphead" data-group aria-expanded="'+(open?"true":"false")+'"><span class="tw" aria-hidden="true">&#9654;</span><h2>'+esc(group.label)+'</h2><span class="own">'+esc(group.owner)+'</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody">'+rows+'</div></section>'}).join("")+notice};
 /* A pinned custom candidate must end in an exact command, not in nothing.
    The trust scan command takes a local path or a GitHub owner/repo, so the
    registry package identity is deliberately NOT presented as the scan target -
@@ -740,6 +755,19 @@ const syncFrameworkSelect=function(){const framework=byId("curation-framework");
    and cannot drift from the rows they mirror. */
 const ROW_STATES=["requested","pending","blocked","external"];
 let planeFilter="all";
+/* The owner ticker. One surface at a time, so an administrator can look at what
+   AIH owns without ECC's 136 components in the way.
+
+   OWNERS is the whole contract: a new surface is one entry here plus group
+   cards carrying its data-owner, and nothing about the layout changes. That is
+   where VibeSec and Voice land when they arrive - they are AIH-owned
+   capability surfaces, so they sit after AIH and before the third-party
+   frameworks, which keeps the ticker ordered first-party then third-party.
+   UPCOMING renders them as declared-but-not-yet-shipped rather than leaving the
+   administrator to wonder whether the surface exists and is empty. */
+const OWNERS=[["all","All"],["AIH","AIH"],["ECC","ECC"],["Superpowers","Superpowers"],["You","Your sources"]];
+const UPCOMING=["VibeSec","Voice"];
+let ownerFocus="all";
 const PRESETS=[["vibe","Vibe","Everything this catalog offers. Nothing is hidden for want of AIH enforcement."],
   ["enterprise","Enterprise","ECC Core selected; languages and security offered as additive choices."],
   ["team","Team","Posture only. Selections stay exactly as you left them."]];
@@ -769,6 +797,20 @@ const paintShell=function(){const totals={requested:0,pending:0,blocked:0,extern
        and the plane says why it is empty. */
     chip.setAttribute("data-empty",count===0?"true":"false");
     chip.title=count?"":FILTER_EMPTY[key]||"Nothing is in this state right now."});
+  /* Owner focus is a view, not a selection: it hides no state and changes no
+     policy, so a focused surface and the authored document never disagree. */
+  const ownerRows={};
+  document.querySelectorAll(".grp[data-owner]").forEach(function(group){
+    const owners=String(group.getAttribute("data-owner")).split(" ");
+    const count=group.querySelectorAll(".row[data-state]").length;
+    owners.forEach(function(owner){ownerRows[owner]=(ownerRows[owner]||0)+count});
+    group.hidden=ownerFocus!=="all"&&owners.indexOf(ownerFocus)===-1});
+  document.querySelectorAll("#owner-ticker [data-owner-focus]").forEach(function(button){
+    const owner=button.getAttribute("data-owner-focus");
+    const count=owner==="all"?total:(ownerRows[owner]||0);
+    button.querySelector("b").textContent=String(count);
+    button.setAttribute("data-empty",count===0?"true":"false");
+    button.setAttribute("aria-pressed",owner===ownerFocus?"true":"false")});
   const empty=byId("plane-empty");
   if(empty){empty.hidden=shown!==0;empty.textContent=shown===0?(FILTER_EMPTY[planeFilter]||"No row is in this state right now."):""}};
 const FILTER_EMPTY={requested:"Nothing is selected yet. Select an item, or compose a preset.",
@@ -937,6 +979,12 @@ byId("custom-editor").querySelector("summary").insertAdjacentHTML("beforeend",he
 document.addEventListener("click",function(event){if(!event.target.closest||!event.target.closest("#clear-policy")){return}
   state.policy=structuredClone(model.initialPolicy);state.editing=null;
   announce("Policy cleared. Every selection, requested control and curation record is gone, and either framework can be selected again.");render()});
+byId("owner-ticker").innerHTML=OWNERS.map(function(entry,index){
+  return (index?'<span class="sep" aria-hidden="true">|</span>':"")+
+    '<button type="button" data-owner-focus="'+esc(entry[0])+'" aria-pressed="'+(entry[0]==="all"?"true":"false")+'">'+esc(entry[1])+' <b>0</b></button>'}).join("")+
+  '<span class="soon">soon '+UPCOMING.map(esc).join(" &middot; ")+'</span>';
+document.addEventListener("click",function(event){const button=event.target.closest&&event.target.closest("[data-owner-focus]");if(!button){return}
+  ownerFocus=button.getAttribute("data-owner-focus");paintShell()});
 byId("presets").innerHTML=PRESETS.map(function(entry){return '<button type="button" class="preset" data-preset="'+esc(entry[0])+'" aria-pressed="false"><b>'+esc(entry[1])+'</b><span>'+esc(entry[2])+'</span></button>'}).join("");
 document.addEventListener("click",function(event){const preset=event.target.closest&&event.target.closest("[data-preset]");if(!preset){return}const select=byId("profile");select.value=preset.getAttribute("data-preset");select.dispatchEvent(new Event("change",{bubbles:true}))});
 buildRail();
