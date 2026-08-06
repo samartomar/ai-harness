@@ -6,8 +6,13 @@ import {
 } from "./authority.js";
 import type { OrgPolicy } from "./schema.js";
 
-/** Machine-enforced findings that no evidence exception or approval may waive. */
-export const UNWAIVABLE_POLICY_DANGER_CODES = [
+/**
+ * Assertions a detector made about a completed scan. A severe label is
+ * evidence, not a verdict, so the accountable administrator decides each one:
+ * reject the candidate, record a false positive, or accept the residual risk
+ * with an attributable signed reason.
+ */
+export const DISPOSITIONABLE_POLICY_FINDING_CODES = [
   "malicious-code",
   "prompt-injection",
   "auto-executing-hook",
@@ -15,16 +20,47 @@ export const UNWAIVABLE_POLICY_DANGER_CODES = [
   "secrets",
   "unpinned-source",
   "dependency-confusion",
+  "unsafe-path",
+] as const;
+
+/**
+ * Prerequisites AIH needs before it can evaluate or project at all. Each marks
+ * something absent or untrustworthy rather than something a detector asserted,
+ * so no signature substitutes for it and approval cannot invent it.
+ */
+export const FENCED_POLICY_PREREQUISITE_CODES = [
   "mandatory-detector-failed",
   "evidence-identity-drift",
-  "unsafe-path",
-  "normalized-collision",
   "missing-projector",
   "unsupported-target",
+  "normalized-collision",
   "ownership-conflict",
 ] as const;
 
+/**
+ * The partition's union — the same 14 codes, none renamed or added. Resolution
+ * still blocks on every one of them: separating the halves is what lets a
+ * consumer tell a disposable finding from a hard prerequisite, and is not by
+ * itself the administrator disposition flow, which does not exist yet.
+ */
+export const UNWAIVABLE_POLICY_DANGER_CODES = [
+  ...DISPOSITIONABLE_POLICY_FINDING_CODES,
+  ...FENCED_POLICY_PREREQUISITE_CODES,
+] as const;
+
+export type DispositionableFindingCode = (typeof DISPOSITIONABLE_POLICY_FINDING_CODES)[number];
+export type FencedPrerequisiteCode = (typeof FENCED_POLICY_PREREQUISITE_CODES)[number];
 export type PolicyDangerCode = (typeof UNWAIVABLE_POLICY_DANGER_CODES)[number];
+
+/** True for a detector finding the accountable administrator may dispose of. */
+export function isDispositionableFinding(value: string): value is DispositionableFindingCode {
+  return (DISPOSITIONABLE_POLICY_FINDING_CODES as readonly string[]).includes(value);
+}
+
+/** True for a missing or untrustworthy prerequisite that no approval can waive. */
+export function isFencedPrerequisite(value: string): value is FencedPrerequisiteCode {
+  return (FENCED_POLICY_PREREQUISITE_CODES as readonly string[]).includes(value);
+}
 export type ResolutionBlockCode =
   | PolicyDangerCode
   | "lifecycle-not-supported"
@@ -152,6 +188,20 @@ export interface EffectiveOrgPolicy {
       clarification?: string;
     }>;
     status: "external-guidance";
+  }>;
+  /**
+   * Admin-requested intent over externally-owned inventory whose audit evidence
+   * does not exist yet. It is reported so a target repository can see exactly
+   * what was asked for; it is never a candidate and never becomes effective.
+   */
+  externalSelections: Array<{
+    framework: "ecc" | "superpowers";
+    items: Array<{
+      kind: string;
+      id: string;
+      source: { repository: string; commit: string; path: string };
+    }>;
+    status: "requested-evidence-needed";
   }>;
   blocking: boolean;
   authority: { verified: boolean; receiptDigest?: string; problem?: string };
@@ -657,6 +707,7 @@ export function resolveEffectiveOrgPolicy(
       activeMcpServerIds: [],
       frameworkSelections: [],
       externalCuration: [],
+      externalSelections: [],
       blocking: false,
       authority: {
         verified: authority !== undefined,
@@ -694,6 +745,11 @@ export function resolveEffectiveOrgPolicy(
       framework: curation.framework,
       items: curation.items.map((item) => ({ ...item })),
       status: "external-guidance" as const,
+    })),
+    externalSelections: governance.externalSelections.map((selection) => ({
+      framework: selection.framework,
+      items: selection.items.map((item) => ({ ...item, source: { ...item.source } })),
+      status: "requested-evidence-needed" as const,
     })),
     blocking: candidates.some(
       (candidate) =>
@@ -804,6 +860,15 @@ const EXTERNAL_CURATION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   "items.*.source.repository": "effective report: external curation source repository only",
 };
 
+const EXTERNAL_SELECTION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
+  framework: "effective report: requested external framework identity only",
+  "items.*.id": "effective report: requested external component identity only",
+  "items.*.kind": "effective report: requested external component kind only",
+  "items.*.source.commit": "effective report: requested external source pin only",
+  "items.*.source.path": "effective report: requested external source path only",
+  "items.*.source.repository": "effective report: requested external source repository only",
+};
+
 function prefixedConsumers(
   prefix: string,
   leaves: Readonly<Record<string, string>>,
@@ -819,6 +884,7 @@ export const POLICY_ENGINE_FIELD_CONSUMERS: Readonly<Record<string, string>> = O
   ...prefixedConsumers("governance.activations.*", ACTIVATION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.authority", AUTHORITY_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.externalCuration.*", EXTERNAL_CURATION_LEAF_CONSUMERS),
+  ...prefixedConsumers("governance.externalSelections.*", EXTERNAL_SELECTION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.reviewed.*", CANDIDATE_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.custom.*", CANDIDATE_LEAF_CONSUMERS),
 });

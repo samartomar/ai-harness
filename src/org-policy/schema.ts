@@ -518,6 +518,68 @@ const ExternalFrameworkCurationSchema = z
     }
   });
 
+/**
+ * The authoring inventory's own kind vocabulary, duplicated here rather than
+ * imported so the grammar module does not pull in the catalog constructors to
+ * name nine strings — the same trade `PolicyDangerCodeSchema` already makes.
+ * `studio-inventory-selection.test.ts` pins this against
+ * `POLICY_AUTHORING_ASSET_KINDS` so the two copies cannot drift apart.
+ */
+const ExternalSelectionKindSchema = z.enum([
+  "agent",
+  "baseline",
+  "capability",
+  "framework",
+  "lang",
+  "mcp",
+  "module",
+  "runtime",
+  "skill",
+]);
+
+/**
+ * An administrator's selection over externally-owned inventory. Selecting
+ * records requested intent immediately and carries the component's pinned
+ * source as provenance; ECC and Superpowers install and run these, and AIH
+ * only records that they were asked for. Evidence is the separate axis: an
+ * item earns its place in `externalCuration` once an audit record and digest
+ * exist, which is why this grammar deliberately has no `audit` field and why
+ * it spans all nine inventory kinds rather than curation's three.
+ */
+const ExternalSelectionItemSchema = z
+  .object({
+    kind: ExternalSelectionKindSchema,
+    id: SafePolicyTextSchema,
+    source: z
+      .object({
+        repository: GitRepositorySchema,
+        commit: GitCommitSchema,
+        path: BaselineOverrideBundleSchema,
+      })
+      .strict(),
+  })
+  .strict();
+
+const ExternalFrameworkSelectionSchema = z
+  .object({
+    framework: z.enum(["ecc", "superpowers"]),
+    items: z.array(ExternalSelectionItemSchema).default([]),
+  })
+  .strict()
+  .superRefine((selection, ctx) => {
+    const seen = new Set<string>();
+    for (const [index, item] of selection.items.entries()) {
+      if (seen.has(item.id)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["items", index],
+          message: `duplicate external selection ${item.id}`,
+        });
+      }
+      seen.add(item.id);
+    }
+  });
+
 const PolicyGovernanceSchema = z
   .object({
     policyVersion: SafePolicyTextSchema,
@@ -541,6 +603,12 @@ const PolicyGovernanceSchema = z
       .default({ approvals: [] }),
     /** Report-only external framework curation; never feeds an installer or projector. */
     externalCuration: z.array(ExternalFrameworkCurationSchema).default([]),
+    /**
+     * Requested intent over externally-owned inventory, recorded before its
+     * audit evidence exists. Recording is not enforcement and never feeds an
+     * installer or projector.
+     */
+    externalSelections: z.array(ExternalFrameworkSelectionSchema).default([]),
   })
   .strict()
   .superRefine((governance, ctx) => {
@@ -640,6 +708,46 @@ const PolicyGovernanceSchema = z
         code: "custom",
         message: `external framework curation ${duplicateCuration} is duplicated`,
       });
+    }
+    const selectionFrameworks = governance.externalSelections.map((item) => item.framework);
+    const duplicateSelection = selectionFrameworks.find(
+      (framework, index) => selectionFrameworks.indexOf(framework) !== index,
+    );
+    if (duplicateSelection !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: `external framework selection ${duplicateSelection} is duplicated`,
+      });
+    }
+    // The same contradiction the activation rule above already forbids, one
+    // level down: a policy that selects components from two pinned frameworks
+    // at once has not chosen a framework.
+    const distinctSelection = [...new Set(selectionFrameworks)].sort();
+    if (distinctSelection.length > 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["externalSelections"],
+        message: `only one framework may be selected at a time; this policy selects from ${distinctSelection.join(" and ")}`,
+      });
+    }
+    // Selection and curation are two stages of one thing. A component sitting
+    // in both is ambiguous about whether its evidence exists, so fail closed
+    // rather than leave a surface to guess which record wins.
+    for (const [index, selection] of governance.externalSelections.entries()) {
+      const curated = new Set(
+        governance.externalCuration
+          .filter((curation) => curation.framework === selection.framework)
+          .flatMap((curation) => curation.items.map((item) => item.id)),
+      );
+      for (const [itemIndex, item] of selection.items.entries()) {
+        if (curated.has(item.id)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["externalSelections", index, "items", itemIndex],
+            message: `${item.id} is recorded as both a selection and a curation item; a curated component already carries its evidence`,
+          });
+        }
+      }
     }
   });
 

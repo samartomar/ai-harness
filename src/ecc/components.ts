@@ -93,7 +93,12 @@ const FRAMEWORK_COMPONENTS: Readonly<Record<string, readonly EccComponentId[]>> 
   Laravel: ["framework:laravel"],
 };
 
-const DECLARATION_RIDERS: Readonly<Record<string, readonly EccComponentId[]>> = {
+/**
+ * What a declarable component pulls in with it. Exported so the authoring
+ * surface can state the relation instead of leaving an administrator to
+ * discover after the fact that picking a language also brought agents.
+ */
+export const ECC_DECLARATION_RIDERS: Readonly<Record<string, readonly EccComponentId[]>> = {
   "lang:typescript": ["agent:typescript-reviewer"],
   "lang:python": ["agent:python-reviewer"],
   "lang:go": ["agent:go-reviewer", "agent:go-build-resolver"],
@@ -118,8 +123,8 @@ const DECLARABLE_COMPONENTS = new Set<string>([
   ...COMMON_ECC_COMPONENTS,
   ...Object.values(LANGUAGE_COMPONENTS).flat(),
   ...Object.values(FRAMEWORK_COMPONENTS).flat(),
-  ...Object.keys(DECLARATION_RIDERS),
-  ...Object.values(DECLARATION_RIDERS).flat(),
+  ...Object.keys(ECC_DECLARATION_RIDERS),
+  ...Object.values(ECC_DECLARATION_RIDERS).flat(),
   "baseline:hooks",
   "baseline:workflow",
   "capability:security",
@@ -222,7 +227,7 @@ export function selectEccComponents(input: SelectEccComponentsInput): EccCompone
     }
     const component = declaration as EccComponentId;
     addAll(componentSet, components, [component]);
-    addAll(componentSet, components, DECLARATION_RIDERS[component] ?? []);
+    addAll(componentSet, components, ECC_DECLARATION_RIDERS[component] ?? []);
   }
 
   const recommendations: EccComponentId[] = [];

@@ -1,0 +1,114 @@
+import { Window } from "happy-dom";
+import { describe, expect, it } from "vitest";
+import { ECC_DECLARATION_RIDERS } from "../../src/ecc/components.js";
+import { policyStudioModel } from "../../src/org-policy/studio-model.js";
+import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
+
+const model = policyStudioModel();
+const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc");
+if (ecc === undefined) throw new Error("expected an ecc framework in the catalog");
+const present = new Set(ecc.assets.map((asset) => asset.id));
+const declarer = ecc.assets.find((asset) => (asset.riders?.length ?? 0) > 0);
+if (declarer === undefined) throw new Error("expected at least one asset that declares riders");
+
+function studio(): Window {
+  const window = new Window({ url: "http://localhost/" });
+  const html = policyStudioHtml(model);
+  window.document.write(html);
+  (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
+    structuredClone;
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
+  if (scripts.length === 0) throw new Error("expected generated workbench script");
+  window.eval(scripts.join("\n"));
+  return window;
+}
+
+function selectedIds(window: Window): string[] {
+  const preview = window.document.getElementById("config-preview") as unknown as {
+    value: string;
+  } | null;
+  if (preview === null) throw new Error("expected authored policy preview");
+  return JSON.parse(preview.value).governance.externalSelections.flatMap(
+    (group: { items: { id: string }[] }) => group.items.map((item) => item.id),
+  );
+}
+
+function click(window: Window, selector: string): void {
+  const node = window.document.querySelector(selector);
+  if (node === null) throw new Error(`expected ${selector}`);
+  node.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+}
+
+describe("policy studio component relations", () => {
+  // ECC declares that picking a language brings agents with it. That relation
+  // existed only inside a non-exported constant, so the surface could not state
+  // it and an administrator met the extra components after the fact.
+  it("carries ECC's declaration riders into the authoring catalog", () => {
+    for (const [id, riders] of Object.entries(ECC_DECLARATION_RIDERS)) {
+      const asset = ecc.assets.find((item) => item.id === id);
+      if (asset === undefined) continue;
+      const usable = riders.filter((rider) => present.has(rider));
+      expect(asset.riders ?? [], id).toEqual(usable.length ? usable : (asset.riders ?? []));
+    }
+    const typescript = ecc.assets.find((asset) => asset.id === "lang:typescript");
+    expect(typescript?.riders).toContain("agent:typescript-reviewer");
+  });
+
+  // A relation pointing at a component the pinned catalog does not carry is a
+  // claim the inventory denies.
+  it("never names a rider the pinned catalog does not contain", () => {
+    for (const asset of ecc.assets)
+      for (const rider of asset.riders ?? [])
+        expect(present.has(rider), `${asset.id} -> ${rider}`).toBe(true);
+  });
+
+  it("states the relation on the row without selecting it silently", () => {
+    const window = studio();
+    click(window, `[data-framework-select="ecc|${declarer.kind}|${declarer.id}"]`);
+    expect(selectedIds(window), "only the item the administrator picked").toEqual([declarer.id]);
+    const row = window.document.querySelector(
+      `[data-row="ecc / ${declarer.kind}: ${declarer.id}"]`,
+    );
+    const text = row?.textContent ?? "";
+    for (const rider of declarer.riders ?? [])
+      expect(text, "row states the rider").toContain(rider);
+  });
+
+  it("adds the declared riders as one explicit action", () => {
+    const window = studio();
+    click(window, `[data-detail="ecc / ${declarer.kind}: ${declarer.id}"]`);
+    click(window, "[data-add-riders]");
+    const selected = selectedIds(window);
+    for (const rider of declarer.riders ?? []) expect(selected).toContain(rider);
+  });
+
+  // AIH knows eleven CLIs and a policy can target two. Showing only the two
+  // leaves an administrator unable to tell unknown from unprojectable.
+  it("lists every host AIH knows and marks the policy-targetable ones", () => {
+    expect(model.catalog.hosts.length).toBeGreaterThanOrEqual(11);
+    const ids = model.catalog.hosts.map((host) => host.id);
+    for (const cli of ["claude", "codex", "cursor", "kimi", "kiro", "opencode"])
+      expect(ids, cli).toContain(cli);
+    expect(
+      model.catalog.hosts
+        .filter((host) => host.policyTarget)
+        .map((host) => host.id)
+        .sort(),
+    ).toEqual(["claude", "codex"]);
+    const window = studio();
+    const rail = window.document.getElementById("rail-hosts")?.textContent ?? "";
+    for (const cli of ids) expect(rail, cli).toContain(cli);
+    const note = window.document.getElementById("rail-host-note")?.textContent ?? "";
+    expect(note).toContain("claude and codex");
+  });
+
+  it("gives every inventory row a hover description", () => {
+    const window = studio();
+    const rows = [...window.document.querySelectorAll("#framework-rows .row .rid")];
+    expect(rows.length).toBeGreaterThan(0);
+    for (const rid of rows) {
+      const title = rid.getAttribute("title") ?? "";
+      expect(title.length, rid.getAttribute("aria-label") ?? "").toBeGreaterThan(20);
+    }
+  });
+});

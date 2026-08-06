@@ -34,6 +34,7 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
         activeMcpServerIds: [],
         frameworkSelections: [],
         externalCuration: [],
+        externalSelections: [],
         blocking: false,
         authority: { verified: false },
       });

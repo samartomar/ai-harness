@@ -18,6 +18,19 @@ import { makeHostAdapter } from "../../src/platform/detect.js";
 
 let dir: string;
 
+/**
+ * FileReader resolves on its own schedule, so a fixed sleep is a race the suite
+ * outgrew: these waits passed alone and failed once the file count rose. Poll
+ * the condition instead, with the old delay as the ceiling rather than the bet.
+ */
+async function settle(window: Window, done: () => boolean, budgetMs = 2000): Promise<void> {
+  const deadline = Date.now() + budgetMs;
+  while (Date.now() < deadline) {
+    if (done()) return;
+    await new Promise((resolve) => window.setTimeout(resolve, 10));
+  }
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aih-policy-generate-"));
 });
@@ -327,9 +340,15 @@ describe("policy generate", () => {
   it("derives catalog data and embeds all authored workbench surfaces without persistent catalog prose", () => {
     const model = policyStudioModel();
     expect(model.catalog.mcp.length).toBeGreaterThan(0);
-    expect(
-      model.catalog.frameworks.flatMap((framework) => framework.assets.map((asset) => asset.kind)),
-    ).toEqual(expect.arrayContaining(["agent", "skill", "command"]));
+    const assets = model.catalog.frameworks.flatMap((framework) => framework.assets);
+    // Inventory kinds span the whole component-id namespace; the three-kind
+    // vocabulary belongs to external curation and is carried separately.
+    expect(assets.map((asset) => asset.kind)).toEqual(
+      expect.arrayContaining(["agent", "skill", "module", "lang", "framework", "capability"]),
+    );
+    expect(assets.flatMap((asset) => asset.curationKind ?? [])).toEqual(
+      expect.arrayContaining(["agent", "skill", "command"]),
+    );
     const html = policyStudioHtml(model);
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('role="tooltip"');
@@ -634,7 +653,9 @@ describe("policy generate", () => {
       ],
     });
     evidenceFile.dispatchEvent(new window.Event("change", { bubbles: true }));
-    await new Promise((resolve) => window.setTimeout(resolve, 50));
+    await settle(window, () =>
+      (document.getElementById("approval-rows")?.textContent ?? "").includes('"candidate"'),
+    );
     const receiptText = document.getElementById("approval-rows")?.textContent;
     for (const label of [
       '"candidate": "custom-mcp"',
@@ -774,7 +795,10 @@ describe("policy generate", () => {
           dispatchEvent: (event: unknown) => boolean;
         } | null;
         if (profile === null) throw new Error("expected profile selector");
-        profile.value = "enterprise";
+        // "team" is the remaining posture-only option: vibe and enterprise now
+        // compose a selection, and their contracts live in their own suites.
+        // This assertion is about the selector still working after an import.
+        profile.value = "team";
         profile.dispatchEvent(new window.Event("change", { bubbles: true }));
         expect(announcement?.textContent).toContain("Profile changed.");
       } else {

@@ -21,6 +21,35 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   receipt-verified external authority, targets, ownership, rollback/drift, and projector
   coverage; unsafe or unsupported requests remain blocked and visible in reports and doctor.
 
+### Changed
+
+- Externally-owned inventory in the Policy Workbench is now **selectable**. AIH records
+  ECC and Superpowers components with provenance — repository, pinned commit, path — while
+  those frameworks install and run them, so a pin on a third-party component is provenance
+  and never a gate. `Unsupported` no longer appears on any of the 151 recorded components;
+  it and `blocked` are now reserved for items where an AIH-owned gate actually fails, which
+  is AIH's own MCP controls, hooks, and custom candidates. Selecting a third-party component
+  records requested intent and holds it at `requested-evidence-needed` until evidence
+  arrives, so evidence is a separate axis from selection rather than a precondition for it.
+  Each row states the `aih evidence vet-baseline` command that would produce its evidence.
+- An org policy may select from **one external framework at a time**, enforced in
+  `OrgPolicySchema`; ECC and Superpowers are mutually exclusive because composing two
+  catalogs is a claim neither framework makes. A component may not appear in both external
+  selections and curation.
+
+### Fixed
+
+- The ECC composite hook dispatcher no longer emits `hookSpecificOutput` on Claude events
+  that reject it. Claude validates that field against a per-event allowlist and discards the
+  whole hook payload when the event is absent from it, so 8 of the 13 registered Claude
+  events previously failed client output validation whenever the dispatcher had context to
+  add — including `PreCompact`, which silently lost the durable pre-compaction summary the
+  continuity handler had produced. Context for those events now travels in the root-level
+  `systemMessage`, and a `PermissionRequest` denial uses the root-level `permissionDecision`
+  and `reason`. `PreToolUse` is unchanged, and Codex is unchanged because only Claude
+  publishes a per-event allowlist. An installed profile keeps the previous behavior until it
+  is updated, because the registered runtime is a built artifact.
+
 ## [3.4.0] - 2026-08-04
 
 ### Added
