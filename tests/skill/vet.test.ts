@@ -163,7 +163,7 @@ function detectorRunner(
       }
     }
     if (argv[0] === "uv" && argv[1] === "run" && argv.includes("skill-scanner")) {
-      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
+      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.13\n" };
       if (argv.includes("scan")) {
         const out = argv[argv.indexOf("--output-sarif") + 1];
         if (out === undefined) return { code: 1, stderr: "missing --output-sarif" };

@@ -263,10 +263,10 @@ would write for the same server. This JSON shape passes `aih policy validate`:
 ```
 
 `mcp-scanner` runs by default when an incoming source contains an MCP
-configuration. AIH invokes the exact `cisco-ai-mcp-scanner==4.8.1` committed uv
+configuration. AIH invokes the exact `cisco-ai-mcp-scanner==4.8.2` committed uv
 project and lock with `--locked --isolated --offline --no-python-downloads
 --no-env-file`, passes only statically extracted tool names/descriptions, and
-uses the static mode's local `yara` analyzer; pinned 4.8.1 does not execute its
+uses the static mode's local `yara` analyzer; pinned 4.8.2 does not execute its
 `prompt_defense` or `readiness` analyzers in static mode. Verify the locked
 project once online and then offline on each managed workstation. If policy
 lists `mcp-scanner` in `requiredDetectors`, an unavailable runtime fails closed

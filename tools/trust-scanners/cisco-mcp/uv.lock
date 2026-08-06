@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "cisco-ai-mcp-scanner", specifier = "==4.8.1" }]
+requires-dist = [{ name = "cisco-ai-mcp-scanner", specifier = "==4.8.2" }]
 
 [[package]]
 name = "aiohappyeyeballs"
@@ -408,7 +408,7 @@ wheels = [
 
 [[package]]
 name = "cisco-ai-mcp-scanner"
-version = "4.8.1"
+version = "4.8.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "expandvars" },
@@ -435,9 +435,9 @@ dependencies = [
     { name = "uvicorn" },
     { name = "yara-python" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4f/ba/06769744615e2cf7b765dbc161c2368fa94b0d08470b515e9cc326d9df56/cisco_ai_mcp_scanner-4.8.1.tar.gz", hash = "sha256:7555dad407e50f5cd144de682732cba1a471bc507e87661f6001bdf054c208c5", size = 552101, upload-time = "2026-07-21T19:10:55.721Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/09/9e/a736f4158656cf8f3bdff0e2cad0464ed2552917da7869d3ce82d99bb4d2/cisco_ai_mcp_scanner-4.8.2.tar.gz", hash = "sha256:7957fcd21351b7373e8497a8cffbb29945403d4e8869af03150f15a3c2d0c218", size = 552190, upload-time = "2026-07-30T00:26:12.543Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f1/2c/0a47ec6db957af747d4028f052353bef51fafca39198ac00b3f30a8654ff/cisco_ai_mcp_scanner-4.8.1-py3-none-any.whl", hash = "sha256:9e17507995dc7acf2c103be84ca952b73f8a63819025ce42339f56b2805b01a8", size = 488636, upload-time = "2026-07-21T19:10:53.899Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/41/a6638024650a296065d7ff242e86d2d4c4cba30b959ad78ce547a1122206/cisco_ai_mcp_scanner-4.8.2-py3-none-any.whl", hash = "sha256:ee96cc8e7d4641a5b96047552c426a9a7d6d2736a65a4bcbd77797f2f1add202", size = 488674, upload-time = "2026-07-30T00:26:10.62Z" },
 ]
 
 [[package]]

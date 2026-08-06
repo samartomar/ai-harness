@@ -15,6 +15,14 @@ import { baselineCatalogById } from "./catalogs.js";
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
 import { findPriorSource, formatTotalReuseSummary, tallyReuse } from "./reuse.js";
 import { type BaselineEvidenceLock, parseBaselineEvidenceLock } from "./schema.js";
+import {
+  formatShardCoverage,
+  mergeReceiptBundles,
+  parseShardSelector,
+  type ShardSelector,
+  shardCatalog,
+  shardCoverage,
+} from "./shard.js";
 import { vetBaselineCatalog } from "./vet.js";
 
 interface GenerateOptions extends GenerateBaselineOptions {
@@ -22,6 +30,11 @@ interface GenerateOptions extends GenerateBaselineOptions {
   check: boolean;
   previewOut: string;
   full: boolean;
+  /** Fan-out: vet only this shard of each catalog and write receipts, no lock. */
+  shard?: ShardSelector;
+  receiptsOut?: string;
+  /** Fan-in: shard receipt bundles to seed reuse from, instead of the prior lock. */
+  reuseFromPaths: readonly string[];
 }
 
 export interface GenerateBaselineOptions {
@@ -63,6 +76,16 @@ function options(argv: readonly string[]): GenerateOptions {
     );
   }
   const here = dirname(fileURLToPath(import.meta.url));
+  const shardValue = optionValue(argv, "--shard");
+  const receiptsOut = optionValue(argv, "--receipts-out");
+  if (shardValue !== undefined && receiptsOut === undefined) {
+    throw new Error("--shard requires --receipts-out <file>");
+  }
+  const reuseFromPaths = (optionValue(argv, "--reuse-from") ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => resolve(entry));
   return {
     eccRoot: resolve(eccRoot),
     superpowersRoot: resolve(superpowersRoot),
@@ -72,6 +95,9 @@ function options(argv: readonly string[]): GenerateOptions {
     ),
     check: argv.includes("--check"),
     full: argv.includes("--full"),
+    ...(shardValue !== undefined ? { shard: parseShardSelector(shardValue) } : {}),
+    ...(receiptsOut !== undefined ? { receiptsOut: resolve(receiptsOut) } : {}),
+    reuseFromPaths,
   };
 }
 
@@ -84,6 +110,27 @@ function readPriorLockBestEffort(path: string): BaselineEvidenceLock | undefined
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Read and merge shard receipt bundles. Unlike the prior-lock read above this
+ * is STRICT: an unreadable or invalid bundle throws. Degrading to "no reuse"
+ * would be silently correct but operationally wrong — the fan-out would have
+ * been wasted and the assembly run would look merely slow instead of broken.
+ */
+function mergeShardReceipts(paths: readonly string[]): BaselineEvidenceLock | undefined {
+  if (paths.length === 0) return undefined;
+  return mergeReceiptBundles(
+    paths.map((path) => {
+      try {
+        return parseBaselineEvidenceLock(JSON.parse(readFileSync(path, "utf8")));
+      } catch (error) {
+        throw new Error(
+          `unusable shard receipt bundle ${path}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }),
+  );
 }
 
 function checkoutHead(root: string): string {
@@ -160,9 +207,63 @@ export async function generateBaselineArtifacts(
   };
 }
 
+/**
+ * Vet one shard of each catalog from scratch and return its receipt bundle.
+ *
+ * Deliberately does NOT produce the install preview or a complete lock: a shard
+ * holds partial evidence and must never look like a publishable artifact. Reuse
+ * is disabled outright, because the whole point of a shard is to produce fresh
+ * receipts for the assembly run to verify.
+ */
+export async function generateShardReceipts(
+  opts: GenerateBaselineOptions & { shard: ShardSelector },
+  deps: Omit<GenerateBaselineDependencies, "reuseFrom" | "full"> = {},
+): Promise<string> {
+  const ecc = shardCatalog(baselineCatalogById("ecc"), opts.shard);
+  const superpowers = shardCatalog(baselineCatalogById("superpowers"), opts.shard);
+  const readHead = deps.checkoutHead ?? ((root: string) => checkoutHead(root));
+  assertCheckoutPin(opts.eccRoot, ecc, "ECC", readHead);
+  assertCheckoutPin(opts.superpowersRoot, superpowers, "Superpowers", readHead);
+  const run = deps.run ?? defaultRunner;
+  const env = deps.env ?? process.env;
+  const platform = deps.platform ?? resolvePlatform(env);
+  const progress = deps.progress ?? ((message: string) => process.stderr.write(`${message}\n`));
+  const vet = deps.vetCatalog ?? vetBaselineCatalog;
+  const vetOptions = {
+    ...requiredBaselineVetOptions({ run, platform, env, progress }),
+    full: true as const,
+  };
+  const preflight = deps.preflight ?? preflightRequiredBaselineAnalyzers;
+  await preflight({ run, platform, env });
+  progress(
+    `baseline shard ${opts.shard.index}/${opts.shard.total}: ` +
+      `ecc ${ecc.components.length} + superpowers ${superpowers.components.length} components`,
+  );
+  const sources = [
+    await vet(opts.eccRoot, ecc, vetOptions),
+    await vet(opts.superpowersRoot, superpowers, vetOptions),
+  ];
+  const bundle = parseBaselineEvidenceLock({ schemaVersion: 1, sources });
+  return `${JSON.stringify(bundle, null, 2)}\n`;
+}
+
 async function main(): Promise<void> {
   const opts = options(process.argv.slice(2));
-  const reuseFrom = opts.full ? undefined : readPriorLockBestEffort(opts.out);
+  const { shard, receiptsOut } = opts;
+  if (shard !== undefined && receiptsOut !== undefined) {
+    const receipts = await generateShardReceipts({ ...opts, shard });
+    writeFileSync(receiptsOut, receipts, "utf8");
+    process.stdout.write(`wrote shard ${shard.index}/${shard.total} receipts: ${receiptsOut}\n`);
+    return;
+  }
+  const merged = mergeShardReceipts(opts.reuseFromPaths);
+  const reuseFrom = opts.full ? undefined : (merged ?? readPriorLockBestEffort(opts.out));
+  if (merged !== undefined) {
+    const catalogs = [baselineCatalogById("ecc"), baselineCatalogById("superpowers")];
+    for (const line of formatShardCoverage(shardCoverage(catalogs, merged))) {
+      process.stderr.write(`${line}\n`);
+    }
+  }
   const contents = await generateBaselineArtifacts(opts, { reuseFrom, full: opts.full });
   if (opts.check) {
     const existing = readFileSync(opts.out, "utf8");

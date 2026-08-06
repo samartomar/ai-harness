@@ -109,21 +109,25 @@ describe("active external-pin ledger", () => {
 
   it("binds refreshed MCP and repo-tool runtimes to production generators", () => {
     expect(ledger.schemaVersion).toBe(1);
-    expect(ledger.verifiedAt).toBe("2026-07-29");
+    expect(ledger.verifiedAt).toBe("2026-08-06");
     expect(ledger.historicalEvidencePolicy).toMatch(/immutable history/i);
 
+    // The ECC pin is 32 untagged commits past v2.1.0, which is still ECC's
+    // newest tag, so the entry must not claim a release it is not.
     expect(entry("ecc")).toMatchObject({
       identity: "affaan-m/ECC",
-      version: "v2.1.0",
-      commit: "4da6deac1888690e7fb8572d097ee23db630f7a0",
+      version: "untagged, 32 commits past v2.1.0",
+      commit: "623f2c020f052319657674e4e6c29ab5d0ad566b",
       disposition: "active",
     });
     expect(entry("superpowers")).toMatchObject({
       identity: "obra/Superpowers",
-      commit: "d884ae04edebef577e82ff7c4e143debd0bbec99",
+      commit: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
       disposition: "active",
     });
-    expect(entry("superpowers").reason).toMatch(/approved exact source pin.*not promoted/i);
+    // The previous reconciliation deliberately did NOT promote the refresh
+    // candidate; this one does, so the recorded reason has to say so.
+    expect(entry("superpowers").reason).toMatch(/rebound from v6\.1\.1 to the v6\.2\.0/i);
     const servers = mcpServers("standard", webStack, { selfHost: true });
     expect(entry("code-review-graph").version).toBe(
       versionFromSpec(stdioArg(servers, "code-review-graph", "code-review-graph@")),
@@ -147,7 +151,7 @@ describe("active external-pin ledger", () => {
       versionFromSpec(stdioArg(servers, "playwright", "@playwright/mcp@")),
     );
     expect(entry("playwright-mcp").reason).toMatch(
-      /initialize online.*offline cache.*Playwright build 1\.62\.0-alpha-1783623505000/i,
+      /initialize online.*offline cache.*Playwright build 1\.63\.0-alpha-2026-08-05/i,
     );
 
     const github = servers.github as StdioServer;
@@ -216,12 +220,12 @@ describe("active external-pin ledger", () => {
   it("records governed scanner identities and fails closed on AgentShield provenance", () => {
     expect(entry("cisco-skill-scanner")).toMatchObject({
       version: CISCO_SKILL_SCANNER_VERSION,
-      integrity: "sha256:e49f979e97b7842549b1f531dc5f426c9780d798a0b21f0125044e3b5ae4a1f7",
+      integrity: "sha256:d81fde291d60b6f8134375c33b49a2f41f5bb3072b74153dafea4774d627a837",
       disposition: "active",
     });
     expect(entry("cisco-mcp-scanner")).toMatchObject({
       version: CISCO_MCP_SCANNER_VERSION,
-      integrity: "sha256:9e17507995dc7acf2c103be84ca952b73f8a63819025ce42339f56b2805b01a8",
+      integrity: "sha256:ee96cc8e7d4641a5b96047552c426a9a7d6d2736a65a4bcbd77797f2f1add202",
       disposition: "active",
     });
     expect(entry("snyk-agent-scan")).toMatchObject({
@@ -261,11 +265,11 @@ describe("active external-pin ledger", () => {
 
   it("documents explicit retained and qualified-runner decisions", () => {
     expect(entry("skillspector")).toMatchObject({
-      commit: "34f60308522f45447cd343da0aad77bcea308ad4",
-      integrity: "sha256:eb100b229ec5b25f74d5f6c1ac31e2d0466f08dbc0726af4239dccadbd7f1b1c",
+      commit: "0562b964ec5ceac67ee15c163738e5404f14a908",
+      integrity: "sha256:108b707cb98cb418680782f9745942b1d3904104a45d8f6fd62f102672285d55",
       disposition: "active",
     });
-    expect(entry("skillspector").reason).toMatch(/two.*OCI.*fixture/i);
+    expect(entry("skillspector").reason).toMatch(/two clean cache-disabled OCI exports/i);
     expect(entry("anthropic-skills-guide")).toMatchObject({
       commit: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
       disposition: "retained",

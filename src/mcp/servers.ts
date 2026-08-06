@@ -103,7 +103,7 @@ const WEB_FRAMEWORKS = new Set(["Next.js", "React", "Vue", "Svelte", "Angular"])
 
 /** Pinned GitHub MCP Docker image for the `--self-host` opt-out (bump deliberately). */
 const GITHUB_MCP_IMAGE =
-  "ghcr.io/github/github-mcp-server@sha256:c491ffdf6f4c85cb5397021bc655edb8ab825c6f5f568e7597d77a1bd7c4d308";
+  "ghcr.io/github/github-mcp-server@sha256:d5a18c04b92714c309eb46a2305087e91a4dbd80420f6e462656699f95093520";
 
 /** Hosted GitHub MCP endpoint used when no org-specific host is configured. */
 export const DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/";
@@ -205,7 +205,7 @@ export function mcpServers(
       type: "stdio",
       command: "npx",
       // Pinned (not @latest) for reproducible installs; bump deliberately.
-      args: ["@playwright/mcp@0.0.78"],
+      args: ["@playwright/mcp@0.0.79"],
       description:
         "Playwright browser automation MCP (navigate, snapshot, interact). Added for a web frontend. The browser it drives can reach any URL — point it at trusted origins.",
       classification: "local",

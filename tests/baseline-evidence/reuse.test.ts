@@ -40,7 +40,7 @@ function source(components: BaselineComponentEvidence[]): BaselineSourceEvidence
 const analyzerVersions = {
   "aih-native": "native.aaaaaaaaaaaa",
   "skillspector@docker": "rev@sha256:deadbeef",
-  "cisco@uvx": "2.0.12",
+  "cisco@uvx": "2.0.13",
 };
 
 describe("findPriorSource", () => {
@@ -134,7 +134,7 @@ describe("decideComponentReuse", () => {
   it("declines with analyzer-identity-changed:<name> when the prior receipt carries an analyzer no longer required", () => {
     const withCisco = source([
       component({
-        analyzers: [...component().analyzers, { name: "cisco@uvx", version: "2.0.12" }],
+        analyzers: [...component().analyzers, { name: "cisco@uvx", version: "2.0.13" }],
       }),
     ]);
     const decision = decideComponentReuse({

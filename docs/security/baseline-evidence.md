@@ -77,11 +77,11 @@ the release vet records exact analyzer receipts before the lock is written:
   through Docker are required for every declared component;
 - `semgrep==1.172.0` through its committed uv project is required for every
   declared component;
-- `cisco-ai-skill-scanner==2.0.12` through its committed uv project is additionally required
+- `cisco-ai-skill-scanner==2.0.13` through its committed uv project is additionally required
   for every component whose declared bytes contain a regular `SKILL.md` file;
 - SkillSpector is bound to source revision
-  `34f60308522f45447cd343da0aad77bcea308ad4` and controlled image digest
-  `sha256:eb100b229ec5b25f74d5f6c1ac31e2d0466f08dbc0726af4239dccadbd7f1b1c`.
+  `0562b964ec5ceac67ee15c163738e5404f14a908` and controlled image digest
+  `sha256:108b707cb98cb418680782f9745942b1d3904104a45d8f6fd62f102672285d55`.
 
 Supplemental locked detectors are not part of the minimum release floor and do
 not enlarge the deterministic component-receipt closure. When one completes,
@@ -125,7 +125,7 @@ specific operating system. A clean receipt set is evidence about *content*, not
 about whether the component is operationally sound where it runs.
 
 That gap is not theoretical. The vetted ECC pin
-`affaan-m/ECC@4da6deac1888690e7fb8572d097ee23db630f7a0` declares 21 hook entries in
+`affaan-m/ECC@623f2c020f052319657674e4e6c29ab5d0ad566b` declares 21 hook entries in
 `hooks/hooks.json`, every one registered as a `command` string and none using the
 `args` exec form — so the harness runs each through a shell, which then launches
 `node`, which spawns the hook itself. Four of those entries sit under matcher `*`
@@ -307,8 +307,8 @@ identity that was vetted is the only identity the evidence covers. Two rules
 follow, and both are load-bearing:
 
 1. **Vet what you ship, from upstream.** The pin names an upstream repository and
-   a full commit SHA — currently `affaan-m/ECC@4da6deac…` and
-   `obra/Superpowers@d884ae04…` in `src/internals/baseline-sources.ts`, recorded
+   a full commit SHA — currently `affaan-m/ECC@623f2c02…` and
+   `obra/Superpowers@3dcbd5c4…` in `src/internals/baseline-sources.ts`, recorded
    with their acceptance disposition in `src/internals/external-pin-ledger.json`.
    Any working checkout used to reproduce a baseline — a local clone, a personal
    fork, a CI runner tree — must be on that same commit. A fork sitting on a

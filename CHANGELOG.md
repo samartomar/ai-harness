@@ -8,6 +8,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The from-scratch baseline vet can now be **fanned out across hosts**. `baseline:vet` accepts
+  `--shard <i>/<n> --receipts-out <file>` to scan one slice of each catalog and write a receipt
+  bundle, and `--reuse-from <a,b,c>` to merge those bundles into the prior lock for a single
+  assembly run. Sharding distributes the *cost* of producing receipts and never the authority
+  to assert one: the assembly run re-hashes every component tree and re-checks the
+  required-analyzer identity set before splicing, so a stale or mismatched receipt is rescanned
+  rather than trusted, and two bundles that disagree about the same component are refused
+  instead of resolved. Shard coverage is always reported so a dropped shard cannot masquerade
+  as a slow run. CI is unchanged and still runs the single-host `--full` ground truth.
 - `aih policy generate --apply` now creates a portable, self-contained Policy Workbench for
   authoring and downloading the actual org-policy schema without inspecting a target repository,
   resolving `--root`/`AIH_ROOT` repository state, or writing a repository run ledger.
@@ -36,6 +45,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `OrgPolicySchema`; ECC and Superpowers are mutually exclusive because composing two
   catalogs is a claim neither framework makes. A component may not appear in both external
   selections and curation.
+- Every externally-pinned vetting input is rebound to a current upstream identity and re-vetted
+  from scratch: ECC `4da6deac` → `623f2c02`, Superpowers v6.1.1 → v6.2.0, SkillSpector 2.5.0 →
+  2.5.3 (new controlled digest, reproduced independently on four hosts), cisco-ai-skill-scanner
+  2.0.12 → 2.0.13, cisco-ai-mcp-scanner 4.8.1 → 4.8.2, uv 0.12.0 → 0.12.2, the self-host
+  `github-mcp-server` image v1.7.0 → v1.8.0 by digest, and the generated `@playwright/mcp`
+  launcher 0.0.78 → 0.0.79. Semgrep deliberately stays at 1.172.0, which remains covered by the
+  open vendor-blocked item. Available versions are not approved versions: each identity is
+  recorded in `src/internals/external-pin-ledger.json` with the evidence that qualified it.
 
 ### Fixed
 

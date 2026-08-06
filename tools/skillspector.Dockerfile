@@ -6,7 +6,7 @@ ARG SOURCE_DATE_EPOCH=1785167267
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} \
     UV_NO_PROGRESS=1
 WORKDIR /app
-RUN pip install --no-cache-dir uv==0.12.0
+RUN pip install --no-cache-dir uv==0.12.2
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
 RUN uv sync --frozen --no-dev --no-editable \
@@ -22,7 +22,7 @@ RUN uv sync --frozen --no-dev --no-editable \
 FROM ${PYTHON_IMAGE}
 
 ARG SOURCE_DATE_EPOCH=1785167267
-LABEL org.opencontainers.image.revision="34f60308522f45447cd343da0aad77bcea308ad4"
+LABEL org.opencontainers.image.revision="0562b964ec5ceac67ee15c163738e5404f14a908"
 ENV PATH="/app/.venv/bin:$PATH" \
     SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 RUN --mount=from=builder,source=/venv.tar,target=/tmp/venv.tar \

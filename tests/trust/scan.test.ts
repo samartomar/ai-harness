@@ -139,7 +139,7 @@ function ciscoRunner(sarif: unknown, onScan?: (argv: string[]) => void): Runner 
     const skillspector = successfulSkillspector(argv);
     if (skillspector !== undefined) return skillspector;
     if (!isCiscoSkillScannerArgv(argv)) return undefined;
-    if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
+    if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.13\n" };
     if (argv.includes("skill-scanner") && argv.includes("scan")) {
       onScan?.(argv);
       const out = argv[argv.indexOf("--output-sarif") + 1];
@@ -159,7 +159,7 @@ function mcpScannerRunner(
     const skillspector = successfulSkillspector(argv);
     if (skillspector !== undefined) return skillspector;
     if (isCiscoSkillScannerArgv(argv)) {
-      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
+      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.13\n" };
       if (argv.includes("scan")) {
         const out = argv[argv.indexOf("--output-sarif") + 1];
         if (out === undefined) return { code: 1, stderr: "missing --output-sarif" };
@@ -226,7 +226,7 @@ function snykAgentScanRunnerWithHooks(
     const skillspector = successfulSkillspector(argv);
     if (skillspector !== undefined) return skillspector;
     if (isCiscoSkillScannerArgv(argv)) {
-      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
+      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.13\n" };
       if (argv.includes("scan")) {
         const out = argv[argv.indexOf("--output-sarif") + 1];
         if (out === undefined) return { code: 1, stderr: "missing --output-sarif" };
@@ -272,7 +272,7 @@ function agentshieldRunner(
     const skillspector = successfulSkillspector(argv);
     if (skillspector !== undefined) return skillspector;
     if (isCiscoSkillScannerArgv(argv)) {
-      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
+      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.13\n" };
       if (argv.includes("scan")) {
         const out = argv[argv.indexOf("--output-sarif") + 1];
         if (out === undefined) return { code: 1, stderr: "missing --output-sarif" };
@@ -307,7 +307,7 @@ function agentDetectorMissingRunner(): Runner {
     const skillspector = successfulSkillspector(argv);
     if (skillspector !== undefined) return skillspector;
     if (isCiscoSkillScannerArgv(argv)) {
-      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
+      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.13\n" };
       if (argv.includes("scan")) {
         const out = argv[argv.indexOf("--output-sarif") + 1];
         if (out === undefined) return { code: 1, stderr: "missing --output-sarif" };
@@ -3108,7 +3108,7 @@ describe("scanTrustTree", () => {
           const skillspector = successfulSkillspector(argv);
           if (skillspector !== undefined) return skillspector;
           if (!argv.includes("skill-scanner")) return undefined;
-          if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
+          if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.13\n" };
           if (!argv.includes("scan")) return undefined;
           observedCwds.push(opts?.cwd);
           const target = argv[argv.indexOf("scan") + 1];
@@ -3185,7 +3185,7 @@ describe("scanTrustTree", () => {
         };
       }
       if (isCiscoSkillScannerArgv(argv) && argv.includes("--version")) {
-        return { code: 0, stdout: "skill-scanner 2.0.12\n", stderr: "" };
+        return { code: 0, stdout: "skill-scanner 2.0.13\n", stderr: "" };
       }
       if (isCiscoSkillScannerArgv(argv) && argv.includes("scan")) {
         const target = argv[argv.indexOf("scan") + 1] ?? "";
@@ -3234,7 +3234,7 @@ describe("scanTrustTree", () => {
         };
       }
       if (isCiscoSkillScannerArgv(argv) && argv.includes("--version")) {
-        return { code: 0, stdout: "skill-scanner 2.0.12\n", stderr: "" };
+        return { code: 0, stdout: "skill-scanner 2.0.13\n", stderr: "" };
       }
       if (isCiscoSkillScannerArgv(argv) && argv.includes("scan")) {
         const output = argv[argv.indexOf("--output-sarif") + 1];
@@ -3279,7 +3279,7 @@ describe("scanTrustTree", () => {
         };
       }
       if (isCiscoSkillScannerArgv(argv) && argv.includes("--version")) {
-        return { code: 0, stdout: "skill-scanner 2.0.12\n", stderr: "" };
+        return { code: 0, stdout: "skill-scanner 2.0.13\n", stderr: "" };
       }
       if (isCiscoSkillScannerArgv(argv) && argv.includes("scan")) {
         const target = argv[argv.indexOf("scan") + 1] ?? "";
@@ -4033,7 +4033,7 @@ describe("scanTrustTree", () => {
       ),
     });
 
-    expect(result.analyzersRun).toContain("mcp-scanner@uv:4.8.1");
+    expect(result.analyzersRun).toContain("mcp-scanner@uv:4.8.2");
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -4046,7 +4046,7 @@ describe("scanTrustTree", () => {
     expect(result.rawOccurrences).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          analyzer: "mcp-scanner@uv:4.8.1",
+          analyzer: "mcp-scanner@uv:4.8.2",
           location: expect.objectContaining({ uri: "mcp-configs/mcp-servers.json" }),
         }),
       ]),
@@ -4102,7 +4102,7 @@ describe("scanTrustTree", () => {
       run: mcpScannerRunner(report),
     });
 
-    expect(result.analyzersRun).toEqual(expect.arrayContaining(["mcp-scanner@uv:4.8.1"]));
+    expect(result.analyzersRun).toEqual(expect.arrayContaining(["mcp-scanner@uv:4.8.2"]));
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -4259,7 +4259,7 @@ describe("scanTrustTree", () => {
       run: mcpScannerRunner(report),
     });
 
-    expect(result.analyzersRun).not.toContain("mcp-scanner@uv:4.8.1");
+    expect(result.analyzersRun).not.toContain("mcp-scanner@uv:4.8.2");
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -4323,7 +4323,7 @@ describe("scanTrustTree", () => {
       ),
     });
 
-    expect(result.analyzersRun).toEqual(expect.arrayContaining(["mcp-scanner@uv:4.8.1"]));
+    expect(result.analyzersRun).toEqual(expect.arrayContaining(["mcp-scanner@uv:4.8.2"]));
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -4490,7 +4490,7 @@ describe("scanTrustTree", () => {
         {
           results: [
             {
-              // The real cisco-ai-skill-scanner==2.0.12 rule id for this finding.
+              // The real cisco-ai-skill-scanner==2.0.13 rule id for this finding.
               ruleId: "MANIFEST_MISSING_LICENSE",
               message: { text: MISSING_LICENSE_MESSAGE },
               locations: [
@@ -5194,7 +5194,7 @@ describe("checkDetectorsAvailable", () => {
     const run = fakeRunner((argv, opts) => {
       if (argv.includes("skill-scanner") && argv.includes("--version")) {
         timeoutMs = opts?.timeoutMs;
-        return { code: 0, stdout: "skill-scanner 2.0.12\n" };
+        return { code: 0, stdout: "skill-scanner 2.0.13\n" };
       }
       return undefined;
     });
