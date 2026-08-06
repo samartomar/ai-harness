@@ -130,7 +130,11 @@ export interface CandidateProjectionState {
   supportedTargets: string[];
   availableTargets: string[];
   coverage: "complete" | "blocked";
-  ownership: "managed-settings-receipt" | "usage-hook-receipt" | "unavailable";
+  ownership:
+    | "managed-settings-receipt"
+    | "usage-hook-receipt"
+    | "hook-registrar-receipt"
+    | "unavailable";
   receipt: "pending-projection" | "unavailable";
 }
 
@@ -348,6 +352,20 @@ function projectorFor(
       availableTargets,
       coverage: projectionCoverage(requested, ["claude"], availableTargets),
       ownership: "managed-settings-receipt",
+      receipt: "pending-projection",
+    };
+  }
+  if (candidate.kind === "hook" && candidate.projector === "hook-managed-settings") {
+    // The registrar owns the client's native hook configuration. Claude only:
+    // Codex publishes no per-event hook output contract AIH has evidence for,
+    // and asserting one without a runtime probe would be a guess.
+    return {
+      projector: candidate.projector,
+      requestedTargets: requested,
+      supportedTargets: ["claude"],
+      availableTargets,
+      coverage: projectionCoverage(requested, ["claude"], availableTargets),
+      ownership: "hook-registrar-receipt",
       receipt: "pending-projection",
     };
   }

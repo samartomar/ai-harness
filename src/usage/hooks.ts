@@ -33,6 +33,15 @@ function failOpenHookCommand(cli: Cli): string {
   return `${hookCommand(cli)}; exit 0`;
 }
 
+/**
+ * The exact PostToolUse command AIH registers on Claude. Exported so the hook
+ * registrar's inventory prices the launcher that actually ships, rather than a
+ * reconstruction of it.
+ */
+export function claudeUsageHookCommand(): string {
+  return failOpenHookCommand("claude");
+}
+
 function codexProjectCommand(cli: Cli): string {
   return `node "$(git rev-parse --show-toplevel)/.aih/usage-record.mjs" --from ${cli}`;
 }

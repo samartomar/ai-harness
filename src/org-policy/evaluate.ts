@@ -2,6 +2,7 @@ import { type DigestAction, digest, type PlanContext } from "../internals/plan.j
 import { lines } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import { type EffectiveOrgPolicy, stableJson } from "./effective.js";
+import { hookRegistrarReport } from "./hook-registrar.js";
 import {
   ORG_POLICY_HOOK_RECEIPT_PATH,
   orgPolicyHookReceiptState,
@@ -132,6 +133,7 @@ export async function orgPolicyEffectiveDigest(
     const effective = (await resolveRuntimeOrgPolicy(ctx, policy)).effective;
     const hookReceipt = orgPolicyHookReceiptState(ctx, effective);
     const mcpReceipt = orgPolicyMcpReceiptState(ctx, effective);
+    const hookRegistrar = hookRegistrarReport(ctx.root);
     const candidates = effective.candidates;
     const body = lines(
       "Requested vs effective governed candidates. A requested item is never active merely because",
@@ -166,6 +168,17 @@ export async function orgPolicyEffectiveDigest(
       "",
       `Hook receipt: ${hookReceipt.state} — ${hookReceipt.detail}.`,
       `Managed-MCP receipt: ${mcpReceipt.state} — ${mcpReceipt.detail}.`,
+      `Hook registrar: ${hookRegistrar.state} — ${hookRegistrar.detail}.`,
+      ...(hookRegistrar.unowned.length === 0
+        ? []
+        : [
+            "",
+            "Hook entries AIH did not emit (drift). AIH never absorbs one silently; adopt or remove each:",
+            ...hookRegistrar.unowned.map(
+              (entry: { owner: string; event: string; command: string }) =>
+                `- owner=${entry.owner}; event=${entry.event}; command=${entry.command}`,
+            ),
+          ]),
       "",
       "External framework curation (report-only; never projected or enforced):",
       ...effective.externalCuration.flatMap((curation) =>
@@ -189,6 +202,7 @@ export async function orgPolicyEffectiveDigest(
         authority: effective.authority,
         hookReceipt,
         mcpReceipt,
+        hookRegistrar,
       },
     );
   } catch (error) {
