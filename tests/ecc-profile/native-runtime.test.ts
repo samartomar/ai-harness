@@ -87,6 +87,54 @@ describe("native ECC hook runtime", () => {
     ).toBe(true);
   });
 
+  it("keeps hookSpecificOutput off Claude events that reject it", async () => {
+    const scope = fixture();
+    const output = await executeNativeEccHook({
+      client: "claude",
+      root: scope.root,
+      stateRoot: scope.stateRoot,
+      input: {
+        session_id: "session-precompact",
+        transcript_path: join(scope.stateRoot, "transcript.jsonl"),
+        cwd: scope.root,
+        permission_mode: "default",
+        hook_event_name: "PreCompact",
+        trigger: "manual",
+        custom_instructions: "",
+      },
+    });
+
+    // Claude validates hookSpecificOutput against a per-event allowlist and
+    // discards the whole payload when an event is not on it. PreCompact is not,
+    // so the continuity summary has to travel as a root-level systemMessage.
+    expect(output.hookSpecificOutput).toBeUndefined();
+    expect(output.systemMessage).toContain("Before compaction, preserve decisions");
+  });
+
+  it("denies a Claude PermissionRequest through the root-level decision", async () => {
+    const scope = fixture();
+    const output = await executeNativeEccHook({
+      client: "claude",
+      root: scope.root,
+      stateRoot: scope.stateRoot,
+      input: {
+        session_id: "session-permission",
+        transcript_path: join(scope.stateRoot, "transcript.jsonl"),
+        cwd: scope.root,
+        permission_mode: "default",
+        hook_event_name: "PermissionRequest",
+        tool_name: "Bash",
+        tool_input: { command: "git commit --no-verify" },
+      },
+    });
+
+    expect(output.hookSpecificOutput).toBeUndefined();
+    expect(output.permissionDecision).toBe("deny");
+    expect(output.reason).toBe(
+      "repository protection blocks Git verification bypass and hooksPath overrides",
+    );
+  });
+
   it("rejects a foreign project root and an in-project state directory", async () => {
     const scope = fixture();
     const foreign = mkdtempSync(join(tmpdir(), "aih-ecc-native-runtime-foreign-"));

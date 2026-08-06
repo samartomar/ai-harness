@@ -29,6 +29,9 @@ export interface NativeEccHookInput {
 export type NativeEccHookOutput = {
   continue?: false;
   stopReason?: string;
+  systemMessage?: string;
+  permissionDecision?: "deny";
+  reason?: string;
   hookSpecificOutput?: {
     hookEventName: string;
     additionalContext?: string;
@@ -36,6 +39,30 @@ export type NativeEccHookOutput = {
     permissionDecisionReason?: string;
   };
 };
+
+/**
+ * Claude validates `hookSpecificOutput` against a per-event allowlist and rejects
+ * the entire payload when the event is absent from it, discarding any decision or
+ * context the dispatcher carried. Every other event states its case through the
+ * root-level fields, which Claude accepts for all events.
+ *
+ * Observed 2026-08-05: a PreCompact payload shaped as `hookSpecificOutput` failed
+ * client output validation, so the R4 pre-compaction summary never reached the
+ * model even though the continuity handler had produced it.
+ */
+const CLAUDE_HOOK_SPECIFIC_OUTPUT_EVENTS: ReadonlySet<string> = new Set([
+  "PreToolUse",
+  "PostToolUse",
+  "PostToolBatch",
+  "UserPromptSubmit",
+  "Stop",
+  "SubagentStop",
+]);
+
+/** Codex keeps its established shape; only Claude publishes a per-event allowlist. */
+function acceptsHookSpecificOutput(event: NormalizedHookEvent): boolean {
+  return event.client !== "claude" || CLAUDE_HOOK_SPECIFIC_OUTPUT_EVENTS.has(event.nativeEvent);
+}
 
 function contained(parent: string, child: string): boolean {
   const relation = relative(parent, child);
@@ -92,29 +119,40 @@ function prepareStateRoot(root: string, value: string): string {
 
 function nativeOutput(event: NormalizedHookEvent, result: HookDispatchResult): NativeEccHookOutput {
   const context = result.contexts.join("\n");
+  const scoped = acceptsHookSpecificOutput(event);
   const toolDecision = event.event === "before-tool" || event.event === "permission-request";
   if (result.action === "block" && toolDecision) {
+    const reason = result.reason ?? "AIH profile policy denied the tool call.";
+    if (!scoped) {
+      return {
+        permissionDecision: "deny",
+        reason,
+        ...(context.length === 0 ? {} : { systemMessage: context }),
+      };
+    }
     return {
       hookSpecificOutput: {
         hookEventName: event.nativeEvent,
         permissionDecision: "deny",
-        permissionDecisionReason: result.reason ?? "AIH profile policy denied the tool call.",
+        permissionDecisionReason: reason,
         ...(context.length === 0 ? {} : { additionalContext: context }),
       },
     };
   }
+  const carried =
+    context.length === 0
+      ? {}
+      : scoped
+        ? { hookSpecificOutput: { hookEventName: event.nativeEvent, additionalContext: context } }
+        : { systemMessage: context };
   if (result.action === "block") {
     return {
       continue: false,
       stopReason: result.reason ?? "AIH profile policy stopped this event.",
-      ...(context.length === 0
-        ? {}
-        : { hookSpecificOutput: { hookEventName: event.nativeEvent, additionalContext: context } }),
+      ...carried,
     };
   }
-  return context.length === 0
-    ? {}
-    : { hookSpecificOutput: { hookEventName: event.nativeEvent, additionalContext: context } };
+  return carried;
 }
 
 export async function executeNativeEccHook(
