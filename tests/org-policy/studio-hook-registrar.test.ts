@@ -48,10 +48,19 @@ describe("H4 — visible inventory, source-labeled", () => {
   });
 
   it("shows both owners' rows with their source labels on the inventory screen", () => {
-    const text = workbenchText("hook-registry-rows");
+    // A whole-container text blob can't tell a source credited to the wrong
+    // row from one credited to its own row — the panel emits one ".hookreg"
+    // element per entry (pinned by the S1 "never duplicated" test below), so
+    // read each row on its own and pair its id with its own Source line.
+    const window = workbenchWindow();
+    const container = window.document.getElementById("hook-registry-rows");
+    if (container === null) throw new Error("workbench renders no #hook-registry-rows");
+    const rows = [...container.querySelectorAll(".hookreg")];
+    expect(rows.length).toBe(model.catalog.hookRegistry.entries.length);
     for (const entry of model.catalog.hookRegistry.entries) {
-      expect(text, `${entry.id} row`).toContain(entry.id);
-      expect(text, `${entry.id} source`).toContain(entry.source);
+      const row = rows.find((candidate) => candidate.querySelector("b")?.textContent === entry.id);
+      if (row === undefined) throw new Error(`workbench renders no row for ${entry.id}`);
+      expect(row.textContent, `${entry.id} row source`).toContain(`Source: ${entry.source}`);
     }
   });
 });
@@ -94,13 +103,18 @@ describe("H5 and H7 — overlap and cost on the signing screen", () => {
   });
 
   it("states on the signing screen that AIH never auto-resolves an overlap", () => {
+    // aihHookRegistrations() (src/org-policy/catalog.ts) ships exactly one
+    // registration, and hookOverlaps requires two members sharing an event
+    // and function tag before it reports anything — so registry.overlaps is
+    // structurally empty here, always. Assert the branch that actually
+    // renders (the zero-overlaps fallback copy) instead of looping over a
+    // collection that can never hold a member.
+    const registry = model.catalog.hookRegistry;
+    expect(registry.overlaps).toEqual([]);
     const text = workbenchText("hook-registry-overlaps");
     expect(text.toLowerCase()).toContain("overlap");
+    expect(text.toLowerCase()).toContain("aih never merges an overlap on your behalf");
     expect(text.toLowerCase()).not.toContain("automatically resolved");
-    for (const overlap of model.catalog.hookRegistry.overlaps) {
-      expect(text, `${overlap.functionTag} overlap`).toContain(overlap.functionTag);
-      for (const owner of overlap.owners) expect(text).toContain(owner);
-    }
   });
 
   it("shows the per-event entries and spawns the administrator signs against", () => {
