@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { lstatSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { readRegularFile } from "../internals/fsxn.js";
@@ -51,6 +52,21 @@ export {
 export const HOOK_REGISTRAR_DESTINATION = ".claude/settings.json";
 export const HOOK_REGISTRAR_RECEIPT_PATH = ".aih/org-policy-hook-registrar-receipt.json";
 export const HOOK_REGISTRAR_RECEIPT_FORMAT = "aih-org-policy-hook-registrar-receipt";
+
+/**
+ * The largest destination the receipt can carry as prior evidence — ONE
+ * constant, used by both the read that captures those bytes and the schema that
+ * has to parse them back. The two paths disagreeing is not a cosmetic defect:
+ * a receipt recorded above what the schema accepts can never be read again, and
+ * a receipt that cannot be read is a projected third-party entry that can never
+ * be revoked. A4 keeps the prior bytes as evidence, so dropping them silently is
+ * not an alternative; a destination this large is refused up front instead.
+ *
+ * The read is capped in BYTES and the schema in UTF-16 code units, which is safe
+ * in this direction: UTF-8 never spends fewer bytes than the code units it
+ * encodes, so bytes within the cap can never decode to a longer string than it.
+ */
+export const HOOK_REGISTRAR_MAX_DESTINATION_BYTES = 4 * 1024 * 1024;
 
 /**
  * Claude is the only supported target. Codex publishes no per-event hook output
@@ -385,12 +401,15 @@ export function adoptedHookRegistrations(
   root: string,
   declarations: readonly HookAdoptionDeclaration[],
 ): ResolvedHookRegistration[] {
-  const bytes = readDestinationBytes(root);
-  if (bytes === undefined) {
+  const read = readDestination(root);
+  if (read.state !== "present") {
     throw new OrgPolicyError(
-      `refusing hook adoption: ${HOOK_REGISTRAR_DESTINATION} is absent, so there is nothing to capture`,
+      read.state === "absent"
+        ? `refusing hook adoption: ${HOOK_REGISTRAR_DESTINATION} is absent, so there is nothing to capture`
+        : `refusing hook adoption: ${read.reason}`,
     );
   }
+  const bytes = read.contents;
   const receipt = readHookRegistrarReceipt(root);
   const ownedKeys = new Set(
     (receipt?.entries ?? []).map((entry) => `${entry.event}\u0000${entry.command}`),
@@ -543,7 +562,7 @@ const HookReceiptSchema = z
         .object({
           state: z.literal("present"),
           sha256: z.string().regex(/^[0-9a-f]{64}$/),
-          contents: z.string().max(4 * 1024 * 1024),
+          contents: z.string().max(HOOK_REGISTRAR_MAX_DESTINATION_BYTES),
         })
         .strict(),
     ]),
@@ -575,8 +594,43 @@ function destinationPath(root: string): string {
   return join(root, ...HOOK_REGISTRAR_DESTINATION.split("/"));
 }
 
-function readDestinationBytes(root: string): string | undefined {
-  return readRegularFile(destinationPath(root))?.toString("utf8");
+/**
+ * What the destination read found. `unreadable` is deliberately NOT collapsed
+ * into `absent`: `absent` is the flag that authorizes deleting the destination
+ * on revocation and the flag that skips the unowned-entry check, so a path AIH
+ * merely failed to read must never reach either. Every caller refuses on it.
+ */
+type DestinationRead =
+  | { state: "absent" }
+  | { state: "present"; contents: string }
+  | { state: "unreadable"; reason: string };
+
+/** The size of a regular file at `abs`, or `undefined` for anything else. */
+function regularFileSize(abs: string): number | undefined {
+  try {
+    const stats = lstatSync(abs);
+    return stats.isFile() ? stats.size : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readDestination(root: string): DestinationRead {
+  const abs = destinationPath(root);
+  const contents = readRegularFile(abs, {
+    maxBytes: HOOK_REGISTRAR_MAX_DESTINATION_BYTES,
+  })?.toString("utf8");
+  if (contents !== undefined) return { state: "present", contents };
+  const size = regularFileSize(abs);
+  if (size !== undefined && size > HOOK_REGISTRAR_MAX_DESTINATION_BYTES) {
+    return {
+      state: "unreadable",
+      reason:
+        `${HOOK_REGISTRAR_DESTINATION} is ${size} bytes, larger than the ` +
+        `${HOOK_REGISTRAR_MAX_DESTINATION_BYTES} bytes a hook registrar receipt can carry as prior evidence`,
+    };
+  }
+  return { state: "absent" };
 }
 
 export function readHookRegistrarReceipt(root: string): HookRegistrarReceipt | undefined {
@@ -640,8 +694,9 @@ export function hookRegistrarReport(root: string): {
 } {
   const state = hookRegistrarState(root);
   if (state.state === "invalid") return { ...state, unowned: [], adoption: [] };
-  const bytes = readDestinationBytes(root);
-  if (bytes === undefined) return { ...state, unowned: [], adoption: [] };
+  const read = readDestination(root);
+  if (read.state !== "present") return { ...state, unowned: [], adoption: [] };
+  const bytes = read.contents;
   let receipt: HookRegistrarReceipt | undefined;
   try {
     receipt = readHookRegistrarReceipt(root);
@@ -681,7 +736,9 @@ export function hookRegistrarState(root: string): HookRegistrarStateReport {
   } catch (error) {
     return { state: "invalid", detail: (error as Error).message };
   }
-  const bytes = readDestinationBytes(root);
+  const read = readDestination(root);
+  if (read.state === "unreadable") return { state: "invalid", detail: read.reason };
+  const bytes = read.state === "present" ? read.contents : undefined;
   if (receipt === undefined) {
     if (bytes === undefined) {
       return { state: "absent", detail: "no hook registrar receipt and no projected destination" };
@@ -731,7 +788,11 @@ export function hookRegistrarProjectionActions(
   const parsed = assertHookRegistrations(registrations);
   if (parsed.length === 0) return hookRegistrarRevocationActions(ctx);
   const existingReceipt = readHookRegistrarReceipt(ctx.root);
-  const bytes = readDestinationBytes(ctx.root);
+  const read = readDestination(ctx.root);
+  if (read.state === "unreadable") {
+    throw new OrgPolicyError(`refusing hook registrar projection: ${read.reason}`);
+  }
+  const bytes = read.state === "present" ? read.contents : undefined;
   const prior: HookReceiptPrior =
     existingReceipt?.prior ??
     (bytes === undefined
@@ -819,12 +880,15 @@ export function hookRegistrarRevocationActions(ctx: PlanContext): Action[] {
       `refusing hook registrar revocation: ${state.detail}; repair the owned destination or remove the receipt only after manual remediation`,
     );
   }
-  const bytes = readDestinationBytes(ctx.root);
-  if (bytes === undefined) {
+  const read = readDestination(ctx.root);
+  if (read.state !== "present") {
     throw new OrgPolicyError(
-      `refusing hook registrar revocation: ${HOOK_REGISTRAR_DESTINATION} is absent`,
+      read.state === "absent"
+        ? `refusing hook registrar revocation: ${HOOK_REGISTRAR_DESTINATION} is absent`
+        : `refusing hook registrar revocation: ${read.reason}`,
     );
   }
+  const bytes = read.contents;
   const receiptRaw = receiptRawBytes(ctx.root);
   /**
    * `hooks` is the only key the receipt proves AIH owns, so it is the only key
