@@ -48,6 +48,17 @@ function context(apply: boolean): PlanContext {
 const OPERATOR_CONTENT = { permissions: { allow: ["Bash(ls:*)"] }, model: "operator-choice" };
 
 /**
+ * The ONE digest line that names `path`. Substring checks against the whole
+ * digest text pass on a row that belongs to some other artifact entirely.
+ */
+function digestRowFor(result: Awaited<ReturnType<typeof executePlan>>, path: string): string {
+  const digest = result.digests.find((entry) => entry.describe.includes("core install footprint"));
+  const rows = (digest?.text ?? "").split("\n").filter((line) => line.includes(path));
+  expect(rows, `expected exactly one digest row naming ${path}`).toHaveLength(1);
+  return rows[0] ?? "";
+}
+
+/**
  * The measured defect, reproduced: a third party wrote Stop entries into the
  * client settings and ships no removal path; the operator owns other keys in
  * the same file.
@@ -173,12 +184,13 @@ describe("A2 — uninstall subtracts receipt-owned hook registrations, never rep
     rmSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH));
 
     const result = await uninstall();
-    const digest = result.digests.find((entry) =>
-      entry.describe.includes("core install footprint"),
-    );
-    expect(digest?.text).toContain(HOOK_REGISTRAR_DESTINATION);
-    expect(digest?.text).toContain("advisory");
-    expect(digest?.text.toLowerCase()).toContain("hook");
+    // Bind the assertions to ONE row: the fixture emits other advisory rows, so
+    // three substrings matched anywhere in the digest would pass on a digest
+    // that never mentions the destination at all.
+    const row = digestRowFor(result, HOOK_REGISTRAR_DESTINATION);
+    expect(row).toMatch(/\[advisory\]/);
+    expect(row.toLowerCase()).toContain("hook");
+    expect(row).toMatch(/receipt/);
     expect(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8")).toBe(projected);
   });
 

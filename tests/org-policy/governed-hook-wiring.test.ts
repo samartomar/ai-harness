@@ -76,6 +76,17 @@ function adoptedUsageRegistration(): HookRegistration {
     command,
     functionTags: ["usage-metering"],
     spawns: 1,
+    // The usage projector writes its own entry as
+    // `{matcher: "*", hooks: [{type, command, timeout, statusMessage}]}`
+    // (`src/usage/hooks.ts`). Adoption captures the whole native entry, not just
+    // its launcher, so an entry adopted from that output carries all of it back
+    // — re-emitting it without the matcher would silently widen a hook scoped to
+    // one tool into one that fires on everything. Without these the registrar's
+    // foreign-entry guard fires first and this case never reaches the
+    // two-writers gate it exists to prove.
+    nativeGroup: { matcher: "*" },
+    nativeHook: { type: "command", statusMessage: "Recording aih usage" },
+    timeout: 5,
     owner: { kind: "unknown", launcherSha256: hookCommandDigest(command) },
   };
 }

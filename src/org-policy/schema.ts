@@ -603,6 +603,80 @@ const HookLauncherCommandSchema = z
     "must not contain control or hidden Unicode characters",
   );
 
+/**
+ * Fields captured verbatim from a native hook entry that AIH does not author —
+ * a group's `matcher`, a hook's `async`, whatever else a third party writes.
+ *
+ * TRANSPORTED, NEVER INTERPRETED. AIH implements no scoping grammar and reads
+ * no meaning out of these; it carries them back unchanged, which is the same
+ * rule the launcher command already follows. Re-emitting an entry without them
+ * would silently widen a hook scoped to one tool into one that fires on
+ * everything, so faithfulness here is a correctness property, not tidiness.
+ *
+ * Bounded and structurally checked at the boundary all the same: unbounded
+ * hostile JSON reaches a receipt, a policy document and an operator's screen.
+ */
+const NATIVE_HOOK_FIELD_MAX_JSON = 8192;
+const NATIVE_HOOK_FIELD_MAX_DEPTH = 8;
+const NATIVE_HOOK_FIELD_MAX_KEY = 120;
+const NATIVE_HOOK_UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+/** The one copy of native-field validation, shared by the grammar and the projector. */
+export function nativeHookFieldIssues(fields: unknown, reserved: readonly string[] = []): string[] {
+  const issues: string[] = [];
+  if (fields === null || typeof fields !== "object" || Array.isArray(fields)) {
+    return ["must be a JSON object of captured native fields"];
+  }
+  for (const key of reserved) {
+    if (Object.hasOwn(fields, key)) issues.push(`must not carry ${key}; AIH authors that field`);
+  }
+  const walk = (value: unknown, depth: number, path: string): void => {
+    const where = path === "" ? "the captured fields" : path;
+    if (depth > NATIVE_HOOK_FIELD_MAX_DEPTH) {
+      issues.push(`${where} nests deeper than ${NATIVE_HOOK_FIELD_MAX_DEPTH} levels`);
+      return;
+    }
+    if (value === null || typeof value === "string" || typeof value === "boolean") return;
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) issues.push(`${where} is not a finite JSON number`);
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const [index, item] of value.entries()) walk(item, depth + 1, `${where}[${index}]`);
+      return;
+    }
+    if (typeof value === "object") {
+      if (Object.getPrototypeOf(value) !== Object.prototype) {
+        issues.push(`${where} does not have a plain object prototype`);
+        return;
+      }
+      for (const [key, child] of Object.entries(value)) {
+        if (NATIVE_HOOK_UNSAFE_KEYS.has(key)) issues.push(`${where} carries the unsafe key ${key}`);
+        else if (key.length > NATIVE_HOOK_FIELD_MAX_KEY || /\p{C}/u.test(key)) {
+          issues.push(`${where} carries an over-long or control-bearing key`);
+        }
+        walk(child, depth + 1, `${where}.${key}`);
+      }
+      return;
+    }
+    issues.push(`${where} is not JSON-representable`);
+  };
+  walk(fields, 0, "");
+  const serialized = JSON.stringify(fields);
+  if (serialized === undefined || serialized.length > NATIVE_HOOK_FIELD_MAX_JSON) {
+    issues.push(`must serialize to at most ${NATIVE_HOOK_FIELD_MAX_JSON} JSON characters`);
+  }
+  return issues;
+}
+
+function nativeHookFieldsSchema(reserved: readonly string[]) {
+  return z.record(z.string(), z.unknown()).superRefine((fields, ctx) => {
+    for (const message of nativeHookFieldIssues(fields, reserved)) {
+      ctx.addIssue({ code: "custom", message });
+    }
+  });
+}
+
 export const ThirdPartyLauncherPinSchema = z
   .object({
     repository: z
@@ -671,6 +745,20 @@ export const HookRegistrationSchema = z
     timeout: z.number().int().min(1).max(600).optional(),
     /** The source's own controls report this hook off. It still spawns a process. */
     sourceDisabled: z.boolean().default(false),
+    /**
+     * The native group's own fields, captured verbatim — `matcher` above all.
+     * Absent means AIH authored this entry and the group carries nothing but
+     * its `hooks` array.
+     */
+    nativeGroup: nativeHookFieldsSchema(["hooks"]).optional(),
+    /**
+     * The native hook object's own fields, captured verbatim. Absent means AIH
+     * authored this entry and it is emitted as a plain `type: "command"` hook;
+     * PRESENT-but-empty means the captured entry genuinely carried nothing but
+     * its command, and it is emitted that way. The two are not the same entry
+     * and must not normalize to the same thing.
+     */
+    nativeHook: nativeHookFieldsSchema(["command", "timeout"]).optional(),
     owner: HookRegistrationOwnerSchema,
   })
   .strict();

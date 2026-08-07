@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,8 +8,10 @@ import { type Action, type PlanContext, plan } from "../../src/internals/plan.js
 import { fakeRunner } from "../../src/internals/proc.js";
 import {
   HOOK_REGISTRAR_DESTINATION,
+  HOOK_REGISTRAR_RECEIPT_PATH,
   hookRegistrarProjectionActions,
   hookRegistrarRevocationActions,
+  readHookRegistrarReceipt,
 } from "../../src/org-policy/hook-registrar.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { eccStopRegistrations } from "./hook-registrar-fixtures.js";
@@ -118,14 +120,30 @@ describe("revocation proves ownership and pins its write over one read", () => {
 
   it("never deletes an entry that arrived after the ownership verdict", async () => {
     await project();
+    const owned = readDestination();
     // A write landing in the window the second read used to open.
     onDestinationRead = reinstallUnownedEntry;
 
     const actions = hookRegistrarRevocationActions(ctx(false));
-    await run(actions).catch(() => undefined);
+    // A subtraction really was planned: this case proves the pin STOPS a real
+    // deletion, not that nothing was ever going to happen.
+    const [restore] = actions;
+    expect(restore?.kind).toBe("write");
+    expect(restore?.describe).toMatch(/subtract every AIH-registered hook entry/);
 
-    // The pin belongs to the bytes the verdict saw, so the subtraction cannot
-    // land on top of the newly-arrived entry: it is still there.
-    expect(readDestination()).toContain("reinstalled.js");
+    // And it fails for the PIN specifically, not for some unrelated reason.
+    await expect(run(actions)).rejects.toThrow(
+      /refusing to write \.claude\/settings\.json .* it changed after the plan was computed/,
+    );
+
+    const after = readDestination();
+    // The entry that arrived is still there, the owned entries were not
+    // partially subtracted, and the file is exactly what the third party left.
+    expect(after).toContain("reinstalled.js");
+    expect(after).toContain("run-with-flags.js");
+    expect(JSON.parse(after ?? "{}").hooks.Stop).toEqual(JSON.parse(owned ?? "{}").hooks.Stop);
+    // The receipt is NOT orphaned: the claim still covers the content on disk.
+    expect(existsSync(join(dir, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(true);
+    expect(readHookRegistrarReceipt(dir)?.entries.length).toBeGreaterThan(0);
   });
 });
