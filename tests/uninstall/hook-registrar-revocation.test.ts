@@ -373,6 +373,40 @@ describe("H6 — uninstall subtracts owned hook groups out of a cohabited destin
     expect(existsSync(join(root, HOOK_REGISTRAR_DESTINATION))).toBe(true);
   });
 
+  /**
+   * The receipt-side sibling of the case above. There the prototype-named event
+   * came from the DESTINATION; here it comes from the RECEIPT, which the one
+   * composer keys the owned groups by. Hand-authored bytes on purpose: the
+   * grammar now refuses to write such a receipt, and the threat is a corrupt or
+   * attacker-influenced receipt file — strictly more load-bearing since per-group
+   * subtraction removed the whole-key corroboration. It must degrade to the
+   * advisory this projector already has, not take the whole uninstall plan down.
+   */
+  it.each(["constructor", "toString", "valueOf", "hasOwnProperty"])(
+    "plans an advisory around a receipt entry on the event %s",
+    async (event) => {
+      seedThirdPartyDestination();
+      await projectOwnership();
+      const projected = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8");
+      const receiptPath = join(root, HOOK_REGISTRAR_RECEIPT_PATH);
+      const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as {
+        entries: { event: string }[];
+      };
+      for (const entry of receipt.entries) entry.event = event;
+      put(HOOK_REGISTRAR_RECEIPT_PATH, `${JSON.stringify(receipt, null, 2)}\n`);
+
+      const result = await uninstall();
+
+      const row = digestRowFor(result, HOOK_REGISTRAR_DESTINATION);
+      expect(row).toMatch(/\[advisory\]/);
+      expect(row).toMatch(/receipt/);
+      // Nothing removed and nothing rewritten: aih cannot prove ownership from a
+      // receipt it refuses to read, and the launchers stay for remediation.
+      expect(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8")).toBe(projected);
+      expect(existsSync(receiptPath)).toBe(true);
+    },
+  );
+
   it("leaves everything alone when an operator entry sits inside a group AIH owns", async () => {
     seedThirdPartyDestination();
     await projectOwnership();

@@ -214,6 +214,51 @@ describe("G3 — one framework per policy, mirrored onto hook registrations", ()
   });
 });
 
+/**
+ * An event name is a KEY. Every surface that groups entries by event puts it
+ * into a plain object, and a name that is already an own property of
+ * `Object.prototype` — `constructor`, `toString`, `valueOf`, `hasOwnProperty` —
+ * resolves through the prototype chain to a FUNCTION on any bare lookup. The
+ * grammar's character fence admits all four, so nothing upstream stopped one
+ * reaching the projector; the receipt-side sibling recorded in the H6 review
+ * spread exactly such a lookup and threw an untyped TypeError out of the
+ * verdict. Own-property reads make the composer safe; this fence keeps the name
+ * from being authored or recorded in the first place.
+ */
+const PROTOTYPE_EVENT_NAMES = ["constructor", "toString", "valueOf", "hasOwnProperty"];
+const PROTOTYPE_EVENT_MESSAGE =
+  "must not name an Object.prototype member, which no plain object can key safely";
+
+describe("G6 — the event fence refuses Object.prototype member names", () => {
+  it.each(PROTOTYPE_EVENT_NAMES)("refuses %s as a hook event, exact message", (event) => {
+    const [registration] = eccStopRegistrations();
+    if (registration === undefined) throw new Error("expected a registration");
+    expect(() =>
+      parseOrgPolicy(governedPolicy({ hookRegistrations: [{ ...registration, event }] })),
+    ).toThrowError(PROTOTYPE_EVENT_MESSAGE);
+  });
+
+  // The fence must not narrow what a real client event can be: AIH implements no
+  // event vocabulary of its own, so any name the character fence already admitted
+  // and no prototype holds still parses.
+  it.each(["SessionStart", "PreToolUse", "MyCustomEvent"])("still accepts %s", (event) => {
+    const [registration] = eccStopRegistrations();
+    if (registration === undefined) throw new Error("expected a registration");
+    const policy = parseOrgPolicy(
+      governedPolicy({ hookRegistrations: [{ ...registration, event }] }),
+    );
+    expect(policy.governance?.hookRegistrations[0]?.event).toBe(event);
+  });
+
+  it("leaves the character fence's own message untouched", () => {
+    const [registration] = eccStopRegistrations();
+    if (registration === undefined) throw new Error("expected a registration");
+    expect(() =>
+      parseOrgPolicy(governedPolicy({ hookRegistrations: [{ ...registration, event: "1Stop" }] })),
+    ).toThrowError("must be a native client hook event name");
+  });
+});
+
 describe("G5 — every registration leaf is enrolled with an explicit consumer", () => {
   it("states that the projector writes the command verbatim and the resolver never reads it", () => {
     const consumer = POLICY_ENGINE_FIELD_CONSUMERS["governance.hookRegistrations.*.command"];

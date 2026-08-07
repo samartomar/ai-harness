@@ -581,9 +581,29 @@ const ExternalFrameworkSelectionSchema = z
     }
   });
 
+/**
+ * A hook event is a KEY, not merely a name. Every surface that groups entries by
+ * event — the projection, the receipt's expectation, the owned-group subtraction
+ * — puts it into a plain object, so a name that is already an own property of
+ * `Object.prototype` resolves through the prototype chain on any bare lookup:
+ * `constructor` yields a function, `toString` and `valueOf` and `hasOwnProperty`
+ * likewise. The character fence below admits all four, so nothing else stops one
+ * being authored into a policy or recorded into a receipt.
+ *
+ * Own-property reads are what make those lookups safe, and the projector does
+ * them. This is the other half, and it is not redundant with them: it keeps the
+ * name out of the authored grammar AND out of a parsed receipt, so a hand-written
+ * or hostile receipt degrades to the projector's existing typed refusal — naming
+ * the receipt — instead of reaching code that has to be individually careful.
+ * AIH implements no event vocabulary of its own, so nothing else here narrows.
+ */
 const HookEventSchema = z
   .string()
-  .regex(/^[A-Za-z][A-Za-z0-9]{0,63}$/, "must be a native client hook event name");
+  .regex(/^[A-Za-z][A-Za-z0-9]{0,63}$/, "must be a native client hook event name")
+  .refine(
+    (value) => !Object.hasOwn(Object.prototype, value),
+    "must not name an Object.prototype member, which no plain object can key safely",
+  );
 const HookRegistrationIdSchema = z
   .string()
   .regex(/^[a-z0-9][a-z0-9._:-]{0,119}$/, "must be a safe registration identifier");
