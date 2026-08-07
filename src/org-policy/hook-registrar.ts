@@ -799,7 +799,11 @@ export function readHookRegistrarReceipt(root: string): HookRegistrarReceipt | u
     throw new OrgPolicyError(`${unsafeParent}; refusing hook ownership`);
   }
   const raw = receiptRawBytes(root);
-  if (raw === undefined) return undefined;
+  return raw === undefined ? undefined : parseHookRegistrarReceipt(raw);
+}
+
+/** Parse receipt bytes a caller has already read, so one read can serve every use. */
+function parseHookRegistrarReceipt(raw: string): HookRegistrarReceipt {
   let value: unknown;
   try {
     value = JSON.parse(raw);
@@ -899,7 +903,20 @@ export function hookRegistrarState(root: string): HookRegistrarStateReport {
   } catch (error) {
     return { state: "invalid", detail: (error as Error).message };
   }
-  const read = readDestination(root);
+  return hookRegistrarVerdict(receipt, readDestination(root));
+}
+
+/**
+ * The verdict over bytes the CALLER read. Revocation proves ownership and then
+ * pins the write it emits, and both have to come from the same read: with a
+ * second read, a write landing between them was baked into the pin, passed at
+ * apply, and the whole-key subtraction then deleted the entry that had just
+ * arrived — the deletion the single-registrar contract forbids (H1).
+ */
+function hookRegistrarVerdict(
+  receipt: HookRegistrarReceipt | undefined,
+  read: DestinationRead,
+): HookRegistrarStateReport {
   if (read.state === "unreadable") return { state: "invalid", detail: read.reason };
   const bytes = read.state === "present" ? read.contents : undefined;
   if (receipt === undefined) {
@@ -1043,24 +1060,27 @@ export function hookRegistrarProjectionActions(
  * dependence on the source shipping an uninstall path of its own.
  */
 export function hookRegistrarRevocationActions(ctx: PlanContext): Action[] {
-  const receipt = readHookRegistrarReceipt(ctx.root);
-  if (receipt === undefined) return [];
-  const state = hookRegistrarState(ctx.root);
-  if (state.state !== "active") {
+  // ONE read of each file. The ownership verdict, the sole-key decision, the
+  // apply-time pin and the merge base all come from these exact bytes, so a
+  // write landing after the verdict can never be pinned as if it had been
+  // proved: it fails the pin at apply instead of being subtracted away.
+  const unsafeReceiptParent = symlinkedParentReason(ctx.root, HOOK_REGISTRAR_RECEIPT_PATH);
+  if (unsafeReceiptParent !== undefined) {
+    throw new OrgPolicyError(
+      `refusing hook registrar revocation: ${unsafeReceiptParent}; refusing hook ownership`,
+    );
+  }
+  const receiptRaw = receiptRawBytes(ctx.root);
+  if (receiptRaw === undefined) return [];
+  const receipt = parseHookRegistrarReceipt(receiptRaw);
+  const read = readDestination(ctx.root);
+  const state = hookRegistrarVerdict(receipt, read);
+  if (state.state !== "active" || read.state !== "present") {
     throw new OrgPolicyError(
       `refusing hook registrar revocation: ${state.detail}; repair the owned destination or remove the receipt only after manual remediation`,
     );
   }
-  const read = readDestination(ctx.root);
-  if (read.state !== "present") {
-    throw new OrgPolicyError(
-      read.state === "absent"
-        ? `refusing hook registrar revocation: ${HOOK_REGISTRAR_DESTINATION} is absent`
-        : `refusing hook registrar revocation: ${read.reason}`,
-    );
-  }
   const bytes = read.contents;
-  const receiptRaw = receiptRawBytes(ctx.root);
   /**
    * `hooks` is the only key the receipt proves AIH owns, so it is the only key
    * revocation touches — every other byte the operator has in this file is
