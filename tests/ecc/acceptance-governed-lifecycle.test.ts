@@ -51,8 +51,10 @@ import { orgPolicyPath, readOrgPolicy } from "../../src/org-policy/schema.js";
  *    the same exported functions a command would call, in the order a command
  *    would call them, but no `aih` binary runs and no product CLI is ever
  *    pointed at a checkout. Whether an operator can DISCOVER or TRIGGER this
- *    is unproven — no command wiring exists yet, deliberately: that is a
- *    later row's work.
+ *    is not proven HERE — command wiring now exists (`aih ecc --lifecycle
+ *    install` and `aih uninstall`), and it is pinned in
+ *    `tests/ecc/governed-lifecycle-command.test.ts` and
+ *    `tests/uninstall/ecc-materialization.test.ts`.
  * 2. CLAUDE ONLY. Claude is the first target in the verification order; Codex,
  *    Kimi, Cursor and OpenCode are follow-up rows and nothing here says
  *    anything about them.
