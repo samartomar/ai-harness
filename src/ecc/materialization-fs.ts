@@ -9,9 +9,14 @@ import {
   type Stats,
   writeFileSync,
 } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { containedPath, inspectContainedRelativePath } from "../internals/contained-path.js";
 import { readRegularFileWithStats, retryTransient } from "../internals/fsxn.js";
+import {
+  assertUnreservedSegments,
+  ECC_MATERIALIZATION_RECEIPT_PATH,
+  MAX_MATERIALIZED_FILE_BYTES,
+} from "./materialization-receipt.js";
 
 /**
  * The guarded filesystem boundary for AIH-direct materialization, and the
@@ -27,7 +32,10 @@ import { readRegularFileWithStats, retryTransient } from "../internals/fsxn.js";
  * this engine forbids components from writing to.
  */
 
-export const MAX_MATERIALIZED_FILE_BYTES = 4 * 1024 * 1024;
+/** The engine own state, exempt from the reserved-area guard it enforces on components. */
+const ENGINE_STATE_PATHS = new Set([ECC_MATERIALIZATION_RECEIPT_PATH]);
+
+export { MAX_MATERIALIZED_FILE_BYTES };
 export const MATERIALIZED_CONTENT_MODE = 0o644;
 export const MATERIALIZATION_RECEIPT_MODE = 0o600;
 const CONTENT_DIRECTORY_MODE = 0o755;
@@ -35,7 +43,7 @@ const STATE_DIRECTORY_MODE = 0o700;
 
 export type DestinationRead =
   | { state: "absent" }
-  | { state: "present"; bytes: Buffer }
+  | { state: "present"; bytes: Buffer; mode: number }
   | { state: "unreadable"; detail: string };
 
 export type DestinationExpectation = { absent: true } | { sha256: string };
@@ -49,9 +57,21 @@ export interface MaterializationCommitStep {
   expect: DestinationExpectation;
   /** Bytes to restore if a later step fails. Absent means the step created the file. */
   prior?: Buffer;
+  /** The mode those bytes had, so a rollback does not silently widen permissions. */
+  priorMode?: number;
   /** Announced before the re-pin check, so a caller can observe (or interrupt) the boundary. */
   announce?: () => void;
 }
+
+/**
+ * The canonical path the OS itself would open. `fs.realpathSync` is implemented
+ * in JS and leaves an NTFS 8.3 short name as it found it, so `GIT~1` would stay
+ * `GIT~1` and every reserved-name check downstream would compare the wrong
+ * string. The native binding resolves through `GetFinalPathNameByHandle`, which
+ * returns the long name — that is the only spelling worth checking.
+ */
+const realpathCanonical: (path: string) => string =
+  (realpathSync as unknown as { native?: (path: string) => string }).native ?? realpathSync;
 
 function lstatSafe(path: string): Stats | undefined {
   try {
@@ -73,26 +93,47 @@ export function materializationRoot(root: string): string {
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
     throw new Error(`ECC materialization root must be a real directory: ${root}`);
   }
-  return realpathSync(root);
+  return realpathCanonical(root);
 }
 
-/** Refuse a symlinked or escaping parent on every segment this engine traverses. */
+/**
+ * Refuse a symlinked, escaping, or RESERVED segment on every path this engine
+ * traverses — checked on what the filesystem actually resolves each segment to,
+ * not on the requested string. A requested string is not what the OS opens: on
+ * NTFS with 8.3 generation `GIT~1` opens `.git` and `AIH~1` opens `.aih`, so a
+ * string-level guard alone would let a component write an executable hook into
+ * a real repository or forge AIH's own state.
+ */
 function assertSafeParents(rootReal: string, path: string): void {
+  const ownState = ENGINE_STATE_PATHS.has(path);
   const segments = path.split("/");
   let current = rootReal;
-  for (let index = 0; index < segments.length - 1; index += 1) {
+  for (let index = 0; index < segments.length; index += 1) {
+    const isLeaf = index === segments.length - 1;
     current = resolve(current, segments[index] as string);
     const stats = lstatSafe(current);
     if (stats === undefined) return;
     if (stats.isSymbolicLink()) {
-      throw new Error(`refusing a symlinked ECC materialization destination parent: ${path}`);
+      throw new Error(
+        isLeaf
+          ? `refusing a symlinked ECC materialization destination: ${path}`
+          : `refusing a symlinked ECC materialization destination parent: ${path}`,
+      );
     }
-    if (!stats.isDirectory()) {
+    if (!isLeaf && !stats.isDirectory()) {
       throw new Error(`ECC materialization destination parent is not a directory: ${path}`);
     }
-    const canonical = realpathSync(current);
+    const canonical = realpathCanonical(current);
     if (!containedPath(rootReal, canonical)) {
       throw new Error(`ECC materialization destination escapes its root: ${path}`);
+    }
+    if (!ownState) {
+      assertUnreservedSegments(
+        relative(rootReal, canonical)
+          .split(/[\\/]/)
+          .filter((segment) => segment.length > 0),
+        path,
+      );
     }
     current = canonical;
   }
@@ -132,7 +173,7 @@ export function inspectDestination(rootReal: string, path: string): DestinationR
         detail: `ECC materialization destination is not a bounded unambiguous regular file: ${path}`,
       };
     }
-    return { state: "present", bytes: opened.contents };
+    return { state: "present", bytes: opened.contents, mode: opened.stats.mode & 0o777 };
   } catch (error) {
     return { state: "unreadable", detail: (error as Error).message };
   }
@@ -249,22 +290,46 @@ export function commitMaterializationSteps(
       applied.push(step);
     }
   } catch (error) {
-    rollback(rootReal, applied);
-    throw error;
+    const unrestored = rollback(rootReal, applied, rename);
+    if (unrestored.length === 0) throw error;
+    throw new Error(
+      `${(error as Error).message}; rollback did not restore ${unrestored.join(", ")}`,
+    );
   }
 }
 
-/** Best-effort restore, in reverse order. It must never mask the original failure. */
-function rollback(rootReal: string, applied: readonly MaterializationCommitStep[]): void {
+/**
+ * Restore in reverse order, re-pinned exactly like the forward path: a step is
+ * undone only while the destination still holds what THAT step left. Anything
+ * else arrived after the step, is not AIH's, and is reported rather than
+ * destroyed — the engine's cardinal rule has to hold on the way out too.
+ * Failures never mask the original error; they are named alongside it.
+ */
+function rollback(
+  rootReal: string,
+  applied: readonly MaterializationCommitStep[],
+  rename?: (from: string, to: string) => void,
+): string[] {
+  const unrestored: string[] = [];
   for (const step of [...applied].reverse()) {
     try {
-      if (step.prior !== undefined) {
-        writeDestinationAtomic(rootReal, step.path, step.prior, step.mode);
+      const live = inspectDestination(rootReal, step.path);
+      const asLeft =
+        step.contents === undefined
+          ? live.state === "absent"
+          : live.state === "present" && sha256(live.bytes) === sha256(step.contents);
+      if (!asLeft) {
+        unrestored.push(step.path);
         continue;
       }
-      removeDestination(rootReal, step.path);
+      if (step.prior === undefined) {
+        removeDestination(rootReal, step.path);
+        continue;
+      }
+      writeDestinationAtomic(rootReal, step.path, step.prior, step.priorMode ?? step.mode, rename);
     } catch {
-      // The original error is the one the operator needs.
+      unrestored.push(step.path);
     }
   }
+  return unrestored;
 }

@@ -10,13 +10,17 @@ import {
 } from "./materialization-fs.js";
 import {
   assertComponentSourcePath,
+  assertMaterializedComponentId,
+  assertOwnedJsonKey,
   assertOwnedRelativePath,
   destinationIdentity,
+  displaySafe,
   ECC_MATERIALIZATION_RECEIPT_FORMAT,
   ECC_MATERIALIZATION_RECEIPT_PATH,
   type EccMaterializationReceipt,
   type EccMaterializedComponent,
   type EccOwnedFile,
+  exceedsJsonDepth,
   MAX_MATERIALIZATION_RECEIPT_BYTES,
   MAX_MATERIALIZED_COMPONENTS,
   MAX_MATERIALIZED_FILES_PER_COMPONENT,
@@ -71,6 +75,22 @@ export function jsonText(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+/**
+ * Render a whole document, or refuse. `JSON.parse` accepts values far deeper
+ * than `JSON.stringify` survives, so a deep value under an OPERATOR key opens
+ * the parse gate and detonates the render gate — with the owned digest still
+ * matching, so subtraction is already authorised. Removal paths turn undefined
+ * into an advisory; write paths refuse by name.
+ */
+export function renderJsonDocument(value: unknown): string | undefined {
+  if (exceedsJsonDepth(value)) return undefined;
+  try {
+    return jsonText(value);
+  } catch {
+    return undefined;
+  }
+}
+
 function sha256(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -121,14 +141,21 @@ export function ownedFragmentDigest(
  * not what is on disk right now.
  */
 export class DestinationState {
-  private readonly planned = new Map<string, Buffer | undefined>();
+  /**
+   * Keyed by the FOLDED identity, the same key every ownership guard uses: on a
+   * case-insensitive volume a step planned against one spelling must be visible
+   * to a later step that reads another.
+   */
+  private readonly planned = new Map<string, { bytes: Buffer | undefined; mode: number }>();
 
   constructor(private readonly root: string) {}
 
   inspect(path: string): DestinationRead {
-    if (this.planned.has(path)) {
-      const bytes = this.planned.get(path);
-      return bytes === undefined ? { state: "absent" } : { state: "present", bytes };
+    const planned = this.planned.get(destinationIdentity(path));
+    if (planned !== undefined) {
+      return planned.bytes === undefined
+        ? { state: "absent" }
+        : { state: "present", bytes: planned.bytes, mode: planned.mode };
     }
     return inspectDestination(this.root, path);
   }
@@ -140,16 +167,20 @@ export class DestinationState {
     return live.state === "absent" ? undefined : live.bytes;
   }
 
-  expectation(path: string): { expect: DestinationExpectation; prior?: Buffer } {
+  expectation(path: string): {
+    expect: DestinationExpectation;
+    prior?: Buffer;
+    priorMode?: number;
+  } {
     const live = this.inspect(path);
     if (live.state === "unreadable") throw new Error(`refusing ${live.detail}`);
     return live.state === "absent"
       ? { expect: { absent: true } }
-      : { expect: { sha256: sha256(live.bytes) }, prior: live.bytes };
+      : { expect: { sha256: sha256(live.bytes) }, prior: live.bytes, priorMode: live.mode };
   }
 
-  set(path: string, bytes: Buffer | undefined): void {
-    this.planned.set(path, bytes);
+  set(path: string, bytes: Buffer | undefined, mode = MATERIALIZED_CONTENT_MODE): void {
+    this.planned.set(destinationIdentity(path), { bytes, mode });
   }
 }
 
@@ -166,10 +197,11 @@ export function resolveRequest(request: EccMaterializationRequest): ResolvedRequ
   let recordBytes = 0;
 
   const components = request.components.map((component) => {
-    if (seenComponents.has(component.id)) {
-      throw new Error(`duplicate ECC materialization component: ${component.id}`);
+    const componentId = assertMaterializedComponentId(component.id);
+    if (seenComponents.has(componentId)) {
+      throw new Error(`duplicate ECC materialization component: ${displaySafe(componentId)}`);
     }
-    seenComponents.add(component.id);
+    seenComponents.add(componentId);
     assertComponentSourcePath(component.provenance.componentPath);
     recordBytes += MIN_RECORD_BYTES_PER_COMPONENT;
     if (
@@ -177,7 +209,7 @@ export function resolveRequest(request: EccMaterializationRequest): ResolvedRequ
       component.files.length > MAX_MATERIALIZED_FILES_PER_COMPONENT
     ) {
       throw new Error(
-        `ECC materialization component file count is outside the lifecycle boundary: ${component.id}`,
+        `ECC materialization component file count is outside the lifecycle boundary: ${componentId}`,
       );
     }
     const seenPaths = new Set<string>();
@@ -185,7 +217,9 @@ export function resolveRequest(request: EccMaterializationRequest): ResolvedRequ
       const path = assertOwnedRelativePath(file.path);
       const identity = destinationIdentity(path);
       if (seenPaths.has(identity)) {
-        throw new Error(`duplicate ECC materialization destination: ${path} (${component.id})`);
+        throw new Error(
+          `duplicate ECC materialization destination: ${displaySafe(path)} (${componentId})`,
+        );
       }
       seenPaths.add(identity);
       recordBytes += Buffer.byteLength(path, "utf8") + MIN_RECORD_BYTES_PER_FILE;
@@ -197,7 +231,9 @@ export function resolveRequest(request: EccMaterializationRequest): ResolvedRequ
       const bytes = toBytes(file.contents);
       total += bytes.byteLength;
       if (bytes.byteLength > MAX_MATERIALIZED_FILE_BYTES || total > MAX_TOTAL_BYTES) {
-        throw new Error(`ECC materialization bytes exceed the lifecycle boundary: ${path}`);
+        throw new Error(
+          `ECC materialization bytes exceed the lifecycle boundary: ${displaySafe(path)}`,
+        );
       }
       if (file.kind === "copy-file") {
         const owner = wholeFileOwners.get(identity);
@@ -211,11 +247,15 @@ export function resolveRequest(request: EccMaterializationRequest): ResolvedRequ
       }
       const fragment = parseJsonObject(bytes.toString("utf8"));
       if (fragment === undefined) {
-        throw new Error(`ECC materialization merge-json content is not a JSON object: ${path}`);
+        throw new Error(
+          `ECC materialization merge-json content is not a JSON object: ${displaySafe(path)}`,
+        );
       }
-      const ownedKeys = Object.keys(fragment).sort(byText);
+      const ownedKeys = Object.keys(fragment).map(assertOwnedJsonKey).sort(byText);
       if (ownedKeys.length === 0) {
-        throw new Error(`ECC materialization merge-json content owns no keys: ${path}`);
+        throw new Error(
+          `ECC materialization merge-json content owns no keys: ${displaySafe(path)}`,
+        );
       }
       mergeOwners.set(identity, component.id);
       for (const key of ownedKeys) {
@@ -378,7 +418,18 @@ export function planSubtraction(
         plans.push({ ...plan, action: "remove" });
         continue;
       }
-      const contents = Buffer.from(jsonText(remaining), "utf8");
+      const rendered = renderJsonDocument(remaining);
+      if (rendered === undefined) {
+        advisories.push({
+          componentId: component.id,
+          path: file.path,
+          reason: "unreadable",
+          detail: `owned ECC materialization destination holds a value nested beyond what this engine renders: ${displaySafe(file.path)}`,
+        });
+        keep.push(file);
+        continue;
+      }
+      const contents = Buffer.from(rendered, "utf8");
       steps.push(plannedWrite(state, { ...plan, action: "subtract-keys" }, contents));
       plans.push({ ...plan, action: "subtract-keys" });
     }
@@ -388,7 +439,7 @@ export function planSubtraction(
 }
 
 function removalStep(state: DestinationState, plan: EccMaterializationFilePlan): PlannedStep {
-  const { expect, prior } = state.expectation(plan.path);
+  const { expect, prior, priorMode } = state.expectation(plan.path);
   state.set(plan.path, undefined);
   return {
     phase: "content",
@@ -397,6 +448,7 @@ function removalStep(state: DestinationState, plan: EccMaterializationFilePlan):
     plan,
     expect,
     ...(prior === undefined ? {} : { prior }),
+    ...(priorMode === undefined ? {} : { priorMode }),
     mode: MATERIALIZED_CONTENT_MODE,
   };
 }
@@ -406,7 +458,7 @@ export function plannedWrite(
   plan: EccMaterializationFilePlan,
   contents: Buffer,
 ): PlannedStep {
-  const { expect, prior } = state.expectation(plan.path);
+  const { expect, prior, priorMode } = state.expectation(plan.path);
   state.set(plan.path, contents);
   return {
     phase: "content",
@@ -416,6 +468,7 @@ export function plannedWrite(
     contents,
     expect,
     ...(prior === undefined ? {} : { prior }),
+    ...(priorMode === undefined ? {} : { priorMode }),
     mode: MATERIALIZED_CONTENT_MODE,
   };
 }
@@ -561,7 +614,13 @@ function planMaterialize(
       const base = Object.fromEntries(
         Object.entries(document).filter(([key]) => !dropped.has(key)),
       );
-      const merged = Buffer.from(jsonText({ ...base, ...file.fragment }), "utf8");
+      const rendered = renderJsonDocument({ ...base, ...file.fragment });
+      if (rendered === undefined) {
+        throw new Error(
+          `refusing an ECC materialization destination nested beyond what this engine renders: ${displaySafe(file.path)} (component ${displaySafe(component.id)})`,
+        );
+      }
+      const merged = Buffer.from(rendered, "utf8");
       if (merged.byteLength > MAX_MATERIALIZED_FILE_BYTES) {
         throw new Error(
           `ECC materialization merge result exceeds the readable size bound: ${file.path} (component ${component.id})`,

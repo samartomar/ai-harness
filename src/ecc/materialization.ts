@@ -3,12 +3,12 @@ import { commitMaterializationSteps, MATERIALIZED_CONTENT_MODE } from "./materia
 import {
   currentReceipt,
   DestinationState,
-  jsonText,
   ownedFragmentDigest,
   parseJsonObject,
   planEccMaterialization,
   planEccUninstall,
   plannedWrite,
+  renderJsonDocument,
   resolveRequest,
 } from "./materialization-plan.js";
 import {
@@ -177,6 +177,7 @@ export function uninstallEccMaterialization(
 }
 
 interface RestoreTarget {
+  path: string;
   operation: "copy-file" | "merge-json";
   bytes?: Buffer;
   fragments: Record<string, unknown>[];
@@ -263,7 +264,8 @@ export function repairEccMaterialization(
           `ECC materialization repair source contradicts the receipt: ${file.path} (component ${component.id})`,
         );
       }
-      const target = restore.get(file.path) ?? {
+      const target = restore.get(destinationIdentity(file.path)) ?? {
+        path: file.path,
         operation: file.operation,
         fragments: [],
         plans: [],
@@ -271,20 +273,24 @@ export function repairEccMaterialization(
       if (source.operation === "copy-file") target.bytes = source.bytes;
       else target.fragments.push(source.fragment);
       target.plans.push({ ...plan, action: "create" });
-      restore.set(file.path, target);
+      restore.set(destinationIdentity(file.path), target);
     }
   }
 
   const steps: PlannedStep[] = [];
-  for (const [path, target] of restore) {
-    const contents =
-      target.operation === "copy-file"
-        ? target.bytes
-        : Buffer.from(jsonText(Object.assign({}, ...target.fragments)), "utf8");
-    if (contents === undefined) continue;
+  for (const target of restore.values()) {
+    const contents = target.operation === "copy-file" ? target.bytes : mergedFragments(target);
+    if (contents === undefined) {
+      advisories.push({
+        path: target.path,
+        reason: "unreadable",
+        detail: `ECC materialization repair cannot render the restored document: ${target.path}`,
+      });
+      continue;
+    }
     const [first] = target.plans;
     if (first === undefined) continue;
-    steps.push(plannedWrite(state, { ...first, path }, contents));
+    steps.push(plannedWrite(state, { ...first, path: target.path }, contents));
     written.push(...target.plans);
   }
   commit({ ...emptyOperation(resolved.root), steps }, deps);
@@ -296,6 +302,21 @@ export function repairEccMaterialization(
     advisories,
     receipt,
   };
+}
+
+/**
+ * Fold every fragment that owns part of one destination into a single document,
+ * on a null prototype: `Object.assign` routes a `__proto__` key to the prototype
+ * setter, silently dropping it from what repair writes — the file would then
+ * fail its own digest and become permanently unremovable.
+ */
+function mergedFragments(target: RestoreTarget): Buffer | undefined {
+  const merged = Object.create(null) as Record<string, unknown>;
+  for (const fragment of target.fragments) {
+    for (const [key, value] of Object.entries(fragment)) merged[key] = value;
+  }
+  const rendered = renderJsonDocument(merged);
+  return rendered === undefined ? undefined : Buffer.from(rendered, "utf8");
 }
 
 function emptyOperation(root: string): PlannedOperation {

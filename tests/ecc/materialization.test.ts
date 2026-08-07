@@ -25,8 +25,10 @@ import {
   repairEccMaterialization,
   uninstallEccMaterialization,
 } from "../../src/ecc/materialization.js";
+import { MAX_MATERIALIZED_FILE_BYTES } from "../../src/ecc/materialization-fs.js";
 import {
   ECC_MATERIALIZATION_RECEIPT_PATH,
+  MAX_MATERIALIZATION_RECEIPT_BYTES,
   readEccMaterializationReceipt,
 } from "../../src/ecc/materialization-receipt.js";
 
@@ -136,6 +138,35 @@ function canSymlink(): boolean {
     return true;
   } catch {
     return false;
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+}
+
+/**
+ * A filesystem alias that reaches `name` under a different spelling — NTFS 8.3
+ * short names on this platform. Returns undefined where the volume generates
+ * none, so the skip is visible rather than silent.
+ */
+function shortNameAlias(name: string): string | undefined {
+  const probe = mkdtempSync(join(tmpdir(), "aih-ecc-alias-probe-"));
+  try {
+    mkdirSync(join(probe, name), { recursive: true });
+    const candidate = `${name.replace(/^\./, "").slice(0, 6).toUpperCase()}~1`;
+    return existsSync(join(probe, candidate)) ? candidate : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+}
+
+/** Whether this volume distinguishes `a` from `A`. */
+function caseSensitiveVolume(): boolean {
+  const probe = mkdtempSync(join(tmpdir(), "aih-ecc-case-probe-"));
+  try {
+    writeFileSync(join(probe, "probe"), "x", "utf8");
+    return !existsSync(join(probe, "PROBE"));
   } finally {
     rmSync(probe, { recursive: true, force: true });
   }
@@ -609,9 +640,9 @@ describe("F1/F5 — AIH-direct per-component materialization", () => {
         contents: JSON.stringify({ ["__proto__"]: { polluted: true } }),
       },
     ]);
-    expect(() => applyEccMaterialization(request(polluting))).toThrow(
-      /invalid ECC materialization receipt/i,
-    );
+    // Refused at the input boundary now that keys are validated there; either
+    // way it must be refused BEFORE any content is written.
+    expect(() => applyEccMaterialization(request(polluting))).toThrow(/JSON key/i);
     expect(tree()).toEqual([]);
 
     const tooManyKeys = componentInput("skill:tdd-workflow", [
@@ -896,6 +927,201 @@ describe("F1/F5 — AIH-direct per-component materialization", () => {
     }
     expect(tree()).toEqual([]);
   });
+
+  it("refuses a reserved directory named in any segment, not just the first", () => {
+    mkdirSync(join(root, "vendor", "libfoo", ".git", "hooks"), { recursive: true });
+
+    for (const [path, message] of [
+      ["vendor/libfoo/.git/hooks/post-checkout", /git/i],
+      ["sub/.aih/state.json", /AIH's own state area/i],
+      ["nested/deep/.AIH-config.json", /AIH's own state area/i],
+    ] as Array<[string, RegExp]>) {
+      expect(
+        () =>
+          applyEccMaterialization(
+            request(componentInput("skill:tdd-workflow", [{ path, contents: "payload\n" }])),
+          ),
+        path,
+      ).toThrow(message);
+    }
+    expect(existsSync(join(root, "vendor", "libfoo", ".git", "hooks", "post-checkout"))).toBe(
+      false,
+    );
+  });
+
+  it.skipIf(shortNameAlias(".git") === undefined)(
+    "refuses a reserved directory reached through a filesystem alias",
+    () => {
+      const alias = shortNameAlias(".git");
+      if (alias === undefined) throw new Error("expected a short-name alias");
+      mkdirSync(join(root, ".git", "hooks"), { recursive: true });
+
+      // The requested string is not reserved; what the OS resolves it to is.
+      expect(() =>
+        applyEccMaterialization(
+          request(
+            componentInput("skill:tdd-workflow", [
+              { path: `${alias}/hooks/pre-commit`, contents: "#!/bin/sh\necho owned\n" },
+            ]),
+          ),
+        ),
+      ).toThrow(/git|reserved|AIH/i);
+      expect(existsSync(join(root, ".git", "hooks", "pre-commit"))).toBe(false);
+    },
+  );
+
+  it("degrades a deep operator value to an advisory instead of throwing out of every operation", () => {
+    put(SETTINGS_PATH, OPERATOR_SETTINGS);
+    applyEccMaterialization(request(settingsComponent()));
+    // Deeper than JSON.stringify survives, shallower than JSON.parse refuses:
+    // the parse gate opens and the render gate is where it detonates. The owned
+    // fragment is byte-identical, so subtraction is authorised.
+    const nested = `${'{"n":'.repeat(20_000)}1${"}".repeat(20_000)}`;
+    put(
+      SETTINGS_PATH,
+      `{"model":"operator-choice","statusLine":{"type":"command","command":"aih status"},"deep":${nested}}\n`,
+    );
+
+    expect(() => previewEccMaterialization(request(settingsComponent()))).toThrow(/nest|depth/i);
+    expect(() => applyEccMaterialization(request(settingsComponent()))).toThrow(/nest|depth/i);
+
+    const result = uninstallEccMaterialization(root);
+    expect(result.advisories.map((advisory) => advisory.reason)).toEqual(["unreadable"]);
+    expect(result.removed).toEqual([]);
+    expect(existsSync(join(root, SETTINGS_PATH))).toBe(true);
+  });
+
+  it("bounds the ownership record by the same reader that has to read it back", () => {
+    expect(MAX_MATERIALIZATION_RECEIPT_BYTES).toBe(MAX_MATERIALIZED_FILE_BYTES);
+
+    // A record between the two former bounds: valid, written, and then
+    // unreadable — every later operation threw, permanently.
+    const longSegment = "s".repeat(190);
+    const components = Array.from({ length: 5 }, (_, componentIndex) =>
+      componentInput(`skill:mid-${componentIndex}`, [
+        ...Array.from({ length: 1_024 }, (_, fileIndex) => ({
+          path: `.claude/skills/${longSegment}/${longSegment}/${longSegment}/${longSegment}/${longSegment}/f${componentIndex}-${fileIndex}.md`,
+          contents: "x",
+        })),
+      ]),
+    );
+
+    expect(() => applyEccMaterialization(request(...components))).toThrow(/exceed/i);
+    expect(tree()).toEqual([]);
+  });
+
+  it("never destroys content that appeared at a path between a step and its rollback", () => {
+    let renames = 0;
+    let hijacked = false;
+
+    expect(() =>
+      applyEccMaterialization(request(agentComponent(), skillComponent()), {
+        rename: (from, to) => {
+          renames += 1;
+          if (renames > 1) throw new Error("injected rename failure");
+          renameSync(from, to);
+        },
+        onStep: (step) => {
+          // A concurrent writer takes the path AIH just created, inside the
+          // announce window this module documents as caller-observable.
+          if (step.path !== SKILL_PATH || hijacked) return;
+          hijacked = true;
+          put(AGENT_PATH, "operator took this path\n");
+        },
+      }),
+    ).toThrow(/injected rename failure/);
+
+    // Rollback re-pins: it restores or removes only what its own step left.
+    expect(read(AGENT_PATH)).toBe("operator took this path\n");
+    expect(existsSync(join(root, SKILL_PATH))).toBe(false);
+  });
+
+  it("reports what a rollback could not restore instead of swallowing it", () => {
+    let renames = 0;
+    let hijacked = false;
+
+    try {
+      applyEccMaterialization(request(agentComponent(), skillComponent()), {
+        rename: (from, to) => {
+          renames += 1;
+          if (renames > 1) throw new Error("injected rename failure");
+          renameSync(from, to);
+        },
+        onStep: (step) => {
+          if (step.path !== SKILL_PATH || hijacked) return;
+          hijacked = true;
+          put(AGENT_PATH, "operator took this path\n");
+        },
+      });
+      throw new Error("expected the apply to fail");
+    } catch (error) {
+      expect((error as Error).message).toMatch(/injected rename failure/);
+      expect((error as Error).message).toMatch(/rollback/i);
+      expect((error as Error).message).toContain(AGENT_PATH);
+    }
+  });
+
+  it("neutralises and bounds hostile identifiers before they reach an operator message", () => {
+    const hostileKey = "ok\u001b[2J\u0007installed";
+    let message = "";
+    try {
+      applyEccMaterialization(
+        request(
+          componentInput("skill:verification-loop", [
+            {
+              path: SETTINGS_PATH,
+              kind: "merge-json",
+              contents: JSON.stringify({ [hostileKey]: 1 }),
+            },
+          ]),
+        ),
+      );
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message.length).toBeGreaterThan(0);
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: asserting they are gone is the point
+    expect(/[\u0000-\u001f\u007f]/.test(message)).toBe(false);
+
+    let longMessage = "";
+    try {
+      applyEccMaterialization({
+        root,
+        components: [
+          {
+            ...skillComponent(),
+            id: `skill:${"x".repeat(200_000)}` as EccComponentId,
+          },
+        ],
+      });
+    } catch (error) {
+      longMessage = (error as Error).message;
+    }
+    expect(longMessage.length).toBeGreaterThan(0);
+    expect(longMessage.length).toBeLessThan(1_000);
+    expect(tree()).toEqual([]);
+  });
+
+  it.skipIf(caseSensitiveVolume())(
+    "treats case-folded spellings of one destination as one destination",
+    () => {
+      const alpha = componentInput("skill:aaa-first", [
+        { path: SETTINGS_PATH, kind: "merge-json", contents: JSON.stringify({ alpha: 1 }) },
+      ]);
+      const beta = componentInput("skill:bbb-second", [
+        {
+          path: ".claude/Settings.json",
+          kind: "merge-json",
+          contents: JSON.stringify({ beta: 2 }),
+        },
+      ]);
+      applyEccMaterialization(request(alpha));
+
+      applyEccMaterialization(request(beta));
+
+      expect(JSON.parse(read(SETTINGS_PATH))).toEqual({ beta: 2 });
+    },
+  );
 
   it("refuses a destination root that is not an absolute real directory", () => {
     expect(() =>

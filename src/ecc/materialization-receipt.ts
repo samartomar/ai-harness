@@ -36,13 +36,20 @@ export const ECC_MATERIALIZATION_RECEIPT_FORMAT = "aih-ecc-materialization-recei
  */
 const RESERVED_FIRST_SEGMENT_PREFIX = ".aih";
 /** Git executes what it finds here regardless of the mode bit. Never a destination. */
-const RESERVED_FIRST_SEGMENTS = new Set([".git"]);
+const RESERVED_SEGMENTS = new Set([".git"]);
 
 const MAX_PATH_LENGTH = 1_024;
+/**
+ * The one byte bound. The ownership record is read back through the same
+ * bounded reader as any other destination, so a record larger than a readable
+ * file would be valid and unreadable at once — an install nothing could revoke.
+ * Deriving the second name from the first makes the two impossible to disagree.
+ */
+export const MAX_MATERIALIZED_FILE_BYTES = 4 * 1024 * 1024;
 export const MAX_MATERIALIZED_COMPONENTS = 4_096;
 export const MAX_MATERIALIZED_FILES_PER_COMPONENT = 2_048;
 export const MAX_MATERIALIZED_OWNED_KEYS = 64;
-export const MAX_MATERIALIZATION_RECEIPT_BYTES = 16 * 1024 * 1024;
+export const MAX_MATERIALIZATION_RECEIPT_BYTES = MAX_MATERIALIZED_FILE_BYTES;
 /** Deep enough for any real configuration, shallow enough that hashing cannot blow the stack. */
 const MAX_JSON_DEPTH = 100;
 
@@ -79,26 +86,113 @@ function assertPortableRelativePath(value: string, label: string): string {
         segment.includes(":"),
     )
   ) {
-    throw new Error(`unsafe ${label}: ${value}`);
+    throw new Error(`unsafe ${label}: ${displaySafe(value)}`);
   }
   return normalized;
 }
 
 /**
+ * Whether one path segment names a directory no component may write into or
+ * through. Reserved-ness is a property of ANY segment, not just the first: a
+ * nested repository's `.git/hooks` executes exactly like the outer one's, and
+ * `sub/.aih/` is AIH state wherever it sits.
+ */
+export function reservedSegmentKind(segment: string): "aih" | "git" | undefined {
+  const folded = segment.normalize("NFC").toLowerCase();
+  if (folded.startsWith(RESERVED_FIRST_SEGMENT_PREFIX)) return "aih";
+  return RESERVED_SEGMENTS.has(folded) ? "git" : undefined;
+}
+
+/**
+ * Refuse a reserved segment anywhere in a path. Callers pass BOTH the requested
+ * spelling (catching names that do not exist yet) and, once the filesystem has
+ * resolved them, the real segments — because a requested string is not what the
+ * OS opens. On NTFS with 8.3 generation, `GIT~1` opens `.git`; the string is
+ * innocent and the resolved path is not.
+ */
+export function assertUnreservedSegments(segments: readonly string[], requested: string): void {
+  for (const segment of segments) {
+    const kind = reservedSegmentKind(segment);
+    if (kind === "aih") {
+      throw new Error(
+        `ECC materialization destination claims AIH's own state area: ${displaySafe(requested)}`,
+      );
+    }
+    if (kind === "git") {
+      throw new Error(
+        `ECC materialization destination claims the git directory: ${displaySafe(requested)}`,
+      );
+    }
+  }
+}
+
+/**
  * Normalize and validate a destination-relative path a component may own.
  * Traversal, absolute inputs, AIH's own state area, and Git's directory are
- * refused rather than repaired.
+ * refused rather than repaired. This is the STRING gate; the filesystem
+ * boundary repeats the reserved check on what each segment actually resolves to.
  */
 export function assertOwnedRelativePath(value: string): string {
   const path = assertPortableRelativePath(value, "ECC materialization destination");
-  const first = (path.split("/")[0] ?? "").normalize("NFC").toLowerCase();
-  if (first.startsWith(RESERVED_FIRST_SEGMENT_PREFIX)) {
-    throw new Error(`ECC materialization destination claims AIH's own state area: ${value}`);
-  }
-  if (RESERVED_FIRST_SEGMENTS.has(first)) {
-    throw new Error(`ECC materialization destination claims the git directory: ${value}`);
-  }
+  assertUnreservedSegments(path.split("/"), value);
   return path;
+}
+
+/**
+ * Neutralise and bound a value before it reaches an operator-facing message. A
+ * component id or JSON key is third-party text: unbounded it produces a
+ * 200,000-character error, and with terminal controls it can forge output
+ * inside AIH's own refusal.
+ */
+export function displaySafe(value: string, max = 120): string {
+  const rendered = String(value)
+    .replace(/[\r\n]+/g, " ")
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping them is the point
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+  return rendered.length > max ? `${rendered.slice(0, max)}…` : rendered;
+}
+
+/** Validate a component id at the boundary, so no unbounded id reaches a message. */
+export function assertMaterializedComponentId(value: string): string {
+  const result = ComponentIdSchema.safeParse(value);
+  if (!result.success) {
+    throw new Error(`unusable ECC materialization component id: ${displaySafe(value)}`);
+  }
+  return result.data;
+}
+
+/** Validate an owned JSON key at the boundary, for the same reason. */
+export function assertOwnedJsonKey(value: string): string {
+  const result = OwnedKeySchema.safeParse(value);
+  if (!result.success) {
+    throw new Error(`unusable ECC materialization JSON key: ${displaySafe(value)}`);
+  }
+  return result.data;
+}
+
+/**
+ * Whether a value nests deeper than this engine renders. Iterative on purpose:
+ * `JSON.parse` accepts documents far deeper than `JSON.stringify` survives, so
+ * the check that guards the renderer must not itself recurse.
+ */
+export function exceedsJsonDepth(value: unknown, max = MAX_JSON_DEPTH): boolean {
+  const stack: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }];
+  while (stack.length > 0) {
+    const entry = stack.pop();
+    if (entry === undefined) break;
+    if (entry.depth > max) return true;
+    const current = entry.value;
+    if (Array.isArray(current)) {
+      for (const child of current) stack.push({ value: child, depth: entry.depth + 1 });
+      continue;
+    }
+    if (current !== null && typeof current === "object") {
+      for (const child of Object.values(current as Record<string, unknown>)) {
+        stack.push({ value: child, depth: entry.depth + 1 });
+      }
+    }
+  }
+  return false;
 }
 
 /** Validate a source-side component path (provenance), which never touches the destination. */
