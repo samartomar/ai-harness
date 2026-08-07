@@ -7,12 +7,18 @@ import {
   assertOwnedRelativePath,
   ECC_MATERIALIZATION_RECEIPT_FORMAT,
   ECC_MATERIALIZATION_RECEIPT_PATH,
+  eccMaterializationAuthorizationSchema,
   eccMaterializationReceiptPath,
+  ownedFragmentSha256,
   parseEccMaterializationReceipt,
   readEccMaterializationReceipt,
   serializeEccMaterializationReceipt,
 } from "../../src/ecc/materialization-receipt.js";
-import { emptyRegistrationLedger, mergeRegistrationLedger } from "../../src/ecc/registration.js";
+import {
+  AuthorizationSchema,
+  emptyRegistrationLedger,
+  mergeRegistrationLedger,
+} from "../../src/ecc/registration.js";
 
 let root: string;
 
@@ -75,11 +81,10 @@ function put(relative: string, contents: string): void {
 }
 
 /**
- * Whether the shipped machine ledger admits this authorization tuple. The
- * ledger's own strict schema is private, so its exported merge — which parses
- * the merged result — is the oracle. Delegated ruling 1 requires the receipt to
- * pin the tuple exactly as the ledger does; a difference in either direction is
- * a contract drift this test fails on.
+ * Whether the shipped machine ledger admits this authorization tuple. Parity is
+ * structural — the receipt imports the ledger's own exported schema rather than
+ * restating it — and these cases are the regression net proving the reference
+ * is live, including a field the ledger would reject.
  */
 function ledgerAccepts(value: unknown): boolean {
   try {
@@ -308,6 +313,10 @@ describe("F5 — the destination-scoped materialization receipt document", () =>
     ).toThrow(/materialization receipt/i);
   });
 
+  it("validates the authorization tuple through the ledger's own exported schema", () => {
+    expect(eccMaterializationAuthorizationSchema).toBe(AuthorizationSchema);
+  });
+
   it("pins the evidence authorization tuple exactly as the machine ledger does", () => {
     const mutations: Array<[string, unknown]> = [
       ["valid tuple", authorization()],
@@ -370,11 +379,51 @@ describe("F5 — the destination-scoped materialization receipt document", () =>
       "C:/absolute.md",
       "trailing/",
       `nul\u0000byte.md`,
+      `bell\u0007.md`,
+      "D:relative-to-drive.md",
+      "weird:name.md",
       ECC_MATERIALIZATION_RECEIPT_PATH,
       ".aih/ecc/registration-ledger.json",
     ]) {
-      expect(() => assertOwnedRelativePath(unsafe), unsafe).toThrow();
+      expect(() => assertOwnedRelativePath(unsafe), unsafe).toThrow(/unsafe|AIH|state/i);
     }
+  });
+
+  it("refuses AIH's own state area whatever its case, and the sibling governance marker", () => {
+    for (const reserved of [
+      ".aih/ecc/materialization-v1.json",
+      ".AIH/ecc/materialization-v1.json",
+      ".Aih/anything.json",
+      ".aih-config.json",
+      ".AIH-CONFIG.json",
+    ]) {
+      expect(() => assertOwnedRelativePath(reserved), reserved).toThrow(/AIH/i);
+    }
+    // Git's own directory is never a materialization destination: a hook file
+    // written there is executed by Git regardless of its mode bit.
+    for (const git of [".git/hooks/pre-commit", ".GIT/config"]) {
+      expect(() => assertOwnedRelativePath(git), git).toThrow(/git/i);
+    }
+    expect(assertOwnedRelativePath(".github/workflows/ci.yml")).toBe(".github/workflows/ci.yml");
+  });
+
+  it("refuses a pathologically nested owned value instead of blowing the stack", () => {
+    let nested: Record<string, unknown> = { end: true };
+    for (let depth = 0; depth < 5_000; depth += 1) nested = { nested };
+
+    expect(() => ownedFragmentSha256({ deep: nested })).toThrow(/nest|depth/i);
+  });
+
+  it("wraps a rejected serialization instead of leaking a raw schema error", () => {
+    const receipt = parseEccMaterializationReceipt(JSON.stringify(receiptValue()));
+    const broken = {
+      ...receipt,
+      components: [{ ...receipt.components[0], id: "NOT A COMPONENT ID" }],
+    } as unknown as Parameters<typeof serializeEccMaterializationReceipt>[0];
+
+    expect(() => serializeEccMaterializationReceipt(broken)).toThrow(
+      /invalid ECC materialization receipt/i,
+    );
   });
 
   it("reads a valid receipt, an absent one, and a malformed one as distinct states", () => {

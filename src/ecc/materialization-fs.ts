@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   chmodSync,
   lstatSync,
@@ -14,13 +14,17 @@ import { containedPath, inspectContainedRelativePath } from "../internals/contai
 import { readRegularFileWithStats, retryTransient } from "../internals/fsxn.js";
 
 /**
- * The guarded filesystem boundary for AIH-direct materialization.
+ * The guarded filesystem boundary for AIH-direct materialization, and the
+ * commit machinery that gives the engine the three guarantees the shipped
+ * `FsTransaction` gives its callers: nothing is touched until every step is
+ * planned, each step is re-pinned against live bytes immediately before its own
+ * side effect, and any failure rolls the applied steps back.
  *
- * Every path this engine reads, creates, or removes goes through here, and
- * every one of them is checked the way the shipped lifecycles check theirs:
- * an absolute real root, a symlink refusal on each traversed segment,
- * containment inside the root, bounded unambiguous regular files, and a
- * temp+rename commit so a destination is never observed half-written.
+ * The engine does not reuse `FsTransaction` itself because that class stages
+ * `string` contents and archives removals into `.aih/legacy/`; materialized
+ * component content is bytes (a skill may ship an image) and an uninstall must
+ * actually remove what it owns rather than relocate it under the reserved area
+ * this engine forbids components from writing to.
  */
 
 export const MAX_MATERIALIZED_FILE_BYTES = 4 * 1024 * 1024;
@@ -29,12 +33,36 @@ export const MATERIALIZATION_RECEIPT_MODE = 0o600;
 const CONTENT_DIRECTORY_MODE = 0o755;
 const STATE_DIRECTORY_MODE = 0o700;
 
+export type DestinationRead =
+  | { state: "absent" }
+  | { state: "present"; bytes: Buffer }
+  | { state: "unreadable"; detail: string };
+
+export type DestinationExpectation = { absent: true } | { sha256: string };
+
+export interface MaterializationCommitStep {
+  path: string;
+  mode: number;
+  /** Absent means remove. */
+  contents?: Buffer;
+  /** Re-checked immediately before this step's side effect. */
+  expect: DestinationExpectation;
+  /** Bytes to restore if a later step fails. Absent means the step created the file. */
+  prior?: Buffer;
+  /** Announced before the re-pin check, so a caller can observe (or interrupt) the boundary. */
+  announce?: () => void;
+}
+
 function lstatSafe(path: string): Stats | undefined {
   try {
     return lstatSync(path);
   } catch {
     return undefined;
   }
+}
+
+function sha256(bytes: Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 /** The destination root must be an absolute, real, non-symlinked directory. */
@@ -70,30 +98,51 @@ function assertSafeParents(rootReal: string, path: string): void {
   }
 }
 
-/** Read a destination's live bytes, refusing anything that is not a contained regular file. */
+/**
+ * Read a destination without deciding what its unreadability means. Removal
+ * paths turn `unreadable` into an advisory that names the path; write paths
+ * refuse. Neither guesses, and neither aborts a whole operation over one file.
+ */
+export function inspectDestination(rootReal: string, path: string): DestinationRead {
+  try {
+    assertSafeParents(rootReal, path);
+    const inspected = inspectContainedRelativePath(rootReal, path);
+    if (inspected.state === "absent") return { state: "absent" };
+    if (inspected.state === "unsafe") {
+      return {
+        state: "unreadable",
+        detail:
+          inspected.reason === "symlink"
+            ? `ECC materialization destination is a symlink: ${path}`
+            : `ECC materialization destination is unsafe (${inspected.reason}): ${path}`,
+      };
+    }
+    if (inspected.kind !== "file") {
+      return {
+        state: "unreadable",
+        detail: `ECC materialization destination is not a regular file: ${path}`,
+      };
+    }
+    const opened = readRegularFileWithStats(inspected.realPath, {
+      maxBytes: MAX_MATERIALIZED_FILE_BYTES,
+    });
+    if (opened === undefined || opened.stats.nlink > 1) {
+      return {
+        state: "unreadable",
+        detail: `ECC materialization destination is not a bounded unambiguous regular file: ${path}`,
+      };
+    }
+    return { state: "present", bytes: opened.contents };
+  } catch (error) {
+    return { state: "unreadable", detail: (error as Error).message };
+  }
+}
+
+/** The write-path read: an unreadable destination refuses rather than degrading. */
 export function readLiveDestination(rootReal: string, path: string): Buffer | undefined {
-  assertSafeParents(rootReal, path);
-  const inspected = inspectContainedRelativePath(rootReal, path);
-  if (inspected.state === "absent") return undefined;
-  if (inspected.state === "unsafe") {
-    throw new Error(
-      inspected.reason === "symlink"
-        ? `refusing a symlinked ECC materialization destination: ${path}`
-        : `refusing an unsafe ECC materialization destination (${inspected.reason}): ${path}`,
-    );
-  }
-  if (inspected.kind !== "file") {
-    throw new Error(`ECC materialization destination is not a regular file: ${path}`);
-  }
-  const opened = readRegularFileWithStats(inspected.realPath, {
-    maxBytes: MAX_MATERIALIZED_FILE_BYTES,
-  });
-  if (opened === undefined || opened.stats.nlink > 1) {
-    throw new Error(
-      `ECC materialization destination is not a bounded unambiguous regular file: ${path}`,
-    );
-  }
-  return opened.contents;
+  const live = inspectDestination(rootReal, path);
+  if (live.state === "unreadable") throw new Error(`refusing ${live.detail}`);
+  return live.state === "absent" ? undefined : live.bytes;
 }
 
 function prepareDirectory(rootReal: string, path: string, mode: number): string {
@@ -161,4 +210,61 @@ export function removeDestination(rootReal: string, path: string): void {
     throw new Error(`refusing to remove a symlinked ECC materialization destination: ${path}`);
   }
   rmSync(target, { force: true });
+}
+
+function assertExpected(rootReal: string, step: MaterializationCommitStep): void {
+  const live = inspectDestination(rootReal, step.path);
+  if (live.state === "unreadable") {
+    throw new Error(
+      `ECC materialization destination became unreadable before commit: ${step.path}`,
+    );
+  }
+  const unchanged =
+    "absent" in step.expect
+      ? live.state === "absent"
+      : live.state === "present" && sha256(live.bytes) === step.expect.sha256;
+  if (!unchanged) {
+    throw new Error(`ECC materialization destination changed before commit: ${step.path}`);
+  }
+}
+
+/**
+ * Commit an ordered plan. Each step is re-pinned against live bytes right
+ * before its own side effect — the window between planning and committing spans
+ * every earlier step, and `announce` runs inside it — and any failure restores
+ * what earlier steps replaced or removed.
+ */
+export function commitMaterializationSteps(
+  rootReal: string,
+  steps: readonly MaterializationCommitStep[],
+  rename?: (from: string, to: string) => void,
+): void {
+  const applied: MaterializationCommitStep[] = [];
+  try {
+    for (const step of steps) {
+      step.announce?.();
+      assertExpected(rootReal, step);
+      if (step.contents === undefined) removeDestination(rootReal, step.path);
+      else writeDestinationAtomic(rootReal, step.path, step.contents, step.mode, rename);
+      applied.push(step);
+    }
+  } catch (error) {
+    rollback(rootReal, applied);
+    throw error;
+  }
+}
+
+/** Best-effort restore, in reverse order. It must never mask the original failure. */
+function rollback(rootReal: string, applied: readonly MaterializationCommitStep[]): void {
+  for (const step of [...applied].reverse()) {
+    try {
+      if (step.prior !== undefined) {
+        writeDestinationAtomic(rootReal, step.path, step.prior, step.mode);
+        continue;
+      }
+      removeDestination(rootReal, step.path);
+    } catch {
+      // The original error is the one the operator needs.
+    }
+  }
 }

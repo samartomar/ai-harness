@@ -3,7 +3,7 @@ import { isAbsolute, join } from "node:path";
 import { z } from "zod";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
-import type { InstalledComponentRegistration } from "./registration.js";
+import { AuthorizationSchema } from "./registration.js";
 
 /**
  * The per-component materialization receipt (F5).
@@ -27,83 +27,57 @@ import type { InstalledComponentRegistration } from "./registration.js";
 export const ECC_MATERIALIZATION_RECEIPT_PATH = ".aih/ecc/materialization-v1.json";
 export const ECC_MATERIALIZATION_RECEIPT_FORMAT = "aih-ecc-materialization-receipt";
 
-/** The first path segment AIH keeps for its own state; a component never owns anything under it. */
-const RESERVED_ROOT_SEGMENT = ".aih";
+/**
+ * AIH's own namespace at the root of a destination. Matched case-insensitively
+ * on the FIRST segment and by prefix, so `.AIH/…` on a case-insensitive volume
+ * and the root-level `.aih-config.json` governance marker are both refused: a
+ * component that could write either could rewrite its own ownership or forge a
+ * marker other AIH subsystems trust.
+ */
+const RESERVED_FIRST_SEGMENT_PREFIX = ".aih";
+/** Git executes what it finds here regardless of the mode bit. Never a destination. */
+const RESERVED_FIRST_SEGMENTS = new Set([".git"]);
 
 const MAX_PATH_LENGTH = 1_024;
-const MAX_COMPONENTS = 4_096;
-const MAX_FILES_PER_COMPONENT = 2_048;
-const MAX_OWNED_KEYS = 64;
-const MAX_MATERIALIZATION_RECEIPT_BYTES = 16 * 1024 * 1024;
+export const MAX_MATERIALIZED_COMPONENTS = 4_096;
+export const MAX_MATERIALIZED_FILES_PER_COMPONENT = 2_048;
+export const MAX_MATERIALIZED_OWNED_KEYS = 64;
+export const MAX_MATERIALIZATION_RECEIPT_BYTES = 16 * 1024 * 1024;
+/** Deep enough for any real configuration, shallow enough that hashing cannot blow the stack. */
+const MAX_JSON_DEPTH = 100;
 
 const COMPONENT_ID = /^[a-z][a-z0-9-]*:[a-z0-9][a-z0-9._-]*$/;
 const REPOSITORY = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 const SHA40 = /^[a-f0-9]{40}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
-
-export type EccMaterializationOperation = "copy-file" | "merge-json";
-
-/** A whole file AIH wrote and therefore owns end to end. */
-export interface EccOwnedCopyFile {
-  path: string;
-  operation: "copy-file";
-  /** SHA-256 of the exact bytes written. */
-  contentSha256: string;
-}
+// biome-ignore lint/suspicious/noControlCharactersInRegex: refusing control characters is the point
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
 /**
- * Named top-level keys AIH merged into a JSON document it does not own whole.
- * `createdByAih` is recorded at write time because removing the file on
- * uninstall is allowed ONLY when AIH created it and the owned keys are still
- * its sole content — the H6 partition, unchanged.
+ * The ledger's own authorization schema, referenced rather than restated. A
+ * restatement cannot notice a field ADDED upstream, which is the likeliest
+ * direction of drift; sharing the object makes the two contracts the same
+ * contract.
  */
-export interface EccOwnedMergeJson {
-  path: string;
-  operation: "merge-json";
-  /** SHA-256 of the canonical bytes of the owned fragment — the keys AIH wrote, not the whole file. */
-  contentSha256: string;
-  ownedKeys: string[];
-  createdByAih: boolean;
-}
-
-export type EccOwnedFile = EccOwnedCopyFile | EccOwnedMergeJson;
-
-export interface EccComponentProvenance {
-  repository: string;
-  commit: string;
-  componentPath: string;
-}
-
-export interface EccMaterializedComponent {
-  id: string;
-  /** The evidence authorization tuple exactly as the machine ledger pins it. */
-  authorization: InstalledComponentRegistration["authorization"];
-  provenance: EccComponentProvenance;
-  files: EccOwnedFile[];
-}
-
-export interface EccMaterializationReceipt {
-  format: typeof ECC_MATERIALIZATION_RECEIPT_FORMAT;
-  schemaVersion: 1;
-  components: EccMaterializedComponent[];
-}
-
-export type EccMaterializationReceiptRead =
-  | { state: "absent" }
-  | { state: "valid"; receipt: EccMaterializationReceipt; raw: string }
-  | { state: "malformed"; detail: string };
+export { AuthorizationSchema as eccMaterializationAuthorizationSchema };
 
 function assertPortableRelativePath(value: string, label: string): string {
   const normalized = typeof value === "string" ? value.replace(/\\/g, "/") : "";
   if (
     normalized.length === 0 ||
     normalized.length > MAX_PATH_LENGTH ||
-    normalized.includes("\u0000") ||
+    CONTROL_CHARACTERS.test(normalized) ||
     normalized.startsWith("/") ||
-    /^[A-Za-z]:\//.test(normalized) ||
-    normalized
-      .split("/")
-      .some((segment) => segment.length === 0 || segment === "." || segment === "..")
+    normalized.split("/").some(
+      (segment) =>
+        segment.length === 0 ||
+        segment === "." ||
+        segment === ".." ||
+        // A colon is a Windows drive or stream separator: `C:/x` is absolute
+        // and `D:foo` is drive-relative, where `join` and `resolve` disagree
+        // about where it points.
+        segment.includes(":"),
+    )
   ) {
     throw new Error(`unsafe ${label}: ${value}`);
   }
@@ -112,14 +86,17 @@ function assertPortableRelativePath(value: string, label: string): string {
 
 /**
  * Normalize and validate a destination-relative path a component may own.
- * Traversal, absolute inputs, and AIH's own state area are refused rather than
- * repaired — the receipt itself lives under that area, and a component that
- * could name it could rewrite its own ownership.
+ * Traversal, absolute inputs, AIH's own state area, and Git's directory are
+ * refused rather than repaired.
  */
 export function assertOwnedRelativePath(value: string): string {
   const path = assertPortableRelativePath(value, "ECC materialization destination");
-  if (path.split("/")[0] === RESERVED_ROOT_SEGMENT) {
+  const first = (path.split("/")[0] ?? "").normalize("NFC").toLowerCase();
+  if (first.startsWith(RESERVED_FIRST_SEGMENT_PREFIX)) {
     throw new Error(`ECC materialization destination claims AIH's own state area: ${value}`);
+  }
+  if (RESERVED_FIRST_SEGMENTS.has(first)) {
+    throw new Error(`ECC materialization destination claims the git directory: ${value}`);
   }
   return path;
 }
@@ -127,6 +104,15 @@ export function assertOwnedRelativePath(value: string): string {
 /** Validate a source-side component path (provenance), which never touches the destination. */
 export function assertComponentSourcePath(value: string): string {
   return assertPortableRelativePath(value, "ECC component source path");
+}
+
+/**
+ * The identity two destinations collide on. Case folding and Unicode
+ * normalization both resolve to one file on the platforms AIH targets, so
+ * comparing raw strings would let two components claim the same bytes.
+ */
+export function destinationIdentity(path: string): string {
+  return path.normalize("NFC").toLowerCase();
 }
 
 const normalizedDestinationPath = z
@@ -142,33 +128,6 @@ const normalizedDestinationPath = z
   }, "owned destination path is unsafe or not normalized");
 
 const ComponentIdSchema = z.string().min(3).max(160).regex(COMPONENT_ID);
-
-/**
- * The evidence authorization tuple, pinned exactly as `registration.ts` pins it
- * for the machine ledger. The ledger's copy is module-private, so the parity is
- * proved by test against the ledger's own exported merge rather than asserted
- * here.
- */
-const AuthorizationSchema = z
-  .object({
-    componentId: ComponentIdSchema,
-    source: z.string().min(1).max(240),
-    pinnedSha: z.string().regex(SHA40),
-    treeSha256: z.string().regex(SHA256),
-    tier: z.enum(["vendor", "org"]),
-    issuer: z.string().min(1).max(240),
-    evidenceSha256: z.string().regex(SHA256),
-    effective: z.enum(["pass", "accepted-with-conditions"]).optional(),
-    acceptance: z
-      .object({
-        decisionId: z.string().min(1).max(240),
-        recordSha256: z.string().regex(SHA256),
-        acceptedFindingCodes: z.array(z.string().min(1).max(120)).max(64),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
 
 const ProvenanceSchema = z
   .object({
@@ -193,7 +152,7 @@ const OwnedKeySchema = z
   .min(1)
   .max(200)
   .refine(
-    (value) => !value.includes("\u0000") && value !== "__proto__",
+    (value) => !CONTROL_CHARACTERS.test(value) && value !== "__proto__",
     "owned JSON key is unusable",
   );
 
@@ -210,7 +169,7 @@ const OwnedFileSchema = z.discriminatedUnion("operation", [
       path: normalizedDestinationPath,
       operation: z.literal("merge-json"),
       contentSha256: z.string().regex(SHA256),
-      ownedKeys: z.array(OwnedKeySchema).min(1).max(MAX_OWNED_KEYS),
+      ownedKeys: z.array(OwnedKeySchema).min(1).max(MAX_MATERIALIZED_OWNED_KEYS),
       createdByAih: z.boolean(),
     })
     .strict(),
@@ -221,12 +180,12 @@ const ComponentSchema = z
     id: ComponentIdSchema,
     authorization: AuthorizationSchema,
     provenance: ProvenanceSchema,
-    files: z.array(OwnedFileSchema).min(1).max(MAX_FILES_PER_COMPONENT),
+    files: z.array(OwnedFileSchema).min(1).max(MAX_MATERIALIZED_FILES_PER_COMPONENT),
   })
   .strict()
   .superRefine((component, context) => {
     duplicateIssues(
-      component.files.map((file) => file.path),
+      component.files.map((file) => destinationIdentity(file.path)),
       "owned file",
       context,
     );
@@ -240,7 +199,7 @@ const ReceiptSchema = z
   .object({
     format: z.literal(ECC_MATERIALIZATION_RECEIPT_FORMAT),
     schemaVersion: z.literal(1),
-    components: z.array(ComponentSchema).min(1).max(MAX_COMPONENTS),
+    components: z.array(ComponentSchema).min(1).max(MAX_MATERIALIZED_COMPONENTS),
   })
   .strict()
   .superRefine((receipt, context) => {
@@ -251,6 +210,17 @@ const ReceiptSchema = z
     );
   });
 
+export type EccMaterializationOperation = "copy-file" | "merge-json";
+export type EccOwnedFile = z.infer<typeof OwnedFileSchema>;
+export type EccComponentProvenance = z.infer<typeof ProvenanceSchema>;
+export type EccMaterializedComponent = z.infer<typeof ComponentSchema>;
+export type EccMaterializationReceipt = z.infer<typeof ReceiptSchema>;
+
+export type EccMaterializationReceiptRead =
+  | { state: "absent" }
+  | { state: "valid"; receipt: EccMaterializationReceipt; raw: string }
+  | { state: "malformed"; detail: string };
+
 function duplicateIssues(
   values: readonly string[],
   label: string,
@@ -258,8 +228,9 @@ function duplicateIssues(
 ): void {
   const seen = new Set<string>();
   for (const value of values) {
-    if (seen.has(value))
+    if (seen.has(value)) {
       context.addIssue({ code: "custom", message: `duplicate ${label}: ${value}` });
+    }
     seen.add(value);
   }
 }
@@ -289,15 +260,31 @@ function normalizeReceipt(receipt: EccMaterializationReceipt): EccMaterializatio
 
 export function parseEccMaterializationReceipt(text: string): EccMaterializationReceipt {
   try {
-    return normalizeReceipt(ReceiptSchema.parse(JSON.parse(text)) as EccMaterializationReceipt);
+    return normalizeReceipt(ReceiptSchema.parse(JSON.parse(text)));
   } catch (error) {
     throw new Error(`invalid ECC materialization receipt: ${(error as Error).message}`);
   }
 }
 
+/**
+ * Validate and render the receipt. Every failure is wrapped, so a raw schema
+ * error never escapes to an operator, and the size bound the READ enforces is
+ * enforced here too — a receipt too large to read back is an install nothing
+ * could ever revoke.
+ */
 export function serializeEccMaterializationReceipt(receipt: EccMaterializationReceipt): string {
-  const validated = ReceiptSchema.parse(receipt) as EccMaterializationReceipt;
-  return `${JSON.stringify(normalizeReceipt(validated), null, 2)}\n`;
+  let text: string;
+  try {
+    text = `${JSON.stringify(normalizeReceipt(ReceiptSchema.parse(receipt)), null, 2)}\n`;
+  } catch (error) {
+    throw new Error(`invalid ECC materialization receipt: ${(error as Error).message}`);
+  }
+  if (Buffer.byteLength(text, "utf8") > MAX_MATERIALIZATION_RECEIPT_BYTES) {
+    throw new Error(
+      "invalid ECC materialization receipt: it would exceed the size this engine can read back",
+    );
+  }
+  return text;
 }
 
 export function eccMaterializationReceiptPath(root: string): string {
@@ -359,13 +346,22 @@ export function ownedFragmentSha256(fragment: Record<string, unknown>): string {
   return sha256(canonicalJsonText(fragment));
 }
 
-/** Deterministic JSON text — key-sorted at every depth. Used for digests only. */
-function canonicalJsonText(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJsonText).join(",")}]`;
+/**
+ * Deterministic JSON text — key-sorted at every depth, bounded in depth so a
+ * hostile or merely silly owned value fails as an error instead of a stack
+ * overflow. Digests only.
+ */
+function canonicalJsonText(value: unknown, depth = 0): string {
+  if (depth > MAX_JSON_DEPTH) {
+    throw new Error("ECC materialization JSON value is nested beyond the depth this engine hashes");
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((child) => canonicalJsonText(child, depth + 1)).join(",")}]`;
+  }
   if (value !== null && typeof value === "object") {
     return `{${Object.entries(value as Record<string, unknown>)
       .sort(([left], [right]) => byText(left, right))
-      .map(([key, child]) => `${JSON.stringify(key)}:${canonicalJsonText(child)}`)
+      .map(([key, child]) => `${JSON.stringify(key)}:${canonicalJsonText(child, depth + 1)}`)
       .join(",")}}`;
   }
   return JSON.stringify(value) ?? "null";
