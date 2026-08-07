@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -183,5 +191,62 @@ describe("fail closed on ambiguity — unreadable is not absent", () => {
     const state = hookRegistrarState(dir);
     expect(state.state).toBe("invalid");
     expect(state.detail).toMatch(/regular file/i);
+  });
+});
+
+describe("symlinked parents are refused, not followed off-root", () => {
+  /**
+   * The no-follow reads guard the LEAF only. Every sibling lifecycle also
+   * guards the parents, and for the same reason: with `.claude` or `.aih`
+   * redirected, ownership state is read from outside the root and reported as
+   * if it were in it — and the executor refuses a symlinked parent outright, so
+   * the removal the report promises would die inside the action loop instead of
+   * degrading to an advisory.
+   */
+  function linkDirectory(target: string, linkPath: string): string | undefined {
+    try {
+      symlinkSync(target, linkPath, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      return `this platform cannot create a directory link in a fixture root: ${(error as Error).message}`;
+    }
+    return lstatSync(linkPath).isSymbolicLink()
+      ? undefined
+      : "this platform does not report the created directory link as a symlink";
+  }
+
+  it("refuses a destination reached through a symlinked parent", (test) => {
+    const outside = mkdtempSync(join(tmpdir(), "aih-hook-registrar-outside-"));
+    try {
+      writeFileSync(
+        join(outside, "settings.json"),
+        `${JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "node outside.js" }] }] } })}\n`,
+        "utf8",
+      );
+      const cannotLink = linkDirectory(outside, join(dir, ".claude"));
+      if (cannotLink !== undefined) test.skip(cannotLink);
+
+      const state = hookRegistrarState(dir);
+      expect(state.state).toBe("invalid");
+      expect(state.detail).toMatch(/symlink/i);
+      expect(() => hookRegistrarProjectionActions(ctx(false), eccStopRegistrations())).toThrowError(
+        /symlink/i,
+      );
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a receipt reached through a symlinked parent", (test) => {
+    const outside = mkdtempSync(join(tmpdir(), "aih-hook-registrar-outside-"));
+    try {
+      writeFileSync(join(outside, "org-policy-hook-registrar-receipt.json"), "{}\n", "utf8");
+      const cannotLink = linkDirectory(outside, join(dir, ".aih"));
+      if (cannotLink !== undefined) test.skip(cannotLink);
+
+      expect(() => readHookRegistrarReceipt(dir)).toThrowError(/symlink/i);
+      expect(hookRegistrarState(dir).state).toBe("invalid");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });

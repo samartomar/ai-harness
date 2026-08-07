@@ -5,7 +5,7 @@ import { z } from "zod";
 import { readRegularFile } from "../internals/fsxn.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 import { type Action, type PlanContext, remove, writeJson } from "../internals/plan.js";
-import { occupied, withExpectedContents } from "../mcp/managed-projection.js";
+import { hasSymlinkParent, occupied, withExpectedContents } from "../mcp/managed-projection.js";
 import { stableJson } from "./effective.js";
 import {
   type HookRegistration,
@@ -670,7 +670,22 @@ function regularFileSize(abs: string): number | undefined {
   }
 }
 
+/**
+ * Why a path under `root` cannot be read as AIH's own, or `undefined` when it
+ * can. The no-follow read guards the leaf; this guards the parents, which the
+ * executor refuses outright — so a verdict reached through a redirected `.aih`
+ * or `.claude` would name a removal that is guaranteed to fail in the action
+ * loop, and would report content from outside the root as if it were in it.
+ */
+function symlinkedParentReason(root: string, rel: string): string | undefined {
+  return hasSymlinkParent(root, rel)
+    ? `${rel} is reached through a symlinked parent directory, and AIH never reads or edits through one`
+    : undefined;
+}
+
 function readDestination(root: string): DestinationRead {
+  const unsafeParent = symlinkedParentReason(root, HOOK_REGISTRAR_DESTINATION);
+  if (unsafeParent !== undefined) return { state: "unreadable", reason: unsafeParent };
   const abs = destinationPath(root);
   const contents = readRegularFile(abs, {
     maxBytes: HOOK_REGISTRAR_MAX_DESTINATION_BYTES,
@@ -702,9 +717,13 @@ function readDestination(root: string): DestinationRead {
 }
 
 export function readHookRegistrarReceipt(root: string): HookRegistrarReceipt | undefined {
-  const raw = readRegularFile(join(root, ...HOOK_REGISTRAR_RECEIPT_PATH.split("/")))?.toString(
-    "utf8",
-  );
+  // Refused, never treated as "no receipt": a receipt read as absent would let
+  // the next projection overwrite a destination AIH still owns.
+  const unsafeParent = symlinkedParentReason(root, HOOK_REGISTRAR_RECEIPT_PATH);
+  if (unsafeParent !== undefined) {
+    throw new OrgPolicyError(`${unsafeParent}; refusing hook ownership`);
+  }
+  const raw = receiptRawBytes(root);
   if (raw === undefined) return undefined;
   let value: unknown;
   try {
@@ -724,6 +743,7 @@ export function readHookRegistrarReceipt(root: string): HookRegistrarReceipt | u
 }
 
 function receiptRawBytes(root: string): string | undefined {
+  if (symlinkedParentReason(root, HOOK_REGISTRAR_RECEIPT_PATH) !== undefined) return undefined;
   return readRegularFile(join(root, ...HOOK_REGISTRAR_RECEIPT_PATH.split("/")))?.toString("utf8");
 }
 
