@@ -6,8 +6,70 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-08-07
+
+### Removed
+
+- **Breaking:** gstack is no longer a framework `aih` can bind. The adapter, its
+  registry and schema entries, the gstack-only Claude skill-override implementation,
+  and the doctor specialization around it are deleted, and the committed
+  `aih-config.schema.json` no longer admits the value — the framework set is `ecc` and
+  `superpowers`. A repository whose `.aih-config.json` still names `gstack`, either as
+  `binding.framework.id` or as `baseline`, now fails closed with one stable diagnostic
+  — `unsupported legacy configuration "gstack"; migrate to a supported framework before
+  continuing` — instead of being ignored, translated, or overridden. Bind `ecc` or
+  `superpowers` instead. One narrow exception keeps an existing install from being
+  stranded: a gstack binding receipt and a gstack-attributed cleanup manifest stay
+  readable by removal, ownership-drift reporting, and rollback, so receipt-proven
+  AIH-owned state can still be subtracted and restored. Such a receipt is never
+  selected, verified, provisioned, or rewritten. v3.0.0 withdrew `--baseline gstack`
+  from the CLI and left the adapter in the tree; this finishes the removal.
+
 ### Added
 
+- **The governed framework lifecycle is reachable from the shipped CLI.** In a
+  repository carrying a governed org policy, `aih ecc --lifecycle install` materializes
+  the policy's own component selection instead of refusing. AIH resolves which selected
+  components are authorized — a component the vet blocked at its pin, or one with no
+  evidence recorded at its pin, is reported with its reason, and with the vet's finding
+  codes when the vet blocked it, and is never written — and then materializes the
+  authorized ones itself, per component. Preview is the default and rides the existing
+  `--apply` gate; a dry run against a remote pin names the pinned source and the
+  selected component ids, and states that file-level preview needs `--ecc-path <dir>`
+  or `--apply`. A selection every target refuses is refused by name rather than
+  reconciled to an empty request. `update`, `repair`, and `rollback` still refuse in a
+  governed repository and name what is wired and where removal lives.
+- **Per-component ownership receipts, and removal bound to them.** The receipt records,
+  for each component, its evidence authorization, its source provenance, and per file
+  the destination-relative path, the SHA-256 of the exact bytes written, and whether
+  AIH owns the whole file or named keys inside it. Apply is atomic and writes owned
+  content before the ownership record; a second apply is byte-identical and does no
+  work; repair rewrites only owned files whose live bytes still match. `aih uninstall`
+  gains a member that subtracts only what the receipt proves AIH wrote: a file an
+  operator has since edited, or one that has gone missing, is reported by component and
+  path and left in place — never deleted and never replayed. A merged JSON file is
+  removed only when AIH created it and its owned keys are still its sole content. A
+  destination whose ownership the receipt cannot prove is reported with its reason
+  rather than rewritten, and a destination the engine kept is reported as kept rather
+  than as removed.
+- **Five materialization targets, chosen by the target selection every other command
+  already uses.** `--cli`, `--all-tools`, and the committed `.aih-config.json` select
+  among `claude` (the default), `codex`, `kimi`, `cursor`, and `opencode`; the policy
+  stays tool-neutral and gains no target grammar. Any other CLI is refused by name with
+  the remedy stated. Four targets carry their own project root — `.claude/`, `.codex/`,
+  `.cursor/`, and for Kimi `./.kimi-code/`, which is where the framework's own Kimi
+  adapter roots a project install. OpenCode materializes only the tool-shared project
+  surfaces (`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`), because its only
+  framework adapter is home-scoped and no evidenced per-tool `.opencode/` layout
+  exists; every other component refuses by name for that target rather than landing in
+  an invented directory. Several targets in one run are one materialization with one
+  receipt: a destination two targets share is written once, a target that refuses a
+  component does not stop the targets that accept it, and a later `--apply` with a
+  narrower target set subtracts the dropped target's files after comparing each digest,
+  reporting a hand-edited file as kept instead of removing it. A component whose files
+  would collapse onto one destination within a single target — two Unicode spellings of
+  one name, or two names differing only in case — is refused whole rather than
+  materialized one file short.
 - A governed policy can now declare **hook registrations**, and AIH emits them into the
   Claude hook configuration it owns while the third-party runtime that supplied each hook
   stays the one that executes it. The problem this addresses is narrow and concrete: when
@@ -24,13 +86,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   from the destination and never from the declaration — a hand-typed launcher is not
   expressible. Projecting onto a destination that carries entries AIH did not emit is
   refused with each one named by owner and event, checked on every projection rather than
-  only the first. `governance.hookRegistrations` is additive and `schemaVersion` stays `1`.
+  only the first. Richer destination content is transported rather than refused:
+  third-party native group and hook fields are carried verbatim through registrations,
+  receipts, and the projection, so an adopted matcher-scoped hook is re-emitted with its
+  matcher instead of being widened to fire on everything, and only structure that cannot
+  be interpreted at all still refuses. `governance.hookRegistrations` is additive and
+  `schemaVersion` stays `1`.
 - **Uninstall now removes hook entries that AIH registered**, third-party ones included,
   with no hand editing. It subtracts only the `hooks` key its receipt proves it owns, leaves
   every other key in the file untouched, and does not replay the bytes recorded before it
   first projected — adoption transfers ownership, so adopted entries do not reappear. A
   destination whose receipt cannot prove clean ownership is reported with its reason and
-  left alone rather than rewritten.
+  left alone rather than rewritten. Hook entries found with no receipt at all — what a
+  crash between the projection's two writes leaves behind — are now reported instead of
+  passed over in silence; they stay an advisory and never a subtraction, because without
+  a receipt AIH cannot prove it emitted them.
 - The Policy Workbench carries a **hook registrar panel**: a read-only projection view over
   registrations authored in the policy document and hook components selected on their own
   inventory rows, never a second place to author them. It reports entries and expected
@@ -38,23 +108,100 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a hook its source reports as disabled still spawns a process — that control is read inside
   the launcher, after the process exists — and says plainly when the pinned catalog carries
   hook components but no per-hook registration table, so a small number is not read as a
-  complete one. The panel reports usage, not price; the surface does not put a cost on a
-  hook.
+  complete one. The panel reports usage; the surface does not put a price on a hook.
 - The Policy Workbench now shows the **vet verdict AIH's own analyzers reached for every
   pinned component**, instead of telling an administrator to generate evidence this build
   already ships. Each row states who scanned it and at exactly what version, plus the
   content identity of the scanned tree. Components the vet blocked are **visually distinct
   and stay selectable**: they carry a leading rule, a mono flag naming the finding code, and
   a screen-reader disclosure listing every finding with its detail. That is deliberate —
-  `blocked` here means an AIH-owned gate failed, which is exactly the case the corrected
-  vocabulary reserves the word for, and the governance decision to accept or reject that
-  finding belongs to the administrator rather than to aih. Verdicts are **pin-bound**: when
-  the shipped evidence was produced against a different commit than the catalog serves, no
-  verdict is shown at all, because a verdict from another commit would launder a stale
-  result into a current claim.
+  `blocked` here means an AIH-owned gate failed, and the governance decision to accept or
+  reject that finding belongs to the administrator rather than to aih. Verdicts are
+  **pin-bound**: when the shipped evidence was produced against a different commit than the
+  catalog serves, no verdict is shown at all, because a verdict from another commit would
+  launder a stale result into a current claim.
+- A selected component row in the Policy Workbench now **states the fulfillment
+  consequence of selecting it**, with matching counts in the report preview — an
+  annotation on the existing rows rather than a new row or a second authoring path.
+  Each state reports only what the shipped catalog's own pin can establish and defers
+  the rest to the target repository's evaluation, because the page reads a build-time
+  pin while the engine reads the target repository's runtime evidence. A vet-blocked row
+  names accepting the finding as the path that changes its outcome; it stays visible and
+  selectable, and the annotation is a label, never a disabled experience. Row
+  annotations and summary counts now derive from one classifier that fails closed, so a
+  row and the summary can no longer contradict each other, and a selection the row layer
+  does not recognise is reported in its own honest bucket instead of being claimed as
+  something else.
+- `aih policy generate --apply` now creates a portable, self-contained Policy Workbench for
+  authoring and downloading the actual org-policy schema without inspecting a target repository,
+  resolving `--root`/`AIH_ROOT` repository state, or writing a repository run ledger.
+  The workbench keeps requested policy intent distinct from evaluated state, preserves authority
+  data as preflight-only until target-repository verification, keeps custom MCP pending and
+  blocked, and records ECC/Superpowers agent, skill, and command curation as pinned external
+  guidance rather than an AIH installer or projector. Signed approval clarification is bound
+  into the approval attestation digest and required when waiving an evidence gap.
+- `aih policy evaluate --verify` now provides a headless requested-versus-effective
+  governed-candidate gate. It resolves exact MCP and AIH-owned hook identities,
+  receipt-verified external authority, targets, ownership, rollback/drift, and projector
+  coverage; unsafe or unsupported requests remain blocked and visible in reports and doctor.
+- The from-scratch baseline vet can now be **fanned out across hosts**. `baseline:vet` accepts
+  `--shard <i>/<n> --receipts-out <file>` to scan one slice of each catalog and write a receipt
+  bundle, and `--reuse-from <a,b,c>` to merge those bundles into the prior lock for a single
+  assembly run. Sharding distributes the *work* of producing receipts and never the authority
+  to assert one: the assembly run re-hashes every component tree and re-checks the
+  required-analyzer identity set before splicing, so a stale or mismatched receipt is rescanned
+  rather than trusted, and two bundles that disagree about the same component are refused
+  instead of resolved. Shard coverage is always reported so a dropped shard cannot masquerade
+  as a slow run. CI is unchanged and still runs the single-host `--full` ground truth.
 
 ### Changed
 
+- **Merged JSON writes preserve the destination's own formatting.** AIH re-serialized
+  the whole file, so an operator's comments, indentation, key order, and line endings
+  did not survive a write even though every value did. A merge onto an existing
+  parseable object now edits only the top-level keys whose value changed: every other
+  key keeps its bytes, its comments, and its position, and a key AIH writes adopts the
+  file's own indentation and line ending. AIH also stops normalizing what it did not
+  change — an existing trailing comma is kept, and a missing final newline is no longer
+  added. Two cases refuse rather than strip a comment: a comment inside the `hooks` span
+  AIH owns and replaces whole, which previously was stripped in silence while the run
+  reported success; and a destination that declares the same top-level key more than
+  once and also carries a comment, because a duplicated name splits the writer from
+  every reader of the file and is therefore collapsed by a whole-file render that would
+  drop the comment. Without a comment to lose, a duplicated key is still collapsed by
+  that render, as before. Non-merge writes, new files, empty files, and non-object roots
+  render exactly as they did.
+- **Hook revocation subtracts per group, so cohabitation is not drift.** One operator
+  hook anywhere under the `hooks` key made the ownership verdict read `drifted` and
+  revocation refuse outright, leaving hand editing as the only exit on exactly the
+  configuration this feature exists for — a repository's own hooks, a framework's, and
+  AIH's in one settings file. Ownership is now granular to the projected group: an entry
+  is owned when its whole group structurally equals the receipt's rendering, produced by
+  the same composer the projection writes with, and claims are occurrence-counted, so N
+  owned copies claim exactly N groups on disk and an unvouched duplicate is preserved. A
+  new verdict, `cohabited`, covers every owned group being provable with foreign content
+  beside it; revocation then subtracts exactly the owned groups, writes the remainder
+  back, and drops the `hooks` key only when subtraction leaves it empty. `active` keeps
+  its exact-match meaning. Anything that breaks provability stays `drifted` and advisory
+  with nothing removed: an operator entry inserted inside an AIH-written group, a
+  modified owned command, a missing owned group. A file is removed only when AIH created
+  it, its owned keys are its sole content, and nothing foreign remains — a file holding
+  any operator content, including an entryless group or an empty event, is subtracted
+  and never removed. Nothing is replayed: the remainder derives from the file's current
+  bytes, so a group the operator has since deleted is not resurrected.
+- Externally-owned inventory in the Policy Workbench is now **selectable**. AIH records
+  ECC and Superpowers components with provenance — repository, pinned commit, path — while
+  those frameworks install and run them, so a pin on a third-party component is provenance
+  and never a gate. `Unsupported` no longer appears on any of the 151 recorded components;
+  it and `blocked` are now reserved for items where an AIH-owned gate actually fails, which
+  is AIH's own MCP controls, hooks, and custom candidates. Selecting a third-party component
+  records requested intent and holds it at `requested-evidence-needed` until evidence
+  arrives, so evidence is a separate axis from selection rather than a precondition for it.
+  Each row states the `aih evidence vet-baseline` command that would produce its evidence.
+- An org policy may select from **one external framework at a time**, enforced in
+  `OrgPolicySchema`; ECC and Superpowers are mutually exclusive because composing two
+  catalogs is a claim neither framework makes. A component may not appear in both external
+  selections and curation.
 - The from-scratch baseline vet is now **anchored to the pin set rather than to a schedule**,
   and no longer runs in CI. Every input it consumes is content-addressed — sources by commit
   SHA, SkillSpector by image digest, the scanner environments by hash-pinned `uv.lock`,
@@ -71,46 +218,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   scanned. The pair is tamper-resistant: editing the lock's recorded pins to fake agreement
   fails, because `baseline:check` then re-derives at those pins and the receipts do not
   reproduce.
-
-### Added
-
-- The from-scratch baseline vet can now be **fanned out across hosts**. `baseline:vet` accepts
-  `--shard <i>/<n> --receipts-out <file>` to scan one slice of each catalog and write a receipt
-  bundle, and `--reuse-from <a,b,c>` to merge those bundles into the prior lock for a single
-  assembly run. Sharding distributes the *cost* of producing receipts and never the authority
-  to assert one: the assembly run re-hashes every component tree and re-checks the
-  required-analyzer identity set before splicing, so a stale or mismatched receipt is rescanned
-  rather than trusted, and two bundles that disagree about the same component are refused
-  instead of resolved. Shard coverage is always reported so a dropped shard cannot masquerade
-  as a slow run. CI is unchanged and still runs the single-host `--full` ground truth.
-- `aih policy generate --apply` now creates a portable, self-contained Policy Workbench for
-  authoring and downloading the actual org-policy schema without inspecting a target repository,
-  resolving `--root`/`AIH_ROOT` repository state, or writing a repository run ledger.
-  The workbench keeps requested policy intent distinct from evaluated state, preserves authority
-  data as preflight-only until target-repository verification, keeps custom MCP pending and
-  blocked, and records ECC/Superpowers agent, skill, and command curation as pinned external
-  guidance rather than an AIH installer or projector. Signed approval clarification is bound
-  into the approval attestation digest and required when waiving an evidence gap.
-- `aih policy evaluate --verify` now provides a headless requested-versus-effective
-  governed-candidate gate. It resolves exact MCP and AIH-owned hook identities,
-  receipt-verified external authority, targets, ownership, rollback/drift, and projector
-  coverage; unsafe or unsupported requests remain blocked and visible in reports and doctor.
-
-### Changed
-
-- Externally-owned inventory in the Policy Workbench is now **selectable**. AIH records
-  ECC and Superpowers components with provenance — repository, pinned commit, path — while
-  those frameworks install and run them, so a pin on a third-party component is provenance
-  and never a gate. `Unsupported` no longer appears on any of the 151 recorded components;
-  it and `blocked` are now reserved for items where an AIH-owned gate actually fails, which
-  is AIH's own MCP controls, hooks, and custom candidates. Selecting a third-party component
-  records requested intent and holds it at `requested-evidence-needed` until evidence
-  arrives, so evidence is a separate axis from selection rather than a precondition for it.
-  Each row states the `aih evidence vet-baseline` command that would produce its evidence.
-- An org policy may select from **one external framework at a time**, enforced in
-  `OrgPolicySchema`; ECC and Superpowers are mutually exclusive because composing two
-  catalogs is a claim neither framework makes. A component may not appear in both external
-  selections and curation.
 - Every externally-pinned vetting input is rebound to a current upstream identity and re-vetted
   from scratch: ECC `4da6deac` → `623f2c02`, Superpowers v6.1.1 → v6.2.0, SkillSpector 2.5.0 →
   2.5.3 (new controlled digest, reproduced independently on four hosts), cisco-ai-skill-scanner
@@ -122,6 +229,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The ECC native runtime AIH projects into a project could not start at all. It runs
+  from wherever it was projected, outside the installed package, so no dependency
+  closure sits beside it — and `zod` stayed an external bare import, which Node failed
+  to resolve before the runtime read a single argument. No invocation of the projected
+  runtime worked, in any mode. `zod` is now bundled into the chunk all three entry
+  points already share. An installed 3.4.0 profile keeps the broken runtime until it is
+  updated, because the registered runtime is a built artifact.
+- An org baseline-evidence bundle this build cannot read is now diagnosed for what it
+  is. An attested artifact that failed to parse was passed over in silence, and the run
+  then reported that the bundle carries no evidence for the pin — sending an
+  administrator to re-vet a pin that was already vetted. Every attested baseline
+  artifact is now classified by its declared schema version before any structural parse,
+  and a lock that is unreadable or newer than this build fails under its own code,
+  `baseline.evidence-schema-unsupported`, naming the declared version, the version this
+  build parses, and the remedy: upgrade aih, rather than restore bytes or re-vet.
+  Artifacts are floored whether or not they match the requested catalog, so a run cannot
+  quietly settle for an older artifact in the same signed bundle.
 - The ECC composite hook dispatcher no longer emits `hookSpecificOutput` on Claude events
   that reject it. Claude validates that field against a per-event allowlist and discards the
   whole hook payload when the event is absent from it, so 8 of the 13 registered Claude
@@ -1951,7 +2075,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v3.4.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/samartomar/ai-harness/compare/v3.4.0...v4.0.0
 [3.4.0]: https://github.com/samartomar/ai-harness/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/samartomar/ai-harness/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/samartomar/ai-harness/compare/v3.1.0...v3.2.0
