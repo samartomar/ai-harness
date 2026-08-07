@@ -129,10 +129,16 @@ describe("acceptance — governed hook registrations on a temporary fixture root
     const actions = await verifiedOrgPolicyProjectionActions(ctx(false), policy);
     await executePlan(plan("policy project", ...actions), ctx(true), { skipWorktreeGate: true });
     const projected = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8");
+    const projectedHooks = JSON.parse(projected).hooks;
     for (const registration of registrations) {
-      expect(projected, `${registration.id} verbatim`).toContain(
-        JSON.stringify(registration.command).slice(1, -1),
-      );
+      // H2 is byte-for-byte, so the assertion is structural equality against the
+      // destination's own entry. A substring test would also pass for a
+      // projection that wrapped the launcher in a shell prefix or appended a
+      // flag — the launcher would no longer be the source's own, which is
+      // exactly what H2 forbids.
+      expect(projectedHooks[registration.event], `${registration.id} verbatim`).toContainEqual({
+        hooks: [{ type: "command", command: registration.command }],
+      });
     }
     const receipt = readHookRegistrarReceipt(root);
     expect(receipt?.policyVersion).toBe("2026-08-06.acceptance");
