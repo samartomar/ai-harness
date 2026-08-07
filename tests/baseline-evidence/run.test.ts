@@ -178,7 +178,13 @@ describe("guarded baseline install phases", () => {
 
     const phase = await baselineInstallPhasePlan(ctx(), gate, build);
 
-    expect(build).toHaveBeenCalledWith([expect.objectContaining({ componentId: "skill:clean" })]);
+    // Authorizations AND the records the gate held back, from the one
+    // verification this phase re-ran — so a builder can report why a requested
+    // component did not install without verifying it a second time.
+    expect(build).toHaveBeenCalledWith(
+      [expect.objectContaining({ componentId: "skill:clean" })],
+      [expect.objectContaining({ componentId: "skill:held" })],
+    );
     expect(phase.actions.map((action) => action.kind)).toEqual(["probe", "digest", "doc"]);
   });
 

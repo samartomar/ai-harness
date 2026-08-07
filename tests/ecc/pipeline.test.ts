@@ -315,7 +315,11 @@ describe("ECC baseline evidence pipeline", () => {
     expect(request.selection.mcps).toEqual([]);
   });
 
-  it("blocks governed ECC lifecycle MCP-writing verbs while retaining uninstall cleanup", async () => {
+  // `install` is no longer here: in a governed repository it runs the governed
+  // framework materialization instead (F6), pinned in
+  // `tests/ecc/governed-lifecycle-command.test.ts`. The remaining three still
+  // drive the framework's own profile installer, which may register native MCPs.
+  it("blocks the governed ECC lifecycle verbs that still drive the profile installer", async () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       JSON.stringify({
@@ -330,7 +334,7 @@ describe("ECC baseline evidence pipeline", () => {
         },
       }),
     );
-    for (const lifecycle of ["install", "update", "repair", "rollback"]) {
+    for (const lifecycle of ["update", "repair", "rollback"]) {
       const context = ctx(false);
       context.options = { lifecycle };
       await expect(
@@ -339,7 +343,7 @@ describe("ECC baseline evidence pipeline", () => {
             throw new Error("lifecycle must not run");
           },
         }),
-      ).rejects.toThrow(/governance exclusively owns AIH MCP projection/);
+      ).rejects.toThrow(/governance exclusively owns/);
     }
 
     const uninstall = ctx(false);
@@ -466,6 +470,10 @@ describe("ECC baseline evidence pipeline", () => {
         expect.objectContaining({ componentId: "runtime:ecc-installer" }),
         expect.objectContaining({ componentId: "baseline:rules" }),
       ],
+      // The held records ride alongside the authorizations, from the same
+      // verification the gate acted on — so a builder can report WHY a
+      // requested component did not install without re-verifying it.
+      [expect.objectContaining({ componentId: "baseline:hooks" })],
     );
     expect(result.docs).toEqual([expect.objectContaining({ describe: "install" })]);
     expect(result.report?.exitCode()).toBe(0);
