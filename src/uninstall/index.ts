@@ -674,6 +674,20 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
         disposition: "advisory",
         reason: `aih hook-registrar receipt cannot prove clean ownership — ${registrar.detail}; remediate manually, then repair or uninstall`,
       });
+    } else if (registrar.state === "unowned") {
+      // Hook entries on disk with no receipt to attribute them. This is also
+      // what a crash between the projection's two writes leaves behind, and
+      // those launchers have no other removal path — reporting nothing would
+      // leave them silently. It stays an ADVISORY and never a subtract: with no
+      // receipt aih cannot prove it emitted them, and proving that is the whole
+      // authority to remove. An `absent` destination stays silent; there is
+      // nothing there to report.
+      artifacts.push({
+        path: HOOK_REGISTRAR_DESTINATION,
+        kind: "hook-registrar",
+        disposition: "advisory",
+        reason: `hook entries with no aih hook-registrar receipt — ${registrar.detail}; aih removes nothing it cannot prove it emitted`,
+      });
     }
   }
 

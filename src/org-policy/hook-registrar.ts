@@ -900,6 +900,12 @@ export function hookRegistrarProjectionActions(
     prior,
     entries: parsed.map(receiptEntry),
   };
+  // Owned content FIRST, ownership record SECOND — the order every sibling
+  // lifecycle uses (`src/mcp/index.ts` writes the managed pair, then its
+  // ownership marker) and the order revocation reverses. The executor stages
+  // both in one filesystem transaction, so an interrupted apply rolls back;
+  // what survives a hard kill between the two renames is content with no
+  // receipt, and uninstall reports that as an advisory rather than silence.
   return [
     withExpectedContents(
       writeJson(

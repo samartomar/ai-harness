@@ -156,4 +156,38 @@ describe("A2 — uninstall subtracts receipt-owned hook registrations, never rep
     // so uninstall leaves every byte alone.
     expect(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8")).toBe(before);
   });
+
+  /**
+   * H6/A2: the projection commits the destination write and the receipt write
+   * in that order, so a crash between them leaves projected launchers on disk
+   * with nothing to attribute them. Uninstall used to say nothing at all about
+   * that state — no artifact, no advisory, no digest line — silently leaving
+   * behind exactly the entries that have no other removal path. It must name
+   * them. It must still not delete them: with no receipt aih cannot prove it
+   * emitted them, and proving ownership is the whole authority to remove.
+   */
+  it("names entries left with no receipt, and still removes nothing", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+    const projected = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8");
+    rmSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH));
+
+    const result = await uninstall();
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("core install footprint"),
+    );
+    expect(digest?.text).toContain(HOOK_REGISTRAR_DESTINATION);
+    expect(digest?.text).toContain("advisory");
+    expect(digest?.text.toLowerCase()).toContain("hook");
+    expect(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8")).toBe(projected);
+  });
+
+  it("stays silent about a destination with no hook entries at all", async () => {
+    put(HOOK_REGISTRAR_DESTINATION, `${JSON.stringify(OPERATOR_CONTENT, null, 2)}\n`);
+    const result = await uninstall();
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("core install footprint"),
+    );
+    expect(digest?.text).not.toContain(HOOK_REGISTRAR_DESTINATION);
+  });
 });
