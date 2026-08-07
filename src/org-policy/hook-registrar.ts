@@ -1,22 +1,84 @@
 import { createHash } from "node:crypto";
-import { join } from "node:path";
-import { z } from "zod";
-import { readRegularFile } from "../internals/fsxn.js";
-import { isPlainObject, parseJsoncText } from "../internals/merge.js";
+import { isPlainObject } from "../internals/merge.js";
 import { type Action, type PlanContext, remove, writeJson } from "../internals/plan.js";
 import { withExpectedContents } from "../mcp/managed-projection.js";
 import { stableJson } from "./effective.js";
+import type { HookAdoptionOffer } from "./hook-registrar-adoption.js";
+import {
+  assertHookRegistrations,
+  boundedReportedEntries,
+  claimOccurrence,
+  composeProjectedHooks,
+  destinationHookEntries,
+  displayableDestinationText,
+  entrylessGroups,
+  mergedMaxCounts,
+  type NativeHookEntry,
+  nativeHookEntryKey,
+  occurrenceCounts,
+  type ProjectedHookGroup,
+  type ProjectedHookSettings,
+  parseDestinationSettings,
+  projectedHookGroup,
+  registrationKey,
+  registrationNativeEntry,
+} from "./hook-registrar-native.js";
+import {
+  type GuardedRead,
+  HOOK_REGISTRAR_DESTINATION,
+  HOOK_REGISTRAR_RECEIPT_PATH,
+  readDestination,
+  readReceipt,
+} from "./hook-registrar-read.js";
+import {
+  expectedHooksFromReceipt,
+  type HookReceiptPrior,
+  type HookRegistrarReceipt,
+  hookRegistrationOwnerId,
+  parseHookRegistrarReceipt,
+  readHookRegistrarReceipt,
+  receiptEntry,
+  receiptNativeEntry,
+  receiptRegistration,
+} from "./hook-registrar-receipt.js";
 import {
   type HookRegistration,
   HookRegistrationSchema,
   hookCommandDigest,
-  hookRegistrationSetIssues,
   OrgPolicyError,
   type ResolvedHookRegistration,
-  type ThirdPartyLauncherPin,
-  ThirdPartyLauncherPinSchema,
 } from "./schema.js";
 
+export {
+  adoptedHookRegistrations,
+  type HookAdoptionDeclaration,
+  type HookAdoptionOffer,
+  type HookAdoptionProvenance,
+} from "./hook-registrar-adoption.js";
+export {
+  assertHookRegistrations,
+  destinationHookEntries,
+  MAX_REPORTED_HOOK_ENTRIES,
+  type NativeHookEntry,
+  nativeHookEntryKey,
+  type ProjectedHookCommand,
+  type ProjectedHookGroup,
+  type ProjectedHookSettings,
+} from "./hook-registrar-native.js";
+export {
+  HOOK_REGISTRAR_DESTINATION,
+  HOOK_REGISTRAR_MAX_DESTINATION_BYTES,
+  HOOK_REGISTRAR_MAX_RECEIPT_BYTES,
+  HOOK_REGISTRAR_RECEIPT_FORMAT,
+  HOOK_REGISTRAR_RECEIPT_PATH,
+} from "./hook-registrar-read.js";
+export {
+  type HookReceiptEntry,
+  type HookReceiptPrior,
+  type HookRegistrarReceipt,
+  hookRegistrationOwnerId,
+  readHookRegistrarReceipt,
+} from "./hook-registrar-receipt.js";
 export {
   type HookRegistration,
   type HookRegistrationOwner,
@@ -42,15 +104,11 @@ export {
  *    observation behind that lives in the decision log, not here: this file
  *    holds no evidence for it and must not assert it as fact.
  *
- * A projected third-party command is transported, never transformed. The only
- * thing AIH computes about it is a hash, and the only thing that hash is used
- * for is proving it did not change.
+ * A projected third-party entry is transported, never transformed — its command
+ * and every native field around it alike. The only thing AIH computes about a
+ * launcher is a hash, and the only thing that hash is used for is proving it did
+ * not change.
  */
-
-/** The one destination this projector owns. */
-export const HOOK_REGISTRAR_DESTINATION = ".claude/settings.json";
-export const HOOK_REGISTRAR_RECEIPT_PATH = ".aih/org-policy-hook-registrar-receipt.json";
-export const HOOK_REGISTRAR_RECEIPT_FORMAT = "aih-org-policy-hook-registrar-receipt";
 
 /**
  * Claude is the only supported target. Codex publishes no per-event hook output
@@ -59,51 +117,8 @@ export const HOOK_REGISTRAR_RECEIPT_FORMAT = "aih-org-policy-hook-registrar-rece
  */
 export const HOOK_REGISTRAR_TARGETS = ["claude"] as const;
 
-export interface ProjectedHookCommand {
-  type: "command";
-  command: string;
-  timeout?: number;
-}
-export interface ProjectedHookGroup {
-  hooks: ProjectedHookCommand[];
-}
-export interface ProjectedHookSettings {
-  hooks: Record<string, ProjectedHookGroup[]>;
-}
-
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
-}
-
-export function hookRegistrationOwnerId(registration: ResolvedHookRegistration): string {
-  return registration.owner.kind === "third-party"
-    ? registration.owner.framework
-    : registration.owner.kind;
-}
-
-/**
- * Validate a registration set at the boundary, and prove every third-party
- * launcher still matches its pin. A launcher whose hash moved is DRIFT — it is
- * refused here rather than projected. The checks are the grammar's own
- * `hookRegistrationSetIssues` — one copy, shared with `governance.hookRegistrations`.
- */
-export function assertHookRegistrations(
-  registrations: readonly HookRegistration[],
-): ResolvedHookRegistration[] {
-  const parsed = registrations.map((registration) => {
-    const result = HookRegistrationSchema.safeParse(registration);
-    if (!result.success) {
-      throw new OrgPolicyError(
-        `hook registration ${String(registration.id)} is invalid: ${result.error.issues
-          .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
-          .join("; ")}`,
-      );
-    }
-    return result.data;
-  });
-  const [issue] = hookRegistrationSetIssues(parsed);
-  if (issue !== undefined) throw new OrgPolicyError(issue.message);
-  return parsed;
 }
 
 function orderedEvents(registrations: readonly ResolvedHookRegistration[]): string[] {
@@ -125,16 +140,7 @@ export function projectedHookSettings(
   for (const event of orderedEvents(parsed)) {
     hooks[event] = parsed
       .filter((registration) => registration.event === event)
-      .map((registration) => ({
-        hooks: [
-          {
-            type: "command" as const,
-            // Verbatim. The source's own launcher, transported unchanged.
-            command: registration.command,
-            ...(registration.timeout === undefined ? {} : { timeout: registration.timeout }),
-          },
-        ],
-      }));
+      .map((registration) => projectedHookGroup(registrationNativeEntry(registration)));
   }
   return { hooks };
 }
@@ -230,53 +236,13 @@ export interface DriftedHookEntry {
   event: string;
   reason: "missing" | "launcher-pin-mismatch";
 }
-export interface HookAdoptionOffer {
-  event: string;
-  command: string;
-  commandSha256: string;
-}
 export interface HookDriftReport {
   destination: string;
   unowned: UnownedHookEntry[];
   drifted: DriftedHookEntry[];
-  /** What AIH offers to take ownership of. It never absorbs one silently. */
   adoption: HookAdoptionOffer[];
-}
-
-interface DestinationEntry {
-  event: string;
-  command: string;
-}
-
-/** Flatten a native hook configuration into entries. Malformed shapes are refused. */
-export function destinationHookEntries(destination: unknown): DestinationEntry[] {
-  if (destination === undefined) return [];
-  if (!isPlainObject(destination)) {
-    throw new OrgPolicyError(`${HOOK_REGISTRAR_DESTINATION} is not a JSON object`);
-  }
-  const hooks = destination.hooks;
-  if (hooks === undefined) return [];
-  if (!isPlainObject(hooks)) {
-    throw new OrgPolicyError(`${HOOK_REGISTRAR_DESTINATION}.hooks is not an object`);
-  }
-  const entries: DestinationEntry[] = [];
-  for (const [event, groups] of Object.entries(hooks)) {
-    if (!Array.isArray(groups)) {
-      throw new OrgPolicyError(`${HOOK_REGISTRAR_DESTINATION}.hooks.${event} is not an array`);
-    }
-    for (const group of groups) {
-      if (!isPlainObject(group) || !Array.isArray(group.hooks)) {
-        throw new OrgPolicyError(
-          `${HOOK_REGISTRAR_DESTINATION}.hooks.${event} has a malformed hook group`,
-        );
-      }
-      for (const hook of group.hooks) {
-        if (!isPlainObject(hook) || typeof hook.command !== "string") continue;
-        entries.push({ event, command: hook.command });
-      }
-    }
-  }
-  return entries;
+  /** Entries beyond the reporting bound — counted, never silently dropped. */
+  omitted: number;
 }
 
 /**
@@ -292,22 +258,27 @@ export function hookRegistrarDrift(input: {
   );
   const onDisk = destinationHookEntries(input.destination);
   const expected = new Map(
-    parsed.map((registration) => [
-      `${registration.event}\u0000${registration.command}`,
-      registration,
-    ]),
+    parsed.map((registration) => [registrationKey(registration), registration]),
   );
+  const unclaimed = occurrenceCounts(parsed.map(registrationKey));
   const seen = new Set<string>();
-  const unowned: UnownedHookEntry[] = [];
-  const adoption: HookAdoptionOffer[] = [];
+  const foreign: NativeHookEntry[] = [];
   for (const entry of onDisk) {
-    const key = `${entry.event}\u0000${entry.command}`;
-    if (expected.has(key)) {
+    const key = nativeHookEntryKey(entry);
+    if (expected.has(key) && claimOccurrence(unclaimed, key)) {
       seen.add(key);
       continue;
     }
+    foreign.push(entry);
+  }
+  const bounded = boundedReportedEntries(foreign);
+  const unowned: UnownedHookEntry[] = [];
+  const adoption: HookAdoptionOffer[] = [];
+  for (const entry of bounded.shown) {
     // Attribution is only as good as a declared pin. Guessing an owner from a
     // command AIH does not interpret would be a fabricated claim.
+    // The digest is taken from the ORIGINAL bytes; only what is reported is
+    // neutralized, so an adoption declaration still names the exact launcher.
     const digest = hookCommandDigest(entry.command);
     const attributed = parsed.find(
       (registration) =>
@@ -315,9 +286,9 @@ export function hookRegistrarDrift(input: {
         registration.owner.pin.launcherSha256 === digest,
     );
     unowned.push({
-      event: entry.event,
+      event: displayableDestinationText(entry.event),
+      command: displayableDestinationText(entry.command),
       owner: attributed === undefined ? "unknown" : hookRegistrationOwnerId(attributed),
-      command: entry.command,
     });
     adoption.push({ event: entry.event, command: entry.command, commandSha256: digest });
   }
@@ -334,296 +305,17 @@ export function hookRegistrarDrift(input: {
       });
       continue;
     }
-    if (!seen.has(`${registration.event}\u0000${registration.command}`)) {
+    if (!seen.has(registrationKey(registration))) {
       drifted.push({ id: registration.id, event: registration.event, reason: "missing" });
     }
   }
-  return { destination: HOOK_REGISTRAR_DESTINATION, unowned, drifted, adoption };
-}
-
-export interface HookAdoptionProvenance {
-  repository: string;
-  commit: string;
-  path: string;
-  runtimeVersion: string;
-}
-
-/**
- * An administrator's answer to an adoption offer. It names the offered entry by
- * event and captured-byte hash — never by launcher text, because an
- * administrator never hand-types a launcher; a hand-typed launcher means
- * adoption was not run. Everything AIH must not infer is declared here:
- * identity, function tags, the spawn measurement, and provenance. Declaring no
- * provenance leaves the owner `unknown`.
- */
-export interface HookAdoptionDeclaration {
-  event: string;
-  commandSha256: string;
-  id: string;
-  functionTags: readonly string[];
-  spawns: number;
-  timeout?: number;
-  sourceDisabled?: boolean;
-  owner:
-    | {
-        kind: "third-party";
-        framework: string;
-        declaredControls?: readonly string[];
-        pin: HookAdoptionProvenance;
-      }
-    | { kind: "unknown" };
-}
-
-/**
- * A1: capture each named launcher byte-for-byte from the destination, hash
- * those exact bytes, and emit the policy entries the grammar accepts. This is
- * the only path from an unowned destination entry to a policy registration —
- * and adoption is a transfer of ownership: once emitted and projected, the
- * entry is revocable through the receipt and never comes back on uninstall.
- */
-export function adoptedHookRegistrations(
-  root: string,
-  declarations: readonly HookAdoptionDeclaration[],
-): ResolvedHookRegistration[] {
-  const bytes = readDestinationBytes(root);
-  if (bytes === undefined) {
-    throw new OrgPolicyError(
-      `refusing hook adoption: ${HOOK_REGISTRAR_DESTINATION} is absent, so there is nothing to capture`,
-    );
-  }
-  const receipt = readHookRegistrarReceipt(root);
-  const ownedKeys = new Set(
-    (receipt?.entries ?? []).map((entry) => `${entry.event}\u0000${entry.command}`),
-  );
-  const unowned = new Map<string, string>();
-  for (const entry of destinationHookEntries(parseJsoncText(bytes))) {
-    if (ownedKeys.has(`${entry.event}\u0000${entry.command}`)) continue;
-    unowned.set(`${entry.event}\u0000${hookCommandDigest(entry.command)}`, entry.command);
-  }
-  const claimed = new Set<string>();
-  const adopted = declarations.map((declaration) => {
-    const key = `${declaration.event}\u0000${declaration.commandSha256}`;
-    if (claimed.has(key)) {
-      throw new OrgPolicyError(
-        `hook adoption ${declaration.id}: the ${declaration.event} entry ${declaration.commandSha256} is declared twice`,
-      );
-    }
-    claimed.add(key);
-    const command = unowned.get(key);
-    if (command === undefined) {
-      const alreadyOwned = (receipt?.entries ?? []).some(
-        (entry) =>
-          entry.event === declaration.event && entry.commandSha256 === declaration.commandSha256,
-      );
-      throw new OrgPolicyError(
-        alreadyOwned
-          ? `hook adoption ${declaration.id}: AIH already owns the ${declaration.event} entry ${declaration.commandSha256}; adoption is for entries AIH did not emit`
-          : `hook adoption ${declaration.id}: no unowned ${declaration.event} entry with hash ${declaration.commandSha256} exists in ${HOOK_REGISTRAR_DESTINATION}; adoption captures bytes from the destination, never from the declaration`,
-      );
-    }
-    // The hash of the exact captured bytes binds the policy entry to the
-    // launcher, whoever the administrator says owns it.
-    const launcherSha256 = hookCommandDigest(command);
-    return {
-      id: declaration.id,
-      event: declaration.event,
-      command,
-      functionTags: [...declaration.functionTags],
-      spawns: declaration.spawns,
-      ...(declaration.timeout === undefined ? {} : { timeout: declaration.timeout }),
-      ...(declaration.sourceDisabled === undefined
-        ? {}
-        : { sourceDisabled: declaration.sourceDisabled }),
-      owner:
-        declaration.owner.kind === "unknown"
-          ? { kind: "unknown" as const, launcherSha256 }
-          : {
-              kind: "third-party" as const,
-              framework: declaration.owner.framework,
-              declaredControls: [...(declaration.owner.declaredControls ?? [])],
-              pin: { ...declaration.owner.pin, launcherSha256 },
-            },
-    };
-  });
-  return assertHookRegistrations(adopted);
-}
-
-export interface HookReceiptEntry {
-  id: string;
-  event: string;
-  owner: "aih" | "third-party" | "unknown";
-  ownerId: string;
-  command: string;
-  commandSha256: string;
-  spawns: number;
-  functionTags: string[];
-  sourceDisabled: boolean;
-  declaredControls?: string[];
-  pin?: ThirdPartyLauncherPin;
-  timeout?: number;
-}
-
-export type HookReceiptPrior =
-  | { state: "absent" }
-  | { state: "present"; sha256: string; contents: string };
-
-export interface HookRegistrarReceipt {
-  format: typeof HOOK_REGISTRAR_RECEIPT_FORMAT;
-  version: 1;
-  destination: string;
-  policyVersion?: string;
-  /**
-   * The bytes found before AIH first projected. EVIDENCE ONLY — the record of
-   * what was there, readable during an investigation. Revocation subtracts the
-   * owned key and never replays these bytes, which would reinstate every
-   * adopted entry (governing ADR, A4).
-   */
-  prior: HookReceiptPrior;
-  entries: HookReceiptEntry[];
-}
-
-function receiptEntry(registration: ResolvedHookRegistration): HookReceiptEntry {
   return {
-    id: registration.id,
-    event: registration.event,
-    owner: registration.owner.kind,
-    ownerId: hookRegistrationOwnerId(registration),
-    command: registration.command,
-    commandSha256: hookCommandDigest(registration.command),
-    spawns: registration.spawns,
-    functionTags: [...registration.functionTags],
-    sourceDisabled: registration.sourceDisabled,
-    ...(registration.owner.kind === "third-party"
-      ? { declaredControls: [...registration.owner.declaredControls], pin: registration.owner.pin }
-      : {}),
-    ...(registration.timeout === undefined ? {} : { timeout: registration.timeout }),
+    destination: HOOK_REGISTRAR_DESTINATION,
+    unowned,
+    drifted,
+    adoption,
+    omitted: bounded.omitted,
   };
-}
-
-/** The registration a receipt entry proves AIH owns, owner partition intact. */
-function receiptRegistration(entry: HookReceiptEntry): HookRegistration {
-  return {
-    id: entry.id,
-    event: entry.event,
-    command: entry.command,
-    functionTags: entry.functionTags,
-    spawns: entry.spawns,
-    sourceDisabled: entry.sourceDisabled,
-    ...(entry.timeout === undefined ? {} : { timeout: entry.timeout }),
-    owner:
-      entry.owner === "third-party" && entry.pin !== undefined
-        ? {
-            kind: "third-party" as const,
-            framework: entry.ownerId,
-            declaredControls: entry.declaredControls ?? [],
-            pin: entry.pin,
-          }
-        : entry.owner === "unknown"
-          ? { kind: "unknown" as const, launcherSha256: entry.commandSha256 }
-          : { kind: "aih" as const },
-  };
-}
-
-// The grammar's own scalar schemas (schema.ts), referenced — not restated — so
-// the receipt contract cannot drift from the registration contract.
-const IdSchema = HookRegistrationSchema.shape.id;
-const EventSchema = HookRegistrationSchema.shape.event;
-const LauncherCommandSchema = HookRegistrationSchema.shape.command;
-const Sha256Schema = ThirdPartyLauncherPinSchema.shape.launcherSha256;
-
-const HookReceiptSchema = z
-  .object({
-    format: z.literal(HOOK_REGISTRAR_RECEIPT_FORMAT),
-    version: z.literal(1),
-    destination: z.literal(HOOK_REGISTRAR_DESTINATION),
-    policyVersion: z.string().min(1).max(200).optional(),
-    prior: z.discriminatedUnion("state", [
-      z.object({ state: z.literal("absent") }).strict(),
-      z
-        .object({
-          state: z.literal("present"),
-          sha256: z.string().regex(/^[0-9a-f]{64}$/),
-          contents: z.string().max(4 * 1024 * 1024),
-        })
-        .strict(),
-    ]),
-    entries: z
-      .array(
-        z
-          .object({
-            id: IdSchema,
-            event: EventSchema,
-            owner: z.enum(["aih", "third-party", "unknown"]),
-            ownerId: IdSchema,
-            command: LauncherCommandSchema,
-            commandSha256: Sha256Schema,
-            spawns: z.number().int().min(1).max(64),
-            functionTags: z.array(IdSchema).min(1).max(20),
-            sourceDisabled: z.boolean(),
-            declaredControls: z.array(z.string().min(1).max(120)).max(20).optional(),
-            pin: ThirdPartyLauncherPinSchema.optional(),
-            timeout: z.number().int().min(1).max(600).optional(),
-          })
-          .strict(),
-      )
-      .min(1)
-      .max(512),
-  })
-  .strict();
-
-function destinationPath(root: string): string {
-  return join(root, ...HOOK_REGISTRAR_DESTINATION.split("/"));
-}
-
-function readDestinationBytes(root: string): string | undefined {
-  return readRegularFile(destinationPath(root))?.toString("utf8");
-}
-
-export function readHookRegistrarReceipt(root: string): HookRegistrarReceipt | undefined {
-  const raw = readRegularFile(join(root, ...HOOK_REGISTRAR_RECEIPT_PATH.split("/")))?.toString(
-    "utf8",
-  );
-  if (raw === undefined) return undefined;
-  let value: unknown;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    throw new OrgPolicyError(
-      `${HOOK_REGISTRAR_RECEIPT_PATH} is malformed; refusing hook ownership`,
-    );
-  }
-  const result = HookReceiptSchema.safeParse(value);
-  if (!result.success) {
-    throw new OrgPolicyError(
-      `${HOOK_REGISTRAR_RECEIPT_PATH} is not an AIH hook registrar receipt: ${result.error.issues[0]?.message ?? "invalid"}`,
-    );
-  }
-  return result.data as HookRegistrarReceipt;
-}
-
-function receiptRawBytes(root: string): string | undefined {
-  return readRegularFile(join(root, ...HOOK_REGISTRAR_RECEIPT_PATH.split("/")))?.toString("utf8");
-}
-
-/** Rebuild the exact hook value a receipt says AIH owns. */
-function expectedHooksFromReceipt(receipt: HookRegistrarReceipt): Record<string, unknown> {
-  const hooks: Record<string, ProjectedHookGroup[]> = {};
-  for (const event of [...new Set(receipt.entries.map((entry) => entry.event))].sort((a, b) =>
-    a.localeCompare(b),
-  )) {
-    hooks[event] = receipt.entries
-      .filter((entry) => entry.event === event)
-      .map((entry) => ({
-        hooks: [
-          {
-            type: "command" as const,
-            command: entry.command,
-            ...(entry.timeout === undefined ? {} : { timeout: entry.timeout }),
-          },
-        ],
-      }));
-  }
-  return hooks;
 }
 
 /**
@@ -638,23 +330,35 @@ export function hookRegistrarReport(root: string): {
   unowned: UnownedHookEntry[];
   adoption: HookAdoptionOffer[];
 } {
-  const state = hookRegistrarState(root);
-  if (state.state === "invalid") return { ...state, unowned: [], adoption: [] };
-  const bytes = readDestinationBytes(root);
-  if (bytes === undefined) return { ...state, unowned: [], adoption: [] };
+  // ONE read of each file: the verdict and the unowned list have to describe
+  // the same bytes, or the report contradicts itself between its own lines.
   let receipt: HookRegistrarReceipt | undefined;
+  const receiptRead = readReceipt(root);
   try {
-    receipt = readHookRegistrarReceipt(root);
-  } catch {
+    if (receiptRead.state === "unreadable") {
+      throw new OrgPolicyError(`${receiptRead.reason}; refusing hook ownership`);
+    }
+    receipt =
+      receiptRead.state === "absent" ? undefined : parseHookRegistrarReceipt(receiptRead.contents);
+  } catch (error) {
+    return { state: "invalid", detail: (error as Error).message, unowned: [], adoption: [] };
+  }
+  const read = readDestination(root);
+  const state = hookRegistrarVerdict(receipt, read);
+  if (state.state === "invalid" || read.state !== "present") {
     return { ...state, unowned: [], adoption: [] };
   }
   const owned: HookRegistration[] = (receipt?.entries ?? []).map(receiptRegistration);
   let drift: HookDriftReport;
   try {
-    drift = hookRegistrarDrift({ destination: parseJsoncText(bytes), registrations: owned });
+    drift = hookRegistrarDrift({
+      destination: parseDestinationSettings(read.contents),
+      registrations: owned,
+    });
   } catch (error) {
     return { state: "invalid", detail: (error as Error).message, unowned: [], adoption: [] };
   }
+  const omitted = drift.omitted === 0 ? "" : ` (+${drift.omitted} more not listed)`;
   return {
     state: state.state,
     detail:
@@ -662,7 +366,7 @@ export function hookRegistrarReport(root: string): {
         ? state.detail
         : `${state.detail}; unowned: ${drift.unowned
             .map((entry) => `${entry.owner}/${entry.event}`)
-            .join(", ")}`,
+            .join(", ")}${omitted}`,
     unowned: drift.unowned,
     adoption: drift.adoption,
   };
@@ -681,14 +385,29 @@ export function hookRegistrarState(root: string): HookRegistrarStateReport {
   } catch (error) {
     return { state: "invalid", detail: (error as Error).message };
   }
-  const bytes = readDestinationBytes(root);
+  return hookRegistrarVerdict(receipt, readDestination(root));
+}
+
+/**
+ * The verdict over bytes the CALLER read. Revocation proves ownership and then
+ * pins the write it emits, and both have to come from the same read: with a
+ * second read, a write landing between them was baked into the pin, passed at
+ * apply, and the whole-key subtraction then deleted the entry that had just
+ * arrived — the deletion the single-registrar contract forbids (H1).
+ */
+function hookRegistrarVerdict(
+  receipt: HookRegistrarReceipt | undefined,
+  read: GuardedRead,
+): HookRegistrarStateReport {
+  if (read.state === "unreadable") return { state: "invalid", detail: read.reason };
+  const bytes = read.state === "present" ? read.contents : undefined;
   if (receipt === undefined) {
     if (bytes === undefined) {
       return { state: "absent", detail: "no hook registrar receipt and no projected destination" };
     }
-    let entries: DestinationEntry[];
+    let entries: NativeHookEntry[];
     try {
-      entries = destinationHookEntries(parseJsoncText(bytes));
+      entries = destinationHookEntries(parseDestinationSettings(bytes));
     } catch (error) {
       return { state: "invalid", detail: (error as Error).message };
     }
@@ -704,7 +423,7 @@ export function hookRegistrarState(root: string): HookRegistrarStateReport {
   }
   let actual: unknown;
   try {
-    actual = parseJsoncText(bytes);
+    actual = parseDestinationSettings(bytes);
   } catch {
     return { state: "drifted", detail: `${HOOK_REGISTRAR_DESTINATION} cannot be parsed safely` };
   }
@@ -730,8 +449,20 @@ export function hookRegistrarProjectionActions(
 ): Action[] {
   const parsed = assertHookRegistrations(registrations);
   if (parsed.length === 0) return hookRegistrarRevocationActions(ctx);
-  const existingReceipt = readHookRegistrarReceipt(ctx.root);
-  const bytes = readDestinationBytes(ctx.root);
+  // ONE read of the receipt: the same bytes decide what AIH already owns and
+  // pin the receipt write below.
+  const receiptRead = readReceipt(ctx.root);
+  if (receiptRead.state === "unreadable") {
+    throw new OrgPolicyError(`refusing hook registrar projection: ${receiptRead.reason}`);
+  }
+  const existingReceiptRaw = receiptRead.state === "present" ? receiptRead.contents : undefined;
+  const existingReceipt =
+    existingReceiptRaw === undefined ? undefined : parseHookRegistrarReceipt(existingReceiptRaw);
+  const read = readDestination(ctx.root);
+  if (read.state === "unreadable") {
+    throw new OrgPolicyError(`refusing hook registrar projection: ${read.reason}`);
+  }
+  const bytes = read.state === "present" ? read.contents : undefined;
   const prior: HookReceiptPrior =
     existingReceipt?.prior ??
     (bytes === undefined
@@ -743,14 +474,19 @@ export function hookRegistrarProjectionActions(
   // silently absorbing an unowned entry; silently deleting one is worse, and a
   // source with no removal path of its own provokes exactly that.
   if (bytes !== undefined) {
-    const onDisk = destinationHookEntries(parseJsoncText(bytes));
+    const onDisk = destinationHookEntries(parseDestinationSettings(bytes));
     // An already-owned entry is not foreign: the administrator may legally drop
-    // one by changing the selection.
-    const known = new Set([
-      ...parsed.map((registration) => `${registration.event}\u0000${registration.command}`),
-      ...(existingReceipt?.entries ?? []).map((entry) => `${entry.event}\u0000${entry.command}`),
-    ]);
-    const foreign = onDisk.filter((entry) => !known.has(`${entry.event}\u0000${entry.command}`));
+    // one by changing the selection. Counted, not merely matched, so duplicate
+    // copies of one owned entry cannot all claim the same single ownership.
+    const known = mergedMaxCounts(
+      occurrenceCounts(parsed.map(registrationKey)),
+      occurrenceCounts(
+        (existingReceipt?.entries ?? []).map((entry) =>
+          nativeHookEntryKey(receiptNativeEntry(entry)),
+        ),
+      ),
+    );
+    const foreign = onDisk.filter((entry) => !claimOccurrence(known, nativeHookEntryKey(entry)));
     if (foreign.length > 0) {
       // A3: refusal names each unowned entry by owner and event. Attribution
       // is only as good as a declared pin — selected or receipt-owned — and an
@@ -759,7 +495,8 @@ export function hookRegistrarProjectionActions(
         ...parsed,
         ...(existingReceipt?.entries ?? []).map(receiptRegistration),
       ];
-      const named = foreign.map((entry) => {
+      const bounded = boundedReportedEntries(foreign);
+      const named = bounded.shown.map((entry) => {
         const digest = hookCommandDigest(entry.command);
         const attributed = attributable.find(
           (registration) =>
@@ -768,27 +505,43 @@ export function hookRegistrarProjectionActions(
         );
         const owner =
           attributed?.owner.kind === "third-party" ? attributed.owner.framework : "unknown";
-        return `${owner}/${entry.event}`;
+        // The owner side is policy-authored and already bounded; the event side
+        // is destination-read and is neutralized before it reaches the terminal.
+        return `${owner}/${displayableDestinationText(entry.event)}`;
       });
+      const omitted = bounded.omitted === 0 ? "" : `, +${bounded.omitted} more`;
       throw new OrgPolicyError(
         `${HOOK_REGISTRAR_DESTINATION} carries ${foreign.length} hook entr${foreign.length === 1 ? "y" : "ies"} AIH did not emit ` +
-          `(${named.join(", ")}); adopt or remove them before projecting`,
+          `(${named.join(", ")}${omitted}); adopt or remove them before projecting`,
       );
     }
   }
+  // Groups that yield no entry are still content — `matcher`, `id`,
+  // `description` — and the whole-key write would delete them. Carry them
+  // through unchanged and record them, so the expectation matches what was
+  // written and revocation can put them back.
+  const carriedThrough =
+    bytes === undefined ? {} : entrylessGroups(parseDestinationSettings(bytes));
   const receipt: HookRegistrarReceipt = {
-    format: HOOK_REGISTRAR_RECEIPT_FORMAT,
+    format: "aih-org-policy-hook-registrar-receipt",
     version: 1,
     destination: HOOK_REGISTRAR_DESTINATION,
     ...(options.policyVersion === undefined ? {} : { policyVersion: options.policyVersion }),
     prior,
     entries: parsed.map(receiptEntry),
+    ...(Object.keys(carriedThrough).length === 0 ? {} : { carriedThrough }),
   };
+  // Owned content FIRST, ownership record SECOND — the order every sibling
+  // lifecycle uses (`src/mcp/index.ts` writes the managed pair, then its
+  // ownership marker) and the order revocation reverses. The executor stages
+  // both in one filesystem transaction, so an interrupted apply rolls back;
+  // what survives a hard kill between the two renames is content with no
+  // receipt, and uninstall reports that as an advisory rather than silence.
   return [
     withExpectedContents(
       writeJson(
         HOOK_REGISTRAR_DESTINATION,
-        { hooks: projectedHookSettings(parsed).hooks },
+        { hooks: composeProjectedHooks(parsed.map(registrationNativeEntry), carriedThrough) },
         "project AIH-registered hook entries, third-party launchers verbatim",
         { merge: true, replaceJsonKeys: ["hooks"] },
       ),
@@ -800,7 +553,7 @@ export function hookRegistrarProjectionActions(
         receipt,
         "record the hook registrar receipt that can revoke every projected entry",
       ),
-      receiptRawBytes(ctx.root),
+      existingReceiptRaw,
     ),
   ];
 }
@@ -811,21 +564,29 @@ export function hookRegistrarProjectionActions(
  * dependence on the source shipping an uninstall path of its own.
  */
 export function hookRegistrarRevocationActions(ctx: PlanContext): Action[] {
-  const receipt = readHookRegistrarReceipt(ctx.root);
-  if (receipt === undefined) return [];
-  const state = hookRegistrarState(ctx.root);
-  if (state.state !== "active") {
+  // ONE read of each file. The ownership verdict, the sole-key decision, the
+  // apply-time pin and the merge base all come from these exact bytes, so a
+  // write landing after the verdict can never be pinned as if it had been
+  // proved: it fails the pin at apply instead of being subtracted away.
+  const receiptRead = readReceipt(ctx.root);
+  // A receipt AIH cannot read is not a receipt AIH never wrote. Returning an
+  // empty plan here would drop the registrar out of the uninstall silently and
+  // orphan every projected launcher; a GENUINELY absent receipt still means
+  // there is nothing to revoke, and stays silent.
+  if (receiptRead.state === "unreadable") {
+    throw new OrgPolicyError(`refusing hook registrar revocation: ${receiptRead.reason}`);
+  }
+  if (receiptRead.state === "absent") return [];
+  const receiptRaw = receiptRead.contents;
+  const receipt = parseHookRegistrarReceipt(receiptRaw);
+  const read = readDestination(ctx.root);
+  const state = hookRegistrarVerdict(receipt, read);
+  if (state.state !== "active" || read.state !== "present") {
     throw new OrgPolicyError(
       `refusing hook registrar revocation: ${state.detail}; repair the owned destination or remove the receipt only after manual remediation`,
     );
   }
-  const bytes = readDestinationBytes(ctx.root);
-  if (bytes === undefined) {
-    throw new OrgPolicyError(
-      `refusing hook registrar revocation: ${HOOK_REGISTRAR_DESTINATION} is absent`,
-    );
-  }
-  const receiptRaw = receiptRawBytes(ctx.root);
+  const bytes = read.contents;
   /**
    * `hooks` is the only key the receipt proves AIH owns, so it is the only key
    * revocation touches — every other byte the operator has in this file is
@@ -840,11 +601,25 @@ export function hookRegistrarRevocationActions(ctx: PlanContext): Action[] {
   // into it. Removal is authorized only while `hooks` is still the only key
   // present; one operator key and the file is preserved and merely subtracted.
   // Lifecycle rule R8: preserve conflicts and user-owned config.
-  const current = parseJsoncText(bytes);
+  const current = parseDestinationSettings(bytes);
   const onlyHooksRemain =
     isPlainObject(current) && Object.keys(current).length === 1 && Object.hasOwn(current, "hooks");
-  const restore: Action =
-    receipt.prior.state === "absent" && onlyHooksRemain
+  // Content AIH carried through was never AIH's to remove. Subtracting the whole
+  // `hooks` key would delete it along with what AIH owned, so where any exists
+  // the key is rewritten to exactly that content instead.
+  const carriedThrough = receipt.carriedThrough ?? {};
+  const carriesContent = Object.keys(carriedThrough).length > 0;
+  const restore: Action = carriesContent
+    ? withExpectedContents(
+        writeJson(
+          HOOK_REGISTRAR_DESTINATION,
+          { hooks: carriedThrough },
+          "subtract every AIH-registered hook entry, keeping the content AIH carried through",
+          { merge: true, replaceJsonKeys: ["hooks"] },
+        ),
+        bytes,
+      )
+    : receipt.prior.state === "absent" && onlyHooksRemain
       ? remove(HOOK_REGISTRAR_DESTINATION, "remove the hook destination AIH created", {
           expect: { sha256: sha256(bytes) },
         })
@@ -860,7 +635,7 @@ export function hookRegistrarRevocationActions(ctx: PlanContext): Action[] {
   return [
     restore,
     remove(HOOK_REGISTRAR_RECEIPT_PATH, "remove the completed hook registrar receipt", {
-      ...(receiptRaw === undefined ? {} : { expect: { sha256: sha256(receiptRaw) } }),
+      expect: { sha256: sha256(receiptRaw) },
     }),
   ];
 }

@@ -1696,6 +1696,20 @@
                 "default": false,
                 "type": "boolean"
               },
+              "nativeGroup": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "nativeHook": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
               "owner": {
                 "oneOf": [
                   {
