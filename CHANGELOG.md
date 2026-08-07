@@ -8,6 +8,38 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A governed policy can now declare **hook registrations**, and AIH emits them into the
+  Claude hook configuration it owns while the third-party runtime that supplied each hook
+  stays the one that executes it. The problem this addresses is narrow and concrete: when
+  several independent writers register entries into one client hook file, the file records
+  no owner per entry, so nothing can later say which writer put an entry there — and a
+  writer that ships no removal path of its own leaves entries that can only be deleted by
+  hand. AIH becomes the single registrar so a receipt can answer both questions. A
+  third-party command is transported **byte-for-byte**: nothing parses, wraps, or re-emits
+  it, and the only value AIH derives from it is the hash proving it did not change. The
+  policy refuses at parse time when a launcher's hash no longer matches its pin, when a
+  registration id repeats, or when registrations name two harnesses at once. Provenance is
+  administrator-declared rather than inferred, so an unattributable launcher stays
+  `owner: unknown` with its captured bytes still hash-pinned. Adoption reads launcher bytes
+  from the destination and never from the declaration — a hand-typed launcher is not
+  expressible. Projecting onto a destination that carries entries AIH did not emit is
+  refused with each one named by owner and event, checked on every projection rather than
+  only the first. `governance.hookRegistrations` is additive and `schemaVersion` stays `1`.
+- **Uninstall now removes hook entries that AIH registered**, third-party ones included,
+  with no hand editing. It subtracts only the `hooks` key its receipt proves it owns, leaves
+  every other key in the file untouched, and does not replay the bytes recorded before it
+  first projected — adoption transfers ownership, so adopted entries do not reappear. A
+  destination whose receipt cannot prove clean ownership is reported with its reason and
+  left alone rather than rewritten.
+- The Policy Workbench carries a **hook registrar panel**: a read-only projection view over
+  registrations authored in the policy document and hook components selected on their own
+  inventory rows, never a second place to author them. It reports entries and expected
+  process spawns per event and in total, counts every row under its true owner, states that
+  a hook its source reports as disabled still spawns a process — that control is read inside
+  the launcher, after the process exists — and says plainly when the pinned catalog carries
+  hook components but no per-hook registration table, so a small number is not read as a
+  complete one. The panel reports usage, not price; the surface does not put a cost on a
+  hook.
 - The Policy Workbench now shows the **vet verdict AIH's own analyzers reached for every
   pinned component**, instead of telling an administrator to generate evidence this build
   already ships. Each row states who scanned it and at exactly what version, plus the
