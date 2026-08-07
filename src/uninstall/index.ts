@@ -670,7 +670,12 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
   );
   if (!registrarUnderRemovedTree) {
     const registrar = hookRegistrarState(ctx.root);
-    if (registrar.state === "active") {
+    // BOTH provable states subtract. `cohabited` is a destination that holds
+    // every projected entry beside content aih did not emit — the measured
+    // baseline of a settings file the repository, ECC and aih all write. Making
+    // that drift refused revocation outright and stranded exactly the
+    // third-party entries whose source ships no removal path of its own.
+    if (registrar.state === "active" || registrar.state === "cohabited") {
       hookRegistrarActions = hookRegistrarRevocationActions(ctx);
       const removesCreatedFile = hookRegistrarActions[0]?.kind === "remove";
       artifacts.push({
@@ -679,7 +684,9 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
         disposition: "subtract",
         reason: removesCreatedFile
           ? "receipt-proven aih hook registration entries; the destination AIH created is removed with them"
-          : "receipt-proven aih hook registration entries (third-party launchers included); every other key is preserved",
+          : registrar.state === "cohabited"
+            ? `receipt-proven aih hook registration entries (third-party launchers included); ${registrar.detail}; every key aih does not own is preserved`
+            : "receipt-proven aih hook registration entries (third-party launchers included); every other key is preserved",
       });
     } else if (registrar.state === "drifted" || registrar.state === "invalid") {
       artifacts.push({
@@ -806,6 +813,26 @@ function withMaterializationOutcome(
   };
 }
 
+/**
+ * The blanket "their file is never deleted" promise is only true while every
+ * subtracted path survives the plan. The hook-registrar row removes a
+ * destination AIH created outright and its own reason says so, so printing the
+ * promise underneath it contradicted the row above it. Read the planned actions
+ * rather than guessing from the reason text.
+ */
+function subtractFooter(set: UninstallSet): string[] {
+  const subtracted = set.artifacts.filter((a) => a.disposition === "subtract");
+  if (subtracted.length === 0) return [];
+  const removedPaths = new Set(
+    (set.hookRegistrarActions ?? []).flatMap((action) =>
+      action.kind === "remove" ? [action.path] : [],
+    ),
+  );
+  return subtracted.some((a) => removedPaths.has(a.path))
+    ? ["Keys marked [subtract] are removed in place; a file is deleted only where its row says so."]
+    : ["Keys marked [subtract] are removed in place; their file is never deleted."];
+}
+
 function body(set: UninstallSet): string {
   if (set.artifacts.length === 0) {
     return "No aih core install footprint found.";
@@ -824,9 +851,7 @@ function body(set: UninstallSet): string {
       : []),
     "",
     "Dry-run by default; pass --apply to move owned paths to reversible *.aih.bak backups.",
-    ...(set.artifacts.some((a) => a.disposition === "subtract")
-      ? ["Keys marked [subtract] are removed in place; their file is never deleted."]
-      : []),
+    ...subtractFooter(set),
   );
 }
 

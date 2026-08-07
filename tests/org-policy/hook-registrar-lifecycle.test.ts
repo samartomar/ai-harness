@@ -237,3 +237,328 @@ describe("H6 — revocation is mandatory", () => {
     );
   });
 });
+
+/** A hook group the operator wrote themselves. AIH never emitted it and never adopted it. */
+const OPERATOR_GROUP = {
+  matcher: "Edit|Write",
+  hooks: [{ type: "command", command: "node ./tools/operator-guard.mjs" }],
+};
+
+/** An `Object.prototype` member name, typed as the plain event name it is on disk. */
+const PROTOTYPE_EVENT: string = "constructor";
+
+/**
+ * Put an operator's own comment in the destination, the way a JSONC file carries
+ * one: spliced in directly after the opening brace.
+ *
+ * Written as an explicit splice rather than a first-occurrence `.replace("{",
+ * …)`. Replacing every `{` would corrupt the JSON, so the single replace was
+ * deliberate — but a single-occurrence replace is the shape static analysis
+ * reads as incomplete sanitization, and this helper is not sanitizing anything.
+ * The position is asserted instead of pattern-matched, so a destination that is
+ * not an object fails the test loudly rather than being silently mis-commented.
+ */
+function addOperatorComment(): string {
+  const text = readDestination() ?? "";
+  expect(text.startsWith("{"), "expected a JSON object destination to comment").toBe(true);
+  const contents = `{\n  // operator note: keep this file${text.slice(1)}`;
+  writeFileSync(join(dir, HOOK_REGISTRAR_DESTINATION), contents, "utf8");
+  return contents;
+}
+
+/** Rewrite the destination's `hooks` key through `mutate`, leaving every other key alone. */
+function rewriteHooks(mutate: (hooks: Record<string, unknown>) => void): string {
+  const current = JSON.parse(readDestination() ?? "{}");
+  mutate(current.hooks);
+  const contents = `${JSON.stringify(current, null, 2)}\n`;
+  writeFileSync(join(dir, HOOK_REGISTRAR_DESTINATION), contents, "utf8");
+  return contents;
+}
+
+/**
+ * Delegated ruling 6. Ownership granularity is the projected GROUP, so an
+ * operator hook group added anywhere else under the same `hooks` key is
+ * COHABITATION — the normal configuration of a file the repository, ECC and AIH
+ * all write — not drift. Revocation subtracts exactly the groups the receipt
+ * proves AIH emitted; anything else stays where the operator put it.
+ */
+describe("H6 — per-entry subtraction: cohabitation is not drift", () => {
+  it("reads cohabited when an operator group joins a different event", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    rewriteHooks((hooks) => {
+      hooks.PreToolUse = [OPERATOR_GROUP];
+    });
+    const state = hookRegistrarState(dir);
+    expect(state.state).toBe("cohabited");
+    // The count is what uninstall promises to preserve, so it has to be real.
+    expect(state.detail).toContain("1 hook entry");
+  });
+
+  it("reads cohabited when an operator group joins the same event", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    rewriteHooks((hooks) => {
+      (hooks.Stop as unknown[]).push(OPERATOR_GROUP);
+    });
+    expect(hookRegistrarState(dir).state).toBe("cohabited");
+  });
+
+  it("keeps `active` for an exact match, so the two states never blur", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    expect(hookRegistrarState(dir).state).toBe("active");
+  });
+
+  it("subtracts exactly the owned groups and leaves the operator's groups value-exact", async () => {
+    seedThirdPartyEntries({ permissions: { allow: ["Bash(ls:*)"] } });
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    rewriteHooks((hooks) => {
+      (hooks.Stop as unknown[]).push(OPERATOR_GROUP);
+      hooks.PreToolUse = [OPERATOR_GROUP];
+    });
+
+    await run(hookRegistrarRevocationActions(ctx(false)));
+
+    const after = JSON.parse(readDestination() ?? "{}");
+    // The whole parsed structure, not a substring: a subtraction that also
+    // dropped the operator's group, reordered it, or rewrote one of its fields
+    // fails here.
+    expect(after.hooks).toEqual({ PreToolUse: [OPERATOR_GROUP], Stop: [OPERATOR_GROUP] });
+    expect(JSON.stringify(after)).not.toContain("run-with-flags.js");
+    expect(after.permissions).toEqual({ allow: ["Bash(ls:*)"] });
+    expect(readHookRegistrarReceipt(dir)).toBeUndefined();
+  });
+
+  it("drops the `hooks` key only when subtraction leaves it empty", async () => {
+    seedThirdPartyEntries({ permissions: { allow: ["Bash(ls:*)"] } });
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarRevocationActions(ctx(false)));
+    expect(JSON.parse(readDestination() ?? "{}").hooks).toBeUndefined();
+  });
+
+  /**
+   * The created-file removal clause keeps its sole-key partition AND now also
+   * requires nothing foreign to remain: a file holding an operator's own hook
+   * group is subtracted, never deleted.
+   */
+  it("never removes a destination AIH created once an operator group shares the key", async () => {
+    await run(hookRegistrarProjectionActions(ctx(false), [aihDispatcher("Stop", ["continuity"])]));
+    rewriteHooks((hooks) => {
+      hooks.PreToolUse = [OPERATOR_GROUP];
+    });
+
+    await run(hookRegistrarRevocationActions(ctx(false)));
+
+    const after = readDestination();
+    expect(after, "the operator's own hook group must survive").toBeDefined();
+    expect(JSON.parse(after ?? "{}").hooks).toEqual({ PreToolUse: [OPERATOR_GROUP] });
+  });
+
+  it("still removes a destination AIH created when nothing foreign remains", async () => {
+    await run(hookRegistrarProjectionActions(ctx(false), [aihDispatcher("Stop", ["continuity"])]));
+    await run(hookRegistrarRevocationActions(ctx(false)));
+    expect(readDestination()).toBeUndefined();
+  });
+
+  /**
+   * The count is of flattened ENTRIES, so operator content that holds none —
+   * an entry-less group carrying a `matcher`, an empty event — used to render
+   * "beside 0 hook entries AIH did not emit ... are preserved" while a real
+   * `matcher` was in fact being preserved. Say what is true instead of counting
+   * to zero; the numbered form stays for a count that means something.
+   */
+  it("names preserved operator configuration without a count when it holds no entry", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    rewriteHooks((hooks) => {
+      hooks.PreToolUse = [{ matcher: "Edit|Write", hooks: [] }];
+    });
+
+    const state = hookRegistrarState(dir);
+    expect(state.state).toBe("cohabited");
+    expect(state.detail).not.toContain("0 hook");
+    expect(state.detail).toContain("operator hook configuration AIH did not emit");
+  });
+
+  it("keeps the numbered form when the count means something", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    rewriteHooks((hooks) => {
+      hooks.PreToolUse = [OPERATOR_GROUP, OPERATOR_GROUP];
+    });
+
+    expect(hookRegistrarState(dir).detail).toContain("2 hook entries AIH did not emit");
+  });
+
+  it("claims no preserved content when subtraction leaves nothing foreign", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    // Only the ORDER of groups AIH itself wrote changed: provable, but no
+    // longer the exact rendering, and nothing foreign is being kept.
+    rewriteHooks((hooks) => {
+      (hooks.Stop as unknown[]).reverse();
+    });
+
+    const state = hookRegistrarState(dir);
+    expect(state.state).toBe("cohabited");
+    expect(state.detail).not.toContain("0 hook");
+    expect(state.detail).not.toContain("operator hook configuration");
+    expect(state.detail).toContain("no longer the exact rendering");
+  });
+
+  it("reports the cohabited state with each foreign entry by owner and event", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    rewriteHooks((hooks) => {
+      hooks.PreToolUse = [OPERATOR_GROUP];
+    });
+
+    const report = hookRegistrarReport(dir);
+    expect(report.state).toBe("cohabited");
+    expect(report.unowned).toEqual([
+      { owner: "unknown", event: "PreToolUse", command: "node ./tools/operator-guard.mjs" },
+    ]);
+    expect(report.detail).toContain("unknown/PreToolUse");
+    // H1 is unchanged: an entry AIH did not emit is still offered for adoption.
+    expect(report.adoption).toHaveLength(1);
+  });
+});
+
+/**
+ * Delegated ruling 6, the other half. Subtracting from INSIDE a group AIH wrote
+ * would delete content AIH cannot prove it emitted, so an unprovable owned group
+ * fails closed exactly as before — drifted, advisory, nothing removed.
+ */
+describe("H6 — per-entry subtraction fails closed on an unprovable owned group", () => {
+  /**
+   * Governing ruling 3 already settled this question: refusing a commented
+   * destination beats silently stripping it. Before per-group subtraction,
+   * cohabitation refused to write at all, so a commented destination never met
+   * this writer on this path. The subtraction write is a NEW route to it, and a
+   * parse-and-re-serialize write drops every comment in the file.
+   */
+  it("refuses to subtract a cohabited destination that carries comments", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    rewriteHooks((hooks) => {
+      hooks.PreToolUse = [OPERATOR_GROUP];
+    });
+    const commented = addOperatorComment();
+
+    const state = hookRegistrarState(dir);
+    expect(state.state).toBe("drifted");
+    expect(state.detail).toContain("comments");
+    expect(() => hookRegistrarRevocationActions(ctx(false))).toThrowError(/comment/i);
+    expect(readDestination()).toBe(commented);
+  });
+
+  /**
+   * The `active` path is NOT changed. A commented exact-match destination was
+   * already rewritten before this row existed; that is recorded in the ADR and
+   * stays as it was, so the refusal above cannot creep into it.
+   */
+  it("leaves the exact-match path exactly as it was for a commented destination", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    addOperatorComment();
+
+    expect(hookRegistrarState(dir).state).toBe("active");
+    expect(() => hookRegistrarRevocationActions(ctx(false))).not.toThrow();
+  });
+
+  it("refuses when an operator entry is inserted inside a group AIH owns", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    const tampered = rewriteHooks((hooks) => {
+      const stop = hooks.Stop as { hooks: unknown[] }[];
+      stop[0]?.hooks.push({ type: "command", command: "node ./tools/operator-guard.mjs" });
+    });
+
+    expect(hookRegistrarState(dir).state).toBe("drifted");
+    expect(() => hookRegistrarRevocationActions(ctx(false))).toThrowError(/drift|changed/i);
+    expect(readDestination()).toBe(tampered);
+  });
+
+  it("refuses when an owned entry's command was modified", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    const tampered = rewriteHooks((hooks) => {
+      const stop = hooks.Stop as { hooks: { command: string }[] }[];
+      const hook = stop[0]?.hooks[0];
+      if (hook !== undefined) hook.command += " --tampered";
+    });
+
+    expect(hookRegistrarState(dir).state).toBe("drifted");
+    expect(() => hookRegistrarRevocationActions(ctx(false))).toThrowError(/drift|changed/i);
+    expect(readDestination()).toBe(tampered);
+  });
+
+  it("refuses when one owned group went missing", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    const tampered = rewriteHooks((hooks) => {
+      (hooks.Stop as unknown[]).splice(0, 1);
+    });
+
+    expect(hookRegistrarState(dir).state).toBe("drifted");
+    expect(() => hookRegistrarRevocationActions(ctx(false))).toThrowError(/drift|changed/i);
+    expect(readDestination()).toBe(tampered);
+  });
+
+  it("refuses when the group AIH owns lost a scoping field it never authored", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    rewriteHooks((hooks) => {
+      const stop = hooks.Stop as Record<string, unknown>[];
+      if (stop[0] !== undefined) stop[0].matcher = "Edit|Write";
+    });
+
+    expect(hookRegistrarState(dir).state).toBe("drifted");
+  });
+});
+
+/**
+ * Event names come from the DESTINATION, which the operator controls. The owned
+ * groups are held in a plain object, so a bare `owned[event]` lookup for an
+ * event named after an `Object.prototype` member resolves to a function through
+ * the prototype chain — `?? []` never fires and the verdict throws an untyped
+ * TypeError instead of answering. Every surface goes down with it, the uninstall
+ * planner included, which strands the launchers this row exists to free.
+ */
+describe("H6 — an operator-controlled event name never reaches the prototype chain", () => {
+  for (const event of ["constructor", "toString", "valueOf", "hasOwnProperty"]) {
+    it(`answers for an operator group under a "${event}" event`, async () => {
+      seedThirdPartyEntries();
+      await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+      rewriteHooks((hooks) => {
+        hooks[event] = [OPERATOR_GROUP];
+      });
+
+      expect(hookRegistrarState(dir).state).toBe("cohabited");
+
+      await run(hookRegistrarRevocationActions(ctx(false)));
+
+      const after = JSON.parse(readDestination() ?? "{}");
+      // Keys and value read separately: a deep-equal against an object carrying
+      // its own `constructor` key is not a comparison worth trusting.
+      expect(Object.getOwnPropertyNames(after.hooks)).toEqual([event]);
+      expect(after.hooks[event]).toEqual([OPERATOR_GROUP]);
+      expect(JSON.stringify(after)).not.toContain("run-with-flags.js");
+    });
+  }
+
+  it("still fails closed on an unprovable owned group beside such an event", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    const tampered = rewriteHooks((hooks) => {
+      hooks[PROTOTYPE_EVENT] = [OPERATOR_GROUP];
+      const stop = hooks.Stop as { hooks: unknown[] }[];
+      stop[0]?.hooks.push({ type: "command", command: "node ./tools/operator-guard.mjs" });
+    });
+
+    expect(hookRegistrarState(dir).state).toBe("drifted");
+    expect(() => hookRegistrarRevocationActions(ctx(false))).toThrowError(/drift|changed/i);
+    expect(readDestination()).toBe(tampered);
+  });
+});

@@ -203,3 +203,192 @@ describe("A2 — uninstall subtracts receipt-owned hook registrations, never rep
     expect(digest?.text).not.toContain(HOOK_REGISTRAR_DESTINATION);
   });
 });
+
+/** A hook group the operator wrote themselves. AIH never emitted it and never adopted it. */
+const OPERATOR_GROUP = {
+  matcher: "Edit|Write",
+  hooks: [{ type: "command", command: "node ./tools/operator-guard.mjs" }],
+};
+
+/** An `Object.prototype` member name, typed as the plain event name it is on disk. */
+const PROTOTYPE_EVENT: string = "constructor";
+
+/**
+ * Put an operator's own comment in the destination, the way a JSONC file carries
+ * one: spliced in directly after the opening brace.
+ *
+ * Written as an explicit splice rather than a first-occurrence `.replace("{",
+ * …)`. Replacing every `{` would corrupt the JSON, so the single replace was
+ * deliberate — but a single-occurrence replace is the shape static analysis
+ * reads as incomplete sanitization, and this helper is not sanitizing anything.
+ * The position is asserted instead of pattern-matched, so a destination that is
+ * not an object fails the test loudly rather than being silently mis-commented.
+ */
+function addOperatorComment(): string {
+  const text = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8");
+  expect(text.startsWith("{"), "expected a JSON object destination to comment").toBe(true);
+  const contents = `{\n  // operator note: keep this file${text.slice(1)}`;
+  put(HOOK_REGISTRAR_DESTINATION, contents);
+  return contents;
+}
+
+/** Rewrite the destination's `hooks` key through `mutate`, leaving every other key alone. */
+function rewriteHooks(mutate: (hooks: Record<string, unknown>) => void): string {
+  const current = JSON.parse(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8"));
+  mutate(current.hooks);
+  const contents = `${JSON.stringify(current, null, 2)}\n`;
+  put(HOOK_REGISTRAR_DESTINATION, contents);
+  return contents;
+}
+
+/**
+ * The measured baseline of the destination this projector owns: the repository,
+ * ECC and AIH all write one `.claude/settings.json`. Before delegated ruling 6
+ * one operator hook group anywhere under `hooks` read as drift, and uninstall
+ * answered "cannot prove clean ownership — remediate manually" — stranding every
+ * projected third-party entry, which is the one thing H6 forbids.
+ */
+describe("H6 — uninstall subtracts owned hook groups out of a cohabited destination", () => {
+  it("removes the owned groups when an operator group cohabits another event", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+    rewriteHooks((hooks) => {
+      hooks.PreToolUse = [OPERATOR_GROUP];
+    });
+
+    const result = await uninstall();
+
+    const after = JSON.parse(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8"));
+    expect(JSON.stringify(after)).not.toContain("run-with-flags.js");
+    // The parsed structure whole: a subtraction that also dropped, reordered or
+    // rewrote the operator's group fails here.
+    expect(after.hooks).toEqual({ PreToolUse: [OPERATOR_GROUP] });
+    expect(after.permissions).toEqual(OPERATOR_CONTENT.permissions);
+    expect(after.model).toBe(OPERATOR_CONTENT.model);
+    expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(false);
+
+    const row = digestRowFor(result, HOOK_REGISTRAR_DESTINATION);
+    expect(row).toMatch(/\[subtract\]/);
+    expect(row).not.toMatch(/remediate manually/);
+    // The reason names what survives, and the count has to be the real one.
+    expect(row).toContain("1 hook entry");
+  });
+
+  it("removes the owned groups when an operator group cohabits the same event", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+    rewriteHooks((hooks) => {
+      (hooks.Stop as unknown[]).push(OPERATOR_GROUP);
+    });
+
+    const result = await uninstall();
+
+    const after = JSON.parse(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8"));
+    expect(JSON.stringify(after)).not.toContain("run-with-flags.js");
+    expect(after.hooks).toEqual({ Stop: [OPERATOR_GROUP] });
+    expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(false);
+    expect(digestRowFor(result, HOOK_REGISTRAR_DESTINATION)).toMatch(/\[subtract\]/);
+  });
+
+  /**
+   * Event names come from the destination. A bare lookup of the owned groups by
+   * an event named after an `Object.prototype` member resolves to a function
+   * through the prototype chain and throws an untyped TypeError. The call in
+   * `coreUninstallSet` is bare, so that took the WHOLE uninstall plan down — it
+   * could not even emit its advisory row, stranding exactly the third-party
+   * launchers this row exists to free.
+   */
+  it("plans and subtracts around an operator group under a prototype-named event", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+    rewriteHooks((hooks) => {
+      hooks[PROTOTYPE_EVENT] = [OPERATOR_GROUP];
+    });
+
+    const result = await uninstall();
+
+    const after = JSON.parse(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8"));
+    expect(JSON.stringify(after)).not.toContain("run-with-flags.js");
+    expect(Object.getOwnPropertyNames(after.hooks)).toEqual(["constructor"]);
+    expect(after.hooks.constructor).toEqual([OPERATOR_GROUP]);
+    expect(after.permissions).toEqual(OPERATOR_CONTENT.permissions);
+    expect(digestRowFor(result, HOOK_REGISTRAR_DESTINATION)).toMatch(/\[subtract\]/);
+  });
+
+  /**
+   * The subtraction write is a parse-and-re-serialize, so it drops every
+   * comment in the file. Refusing a commented destination beats silently
+   * stripping it, and the advisory has to say comments are why — otherwise the
+   * operator cannot tell this apart from ordinary drift.
+   */
+  it("refuses a commented cohabited destination and names comments as the reason", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+    rewriteHooks((hooks) => {
+      hooks.PreToolUse = [OPERATOR_GROUP];
+    });
+    const commented = addOperatorComment();
+
+    const result = await uninstall();
+
+    const row = digestRowFor(result, HOOK_REGISTRAR_DESTINATION);
+    expect(row).toMatch(/\[advisory\]/);
+    expect(row).toMatch(/comment/i);
+    expect(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8")).toBe(commented);
+    expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(true);
+  });
+
+  /**
+   * The footer promised "their file is never deleted" whenever ANY artifact was
+   * subtract — printed directly under a hook-registrar row whose own reason says
+   * the destination AIH created is removed. Both cannot be true, and the row is
+   * the one describing what the plan actually does.
+   */
+  it("never promises a subtracted file survives while a row says it is deleted", async () => {
+    // No seeded destination: AIH creates it, so revocation removes it outright.
+    await projectOwnership();
+
+    const result = await uninstall();
+
+    const row = digestRowFor(result, HOOK_REGISTRAR_DESTINATION);
+    expect(row).toMatch(/\[subtract\]/);
+    expect(row).toContain("removed with them");
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("core install footprint"),
+    );
+    expect(digest?.text).not.toContain("their file is never deleted");
+    expect(existsSync(join(root, HOOK_REGISTRAR_DESTINATION))).toBe(false);
+  });
+
+  it("still promises subtracted files survive when the plan deletes none", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+
+    const result = await uninstall();
+
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("core install footprint"),
+    );
+    expect(digest?.text).toContain("their file is never deleted");
+    expect(existsSync(join(root, HOOK_REGISTRAR_DESTINATION))).toBe(true);
+  });
+
+  it("leaves everything alone when an operator entry sits inside a group AIH owns", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+    const tampered = rewriteHooks((hooks) => {
+      const stop = hooks.Stop as { hooks: unknown[] }[];
+      stop[0]?.hooks.push({ type: "command", command: "node ./tools/operator-guard.mjs" });
+    });
+
+    const result = await uninstall();
+
+    // Subtracting from inside a group AIH wrote would delete content AIH cannot
+    // prove it emitted, so this stays the advisory it always was.
+    const row = digestRowFor(result, HOOK_REGISTRAR_DESTINATION);
+    expect(row).toMatch(/\[advisory\]/);
+    expect(row).toMatch(/remediate manually/);
+    expect(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8")).toBe(tampered);
+    expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(true);
+  });
+});
