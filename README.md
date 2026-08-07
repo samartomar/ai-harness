@@ -8,7 +8,7 @@
 [![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-339933.svg)](package.json)
 
 <p align="center">
-  <img src="docs/assets/aih-overview.svg" alt="aih v3.4.0 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
+  <img src="docs/assets/aih-overview.svg" alt="aih v4.0.0 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
 </p>
 
 A cross-platform CLI that helps prepare developer workstations and repositories for
@@ -30,7 +30,7 @@ the claim -> implementation -> test proof map.
 
 ## The stable command contract
 
-For the current v2 line, pin `@aihq/harness@^2` unless your organization pins an
+For the current v4 line, pin `@aihq/harness@^4` unless your organization pins an
 exact release for reproducible rollout. Every command, flag, and deprecated alias is
 snapshot-tested in CI against a committed fixture, the `--json` envelope is
 schema-pinned, and exit-code semantics are pinned — a surface change fails the build
@@ -51,8 +51,8 @@ Install and verify a published release. Current releases publish npm provenance 
 checksums and a keyless cosign bundle:
 
 ```bash
-npm install -g @aihq/harness@3.4.0      # then run: aih --help
-aih verify-release 3.4.0   # checks npm signatures, GitHub release sums, and cosign evidence for 3.4.0
+npm install -g @aihq/harness@4.0.0      # then run: aih --help
+aih verify-release 4.0.0   # checks npm signatures, GitHub release sums, and cosign evidence for 4.0.0
 ```
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs
@@ -140,7 +140,7 @@ still initialize under the vendor CLI. Aih does not attest those customizations 
 | [`aih adopt`](docs/commands.md#aih-adopt) | Converge an existing AI canon onto aih's managed model without overwriting your work (brownfield migration). |
 | [`aih prune`](docs/commands.md#aih-prune) | Remove stale per-CLI artifacts and reconcile orphaned aih-managed ECC components from the machine registration ledger. <!-- aih:claim CM-22 --> |
 | [`aih uninstall`](docs/commands.md#aih-uninstall) | Remove the marker-backed core aih install footprint from a repo; `aih clean` is an alias. |
-| [`aih ecc`](docs/commands.md#aih-ecc) | Register the additive ECC union, or manage the reviewed Claude/Codex projection plus field-owned native hook/MCP registration with `--lifecycle`, from authenticated exact-pin bytes. <!-- aih:claim CM-21 --> <!-- aih:claim CM-45 --> |
+| [`aih ecc`](docs/commands.md#aih-ecc) | Register the additive ECC union, or manage the reviewed Claude/Codex projection plus field-owned native hook/MCP registration with `--lifecycle`, from authenticated exact-pin bytes. In a governed repository, `--lifecycle install` instead materializes the org policy's evidence-passed selection for the targets `--cli` selects, and removal lives in `aih uninstall`. <!-- aih:claim CM-21 --> <!-- aih:claim CM-45 --> |
 | [`aih superpowers`](docs/commands.md#aih-superpowers) | Verify exact-pinned Superpowers components and emit evidence-bound target guidance. |
 | [`aih crispy`](docs/commands.md#aih-crispy) | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |
 | [`aih workspace`](docs/commands.md#aih-workspace) | Scaffold and restore a multi-repo workspace at the parent folder: cross-repo map, declared-repo graph MCP, snapshots, hydrate. |
@@ -153,7 +153,7 @@ still initialize under the vendor CLI. Aih does not attest those customizations 
 | [`aih skill`](docs/commands.md#aih-skill) | Govern the skill lifecycle — vet → approve → inventory → quarantine → remove — anchored in `aih-skills.lock.json`. |
 | [`aih pack`](docs/commands.md#aih-pack) | Curate committed sets of approved skills (`aih-packs.json`); every ref is cross-checked against the lock, fail-closed. |
 | [`aih marketplace`](docs/commands.md#aih-marketplace) | Build, validate, and publish a reproducible, verifiable distribution artifact for hostable approved skills — never a registry. |
-| [`aih policy`](docs/commands.md#aih-policy) | Evaluate requested governed candidates before projection, validate policy shape, or verify the policy against a pinned hash/bundle. |
+| [`aih policy`](docs/commands.md#aih-policy) | Generate a portable Policy Workbench for authoring the org policy, evaluate requested governed candidates before projection, validate policy shape, or verify the policy against a pinned hash/bundle. |
 | [`aih evidence`](docs/commands.md#aih-evidence) | Vet exact-pinned baseline components and package local audit artifacts into deterministic signed evidence bundles. |
 | [`aih truth`](docs/commands.md#aih-truth) | Create and verify an external project-truth sidecar; commit, version, claim, decision, acceptance-preflight, and agent-evidence assertions fail closed before a pack helps govern evidence. <!-- aih:claim CM-13 --> |
 | [`aih bundle`](docs/commands.md#aih-bundle) | Build a deterministic fleet bundle with checksums; `aih verify-bundle --require-signature` turns missing/unverifiable signatures into failures. |
