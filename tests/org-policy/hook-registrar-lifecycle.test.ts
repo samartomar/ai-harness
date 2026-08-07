@@ -247,9 +247,21 @@ const OPERATOR_GROUP = {
 /** An `Object.prototype` member name, typed as the plain event name it is on disk. */
 const PROTOTYPE_EVENT: string = "constructor";
 
-/** Put an operator's own comment in the destination, the way a JSONC file carries one. */
+/**
+ * Put an operator's own comment in the destination, the way a JSONC file carries
+ * one: spliced in directly after the opening brace.
+ *
+ * Written as an explicit splice rather than a first-occurrence `.replace("{",
+ * …)`. Replacing every `{` would corrupt the JSON, so the single replace was
+ * deliberate — but a single-occurrence replace is the shape static analysis
+ * reads as incomplete sanitization, and this helper is not sanitizing anything.
+ * The position is asserted instead of pattern-matched, so a destination that is
+ * not an object fails the test loudly rather than being silently mis-commented.
+ */
 function addOperatorComment(): string {
-  const contents = (readDestination() ?? "").replace("{", "{\n  // operator note: keep this file");
+  const text = readDestination() ?? "";
+  expect(text.startsWith("{"), "expected a JSON object destination to comment").toBe(true);
+  const contents = `{\n  // operator note: keep this file${text.slice(1)}`;
   writeFileSync(join(dir, HOOK_REGISTRAR_DESTINATION), contents, "utf8");
   return contents;
 }

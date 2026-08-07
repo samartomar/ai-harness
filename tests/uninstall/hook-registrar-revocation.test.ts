@@ -213,6 +213,25 @@ const OPERATOR_GROUP = {
 /** An `Object.prototype` member name, typed as the plain event name it is on disk. */
 const PROTOTYPE_EVENT: string = "constructor";
 
+/**
+ * Put an operator's own comment in the destination, the way a JSONC file carries
+ * one: spliced in directly after the opening brace.
+ *
+ * Written as an explicit splice rather than a first-occurrence `.replace("{",
+ * …)`. Replacing every `{` would corrupt the JSON, so the single replace was
+ * deliberate — but a single-occurrence replace is the shape static analysis
+ * reads as incomplete sanitization, and this helper is not sanitizing anything.
+ * The position is asserted instead of pattern-matched, so a destination that is
+ * not an object fails the test loudly rather than being silently mis-commented.
+ */
+function addOperatorComment(): string {
+  const text = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8");
+  expect(text.startsWith("{"), "expected a JSON object destination to comment").toBe(true);
+  const contents = `{\n  // operator note: keep this file${text.slice(1)}`;
+  put(HOOK_REGISTRAR_DESTINATION, contents);
+  return contents;
+}
+
 /** Rewrite the destination's `hooks` key through `mutate`, leaving every other key alone. */
 function rewriteHooks(mutate: (hooks: Record<string, unknown>) => void): string {
   const current = JSON.parse(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8"));
@@ -308,11 +327,7 @@ describe("H6 — uninstall subtracts owned hook groups out of a cohabited destin
     rewriteHooks((hooks) => {
       hooks.PreToolUse = [OPERATOR_GROUP];
     });
-    const commented = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8").replace(
-      "{",
-      "{\n  // operator note: keep this file",
-    );
-    put(HOOK_REGISTRAR_DESTINATION, commented);
+    const commented = addOperatorComment();
 
     const result = await uninstall();
 
