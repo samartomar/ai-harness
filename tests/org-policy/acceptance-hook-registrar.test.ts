@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { Window } from "happy-dom";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import { type PlanContext, plan } from "../../src/internals/plan.js";
@@ -71,6 +72,27 @@ function ctx(apply: boolean): PlanContext {
 }
 
 const OPERATOR_CONTENT = { permissions: { allow: ["Bash(ls:*)"] } };
+
+/**
+ * Read the registrar panel the way an operator does. The panel's content is
+ * written by the page's own script, so the served html carries empty containers
+ * and the ids appear in it whether or not anything renders into them. Executing
+ * the script and reading the resulting text is what makes the assertion bite.
+ */
+function workbenchPanelReader(html: string): (id: string) => string {
+  const window = new Window({ url: "http://localhost/" });
+  window.document.write(html);
+  (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
+    structuredClone;
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
+  if (scripts.length === 0) throw new Error("expected generated workbench script");
+  window.eval(scripts.join("\n"));
+  return (id: string): string => {
+    const container = window.document.getElementById(id);
+    if (container === null) throw new Error(`workbench renders no #${id}`);
+    return container.textContent ?? "";
+  };
+}
 
 describe("acceptance — governed hook registrations on a temporary fixture root", () => {
   it("author → project → panel → mutate → drift by owner and event → uninstall", async () => {
@@ -144,11 +166,43 @@ describe("acceptance — governed hook registrations on a temporary fixture root
     expect(receipt?.policyVersion).toBe("2026-08-06.acceptance");
     expect(hookRegistrarState(root).state).toBe("active");
 
-    // ── See the registrar panel: sources, overlaps, spawn counts.
-    const html = policyStudioHtml(policyStudioModel());
-    expect(html).toContain("hook-registry-rows");
-    expect(html).toContain("hook-registry-overlaps");
-    expect(html).toContain("hook-registry-spawns");
+    // ── See the registrar panel: sources, overlaps, spawn counts. Asserted on
+    // what the operator reads, not on element ids: the page's own script names
+    // every one of those ids in a byId(...) call, so searching the served html
+    // for them passes even with all four panel containers deleted.
+    const model = policyStudioModel();
+    const html = policyStudioHtml(model);
+    const panelText = workbenchPanelReader(html);
+    const registry = model.catalog.hookRegistry;
+
+    // Sources: every registrar row named under its own owner's source label.
+    const rows = panelText("hook-registry-rows");
+    expect(registry.entries.length).toBeGreaterThan(0);
+    for (const entry of registry.entries) {
+      expect(rows, `${entry.id} row`).toContain(entry.id);
+      expect(rows, `${entry.id} source`).toContain(entry.source);
+    }
+
+    // Overlaps: stated in a sentence, and never auto-resolved (H5).
+    const overlaps = panelText("hook-registry-overlaps");
+    expect(overlaps.toLowerCase()).toContain("overlap");
+    expect(overlaps).toMatch(/does not resolve it|never merges an overlap/);
+    for (const overlap of registry.overlaps) {
+      expect(overlaps, `${overlap.functionTag} overlap`).toContain(overlap.functionTag);
+    }
+
+    // Spawn counts: the total the administrator signs against, per event and
+    // in total, with the source-disabled hook still priced as a process (S3).
+    const spawns = panelText("hook-registry-spawns");
+    for (const event of registry.spawnProjection.events) {
+      expect(spawns, `${event.event} spawns`).toContain(
+        `${event.entries} entries, ${event.spawns} expected process spawns`,
+      );
+    }
+    expect(spawns).toContain(
+      `Total: ${registry.spawnProjection.totalEntries} entries, ${registry.spawnProjection.totalSpawns} process spawns`,
+    );
+    expect(spawns.toLowerCase()).toContain("still spawns a process");
     expect(html.toLowerCase()).not.toContain("cost");
 
     // ── Mutate one destination entry: drift, named by owner and event.
