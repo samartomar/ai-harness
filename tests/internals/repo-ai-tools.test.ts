@@ -2,8 +2,10 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { hermeticGitEnv } from "../git-fixture-env.js";
 
 const root = resolve(import.meta.dirname, "../..");
+const TEST_PROCESS_TIMEOUT_MS = 10_000;
 
 function toolingPlan(): Record<string, unknown> {
   return JSON.parse(
@@ -12,6 +14,53 @@ function toolingPlan(): Record<string, unknown> {
       encoding: "utf8",
     }),
   ) as Record<string, unknown>;
+}
+
+/**
+ * True when `git ls-files` reports the path as part of the tracked index.
+ * `existsSync` cannot stand in for this: an operator's local, gitignored
+ * AI-client projections (see ai-coding/rules/repo-ai-tools.md — "optional
+ * local projections") legitimately exist on disk without being tracked, so a
+ * filesystem-existence assertion fails on any workstation that carries them
+ * even though the repository itself is clean. Probe tracking/ignore state
+ * with real git, per ai-coding/rules/engine-invariants.md.
+ */
+function isTrackedByGit(relativePath: string): boolean {
+  const out = execFileSync("git", ["ls-files", "--", relativePath], {
+    cwd: root,
+    encoding: "utf8",
+    timeout: TEST_PROCESS_TIMEOUT_MS,
+    env: hermeticGitEnv(),
+  });
+  return out.trim().length > 0;
+}
+
+/** `git check-ignore -q <path>` exits 0 iff the path IS ignored, 1 if it is NOT. */
+function isIgnoredByGit(relativePath: string): boolean {
+  try {
+    execFileSync("git", ["check-ignore", "-q", relativePath], {
+      cwd: root,
+      timeout: TEST_PROCESS_TIMEOUT_MS,
+      env: hermeticGitEnv(),
+    });
+    return true; // exit 0 -> ignored
+  } catch {
+    return false; // exit 1 -> not ignored
+  }
+}
+
+/**
+ * The repo-hygiene predicate: a path must never enter the Git index, and —
+ * so it cannot be staged by accident either — must be ignore-covered
+ * whenever it happens to exist on disk (an absent path trivially satisfies
+ * the "can't be staged" intent).
+ */
+function expectUntrackedAndIgnored(relativePath: string): void {
+  expect(isTrackedByGit(relativePath), relativePath).toBe(false);
+  expect(
+    isIgnoredByGit(relativePath) || !existsSync(resolve(root, relativePath)),
+    relativePath,
+  ).toBe(true);
 }
 
 describe("ai-harness repo AI tooling", () => {
@@ -60,7 +109,7 @@ describe("ai-harness repo AI tooling", () => {
       ".codex/hooks.json",
       ".claude/settings.json",
     ]) {
-      expect(existsSync(resolve(root, file)), file).toBe(false);
+      expectUntrackedAndIgnored(file);
     }
   });
 
@@ -133,8 +182,9 @@ describe("ai-harness repo AI tooling", () => {
   });
 
   it("keeps Serena configuration and runtime artifacts out of the product diff", () => {
-    expect(existsSync(resolve(root, ".serena/project.yml"))).toBe(false);
-    expect(existsSync(resolve(root, ".serena/.gitignore"))).toBe(false);
+    for (const file of [".serena/project.yml", ".serena/.gitignore"]) {
+      expectUntrackedAndIgnored(file);
+    }
     expect(toolingPlan()).toMatchObject({ installRoot: "project-keyed user cache" });
   });
 
