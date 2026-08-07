@@ -1,5 +1,12 @@
 import type { PolicyStudioModel } from "./studio-model.js";
 
+/**
+ * Escape the model for embedding inside an inline script. Angle brackets go to
+ * unicode escapes so no model string can close the tag. This is only half the
+ * job: the caller must also splice it in through a FUNCTION replacer, or
+ * String.replace interprets `$'`, `$&`, `$\`` and `$$` in these bytes and
+ * copies the template's own tail into the page.
+ */
 function safeScriptJson(value: unknown): string {
   return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
 }
@@ -1068,5 +1075,5 @@ byId("copy-approvals").addEventListener("click",function(event){event.preventDef
 })();
 </script>
 </body>
-</html>`.replace("__AIH_DATA__", safeScriptJson(model));
+</html>`.replace("__AIH_DATA__", () => safeScriptJson(model));
 }
