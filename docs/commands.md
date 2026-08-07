@@ -324,9 +324,11 @@ profile installer: it materializes the policy's evidence-passed component select
 removal lives in `aih uninstall`. That governed install does read `--cli`, because which tools a
 materialization lands for is the ordinary workstation target selection — `--cli`, `--all-tools`, the
 committed `.aih-config.json` targets, else the `claude` default. The governed materialization targets
-are `claude`, `codex`, `kimi`, `cursor`, and `opencode`; `claude` and `codex` are wired today, a ruled
-target that is not wired yet is refused by name, and any other CLI is refused as not a governed
-materialization target. Several targets in one run are one materialization into one root with one
+are `claude`, `codex`, `kimi`, `cursor`, and `opencode`; `claude`, `codex`, and `kimi` are wired
+today, a ruled target that is not wired yet is refused by name, and any other CLI is refused as not a
+governed materialization target. Each wired target's rows land under its own project root —
+`.claude/`, `.codex/`, and for Kimi `.kimi-code/`, which is where the framework's own Kimi adapter
+roots a project install. Several targets in one run are one materialization into one root with one
 receipt: destinations two targets share (`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`) are
 written once, and a later `--apply` with a narrower target set subtracts the dropped target's files
 and reports each removal.

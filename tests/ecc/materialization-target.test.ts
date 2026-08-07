@@ -37,13 +37,13 @@ import {
 } from "../../src/ecc/materialize.js";
 
 /**
- * F4, second target: Codex, and the seam that made it one resolver instead of a
- * second copy of the Claude one.
+ * F4, the targets past the first: Codex and Kimi, and the seam that made them
+ * one resolver instead of a copy of the Claude one apiece.
  *
  * The Claude suite (`materialization-target-claude.test.ts`) still pins the
  * single-target binding exactly as it shipped. This file pins what the
- * generalization added: a second target's destinations, the refusals that keep
- * their per-target voice, the union a multi-target request produces in ONE
+ * generalization added: each further target's destinations, the refusals that
+ * keep their per-target voice, the union a multi-target request produces in ONE
  * receipt, and the two refusals that decide whether a target is a governed
  * materialization target at all.
  *
@@ -219,6 +219,130 @@ describe("the Codex target maps evidence-passed components onto the Codex projec
         reason: "unowned-destination",
         detail: "the Claude target owns no content destination for .mcp.json",
       },
+    ]);
+  });
+});
+
+/**
+ * F4, third target: Kimi, whose project root is the one that is NOT `.<target>`.
+ *
+ * Upstream's own Kimi adapter roots the project install at `.kimi-code`
+ * (`scripts/lib/install-targets/kimi-project.js`: `kind: 'project'`,
+ * `rootSegments: ['.kimi-code']`) and keeps its install state inside that root.
+ * The generic scaffold there is `join(targetRoot, sourceRelativePath)`, which is
+ * what the four content classes below preserve. Two upstream shapes are recorded
+ * and deliberately NOT imitated: upstream special-cases `.agents/skills` into
+ * `<root>/skills`, while this lifecycle keeps that row shared at the project
+ * root for every target; and upstream syncs a `.kimi/` source as root children
+ * rather than recreating the directory it calls obsolete compat docs, which this
+ * copy-file-only lifecycle cannot express and therefore refuses.
+ */
+describe("the Kimi target maps evidence-passed components onto the .kimi-code project rows", () => {
+  it("maps an agent, a skill, and the rules baseline under .kimi-code/", () => {
+    const result = resolve(
+      ["kimi"],
+      [
+        selected("agent:code-reviewer", "agents/code-reviewer.md"),
+        selected("skill:tdd-workflow", "skills/tdd-workflow"),
+        selected("baseline:rules", "rules"),
+      ],
+    );
+
+    expect(result.refused).toEqual([]);
+    // `.kimi-code`, never the `.kimi` the parameterized root would produce.
+    expect(destinations(result, "agent:code-reviewer")).toEqual([
+      ".kimi-code/agents/code-reviewer.md",
+    ]);
+    expect(destinations(result, "skill:tdd-workflow")).toEqual([
+      // The shared row stays shared: it is NOT duplicated into `.kimi-code/`,
+      // which is where upstream's own adapter puts it and this one does not.
+      ".agents/skills/tdd-workflow/SKILL.md",
+      ".kimi-code/skills/tdd-workflow/SKILL.md",
+      ".kimi-code/skills/tdd-workflow/assets/marker.bin",
+    ]);
+    expect(destinations(result, "baseline:rules")).toEqual([
+      ".kimi-code/rules/README.md",
+      ".kimi-code/rules/common/coding-style.md",
+    ]);
+    // Source paths are preserved verbatim below the root — no flattening and no
+    // renaming, exactly as upstream's `join(targetRoot, sourceRelativePath)`.
+    expect(destinations(result, "skill:tdd-workflow")).not.toContain(
+      ".kimi-code/skills/tdd-workflow-assets-marker.bin",
+    );
+  });
+
+  it("refuses by name, in the Kimi target's own voice, what Kimi does not own", () => {
+    const result = resolve(
+      ["kimi"],
+      [
+        selected("mcp:github", "mcp-configs/mcp-servers.json"),
+        selected("baseline:hooks", "hooks"),
+        // Positive control: the run is not empty, so the refusals below are
+        // decisions and not an adapter that mapped nothing.
+        selected("agent:code-reviewer", "agents/code-reviewer.md"),
+      ],
+    );
+
+    expect(result.components.map((component) => component.id)).toEqual(["agent:code-reviewer"]);
+    expect(refusalFor(result, "mcp:github", "kimi")).toEqual({
+      target: "kimi",
+      id: "mcp:github",
+      reason: "unowned-destination",
+      detail: "the Kimi target owns no content destination for .mcp.json",
+    });
+    expect(refusalFor(result, "baseline:hooks", "kimi")?.detail).toContain("hooks/hooks.json");
+  });
+
+  it("refuses a `.kimi/`-sourced platform component for every target, Kimi included", () => {
+    // Every declared platform path present, so the refusal is about the
+    // destination and not a path the pinned root happens to lack. The platform
+    // roots that sort ahead of `.kimi` are all empty here, so `.kimi/` holds the
+    // first file the walk reaches and is the source the refusal must name.
+    for (const declared of eccComponentSourcePaths("baseline:platform")) {
+      mkdirSync(join(sourceRoot, ...declared.split("/")), { recursive: true });
+    }
+    writeFileSync(join(sourceRoot, ".kimi", "compat-docs.md"), "# obsolete compat docs\n");
+
+    const result = resolve(
+      ["claude", "kimi"],
+      [
+        selected("baseline:platform", ".claude-plugin"),
+        // Positive control: the run is not empty.
+        selected("agent:code-reviewer", "agents/code-reviewer.md"),
+      ],
+    );
+
+    expect(result.components.map((component) => component.id)).toEqual(["agent:code-reviewer"]);
+    for (const target of ["claude", "kimi"] as const) {
+      const refusal = refusalFor(result, "baseline:platform", target);
+      expect(refusal?.reason, target).toBe("unowned-destination");
+      expect(refusal?.detail, target).toContain(".kimi/compat-docs.md");
+    }
+  });
+
+  it("unions Claude and Kimi into one set with the shared rows written once", () => {
+    const result = resolve(
+      ["claude", "kimi"],
+      [
+        selected("skill:tdd-workflow", "skills/tdd-workflow"),
+        selected("baseline:agents", "AGENTS.md"),
+      ],
+    );
+
+    expect(destinations(result, "skill:tdd-workflow")).toEqual([
+      // Once, not twice.
+      ".agents/skills/tdd-workflow/SKILL.md",
+      ".claude/skills/tdd-workflow/SKILL.md",
+      ".claude/skills/tdd-workflow/assets/marker.bin",
+      ".kimi-code/skills/tdd-workflow/SKILL.md",
+      ".kimi-code/skills/tdd-workflow/assets/marker.bin",
+    ]);
+    // `baseline:agents` declares only target-independent rows, so two targets
+    // must produce exactly one `AGENTS.md` — a component claiming one
+    // destination twice is refused by the engine.
+    expect(destinations(result, "baseline:agents")).toEqual([
+      ".agents/plugins/marketplace.json",
+      "AGENTS.md",
     ]);
   });
 });
@@ -550,6 +674,12 @@ describe("which CLIs are governed materialization targets", () => {
     expect(assertGovernedMaterializationTargets(["claude"])).toEqual(["claude"]);
     expect(assertGovernedMaterializationTargets(["claude", "codex"])).toEqual(["claude", "codex"]);
     expect(assertGovernedMaterializationTargets(["codex", "codex"])).toEqual(["codex"]);
+    expect(assertGovernedMaterializationTargets(["kimi"])).toEqual(["kimi"]);
+    expect(assertGovernedMaterializationTargets(["claude", "codex", "kimi"])).toEqual([
+      "claude",
+      "codex",
+      "kimi",
+    ]);
   });
 
   it("refuses a CLI outside the governed five, by name", () => {
@@ -572,7 +702,7 @@ describe("which CLIs are governed materialization targets", () => {
   });
 
   it("refuses a ruled target that is not wired yet, naming what IS wired", () => {
-    for (const target of ["kimi", "cursor", "opencode"]) {
+    for (const target of ["cursor", "opencode"]) {
       const failure = (() => {
         try {
           assertGovernedMaterializationTargets([target]);
@@ -582,7 +712,10 @@ describe("which CLIs are governed materialization targets", () => {
         return "";
       })();
       expect(failure, target).toMatch(/is a governed materialization target that is not wired yet/);
-      expect(failure, target).toContain("claude, codex");
+      // The wired list is three targets now, and the refusal states it exactly:
+      // "claude, codex" would still read true as a prefix while naming one less
+      // target than the operator can actually ask for.
+      expect(failure, target).toContain("claude, codex, kimi");
       // Not the other refusal: an unwired ruled target is a row still to come,
       // not a tool this lifecycle will never serve.
       expect(failure, target).not.toContain("is not a governed materialization target");
@@ -615,6 +748,39 @@ describe("the one destination mapping keeps each target off the others' exclusiv
       scope: "project",
       relative: ".codex/rules/common/testing.md",
     });
+  });
+
+  it("roots the Kimi project rows at `.kimi-code`, not at the parameterized `.kimi`", () => {
+    for (const [source, relative] of [
+      ["agents/code-reviewer.md", ".kimi-code/agents/code-reviewer.md"],
+      ["skills/tdd-workflow/SKILL.md", ".kimi-code/skills/tdd-workflow/SKILL.md"],
+      ["commands/tdd.md", ".kimi-code/commands/tdd.md"],
+      ["rules/common/testing.md", ".kimi-code/rules/common/testing.md"],
+    ] as const) {
+      expect(eccContentDestinationMapping(source, "kimi"), source).toEqual({
+        scope: "project",
+        relative,
+      });
+    }
+    // `.kimi` is upstream's own obsolete compat-docs directory, which its Kimi
+    // adapter refuses to recreate. No target's generic rows may land there.
+    expect(
+      GOVERNED_MATERIALIZATION_TARGETS.flatMap((target) =>
+        ["agents/x.md", "skills/x/SKILL.md", "commands/x.md", "rules/x.md"].map(
+          (source) => eccContentDestinationMapping(source, target)?.relative ?? "",
+        ),
+      ).filter((relative) => relative.startsWith(".kimi/")),
+    ).toEqual([]);
+  });
+
+  it("owns no destination for a `.kimi/` source, for Kimi or for anyone else", () => {
+    for (const target of GOVERNED_MATERIALIZATION_TARGETS) {
+      expect(eccContentDestinationMapping(".kimi/compat-docs.md", target), target).toBeUndefined();
+      expect(
+        eccContentDestinationMapping(".kimi-code/agents/x.md", target),
+        target,
+      ).toBeUndefined();
+    }
   });
 
   it("keeps the shared rows shared and the Codex home row home-scoped", () => {
@@ -672,6 +838,60 @@ describe("the one destination mapping keeps each target off the others' exclusiv
         target: "codex",
       }),
     ).toThrow(/unclassifiable governed ECC content operation/);
+  });
+
+  it("classifies a `.kimi-code/` destination as governed content for Kimi and for nobody else", () => {
+    const operation = {
+      kind: "copy-file" as const,
+      moduleId: "agents-core",
+      sourceRelativePath: "agents/code-reviewer.md",
+      destinationPath: "/fixture/.kimi-code/agents/code-reviewer.md",
+    };
+
+    // The classifier reads the SAME mapping the adapter does, so the root
+    // override has to reach it — a mapping that answered `.kimi-code` while the
+    // classifier still derived `.kimi` would refuse every byte the adapter
+    // planned, at apply time, after the plan said it would write them.
+    expect(
+      classifyGovernedEccOperation(operation, {
+        projectRoot: "/fixture",
+        homeDir: "/home/aih",
+        target: "kimi",
+      }),
+    ).toBe("ecc-content");
+    for (const target of ["claude", "codex"] as const) {
+      expect(() =>
+        classifyGovernedEccOperation(operation, {
+          projectRoot: "/fixture",
+          homeDir: "/home/aih",
+          target,
+        }),
+      ).toThrow(/unclassifiable governed ECC content operation/);
+    }
+    // ...and the root the parameterized mapping would have produced is not a
+    // destination Kimi owns.
+    expect(() =>
+      classifyGovernedEccOperation(
+        { ...operation, destinationPath: "/fixture/.kimi/agents/code-reviewer.md" },
+        { projectRoot: "/fixture", homeDir: "/home/aih", target: "kimi" },
+      ),
+    ).toThrow(/unclassifiable governed ECC content operation/);
+  });
+
+  /**
+   * The verified installer's spawned child restates this mapping in a script
+   * string: it runs out of process against the framework's own executor and
+   * cannot import the module above. Nothing but this pin keeps the two copies
+   * saying the same thing, and a Kimi root applied to only one of them is a
+   * classifier that rejects at apply what the planner promised to write.
+   */
+  it("keeps the runtime restatement of the mapping in lockstep on the Kimi root", () => {
+    const kimiRoot = /const targetRoot = [^\n]*"\.kimi-code"[^\n]*;/;
+    for (const module of ["materialize.ts", "verified.ts"]) {
+      expect(readFileSync(join(process.cwd(), "src", "ecc", module), "utf8"), module).toMatch(
+        kimiRoot,
+      );
+    }
   });
 
   it("has no shipped component that declares a `.claude/commands/` source", () => {
