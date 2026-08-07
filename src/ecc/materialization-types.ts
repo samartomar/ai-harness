@@ -109,6 +109,12 @@ export interface PlannedStep {
   contents?: Buffer;
   expect: DestinationExpectation;
   prior?: Buffer;
+  /**
+   * The mode the prior bytes had. Declared HERE so the bridge cannot drop it
+   * again: an optional field attached only by a spread is exempt from excess
+   * property checking, which is how it went missing without a type error.
+   */
+  priorMode?: number;
   mode: number;
 }
 

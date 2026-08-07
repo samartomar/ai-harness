@@ -469,7 +469,9 @@ export function plannedWrite(
     expect,
     ...(prior === undefined ? {} : { prior }),
     ...(priorMode === undefined ? {} : { priorMode }),
-    mode: MATERIALIZED_CONTENT_MODE,
+    // Writing over a destination keeps the mode it already had: AIH never
+    // widens an operator file, and a re-apply never widens its own.
+    mode: priorMode ?? MATERIALIZED_CONTENT_MODE,
   };
 }
 

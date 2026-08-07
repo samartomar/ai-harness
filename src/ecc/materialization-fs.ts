@@ -70,14 +70,28 @@ export interface MaterializationCommitStep {
  * string. The native binding resolves through `GetFinalPathNameByHandle`, which
  * returns the long name — that is the only spelling worth checking.
  */
-const realpathCanonical: (path: string) => string =
-  (realpathSync as unknown as { native?: (path: string) => string }).native ?? realpathSync;
+const nativeRealpath = (realpathSync as unknown as { native?: (path: string) => string }).native;
+if (typeof nativeRealpath !== "function") {
+  throw new Error(
+    "ECC materialization requires fs.realpathSync.native; the JS implementation does not resolve filesystem aliases and would defeat the reserved-path guard",
+  );
+}
+const realpathCanonical: (path: string) => string = nativeRealpath;
 
-function lstatSafe(path: string): Stats | undefined {
+/**
+ * `undefined` means the path is genuinely absent. Anything else — EACCES,
+ * EPERM, ELOOP, ENOTDIR, a transient Windows scanner lock that outlives its
+ * retries — is refused, because treating it as absent skips every symlink,
+ * containment and reserved check for the rest of the path. `contained-path.ts`
+ * already draws this line; the two policies in one call chain must not disagree.
+ */
+function lstatOrAbsent(path: string): Stats | undefined {
   try {
-    return lstatSync(path);
-  } catch {
-    return undefined;
+    return retryTransient(() => lstatSync(path));
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return undefined;
+    throw new Error(`ECC materialization path is inaccessible: ${path} (${code ?? "unknown"})`);
   }
 }
 
@@ -88,7 +102,7 @@ function sha256(bytes: Buffer): string {
 /** The destination root must be an absolute, real, non-symlinked directory. */
 export function materializationRoot(root: string): string {
   if (!isAbsolute(root)) throw new Error("ECC materialization root must be an absolute path");
-  const stats = lstatSafe(root);
+  const stats = lstatOrAbsent(root);
   if (stats === undefined) throw new Error(`ECC materialization root is not a directory: ${root}`);
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
     throw new Error(`ECC materialization root must be a real directory: ${root}`);
@@ -97,9 +111,11 @@ export function materializationRoot(root: string): string {
 }
 
 /**
- * Refuse a symlinked, escaping, or RESERVED segment on every path this engine
- * traverses — checked on what the filesystem actually resolves each segment to,
- * not on the requested string. A requested string is not what the OS opens: on
+ * Refuse a symlinked, escaping, or RESERVED segment on every EXISTING segment
+ * of a path — checked on what the filesystem actually resolves each segment to,
+ * not on the requested string. The walk stops at the first absent segment;
+ * `prepareDirectory` repeats the same checks over the range this abandons,
+ * where those segments are actually created. A requested string is not what the OS opens: on
  * NTFS with 8.3 generation `GIT~1` opens `.git` and `AIH~1` opens `.aih`, so a
  * string-level guard alone would let a component write an executable hook into
  * a real repository or forge AIH's own state.
@@ -111,7 +127,7 @@ function assertSafeParents(rootReal: string, path: string): void {
   for (let index = 0; index < segments.length; index += 1) {
     const isLeaf = index === segments.length - 1;
     current = resolve(current, segments[index] as string);
-    const stats = lstatSafe(current);
+    const stats = lstatOrAbsent(current);
     if (stats === undefined) return;
     if (stats.isSymbolicLink()) {
       throw new Error(
@@ -186,22 +202,41 @@ export function readLiveDestination(rootReal: string, path: string): Buffer | un
   return live.state === "absent" ? undefined : live.bytes;
 }
 
+/**
+ * Create the parent chain, checking each segment where it is actually created.
+ * `assertSafeParents` stops at the first absent segment, which is exactly the
+ * range this walks — so the guard has to be repeated here rather than inferred
+ * from the ordering argument that a missing parent implies missing children.
+ * That argument stops holding the moment a segment is unreadable or a concurrent
+ * creator wins the race.
+ */
 function prepareDirectory(rootReal: string, path: string, mode: number): string {
+  const ownState = ENGINE_STATE_PATHS.has(path);
   const segments = path.split("/");
   let current = rootReal;
   for (let index = 0; index < segments.length - 1; index += 1) {
     current = join(current, segments[index] as string);
-    const stats = lstatSafe(current);
+    const stats = lstatOrAbsent(current);
     if (stats === undefined) {
       mkdirSync(current, { recursive: false, mode });
-      continue;
-    }
-    if (stats.isSymbolicLink()) {
+    } else if (stats.isSymbolicLink()) {
       throw new Error(`refusing a symlinked ECC materialization destination parent: ${path}`);
-    }
-    if (!stats.isDirectory()) {
+    } else if (!stats.isDirectory()) {
       throw new Error(`ECC materialization destination parent is not a directory: ${path}`);
     }
+    const canonical = realpathCanonical(current);
+    if (!containedPath(rootReal, canonical)) {
+      throw new Error(`ECC materialization destination escapes its root: ${path}`);
+    }
+    if (!ownState) {
+      assertUnreservedSegments(
+        relative(rootReal, canonical)
+          .split(/[\\/]/)
+          .filter((segment) => segment.length > 0),
+        path,
+      );
+    }
+    current = canonical;
   }
   return current;
 }
@@ -219,13 +254,16 @@ export function writeDestinationAtomic(
   rename?: (from: string, to: string) => void,
 ): void {
   assertSafeParents(rootReal, path);
+  // Decided by WHOSE path it is, never derived from the file mode: a content
+  // file that preserves an operator 0600 would otherwise silently create its
+  // parent directories 0700.
   const directory = prepareDirectory(
     rootReal,
     path,
-    mode === MATERIALIZATION_RECEIPT_MODE ? STATE_DIRECTORY_MODE : CONTENT_DIRECTORY_MODE,
+    ENGINE_STATE_PATHS.has(path) ? STATE_DIRECTORY_MODE : CONTENT_DIRECTORY_MODE,
   );
   const target = join(rootReal, ...path.split("/"));
-  if (lstatSafe(target)?.isSymbolicLink() === true) {
+  if (lstatOrAbsent(target)?.isSymbolicLink() === true) {
     throw new Error(
       `refusing to write through a symlinked ECC materialization destination: ${path}`,
     );
@@ -245,7 +283,7 @@ export function writeDestinationAtomic(
 export function removeDestination(rootReal: string, path: string): void {
   assertSafeParents(rootReal, path);
   const target = join(rootReal, ...path.split("/"));
-  const stats = lstatSafe(target);
+  const stats = lstatOrAbsent(target);
   if (stats === undefined) return;
   if (stats.isSymbolicLink()) {
     throw new Error(`refusing to remove a symlinked ECC materialization destination: ${path}`);

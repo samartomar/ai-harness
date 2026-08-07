@@ -34,7 +34,7 @@ export const ECC_MATERIALIZATION_RECEIPT_FORMAT = "aih-ecc-materialization-recei
  * component that could write either could rewrite its own ownership or forge a
  * marker other AIH subsystems trust.
  */
-const RESERVED_FIRST_SEGMENT_PREFIX = ".aih";
+const RESERVED_SEGMENT_PREFIX = ".aih";
 /** Git executes what it finds here regardless of the mode bit. Never a destination. */
 const RESERVED_SEGMENTS = new Set([".git"]);
 
@@ -99,7 +99,7 @@ function assertPortableRelativePath(value: string, label: string): string {
  */
 export function reservedSegmentKind(segment: string): "aih" | "git" | undefined {
   const folded = segment.normalize("NFC").toLowerCase();
-  if (folded.startsWith(RESERVED_FIRST_SEGMENT_PREFIX)) return "aih";
+  if (folded.startsWith(RESERVED_SEGMENT_PREFIX)) return "aih";
   return RESERVED_SEGMENTS.has(folded) ? "git" : undefined;
 }
 

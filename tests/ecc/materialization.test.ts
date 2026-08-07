@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -12,7 +14,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
 import type { EccComponentId } from "../../src/ecc/components.js";
 import {
@@ -25,7 +27,11 @@ import {
   repairEccMaterialization,
   uninstallEccMaterialization,
 } from "../../src/ecc/materialization.js";
-import { MAX_MATERIALIZED_FILE_BYTES } from "../../src/ecc/materialization-fs.js";
+import {
+  MAX_MATERIALIZED_FILE_BYTES,
+  writeDestinationAtomic,
+} from "../../src/ecc/materialization-fs.js";
+import { planEccMaterialization } from "../../src/ecc/materialization-plan.js";
 import {
   ECC_MATERIALIZATION_RECEIPT_PATH,
   MAX_MATERIALIZATION_RECEIPT_BYTES,
@@ -157,6 +163,35 @@ function shortNameAlias(name: string): string | undefined {
   } catch {
     return undefined;
   } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Whether this process can actually be denied a stat. Root bypasses directory
+ * permissions, so the check would be vacuous there; make the skip visible.
+ */
+function canObserveInaccessiblePath(): boolean {
+  if (process.platform === "win32") return false;
+  const probe = mkdtempSync(join(tmpdir(), "aih-ecc-eacces-probe-"));
+  try {
+    mkdirSync(join(probe, "locked"));
+    writeFileSync(join(probe, "locked", "file"), "x", "utf8");
+    chmodSync(join(probe, "locked"), 0o000);
+    try {
+      lstatSync(join(probe, "locked", "file"));
+      return false;
+    } catch {
+      return true;
+    }
+  } catch {
+    return false;
+  } finally {
+    try {
+      chmodSync(join(probe, "locked"), 0o700);
+    } catch {
+      // best effort
+    }
     rmSync(probe, { recursive: true, force: true });
   }
 }
@@ -1123,6 +1158,75 @@ describe("F1/F5 — AIH-direct per-component materialization", () => {
     },
   );
 
+  it.skipIf(process.platform === "win32")(
+    "keeps the operator's file mode through a merge and through a rollback",
+    () => {
+      const settings = (command: string) =>
+        componentInput("skill:aaa-settings", [
+          {
+            path: SETTINGS_PATH,
+            kind: "merge-json",
+            contents: JSON.stringify({ statusLine: { type: "command", command } }),
+          },
+        ]);
+      put(SETTINGS_PATH, OPERATOR_SETTINGS);
+      chmodSync(join(root, SETTINGS_PATH), 0o600);
+
+      applyEccMaterialization(request(settings("aih status")));
+      // The forward path must not widen an operator's permissions either.
+      expect(lstatSync(join(root, SETTINGS_PATH)).mode & 0o777).toBe(0o600);
+
+      let renames = 0;
+      expect(() =>
+        applyEccMaterialization(request(settings("aih status --json"), agentComponent()), {
+          rename: (from, to) => {
+            renames += 1;
+            if (renames > 1) throw new Error("injected rename failure");
+            renameSync(from, to);
+          },
+        }),
+      ).toThrow(/injected rename failure/);
+
+      expect(read(SETTINGS_PATH)).toContain("aih status");
+      expect(lstatSync(join(root, SETTINGS_PATH)).mode & 0o777).toBe(0o600);
+    },
+  );
+
+  it.skipIf(!canObserveInaccessiblePath())(
+    "fails closed when a path segment cannot be inspected at all",
+    () => {
+      mkdirSync(join(root, ".claude"), { recursive: true });
+      chmodSync(join(root, ".claude"), 0o000);
+      try {
+        expect(() => applyEccMaterialization(request(skillComponent()))).toThrow(
+          /inaccessible|refusing/i,
+        );
+        expect(readEccMaterializationReceipt(root)).toEqual({ state: "absent" });
+      } finally {
+        chmodSync(join(root, ".claude"), 0o700);
+      }
+    },
+  );
+
+  it("carries the destination's existing mode into the step that may have to restore it", () => {
+    put(SETTINGS_PATH, OPERATOR_SETTINGS);
+
+    const plan = planEccMaterialization(request(settingsComponent()));
+    const step = plan.steps.find((candidate) => candidate.path === SETTINGS_PATH);
+
+    expect(step?.prior).toBeDefined();
+    // Without this the rollback restores at the engine's default and silently
+    // widens an operator's permissions; the type is what keeps it plumbed.
+    expect(step?.priorMode).toBeGreaterThan(0);
+  });
+
+  it("refuses a reserved directory it would have to create", () => {
+    expect(() =>
+      writeDestinationAtomic(root, ".git/hooks/pre-commit", Buffer.from("payload\n"), 0o644),
+    ).toThrow(/git/i);
+    expect(existsSync(join(root, ".git", "hooks", "pre-commit"))).toBe(false);
+  });
+
   it("refuses a destination root that is not an absolute real directory", () => {
     expect(() =>
       applyEccMaterialization({ root: "relative/root", components: [skillComponent()] }),
@@ -1130,5 +1234,27 @@ describe("F1/F5 — AIH-direct per-component materialization", () => {
     expect(() =>
       applyEccMaterialization({ root: join(root, "missing"), components: [skillComponent()] }),
     ).toThrow(/directory/i);
+  });
+});
+
+describe("the filesystem boundary's own preconditions", () => {
+  afterEach(() => {
+    vi.doUnmock("node:fs");
+    vi.resetModules();
+  });
+
+  it("refuses to load at all without the native realpath binding", async () => {
+    const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+    // The JS implementation leaves an NTFS 8.3 short name as it found it, so
+    // every reserved-name check downstream would compare the wrong string.
+    // Silently falling back to it reopens the class the guard exists to close.
+    const withoutNative: typeof actual = {
+      ...actual,
+      realpathSync: ((path: string) => actual.realpathSync(path)) as typeof actual.realpathSync,
+    };
+    vi.resetModules();
+    vi.doMock("node:fs", () => ({ ...withoutNative, default: withoutNative }));
+
+    await expect(import("../../src/ecc/materialization-fs.js")).rejects.toThrow(/native/i);
   });
 });

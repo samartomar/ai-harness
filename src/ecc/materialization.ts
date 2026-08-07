@@ -77,6 +77,7 @@ function commit(operation: PlannedOperation, deps: EccMaterializationDeps): void
       expect: step.expect,
       ...(step.contents === undefined ? {} : { contents: step.contents }),
       ...(step.prior === undefined ? {} : { prior: step.prior }),
+      ...(step.priorMode === undefined ? {} : { priorMode: step.priorMode }),
       announce: () =>
         deps.onStep?.({
           phase: step.phase,
