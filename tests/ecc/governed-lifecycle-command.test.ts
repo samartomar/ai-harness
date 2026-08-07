@@ -51,6 +51,10 @@ const SOURCE_TREE: Readonly<Record<string, string>> = {
   "rules/common/coding-style.md": "# coding style\n",
   ".mcp.json": '{"mcpServers":{}}\n',
   "mcp-configs/mcp-servers.json": '{"servers":{}}\n',
+  // The target-independent rows, which every target shares and which are the
+  // ONLY rows OpenCode carries.
+  "AGENTS.md": "# agents bootloader\n",
+  ".agents/plugins/marketplace.json": '{"plugins":[]}\n',
 };
 
 /** Operator content on the destination root, present before anything is applied. */
@@ -98,6 +102,18 @@ const OTHER_LIFECYCLE: SelectionFixture = {
   id: "mcp:github",
   path: "mcp-configs/mcp-servers.json",
   paths: [".mcp.json", "mcp-configs/mcp-servers.json"],
+};
+
+/**
+ * Evidence-passed, and declares ONLY target-independent sources. Selected apart
+ * from `PASSED` because it is the one component OpenCode can materialize, so it
+ * is what makes an OpenCode run non-empty.
+ */
+const SHARED_ONLY: SelectionFixture = {
+  kind: "baseline",
+  id: "baseline:agents",
+  path: "AGENTS.md",
+  paths: [".agents/plugins/marketplace.json", "AGENTS.md"],
 };
 
 /** What must land, and from which source file, once the command applies. */
@@ -214,7 +230,7 @@ function writeUngovernedPolicy(): void {
   );
 }
 
-const CATALOGUED: readonly SelectionFixture[] = [...PASSED, BLOCKED, OTHER_LIFECYCLE];
+const CATALOGUED: readonly SelectionFixture[] = [...PASSED, BLOCKED, OTHER_LIFECYCLE, SHARED_ONLY];
 
 function catalog() {
   return defineBaselineCatalog({
@@ -732,29 +748,14 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
 
     expect(failure?.message).toContain("zed is not a governed materialization target");
     expect(failure?.message).toContain("claude, codex, kimi, cursor, opencode");
-    // ...and what IS wired, which is three targets now, not two.
-    expect(failure?.message).toContain("claude, codex, kimi are wired today");
+    // ...and what IS wired, which is now the whole ruled five.
+    expect(failure?.message).toContain("claude, codex, kimi, cursor, opencode are wired today");
     // The remedy, not just the diagnosis: the target set can come from a
     // committed marker the operator is not thinking about, so the refusal has
     // to say which flag overrides it.
-    expect(failure?.message).toContain("--cli claude,codex,kimi");
+    expect(failure?.message).toContain("--cli claude,codex,kimi,cursor,opencode");
     expect(failure?.message).toContain(".aih-config.json");
     expect(snapshot(root)).toEqual(before);
-    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
-  });
-
-  it("refuses a ruled target that is not wired yet, naming what is wired and the remedy", async () => {
-    writeGovernedPolicy([...PASSED]);
-
-    const failure = await runLifecycle("install", true, "cursor").then(
-      () => undefined,
-      (error: Error) => error,
-    );
-
-    expect(failure?.message).toMatch(/not wired yet/);
-    expect(failure?.message).toContain("claude, codex, kimi are wired today");
-    expect(failure?.message).toContain("--cli claude,codex,kimi");
-    expect(failure?.message).toContain(".aih-config.json");
     expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
   });
 
@@ -778,7 +779,7 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
     );
 
     expect(failure?.message).toContain("gemini is not a governed materialization target");
-    expect(failure?.message).toContain("--cli claude,codex,kimi");
+    expect(failure?.message).toContain("--cli claude,codex,kimi,cursor,opencode");
     expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
 
     // ...and taking the named remedy actually works, so the message is a route
@@ -996,6 +997,307 @@ describe("F4 — the governed framework lifecycle for the Kimi target", () => {
         component.files.map((file) => file.path).filter((path) => path.startsWith(".kimi-code/")),
       ),
     ).toEqual([]);
+  });
+});
+
+/**
+ * F4, fourth target: the same operator route with `--cli cursor`. The mapping
+ * needed no Cursor row — `.${target}` is already the project root upstream's own
+ * Cursor adapter uses — so what this block pins is the wiring: the operator can
+ * ask for it, the rows land, the receipt owns them, and `aih uninstall` takes
+ * them back.
+ */
+describe("F4 — the governed framework lifecycle for the Cursor target", () => {
+  /** Where each source file lands for Cursor; the shared row is target-independent. */
+  const CURSOR_MATERIALIZED: ReadonlyArray<{ source: string; destination: string }> = [
+    { source: "agents/code-reviewer.md", destination: ".cursor/agents/code-reviewer.md" },
+    { source: "rules/README.md", destination: ".cursor/rules/README.md" },
+    { source: "rules/common/coding-style.md", destination: ".cursor/rules/common/coding-style.md" },
+    {
+      source: ".agents/skills/tdd-workflow/SKILL.md",
+      destination: ".agents/skills/tdd-workflow/SKILL.md",
+    },
+    { source: "skills/tdd-workflow/SKILL.md", destination: ".cursor/skills/tdd-workflow/SKILL.md" },
+  ];
+
+  it("previews `--cli cursor` against the .cursor rows and writes nothing", async () => {
+    writeGovernedPolicy([...PASSED, BLOCKED]);
+    const before = snapshot(root);
+
+    const reported = materializationDigest(await runLifecycle("install", false, "cursor"));
+
+    expect(reported.applied).toBe(false);
+    expect(reported.write.map((file) => file.path).sort()).toEqual(
+      CURSOR_MATERIALIZED.map((file) => file.destination).sort(),
+    );
+    expect(snapshot(root)).toEqual(before);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+  });
+
+  it("applies, receipts and then uninstalls the Cursor materialization", async () => {
+    writeGovernedPolicy([...PASSED, BLOCKED]);
+
+    const reported = materializationDigest(await runLifecycle("install", true, "cursor"));
+
+    expect(reported.applied).toBe(true);
+    for (const file of CURSOR_MATERIALIZED) {
+      expect(
+        bytesAt(root, file.destination).equals(bytesAt(sourceRoot, file.source)),
+        file.destination,
+      ).toBe(true);
+    }
+    // Nothing landed on a target this run did not ask for.
+    expect(existsSync(join(root, ".claude", "agents", "code-reviewer.md"))).toBe(false);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
+
+    const removed = removeEccMaterialization(root);
+
+    expect(removed.advisories).toEqual([]);
+    expect(removed.removed.sort()).toEqual(CURSOR_MATERIALIZED.map((f) => f.destination).sort());
+    for (const file of CURSOR_MATERIALIZED) {
+      expect(existsSync(join(root, ...file.destination.split("/"))), file.destination).toBe(false);
+    }
+    for (const path of Object.keys(OPERATOR_TREE)) {
+      expect(bytesAt(root, path).toString("utf8"), path).toBe(OPERATOR_TREE[path]);
+    }
+  });
+
+  it("names the Cursor target in its own refusal row", async () => {
+    writeGovernedPolicy([...PASSED, OTHER_LIFECYCLE]);
+
+    const result = await runLifecycle("install", false, "cursor");
+
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("governed ECC framework materialization"),
+    );
+    expect(digest?.text).toContain("Evidence-passed, and refused by the Cursor target:");
+    expect(digest?.text).toContain(
+      `[unowned-destination] ${OTHER_LIFECYCLE.id} - the Cursor target owns no content destination for .mcp.json`,
+    );
+    expect(digest?.text).not.toContain("refused by the Claude target");
+  });
+
+  it("materializes `--cli claude,cursor` as one union with the shared row written once", async () => {
+    writeGovernedPolicy([...PASSED]);
+
+    const reported = materializationDigest(await runLifecycle("install", true, "claude,cursor"));
+
+    const written = reported.write.map((file) => file.path).sort();
+    expect(written).toEqual(
+      [
+        ...MATERIALIZED.map((file) => file.destination),
+        ...CURSOR_MATERIALIZED.map((file) => file.destination),
+      ]
+        .filter((path, index, all) => all.indexOf(path) === index)
+        .sort(),
+    );
+    // Both roots really materialized — a union that wrote only one target's rows
+    // would still satisfy a laxer assertion.
+    expect(written.some((path) => path.startsWith(".claude/"))).toBe(true);
+    expect(written.some((path) => path.startsWith(".cursor/"))).toBe(true);
+    const shared = ".agents/skills/tdd-workflow/SKILL.md";
+    expect(written.filter((path) => path === shared)).toEqual([shared]);
+
+    const receipt = readEccMaterializationReceipt(root);
+    if (receipt.state !== "valid") throw new Error("expected a valid receipt");
+    const skill = receipt.receipt.components.find(
+      (component) => component.id === "skill:tdd-workflow",
+    );
+    expect(skill?.files.map((file) => file.path)).toEqual([
+      shared,
+      ".claude/skills/tdd-workflow/SKILL.md",
+      ".cursor/skills/tdd-workflow/SKILL.md",
+    ]);
+    // ONE receipt at ONE path: no per-target root and no second document.
+    expect(walkManagedRoot(root).filter((path) => path.startsWith(".aih/"))).toEqual([
+      ".aih/ecc/materialization-v1.json",
+    ]);
+  });
+
+  it("subtracts the `.cursor` files when a later apply narrows `--cli` back to claude", async () => {
+    writeGovernedPolicy([...PASSED]);
+    await runLifecycle("install", true, "claude,cursor");
+    // Every digest the union wrote, so the narrowing below is checked against
+    // bytes rather than against mere existence.
+    const digests = Object.fromEntries(
+      walkManagedRoot(root).map((path) => [
+        path,
+        createHash("sha256").update(bytesAt(root, path)).digest("hex"),
+      ]),
+    );
+    const cursorPaths = Object.keys(digests).filter((path) => path.startsWith(".cursor/"));
+    expect(cursorPaths.sort()).toEqual(
+      CURSOR_MATERIALIZED.map((file) => file.destination)
+        .filter((path) => path.startsWith(".cursor/"))
+        .sort(),
+    );
+
+    const result = await runLifecycle("install", true, "claude");
+
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("governed ECC framework materialization"),
+    );
+    for (const path of cursorPaths) {
+      expect(existsSync(join(root, ...path.split("/"))), path).toBe(false);
+      expect(digest?.text, path).toContain(`[removed] ${path}`);
+    }
+    // The remaining target keeps every byte it had — same digest, not merely
+    // still present. The receipt is the one file that MUST change: it is the
+    // record of what is owned, and it no longer owns the dropped target's rows.
+    const receiptPath = ".aih/ecc/materialization-v1.json";
+    for (const [path, sha] of Object.entries(digests)) {
+      if (path.startsWith(".cursor/") || path === receiptPath) continue;
+      expect(createHash("sha256").update(bytesAt(root, path)).digest("hex"), path).toBe(sha);
+      expect(digest?.text ?? "", path).not.toContain(`[removed] ${path}`);
+    }
+    const receipt = readEccMaterializationReceipt(root);
+    if (receipt.state !== "valid") throw new Error("expected a valid receipt");
+    expect(
+      receipt.receipt.components.flatMap((component) =>
+        component.files.map((file) => file.path).filter((path) => path.startsWith(".cursor/")),
+      ),
+    ).toEqual([]);
+  });
+});
+
+/**
+ * F4, fifth and last target: `--cli opencode`, whose scope is the shared rows
+ * and nothing else. What this block pins is the honest-small shape end to end —
+ * the operator asks for OpenCode, gets the tool-shared project surfaces, and
+ * reads by name every component OpenCode does not own.
+ *
+ * It also closes the mixed-outcome path. Until a target existed that refuses
+ * ordinary content while another accepts it, "a target that refuses a component
+ * does not veto the others" and "the total-refusal gate spans the WHOLE
+ * requested target set" were implemented but not reachable from the command.
+ */
+describe("F4 — the governed framework lifecycle for the OpenCode target", () => {
+  /** The only rows OpenCode carries: target-independent, at the project root. */
+  const OPENCODE_MATERIALIZED: ReadonlyArray<{ source: string; destination: string }> = [
+    { source: "AGENTS.md", destination: "AGENTS.md" },
+    {
+      source: ".agents/plugins/marketplace.json",
+      destination: ".agents/plugins/marketplace.json",
+    },
+  ];
+
+  it("materializes only the shared rows for `--cli opencode`, and nothing under .opencode/", async () => {
+    writeGovernedPolicy([...PASSED, SHARED_ONLY, BLOCKED]);
+
+    const reported = materializationDigest(await runLifecycle("install", true, "opencode"));
+
+    expect(reported.applied).toBe(true);
+    expect(reported.write.map((file) => file.path).sort()).toEqual(
+      OPENCODE_MATERIALIZED.map((file) => file.destination).sort(),
+    );
+    for (const file of OPENCODE_MATERIALIZED) {
+      expect(
+        bytesAt(root, file.destination).equals(bytesAt(sourceRoot, file.source)),
+        file.destination,
+      ).toBe(true);
+    }
+    // No invented per-tool directory, and no other target's root either.
+    expect(existsSync(join(root, ".opencode"))).toBe(false);
+    expect(walkManagedRoot(root).filter((path) => path.startsWith(".opencode/"))).toEqual([]);
+    expect(existsSync(join(root, ".claude", "agents", "code-reviewer.md"))).toBe(false);
+  });
+
+  it("names the OpenCode target in the refusal rows for the content it does not own", async () => {
+    writeGovernedPolicy([...PASSED, SHARED_ONLY]);
+
+    const result = await runLifecycle("install", false, "opencode");
+
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("governed ECC framework materialization"),
+    );
+    expect(digest?.text).toContain("Evidence-passed, and refused by the OpenCode target:");
+    expect(digest?.text).toContain(
+      "[unowned-destination] agent:code-reviewer - the OpenCode target owns no content destination for agents/code-reviewer.md",
+    );
+    // A component with one shared row and one generic row refuses WHOLE, rather
+    // than installing the half OpenCode can map.
+    expect(digest?.text).toContain("[unowned-destination] skill:tdd-workflow");
+    expect(materializationDigest(result).write.map((file) => file.path)).not.toContain(
+      ".agents/skills/tdd-workflow/SKILL.md",
+    );
+  });
+
+  it("materializes for Claude what OpenCode refuses, without firing the total-refusal gate", async () => {
+    writeGovernedPolicy([...PASSED, SHARED_ONLY]);
+
+    const result = await runLifecycle("install", true, "claude,opencode");
+    const reported = materializationDigest(result);
+
+    // Claude's rows all landed — one target refusing everything it was handed is
+    // not total refusal while another still materializes.
+    expect(reported.applied).toBe(true);
+    expect(reported.write.map((file) => file.path).sort()).toEqual(
+      [
+        ...MATERIALIZED.map((file) => file.destination),
+        ...OPENCODE_MATERIALIZED.map((file) => file.destination),
+      ]
+        .filter((path, index, all) => all.indexOf(path) === index)
+        .sort(),
+    );
+    // ...and the refusals are reported against the target that made them.
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("governed ECC framework materialization"),
+    );
+    expect(digest?.text).toContain("Evidence-passed, and refused by the OpenCode target:");
+    expect(digest?.text).not.toContain("refused by the Claude target");
+    expect(reported.refused.map((entry) => entry.id).sort()).toEqual(
+      PASSED.map((item) => item.id).sort(),
+    );
+    // `AGENTS.md` is a row both targets agree on, so the union claims it once.
+    expect(reported.write.filter((file) => file.path === "AGENTS.md")).toHaveLength(1);
+    const receipt = readEccMaterializationReceipt(root);
+    if (receipt.state !== "valid") throw new Error("expected a valid receipt");
+    expect(
+      receipt.receipt.components
+        .find((component) => component.id === SHARED_ONLY.id)
+        ?.files.map((file) => file.path),
+    ).toEqual([".agents/plugins/marketplace.json", "AGENTS.md"]);
+  });
+
+  it("still fires the total-refusal gate when every target refuses every component", async () => {
+    // No shared-row component in the selection, so OpenCode — the only target —
+    // refuses all of it. That is indistinguishable from "everything was
+    // deselected", on which apply would subtract a whole prior install.
+    writeGovernedPolicy([...PASSED]);
+    const before = snapshot(root);
+
+    const failure = await runLifecycle("install", true, "opencode").then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toContain(
+      "the OpenCode target refused every evidence-passed component",
+    );
+    expect(failure?.message).toContain("indistinguishable from deselecting all of them");
+    // Every refusal named, not just the count.
+    for (const item of PASSED) expect(failure?.message, item.id).toContain(item.id);
+    expect(snapshot(root)).toEqual(before);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+  });
+
+  it("uninstalls the OpenCode materialization and leaves operator content alone", async () => {
+    writeGovernedPolicy([...PASSED, SHARED_ONLY]);
+    await runLifecycle("install", true, "opencode");
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
+
+    const removed = removeEccMaterialization(root);
+
+    expect(removed.advisories).toEqual([]);
+    expect(removed.removed.sort()).toEqual(
+      OPENCODE_MATERIALIZED.map((file) => file.destination).sort(),
+    );
+    for (const file of OPENCODE_MATERIALIZED) {
+      expect(existsSync(join(root, ...file.destination.split("/"))), file.destination).toBe(false);
+    }
+    for (const path of Object.keys(OPERATOR_TREE)) {
+      expect(bytesAt(root, path).toString("utf8"), path).toBe(OPERATOR_TREE[path]);
+    }
   });
 });
 

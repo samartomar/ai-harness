@@ -82,11 +82,18 @@ export type EccMaterializationTarget = (typeof GOVERNED_MATERIALIZATION_TARGETS)
  * target that has not landed yet refuses naming what is wired — the same
  * discipline the lifecycle's other refusals follow. Adding a target to this
  * list is what ships its row.
+ *
+ * All five are wired: this list now EQUALS the governed list, which is the
+ * completion of F4. `tests/ecc/materialization-target.test.ts` pins that
+ * equality, so a sixth governed target cannot be added without deciding what
+ * the unwired branch below should say about it.
  */
 export const WIRED_MATERIALIZATION_TARGETS: readonly EccMaterializationTarget[] = [
   "claude",
   "codex",
   "kimi",
+  "cursor",
+  "opencode",
 ];
 
 /**
@@ -144,6 +151,9 @@ export function assertGovernedMaterializationTargets(
   }
   const targets = requested.filter(isGovernedTarget);
   const unwired = targets.filter((target) => !WIRED_MATERIALIZATION_TARGETS.includes(target));
+  // Unreachable while the two target lists are equal, which they are today. Kept
+  // as the fail-closed guard for the edit that adds a sixth governed target:
+  // without it that target would materialize nothing and report success.
   if (unwired.length > 0) {
     throw new AihError(
       `refusing the governed ECC framework materialization: the ${unwired.map((target) => TARGET_NAME[target]).join(", ")} target is a governed materialization target that is not wired yet — ${wired} ${WIRED_MATERIALIZATION_TARGETS.length === 1 ? "is" : "are"} wired today; ${wiredTargetRemedy()}`,
