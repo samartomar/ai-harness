@@ -23,15 +23,17 @@ import {
   resolveEccMaterializationSelection,
 } from "./materialization-selection.js";
 import {
-  type EccTargetRefusal,
-  resolveEccClaudeMaterialization,
-} from "./materialization-target-claude.js";
+  type EccMaterializationTarget,
+  type EccTargetedRefusal,
+  eccMaterializationTargetName,
+  resolveEccTargetMaterialization,
+} from "./materialization-target.js";
 
 /**
  * F6: `aih ecc --lifecycle install` in a governed repository.
  *
  * Every part of the governed framework lifecycle already exists — the effective
- * policy reader, the evidence-passed selection resolver (F2), the Claude target
+ * policy reader, the evidence-passed selection resolver (F2), the target
  * adapter (F4) and the AIH-direct materialization engine (F1/F5). This module is
  * the only thing that was missing: the route an operator can actually take to
  * them. It composes them in exactly the order the acceptance journey walks
@@ -55,6 +57,14 @@ import {
  * file-level preview needs `--ecc-path` or `--apply`, rather than implying that
  * nothing would be written. There is no second preview flag, and this module
  * never writes outside the engine.
+ *
+ * WHICH TARGETS is the caller's business, not a governed-only concept: the
+ * command resolves the ordinary workstation CLI selection and hands the
+ * narrowed target set in. N targets are ONE materialization here — the adapter
+ * unions their destinations per component, the engine sees one request against
+ * one root, and a later run with a narrower set subtracts the dropped target's
+ * files as stale ownership. Every report row that used to name Claude now names
+ * the target that produced it.
  */
 
 /** The framework this lifecycle materializes. Superpowers is a later row. */
@@ -67,17 +77,24 @@ export interface GovernedEccMaterializationInput {
   policy: OrgPolicy;
   /** {@link governedEccComponentIds}, resolved by the caller BEFORE the source. */
   componentIds: readonly string[];
+  /**
+   * The requested governed targets, narrowed by
+   * `assertGovernedMaterializationTargets` BEFORE the source is resolved — a
+   * target this lifecycle refuses must create no quarantine.
+   */
+  targets: readonly EccMaterializationTarget[];
 }
 
 /** One normalized report for both halves of the `--apply` gate. */
 interface GovernedMaterializationReport {
   root: string;
   applied: boolean;
+  targets: readonly EccMaterializationTarget[];
   write: EccMaterializationFilePlan[];
   subtract: EccMaterializationFilePlan[];
   advisories: EccMaterializationAdvisory[];
   excluded: EccSelectionExclusion[];
-  refused: EccTargetRefusal[];
+  refused: EccTargetedRefusal[];
 }
 
 /**
@@ -135,7 +152,10 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
   const unknown = [...selected].filter((id) => !known.has(id)).sort();
   if (unknown.length > 0) {
     throw new AihError(
-      `refusing the governed ECC framework lifecycle: the policy selects component(s) the pinned ECC catalog does not carry: ${unknown.map(displaySafe).join(", ")}`,
+      // Wrapped rather than passed by reference: `map` supplies the index as
+      // `displaySafe`'s second argument, which is its `max` — every id would
+      // render as a bare ellipsis and the refusal would name nothing.
+      `refusing the governed ECC framework lifecycle: the policy selects component(s) the pinned ECC catalog does not carry: ${unknown.map((id) => displaySafe(id)).join(", ")}`,
       "AIH_CONFIG",
     );
   }
@@ -150,7 +170,11 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
  * a dry run that reported nothing would let the first run that shows the plan be
  * the run that already wrote.
  */
-function sourceAbsentPlan(catalog: BaselineCatalog, componentIds: readonly string[]): Plan {
+function sourceAbsentPlan(
+  catalog: BaselineCatalog,
+  componentIds: readonly string[],
+  targets: readonly EccMaterializationTarget[],
+): Plan {
   const pinnedSource = `${catalog.owner}/${catalog.repo}@${catalog.pinnedSha}`;
   return plan(
     "ecc: governed framework materialization",
@@ -158,6 +182,7 @@ function sourceAbsentPlan(catalog: BaselineCatalog, componentIds: readonly strin
       "governed ECC framework materialization (pinned source not present)",
       lines(
         `Governed ECC framework materialization would install from ${pinnedSource}.`,
+        `Requested target(s): ${targets.map(eccMaterializationTargetName).join(", ")}.`,
         "",
         "Selected components, each still subject to the evidence gate at apply:",
         ...componentIds.map((id) => `  - ${id}`),
@@ -169,9 +194,33 @@ function sourceAbsentPlan(catalog: BaselineCatalog, componentIds: readonly strin
         "",
         "Nothing has been written and nothing has been fetched.",
       ),
-      { applied: false, sourcePresent: false, pinnedSource, componentIds: [...componentIds] },
+      {
+        applied: false,
+        sourcePresent: false,
+        pinnedSource,
+        componentIds: [...componentIds],
+        targets: [...targets],
+      },
     ),
   );
+}
+
+/**
+ * Refusals, grouped under the target that made them, in the order the targets
+ * were requested. Grouping is a rendering concern only: the machine payload
+ * stays one flat list, each entry naming its own target, so a consumer never
+ * has to reassemble it.
+ */
+function refusalRows(report: GovernedMaterializationReport): string[] {
+  return report.targets.flatMap((target) => {
+    const rows = report.refused.filter((entry) => entry.target === target);
+    if (rows.length === 0) return [];
+    return [
+      "",
+      `Evidence-passed, and refused by the ${eccMaterializationTargetName(target)} target:`,
+      ...rows.map((entry) => `  [${entry.reason}] ${entry.id} - ${entry.detail}`),
+    ];
+  });
 }
 
 function reportBody(report: GovernedMaterializationReport): string {
@@ -194,13 +243,7 @@ function reportBody(report: GovernedMaterializationReport): string {
           ...report.excluded.map((entry) => `  [${entry.reason}] ${entry.id} - ${entry.detail}`),
         ]
       : []),
-    ...(report.refused.length > 0
-      ? [
-          "",
-          "Evidence-passed, and refused by the Claude target:",
-          ...report.refused.map((entry) => `  [${entry.reason}] ${entry.id} - ${entry.detail}`),
-        ]
-      : []),
+    ...refusalRows(report),
     ...(report.advisories.length > 0
       ? [
           "",
@@ -217,11 +260,18 @@ function reportBody(report: GovernedMaterializationReport): string {
 /**
  * Steps 2-5 of the journey, run against the verified source: resolve the
  * effective policy, resolve the evidence-passed effective selection, map it onto
- * the Claude target, and preview or apply.
+ * the requested targets, and preview or apply.
+ *
+ * Multi-target is a union in ONE materialization, not N of them: the adapter
+ * returns each component's per-target destinations already merged, so the engine
+ * sees one request against one root and `apply IS the reconcile` handles a later
+ * run with a narrower target set by subtracting the dropped target's files as
+ * stale ownership.
  */
 function governedMaterializationPlan(
   ctx: PlanContext,
   policy: OrgPolicy,
+  targets: readonly EccMaterializationTarget[],
   sourceRoot: string,
   authorizations: readonly BaselineAuthorization[],
   held: readonly BaselineHeldComponent[],
@@ -231,14 +281,23 @@ function governedMaterializationPlan(
     authorizations: [...authorizations],
     held: [...held],
   });
-  const target = resolveEccClaudeMaterialization({ sourceRoot, components: selection.included });
+  const target = resolveEccTargetMaterialization({
+    sourceRoot,
+    targets,
+    components: selection.included,
+  });
   // Total refusal is ambiguity, and the engine cannot see it: an empty request
   // is byte-identical to "every component was deselected", on which `apply`
   // subtracts the whole prior install as stale ownership. Fail closed and name
   // every refusal instead of wiping an install on a reading nothing confirmed.
+  // The gate spans the WHOLE requested target set: one target refusing
+  // everything is not total refusal while another still materializes.
   if (selection.included.length > 0 && target.components.length === 0) {
+    const named = `the ${targets.map(eccMaterializationTargetName).join(", ")} target${
+      targets.length === 1 ? "" : "s"
+    }`;
     throw new AihError(
-      `refusing the governed ECC framework materialization: the Claude target refused every evidence-passed component, which is indistinguishable from deselecting all of them — ${target.refused
+      `refusing the governed ECC framework materialization: ${named} refused every evidence-passed component, which is indistinguishable from deselecting all of them — ${target.refused
         .map((entry) => `${displaySafe(entry.id)} (${entry.reason}: ${displaySafe(entry.detail)})`)
         .join("; ")}`,
       "AIH_TRUST",
@@ -251,6 +310,7 @@ function governedMaterializationPlan(
   const report: GovernedMaterializationReport = {
     root: ctx.root,
     applied: ctx.apply,
+    targets,
     write: "written" in outcome ? outcome.written : outcome.write,
     subtract: "removed" in outcome ? outcome.removed : outcome.subtract,
     advisories: outcome.advisories,
@@ -279,7 +339,10 @@ export async function executeGovernedEccMaterialization(
   // removed the way the sibling preview does it (`pipeline.ts:268-270`).
   if (!ctx.apply && input.source.kind === "github") {
     try {
-      return await executePlan(sourceAbsentPlan(input.catalog, input.componentIds), ctx);
+      return await executePlan(
+        sourceAbsentPlan(input.catalog, input.componentIds, input.targets),
+        ctx,
+      );
     } finally {
       cleanupQuarantine(input.source);
     }
@@ -295,7 +358,14 @@ export async function executeGovernedEccMaterialization(
       // them must not take the whole install down with it.
       allowPartial: true,
       buildInstallPlan: (sourceRoot, authorizations, held) =>
-        governedMaterializationPlan(ctx, input.policy, sourceRoot, authorizations, held),
+        governedMaterializationPlan(
+          ctx,
+          input.policy,
+          input.targets,
+          sourceRoot,
+          authorizations,
+          held,
+        ),
     },
     deps,
   );

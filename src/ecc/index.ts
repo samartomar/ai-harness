@@ -912,7 +912,7 @@ export const command: CommandSpec = {
     {
       flags: "--lifecycle <operation>",
       description:
-        "manage the AIH-owned Claude/Codex profile: install|update|repair|rollback|uninstall. In a governed repository `install` instead materializes the policy's evidence-passed component selection (removal lives in `aih uninstall`), and update|repair|rollback are refused",
+        "manage the AIH-owned Claude/Codex profile: install|update|repair|rollback|uninstall. In a governed repository `install` instead materializes the policy's evidence-passed component selection (removal lives in `aih uninstall`), and update|repair|rollback are refused. The governed install materializes for the targets `--cli` selects (default claude); governed targets are claude, codex, kimi, cursor, opencode, of which claude and codex are wired today and any other target is refused by name",
     },
   ],
   plan: eccPlan,

@@ -554,6 +554,14 @@ function isEccContentDestination(
  * source file land for this target". A target adapter that needed the same
  * answer and restated it would be a second mapping able to drift from the one
  * the governed classifier below enforces.
+ *
+ * Three rows are target-independent and therefore SHARED by every target:
+ * `AGENTS.md`, `.agents/plugins/` and `.agents/skills/` are the same
+ * destination whoever asks. `.claude/commands/` is the opposite — a surface
+ * Claude owns exclusively — so it answers for the Claude target and for nobody
+ * else: a non-Claude install that landed there would write another tool's
+ * directory, and the callers of this mapping fail closed on an unmapped source
+ * rather than inventing a destination for it.
  */
 export function eccContentDestinationMapping(
   source: string,
@@ -568,7 +576,9 @@ export function eccContentDestinationMapping(
   const mappings: Array<[string, string]> = [
     [".agents/plugins/", ".agents/plugins/"],
     [".agents/skills/", ".agents/skills/"],
-    [".claude/commands/", ".claude/commands/"],
+    ...(target === "claude"
+      ? ([[".claude/commands/", ".claude/commands/"]] as Array<[string, string]>)
+      : []),
     ["agents/", `${targetRoot}/agents/`],
     ["skills/", `${targetRoot}/skills/`],
     ["commands/", `${targetRoot}/commands/`],

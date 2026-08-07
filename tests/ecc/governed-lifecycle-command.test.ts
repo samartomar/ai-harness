@@ -15,6 +15,7 @@ import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
 import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
 import { walkManagedRoot } from "../../src/ecc/install-manifest.js";
 import { eccMaterializationReceiptPath } from "../../src/ecc/materialization.js";
+import { readEccMaterializationReceipt } from "../../src/ecc/materialization-receipt.js";
 import { executeEccCommand } from "../../src/ecc/pipeline.js";
 import type { PlanResult } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
@@ -22,6 +23,7 @@ import { fakeRunner } from "../../src/internals/proc.js";
 import { orgPolicyPath } from "../../src/org-policy/schema.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
+import { removeEccMaterialization } from "../../src/uninstall/ecc-materialization.js";
 
 /**
  * F6: the governed framework lifecycle reached through the shipped command.
@@ -246,15 +248,18 @@ function vendorLock() {
   });
 }
 
-async function runLifecycle(lifecycle: string, apply: boolean): Promise<PlanResult> {
-  return executeEccCommand(ctx(apply, { lifecycle, eccPath: sourceRoot }), {
-    catalog: catalog(),
-    vendorLock: vendorLock(),
-    vendorLockSha256: "f".repeat(64),
-    executeProfileLifecycle: async () => {
-      throw new Error("the governed install must not fall through to the profile lifecycle");
+async function runLifecycle(lifecycle: string, apply: boolean, cli?: string): Promise<PlanResult> {
+  return executeEccCommand(
+    ctx(apply, { lifecycle, eccPath: sourceRoot, ...(cli === undefined ? {} : { cli }) }),
+    {
+      catalog: catalog(),
+      vendorLock: vendorLock(),
+      vendorLockSha256: "f".repeat(64),
+      executeProfileLifecycle: async () => {
+        throw new Error("the governed install must not fall through to the profile lifecycle");
+      },
     },
-  });
+  );
 }
 
 /** The one digest the governed materialization emits, with its machine payload. */
@@ -558,6 +563,271 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
     expect(executeProfileLifecycle).toHaveBeenCalledOnce();
     expect(result.capability).toBe("ecc lifecycle");
     expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+  });
+});
+
+/**
+ * F4, second target: the SAME operator route with `--cli` naming the target.
+ *
+ * The discriminator is the workstation CLI selection every other target-scoped
+ * operation already uses — no governed-only flag and no policy grammar for it —
+ * so the block above, which passes no `--cli`, is also the proof that the
+ * default stays `claude` and behaves exactly as it shipped.
+ */
+/** Whether this volume stores NFC and NFD spellings as two entries (APFS does not). */
+function preservesUnicodeSpelling(): boolean {
+  const probe = mkdtempSync(join(tmpdir(), "aih-governed-nfd-probe-"));
+  try {
+    writeFileSync(join(probe, "café.md".normalize("NFC")), "x", "utf8");
+    return !existsSync(join(probe, "café.md".normalize("NFD")));
+  } catch {
+    return false;
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+}
+
+describe("F4 — the governed framework lifecycle for the Codex target", () => {
+  /** Where each source file lands for Codex; the shared row is target-independent. */
+  const CODEX_MATERIALIZED: ReadonlyArray<{ source: string; destination: string }> = [
+    { source: "agents/code-reviewer.md", destination: ".codex/agents/code-reviewer.md" },
+    { source: "rules/README.md", destination: ".codex/rules/README.md" },
+    { source: "rules/common/coding-style.md", destination: ".codex/rules/common/coding-style.md" },
+    {
+      source: ".agents/skills/tdd-workflow/SKILL.md",
+      destination: ".agents/skills/tdd-workflow/SKILL.md",
+    },
+    { source: "skills/tdd-workflow/SKILL.md", destination: ".codex/skills/tdd-workflow/SKILL.md" },
+  ];
+
+  it("previews `--cli codex` against the Codex rows and writes nothing", async () => {
+    writeGovernedPolicy([...PASSED, BLOCKED]);
+    const before = snapshot(root);
+
+    const reported = materializationDigest(await runLifecycle("install", false, "codex"));
+
+    expect(reported.applied).toBe(false);
+    expect(reported.write.map((file) => file.path).sort()).toEqual(
+      CODEX_MATERIALIZED.map((file) => file.destination).sort(),
+    );
+    expect(snapshot(root)).toEqual(before);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+  });
+
+  it("applies, receipts and then uninstalls the Codex materialization", async () => {
+    writeGovernedPolicy([...PASSED, BLOCKED]);
+
+    const reported = materializationDigest(await runLifecycle("install", true, "codex"));
+
+    expect(reported.applied).toBe(true);
+    for (const file of CODEX_MATERIALIZED) {
+      expect(
+        bytesAt(root, file.destination).equals(bytesAt(sourceRoot, file.source)),
+        file.destination,
+      ).toBe(true);
+    }
+    // Nothing landed on the Claude surfaces this run did not target.
+    expect(existsSync(join(root, ".claude", "agents", "code-reviewer.md"))).toBe(false);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
+
+    // Removal is the shipped `aih uninstall` member, receipt-bound and
+    // target-agnostic: the receipt is what proves ownership, not the flag.
+    const removed = removeEccMaterialization(root);
+
+    expect(removed.advisories).toEqual([]);
+    expect(removed.removed.sort()).toEqual(
+      CODEX_MATERIALIZED.map((file) => file.destination).sort(),
+    );
+    for (const file of CODEX_MATERIALIZED) {
+      expect(existsSync(join(root, ...file.destination.split("/"))), file.destination).toBe(false);
+    }
+    for (const path of Object.keys(OPERATOR_TREE)) {
+      expect(bytesAt(root, path).toString("utf8"), path).toBe(OPERATOR_TREE[path]);
+    }
+  });
+
+  it("names the Codex target in its own refusal row", async () => {
+    writeGovernedPolicy([...PASSED, OTHER_LIFECYCLE]);
+
+    const result = await runLifecycle("install", false, "codex");
+
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("governed ECC framework materialization"),
+    );
+    expect(digest?.text).toContain("Evidence-passed, and refused by the Codex target:");
+    expect(digest?.text).toContain(
+      `[unowned-destination] ${OTHER_LIFECYCLE.id} - the Codex target owns no content destination for .mcp.json`,
+    );
+    expect(digest?.text).not.toContain("refused by the Claude target");
+  });
+
+  it("materializes `--cli claude,codex` as one union with the shared row written once", async () => {
+    writeGovernedPolicy([...PASSED]);
+
+    const reported = materializationDigest(await runLifecycle("install", true, "claude,codex"));
+
+    const written = reported.write.map((file) => file.path).sort();
+    expect(written).toEqual(
+      [
+        ...MATERIALIZED.map((file) => file.destination),
+        ...CODEX_MATERIALIZED.map((f) => f.destination),
+      ]
+        .filter((path, index, all) => all.indexOf(path) === index)
+        .sort(),
+    );
+    // The shared row appears exactly once in the plan and once in the receipt —
+    // a component claiming one destination twice is refused by the engine, so
+    // this is correctness, not tidiness.
+    const shared = ".agents/skills/tdd-workflow/SKILL.md";
+    expect(written.filter((path) => path === shared)).toEqual([shared]);
+
+    const receipt = readEccMaterializationReceipt(root);
+    if (receipt.state !== "valid") throw new Error("expected a valid receipt");
+    const skill = receipt.receipt.components.find(
+      (component) => component.id === "skill:tdd-workflow",
+    );
+    expect(skill?.files.map((file) => file.path)).toEqual([
+      shared,
+      ".claude/skills/tdd-workflow/SKILL.md",
+      ".codex/skills/tdd-workflow/SKILL.md",
+    ]);
+    // ONE receipt at ONE path: no per-target root and no second document.
+    expect(walkManagedRoot(root).filter((path) => path.startsWith(".aih/"))).toEqual([
+      ".aih/ecc/materialization-v1.json",
+    ]);
+  });
+
+  it("subtracts the dropped target's files when a later apply narrows `--cli`", async () => {
+    // One component, deliberately: two applies of the whole selection is the
+    // slowest shape in this file and the reconcile needs exactly one row each
+    // side — one the dropped target owned alone, one the remaining target keeps.
+    writeGovernedPolicy([PASSED[0] as SelectionFixture]);
+    await runLifecycle("install", true, "claude,codex");
+    expect(existsSync(join(root, ".codex", "agents", "code-reviewer.md"))).toBe(true);
+    expect(existsSync(join(root, ".claude", "agents", "code-reviewer.md"))).toBe(true);
+
+    const result = await runLifecycle("install", true, "claude");
+
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("governed ECC framework materialization"),
+    );
+    // Subtracted, and reported — never silently.
+    expect(existsSync(join(root, ".codex", "agents", "code-reviewer.md"))).toBe(false);
+    expect(digest?.text).toContain("[removed] .codex/agents/code-reviewer.md");
+    // The remaining target's row survives: narrowing subtracts what the dropped
+    // target owned alone, never what the remaining target still claims.
+    expect(existsSync(join(root, ".claude", "agents", "code-reviewer.md"))).toBe(true);
+    expect(digest?.text).not.toContain("[removed] .claude/agents/code-reviewer.md");
+  });
+
+  it("refuses a CLI that is not a governed materialization target, before any source", async () => {
+    writeGovernedPolicy([...PASSED]);
+    const before = snapshot(root);
+
+    const failure = await runLifecycle("install", true, "zed").then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toContain("zed is not a governed materialization target");
+    expect(failure?.message).toContain("claude, codex, kimi, cursor, opencode");
+    // The remedy, not just the diagnosis: the target set can come from a
+    // committed marker the operator is not thinking about, so the refusal has
+    // to say which flag overrides it.
+    expect(failure?.message).toContain("--cli claude,codex");
+    expect(failure?.message).toContain(".aih-config.json");
+    expect(snapshot(root)).toEqual(before);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+  });
+
+  it("refuses a ruled target that is not wired yet, naming what is wired and the remedy", async () => {
+    writeGovernedPolicy([...PASSED]);
+
+    const failure = await runLifecycle("install", true, "cursor").then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toMatch(/not wired yet/);
+    expect(failure?.message).toContain("claude, codex");
+    expect(failure?.message).toContain("--cli claude,codex");
+    expect(failure?.message).toContain(".aih-config.json");
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+  });
+
+  /**
+   * A committed `.aih-config.json` naming a tool outside the wired set refuses
+   * the governed install rather than narrowing to the intersection: narrowing
+   * would materialize less than the workstation configuration says while
+   * reporting success. The refusal therefore has to carry the way out.
+   */
+  it("refuses on committed marker targets outside the wired set, naming the flag that outranks them", async () => {
+    writeGovernedPolicy([...PASSED]);
+    writeFileSync(
+      join(root, ".aih-config.json"),
+      `${JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["claude", "gemini"] })}\n`,
+      "utf8",
+    );
+
+    const failure = await runLifecycle("install", true).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toContain("gemini is not a governed materialization target");
+    expect(failure?.message).toContain("--cli claude,codex");
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+
+    // ...and taking the named remedy actually works, so the message is a route
+    // and not just an apology.
+    const reported = materializationDigest(await runLifecycle("install", true, "claude"));
+    expect(reported.applied).toBe(true);
+  });
+
+  /**
+   * Two of ONE target's own sources folding onto one destination is a defect in
+   * the pinned checkout. It must be refused and REPORTED, never collapsed into
+   * a component that installs one file short.
+   */
+  it.skipIf(!preservesUnicodeSpelling())(
+    "reports a duplicate-destination refusal under the target that made it",
+    async () => {
+      writeGovernedPolicy([...PASSED]);
+      const skill = join(sourceRoot, "skills", "tdd-workflow");
+      writeFileSync(join(skill, "café.md".normalize("NFC")), "# precomposed\n");
+      writeFileSync(join(skill, "café.md".normalize("NFD")), "# decomposed\n");
+
+      const result = await runLifecycle("install", false, "codex");
+
+      const digest = result.digests.find((entry) =>
+        entry.describe.includes("governed ECC framework materialization"),
+      );
+      expect(digest?.text).toContain("Evidence-passed, and refused by the Codex target:");
+      expect(digest?.text).toContain("[duplicate-destination] skill:tdd-workflow");
+      expect(digest?.text).toContain("two pinned sources claim one Codex destination");
+      // Positive control: the other components still materialize, so the
+      // refusal is scoped to the component that carries the collision.
+      expect(materializationDigest(result).write.map((file) => file.path)).toContain(
+        ".codex/agents/code-reviewer.md",
+      );
+      expect(materializationDigest(result).write.map((file) => file.path)).not.toContain(
+        ".codex/skills/tdd-workflow/SKILL.md",
+      );
+    },
+  );
+
+  it("names the component the pinned catalog does not carry, instead of an ellipsis", async () => {
+    writeGovernedPolicy([
+      ...PASSED,
+      { kind: "skill", id: "skill:not-in-this-catalog", path: "skills/nope", paths: [] },
+    ]);
+
+    const failure = await runLifecycle("install", false, "codex").then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toContain("skill:not-in-this-catalog");
   });
 });
 
