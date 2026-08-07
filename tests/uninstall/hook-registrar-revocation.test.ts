@@ -470,3 +470,61 @@ describe("H6 — uninstall subtracts owned hook groups out of a cohabited destin
     expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(true);
   });
 });
+
+/**
+ * A destination carrying two top-level `hooks` keys reads one way to the client
+ * and another to a format-preserving edit: every consumer takes the LAST
+ * occurrence, a `modify` edit targets the FIRST. The verdict is `active`
+ * because last-wins IS the receipt's rendering, so the subtraction runs — and if
+ * it edited under the shadow it would delete the operator's stale copy, leave
+ * every AIH launcher live, and remove the receipt that could revoke them.
+ */
+describe("A2 — a duplicated hooks key cannot strand the launchers it owns", () => {
+  /** Splice a stale operator `hooks` BEFORE AIH's, so AIH's is the one that wins. */
+  function addShadowedHooksKey(): void {
+    const text = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8");
+    expect(text.startsWith("{"), "expected a JSON object destination").toBe(true);
+    const stale = '{ "Stop": [{ "hooks": [{ "type": "command", "command": "echo stale" }] }] }';
+    put(HOOK_REGISTRAR_DESTINATION, `{\n  "hooks": ${stale},${text.slice(1)}`);
+  }
+
+  it("subtracts every copy, so no launcher survives the uninstall it reported", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+    addShadowedHooksKey();
+
+    const result = await uninstall();
+
+    const after = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8");
+    // On disk AND in what the client would actually load.
+    expect(after).not.toContain("run-with-flags.js");
+    const effective = JSON.parse(after);
+    expect(effective.hooks).toBeUndefined();
+    expect(effective.permissions).toEqual(OPERATOR_CONTENT.permissions);
+    expect(effective.model).toBe(OPERATOR_CONTENT.model);
+    // A receipt removed while launchers remain is the unrecoverable state.
+    expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(false);
+    expect(digestRowFor(result, HOOK_REGISTRAR_DESTINATION)).toMatch(/\[subtract\]/);
+  });
+
+  /**
+   * A duplicated key forces the whole-file render, which strips comments the
+   * span-scoped guard would otherwise have let through. Refuse instead of
+   * silently rewriting them — the same ruling, applied to the fallback path.
+   */
+  it("refuses when a duplicated key would force a comment-stripping rewrite", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+    addShadowedHooksKey();
+    const commented = addOperatorComment();
+
+    const result = await uninstall();
+
+    const row = digestRowFor(result, HOOK_REGISTRAR_DESTINATION);
+    expect(row).toMatch(/\[advisory\]/);
+    expect(row).toMatch(/comment/i);
+    expect(row).toMatch(/hooks/);
+    expect(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8")).toBe(commented);
+    expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(true);
+  });
+});

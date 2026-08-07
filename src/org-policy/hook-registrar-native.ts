@@ -1,5 +1,5 @@
 import { findNodeAtLocation, type Node, parseTree, visit } from "jsonc-parser";
-import { isPlainObject, parseJsoncText } from "../internals/merge.js";
+import { duplicateRootKeys, isPlainObject, parseJsoncText } from "../internals/merge.js";
 import { stableJson } from "./effective.js";
 import { HOOK_REGISTRAR_DESTINATION } from "./hook-registrar-read.js";
 import {
@@ -327,6 +327,30 @@ export function carriesJsoncComments(text: string): boolean {
     },
   });
   return found;
+}
+
+/**
+ * Top-level names this text duplicates, when it ALSO carries a comment anywhere
+ * — otherwise empty.
+ *
+ * A duplicated name forces the writer off its in-place path onto the whole-file
+ * render, and that render drops every comment in the file, not just the ones
+ * inside the owned span. So the narrower guard above stops being sufficient
+ * exactly here, and the write has to refuse on the same ruling rather than
+ * quietly strip comments the span check just declared safe. Without a comment
+ * to lose there is nothing to refuse: collapsing a duplicated key is the
+ * pre-existing normalization of a file no reader agrees on.
+ */
+export function shadowedCommentKeys(text: string): string[] {
+  const duplicated = duplicateRootKeys(text);
+  if (duplicated.length === 0) return [];
+  let commented = false;
+  visit(text, {
+    onComment: () => {
+      commented = true;
+    },
+  });
+  return commented ? duplicated : [];
 }
 
 /**

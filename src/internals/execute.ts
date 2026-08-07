@@ -26,7 +26,7 @@ import type {
 import { isWellFormedUtf16 } from "../verification/validation.js";
 import { upsertManagedBlock } from "./envfile.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
-import { deepMerge, isPlainObject, parseJsoncText } from "./merge.js";
+import { deepMerge, duplicateRootKeys, isPlainObject, parseJsoncText } from "./merge.js";
 import type {
   DigestAction,
   EnvBlockAction,
@@ -633,8 +633,17 @@ function destinationFormatting(text: string): FormattingOptions {
  */
 function editedJsonText(source: string, base: unknown, value: unknown): string | undefined {
   if (!isPlainObject(base) || !isPlainObject(value)) return undefined;
+  // A duplicated top-level name makes `modify` and every reader of the file
+  // disagree about which property they mean, so an in-place edit would land
+  // under a shadow and change nothing the client can see. Render the whole file
+  // instead: it collapses the duplicates to the value the readers already agree
+  // on, in one apply.
+  if (duplicateRootKeys(source).length > 0) return undefined;
   const formattingOptions = destinationFormatting(source);
   let text = source;
+  // Each `modify` reparses `text`, so this is O(changed keys²) in the file's
+  // size. The bound is over CHANGED keys, not all of them, and a client settings
+  // file measures sub-millisecond; it is not worth a batched-edit rewrite.
   for (const key of Object.keys(base)) {
     if (Object.hasOwn(value, key)) continue;
     text = applyEdits(text, modify(text, [key], undefined, { formattingOptions }));

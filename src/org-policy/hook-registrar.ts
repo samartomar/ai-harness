@@ -23,6 +23,7 @@ import {
   projectedHookGroup,
   registrationKey,
   registrationNativeEntry,
+  shadowedCommentKeys,
 } from "./hook-registrar-native.js";
 import {
   type GuardedRead,
@@ -470,6 +471,33 @@ export function hookRegistrarState(root: string): HookRegistrarStateReport {
   return hookRegistrarVerdict(receipt, readDestination(root));
 }
 
+/**
+ * Why a write of `hooks` would destroy operator comments in these bytes, phrased
+ * to follow the destination path, or undefined when it would not.
+ *
+ * Two shapes, one ruling — refusing beats silently stripping. The writer edits
+ * only the keys it changes, so a comment is at risk when it sits inside `hooks`
+ * (replaced whole), or when a duplicated top-level name forces the whole-file
+ * render that drops every comment in the file.
+ */
+function commentStrippingHazard(bytes: string): string | undefined {
+  const shadowed = shadowedCommentKeys(bytes);
+  if (shadowed.length > 0) {
+    const named = shadowed.map((key) => `\`${key}\``).join(", ");
+    return (
+      `declares ${named} more than once, which forces a whole-file rewrite that would strip ` +
+      "its comments; AIH refuses rather than silently rewrite them"
+    );
+  }
+  if (carriesJsoncComments(bytes)) {
+    return (
+      "carries comments inside its hook entries that writing the groups AIH owns would " +
+      "strip; AIH refuses rather than silently rewrite them"
+    );
+  }
+  return undefined;
+}
+
 /** A verdict, and — when one can be proved — the subtraction it authorizes. */
 interface HookRegistrarOwnership {
   report: HookRegistrarStateReport;
@@ -537,22 +565,12 @@ function hookRegistrarOwnership(
       },
     };
   }
-  // Refusing beats silently stripping — the ruling this destination carries.
-  // The writer preserves every key it does not edit, so a comment elsewhere in
-  // the file is not at risk and no longer costs the operator a subtraction;
-  // `hooks` is replaced whole, so a comment inside it cannot survive. Checked
-  // before the `active` split because BOTH routes below authorize a write of
-  // that key, and a comment changes no parsed value — an `active` verdict says
-  // nothing about whether one is there.
-  if (carriesJsoncComments(bytes)) {
-    return {
-      report: {
-        state: "drifted",
-        detail:
-          `${HOOK_REGISTRAR_DESTINATION} carries comments inside its hook entries that ` +
-          "subtracting the groups AIH owns would strip; AIH refuses rather than silently rewrite them",
-      },
-    };
+  // Checked before the `active` split because BOTH routes below authorize a
+  // write of `hooks`, and a comment changes no parsed value — an `active`
+  // verdict says nothing about whether one is there.
+  const hazard = commentStrippingHazard(bytes);
+  if (hazard !== undefined) {
+    return { report: { state: "drifted", detail: `${HOOK_REGISTRAR_DESTINATION} ${hazard}` } };
   }
   const hooks = isPlainObject(actual) ? actual.hooks : undefined;
   if (stableJson(hooks) === stableJson(expectedHooksFromReceipt(receipt))) {
@@ -669,15 +687,11 @@ export function hookRegistrarProjectionActions(
       );
     }
   }
-  // The projection replaces `hooks` whole, so a comment inside it is destroyed
-  // by a write that reports success. Same ruling as revocation's: refuse and say
-  // so. Comments elsewhere in the file are untouched by the writer and are not
-  // grounds to refuse.
-  if (bytes !== undefined && carriesJsoncComments(bytes)) {
-    throw new OrgPolicyError(
-      `${HOOK_REGISTRAR_DESTINATION} carries comments inside its hook entries that projecting ` +
-        "would strip; AIH refuses rather than silently rewrite them",
-    );
+  // The projection reaches the same `hooks` write revocation does, so it refuses
+  // on the same hazards rather than reporting success over stripped comments.
+  const projectionHazard = bytes === undefined ? undefined : commentStrippingHazard(bytes);
+  if (projectionHazard !== undefined) {
+    throw new OrgPolicyError(`${HOOK_REGISTRAR_DESTINATION} ${projectionHazard}`);
   }
   // Groups that yield no entry are still content — `matcher`, `id`,
   // `description` — and the whole-key write would delete them. Carry them
