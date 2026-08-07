@@ -5,7 +5,7 @@ import { z } from "zod";
 import { readRegularFile } from "../internals/fsxn.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 import { type Action, type PlanContext, remove, writeJson } from "../internals/plan.js";
-import { withExpectedContents } from "../mcp/managed-projection.js";
+import { occupied, withExpectedContents } from "../mcp/managed-projection.js";
 import { stableJson } from "./effective.js";
 import {
   type HookRegistration,
@@ -683,6 +683,19 @@ function readDestination(root: string): DestinationRead {
       reason:
         `${HOOK_REGISTRAR_DESTINATION} is ${size} bytes, larger than the ` +
         `${HOOK_REGISTRAR_MAX_DESTINATION_BYTES} bytes a hook registrar receipt can carry as prior evidence`,
+    };
+  }
+  // PRESENCE only, and NO-FOLLOW — the peer's shape (`occupied`, used by the
+  // managed-MCP projection for exactly this). A directory, a symlink, a FIFO or
+  // an unreadable file all fail the regular-file read, and calling any of them
+  // `absent` would record the one prior state that authorizes deleting the
+  // destination and would skip the unowned-entry check on the way there.
+  if (occupied(abs)) {
+    return {
+      state: "unreadable",
+      reason:
+        `${HOOK_REGISTRAR_DESTINATION} is not a readable regular file (a directory, a symlink, ` +
+        `a special file, or one AIH cannot read), and AIH never records or edits through one`,
     };
   }
   return { state: "absent" };

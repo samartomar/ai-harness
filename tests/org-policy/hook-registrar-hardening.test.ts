@@ -10,6 +10,7 @@ import {
   HOOK_REGISTRAR_MAX_DESTINATION_BYTES,
   hookRegistrarProjectionActions,
   hookRegistrarRevocationActions,
+  hookRegistrarState,
   readHookRegistrarReceipt,
 } from "../../src/org-policy/hook-registrar.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -163,5 +164,24 @@ describe("H1 — nothing under `hooks` is deleted without being owned or named",
       hooks: { Stop: [{ hooks: [{ type: "command", command: selectedCommand(), timeout: 45 }] }] },
     });
     expect(message).toMatch(/did not emit|timeout/i);
+  });
+});
+
+describe("fail closed on ambiguity — unreadable is not absent", () => {
+  /**
+   * `absent` is not a neutral verdict here. It is the flag that authorizes
+   * deleting the destination on revocation, and the flag that skips the
+   * unowned-entry check entirely. A path AIH merely failed to read — a
+   * directory, a symlink, a special file — must never be recorded as one.
+   */
+  it("refuses a destination path occupied by a directory", () => {
+    mkdirSync(join(dir, HOOK_REGISTRAR_DESTINATION), { recursive: true });
+
+    expect(() => hookRegistrarProjectionActions(ctx(false), eccStopRegistrations())).toThrowError(
+      /regular file/i,
+    );
+    const state = hookRegistrarState(dir);
+    expect(state.state).toBe("invalid");
+    expect(state.detail).toMatch(/regular file/i);
   });
 });
