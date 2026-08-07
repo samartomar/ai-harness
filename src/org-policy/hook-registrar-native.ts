@@ -1,4 +1,4 @@
-import { type Node, parseTree, visit } from "jsonc-parser";
+import { findNodeAtLocation, type Node, parseTree, visit } from "jsonc-parser";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 import { stableJson } from "./effective.js";
 import { HOOK_REGISTRAR_DESTINATION } from "./hook-registrar-read.js";
@@ -301,19 +301,29 @@ export function assertNoProtoMember(text: string, where: string): void {
 }
 
 /**
- * True when the destination TEXT carries a JSONC comment.
+ * True when the destination TEXT carries a JSONC comment INSIDE the `hooks` key.
  *
  * Read from the SOURCE, the same way {@link assertNoProtoMember} is: a comment
- * is not a value, so nothing in the parse result remembers it, and a
- * parse-and-re-serialize write drops every one in the file. Callers use this to
- * refuse a write rather than silently strip an operator's comments — the
- * governing ruling on this destination is that refusing beats stripping.
+ * is not a value, so nothing in the parse result remembers it. The writer edits
+ * only the keys it changes, so a comment elsewhere in the file survives a write
+ * untouched and refusing over it would withhold a subtraction for content that
+ * was never at risk. `hooks` is the exception: it is replaced whole, so a
+ * comment within its span cannot survive. Callers refuse that case rather than
+ * silently strip it — the governing ruling on this destination is that refusing
+ * beats stripping.
+ *
+ * Offsets, not a re-parse: a comment has no node of its own, so the only way to
+ * place one relative to a key is to compare its offset against that key's span.
  */
 export function carriesJsoncComments(text: string): boolean {
+  const tree = parseTree(text);
+  const hooks = tree === undefined ? undefined : findNodeAtLocation(tree, ["hooks"]);
+  if (hooks === undefined) return false;
+  const end = hooks.offset + hooks.length;
   let found = false;
   visit(text, {
-    onComment: () => {
-      found = true;
+    onComment: (offset) => {
+      if (offset >= hooks.offset && offset < end) found = true;
     },
   });
   return found;

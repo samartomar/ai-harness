@@ -537,27 +537,28 @@ function hookRegistrarOwnership(
       },
     };
   }
-  const hooks = isPlainObject(actual) ? actual.hooks : undefined;
-  if (stableJson(hooks) === stableJson(expectedHooksFromReceipt(receipt))) {
-    return {
-      report: { state: "active", detail: "receipt and every projected hook entry match" },
-      subtraction,
-    };
-  }
-  // Refusing a commented destination beats silently stripping it — the ruling
-  // this destination already carries. `active` met this writer long before
-  // per-group subtraction existed and is deliberately untouched above; the
-  // cohabited write is a NEW route to it, and the parse-and-re-serialize writer
-  // drops every comment in the file. So it fails closed here instead, and the
-  // operator is told comments are the reason.
+  // Refusing beats silently stripping — the ruling this destination carries.
+  // The writer preserves every key it does not edit, so a comment elsewhere in
+  // the file is not at risk and no longer costs the operator a subtraction;
+  // `hooks` is replaced whole, so a comment inside it cannot survive. Checked
+  // before the `active` split because BOTH routes below authorize a write of
+  // that key, and a comment changes no parsed value — an `active` verdict says
+  // nothing about whether one is there.
   if (carriesJsoncComments(bytes)) {
     return {
       report: {
         state: "drifted",
         detail:
-          `${HOOK_REGISTRAR_DESTINATION} carries comments that subtracting the hook groups ` +
-          "AIH owns would strip; AIH refuses rather than silently rewrite them",
+          `${HOOK_REGISTRAR_DESTINATION} carries comments inside its hook entries that ` +
+          "subtracting the groups AIH owns would strip; AIH refuses rather than silently rewrite them",
       },
+    };
+  }
+  const hooks = isPlainObject(actual) ? actual.hooks : undefined;
+  if (stableJson(hooks) === stableJson(expectedHooksFromReceipt(receipt))) {
+    return {
+      report: { state: "active", detail: "receipt and every projected hook entry match" },
+      subtraction,
     };
   }
   const foreign = subtraction.foreignEntries;
@@ -667,6 +668,16 @@ export function hookRegistrarProjectionActions(
           `(${named.join(", ")}${omitted}); adopt or remove them before projecting`,
       );
     }
+  }
+  // The projection replaces `hooks` whole, so a comment inside it is destroyed
+  // by a write that reports success. Same ruling as revocation's: refuse and say
+  // so. Comments elsewhere in the file are untouched by the writer and are not
+  // grounds to refuse.
+  if (bytes !== undefined && carriesJsoncComments(bytes)) {
+    throw new OrgPolicyError(
+      `${HOOK_REGISTRAR_DESTINATION} carries comments inside its hook entries that projecting ` +
+        "would strip; AIH refuses rather than silently rewrite them",
+    );
   }
   // Groups that yield no entry are still content — `matcher`, `id`,
   // `description` — and the whole-key write would delete them. Carry them

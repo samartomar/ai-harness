@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { applyEdits, type FormattingOptions, modify } from "jsonc-parser";
 import { AihError, DirtyWorktreeError, PathContainmentError } from "../errors.js";
 import { redactSecrets } from "../guardrails/redact.js";
 import {
@@ -587,13 +588,77 @@ export function writeArtifact(ctx: PlanContext, relPath: string, contents: strin
   return txn.commit().backups;
 }
 
+/**
+ * Key-order-insensitive rendering, used only to answer "did this key's value
+ * change?". `JSON.stringify` cannot answer it: a merge that preserves a value
+ * while reordering its members would read as a change, and the key would lose
+ * its formatting for nothing.
+ */
+function structuralJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(structuralJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => `${JSON.stringify(key)}:${structuralJson(child)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * The destination's own indentation and line ending, so a key written into it is
+ * written in the style the rest of the file already uses. A file with no
+ * indented line has no style to honour and takes the same 2-space default
+ * {@link jsonFile} renders.
+ */
+function destinationFormatting(text: string): FormattingOptions {
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const indent = /\n([ \t]+)\S/.exec(text)?.[1];
+  if (indent === undefined) return { insertSpaces: true, tabSize: 2, eol };
+  if (indent.startsWith("\t")) return { insertSpaces: false, tabSize: 1, eol };
+  return { insertSpaces: true, tabSize: indent.length, eol };
+}
+
+/**
+ * Render `value` onto the destination's OWN text, editing only the top-level
+ * keys whose value changed. Every other key is never re-emitted, so its
+ * comments, indentation and ordering survive byte-for-byte — which is what lets
+ * a subtraction claim it left operator content alone (A2). Returns undefined
+ * when this is not an object-onto-object edit, and the caller renders the whole
+ * file as before.
+ *
+ * A key that IS edited is re-serialized whole, so a comment inside one does not
+ * survive. Callers owning such a key refuse that case themselves rather than
+ * strip it silently.
+ */
+function editedJsonText(source: string, base: unknown, value: unknown): string | undefined {
+  if (!isPlainObject(base) || !isPlainObject(value)) return undefined;
+  const formattingOptions = destinationFormatting(source);
+  let text = source;
+  for (const key of Object.keys(base)) {
+    if (Object.hasOwn(value, key)) continue;
+    text = applyEdits(text, modify(text, [key], undefined, { formattingOptions }));
+  }
+  for (const key of Object.keys(value)) {
+    if (Object.hasOwn(base, key) && structuralJson(base[key]) === structuralJson(value[key])) {
+      continue;
+    }
+    text = applyEdits(text, modify(text, [key], value[key], { formattingOptions }));
+  }
+  return text;
+}
+
 /** Compute final file contents for a write action, applying JSON merge if requested. */
 export function resolveContents(action: WriteAction, absPath: string): string {
   if (action.json !== undefined) {
     let value: unknown = action.json;
+    // Only a merge has a destination to preserve: every other JSON write is a
+    // whole-file render aih owns outright.
+    let source: string | undefined;
+    let base: unknown;
     if (action.merge) {
-      const existing = readIfExists(absPath);
-      const base = existing !== undefined ? parseJsoncText(existing) : undefined;
+      source = readIfExists(absPath);
+      base = source !== undefined ? parseJsoncText(source) : undefined;
       value = base !== undefined ? deepMerge(base, action.json) : action.json;
       value = replaceJsonKeys(value, action.json, action.replaceJsonKeys);
       value = replaceJsonChildKeys(value, action.json, action.replaceJsonChildKeys);
@@ -602,7 +667,8 @@ export function resolveContents(action: WriteAction, absPath: string): string {
     }
     value = removeJsonKeys(value, action.removeJsonKeys);
     value = removeJsonTopLevelKeys(value, action.removeJsonTopLevelKeys);
-    return jsonFile(value);
+    const edited = source === undefined ? undefined : editedJsonText(source, base, value);
+    return edited ?? jsonFile(value);
   }
   return ensureTrailingNewline(action.contents ?? "");
 }

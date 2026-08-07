@@ -266,6 +266,18 @@ function addOperatorComment(): string {
   return contents;
 }
 
+/** The same comment, INSIDE the `hooks` span — the one key a write replaces whole. */
+function addCommentInsideHooks(): string {
+  const text = readDestination() ?? "";
+  const opening = '"hooks": {';
+  const at = text.indexOf(opening);
+  expect(at, "expected a hooks object to comment inside").toBeGreaterThan(-1);
+  const cut = at + opening.length;
+  const contents = `${text.slice(0, cut)}\n    // operator note: inside the owned key${text.slice(cut)}`;
+  writeFileSync(join(dir, HOOK_REGISTRAR_DESTINATION), contents, "utf8");
+  return contents;
+}
+
 /** Rewrite the destination's `hooks` key through `mutate`, leaving every other key alone. */
 function rewriteHooks(mutate: (hooks: Record<string, unknown>) => void): string {
   const current = JSON.parse(readDestination() ?? "{}");
@@ -432,19 +444,35 @@ describe("H6 — per-entry subtraction: cohabitation is not drift", () => {
  */
 describe("H6 — per-entry subtraction fails closed on an unprovable owned group", () => {
   /**
-   * Governing ruling 3 already settled this question: refusing a commented
-   * destination beats silently stripping it. Before per-group subtraction,
-   * cohabitation refused to write at all, so a commented destination never met
-   * this writer on this path. The subtraction write is a NEW route to it, and a
-   * parse-and-re-serialize write drops every comment in the file.
+   * Governing ruling 3 settled the question: refusing a commented destination
+   * beats silently stripping it. What counts as at risk is now narrower — the
+   * writer edits only the keys it changes, so a comment outside the `hooks` span
+   * survives the subtraction and refusing over it would withhold the removal for
+   * content that was never touched.
    */
-  it("refuses to subtract a cohabited destination that carries comments", async () => {
+  it("subtracts a cohabited destination whose comment sits outside the hooks span", async () => {
     seedThirdPartyEntries();
     await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
     rewriteHooks((hooks) => {
       hooks.PreToolUse = [OPERATOR_GROUP];
     });
-    const commented = addOperatorComment();
+    addOperatorComment();
+
+    expect(hookRegistrarState(dir).state).toBe("cohabited");
+    await run(hookRegistrarRevocationActions(ctx(false)));
+    const after = readDestination() ?? "";
+    expect(after).toContain("// operator note: keep this file");
+    expect(after).not.toContain("run-with-flags.js");
+  });
+
+  /** Inside the span the key is replaced whole, so the refusal stands. */
+  it("refuses to subtract a cohabited destination commented inside the hooks span", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    rewriteHooks((hooks) => {
+      hooks.PreToolUse = [OPERATOR_GROUP];
+    });
+    const commented = addCommentInsideHooks();
 
     const state = hookRegistrarState(dir);
     expect(state.state).toBe("drifted");
@@ -454,17 +482,28 @@ describe("H6 — per-entry subtraction fails closed on an unprovable owned group
   });
 
   /**
-   * The `active` path is NOT changed. A commented exact-match destination was
-   * already rewritten before this row existed; that is recorded in the ADR and
-   * stays as it was, so the refusal above cannot creep into it.
+   * The exact-match path reaches the same `hooks`-replacing write, and a comment
+   * changes no parsed value — so an `active` verdict alone never proved the
+   * comment was safe. Outside the span it now genuinely is.
    */
-  it("leaves the exact-match path exactly as it was for a commented destination", async () => {
+  it("subtracts an exact-match destination whose comment sits outside the hooks span", async () => {
     seedThirdPartyEntries();
     await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
     addOperatorComment();
 
     expect(hookRegistrarState(dir).state).toBe("active");
     expect(() => hookRegistrarRevocationActions(ctx(false))).not.toThrow();
+  });
+
+  /** Inside the span, the exact-match path fails closed too rather than strip it. */
+  it("refuses an exact-match destination commented inside the hooks span", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    const commented = addCommentInsideHooks();
+
+    expect(hookRegistrarState(dir).state).toBe("drifted");
+    expect(() => hookRegistrarRevocationActions(ctx(false))).toThrowError(/comment/i);
+    expect(readDestination()).toBe(commented);
   });
 
   it("refuses when an operator entry is inserted inside a group AIH owns", async () => {
