@@ -629,6 +629,20 @@ export function orgPolicyMcpReceiptState(
   return state;
 }
 
+/**
+ * Does the usage-hook ownership receipt already own hook entries at this path?
+ *
+ * Ownership outlives a single plan. The projector skips its own write while its
+ * receipt is active, so asking only what it emits this run mistakes an
+ * idempotent skip for an absent owner.
+ */
+function usageHookReceiptOwnsPath(ctx: PlanContext, path: string): boolean {
+  const { receipt } = parseHookReceipt(ctx);
+  return (receipt?.entries ?? []).some(
+    (entry) => entry.kind === "json-hook" && entry.path === path,
+  );
+}
+
 function usageHookProjectionActions(ctx: PlanContext, effective: EffectiveOrgPolicy): Action[] {
   const currentTargets = new Set(ctx.targets ?? ["claude"]);
   const targets = [
@@ -935,13 +949,34 @@ function projectionActionsFromRuntime(
       });
       const touchesDestination = (planned: readonly Action[]) =>
         planned.some((action) => "path" in action && action.path === HOOK_REGISTRAR_DESTINATION);
-      // The plan executor collapses repeated writes to one path, so two hook
-      // writers would silently drop one owner's entries — refuse instead.
-      if (touchesDestination(usage) && touchesDestination(registrar)) {
+      // Two independent ways the usage-hook side lays claim to this
+      // destination, and either one blocks the registrar:
+      //
+      //  - OWNERSHIP. An active usage-hook receipt keeps that projector's entry
+      //    on disk on every later run, including runs where it emits nothing.
+      //    The registrar's whole-key write would rewrite that entry, leaving it
+      //    claimed by two receipts with the usage receipt no longer matching.
+      //  - PLAN SHAPE. Both projectors emitting a write in one plan. Still
+      //    load-bearing on its own: on the first-ever projection no receipt
+      //    exists yet, so ownership is silent and only this catches it. The
+      //    executor collapses repeated writes to one path, dropping an owner's
+      //    entries.
+      const usageOwnsDestination = usageHookReceiptOwnsPath(ctx, HOOK_REGISTRAR_DESTINATION);
+      if ((usageOwnsDestination || touchesDestination(usage)) && touchesDestination(registrar)) {
+        // Branch-specific, because the remedies differ. Once the usage receipt
+        // owns the destination, "deactivate the usage-hook selection" does NOT
+        // clear the refusal: deactivation itself emits a write, so it re-refuses
+        // through the plan-shape half. The registrations have to come out for
+        // one projection so the usage-hook side can settle first.
         throw new OrgPolicyError(
           `policy project refuses two hook writers into ${HOOK_REGISTRAR_DESTINATION}: the ` +
-            "usage-hook projector and the hook registrar both emit writes for this policy; " +
-            "deactivate the usage-hook selection or drop the hook registrations before projecting",
+            "usage-hook projector and the hook registrar " +
+            (usageOwnsDestination
+              ? `cannot both own it — ${ORG_POLICY_HOOK_RECEIPT_PATH} already owns hook entries ` +
+                "there; drop the hook registrations and project once so the usage-hook receipt " +
+                "settles or is subtracted, then declare them again"
+              : "both emit writes for it in this projection; deactivate the usage-hook selection " +
+                "or drop the hook registrations before projecting"),
         );
       }
       actions.push(...registrar);
