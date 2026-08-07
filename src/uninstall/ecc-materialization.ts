@@ -1,5 +1,6 @@
 import { uninstallEccMaterialization } from "../ecc/materialization.js";
 import {
+  displaySafe,
   ECC_MATERIALIZATION_RECEIPT_PATH,
   readEccMaterializationReceipt,
 } from "../ecc/materialization-receipt.js";
@@ -25,8 +26,6 @@ import {
 
 export interface EccMaterializationUninstallState {
   state: "absent" | "owned" | "unprovable";
-  /** Owned destination paths the receipt claims; empty unless `owned`. */
-  paths: string[];
   detail: string;
 }
 
@@ -34,27 +33,25 @@ export interface EccMaterializationUninstallState {
 export function eccMaterializationUninstallState(root: string): EccMaterializationUninstallState {
   const read = readEccMaterializationReceipt(root);
   if (read.state === "absent") {
-    return { state: "absent", paths: [], detail: "no ECC materialization receipt" };
+    return { state: "absent", detail: "no ECC materialization receipt" };
   }
   if (read.state === "malformed") {
-    return { state: "unprovable", paths: [], detail: read.detail };
+    // The receipt is third-party text and its parse error carries that text
+    // through: zod renders a rejected multi-megabyte document as megabytes of
+    // INDENTED JSON, so pasting it verbatim would not merely be long — its
+    // newlines would forge extra rows inside AIH's own refusal.
+    return { state: "unprovable", detail: displaySafe(read.detail) };
   }
-  const paths = read.receipt.components.flatMap((component) =>
-    component.files.map((file) => file.path),
+  // A valid receipt always claims at least one file: `components` is `.min(1)`
+  // (`materialization-receipt.ts:296`) and every component's `files` is `.min(1)`
+  // (`:277`), so there is no "owned but claiming nothing" state to describe.
+  const owned = read.receipt.components.reduce(
+    (total, component) => total + component.files.length,
+    0,
   );
-  if (paths.length === 0) {
-    // A receipt claiming nothing still records ownership of itself; removing it
-    // is the whole subtraction, and saying "0 files" is the honest description.
-    return {
-      state: "owned",
-      paths: [],
-      detail: "receipt-proven ECC materialization claiming no destination",
-    };
-  }
   return {
     state: "owned",
-    paths,
-    detail: `receipt-proven ECC materialization of ${paths.length} owned file(s) across ${read.receipt.components.length} component(s)`,
+    detail: `receipt-proven ECC materialization of ${owned} owned file(s) across ${read.receipt.components.length} component(s)`,
   };
 }
 

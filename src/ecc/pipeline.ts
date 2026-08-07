@@ -33,7 +33,10 @@ import { cleanupQuarantine, resolveTrustSource, type TrustSource } from "../trus
 import type { EccComponentId, EccComponentSelection, EccMcpComponentId } from "./components.js";
 import { selectEccComponents } from "./components.js";
 import { eccEvidenceComponentIds, eccEvidenceComponentIdsForSelection } from "./evidence.js";
-import { executeGovernedEccMaterialization } from "./governed-lifecycle.js";
+import {
+  executeGovernedEccMaterialization,
+  governedEccComponentIds,
+} from "./governed-lifecycle.js";
 import { eccActionsForCli, eccToolsDoc, isAihDirectEccInstallTarget } from "./install.js";
 import {
   contingentEccInstallPreviewPlan,
@@ -298,9 +301,13 @@ export async function executeEccCommand(
       // materialization is what makes per-component governed control possible,
       // and the framework's own installer projects surfaces governance owns.
       const catalog = deps.catalog ?? requestedCatalog(ctx);
+      // Validate the policy against the catalog BEFORE resolving a source:
+      // resolving a remote source creates a quarantine directory, and an
+      // invocation that refuses must create nothing at all.
+      const componentIds = governedEccComponentIds(policy, catalog);
       return executeGovernedEccMaterialization(
         ctx,
-        { catalog, source: deps.source ?? requestedSource(ctx, catalog), policy },
+        { catalog, componentIds, source: deps.source ?? requestedSource(ctx, catalog), policy },
         deps,
       );
     }

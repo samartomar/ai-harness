@@ -178,6 +178,70 @@ describe("F6 — `aih uninstall` removes governed ECC materialization receipt-bo
     expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
   });
 
+  /**
+   * M1: the digest is rendered from what the engine ACTUALLY did, not from the
+   * intent captured before it ran. The engine keeps a drifted destination
+   * (`materialization-plan.ts:385-388`); a run that printed "operator content is
+   * preserved" and exited clean would be telling the operator the opposite of
+   * what happened to that file.
+   */
+  it("reports the drifted file the engine kept, and does not claim it removed it", async () => {
+    materialize();
+    const drifted = ".claude/rules/README.md";
+    writeFileSync(join(root, ...drifted.split("/")), "# operator edited this\n", "utf8");
+
+    const result = await uninstall(true);
+
+    const row = digestRowFor(result, drifted);
+    expect(row).toMatch(/\[advisory\]/);
+    expect(row).toMatch(/drift/i);
+    // The engine kept it, so the bytes AND the operator's edit survive.
+    expect(readFileSync(join(root, ...drifted.split("/")), "utf8")).toBe(
+      "# operator edited this\n",
+    );
+    // The two undrifted owned files still went.
+    for (const path of MATERIALIZED.filter((entry) => entry !== drifted)) {
+      expect(existsSync(join(root, ...path.split("/"))), path).toBe(false);
+    }
+    // The receipt row states the real count — two removed, not three — and the
+    // receipt survives because it still records ownership of the kept file.
+    const receiptRow = digestRowFor(result, ECC_MATERIALIZATION_RECEIPT_PATH);
+    expect(receiptRow).toMatch(/removed 2 /);
+    expect(receiptRow).not.toMatch(/removed 3 /);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
+  });
+
+  /**
+   * M4: the receipt is third-party text. An unbounded zod parse error rendered
+   * verbatim turned a 3 MB hostile receipt into a multi-megabyte refusal; every
+   * peer string in this family goes through `displaySafe`.
+   */
+  it("bounds the advisory detail when a hostile receipt produces a huge parse error", async () => {
+    materialize();
+    const hostile: Record<string, unknown> = { format: "aih-ecc-materialization-receipt" };
+    for (let index = 0; index < 5_000; index += 1) {
+      hostile[`unrecognized-key-${index}-${"p".repeat(200)}`] = index;
+    }
+    writeFileSync(eccMaterializationReceiptPath(root), JSON.stringify(hostile), "utf8");
+
+    const result = await uninstall(true);
+
+    // The whole rendered footprint, not one line of it: the raw parse error is
+    // 2.3 MB of INDENTED JSON, so a per-row length check would pass on its short
+    // first line while the rest forged extra rows inside AIH's own refusal.
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("core install footprint"),
+    );
+    expect((digest?.text ?? "").length).toBeLessThan(5_000);
+    const row = digestRowFor(result, ECC_MATERIALIZATION_RECEIPT_PATH);
+    expect(row).toMatch(/\[advisory\]/);
+    expect(row.length).toBeLessThan(300);
+    // Still refuses every claim: nothing was removed.
+    for (const path of MATERIALIZED) {
+      expect(existsSync(join(root, ...path.split("/"))), path).toBe(true);
+    }
+  });
+
   it("stays silent when no materialization receipt exists at all", async () => {
     const result = await uninstall(true);
 

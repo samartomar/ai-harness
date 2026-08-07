@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,6 +21,7 @@ import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { orgPolicyPath } from "../../src/org-policy/schema.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { resolveTrustSource } from "../../src/trust/fetch.js";
 
 /**
  * F6: the governed framework lifecycle reached through the shipped command.
@@ -37,6 +46,8 @@ const SOURCE_TREE: Readonly<Record<string, string>> = {
   ".agents/skills/tdd-workflow/SKILL.md": "# tdd-workflow (agent copy)\n",
   "rules/README.md": "# rules\n",
   "rules/common/coding-style.md": "# coding style\n",
+  ".mcp.json": '{"mcpServers":{}}\n',
+  "mcp-configs/mcp-servers.json": '{"servers":{}}\n',
 };
 
 /** Operator content on the destination root, present before anything is applied. */
@@ -76,6 +87,14 @@ const BLOCKED: SelectionFixture = {
   id: "agent:planner",
   path: "agents/planner.md",
   paths: ["agents/planner.md"],
+};
+
+/** Evidence-passed, and lands on a surface another AIH lifecycle owns. */
+const OTHER_LIFECYCLE: SelectionFixture = {
+  kind: "mcp",
+  id: "mcp:github",
+  path: "mcp-configs/mcp-servers.json",
+  paths: [".mcp.json", "mcp-configs/mcp-servers.json"],
 };
 
 /** What must land, and from which source file, once the command applies. */
@@ -139,7 +158,10 @@ function ctx(apply: boolean, options: Record<string, unknown>): PlanContext {
   };
 }
 
-function writeGovernedPolicy(selections: readonly SelectionFixture[]): void {
+function writeGovernedPolicy(
+  selections: readonly SelectionFixture[],
+  source: { repository?: string; commit?: string } = {},
+): void {
   writeFileSync(
     orgPolicyPath(root, {}),
     `${JSON.stringify(
@@ -156,7 +178,11 @@ function writeGovernedPolicy(selections: readonly SelectionFixture[]): void {
               items: selections.map((item) => ({
                 kind: item.kind,
                 id: item.id,
-                source: { repository: REPOSITORY, commit: COMMIT, path: item.path },
+                source: {
+                  repository: source.repository ?? REPOSITORY,
+                  commit: source.commit ?? COMMIT,
+                  path: item.path,
+                },
               })),
             },
           ],
@@ -185,13 +211,15 @@ function writeUngovernedPolicy(): void {
   );
 }
 
+const CATALOGUED: readonly SelectionFixture[] = [...PASSED, BLOCKED, OTHER_LIFECYCLE];
+
 function catalog() {
   return defineBaselineCatalog({
     id: "ecc",
     owner: "affaan-m",
     repo: "ECC",
     pinnedSha: COMMIT,
-    components: [...PASSED, BLOCKED].map((item) => ({ id: item.id, paths: item.paths })),
+    components: CATALOGUED.map((item) => ({ id: item.id, paths: item.paths })),
   });
 }
 
@@ -204,7 +232,7 @@ function vendorLock() {
         owner: "affaan-m",
         repo: "ECC",
         pinnedSha: COMMIT,
-        components: [...PASSED, BLOCKED].map((item) => ({
+        components: CATALOGUED.map((item) => ({
           id: item.id,
           paths: item.paths,
           treeSha256: hashComponentTree(sourceRoot, item.paths).treeSha256,
@@ -319,6 +347,183 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
       expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
     });
   }
+
+  /**
+   * M2: on the DEFAULT source the evidence pipeline returns the acquisition plan
+   * in dry run and never reaches the plan builder
+   * (`baseline-evidence/pipeline.ts:126-135`), so a governed dry run that said
+   * nothing would make the first run showing the plan the run that already
+   * wrote. It must instead say plainly that file-level preview needs the source.
+   */
+  it("gives an honest dry run on the default remote source, fetching and writing nothing", async () => {
+    writeGovernedPolicy([...PASSED, BLOCKED]);
+    const source = resolveTrustSource("affaan-m/ECC", { root, pin: COMMIT });
+    if (source.kind !== "github") throw new Error("expected a GitHub source");
+    const before = snapshot(root);
+
+    const result = await executeEccCommand(ctx(false, { lifecycle: "install" }), {
+      catalog: catalog(),
+      source,
+      vendorLock: vendorLock(),
+      vendorLockSha256: "f".repeat(64),
+    });
+
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("governed ECC framework materialization"),
+    );
+    // Names the pin the bytes would come from...
+    expect(digest?.text).toContain(`affaan-m/ECC@${COMMIT}`);
+    // ...every selected component id...
+    for (const item of [...PASSED, BLOCKED]) {
+      expect(digest?.text, item.id).toContain(item.id);
+    }
+    // ...and states plainly why this is not a file-level preview.
+    expect(digest?.text).toContain("--ecc-path");
+    expect(digest?.text).toContain("--apply");
+    // Nothing fetched, nothing written, no quarantine left behind.
+    expect(result.execs).toEqual([]);
+    expect(snapshot(root)).toEqual(before);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+    expect(existsSync(source.quarantineRoot)).toBe(false);
+  });
+
+  /**
+   * M3: an empty engine request is indistinguishable from "everything was
+   * deselected", and the engine subtracts every prior receipt entry on that
+   * reading. A selection the target refuses WHOLLY is ambiguity, so it fails
+   * closed instead of wiping the prior install.
+   */
+  it("refuses a wholly-refused selection by name instead of subtracting the prior install", async () => {
+    // A prior governed install, materialized and receipted.
+    writeGovernedPolicy([...PASSED]);
+    await runLifecycle("install", true);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
+
+    // Now the policy selects only a component whose content lands on a surface
+    // another AIH lifecycle owns — the Claude target refuses all of it. The
+    // baseline is taken AFTER the policy rewrite, so the only thing this can
+    // catch is the materialization being touched.
+    writeGovernedPolicy([OTHER_LIFECYCLE]);
+    const settled = snapshot(root);
+    const failure = await runLifecycle("install", true).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    // The safety property first: the prior install is untouched, every byte,
+    // receipt included. This is what an empty request would have destroyed.
+    expect(snapshot(root)).toEqual(settled);
+    expect(failure?.message).toContain(OTHER_LIFECYCLE.id);
+    expect(failure?.message).toContain("unowned-destination");
+  });
+
+  /**
+   * M3, the other half. A receipt entry the new request no longer carries may be
+   * a genuine deselection OR a component this run could not map, and this layer
+   * does not check which. The subtract row must therefore not name a cause it
+   * never established — not even here, where the deselection IS genuine.
+   */
+  it("subtracts a deselected component without claiming to know it was deselected", async () => {
+    writeGovernedPolicy([...PASSED]);
+    await runLifecycle("install", true);
+    const deselected = ".claude/rules/README.md";
+    expect(existsSync(join(root, ...deselected.split("/")))).toBe(true);
+
+    // Genuinely narrower: `baseline:rules` and `skill:tdd-workflow` are dropped.
+    writeGovernedPolicy([PASSED[0] as SelectionFixture]);
+    const result = await runLifecycle("install", true);
+
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("governed ECC framework materialization"),
+    );
+    const row = (digest?.text ?? "").split("\n").find((line) => line.includes(deselected)) ?? "";
+    // The subtraction really happened — a vacuous row would prove nothing.
+    expect(row).toMatch(/\[removed\]/);
+    expect(existsSync(join(root, ...deselected.split("/")))).toBe(false);
+    // ...and it is described by what this layer knows, not by a cause it assumed.
+    expect(row).toContain("no longer part of this materialization");
+    expect(digest?.text).not.toContain("ownership no longer selected");
+  });
+
+  /**
+   * L1: a refusal must not leave a quarantine directory behind. The source was
+   * being resolved — which creates the quarantine — before the policy was
+   * validated against the catalog.
+   */
+  it("creates no quarantine directory when the policy refuses before any source is resolved", async () => {
+    // Governed, but selecting a framework this lifecycle does not materialize.
+    writeFileSync(
+      orgPolicyPath(root, {}),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          policyVersion: "2026-08-07.f6",
+          catalog: { reviewed: [], custom: [] },
+          externalSelections: [{ framework: "superpowers", items: [] }],
+        },
+      })}\n`,
+      "utf8",
+    );
+    const temp = mkdtempSync(join(tmpdir(), "aih-governed-tmp-"));
+    const saved = { TMPDIR: process.env.TMPDIR, TEMP: process.env.TEMP, TMP: process.env.TMP };
+    process.env.TMPDIR = temp;
+    process.env.TEMP = temp;
+    process.env.TMP = temp;
+
+    let failure: Error | undefined;
+    try {
+      // No `deps.source`: the command resolves the source itself, which is
+      // exactly the ordering under test.
+      failure = await executeEccCommand(ctx(false, { lifecycle: "install" }), {
+        catalog: catalog(),
+      }).then(
+        () => undefined,
+        (error: Error) => error,
+      );
+    } finally {
+      process.env.TMPDIR = saved.TMPDIR;
+      process.env.TEMP = saved.TEMP;
+      process.env.TMP = saved.TMP;
+    }
+
+    expect(failure?.message).toMatch(/selects no ECC component/);
+    expect(readdirSync(temp).filter((name) => name.startsWith("aih-quarantine-"))).toEqual([]);
+    rmSync(temp, { recursive: true, force: true });
+  });
+
+  /**
+   * L2: the receipt's provenance is the policy's claim about where bytes came
+   * from, while the bytes come from the catalog pin. Nothing compared them, so a
+   * policy naming any repository/commit produced a receipt asserting it.
+   */
+  it("refuses a selection whose claimed pin disagrees with the catalog the bytes come from", async () => {
+    writeGovernedPolicy([...PASSED], { commit: "b".repeat(40) });
+
+    const failure = await runLifecycle("install", true).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    // Both values named, so the operator can see which one is wrong.
+    expect(failure?.message).toContain("b".repeat(40));
+    expect(failure?.message).toContain(COMMIT);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+  });
+
+  it("refuses a selection whose claimed repository disagrees with the catalog", async () => {
+    writeGovernedPolicy([...PASSED], { repository: "attacker/ECC" });
+
+    const failure = await runLifecycle("install", true).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toContain("attacker/ECC");
+    expect(failure?.message).toContain(REPOSITORY);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+  });
 
   it("leaves --lifecycle uninstall on the profile lifecycle in a governed repository", async () => {
     writeGovernedPolicy([...PASSED]);
