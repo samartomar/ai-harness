@@ -160,6 +160,7 @@ export async function baselineInstallPhasePlan(
   gate: BaselineGate,
   buildActions: (
     authorizations: readonly BaselineAuthorization[],
+    held: readonly BaselineHeldComponent[],
   ) => readonly Action[] | Promise<readonly Action[]>,
 ): Promise<Plan> {
   const verification = verifyBaselineComponents({
@@ -196,7 +197,10 @@ export async function baselineInstallPhasePlan(
     );
   }
   const evidenceProbe = verificationProbe(partialInstallChecks(verification));
-  const actions = await buildActions(verification.authorizations);
+  // The SAME verification the probe above reports: authorizations and held come
+  // from one run, so a caller can never explain an install with evidence the
+  // gate did not act on.
+  const actions = await buildActions(verification.authorizations, verification.held);
   return plan(
     "baseline install: evidence re-check + install",
     evidenceProbe,

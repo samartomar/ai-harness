@@ -21,7 +21,7 @@ import {
 } from "./run.js";
 import type { BaselineEvidenceLock } from "./schema.js";
 import { readVendorBaselineLock, vendorBaselineLockSha256 } from "./vendor.js";
-import type { BaselineAuthorization } from "./verify.js";
+import type { BaselineAuthorization, BaselineHeldComponent } from "./verify.js";
 
 export interface BaselineEvidencePipelineInput {
   catalog: BaselineCatalog;
@@ -30,9 +30,16 @@ export interface BaselineEvidencePipelineInput {
   allowPartial?: boolean;
   /** When set, only accepted-with-conditions decisions for this exact tuple apply. */
   acceptanceTuple?: AcceptanceTuple;
+  /**
+   * `held` rides alongside `authorizations` because a caller that reports WHY a
+   * requested component did not install needs the evidence state that held it
+   * back, and re-deriving it downstream would be a second verification whose
+   * verdict could differ from the one this gate acted on.
+   */
   buildInstallPlan: (
     sourceRoot: string,
     authorizations: readonly BaselineAuthorization[],
+    held: readonly BaselineHeldComponent[],
   ) => Plan | Promise<Plan>;
 }
 
@@ -175,7 +182,8 @@ export async function executeBaselineEvidencePipeline(
     const install = await baselineInstallPhasePlan(
       ctx,
       gate,
-      async (authorizations) => (await input.buildInstallPlan(sourceRoot, authorizations)).actions,
+      async (authorizations, held) =>
+        (await input.buildInstallPlan(sourceRoot, authorizations, held)).actions,
     );
     const actions =
       org.checks.length > 0

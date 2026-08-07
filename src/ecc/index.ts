@@ -912,7 +912,7 @@ export const command: CommandSpec = {
     {
       flags: "--lifecycle <operation>",
       description:
-        "manage the AIH-owned Claude/Codex profile: install|update|repair|rollback|uninstall",
+        "manage the AIH-owned Claude/Codex profile: install|update|repair|rollback|uninstall. In a governed repository `install` instead materializes the policy's evidence-passed component selection (removal lives in `aih uninstall`), and update|repair|rollback are refused",
     },
   ],
   plan: eccPlan,

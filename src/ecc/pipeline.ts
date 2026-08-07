@@ -13,6 +13,7 @@ import {
   executeBaselineEvidencePipeline,
 } from "../baseline-evidence/pipeline.js";
 import type { BaselineEvidenceLock } from "../baseline-evidence/schema.js";
+import type { BaselineAuthorization, BaselineHeldComponent } from "../baseline-evidence/verify.js";
 import { postureFromContext } from "../config/posture.js";
 import {
   type EccProfileLifecycleCommandDeps,
@@ -23,7 +24,7 @@ import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js
 import type { Cli } from "../internals/clis.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
-import { doc, type PlanContext, plan } from "../internals/plan.js";
+import { doc, type Plan, type PlanContext, plan } from "../internals/plan.js";
 import { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
 import { readOrgPolicy } from "../org-policy/schema.js";
 import type { RepoStack } from "../profile/scan.js";
@@ -32,6 +33,10 @@ import { cleanupQuarantine, resolveTrustSource, type TrustSource } from "../trus
 import type { EccComponentId, EccComponentSelection, EccMcpComponentId } from "./components.js";
 import { selectEccComponents } from "./components.js";
 import { eccEvidenceComponentIds, eccEvidenceComponentIdsForSelection } from "./evidence.js";
+import {
+  executeGovernedEccMaterialization,
+  governedEccComponentIds,
+} from "./governed-lifecycle.js";
 import { eccActionsForCli, eccToolsDoc, isAihDirectEccInstallTarget } from "./install.js";
 import {
   contingentEccInstallPreviewPlan,
@@ -50,6 +55,20 @@ import { type VerifiedEccRequest, verifiedEccInstallPlan } from "./verified.js";
 
 const FULL_SHA = /^[a-f0-9]{40}$/;
 
+/**
+ * `verifiedEccInstallPlan`'s shape, plus the evidence records the gate held
+ * back. Declared rather than derived so a builder that reports WHY a selected
+ * component did not install — the governed materialization lifecycle — is
+ * expressible without every existing four-parameter builder having to change.
+ */
+export type EccInstallPlanBuilder = (
+  ctx: PlanContext,
+  sourceRoot: string,
+  request: VerifiedEccRequest,
+  authorizations: readonly BaselineAuthorization[],
+  held: readonly BaselineHeldComponent[],
+) => Plan | Promise<Plan>;
+
 export interface EccEvidencePipelineDeps extends BaselineEvidencePipelineDeps {
   catalog?: BaselineCatalog;
   source?: TrustSource;
@@ -57,7 +76,7 @@ export interface EccEvidencePipelineDeps extends BaselineEvidencePipelineDeps {
   acceptanceTuple?: AcceptanceTuple;
   vendorLock?: BaselineEvidenceLock;
   vendorLockSha256?: string;
-  buildInstallPlan?: typeof verifiedEccInstallPlan;
+  buildInstallPlan?: EccInstallPlanBuilder;
   resolveOrgEvidence?: (
     input: Parameters<typeof resolveOrgBaselineEvidence>[0],
   ) => Promise<ResolveOrgBaselineEvidenceResult>;
@@ -260,8 +279,8 @@ export async function executeEccEvidencePipeline(
       allowPartial:
         request.selection?.scope !== "full" && (request.selection?.moduleIds?.length ?? 0) === 0,
       acceptanceTuple: deps.acceptanceTuple,
-      buildInstallPlan: (sourceRoot, authorizations) =>
-        buildInstallPlan(ctx, sourceRoot, request, authorizations),
+      buildInstallPlan: (sourceRoot, authorizations, held) =>
+        buildInstallPlan(ctx, sourceRoot, request, authorizations, held),
     },
     deps,
   );
@@ -276,15 +295,28 @@ export async function executeEccCommand(
   if (ctx.options.lifecycle !== undefined) {
     const lifecycle = String(ctx.options.lifecycle);
     const policy = readOrgPolicy(ctx.root, ctx.env);
+    if (policy?.governance !== undefined && lifecycle === "install") {
+      // The governed framework lifecycle, reached by an operator. It replaces
+      // the profile installer here rather than wrapping it: AIH-direct
+      // materialization is what makes per-component governed control possible,
+      // and the framework's own installer projects surfaces governance owns.
+      const catalog = deps.catalog ?? requestedCatalog(ctx);
+      // Validate the policy against the catalog BEFORE resolving a source:
+      // resolving a remote source creates a quarantine directory, and an
+      // invocation that refuses must create nothing at all.
+      const componentIds = governedEccComponentIds(policy, catalog);
+      return executeGovernedEccMaterialization(
+        ctx,
+        { catalog, componentIds, source: deps.source ?? requestedSource(ctx, catalog), policy },
+        deps,
+      );
+    }
     if (
       policy?.governance !== undefined &&
-      (lifecycle === "install" ||
-        lifecycle === "update" ||
-        lifecycle === "repair" ||
-        lifecycle === "rollback")
+      (lifecycle === "update" || lifecycle === "repair" || lifecycle === "rollback")
     ) {
       throw new AihError(
-        "governance exclusively owns AIH MCP projection; ECC lifecycle install/update/repair/rollback may register native MCPs, so use `aih policy project` after the non-MCP framework lifecycle is designed",
+        `\`aih ecc --lifecycle ${lifecycle}\` drives the framework's own profile installer, which may register native MCPs that governance exclusively owns; the governed framework lifecycle is wired instead — \`aih ecc --lifecycle install\` materializes the policy's evidence-passed selection and \`aih uninstall\` removes it receipt-bound`,
         "AIH_CONFIG",
       );
     }

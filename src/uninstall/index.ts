@@ -32,6 +32,12 @@ import {
   hookRegistrarState,
 } from "../org-policy/hook-registrar.js";
 import { parseTrustLockSource, TRUST_LOCK_FILE, type TrustLockSource } from "../trust/lock.js";
+import {
+  ECC_MATERIALIZATION_RECEIPT_PATH,
+  type EccMaterializationRemovalOutcome,
+  eccMaterializationUninstallState,
+  removeEccMaterialization,
+} from "./ecc-materialization.js";
 
 type UninstallDisposition = "backup" | "subtract" | "advisory";
 
@@ -46,7 +52,8 @@ interface UninstallArtifact {
     | "kiro-steering"
     | "kiro-hook"
     | "managed-settings"
-    | "hook-registrar";
+    | "hook-registrar"
+    | "ecc-materialization";
   disposition: UninstallDisposition;
   reason: string;
 }
@@ -66,6 +73,13 @@ interface UninstallSet {
    * never a replay of prior bytes.
    */
   hookRegistrarActions?: Action[];
+  /**
+   * Receipt-proven governed ECC materialization. Its owned bytes live on the
+   * client surfaces while the receipt lives under `.aih`, so removal must run
+   * BEFORE the ownership record leaves — the same issue #567 ordering the
+   * managed-MCP residue above obeys.
+   */
+  removeEccMaterialization?: true;
 }
 
 function cleanRel(path: string): string {
@@ -691,6 +705,28 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
     }
   }
 
+  // Governed ECC materialization, on the same receipt-proven terms: the receipt
+  // is the only record of which bytes on the client surfaces AIH wrote, so an
+  // unprovable one is reported and nothing is touched.
+  const materialization = eccMaterializationUninstallState(ctx.root);
+  let removeMaterialization: true | undefined;
+  if (materialization.state === "owned") {
+    removeMaterialization = true;
+    artifacts.push({
+      path: ECC_MATERIALIZATION_RECEIPT_PATH,
+      kind: "ecc-materialization",
+      disposition: "subtract",
+      reason: `${materialization.detail}; operator content on the same surfaces is preserved`,
+    });
+  } else if (materialization.state === "unprovable") {
+    artifacts.push({
+      path: ECC_MATERIALIZATION_RECEIPT_PATH,
+      kind: "ecc-materialization",
+      disposition: "advisory",
+      reason: `aih ECC materialization receipt cannot prove clean ownership — ${materialization.detail}; remediate manually, then uninstall`,
+    });
+  }
+
   if (exists(ctx, AIH_CONFIG_FILE)) {
     artifacts.push({
       path: AIH_CONFIG_FILE,
@@ -729,6 +765,44 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
     artifacts,
     ...(managedMcp === undefined ? {} : { managedMcp }),
     ...(hookRegistrarActions === undefined ? {} : { hookRegistrarActions }),
+    ...(removeMaterialization === undefined
+      ? {}
+      : { removeEccMaterialization: removeMaterialization }),
+  };
+}
+
+/**
+ * Re-render the materialization member from what the engine ACTUALLY did.
+ * The artifact was derived from the receipt BEFORE removal ran, so on its own it
+ * reports intent: the engine keeps a drifted destination rather than removing it
+ * (`src/ecc/materialization-plan.ts:385-388`, `:403-406`), and a report built
+ * from intent would claim that file was subtracted and operator content
+ * preserved while the opposite happened to it.
+ */
+function withMaterializationOutcome(
+  set: UninstallSet,
+  outcome: EccMaterializationRemovalOutcome,
+): UninstallSet {
+  return {
+    ...set,
+    artifacts: set.artifacts.flatMap((artifact): UninstallArtifact[] =>
+      artifact.kind === "ecc-materialization" && artifact.disposition === "subtract"
+        ? [
+            {
+              ...artifact,
+              reason: `receipt-proven aih ECC materialization: removed ${outcome.removed.length} owned file(s); operator content on the same surfaces is preserved`,
+            },
+            ...outcome.advisories.map(
+              (advisory): UninstallArtifact => ({
+                path: advisory.path,
+                kind: "ecc-materialization",
+                disposition: "advisory",
+                reason: `aih ECC materialization destination ${advisory.reason} and was kept, not removed — ${advisory.detail}`,
+              }),
+            ),
+          ]
+        : [artifact],
+    ),
   };
 }
 
@@ -757,7 +831,7 @@ function body(set: UninstallSet): string {
 }
 
 function uninstallPlan(ctx: PlanContext): Plan {
-  const set = coreUninstallSet(ctx);
+  const planned = coreUninstallSet(ctx);
   const actions: Action[] = [];
   // Owned content whose ownership only the marker proves is subtracted FIRST — the
   // established owned-content -> ownership-state -> ledger-last order
@@ -766,10 +840,10 @@ function uninstallPlan(ctx: PlanContext): Plan {
   // and a failure rolls both back), so an interrupted uninstall can never leave a
   // removed marker beside unsubtracted content. Clearing the marker's ownership
   // record is unnecessary here: the whole marker is being removed.
-  if (set.managedMcp?.matches === true) {
+  if (planned.managedMcp?.matches === true) {
     actions.push(
       managedMcpSubtractionAction(
-        set.managedMcp,
+        planned.managedMcp,
         "subtract the aih-owned Claude managed-MCP keys before removing the ownership marker",
       ),
     );
@@ -777,9 +851,20 @@ function uninstallPlan(ctx: PlanContext): Plan {
   // A2: subtract every receipt-owned hook registration — third-party launchers
   // included — before the ownership record leaves. The revocation never
   // replays the recorded prior bytes; adopted entries do not return.
-  if (set.hookRegistrarActions !== undefined) {
-    actions.push(...set.hookRegistrarActions);
+  if (planned.hookRegistrarActions !== undefined) {
+    actions.push(...planned.hookRegistrarActions);
   }
+  // The governed ECC materialization is subtracted by its own engine, which owns
+  // the per-file digest match, the operator-content guarantee and the rollback
+  // that make removal honest — re-expressing it as plan removes would be a
+  // second copy of that transaction, free to disagree with the receipt. `apply`
+  // is the only gate; a dry run reports {@link eccMaterializationUninstallState}
+  // through the artifact digest and touches nothing.
+  // The report is then re-derived from the outcome, never from the intent.
+  const set =
+    planned.removeEccMaterialization === true && ctx.apply
+      ? withMaterializationOutcome(planned, removeEccMaterialization(ctx.root))
+      : planned;
   for (const artifact of set.artifacts) {
     if (artifact.disposition !== "backup") continue;
     actions.push(remove(artifact.path, artifact.reason, { hardDelete: true }));
