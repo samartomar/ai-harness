@@ -1,4 +1,4 @@
-import { type Node, parseTree } from "jsonc-parser";
+import { type Node, parseTree, visit } from "jsonc-parser";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 import { stableJson } from "./effective.js";
 import { HOOK_REGISTRAR_DESTINATION } from "./hook-registrar-read.js";
@@ -288,6 +288,25 @@ export function assertNoProtoMember(text: string, where: string): void {
         "AIH refuses rather than silently drop it",
     );
   }
+}
+
+/**
+ * True when the destination TEXT carries a JSONC comment.
+ *
+ * Read from the SOURCE, the same way {@link assertNoProtoMember} is: a comment
+ * is not a value, so nothing in the parse result remembers it, and a
+ * parse-and-re-serialize write drops every one in the file. Callers use this to
+ * refuse a write rather than silently strip an operator's comments — the
+ * governing ruling on this destination is that refusing beats stripping.
+ */
+export function carriesJsoncComments(text: string): boolean {
+  let found = false;
+  visit(text, {
+    onComment: () => {
+      found = true;
+    },
+  });
+  return found;
 }
 
 /**

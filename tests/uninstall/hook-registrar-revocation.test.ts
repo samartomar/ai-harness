@@ -210,6 +210,9 @@ const OPERATOR_GROUP = {
   hooks: [{ type: "command", command: "node ./tools/operator-guard.mjs" }],
 };
 
+/** An `Object.prototype` member name, typed as the plain event name it is on disk. */
+const PROTOTYPE_EVENT: string = "constructor";
+
 /** Rewrite the destination's `hooks` key through `mutate`, leaving every other key alone. */
 function rewriteHooks(mutate: (hooks: Record<string, unknown>) => void): string {
   const current = JSON.parse(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8"));
@@ -266,6 +269,93 @@ describe("H6 — uninstall subtracts owned hook groups out of a cohabited destin
     expect(after.hooks).toEqual({ Stop: [OPERATOR_GROUP] });
     expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(false);
     expect(digestRowFor(result, HOOK_REGISTRAR_DESTINATION)).toMatch(/\[subtract\]/);
+  });
+
+  /**
+   * Event names come from the destination. A bare lookup of the owned groups by
+   * an event named after an `Object.prototype` member resolves to a function
+   * through the prototype chain and throws an untyped TypeError. The call in
+   * `coreUninstallSet` is bare, so that took the WHOLE uninstall plan down — it
+   * could not even emit its advisory row, stranding exactly the third-party
+   * launchers this row exists to free.
+   */
+  it("plans and subtracts around an operator group under a prototype-named event", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+    rewriteHooks((hooks) => {
+      hooks[PROTOTYPE_EVENT] = [OPERATOR_GROUP];
+    });
+
+    const result = await uninstall();
+
+    const after = JSON.parse(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8"));
+    expect(JSON.stringify(after)).not.toContain("run-with-flags.js");
+    expect(Object.getOwnPropertyNames(after.hooks)).toEqual(["constructor"]);
+    expect(after.hooks.constructor).toEqual([OPERATOR_GROUP]);
+    expect(after.permissions).toEqual(OPERATOR_CONTENT.permissions);
+    expect(digestRowFor(result, HOOK_REGISTRAR_DESTINATION)).toMatch(/\[subtract\]/);
+  });
+
+  /**
+   * The subtraction write is a parse-and-re-serialize, so it drops every
+   * comment in the file. Refusing a commented destination beats silently
+   * stripping it, and the advisory has to say comments are why — otherwise the
+   * operator cannot tell this apart from ordinary drift.
+   */
+  it("refuses a commented cohabited destination and names comments as the reason", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+    rewriteHooks((hooks) => {
+      hooks.PreToolUse = [OPERATOR_GROUP];
+    });
+    const commented = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8").replace(
+      "{",
+      "{\n  // operator note: keep this file",
+    );
+    put(HOOK_REGISTRAR_DESTINATION, commented);
+
+    const result = await uninstall();
+
+    const row = digestRowFor(result, HOOK_REGISTRAR_DESTINATION);
+    expect(row).toMatch(/\[advisory\]/);
+    expect(row).toMatch(/comment/i);
+    expect(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8")).toBe(commented);
+    expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(true);
+  });
+
+  /**
+   * The footer promised "their file is never deleted" whenever ANY artifact was
+   * subtract — printed directly under a hook-registrar row whose own reason says
+   * the destination AIH created is removed. Both cannot be true, and the row is
+   * the one describing what the plan actually does.
+   */
+  it("never promises a subtracted file survives while a row says it is deleted", async () => {
+    // No seeded destination: AIH creates it, so revocation removes it outright.
+    await projectOwnership();
+
+    const result = await uninstall();
+
+    const row = digestRowFor(result, HOOK_REGISTRAR_DESTINATION);
+    expect(row).toMatch(/\[subtract\]/);
+    expect(row).toContain("removed with them");
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("core install footprint"),
+    );
+    expect(digest?.text).not.toContain("their file is never deleted");
+    expect(existsSync(join(root, HOOK_REGISTRAR_DESTINATION))).toBe(false);
+  });
+
+  it("still promises subtracted files survive when the plan deletes none", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+
+    const result = await uninstall();
+
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("core install footprint"),
+    );
+    expect(digest?.text).toContain("their file is never deleted");
+    expect(existsSync(join(root, HOOK_REGISTRAR_DESTINATION))).toBe(true);
   });
 
   it("leaves everything alone when an operator entry sits inside a group AIH owns", async () => {

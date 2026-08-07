@@ -244,6 +244,16 @@ const OPERATOR_GROUP = {
   hooks: [{ type: "command", command: "node ./tools/operator-guard.mjs" }],
 };
 
+/** An `Object.prototype` member name, typed as the plain event name it is on disk. */
+const PROTOTYPE_EVENT: string = "constructor";
+
+/** Put an operator's own comment in the destination, the way a JSONC file carries one. */
+function addOperatorComment(): string {
+  const contents = (readDestination() ?? "").replace("{", "{\n  // operator note: keep this file");
+  writeFileSync(join(dir, HOOK_REGISTRAR_DESTINATION), contents, "utf8");
+  return contents;
+}
+
 /** Rewrite the destination's `hooks` key through `mutate`, leaving every other key alone. */
 function rewriteHooks(mutate: (hooks: Record<string, unknown>) => void): string {
   const current = JSON.parse(readDestination() ?? "{}");
@@ -339,6 +349,52 @@ describe("H6 — per-entry subtraction: cohabitation is not drift", () => {
     expect(readDestination()).toBeUndefined();
   });
 
+  /**
+   * The count is of flattened ENTRIES, so operator content that holds none —
+   * an entry-less group carrying a `matcher`, an empty event — used to render
+   * "beside 0 hook entries AIH did not emit ... are preserved" while a real
+   * `matcher` was in fact being preserved. Say what is true instead of counting
+   * to zero; the numbered form stays for a count that means something.
+   */
+  it("names preserved operator configuration without a count when it holds no entry", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    rewriteHooks((hooks) => {
+      hooks.PreToolUse = [{ matcher: "Edit|Write", hooks: [] }];
+    });
+
+    const state = hookRegistrarState(dir);
+    expect(state.state).toBe("cohabited");
+    expect(state.detail).not.toContain("0 hook");
+    expect(state.detail).toContain("operator hook configuration AIH did not emit");
+  });
+
+  it("keeps the numbered form when the count means something", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    rewriteHooks((hooks) => {
+      hooks.PreToolUse = [OPERATOR_GROUP, OPERATOR_GROUP];
+    });
+
+    expect(hookRegistrarState(dir).detail).toContain("2 hook entries AIH did not emit");
+  });
+
+  it("claims no preserved content when subtraction leaves nothing foreign", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    // Only the ORDER of groups AIH itself wrote changed: provable, but no
+    // longer the exact rendering, and nothing foreign is being kept.
+    rewriteHooks((hooks) => {
+      (hooks.Stop as unknown[]).reverse();
+    });
+
+    const state = hookRegistrarState(dir);
+    expect(state.state).toBe("cohabited");
+    expect(state.detail).not.toContain("0 hook");
+    expect(state.detail).not.toContain("operator hook configuration");
+    expect(state.detail).toContain("no longer the exact rendering");
+  });
+
   it("reports the cohabited state with each foreign entry by owner and event", async () => {
     seedThirdPartyEntries();
     await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
@@ -363,6 +419,42 @@ describe("H6 — per-entry subtraction: cohabitation is not drift", () => {
  * fails closed exactly as before — drifted, advisory, nothing removed.
  */
 describe("H6 — per-entry subtraction fails closed on an unprovable owned group", () => {
+  /**
+   * Governing ruling 3 already settled this question: refusing a commented
+   * destination beats silently stripping it. Before per-group subtraction,
+   * cohabitation refused to write at all, so a commented destination never met
+   * this writer on this path. The subtraction write is a NEW route to it, and a
+   * parse-and-re-serialize write drops every comment in the file.
+   */
+  it("refuses to subtract a cohabited destination that carries comments", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    rewriteHooks((hooks) => {
+      hooks.PreToolUse = [OPERATOR_GROUP];
+    });
+    const commented = addOperatorComment();
+
+    const state = hookRegistrarState(dir);
+    expect(state.state).toBe("drifted");
+    expect(state.detail).toContain("comments");
+    expect(() => hookRegistrarRevocationActions(ctx(false))).toThrowError(/comment/i);
+    expect(readDestination()).toBe(commented);
+  });
+
+  /**
+   * The `active` path is NOT changed. A commented exact-match destination was
+   * already rewritten before this row existed; that is recorded in the ADR and
+   * stays as it was, so the refusal above cannot creep into it.
+   */
+  it("leaves the exact-match path exactly as it was for a commented destination", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    addOperatorComment();
+
+    expect(hookRegistrarState(dir).state).toBe("active");
+    expect(() => hookRegistrarRevocationActions(ctx(false))).not.toThrow();
+  });
+
   it("refuses when an operator entry is inserted inside a group AIH owns", async () => {
     seedThirdPartyEntries();
     await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
@@ -411,5 +503,50 @@ describe("H6 — per-entry subtraction fails closed on an unprovable owned group
     });
 
     expect(hookRegistrarState(dir).state).toBe("drifted");
+  });
+});
+
+/**
+ * Event names come from the DESTINATION, which the operator controls. The owned
+ * groups are held in a plain object, so a bare `owned[event]` lookup for an
+ * event named after an `Object.prototype` member resolves to a function through
+ * the prototype chain — `?? []` never fires and the verdict throws an untyped
+ * TypeError instead of answering. Every surface goes down with it, the uninstall
+ * planner included, which strands the launchers this row exists to free.
+ */
+describe("H6 — an operator-controlled event name never reaches the prototype chain", () => {
+  for (const event of ["constructor", "toString", "valueOf", "hasOwnProperty"]) {
+    it(`answers for an operator group under a "${event}" event`, async () => {
+      seedThirdPartyEntries();
+      await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+      rewriteHooks((hooks) => {
+        hooks[event] = [OPERATOR_GROUP];
+      });
+
+      expect(hookRegistrarState(dir).state).toBe("cohabited");
+
+      await run(hookRegistrarRevocationActions(ctx(false)));
+
+      const after = JSON.parse(readDestination() ?? "{}");
+      // Keys and value read separately: a deep-equal against an object carrying
+      // its own `constructor` key is not a comparison worth trusting.
+      expect(Object.getOwnPropertyNames(after.hooks)).toEqual([event]);
+      expect(after.hooks[event]).toEqual([OPERATOR_GROUP]);
+      expect(JSON.stringify(after)).not.toContain("run-with-flags.js");
+    });
+  }
+
+  it("still fails closed on an unprovable owned group beside such an event", async () => {
+    seedThirdPartyEntries();
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    const tampered = rewriteHooks((hooks) => {
+      hooks[PROTOTYPE_EVENT] = [OPERATOR_GROUP];
+      const stop = hooks.Stop as { hooks: unknown[] }[];
+      stop[0]?.hooks.push({ type: "command", command: "node ./tools/operator-guard.mjs" });
+    });
+
+    expect(hookRegistrarState(dir).state).toBe("drifted");
+    expect(() => hookRegistrarRevocationActions(ctx(false))).toThrowError(/drift|changed/i);
+    expect(readDestination()).toBe(tampered);
   });
 });

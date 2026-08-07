@@ -7,6 +7,7 @@ import type { HookAdoptionOffer } from "./hook-registrar-adoption.js";
 import {
   assertHookRegistrations,
   boundedReportedEntries,
+  carriesJsoncComments,
   claimOccurrence,
   composeProjectedHooks,
   destinationHookEntries,
@@ -433,10 +434,18 @@ function ownedGroupSubtraction(
   for (const event of Object.getOwnPropertyNames(hooks)) {
     const groups = hooks[event];
     if (!Array.isArray(groups)) return undefined;
+    // OWN-PROPERTY read. `event` is destination-controlled, and the owned groups
+    // sit in a plain object: a bare `owned[event]` for an event named after an
+    // `Object.prototype` member — `constructor`, `toString`, `valueOf` — resolves
+    // to a function through the prototype chain, `?? []` never fires, and the
+    // verdict throws an untyped TypeError instead of answering. That took the
+    // whole uninstall plan down with it, advisory row included, stranding the
+    // launchers this projector exists to be able to remove.
+    const ownedForEvent = Object.hasOwn(owned, event) ? (owned[event] ?? []) : [];
     // Occurrence counts, not a membership set — the module's rule everywhere
     // else: N owned copies claim N groups on disk and no more, so a duplicate
     // nobody vouches for is preserved rather than subtracted away.
-    const unclaimed = occurrenceCounts((owned[event] ?? []).map(stableJson));
+    const unclaimed = occurrenceCounts(ownedForEvent.map(stableJson));
     const kept = groups.filter((group) => !claimOccurrence(unclaimed, stableJson(group)));
     // An owned group the destination no longer holds: the entries the receipt
     // proves are gone, which is drift and not cohabitation.
@@ -535,13 +544,38 @@ function hookRegistrarOwnership(
       subtraction,
     };
   }
+  // Refusing a commented destination beats silently stripping it — the ruling
+  // this destination already carries. `active` met this writer long before
+  // per-group subtraction existed and is deliberately untouched above; the
+  // cohabited write is a NEW route to it, and the parse-and-re-serialize writer
+  // drops every comment in the file. So it fails closed here instead, and the
+  // operator is told comments are the reason.
+  if (carriesJsoncComments(bytes)) {
+    return {
+      report: {
+        state: "drifted",
+        detail:
+          `${HOOK_REGISTRAR_DESTINATION} carries comments that subtracting the hook groups ` +
+          "AIH owns would strip; AIH refuses rather than silently rewrite them",
+      },
+    };
+  }
   const foreign = subtraction.foreignEntries;
+  // The count is of flattened ENTRIES, and operator content can hold none — an
+  // entry-less group carrying a `matcher`, an event with no group at all. Saying
+  // "0 hook entries ... are preserved" while a real `matcher` IS being preserved
+  // is a false claim about the file, so the number is only spent where it means
+  // something, and the two contentless shapes say what is actually true.
+  const beside =
+    foreign > 0
+      ? `beside ${foreign} hook entr${foreign === 1 ? "y" : "ies"} AIH did not emit`
+      : Object.keys(subtraction.remainder).length > 0
+        ? "beside operator hook configuration AIH did not emit"
+        : "in a key that is no longer the exact rendering AIH wrote";
   return {
     report: {
       state: "cohabited",
-      detail:
-        "receipt and every projected hook entry match, beside " +
-        `${foreign} hook entr${foreign === 1 ? "y" : "ies"} AIH did not emit`,
+      detail: `receipt and every projected hook entry match, ${beside}`,
     },
     subtraction,
   };
