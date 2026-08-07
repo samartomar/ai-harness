@@ -893,6 +893,10 @@ const HOOK_REGISTRATION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   event: "hook registrar: native client event key for projection, drift, and overlap reporting",
   "functionTags.*": "hook registrar: declared overlap key; never inferred by reading a command",
   id: "hook registrar: registration identity, duplicate refusal, and receipt lookup",
+  nativeGroup:
+    "hook registrar: the native group's own captured fields (matcher above all), re-emitted verbatim and never interpreted",
+  nativeHook:
+    "hook registrar: the native hook object's own captured fields, re-emitted verbatim and never interpreted",
   "owner.declaredControls.*":
     "hook registrar: third-party controls recorded read-only, never implemented or mirrored",
   "owner.framework": "hook registrar: third-party owner identity and the one-framework rule",
