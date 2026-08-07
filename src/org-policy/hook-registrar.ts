@@ -605,8 +605,13 @@ function receiptEntry(registration: ResolvedHookRegistration): HookReceiptEntry 
   };
 }
 
-/** The registration a receipt entry proves AIH owns, owner partition intact. */
-function receiptRegistration(entry: HookReceiptEntry): HookRegistration {
+/**
+ * The registration a receipt entry proves AIH owns, owner partition intact.
+ * The schema below refuses a third-party entry with no pin before this runs, so
+ * the `aih` fallback can only be reached by an entry that genuinely records AIH
+ * ownership — never by a third-party claim whose pin went missing.
+ */
+function receiptRegistration(entry: HookReceiptEntry): ResolvedHookRegistration {
   return {
     id: entry.id,
     event: entry.event,
@@ -674,7 +679,46 @@ const HookReceiptSchema = z
       .min(1)
       .max(512),
   })
-  .strict();
+  .strict()
+  /**
+   * A receipt that contradicts itself is refused, not believed in part. It is
+   * the only removal authority a projected third-party entry has, so an entry
+   * that cannot be reconstructed into the registration it claims to own is
+   * worthless: a `commandSha256` that does not hash its own command proves
+   * nothing, and third-party ownership with no pin used to reconstruct as
+   * `{kind: "aih"}` — the receipt saying a third party owns the entry while the
+   * reconstruction claimed AIH does, which dropped it out of the launcher-pin
+   * drift check and out of refusal attribution (H2).
+   *
+   * The set-level checks are the grammar's own `hookRegistrationSetIssues` —
+   * the one copy the policy grammar and the projector already share, not a
+   * second implementation of the same rules.
+   */
+  .superRefine((receipt, ctx) => {
+    const reconstructable: HookReceiptEntry[] = [];
+    for (const [index, entry] of receipt.entries.entries()) {
+      if (entry.owner === "third-party" && entry.pin === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["entries", index, "pin"],
+          message: `hook receipt entry ${entry.id} records third-party ownership without its launcher pin`,
+        });
+        continue;
+      }
+      if (entry.commandSha256 !== hookCommandDigest(entry.command)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["entries", index, "commandSha256"],
+          message: `hook receipt entry ${entry.id} records a command hash that does not match its recorded command`,
+        });
+        continue;
+      }
+      reconstructable.push(entry as HookReceiptEntry);
+    }
+    for (const issue of hookRegistrationSetIssues(reconstructable.map(receiptRegistration))) {
+      ctx.addIssue({ code: "custom", path: ["entries", issue.index], message: issue.message });
+    }
+  });
 
 function destinationPath(root: string): string {
   return join(root, ...HOOK_REGISTRAR_DESTINATION.split("/"));

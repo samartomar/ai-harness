@@ -16,6 +16,7 @@ import { fakeRunner } from "../../src/internals/proc.js";
 import {
   HOOK_REGISTRAR_DESTINATION,
   HOOK_REGISTRAR_MAX_DESTINATION_BYTES,
+  HOOK_REGISTRAR_RECEIPT_PATH,
   hookRegistrarProjectionActions,
   hookRegistrarReport,
   hookRegistrarRevocationActions,
@@ -192,6 +193,50 @@ describe("fail closed on ambiguity — unreadable is not absent", () => {
     const state = hookRegistrarState(dir);
     expect(state.state).toBe("invalid");
     expect(state.detail).toMatch(/regular file/i);
+  });
+});
+
+describe("H2 — a receipt that contradicts itself is refused at parse", () => {
+  /**
+   * The receipt is the only removal authority a projected third-party entry
+   * has, so it has to be internally consistent to be believed at all: a
+   * `commandSha256` that does not hash its own command, or third-party
+   * ownership with no pin, means the document cannot be reconstructed into the
+   * registration it claims to own. A pinless third-party entry used to
+   * reconstruct as `{kind: "aih"}` — the receipt saying a third party owns it
+   * while the reconstruction claimed AIH does — and dropped straight out of the
+   * launcher-pin drift check and out of refusal attribution.
+   */
+  interface TamperableEntry {
+    owner: string;
+    commandSha256: string;
+    pin?: unknown;
+  }
+
+  async function projectThenTamper(mutate: (entry: TamperableEntry) => void): Promise<void> {
+    writeDestination(`${JSON.stringify({ note: "operator" })}\n`);
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    const path = join(dir, HOOK_REGISTRAR_RECEIPT_PATH);
+    const receipt = JSON.parse(readFileSync(path, "utf8")) as { entries: TamperableEntry[] };
+    const [entry] = receipt.entries;
+    if (entry === undefined) throw new Error("expected a receipt entry");
+    mutate(entry);
+    writeFileSync(path, `${JSON.stringify(receipt, null, 2)}\n`, "utf8");
+  }
+
+  it("refuses an entry whose recorded hash does not match its recorded command", async () => {
+    await projectThenTamper((entry) => {
+      entry.commandSha256 = sha256("a launcher this receipt does not carry");
+    });
+    expect(() => readHookRegistrarReceipt(dir)).toThrowError(/hash|command/i);
+  });
+
+  it("refuses third-party ownership recorded without its launcher pin", async () => {
+    await projectThenTamper((entry) => {
+      expect(entry.owner).toBe("third-party");
+      entry.pin = undefined;
+    });
+    expect(() => readHookRegistrarReceipt(dir)).toThrowError(/pin/i);
   });
 });
 
