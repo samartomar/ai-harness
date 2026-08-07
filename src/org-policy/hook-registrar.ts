@@ -720,17 +720,14 @@ const HookReceiptSchema = z
     }
   });
 
-function destinationPath(root: string): string {
-  return join(root, ...HOOK_REGISTRAR_DESTINATION.split("/"));
-}
-
 /**
- * What the destination read found. `unreadable` is deliberately NOT collapsed
- * into `absent`: `absent` is the flag that authorizes deleting the destination
- * on revocation and the flag that skips the unowned-entry check, so a path AIH
- * merely failed to read must never reach either. Every caller refuses on it.
+ * What a guarded read found. `unreadable` is deliberately NOT collapsed into
+ * `absent`: `absent` is a load-bearing verdict on both of this projector's
+ * files — it authorizes deleting the destination, it skips the unowned-entry
+ * check, and on the receipt it means AIH never projected here at all. A path
+ * AIH merely failed to read must never reach any of those. Callers refuse.
  */
-type DestinationRead =
+type GuardedRead =
   | { state: "absent" }
   | { state: "present"; contents: string }
   | { state: "unreadable"; reason: string };
@@ -758,48 +755,73 @@ function symlinkedParentReason(root: string, rel: string): string | undefined {
     : undefined;
 }
 
-function readDestination(root: string): DestinationRead {
-  const unsafeParent = symlinkedParentReason(root, HOOK_REGISTRAR_DESTINATION);
+/**
+ * ONE guarded read for BOTH files this projector owns. They fail open in the
+ * same way for the same reason, so they are read the same way: a directory, a
+ * symlink, a FIFO, an unreadable file or a redirected parent all make a plain
+ * read return nothing, and calling any of them `absent` is the fail-open the
+ * invariants forbid. On the destination, `absent` is the prior state that
+ * authorizes deletion and the branch that skips the unowned-entry check. On the
+ * receipt, `absent` means "AIH never projected here" — so a shadowed receipt
+ * read as absent drops the registrar out of the plan entirely and orphans every
+ * projected launcher, since the receipt is their only removal authority.
+ */
+function readGuardedFile(
+  root: string,
+  rel: string,
+  options: { maxBytes?: number } = {},
+): GuardedRead {
+  const unsafeParent = symlinkedParentReason(root, rel);
   if (unsafeParent !== undefined) return { state: "unreadable", reason: unsafeParent };
-  const abs = destinationPath(root);
-  const contents = readRegularFile(abs, {
-    maxBytes: HOOK_REGISTRAR_MAX_DESTINATION_BYTES,
-  })?.toString("utf8");
+  const abs = join(root, ...rel.split("/"));
+  const contents = readRegularFile(abs, options)?.toString("utf8");
   if (contents !== undefined) return { state: "present", contents };
   const size = regularFileSize(abs);
-  if (size !== undefined && size > HOOK_REGISTRAR_MAX_DESTINATION_BYTES) {
+  if (options.maxBytes !== undefined && size !== undefined && size > options.maxBytes) {
     return {
       state: "unreadable",
       reason:
-        `${HOOK_REGISTRAR_DESTINATION} is ${size} bytes, larger than the ` +
-        `${HOOK_REGISTRAR_MAX_DESTINATION_BYTES} bytes a hook registrar receipt can carry as prior evidence`,
+        `${rel} is ${size} bytes, larger than the ${options.maxBytes} bytes ` +
+        "a hook registrar receipt can carry as prior evidence",
     };
   }
   // PRESENCE only, and NO-FOLLOW — the peer's shape (`occupied`, used by the
-  // managed-MCP projection for exactly this). A directory, a symlink, a FIFO or
-  // an unreadable file all fail the regular-file read, and calling any of them
-  // `absent` would record the one prior state that authorizes deleting the
-  // destination and would skip the unowned-entry check on the way there.
+  // managed-MCP projection for exactly this).
   if (occupied(abs)) {
     return {
       state: "unreadable",
       reason:
-        `${HOOK_REGISTRAR_DESTINATION} is not a readable regular file (a directory, a symlink, ` +
-        `a special file, or one AIH cannot read), and AIH never records or edits through one`,
+        `${rel} is not a readable regular file (a directory, a symlink, ` +
+        "a special file, or one AIH cannot read), and AIH never records or edits through one",
     };
   }
   return { state: "absent" };
 }
 
+function readDestination(root: string): GuardedRead {
+  return readGuardedFile(root, HOOK_REGISTRAR_DESTINATION, {
+    maxBytes: HOOK_REGISTRAR_MAX_DESTINATION_BYTES,
+  });
+}
+
+/**
+ * The receipt is read WITHOUT a byte cap: it carries the destination's prior
+ * bytes JSON-escaped, so it is legitimately larger than the destination cap.
+ */
+function readReceipt(root: string): GuardedRead {
+  return readGuardedFile(root, HOOK_REGISTRAR_RECEIPT_PATH);
+}
+
 export function readHookRegistrarReceipt(root: string): HookRegistrarReceipt | undefined {
-  // Refused, never treated as "no receipt": a receipt read as absent would let
-  // the next projection overwrite a destination AIH still owns.
-  const unsafeParent = symlinkedParentReason(root, HOOK_REGISTRAR_RECEIPT_PATH);
-  if (unsafeParent !== undefined) {
-    throw new OrgPolicyError(`${unsafeParent}; refusing hook ownership`);
+  const read = readReceipt(root);
+  // Refused, never treated as "no receipt": a receipt AIH cannot read is not a
+  // receipt AIH never wrote. Reading it as absent would let the next projection
+  // overwrite a destination AIH still owns, and would make revocation quietly
+  // decide there is nothing to revoke.
+  if (read.state === "unreadable") {
+    throw new OrgPolicyError(`${read.reason}; refusing hook ownership`);
   }
-  const raw = receiptRawBytes(root);
-  return raw === undefined ? undefined : parseHookRegistrarReceipt(raw);
+  return read.state === "absent" ? undefined : parseHookRegistrarReceipt(read.contents);
 }
 
 /** Parse receipt bytes a caller has already read, so one read can serve every use. */
@@ -819,11 +841,6 @@ function parseHookRegistrarReceipt(raw: string): HookRegistrarReceipt {
     );
   }
   return result.data as HookRegistrarReceipt;
-}
-
-function receiptRawBytes(root: string): string | undefined {
-  if (symlinkedParentReason(root, HOOK_REGISTRAR_RECEIPT_PATH) !== undefined) return undefined;
-  return readRegularFile(join(root, ...HOOK_REGISTRAR_RECEIPT_PATH.split("/")))?.toString("utf8");
 }
 
 /** Rebuild the exact hook value a receipt says AIH owns. */
@@ -915,7 +932,7 @@ export function hookRegistrarState(root: string): HookRegistrarStateReport {
  */
 function hookRegistrarVerdict(
   receipt: HookRegistrarReceipt | undefined,
-  read: DestinationRead,
+  read: GuardedRead,
 ): HookRegistrarStateReport {
   if (read.state === "unreadable") return { state: "invalid", detail: read.reason };
   const bytes = read.state === "present" ? read.contents : undefined;
@@ -967,7 +984,15 @@ export function hookRegistrarProjectionActions(
 ): Action[] {
   const parsed = assertHookRegistrations(registrations);
   if (parsed.length === 0) return hookRegistrarRevocationActions(ctx);
-  const existingReceipt = readHookRegistrarReceipt(ctx.root);
+  // ONE read of the receipt: the same bytes decide what AIH already owns and
+  // pin the receipt write below.
+  const receiptRead = readReceipt(ctx.root);
+  if (receiptRead.state === "unreadable") {
+    throw new OrgPolicyError(`refusing hook registrar projection: ${receiptRead.reason}`);
+  }
+  const existingReceiptRaw = receiptRead.state === "present" ? receiptRead.contents : undefined;
+  const existingReceipt =
+    existingReceiptRaw === undefined ? undefined : parseHookRegistrarReceipt(existingReceiptRaw);
   const read = readDestination(ctx.root);
   if (read.state === "unreadable") {
     throw new OrgPolicyError(`refusing hook registrar projection: ${read.reason}`);
@@ -1049,7 +1074,7 @@ export function hookRegistrarProjectionActions(
         receipt,
         "record the hook registrar receipt that can revoke every projected entry",
       ),
-      receiptRawBytes(ctx.root),
+      existingReceiptRaw,
     ),
   ];
 }
@@ -1064,14 +1089,16 @@ export function hookRegistrarRevocationActions(ctx: PlanContext): Action[] {
   // apply-time pin and the merge base all come from these exact bytes, so a
   // write landing after the verdict can never be pinned as if it had been
   // proved: it fails the pin at apply instead of being subtracted away.
-  const unsafeReceiptParent = symlinkedParentReason(ctx.root, HOOK_REGISTRAR_RECEIPT_PATH);
-  if (unsafeReceiptParent !== undefined) {
-    throw new OrgPolicyError(
-      `refusing hook registrar revocation: ${unsafeReceiptParent}; refusing hook ownership`,
-    );
+  const receiptRead = readReceipt(ctx.root);
+  // A receipt AIH cannot read is not a receipt AIH never wrote. Returning an
+  // empty plan here would drop the registrar out of the uninstall silently and
+  // orphan every projected launcher; a GENUINELY absent receipt still means
+  // there is nothing to revoke, and stays silent.
+  if (receiptRead.state === "unreadable") {
+    throw new OrgPolicyError(`refusing hook registrar revocation: ${receiptRead.reason}`);
   }
-  const receiptRaw = receiptRawBytes(ctx.root);
-  if (receiptRaw === undefined) return [];
+  if (receiptRead.state === "absent") return [];
+  const receiptRaw = receiptRead.contents;
   const receipt = parseHookRegistrarReceipt(receiptRaw);
   const read = readDestination(ctx.root);
   const state = hookRegistrarVerdict(receipt, read);

@@ -289,6 +289,42 @@ describe("destination text is bounded and control-free before it is reported", (
   });
 });
 
+describe("a shadowed receipt path is refused, never read as no receipt", () => {
+  /**
+   * The receipt is the only removal authority a projected third-party entry
+   * has. Reading a directory or a symlink at the receipt path as `undefined` —
+   * indistinguishable from "no receipt was ever written" — makes the registrar
+   * drop out of the plan entirely: revocation returns nothing to do, and the
+   * projected launchers stay on disk with nothing claiming them. Same fail-open
+   * shape as an unreadable destination, on the path that proves ownership.
+   *
+   * The sibling usage-hook path already refuses exactly this shape
+   * (`ownedText` in `src/org-policy/project.ts`), so this closes the asymmetry.
+   */
+  async function projectThenShadowTheReceipt(): Promise<void> {
+    writeDestination(`${JSON.stringify({ permissions: { allow: ["Bash(ls:*)"] } }, null, 2)}\n`);
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    const receiptPath = join(dir, HOOK_REGISTRAR_RECEIPT_PATH);
+    rmSync(receiptPath);
+    mkdirSync(receiptPath, { recursive: true });
+  }
+
+  it("refuses to drop every registration while the receipt path is shadowed", async () => {
+    await projectThenShadowTheReceipt();
+
+    // Dropping every registration routes to revocation, which used to return an
+    // empty plan: six projected third-party entries silently orphaned.
+    expect(() => hookRegistrarProjectionActions(ctx(false), [])).toThrowError(/regular file/i);
+    expect(() => readHookRegistrarReceipt(dir)).toThrowError(/regular file/i);
+    expect(readDestination()).toContain("run-with-flags.js");
+  });
+
+  it("still treats a genuinely absent receipt as nothing to revoke", () => {
+    expect(readHookRegistrarReceipt(dir)).toBeUndefined();
+    expect(hookRegistrarRevocationActions(ctx(false))).toEqual([]);
+  });
+});
+
 describe("symlinked parents are refused, not followed off-root", () => {
   /**
    * The no-follow reads guard the LEAF only. Every sibling lifecycle also
