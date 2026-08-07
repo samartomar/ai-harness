@@ -29,6 +29,7 @@ import {
   projectedHookSettings,
   readHookRegistrarReceipt,
 } from "../../src/org-policy/hook-registrar.js";
+import { composeProjectedHooks } from "../../src/org-policy/hook-registrar-native.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { eccStopRegistrations, sha256 } from "./hook-registrar-fixtures.js";
 
@@ -503,6 +504,112 @@ describe("H2 — a receipt that contradicts itself is refused at parse", () => {
       receipt.prior.contents = '{"note":"something else entirely"}\n';
     });
     expect(() => readHookRegistrarReceipt(dir)).toThrowError(/prior bytes/i);
+  });
+});
+
+/**
+ * The receipt-side sibling of the destination-side prototype-event defect
+ * recorded in the H6 review. The event of a receipt entry is a KEY, and the one
+ * composer both the projection and the receipt's expectation go through spread a
+ * bare lookup of the carried-through groups by it. For an event named after an
+ * own property of `Object.prototype` that lookup resolves to a FUNCTION through
+ * the prototype chain, `?? []` never fires, and the spread throws an untyped
+ * TypeError — out of the verdict, and so out of the subtraction, the uninstall
+ * plan, the repair report and the evaluate digest at once.
+ *
+ * Two independent halves, because either alone leaves a live route: the composer
+ * reads own properties only, so no caller can reach the throw; and the grammar
+ * refuses these names, so such a receipt is refused at PARSE rather than
+ * composed at all.
+ */
+const PROTOTYPE_EVENTS = ["constructor", "toString", "valueOf", "hasOwnProperty"];
+
+/** Read one key without consulting the prototype chain — what the test asserts about. */
+function ownValue(source: object, key: string): unknown {
+  return Object.getOwnPropertyDescriptor(source, key)?.value;
+}
+
+describe("H6 (receipt side) — the composer keys owned events as own properties", () => {
+  it.each(PROTOTYPE_EVENTS)("composes a receipt entry on the event %s", (event) => {
+    const command = `node ${event}-hook.js`;
+
+    const hooks = composeProjectedHooks([{ event, command }]);
+
+    expect(Object.getOwnPropertyNames(hooks)).toEqual([event]);
+    expect(ownValue(hooks, event)).toEqual([{ hooks: [{ type: "command", command }] }]);
+  });
+
+  it.each(PROTOTYPE_EVENTS)("composes carried-through groups on the event %s", (event) => {
+    const scoped = { matcher: "Write", id: "third-party-empty", hooks: [] };
+
+    const hooks = composeProjectedHooks([], { [event]: [scoped] });
+
+    expect(Object.getOwnPropertyNames(hooks)).toEqual([event]);
+    expect(ownValue(hooks, event)).toEqual([scoped]);
+  });
+
+  it("keeps legitimate events composing exactly as before, ordering included", () => {
+    const scoped = { matcher: "*", hooks: [] };
+    const entries = [
+      { event: "Stop", command: "node stop.js" },
+      { event: "PreToolUse", command: "node pre.js" },
+    ];
+
+    const hooks = composeProjectedHooks(entries, { SessionStart: [scoped], Stop: [scoped] });
+
+    expect(Object.keys(hooks)).toEqual(["PreToolUse", "SessionStart", "Stop"]);
+    expect(hooks.PreToolUse).toEqual([{ hooks: [{ type: "command", command: "node pre.js" }] }]);
+    expect(hooks.SessionStart).toEqual([scoped]);
+    expect(hooks.Stop).toEqual([{ hooks: [{ type: "command", command: "node stop.js" }] }, scoped]);
+  });
+});
+
+describe("H6 (receipt side) — a receipt naming a prototype event is refused at parse", () => {
+  /**
+   * HAND-AUTHORED bytes, deliberately: the grammar now refuses to WRITE such a
+   * receipt, and the threat this covers is an attacker-influenced or corrupt
+   * receipt file. Since H6 removed the whole-key corroboration, receipt
+   * integrity is the only thing standing between these bytes and the verdict.
+   */
+  async function projectThenRenameEvents(event: string): Promise<void> {
+    writeDestination(`${JSON.stringify({ note: "operator" }, null, 2)}\n`);
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    const path = join(dir, HOOK_REGISTRAR_RECEIPT_PATH);
+    const receipt = JSON.parse(readFileSync(path, "utf8")) as {
+      entries: { event: string }[];
+    };
+    for (const entry of receipt.entries) entry.event = event;
+    writeFileSync(path, `${JSON.stringify(receipt, null, 2)}\n`, "utf8");
+  }
+
+  it.each(PROTOTYPE_EVENTS)("refuses a receipt entry on the event %s", async (event) => {
+    await projectThenRenameEvents(event);
+
+    // A TYPED refusal naming the receipt — never the untyped TypeError the bare
+    // lookup threw, and never a silent read as "no receipt".
+    expect(() => readHookRegistrarReceipt(dir)).toThrowError(/hook-registrar-receipt/);
+    expect(() => readHookRegistrarReceipt(dir)).toThrowError(/Object\.prototype member/);
+  });
+
+  it.each(PROTOTYPE_EVENTS)("degrades the verdict to invalid on the event %s", async (event) => {
+    await projectThenRenameEvents(event);
+
+    const state = hookRegistrarState(dir);
+    expect(state.state).toBe("invalid");
+    expect(state.detail).toMatch(/Object\.prototype member/);
+  });
+
+  it.each(PROTOTYPE_EVENTS)("degrades the repair report on the event %s", async (event) => {
+    await projectThenRenameEvents(event);
+
+    // `hookRegistrarReport` is what the evaluate digest reads. It must answer,
+    // not throw: one hostile receipt entry used to abort the whole digest.
+    const report = hookRegistrarReport(dir);
+    expect(report.state).toBe("invalid");
+    expect(report.detail).toMatch(/Object\.prototype member/);
+    expect(report.unowned).toEqual([]);
+    // Fail-closed means nothing was rewritten on the way to the refusal.
+    expect(readDestination()).toContain("run-with-flags.js");
   });
 });
 

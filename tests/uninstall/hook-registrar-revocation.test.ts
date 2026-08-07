@@ -118,7 +118,10 @@ describe("A2 — uninstall subtracts receipt-owned hook registrations, never rep
     expect(after.hooks).toBeUndefined();
     // Adopted entries do not return: the recorded prior bytes carried these
     // exact launchers and nothing replayed them.
-    // Operator content: byte-identical values, no keys added or removed.
+    // Operator content: every value and key preserved. This case seeds through a
+    // serializer, so it can only witness the parsed structure; the raw-byte form
+    // of the A2 claim is pinned on hand-authored bytes in
+    // tests/org-policy/acceptance-hook-registrar.test.ts.
     expect(after).toEqual(OPERATOR_CONTENT);
     expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(false);
   });
@@ -214,8 +217,8 @@ const OPERATOR_GROUP = {
 const PROTOTYPE_EVENT: string = "constructor";
 
 /**
- * Put an operator's own comment in the destination, the way a JSONC file carries
- * one: spliced in directly after the opening brace.
+ * Put an operator's own comment OUTSIDE the `hooks` span, the way a JSONC file
+ * carries one: spliced in directly after the opening brace.
  *
  * Written as an explicit splice rather than a first-occurrence `.replace("{",
  * …)`. Replacing every `{` would corrupt the JSON, so the single replace was
@@ -228,6 +231,22 @@ function addOperatorComment(): string {
   const text = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8");
   expect(text.startsWith("{"), "expected a JSON object destination to comment").toBe(true);
   const contents = `{\n  // operator note: keep this file${text.slice(1)}`;
+  put(HOOK_REGISTRAR_DESTINATION, contents);
+  return contents;
+}
+
+/**
+ * The same comment, INSIDE the `hooks` span — the one place subtraction still
+ * re-renders, because `hooks` is the key the write replaces wholesale. The
+ * position is asserted rather than pattern-matched for the same reason as above.
+ */
+function addCommentInsideHooks(): string {
+  const text = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8");
+  const opening = '"hooks": {';
+  const at = text.indexOf(opening);
+  expect(at, "expected a hooks object to comment inside").toBeGreaterThan(-1);
+  const cut = at + opening.length;
+  const contents = `${text.slice(0, cut)}\n    // operator note: inside the owned key${text.slice(cut)}`;
   put(HOOK_REGISTRAR_DESTINATION, contents);
   return contents;
 }
@@ -316,18 +335,43 @@ describe("H6 — uninstall subtracts owned hook groups out of a cohabited destin
   });
 
   /**
-   * The subtraction write is a parse-and-re-serialize, so it drops every
-   * comment in the file. Refusing a commented destination beats silently
-   * stripping it, and the advisory has to say comments are why — otherwise the
-   * operator cannot tell this apart from ordinary drift.
+   * The subtraction write edits only the keys it changes, so a comment outside
+   * the `hooks` span survives it. Refusing here would withhold the removal this
+   * row exists to perform over content the write never touches, so the
+   * subtraction proceeds and the operator's comment is still on disk after it.
    */
-  it("refuses a commented cohabited destination and names comments as the reason", async () => {
+  it("subtracts around a comment outside the hooks span and leaves those bytes alone", async () => {
     seedThirdPartyDestination();
     await projectOwnership();
     rewriteHooks((hooks) => {
       hooks.PreToolUse = [OPERATOR_GROUP];
     });
-    const commented = addOperatorComment();
+    addOperatorComment();
+
+    const result = await uninstall();
+
+    const row = digestRowFor(result, HOOK_REGISTRAR_DESTINATION);
+    expect(row).toMatch(/\[subtract\]/);
+    const after = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8");
+    // Raw bytes: the comment is a property no parse can witness.
+    expect(after).toContain("// operator note: keep this file");
+    expect(after).not.toContain("run-with-flags.js");
+    expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(false);
+  });
+
+  /**
+   * Inside the `hooks` span the write still re-renders wholesale, so the comment
+   * cannot survive. Refusing beats silently stripping it, and the advisory has
+   * to say comments are why — otherwise the operator cannot tell this apart from
+   * ordinary drift.
+   */
+  it("refuses when the comment sits inside the hooks span and names comments as the reason", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+    rewriteHooks((hooks) => {
+      hooks.PreToolUse = [OPERATOR_GROUP];
+    });
+    const commented = addCommentInsideHooks();
 
     const result = await uninstall();
 
@@ -373,6 +417,40 @@ describe("H6 — uninstall subtracts owned hook groups out of a cohabited destin
     expect(existsSync(join(root, HOOK_REGISTRAR_DESTINATION))).toBe(true);
   });
 
+  /**
+   * The receipt-side sibling of the case above. There the prototype-named event
+   * came from the DESTINATION; here it comes from the RECEIPT, which the one
+   * composer keys the owned groups by. Hand-authored bytes on purpose: the
+   * grammar now refuses to write such a receipt, and the threat is a corrupt or
+   * attacker-influenced receipt file — strictly more load-bearing since per-group
+   * subtraction removed the whole-key corroboration. It must degrade to the
+   * advisory this projector already has, not take the whole uninstall plan down.
+   */
+  it.each(["constructor", "toString", "valueOf", "hasOwnProperty"])(
+    "plans an advisory around a receipt entry on the event %s",
+    async (event) => {
+      seedThirdPartyDestination();
+      await projectOwnership();
+      const projected = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8");
+      const receiptPath = join(root, HOOK_REGISTRAR_RECEIPT_PATH);
+      const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as {
+        entries: { event: string }[];
+      };
+      for (const entry of receipt.entries) entry.event = event;
+      put(HOOK_REGISTRAR_RECEIPT_PATH, `${JSON.stringify(receipt, null, 2)}\n`);
+
+      const result = await uninstall();
+
+      const row = digestRowFor(result, HOOK_REGISTRAR_DESTINATION);
+      expect(row).toMatch(/\[advisory\]/);
+      expect(row).toMatch(/receipt/);
+      // Nothing removed and nothing rewritten: aih cannot prove ownership from a
+      // receipt it refuses to read, and the launchers stay for remediation.
+      expect(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8")).toBe(projected);
+      expect(existsSync(receiptPath)).toBe(true);
+    },
+  );
+
   it("leaves everything alone when an operator entry sits inside a group AIH owns", async () => {
     seedThirdPartyDestination();
     await projectOwnership();
@@ -389,6 +467,64 @@ describe("H6 — uninstall subtracts owned hook groups out of a cohabited destin
     expect(row).toMatch(/\[advisory\]/);
     expect(row).toMatch(/remediate manually/);
     expect(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8")).toBe(tampered);
+    expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(true);
+  });
+});
+
+/**
+ * A destination carrying two top-level `hooks` keys reads one way to the client
+ * and another to a format-preserving edit: every consumer takes the LAST
+ * occurrence, a `modify` edit targets the FIRST. The verdict is `active`
+ * because last-wins IS the receipt's rendering, so the subtraction runs — and if
+ * it edited under the shadow it would delete the operator's stale copy, leave
+ * every AIH launcher live, and remove the receipt that could revoke them.
+ */
+describe("A2 — a duplicated hooks key cannot strand the launchers it owns", () => {
+  /** Splice a stale operator `hooks` BEFORE AIH's, so AIH's is the one that wins. */
+  function addShadowedHooksKey(): void {
+    const text = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8");
+    expect(text.startsWith("{"), "expected a JSON object destination").toBe(true);
+    const stale = '{ "Stop": [{ "hooks": [{ "type": "command", "command": "echo stale" }] }] }';
+    put(HOOK_REGISTRAR_DESTINATION, `{\n  "hooks": ${stale},${text.slice(1)}`);
+  }
+
+  it("subtracts every copy, so no launcher survives the uninstall it reported", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+    addShadowedHooksKey();
+
+    const result = await uninstall();
+
+    const after = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8");
+    // On disk AND in what the client would actually load.
+    expect(after).not.toContain("run-with-flags.js");
+    const effective = JSON.parse(after);
+    expect(effective.hooks).toBeUndefined();
+    expect(effective.permissions).toEqual(OPERATOR_CONTENT.permissions);
+    expect(effective.model).toBe(OPERATOR_CONTENT.model);
+    // A receipt removed while launchers remain is the unrecoverable state.
+    expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(false);
+    expect(digestRowFor(result, HOOK_REGISTRAR_DESTINATION)).toMatch(/\[subtract\]/);
+  });
+
+  /**
+   * A duplicated key forces the whole-file render, which strips comments the
+   * span-scoped guard would otherwise have let through. Refuse instead of
+   * silently rewriting them — the same ruling, applied to the fallback path.
+   */
+  it("refuses when a duplicated key would force a comment-stripping rewrite", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+    addShadowedHooksKey();
+    const commented = addOperatorComment();
+
+    const result = await uninstall();
+
+    const row = digestRowFor(result, HOOK_REGISTRAR_DESTINATION);
+    expect(row).toMatch(/\[advisory\]/);
+    expect(row).toMatch(/comment/i);
+    expect(row).toMatch(/hooks/);
+    expect(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8")).toBe(commented);
     expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(true);
   });
 });
