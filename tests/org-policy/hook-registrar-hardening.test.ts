@@ -17,12 +17,13 @@ import {
   HOOK_REGISTRAR_DESTINATION,
   HOOK_REGISTRAR_MAX_DESTINATION_BYTES,
   hookRegistrarProjectionActions,
+  hookRegistrarReport,
   hookRegistrarRevocationActions,
   hookRegistrarState,
   readHookRegistrarReceipt,
 } from "../../src/org-policy/hook-registrar.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { eccStopRegistrations } from "./hook-registrar-fixtures.js";
+import { eccStopRegistrations, sha256 } from "./hook-registrar-fixtures.js";
 
 /**
  * Hardening pins for the hook registrar's read path: what it records, what it
@@ -191,6 +192,55 @@ describe("fail closed on ambiguity — unreadable is not absent", () => {
     const state = hookRegistrarState(dir);
     expect(state.state).toBe("invalid");
     expect(state.detail).toMatch(/regular file/i);
+  });
+});
+
+describe("destination text is bounded and control-free before it is reported", () => {
+  /**
+   * A policy-authored launcher is bounded and control-character-free by the
+   * grammar. One read from the destination is bounded only by file size, and it
+   * reaches the operator's terminal, the `--json` envelope and the governance
+   * digest. Neutralize what is DISPLAYED; hash the original bytes, so the
+   * exactness ownership turns on is untouched.
+   */
+  const ESC = String.fromCharCode(27);
+  const HOSTILE_COMMAND = `node hook.js ${ESC}[31mRED${ESC}[0m\r\n- owner=aih; event=Stop; command=forged ${"x".repeat(2000)}`;
+
+  function seedHostileDestination(event: string): void {
+    writeDestination(
+      `${JSON.stringify({
+        hooks: { [event]: [{ hooks: [{ type: "command", command: HOSTILE_COMMAND }] }] },
+      })}\n`,
+    );
+  }
+
+  it("neutralizes and bounds a reported command without changing its digest", () => {
+    seedHostileDestination("Stop");
+    const report = hookRegistrarReport(dir);
+
+    const [unowned] = report.unowned;
+    const [offer] = report.adoption;
+    expect(unowned?.command).not.toMatch(/\p{C}/u);
+    expect(offer?.command).not.toMatch(/\p{C}/u);
+    expect((unowned?.command ?? "").length).toBeLessThan(HOSTILE_COMMAND.length);
+    // The digest is of the ORIGINAL bytes — display never weakens the hash the
+    // ownership comparison and the adoption declaration turn on.
+    expect(offer?.commandSha256).toBe(sha256(HOSTILE_COMMAND));
+    expect(report.detail).not.toMatch(/\p{C}/u);
+  });
+
+  it("neutralizes and bounds an event name it names in a refusal", () => {
+    const hostileEvent = `Stop${ESC}[31m${"y".repeat(2000)}`;
+    seedHostileDestination(hostileEvent);
+    let message = "";
+    try {
+      hookRegistrarProjectionActions(ctx(false), eccStopRegistrations());
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).not.toBe("");
+    expect(message).not.toMatch(/\p{C}/u);
+    expect(message.length).toBeLessThan(hostileEvent.length);
   });
 });
 

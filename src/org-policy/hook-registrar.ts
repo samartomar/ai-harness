@@ -280,6 +280,30 @@ function destinationEntryKey(entry: { event: string; command: string; timeout?: 
 const PROJECTED_GROUP_KEYS = new Set(["hooks"]);
 const PROJECTED_HOOK_KEYS = new Set(["type", "command", "timeout"]);
 
+/** How much destination-read text may reach a message, a report field, or a digest row. */
+const MAX_REPORTED_DESTINATION_TEXT = 200;
+/** U+FFFD REPLACEMENT CHARACTER — what a neutralized control character becomes. */
+const CONTROL_REPLACEMENT = String.fromCodePoint(0xfffd);
+
+/**
+ * Make one destination-read string safe to PRINT. A policy-authored launcher is
+ * bounded and control-character-free by the grammar; a string read from the
+ * destination is bounded only by file size, and it reaches the operator's
+ * terminal, the `--json` envelope and the governance digest — where control
+ * characters repaint the screen, a CR/LF forges a digest row, and a megabyte of
+ * launcher makes one error message unreadable.
+ *
+ * Display only. Every hash, comparison and captured launcher keeps the ORIGINAL
+ * bytes: ownership turns on exactness, so neutralizing what is shown must never
+ * touch what is compared.
+ */
+function displayableDestinationText(value: string): string {
+  const neutralized = value.replace(/\p{C}/gu, CONTROL_REPLACEMENT);
+  if (neutralized.length <= MAX_REPORTED_DESTINATION_TEXT) return neutralized;
+  const dropped = neutralized.length - MAX_REPORTED_DESTINATION_TEXT;
+  return `${neutralized.slice(0, MAX_REPORTED_DESTINATION_TEXT)} [+${dropped} characters not shown]`;
+}
+
 /**
  * Refuse destination content AIH cannot re-emit verbatim. Skipping it silently
  * is not an option: the projection replaces the whole `hooks` key, so anything
@@ -290,7 +314,7 @@ const PROJECTED_HOOK_KEYS = new Set(["type", "command", "timeout"]);
  */
 function refuseUnrepresentable(event: string, what: string): never {
   throw new OrgPolicyError(
-    `${HOOK_REGISTRAR_DESTINATION}.hooks.${event} carries ${what}, which AIH cannot re-emit verbatim; ` +
+    `${HOOK_REGISTRAR_DESTINATION}.hooks.${displayableDestinationText(event)} carries ${what}, which AIH cannot re-emit verbatim; ` +
       `projecting replaces the whole hooks key, so AIH refuses rather than delete it — remove it first`,
   );
 }
@@ -309,13 +333,15 @@ export function destinationHookEntries(destination: unknown): DestinationEntry[]
   const entries: DestinationEntry[] = [];
   for (const [event, groups] of Object.entries(hooks)) {
     if (!Array.isArray(groups)) {
-      throw new OrgPolicyError(`${HOOK_REGISTRAR_DESTINATION}.hooks.${event} is not an array`);
+      throw new OrgPolicyError(
+        `${HOOK_REGISTRAR_DESTINATION}.hooks.${displayableDestinationText(event)} is not an array`,
+      );
     }
     if (groups.length === 0) refuseUnrepresentable(event, "an empty group list");
     for (const group of groups) {
       if (!isPlainObject(group) || !Array.isArray(group.hooks)) {
         throw new OrgPolicyError(
-          `${HOOK_REGISTRAR_DESTINATION}.hooks.${event} has a malformed hook group`,
+          `${HOOK_REGISTRAR_DESTINATION}.hooks.${displayableDestinationText(event)} has a malformed hook group`,
         );
       }
       const groupExtras = Object.keys(group)
@@ -381,18 +407,23 @@ export function hookRegistrarDrift(input: {
     }
     // Attribution is only as good as a declared pin. Guessing an owner from a
     // command AIH does not interpret would be a fabricated claim.
+    // The digest is taken from the ORIGINAL bytes; only what is reported is
+    // neutralized, so an adoption declaration still names the exact launcher.
     const digest = hookCommandDigest(entry.command);
     const attributed = parsed.find(
       (registration) =>
         registration.owner.kind === "third-party" &&
         registration.owner.pin.launcherSha256 === digest,
     );
+    const reported = {
+      event: displayableDestinationText(entry.event),
+      command: displayableDestinationText(entry.command),
+    };
     unowned.push({
-      event: entry.event,
+      ...reported,
       owner: attributed === undefined ? "unknown" : hookRegistrationOwnerId(attributed),
-      command: entry.command,
     });
-    adoption.push({ event: entry.event, command: entry.command, commandSha256: digest });
+    adoption.push({ ...reported, commandSha256: digest });
   }
   const drifted: DriftedHookEntry[] = [];
   for (const registration of parsed) {
@@ -917,7 +948,9 @@ export function hookRegistrarProjectionActions(
         );
         const owner =
           attributed?.owner.kind === "third-party" ? attributed.owner.framework : "unknown";
-        return `${owner}/${entry.event}`;
+        // The owner side is policy-authored and already bounded; the event side
+        // is destination-read and is neutralized before it reaches the terminal.
+        return `${owner}/${displayableDestinationText(entry.event)}`;
       });
       throw new OrgPolicyError(
         `${HOOK_REGISTRAR_DESTINATION} carries ${foreign.length} hook entr${foreign.length === 1 ? "y" : "ies"} AIH did not emit ` +
