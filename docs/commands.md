@@ -324,14 +324,17 @@ profile installer: it materializes the policy's evidence-passed component select
 removal lives in `aih uninstall`. That governed install does read `--cli`, because which tools a
 materialization lands for is the ordinary workstation target selection — `--cli`, `--all-tools`, the
 committed `.aih-config.json` targets, else the `claude` default. The governed materialization targets
-are `claude`, `codex`, `kimi`, `cursor`, and `opencode`; `claude`, `codex`, `kimi`, and `cursor` are
-wired today, a ruled target that is not wired yet is refused by name, and any other CLI is refused as
-not a governed materialization target. Each wired target's rows land under its own project root —
+are `claude`, `codex`, `kimi`, `cursor`, and `opencode`, and all five are wired; any other CLI is
+refused as not a governed materialization target. Four of them carry their own project root —
 `.claude/`, `.codex/`, `.cursor/`, and for Kimi `.kimi-code/`, which is where the framework's own
-Kimi adapter roots a project install. Several targets in one run are one materialization into one
-root with one receipt: destinations two targets share (`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`) are
-written once, and a later `--apply` with a narrower target set subtracts the dropped target's files
-and reports each removal.
+Kimi adapter roots a project install. OpenCode materializes only the tool-shared project surfaces
+(`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`), because its only framework adapter is
+home-scoped and no evidenced per-tool `.opencode/` content layout exists; every other component
+refuses by name for that target rather than landing in an invented directory. Several targets in one
+run are one materialization into one root with one receipt: destinations two targets share
+(`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`) are written once, a target that refuses a
+component does not stop the targets that own it, and a later `--apply` with a narrower target set
+subtracts the dropped target's files and reports each removal.
 
 The same lifecycle manages project-local Claude and Codex hook/MCP registration without claiming
 either client's whole shared settings file. It adds one AIH composite hook per supported native

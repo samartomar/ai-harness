@@ -456,6 +456,120 @@ describe("the Cursor target maps evidence-passed components onto the .cursor pro
   });
 });
 
+/**
+ * F4, fifth and last target: OpenCode, the honest-small one.
+ *
+ * There is no evidenced per-component PROJECT content layout for OpenCode. The
+ * framework's only OpenCode adapter is home-scoped — this repository already
+ * records it as `{ scope: "home", rootSegment: ".opencode" }` in the ECC
+ * reconcile locations — and the pinned install-preview artifact carries, for
+ * OpenCode, home-scoped `opencode.json` MCP merges and a home `.opencode` exec
+ * and nothing else. Not one project-scoped content row.
+ *
+ * So OpenCode ships with the SHARED target-independent rows only: `AGENTS.md`,
+ * `.agents/plugins/` and `.agents/skills/`, which are the tool-shared project
+ * surfaces OpenCode genuinely reads. Every other component refuses by name, in
+ * the OpenCode voice. Inventing `.opencode/agents/` to make the target look
+ * complete would write a directory no evidence says anything reads.
+ *
+ * Refusal stays all-or-nothing per target, so a component with one shared row
+ * and one generic row — `skill:tdd-workflow` — refuses WHOLE for OpenCode
+ * rather than installing the half it can map.
+ */
+describe("the OpenCode target ships the shared rows and refuses the rest by name", () => {
+  it("materializes a shared-row-only component and nothing under .opencode/", () => {
+    const result = resolve(["opencode"], [selected("baseline:agents", "AGENTS.md")]);
+
+    expect(result.refused).toEqual([]);
+    expect(destinations(result, "baseline:agents")).toEqual([
+      ".agents/plugins/marketplace.json",
+      "AGENTS.md",
+    ]);
+  });
+
+  it("refuses a component whose sources are all generic content, in the OpenCode voice", () => {
+    const result = resolve(
+      ["opencode"],
+      [
+        selected("agent:code-reviewer", "agents/code-reviewer.md"),
+        selected("baseline:rules", "rules"),
+        // Positive control: the run is not empty, so the refusals below are
+        // decisions and not an adapter that mapped nothing.
+        selected("baseline:agents", "AGENTS.md"),
+      ],
+    );
+
+    expect(result.components.map((component) => component.id)).toEqual(["baseline:agents"]);
+    expect(refusalFor(result, "agent:code-reviewer", "opencode")).toEqual({
+      target: "opencode",
+      id: "agent:code-reviewer",
+      reason: "unowned-destination",
+      detail: "the OpenCode target owns no content destination for agents/code-reviewer.md",
+    });
+    expect(refusalFor(result, "baseline:rules", "opencode")?.detail).toContain(
+      "the OpenCode target owns no content destination for rules/",
+    );
+  });
+
+  it("refuses a half-shared component whole rather than installing the half it can map", () => {
+    const result = resolve(
+      ["opencode"],
+      [
+        // `.agents/skills/tdd-workflow` is shared and WOULD map; `skills/tdd-workflow`
+        // does not. Per-target refusal is all-or-nothing, so neither lands.
+        selected("skill:tdd-workflow", "skills/tdd-workflow"),
+        selected("baseline:agents", "AGENTS.md"),
+      ],
+    );
+
+    expect(result.components.map((component) => component.id)).toEqual(["baseline:agents"]);
+    expect(refusalFor(result, "skill:tdd-workflow", "opencode")?.reason).toBe(
+      "unowned-destination",
+    );
+    expect(destinations(result, "skill:tdd-workflow")).toEqual([]);
+  });
+
+  it("produces no `.opencode/` destination for any evidence-passed component", () => {
+    const result = resolve(
+      ["opencode"],
+      [
+        selected("agent:code-reviewer", "agents/code-reviewer.md"),
+        selected("skill:tdd-workflow", "skills/tdd-workflow"),
+        selected("baseline:rules", "rules"),
+        selected("baseline:agents", "AGENTS.md"),
+      ],
+    );
+
+    expect(
+      result.components.flatMap((component) => component.files.map((file) => file.path)),
+    ).toEqual([".agents/plugins/marketplace.json", "AGENTS.md"]);
+  });
+
+  it("lets Claude materialize what OpenCode refuses, in one union", () => {
+    const result = resolve(
+      ["claude", "opencode"],
+      [
+        selected("agent:code-reviewer", "agents/code-reviewer.md"),
+        selected("baseline:agents", "AGENTS.md"),
+      ],
+    );
+
+    // A target that refuses a component does not veto the target that owns it.
+    expect(destinations(result, "agent:code-reviewer")).toEqual([
+      ".claude/agents/code-reviewer.md",
+    ]);
+    expect(refusalFor(result, "agent:code-reviewer", "opencode")?.reason).toBe(
+      "unowned-destination",
+    );
+    expect(refusalFor(result, "agent:code-reviewer", "claude")).toBeUndefined();
+    // The shared rows both targets agree on collapse to one claim.
+    expect(destinations(result, "baseline:agents")).toEqual([
+      ".agents/plugins/marketplace.json",
+      "AGENTS.md",
+    ]);
+  });
+});
+
 describe("a multi-target request is one union in one materialization", () => {
   let root: string;
 
@@ -785,12 +899,30 @@ describe("which CLIs are governed materialization targets", () => {
     expect(assertGovernedMaterializationTargets(["codex", "codex"])).toEqual(["codex"]);
     expect(assertGovernedMaterializationTargets(["kimi"])).toEqual(["kimi"]);
     expect(assertGovernedMaterializationTargets(["cursor"])).toEqual(["cursor"]);
-    expect(assertGovernedMaterializationTargets(["claude", "codex", "kimi", "cursor"])).toEqual([
-      "claude",
-      "codex",
-      "kimi",
-      "cursor",
-    ]);
+    expect(assertGovernedMaterializationTargets(["opencode"])).toEqual(["opencode"]);
+    expect(
+      assertGovernedMaterializationTargets(["claude", "codex", "kimi", "cursor", "opencode"]),
+    ).toEqual(["claude", "codex", "kimi", "cursor", "opencode"]);
+  });
+
+  /**
+   * The completion fact itself. Every ruled target is wired, so the two lists
+   * are the same list.
+   *
+   * `assertGovernedMaterializationTargets` still carries its unwired-target
+   * branch, and while these lists are equal that branch cannot be reached. It
+   * is kept as a fail-closed guard for the edit that adds a sixth governed
+   * target: without it, a ruled-but-unbuilt target would silently materialize
+   * nothing instead of refusing by name. This pin is what turns that future
+   * edit into a visible decision — adding to GOVERNED alone breaks it, and the
+   * fix is either to wire the target or to accept the refusal this test is
+   * changed to describe.
+   *
+   * No test exercises the guarded branch. It cannot be reached without mutating
+   * the lists, and a pin that cannot fail is worse than no pin.
+   */
+  it("has every governed target wired — the ruled five are complete", () => {
+    expect([...WIRED_MATERIALIZATION_TARGETS]).toEqual([...GOVERNED_MATERIALIZATION_TARGETS]);
   });
 
   it("refuses a CLI outside the governed five, by name", () => {
@@ -808,32 +940,12 @@ describe("which CLIs are governed materialization targets", () => {
       return "";
     })();
     expect(failure).toContain("gemini, kiro");
+    // The refusal names both lists, which now coincide — see the completion pin
+    // above. The remedy still has to be reachable from the message, so the
+    // wired list is asserted on its own rather than folded into the other.
     expect(failure).toContain(GOVERNED_MATERIALIZATION_TARGETS.join(", "));
     expect(failure).toContain(WIRED_MATERIALIZATION_TARGETS.join(", "));
-  });
-
-  it("refuses a ruled target that is not wired yet, naming what IS wired", () => {
-    for (const target of ["opencode"]) {
-      const failure = (() => {
-        try {
-          assertGovernedMaterializationTargets([target]);
-        } catch (error) {
-          return (error as Error).message;
-        }
-        return "";
-      })();
-      expect(failure, target).toMatch(/is a governed materialization target that is not wired yet/);
-      // The wired list is four targets now, and the refusal states it exactly:
-      // "claude, codex" would still read true as a prefix while naming two less
-      // targets than the operator can actually ask for.
-      expect(failure, target).toContain("claude, codex, kimi, cursor");
-      // Not the other refusal: an unwired ruled target is a row still to come,
-      // not a tool this lifecycle will never serve.
-      expect(failure, target).not.toContain("is not a governed materialization target");
-    }
-    expect(() => assertGovernedMaterializationTargets(["claude", "opencode"])).toThrowError(
-      /OpenCode target is a governed materialization target that is not wired yet/,
-    );
+    expect(failure).toContain(`--cli ${WIRED_MATERIALIZATION_TARGETS.join(",")}`);
   });
 
   it("refuses an empty target set rather than materializing for nobody", () => {
@@ -876,6 +988,64 @@ describe("the one destination mapping keeps each target off the others' exclusiv
         relative,
       });
     }
+  });
+
+  it("answers no generic project row for OpenCode, and never `.opencode/`", () => {
+    // Suppressed deliberately: no evidence records a per-component OpenCode
+    // PROJECT layout. Its only framework adapter is home-scoped, so `.opencode/`
+    // here would be a directory this lifecycle invented.
+    for (const source of [
+      "agents/code-reviewer.md",
+      "skills/tdd-workflow/SKILL.md",
+      "commands/tdd.md",
+      "rules/common/testing.md",
+    ]) {
+      expect(eccContentDestinationMapping(source, "opencode"), source).toBeUndefined();
+    }
+    expect(
+      GOVERNED_MATERIALIZATION_TARGETS.flatMap((target) =>
+        ["agents/x.md", "skills/x/SKILL.md", "commands/x.md", "rules/x.md"].map(
+          (source) => eccContentDestinationMapping(source, target)?.relative ?? "",
+        ),
+      ).filter((relative) => relative.startsWith(".opencode/")),
+    ).toEqual([]);
+    // The shared rows still answer for OpenCode — the suppression removes the
+    // four generic rows, not the target.
+    expect(eccContentDestinationMapping("AGENTS.md", "opencode")).toEqual({
+      scope: "project",
+      relative: "AGENTS.md",
+    });
+    expect(
+      eccContentDestinationMapping(".agents/skills/tdd-workflow/SKILL.md", "opencode"),
+    ).toEqual({ scope: "project", relative: ".agents/skills/tdd-workflow/SKILL.md" });
+  });
+
+  it("fails the governed classifier closed when OpenCode claims a `.opencode/` content path", () => {
+    const operation = {
+      kind: "copy-file" as const,
+      moduleId: "agents-core",
+      sourceRelativePath: "agents/code-reviewer.md",
+      destinationPath: "/fixture/.opencode/agents/code-reviewer.md",
+    };
+
+    // The classifier reads the SAME mapping the adapter does, so the suppression
+    // has to reach it: a classifier that still derived `.opencode` would admit
+    // at apply time exactly the row the adapter refuses to plan.
+    expect(() =>
+      classifyGovernedEccOperation(operation, {
+        projectRoot: "/fixture",
+        homeDir: "/home/aih",
+        target: "opencode",
+      }),
+    ).toThrow(/unclassifiable governed ECC content operation/);
+    // Positive control: the same source still classifies for a target that owns
+    // a generic row, so this is the suppression and not a broken operation.
+    expect(
+      classifyGovernedEccOperation(
+        { ...operation, destinationPath: "/fixture/.cursor/agents/code-reviewer.md" },
+        { projectRoot: "/fixture", homeDir: "/home/aih", target: "cursor" },
+      ),
+    ).toBe("ecc-content");
   });
 
   it("roots the Kimi project rows at `.kimi-code`, not at the parameterized `.kimi`", () => {
@@ -1018,6 +1188,24 @@ describe("the one destination mapping keeps each target off the others' exclusiv
     for (const module of ["materialize.ts", "verified.ts"]) {
       expect(readFileSync(join(process.cwd(), "src", "ecc", module), "utf8"), module).toMatch(
         kimiRoot,
+      );
+    }
+  });
+
+  /**
+   * The same lockstep, on the OpenCode suppression. The behavioural pins above
+   * only reach the importable copy; the child's restatement is a script string
+   * this suite can read but not call. Suppression applied to one copy only is a
+   * classifier and a planner that disagree about whether `.opencode/agents/` is
+   * a governed content destination at all.
+   */
+  it("keeps the runtime restatement of the mapping in lockstep on the OpenCode suppression", () => {
+    // The four generic rows must sit INSIDE the suppressed arm, so the regex
+    // spans from the target test through the first row it guards.
+    const suppression = /target === "opencode"\s*\?\s*\[\]\s*:\s*\(?\[\s*\[\s*"agents\/"/;
+    for (const module of ["materialize.ts", "verified.ts"]) {
+      expect(readFileSync(join(process.cwd(), "src", "ecc", module), "utf8"), module).toMatch(
+        suppression,
       );
     }
   });

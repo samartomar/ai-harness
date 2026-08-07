@@ -570,6 +570,19 @@ function isEccContentDestination(
  * root would write a directory upstream abandoned. Overriding here rather than
  * at a call site keeps this the single answer to "where does this source land
  * for this target", which is what the governed classifier enforces against.
+ *
+ * One target has NO generic rows at all. OpenCode's only framework adapter is
+ * home-scoped (`TARGET_LOCATIONS` in `reconcile.ts` records it as
+ * `{ scope: "home", rootSegment: ".opencode" }`) and the pinned install-preview
+ * artifact carries, for OpenCode, home config merges and nothing project-scoped
+ * — so no evidence says where a per-component OpenCode project layout would go.
+ * The four generic rows are therefore suppressed for it and OpenCode ships the
+ * shared target-independent rows only. Deriving `.opencode/agents/` from the
+ * parameterized root would invent a directory nothing is known to read, and
+ * this function is the single answer to where a source lands: an invented
+ * answer here becomes an invented answer in the receipt, in the classifier, and
+ * in what uninstall then removes. A small target with real, named refusals is
+ * the honest shape; a full-looking one built on a guess is not.
  */
 export function eccContentDestinationMapping(
   source: string,
@@ -587,10 +600,14 @@ export function eccContentDestinationMapping(
     ...(target === "claude"
       ? ([[".claude/commands/", ".claude/commands/"]] as Array<[string, string]>)
       : []),
-    ["agents/", `${targetRoot}/agents/`],
-    ["skills/", `${targetRoot}/skills/`],
-    ["commands/", `${targetRoot}/commands/`],
-    ["rules/", `${targetRoot}/rules/`],
+    ...(target === "opencode"
+      ? []
+      : ([
+          ["agents/", `${targetRoot}/agents/`],
+          ["skills/", `${targetRoot}/skills/`],
+          ["commands/", `${targetRoot}/commands/`],
+          ["rules/", `${targetRoot}/rules/`],
+        ] as Array<[string, string]>)),
   ];
   for (const [sourcePrefix, targetPrefix] of mappings) {
     if (!source.startsWith(sourcePrefix)) continue;
