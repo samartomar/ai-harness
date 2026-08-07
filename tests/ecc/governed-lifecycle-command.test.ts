@@ -467,6 +467,9 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
       "utf8",
     );
     const temp = mkdtempSync(join(tmpdir(), "aih-governed-tmp-"));
+    // The quarantine goes under `os.tmpdir()` with no injection point
+    // (`src/trust/fetch.ts:101-102`), so proving none was created means pointing
+    // the OS temp dir at an observable directory for the length of this call.
     const saved = { TMPDIR: process.env.TMPDIR, TEMP: process.env.TEMP, TMP: process.env.TMP };
     process.env.TMPDIR = temp;
     process.env.TEMP = temp;
@@ -483,9 +486,16 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
         (error: Error) => error,
       );
     } finally {
-      process.env.TMPDIR = saved.TMPDIR;
-      process.env.TEMP = saved.TEMP;
-      process.env.TMP = saved.TMP;
+      // Restore by DELETING what was unset. Assigning `undefined` to a
+      // `process.env` key stores the literal string "undefined", and POSIX
+      // `os.tmpdir()` reads TMPDIR first — so every later `mkdtempSync` in this
+      // file would target a directory named "undefined". GitHub's ubuntu runners
+      // set none of these three (only RUNNER_TEMP); Windows always sets TEMP and
+      // macOS always sets TMPDIR, which is why only Linux saw it.
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
     }
 
     expect(failure?.message).toMatch(/selects no ECC component/);
