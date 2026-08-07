@@ -642,19 +642,42 @@ const vetNote=function(vet){if(!vet||vet.verdict!=="blocked")return "";
   return " Vet: blocked by "+vet.analyzers.map(function(a){return a.name}).join(", ")+" - "+
     vet.findings.map(function(f){return f.code+(typeof f.count==="number"?" ("+f.count+")":"")+": "+f.detail}).join("; ")+
     " Selecting it records intent; the finding is yours to accept or reject."};
-/* Delegated ruling 2: the fulfillment consequence is a third axis layered on
-   selection and vet verdict - what a governed projection would do with this
-   exact component. Callers gate this on selection; an unselected row has
-   nothing to state about materialization yet, and its existing "Selectable"
-   status stays exactly as true as it always was (S1: annotate, never
-   duplicate; no new row, no new authoring path). Every branch stays
-   conditional on the target repository's own engine evaluation - this
-   browser never claims effectiveness, exactly like every other
-   effective-state sentence on this surface. */
+/* The fulfillment consequence is a third axis layered on selection and vet
+   verdict - what a governed projection would do with this exact component.
+   Callers gate this on selection; an unselected row has nothing to state
+   about materialization yet, and its existing "Selectable" status stays
+   exactly as true as it always was (annotate, never duplicate; no new row,
+   no new authoring path).
+   MUST hold, checked on every edit here: asset.vet is AIH's own BUILD-TIME
+   pin, produced once against a fixed tree hash. The materialization engine
+   authorizes a component from the TARGET REPOSITORY's own RUNTIME evidence
+   (src/ecc/materialization-selection.ts), which can and does diverge from the
+   pin - a component this pin marks blocked is authorized there exactly like
+   a plain pass once the target repository accepts the finding (with
+   conditions); a component absent from the target's evidence excludes
+   fail-closed regardless of what this pin says. Because the browser can never
+   read that runtime state, EVERY branch below states only what the pin shows
+   and defers the actual outcome to "the target repository's own engine
+   evaluation" - never a fixed claim that something will or will not
+   materialize. */
+const FULFILLMENT_MATERIALIZES="materializes",FULFILLMENT_VET_BLOCKED="vetBlocked",FULFILLMENT_EVIDENCE_OWED="evidenceOwed";
+/* One classifier, two callers (this note and the fulfillment tally below) -
+   so an unexpected vet shape cannot render two different claims about the
+   same component. Un-recognized input fails closed to evidenceOwed, the
+   weakest claim, never to materializes; verdict is "pass" or "blocked"
+   today, but the engine's own runtime outcome already has five, so nothing
+   here may assume the pin's two values are exhaustive. */
+const classifyFulfillment=function(vet){
+  if(!vet)return FULFILLMENT_EVIDENCE_OWED;
+  if(vet.verdict==="blocked")return FULFILLMENT_VET_BLOCKED;
+  if(vet.verdict==="pass")return FULFILLMENT_MATERIALIZES;
+  return FULFILLMENT_EVIDENCE_OWED;
+};
 const fulfillmentNote=function(framework,vet){
-  if(!vet)return "Fulfillment: evidence is still owed at this pin; nothing materializes until it passes.";
-  if(vet.verdict==="blocked")return "Fulfillment: vet-blocked, so this stays recorded as intent only and does not materialize while blocked.";
-  return "Fulfillment: on aih policy project in a governed repository, AIH materializes this component directly, per-component and receipt-bound, and "+framework.id+" runs no installer for it - conditional on the target repository's own engine evaluation.";
+  const classification=classifyFulfillment(vet);
+  if(classification===FULFILLMENT_VET_BLOCKED)return "Fulfillment: blocked at this pin - whether it materializes depends on the target repository's own engine evaluation of its evidence; accepting the finding is the path that can change it.";
+  if(classification===FULFILLMENT_MATERIALIZES)return "Fulfillment: on aih policy project in a governed repository, AIH materializes this component directly, per-component and receipt-bound, and "+framework.id+" runs no installer for it - conditional on the target repository's own engine evaluation of its evidence.";
+  return "Fulfillment: evidence is still owed at this pin - whether it materializes depends on the target repository's own engine evaluation of its evidence, once evidence exists to evaluate.";
 };
 const row=function(title,detail,status,kind,action,note,label,vet){
   return '<div class="row'+(kind==="requested"?" on":"")+'" data-state="'+esc(kind)+'"'+(vet?' data-vetted="'+esc(vet.verdict)+'"':"")+' data-row="'+esc(title)+'">'+
@@ -730,6 +753,20 @@ const frameworkAsset=function(frameworkId,id){const framework=model.catalog.fram
 const externalSelectionGroups=function(){const groups=governance().externalSelections;return Array.isArray(groups)?groups:[]};
 const selectedItems=function(frameworkId){const group=externalSelectionGroups().find(function(item){return item.framework===frameworkId});return group?group.items:[]};
 const isFrameworkSelected=function(frameworkId,id){return selectedItems(frameworkId).some(function(item){return item.id===id})};
+/* isFrameworkSelected() matches on id alone - the same matching the existing
+   tick and badge already use, and changing that shared, widely-used
+   semantics is out of this row's scope. The fulfillment layer needs one more
+   bit before it may name a consequence: whether the selected entry's OWN
+   kind agrees with the catalog's kind for that id. A selection whose kind
+   and id disagree is exactly what the materialization engine refuses as
+   malformed (src/ecc/materialization-selection.ts, "selection kind ...
+   does not match component id ..."), so this layer states none of the three
+   fulfillment claims for it - asserting any one of them would overstate what
+   is actually true. */
+const selectedAssetAuthorizable=function(frameworkId,asset){
+  const item=selectedItems(frameworkId).find(function(entry){return entry.id===asset.id});
+  return item!==undefined&&item.kind===asset.kind;
+};
 /* Ownership annotates a row; it never disables one. Selecting records requested
    intent with the component's pinned source as provenance - ECC and Superpowers
    install and run these, and AIH only records that they were asked for. Evidence
@@ -779,12 +816,16 @@ const frameworkInventoryRows=function(){const active=activeSelectionFramework(go
   const open=openGroups[group.label]?1:0;
   const rows=group.rows.map(function(entry){const framework=entry.framework,asset=entry.asset;
     const selected=isFrameworkSelected(framework.id,asset.id);
-    /* Fulfillment is stated only once selected: an unselected row has nothing
-       to say about materialization yet, so "Selectable - ... installs and
-       runs it" stays exactly as true as it always was. */
-    const fulfillment=selected?fulfillmentNote(framework,asset.vet):"";
+    /* Fulfillment is stated only once selected, and only when the selected
+       entry's own kind agrees with the catalog's kind for this id - an
+       unselected row has nothing to say about materialization yet, and a
+       kind-mismatched selection is exactly what the engine refuses as
+       malformed, so this layer states none of the three claims for it
+       rather than overstating one. "Selectable - ... installs and runs it"
+       stays exactly as true as it always was either way. */
+    const fulfillment=selected&&selectedAssetAuthorizable(framework.id,asset)?fulfillmentNote(framework,asset.vet):"";
     return row(framework.id+" / "+asset.kind+": "+asset.id,
-      (KIND_HELP[asset.kind]||"A framework-owned component.")+" "+framework.id+" installs and runs it; AIH records the selection with its pinned source."+(asset.riders&&asset.riders.length?" Declares "+asset.riders.length+" rider(s): "+asset.riders.join(", ")+".":""),
+      (KIND_HELP[asset.kind]||"A framework-owned component.")+" By default, "+framework.id+" installs and runs it; AIH records the selection with its pinned source."+(asset.riders&&asset.riders.length?" Declares "+asset.riders.length+" rider(s): "+asset.riders.join(", ")+".":""),
       selected?"Selected - requested intent recorded":"Selectable - "+framework.id+" installs and runs it",
       selected?"requested":"external",
       tick("data-framework-select",framework.id+"|"+asset.kind+"|"+asset.id,selected,asset.id),
@@ -801,18 +842,38 @@ const compositionNamedCount=function(){return model.catalog.enterpriseCompositio
 const partSelectedCount=function(part){const ids=selectedItems(model.catalog.enterpriseComposition.framework).map(function(item){return item.id});return part.componentIds.filter(function(id){return ids.indexOf(id)!==-1}).length};
 const renderComposition=function(){const composition=model.catalog.enterpriseComposition;byId("composition-parts").innerHTML='<p class="help">Every component below is owned by '+esc(composition.framework)+', which installs and runs it; AIH records the selection with its pinned source. Choosing Enterprise selects the Core parts. The additive parts are yours to add, here or from any inventory row.</p>'+composition.parts.map(function(part){const selected=partSelectedCount(part);const complete=selected===part.componentIds.length;const action=part.selection==="additive"?'<button type="button" data-composition-add="'+esc(part.id)+'">'+(complete?"Remove these":"Add these")+'</button>':"";return '<div class="row"><div><strong>'+esc(part.label)+'</strong><p>Derived from '+esc(part.rule)+'.</p><p class="mono">'+esc(part.componentIds.join(" "))+'</p></div><span class="badge '+(complete?"requested":"external")+'">'+esc(selected+" of "+part.componentIds.length+" selected"+(part.selection==="additive"?" - additive":" - Core"))+'</span>'+action+'</div>'}).join("")};
 const renderReceipt=function(){const receipt=state.receipt;const rows=[];if(receipt&&Array.isArray(receipt.approvals)){receipt.approvals.forEach(function(item){rows.push(row(item.id||"approval",(item.issuer||"unknown issuer")+" — preserved/preflight-only", "Not verified / not effective","pending"))})}if(receipt&&Array.isArray(receipt.evidence)){receipt.evidence.forEach(function(item){rows.push(row(item.id||"evidence",(item.state||"unknown")+" evidence — preserved/preflight-only", "Not verified / not effective","pending"))})}byId("approval-rows").innerHTML=rows.length?rows.join(""):"<p class=\"help\">Import an authority receipt to preserve and inspect its subjects; target-repository verification decides authority.</p>";byId("receipt-state").textContent=receipt?"Receipt preserved for preflight only; this browser does not verify it or create effective approval.":"No authority receipt imported.";byId("copy-approvals").disabled=!(receipt&&Array.isArray(receipt.approvals))};
-/* The report preview's fulfillment summary extends the same three states
-   (delegated ruling 2) as three counts, over exactly the components already
-   selected - never a second authoring path, never a tally the per-row
-   annotations above do not already agree with. */
-const fulfillmentCounts=function(){const counts={materializes:0,vetBlocked:0,evidenceOwed:0};
+/* The report preview's fulfillment summary extends the same three states as
+   three counts, over exactly the rows the plane actually annotates - walking
+   the identical (activeSelectionFramework, frameworkGroups,
+   isFrameworkSelected, selectedAssetAuthorizable) primitives the rows above
+   are built from, so a row and this tally can never disagree about the same
+   component (previously they could: this used to walk the raw selections
+   directly, which could count a selection shadowed by a duplicate framework
+   group, a selection for the framework not currently shown, or an id the pin
+   does not carry, none of which render as an annotated row at all).
+   Anything selected in the raw policy this pass does not recognize is never
+   folded into "evidence owed", which the engine reserves for a component the
+   pin DOES carry - it gets its own, honestly-named count instead. */
+const fulfillmentCounts=function(){
+  const counts={materializes:0,vetBlocked:0,evidenceOwed:0,notShownAsRow:0};
+  const active=activeSelectionFramework(governance());
+  const recognized=new Set();
+  frameworkGroups().filter(function(group){return !active||group.framework===active})
+    .forEach(function(group){group.rows.forEach(function(entry){
+      const framework=entry.framework,asset=entry.asset;
+      if(!isFrameworkSelected(framework.id,asset.id))return;
+      if(!selectedAssetAuthorizable(framework.id,asset))return;
+      recognized.add(framework.id+"|"+asset.id);
+      const classification=classifyFulfillment(asset.vet);
+      if(classification===FULFILLMENT_VET_BLOCKED){counts.vetBlocked++}
+      else if(classification===FULFILLMENT_MATERIALIZES){counts.materializes++}
+      else{counts.evidenceOwed++}
+    })});
   externalSelectionGroups().forEach(function(group){group.items.forEach(function(item){
-    const found=frameworkAsset(group.framework,item.id);const vet=found?found.asset.vet:undefined;
-    if(vet&&vet.verdict==="blocked"){counts.vetBlocked++}
-    else if(vet&&vet.verdict==="pass"){counts.materializes++}
-    else{counts.evidenceOwed++}})});
+    if(!recognized.has(group.framework+"|"+item.id)){counts.notShownAsRow++}
+  })});
   return counts};
-const renderPreview=function(){byId("config-preview").value=policyText();const g=governance();const requested=g.activations.filter(function(item){return item.state==="active"}).map(function(item){return item.candidate});const custom=g.catalog.custom.map(function(item){return item.id+": Blocked - custom MCP has no supported projector/scanning/evidence"});const fulfillment=fulfillmentCounts();byId("report-preview").value=["Policy Workbench preview", "", "Requested intent: "+(requested.join(", ")||"none"), "Effective: not evaluated - import this policy into a target repository for engine verification.", "", "External selections: "+externalSelectionGroups().reduce(function(total,item){return total+item.items.length},0)+" requested item(s), audit evidence still owed.","External curation: "+g.externalCuration.reduce(function(total,item){return total+item.items.length},0)+" report-only item(s).", "", "Fulfillment summary (governed projection, engine-evaluated): "+fulfillment.materializes+" would materialize directly, "+fulfillment.vetBlocked+" vet-blocked and recorded as intent only, "+fulfillment.evidenceOwed+" with evidence still owed.", "", "Hard blocked:",].concat(custom.length?custom:["none"]).join("\n")};
+const renderPreview=function(){byId("config-preview").value=policyText();const g=governance();const requested=g.activations.filter(function(item){return item.state==="active"}).map(function(item){return item.candidate});const custom=g.catalog.custom.map(function(item){return item.id+": Blocked - custom MCP has no supported projector/scanning/evidence"});const fulfillment=fulfillmentCounts();byId("report-preview").value=["Policy Workbench preview", "", "Requested intent: "+(requested.join(", ")||"none"), "Effective: not evaluated - import this policy into a target repository for engine verification.", "", "External selections: "+externalSelectionGroups().reduce(function(total,item){return total+item.items.length},0)+" requested item(s), audit evidence still owed.","External curation: "+g.externalCuration.reduce(function(total,item){return total+item.items.length},0)+" report-only item(s).", "", "Fulfillment summary (governed projection, engine-evaluated): "+fulfillment.materializes+" would materialize directly, "+fulfillment.vetBlocked+" vet-blocked and recorded as intent only, "+fulfillment.evidenceOwed+" with evidence still owed, "+fulfillment.notShownAsRow+" selected but not shown as a row at this pin.", "", "Hard blocked:",].concat(custom.length?custom:["none"]).join("\n")};
 const selectedFramework=function(){return model.catalog.frameworks.find(function(item){return item.id===byId("curation-framework").value})||model.catalog.frameworks[0]};
 const curatableAssets=function(framework){return framework?framework.assets.filter(function(item){return item.curationKind}):[]};
 const prefillCurationAsset=function(){const framework=selectedFramework();const key=byId("curation-asset").value.split("|");const asset=curatableAssets(framework).find(function(item){return item.curationKind===key[0]&&item.id===key[1]});if(!asset){return}byId("curation-kind").value=asset.curationKind;byId("curation-id").value=asset.id;byId("curation-repository").value=asset.source.repository;byId("curation-commit").value=asset.source.commit;byId("curation-path").value=asset.source.path};
@@ -921,12 +982,15 @@ const paintDrawer=function(id){
   if(item.asset){html+=kv("Kind",esc(item.asset.kind))+kv("Repository",esc(item.asset.source.repository))+kv("Pinned commit",esc(item.asset.source.commit))+kv("Source path",esc(item.asset.source.path))}
   html+='</div>';
   if(item.desc){html+='<p class="note ok">'+esc(item.desc)+'</p>'}
-  if(item.asset){html+='<p class="note">'+esc(item.framework.id)+' owns this component and installs and runs it. AIH records the selection with its pinned source; recording intent is not enforcement.</p>'}
-  /* Delegated ruling 2: the row and its detail state the fulfillment
-     consequence once selected. The drawer is exactly the "detail" the compact
-     row deliberately does not carry (see the comment above paintDrawer). */
-  if(item.asset&&selected){const fulfillment=fulfillmentNote(item.framework,item.asset.vet);
-    html+='<p class="note'+(item.asset.vet&&item.asset.vet.verdict==="blocked"?" bad":item.asset.vet?" ok":"")+'">'+esc(fulfillment)+'</p>'}
+  if(item.asset){html+='<p class="note">'+esc(item.framework.id)+' owns this component; by default it installs and runs it. AIH records the selection with its pinned source; recording intent is not enforcement.</p>'}
+  /* The row and its detail state the fulfillment consequence once selected -
+     the drawer is exactly the "detail" the compact row deliberately does not
+     carry (see the comment above paintDrawer). Gated the same way the row's
+     own annotation is: never for a kind-mismatched (malformed) selection. */
+  if(item.asset&&selected&&selectedAssetAuthorizable(item.framework.id,item.asset)){
+    const classification=classifyFulfillment(item.asset.vet);
+    const fulfillment=fulfillmentNote(item.framework,item.asset.vet);
+    html+='<p class="note'+(classification===FULFILLMENT_VET_BLOCKED?" bad":classification===FULFILLMENT_MATERIALIZES?" ok":"")+'">'+esc(fulfillment)+'</p>'}
   /* ECC's own declaration riders, stated before the click rather than
      discovered after it. Adding them is a separate, explicit action: the
      policy document has no field in which to refcount who pulled what in, so

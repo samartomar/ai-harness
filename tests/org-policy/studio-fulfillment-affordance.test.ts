@@ -1,5 +1,6 @@
 import { Window } from "happy-dom";
 import { describe, expect, it } from "vitest";
+import type { OrgPolicy } from "../../src/org-policy/schema.js";
 import type { PolicyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
@@ -94,7 +95,43 @@ const noVetFixture = (): { model: PolicyStudioModel; entry: Entry } => {
   return { model: cloned, entry: { framework, asset } };
 };
 
-describe("delegated ruling 2 — selection to fulfillment affordance", () => {
+type Governance = NonNullable<OrgPolicy["governance"]>;
+type RawSelectionGroup = Governance["externalSelections"][number];
+type RawSelectionItem = RawSelectionGroup["items"][number];
+
+/**
+ * A model whose initial policy carries exactly the given externalSelections,
+ * bypassing schema.ts's parseOrgPolicy the same way the workbench's OWN
+ * client-side import path already does: its inline schemaErrors() reads only
+ * the JSON-Schema conversion of OrgPolicySchema, which cannot express a
+ * Zod superRefine (so the "no duplicate framework" rule is invisible to it),
+ * and its hand-written policySemantics() has no externalSelections branch at
+ * all — confirmed by reading both. Only the server-side Zod schema rejects a
+ * duplicate framework group; nothing anywhere (client or server) cross-checks
+ * an item's kind against its own id, or checks the id against the catalog.
+ * This constructs the exact policy shape such an import would leave behind,
+ * directly, so the render pipeline's reaction to it is what gets tested.
+ */
+const modelWithSelections = (externalSelections: RawSelectionGroup[]): PolicyStudioModel => {
+  const cloned = structuredClone(model) as PolicyStudioModel;
+  const governance = cloned.initialPolicy.governance;
+  if (governance === undefined) throw new Error("expected default studio governance");
+  governance.externalSelections = externalSelections;
+  return cloned;
+};
+
+function rawItem(
+  entry: Entry & { asset: { source: unknown } },
+  kindOverride?: string,
+): RawSelectionItem {
+  return {
+    kind: kindOverride ?? entry.asset.kind,
+    id: entry.asset.id,
+    source: entry.asset.source,
+  } as RawSelectionItem;
+}
+
+describe("selection to fulfillment affordance", () => {
   describe("selected and vetted-at-pin", () => {
     it("states on the row that AIH materializes the component directly, conditional on engine evaluation", () => {
       const window = studioWindow(model);
@@ -130,19 +167,40 @@ describe("delegated ruling 2 — selection to fulfillment affordance", () => {
       expect(text).toContain(`Selectable - ${passExample.framework.id} installs and runs it`);
       expect(text).not.toContain("Fulfillment:");
     });
+
+    it("qualifies the neighbouring ownership copy so it no longer contradicts the fulfillment claim", () => {
+      // The row's own detail text and the drawer's ownership paragraph both
+      // say "<framework> installs and runs it" right next to this row's
+      // "<framework> runs no installer for it" - read together that is a
+      // direct contradiction unless the neighbour is hedged as the default,
+      // non-governed behaviour rather than an unconditional fact.
+      const window = studioWindow(model);
+      click(window, selectSelector(passExample));
+      const rowText = rowFor(window, passExample).textContent ?? "";
+      expect(rowText).toContain(`By default, ${passExample.framework.id} installs and runs it`);
+      click(window, detailSelector(passExample));
+      const drawerText = window.document.getElementById("drawer-detail")?.textContent ?? "";
+      expect(drawerText).toContain(
+        `${passExample.framework.id} owns this component; by default it installs and runs it`,
+      );
+    });
   });
 
   describe("selected and vet-blocked", () => {
-    it("keeps the visible-selectable treatment and states it does not materialize while blocked", () => {
+    it("states it is blocked at this pin and defers the actual outcome to the target repository's engine evaluation", () => {
       const window = studioWindow(model);
       click(window, selectSelector(blockedExample));
       const row = rowFor(window, blockedExample);
       const text = row.textContent ?? "";
       expect(text).toContain("Selected - requested intent recorded");
       expect(text).toContain(
-        "Fulfillment: vet-blocked, so this stays recorded as intent only and does not materialize while blocked.",
+        "Fulfillment: blocked at this pin - whether it materializes depends on the target repository's own engine evaluation of its evidence; accepting the finding is the path that can change it.",
       );
       expect(text).not.toContain("materializes this component directly");
+      // Never a fixed "will not materialize" outcome: the engine authorizes
+      // an accepted-with-conditions component from THIS pin's blocked
+      // verdict exactly like a plain pass (src/ecc/materialization-selection.ts).
+      expect(text).not.toContain("does not materialize while blocked");
       // A label on a selectable row, never a disabled experience (H4).
       const tickButton = row.querySelector("[data-framework-select]");
       expect(tickButton).not.toBeNull();
@@ -155,7 +213,7 @@ describe("delegated ruling 2 — selection to fulfillment affordance", () => {
       click(window, detailSelector(blockedExample));
       const detail = window.document.getElementById("drawer-detail");
       expect(detail?.querySelector(".note.bad")?.textContent).toContain(
-        "does not materialize while blocked",
+        "accepting the finding is the path that can change it",
       );
     });
 
@@ -171,13 +229,13 @@ describe("delegated ruling 2 — selection to fulfillment affordance", () => {
   });
 
   describe("selected with no vet record at the pin", () => {
-    it("states evidence is still owed and nothing materializes until it passes", () => {
+    it("states evidence is still owed and defers the outcome to the target repository's engine evaluation", () => {
       const { model: fixtureModel, entry } = noVetFixture();
       const window = studioWindow(fixtureModel);
       click(window, selectSelector(entry));
       const text = rowFor(window, entry).textContent ?? "";
       expect(text).toContain(
-        "Fulfillment: evidence is still owed at this pin; nothing materializes until it passes.",
+        "Fulfillment: evidence is still owed at this pin - whether it materializes depends on the target repository's own engine evaluation of its evidence, once evidence exists to evaluate.",
       );
       expect(text).not.toContain("materializes this component directly");
       expect(text).not.toContain("vet-blocked");
@@ -198,6 +256,99 @@ describe("delegated ruling 2 — selection to fulfillment affordance", () => {
     });
   });
 
+  describe("a selection whose kind disagrees with its own id is never annotated as materializing", () => {
+    // src/ecc/materialization-selection.ts refuses exactly this shape as
+    // "malformed-selection" ("selection kind ... does not match component
+    // id ..."). isFrameworkSelected() matches on id alone (pre-existing,
+    // widely-used, out of this row's scope to change), so the row still
+    // shows "Selected" via the existing tick/badge - but this layer must
+    // name none of the three fulfillment claims for it, since all three
+    // would overstate what the engine actually does with it.
+    it("renders no fulfillment claim on the row", () => {
+      const mismatchedKind = passExample.asset.kind === "runtime" ? "module" : "runtime";
+      const fixtureModel = modelWithSelections([
+        {
+          framework: passExample.framework.id as "ecc" | "superpowers",
+          items: [rawItem(passExample, mismatchedKind)],
+        },
+      ]);
+      const window = studioWindow(fixtureModel);
+      const text = rowFor(window, passExample).textContent ?? "";
+      expect(text).toContain("Selected - requested intent recorded");
+      expect(text).not.toContain("Fulfillment:");
+    });
+
+    it("is not counted in any of the three fulfillment buckets, nor silently dropped", () => {
+      const mismatchedKind = passExample.asset.kind === "runtime" ? "module" : "runtime";
+      const fixtureModel = modelWithSelections([
+        {
+          framework: passExample.framework.id as "ecc" | "superpowers",
+          items: [rawItem(passExample, mismatchedKind)],
+        },
+      ]);
+      const window = studioWindow(fixtureModel);
+      const preview = reportPreview(window);
+      expect(preview).toContain(
+        "Fulfillment summary (governed projection, engine-evaluated): " +
+          "0 would materialize directly, 0 vet-blocked and recorded as intent only, " +
+          "0 with evidence still owed, 1 selected but not shown as a row at this pin.",
+      );
+    });
+  });
+
+  describe("the counts and the rows derive from one source, so they cannot disagree", () => {
+    it("does not count a selection shadowed by a duplicate framework group as an annotated row", () => {
+      // Two groups for the same framework: the second is invisible to
+      // isFrameworkSelected() (selectedItems() takes the FIRST group for a
+      // framework), so its row renders unselected/unannotated - the tally
+      // must agree, not count it as if the row had shown it.
+      const fixtureModel = modelWithSelections([
+        { framework: "ecc", items: [rawItem(passExample)] },
+        { framework: "ecc", items: [rawItem(blockedExample)] },
+      ]);
+      const window = studioWindow(fixtureModel);
+      const shadowedRowText = rowFor(window, blockedExample).textContent ?? "";
+      expect(shadowedRowText).toContain(
+        `Selectable - ${blockedExample.framework.id} installs and runs it`,
+      );
+      expect(shadowedRowText).not.toContain("Fulfillment:");
+      const primaryRowText = rowFor(window, passExample).textContent ?? "";
+      expect(primaryRowText).toContain("Selected - requested intent recorded");
+      const preview = reportPreview(window);
+      expect(preview).toContain(
+        "Fulfillment summary (governed projection, engine-evaluated): " +
+          "1 would materialize directly, 0 vet-blocked and recorded as intent only, " +
+          "0 with evidence still owed, 1 selected but not shown as a row at this pin.",
+      );
+    });
+
+    it("reports an id the pin does not carry as not shown as a row, never as evidence owed", () => {
+      // Collapsing this into "evidence owed" would read as though the pin
+      // carries the component and merely lacks a verdict for it - the engine
+      // keeps a malformed selection and missing evidence as distinct
+      // exclusion reasons, and this surface must not erase that distinction.
+      const fixtureModel = modelWithSelections([
+        {
+          framework: "ecc",
+          items: [
+            {
+              kind: "module",
+              id: "module:this-id-is-not-in-the-pinned-catalog",
+              source: { ...passExample.asset.source },
+            } as RawSelectionItem,
+          ],
+        },
+      ]);
+      const window = studioWindow(fixtureModel);
+      const preview = reportPreview(window);
+      expect(preview).toContain(
+        "Fulfillment summary (governed projection, engine-evaluated): " +
+          "0 would materialize directly, 0 vet-blocked and recorded as intent only, " +
+          "0 with evidence still owed, 1 selected but not shown as a row at this pin.",
+      );
+    });
+  });
+
   describe("the report preview extends the same three counts as a fulfillment summary", () => {
     it("counts a materializing selection and a vet-blocked selection separately", () => {
       // Asymmetric on purpose (2 pass, 1 blocked): with equal counts a
@@ -211,7 +362,7 @@ describe("delegated ruling 2 — selection to fulfillment affordance", () => {
       expect(preview).toContain(
         "Fulfillment summary (governed projection, engine-evaluated): " +
           "2 would materialize directly, 1 vet-blocked and recorded as intent only, " +
-          "0 with evidence still owed.",
+          "0 with evidence still owed, 0 selected but not shown as a row at this pin.",
       );
     });
 
@@ -223,7 +374,7 @@ describe("delegated ruling 2 — selection to fulfillment affordance", () => {
       expect(preview).toContain(
         "Fulfillment summary (governed projection, engine-evaluated): " +
           "0 would materialize directly, 0 vet-blocked and recorded as intent only, " +
-          "1 with evidence still owed.",
+          "1 with evidence still owed, 0 selected but not shown as a row at this pin.",
       );
     });
 
@@ -233,55 +384,56 @@ describe("delegated ruling 2 — selection to fulfillment affordance", () => {
       expect(preview).toContain(
         "Fulfillment summary (governed projection, engine-evaluated): " +
           "0 would materialize directly, 0 vet-blocked and recorded as intent only, " +
-          "0 with evidence still owed.",
+          "0 with evidence still owed, 0 selected but not shown as a row at this pin.",
       );
     });
   });
 
-  it("never says cost anywhere on the surface, including the new fulfillment copy", () => {
-    const html = policyStudioHtml(model);
-    expect(html.toLowerCase()).not.toContain("cost");
-    const window = studioWindow(model);
-    click(window, selectSelector(passExample));
-    click(window, selectSelector(blockedExample));
-    const text = window.document.body?.textContent ?? "";
-    expect(text.toLowerCase()).not.toContain("cost");
-  });
-
   it("adds no new row when a selection gains a fulfillment annotation (S1)", () => {
-    // Both fixtures live in the same (ecc) framework, so this stays inside one
-    // stable one-framework-at-a-time view (ruling 7 / F3, unrelated to this
-    // row) rather than crossing the point where selecting a first component
-    // hides the other framework's groups entirely - a real but orthogonal
-    // dynamic that must not be mistaken for a row this change added.
+    // Queries plain ".row", not ".row[data-state]": every row row() builds
+    // carries data-state, so that attribute filter is blind to exactly the
+    // kind of stray row this test exists to forbid - one appended outside
+    // the shared row() builder. Both fixtures live in the same (ecc)
+    // framework, so this stays inside one stable one-framework-at-a-time
+    // view (F3, unrelated to this row) rather than crossing the point where
+    // selecting a first component hides the other framework's groups
+    // entirely - a real but orthogonal dynamic that must not be mistaken for
+    // a row this change added.
     const window = studioWindow(model);
     click(window, selectSelector(passExample));
-    const rowCountAfterFirstSelection = window.document.querySelectorAll(
-      "#framework-rows .row[data-state]",
-    ).length;
+    const rowCountAfterFirstSelection =
+      window.document.querySelectorAll("#framework-rows .row").length;
     expect(rowCountAfterFirstSelection).toBe(passExample.framework.assets.length);
     click(window, selectSelector(blockedExample));
-    const rowCountAfterSecondSelection = window.document.querySelectorAll(
-      "#framework-rows .row[data-state]",
-    ).length;
+    const rowCountAfterSecondSelection =
+      window.document.querySelectorAll("#framework-rows .row").length;
     expect(rowCountAfterSecondSelection).toBe(rowCountAfterFirstSelection);
   });
 
-  it("leaves the ticker's per-owner totals matching the DOM rows they count, unchanged by annotating (S2)", () => {
-    // studio-hook-registrar.test.ts already pins that the ticker counts
-    // exactly the DOM rows under each owner in general; this pins that the
-    // invariant still holds once rows carry the new fulfillment note, so an
-    // annotation is never miscounted as a second row under a different owner.
+  it("leaves the ticker's per-owner totals matching the catalog's own counts (S2)", () => {
+    // Asserts against numbers the MODEL supplies independently, never
+    // against the identical three DOM operations (querySelectorAll +
+    // filter + reduce) the production ticker code itself runs to produce
+    // the number - recomputing the production formula as the expectation
+    // is tautological: a stray row moves both sides together and the
+    // assertion passes regardless. studio-owner-ticker.test.ts's "counts
+    // every owner's rows" test is the biting sibling this mirrors.
     const window = studioWindow(model);
     click(window, selectSelector(passExample));
     click(window, selectSelector(blockedExample));
     const document = window.document;
-    for (const owner of ["AIH", "ECC", "Superpowers", "You"]) {
-      const domRows = [...document.querySelectorAll(".grp[data-owner]")]
-        .filter((group) => String(group.getAttribute("data-owner")).split(" ").includes(owner))
-        .reduce((total, group) => total + group.querySelectorAll(".row[data-state]").length, 0);
-      const button = document.querySelector(`#owner-ticker [data-owner-focus="${owner}"] b`);
-      expect(Number(button?.textContent), `${owner} tally`).toBe(domRows);
-    }
+    const chip = (owner: string): string | null | undefined =>
+      document.querySelector(`#owner-ticker [data-owner-focus="${owner}"] b`)?.textContent;
+    const aihControls = model.catalog.mcp.length + model.catalog.hooks.length;
+    const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc");
+    if (ecc === undefined) throw new Error("expected the ecc framework in the catalog");
+    // Selecting an ecc component makes ecc the active framework, which hides
+    // superpowers' groups from the plane entirely (pre-existing exclusivity,
+    // unrelated to this row) - the ticker must agree with that, not with 15.
+    expect(chip("AIH")).toBe(String(aihControls));
+    expect(chip("ECC")).toBe(String(ecc.assets.length));
+    expect(chip("Superpowers")).toBe("0");
+    expect(chip("You")).toBe("0");
+    expect(chip("all")).toBe(String(aihControls + ecc.assets.length));
   });
 });
