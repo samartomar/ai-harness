@@ -9,12 +9,14 @@ import { fakeRunner } from "../../src/internals/proc.js";
 import {
   HOOK_REGISTRAR_DESTINATION,
   HOOK_REGISTRAR_RECEIPT_PATH,
+  hookCommandDigest,
   readHookRegistrarReceipt,
 } from "../../src/org-policy/hook-registrar.js";
 import { verifiedOrgPolicyProjectionActions } from "../../src/org-policy/project.js";
 import { type HookRegistration, parseOrgPolicy } from "../../src/org-policy/schema.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { usageRecorderScript } from "../../src/usage/capture.js";
+import { claudeUsageHookCommand } from "../../src/usage/hooks.js";
 import { eccStopRegistrations } from "./hook-registrar-fixtures.js";
 
 let dir: string;
@@ -57,7 +59,27 @@ function governedPolicy(registrations: readonly HookRegistration[] | undefined) 
   });
 }
 
-function usageAndRegistrationsPolicy() {
+/**
+ * The adoption offer an operator accepts for the usage projector's own entry.
+ * The registrar reports that entry unowned and offers it; capturing it produces
+ * a policy registration whose command is the destination's exact bytes, and an
+ * unattributable launcher stays `owner: unknown` (A1).
+ */
+function adoptedUsageRegistration(): HookRegistration {
+  const command = claudeUsageHookCommand();
+  return {
+    id: "adopted-usage-post-tool-use",
+    event: "PostToolUse",
+    command,
+    functionTags: ["usage-metering"],
+    spawns: 1,
+    owner: { kind: "unknown", launcherSha256: hookCommandDigest(command) },
+  };
+}
+
+function usageAndRegistrationsPolicy(
+  registrations: readonly HookRegistration[] = eccStopRegistrations(),
+) {
   const scriptDigest = `sha256:${createHash("sha256").update(usageRecorderScript(), "utf8").digest("hex")}`;
   return parseOrgPolicy({
     schemaVersion: 1,
@@ -81,7 +103,7 @@ function usageAndRegistrationsPolicy() {
         custom: [],
       },
       activations: [{ candidate: "usage-metering", state: "active", targets: ["claude"] }],
-      hookRegistrations: eccStopRegistrations(),
+      hookRegistrations: [...registrations],
     },
   });
 }
@@ -146,5 +168,27 @@ describe("G4 — the registrar is reachable end to end through the verified proj
     await expect(
       verifiedOrgPolicyProjectionActions(ctx(), usageAndRegistrationsPolicy()),
     ).rejects.toThrow(/usage-hook projector and the hook registrar/);
+  });
+
+  it("refuses a registrar projection onto a destination the usage-hook receipt already owns", async () => {
+    // The refusal is an OWNERSHIP gate, not a plan-shape one. Once its receipt
+    // is active the usage projector skips its own write, so a check that only
+    // asks what each projector emits THIS run sees a single writer while the
+    // usage receipt still owns the destination. Adopting the entry the registrar
+    // itself offers is the operator path into exactly that state, and the
+    // registrar's whole-key write would then silently rewrite the usage
+    // projector's own entry — one entry claimed by two receipts.
+    await project(usageAndRegistrationsPolicy([]));
+    const owned = JSON.parse(readFileSync(join(dir, HOOK_REGISTRAR_DESTINATION), "utf8"));
+    expect(owned.hooks.PostToolUse[0].matcher).toBe("*");
+
+    await expect(
+      project(usageAndRegistrationsPolicy([adoptedUsageRegistration()])),
+    ).rejects.toThrow(/usage-hook projector and the hook registrar/);
+
+    // Fail closed: refusing left the usage projector's own entry byte-intact,
+    // and no registrar receipt claims an entry the usage receipt already owns.
+    expect(JSON.parse(readFileSync(join(dir, HOOK_REGISTRAR_DESTINATION), "utf8"))).toEqual(owned);
+    expect(existsSync(join(dir, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(false);
   });
 });
