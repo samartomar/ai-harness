@@ -235,9 +235,19 @@ export function composeProjectedHooks(
   ].sort((a, b) => a.localeCompare(b));
   const hooks: Record<string, ProjectedHookGroup[]> = {};
   for (const event of events) {
+    // OWN-PROPERTY read, the same discipline the destination-side subtraction
+    // already uses. `event` comes from a RECEIPT entry, and the carried-through
+    // groups sit in a plain object: a bare `carried[event]` for an event named
+    // after an `Object.prototype` member — `constructor`, `toString`, `valueOf`,
+    // `hasOwnProperty` — resolves to a FUNCTION through the prototype chain,
+    // `?? []` never fires, and spreading it throws an untyped TypeError out of
+    // this one composer. That is the verdict, the subtraction, the uninstall
+    // plan, the repair report and the evaluate digest at once, from one hostile
+    // or corrupt receipt entry. A non-own key means the event carries nothing.
+    const carriedForEvent = Object.hasOwn(carried, event) ? (carried[event] ?? []) : [];
     hooks[event] = [
       ...entries.filter((entry) => entry.event === event).map(projectedHookGroup),
-      ...(carried[event] ?? []),
+      ...carriedForEvent,
     ];
   }
   return hooks;
