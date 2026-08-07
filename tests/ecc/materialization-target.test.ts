@@ -24,6 +24,7 @@ import {
   assertGovernedMaterializationTargets,
   type EccMaterializationTarget,
   type EccTargetMaterializationResult,
+  foldedDestinationCollision,
   GOVERNED_MATERIALIZATION_TARGETS,
   resolveEccTargetMaterialization,
   WIRED_MATERIALIZATION_TARGETS,
@@ -413,6 +414,135 @@ describe("a multi-target request is one union in one materialization", () => {
       ),
     ).toEqual(first);
   });
+});
+
+/**
+ * `café.md`, spelled as one precomposed é and as e + combining acute. Derived
+ * with `normalize` rather than written as two literals, so the pair cannot
+ * silently become one spelling in transit through an editor or a formatter.
+ */
+const NFC_NAME = "café.md".normalize("NFC");
+const NFD_NAME = "café.md".normalize("NFD");
+
+/** Whether this volume stores two entries that differ only by case. */
+function caseSensitiveVolume(): boolean {
+  const probe = mkdtempSync(join(tmpdir(), "aih-ecc-case-probe-"));
+  try {
+    writeFileSync(join(probe, "probe"), "x", "utf8");
+    return !existsSync(join(probe, "PROBE"));
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+}
+
+/** Whether this volume stores NFC and NFD spellings as two entries (APFS does not). */
+function preservesUnicodeSpelling(): boolean {
+  const probe = mkdtempSync(join(tmpdir(), "aih-ecc-nfd-probe-"));
+  try {
+    writeFileSync(join(probe, NFC_NAME), "x", "utf8");
+    return !existsSync(join(probe, NFD_NAME));
+  } catch {
+    return false;
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+}
+
+describe("two of one target's own sources may not claim one destination", () => {
+  /**
+   * The folding, not the filesystem, is the rule under test. Neither colliding
+   * pair can be created on every platform — a case-insensitive volume refuses
+   * the second spelling of one, a normalizing volume refuses the other — so the
+   * probe hands the pair straight to the predicate the resolver calls. That
+   * keeps both fold classes pinned on every platform this suite runs on.
+   */
+  it("folds a Unicode-normalization pair and a case pair onto one destination", () => {
+    expect(
+      foldedDestinationCollision([
+        `.codex/skills/x/${NFC_NAME}`,
+        ".codex/skills/x/other.md",
+        `.codex/skills/x/${NFD_NAME}`,
+      ]),
+    ).toEqual({
+      first: `.codex/skills/x/${NFC_NAME}`,
+      second: `.codex/skills/x/${NFD_NAME}`,
+    });
+    expect(
+      foldedDestinationCollision([".codex/rules/README.md", ".codex/rules/readme.md"]),
+    ).toEqual({ first: ".codex/rules/README.md", second: ".codex/rules/readme.md" });
+    // The positive control: distinct destinations, including the ones a
+    // multi-target union legitimately produces, are not a collision.
+    expect(
+      foldedDestinationCollision([
+        ".agents/skills/x/SKILL.md",
+        ".claude/skills/x/SKILL.md",
+        ".codex/skills/x/SKILL.md",
+      ]),
+    ).toBeUndefined();
+  });
+
+  it.skipIf(!preservesUnicodeSpelling())(
+    "refuses the component for that target when the pinned checkout carries both spellings",
+    () => {
+      // Skipped where the volume normalizes filenames (APFS): the pair cannot
+      // exist there, so there is nothing for the resolver to see.
+      const skill = join(sourceRoot, "skills", "tdd-workflow");
+      writeFileSync(join(skill, NFC_NAME), "# precomposed\n");
+      writeFileSync(join(skill, NFD_NAME), "# decomposed\n");
+
+      const result = resolve(
+        ["codex"],
+        [
+          selected("skill:tdd-workflow", "skills/tdd-workflow"),
+          // Positive control: the run is not empty, so the refusal is a decision.
+          selected("agent:code-reviewer", "agents/code-reviewer.md"),
+        ],
+      );
+
+      expect(result.components.map((component) => component.id)).toEqual(["agent:code-reviewer"]);
+      const refusal = refusalFor(result, "skill:tdd-workflow", "codex");
+      expect(refusal?.reason).toBe("duplicate-destination");
+      expect(refusal?.detail).toContain("two pinned sources claim one Codex destination");
+      expect(refusal?.detail).toContain("Unicode normalization or case");
+    },
+  );
+
+  it.skipIf(!preservesUnicodeSpelling())(
+    "refuses the same component on the default Claude path, never one file short",
+    () => {
+      const skill = join(sourceRoot, "skills", "tdd-workflow");
+      writeFileSync(join(skill, NFC_NAME), "# precomposed\n");
+      writeFileSync(join(skill, NFD_NAME), "# decomposed\n");
+
+      const claude = resolveEccClaudeMaterialization({
+        sourceRoot,
+        components: [selected("skill:tdd-workflow", "skills/tdd-workflow")],
+      });
+
+      // Materializing one of the two and reporting nothing is the regression
+      // this pins: the component is refused whole, by name, for the target.
+      expect(claude.components).toEqual([]);
+      expect(claude.refused[0]?.reason).toBe("duplicate-destination");
+      expect(claude.refused[0]?.detail).toContain(
+        "two pinned sources claim one Claude destination",
+      );
+    },
+  );
+
+  it.skipIf(!caseSensitiveVolume())(
+    "refuses a case-folded pair the same way on a case-sensitive volume",
+    () => {
+      // Inside `rules/common`, which the descriptor declares as a DIRECTORY, so
+      // the walk sees both spellings. `rules/README.md` is declared as an exact
+      // file and a differently-cased sibling would simply not be a source.
+      writeFileSync(join(sourceRoot, "rules", "common", "Coding-Style.md"), "# shouting\n");
+
+      const result = resolve(["codex"], [selected("baseline:rules", "rules")]);
+
+      expect(result.components).toEqual([]);
+      expect(refusalFor(result, "baseline:rules", "codex")?.reason).toBe("duplicate-destination");
+    },
+  );
 });
 
 describe("which CLIs are governed materialization targets", () => {

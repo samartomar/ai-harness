@@ -111,11 +111,24 @@ function isGovernedTarget(value: string): value is EccMaterializationTarget {
 }
 
 /**
+ * What an operator does next after either refusal. Named because the target set
+ * can come from a COMMITTED `.aih-config.json`, which the operator may not have
+ * in mind while running this command: without the remedy the refusal reads as a
+ * dead end rather than as one flag away. Narrowing to the wired subset silently
+ * is what this lifecycle will not do — that would materialize less than the
+ * workstation configuration says, which is the substitution the design refuses.
+ */
+function wiredTargetRemedy(): string {
+  return `pass \`--cli ${WIRED_MATERIALIZATION_TARGETS.join(",")}\` (or any subset of it) to materialize for the wired targets — an explicit \`--cli\` outranks the committed \`.aih-config.json\` targets`;
+}
+
+/**
  * Narrow a requested CLI list to governed materialization targets, or refuse by
  * name. Two distinct refusals, because they mean different things to whoever
  * reads them: a CLI outside the ruled five is not a materialization target at
  * all, while a ruled one that has not landed yet is a row still to come. Both
- * name what IS wired, so neither reads as "AIH does nothing here".
+ * name what IS wired and how to ask for it, so neither reads as "AIH does
+ * nothing here" or as a dead end.
  */
 export function assertGovernedMaterializationTargets(
   requested: readonly string[],
@@ -124,7 +137,7 @@ export function assertGovernedMaterializationTargets(
   const unruled = requested.filter((cli) => !isGovernedTarget(cli));
   if (unruled.length > 0) {
     throw new AihError(
-      `refusing the governed ECC framework materialization: ${unruled.map((cli) => displaySafe(cli)).join(", ")} is not a governed materialization target — the governed targets are ${GOVERNED_MATERIALIZATION_TARGETS.join(", ")}, of which ${wired} ${WIRED_MATERIALIZATION_TARGETS.length === 1 ? "is" : "are"} wired today`,
+      `refusing the governed ECC framework materialization: ${unruled.map((cli) => displaySafe(cli)).join(", ")} is not a governed materialization target — the governed targets are ${GOVERNED_MATERIALIZATION_TARGETS.join(", ")}, of which ${wired} ${WIRED_MATERIALIZATION_TARGETS.length === 1 ? "is" : "are"} wired today; ${wiredTargetRemedy()}`,
       "AIH_CONFIG",
     );
   }
@@ -132,7 +145,7 @@ export function assertGovernedMaterializationTargets(
   const unwired = targets.filter((target) => !WIRED_MATERIALIZATION_TARGETS.includes(target));
   if (unwired.length > 0) {
     throw new AihError(
-      `refusing the governed ECC framework materialization: the ${unwired.map((target) => TARGET_NAME[target]).join(", ")} target is a governed materialization target that is not wired yet — ${wired} ${WIRED_MATERIALIZATION_TARGETS.length === 1 ? "is" : "are"} wired today`,
+      `refusing the governed ECC framework materialization: the ${unwired.map((target) => TARGET_NAME[target]).join(", ")} target is a governed materialization target that is not wired yet — ${wired} ${WIRED_MATERIALIZATION_TARGETS.length === 1 ? "is" : "are"} wired today; ${wiredTargetRemedy()}`,
       "AIH_CONFIG",
     );
   }
@@ -152,7 +165,8 @@ export type EccTargetRefusalReason =
   | "no-install-descriptor"
   | "unowned-destination"
   | "missing-source"
-  | "unreadable-source";
+  | "unreadable-source"
+  | "duplicate-destination";
 
 export interface EccTargetRefusal {
   id: string;
@@ -289,6 +303,31 @@ function sourceBytes(file: SourceFile): Buffer {
   return opened.contents;
 }
 
+/**
+ * The first pair of destinations in ONE target's list that resolve to the same
+ * owned file, or `undefined`. Two spellings collide when `destinationIdentity`
+ * folds them together — it folds Unicode normalization AND case, because both
+ * resolve to one file on the platforms AIH targets. A pinned checkout carrying
+ * `café.md` in NFC beside `café.md` in NFD (NTFS and ext4 both store those as
+ * two entries), or `README.md` beside `readme.md` on a case-sensitive volume,
+ * declares two sources for one destination.
+ *
+ * Exported because the folding, not the filesystem, is what has to be pinned:
+ * neither pair can be CREATED on every platform, so the probe that proves this
+ * rule holds must be able to hand it the pair directly.
+ */
+export function foldedDestinationCollision(
+  paths: readonly string[],
+): { first: string; second: string } | undefined {
+  const seen = new Map<string, string>();
+  for (const path of paths) {
+    const first = seen.get(destinationIdentity(path));
+    if (first !== undefined) return { first, second: path };
+    seen.set(destinationIdentity(path), path);
+  }
+  return undefined;
+}
+
 function componentFiles(
   sourceRoot: string,
   id: EccComponentId,
@@ -318,6 +357,19 @@ function componentFiles(
       `the pinned source root carries no content for ${displaySafe(id)}`,
     );
   }
+  // Two of this ONE target's own sources claiming one destination is a defect in
+  // the pinned checkout, not a shared row: the cross-target union below collapses
+  // by the same folded identity, so without this the second file would vanish and
+  // the component would install one file short, with the survivor decided by
+  // directory enumeration order. Refuse the component for this target instead —
+  // all-or-nothing, like every other refusal here.
+  const collision = foldedDestinationCollision(files.map((file) => file.path));
+  if (collision !== undefined) {
+    throw new TargetRefusal(
+      "duplicate-destination",
+      `two pinned sources claim one ${TARGET_NAME[target]} destination: ${displaySafe(collision.first)} and ${displaySafe(collision.second)} differ only by Unicode normalization or case`,
+    );
+  }
   return files;
 }
 
@@ -333,10 +385,14 @@ function componentFiles(
  * targets share (`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`) collapse on
  * `destinationIdentity`, the same folded identity every ownership guard uses;
  * without that collapse the engine would see one component claiming one
- * destination twice and refuse the whole request. Collapsing is safe precisely
- * because it is the ONE mapping that produces both: a destination two targets
- * agree on is a row with no target in it, so the bytes are the same source
- * file's.
+ * destination twice and refuse the whole request.
+ *
+ * That collapse is CROSS-target only, and it is safe for exactly one reason: a
+ * destination two targets agree on comes from a mapping row with no target in
+ * it, so both spellings are the identical string produced from the identical
+ * source file. Two spellings that merely FOLD together never reach here — they
+ * are a defect inside one target's own list, and `componentFiles` refuses the
+ * component for that target before the union sees either of them.
  *
  * A target that refuses a component does not veto the others: the component
  * still materializes for the targets that own it, and the refusal is reported
