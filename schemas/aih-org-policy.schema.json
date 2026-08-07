@@ -1653,6 +1653,159 @@
             ],
             "additionalProperties": false
           }
+        },
+        "hookRegistrations": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._:-]{0,119}$"
+              },
+              "event": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9]{0,63}$"
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8192
+              },
+              "functionTags": {
+                "minItems": 1,
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9._:-]{0,119}$"
+                }
+              },
+              "spawns": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 64
+              },
+              "timeout": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 600
+              },
+              "sourceDisabled": {
+                "default": false,
+                "type": "boolean"
+              },
+              "owner": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "aih"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "third-party"
+                      },
+                      "framework": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9._:-]{0,119}$"
+                      },
+                      "declaredControls": {
+                        "default": [],
+                        "maxItems": 20,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120
+                        }
+                      },
+                      "pin": {
+                        "type": "object",
+                        "properties": {
+                          "repository": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$"
+                          },
+                          "commit": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{40}$"
+                          },
+                          "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1024
+                          },
+                          "launcherSha256": {
+                            "type": "string",
+                            "pattern": "^sha256:[0-9a-f]{64}$"
+                          },
+                          "runtimeVersion": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          }
+                        },
+                        "required": [
+                          "repository",
+                          "commit",
+                          "path",
+                          "launcherSha256",
+                          "runtimeVersion"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "framework",
+                      "pin"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "unknown"
+                      },
+                      "launcherSha256": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "launcherSha256"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "event",
+              "command",
+              "functionTags",
+              "spawns",
+              "owner"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

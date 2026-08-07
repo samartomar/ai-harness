@@ -130,7 +130,11 @@ export interface CandidateProjectionState {
   supportedTargets: string[];
   availableTargets: string[];
   coverage: "complete" | "blocked";
-  ownership: "managed-settings-receipt" | "usage-hook-receipt" | "unavailable";
+  ownership:
+    | "managed-settings-receipt"
+    | "usage-hook-receipt"
+    | "hook-registrar-receipt"
+    | "unavailable";
   receipt: "pending-projection" | "unavailable";
 }
 
@@ -348,6 +352,20 @@ function projectorFor(
       availableTargets,
       coverage: projectionCoverage(requested, ["claude"], availableTargets),
       ownership: "managed-settings-receipt",
+      receipt: "pending-projection",
+    };
+  }
+  if (candidate.kind === "hook" && candidate.projector === "hook-managed-settings") {
+    // The registrar owns the client's native hook configuration. Claude only:
+    // Codex publishes no per-event hook output contract AIH has evidence for,
+    // and asserting one without a runtime probe would be a guess.
+    return {
+      projector: candidate.projector,
+      requestedTargets: requested,
+      supportedTargets: ["claude"],
+      availableTargets,
+      coverage: projectionCoverage(requested, ["claude"], availableTargets),
+      ownership: "hook-registrar-receipt",
       receipt: "pending-projection",
     };
   }
@@ -869,6 +887,32 @@ const EXTERNAL_SELECTION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   "items.*.source.repository": "effective report: requested external source repository only",
 };
 
+const HOOK_REGISTRATION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
+  command:
+    "hook-managed-settings projector: written verbatim into the owned client destination; the effective resolver never reads it",
+  event: "hook registrar: native client event key for projection, drift, and overlap reporting",
+  "functionTags.*": "hook registrar: declared overlap key; never inferred by reading a command",
+  id: "hook registrar: registration identity, duplicate refusal, and receipt lookup",
+  "owner.declaredControls.*":
+    "hook registrar: third-party controls recorded read-only, never implemented or mirrored",
+  "owner.framework": "hook registrar: third-party owner identity and the one-framework rule",
+  "owner.kind": "hook registrar: owner partition for receipts and drift attribution",
+  "owner.launcherSha256":
+    "hook registrar: adoption-captured launcher hash for an unattributable owner; parse-time refusal and drift detection",
+  "owner.pin.commit": "hook registrar: administrator-declared provenance recorded into the receipt",
+  "owner.pin.launcherSha256":
+    "hook registrar: parse-time launcher hash refusal and drift detection",
+  "owner.pin.path": "hook registrar: administrator-declared provenance recorded into the receipt",
+  "owner.pin.repository":
+    "hook registrar: administrator-declared provenance recorded into the receipt",
+  "owner.pin.runtimeVersion":
+    "hook registrar: administrator-declared provenance recorded into the receipt",
+  sourceDisabled:
+    "hook registrar: source-disabled spawn accounting; a disabled hook still spawns a process",
+  spawns: "hook registrar: projected process spawns per firing, nested launcher spawns included",
+  timeout: "hook registrar: projected native entry timeout, transported unchanged",
+};
+
 function prefixedConsumers(
   prefix: string,
   leaves: Readonly<Record<string, string>>,
@@ -885,6 +929,7 @@ export const POLICY_ENGINE_FIELD_CONSUMERS: Readonly<Record<string, string>> = O
   ...prefixedConsumers("governance.authority", AUTHORITY_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.externalCuration.*", EXTERNAL_CURATION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.externalSelections.*", EXTERNAL_SELECTION_LEAF_CONSUMERS),
+  ...prefixedConsumers("governance.hookRegistrations.*", HOOK_REGISTRATION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.reviewed.*", CANDIDATE_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.custom.*", CANDIDATE_LEAF_CONSUMERS),
 });

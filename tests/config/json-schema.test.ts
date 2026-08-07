@@ -109,6 +109,40 @@ describe("committed JSON Schemas", () => {
     });
   });
 
+  it("accepts governed hook registrations in the org policy editor schema", () => {
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", {
+      schemaVersion: 1,
+      minimumPosture: "team",
+      references: { repoContract: "ai-coding/project.json" },
+      governance: {
+        policyVersion: "2026-08-06.1",
+        catalog: { reviewed: [], custom: [] },
+        hookRegistrations: [
+          {
+            id: "ecc-stop-session-summary",
+            event: "Stop",
+            command:
+              "node -e \"require('~/.claude/scripts/hooks/run-with-flags.js').run('session-summary.js')\"",
+            functionTags: ["session-summary"],
+            spawns: 3,
+            owner: {
+              kind: "third-party",
+              framework: "ecc",
+              declaredControls: ["ECC_HOOK_PROFILE"],
+              pin: {
+                repository: "affaan-m/ECC",
+                commit: "623f2c020f052319657674e4e6c29ab5d0ad566b",
+                path: "scripts/hooks/session-summary.js",
+                launcherSha256: `sha256:${"b".repeat(64)}`,
+                runtimeVersion: "3.7.1",
+              },
+            },
+          },
+        ],
+      },
+    });
+  });
+
   it("rejects githubHost values that are not bare https origins", () => {
     const base = {
       schemaVersion: 1,

@@ -7,6 +7,8 @@ import { CLI_REGISTRY, REGISTRY_IDS } from "../internals/cli-registry.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
 import { usageRecorderScript } from "../usage/capture.js";
+import { claudeUsageHookCommand } from "../usage/hooks.js";
+import { type HookRegistration, hookOverlaps, hookSpawnProjection } from "./hook-registrar.js";
 
 /**
  * The no-repository authoring projection deliberately uses the same pure MCP
@@ -195,9 +197,58 @@ export function policyAuthoringHosts(): PolicyAuthoringHost[] {
   });
 }
 
+/**
+ * One row of the hook registrar's inventory. AIH-owned handlers and third-party
+ * hooks appear here together: AIH registers every entry, so an administrator who
+ * cannot see both halves cannot see what the destination will contain.
+ */
+export interface PolicyAuthoringHookRegistryEntry {
+  id: string;
+  owner: "aih" | "third-party";
+  /**
+   * The TRUE owner as the workbench ticker names it ("AIH", "ECC",
+   * "Superpowers"). Every registrar-related row files under this label; a row
+   * under the wrong owner or missing from the tally is a product failure.
+   */
+  ownerLabel: string;
+  /** Where the behaviour comes from — repository@commit path, or AIH itself. */
+  source: string;
+  description: string;
+  /**
+   * Whether an AIH-owned gate actually governs this item at run time. A
+   * third-party hook is `not-aih-enforced` because ECC installs and runs it —
+   * that is a LABEL, never a statement that AIH withheld or blocked it.
+   */
+  enforcement: "aih-enforced" | "not-aih-enforced";
+  /** Always true: absence of AIH enforcement never disables authoring. */
+  selectable: true;
+}
+
+/**
+ * A gating control a third-party source declares for its own hooks. AIH records
+ * that it exists and never implements, mirrors, or overrides it.
+ */
+export interface PolicyAuthoringHookControl {
+  name: string;
+  owner: string;
+  enforcedByAih: false;
+  detail: string;
+}
+
+export interface PolicyAuthoringHookRegistry {
+  entries: PolicyAuthoringHookRegistryEntry[];
+  declaredControls: PolicyAuthoringHookControl[];
+  /** The registrations this artifact can price — AIH's own, plus any authored. */
+  registrations: HookRegistration[];
+  overlaps: ReturnType<typeof hookOverlaps>;
+  /** Usage metering, never a cost model: entries and process spawns per event. */
+  spawnProjection: ReturnType<typeof hookSpawnProjection>;
+}
+
 export interface PolicyAuthoringCatalog {
   mcp: Array<{ id: string; description: string; server: McpServer; control: AihPolicyControl }>;
   hooks: PolicyAuthoringHook[];
+  hookRegistry: PolicyAuthoringHookRegistry;
   frameworks: PolicyAuthoringFramework[];
   enterpriseComposition: PolicyAuthoringComposition;
   hosts: PolicyAuthoringHost[];
@@ -407,6 +458,101 @@ function enterpriseComposition(ecc: PolicyAuthoringFramework): PolicyAuthoringCo
 }
 
 /**
+ * Components a third-party source ships to register its own hooks. These are the
+ * ids AIH's pinned catalog actually carries. AIH deliberately does NOT ship a
+ * per-hook registration table for them: it has no pinned evidence for one, and
+ * naming individual hooks its own inventory does not contain would be a claim
+ * the inventory denies.
+ */
+const THIRD_PARTY_HOOK_COMPONENT_IDS = ["baseline:hooks", "module:hooks-runtime"] as const;
+
+/**
+ * Gating controls third-party sources declare for their own hooks, recorded
+ * read-only. AIH does not implement, mirror, or override any of them.
+ *
+ * The `detail` on each is the one operational fact an administrator cannot infer
+ * from the name: these are evaluated INSIDE the source's launcher, so a hook the
+ * control reports as off has already cost an operating-system process by the
+ * time the control is read.
+ */
+const DECLARED_THIRD_PARTY_HOOK_CONTROLS: PolicyAuthoringHookControl[] = [
+  {
+    name: "ECC_HOOK_PROFILE",
+    owner: "ecc",
+    enforcedByAih: false,
+    detail:
+      "ECC selects its own hook profile. AIH records that the control exists and never sets, mirrors, or overrides it.",
+  },
+  {
+    name: "ECC_DISABLED_HOOKS",
+    owner: "ecc",
+    enforcedByAih: false,
+    detail:
+      "ECC reads this list inside its own launcher, after the operating-system process already exists — a hook named here still spawns one process per firing.",
+  },
+];
+
+/** AIH's own registrations, priced from the launcher that actually ships. */
+function aihHookRegistrations(): HookRegistration[] {
+  const command = claudeUsageHookCommand();
+  return [
+    {
+      id: "usage-metering",
+      event: "PostToolUse",
+      command,
+      functionTags: ["usage-metering"],
+      // One process: AIH registers one composite entry per event.
+      spawns: 1,
+      owner: { kind: "aih" },
+    },
+  ];
+}
+
+function hookRegistry(
+  frameworks: readonly PolicyAuthoringFramework[],
+): PolicyAuthoringHookRegistry {
+  const entries: PolicyAuthoringHookRegistryEntry[] = Object.entries(AIH_HOOK_DISCLOSURES).map(
+    ([id, disclosure]) => ({
+      id,
+      owner: "aih" as const,
+      ownerLabel: "AIH",
+      source: "AIH",
+      description: disclosure.description,
+      enforcement: "aih-enforced" as const,
+      selectable: true as const,
+    }),
+  );
+  for (const framework of frameworks) {
+    for (const asset of framework.assets) {
+      if (!(THIRD_PARTY_HOOK_COMPONENT_IDS as readonly string[]).includes(asset.id)) continue;
+      entries.push({
+        id: asset.id,
+        owner: "third-party",
+        // The same label the workbench files the framework's inventory rows
+        // under, so the panel annotation and the ticker can never disagree.
+        ownerLabel: framework.id === "superpowers" ? "Superpowers" : "ECC",
+        source: `${asset.source.repository}@${asset.source.commit.slice(0, 7)} ${asset.source.path}`,
+        description: `Hook registrations ${framework.id} installs and runs. AIH registers and revokes them; ${framework.id} executes them.`,
+        // A label on a selectable item: aih does not install or run these, and
+        // is not withholding them.
+        enforcement: "not-aih-enforced",
+        selectable: true,
+      });
+    }
+  }
+  const registrations = aihHookRegistrations();
+  return {
+    entries,
+    declaredControls: DECLARED_THIRD_PARTY_HOOK_CONTROLS.filter((control) =>
+      frameworks.some((framework) => framework.id === control.owner),
+    ),
+    registrations,
+    overlaps: hookOverlaps(registrations),
+    spawnProjection: hookSpawnProjection(registrations),
+  };
+}
+
+/**
  * Serializable, source-controlled authoring data. It is derived directly from
  * the existing pinned MCP and baseline catalog constructors, never copied.
  */
@@ -414,8 +560,10 @@ export function policyAuthoringCatalog(): PolicyAuthoringCatalog {
   const mcp = policyAuthoringMcpCatalog();
   const controls = aihPolicyControls(mcp);
   const ecc = frameworkCatalog("ecc");
+  const frameworks = [ecc, frameworkCatalog("superpowers")];
   return {
     hosts: policyAuthoringHosts(),
+    hookRegistry: hookRegistry(frameworks),
     enterpriseComposition: enterpriseComposition(ecc),
     mcp: Object.entries(mcp).flatMap(([id, server]) => {
       const control = controls.find((candidate) => candidate.id === id);
@@ -431,6 +579,6 @@ export function policyAuthoringCatalog(): PolicyAuthoringCatalog {
           throw new Error(`AIH hook ${control.id} ships without a behaviour disclosure`);
         return { id: control.id, ...disclosure, control };
       }),
-    frameworks: [ecc, frameworkCatalog("superpowers")],
+    frameworks,
   };
 }

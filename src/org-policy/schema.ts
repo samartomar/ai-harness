@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { AihError } from "../errors.js";
@@ -580,6 +581,146 @@ const ExternalFrameworkSelectionSchema = z
     }
   });
 
+const HookEventSchema = z
+  .string()
+  .regex(/^[A-Za-z][A-Za-z0-9]{0,63}$/, "must be a native client hook event name");
+const HookRegistrationIdSchema = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9._:-]{0,119}$/, "must be a safe registration identifier");
+
+/**
+ * A launcher is opaque bytes. It is length-bounded and rejected when it carries
+ * control or hidden-Unicode characters, because those cannot survive a JSON
+ * round trip into a client configuration intact — but it is never otherwise
+ * inspected, and never rewritten.
+ */
+const HookLauncherCommandSchema = z
+  .string()
+  .min(1)
+  .max(8192)
+  .refine(
+    (value) => !/\p{C}/u.test(value),
+    "must not contain control or hidden Unicode characters",
+  );
+
+export const ThirdPartyLauncherPinSchema = z
+  .object({
+    repository: z
+      .string()
+      .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, "must be an owner/repository identity"),
+    commit: z.string().regex(/^[0-9a-f]{40}$/, "must be an exact commit"),
+    path: z
+      .string()
+      .min(1)
+      .max(1024)
+      .refine(
+        (value) => !value.includes("..") && !value.startsWith("/") && !value.startsWith("\\"),
+        "must be a contained component path",
+      ),
+    launcherSha256: Sha256Schema,
+    runtimeVersion: z.string().min(1).max(120),
+  })
+  .strict();
+
+const HookRegistrationOwnerSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("aih") }).strict(),
+  z
+    .object({
+      kind: z.literal("third-party"),
+      framework: HookRegistrationIdSchema,
+      /**
+       * Controls the source declares for its own hooks — recorded read-only.
+       * AIH never implements, mirrors, or overrides them.
+       */
+      declaredControls: z.array(z.string().min(1).max(120)).max(20).default([]),
+      pin: ThirdPartyLauncherPinSchema,
+    })
+    .strict(),
+  /**
+   * An adoption-emitted entry nobody could attribute. Provenance is
+   * administrator-declared, never inferred, so an unattributable launcher
+   * stays owner `unknown` — but the hash of its exact captured bytes still
+   * binds the policy entry to the launcher, so mutation is still drift.
+   */
+  z.object({ kind: z.literal("unknown"), launcherSha256: Sha256Schema }).strict(),
+]);
+
+/**
+ * The `hook-managed-settings` projector's own registration shape, carried by
+ * the policy grammar as `governance.hookRegistrations` (G1). It lives here so
+ * the grammar and the projector validate through ONE copy; the projector module
+ * imports it rather than restating it.
+ */
+export const HookRegistrationSchema = z
+  .object({
+    id: HookRegistrationIdSchema,
+    event: HookEventSchema,
+    command: HookLauncherCommandSchema,
+    /**
+     * Declared overlap keys. AIH never infers a function by reading a command:
+     * one AIH composite dispatcher carries several, which is exactly why the
+     * overlap key is per-function and not per-entry.
+     */
+    functionTags: z.array(HookRegistrationIdSchema).min(1).max(20),
+    /**
+     * Operating-system processes ONE firing spawns, including nested launcher
+     * spawns. Never zero: a source that gates its own hooks does so inside the
+     * launcher, after the process already exists.
+     */
+    spawns: z.number().int().min(1).max(64),
+    timeout: z.number().int().min(1).max(600).optional(),
+    /** The source's own controls report this hook off. It still spawns a process. */
+    sourceDisabled: z.boolean().default(false),
+    owner: HookRegistrationOwnerSchema,
+  })
+  .strict();
+
+export type ThirdPartyLauncherPin = z.infer<typeof ThirdPartyLauncherPinSchema>;
+export type HookRegistrationOwner = z.infer<typeof HookRegistrationOwnerSchema>;
+export interface HookRegistration extends z.input<typeof HookRegistrationSchema> {}
+export type ResolvedHookRegistration = z.infer<typeof HookRegistrationSchema>;
+
+export function hookCommandDigest(command: string): string {
+  return `sha256:${createHash("sha256").update(command, "utf8").digest("hex")}`;
+}
+
+/**
+ * The one copy of registration-set validation: the policy grammar refuses
+ * through it at parse time and the projector refuses through it before
+ * emitting. A launcher whose hash no longer matches its pin is drift — refused,
+ * never projected, because projecting it would be a silent update of code AIH
+ * cannot read.
+ */
+export function hookRegistrationSetIssues(
+  registrations: readonly ResolvedHookRegistration[],
+): { index: number; message: string }[] {
+  const issues: { index: number; message: string }[] = [];
+  const ids = new Set<string>();
+  for (const [index, registration] of registrations.entries()) {
+    if (ids.has(registration.id)) {
+      issues.push({ index, message: `hook registration ${registration.id} is declared twice` });
+    }
+    ids.add(registration.id);
+    const pinnedSha256 =
+      registration.owner.kind === "third-party"
+        ? registration.owner.pin.launcherSha256
+        : registration.owner.kind === "unknown"
+          ? registration.owner.launcherSha256
+          : undefined;
+    if (pinnedSha256 === undefined) continue;
+    const actual = hookCommandDigest(registration.command);
+    if (actual !== pinnedSha256) {
+      issues.push({
+        index,
+        message:
+          `hook registration ${registration.id} launcher hash ${actual} no longer matches its pin ` +
+          `${pinnedSha256}; this is drift, not a silent update`,
+      });
+    }
+  }
+  return issues;
+}
+
 const PolicyGovernanceSchema = z
   .object({
     policyVersion: SafePolicyTextSchema,
@@ -609,6 +750,14 @@ const PolicyGovernanceSchema = z
      * installer or projector.
      */
     externalSelections: z.array(ExternalFrameworkSelectionSchema).default([]),
+    /**
+     * Registrations the `hook-managed-settings` projector emits into the client
+     * destination AIH owns. The command is a third party's own launcher carried
+     * byte-for-byte; the policy engine never reads it, and adoption — never
+     * hand-typing — is how a launcher gets here. Additive: absent means no
+     * registrations, `schemaVersion` stays 1.
+     */
+    hookRegistrations: z.array(HookRegistrationSchema).default([]),
   })
   .strict()
   .superRefine((governance, ctx) => {
@@ -728,6 +877,33 @@ const PolicyGovernanceSchema = z
         code: "custom",
         path: ["externalSelections"],
         message: `only one framework may be selected at a time; this policy selects from ${distinctSelection.join(" and ")}`,
+      });
+    }
+    for (const issue of hookRegistrationSetIssues(governance.hookRegistrations)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["hookRegistrations", issue.index],
+        message: issue.message,
+      });
+    }
+    // The exclusivity rule mirrored onto the registration surface: harness
+    // hooks and harness selections must name one framework between them.
+    // Owners that are not harnesses — aih, a repository's own hook — coexist,
+    // so the measured multi-writer workstation state stays expressible.
+    const harnessOwners = governance.hookRegistrations
+      .map((registration) =>
+        registration.owner.kind === "third-party" ? registration.owner.framework : undefined,
+      )
+      .filter(
+        (framework): framework is "ecc" | "superpowers" =>
+          framework === "ecc" || framework === "superpowers",
+      );
+    const namedHarnesses = [...new Set([...distinctSelection, ...harnessOwners])].sort();
+    if (harnessOwners.length > 0 && namedHarnesses.length > 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["hookRegistrations"],
+        message: `only one framework may be selected at a time; this policy's selections and hook registrations name ${namedHarnesses.join(" and ")}`,
       });
     }
     // Selection and curation are two stages of one thing. A component sitting

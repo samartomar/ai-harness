@@ -35,6 +35,7 @@ import {
   resolveEffectiveOrgPolicy,
   stableJson,
 } from "./effective.js";
+import { HOOK_REGISTRAR_DESTINATION, hookRegistrarProjectionActions } from "./hook-registrar.js";
 import { type RuntimeOrgPolicyResolution, resolveRuntimeOrgPolicy } from "./runtime.js";
 import { type OrgPolicy, OrgPolicyError } from "./schema.js";
 
@@ -923,7 +924,28 @@ function projectionActionsFromRuntime(
   // that lifecycle for a legacy policy would mistake its generic recorder for
   // an unreceipted governed artifact.
   if (policy.governance !== undefined) {
-    actions.push(...usageHookProjectionActions(ctx, runtime.effective));
+    const usage = usageHookProjectionActions(ctx, runtime.effective);
+    actions.push(...usage);
+    if (targets.includes("claude")) {
+      // G4: the hook registrar is reachable through the verified projector. A
+      // policy declaring registrations gets the registrar's projection; one
+      // declaring none gets its revocation (a no-op without a receipt).
+      const registrar = hookRegistrarProjectionActions(ctx, policy.governance.hookRegistrations, {
+        policyVersion: policy.governance.policyVersion,
+      });
+      const touchesDestination = (planned: readonly Action[]) =>
+        planned.some((action) => "path" in action && action.path === HOOK_REGISTRAR_DESTINATION);
+      // The plan executor collapses repeated writes to one path, so two hook
+      // writers would silently drop one owner's entries — refuse instead.
+      if (touchesDestination(usage) && touchesDestination(registrar)) {
+        throw new OrgPolicyError(
+          `policy project refuses two hook writers into ${HOOK_REGISTRAR_DESTINATION}: the ` +
+            "usage-hook projector and the hook registrar both emit writes for this policy; " +
+            "deactivate the usage-hook selection or drop the hook registrations before projecting",
+        );
+      }
+      actions.push(...registrar);
+    }
   }
   return actions;
 }
