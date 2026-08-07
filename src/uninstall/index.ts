@@ -670,7 +670,12 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
   );
   if (!registrarUnderRemovedTree) {
     const registrar = hookRegistrarState(ctx.root);
-    if (registrar.state === "active") {
+    // BOTH provable states subtract. `cohabited` is a destination that holds
+    // every projected entry beside content aih did not emit — the measured
+    // baseline of a settings file the repository, ECC and aih all write. Making
+    // that drift refused revocation outright and stranded exactly the
+    // third-party entries whose source ships no removal path of its own.
+    if (registrar.state === "active" || registrar.state === "cohabited") {
       hookRegistrarActions = hookRegistrarRevocationActions(ctx);
       const removesCreatedFile = hookRegistrarActions[0]?.kind === "remove";
       artifacts.push({
@@ -679,7 +684,9 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
         disposition: "subtract",
         reason: removesCreatedFile
           ? "receipt-proven aih hook registration entries; the destination AIH created is removed with them"
-          : "receipt-proven aih hook registration entries (third-party launchers included); every other key is preserved",
+          : registrar.state === "cohabited"
+            ? `receipt-proven aih hook registration entries (third-party launchers included); ${registrar.detail} — those and every other key are preserved`
+            : "receipt-proven aih hook registration entries (third-party launchers included); every other key is preserved",
       });
     } else if (registrar.state === "drifted" || registrar.state === "invalid") {
       artifacts.push({

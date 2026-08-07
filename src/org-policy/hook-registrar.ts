@@ -373,8 +373,81 @@ export function hookRegistrarReport(root: string): {
 }
 
 export interface HookRegistrarStateReport {
-  state: "absent" | "unowned" | "active" | "drifted" | "invalid";
+  /**
+   * `active` is an EXACT match: the `hooks` key holds what the receipt says AIH
+   * wrote and nothing else. `cohabited` is the same ownership proof over a key
+   * that also holds content AIH did not emit — the normal configuration of a
+   * file a repository, a third-party framework and AIH all write, and a state
+   * revocation acts on. Neither one widens the other: a surface that cannot tell
+   * them apart cannot tell an operator what uninstall is about to preserve.
+   */
+  state: "absent" | "unowned" | "active" | "cohabited" | "drifted" | "invalid";
   detail: string;
+}
+
+/** The `hooks` value revocation writes back, and what it leaves behind. */
+interface HookGroupSubtraction {
+  /** Every group AIH did not emit, per event. Empty means the key itself goes. */
+  remainder: Record<string, unknown[]>;
+  /** Entries the destination keeps that the receipt does not prove AIH emitted. */
+  foreignEntries: number;
+}
+
+/**
+ * The destination's `hooks` key with exactly the groups the receipt proves AIH
+ * emitted taken out of it, or `undefined` when no such subtraction can be
+ * proved and the caller must fail closed.
+ *
+ * Ownership granularity is the projected GROUP. AIH projects single-entry groups
+ * by construction, so a group that structurally equals the receipt's own
+ * rendering — scoping fields included — is one AIH wrote, and dropping the whole
+ * group drops exactly what it wrote. An operator entry inserted INTO an
+ * AIH-written group makes that group unprovable: subtracting from inside it
+ * would delete content AIH cannot prove it emitted, which is the deletion the
+ * single-registrar contract forbids (H1).
+ *
+ * Groups AIH never emitted are NOT drift. Cohabitation is the measured baseline
+ * of this destination, so they are counted, left where the operator put them,
+ * and written back through the parse-and-re-serialize writer — value and key
+ * preservation, never a byte-preservation claim.
+ */
+function ownedGroupSubtraction(
+  destination: unknown,
+  receipt: HookRegistrarReceipt,
+): HookGroupSubtraction | undefined {
+  let onDisk: NativeHookEntry[];
+  try {
+    onDisk = destinationHookEntries(destination);
+  } catch {
+    // A destination this module cannot read is not one it can prove it owns
+    // part of. Refusing here keeps the verdict fail-closed on ambiguity.
+    return undefined;
+  }
+  const hooks = isPlainObject(destination) ? destination.hooks : undefined;
+  if (!isPlainObject(hooks)) return undefined;
+  // The ONE composer the projection and the receipt's expectation already use,
+  // asked for the owned groups alone. The rendering is never restated here.
+  const owned = composeProjectedHooks(receipt.entries.map(receiptNativeEntry));
+  if (Object.keys(owned).some((event) => !Object.hasOwn(hooks, event))) return undefined;
+  const remainder: Record<string, unknown[]> = {};
+  for (const event of Object.getOwnPropertyNames(hooks)) {
+    const groups = hooks[event];
+    if (!Array.isArray(groups)) return undefined;
+    // Occurrence counts, not a membership set — the module's rule everywhere
+    // else: N owned copies claim N groups on disk and no more, so a duplicate
+    // nobody vouches for is preserved rather than subtracted away.
+    const unclaimed = occurrenceCounts((owned[event] ?? []).map(stableJson));
+    const kept = groups.filter((group) => !claimOccurrence(unclaimed, stableJson(group)));
+    // An owned group the destination no longer holds: the entries the receipt
+    // proves are gone, which is drift and not cohabitation.
+    if ([...unclaimed.values()].some((count) => count > 0)) return undefined;
+    // An event whose groups were ALL owned goes with them; one that already held
+    // no group stays, exactly as the projection carried it through.
+    if (kept.length > 0 || groups.length === 0) remainder[event] = kept;
+  }
+  // Every owned group carries exactly one hook by construction, so what the
+  // destination holds beyond the receipt's own entries is what AIH did not emit.
+  return { remainder, foreignEntries: onDisk.length - receipt.entries.length };
 }
 
 /** Read-only ownership verdict. It never mutates the destination. */
@@ -388,53 +461,98 @@ export function hookRegistrarState(root: string): HookRegistrarStateReport {
   return hookRegistrarVerdict(receipt, readDestination(root));
 }
 
+/** A verdict, and — when one can be proved — the subtraction it authorizes. */
+interface HookRegistrarOwnership {
+  report: HookRegistrarStateReport;
+  /** Present exactly when the report reads `active` or `cohabited`. */
+  subtraction?: HookGroupSubtraction;
+}
+
 /**
- * The verdict over bytes the CALLER read. Revocation proves ownership and then
- * pins the write it emits, and both have to come from the same read: with a
- * second read, a write landing between them was baked into the pin, passed at
- * apply, and the whole-key subtraction then deleted the entry that had just
- * arrived — the deletion the single-registrar contract forbids (H1).
+ * The verdict over bytes the CALLER read, and the subtraction proved from those
+ * same bytes. Revocation proves ownership and then pins the write it emits, and
+ * both have to come from the same read: with a second read, a write landing
+ * between them was baked into the pin, passed at apply, and was then subtracted
+ * as though AIH had proved it owned the entry that had just arrived — the
+ * deletion the single-registrar contract forbids (H1). One computation answers
+ * both questions here so the two can never be asked of different bytes.
  */
-function hookRegistrarVerdict(
+function hookRegistrarOwnership(
   receipt: HookRegistrarReceipt | undefined,
   read: GuardedRead,
-): HookRegistrarStateReport {
-  if (read.state === "unreadable") return { state: "invalid", detail: read.reason };
+): HookRegistrarOwnership {
+  if (read.state === "unreadable") return { report: { state: "invalid", detail: read.reason } };
   const bytes = read.state === "present" ? read.contents : undefined;
   if (receipt === undefined) {
     if (bytes === undefined) {
-      return { state: "absent", detail: "no hook registrar receipt and no projected destination" };
+      return {
+        report: {
+          state: "absent",
+          detail: "no hook registrar receipt and no projected destination",
+        },
+      };
     }
     let entries: NativeHookEntry[];
     try {
       entries = destinationHookEntries(parseDestinationSettings(bytes));
     } catch (error) {
-      return { state: "invalid", detail: (error as Error).message };
+      return { report: { state: "invalid", detail: (error as Error).message } };
     }
-    return entries.length === 0
-      ? { state: "absent", detail: "no hook registrar receipt and no hook entries on disk" }
-      : {
-          state: "unowned",
-          detail: `${entries.length} hook entr${entries.length === 1 ? "y" : "ies"} AIH did not emit; repair reports them and offers adoption`,
-        };
+    return {
+      report:
+        entries.length === 0
+          ? { state: "absent", detail: "no hook registrar receipt and no hook entries on disk" }
+          : {
+              state: "unowned",
+              detail: `${entries.length} hook entr${entries.length === 1 ? "y" : "ies"} AIH did not emit; repair reports them and offers adoption`,
+            },
+    };
   }
   if (bytes === undefined) {
-    return { state: "drifted", detail: "receipt-owned hook destination is absent" };
+    return { report: { state: "drifted", detail: "receipt-owned hook destination is absent" } };
   }
   let actual: unknown;
   try {
     actual = parseDestinationSettings(bytes);
   } catch {
-    return { state: "drifted", detail: `${HOOK_REGISTRAR_DESTINATION} cannot be parsed safely` };
-  }
-  const hooks = isPlainObject(actual) ? actual.hooks : undefined;
-  if (stableJson(hooks) !== stableJson(expectedHooksFromReceipt(receipt))) {
     return {
-      state: "drifted",
-      detail: `${HOOK_REGISTRAR_DESTINATION} hooks changed since AIH projected them`,
+      report: { state: "drifted", detail: `${HOOK_REGISTRAR_DESTINATION} cannot be parsed safely` },
     };
   }
-  return { state: "active", detail: "receipt and every projected hook entry match" };
+  const subtraction = ownedGroupSubtraction(actual, receipt);
+  if (subtraction === undefined) {
+    return {
+      report: {
+        state: "drifted",
+        detail: `${HOOK_REGISTRAR_DESTINATION} hooks changed since AIH projected them`,
+      },
+    };
+  }
+  const hooks = isPlainObject(actual) ? actual.hooks : undefined;
+  if (stableJson(hooks) === stableJson(expectedHooksFromReceipt(receipt))) {
+    return {
+      report: { state: "active", detail: "receipt and every projected hook entry match" },
+      subtraction,
+    };
+  }
+  const foreign = subtraction.foreignEntries;
+  return {
+    report: {
+      state: "cohabited",
+      detail:
+        "receipt and every projected hook entry match, beside " +
+        `${foreign} hook entr${foreign === 1 ? "y" : "ies"} AIH did not emit`,
+    },
+    subtraction,
+  };
+}
+
+/** Read-only ownership verdict over bytes the caller read. It never mutates anything. */
+function hookRegistrarVerdict(
+  receipt: HookRegistrarReceipt | undefined,
+  read: GuardedRead,
+): HookRegistrarStateReport {
+  return hookRegistrarOwnership(receipt, read).report;
 }
 
 /**
@@ -580,10 +698,10 @@ export function hookRegistrarRevocationActions(ctx: PlanContext): Action[] {
   const receiptRaw = receiptRead.contents;
   const receipt = parseHookRegistrarReceipt(receiptRaw);
   const read = readDestination(ctx.root);
-  const state = hookRegistrarVerdict(receipt, read);
-  if (state.state !== "active" || read.state !== "present") {
+  const ownership = hookRegistrarOwnership(receipt, read);
+  if (ownership.subtraction === undefined || read.state !== "present") {
     throw new OrgPolicyError(
-      `refusing hook registrar revocation: ${state.detail}; repair the owned destination or remove the receipt only after manual remediation`,
+      `refusing hook registrar revocation: ${ownership.report.detail}; repair the owned destination or remove the receipt only after manual remediation`,
     );
   }
   const bytes = read.contents;
@@ -591,47 +709,50 @@ export function hookRegistrarRevocationActions(ctx: PlanContext): Action[] {
    * `hooks` is the only key the receipt proves AIH owns, so it is the only key
    * revocation touches — every other byte the operator has in this file is
    * merge-preserved, which is what restoring the prior destination means here.
+   * Inside that key the unit is the projected GROUP: what AIH emitted is
+   * subtracted, and every group it did not — content it carried through, and
+   * anything an operator or a third party added afterwards — is written back.
    *
    * Entries AIH adopted from a third party do NOT come back. Adoption is a
    * transfer of ownership, and the case that motivated this ADR is precisely a
    * source that wrote entries into a client's settings and shipped no way to
    * remove them. Reinstating them on uninstall would rebuild the defect.
+   * Subtraction changes what revocation can prove, never what it replays:
+   * nothing here is ever replayed.
    */
   // Creating the file does not make AIH the owner of everything later written
   // into it. Removal is authorized only while `hooks` is still the only key
-  // present; one operator key and the file is preserved and merely subtracted.
+  // present AND nothing foreign is left inside it; one operator key or one
+  // operator hook group and the file is preserved and merely subtracted.
   // Lifecycle rule R8: preserve conflicts and user-owned config.
   const current = parseDestinationSettings(bytes);
   const onlyHooksRemain =
     isPlainObject(current) && Object.keys(current).length === 1 && Object.hasOwn(current, "hooks");
-  // Content AIH carried through was never AIH's to remove. Subtracting the whole
-  // `hooks` key would delete it along with what AIH owned, so where any exists
-  // the key is rewritten to exactly that content instead.
-  const carriedThrough = receipt.carriedThrough ?? {};
-  const carriesContent = Object.keys(carriedThrough).length > 0;
-  const restore: Action = carriesContent
-    ? withExpectedContents(
-        writeJson(
-          HOOK_REGISTRAR_DESTINATION,
-          { hooks: carriedThrough },
-          "subtract every AIH-registered hook entry, keeping the content AIH carried through",
-          { merge: true, replaceJsonKeys: ["hooks"] },
-        ),
-        bytes,
-      )
-    : receipt.prior.state === "absent" && onlyHooksRemain
-      ? remove(HOOK_REGISTRAR_DESTINATION, "remove the hook destination AIH created", {
-          expect: { sha256: sha256(bytes) },
-        })
-      : withExpectedContents(
+  const { remainder } = ownership.subtraction;
+  const restore: Action =
+    Object.keys(remainder).length > 0
+      ? withExpectedContents(
           writeJson(
             HOOK_REGISTRAR_DESTINATION,
-            {},
-            "subtract every AIH-registered hook entry and restore the prior destination",
-            { merge: true, removeJsonTopLevelKeys: ["hooks"] },
+            { hooks: remainder },
+            "subtract every AIH-registered hook entry, keeping every group AIH did not emit",
+            { merge: true, replaceJsonKeys: ["hooks"] },
           ),
           bytes,
-        );
+        )
+      : receipt.prior.state === "absent" && onlyHooksRemain
+        ? remove(HOOK_REGISTRAR_DESTINATION, "remove the hook destination AIH created", {
+            expect: { sha256: sha256(bytes) },
+          })
+        : withExpectedContents(
+            writeJson(
+              HOOK_REGISTRAR_DESTINATION,
+              {},
+              "subtract every AIH-registered hook entry and restore the prior destination",
+              { merge: true, removeJsonTopLevelKeys: ["hooks"] },
+            ),
+            bytes,
+          );
   return [
     restore,
     remove(HOOK_REGISTRAR_RECEIPT_PATH, "remove the completed hook registrar receipt", {

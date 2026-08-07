@@ -203,3 +203,87 @@ describe("A2 — uninstall subtracts receipt-owned hook registrations, never rep
     expect(digest?.text).not.toContain(HOOK_REGISTRAR_DESTINATION);
   });
 });
+
+/** A hook group the operator wrote themselves. AIH never emitted it and never adopted it. */
+const OPERATOR_GROUP = {
+  matcher: "Edit|Write",
+  hooks: [{ type: "command", command: "node ./tools/operator-guard.mjs" }],
+};
+
+/** Rewrite the destination's `hooks` key through `mutate`, leaving every other key alone. */
+function rewriteHooks(mutate: (hooks: Record<string, unknown>) => void): string {
+  const current = JSON.parse(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8"));
+  mutate(current.hooks);
+  const contents = `${JSON.stringify(current, null, 2)}\n`;
+  put(HOOK_REGISTRAR_DESTINATION, contents);
+  return contents;
+}
+
+/**
+ * The measured baseline of the destination this projector owns: the repository,
+ * ECC and AIH all write one `.claude/settings.json`. Before delegated ruling 6
+ * one operator hook group anywhere under `hooks` read as drift, and uninstall
+ * answered "cannot prove clean ownership — remediate manually" — stranding every
+ * projected third-party entry, which is the one thing H6 forbids.
+ */
+describe("H6 — uninstall subtracts owned hook groups out of a cohabited destination", () => {
+  it("removes the owned groups when an operator group cohabits another event", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+    rewriteHooks((hooks) => {
+      hooks.PreToolUse = [OPERATOR_GROUP];
+    });
+
+    const result = await uninstall();
+
+    const after = JSON.parse(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8"));
+    expect(JSON.stringify(after)).not.toContain("run-with-flags.js");
+    // The parsed structure whole: a subtraction that also dropped, reordered or
+    // rewrote the operator's group fails here.
+    expect(after.hooks).toEqual({ PreToolUse: [OPERATOR_GROUP] });
+    expect(after.permissions).toEqual(OPERATOR_CONTENT.permissions);
+    expect(after.model).toBe(OPERATOR_CONTENT.model);
+    expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(false);
+
+    const row = digestRowFor(result, HOOK_REGISTRAR_DESTINATION);
+    expect(row).toMatch(/\[subtract\]/);
+    expect(row).not.toMatch(/remediate manually/);
+    // The reason names what survives, and the count has to be the real one.
+    expect(row).toContain("1 hook entry");
+  });
+
+  it("removes the owned groups when an operator group cohabits the same event", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+    rewriteHooks((hooks) => {
+      (hooks.Stop as unknown[]).push(OPERATOR_GROUP);
+    });
+
+    const result = await uninstall();
+
+    const after = JSON.parse(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8"));
+    expect(JSON.stringify(after)).not.toContain("run-with-flags.js");
+    expect(after.hooks).toEqual({ Stop: [OPERATOR_GROUP] });
+    expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(false);
+    expect(digestRowFor(result, HOOK_REGISTRAR_DESTINATION)).toMatch(/\[subtract\]/);
+  });
+
+  it("leaves everything alone when an operator entry sits inside a group AIH owns", async () => {
+    seedThirdPartyDestination();
+    await projectOwnership();
+    const tampered = rewriteHooks((hooks) => {
+      const stop = hooks.Stop as { hooks: unknown[] }[];
+      stop[0]?.hooks.push({ type: "command", command: "node ./tools/operator-guard.mjs" });
+    });
+
+    const result = await uninstall();
+
+    // Subtracting from inside a group AIH wrote would delete content AIH cannot
+    // prove it emitted, so this stays the advisory it always was.
+    const row = digestRowFor(result, HOOK_REGISTRAR_DESTINATION);
+    expect(row).toMatch(/\[advisory\]/);
+    expect(row).toMatch(/remediate manually/);
+    expect(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8")).toBe(tampered);
+    expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(true);
+  });
+});
