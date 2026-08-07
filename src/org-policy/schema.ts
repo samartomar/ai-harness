@@ -662,13 +662,40 @@ export function nativeHookFieldIssues(fields: unknown, reserved: readonly string
     issues.push(`${where} is not JSON-representable`);
   };
   walk(fields, 0, "");
-  const serialized = JSON.stringify(fields);
+  // Only serialize once the bounded walk has passed. `JSON.stringify` recurses
+  // over the whole value regardless of how deep it is, so measuring size first
+  // turns one over-nested field into a raw `RangeError` thrown out of the
+  // projection — untyped, and enough to pin the registrar to `invalid` forever.
+  if (issues.length > 0) return issues;
+  let serialized: string | undefined;
+  try {
+    serialized = JSON.stringify(fields);
+  } catch (error) {
+    return [`could not be serialized safely: ${(error as Error).message}`];
+  }
   if (serialized === undefined || serialized.length > NATIVE_HOOK_FIELD_MAX_JSON) {
     issues.push(`must serialize to at most ${NATIVE_HOOK_FIELD_MAX_JSON} JSON characters`);
   }
   return issues;
 }
 
+/**
+ * MEASURED LIMIT, stated rather than implied: `z.record` builds a new object and
+ * drops a `__proto__` key on the way, so the unsafe-key check below never sees
+ * that one key when a value reaches the grammar as already-parsed JSON. The
+ * check still does real work on every other key and on structure, depth and
+ * size.
+ *
+ * What actually guards `__proto__` is on the capture path, where untrusted
+ * content enters: the projector refuses it in the destination SOURCE TEXT
+ * (`assertNoProtoMember`) before any of this runs. A `__proto__` written into a
+ * policy document by its own administrator is dropped by `z.record` rather than
+ * refused — a silent drop this module's doctrine dislikes, kept because the
+ * wrappers that expose the raw value (`z.preprocess`, `z.custom`) either strip
+ * `"default": []` from the published editor schema or cannot be represented in
+ * JSON Schema at all. Not exploitable: no pollution occurs and nothing is
+ * projected from it.
+ */
 function nativeHookFieldsSchema(reserved: readonly string[]) {
   return z.record(z.string(), z.unknown()).superRefine((fields, ctx) => {
     for (const message of nativeHookFieldIssues(fields, reserved)) {
@@ -751,6 +778,10 @@ export const HookRegistrationSchema = z
      * its `hooks` array.
      */
     nativeGroup: nativeHookFieldsSchema(["hooks"]).optional(),
+    // `command` is always AIH's to write. `timeout` is reserved only while the
+    // registration authors one: a captured timeout outside what the grammar can
+    // author is carried here instead, so a third party writing `timeout: 900`
+    // stays adoptable rather than bricking the destination.
     /**
      * The native hook object's own fields, captured verbatim. Absent means AIH
      * authored this entry and it is emitted as a plain `type: "command"` hook;
@@ -758,7 +789,7 @@ export const HookRegistrationSchema = z
      * its command, and it is emitted that way. The two are not the same entry
      * and must not normalize to the same thing.
      */
-    nativeHook: nativeHookFieldsSchema(["command", "timeout"]).optional(),
+    nativeHook: nativeHookFieldsSchema(["command"]).optional(),
     owner: HookRegistrationOwnerSchema,
   })
   .strict();
@@ -789,6 +820,15 @@ export function hookRegistrationSetIssues(
       issues.push({ index, message: `hook registration ${registration.id} is declared twice` });
     }
     ids.add(registration.id);
+    // A timeout has exactly one home. Both at once would emit one value and key
+    // on another, which is the field-level divergence the ownership key exists
+    // to prevent.
+    if (registration.timeout !== undefined && registration.nativeHook?.timeout !== undefined) {
+      issues.push({
+        index,
+        message: `hook registration ${registration.id} records a timeout both as its own field and as a captured native field; it has one home`,
+      });
+    }
     const pinnedSha256 =
       registration.owner.kind === "third-party"
         ? registration.owner.pin.launcherSha256

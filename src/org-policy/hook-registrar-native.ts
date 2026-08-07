@@ -1,4 +1,5 @@
-import { isPlainObject } from "../internals/merge.js";
+import { type Node, parseTree } from "jsonc-parser";
+import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 import { stableJson } from "./effective.js";
 import { HOOK_REGISTRAR_DESTINATION } from "./hook-registrar-read.js";
 import {
@@ -87,8 +88,14 @@ export function projectedHookGroup(entry: NativeHookEntry): ProjectedHookGroup {
  * {@link projectedHookGroup} emits, because the projection replaces the whole
  * `hooks` key: a field left out of this key is a field the destination can
  * hold, AIH can then call already-known, and the replace can drop — a silent
- * rewrite of a hook AIH never emitted. `stableJson` sorts keys, so the key is
- * insensitive to the order a writer happened to use.
+ * rewrite of a hook AIH never emitted.
+ *
+ * `stableJson` sorts with `localeCompare`, which returns 0 for some distinct
+ * strings, so this key is NOT guaranteed insensitive to the order a writer used:
+ * two objects carrying the same fields in different orders can serialize
+ * differently and read as two different entries. That direction is fail-closed —
+ * the entry is reported unowned rather than silently rewritten — so it is a
+ * false-drift risk, never a deletion risk.
  */
 export function nativeHookEntryKey(entry: NativeHookEntry): string {
   return [
@@ -174,13 +181,76 @@ export function claimOccurrence(counts: Map<string, number>, key: string): boole
   return true;
 }
 
+/** The bounds the grammar puts on an AIH-authored `timeout`. */
+const MIN_AUTHORED_TIMEOUT = 1;
+const MAX_AUTHORED_TIMEOUT = 600;
+
+/** True only for a timeout the registration grammar will accept as its own field. */
+export function isAuthorableTimeout(value: unknown): boolean {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= MIN_AUTHORED_TIMEOUT &&
+    value <= MAX_AUTHORED_TIMEOUT
+  );
+}
+
 /**
- * A JSON value parsed from the destination is refused when its prototype was
- * replaced. `parseJsoncText` does not give a `__proto__` member an own property:
- * it SETS THE PROTOTYPE, so the entry becomes invisible to `Object.keys` and to
- * `Object.getOwnPropertyNames` alike — enumerating own keys cannot recover it —
- * and the whole-key replace would then delete it with nothing reported. The
- * poisoned prototype is the one observable trace, so that is what is checked.
+ * Groups that yield no entry, kept per event exactly as found. A group object is
+ * CONTENT — it carries `matcher`, `id`, `description`, the very fields this
+ * projector exists to preserve — so producing no entry must not mean the
+ * whole-key replace deletes it. The projection carries these through unchanged
+ * and the receipt records them, so revocation puts them back rather than
+ * subtracting them along with what AIH owned. An event whose group list is empty
+ * is carried the same way, so the event key itself survives.
+ */
+export function entrylessGroups(destination: unknown): Record<string, ProjectedHookGroup[]> {
+  if (!isPlainObject(destination)) return {};
+  const hooks = destination.hooks;
+  if (!isPlainObject(hooks)) return {};
+  const carried: Record<string, ProjectedHookGroup[]> = {};
+  for (const event of Object.getOwnPropertyNames(hooks)) {
+    const groups = hooks[event];
+    if (!Array.isArray(groups)) continue;
+    const entryless = groups.filter(
+      (group): group is ProjectedHookGroup =>
+        isPlainObject(group) && Array.isArray(group.hooks) && group.hooks.length === 0,
+    );
+    if (groups.length === 0 || entryless.length > 0) carried[event] = entryless;
+  }
+  return carried;
+}
+
+/**
+ * The `hooks` value a set of owned entries plus carried-through content makes.
+ * ONE composer, used by the projection and by the receipt's expectation, so the
+ * bytes AIH writes and the bytes it later proves it owns cannot diverge.
+ */
+export function composeProjectedHooks(
+  entries: readonly NativeHookEntry[],
+  carried: Record<string, ProjectedHookGroup[]> = {},
+): Record<string, ProjectedHookGroup[]> {
+  const events = [
+    ...new Set([...entries.map((entry) => entry.event), ...Object.keys(carried)]),
+  ].sort((a, b) => a.localeCompare(b));
+  const hooks: Record<string, ProjectedHookGroup[]> = {};
+  for (const event of events) {
+    hooks[event] = [
+      ...entries.filter((entry) => entry.event === event).map(projectedHookGroup),
+      ...(carried[event] ?? []),
+    ];
+  }
+  return hooks;
+}
+
+/**
+ * A parsed value is refused when its prototype was replaced. This catches a
+ * `__proto__` member whose value is an object, an array or null.
+ *
+ * It is NOT sufficient on its own: `obj["__proto__"] = "text"` is a silent
+ * no-op, so a primitive-valued member leaves no own property AND no prototype
+ * change — zero trace in the parse result. {@link assertNoProtoMember} is what
+ * covers that, by reading the source text rather than the object built from it.
  */
 function assertPlainShape(value: object, where: string): void {
   if (Object.getPrototypeOf(value) !== Object.prototype) {
@@ -189,6 +259,44 @@ function assertPlainShape(value: object, where: string): void {
         "AIH refuses rather than silently drop it",
     );
   }
+}
+
+/**
+ * Refuse a `__proto__` member ANYWHERE in the destination text, whatever its
+ * value type. The parse result cannot answer this: a member with an object or
+ * null value poisons the prototype, and one with a string or number value is
+ * discarded outright — no own property, no prototype change, nothing left to
+ * observe. So this reads the SOURCE, walking the JSONC parse tree, where the
+ * property name survives regardless of what it was set to. A `__proto__`
+ * appearing inside a string VALUE is not a member and does not trip it.
+ *
+ * Without this, an operator's `"__proto__": "content"` is destroyed by the
+ * whole-key replace with no refusal, no unowned report, and a verdict of active.
+ */
+export function assertNoProtoMember(text: string, where: string): void {
+  const walk = (node: Node | undefined): boolean => {
+    if (node === undefined) return false;
+    if (node.type === "property") {
+      const [key] = node.children ?? [];
+      if (key?.value === "__proto__") return true;
+    }
+    return (node.children ?? []).some(walk);
+  };
+  if (walk(parseTree(text))) {
+    throw new OrgPolicyError(
+      `${where} carries a __proto__ member, which no JSON parse can preserve; ` +
+        "AIH refuses rather than silently drop it",
+    );
+  }
+}
+
+/**
+ * Parse the destination the one safe way: the shared JSONC parse, plus the
+ * source-level `__proto__` refusal the parse result cannot express.
+ */
+export function parseDestinationSettings(text: string): unknown {
+  assertNoProtoMember(text, HOOK_REGISTRAR_DESTINATION);
+  return parseJsoncText(text);
 }
 
 function assertNativeFields(
@@ -259,15 +367,22 @@ export function destinationHookEntries(destination: unknown): NativeHookEntry[] 
         if (typeof hook.command !== "string") {
           throw new OrgPolicyError(`${eventPath} has a hook entry whose command is not a string`);
         }
-        if (hook.timeout !== undefined && typeof hook.timeout !== "number") {
-          throw new OrgPolicyError(`${eventPath} has a hook entry whose timeout is not a number`);
-        }
-        const nativeHook = withoutKeys(hook, ["command", "timeout"]);
-        assertNativeFields(nativeHook, ["command", "timeout"], eventPath);
+        // A timeout AIH can author is captured as the authored field; anything
+        // else — out of range, fractional, not a number at all — is carried as
+        // an unauthored native field instead of refused. Refusing it would
+        // report the entry as unowned, offer adoption, and then refuse that
+        // adoption because the captured value fails the grammar, leaving the
+        // operator no path that clears while projection demanded adopt-or-remove.
+        const authoredTimeout = isAuthorableTimeout(hook.timeout);
+        const nativeHook = withoutKeys(
+          hook,
+          authoredTimeout ? ["command", "timeout"] : ["command"],
+        );
+        assertNativeFields(nativeHook, ["command"], eventPath);
         entries.push({
           event,
           command: hook.command,
-          ...(typeof hook.timeout === "number" ? { timeout: hook.timeout } : {}),
+          ...(authoredTimeout ? { timeout: hook.timeout as number } : {}),
           nativeGroup,
           nativeHook,
         });

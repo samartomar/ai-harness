@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
+  composeProjectedHooks,
   type NativeHookEntry,
   type ProjectedHookGroup,
-  projectedHookGroup,
 } from "./hook-registrar-native.js";
 import {
   HOOK_REGISTRAR_DESTINATION,
@@ -66,6 +66,14 @@ export interface HookRegistrarReceipt {
    */
   prior: HookReceiptPrior;
   entries: HookReceiptEntry[];
+  /**
+   * Groups found in the destination that yield no entry — content AIH did not
+   * author and does not own, carried through the whole-key write so the replace
+   * cannot delete it. Recorded here so the expectation below reproduces exactly
+   * what was written, and so revocation can put it back instead of subtracting
+   * it along with what AIH did own.
+   */
+  carriedThrough?: Record<string, ProjectedHookGroup[]>;
 }
 
 function sha256(value: string): string {
@@ -175,6 +183,7 @@ const HookReceiptSchema = z
       )
       .min(1)
       .max(HOOK_REGISTRAR_MAX_RECEIPT_ENTRIES),
+    carriedThrough: z.record(z.string(), z.array(z.unknown()).max(512)).optional(),
   })
   .strict()
   /**
@@ -225,7 +234,9 @@ const HookReceiptSchema = z
       }
       const nativeIssues = [
         ...nativeHookFieldIssues(entry.nativeGroup ?? {}, ["hooks"]),
-        ...nativeHookFieldIssues(entry.nativeHook ?? {}, ["command", "timeout"]),
+        // `timeout` is reserved only while the entry authors one of its own; a
+        // captured value outside what the grammar can author is carried here.
+        ...nativeHookFieldIssues(entry.nativeHook ?? {}, ["command"]),
       ];
       if (nativeIssues[0] !== undefined) {
         ctx.addIssue({
@@ -284,17 +295,16 @@ export function receiptNativeEntry(entry: HookReceiptEntry): NativeHookEntry {
   };
 }
 
-/** Rebuild the exact hook value a receipt says AIH owns. */
+/**
+ * Rebuild the exact hook value the projection wrote: the entries AIH owns plus
+ * the content it carried through. Both come from the ONE composer the
+ * projection uses, so the expectation cannot drift from what was written.
+ */
 export function expectedHooksFromReceipt(receipt: HookRegistrarReceipt): Record<string, unknown> {
-  const hooks: Record<string, ProjectedHookGroup[]> = {};
-  for (const event of [...new Set(receipt.entries.map((entry) => entry.event))].sort((a, b) =>
-    a.localeCompare(b),
-  )) {
-    hooks[event] = receipt.entries
-      .filter((entry) => entry.event === event)
-      .map((entry) => projectedHookGroup(receiptNativeEntry(entry)));
-  }
-  return hooks;
+  return composeProjectedHooks(
+    receipt.entries.map(receiptNativeEntry),
+    receipt.carriedThrough ?? {},
+  );
 }
 
 export type { HookRegistration };

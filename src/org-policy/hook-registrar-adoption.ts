@@ -1,4 +1,3 @@
-import { parseJsoncText } from "../internals/merge.js";
 import {
   assertHookRegistrations,
   claimOccurrence,
@@ -6,6 +5,7 @@ import {
   type NativeHookEntry,
   nativeHookEntryKey,
   occurrenceCounts,
+  parseDestinationSettings,
 } from "./hook-registrar-native.js";
 import { HOOK_REGISTRAR_DESTINATION, readDestination } from "./hook-registrar-read.js";
 import { readHookRegistrarReceipt, receiptNativeEntry } from "./hook-registrar-receipt.js";
@@ -96,7 +96,7 @@ export function adoptedHookRegistrations(
   );
   const unowned = new Map<string, NativeHookEntry>();
   const ambiguous = new Set<string>();
-  for (const entry of destinationHookEntries(parseJsoncText(read.contents))) {
+  for (const entry of destinationHookEntries(parseDestinationSettings(read.contents))) {
     if (claimOccurrence(ownedKeys, nativeHookEntryKey(entry))) continue;
     const key = offerKeyFor(entry.event, hookCommandDigest(entry.command));
     const existing = unowned.get(key);

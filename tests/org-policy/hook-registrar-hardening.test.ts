@@ -223,12 +223,38 @@ describe("H1/H2 — richer native content is transported, never destroyed or fla
     expect(hookRegistrarReport(dir).unowned).toEqual([]);
   });
 
-  it("holds no entry for an empty group or an empty event list, and refuses neither", () => {
-    // Neither can lose an entry, because neither holds one.
-    seed({ hooks: { Stop: [], SessionStart: [{ matcher: "*", hooks: [] }] } });
-    const state = hookRegistrarState(dir);
-    expect(state.state).toBe("absent");
-    expect(() => hookRegistrarProjectionActions(ctx(false), eccStopRegistrations())).not.toThrow();
+  /**
+   * A group that yields no entry is still CONTENT: it carries `matcher`, `id`
+   * and `description`, the very fields this redesign exists to preserve. Having
+   * no entry to report must not mean the whole-key replace deletes it — it is
+   * carried through the projection unchanged, and revocation puts it back
+   * rather than subtracting it with what AIH owned.
+   */
+  it("carries an entry-less group through the projection instead of deleting it", async () => {
+    const scoped = { matcher: "*", id: "third-party-empty", description: "kept", hooks: [] };
+    seed({ hooks: { Stop: [], SessionStart: [scoped] } });
+
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+
+    const hooks = destinationHooks();
+    // Survived, byte-identical, alongside what AIH projected.
+    expect(hooks.SessionStart).toEqual([scoped]);
+    expect(hooks.Stop).toHaveLength(eccStopRegistrations().length);
+    // And AIH's ownership verdict accounts for what it carried.
+    expect(hookRegistrarState(dir).state).toBe("active");
+  });
+
+  it("puts carried-through content back when it revokes", async () => {
+    const scoped = { matcher: "Write", id: "third-party-empty", hooks: [] };
+    seed({ hooks: { Stop: [scoped] } });
+
+    await run(hookRegistrarProjectionActions(ctx(false), eccStopRegistrations()));
+    await run(hookRegistrarRevocationActions(ctx(false)));
+
+    // AIH's own entries are gone; the group it never owned is still there.
+    const after = JSON.parse(readDestination() ?? "{}");
+    expect(JSON.stringify(after)).not.toContain("run-with-flags.js");
+    expect(after.hooks.Stop).toEqual([scoped]);
   });
 
   /**
@@ -307,10 +333,42 @@ describe("H1 — structure that cannot be interpreted at all still refuses", () 
     ).toMatch(/command is not a string/);
   });
 
-  it("refuses a hook entry whose timeout is not a number", () => {
-    expect(
-      refusalFor({ hooks: { Stop: [{ hooks: [{ command: "node t.js", timeout: "30s" }] }] } }),
-    ).toMatch(/timeout is not a number/);
+  /**
+   * A timeout AIH cannot author must not brick the destination. Refusing the
+   * capture would report the entry as unowned, offer adoption, refuse that
+   * adoption because the captured value fails the grammar, and leave projection
+   * demanding adopt-or-remove forever — no path that clears. It is carried as an
+   * unauthored native field instead, so the entry stays adoptable and
+   * re-projects byte-faithfully.
+   */
+  it.each([
+    ["above the authorable range", 900],
+    ["below it", 0],
+    ["fractional", 1.5],
+    ["not a number at all", "30s"],
+  ])("carries a timeout %s rather than bricking the destination", async (_label, timeout) => {
+    const group = { matcher: "Bash", hooks: [{ type: "command", command: "node t.js", timeout }] };
+    seed({ hooks: { Stop: [group] } });
+
+    const [offer] = hookRegistrarReport(dir).adoption;
+    if (offer === undefined) throw new Error("expected an adoption offer");
+    const adopted = adoptedHookRegistrations(dir, [
+      {
+        event: offer.event,
+        commandSha256: offer.commandSha256,
+        id: "adopted-odd-timeout",
+        functionTags: ["odd-timeout"],
+        spawns: 1,
+        owner: { kind: "unknown" },
+      },
+    ]);
+    // Carried as an unauthored native field, never as the authored one.
+    expect(adopted[0]?.timeout).toBeUndefined();
+    expect(adopted[0]?.nativeHook?.timeout).toEqual(timeout);
+
+    await run(hookRegistrarProjectionActions(ctx(false), adopted));
+    expect(destinationHooks().Stop).toEqual([group]);
+    expect(hookRegistrarState(dir).state).toBe("active");
   });
 
   it("refuses a native field AIH cannot transport back", () => {
@@ -324,19 +382,38 @@ describe("H1 — structure that cannot be interpreted at all still refuses", () 
   });
 
   /**
-   * `parseJsoncText` does not give a `__proto__` member an own property — it
-   * SETS THE PROTOTYPE, so the entry is invisible to `Object.keys` and to
-   * `Object.getOwnPropertyNames` alike and the whole-key replace would delete it
-   * with nothing reported. The poisoned prototype is its one observable trace.
+   * A `__proto__` member survives no JSON parse. With an object, array or null
+   * value it silently REPLACES THE PROTOTYPE; with a string or number value the
+   * assignment is a no-op and the member is simply discarded — no own property,
+   * no prototype change, ZERO trace in the parse result. Either way the
+   * whole-key replace would delete an operator's content with nothing reported,
+   * so the refusal reads the source text, where the property name survives
+   * whatever it was set to. Every value type is covered, because a guard that
+   * only catches the object case is a guard for the case that leaves evidence.
    */
-  it("refuses a hooks object whose prototype was replaced by a __proto__ member", () => {
-    writeDestination(
-      '{"hooks":{"__proto__":[{"hooks":[{"type":"command","command":"node evil.js"}]}],"Stop":[]}}\n',
-    );
+  it.each([
+    ["an object value", '[{"hooks":[{"type":"command","command":"node evil.js"}]}]'],
+    ["a null value", "null"],
+    ["a string value", '"operator-content"'],
+    ["a number value", "42"],
+  ])("refuses a __proto__ member with %s", (_label, value) => {
+    writeDestination(`{"hooks":{"__proto__":${value},"Stop":[]}}\n`);
+
     expect(() => hookRegistrarProjectionActions(ctx(false), eccStopRegistrations())).toThrowError(
       /__proto__/,
     );
-    expect(hookRegistrarState(dir).state).toBe("invalid");
+    const state = hookRegistrarState(dir);
+    expect(state.state).toBe("invalid");
+    expect(state.detail).toMatch(/__proto__/);
+  });
+
+  it("does not mistake a __proto__ mentioned inside a value for a member", () => {
+    seed({
+      hooks: {
+        Stop: [{ matcher: "__proto__ is only text here", hooks: [{ command: "node ok.js" }] }],
+      },
+    });
+    expect(hookRegistrarState(dir).state).toBe("unowned");
   });
 });
 

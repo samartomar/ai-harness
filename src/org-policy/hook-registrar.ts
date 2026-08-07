@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { isPlainObject, parseJsoncText } from "../internals/merge.js";
+import { isPlainObject } from "../internals/merge.js";
 import { type Action, type PlanContext, remove, writeJson } from "../internals/plan.js";
 import { withExpectedContents } from "../mcp/managed-projection.js";
 import { stableJson } from "./effective.js";
@@ -8,14 +8,17 @@ import {
   assertHookRegistrations,
   boundedReportedEntries,
   claimOccurrence,
+  composeProjectedHooks,
   destinationHookEntries,
   displayableDestinationText,
+  entrylessGroups,
   mergedMaxCounts,
   type NativeHookEntry,
   nativeHookEntryKey,
   occurrenceCounts,
   type ProjectedHookGroup,
   type ProjectedHookSettings,
+  parseDestinationSettings,
   projectedHookGroup,
   registrationKey,
   registrationNativeEntry,
@@ -349,7 +352,7 @@ export function hookRegistrarReport(root: string): {
   let drift: HookDriftReport;
   try {
     drift = hookRegistrarDrift({
-      destination: parseJsoncText(read.contents),
+      destination: parseDestinationSettings(read.contents),
       registrations: owned,
     });
   } catch (error) {
@@ -404,7 +407,7 @@ function hookRegistrarVerdict(
     }
     let entries: NativeHookEntry[];
     try {
-      entries = destinationHookEntries(parseJsoncText(bytes));
+      entries = destinationHookEntries(parseDestinationSettings(bytes));
     } catch (error) {
       return { state: "invalid", detail: (error as Error).message };
     }
@@ -420,7 +423,7 @@ function hookRegistrarVerdict(
   }
   let actual: unknown;
   try {
-    actual = parseJsoncText(bytes);
+    actual = parseDestinationSettings(bytes);
   } catch {
     return { state: "drifted", detail: `${HOOK_REGISTRAR_DESTINATION} cannot be parsed safely` };
   }
@@ -471,7 +474,7 @@ export function hookRegistrarProjectionActions(
   // silently absorbing an unowned entry; silently deleting one is worse, and a
   // source with no removal path of its own provokes exactly that.
   if (bytes !== undefined) {
-    const onDisk = destinationHookEntries(parseJsoncText(bytes));
+    const onDisk = destinationHookEntries(parseDestinationSettings(bytes));
     // An already-owned entry is not foreign: the administrator may legally drop
     // one by changing the selection. Counted, not merely matched, so duplicate
     // copies of one owned entry cannot all claim the same single ownership.
@@ -513,6 +516,12 @@ export function hookRegistrarProjectionActions(
       );
     }
   }
+  // Groups that yield no entry are still content — `matcher`, `id`,
+  // `description` — and the whole-key write would delete them. Carry them
+  // through unchanged and record them, so the expectation matches what was
+  // written and revocation can put them back.
+  const carriedThrough =
+    bytes === undefined ? {} : entrylessGroups(parseDestinationSettings(bytes));
   const receipt: HookRegistrarReceipt = {
     format: "aih-org-policy-hook-registrar-receipt",
     version: 1,
@@ -520,6 +529,7 @@ export function hookRegistrarProjectionActions(
     ...(options.policyVersion === undefined ? {} : { policyVersion: options.policyVersion }),
     prior,
     entries: parsed.map(receiptEntry),
+    ...(Object.keys(carriedThrough).length === 0 ? {} : { carriedThrough }),
   };
   // Owned content FIRST, ownership record SECOND — the order every sibling
   // lifecycle uses (`src/mcp/index.ts` writes the managed pair, then its
@@ -531,7 +541,7 @@ export function hookRegistrarProjectionActions(
     withExpectedContents(
       writeJson(
         HOOK_REGISTRAR_DESTINATION,
-        { hooks: projectedHookSettings(parsed).hooks },
+        { hooks: composeProjectedHooks(parsed.map(registrationNativeEntry), carriedThrough) },
         "project AIH-registered hook entries, third-party launchers verbatim",
         { merge: true, replaceJsonKeys: ["hooks"] },
       ),
@@ -591,11 +601,25 @@ export function hookRegistrarRevocationActions(ctx: PlanContext): Action[] {
   // into it. Removal is authorized only while `hooks` is still the only key
   // present; one operator key and the file is preserved and merely subtracted.
   // Lifecycle rule R8: preserve conflicts and user-owned config.
-  const current = parseJsoncText(bytes);
+  const current = parseDestinationSettings(bytes);
   const onlyHooksRemain =
     isPlainObject(current) && Object.keys(current).length === 1 && Object.hasOwn(current, "hooks");
-  const restore: Action =
-    receipt.prior.state === "absent" && onlyHooksRemain
+  // Content AIH carried through was never AIH's to remove. Subtracting the whole
+  // `hooks` key would delete it along with what AIH owned, so where any exists
+  // the key is rewritten to exactly that content instead.
+  const carriedThrough = receipt.carriedThrough ?? {};
+  const carriesContent = Object.keys(carriedThrough).length > 0;
+  const restore: Action = carriesContent
+    ? withExpectedContents(
+        writeJson(
+          HOOK_REGISTRAR_DESTINATION,
+          { hooks: carriedThrough },
+          "subtract every AIH-registered hook entry, keeping the content AIH carried through",
+          { merge: true, replaceJsonKeys: ["hooks"] },
+        ),
+        bytes,
+      )
+    : receipt.prior.state === "absent" && onlyHooksRemain
       ? remove(HOOK_REGISTRAR_DESTINATION, "remove the hook destination AIH created", {
           expect: { sha256: sha256(bytes) },
         })
