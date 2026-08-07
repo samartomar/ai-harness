@@ -562,6 +562,14 @@ function isEccContentDestination(
  * else: a non-Claude install that landed there would write another tool's
  * directory, and the callers of this mapping fail closed on an unmapped source
  * rather than inventing a destination for it.
+ *
+ * One target's project root is not `.<target>`: Kimi's is `.kimi-code`, which
+ * is where the framework's own Kimi adapter roots a project install and keeps
+ * its install state. `.kimi` is that framework's OBSOLETE compatibility-docs
+ * directory — its adapter deliberately does not recreate it — so deriving the
+ * root would write a directory upstream abandoned. Overriding here rather than
+ * at a call site keeps this the single answer to "where does this source land
+ * for this target", which is what the governed classifier enforces against.
  */
 export function eccContentDestinationMapping(
   source: string,
@@ -572,7 +580,7 @@ export function eccContentDestinationMapping(
     return { scope: "home", relative: ".codex/AGENTS.md" };
   }
   if (target === undefined) return undefined;
-  const targetRoot = `.${target}`;
+  const targetRoot = target === "kimi" ? ".kimi-code" : `.${target}`;
   const mappings: Array<[string, string]> = [
     [".agents/plugins/", ".agents/plugins/"],
     [".agents/skills/", ".agents/skills/"],

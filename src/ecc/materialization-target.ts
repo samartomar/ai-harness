@@ -86,6 +86,7 @@ export type EccMaterializationTarget = (typeof GOVERNED_MATERIALIZATION_TARGETS)
 export const WIRED_MATERIALIZATION_TARGETS: readonly EccMaterializationTarget[] = [
   "claude",
   "codex",
+  "kimi",
 ];
 
 /**

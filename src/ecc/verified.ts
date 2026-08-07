@@ -180,7 +180,7 @@ if (spec.excludeAihOwnedSurfaces === true) {
     const mapping = (() => {
       if (source === "AGENTS.md") return { root: payload.projectRoot, relative: "AGENTS.md" };
       if (source === ".codex/AGENTS.md") return { root: payload.homeDir, relative: ".codex/AGENTS.md" };
-      const targetRoot = "." + payload.target;
+      const targetRoot = payload.target === "kimi" ? ".kimi-code" : "." + payload.target;
       const mappings = [[".agents/plugins/", ".agents/plugins/"], [".agents/skills/", ".agents/skills/"], ...(payload.target === "claude" ? [[".claude/commands/", ".claude/commands/"]] : []), ["agents/", targetRoot + "/agents/"], ["skills/", targetRoot + "/skills/"], ["commands/", targetRoot + "/commands/"], ["rules/", targetRoot + "/rules/"]];
       for (const [sourcePrefix, targetPrefix] of mappings) {
         if (!source.startsWith(sourcePrefix)) continue;
