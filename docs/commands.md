@@ -319,6 +319,18 @@ hash-authenticated installed bytes and source identity, so a later package pin c
 older managed installation. Legacy selection flags such as `--profile`, `--with`, and `--cli`
 cannot be combined with `--lifecycle`.
 
+In a **governed** repository (an org policy carrying `governance`), `--lifecycle install` is not this
+profile installer: it materializes the policy's evidence-passed component selection AIH-directly, and
+removal lives in `aih uninstall`. That governed install does read `--cli`, because which tools a
+materialization lands for is the ordinary workstation target selection — `--cli`, `--all-tools`, the
+committed `.aih-config.json` targets, else the `claude` default. The governed materialization targets
+are `claude`, `codex`, `kimi`, `cursor`, and `opencode`; `claude` and `codex` are wired today, a ruled
+target that is not wired yet is refused by name, and any other CLI is refused as not a governed
+materialization target. Several targets in one run are one materialization into one root with one
+receipt: destinations two targets share (`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`) are
+written once, and a later `--apply` with a narrower target set subtracts the dropped target's files
+and reports each removal.
+
 The same lifecycle manages project-local Claude and Codex hook/MCP registration without claiming
 either client's whole shared settings file. It adds one AIH composite hook per supported native
 event, registers the reviewed MCP identities, preserves unrelated operator entries, and records

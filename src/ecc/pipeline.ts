@@ -42,6 +42,7 @@ import {
   contingentEccInstallPreviewPlan,
   type EccInstallPreviewArtifact,
 } from "./install-preview.js";
+import { assertGovernedMaterializationTargets } from "./materialization-target.js";
 import { orgAllowedEccMcpComponents } from "./mcp.js";
 import {
   machineRegistrationUnion,
@@ -305,9 +306,23 @@ export async function executeEccCommand(
       // resolving a remote source creates a quarantine directory, and an
       // invocation that refuses must create nothing at all.
       const componentIds = governedEccComponentIds(policy, catalog);
+      // WHICH targets is the workstation CLI selection every other
+      // target-scoped operation already uses — `--cli`, `--all-tools`, the
+      // committed marker, else the `claude` default. No second flag and no
+      // policy grammar for it: a governed repository does not get a private
+      // notion of "which tool am I installing for". Narrowed here, before the
+      // source, for the same reason the catalog check is here.
+      const { clis } = await resolveTargets(ctx);
+      const targets = assertGovernedMaterializationTargets(clis);
       return executeGovernedEccMaterialization(
         ctx,
-        { catalog, componentIds, source: deps.source ?? requestedSource(ctx, catalog), policy },
+        {
+          catalog,
+          componentIds,
+          targets,
+          source: deps.source ?? requestedSource(ctx, catalog),
+          policy,
+        },
         deps,
       );
     }
