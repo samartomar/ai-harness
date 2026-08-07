@@ -538,7 +538,7 @@ function isEccContentDestination(
   destination: string,
   roots?: GovernedEccDestinationRoots,
 ): boolean {
-  const mapping = contentDestinationMapping(source, roots?.target);
+  const mapping = eccContentDestinationMapping(source, roots?.target);
   if (mapping === undefined) return false;
   if (roots === undefined) return normalizedPath(destination).endsWith(`/${mapping.relative}`);
   const root = mapping.scope === "project" ? roots.projectRoot : roots.homeDir;
@@ -549,8 +549,13 @@ function isEccContentDestination(
  * Each retained upstream content source has exactly one owned target path.
  * Matching a suffix somewhere below an otherwise trusted root is not enough:
  * it could remap a rule to a skill or overwrite a sibling's content.
+ *
+ * Exported because it is the single answer to "where does this component's
+ * source file land for this target". A target adapter that needed the same
+ * answer and restated it would be a second mapping able to drift from the one
+ * the governed classifier below enforces.
  */
-function contentDestinationMapping(
+export function eccContentDestinationMapping(
   source: string,
   target: string | undefined,
 ): { scope: "project" | "home"; relative: string } | undefined {
