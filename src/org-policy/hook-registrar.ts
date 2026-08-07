@@ -262,6 +262,37 @@ export interface HookDriftReport {
 interface DestinationEntry {
   event: string;
   command: string;
+  timeout?: number;
+}
+
+/**
+ * The ownership key for one native entry. It carries EVERY field the projector
+ * emits, because the projection writes `hooks` as a whole-key replace: a field
+ * left out of this key is a field the destination can hold, AIH can then call
+ * already-known, and the replace can drop — a silent rewrite of a hook AIH
+ * never emitted.
+ */
+function destinationEntryKey(entry: { event: string; command: string; timeout?: number }): string {
+  return `${entry.event}\u0000${entry.command}\u0000${entry.timeout ?? ""}`;
+}
+
+/** The exact group and hook shapes {@link projectedHookSettings} emits. */
+const PROJECTED_GROUP_KEYS = new Set(["hooks"]);
+const PROJECTED_HOOK_KEYS = new Set(["type", "command", "timeout"]);
+
+/**
+ * Refuse destination content AIH cannot re-emit verbatim. Skipping it silently
+ * is not an option: the projection replaces the whole `hooks` key, so anything
+ * this flattening cannot see is deleted without ever reaching the unowned-entry
+ * refusal — and H1 forbids silently deleting an entry as firmly as absorbing
+ * one. AIH does not invent a matcher grammar for a policy-authored
+ * registration; it names what it cannot represent and stops.
+ */
+function refuseUnrepresentable(event: string, what: string): never {
+  throw new OrgPolicyError(
+    `${HOOK_REGISTRAR_DESTINATION}.hooks.${event} carries ${what}, which AIH cannot re-emit verbatim; ` +
+      `projecting replaces the whole hooks key, so AIH refuses rather than delete it — remove it first`,
+  );
 }
 
 /** Flatten a native hook configuration into entries. Malformed shapes are refused. */
@@ -280,15 +311,44 @@ export function destinationHookEntries(destination: unknown): DestinationEntry[]
     if (!Array.isArray(groups)) {
       throw new OrgPolicyError(`${HOOK_REGISTRAR_DESTINATION}.hooks.${event} is not an array`);
     }
+    if (groups.length === 0) refuseUnrepresentable(event, "an empty group list");
     for (const group of groups) {
       if (!isPlainObject(group) || !Array.isArray(group.hooks)) {
         throw new OrgPolicyError(
           `${HOOK_REGISTRAR_DESTINATION}.hooks.${event} has a malformed hook group`,
         );
       }
+      const groupExtras = Object.keys(group)
+        .filter((key) => !PROJECTED_GROUP_KEYS.has(key))
+        .sort((a, b) => a.localeCompare(b));
+      if (groupExtras.length > 0) {
+        refuseUnrepresentable(event, `a hook group scoped by ${groupExtras.join(", ")}`);
+      }
+      if (group.hooks.length === 0) refuseUnrepresentable(event, "an empty hook group");
       for (const hook of group.hooks) {
-        if (!isPlainObject(hook) || typeof hook.command !== "string") continue;
-        entries.push({ event, command: hook.command });
+        if (!isPlainObject(hook)) {
+          refuseUnrepresentable(event, "a hook entry that is not an object");
+        }
+        if (typeof hook.command !== "string") {
+          refuseUnrepresentable(event, "a hook entry whose command is not a string");
+        }
+        const hookExtras = Object.keys(hook)
+          .filter((key) => !PROJECTED_HOOK_KEYS.has(key))
+          .sort((a, b) => a.localeCompare(b));
+        if (hookExtras.length > 0) {
+          refuseUnrepresentable(event, `a hook entry carrying ${hookExtras.join(", ")}`);
+        }
+        if (hook.type !== undefined && hook.type !== "command") {
+          refuseUnrepresentable(event, "a hook entry that is not a command hook");
+        }
+        if (hook.timeout !== undefined && typeof hook.timeout !== "number") {
+          refuseUnrepresentable(event, "a hook entry whose timeout is not a number");
+        }
+        entries.push({
+          event,
+          command: hook.command,
+          ...(typeof hook.timeout === "number" ? { timeout: hook.timeout } : {}),
+        });
       }
     }
   }
@@ -308,16 +368,13 @@ export function hookRegistrarDrift(input: {
   );
   const onDisk = destinationHookEntries(input.destination);
   const expected = new Map(
-    parsed.map((registration) => [
-      `${registration.event}\u0000${registration.command}`,
-      registration,
-    ]),
+    parsed.map((registration) => [destinationEntryKey(registration), registration]),
   );
   const seen = new Set<string>();
   const unowned: UnownedHookEntry[] = [];
   const adoption: HookAdoptionOffer[] = [];
   for (const entry of onDisk) {
-    const key = `${entry.event}\u0000${entry.command}`;
+    const key = destinationEntryKey(entry);
     if (expected.has(key)) {
       seen.add(key);
       continue;
@@ -350,7 +407,7 @@ export function hookRegistrarDrift(input: {
       });
       continue;
     }
-    if (!seen.has(`${registration.event}\u0000${registration.command}`)) {
+    if (!seen.has(destinationEntryKey(registration))) {
       drifted.push({ id: registration.id, event: registration.event, reason: "missing" });
     }
   }
@@ -411,12 +468,10 @@ export function adoptedHookRegistrations(
   }
   const bytes = read.contents;
   const receipt = readHookRegistrarReceipt(root);
-  const ownedKeys = new Set(
-    (receipt?.entries ?? []).map((entry) => `${entry.event}\u0000${entry.command}`),
-  );
+  const ownedKeys = new Set((receipt?.entries ?? []).map(destinationEntryKey));
   const unowned = new Map<string, string>();
   for (const entry of destinationHookEntries(parseJsoncText(bytes))) {
-    if (ownedKeys.has(`${entry.event}\u0000${entry.command}`)) continue;
+    if (ownedKeys.has(destinationEntryKey(entry))) continue;
     unowned.set(`${entry.event}\u0000${hookCommandDigest(entry.command)}`, entry.command);
   }
   const claimed = new Set<string>();
@@ -808,10 +863,10 @@ export function hookRegistrarProjectionActions(
     // An already-owned entry is not foreign: the administrator may legally drop
     // one by changing the selection.
     const known = new Set([
-      ...parsed.map((registration) => `${registration.event}\u0000${registration.command}`),
-      ...(existingReceipt?.entries ?? []).map((entry) => `${entry.event}\u0000${entry.command}`),
+      ...parsed.map(destinationEntryKey),
+      ...(existingReceipt?.entries ?? []).map(destinationEntryKey),
     ]);
-    const foreign = onDisk.filter((entry) => !known.has(`${entry.event}\u0000${entry.command}`));
+    const foreign = onDisk.filter((entry) => !known.has(destinationEntryKey(entry)));
     if (foreign.length > 0) {
       // A3: refusal names each unowned entry by owner and event. Attribution
       // is only as good as a declared pin — selected or receipt-owned — and an

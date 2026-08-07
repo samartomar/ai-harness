@@ -95,3 +95,73 @@ describe("A4 — recorded prior evidence is always readable back", () => {
     expect(readDestination() ?? "").not.toContain("run-with-flags.js");
   });
 });
+
+describe("H1 — nothing under `hooks` is deleted without being owned or named", () => {
+  /**
+   * The projection writes with `replaceJsonKeys: ["hooks"]`, so everything the
+   * flattening cannot see is destroyed without ever reaching the foreign-entry
+   * refusal. H1 forbids silently absorbing an unowned entry and equally forbids
+   * silently deleting one, so content AIH cannot re-emit verbatim has to refuse.
+   */
+  function selectedCommand(): string {
+    const [selected] = eccStopRegistrations();
+    if (selected === undefined) throw new Error("expected a registration");
+    return selected.command;
+  }
+
+  function refusalFor(destination: unknown): string {
+    writeDestination(`${JSON.stringify(destination, null, 2)}\n`);
+    const before = readDestination();
+    let message = "";
+    try {
+      hookRegistrarProjectionActions(ctx(false), eccStopRegistrations());
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    // Refusal is not enough on its own: the content must still be on disk.
+    expect(readDestination()).toBe(before);
+    return message;
+  }
+
+  it("refuses a matcher-scoped entry rather than re-emit it unscoped", () => {
+    // The command matches a selected registration, so the flattening called it
+    // already-known and re-emitted it WITHOUT the matcher — silently widening a
+    // hook scoped to one tool into one that fires on everything.
+    const message = refusalFor({
+      hooks: {
+        Stop: [{ matcher: "Write", hooks: [{ type: "command", command: selectedCommand() }] }],
+      },
+    });
+    expect(message).toMatch(/matcher/);
+    expect(message).toMatch(/Stop/);
+  });
+
+  it("refuses a hook entry whose command is not a string", () => {
+    const message = refusalFor({
+      hooks: { Stop: [{ hooks: [{ type: "command", command: { $ref: "elsewhere" } }] }] },
+    });
+    expect(message).toMatch(/command/i);
+    expect(message).toMatch(/Stop/);
+  });
+
+  it("refuses an empty hook group", () => {
+    const message = refusalFor({ hooks: { Stop: [{ hooks: [] }] } });
+    expect(message).toMatch(/Stop/);
+    expect(message).toMatch(/empty/i);
+  });
+
+  it("refuses an event mapped to an empty array", () => {
+    const message = refusalFor({ hooks: { SessionStart: [] } });
+    expect(message).toMatch(/SessionStart/);
+    expect(message).toMatch(/empty/i);
+  });
+
+  it("refuses a per-hook field it would drop, rather than drop it", () => {
+    // `timeout` never reached the flattening, so a projected entry that matched
+    // by command alone came back without the destination's timeout.
+    const message = refusalFor({
+      hooks: { Stop: [{ hooks: [{ type: "command", command: selectedCommand(), timeout: 45 }] }] },
+    });
+    expect(message).toMatch(/did not emit|timeout/i);
+  });
+});
