@@ -30,7 +30,12 @@ const McpComponentIdSchema = ComponentIdSchema.refine((value) => value.startsWit
   message: "MCP component IDs must start with mcp:",
 });
 
-const AuthorizationSchema = z
+/**
+ * The evidence authorization tuple. Exported so a sibling ownership record can
+ * REFERENCE this schema instead of restating it — a restatement cannot detect a
+ * field added here, which is the likeliest direction of drift.
+ */
+export const AuthorizationSchema = z
   .object({
     componentId: ComponentIdSchema,
     source: z.string().min(1).max(240),
