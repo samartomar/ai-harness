@@ -347,6 +347,115 @@ describe("the Kimi target maps evidence-passed components onto the .kimi-code pr
   });
 });
 
+/**
+ * F4, fourth target: Cursor, whose project root the parameterized mapping
+ * already produces. Upstream's own Cursor adapter is `kind: 'project'` rooted at
+ * `.cursor` (`scripts/lib/install-targets/cursor-project.js`), and the pinned
+ * install-preview artifact records every Cursor row as project-scoped under
+ * `<project>/.cursor/` with `agents/`, `skills/`, `commands/` and `rules/`
+ * beneath it. That is exactly `.${target}` for `target === "cursor"`, so this
+ * row wires the target and changes no mapping.
+ *
+ * Three upstream spellings are recorded and deliberately NOT imitated, on the
+ * same principle the Kimi row states: this lifecycle materializes catalog paths
+ * verbatim. Upstream prefixes agent filenames (`agents/architect.md` ->
+ * `.cursor/agents/ecc-architect.md`), which is the framework namespacing its own
+ * install inside a directory it shares; it flattens and renames rules
+ * (`rules/common/agents.md` -> `.cursor/rules/common-agents.mdc`); and it nests
+ * the shared `.agents/` tree under `.cursor/`, while this lifecycle keeps that
+ * row shared at the project root for every target. A rename here would make the
+ * receipt's destination unpredictable from the source path, which is what
+ * removal and re-apply are checked against.
+ */
+describe("the Cursor target maps evidence-passed components onto the .cursor project rows", () => {
+  it("maps an agent, a skill, and the rules baseline under .cursor/", () => {
+    const result = resolve(
+      ["cursor"],
+      [
+        selected("agent:code-reviewer", "agents/code-reviewer.md"),
+        selected("skill:tdd-workflow", "skills/tdd-workflow"),
+        selected("baseline:rules", "rules"),
+      ],
+    );
+
+    expect(result.refused).toEqual([]);
+    // Verbatim: no `ecc-` filename prefix, which is upstream namespacing its own
+    // install and not a destination this lifecycle can derive back from.
+    expect(destinations(result, "agent:code-reviewer")).toEqual([
+      ".cursor/agents/code-reviewer.md",
+    ]);
+    expect(destinations(result, "skill:tdd-workflow")).toEqual([
+      // The shared row stays at the project root; upstream nests it under
+      // `.cursor/` and this lifecycle does not.
+      ".agents/skills/tdd-workflow/SKILL.md",
+      ".cursor/skills/tdd-workflow/SKILL.md",
+      ".cursor/skills/tdd-workflow/assets/marker.bin",
+    ]);
+    // Verbatim again: the nested rule keeps its directory and its extension,
+    // rather than upstream's flattened `common-coding-style.mdc`.
+    expect(destinations(result, "baseline:rules")).toEqual([
+      ".cursor/rules/README.md",
+      ".cursor/rules/common/coding-style.md",
+    ]);
+  });
+
+  it("carries the exact source bytes for Cursor, including a file that is not text", () => {
+    const result = resolve(["cursor"], [selected("skill:tdd-workflow", "skills/tdd-workflow")]);
+
+    const files = result.components[0]?.files ?? [];
+    const asset = files.find(
+      (file) => file.path === ".cursor/skills/tdd-workflow/assets/marker.bin",
+    );
+    expect(Buffer.from(asset?.contents ?? "").equals(BINARY_ASSET)).toBe(true);
+    expect([...new Set(files.map((file) => file.kind))]).toEqual(["copy-file"]);
+  });
+
+  it("refuses by name, in the Cursor target's own voice, what Cursor does not own", () => {
+    const result = resolve(
+      ["cursor"],
+      [
+        selected("mcp:github", "mcp-configs/mcp-servers.json"),
+        selected("baseline:hooks", "hooks"),
+        // Positive control: the run is not empty, so the refusals below are
+        // decisions and not an adapter that mapped nothing.
+        selected("agent:code-reviewer", "agents/code-reviewer.md"),
+      ],
+    );
+
+    expect(result.components.map((component) => component.id)).toEqual(["agent:code-reviewer"]);
+    expect(refusalFor(result, "mcp:github", "cursor")).toEqual({
+      target: "cursor",
+      id: "mcp:github",
+      reason: "unowned-destination",
+      detail: "the Cursor target owns no content destination for .mcp.json",
+    });
+    expect(refusalFor(result, "baseline:hooks", "cursor")?.detail).toContain("hooks/hooks.json");
+  });
+
+  it("unions Claude and Cursor into one set with the shared rows written once", () => {
+    const result = resolve(
+      ["claude", "cursor"],
+      [
+        selected("skill:tdd-workflow", "skills/tdd-workflow"),
+        selected("baseline:agents", "AGENTS.md"),
+      ],
+    );
+
+    expect(destinations(result, "skill:tdd-workflow")).toEqual([
+      // Once, not twice.
+      ".agents/skills/tdd-workflow/SKILL.md",
+      ".claude/skills/tdd-workflow/SKILL.md",
+      ".claude/skills/tdd-workflow/assets/marker.bin",
+      ".cursor/skills/tdd-workflow/SKILL.md",
+      ".cursor/skills/tdd-workflow/assets/marker.bin",
+    ]);
+    expect(destinations(result, "baseline:agents")).toEqual([
+      ".agents/plugins/marketplace.json",
+      "AGENTS.md",
+    ]);
+  });
+});
+
 describe("a multi-target request is one union in one materialization", () => {
   let root: string;
 
@@ -675,10 +784,12 @@ describe("which CLIs are governed materialization targets", () => {
     expect(assertGovernedMaterializationTargets(["claude", "codex"])).toEqual(["claude", "codex"]);
     expect(assertGovernedMaterializationTargets(["codex", "codex"])).toEqual(["codex"]);
     expect(assertGovernedMaterializationTargets(["kimi"])).toEqual(["kimi"]);
-    expect(assertGovernedMaterializationTargets(["claude", "codex", "kimi"])).toEqual([
+    expect(assertGovernedMaterializationTargets(["cursor"])).toEqual(["cursor"]);
+    expect(assertGovernedMaterializationTargets(["claude", "codex", "kimi", "cursor"])).toEqual([
       "claude",
       "codex",
       "kimi",
+      "cursor",
     ]);
   });
 
@@ -702,7 +813,7 @@ describe("which CLIs are governed materialization targets", () => {
   });
 
   it("refuses a ruled target that is not wired yet, naming what IS wired", () => {
-    for (const target of ["cursor", "opencode"]) {
+    for (const target of ["opencode"]) {
       const failure = (() => {
         try {
           assertGovernedMaterializationTargets([target]);
@@ -712,16 +823,16 @@ describe("which CLIs are governed materialization targets", () => {
         return "";
       })();
       expect(failure, target).toMatch(/is a governed materialization target that is not wired yet/);
-      // The wired list is three targets now, and the refusal states it exactly:
-      // "claude, codex" would still read true as a prefix while naming one less
-      // target than the operator can actually ask for.
-      expect(failure, target).toContain("claude, codex, kimi");
+      // The wired list is four targets now, and the refusal states it exactly:
+      // "claude, codex" would still read true as a prefix while naming two less
+      // targets than the operator can actually ask for.
+      expect(failure, target).toContain("claude, codex, kimi, cursor");
       // Not the other refusal: an unwired ruled target is a row still to come,
       // not a tool this lifecycle will never serve.
       expect(failure, target).not.toContain("is not a governed materialization target");
     }
-    expect(() => assertGovernedMaterializationTargets(["claude", "cursor"])).toThrowError(
-      /Cursor target is a governed materialization target that is not wired yet/,
+    expect(() => assertGovernedMaterializationTargets(["claude", "opencode"])).toThrowError(
+      /OpenCode target is a governed materialization target that is not wired yet/,
     );
   });
 
@@ -748,6 +859,23 @@ describe("the one destination mapping keeps each target off the others' exclusiv
       scope: "project",
       relative: ".codex/rules/common/testing.md",
     });
+  });
+
+  it("answers the generic project rows for Cursor at the parameterized `.cursor` root", () => {
+    // The mapping needed no Cursor row: `.${target}` is already the root
+    // upstream's own project adapter uses, and the pinned install-preview
+    // artifact records every Cursor destination under `<project>/.cursor/`.
+    for (const [source, relative] of [
+      ["agents/code-reviewer.md", ".cursor/agents/code-reviewer.md"],
+      ["skills/tdd-workflow/SKILL.md", ".cursor/skills/tdd-workflow/SKILL.md"],
+      ["commands/tdd.md", ".cursor/commands/tdd.md"],
+      ["rules/common/testing.md", ".cursor/rules/common/testing.md"],
+    ] as const) {
+      expect(eccContentDestinationMapping(source, "cursor"), source).toEqual({
+        scope: "project",
+        relative,
+      });
+    }
   });
 
   it("roots the Kimi project rows at `.kimi-code`, not at the parameterized `.kimi`", () => {

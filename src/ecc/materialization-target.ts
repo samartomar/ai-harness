@@ -87,6 +87,7 @@ export const WIRED_MATERIALIZATION_TARGETS: readonly EccMaterializationTarget[] 
   "claude",
   "codex",
   "kimi",
+  "cursor",
 ];
 
 /**

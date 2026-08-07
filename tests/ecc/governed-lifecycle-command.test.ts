@@ -732,12 +732,12 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
 
     expect(failure?.message).toContain("zed is not a governed materialization target");
     expect(failure?.message).toContain("claude, codex, kimi, cursor, opencode");
-    // ...and what IS wired, which is three targets now, not two.
-    expect(failure?.message).toContain("claude, codex, kimi are wired today");
+    // ...and what IS wired, which is four targets now, not three.
+    expect(failure?.message).toContain("claude, codex, kimi, cursor are wired today");
     // The remedy, not just the diagnosis: the target set can come from a
     // committed marker the operator is not thinking about, so the refusal has
     // to say which flag overrides it.
-    expect(failure?.message).toContain("--cli claude,codex,kimi");
+    expect(failure?.message).toContain("--cli claude,codex,kimi,cursor");
     expect(failure?.message).toContain(".aih-config.json");
     expect(snapshot(root)).toEqual(before);
     expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
@@ -746,14 +746,14 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
   it("refuses a ruled target that is not wired yet, naming what is wired and the remedy", async () => {
     writeGovernedPolicy([...PASSED]);
 
-    const failure = await runLifecycle("install", true, "cursor").then(
+    const failure = await runLifecycle("install", true, "opencode").then(
       () => undefined,
       (error: Error) => error,
     );
 
     expect(failure?.message).toMatch(/not wired yet/);
-    expect(failure?.message).toContain("claude, codex, kimi are wired today");
-    expect(failure?.message).toContain("--cli claude,codex,kimi");
+    expect(failure?.message).toContain("claude, codex, kimi, cursor are wired today");
+    expect(failure?.message).toContain("--cli claude,codex,kimi,cursor");
     expect(failure?.message).toContain(".aih-config.json");
     expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
   });
@@ -778,7 +778,7 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
     );
 
     expect(failure?.message).toContain("gemini is not a governed materialization target");
-    expect(failure?.message).toContain("--cli claude,codex,kimi");
+    expect(failure?.message).toContain("--cli claude,codex,kimi,cursor");
     expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
 
     // ...and taking the named remedy actually works, so the message is a route
@@ -994,6 +994,166 @@ describe("F4 — the governed framework lifecycle for the Kimi target", () => {
     expect(
       receipt.receipt.components.flatMap((component) =>
         component.files.map((file) => file.path).filter((path) => path.startsWith(".kimi-code/")),
+      ),
+    ).toEqual([]);
+  });
+});
+
+/**
+ * F4, fourth target: the same operator route with `--cli cursor`. The mapping
+ * needed no Cursor row — `.${target}` is already the project root upstream's own
+ * Cursor adapter uses — so what this block pins is the wiring: the operator can
+ * ask for it, the rows land, the receipt owns them, and `aih uninstall` takes
+ * them back.
+ */
+describe("F4 — the governed framework lifecycle for the Cursor target", () => {
+  /** Where each source file lands for Cursor; the shared row is target-independent. */
+  const CURSOR_MATERIALIZED: ReadonlyArray<{ source: string; destination: string }> = [
+    { source: "agents/code-reviewer.md", destination: ".cursor/agents/code-reviewer.md" },
+    { source: "rules/README.md", destination: ".cursor/rules/README.md" },
+    { source: "rules/common/coding-style.md", destination: ".cursor/rules/common/coding-style.md" },
+    {
+      source: ".agents/skills/tdd-workflow/SKILL.md",
+      destination: ".agents/skills/tdd-workflow/SKILL.md",
+    },
+    { source: "skills/tdd-workflow/SKILL.md", destination: ".cursor/skills/tdd-workflow/SKILL.md" },
+  ];
+
+  it("previews `--cli cursor` against the .cursor rows and writes nothing", async () => {
+    writeGovernedPolicy([...PASSED, BLOCKED]);
+    const before = snapshot(root);
+
+    const reported = materializationDigest(await runLifecycle("install", false, "cursor"));
+
+    expect(reported.applied).toBe(false);
+    expect(reported.write.map((file) => file.path).sort()).toEqual(
+      CURSOR_MATERIALIZED.map((file) => file.destination).sort(),
+    );
+    expect(snapshot(root)).toEqual(before);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+  });
+
+  it("applies, receipts and then uninstalls the Cursor materialization", async () => {
+    writeGovernedPolicy([...PASSED, BLOCKED]);
+
+    const reported = materializationDigest(await runLifecycle("install", true, "cursor"));
+
+    expect(reported.applied).toBe(true);
+    for (const file of CURSOR_MATERIALIZED) {
+      expect(
+        bytesAt(root, file.destination).equals(bytesAt(sourceRoot, file.source)),
+        file.destination,
+      ).toBe(true);
+    }
+    // Nothing landed on a target this run did not ask for.
+    expect(existsSync(join(root, ".claude", "agents", "code-reviewer.md"))).toBe(false);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
+
+    const removed = removeEccMaterialization(root);
+
+    expect(removed.advisories).toEqual([]);
+    expect(removed.removed.sort()).toEqual(CURSOR_MATERIALIZED.map((f) => f.destination).sort());
+    for (const file of CURSOR_MATERIALIZED) {
+      expect(existsSync(join(root, ...file.destination.split("/"))), file.destination).toBe(false);
+    }
+    for (const path of Object.keys(OPERATOR_TREE)) {
+      expect(bytesAt(root, path).toString("utf8"), path).toBe(OPERATOR_TREE[path]);
+    }
+  });
+
+  it("names the Cursor target in its own refusal row", async () => {
+    writeGovernedPolicy([...PASSED, OTHER_LIFECYCLE]);
+
+    const result = await runLifecycle("install", false, "cursor");
+
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("governed ECC framework materialization"),
+    );
+    expect(digest?.text).toContain("Evidence-passed, and refused by the Cursor target:");
+    expect(digest?.text).toContain(
+      `[unowned-destination] ${OTHER_LIFECYCLE.id} - the Cursor target owns no content destination for .mcp.json`,
+    );
+    expect(digest?.text).not.toContain("refused by the Claude target");
+  });
+
+  it("materializes `--cli claude,cursor` as one union with the shared row written once", async () => {
+    writeGovernedPolicy([...PASSED]);
+
+    const reported = materializationDigest(await runLifecycle("install", true, "claude,cursor"));
+
+    const written = reported.write.map((file) => file.path).sort();
+    expect(written).toEqual(
+      [
+        ...MATERIALIZED.map((file) => file.destination),
+        ...CURSOR_MATERIALIZED.map((file) => file.destination),
+      ]
+        .filter((path, index, all) => all.indexOf(path) === index)
+        .sort(),
+    );
+    // Both roots really materialized — a union that wrote only one target's rows
+    // would still satisfy a laxer assertion.
+    expect(written.some((path) => path.startsWith(".claude/"))).toBe(true);
+    expect(written.some((path) => path.startsWith(".cursor/"))).toBe(true);
+    const shared = ".agents/skills/tdd-workflow/SKILL.md";
+    expect(written.filter((path) => path === shared)).toEqual([shared]);
+
+    const receipt = readEccMaterializationReceipt(root);
+    if (receipt.state !== "valid") throw new Error("expected a valid receipt");
+    const skill = receipt.receipt.components.find(
+      (component) => component.id === "skill:tdd-workflow",
+    );
+    expect(skill?.files.map((file) => file.path)).toEqual([
+      shared,
+      ".claude/skills/tdd-workflow/SKILL.md",
+      ".cursor/skills/tdd-workflow/SKILL.md",
+    ]);
+    // ONE receipt at ONE path: no per-target root and no second document.
+    expect(walkManagedRoot(root).filter((path) => path.startsWith(".aih/"))).toEqual([
+      ".aih/ecc/materialization-v1.json",
+    ]);
+  });
+
+  it("subtracts the `.cursor` files when a later apply narrows `--cli` back to claude", async () => {
+    writeGovernedPolicy([...PASSED]);
+    await runLifecycle("install", true, "claude,cursor");
+    // Every digest the union wrote, so the narrowing below is checked against
+    // bytes rather than against mere existence.
+    const digests = Object.fromEntries(
+      walkManagedRoot(root).map((path) => [
+        path,
+        createHash("sha256").update(bytesAt(root, path)).digest("hex"),
+      ]),
+    );
+    const cursorPaths = Object.keys(digests).filter((path) => path.startsWith(".cursor/"));
+    expect(cursorPaths.sort()).toEqual(
+      CURSOR_MATERIALIZED.map((file) => file.destination)
+        .filter((path) => path.startsWith(".cursor/"))
+        .sort(),
+    );
+
+    const result = await runLifecycle("install", true, "claude");
+
+    const digest = result.digests.find((entry) =>
+      entry.describe.includes("governed ECC framework materialization"),
+    );
+    for (const path of cursorPaths) {
+      expect(existsSync(join(root, ...path.split("/"))), path).toBe(false);
+      expect(digest?.text, path).toContain(`[removed] ${path}`);
+    }
+    // The remaining target keeps every byte it had — same digest, not merely
+    // still present. The receipt is the one file that MUST change: it is the
+    // record of what is owned, and it no longer owns the dropped target's rows.
+    const receiptPath = ".aih/ecc/materialization-v1.json";
+    for (const [path, sha] of Object.entries(digests)) {
+      if (path.startsWith(".cursor/") || path === receiptPath) continue;
+      expect(createHash("sha256").update(bytesAt(root, path)).digest("hex"), path).toBe(sha);
+      expect(digest?.text ?? "", path).not.toContain(`[removed] ${path}`);
+    }
+    const receipt = readEccMaterializationReceipt(root);
+    if (receipt.state !== "valid") throw new Error("expected a valid receipt");
+    expect(
+      receipt.receipt.components.flatMap((component) =>
+        component.files.map((file) => file.path).filter((path) => path.startsWith(".cursor/")),
       ),
     ).toEqual([]);
   });
