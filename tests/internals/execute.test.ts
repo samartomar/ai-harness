@@ -1812,3 +1812,74 @@ describe("executePlan — hard-delete removals", () => {
     ).rejects.toBeInstanceOf(PathContainmentError);
   });
 });
+
+/**
+ * Duplicate top-level property names split the two readers this writer sits
+ * between: `jsonc-parser`'s `modify` targets the FIRST property with a name,
+ * while every consumer of the file — `parseJsoncText`, `JSON.parse`, the client
+ * itself — takes the LAST. A format-preserving edit aimed at the first
+ * occurrence therefore lands under a shadow: the bytes change, the effective
+ * value does not, and a second apply reads `unchanged` so it never heals.
+ */
+describe("resolveContents — duplicated top-level keys", () => {
+  const DUPLICATED_AIH_KEY_LAST = `{
+  "hooks": { "operator": true },
+  "permissions": { "allow": [] },
+  "hooks": { "stale": true }
+}
+`;
+  const DUPLICATED_AIH_KEY_FIRST = `{
+  "hooks": { "stale": true },
+  "hooks": { "operator": true },
+  "permissions": { "allow": [] }
+}
+`;
+
+  for (const [label, seed] of [
+    ["shadowed last", DUPLICATED_AIH_KEY_LAST],
+    ["shadowed first", DUPLICATED_AIH_KEY_FIRST],
+  ] as const) {
+    it(`lands the computed merge on disk when the destination duplicates a key (${label})`, async () => {
+      mkdirSync(join(dir, ".claude"), { recursive: true });
+      writeFileSync(join(dir, ".claude/settings.json"), seed, "utf8");
+
+      await executePlan(
+        plan(
+          "merge",
+          writeJson(".claude/settings.json", { hooks: { written: true } }, "merge", {
+            merge: true,
+            replaceJsonKeys: ["hooks"],
+          }),
+        ),
+        ctx({ apply: true }),
+      );
+
+      // What the file MEANS to its reader, not merely what changed in it.
+      const after = readFileSync(join(dir, ".claude/settings.json"), "utf8");
+      expect(JSON.parse(after).hooks).toEqual({ written: true });
+      expect(JSON.parse(after).permissions).toEqual({ allow: [] });
+    });
+  }
+
+  it("subtracts a duplicated key in ONE apply, and the second is a byte no-op", async () => {
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(join(dir, ".claude/settings.json"), DUPLICATED_AIH_KEY_LAST, "utf8");
+    const subtract = plan(
+      "subtract",
+      writeJson(".claude/settings.json", {}, "subtract", {
+        merge: true,
+        removeJsonTopLevelKeys: ["hooks"],
+      }),
+    );
+
+    await executePlan(subtract, ctx({ apply: true }));
+    const once = readFileSync(join(dir, ".claude/settings.json"), "utf8");
+    // ONE apply: no `hooks` survives, shadowed copy included.
+    expect(JSON.parse(once).hooks).toBeUndefined();
+    expect(once).not.toContain('"hooks"');
+
+    const second = await executePlan(subtract, ctx({ apply: true }));
+    expect(readFileSync(join(dir, ".claude/settings.json"), "utf8")).toBe(once);
+    expect(second.writes[0]?.effect).toBe("unchanged");
+  });
+});

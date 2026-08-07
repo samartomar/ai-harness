@@ -23,6 +23,7 @@ import {
   projectedHookGroup,
   registrationKey,
   registrationNativeEntry,
+  shadowedCommentKeys,
 } from "./hook-registrar-native.js";
 import {
   type GuardedRead,
@@ -470,6 +471,33 @@ export function hookRegistrarState(root: string): HookRegistrarStateReport {
   return hookRegistrarVerdict(receipt, readDestination(root));
 }
 
+/**
+ * Why a write of `hooks` would destroy operator comments in these bytes, phrased
+ * to follow the destination path, or undefined when it would not.
+ *
+ * Two shapes, one ruling — refusing beats silently stripping. The writer edits
+ * only the keys it changes, so a comment is at risk when it sits inside `hooks`
+ * (replaced whole), or when a duplicated top-level name forces the whole-file
+ * render that drops every comment in the file.
+ */
+function commentStrippingHazard(bytes: string): string | undefined {
+  const shadowed = shadowedCommentKeys(bytes);
+  if (shadowed.length > 0) {
+    const named = shadowed.map((key) => `\`${key}\``).join(", ");
+    return (
+      `declares ${named} more than once, which forces a whole-file rewrite that would strip ` +
+      "its comments; AIH refuses rather than silently rewrite them"
+    );
+  }
+  if (carriesJsoncComments(bytes)) {
+    return (
+      "carries comments inside its hook entries that writing the groups AIH owns would " +
+      "strip; AIH refuses rather than silently rewrite them"
+    );
+  }
+  return undefined;
+}
+
 /** A verdict, and — when one can be proved — the subtraction it authorizes. */
 interface HookRegistrarOwnership {
   report: HookRegistrarStateReport;
@@ -537,27 +565,18 @@ function hookRegistrarOwnership(
       },
     };
   }
+  // Checked before the `active` split because BOTH routes below authorize a
+  // write of `hooks`, and a comment changes no parsed value — an `active`
+  // verdict says nothing about whether one is there.
+  const hazard = commentStrippingHazard(bytes);
+  if (hazard !== undefined) {
+    return { report: { state: "drifted", detail: `${HOOK_REGISTRAR_DESTINATION} ${hazard}` } };
+  }
   const hooks = isPlainObject(actual) ? actual.hooks : undefined;
   if (stableJson(hooks) === stableJson(expectedHooksFromReceipt(receipt))) {
     return {
       report: { state: "active", detail: "receipt and every projected hook entry match" },
       subtraction,
-    };
-  }
-  // Refusing a commented destination beats silently stripping it — the ruling
-  // this destination already carries. `active` met this writer long before
-  // per-group subtraction existed and is deliberately untouched above; the
-  // cohabited write is a NEW route to it, and the parse-and-re-serialize writer
-  // drops every comment in the file. So it fails closed here instead, and the
-  // operator is told comments are the reason.
-  if (carriesJsoncComments(bytes)) {
-    return {
-      report: {
-        state: "drifted",
-        detail:
-          `${HOOK_REGISTRAR_DESTINATION} carries comments that subtracting the hook groups ` +
-          "AIH owns would strip; AIH refuses rather than silently rewrite them",
-      },
     };
   }
   const foreign = subtraction.foreignEntries;
@@ -667,6 +686,12 @@ export function hookRegistrarProjectionActions(
           `(${named.join(", ")}${omitted}); adopt or remove them before projecting`,
       );
     }
+  }
+  // The projection reaches the same `hooks` write revocation does, so it refuses
+  // on the same hazards rather than reporting success over stripped comments.
+  const projectionHazard = bytes === undefined ? undefined : commentStrippingHazard(bytes);
+  if (projectionHazard !== undefined) {
+    throw new OrgPolicyError(`${HOOK_REGISTRAR_DESTINATION} ${projectionHazard}`);
   }
   // Groups that yield no entry are still content — `matcher`, `id`,
   // `description` — and the whole-key write would delete them. Carry them

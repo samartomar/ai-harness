@@ -1,5 +1,31 @@
-import { type ParseError, parse as parseJsonc, printParseErrorCode } from "jsonc-parser";
+import { type ParseError, parse as parseJsonc, parseTree, printParseErrorCode } from "jsonc-parser";
 import { MergeError } from "../errors.js";
+
+/**
+ * Top-level property names this text declares more than once.
+ *
+ * Duplicates split the two readers a format-preserving write sits between:
+ * `jsonc-parser`'s `modify` targets the FIRST property with a name, while every
+ * consumer of the file — {@link parseJsoncText}, `JSON.parse`, the client
+ * itself — takes the LAST. An edit aimed at the first occurrence lands under a
+ * shadow: the bytes change, the effective value does not, and a re-apply sees
+ * nothing left to do. Callers that would edit in place check this first and
+ * fall back to rendering the whole file, which collapses the duplicates to the
+ * value every reader already agreed on.
+ */
+export function duplicateRootKeys(text: string): string[] {
+  const root = parseTree(text);
+  if (root?.type !== "object") return [];
+  const seen = new Set<string>();
+  const repeated = new Set<string>();
+  for (const property of root.children ?? []) {
+    const name = property.children?.[0]?.value;
+    if (typeof name !== "string") continue;
+    if (seen.has(name)) repeated.add(name);
+    seen.add(name);
+  }
+  return [...repeated].sort((left, right) => left.localeCompare(right));
+}
 
 /**
  * Parse JSON or JSONC text (tolerant of comments + trailing commas). Returns

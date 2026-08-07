@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { Window } from "happy-dom";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
+import { parseJsoncText } from "../../src/internals/merge.js";
 import { type PlanContext, plan } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import {
@@ -71,7 +72,52 @@ function ctx(apply: boolean): PlanContext {
   };
 }
 
-const OPERATOR_CONTENT = { permissions: { allow: ["Bash(ls:*)"] } };
+/**
+ * The operator's own bytes, authored by hand rather than serialized: a comment
+ * outside the `hooks` span, four-space indent, a key order that is deliberately
+ * not alphabetical, and a non-ASCII value. A2 claims uninstall leaves operator
+ * content byte-identical, and only raw bytes can witness that — routing the
+ * fixture through a serializer, or the assertion through `JSON.parse`, discards
+ * every property under test and the claim passes without being examined.
+ */
+const OPERATOR_SETTINGS = `{
+    // operator: this order mirrors our runbook — keep it
+    "zebra": "ünicode ✓ café",
+    "permissions": {
+        "allow": [
+            "Bash(ls:*)"
+        ]
+    },
+    "apple": 1
+}
+`;
+
+/** The same operator bytes as the third party left them: its Stop entries added. */
+const SEEDED_SETTINGS = `{
+    // operator: this order mirrors our runbook — keep it
+    "zebra": "ünicode ✓ café",
+    "permissions": {
+        "allow": [
+            "Bash(ls:*)"
+        ]
+    },
+    "apple": 1,
+    "hooks": {
+        "Stop": [
+            {
+                "hooks": [
+${eccStopRegistrations()
+  .map(
+    (registration) =>
+      `                    { "type": "command", "command": ${JSON.stringify(registration.command)} }`,
+  )
+  .join(",\n")}
+                ]
+            }
+        ]
+    }
+}
+`;
 
 /** Minimal structural view of a rendered node; the DOM lib is not in scope here. */
 interface PanelNode {
@@ -151,26 +197,7 @@ describe("acceptance — governed hook registrations on a temporary fixture root
       )}\n`,
     );
     // The destination the third party already wrote, beside operator content.
-    put(
-      HOOK_REGISTRAR_DESTINATION,
-      `${JSON.stringify(
-        {
-          ...OPERATOR_CONTENT,
-          hooks: {
-            Stop: [
-              {
-                hooks: eccStopRegistrations().map((registration) => ({
-                  type: "command",
-                  command: registration.command,
-                })),
-              },
-            ],
-          },
-        },
-        null,
-        2,
-      )}\n`,
-    );
+    put(HOOK_REGISTRAR_DESTINATION, SEEDED_SETTINGS);
     const policy = readOrgPolicy(root, {});
     if (policy === undefined) throw new Error("expected the authored policy to parse");
 
@@ -179,7 +206,11 @@ describe("acceptance — governed hook registrations on a temporary fixture root
     const actions = await verifiedOrgPolicyProjectionActions(ctx(false), policy);
     await executePlan(plan("policy project", ...actions), ctx(true), { skipWorktreeGate: true });
     const projected = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8");
-    const projectedHooks = JSON.parse(projected).hooks;
+    // Read it the way aih reads this destination. The operator's comment is
+    // still in the file — preserving it is the point — so `JSON.parse` would
+    // fail here on valid JSONC.
+    const projectedHooks = (parseJsoncText(projected) as { hooks: Record<string, unknown[]> })
+      .hooks;
     for (const registration of registrations) {
       // H2 is byte-for-byte, so the assertion is structural equality against the
       // destination's own entry. A substring test would also pass for a
@@ -246,8 +277,12 @@ describe("acceptance — governed hook registrations on a temporary fixture root
     expect(html.toLowerCase()).not.toContain("cost");
 
     // ── Mutate one destination entry: drift, named by owner and event.
-    const tampered = JSON.parse(projected);
-    tampered.hooks.Stop[0].hooks[0].command += " --tampered";
+    const tampered = parseJsoncText(projected) as {
+      hooks: { Stop: { hooks: { command: string }[] }[] };
+    };
+    const tamperedHook = tampered.hooks.Stop[0]?.hooks[0];
+    if (tamperedHook === undefined) throw new Error("expected a projected Stop entry to tamper");
+    tamperedHook.command += " --tampered";
     put(HOOK_REGISTRAR_DESTINATION, `${JSON.stringify(tampered, null, 2)}\n`);
     expect(hookRegistrarState(root).state).toBe("drifted");
     const drift = hookRegistrarDrift({ destination: tampered, registrations });
@@ -283,9 +318,13 @@ describe("acceptance — governed hook registrations on a temporary fixture root
     await executePlan(await uninstallCommand.plan(uninstallCtx), uninstallCtx, {
       skipWorktreeGate: true,
     });
-    const after = JSON.parse(readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8"));
-    expect(JSON.stringify(after)).not.toContain("run-with-flags.js");
-    expect(after).toEqual(OPERATOR_CONTENT);
+    // A2 on raw bytes: no parse between disk and assertion. The comment, the
+    // four-space indent, the authored key order and the non-ASCII value are all
+    // properties a parse would discard, so this equality is the only form of the
+    // claim that can fail when the writer re-serializes.
+    const after = readFileSync(join(root, HOOK_REGISTRAR_DESTINATION), "utf8");
+    expect(after).not.toContain("run-with-flags.js");
+    expect(after).toBe(OPERATOR_SETTINGS);
     expect(existsSync(join(root, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(false);
   });
 });
