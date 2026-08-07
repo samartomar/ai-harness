@@ -73,25 +73,53 @@ function ctx(apply: boolean): PlanContext {
 
 const OPERATOR_CONTENT = { permissions: { allow: ["Bash(ls:*)"] } };
 
+/** Minimal structural view of a rendered node; the DOM lib is not in scope here. */
+interface PanelNode {
+  textContent: string | null;
+  querySelector(selector: string): { textContent: string | null } | null;
+  querySelectorAll(selector: string): Iterable<PanelNode>;
+}
+
+interface RegistrarPanel {
+  /** One entry per rendered row, so a source can be tied to the row it labels. */
+  rows: { id: string; text: string }[];
+  overlaps: string;
+  spawns: string;
+}
+
 /**
  * Read the registrar panel the way an operator does. The panel's content is
  * written by the page's own script, so the served html carries empty containers
- * and the ids appear in it whether or not anything renders into them. Executing
- * the script and reading the resulting text is what makes the assertion bite.
+ * and every id appears in it whether or not anything renders into them.
+ * Executing the script and reading the resulting text is what makes an
+ * assertion about the panel bite.
  */
-function workbenchPanelReader(html: string): (id: string) => string {
+function readRegistrarPanel(html: string): RegistrarPanel {
   const window = new Window({ url: "http://localhost/" });
-  window.document.write(html);
-  (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
-    structuredClone;
-  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
-  if (scripts.length === 0) throw new Error("expected generated workbench script");
-  window.eval(scripts.join("\n"));
-  return (id: string): string => {
-    const container = window.document.getElementById(id);
-    if (container === null) throw new Error(`workbench renders no #${id}`);
-    return container.textContent ?? "";
-  };
+  try {
+    window.document.write(html);
+    (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
+      structuredClone;
+    const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
+    if (scripts.length === 0) throw new Error("expected generated workbench script");
+    window.eval(scripts.join("\n"));
+    const container = (id: string): PanelNode => {
+      const node = window.document.getElementById(id);
+      if (node === null) throw new Error(`workbench renders no #${id}`);
+      return node as unknown as PanelNode;
+    };
+    return {
+      rows: [...container("hook-registry-rows").querySelectorAll(".hookreg")].map((node) => ({
+        id: node.querySelector("b")?.textContent ?? "",
+        text: node.textContent ?? "",
+      })),
+      overlaps: container("hook-registry-overlaps").textContent ?? "",
+      spawns: container("hook-registry-spawns").textContent ?? "",
+    };
+  } finally {
+    // The evaluated script installs MutationObservers and document listeners.
+    window.happyDOM.close();
+  }
 }
 
 describe("acceptance — governed hook registrations on a temporary fixture root", () => {
@@ -166,43 +194,55 @@ describe("acceptance — governed hook registrations on a temporary fixture root
     expect(receipt?.policyVersion).toBe("2026-08-06.acceptance");
     expect(hookRegistrarState(root).state).toBe("active");
 
-    // ── See the registrar panel: sources, overlaps, spawn counts. Asserted on
-    // what the operator reads, not on element ids: the page's own script names
-    // every one of those ids in a byId(...) call, so searching the served html
-    // for them passes even with all four panel containers deleted.
+    // ── See the registrar panel: sources, overlaps, spawn counts.
+    //
+    // SCOPE, stated so nothing here reads as more than it is. This step opens
+    // the workbench an operator opens at this point in the journey, and that
+    // page renders the SHIPPED catalog: `policyStudioModel()` takes no
+    // arguments, so the eight registrations authored above cannot reach it and
+    // nothing below observes them. Per-policy registration rendering does not
+    // exist, deliberately — S1 rules the panel a read-only projection view over
+    // rows authored elsewhere until registrations become authorable through the
+    // grammar. So what this proves is that the panel is populated and
+    // self-consistent with the catalog behind it, NOT that this journey's
+    // registrations reach a surface. Per-assertion S1-S4 coverage lives in
+    // tests/org-policy/studio-hook-registrar.test.ts; this step deliberately
+    // keeps only what an operator would look at here.
     const model = policyStudioModel();
     const html = policyStudioHtml(model);
-    const panelText = workbenchPanelReader(html);
+    const panel = readRegistrarPanel(html);
     const registry = model.catalog.hookRegistry;
 
-    // Sources: every registrar row named under its own owner's source label.
-    const rows = panelText("hook-registry-rows");
-    expect(registry.entries.length).toBeGreaterThan(0);
+    // Sources: each row read on its own, so a source cannot be credited to the
+    // wrong row. A whole-container search would pass with the labels swapped —
+    // and the AIH row's source is the bare string "AIH", which every
+    // third-party row's body also contains.
+    expect(panel.rows.map((row) => row.id)).toEqual(registry.entries.map((entry) => entry.id));
     for (const entry of registry.entries) {
-      expect(rows, `${entry.id} row`).toContain(entry.id);
-      expect(rows, `${entry.id} source`).toContain(entry.source);
+      const row = panel.rows.find((candidate) => candidate.id === entry.id);
+      expect(row, `${entry.id} row`).toBeDefined();
+      expect(row?.text, `${entry.id} source`).toContain(`Source: ${entry.source}`);
     }
 
-    // Overlaps: stated in a sentence, and never auto-resolved (H5).
-    const overlaps = panelText("hook-registry-overlaps");
-    expect(overlaps.toLowerCase()).toContain("overlap");
-    expect(overlaps).toMatch(/does not resolve it|never merges an overlap/);
-    for (const overlap of registry.overlaps) {
-      expect(overlaps, `${overlap.functionTag} overlap`).toContain(overlap.functionTag);
-    }
+    // Overlaps: this model declares ONE registration, so it can carry no
+    // overlap at all — `hookOverlaps` needs two sharing event-plus-tag. Assert
+    // the branch that actually applies rather than looping over a collection
+    // that is structurally always empty, which would assert nothing.
+    expect(registry.overlaps).toHaveLength(0);
+    expect(panel.overlaps).toContain("AIH never merges an overlap on your behalf");
+    expect(panel.overlaps.toLowerCase()).not.toContain("automatically resolved");
 
-    // Spawn counts: the total the administrator signs against, per event and
-    // in total, with the source-disabled hook still priced as a process (S3).
-    const spawns = panelText("hook-registry-spawns");
+    // Spawn counts: event and numbers asserted separately, so a copy fix (the
+    // template currently renders the ungrammatical "1 entries") does not break
+    // the test while a missing projection still does.
+    expect(registry.spawnProjection.events.length).toBeGreaterThan(0);
     for (const event of registry.spawnProjection.events) {
-      expect(spawns, `${event.event} spawns`).toContain(
-        `${event.entries} entries, ${event.spawns} expected process spawns`,
-      );
+      expect(panel.spawns, `${event.event} row`).toContain(event.event);
+      expect(panel.spawns, `${event.event} spawns`).toContain(String(event.spawns));
     }
-    expect(spawns).toContain(
-      `Total: ${registry.spawnProjection.totalEntries} entries, ${registry.spawnProjection.totalSpawns} process spawns`,
-    );
-    expect(spawns.toLowerCase()).toContain("still spawns a process");
+    expect(panel.spawns, "spawn total").toContain("Total:");
+    expect(panel.spawns, "total entries").toContain(String(registry.spawnProjection.totalEntries));
+    expect(panel.spawns, "total spawns").toContain(String(registry.spawnProjection.totalSpawns));
     expect(html.toLowerCase()).not.toContain("cost");
 
     // ── Mutate one destination entry: drift, named by owner and event.
