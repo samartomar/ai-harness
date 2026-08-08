@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-08-08
+
 ### Changed
 
 - **Breaking:** Governance now supports only `vibe` and `enterprise` postures.
@@ -2087,7 +2089,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/samartomar/ai-harness/compare/v4.0.0...v5.0.0
 [4.0.0]: https://github.com/samartomar/ai-harness/compare/v3.4.0...v4.0.0
 [3.4.0]: https://github.com/samartomar/ai-harness/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/samartomar/ai-harness/compare/v3.2.0...v3.3.0
