@@ -10,7 +10,7 @@ purpose: Human-readable guide to posture behavior and positioning.
 
 This guide explains how to reason about `vibe` and `enterprise` posture without turning posture into pricing language or mixing shipped behavior with unshipped plans.
 
-Current command baseline: shipped behavior through `@aihq/harness@2.4.3`, including capability intent/cache, workspace reconstruction, pack governance, BetterDoc/docs-lint, project-truth sidecars, and release verification.
+The latest published baseline is `@aihq/harness@4.0.0`. The `vibe`/`enterprise` model below is an unreleased `5.0.0` breaking migration; it becomes shipped behavior only when that major release publishes. Until then, use the installed version's release notes and CLI help as the authority.
 
 ## Read this as
 
