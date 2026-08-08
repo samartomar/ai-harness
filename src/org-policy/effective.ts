@@ -334,7 +334,7 @@ function projectorFor(
     // A package/version/integrity declaration identifies the intended custom
     // process but is not an integrity-enforcing materializer. Until AIH owns
     // that lifecycle, it remains authorable/reportable and cannot project.
-    if (candidate.source.type === "stdio") {
+    if (candidate.source.type === "stdio" || candidate.source.type === "remote") {
       return {
         projector: candidate.projector,
         requestedTargets: requested,
@@ -580,7 +580,10 @@ function resolveCandidate(
     } else if (!identity.projectable) {
       dangerCodes.push("missing-projector");
     }
-  } else if (candidate.kind === "mcp" && candidate.source.type === "stdio") {
+  } else if (
+    candidate.kind === "mcp" &&
+    (candidate.source.type === "stdio" || candidate.source.type === "remote")
+  ) {
     dangerCodes.push("missing-projector");
   } else if (candidate.kind === "mcp") {
     dangerCodes.push("evidence-identity-drift");
@@ -816,7 +819,20 @@ const CANDIDATE_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   "source.server": "effective resolver: AIH-shipped MCP identity",
   "source.subject": "effective resolver: AIH-shipped MCP subject identity",
   "source.tree": "effective resolver: immutable git tree identity",
+  "source.approval.allowedDataClasses.*":
+    "effective report metadata consumer; remote approval record is fenced until later machinery",
+  "source.approval.approvedBy":
+    "effective report metadata consumer; remote approval record is fenced until later machinery",
+  "source.approval.authenticationMode":
+    "effective report metadata consumer; remote approval record is fenced until later machinery",
+  "source.contentScanned":
+    "effective report metadata consumer; remote records explicitly state no content scan",
+  "source.origin": "effective resolver: exact remote HTTPS origin identity",
+  "source.toolSurfaceDigest":
+    "effective report metadata consumer; remote tool-surface snapshot is fenced until later machinery",
   "source.type": "effective resolver: source union and identity gate",
+  "source.verdict":
+    "effective report metadata consumer; remote verdict vocabulary is fenced until later machinery",
   "source.version":
     "effective resolver: immutable stdio curation/evidence version identity; no launch projector exists",
   "targets.*": "effective resolver: declared target parity gate",
@@ -861,7 +877,16 @@ const AUTHORITY_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   "approvals.*.source.server": "authority resolver: immutable source binding",
   "approvals.*.source.subject": "authority resolver: immutable source binding",
   "approvals.*.source.tree": "authority resolver: immutable source binding",
+  "approvals.*.source.approval.allowedDataClasses.*":
+    "authority resolver: exact remote source binding",
+  "approvals.*.source.approval.approvedBy": "authority resolver: exact remote source binding",
+  "approvals.*.source.approval.authenticationMode":
+    "authority resolver: exact remote source binding",
+  "approvals.*.source.contentScanned": "authority resolver: exact remote source binding",
+  "approvals.*.source.origin": "authority resolver: exact remote source binding",
+  "approvals.*.source.toolSurfaceDigest": "authority resolver: exact remote source binding",
   "approvals.*.source.type": "authority resolver: immutable source binding",
+  "approvals.*.source.verdict": "authority resolver: exact remote source binding",
   "approvals.*.source.version": "authority resolver: immutable source binding",
   "approvals.*.sourceDigest": "authority resolver: exact source digest binding",
 };

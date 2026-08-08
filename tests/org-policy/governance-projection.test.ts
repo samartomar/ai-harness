@@ -642,7 +642,8 @@ describe("governed candidate projection", () => {
           ...JSON.parse(JSON.stringify(customPolicy())).governance.catalog.custom[0],
           source: { type: "hook", handler: "usage-metering", scriptDigest },
         },
-        detail: "MCP candidates must use an exact catalog or fully pinned stdio package identity",
+        detail:
+          "MCP candidates must use an exact catalog, fully pinned stdio package, or fenced remote endpoint identity",
       },
       {
         candidate: { ...builtin, id: "mcp-alias" },

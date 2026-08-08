@@ -292,6 +292,22 @@ export const CandidateSourceSchema = z.discriminatedUnion("type", [
     .strict(),
   z
     .object({
+      type: z.literal("remote"),
+      origin: HttpsOriginSchema,
+      approval: z
+        .object({
+          approvedBy: SafePolicyIdentifierSchema,
+          authenticationMode: SafePolicyTextSchema,
+          allowedDataClasses: z.array(SafePolicyIdentifierSchema).min(1).max(20),
+        })
+        .strict(),
+      toolSurfaceDigest: Sha256Schema,
+      verdict: z.enum(["approved", "drifted", "revoked"]),
+      contentScanned: z.literal(false),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("mcp"),
       server: SafePolicyIdentifierSchema,
       subject: z
@@ -360,11 +376,13 @@ const PolicyCandidateSchema = z
     if (
       candidate.kind === "mcp" &&
       candidate.source.type !== "mcp" &&
-      candidate.source.type !== "stdio"
+      candidate.source.type !== "stdio" &&
+      candidate.source.type !== "remote"
     ) {
       ctx.addIssue({
         code: "custom",
-        message: "MCP candidates must use an exact catalog or fully pinned stdio package identity",
+        message:
+          "MCP candidates must use an exact catalog, fully pinned stdio package, or fenced remote endpoint identity",
       });
     }
     if (
@@ -903,7 +921,7 @@ const PolicyGovernanceSchema = z
      * destination AIH owns. The command is a third party's own launcher carried
      * byte-for-byte; the policy engine never reads it, and adoption — never
      * hand-typing — is how a launcher gets here. Additive: absent means no
-     * registrations, `schemaVersion` stays 1.
+     * registrations, `schemaVersion` is 2.
      */
     hookRegistrations: z.array(HookRegistrationSchema).default([]),
   })
@@ -920,12 +938,16 @@ const PolicyGovernanceSchema = z
       }
     }
     for (const [index, candidate] of governance.catalog.custom.entries()) {
-      if (candidate.kind === "mcp" && candidate.source.type !== "stdio") {
+      if (
+        candidate.kind === "mcp" &&
+        candidate.source.type !== "stdio" &&
+        candidate.source.type !== "remote"
+      ) {
         ctx.addIssue({
           code: "custom",
           path: ["catalog", "custom", index, "source"],
           message:
-            "custom MCP candidates must use a fully pinned stdio package identity; AIH-shipped MCPs belong in catalog.reviewed",
+            "custom MCP candidates must use a fully pinned stdio package or fenced remote endpoint identity; AIH-shipped MCPs belong in catalog.reviewed",
         });
       }
       if (candidate.kind === "hook") {

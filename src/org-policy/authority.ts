@@ -142,12 +142,17 @@ const RECEIPT_EVIDENCE_CONSUMERS: Readonly<Record<string, string>> = {
 };
 
 const RECEIPT_SOURCE_CONSUMERS: Readonly<Record<string, string>> = {
+  "approval.allowedDataClasses.*": "authority resolver: exact remote source binding",
+  "approval.approvedBy": "authority resolver: exact remote source binding",
+  "approval.authenticationMode": "authority resolver: exact remote source binding",
+  contentScanned: "authority resolver: exact remote source binding",
   "args.*": "authority resolver: immutable source binding",
   command: "authority resolver: immutable source binding",
   commit: "authority resolver: immutable source binding",
   executableDigest: "authority resolver: immutable source binding",
   handler: "authority resolver: immutable source binding",
   integrity: "authority resolver: immutable package integrity binding",
+  origin: "authority resolver: exact remote HTTPS origin binding",
   package: "authority resolver: canonical package launch binding",
   registry: "authority resolver: canonical registry launch binding",
   repository: "authority resolver: immutable source binding",
@@ -155,8 +160,10 @@ const RECEIPT_SOURCE_CONSUMERS: Readonly<Record<string, string>> = {
   scriptDigest: "authority resolver: immutable source binding",
   server: "authority resolver: immutable source binding",
   subject: "authority resolver: immutable source binding",
+  toolSurfaceDigest: "authority resolver: exact remote tool-surface binding",
   tree: "authority resolver: immutable source binding",
   type: "authority resolver: source union binding",
+  verdict: "authority resolver: exact remote verdict binding",
   version: "authority resolver: canonical exact version binding",
 };
 

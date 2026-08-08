@@ -239,7 +239,56 @@ describe("headless effective org policy", () => {
           authority: { approvals: [] },
         },
       }),
-    ).toThrow(/custom MCP candidates must use a fully pinned stdio package identity/);
+    ).toThrow(
+      /custom MCP candidates must use a fully pinned stdio package or fenced remote endpoint identity/,
+    );
+  });
+
+  it("preserves a remote custom MCP record but keeps it non-projectable", () => {
+    const source = {
+      type: "remote" as const,
+      origin: "https://mcp.figma.com",
+      approval: {
+        approvedBy: "security-admin",
+        authenticationMode: "oauth",
+        allowedDataClasses: ["design-metadata"],
+      },
+      toolSurfaceDigest: DIGEST,
+      verdict: "approved" as const,
+      contentScanned: false as const,
+    };
+    const base = policy();
+    if (base.governance === undefined) throw new Error("expected governance fixture");
+    const effective = resolveEffectiveOrgPolicy(
+      policy({
+        governance: {
+          ...base.governance,
+          catalog: {
+            reviewed: [],
+            custom: [
+              candidate({
+                id: "figma-remote",
+                description: "Approved hosted design MCP",
+                source,
+                evidence: { record: "figma-remote-approval" },
+              }),
+            ],
+          },
+          activations: [{ candidate: "figma-remote", state: "active", targets: ["claude"] }],
+        },
+      }),
+      { targets: ["claude"] },
+    );
+
+    expect(effective.candidates[0]).toMatchObject({
+      id: "figma-remote",
+      source,
+      effective: false,
+      dangerCodes: expect.arrayContaining(["missing-projector"]),
+      projection: { coverage: "blocked", ownership: "unavailable" },
+    });
+    expect(effective.candidates[0]?.dangerCodes).not.toContain("evidence-identity-drift");
+    expect(effective.activeMcpServerIds).toEqual([]);
   });
 
   it("rejects custom and aliased hook candidates instead of letting them project an AIH hook", () => {

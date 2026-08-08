@@ -598,11 +598,13 @@ like `aih init .` (`--root` and `AIH_ROOT` still apply).
 `aih-org-policy.json` schema, with schema-backed audit references for ECC or Superpowers agents, skills, and commands.
 Those records are external curation guidance only: AIH does not install, project, or enforce the external assets. Its
 catalog is an authoring projection of the same pinned AIH controls and framework catalog data used by the engine; it does
-not scan a repository. Browser import/export preserves policy semantics, including pending custom candidates, annotations,
-signed-approval clarification, and external curation intent. The workbench can preflight JSON and preserve an imported
-authority receipt's subjects in `governance.authority.approvals`, but it does not verify a receipt or make any approval
-effective. Target-repository `evaluate` remains the source of effective state. Custom MCP remains a pending, hard-blocked
-candidate with no activation affordance until supported scanning, evidence, and projection exist.
+not scan a repository. Browser import/export preserves policy semantics, including pinned stdio candidates, fenced remote endpoint candidates, annotations,
+signed-approval clarification, and external curation intent. A remote candidate records only an exact HTTPS origin,
+approval-shaped metadata, a pinned tool-surface digest, an `approved`, `drifted`, or `revoked` verdict, and an explicit
+no-content-scan marker; the workbench never contacts or scans that endpoint. The workbench can preflight JSON and preserve an
+imported authority receipt's subjects in `governance.authority.approvals`, but it does not verify a receipt or make any
+approval effective. Target-repository `evaluate` remains the source of effective state. Both custom-MCP forms remain pending,
+hard-blocked candidates with no activation affordance until supported scanning, evidence, and projection exist.
 
 `init` seeds a starter `aih-org-policy.json` from **observed fleet state**, so authoring the policy
 becomes a review exercise instead of a blank page — and a fresh enterprise setup passes baseline
