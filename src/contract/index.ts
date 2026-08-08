@@ -20,7 +20,7 @@ import { projectContractDoc, setupDoc } from "./templates.js";
 /**
  * The portable-paths invariant as a verification {@link Check}: every path-like value
  * in the contract must be a portable repo-relative POSIX path. Clean contracts pass;
- * non-portable paths are posture-graded (`vibe` warning-only, `team`/`enterprise`
+ * non-portable paths are posture-graded (`vibe` warning-only, `enterprise`
  * fail with `contract.path-unportable`).
  */
 export function portablePathsCheck(contract: ProjectContract, posture: Posture): Check {

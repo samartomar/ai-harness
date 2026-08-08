@@ -415,7 +415,8 @@ summary{min-height:32px}
     <button type="button" class="seek" id="seek">Find any item&hellip; <kbd>/</kbd></button>
     <span class="sp"></span>
     <span id="status">Ready - no repository is required.</span>
-    <label>Preset <select id="profile"><option value="team">Team</option><option value="enterprise">Enterprise</option><option value="vibe">Vibe</option></select></label>
+    <label>Preset <select id="profile"><option value="">Custom</option><option value="vibe">Vibe</option><option value="enterprise">Enterprise</option></select></label>
+    <label>Posture <select id="posture"><option value="vibe">Vibe</option><option value="enterprise">Enterprise</option></select></label>
     <span class="pill" role="group" aria-label="Theme">
       <button type="button" data-theme-set="light" aria-pressed="true">Light</button>
       <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
@@ -437,7 +438,7 @@ summary{min-height:32px}
   <div class="work">
     <aside class="rail" aria-label="Presets and quick selection">
       <section class="gcard sect">
-        <div class="cap">Preset <span class="end" id="rail-posture">team</span></div>
+        <div class="cap">Preset <span class="end" id="rail-posture">vibe</span></div>
         <div id="presets" style="display:grid;gap:4px"></div>
       </section>
       <section class="gcard sect"><div class="cap">Languages</div><div class="chips" id="rail-langs"></div></section>
@@ -898,13 +899,13 @@ let planeFilter="all";
 const OWNERS=[["all","All"],["AIH","AIH"],["ECC","ECC"],["Superpowers","Superpowers"],["You","Your sources"]];
 const UPCOMING=["VibeSec","Voice"];
 let ownerFocus="all";
+let activePreset="";
 const PRESETS=[["vibe","Vibe","Everything this catalog offers. Nothing is hidden for want of AIH enforcement."],
-  ["enterprise","Enterprise","ECC Core selected; languages and security offered as additive choices."],
-  ["team","Team","Posture only. Selections stay exactly as you left them."]];
+  ["enterprise","Enterprise","ECC Core selected; languages and security offered as additive choices."]];
 const railKinds=[["rail-langs","lang"],["rail-frameworks","framework"],["rail-caps","capability"],["rail-modules","module"]];
 const buildRail=function(){const framework=eccFramework();if(!framework){return}railKinds.forEach(function(entry){const host=byId(entry[0]);if(!host){return}host.innerHTML=framework.assets.filter(function(asset){return asset.kind===entry[1]}).map(function(asset){return '<button type="button" class="chip" data-framework-select="'+esc(framework.id+"|"+asset.kind+"|"+asset.id)+'" aria-pressed="false">'+esc(asset.id.slice(asset.id.indexOf(":")+1))+'</button>'}).join("")})};
-const syncRail=function(){const framework=eccFramework();if(!framework){return}const chosen=selectedItems(framework.id).map(function(item){return item.id});document.querySelectorAll(".chip[data-framework-select]").forEach(function(chip){const id=String(chip.getAttribute("data-framework-select")).split("|")[2];chip.setAttribute("aria-pressed",chosen.indexOf(id)===-1?"false":"true")});const posture=byId("rail-posture");if(posture){posture.textContent=state.policy.minimumPosture||"team"}
-  document.querySelectorAll("[data-preset]").forEach(function(node){node.setAttribute("aria-pressed",node.getAttribute("data-preset")===(state.policy.minimumPosture||"team")?"true":"false")})};
+const syncRail=function(){const framework=eccFramework();if(!framework){return}const chosen=selectedItems(framework.id).map(function(item){return item.id});document.querySelectorAll(".chip[data-framework-select]").forEach(function(chip){const id=String(chip.getAttribute("data-framework-select")).split("|")[2];chip.setAttribute("aria-pressed",chosen.indexOf(id)===-1?"false":"true")});const posture=byId("rail-posture");if(posture){posture.textContent=state.policy.minimumPosture||"vibe"}
+  document.querySelectorAll("[data-preset]").forEach(function(node){node.setAttribute("aria-pressed",node.getAttribute("data-preset")===activePreset?"true":"false")})};
 /* One pass over the rendered rows: it applies the filter, counts each group,
    paints its meter, and totals the ledger. Reading the DOM keeps the tally
    honest about what an administrator can actually see. */
@@ -1069,8 +1070,9 @@ document.addEventListener("keydown",function(event){
   if(event.key==="ArrowUp"){event.preventDefault();spotIndex=Math.max(spotIndex-1,0);paintHits()}
   if(event.key==="Enter"&&matches[spotIndex]){event.preventDefault();closeSpot();openDrawer(matches[spotIndex].id)}});
 document.addEventListener("click",function(event){const filter=event.target.closest&&event.target.closest(".f[data-filter]");if(!filter){return}planeFilter=filter.getAttribute("data-filter");document.querySelectorAll(".f[data-filter]").forEach(function(node){node.setAttribute("aria-pressed",node===filter?"true":"false")});paintShell()});
-const render=function(){byId("profile").value=state.policy.minimumPosture||"team";syncFrameworkSelect();renderRows();renderComposition();renderReceipt();renderPreview();syncRail();paintShell();byId("dispositionable-findings").textContent=model.findings.dispositionable.join(" | ");byId("hard-blockers").textContent=model.findings.fenced.join(" | ");if(typeof window.__aihPolicyWorkbenchEnhanceRows==="function"){window.__aihPolicyWorkbenchEnhanceRows()}};
-byId("profile").addEventListener("change",function(event){const value=event.target.value;if(value==="vibe"){composeVibeProfile();return}if(value==="enterprise"){composeEnterpriseProfile();return}const previous=structuredClone(state.policy);state.policy.minimumPosture=value;commitPolicy(previous,"Profile changed.")});
+const render=function(){byId("posture").value=state.policy.minimumPosture||"vibe";byId("profile").value=activePreset;syncFrameworkSelect();renderRows();renderComposition();renderReceipt();renderPreview();syncRail();paintShell();byId("dispositionable-findings").textContent=model.findings.dispositionable.join(" | ");byId("hard-blockers").textContent=model.findings.fenced.join(" | ");if(typeof window.__aihPolicyWorkbenchEnhanceRows==="function"){window.__aihPolicyWorkbenchEnhanceRows()}};
+byId("profile").addEventListener("change",function(event){const value=event.target.value;activePreset=value;if(value==="vibe"){composeVibeProfile();return}if(value==="enterprise"){composeEnterpriseProfile()}});
+byId("posture").addEventListener("change",function(event){const value=event.target.value;const previous=structuredClone(state.policy);activePreset="";state.policy.minimumPosture=value;commitPolicy(previous,"Posture changed without modifying selections.")});
 const closeTooltips=function(){document.querySelectorAll(".tooltip[data-open='true']").forEach(function(tip){tip.setAttribute("data-open","false")});document.querySelectorAll("[data-tooltip-button][aria-expanded='true']").forEach(function(button){button.setAttribute("aria-expanded","false")})};
 const openTooltip=function(button){closeTooltips();button.setAttribute("aria-expanded","true");button.removeAttribute("data-tooltip-dismissed");const tip=byId(button.getAttribute("data-tooltip-button"));if(tip){const rect=button.getBoundingClientRect();const width=Math.min(368,Math.max(24,window.innerWidth-32));tip.style.width=width+"px";tip.style.left=Math.max(16,Math.min(rect.left,window.innerWidth-16-width))+"px";tip.style.top=Math.max(16,rect.bottom+4)+"px";tip.setAttribute("data-open","true")}};
 document.addEventListener("focusin",function(event){const helpButton=event.target.closest&&event.target.closest("[data-tooltip-button]");if(helpButton&&!helpButton.hasAttribute("data-tooltip-dismissed")){openTooltip(helpButton)}});
@@ -1118,7 +1120,7 @@ byId("custom-editor").querySelector("summary").insertAdjacentHTML("beforeend",he
    has to be one control. It restores the generated starting policy exactly,
    which is also what makes the one-framework rule escapable. */
 document.addEventListener("click",function(event){if(!event.target.closest||!event.target.closest("#clear-policy")){return}
-  state.policy=structuredClone(model.initialPolicy);state.editing=null;
+  state.policy=structuredClone(model.initialPolicy);state.editing=null;activePreset="";
   announce("Policy cleared. Every selection, requested control and curation record is gone, and either framework can be selected again.");render()});
 byId("owner-ticker").innerHTML=OWNERS.map(function(entry,index){
   return (index?'<span class="sep" aria-hidden="true">|</span>':"")+

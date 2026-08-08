@@ -209,12 +209,12 @@ is labeled first-party rather than Superpowers vendor evidence.
 
 ## Posture behavior
 
-| Evidence result | vibe | team | enterprise |
-| --- | --- | --- | --- |
-| Exact `pass` from vendor or org | allow | allow | allow |
-| Missing component or hash/path mismatch | warn; no authorization receipt | deny | deny |
-| Exact `blocked` verdict | deny | deny | deny |
-| Invalid configured org bundle/signature | deny | deny | deny |
+| Evidence result | vibe | enterprise |
+| --- | --- | --- |
+| Exact `pass` from vendor or org | allow | allow |
+| Missing component or hash/path mismatch | warn; no authorization receipt | deny |
+| Exact `blocked` verdict | deny | deny |
+| Invalid configured org bundle/signature | deny | deny |
 
 Danger-class findings remain a floor at every posture. In particular, unpinned
 executable dependencies, destructive automatic execution, genuine credential
@@ -255,8 +255,8 @@ through the repository or another reviewed channel, then bind it in
 
 ```json
 {
-  "schemaVersion": 1,
-  "minimumPosture": "team",
+  "schemaVersion": 2,
+  "minimumPosture": "enterprise",
   "references": { "repoContract": "ai-coding/project.json" },
   "trust": {
     "baselineOverrides": [
@@ -343,7 +343,7 @@ follow, and both are load-bearing:
    review of every finding. Patching a local or forked checkout in place produces
    a tree no receipt describes; `src/binding/scan-acceptance.json` is keyed to
    exact file-content sha256, so any rebind — even to an upstream merge of the
-   very change already vetted on a fork — voids the acceptance set and is its own
+   that change already vetted on a fork — voids the acceptance set and is its own
    work package, never a pin swap.
 
 The maintainer drift check above exists to enforce exactly this: it re-runs the

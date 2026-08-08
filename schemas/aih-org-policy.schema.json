@@ -4,13 +4,12 @@
   "properties": {
     "schemaVersion": {
       "type": "number",
-      "const": 1
+      "const": 2
     },
     "minimumPosture": {
       "type": "string",
       "enum": [
         "vibe",
-        "team",
         "enterprise"
       ]
     },

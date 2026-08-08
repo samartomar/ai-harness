@@ -29,7 +29,7 @@ const SCA_PATH = ".github/workflows/sca.yml";
 const RISK_GATES_WORKFLOW_PATH = ".github/workflows/risk-gates.yml";
 /** Native Claude permission file the command-policy projection merges into. */
 const CLAUDE_SETTINGS_PATH = ".claude/settings.json";
-/** Project managed-settings file for command-policy enforcement under team+. */
+/** Project managed-settings file for command-policy enforcement under enterprise. */
 const CLAUDE_MANAGED_SETTINGS_PATH = ".claude/managed-settings.json";
 /** System-path example an admin deploys at enterprise posture. */
 const SYSTEM_MANAGED_SETTINGS_EXAMPLE_PATH = "managed-settings.json.example";
@@ -153,7 +153,7 @@ function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
     );
   }
 
-  // Defense-in-depth: at team+ posture, project the command lexicon into Claude's
+  // Defense-in-depth: at enterprise posture, project the command lexicon into Claude's
   // native project permissions AND managed-settings commandPolicy. This is
   // Claude-specific, so under `aih init` it lands only when Claude is a target; at
   // `vibe`, the lexicon remains advisory docs only.

@@ -185,7 +185,7 @@ function writeGovernedPolicy(
     orgPolicyPath(root, {}),
     `${JSON.stringify(
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         governance: {
@@ -219,7 +219,7 @@ function writeUngovernedPolicy(): void {
     orgPolicyPath(root, {}),
     `${JSON.stringify(
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
       },
@@ -477,7 +477,7 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
     writeFileSync(
       orgPolicyPath(root, {}),
       `${JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         governance: {

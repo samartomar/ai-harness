@@ -434,7 +434,7 @@ function enterpriseComposition(ecc: PolicyAuthoringFramework): PolicyAuthoringCo
     {
       id: "security",
       label: "Security composition",
-      rule: 'capability:security is what selectEccComponents() recommends at team and enterprise posture; module:security is what ECC\'s "security" profile adds over "core"',
+      rule: 'capability:security is what selectEccComponents() recommends at enterprise posture; module:security is what ECC\'s "security" profile adds over "core"',
       selection: "additive",
       componentIds: [
         "capability:security",

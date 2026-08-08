@@ -27,8 +27,8 @@ function put(rel: string, contents: string): void {
 function policy(signingRepository = "acme/engineering-governance") {
   const catalog = baselineCatalogById("ecc");
   return parseOrgPolicy({
-    schemaVersion: 1,
-    minimumPosture: "team",
+    schemaVersion: 2,
+    minimumPosture: "enterprise",
     references: { repoContract: "ai-coding/project.json" },
     trust: {
       baselineOverrides: [

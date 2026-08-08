@@ -37,7 +37,7 @@ and the existing fail-closed verified install driver.
   opt-in at vibe. Hooks, vertical packs, continuous learning, and full are never
   automatic.
 - MCP defaults are local `sequential-thinking`, repo-declared
-  `code-review-graph`/`codebase-memory-mcp`, and `github` at team/enterprise.
+  `code-review-graph`/`codebase-memory-mcp`, and `github` at enterprise.
   Egress MCPs such as Context7 and Exa never default on.
 - `scanRepo` and repeatable `--with <component>` are co-equal writers. Re-running
   for another project adds to the machine union; it never removes another

@@ -164,37 +164,37 @@ describe("verifyBaselineComponents", () => {
     ]);
   });
 
-  it.each([
-    "enterprise",
-    "enterprise",
-  ] as const)("fails closed on uncovered evidence at %s posture", (posture) => {
-    const empty = parseBaselineEvidenceLock({
-      schemaVersion: 1,
-      sources: [
-        {
-          id: "other",
-          owner: "other",
-          repo: "source",
-          pinnedSha: "b".repeat(40),
-          components: [
-            {
-              id: "skill:other",
-              paths: ["skills/other"],
-              treeSha256: "c".repeat(64),
-              verdict: "pass",
-              analyzers: [{ name: "aih-native", version: "2.7.0" }],
-              findings: [],
-            },
-          ],
-        },
-      ],
-    });
-    const result = verify(posture, empty);
-    expect(result.checks).toEqual([
-      expect.objectContaining({ verdict: "fail", code: "baseline.evidence-missing" }),
-    ]);
-    expect(result.authorizations).toEqual([]);
-  });
+  it.each(["enterprise", "enterprise"] as const)(
+    "fails closed on uncovered evidence at %s posture",
+    (posture) => {
+      const empty = parseBaselineEvidenceLock({
+        schemaVersion: 1,
+        sources: [
+          {
+            id: "other",
+            owner: "other",
+            repo: "source",
+            pinnedSha: "b".repeat(40),
+            components: [
+              {
+                id: "skill:other",
+                paths: ["skills/other"],
+                treeSha256: "c".repeat(64),
+                verdict: "pass",
+                analyzers: [{ name: "aih-native", version: "2.7.0" }],
+                findings: [],
+              },
+            ],
+          },
+        ],
+      });
+      const result = verify(posture, empty);
+      expect(result.checks).toEqual([
+        expect.objectContaining({ verdict: "fail", code: "baseline.evidence-missing" }),
+      ]);
+      expect(result.authorizations).toEqual([]);
+    },
+  );
 
   it("warns but does not invent an authorization for uncovered vibe installs", () => {
     const empty = parseBaselineEvidenceLock({
@@ -225,17 +225,16 @@ describe("verifyBaselineComponents", () => {
     expect(result.authorizations).toEqual([]);
   });
 
-  it.each([
-    "vibe",
-    "enterprise",
-    "enterprise",
-  ] as const)("never permits an exact component whose signed verdict is blocked at %s", (posture) => {
-    const result = verify(posture, lock({ verdict: "blocked" }));
-    expect(result.checks).toEqual([
-      expect.objectContaining({ verdict: "fail", code: "baseline.evidence-blocked" }),
-    ]);
-    expect(result.authorizations).toEqual([]);
-  });
+  it.each(["vibe", "enterprise", "enterprise"] as const)(
+    "never permits an exact component whose signed verdict is blocked at %s",
+    (posture) => {
+      const result = verify(posture, lock({ verdict: "blocked" }));
+      expect(result.checks).toEqual([
+        expect.objectContaining({ verdict: "fail", code: "baseline.evidence-blocked" }),
+      ]);
+      expect(result.authorizations).toEqual([]);
+    },
+  );
 
   it.each([
     ["vibe", "pass"],
@@ -289,31 +288,30 @@ describe("verifyBaselineComponents", () => {
     });
   });
 
-  it.each([
-    "vibe",
-    "enterprise",
-    "enterprise",
-  ] as const)("never permits a component whose org evidence is blocked at %s", (posture) => {
-    const newerPin = "b".repeat(40);
-    const result = verifyBaselineComponents({
-      sourceRoot: root,
-      catalog: catalog(newerPin),
-      componentIds: ["skill:clean"],
-      posture,
-      vendorLock: lock(),
-      vendorLockSha256: "f".repeat(64),
-      orgEvidence: {
-        tier: "org",
-        issuer: "github:acme/engineering-governance",
-        evidenceSha256: "e".repeat(64),
-        lock: lock({ pin: newerPin, verdict: "blocked" }),
-      },
-    });
-    expect(result.checks).toEqual([
-      expect.objectContaining({ verdict: "fail", code: "baseline.evidence-blocked" }),
-    ]);
-    expect(result.authorizations).toEqual([]);
-  });
+  it.each(["vibe", "enterprise", "enterprise"] as const)(
+    "never permits a component whose org evidence is blocked at %s",
+    (posture) => {
+      const newerPin = "b".repeat(40);
+      const result = verifyBaselineComponents({
+        sourceRoot: root,
+        catalog: catalog(newerPin),
+        componentIds: ["skill:clean"],
+        posture,
+        vendorLock: lock(),
+        vendorLockSha256: "f".repeat(64),
+        orgEvidence: {
+          tier: "org",
+          issuer: "github:acme/engineering-governance",
+          evidenceSha256: "e".repeat(64),
+          lock: lock({ pin: newerPin, verdict: "blocked" }),
+        },
+      });
+      expect(result.checks).toEqual([
+        expect.objectContaining({ verdict: "fail", code: "baseline.evidence-blocked" }),
+      ]);
+      expect(result.authorizations).toEqual([]);
+    },
+  );
 
   it("does not let org evidence replace an exact vendor-blocked verdict for the same bytes", () => {
     const result = verifyBaselineComponents({

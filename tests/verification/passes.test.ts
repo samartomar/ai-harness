@@ -193,7 +193,7 @@ describe("structured verification passes", () => {
       root,
       "aih-org-policy.json",
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { allowedServers: [], allowManagedOnly: true },

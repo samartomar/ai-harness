@@ -133,7 +133,7 @@ git init aih-admin-configuration
 Set-Location aih-admin-configuration
 @'
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "minimumPosture": "enterprise",
   "references": {
     "repoContract": "ai-coding/project.json"
@@ -398,7 +398,7 @@ Use `aih mcp approve --apply` for repo-local policy because it computes the curr
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "minimumPosture": "enterprise",
   "references": {
     "repoContract": "ai-coding/project.json"

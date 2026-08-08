@@ -3,8 +3,8 @@ import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 
 function policy(override: Record<string, unknown> = {}) {
   return {
-    schemaVersion: 1,
-    minimumPosture: "team",
+    schemaVersion: 2,
+    minimumPosture: "enterprise",
     references: { repoContract: "ai-coding/project.json" },
     trust: {
       baselineOverrides: [

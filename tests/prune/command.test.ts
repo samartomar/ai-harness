@@ -154,7 +154,7 @@ describe("aih prune command", () => {
       writeFileSync(
         join(dir, "aih-org-policy.json"),
         JSON.stringify({
-          schemaVersion: 1,
+          schemaVersion: 2,
           minimumPosture: "enterprise",
           references: { repoContract: "ai-coding/project.json" },
           mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },

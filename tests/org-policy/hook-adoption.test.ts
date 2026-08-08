@@ -135,8 +135,8 @@ describe("A1 — adoption captures the destination's own bytes and emits the pol
       },
     ]);
     const policy = parseOrgPolicy({
-      schemaVersion: 1,
-      minimumPosture: "team",
+      schemaVersion: 2,
+      minimumPosture: "vibe",
       references: { repoContract: "ai-coding/project.json" },
       governance: {
         policyVersion: "2026-08-06.1",

@@ -333,6 +333,16 @@ describe("aih capability resolve", () => {
     }).rejects.toThrow(/invalid posture/);
   });
 
+  it("refuses the removed Team posture with a named migration", async () => {
+    seedNodeRepo();
+
+    await expect(async () => {
+      await capabilityResolveCommand.plan(
+        ctx({ posture: "team" as unknown as PlanContext["posture"] }),
+      );
+    }).rejects.toThrow(/replace team with vibe or enterprise/);
+  });
+
   it("rejects legacy community posture instead of falling back to auto-add", async () => {
     seedNodeRepo();
 
@@ -343,7 +353,7 @@ describe("aih capability resolve", () => {
     }).rejects.toThrow(/invalid posture/);
   });
 
-  it("team posture records detected needs as warnings", async () => {
+  it("enterprise posture records detected needs as warnings", async () => {
     seedNodeRepo();
 
     const result = await executePlan(
@@ -355,7 +365,11 @@ describe("aih capability resolve", () => {
       decisions: Array<{ install: string }>;
     };
 
-    expect(data.decisions.map((d) => d.install)).toEqual(["warn", "warn", "warn"]);
+    expect(data.decisions.map((d) => d.install)).toEqual([
+      "requires-approval",
+      "requires-approval",
+      "requires-approval",
+    ]);
   });
 
   it("fails closed when the catalog engine check cannot parse the current aih version", async () => {

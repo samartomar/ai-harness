@@ -82,7 +82,7 @@ Prefer mechanism claims:
 - "dry-run by default for managed project changes";
 - "pack refs are cross-checked against `aih-skills.lock.json`";
 - "reports are offline artifacts by default";
-- "skill installs are approval-gated at team/enterprise posture";
+- "skill installs are approval-gated at enterprise posture";
 - "normal plans do not include remote mutation actions."
 
 ## Source links

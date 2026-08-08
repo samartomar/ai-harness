@@ -61,7 +61,7 @@ function seedOrgPolicy(allowedServers = ["code-review-graph"]): void {
   writeFileSync(
     join(dir, "aih-org-policy.json"),
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: ".ai-context/project.json" },
       mcp: { allowedServers, allowManagedOnly: true },
@@ -74,7 +74,7 @@ function seedGovernedUsage(state: "active" | "disabled", targets: string[] = ["c
   writeFileSync(
     join(dir, "aih-org-policy.json"),
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: ".ai-context/project.json" },
       governance: {
@@ -301,7 +301,7 @@ describe("aih init — command surface", () => {
     writeFileSync(
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: ".ai-context/project.json" },
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: false },
@@ -342,9 +342,9 @@ describe("aih init --v3 — bootstrap intelligence", () => {
     );
     expect(data?.plan.decisions).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "common.security-review", install: "warn" }),
-        expect.objectContaining({ name: "common.tdd-workflow", install: "warn" }),
-        expect.objectContaining({ name: "stack.node-typescript", install: "warn" }),
+        expect.objectContaining({ name: "common.security-review", install: "requires-approval" }),
+        expect.objectContaining({ name: "common.tdd-workflow", install: "requires-approval" }),
+        expect.objectContaining({ name: "stack.node-typescript", install: "requires-approval" }),
       ]),
     );
     expect(data?.fingerprint.fingerprintSha256).toMatch(/^[a-f0-9]{64}$/);
@@ -361,14 +361,14 @@ describe("aih init --v3 — bootstrap intelligence", () => {
   it("fingerprints install-mode changes, not just capability ids", async () => {
     seedNodeRepo();
 
-    const team = initV3Digest((await command.plan(initV3Ctx({ posture: "enterprise" }))).actions);
+    const vibe = initV3Digest((await command.plan(initV3Ctx({ posture: "vibe" }))).actions);
     const enterprise = initV3Digest(
       (await command.plan(initV3Ctx({ posture: "enterprise" }))).actions,
     );
 
-    expect(team.fingerprint.plannedCapabilities).toEqual(
+    expect(vibe.fingerprint.plannedCapabilities).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "common.security-review", install: "warn" }),
+        expect.objectContaining({ name: "common.security-review", install: "auto-add" }),
       ]),
     );
     expect(enterprise.fingerprint.plannedCapabilities).toEqual(
@@ -379,7 +379,7 @@ describe("aih init --v3 — bootstrap intelligence", () => {
         }),
       ]),
     );
-    expect(enterprise.fingerprint.fingerprintSha256).not.toBe(team.fingerprint.fingerprintSha256);
+    expect(enterprise.fingerprint.fingerprintSha256).not.toBe(vibe.fingerprint.fingerprintSha256);
   });
 
   it("--apply writes committed capability intent plus derived cache/fingerprint idempotently", async () => {

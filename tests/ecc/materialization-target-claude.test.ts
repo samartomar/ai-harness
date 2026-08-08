@@ -317,8 +317,8 @@ const MCP: SelectionFixture = {
 /** A real policy document, parsed by the real entry point — never a policy-shaped object. */
 function policyDocument(): Record<string, unknown> {
   return {
-    schemaVersion: 1,
-    minimumPosture: "team",
+    schemaVersion: 2,
+    minimumPosture: "enterprise",
     references: { repoContract: "ai-coding/project.json" },
     governance: {
       policyVersion: "2026-08-07.1",

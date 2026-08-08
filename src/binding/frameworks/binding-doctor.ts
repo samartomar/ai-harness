@@ -266,7 +266,7 @@ function attributionOf(framework: FrameworkId): FrameworkAttribution {
 /**
  * B1 — user-scope contamination. Clean ⇒ pass. Leakage ⇒ posture-graded (O4): a
  * failing check at enterprise, an advisory skip (label downgrade to
- * PROJECT_BINDING_CONFLICTED) at vibe/team. Detail is the countable leakage
+ * PROJECT_BINDING_CONFLICTED) at vibe. Detail is the countable leakage
  * summary (`N skills, N agents, …`) — counts only, no surface paths, deterministic.
  */
 export function bindingContaminationCheck(ctx: PlanContext): Check {
@@ -344,7 +344,7 @@ function hardFactMismatches(measured: HostTuple, pinned: HostTuple): string[] {
  * the Claude Code version advanced) ⇒ advisory skip (`binding.host-version-drift`);
  * `off-tuple` ⇒ posture-graded like O4 (`binding.host-off-tuple`): a failing check at
  * enterprise, an advisory skip (support downgrades to HOST_BINDING_UNVALIDATED) at
- * vibe/team. Detail names the pinned facts / mismatched field NAMES only — never a
+ * vibe. Detail names the pinned facts / mismatched field NAMES only — never a
  * raw machine value — so it is portable and deterministic. `measured` is injectable
  * for deterministic tests; production measures the live host.
  */
@@ -596,7 +596,7 @@ export function bindingMcpInventoryCheck(ctx: PlanContext): Check {
  *
  * Both signals are read by their STABLE `code` (never by matching `detail`):
  *  - `contaminationClean` is false iff B1 emitted `binding.contaminated` (as a
- *    fail at enterprise or an advisory skip at vibe/team) — otherwise clean.
+ *    fail at enterprise or an advisory skip at vibe) — otherwise clean.
  *  - `inTuple` is false iff B3 emitted `binding.host-off-tuple`. A
  *    `binding.host-version-drift` is NOT off-tuple: the hard facts held and only the
  *    Claude Code provenance advanced, so it stays in-tuple for the card (design §B.3).

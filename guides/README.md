@@ -12,7 +12,7 @@ Use this folder for human-facing guidance. These docs explain how different read
 
 Guide baseline: `@aihq/harness@2.4.3`. Use [docs/commands.md](../docs/commands.md) and `aih <command> --help` as syntax authorities; these guides explain reader workflows.
 
-![AI-Harness guide map showing reader paths for vibe developers, teams, enterprise admins, enterprise developers, and shared command references](../docs/assets/aih-guide-map.svg)
+![AI-Harness guide map showing reader paths for vibe developers, shared repositories, enterprise admins, enterprise developers, and shared command references](../docs/assets/aih-guide-map.svg)
 
 ## Read Order
 
@@ -22,7 +22,7 @@ Guide baseline: `@aihq/harness@2.4.3`. Use [docs/commands.md](../docs/commands.m
 | Add, switch, or prune AI CLI surfaces | [CLI Lifecycle](cli-lifecycle-guide.md) |
 | Understand posture behavior and boundaries | [Postures](postures.md) |
 | Individual developer or evaluator | [Vibe Developer](vibe-developer-guide.md) |
-| Shared repository or platform team | [Team](team-guide.md) |
+| Shared repository | [Shared Repository](shared-repository-guide.md) |
 | Governed organization or enterprise rollout | [Enterprise Admin](enterprise-admin-guide.md) |
 | Developer consuming an admin enterprise config | [Enterprise Developer](enterprise-developer-guide.md) |
 

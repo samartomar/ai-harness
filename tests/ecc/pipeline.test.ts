@@ -235,7 +235,7 @@ describe("ECC baseline evidence pipeline", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
@@ -253,7 +253,7 @@ describe("ECC baseline evidence pipeline", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { allowedServers: [], allowManagedOnly: false },
@@ -269,7 +269,7 @@ describe("ECC baseline evidence pipeline", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { allowManagedOnly: true, allowedServers: ["code-review-graph"] },
@@ -296,7 +296,7 @@ describe("ECC baseline evidence pipeline", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         governance: {
@@ -323,7 +323,7 @@ describe("ECC baseline evidence pipeline", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         governance: {

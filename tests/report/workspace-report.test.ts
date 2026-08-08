@@ -329,7 +329,7 @@ describe("report workspace rollup", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       json({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         governance: {

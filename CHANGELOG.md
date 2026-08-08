@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** Governance now supports only `vibe` and `enterprise` postures.
+  Org policies must use `schemaVersion: 2`; schema version 1 and the removed
+  `team` value fail closed with a migration message directing administrators to
+  set `schemaVersion: 2` and choose `vibe` or `enterprise`.
+
 ## [4.0.0] - 2026-08-07
 
 ### Removed

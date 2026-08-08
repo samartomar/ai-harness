@@ -285,7 +285,7 @@ describe("fast scan disposition (D12 gate + posture-graded coverage)", () => {
     }
   });
 
-  it("blocks at team/enterprise when a (future deep) dimension is unavailable (incomplete coverage fails closed)", async () => {
+  it("blocks at enterprise when a (future deep) dimension is unavailable (incomplete coverage fails closed)", async () => {
     const src = await scannable();
     for (const posture of ["enterprise", "enterprise"] as const) {
       const disposition = runFastScanGate(

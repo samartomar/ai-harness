@@ -1,6 +1,6 @@
 <svg width="1200" height="680" viewBox="0 0 1200 680" xmlns="http://www.w3.org/2000/svg" role="img" font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif">
   <title>AI-Harness guide map for v4.0.0 public documentation</title>
-  <desc>Reader paths from the guide index to vibe developer, team, enterprise admin, and enterprise developer guides, with shared command, lifecycle, and posture references.</desc>
+  <desc>Reader paths from the guide index to vibe developer, shared repository, enterprise admin, and enterprise developer guides, with shared command, lifecycle, and posture references.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0b0e14"/>
@@ -63,7 +63,7 @@
       <text x="22" y="67" font-size="13" fill="#8b949e">Standardize repo setup,</text>
       <text x="22" y="85" font-size="13" fill="#8b949e">local reports, and shared</text>
       <text x="22" y="103" font-size="13" fill="#8b949e">review defaults.</text>
-      <text x="22" y="132" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">team-guide.md</text>
+      <text x="22" y="132" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">shared-repository-guide.md</text>
     </g>
 
     <g transform="translate(914,176)">
@@ -107,7 +107,7 @@
     <text x="176" y="55" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">cli-lifecycle-guide.md</text>
     <text x="430" y="55" font-size="12.5" fill="#6e7681">Add, switch, and prune AI CLI surfaces.</text>
     <text x="760" y="31" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">postures.md</text>
-    <text x="880" y="31" font-size="12.5" fill="#6e7681">vibe | team | enterprise</text>
+    <text x="880" y="31" font-size="12.5" fill="#6e7681">vibe | enterprise</text>
   </g>
 
   <text x="64" y="654" font-size="12" fill="#6e7681">Enterprise examples should stay limited to approved MCP surfaces such as Jira, AWS MCP, and Figma.</text>

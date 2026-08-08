@@ -159,7 +159,11 @@ export function isLoggingEnabled(
   opts: { noLog?: boolean },
 ): boolean {
   if (opts.noLog === true || env.AIH_LOG === "0") return false;
-  return readAihConfig(root) !== undefined;
+  try {
+    return readAihConfig(root) !== undefined;
+  } catch {
+    return false;
+  }
 }
 
 /** Month-sharded ledger filename for `date` (UTC), e.g. `2026-06.jsonl`. */

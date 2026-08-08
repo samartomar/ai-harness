@@ -104,7 +104,7 @@ function customSource() {
 function customPolicy(targets: string[] = ["claude"], approvals: unknown[] = []) {
   const source = customSource();
   return parseOrgPolicy({
-    schemaVersion: 1,
+    schemaVersion: 2,
     minimumPosture: "enterprise",
     references: { repoContract: "ai-coding/project.json" },
     mcp: { allowManagedOnly: true },
@@ -232,7 +232,7 @@ function usageHookPolicy(state: "active" | "disabled", targets: string[] = ["cla
   const scriptDigest = `sha256:${createHash("sha256").update(usageRecorderScript(), "utf8").digest("hex")}`;
   const source = { type: "hook" as const, handler: "usage-metering" as const, scriptDigest };
   return parseOrgPolicy({
-    schemaVersion: 1,
+    schemaVersion: 2,
     minimumPosture: "enterprise",
     references: { repoContract: "ai-coding/project.json" },
     governance: {
@@ -281,7 +281,7 @@ function reviewedMcpPolicy({
     subject: mcpApprovalSubject(server),
   };
   return parseOrgPolicy({
-    schemaVersion: 1,
+    schemaVersion: 2,
     minimumPosture: "enterprise",
     references: { repoContract: "ai-coding/project.json" },
     mcp: { allowManagedOnly, allowedServers, disabledServers },
@@ -1000,7 +1000,7 @@ describe("governed candidate projection", () => {
       subject: mcpApprovalSubject(server),
     };
     const policy = parseOrgPolicy({
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
       mcp: { allowManagedOnly: true },
@@ -1155,7 +1155,7 @@ describe("governed candidate projection", () => {
     const scriptDigest = `sha256:${createHash("sha256").update(usageRecorderScript(), "utf8").digest("hex")}`;
     const source = { type: "hook" as const, handler: "usage-metering" as const, scriptDigest };
     const policy = parseOrgPolicy({
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
       governance: {

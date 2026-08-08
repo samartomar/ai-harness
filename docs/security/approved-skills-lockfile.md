@@ -21,7 +21,7 @@ pin -> evidence -> approvable verdict -> license -> owner -> lock entry
 
 Downstream surfaces use the lockfile as authority:
 
-- `workspace add` checks approval before promoting skills at team/enterprise
+- `workspace add` checks approval before promoting skills at enterprise
   posture;
 - `skill inventory` joins on-disk skills with approvals and cards;
 - `pack status` and `pack validate` cross-check pack refs against lock entries;

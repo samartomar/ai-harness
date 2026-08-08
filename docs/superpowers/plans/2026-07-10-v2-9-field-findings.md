@@ -21,7 +21,7 @@
 
 - Never mutate the real development-seat HOME; use disposable fixture HOMEs and project roots.
 - Danger-class trust findings remain failing and non-acknowledgeable at every posture.
-- Legal-text findings warn-pass only at vibe; team and enterprise require exact fingerprint acknowledgement plus a non-empty reason.
+- Legal-text findings warn-pass only at vibe; enterprise require exact fingerprint acknowledgement plus a non-empty reason.
 - Reuse `isStrictUnicodeSurface`; do not add a second docs-versus-instruction classifier.
 - Finding identity is content-bound; line number is advisory display metadata only.
 - `runtime:ecc-installer` and `runtime:ecc-kiro` must be authorized before their code executes.
@@ -145,7 +145,7 @@ it.each([
 });
 ```
 
-Add a scan-level test that team and enterprise become green only after the exact fingerprint and `--reason` pass through the existing acknowledgement path.
+Add a scan-level test that enterprise become green only after the exact fingerprint and `--reason` pass through the existing acknowledgement path.
 
 - [ ] **Step 2: Run RED**
 
@@ -172,7 +172,7 @@ export function gradeTrustCheck(check: Check, posture: Posture): Check {
 
 - [ ] **Step 4: Document and verify the exact matrix**
 
-Add an `[Unreleased]` Changed entry naming #422. Update the two trust docs to state vibe warn-pass and team/enterprise acknowledgement-with-reason. Do not describe danger findings as overrideable.
+Add an `[Unreleased]` Changed entry naming #422. Update the two trust docs to state vibe warn-pass and enterprise acknowledgement-with-reason. Do not describe danger findings as overrideable.
 
 Run: `npx vitest run tests/trust/grade.test.ts tests/trust/scan.test.ts && npm run verify`
 
@@ -222,7 +222,7 @@ expect(
 });
 ```
 
-Assert the unavailable result remains a skip at vibe, team, and enterprise in the scan report.
+Assert the unavailable result remains a skip at vibe and enterprise in the scan report.
 
 - [ ] **Step 2: Run RED**
 
@@ -839,13 +839,13 @@ export interface InstallableBaselineReport {
 }
 ```
 
-`checkInstallableBaseline()` creates a temporary HOME and project for each of `vibe`, `team`, and `enterprise`, runs the built CLI with the matching explicit `--posture` plus `ecc --cli claude --apply --yes`, reads the target state and registration ledger, verifies every installed component has an exact receipt/hash, and removes the fixture root in `finally`. It sets HOME/USERPROFILE to the fixture and rejects any resolved path outside it.
+`checkInstallableBaseline()` creates a temporary HOME and project for each of `vibe` and `enterprise`, runs the built CLI with the matching explicit `--posture` plus `ecc --cli claude --apply --yes`, reads the target state and registration ledger, verifies every installed component has an exact receipt/hash, and removes the fixture root in `finally`. It sets HOME/USERPROFILE to the fixture and rejects any resolved path outside it.
 
 Set `ok` only when all three postures install at least one component, ledgers equal the actual installed sets, held components are named with codes, and no unauthorized runtime or source/evidence drift appears.
 
 - [ ] **Step 4: Keep the v2.8.0 regression and add GREEN current-lock tests**
 
-The frozen v2.8.0 lock remains `installed === 0` and `ok === false` at enterprise. The current shipped lock must produce `installed > 0` and `ok === true` for vibe, team, and enterprise. Add an explicit assertion that enterprise may hold `module:hooks-runtime` with `trust.auto-exec-hook` while remaining green.
+The frozen v2.8.0 lock remains `installed === 0` and `ok === false` at enterprise. The current shipped lock must produce `installed > 0` and `ok === true` for vibe and enterprise. Add an explicit assertion that enterprise may hold `module:hooks-runtime` with `trust.auto-exec-hook` while remaining green.
 
 - [ ] **Step 5: Wire CI and release gates**
 

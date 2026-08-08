@@ -11,7 +11,7 @@
  * + doc renderers are original.
  *
  * Posture: ask-not-deny. aih emits these as a CI-checkable sidecar + human doc,
- * plus (at team/enterprise posture) the sidecar's generated consumer — a PR-diff
+ * plus (at enterprise posture) the sidecar's generated consumer — a PR-diff
  * workflow that surfaces touched gates in the customer's pipeline (#507 slice D).
  * The consuming CLI (where it has a hook seam) reads the same categories
  * in-session. aih never gates a live tool call itself.
@@ -363,7 +363,7 @@ export function riskGatesDoc(): string {
     "## Runs in YOUR CI, not from aih",
     "",
     "aih never gates a live tool call — it only WRITES `risk-gates.json`, this doc,",
-    "and (at team/enterprise posture) the sidecar's consumer,",
+    "and (at enterprise posture) the sidecar's consumer,",
     "`.github/workflows/risk-gates.yml`. That workflow runs on pull_request in YOUR",
     "pipeline: it reads the sidecar, diffs the PR's changed paths against each gate's",
     "path patterns, and surfaces every touched gate as a warning annotation plus a",

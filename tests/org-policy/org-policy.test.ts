@@ -46,7 +46,7 @@ function ctx(): PlanContext {
 
 function policy(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     minimumPosture: "enterprise",
     references: { repoContract: "ai-coding/project.json" },
     ...overrides,
@@ -75,6 +75,8 @@ describe("policy project", () => {
     expect(planned.capability).toBe("policy project");
     expect(writes(planned.actions).map((action) => action.path)).toEqual([
       ".claude/managed-settings.json",
+      "managed-settings.json.example",
+      "managed-mcp.json.example",
     ]);
 
     await executePlan(planned, applied);
@@ -104,6 +106,8 @@ describe("policy project", () => {
     expect(writes(planned.actions).map((action) => action.path)).toEqual([
       ".claude/managed-settings.json",
       ".aih-config.json",
+      "managed-settings.json.example",
+      "managed-mcp.json.example",
     ]);
     await executePlan(planned, applied);
     expect(JSON.parse(readFileSync(join(dir, ".aih-config.json"), "utf8"))).toMatchObject({
@@ -508,12 +512,12 @@ describe("composeOrgPolicy", () => {
 });
 
 describe("orgPolicyProjectionActions", () => {
-  it("projects team policy into project managed-settings only", () => {
+  it("projects enterprise policy into project managed-settings only", () => {
     const actions = orgPolicyProjectionActions(ctx(), parseOrgPolicy(policy()));
     const paths = writes(actions).map((w) => w.path.replace(/\\/g, "/"));
     expect(paths).toContain(".claude/managed-settings.json");
-    expect(paths).not.toContain("managed-settings.json.example");
-    expect(paths).not.toContain("managed-mcp.json.example");
+    expect(paths).toContain("managed-settings.json.example");
+    expect(paths).toContain("managed-mcp.json.example");
   });
 
   it("at enterprise also emits system-path examples for admin deployment", () => {
@@ -784,16 +788,17 @@ describe("orgPolicyDriftProbes — target scope (#554)", () => {
   /** Every registered CLI that does NOT own the projected `.claude/` artifacts. */
   const nonOwners = REGISTRY_IDS.filter((id) => !entry(id).configDirs.includes(".claude"));
 
-  it.each(
-    nonOwners,
-  )("does not fail a %s-only repo for an artifact it never projects", async (cli) => {
-    writeScopePolicy(denyPolicy());
-    const c = scopeCtx([cli]);
-    const checks = await Promise.all(orgPolicyDriftProbes(c).map((p) => p.run(c)));
-    // `aih policy project` emits zero actions when the owning CLI is untargeted,
-    // so a failing drift finding here would be unsatisfiable by construction.
-    expect(checks.filter((k) => k?.verdict === "fail").map((k) => k?.detail ?? "")).toEqual([]);
-  });
+  it.each(nonOwners)(
+    "does not fail a %s-only repo for an artifact it never projects",
+    async (cli) => {
+      writeScopePolicy(denyPolicy());
+      const c = scopeCtx([cli]);
+      const checks = await Promise.all(orgPolicyDriftProbes(c).map((p) => p.run(c)));
+      // `aih policy project` emits zero actions when the owning CLI is untargeted,
+      // so a failing drift finding here would be unsatisfiable by construction.
+      expect(checks.filter((k) => k?.verdict === "fail").map((k) => k?.detail ?? "")).toEqual([]);
+    },
+  );
 
   it("still fails a Claude-targeted repo when the projection is missing", async () => {
     writeScopePolicy(denyPolicy());
@@ -939,18 +944,19 @@ describe("orgPolicyDriftProbes", () => {
     expect(check?.verdict).toBe("pass");
   });
 
-  it("downgrades drift to warning-only in vibe posture", async () => {
-    writePolicy(policy({ command: { deny: { add: [{ pattern: "terraform destroy*" }] } } }));
+  it("does not generate managed-settings drift probes at vibe posture", () => {
+    writePolicy(
+      policy({
+        minimumPosture: "vibe",
+        command: { deny: { add: [{ pattern: "terraform destroy*" }] } },
+      }),
+    );
     const c: PlanContext = { ...ctx(), posture: "vibe", postureSource: "flag" };
     const probes = orgPolicyDriftProbes(c);
-    const check = await probes
-      .find((p) => p.describe.includes(".claude/managed-settings.json"))
-      ?.run(c);
 
-    expect(check?.verdict).toBe("pass");
-    expect(check?.code).toBeUndefined();
-    expect(check?.detail).toContain("warning-only (vibe posture)");
-    expect(check?.detail).toContain("missing");
+    expect(probes.map((probe) => probe.describe)).not.toContain(
+      "org-policy drift: .claude/managed-settings.json",
+    );
   });
 
   it("fails closed at enterprise when local settings drift from org policy", async () => {
@@ -1013,8 +1019,13 @@ describe("orgPolicyDriftProbes", () => {
   // #501 — an in-place upgrade leaves managed artifacts aih itself generated
   // under an older shape. That is a generation delta (aih's generated output
   // evolved), not user drift, and the message must name the re-projection command.
-  function writeOldGenerationFixture(): void {
-    writePolicy(policy({ mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true } }));
+  function writeOldGenerationFixture(minimumPosture: "vibe" | "enterprise" = "enterprise"): void {
+    writePolicy(
+      policy({
+        minimumPosture,
+        mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+      }),
+    );
     writeManagedSettings({
       allowManagedMcpServersOnly: true,
       // bare pre-hardening launch shape with an older pin; the newer
@@ -1040,18 +1051,13 @@ describe("orgPolicyDriftProbes", () => {
     expect(check?.location?.uri).toBe(".claude/managed-settings.json");
   });
 
-  it("keeps the generation delta warning-only in vibe posture without drift wording", async () => {
-    writeOldGenerationFixture();
+  it("does not generate a generation-delta probe at vibe posture", () => {
+    writeOldGenerationFixture("vibe");
     const c: PlanContext = { ...ctx(), posture: "vibe", postureSource: "flag" };
 
-    const check = await orgPolicyDriftProbes(c)
-      .find((p) => p.describe.includes(".claude/managed-settings.json"))
-      ?.run(c);
-
-    expect(check?.verdict).toBe("pass");
-    expect(check?.detail).toContain("warning-only (vibe posture)");
-    expect(check?.detail).toContain("aih policy project --apply");
-    expect(check?.detail).not.toMatch(/drift/i);
+    expect(orgPolicyDriftProbes(c).map((probe) => probe.describe)).not.toContain(
+      "org-policy drift: .claude/managed-settings.json",
+    );
   });
 
   it("fails closed as drift when an allowlist entry matches no aih generation", async () => {
@@ -1077,7 +1083,7 @@ describe("orgPolicyDriftProbes", () => {
     });
     const parsed = parseOrgPolicy(value);
     writePolicy(value);
-    const c = ctx();
+    const c: PlanContext = { ...ctx(), posture: "enterprise" };
     const projected = writes(orgPolicyProjectionActions(c, parsed)).find(
       (w) => w.path === ".claude/managed-settings.json",
     );
@@ -1121,11 +1127,11 @@ describe("orgPolicyIntegrityProbes", () => {
     expect(check?.detail).toContain("AIH_ORG_POLICY env override");
   });
 
-  it("downgrades env override visibility to warning-only at team posture", async () => {
+  it("downgrades env override visibility to warning-only at vibe posture", async () => {
     writeFileSync(join(dir, "override.json"), JSON.stringify(policy()));
     const c: PlanContext = {
       ...ctx(),
-      posture: "enterprise",
+      posture: "vibe",
       env: { AIH_ORG_POLICY: "override.json" },
     };
     const check = await orgPolicyIntegrityProbes(c)
@@ -1133,7 +1139,7 @@ describe("orgPolicyIntegrityProbes", () => {
       ?.run(c);
 
     expect(check?.verdict).toBe("pass");
-    expect(check?.detail).toContain("warning-only (team posture)");
+    expect(check?.detail).toContain("warning-only (vibe posture)");
   });
 
   it("flags working-tree policy drift from HEAD", async () => {

@@ -152,7 +152,7 @@ describe("mcpServersDigest", () => {
     put(
       "aih-org-policy.json",
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { incumbentHosts: [], disabledServers: ["context7"] },
@@ -172,7 +172,7 @@ describe("mcpServersDigest", () => {
     put(
       "aih-org-policy.json",
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { disabledServers: ["github"] },
@@ -1193,8 +1193,8 @@ describe("skillGovernanceDigest", () => {
     put(
       "aih-org-policy.json",
       JSON.stringify({
-        schemaVersion: 1,
-        minimumPosture: "team",
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
         references: { repoContract: `${DIR}/project.md` },
       }),
     );
@@ -1211,7 +1211,10 @@ describe("skillGovernanceDigest", () => {
 
   it("reports an invalid org policy with a sanitized, truncated first error line", () => {
     // Schema-invalid (missing references) + a bidi override smuggled into a value.
-    put("aih-org-policy.json", JSON.stringify({ schemaVersion: 1, minimumPosture: "team\u202e" }));
+    put(
+      "aih-org-policy.json",
+      JSON.stringify({ schemaVersion: 2, minimumPosture: "enterprise\u202e" }),
+    );
     const d = skillGovernanceDigest(ctx());
     const data = d?.data as SkillGovData & {
       orgPolicy?: { present: true; valid: boolean; error?: string };

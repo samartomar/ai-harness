@@ -60,7 +60,7 @@ describe("committed JSON Schemas", () => {
       baseline: "ecc",
     });
     validateCommittedSchema("schemas/aih-org-policy.schema.json", {
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture: "vibe",
       references: { repoContract: "ai-coding/project.json" },
       command: { deny: {} },
@@ -87,7 +87,7 @@ describe("committed JSON Schemas", () => {
 
   it("rejects unsupported fields in org-policy add-item schemas", () => {
     const base = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
     };
@@ -111,8 +111,8 @@ describe("committed JSON Schemas", () => {
 
   it("accepts governed hook registrations in the org policy editor schema", () => {
     validateCommittedSchema("schemas/aih-org-policy.schema.json", {
-      schemaVersion: 1,
-      minimumPosture: "team",
+      schemaVersion: 2,
+      minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
       governance: {
         policyVersion: "2026-08-06.1",
@@ -145,7 +145,7 @@ describe("committed JSON Schemas", () => {
 
   it("rejects githubHost values that are not bare https origins", () => {
     const base = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
     };
@@ -170,7 +170,7 @@ describe("committed JSON Schemas", () => {
 
   it("validates MCP approval evidence in the org policy editor schema", () => {
     const base = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
     };
@@ -229,7 +229,7 @@ describe("committed JSON Schemas", () => {
 
   it("preserves signed approval clarifications and report-only external curation intent", () => {
     const base = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
     };
@@ -264,8 +264,8 @@ describe("committed JSON Schemas", () => {
 
   it("validates attributable baseline override evidence in the org policy editor schema", () => {
     validateCommittedSchema("schemas/aih-org-policy.schema.json", {
-      schemaVersion: 1,
-      minimumPosture: "team",
+      schemaVersion: 2,
+      minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
       trust: {
         baselineOverrides: [

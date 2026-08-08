@@ -695,7 +695,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "baseline component has no signed evidence",
     action:
-      "Use the vendor-pinned baseline, or vet the newer component and activate its GitHub-attested org evidence bundle before installing at team or enterprise posture.",
+      "Use the vendor-pinned baseline, or vet the newer component and activate its GitHub-attested org evidence bundle before installing at enterprise posture.",
   },
   "baseline.evidence-mismatch": {
     audience: "developer",
@@ -800,7 +800,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "Cisco skill-scanner: skill manifest declares no license field",
     action:
-      "Add a license to the skill manifest (SKILL.md license frontmatter, a LICENSE/COPYING file, or a package.json license field). Advisory at vibe/team posture; at enterprise, fix it or acknowledge the exact finding fingerprint with a recorded reason.",
+      "Add a license to the skill manifest (SKILL.md license frontmatter, a LICENSE/COPYING file, or a package.json license field). Advisory at vibe; at enterprise, fix it or acknowledge the exact finding fingerprint with a recorded reason.",
   },
   "trust.prompt-injection": {
     audience: "developer",
@@ -977,7 +977,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "user-scope framework surfaces contaminate the bound project",
     action:
-      "A global (`~/.claude`) framework install leaks skills/agents/hooks/rules/plugins/MCP servers into every project, competing with the bound framework. Review with `aih doctor` and clean the user scope with `aih cleanup` so the project binding is the only methodology surface (advisory at vibe/team, blocking at enterprise).",
+      "A global (`~/.claude`) framework install leaks skills/agents/hooks/rules/plugins/MCP servers into every project, competing with the bound framework. Review with `aih doctor` and clean the user scope with `aih cleanup` so the project binding is the only methodology surface (advisory at vibe, blocking at enterprise).",
   },
   "binding.host-off-tuple": {
     audience: "developer",

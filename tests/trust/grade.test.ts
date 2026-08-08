@@ -74,7 +74,7 @@ function legalTextCheck(): Check {
 
 describe("gradeTrustDanger", () => {
   it("keeps danger findings failing at every posture", () => {
-    for (const _posture of ["vibe", "enterprise", "enterprise"] satisfies Posture[]) {
+    for (const _posture of ["vibe", "enterprise"] satisfies Posture[]) {
       const graded = gradeTrustDanger(dangerousCheck());
       expect(graded.verdict).toBe("fail");
       expect(graded.code).toBe("trust.prompt-injection");
@@ -100,14 +100,12 @@ describe("gradeTrustCheck", () => {
     ]);
   });
 
-  it("grades review findings as warning-only at vibe/team and blocking at enterprise", () => {
-    for (const posture of ["vibe", "enterprise"] satisfies Posture[]) {
-      const graded = gradeTrustCheck(reviewCheck(), posture);
-      expect(graded.verdict).toBe("pass");
-      expect(graded.code).toBeUndefined();
-      expect(graded.detail).toContain(`warning-only (${posture} posture)`);
-      expect(graded.detail).toContain("authenticated external request");
-    }
+  it("grades review findings as warning-only at vibe and blocking at enterprise", () => {
+    const vibe = gradeTrustCheck(reviewCheck(), "vibe");
+    expect(vibe.verdict).toBe("pass");
+    expect(vibe.code).toBeUndefined();
+    expect(vibe.detail).toContain("warning-only (vibe posture)");
+    expect(vibe.detail).toContain("authenticated external request");
 
     const enterprise = gradeTrustCheck(reviewCheck(), "enterprise");
     expect(enterprise.verdict).toBe("fail");
@@ -116,7 +114,7 @@ describe("gradeTrustCheck", () => {
 
   it("keeps warning findings non-blocking and visible at every posture", () => {
     for (const check of [genericDetectorCheck(), legalTextCheck(), visibleUnicodeCheck()]) {
-      for (const posture of ["vibe", "enterprise", "enterprise"] satisfies Posture[]) {
+      for (const posture of ["vibe", "enterprise"] satisfies Posture[]) {
         const graded = gradeTrustCheck(check, posture);
         expect(graded.verdict).toBe("pass");
         expect(graded.code).toBeUndefined();
@@ -126,7 +124,7 @@ describe("gradeTrustCheck", () => {
   });
 
   it("keeps unpinned executable dependencies blocking at every posture", () => {
-    for (const posture of ["vibe", "enterprise", "enterprise"] satisfies Posture[]) {
+    for (const posture of ["vibe", "enterprise"] satisfies Posture[]) {
       const graded = gradeTrustCheck(unpinnedCheck(), posture);
       expect(graded.verdict).toBe("fail");
       expect(graded.code).toBe("trust.unpinned-dependency");
@@ -134,7 +132,7 @@ describe("gradeTrustCheck", () => {
   });
 
   it("leaves danger findings failing at every posture", () => {
-    for (const posture of ["vibe", "enterprise", "enterprise"] satisfies Posture[]) {
+    for (const posture of ["vibe", "enterprise"] satisfies Posture[]) {
       const graded = gradeTrustCheck(dangerousCheck(), posture);
       expect(graded.verdict).toBe("fail");
       expect(graded.code).toBe("trust.prompt-injection");

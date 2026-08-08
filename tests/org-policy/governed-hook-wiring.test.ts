@@ -51,7 +51,7 @@ function ctx(overrides: Partial<PlanContext> = {}): PlanContext {
 
 function governedPolicy(registrations: readonly HookRegistration[] | undefined) {
   return parseOrgPolicy({
-    schemaVersion: 1,
+    schemaVersion: 2,
     minimumPosture: "enterprise",
     references: { repoContract: "ai-coding/project.json" },
     governance: {
@@ -97,7 +97,7 @@ function usageAndRegistrationsPolicy(
 ) {
   const scriptDigest = `sha256:${createHash("sha256").update(usageRecorderScript(), "utf8").digest("hex")}`;
   return parseOrgPolicy({
-    schemaVersion: 1,
+    schemaVersion: 2,
     minimumPosture: "enterprise",
     references: { repoContract: "ai-coding/project.json" },
     governance: {

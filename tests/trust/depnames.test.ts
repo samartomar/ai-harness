@@ -40,8 +40,8 @@ describe("resolveInternalScopes", () => {
     write(
       "aih-org-policy.json",
       JSON.stringify({
-        schemaVersion: 1,
-        minimumPosture: "team",
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         trust: { internalScopes: ["policy", "@shared"] },
       }),

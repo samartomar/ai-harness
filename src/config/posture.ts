@@ -7,6 +7,7 @@ import type { AihConfig } from "./marker.js";
 import { AIH_CONFIG_FILE, readAihConfig, readAihConfigBaseline } from "./marker.js";
 
 export type Posture = "vibe" | "enterprise";
+export const POSTURES = ["vibe", "enterprise"] as const satisfies readonly Posture[];
 export type PostureSource = "flag" | "marker" | "env" | "default" | "org-floor";
 export type PolicyVerdict = "allow" | "warn" | "deny";
 export type GovernanceControl =
