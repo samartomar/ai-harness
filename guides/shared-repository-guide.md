@@ -3,10 +3,10 @@ status: guide
 owner: AI-Harness maintainers
 last_verified: 2026-07-07
 truth_home: true
-purpose: Persona guide for teams using AI-Harness across shared repositories.
+purpose: Guide for shared repositories using AI-Harness.
 ---
 
-# Team Guide to AI-Harness
+# Shared Repository Guide to AI-Harness
 
 Use this guide for a shared repo, small platform team, or engineering group that wants repeatable AI-assisted development without a central admin service. For posture mechanics, read [Postures](postures.md). For the full command map, use [Command Use Cases](command-use-cases.md).
 
@@ -14,15 +14,15 @@ Use this guide for a shared repo, small platform team, or engineering group that
 
 For a team, AI-Harness is a committed repo discipline. The goal is not only to help one developer start faster; it is to make supported tools read the same repo canon, route approved skills through the same governance loop, and keep important setup decisions in reviewable files instead of chat transcripts.
 
-The `team` posture keeps the local-first model but raises the bar for shared state. Team intent belongs in committed files: `ai-coding/`, bootloaders, `.aih-config.json`, `aih-capabilities.json`, skill approvals, pack manifests, policy files, sidecar pointers when used, and decision docs. Local caches and reports help diagnosis; they are not team truth.
+An enterprise policy floor raises the bar for shared state when the repository needs enforced controls. Team intent belongs in committed files: `ai-coding/`, bootloaders, `.aih-config.json`, `aih-capabilities.json`, skill approvals, pack manifests, policy files, sidecar pointers when used, and decision docs. Local caches and reports help diagnosis; they are not team truth.
 
 ## 2. Quickstart / Implementation Blueprint
 
 Create the repo canon on a branch:
 
 ```console
-aih init . --posture team
-aih init . --posture team --apply
+aih init . --posture enterprise
+aih init . --posture enterprise --apply
 aih bootstrap-ai --all-tools --apply
 aih bootstrap-ai --verify
 ```
@@ -33,7 +33,7 @@ Add shared safety and capability gates:
 aih secrets --verify
 aih guardrails --apply
 aih capability resolve --apply
-aih doctor --posture team
+aih doctor --posture enterprise
 aih docs-lint
 ```
 
@@ -65,13 +65,13 @@ aih bootstrap-ai --verify
 aih secrets --verify
 aih pack validate
 aih docs-lint
-aih doctor --posture team
+aih doctor --posture enterprise
 ```
 
 Use a truth sidecar only when the team wants external staged truth packs and the repo already has a real commit:
 
 ```console
-aih init . --sidecar --posture team --apply
+aih init . --sidecar --posture enterprise --apply
 aih truth verify
 aih truth pack --apply
 ```

@@ -97,8 +97,8 @@ describe("trust allow/list/pin commands", () => {
     write(
       "aih-org-policy.json",
       JSON.stringify({
-        schemaVersion: 1,
-        minimumPosture: "team",
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         trust: { approvedSources: [{ owner: "owner", repo: "repo" }] },
       }),
@@ -127,8 +127,8 @@ describe("trust allow/list/pin commands", () => {
     write(
       "aih-org-policy.json",
       JSON.stringify({
-        schemaVersion: 1,
-        minimumPosture: "team",
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         trust: {
           skillspector: {
@@ -184,8 +184,8 @@ describe("trust allow/list/pin commands", () => {
     write(
       "aih-org-policy.json",
       JSON.stringify({
-        schemaVersion: 1,
-        minimumPosture: "team",
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         trust: { approvedSources: [{ owner: "owner", repo: "repo", reason: "reviewed" }] },
       }),

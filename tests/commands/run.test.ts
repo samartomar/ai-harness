@@ -222,7 +222,7 @@ describe("runCapability — posture precedence ladder (org floor > flag > marker
     writeFileSync(
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture,
         references: { repoContract: "ai-coding/project.json" },
       }),
@@ -230,22 +230,22 @@ describe("runCapability — posture precedence ladder (org floor > flag > marker
   }
 
   it("explicit --posture wins over marker and env", async () => {
-    writeMarker("team");
-    const out = await resolvedPosture(["--posture", "vibe", "--root", dir], {
-      AIH_POSTURE: "enterprise",
+    writeMarker("vibe");
+    const out = await resolvedPosture(["--posture", "enterprise", "--root", dir], {
+      AIH_POSTURE: "vibe",
     });
-    expect(out).toContain("vibe:flag");
+    expect(out).toContain("enterprise:flag");
   });
 
   it("marker wins over env when no flag is passed", async () => {
-    writeMarker("team");
-    const out = await resolvedPosture(["--root", dir], { AIH_POSTURE: "enterprise" });
-    expect(out).toContain("team:marker");
+    writeMarker("enterprise");
+    const out = await resolvedPosture(["--root", dir], { AIH_POSTURE: "vibe" });
+    expect(out).toContain("enterprise:marker");
   });
 
   it("env wins over the default when neither flag nor marker is present", async () => {
-    const out = await resolvedPosture(["--root", dir], { AIH_POSTURE: "team" });
-    expect(out).toContain("team:env");
+    const out = await resolvedPosture(["--root", dir], { AIH_POSTURE: "enterprise" });
+    expect(out).toContain("enterprise:env");
   });
 
   it("defaults to vibe", async () => {
@@ -254,12 +254,12 @@ describe("runCapability — posture precedence ladder (org floor > flag > marker
   });
 
   it("org minimum posture clamps a lower local choice but never lowers enterprise", async () => {
-    writeOrgFloor("team");
+    writeOrgFloor("enterprise");
     expect(await resolvedPosture(["--posture", "vibe", "--root", dir], {})).toContain(
-      "team:org-floor",
+      "enterprise:org-floor",
     );
     expect(await resolvedPosture(["--posture", "enterprise", "--root", dir], {})).toContain(
-      "enterprise:flag",
+      "enterprise:org-floor",
     );
   });
 
@@ -317,10 +317,33 @@ describe("runCapability — posture precedence ladder (org floor > flag > marker
     expect(out).toContain("invalid AIH_POSTURE");
   });
 
+  it("refuses removed team posture values from CLI, marker, and environment with the named migration", async () => {
+    const cases: Array<{ argv: string[]; env: NodeJS.ProcessEnv; marker?: boolean }> = [
+      { argv: ["--posture", "team", "--root", dir], env: {} },
+      { argv: ["--root", dir], env: { AIH_POSTURE: "team" } },
+      { argv: ["--root", dir], env: {}, marker: true },
+    ];
+
+    for (const fixture of cases) {
+      if (fixture.marker) writeMarker("team");
+      let out = "";
+      const code = await runCapability(echoSpec, command(fixture.argv), {
+        run: fakeRunner(() => undefined),
+        env: fixture.env,
+        write: (text) => {
+          out += text;
+        },
+      });
+
+      expect(code).toBe(1);
+      expect(out).toContain("replace team with vibe or enterprise");
+    }
+  });
+
   it("lets policy validate report malformed org policy as a coded verification finding", async () => {
     writeFileSync(
       join(dir, "aih-org-policy.json"),
-      JSON.stringify({ schemaVersion: 1, minimumPosture: "wild", references: {} }),
+      JSON.stringify({ schemaVersion: 2, minimumPosture: "wild", references: {} }),
     );
 
     let out = "";

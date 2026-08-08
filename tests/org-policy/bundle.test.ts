@@ -4,8 +4,8 @@ import { PolicyBundleSchema, parsePolicyBundle } from "../../src/org-policy/bund
 /** A minimal valid embedded org policy (the local `aih-org-policy.json` shape). */
 function policy(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    schemaVersion: 1,
-    minimumPosture: "team",
+    schemaVersion: 2,
+    minimumPosture: "vibe",
     references: { repoContract: "ai-coding/project.json" },
     ...overrides,
   };
@@ -28,7 +28,7 @@ describe("PolicyBundleSchema", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected ok");
     expect(result.bundle.issuer).toBe("platform-team");
-    expect(result.bundle.policy.minimumPosture).toBe("team");
+    expect(result.bundle.policy.minimumPosture).toBe("vibe");
     expect(result.bundle.rings?.[0]?.name).toBe("canary");
   });
 
@@ -79,7 +79,7 @@ describe("parsePolicyBundle layer attribution", () => {
   });
 
   it("reports both layers when both fail", () => {
-    const result = parsePolicyBundle(bundle({ issuer: "", policy: { schemaVersion: 1 } }));
+    const result = parsePolicyBundle(bundle({ issuer: "", policy: { schemaVersion: 2 } }));
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected failure");
     expect(result.error).toContain("bundle envelope is invalid");

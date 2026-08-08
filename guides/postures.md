@@ -8,9 +8,9 @@ purpose: Human-readable guide to posture behavior and positioning.
 
 # Posture Guide
 
-This guide explains how to reason about `vibe (developer)`, `team`, and `enterprise` posture without turning posture into pricing language or mixing shipped behavior with unshipped plans.
+This guide explains how to reason about `vibe` and `enterprise` posture without turning posture into pricing language or mixing shipped behavior with unshipped plans.
 
-Current command baseline: shipped behavior through `@aihq/harness@2.4.3`, including capability intent/cache, workspace reconstruction, pack governance, BetterDoc/docs-lint, project-truth sidecars, and release verification.
+The latest published baseline is `@aihq/harness@4.0.0`. The `vibe`/`enterprise` model below is an unreleased `5.0.0` breaking migration; it becomes shipped behavior only when that major release publishes. Until then, use the installed version's release notes and CLI help as the authority.
 
 ## Read this as
 
@@ -43,9 +43,8 @@ These apply across posture modes:
 
 | Posture | Primary user | Intent | Default behavior | Escalation posture |
 |---|---|---|---|---|
-| `vibe (developer)` | Individual developer or evaluator | Fast adoption and useful defaults. | Broad defaults, low friction, auto-light-up where safe. | Warn, explain, and keep moving unless danger is proven. |
-| `team` | Shared repo/team workflow | Team hygiene without a central admin board. | Sensible defaults, warn-on-add, committed intent. | Promote repeatable risk into policy or an approval note. |
-| `enterprise` | Governed org/fleet | Least privilege, auditability, admin-pinned behavior. | Admin-pinned surfaces, approval paths, fail-closed enforcement where configured. | Require explicit approval, signed/pinned policy, or a decision record. |
+| `vibe` | Developer, evaluator, or locally managed shared repository | Fast adoption and useful defaults. | Broad defaults, low friction, auto-add where safe. | Warn, explain, and keep moving unless danger is proven. |
+| `enterprise` | Governed organization or fleet | Least privilege, auditability, admin-pinned behavior. | Approval paths and fail-closed enforcement where configured. | Require explicit approval, signed/pinned policy, or a decision record. |
 
 ## Developer / Vibe Posture
 
@@ -75,33 +74,9 @@ Examples:
 | Public doc claim marker missing evidence | `aih docs-lint` fails; fix the claim, matrix, or named test. |
 | Truth sidecar absent | No issue unless the workflow chose to use sidecars. |
 
-## Team Posture
+## Shared Repository Practice
 
-`team` optimizes for repeatability across a shared repo without requiring a central admin service.
-
-Use this posture when several developers need consistent behavior from committed repo files, shared policy, and stable defaults.
-
-Behavior rules:
-
-- Defaults should be sensible, not maximal. Auto-detected capabilities can be suggested or added when low risk, but broad or risky additions should warn first.
-- Team-shared intent belongs in committed files: policy, manifests, lockfiles, feature notes, and decisions. Do not leave team state only in `.aih/` or a chat transcript.
-- Local derived caches such as `~/.aih/` are rebuildable convenience state, never the source of truth.
-- Defects that affect repeatable team behavior should be verified against code, CLI behavior, or GitHub/npm evidence before they are treated as active work.
-- If the same warning keeps recurring, convert it into a policy, decision, or tracked work item instead of letting each agent rediscover it.
-- Capability decisions should be committed when shared. The machine cache can be pruned and rebuilt from repo manifests.
-- Packs should be named team choices. Use `pack status` and `pack validate` to join pack curation, approval lock, and install state.
-- Sidecar use is a team workflow choice. When used, `truth verify` belongs in the same review path as docs and evidence gates.
-
-Examples:
-
-| Case | Team behavior |
-|---|---|
-| MCP server not in allowed list | Warn or require local approval depending on policy surface. |
-| Missing optional detector | Warn with degraded coverage; do not hard-fail unless configured as required. |
-| Git absent for readiness | Gate at team+ when the workflow depends on git. |
-| Shared package source | Prefer pinned source references and committed manifests. |
-| Claim-ledger drift | Fail the docs gate and update docs/control matrix or tests. |
-| Workspace child writes | Require explicit commands such as `workspace init --recursive` or `workspace report --refresh-children`. |
+A shared repository can use either posture. Keep shared intent in committed policy, manifests, lockfiles, and decision records; local caches remain derived state. Use `vibe` when the workflow needs advisory defaults, and set an `enterprise` policy floor when the repository requires approved, enforced controls.
 
 ## Enterprise Posture
 
@@ -135,30 +110,30 @@ Examples:
 
 ## Trust And Verdict Examples
 
-| Condition | `vibe (developer)` | `team` | `Enterprise` |
-|---|---|---|---|
-| Proven dangerous content | Deny | Deny | Deny |
-| Origin/provenance ambiguity | Warn | Warn or require local approval | Deny unless approved |
-| Optional detector absent | Degraded warning | Degraded warning | Fail only if configured as required |
-| Required detector absent | Degraded warning | Degraded warning unless team policy says otherwise | Fail closed |
-| Hosted remote MCP with no stable artifact | Warn with runtime advice | Warn/approval path | Deny or admin approval |
-| Plaintext committed secret | Warn/gate by command rule | Gate where team rule requires | Gate |
-| Claim-ledger orphan | Fail `docs-lint` | Fail `docs-lint` | Fail `docs-lint` |
-| Truth sidecar drift | Fail when sidecar workflow is used | Fail when sidecar workflow is used | Fail when sidecar workflow is used |
+| Condition | `vibe` | `enterprise` |
+|---|---|---|
+| Proven dangerous content | Deny | Deny |
+| Origin/provenance ambiguity | Warn | Deny unless approved |
+| Optional detector absent | Degraded warning | Fail only if configured as required |
+| Required detector absent | Degraded warning | Fail closed |
+| Hosted remote MCP with no stable artifact | Warn with runtime advice | Deny or admin approval |
+| Plaintext committed secret | Warn/gate by command rule | Gate |
+| Claim-ledger orphan | Fail `docs-lint` | Fail `docs-lint` |
+| Truth sidecar drift | Fail when sidecar workflow is used | Fail when sidecar workflow is used |
 
 ## Capability And Package Behavior
 
-| Surface | Vibe | Team | Enterprise |
-|---|---|---|---|
-| Common baseline | Default-on where safe. | Sensible default; document and commit shared intent. | Admin-pinned. |
-| Stack/domain detection | Auto-light-up standard needs. | Suggest or add with warning for broader impact. | Hint or require approval. |
-| Regulated domains | Approved-but-off-by-default. | Approved-but-off-by-default. | Approved-but-off-by-default plus policy approval. |
-| Machine store `~/.aih/` | Derived cache for convenience. | Derived cache; never team truth. | Derived cache projected from policy. |
-| Package graph registry | Open governance data model. | Shared source of declared membership. | Signed/admin-authored projection. |
-| Capability intent | Auto-add decisions where evidence supports them. | Commit shared intent; warn on broader impact. | Approval-required hints unless policy permits. |
-| BetterDoc / docs-quality | Install through pack flow when approval exists. | Curate and validate as a named pack. | Seed only with repo-local approval evidence and policy fit. |
-| `docs-lint` claim gate | Local public-doc check. | CI/review gate for public claims. | Release/evidence gate for public claims. |
-| Truth sidecar | Optional local workflow. | Optional shared workflow with reviewed promotion. | Optional evidence workflow; stale packs fail closed. |
+| Surface | Vibe | Enterprise |
+|---|---|---|
+| Common baseline | Default-on where safe. | Admin-pinned. |
+| Stack/domain detection | Auto-add standard needs. | Require approval. |
+| Regulated domains | Approved-but-off-by-default. | Approved-but-off-by-default plus policy approval. |
+| Machine store `~/.aih/` | Derived cache for convenience. | Derived cache projected from policy. |
+| Package graph registry | Open governance data model. | Signed/admin-authored projection. |
+| Capability intent | Auto-add decisions where evidence supports them. | Approval-required hints unless policy permits. |
+| BetterDoc / docs-quality | Install through pack flow when approval exists. | Seed only with repo-local approval evidence and policy fit. |
+| `docs-lint` claim gate | Local public-doc check. | Release/evidence gate for public claims. |
+| Truth sidecar | Optional local workflow. | Optional evidence workflow; stale packs fail closed. |
 
 ## Public Documentation Boundary
 

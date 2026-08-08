@@ -378,13 +378,15 @@ describe("docs-lint", () => {
     mkdirSync(join(root, "docs", "specs"), { recursive: true });
     writeFileSync(join(root, "README.md"), "Plain setup notes.\n");
     writeFileSync(join(root, "docs", "guide.md"), "This robust claim should be grounded.\n");
-    write(root, "guides/team-guide.md", "This robust guide should be grounded.\n");
+    write(root, "guides/shared-repository-guide.md", "This robust guide should be grounded.\n");
     writeFileSync(join(root, "docs", "specs", "scratch.md"), "Clearly a draft spec.\n");
 
     const checks = await docsLintChecks(ctx(root));
 
     expect(checks.map((check) => check.location?.uri)).toContain("docs/guide.md");
-    expect(checks.map((check) => check.location?.uri)).toContain("guides/team-guide.md");
+    expect(checks.map((check) => check.location?.uri)).toContain(
+      "guides/shared-repository-guide.md",
+    );
     expect(checks.map((check) => check.location?.uri)).not.toContain("docs/specs/scratch.md");
   });
 });

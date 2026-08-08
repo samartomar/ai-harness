@@ -148,7 +148,7 @@ describe("selectEccComponents", () => {
   it("modulates security content and GitHub MCP by posture without defaulting egress", () => {
     const team = selectEccComponents({
       stack: stack(),
-      posture: "team",
+      posture: "enterprise",
       profile: "core",
       declaredMcps: ["code-review-graph", "codebase-memory-mcp", "context7", "exa"],
     });

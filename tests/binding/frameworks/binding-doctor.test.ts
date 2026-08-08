@@ -423,7 +423,7 @@ describe("B1 — bindingContaminationCheck (posture-graded, O4)", () => {
     expect(res.detail).toContain("no user-scope framework contamination");
   });
 
-  it("advises (skip + code) with a countable leakage summary at vibe/team", () => {
+  it("advises (skip + code) with a countable leakage summary at vibe", () => {
     bind("ecc", ECC_SOURCE, { mode: "lean" });
     seedHomeSkill("some-global-skill");
     const res = bindingContaminationCheck(ctx());
@@ -496,7 +496,7 @@ describe("B3 — bindingHostTupleCheck (O5)", () => {
     expect(res.code).toBe("binding.host-version-drift");
   });
 
-  it("advises off-tuple (skip + code) at vibe/team, naming mismatched facts (no raw values)", async () => {
+  it("advises off-tuple (skip + code) at vibe, naming mismatched facts (no raw values)", async () => {
     bind("ecc", ECC_SOURCE, { mode: "lean" });
     const res = await bindingHostTupleCheck(ctx(), OFF_TUPLE);
     expect(res.verdict).toBe("skip");
@@ -798,7 +798,7 @@ describe("cardDoctorInputFromChecks (§A.3.3)", () => {
     ];
     expect(cardDoctorInputFromChecks(clean)).toEqual({ contaminationClean: true, inTuple: true });
 
-    // B1 contamination (advisory skip at vibe/team OR fail at enterprise) both carry the code.
+    // B1 contamination (advisory skip at vibe OR fail at enterprise) both carry the code.
     const contaminated: Check[] = [
       {
         name: "binding contamination",

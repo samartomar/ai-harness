@@ -92,9 +92,9 @@
       <text x="112" y="78" class="body-dim">and governance posture</text>
       <text x="54" y="98" class="body">- <tspan class="mono">--apply</tspan> refuses a dirty git worktree unless <tspan class="mono">--force</tspan> is set.</text>
       <text x="54" y="126" class="body">- Commands resolve posture at runtime:</text>
-      <rect x="76" y="140" width="248" height="22" rx="5" class="chip"/><text x="86" y="156" class="chip-text">--posture vibe | team | enterprise</text>
+      <rect x="76" y="140" width="248" height="22" rx="5" class="chip"/><text x="86" y="156" class="chip-text">--posture vibe | enterprise</text>
       <rect x="334" y="140" width="100" height="22" rx="5" class="chip-green"/><text x="344" y="156" class="chip-text">default: vibe</text>
-      <text x="54" y="192" class="body">- Skill-install refuses unapproved skills at <tspan class="mono">team</tspan>/<tspan class="mono">enterprise</tspan>.</text>
+      <text x="54" y="192" class="body">- Skill-install refuses unapproved skills at <tspan class="mono">enterprise</tspan>.</text>
       <text x="54" y="220" class="body">- At <tspan class="mono">vibe</tspan> it is advisory; pack installs fail-closed at every posture.</text>
       <text x="54" y="248" class="body-dim">- Initialised repos record every run in the local run ledger.</text>
     </g>

@@ -50,8 +50,8 @@ const ONE_FRAMEWORK_MESSAGE = /only one framework may be selected at a time.*ecc
 
 function governedPolicy(governance: Record<string, unknown>): Record<string, unknown> {
   return {
-    schemaVersion: 1,
-    minimumPosture: "team",
+    schemaVersion: 2,
+    minimumPosture: "enterprise",
     references: { repoContract: "ai-coding/project.json" },
     governance: {
       policyVersion: "2026-08-07.1",

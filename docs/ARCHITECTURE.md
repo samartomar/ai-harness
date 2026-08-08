@@ -22,7 +22,7 @@ and the executor is the only layer that performs filesystem or process effects.
   agent-evidence file probes.
 - **Trust and skill governance** (`src/trust/`, `src/skill/`, `src/pack/`,
   `src/marketplace/`) vets external skill sources, pins commits, records
-  approvals, and blocks unapproved installs at team/enterprise posture.
+  approvals, and blocks unapproved installs at enterprise posture.
 - **Policy and schemas** (`src/org-policy/`, `src/config/`, `schemas/`) validate
   committed org policy and bootstrap markers.
 - **Evidence and release verification** (`src/evidence/`, `src/bundle/`,

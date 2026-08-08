@@ -84,7 +84,7 @@ aih init . --apply      # apply it
 Use the command reference for exact CLI behavior; use the guides when you need the
 right workflow for a reader or rollout stage.
 
-![AI-Harness guide map showing reader paths for vibe developers, teams, enterprise admins, enterprise developers, and shared command references](docs/assets/aih-guide-map.svg)
+![AI-Harness guide map showing reader paths for vibe developers, shared repositories, enterprise admins, enterprise developers, and shared command references](docs/assets/aih-guide-map.svg)
 
 | Reader need | Start here |
 | --- | --- |
@@ -92,7 +92,7 @@ right workflow for a reader or rollout stage.
 | Add, switch, or prune AI CLI surfaces | [CLI Lifecycle](guides/cli-lifecycle-guide.md) |
 | Understand posture behavior and boundaries | [Postures](guides/postures.md) |
 | Individual developer or evaluator | [Vibe Developer](guides/vibe-developer-guide.md) |
-| Shared repository or platform team | [Team Guide](guides/team-guide.md) |
+| Shared repository | [Shared Repository](guides/shared-repository-guide.md) |
 | Governed organization or enterprise rollout | [Enterprise Admin](guides/enterprise-admin-guide.md) |
 | Developer consuming an admin-approved config | [Enterprise Developer](guides/enterprise-developer-guide.md) |
 
@@ -159,7 +159,7 @@ still initialize under the vendor CLI. Aih does not attest those customizations 
 | [`aih bundle`](docs/commands.md#aih-bundle) | Build a deterministic fleet bundle with checksums; `aih verify-bundle --require-signature` turns missing/unverifiable signatures into failures. |
 | [`aih verify-bundle`](docs/commands.md#aih-verify-bundle) | Re-check a fleet or evidence bundle's checksums and signature/provenance evidence. |
 | [`aih verify-release`](docs/commands.md#aih-verify-release) | Verify a published aih release: npm signatures, GitHub release cosign bundle, and tarball hash. |
-| [`aih secrets`](docs/commands.md#aih-secrets) | Scan for plaintext secret paths and hardcoded MCP config credentials without emitting values; `--verify` is warning-only at `vibe` and non-zero at `team`/`enterprise`. <!-- aih:claim CM-16 --> |
+| [`aih secrets`](docs/commands.md#aih-secrets) | Scan for plaintext secret paths and hardcoded MCP config credentials without emitting values; `--verify` is warning-only at `vibe` and non-zero at `enterprise`. <!-- aih:claim CM-16 --> |
 | [`aih guardrails`](docs/commands.md#aih-guardrails) | Generate local gitleaks/pre-commit policy files and a CI license/secret workflow; enforcement requires installing tools and wiring Git hooks or required CI checks. <!-- aih:claim CM-17 --> |
 
 ### Enterprise packs, skill governance, and safety
@@ -180,7 +180,7 @@ not guess which names are private to your organization.
 paths must match the vendor lock shipped in the npm release or an attributable GitHub-attested org
 bundle. Covered user seats verify hashes and signatures; they do not rerun the release analyzers.
 Missing/mismatched coverage warns without an authorization receipt at `vibe` and denies at
-`team`/`enterprise`. A signed `blocked` verdict denies at every posture and cannot be waived by org
+`enterprise`. A signed `blocked` verdict denies at every posture and cannot be waived by org
 evidence for the same bytes. See [Baseline Component Evidence](docs/security/baseline-evidence.md)
 for the vet/sign/policy flow. <!-- aih:claim CM-20 -->
 
@@ -203,7 +203,7 @@ for the vet/sign/policy flow. <!-- aih:claim CM-20 -->
 | [`aih doctor`](docs/commands.md#aih-doctor) | Verify the workstation/repo configuration fail-closed; workspace mode validates each child repo, and Enterprise posture attests declared capability surfaces. |
 | [`aih status`](docs/commands.md#aih-status) | Show a read-only inventory of what the harness has configured. |
 
-Shared flags: `--apply`, `--force`, `--verify`, `--json`, `--posture <vibe|team|enterprise>`, `--support-out <dir>`, `--no-log`, `--context-dir <dir>`, `--root <dir>`, `--cli <list>`, `--all-tools`, `--detect`, `--yes` (read-only commands take the relevant subset).
+Shared flags: `--apply`, `--force`, `--verify`, `--json`, `--posture <vibe|enterprise>`, `--support-out <dir>`, `--no-log`, `--context-dir <dir>`, `--root <dir>`, `--cli <list>`, `--all-tools`, `--detect`, `--yes` (read-only commands take the relevant subset).
 Settings also read from `AIH_*` env vars (`AIH_APPLY`, `AIH_CONTEXT_DIR`, `AIH_LOG`, …).
 
 ### Plugins
@@ -332,7 +332,7 @@ literal Codex skills path (`~/.codex/skills/<name>/SKILL.md`); they are not an a
 `.agents/skills/` surface. `aih ecc --cli codex` still installs the selected ECC Codex
 skills/agents from ECC's manifest, but uses add-only Codex TOML merge helpers and a fenced AGENTS
 merge rather than the upstream `ecc-install --target codex` copy mode for shared `~/.codex` files.
-Its scoped MCP block contains pinned `sequential-thinking` plus GitHub at team/enterprise (and
+Its scoped MCP block contains pinned `sequential-thinking` plus GitHub at enterprise (and
 repo-declared local graph/memory servers); Context7 and Exa are never defaults.
 
 ### Layered AI canon (`bootstrap-ai`)

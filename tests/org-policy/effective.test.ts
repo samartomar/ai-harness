@@ -43,7 +43,7 @@ function candidate(overrides: Record<string, unknown> = {}) {
 
 function policy(overrides: Record<string, unknown> = {}) {
   return parseOrgPolicy({
-    schemaVersion: 1,
+    schemaVersion: 2,
     minimumPosture: "enterprise",
     references: { repoContract: "ai-coding/project.json" },
     mcp: { allowManagedOnly: true },
@@ -117,7 +117,7 @@ describe("headless effective org policy", () => {
 
   it("rejects policy-authored authority issuers and evidence verdicts instead of treating them as proof", () => {
     const withAuthIssuer = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
       governance: {
@@ -224,7 +224,7 @@ describe("headless effective org policy", () => {
   it("rejects a custom MCP that tries to point at an AIH catalog server instead of a pinned package", () => {
     expect(() =>
       parseOrgPolicy({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         governance: {

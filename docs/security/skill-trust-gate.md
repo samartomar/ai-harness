@@ -211,7 +211,7 @@ governed as part of the trust scan:
   launch.
 
 Enterprise posture denies unpinned or reload-enabled skills-over-MCP servers.
-Vibe and team postures leave them warning-only so reviewers still see the drift
+Vibe posture leaves them warning-only so reviewers still see the drift
 risk before promotion.
 
 ## RED policy
@@ -469,7 +469,7 @@ top-level license file so the answer is the same in qualification.
 
 When neither skill frontmatter nor repository evidence resolves licensing, the
 finding is `trust.skill-metadata-license`: review-required, warning-only at vibe
-and team, and blocking at enterprise until its exact fingerprint is
+and blocking at enterprise until its exact fingerprint is
 acknowledged with a recorded reason. Other unmapped Cisco and generic
 third-party heuristic findings are warnings, not review-required by default.
 Credible unresolved external transmission is review-required. A mapped danger

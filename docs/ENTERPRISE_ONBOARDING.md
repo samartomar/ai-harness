@@ -47,8 +47,8 @@
 3. Initialize a pilot repo in dry-run, then apply after review:
 
    ```bash
-   aih init . --posture team
-   aih init . --posture team --apply
+   aih init . --posture enterprise
+   aih init . --posture enterprise --apply
    npm run dev -- contract --apply
    ```
 
@@ -102,12 +102,12 @@
    skills/agents: code review, security review, and the domain reviewer for the
    touched area.
 
-## Team Policy Example
+## Enterprise Policy Example
 
 ```json
 {
-  "schemaVersion": 1,
-  "minimumPosture": "team",
+  "schemaVersion": 2,
+  "minimumPosture": "enterprise",
   "references": {
     "repoContract": "ai-coding/project.json"
   },
@@ -152,7 +152,7 @@
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "minimumPosture": "enterprise",
   "references": {
     "repoContract": "ai-coding/project.json"
@@ -241,7 +241,7 @@ would write for the same server. This JSON shape passes `aih policy validate`:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "minimumPosture": "enterprise",
   "references": {
     "repoContract": "ai-coding/project.json"

@@ -31,6 +31,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Command } from "commander";
 import { describe, expect, it } from "vitest";
+import { POSTURES } from "../../src/config/posture.js";
 import { type CommandSpec, plan } from "../../src/internals/plan.js";
 import { buildProgram } from "../../src/program.js";
 
@@ -159,6 +160,22 @@ describe("v1 contract — CLI command surface", () => {
     expect(text).not.toMatch(/[A-Za-z]:\\/); // Windows drive-letter paths
     expect(text).not.toMatch(/\/(?:home|Users)\//); // POSIX home dirs
     expect(text).not.toContain("\\\\"); // UNC / escaped backslashes
+  });
+
+  it("advertises only vibe and enterprise posture options in CLI help", () => {
+    expect(POSTURES).toEqual(["vibe", "enterprise"]);
+
+    const commands = (command: Command): Command[] => [
+      command,
+      ...command.commands.flatMap((child) => commands(child)),
+    ];
+    const postureHelp = commands(buildProgram())
+      .flatMap((command) => command.options)
+      .filter((option) => option.flags === "--posture <posture>")
+      .map((option) => option.description);
+
+    expect(postureHelp.length).toBeGreaterThan(0);
+    expect([...new Set(postureHelp)]).toEqual(["governance posture: vibe | enterprise"]);
   });
 
   it("read-only top-level commands accept the posture flag without changing apply behavior", () => {

@@ -50,7 +50,7 @@ function writePolicy(
   writeFileSync(
     join(dir, "aih-org-policy.json"),
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
       mcp: { allowedServers, allowManagedOnly: true },
@@ -628,7 +628,7 @@ describe("enterprise baseline attestation", () => {
       rogue: { type: "http", url: "https://rogue.example/mcp/" },
     });
 
-    const check = enterpriseBaselineAttestationCheck(ctx("team"));
+    const check = enterpriseBaselineAttestationCheck(ctx("vibe"));
 
     expect(check.verdict).toBe("skip");
     expect(check.detail).toContain("enterprise posture");

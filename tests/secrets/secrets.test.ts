@@ -543,7 +543,7 @@ describe("secrets command", () => {
       return;
     }
 
-    const p = await command.plan(ctx({ verify: true, posture: "team" }));
+    const p = await command.plan(ctx({ verify: true, posture: "enterprise" }));
     rmSync(dirname(outside), { recursive: true, force: true });
     const warning = p.actions.find(
       (a) => a.kind === "doc" && a.describe.startsWith("MCP config secret-scan findings"),
@@ -674,8 +674,8 @@ describe("secrets --verify gate", () => {
   it("each secret yields a fail verdict that flips the gate exit code", async () => {
     plantFixture(dir);
     const result = await executePlan(
-      await command.plan(ctx({ verify: true, posture: "team" })),
-      ctx({ verify: true, posture: "team" }),
+      await command.plan(ctx({ verify: true, posture: "enterprise" })),
+      ctx({ verify: true, posture: "enterprise" }),
     );
     const report = result.report;
     if (!report) throw new Error("expected a verification report under --verify");

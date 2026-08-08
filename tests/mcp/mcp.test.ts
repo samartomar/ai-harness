@@ -52,7 +52,7 @@ function writeMcpPolicy(
   writeFileSync(
     join(root, "aih-org-policy.json"),
     jsonFile({
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
       mcp,
@@ -188,7 +188,7 @@ describe("mcp enterprise modes", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -770,7 +770,7 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
     writeFileSync(
       join(root, "uncommitted-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -800,7 +800,7 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
     writeFileSync(
       join(root, "aih-org-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -812,7 +812,7 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
     writeFileSync(
       join(root, "operator-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -1023,8 +1023,8 @@ describe("aih mcp — remote scope emits SSO gateway doc (cloud is doc, not writ
     writeFileSync(
       join(root, "aih-org-policy.json"),
       jsonFile({
-        schemaVersion: 1,
-        minimumPosture: "team",
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
           allowedServers: ["code-review-graph", "better-email", "missing-server"],
@@ -1173,7 +1173,7 @@ describe("aih mcp — MCP write hygiene", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -1696,7 +1696,7 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     writeFileSync(
       join(root, "operator-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "vibe",
         references: { repoContract: "ai-coding/project.json" },
       }),
@@ -2093,7 +2093,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -2268,7 +2268,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -2296,7 +2296,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -2345,7 +2345,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -2370,7 +2370,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -2399,7 +2399,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -2423,7 +2423,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -2447,7 +2447,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
@@ -2482,7 +2482,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -2533,7 +2533,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -2574,7 +2574,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -2595,7 +2595,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     writeFileSync(
       join(root, "operator-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -2640,7 +2640,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     );
 
     expect(write?.json).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture: "enterprise",
       mcp: {
         allowedServers: ["context7"],
@@ -2677,7 +2677,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     });
     const planned = await mcpApproveCommand.plan(plannedCtx);
     const changed = jsonFile({
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
       mcp: { allowedServers: ["github"], allowManagedOnly: false },
@@ -2710,7 +2710,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     writeFileSync(
       join(root, "aih-org-policy.json"),
       jsonFile({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         governance: {

@@ -9,7 +9,7 @@ import type { McpServer } from "./servers.js";
  * is made legible in `.mcp.json` (the axes on {@link McpServer}); this module turns
  * those axes into a posture-aware verdict a reviewer can sign off on.
  *
- *  - `vibe` / `team` — permissive: nothing is blocked; third-party egress (and an
+ *  - `vibe` — permissive: nothing is blocked; third-party egress (and an
  *                      unpinned supply chain) is WARNED so a reviewer still eyeballs it.
  *  - `enterprise` — restrictive: third-party egress and unpinned supply chains are
  *                   DENIED (self-host or pin instead); a token-bearing server is
@@ -161,7 +161,7 @@ function evaluateOne(
       reason: "local or vendor-incumbent egress, pinned/hosted, no plaintext secret",
     };
   }
-  // vibe/team — permissive, but a reviewer still sees the egress surface.
+  // vibe — permissive, but a reviewer still sees the egress surface.
   if (s.egress === "third-party") {
     return {
       verdict: "warn",

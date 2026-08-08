@@ -24,7 +24,7 @@ function orgPolicy(minimumPosture: string, path = join(dir, "aih-org-policy.json
   writeFileSync(
     path,
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture,
       references: { repoContract: "ai-coding/project.json" },
     }),
@@ -32,10 +32,9 @@ function orgPolicy(minimumPosture: string, path = join(dir, "aih-org-policy.json
 }
 
 describe("asPosture", () => {
-  it("defaults absent posture to vibe and accepts the three v2 postures", () => {
+  it("defaults absent posture to vibe and accepts the two v2 postures", () => {
     expect(asPosture(undefined)).toBe("vibe");
     expect(asPosture("vibe")).toBe("vibe");
-    expect(asPosture("team")).toBe("team");
     expect(asPosture("enterprise")).toBe("enterprise");
   });
 
@@ -43,35 +42,52 @@ describe("asPosture", () => {
     expect(() => asPosture("community")).toThrow(/invalid posture/);
     expect(() => asPosture("nonsense")).toThrow(/invalid posture/);
   });
+
+  it("refuses the removed team posture with an administrator-chosen migration", () => {
+    expect(() => asPosture("team")).toThrow(/replace team with vibe or enterprise/);
+  });
 });
 
 describe("gradeVerdict", () => {
-  it("keeps vibe advisory, hard-blocks secret controls at team, and preserves risk-gates as ask", () => {
+  it("keeps vibe advisory, hard-blocks secret controls at enterprise, and preserves risk-gates as ask", () => {
     expect(gradeVerdict("warn", "secrets", "vibe")).toBe("warn");
-    expect(gradeVerdict("warn", "secrets", "team")).toBe("deny");
-    expect(gradeVerdict("warn", "path-portability", "team")).toBe("deny");
-    expect(gradeVerdict("warn", "contract-freshness", "team")).toBe("deny");
     expect(gradeVerdict("warn", "secrets", "enterprise")).toBe("deny");
+    expect(gradeVerdict("warn", "path-portability", "enterprise")).toBe("deny");
+    expect(gradeVerdict("warn", "contract-freshness", "enterprise")).toBe("deny");
     expect(gradeVerdict("warn", "risk-gates", "enterprise")).toBe("warn");
     expect(gradeVerdict("allow", "secrets", "enterprise")).toBe("allow");
   });
 
   it("hard-blocks proven trust danger at every posture", () => {
     expect(gradeVerdict("warn", "trust-danger", "vibe")).toBe("deny");
-    expect(gradeVerdict("warn", "trust-danger", "team")).toBe("deny");
     expect(gradeVerdict("warn", "trust-danger", "enterprise")).toBe("deny");
   });
 
-  it("keeps trust origin advisory at vibe/team and blocking at enterprise", () => {
+  it("keeps trust origin advisory at vibe and blocking at enterprise", () => {
     expect(gradeVerdict("warn", "trust-origin", "vibe")).toBe("warn");
-    expect(gradeVerdict("warn", "trust-origin", "team")).toBe("warn");
     expect(gradeVerdict("warn", "trust-origin", "enterprise")).toBe("deny");
   });
 });
 
 describe("resolvePosture", () => {
-  it("uses flag > marker > env > default when no org floor is present", () => {
+  it("refuses the removed team posture from flag, marker, and environment sources", () => {
+    expect(() => resolvePosture({ root: dir, env: {}, flag: "team", flagSource: "cli" })).toThrow(
+      /replace team with vibe or enterprise/,
+    );
+
     marker("team");
+    expect(() => resolvePosture({ root: dir, env: {} })).toThrow(
+      /replace team with vibe or enterprise/,
+    );
+
+    rmSync(join(dir, ".aih-config.json"), { force: true });
+    expect(() => resolvePosture({ root: dir, env: { AIH_POSTURE: "team" } })).toThrow(
+      /replace team with vibe or enterprise/,
+    );
+  });
+
+  it("uses flag > marker > env > default when no org floor is present", () => {
+    marker("enterprise");
     expect(
       resolvePosture({
         root: dir,
@@ -81,12 +97,12 @@ describe("resolvePosture", () => {
       }),
     ).toEqual({ posture: "vibe", postureSource: "flag" });
     expect(resolvePosture({ root: dir, env: { AIH_POSTURE: "enterprise" } })).toEqual({
-      posture: "team",
+      posture: "enterprise",
       postureSource: "marker",
     });
     rmSync(join(dir, ".aih-config.json"), { force: true });
-    expect(resolvePosture({ root: dir, env: { AIH_POSTURE: "team" } })).toEqual({
-      posture: "team",
+    expect(resolvePosture({ root: dir, env: { AIH_POSTURE: "enterprise" } })).toEqual({
+      posture: "enterprise",
       postureSource: "env",
     });
     expect(resolvePosture({ root: dir, env: {} })).toEqual({
@@ -164,7 +180,7 @@ describe("resolvePosture", () => {
   });
 
   it("clamps upward to the org minimum posture without lowering a stricter local choice", () => {
-    orgPolicy("team");
+    orgPolicy("enterprise");
     expect(
       resolvePosture({
         root: dir,
@@ -172,7 +188,7 @@ describe("resolvePosture", () => {
         flag: "vibe",
         flagSource: "cli",
       }),
-    ).toEqual({ posture: "team", postureSource: "org-floor" });
+    ).toEqual({ posture: "enterprise", postureSource: "org-floor" });
     expect(
       resolvePosture({
         root: dir,
@@ -180,7 +196,7 @@ describe("resolvePosture", () => {
         flag: "enterprise",
         flagSource: "cli",
       }),
-    ).toEqual({ posture: "enterprise", postureSource: "flag" });
+    ).toEqual({ posture: "enterprise", postureSource: "org-floor" });
   });
 
   it("attributes posture to org-floor when the local choice equals the floor", () => {
@@ -196,7 +212,7 @@ describe("resolvePosture", () => {
   });
 
   it("uses AIH_ORG_POLICY as an exclusive floor source", () => {
-    orgPolicy("team");
+    orgPolicy("enterprise");
     const envPolicy = join(dir, "ops", "org-policy.json");
     orgPolicy("enterprise", envPolicy);
 
@@ -217,7 +233,7 @@ describe("resolvePosture", () => {
     writeFileSync(
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "oops",
         references: { repoContract: "ai-coding/project.json" },
       }),

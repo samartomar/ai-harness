@@ -11,8 +11,8 @@ import {
 
 function governedPolicy(governance: Record<string, unknown>): Record<string, unknown> {
   return {
-    schemaVersion: 1,
-    minimumPosture: "team",
+    schemaVersion: 2,
+    minimumPosture: "vibe",
     references: { repoContract: "ai-coding/project.json" },
     governance: {
       policyVersion: "2026-08-06.1",
@@ -56,9 +56,9 @@ describe("G1 — the policy grammar carries the projector's own registration sha
     }
   });
 
-  it("is additive: a governed policy without the field parses to an empty list at schemaVersion 1", () => {
+  it("is additive: a governed policy without the field parses to an empty list at schemaVersion 2", () => {
     const policy = parseOrgPolicy(governedPolicy({}));
-    expect(policy.schemaVersion).toBe(1);
+    expect(policy.schemaVersion).toBe(2);
     expect(policy.governance?.hookRegistrations).toEqual([]);
   });
 

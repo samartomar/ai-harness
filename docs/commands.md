@@ -70,7 +70,7 @@ The secret gate reports the finding's LOCATION class, because the remediation di
 git-tracked finding is `no-committed-secret` (rotate the credential and rewrite it out of git
 history), while an untracked on-disk file is `no-plaintext-secret-on-disk` (rotate and move it to a
 vault / env references). Both classes carry the same posture split (warn at vibe, gate at
-team/enterprise) and no finding is ever dropped by classification: when git cannot answer — git is
+enterprise) and no finding is ever dropped by classification: when git cannot answer — git is
 absent, or `rev-parse` errors (for example dubious ownership) — every finding stays under the
 committed class, the strongest gate.
 
@@ -268,7 +268,7 @@ Resolve the repo's agent-capability needs into committed intent plus a derived m
 (`{name, install, reason, evidence[]}`), writes root `aih-capabilities.json` under `--apply`, and
 updates `$HOME/.aih/capabilities/cache.json` as a rebuildable cache. It never fetches, installs, or
 vendors third-party bytes. At `vibe` posture detected capabilities are auto-add decisions; at
-`team` they warn; at `Enterprise` they are approval-required hints for the org policy/on-ramp.
+`enterprise` they are approval-required hints for the org policy/on-ramp.
 `capability prune` rewrites only that derived cache, dropping repo entries whose committed
 `aih-capabilities.json` is gone or unreadable and refreshing cache hashes/capability lists from
 retained manifests. The committed repo file remains the source of truth; `~/.aih/` is safe to
@@ -370,7 +370,7 @@ untrustworthy still fail the request, and aih refuses all installer execution un
 `runtime:ecc-installer` itself has an authorization receipt.
 
 The validated MCP default is pinned local `sequential-thinking`, repo-declared
-`code-review-graph`/`codebase-memory-mcp`, and GitHub OAuth at team/enterprise. Context7, Exa, and
+`code-review-graph`/`codebase-memory-mcp`, and GitHub OAuth at enterprise. Context7, Exa, and
 other egress-bearing servers are never defaults. Project config receives that project's set; global
 target config receives the machine union, with existing user-defined same-name servers preserved.
 
@@ -526,7 +526,7 @@ contradiction is suppressed. Corroborated danger remains blocking and cannot be 
 **`aih-skills.lock.json`** entry, behind a fail-closed chain (pin → evidence → approvable verdict →
 license → owner; RED blocked, UNKNOWN refused, YELLOW = the manual review). The lockfile has
 **install-time teeth**: `workspace add` refuses promoting a skill with no committed approval *for
-that source's pinned commit* at `team`/`enterprise` posture (advisory at `vibe`) — a same-named
+that source's pinned commit* at `enterprise` posture (advisory at `vibe`) — a same-named
 skill from an unrelated source never inherits an approval, and stale approvals are refused.
 `inventory` joins on-disk skills against the approvals — approved / unapproved / stale-pin /
 quarantined, one row per physical install — and feeds a "Skill governance" panel in `report --v9`.
@@ -761,15 +761,15 @@ honest skips instead of false passes.
 Scan for plaintext `.env*`/root `secrets/` paths, inspect known MCP config files for hardcoded
 credential shapes or secret-looking key literals, and write agent deny rules + vault-injection
 guidance. Findings report file/key/kind only, never detected values. `--verify` is posture-graded:
-at `vibe` plaintext secret findings are warning-only, while `team` and `enterprise` return a
+at `vibe` plaintext secret findings are warning-only, while `enterprise` return a
 non-zero exit for plaintext paths, unsafe MCP config paths, or hardcoded MCP credentials. CI should
-run with `--posture team`, `--posture enterprise`, or an org-policy posture floor. `--sarif <file>`
+run with `--posture enterprise` or an org-policy posture floor. `--sarif <file>`
 emits one result per finding for GitHub code-scanning. <!-- aih:claim CM-16 -->
 
 ## aih guardrails
 
 Generate `.gitleaks.toml`, `.pre-commit-config.yaml`, and a GitHub Actions workflow for CI secret
-scanning plus strong/network-copyleft license blocking. At team/enterprise posture it also emits
+scanning plus strong/network-copyleft license blocking. At enterprise posture it also emits
 the machine-readable risk-gate sidecar (`<context-dir>/risk-gates.json`) together with its
 consumer, `.github/workflows/risk-gates.yml`: a pull-request job that diffs the PR's changed paths
 against the declared gate patterns and surfaces every touched gate as warning annotations plus a

@@ -3,7 +3,7 @@ status: guide
 owner: AI-Harness maintainers
 last_verified: 2026-07-07
 truth_home: true
-purpose: Use-case map for AI-Harness commands across developer, team, and enterprise workflows.
+purpose: Use-case map for AI-Harness commands across developer, shared-repository, and enterprise workflows.
 ---
 
 # AI-Harness Command Use-Case Guide
@@ -247,7 +247,7 @@ For hand-authored distributed policy, each `mcp.approvals[]` entry needs `server
 | Persona | First path | Maintenance path |
 |---|---|---|
 | Vibe developer | `doctor` -> `init` -> `bootstrap-ai --detect` -> `secrets --verify` -> `pack scaffold --pack docs-quality` when needed -> `pack install --pack docs-quality` | `ready`, `status`, `report --v9`, `docs-lint`, `bootstrap-ai --verify` |
-| Team | `init --posture team` -> `bootstrap-ai --all-tools` -> `guardrails` -> `capability resolve` -> `pack validate` | `doctor --posture team`, `secrets --verify`, `pack status`, `pack validate`, `docs-lint`, `report --team` |
+| Enterprise | `init --posture enterprise` -> `bootstrap-ai --all-tools` -> `guardrails` -> `capability resolve` -> `pack validate` | `doctor --posture enterprise`, `secrets --verify`, `pack status`, `pack validate`, `docs-lint`, `report --team` |
 | Enterprise | `aih verify-release` -> `aih init . --posture enterprise --mcp-mode offline --mcp-compliant` -> `aih policy validate` -> `aih doctor --posture enterprise` | `aih policy verify`, `aih truth verify`, `aih docs-lint`, `aih verify-bundle`, `aih marketplace validate --require-signature`, `aih evidence build --require-signature` |
 | Enterprise developer | set `AIH_ORG_POLICY` -> `aih policy validate` -> Min, Balanced, or Powerhouse path from [Enterprise Developer](enterprise-developer-guide.md) | `aih doctor --posture enterprise`, `aih mcp --posture enterprise --mcp-compliant --verify`, `aih pack status`, `aih skill inventory`, `aih report --v9` |
 

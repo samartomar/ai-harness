@@ -212,7 +212,7 @@ describe("deniedServers / asPosture / mcpGovernanceDoc", () => {
 
   it("asPosture defaults absent values to vibe and rejects explicit invalid values", () => {
     expect(asPosture("enterprise")).toBe("enterprise");
-    expect(asPosture("team")).toBe("team");
+    expect(() => asPosture("team")).toThrow(/replace team with vibe or enterprise/);
     expect(asPosture(undefined)).toBe("vibe");
     expect(() => asPosture("community")).toThrow(/invalid posture/);
     expect(() => asPosture("nonsense")).toThrow(/invalid posture/);

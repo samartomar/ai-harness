@@ -116,7 +116,7 @@ function policyInitPlan(ctx: PlanContext): Plan {
   );
   const marketplace = collected.surfaces.filter((surface) => surface.kind === "marketplace");
   const starter = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     minimumPosture: ctx.posture ?? "vibe",
     references: { repoContract: posix.join(ctx.contextDir, "project.json") },
     mcp: { allowedServers },

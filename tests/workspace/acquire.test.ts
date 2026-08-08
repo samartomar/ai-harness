@@ -72,7 +72,7 @@ function writePolicy(trust: Record<string, unknown>): void {
   writeFileSync(
     join(workspace, "aih-org-policy.json"),
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture: "vibe",
       references: { repoContract: "ai-coding/project.json" },
       trust,
@@ -1052,7 +1052,7 @@ describe("posture-gated install enforcement (trust.unapproved-skill, #102)", () 
     return { c, report: phase1.report };
   }
 
-  it("REFUSES at team posture when a promoted skill has no committed approval (coded check)", async () => {
+  it("REFUSES at enterprise posture when a promoted skill has no committed approval (coded check)", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");
     const { c, report } = await clearedPhase1("team");
     const gate = await captureClearedWorkspaceAddTrustGate(c, report);
@@ -1166,11 +1166,11 @@ describe("posture-gated install enforcement (trust.unapproved-skill, #102)", () 
     localSkill(sourceRoot, "clean", "# Clean\n");
     const { c: vibeCtx, report } = await clearedPhase1("vibe");
     const gate = await captureClearedWorkspaceAddTrustGate(vibeCtx, report);
-    // Same workspace, but phase 2 now runs at team posture (e.g. org policy tightened).
-    const teamCtx = ctx(sourceRoot, true, true, {}, { posture: "team" });
-    const phase2 = await workspaceAddPhase2Plan(teamCtx, gate);
+    // Same workspace, but phase 2 now runs at enterprise posture (e.g. org policy tightened).
+    const enterpriseCtx = ctx(sourceRoot, true, true, {}, { posture: "enterprise" });
+    const phase2 = await workspaceAddPhase2Plan(enterpriseCtx, gate);
     expectEveryProbePaired(phase2.actions);
-    const result = await executePlan(phase2, teamCtx);
+    const result = await executePlan(phase2, enterpriseCtx);
     expect(result.report?.exitCode()).toBe(1); // fail check, no promotion
     expect(result.writes).toHaveLength(0);
     expectStructuredResult(result, "trust.unapproved-skill clean", "fail");

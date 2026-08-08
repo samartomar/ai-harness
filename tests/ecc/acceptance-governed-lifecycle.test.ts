@@ -283,7 +283,7 @@ describe("acceptance — the governed framework lifecycle on a temporary fixture
       orgPolicyPath(root, {}),
       `${JSON.stringify(
         {
-          schemaVersion: 1,
+          schemaVersion: 2,
           minimumPosture: "enterprise",
           references: { repoContract: "ai-coding/project.json" },
           governance: {

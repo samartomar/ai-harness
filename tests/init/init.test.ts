@@ -61,8 +61,8 @@ function seedOrgPolicy(allowedServers = ["code-review-graph"]): void {
   writeFileSync(
     join(dir, "aih-org-policy.json"),
     JSON.stringify({
-      schemaVersion: 1,
-      minimumPosture: "team",
+      schemaVersion: 2,
+      minimumPosture: "enterprise",
       references: { repoContract: ".ai-context/project.json" },
       mcp: { allowedServers, allowManagedOnly: true },
     }),
@@ -74,7 +74,7 @@ function seedGovernedUsage(state: "active" | "disabled", targets: string[] = ["c
   writeFileSync(
     join(dir, "aih-org-policy.json"),
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: ".ai-context/project.json" },
       governance: {
@@ -208,7 +208,7 @@ describe("aih init — command surface", () => {
   it("projects active org-policy into init managed settings so doctor drift passes", async () => {
     seedOrgPolicy();
 
-    const c = ctx({ apply: true, posture: "team", postureSource: "flag" });
+    const c = ctx({ apply: true, posture: "enterprise", postureSource: "flag" });
     const p = await command.plan(c);
     const managed = p.actions.find(
       (a): a is WriteAction => a.kind === "write" && a.path === ".claude/managed-settings.json",
@@ -216,13 +216,13 @@ describe("aih init — command surface", () => {
 
     expect(managed?.json).toMatchObject({
       organizationPolicy: {
-        minimumPosture: "team",
+        minimumPosture: "enterprise",
         references: { repoContract: ".ai-context/project.json" },
       },
     });
 
     await executePlan(p, c);
-    const doctorCtx = ctx({ posture: "team", postureSource: "flag" });
+    const doctorCtx = ctx({ posture: "enterprise", postureSource: "flag" });
     const doctor = await doctorCommand.plan(doctorCtx);
     const driftProbe = doctor.actions.find(
       (a) => a.kind === "probe" && a.describe === "org-policy drift: .claude/managed-settings.json",
@@ -274,7 +274,7 @@ describe("aih init — command surface", () => {
 
   it("S1/S2 makes an empty managed allowlist deny all init MCP projections", async () => {
     seedOrgPolicy([]);
-    const p = await command.plan(ctx({ posture: "team", postureSource: "flag" }));
+    const p = await command.plan(ctx({ posture: "enterprise", postureSource: "flag" }));
     const dotMcp = p.actions.find(
       (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
     );
@@ -295,19 +295,19 @@ describe("aih init — command surface", () => {
   it("refuses init deactivation when an operator changes managed MCP settings after planning", async () => {
     const managedPath = join(dir, ".claude", "managed-settings.json");
     seedOrgPolicy(["code-review-graph"]);
-    const activeCtx = ctx({ posture: "team", postureSource: "flag" });
+    const activeCtx = ctx({ posture: "enterprise", postureSource: "flag" });
     await executePlan(await command.plan(activeCtx), { ...activeCtx, apply: true });
 
     writeFileSync(
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
-        minimumPosture: "team",
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
         references: { repoContract: ".ai-context/project.json" },
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: false },
       }),
     );
-    const inactiveCtx = ctx({ posture: "team", postureSource: "flag" });
+    const inactiveCtx = ctx({ posture: "enterprise", postureSource: "flag" });
     const planned = await command.plan(inactiveCtx);
     const operatorProjection = JSON.stringify({
       allowManagedMcpServersOnly: true,
@@ -327,7 +327,7 @@ describe("aih init --v3 — bootstrap intelligence", () => {
   it("adds scan, gap, capability-plan, and fingerprint evidence without execs", async () => {
     seedNodeRepo();
 
-    const c = initV3Ctx({ posture: "team", postureSource: "flag" });
+    const c = initV3Ctx({ posture: "enterprise", postureSource: "flag" });
     const p = await command.plan(c);
     const data = initV3Digest(p.actions);
 
@@ -342,9 +342,9 @@ describe("aih init --v3 — bootstrap intelligence", () => {
     );
     expect(data?.plan.decisions).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "common.security-review", install: "warn" }),
-        expect.objectContaining({ name: "common.tdd-workflow", install: "warn" }),
-        expect.objectContaining({ name: "stack.node-typescript", install: "warn" }),
+        expect.objectContaining({ name: "common.security-review", install: "requires-approval" }),
+        expect.objectContaining({ name: "common.tdd-workflow", install: "requires-approval" }),
+        expect.objectContaining({ name: "stack.node-typescript", install: "requires-approval" }),
       ]),
     );
     expect(data?.fingerprint.fingerprintSha256).toMatch(/^[a-f0-9]{64}$/);
@@ -361,14 +361,14 @@ describe("aih init --v3 — bootstrap intelligence", () => {
   it("fingerprints install-mode changes, not just capability ids", async () => {
     seedNodeRepo();
 
-    const team = initV3Digest((await command.plan(initV3Ctx({ posture: "team" }))).actions);
+    const vibe = initV3Digest((await command.plan(initV3Ctx({ posture: "vibe" }))).actions);
     const enterprise = initV3Digest(
       (await command.plan(initV3Ctx({ posture: "enterprise" }))).actions,
     );
 
-    expect(team.fingerprint.plannedCapabilities).toEqual(
+    expect(vibe.fingerprint.plannedCapabilities).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "common.security-review", install: "warn" }),
+        expect.objectContaining({ name: "common.security-review", install: "auto-add" }),
       ]),
     );
     expect(enterprise.fingerprint.plannedCapabilities).toEqual(
@@ -379,7 +379,7 @@ describe("aih init --v3 — bootstrap intelligence", () => {
         }),
       ]),
     );
-    expect(enterprise.fingerprint.fingerprintSha256).not.toBe(team.fingerprint.fingerprintSha256);
+    expect(enterprise.fingerprint.fingerprintSha256).not.toBe(vibe.fingerprint.fingerprintSha256);
   });
 
   it("--apply writes committed capability intent plus derived cache/fingerprint idempotently", async () => {
@@ -443,7 +443,7 @@ describe("aih init — composes all six repo-scoped capabilities", () => {
 
   it("folds the .claude/settings.json contributions into one merge write carrying deny rules, command policy, and usage hooks", async () => {
     const writes = (
-      await command.plan(ctx({ posture: "team", postureSource: "flag" }))
+      await command.plan(ctx({ posture: "enterprise", postureSource: "flag" }))
     ).actions.filter(
       (a): a is WriteAction =>
         a.kind === "write" && a.path.replace(/\\/g, "/") === ".claude/settings.json",
@@ -636,7 +636,7 @@ describe("aih init — target-gated tool artifacts (.cursor on cursor, .claude o
   it("--cli kiro with active org-policy still writes no Claude managed settings", async () => {
     seedOrgPolicy();
     const p = await paths({
-      posture: "team",
+      posture: "enterprise",
       postureSource: "flag",
       options: { cli: "kiro" },
     });
@@ -648,7 +648,7 @@ describe("aih init — target-gated tool artifacts (.cursor on cursor, .claude o
   it("--cli cursor with active org-policy still writes no Claude managed settings", async () => {
     seedOrgPolicy();
     const p = await paths({
-      posture: "team",
+      posture: "enterprise",
       postureSource: "flag",
       options: { cli: "cursor" },
     });
@@ -852,7 +852,7 @@ describe("aih init — apply lays the whole bootstrap down in one pass", () => {
     // a targeted write. This is the regression guard for the init-dedup fold: under
     // the old first-writer-wins drop, guardrails' command-policy projection never
     // reached the composed init plan (it landed only via standalone `aih guardrails`).
-    const applied = ctx({ apply: true, posture: "team", postureSource: "flag" });
+    const applied = ctx({ apply: true, posture: "enterprise", postureSource: "flag" });
     await executePlan(await command.plan(applied), applied);
 
     const settings = JSON.parse(readFileSync(join(dir, ".claude/settings.json"), "utf8"));

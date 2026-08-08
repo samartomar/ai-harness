@@ -69,7 +69,7 @@ function loadStudio(window: Window, html: string, setup = ""): void {
 
 function fullAuthoringPolicy(): Record<string, unknown> {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     minimumPosture: "enterprise",
     references: { repoContract: "ai-coding/project.json" },
     governance: {
@@ -212,8 +212,8 @@ function policyWithCommandArgument(
 
 function policyWithoutGovernance(): Record<string, unknown> {
   return {
-    schemaVersion: 1,
-    minimumPosture: "team",
+    schemaVersion: 2,
+    minimumPosture: "vibe",
     references: { repoContract: "ai-coding/project.json" },
   };
 }
@@ -257,7 +257,7 @@ describe("policy generate", () => {
       "command",
     ]);
     expect(reparsed.governance?.authority.approvals[0]?.clarification).toContain("Follow-up");
-    expect(() => parseStudioPolicyImport('{"schemaVersion":1,"unknown":true}')).toThrow();
+    expect(() => parseStudioPolicyImport('{"schemaVersion":2,"unknown":true}')).toThrow();
     const unsafe = fullAuthoringPolicy();
     const curation = (
       unsafe.governance as {
@@ -407,8 +407,8 @@ describe("policy generate", () => {
     const invalid = new window.File(
       [
         JSON.stringify({
-          schemaVersion: 1,
-          minimumPosture: "team",
+          schemaVersion: 2,
+          minimumPosture: "vibe",
           references: { repoContract: "ai-coding/project.json", invented: true },
         }),
       ],
@@ -795,12 +795,11 @@ describe("policy generate", () => {
           dispatchEvent: (event: unknown) => boolean;
         } | null;
         if (profile === null) throw new Error("expected profile selector");
-        // "team" is the remaining posture-only option: vibe and enterprise now
-        // compose a selection, and their contracts live in their own suites.
+        // Presets compose selections; posture-only behavior is covered separately.
         // This assertion is about the selector still working after an import.
-        profile.value = "team";
+        profile.value = "vibe";
         profile.dispatchEvent(new window.Event("change", { bubbles: true }));
-        expect(announcement?.textContent).toContain("Profile changed.");
+        expect(announcement?.textContent).toContain("Vibe composed:");
       } else {
         expect(
           announcement?.textContent,

@@ -8,7 +8,7 @@
 **Goal:** Close #407 by making every aih-controlled ECC or Superpowers install
 depend on content-addressed vendor or org evidence, while preserving the
 posture rules: missing/mismatched coverage warns at vibe and fails at
-team/enterprise; danger-class findings fail at every posture.
+enterprise; danger-class findings fail at every posture.
 
 **Architecture:** Add one baseline-evidence subsystem that owns component
 catalogs, deterministic tree hashes, evidence schemas, vendor-lock validation,
@@ -155,9 +155,9 @@ GitHub attestations.
 
 1. Add RED matrix tests for covered/pass, uncovered, hash mismatch, source-pin
    mismatch, vendor-blocked, valid org coverage, invalid org signature, and
-   danger findings across vibe/team/enterprise.
+   danger findings across vibe/enterprise.
 2. Prove missing/mismatch is warning-only at vibe and failing at
-   team/enterprise, while blocked/danger fails at every posture.
+   enterprise, while blocked/danger fails at every posture.
 3. Prove the returned authorization receipt carries component ID, content hash,
    source pin, `vendor|org` tier, evidence hash, and issuer without secrets or
    unbounded external text.
@@ -207,7 +207,7 @@ GitHub attestations.
    checkout.
 4. Treat `--ecc-path` or a newer `AIH_ECC_REF` as org-override candidates, not
    vendor coverage. An explicit local path without signed evidence may warn at
-   vibe but must fail at team/enterprise; danger still fails everywhere.
+   vibe but must fail at enterprise; danger still fails everywhere.
 5. Update summaries to name the pinned source and evidence tier. Remove claims
    that latest/mutable execution is the default.
 6. Run ECC and baseline-evidence tests GREEN.

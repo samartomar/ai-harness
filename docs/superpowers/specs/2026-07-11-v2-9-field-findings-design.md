@@ -9,7 +9,7 @@
 
 Resolve the eight findings from the v2.8.0 consumer-seat report without weakening
 the locked trust model. The result must make the shipped default ECC baseline
-install useful components at vibe, team, and enterprise posture from its own
+install useful components at vibe and enterprise posture from its own
 signed evidence, preserve danger-class floors, keep the component registration
 ledger truthful, and make release escalation acknowledgement attributable.
 
@@ -114,7 +114,7 @@ and JSON output; it is not rewritten as a detector pass.
 
 Only a smoke test that actually starts on a capable host and returns a failing
 result emits a blocking failure. Tests distinguish unavailable, successful, and
-failed execution at vibe, team, and enterprise.
+failed execution at vibe and enterprise.
 
 ### #418: instruction-surface authority and finding identity
 
@@ -286,7 +286,7 @@ and verifies their hashes/signatures before committing either. Pin selection is
 evidence-driven: use the exact commit of the catalog's pinned source vetted by the job, never a moving
 branch or tag.
 
-For each posture—vibe, team, and enterprise—the job creates a fresh fixture HOME,
+For each posture—vibe and enterprise—the job creates a fresh fixture HOME,
 uses the package code and shipped vendor lock to run a real scoped ECC install,
 and inspects the resulting target state and registration ledger. Each posture must
 install at least one component, every installed file must be covered by an

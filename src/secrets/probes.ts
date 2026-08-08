@@ -30,7 +30,7 @@ export function plaintextSecretCheck(path: string, posture: Posture): Check {
 
 /**
  * One read-only probe per detected plaintext-secret path. Posture decides whether
- * it is warning-only (`vibe`) or a failing gate (`team`/`enterprise`); only failing
+ * it is warning-only (`vibe`) or a failing gate (`enterprise`); only failing
  * verdicts flip the exit code and render as SARIF errors.
  *
  * Pure and boundary-safe: the scan already read the filesystem at plan-build time,

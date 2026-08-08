@@ -676,7 +676,7 @@ function safeSkillLabel(name: string): string {
  *
  * A missing approval emits a `trust.unapproved-skill` check — ADVISORY at `vibe`
  * (pass with the standard warning-only detail), a promotion-blocking FAIL at
- * `team`/`enterprise`. Graded locally rather than through the shared trust-origin
+ * `enterprise`. Graded locally rather than through the shared trust-origin
  * ladder: that ladder denies only at enterprise, but an install-time approval gate
  * is the committed lockfile's teeth and #102 specs team as enforcing too — and
  * widening the shared ladder would harden four already-released origin codes as a

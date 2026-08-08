@@ -1058,7 +1058,7 @@ describe("doctor — MCP managed allowlist drift", () => {
     writeFileSync(
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
@@ -1077,7 +1077,7 @@ describe("doctor — MCP managed allowlist drift", () => {
     writeFileSync(
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { allowedServers: [], allowManagedOnly: true },
@@ -1105,7 +1105,7 @@ describe("doctor — MCP managed allowlist drift", () => {
     writeFileSync(
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
@@ -1171,7 +1171,7 @@ describe("doctor — org-policy drift", () => {
     writeFileSync(
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
       }),
@@ -1221,7 +1221,7 @@ describe("doctor — enterprise baseline attestation", () => {
     writeFileSync(
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { allowedServers: [], allowManagedOnly: true },
@@ -1792,7 +1792,7 @@ describe("doctor — Claude probe target scope from the committed marker (#554)"
     writeFileSync(
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         command: { deny: { add: [{ pattern: "terraform destroy*" }] } },

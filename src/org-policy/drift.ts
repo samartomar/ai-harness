@@ -35,7 +35,7 @@ import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import { orgPolicyProjectionActions, verifiedOrgPolicyProjectionActions } from "./project.js";
 import { OrgPolicyError, orgPolicyPath, readOrgPolicy } from "./schema.js";
 
-const POSTURE_RANK: Record<Posture, number> = { vibe: 0, team: 1, enterprise: 2 };
+const POSTURE_RANK: Record<Posture, number> = { vibe: 0, enterprise: 1 };
 
 function strongerPosture(a: Posture, b: Posture): Posture {
   return POSTURE_RANK[a] >= POSTURE_RANK[b] ? a : b;
@@ -230,7 +230,7 @@ function generationDeltaCheck(
     fingerprint: `org-policy-generation-delta:${action.path}`,
   };
   // Same severity as the managed-key drift path this refines: a hard fail at
-  // team/enterprise (the finding is never suppressed), warning-only at vibe.
+  // enterprise (the finding is never suppressed), warning-only at vibe.
   return posture === "vibe" ? postureGradeCheck(check, "verify", posture) : check;
 }
 
@@ -522,7 +522,7 @@ function sourceCheck(ctx: PlanContext): Check {
       code: "org-policy.drift",
       detail:
         `policy source: AIH_ORG_POLICY env override (${source.display}); ` +
-        "team/enterprise control planes should use a trusted managed channel or an explicit `aih policy verify --against <pin>` gate",
+        "enterprise control planes should use a trusted managed channel or an explicit `aih policy verify --against <pin>` gate",
       location: { uri: source.display },
       fingerprint: "org-policy-source:env-override",
     },

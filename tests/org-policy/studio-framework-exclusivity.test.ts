@@ -151,8 +151,22 @@ describe("policy studio framework exclusivity", () => {
     expect(policy.governance.catalog.reviewed).toEqual([]);
     expect(policy.governance.activations).toEqual([]);
     expect(policy.governance.externalCuration).toEqual([]);
-    expect(policy.minimumPosture).toBe("team");
+    expect(policy.minimumPosture).toBe("vibe");
     expect(announcement(window).toLowerCase()).toContain("cleared");
+  });
+
+  it("changes posture without rewriting selected components", () => {
+    const window = studio();
+    click(window, selectKey(ecc, eccAsset));
+    const before = structuredClone(selections(window));
+    const posture = window.document.getElementById("posture");
+    if (posture === null) throw new Error("expected posture control");
+    (posture as unknown as { value: string }).value = "enterprise";
+    posture.dispatchEvent(new window.Event("change", { bubbles: true }));
+
+    expect(authored(window).minimumPosture).toBe("enterprise");
+    expect(selections(window)).toEqual(before);
+    expect(window.document.querySelector('option[value="team"]')).toBeNull();
   });
 
   it("lets the other framework be selected once the policy is cleared", () => {

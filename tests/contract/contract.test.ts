@@ -659,7 +659,7 @@ describe("portable-paths invariant", () => {
     for (const bad of ["../escape", "/abs/path", "C:\\win", "C:/win", "\\\\unc\\share", "a\\b"]) {
       const tampered: ProjectContract = { ...base, entrypoints: [bad] };
       expect(unportablePaths(tampered)).toContain(bad);
-      expect(portablePathsCheck(tampered, "team").verdict).toBe("fail");
+      expect(portablePathsCheck(tampered, "enterprise").verdict).toBe("fail");
     }
   });
 
@@ -670,7 +670,7 @@ describe("portable-paths invariant", () => {
       workspaces: { "../escape": { languages: ["Python"], commands: {} } },
     };
     expect(unportablePaths(tampered)).toContain("../escape");
-    expect(portablePathsCheck(tampered, "team").verdict).toBe("fail");
+    expect(portablePathsCheck(tampered, "enterprise").verdict).toBe("fail");
   });
 
   it("keeps unportable paths warning-only at vibe posture", async () => {
@@ -684,7 +684,7 @@ describe("portable-paths invariant", () => {
 
   it("surfaces a failing probe when the context dir itself is non-portable", async () => {
     seedMindworksLike(dir);
-    const c = ctx({ contextDir: "../sneaky", posture: "team" });
+    const c = ctx({ contextDir: "../sneaky", posture: "enterprise" });
     const p = await command.plan(c);
     const probeAction = p.actions.find((a) => a.kind === "probe");
     expect(probeAction).toBeDefined();
@@ -745,7 +745,7 @@ describe("PR 1D — doctor contract-truth probe", () => {
     writeContract(await synth({ run: gitTrackedRunner(fakeTrackedPaths(50)) }));
 
     const res = await contractTruthCheck(
-      ctx({ posture: "team", run: gitTrackedRunner(fakeTrackedPaths(51)) }),
+      ctx({ posture: "enterprise", run: gitTrackedRunner(fakeTrackedPaths(51)) }),
     );
 
     expect(res.verdict).toBe("pass");
@@ -764,7 +764,7 @@ describe("PR 1D — doctor contract-truth probe", () => {
       }),
     );
 
-    const res = await contractTruthCheck(ctx({ posture: "team" }));
+    const res = await contractTruthCheck(ctx({ posture: "enterprise" }));
     expect(res.verdict).toBe("fail");
     expect(res.code).toBe("contract.stale");
     expect(res.detail).toContain("commands.build");
@@ -792,7 +792,7 @@ describe("PR 1D — doctor contract-truth probe", () => {
     writeFileSync(join(dir, "package-lock.json"), JSON.stringify({ lockfileVersion: 3 }));
     writeFileSync(join(dir, "Dockerfile"), "FROM node:20\n");
 
-    const res = await contractTruthCheck(ctx({ posture: "team" }));
+    const res = await contractTruthCheck(ctx({ posture: "enterprise" }));
     expect(res.verdict).toBe("fail");
     expect(res.code).toBe("contract.stale");
     expect(res.detail).toContain("cloud");
@@ -829,7 +829,7 @@ describe("PR 1D — doctor contract-truth probe", () => {
       `${JSON.stringify({ ...(await synth()), teamNotes: { owner: "platform" } }, null, 2)}\n`,
     );
 
-    const res = await contractTruthCheck(ctx({ posture: "team" }));
+    const res = await contractTruthCheck(ctx({ posture: "enterprise" }));
     expect(res.verdict).toBe("pass");
     expect(res.code).toBeUndefined();
   });
@@ -837,7 +837,7 @@ describe("PR 1D — doctor contract-truth probe", () => {
   it("fails (routable) on a non-portable path in the committed contract", async () => {
     seedMindworksLike(dir);
     writeContract({ ...(await synth()), entrypoints: ["../escape"] });
-    const res = await contractTruthCheck(ctx({ posture: "team" }));
+    const res = await contractTruthCheck(ctx({ posture: "enterprise" }));
     expect(res.verdict).toBe("fail");
     expect(res.code).toBe("contract.path-unportable");
     expect(res.detail).toContain("../escape");

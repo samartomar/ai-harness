@@ -83,7 +83,7 @@ describe("policy init — starter org policy from observed fleet state", () => {
     const { write: writeAction, starter } = await planned(ctx());
 
     // parseOrgPolicy in `planned` already proved schema validity (AC: valid starter).
-    expect(starter.schemaVersion).toBe(1);
+    expect(starter.schemaVersion).toBe(2);
     expect(starter.minimumPosture).toBe("enterprise");
     expect(starter.references.repoContract).toBe("ai-coding/project.json");
     expect(starter.mcp?.allowedServers).toEqual(["context7", "github"]);
@@ -93,8 +93,8 @@ describe("policy init — starter org policy from observed fleet state", () => {
   });
 
   it("records the resolved posture, not a hardcoded one", async () => {
-    const { starter } = await planned(ctx({ posture: "team" }));
-    expect(starter.minimumPosture).toBe("team");
+    const { starter } = await planned(ctx({ posture: "enterprise" }));
+    expect(starter.minimumPosture).toBe("enterprise");
   });
 
   it("lets a fresh enterprise setup pass attestation with no hand-editing (AC1)", async () => {
@@ -116,8 +116,8 @@ describe("policy init — starter org policy from observed fleet state", () => {
     write(
       "aih-org-policy.json",
       JSON.stringify({
-        schemaVersion: 1,
-        minimumPosture: "team",
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
       }),
     );
@@ -129,8 +129,8 @@ describe("policy init — starter org policy from observed fleet state", () => {
     write(
       "policies/org.json",
       JSON.stringify({
-        schemaVersion: 1,
-        minimumPosture: "team",
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
       }),
     );

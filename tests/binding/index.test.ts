@@ -145,7 +145,11 @@ describe("binding W2 end-to-end (declaration authority + derived caches)", () =>
       JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", binding: declaration }),
     );
 
-    const first = runFastScanGate(scannableFromGit(resolved), { posture: "team" }, { cacheHome });
+    const first = runFastScanGate(
+      scannableFromGit(resolved),
+      { posture: "enterprise" },
+      { cacheHome },
+    );
 
     // Blow away every derived cache and rebuild from the committed source.
     rmSync(join(cacheHome, "scan-cache"), { recursive: true, force: true });
@@ -154,7 +158,11 @@ describe("binding W2 end-to-end (declaration authority + derived caches)", () =>
       { repository: repoDir, ref: "HEAD" },
       { runner: defaultRunner, cacheHome },
     );
-    const second = runFastScanGate(scannableFromGit(rebuilt), { posture: "team" }, { cacheHome });
+    const second = runFastScanGate(
+      scannableFromGit(rebuilt),
+      { posture: "enterprise" },
+      { cacheHome },
+    );
 
     expect(second.verdict).toBe(first.verdict);
     expect(second.digest).toBe(first.digest);

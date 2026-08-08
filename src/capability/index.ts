@@ -214,14 +214,20 @@ function satisfiesAihEngine(range: string): boolean {
   return current[0] === 0 && current[1] === 0 && current[2] === minimum[2];
 }
 
-function capabilityPosture(ctx: PlanContext): "vibe" | "team" | "enterprise" {
+function capabilityPosture(ctx: PlanContext): "vibe" | "enterprise" {
   const raw = ctx.posture ?? ctx.options.posture ?? "vibe";
   if (typeof raw !== "string") {
-    throw new AihError("invalid posture: expected vibe, team, or enterprise", "AIH_CONFIG");
+    throw new AihError("invalid posture: expected vibe or enterprise", "AIH_CONFIG");
   }
   const posture = raw.toLowerCase();
-  if (posture === "vibe" || posture === "team" || posture === "enterprise") return posture;
-  throw new AihError("invalid posture: expected vibe, team, or enterprise", "AIH_CONFIG");
+  if (posture === "team") {
+    throw new AihError(
+      "team posture was removed; replace team with vibe or enterprise (the administrator chooses)",
+      "AIH_CONFIG",
+    );
+  }
+  if (posture === "vibe" || posture === "enterprise") return posture;
+  throw new AihError("invalid posture: expected vibe or enterprise", "AIH_CONFIG");
 }
 
 function requireHome(ctx: PlanContext): string {
@@ -302,7 +308,6 @@ function readMachineCapabilityCache(ctx: PlanContext): MachineCapabilityCache {
 function installForPosture(ctx: PlanContext): CapabilityInstall {
   const posture = capabilityPosture(ctx);
   if (posture === "enterprise") return "requires-approval";
-  if (posture === "team") return "warn";
   return "auto-add";
 }
 

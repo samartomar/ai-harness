@@ -211,7 +211,7 @@ describe("workspace.plan — generated artifacts", () => {
     writeFileSync(
       join(parent, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { allowedServers: [], allowManagedOnly: true },
@@ -228,7 +228,7 @@ describe("workspace.plan — generated artifacts", () => {
     writeFileSync(
       join(parent, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { allowedServers: [], allowManagedOnly: false },
@@ -246,7 +246,7 @@ describe("workspace.plan — generated artifacts", () => {
     writeFileSync(
       join(parent, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         governance: {
@@ -970,8 +970,8 @@ describe("workspace.plan — generated artifacts", () => {
     writeFileSync(
       join(parent, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
-        minimumPosture: "team",
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
           allowedServers: ["hosted-docs"],
@@ -1017,8 +1017,8 @@ describe("workspace.plan — generated artifacts", () => {
     writeFileSync(
       join(parent, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
-        minimumPosture: "team",
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { disabledServers: ["local-graph"] },
       }),
@@ -1645,7 +1645,7 @@ describe("workspace — write-once executor behavior", () => {
     writeFileSync(
       join(parent, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { allowedServers: [], allowManagedOnly: true },

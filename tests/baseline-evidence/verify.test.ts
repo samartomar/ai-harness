@@ -164,7 +164,7 @@ describe("verifyBaselineComponents", () => {
     ]);
   });
 
-  it.each(["team", "enterprise"] as const)(
+  it.each(["enterprise", "enterprise"] as const)(
     "fails closed on uncovered evidence at %s posture",
     (posture) => {
       const empty = parseBaselineEvidenceLock({
@@ -225,7 +225,7 @@ describe("verifyBaselineComponents", () => {
     expect(result.authorizations).toEqual([]);
   });
 
-  it.each(["vibe", "team", "enterprise"] as const)(
+  it.each(["vibe", "enterprise", "enterprise"] as const)(
     "never permits an exact component whose signed verdict is blocked at %s",
     (posture) => {
       const result = verify(posture, lock({ verdict: "blocked" }));
@@ -238,7 +238,7 @@ describe("verifyBaselineComponents", () => {
 
   it.each([
     ["vibe", "pass"],
-    ["team", "fail"],
+    ["enterprise", "fail"],
     ["enterprise", "fail"],
   ] as const)("grades content hash mismatch at %s as %s", (posture, verdict) => {
     const result = verify(posture, lock({ hash: "0".repeat(64) }));
@@ -288,7 +288,7 @@ describe("verifyBaselineComponents", () => {
     });
   });
 
-  it.each(["vibe", "team", "enterprise"] as const)(
+  it.each(["vibe", "enterprise", "enterprise"] as const)(
     "never permits a component whose org evidence is blocked at %s",
     (posture) => {
       const newerPin = "b".repeat(40);

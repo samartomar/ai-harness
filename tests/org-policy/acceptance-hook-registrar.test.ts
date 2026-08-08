@@ -182,7 +182,7 @@ describe("acceptance — governed hook registrations on a temporary fixture root
       "aih-org-policy.json",
       `${JSON.stringify(
         {
-          schemaVersion: 1,
+          schemaVersion: 2,
           minimumPosture: "enterprise",
           references: { repoContract: "ai-coding/project.json" },
           governance: {
@@ -301,7 +301,7 @@ describe("acceptance — governed hook registrations on a temporary fixture root
     }
     expect(() =>
       parseOrgPolicy({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         governance: {

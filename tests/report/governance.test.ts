@@ -90,12 +90,12 @@ describe("governanceRollupDigest", () => {
   it("grades secrets and contract path-portability under the active posture", () => {
     writeFileSync(join(dir, ".env"), "API_KEY=sk-nope-nope-nope\n");
     writeContract(CONTRACT);
-    const d = governanceRollupDigest(ctx({ posture: "team", postureSource: "flag" }));
+    const d = governanceRollupDigest(ctx({ posture: "enterprise", postureSource: "flag" }));
     const byControl = Object.fromEntries(controls(d).map((c) => [c.control, c.verdict]));
 
     expect(byControl.secrets).toBe("deny");
     expect(byControl["path-portability"]).toBe("deny");
-    expect(d.text).toContain("team");
+    expect(d.text).toContain("enterprise");
     expect(d.text).toContain("plaintext");
   });
 
@@ -112,7 +112,7 @@ describe("governanceRollupDigest", () => {
       return;
     }
 
-    const d = governanceRollupDigest(ctx({ posture: "team" }));
+    const d = governanceRollupDigest(ctx({ posture: "enterprise" }));
     rmSync(dirname(outside), { recursive: true, force: true });
     const secrets = controls(d).find((c) => c.control === "secrets");
 
@@ -122,17 +122,17 @@ describe("governanceRollupDigest", () => {
   });
 
   it("marks CA trust as enterprise-deny until a trust env var is present", () => {
-    const team = governanceRollupDigest(ctx({ posture: "team" }));
+    const vibe = governanceRollupDigest(ctx({ posture: "vibe" }));
     const missing = governanceRollupDigest(ctx({ posture: "enterprise" }));
     const configured = governanceRollupDigest(
       ctx({ posture: "enterprise", env: { NODE_EXTRA_CA_CERTS: "/corp/root.pem" } }),
     );
 
-    const teamCa = controls(team).find((c) => c.control === "ca-trust");
+    const vibeCa = controls(vibe).find((c) => c.control === "ca-trust");
     const missingCa = controls(missing).find((c) => c.control === "ca-trust");
     const configuredCa = controls(configured).find((c) => c.control === "ca-trust");
 
-    expect(teamCa?.verdict).toBe("warn");
+    expect(vibeCa?.verdict).toBe("warn");
     expect(missingCa?.verdict).toBe("deny");
     expect(configuredCa?.verdict).toBe("allow");
   });
@@ -168,7 +168,7 @@ describe("governanceRollupDigest", () => {
     writeFileSync(
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { incumbentHosts: [], disabledServers: ["context7"] },
@@ -191,7 +191,7 @@ describe("governanceRollupDigest", () => {
     writeFileSync(
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -226,7 +226,7 @@ describe("governanceRollupDigest", () => {
     writeFileSync(
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { disabledServers: ["github"] },

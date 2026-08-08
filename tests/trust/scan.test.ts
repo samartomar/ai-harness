@@ -87,7 +87,7 @@ function orgPolicy(trust: Record<string, unknown>): void {
   write(
     "aih-org-policy.json",
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       minimumPosture: "vibe",
       references: { repoContract: "ai-coding/project.json" },
       trust,
@@ -797,7 +797,7 @@ describe("scanTrustTree", () => {
     );
     expect(vibe.every((check) => check.verdict !== "fail")).toBe(true);
 
-    const team = await scanTrustTree(dir, { posture: "team" });
+    const team = await scanTrustTree(dir, { posture: "enterprise" });
     expect(team).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -823,7 +823,7 @@ describe("scanTrustTree", () => {
       }),
     );
 
-    const checks = await scanTrustTree(dir, { posture: "team" });
+    const checks = await scanTrustTree(dir, { posture: "enterprise" });
 
     expect(checks).toEqual(
       expect.arrayContaining([
@@ -851,7 +851,7 @@ describe("scanTrustTree", () => {
       }),
     );
 
-    const checks = await scanTrustTree(dir, { posture: "team" });
+    const checks = await scanTrustTree(dir, { posture: "enterprise" });
 
     expect(checks).toEqual(
       expect.arrayContaining([
@@ -882,7 +882,7 @@ describe("scanTrustTree", () => {
       }),
     );
 
-    const checks = await scanTrustTree(dir, { posture: "team" });
+    const checks = await scanTrustTree(dir, { posture: "enterprise" });
 
     expect(checks).toEqual(
       expect.arrayContaining([
@@ -1046,7 +1046,7 @@ describe("scanTrustTree", () => {
     write(
       "operator-policy.json",
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
@@ -2363,7 +2363,7 @@ describe("scanTrustTree", () => {
     expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/install.sh'");
   });
 
-  it.each(["vibe", "team", "enterprise"] as const)(
+  it.each(["vibe", "enterprise", "enterprise"] as const)(
     "skips applicable sandbox smoke when detector runtime is missing at %s posture",
     async (posture) => {
       skill("skills/clean", "# Clean\n");
@@ -3416,7 +3416,7 @@ describe("scanTrustTree", () => {
     skill("skills/clean", "# Clean\n");
 
     const result = await scanTrustTreeWithAnalyzers(dir, {
-      posture: "team",
+      posture: "vibe",
       requiredDetectors: ["semgrep"],
     });
 
@@ -4519,7 +4519,7 @@ describe("scanTrustTree", () => {
       ],
     };
     const scanAt = (
-      posture: "vibe" | "team" | "enterprise",
+      posture: "vibe" | "enterprise",
     ): Promise<Awaited<ReturnType<typeof scanTrustTreeWithAnalyzers>>> => {
       skill("skills/clean", "# Clean\n");
       write("skills/clean/notes.txt", "review\nunknown finding\n");
@@ -4536,7 +4536,7 @@ describe("scanTrustTree", () => {
     const genericCiscoFinding = (checks: readonly Check[]): Check | undefined =>
       checks.find((check) => check.name === "trust.cisco-finding");
 
-    for (const posture of ["vibe", "team"] as const) {
+    for (const posture of ["vibe"] as const) {
       const { checks } = await scanAt(posture);
       const license = licenseFinding(checks);
       // Advisory: warning-only pass, no residual failing code.
@@ -5459,21 +5459,6 @@ describe("trustScanCommand", () => {
       approvedSources: [{ owner: "trusted", repo: "source" }],
     });
 
-    const team = await executePlan(
-      await trustScanCommand.plan(ctx({ target: "owner/repo" }, {}, "team")),
-      ctx({ target: "owner/repo" }, {}, "team"),
-    );
-    expect(team.report?.ok).toBe(true);
-    expect(team.report?.checks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          name: "trust.untrusted-publisher",
-          verdict: "pass",
-          detail: expect.stringContaining("warning-only (team posture)"),
-        }),
-      ]),
-    );
-
     const vibe = await executePlan(
       await trustScanCommand.plan(ctx({ target: "owner/repo" }, {}, "vibe")),
       ctx({ target: "owner/repo" }, {}, "vibe"),
@@ -5576,7 +5561,9 @@ describe("trustScanCommand", () => {
   it("blocks unsigned source at every posture", async () => {
     orgPolicy({ requireSignedSource: true });
 
-    for (const posture of ["vibe", "team"] satisfies Array<NonNullable<PlanContext["posture"]>>) {
+    for (const posture of ["vibe", "enterprise"] satisfies Array<
+      NonNullable<PlanContext["posture"]>
+    >) {
       const result = await executePlan(
         await trustScanCommand.plan(ctx({ target: "owner/repo" }, {}, posture)),
         ctx({ target: "owner/repo" }, {}, posture),

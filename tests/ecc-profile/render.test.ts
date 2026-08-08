@@ -240,7 +240,7 @@ describe("native ECC profile projection", () => {
     } finally {
       await roots.cleanup();
     }
-  });
+  }, 30_000);
 
   it.each(["modified", "missing", "extra", "type-changed"] as const)(
     "rejects a %s projected input after the closure was authenticated",

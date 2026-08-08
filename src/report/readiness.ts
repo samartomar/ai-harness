@@ -49,7 +49,7 @@ import { remediationBlock } from "./render.js";
  * verdict; `skip`/not-applicable is neither pass nor fail and is EXCLUDED from both
  * scoring and blocking. Posture (see {@link postureFromContext}) promotes the amber
  * warn-at-vibe gates — the secret gates (committed AND on-disk classes), and
- * git-absent / stale-contract — to hard gates at team/enterprise, following the same
+ * git-absent / stale-contract — to hard gates at enterprise, following the same
  * split `secrets`/governance already use.
  *
  * Pure composition: every signal is one of aih's existing read-only probes (heal's
@@ -297,7 +297,7 @@ async function buildChecks(ctx: PlanContext): Promise<ReadinessCheck[]> {
     cmd: "aih heal --scope path",
   });
 
-  // git: WARN at vibe, GATE at team/enterprise (an amber promote, like the secret gates).
+  // git: WARN at vibe, GATE at enterprise (an amber promote, like the secret gates).
   const git = await gitVerdict(ctx);
   out.push({
     id: "git-present",
@@ -334,7 +334,7 @@ async function buildChecks(ctx: PlanContext): Promise<ReadinessCheck[]> {
   // ---- repo-contract: freshness + declared commands + secrets ------------
   // A stale/non-portable contract is an amber warn-at-vibe that ENTERPRISE promotes to
   // a hard GATE (the locked taxonomy). Two teeth combine: contractTruthCheck already
-  // posture-grades the VERDICT (stale stays `pass` at vibe/team, fails at enterprise),
+  // posture-grades the VERDICT (stale stays `pass` at vibe, fails at enterprise),
   // and here the SEVERITY flips to `gate` at enterprise so a real stale-contract fail
   // BLOCKS rather than just dinging — mirroring the git/secret amber-gate promotion.
   const contract = await contractTruthCheck(ctx);
@@ -363,7 +363,7 @@ async function buildChecks(ctx: PlanContext): Promise<ReadinessCheck[]> {
     cmd: "add a test/build/start script to package.json",
   });
 
-  // Plaintext/hardcoded secret: GATE at team/enterprise, WARN at vibe — the exact
+  // Plaintext/hardcoded secret: GATE at enterprise, WARN at vibe — the exact
   // split the `secrets` control uses. A finding is a fail; none ⇒ pass. Two rows,
   // one per LOCATION class, because the fixes differ: committed (git-tracked)
   // material needs a history rewrite + rotation, while an untracked on-disk file

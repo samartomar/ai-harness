@@ -28,7 +28,6 @@
       "type": "string",
       "enum": [
         "vibe",
-        "team",
         "enterprise"
       ]
     },
