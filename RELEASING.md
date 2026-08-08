@@ -123,8 +123,13 @@ is ever stored; after the bootstrap, publish is OIDC-only.
    npm audit signatures        # provenance + integrity
    aih verify-release X.Y.Z
    ```
+   The verifying environment needs an authenticated `gh`, plus `npm` and `cosign` on
+   `PATH` (`winget install sigstore.cosign` / `brew install cosign`) — without cosign,
+   `verify-release` degrades its signature-bundle leg to a skip instead of verifying it.
 14. **Close on evidence — not at tag.** Only after the workflow succeeded, the GitHub
-    Release exists, npm serves the exact version, and `aih verify-release X.Y.Z` passes:
+    Release exists, npm serves the exact version, and `aih verify-release X.Y.Z` passes
+    with zero skipped legs (a skip is a prerequisite gap in the verifying environment,
+    not a pass — equip it and re-run):
     complete the tracker checklist, close the tracker, then close the `vX.Y.Z`
     milestone. If publication fails permanently, never re-tag — fix forward to
     `X.Y.Z+1`, close the milestone as superseded-not-released with a note, and re-board

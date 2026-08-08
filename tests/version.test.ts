@@ -37,7 +37,7 @@ describe("versioned surfaces", () => {
     // pattern and shipped stale in the v2.6.0 tarball. Scan rendered text content only
     // (attribute numerics like font-size="12.5" are not version claims); historical
     // journey markers and the license id are the only tokens allowed besides VERSION.
-    const allowed = new Set([VERSION, `v${VERSION}`, "0.2", "0.4", "1.0", "v1.0", "2.1"]);
+    const allowed = new Set([VERSION, `v${VERSION}`, "0.2", "0.4", "1.0", "v1.0", "2.1", "4.0"]);
     for (const name of readdirSync(assetsDir).filter((f) => f.endsWith(".svg"))) {
       let text = readFileSync(join(assetsDir, name), "utf8");
       for (let prev = ""; prev !== text; ) {
