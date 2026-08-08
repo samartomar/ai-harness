@@ -465,6 +465,24 @@ describe("policy generate", () => {
     expect(document.getElementById("custom-note")?.getAttribute("aria-invalid")).toBe("true");
     expect(document.activeElement?.id).toBe("custom-note");
     expect(document.getElementById("custom-rows")?.textContent).toContain("No custom candidates");
+    setValue("remote-custom-id", "figma-remote");
+    setValue("remote-custom-origin", "https://mcp.figma.com/mcp");
+    setValue("remote-custom-approved-by", "security-admin");
+    setValue("remote-custom-authentication-mode", "oauth");
+    setValue("remote-custom-data-classes", "design-metadata");
+    setValue("remote-custom-tool-surface-digest", sha("d"));
+    setValue("remote-custom-evidence", "audit-remote-2026");
+    const remoteForm = document.getElementById("remote-custom-form");
+    if (remoteForm === null) throw new Error("expected remote custom form");
+    remoteForm.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    expect(document.getElementById("announcement")?.textContent).toContain(
+      "Correct the highlighted remote-endpoint fields.",
+    );
+    expect(document.getElementById("remote-custom-origin")?.getAttribute("aria-invalid")).toBe(
+      "true",
+    );
+    expect(document.activeElement?.id).toBe("remote-custom-origin");
+    expect(document.getElementById("custom-rows")?.textContent).toContain("No custom candidates");
     expect(html).toContain("Download blocked:");
     expect(html).toContain("schemaErrors(model.schema");
   });
@@ -582,6 +600,32 @@ describe("policy generate", () => {
     expect((document.getElementById("custom-id") as unknown as { value: string }).value).toBe(
       "custom-mcp",
     );
+    set("remote-custom-id", "figma-remote");
+    set("remote-custom-origin", "https://mcp.figma.com");
+    set("remote-custom-approved-by", "security-admin");
+    set("remote-custom-authentication-mode", "oauth");
+    set("remote-custom-data-classes", "design-metadata");
+    set("remote-custom-tool-surface-digest", sha("d"));
+    set("remote-custom-verdict", "approved");
+    set("remote-custom-evidence", "audit-remote-2026");
+    const remoteForm = document.getElementById("remote-custom-form");
+    remoteForm?.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(document.getElementById("custom-rows")?.textContent).toContain("Remote origin:");
+    expect(document.getElementById("custom-rows")?.textContent).toContain("Content scan: none");
+    expect(
+      document.querySelectorAll('[data-workbench-kind="remote"][data-workbench-action]').length,
+    ).toBe(2);
+    document
+      .querySelector('[data-workbench-action="edit"][data-workbench-kind="remote"]')
+      ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(
+      (document.getElementById("remote-custom-origin") as unknown as { value: string }).value,
+    ).toBe("https://mcp.figma.com");
+    document
+      .querySelector('[data-workbench-action="remove"][data-workbench-kind="remote"]')
+      ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(document.getElementById("custom-rows")?.textContent).toContain("custom-mcp");
     document
       .querySelector('[data-workbench-action="remove"][data-workbench-kind="custom"]')
       ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));

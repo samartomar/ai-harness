@@ -209,6 +209,100 @@ describe("OrgPolicySchema", () => {
     });
   });
 
+  it("accepts a fenced remote custom MCP record without claiming a content scan", () => {
+    const parsed = parseOrgPolicy(
+      policy({
+        governance: {
+          policyVersion: "2026.08.0",
+          catalog: {
+            reviewed: [],
+            custom: [
+              {
+                id: "figma-remote",
+                kind: "mcp",
+                description: "Approved hosted design MCP",
+                capabilities: [],
+                risks: ["hosted endpoint"],
+                source: {
+                  type: "remote",
+                  origin: "https://mcp.figma.com",
+                  approval: {
+                    approvedBy: "security-admin",
+                    authenticationMode: "oauth",
+                    allowedDataClasses: ["design-metadata"],
+                  },
+                  toolSurfaceDigest:
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  verdict: "approved",
+                  contentScanned: false,
+                },
+                targets: ["claude"],
+                projector: "mcp-managed-settings",
+                lifecycle: "supported",
+                evidence: { record: "figma-remote-approval" },
+              },
+            ],
+          },
+          activations: [],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+
+    expect(parsed.governance?.catalog.custom[0]?.source).toMatchObject({
+      type: "remote",
+      origin: "https://mcp.figma.com",
+      verdict: "approved",
+      contentScanned: false,
+    });
+  });
+
+  it.each([
+    ["a path-bearing endpoint", "https://mcp.figma.com/mcp"],
+    ["an insecure endpoint", "http://mcp.figma.com"],
+  ])("refuses remote custom MCP records with %s", (_label, origin) => {
+    expect(() =>
+      parseOrgPolicy(
+        policy({
+          governance: {
+            policyVersion: "2026.08.0",
+            catalog: {
+              reviewed: [],
+              custom: [
+                {
+                  id: "figma-remote",
+                  kind: "mcp",
+                  description: "Approved hosted design MCP",
+                  capabilities: [],
+                  risks: ["hosted endpoint"],
+                  source: {
+                    type: "remote",
+                    origin,
+                    approval: {
+                      approvedBy: "security-admin",
+                      authenticationMode: "oauth",
+                      allowedDataClasses: ["design-metadata"],
+                    },
+                    toolSurfaceDigest:
+                      "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    verdict: "approved",
+                    contentScanned: false,
+                  },
+                  targets: ["claude"],
+                  projector: "mcp-managed-settings",
+                  lifecycle: "supported",
+                  evidence: { record: "figma-remote-approval" },
+                },
+              ],
+            },
+            activations: [],
+            authority: { approvals: [] },
+          },
+        }),
+      ),
+    ).toThrow(/org-policy is invalid/);
+  });
+
   it("rejects unsupported fields in command and risk-gate add items", () => {
     expect(() =>
       parseOrgPolicy(
