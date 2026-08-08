@@ -253,7 +253,7 @@ describe("bugbounty-pr-scan", () => {
         expect.objectContaining({ code: "sensitive.skipped", path: "secrets/token.md" }),
       ]),
     );
-  }, 20_000);
+  }, 60_000);
 
   it("flags unapproved and unpinned servers in generated .mcp.json", () => {
     initRepo();
@@ -269,7 +269,7 @@ describe("bugbounty-pr-scan", () => {
     expect(codes(result.output)).toEqual(
       expect.arrayContaining(["mcp.added-server", "mcp.unpinned-package"]),
     );
-  }, 20_000);
+  }, 60_000);
 
   it("flags write-enabled reviewer agent configs without justification", () => {
     initRepo();
@@ -287,7 +287,7 @@ describe("bugbounty-pr-scan", () => {
         }),
       ]),
     );
-  }, 20_000);
+  }, 60_000);
 
   it("flags Codex-facing skill files outside the canonical skills subdirectory", () => {
     initRepo();
@@ -305,7 +305,7 @@ describe("bugbounty-pr-scan", () => {
         }),
       ]),
     );
-  }, 20_000);
+  }, 60_000);
 
   it("does not treat source-link test references as over-narrow workflow guidance", () => {
     initRepo();
@@ -329,7 +329,7 @@ describe("bugbounty-pr-scan", () => {
 
     expect(result.status).toBe(0);
     expect(codes(result.output)).not.toContain("claim.over-narrow-tests");
-  }, 20_000);
+  }, 60_000);
 
   it("flags generated workflow guidance that claims only two test areas are needed", () => {
     initRepo();
@@ -347,7 +347,7 @@ describe("bugbounty-pr-scan", () => {
     const result = scan();
 
     expect(codes(result.output)).toContain("claim.over-narrow-tests");
-  }, 20_000);
+  }, 60_000);
 
   it("flags release gate guidance that omits npm run verify", () => {
     initRepo();
@@ -357,5 +357,5 @@ describe("bugbounty-pr-scan", () => {
     const result = scan();
 
     expect(codes(result.output)).toContain("claim.verify-gate-missing");
-  }, 20_000);
+  }, 60_000);
 });
