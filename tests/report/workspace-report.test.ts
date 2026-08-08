@@ -334,6 +334,7 @@ describe("report workspace rollup", () => {
         references: { repoContract: "ai-coding/project.json" },
         governance: {
           policyVersion: "2026.08.0",
+          supportedClis: ["claude"],
           catalog: { reviewed: [], custom: [] },
           activations: [],
           authority: { approvals: [] },

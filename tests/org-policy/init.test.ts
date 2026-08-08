@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { enterpriseBaselineAttestationCheck } from "../../src/baseline/attestation.js";
+import { SUPPORTED_CLIS } from "../../src/internals/clis.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { DigestAction, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -87,6 +88,7 @@ describe("policy init — starter org policy from observed fleet state", () => {
     expect(starter.minimumPosture).toBe("enterprise");
     expect(starter.references.repoContract).toBe("ai-coding/project.json");
     expect(starter.mcp?.allowedServers).toEqual(["context7", "github"]);
+    expect(starter.governance?.supportedClis).toEqual(SUPPORTED_CLIS);
     // Never clobber a policy that appears between plan and apply.
     expect(writeAction.expect).toEqual({ absent: true });
     expect(writeAction.once).toBe(true);
@@ -95,6 +97,11 @@ describe("policy init — starter org policy from observed fleet state", () => {
   it("records the resolved posture, not a hardcoded one", async () => {
     const { starter } = await planned(ctx({ posture: "enterprise" }));
     expect(starter.minimumPosture).toBe("enterprise");
+  });
+
+  it("leaves the allow-list absent for a vibe starter", async () => {
+    const { starter } = await planned(ctx({ posture: "vibe" }));
+    expect(starter.governance?.supportedClis).toBeUndefined();
   });
 
   it("lets a fresh enterprise setup pass attestation with no hand-editing (AC1)", async () => {

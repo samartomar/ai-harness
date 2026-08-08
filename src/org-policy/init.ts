@@ -4,6 +4,7 @@ import {
   collectCapabilitySurfaces,
   surfaceSummary,
 } from "../baseline/attestation.js";
+import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import {
   type CommandSpec,
@@ -115,11 +116,17 @@ function policyInitPlan(ctx: PlanContext): Plan {
     (surface) => surface.kind === "mcp" && surface.forceUndeclared === true,
   );
   const marketplace = collected.surfaces.filter((surface) => surface.kind === "marketplace");
+  const minimumPosture = ctx.posture ?? "vibe";
   const starter = {
     schemaVersion: 2,
-    minimumPosture: ctx.posture ?? "vibe",
+    minimumPosture,
     references: { repoContract: posix.join(ctx.contextDir, "project.json") },
     mcp: { allowedServers },
+    ...(minimumPosture === "enterprise"
+      ? {
+          governance: { supportedClis: [...SUPPORTED_CLIS] },
+        }
+      : {}),
   };
   // The starter must be valid by construction — parse it through the same
   // schema `policy validate` enforces before ever planning the write.

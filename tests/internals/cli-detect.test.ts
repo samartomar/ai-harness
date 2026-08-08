@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { assertGovernedMaterializationTargets } from "../../src/ecc/materialization-target.js";
 import {
   bareDefaultNarrowingNotice,
   confirmDetectedClis,
@@ -266,6 +267,91 @@ describe("bareDefault — the silent-narrowing signal", () => {
     expect(n).toContain("GEMINI.md");
     expect(n).toContain("--cli");
     expect(n).toContain("--detect");
+  });
+});
+
+function writeOrgPolicy({
+  minimumPosture = "vibe",
+  supportedClis,
+}: {
+  minimumPosture?: "vibe" | "enterprise";
+  supportedClis?: readonly string[];
+} = {}): void {
+  const governance: Record<string, unknown> = {
+    policyVersion: "1",
+    catalog: { reviewed: [], custom: [] },
+    activations: [],
+    authority: { approvals: [] },
+    externalCuration: [],
+    externalSelections: [],
+  };
+  if (supportedClis !== undefined) governance.supportedClis = supportedClis;
+  writeFileSync(
+    join(home, "aih-org-policy.json"),
+    JSON.stringify({
+      schemaVersion: 2,
+      minimumPosture,
+      references: { repoContract: "ai-coding/project.json" },
+      governance,
+    }),
+  );
+}
+
+describe("resolveTargets — org supported-CLI allow-list", () => {
+  it("allows a selected CLI that the org policy sanctions", async () => {
+    writeOrgPolicy({ supportedClis: ["claude", "codex"] });
+    await expect(resolveTargets(makeCtx({ cli: "codex" }))).resolves.toMatchObject({
+      clis: ["codex"],
+    });
+  });
+
+  it("leaves vibe posture unrestricted when the allow-list is absent", async () => {
+    writeOrgPolicy();
+    await expect(resolveTargets(makeCtx({ cli: "codex" }))).resolves.toMatchObject({
+      clis: ["codex"],
+    });
+  });
+
+  it.each(["vibe", "enterprise"] as const)(
+    "refuses an explicit selected CLI that the present %s allow-list does not sanction",
+    async (minimumPosture) => {
+      writeOrgPolicy({ minimumPosture, supportedClis: ["claude"] });
+      await expect(resolveTargets(makeCtx({ cli: "codex" }))).rejects.toThrow(
+        /organization sanction gate.*codex.*allowed: claude/i,
+      );
+    },
+  );
+
+  it("reports materialization capability separately after organization sanction succeeds", async () => {
+    writeOrgPolicy({ minimumPosture: "enterprise", supportedClis: ["zed"] });
+    const resolved = await resolveTargets(makeCtx({ cli: "zed" }));
+    expect(resolved.clis).toEqual(["zed"]);
+    expect(() => assertGovernedMaterializationTargets(resolved.clis)).toThrow(
+      /materialization capability gate.*zed is not a governed materialization target/i,
+    );
+  });
+
+  it("refuses --all-tools when any selected CLI is not sanctioned", async () => {
+    writeOrgPolicy({ supportedClis: ["claude", "codex"] });
+    await expect(resolveTargets(makeCtx({ allTools: true }))).rejects.toThrow(
+      /organization sanction gate.*cursor/i,
+    );
+  });
+
+  it("refuses a detected runnable CLI that is not sanctioned", async () => {
+    writeOrgPolicy({ supportedClis: ["claude"] });
+    await expect(resolveTargets(makeCtx({ detect: true }, ["codex"]))).rejects.toThrow(
+      /organization sanction gate.*codex/i,
+    );
+  });
+
+  it("refuses a marker-derived CLI that is not sanctioned", async () => {
+    writeOrgPolicy({ supportedClis: ["claude"] });
+    writeFileSync(
+      join(home, ".aih-config.json"),
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["claude", "codex"] }),
+    );
+    await expect(resolveTargets(makeCtx())).rejects.toThrow(/organization sanction gate.*codex/i);
   });
 });
 

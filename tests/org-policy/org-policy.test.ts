@@ -47,7 +47,7 @@ function ctx(): PlanContext {
 function policy(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     schemaVersion: 2,
-    minimumPosture: "enterprise",
+    minimumPosture: "vibe",
     references: { repoContract: "ai-coding/project.json" },
     ...overrides,
   };
@@ -203,10 +203,46 @@ describe("OrgPolicySchema", () => {
         }),
       ),
     ).toMatchObject({
-      minimumPosture: "enterprise",
+      minimumPosture: "vibe",
       references: { repoContract: "ai-coding/project.json" },
       command: { deny: { remove: ["printenv*"] } },
     });
+  });
+
+  it("accepts an org supported-CLI allow-list from the registry", () => {
+    const parsed = parseOrgPolicy(
+      policy({
+        governance: {
+          policyVersion: "2026.08.0",
+          catalog: { reviewed: [], custom: [] },
+          activations: [],
+          authority: { approvals: [] },
+          supportedClis: ["claude", "codex", "kiro"],
+        },
+      }),
+    );
+
+    expect(parsed.governance?.supportedClis).toEqual(["claude", "codex", "kiro"]);
+  });
+
+  it("rejects unknown or duplicate org supported-CLI entries", () => {
+    const policyWithSupportedClis = (supportedClis: string[]) =>
+      policy({
+        governance: {
+          policyVersion: "2026.08.0",
+          catalog: { reviewed: [], custom: [] },
+          activations: [],
+          authority: { approvals: [] },
+          supportedClis,
+        },
+      });
+
+    expect(() => parseOrgPolicy(policyWithSupportedClis(["claude", "not-a-cli"]))).toThrow(
+      /org-policy is invalid/,
+    );
+    expect(() => parseOrgPolicy(policyWithSupportedClis(["claude", "claude"]))).toThrow(
+      /supported CLI claude appears more than once/,
+    );
   });
 
   it("accepts a fenced remote custom MCP record without claiming a content scan", () => {
@@ -214,6 +250,7 @@ describe("OrgPolicySchema", () => {
       policy({
         governance: {
           policyVersion: "2026.08.0",
+          supportedClis: ["claude"],
           catalog: {
             reviewed: [],
             custom: [
@@ -266,6 +303,7 @@ describe("OrgPolicySchema", () => {
         policy({
           governance: {
             policyVersion: "2026.08.0",
+            supportedClis: ["claude"],
             catalog: {
               reviewed: [],
               custom: [
@@ -619,7 +657,7 @@ describe("orgPolicyProjectionActions", () => {
       { ...ctx(), posture: "enterprise" },
       parseOrgPolicy(
         policy({
-          minimumPosture: "enterprise",
+          minimumPosture: "vibe",
           mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
         }),
       ),
@@ -639,6 +677,7 @@ describe("orgPolicyProjectionActions", () => {
       ctx(),
       parseOrgPolicy(
         policy({
+          minimumPosture: "vibe",
           command: { deny: { add: [{ pattern: "terraform destroy*" }] } },
           mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
         }),
@@ -647,7 +686,7 @@ describe("orgPolicyProjectionActions", () => {
     const managed = writes(actions).find((w) => w.path === ".claude/managed-settings.json");
     expect(managed?.json).toMatchObject({
       organizationPolicy: {
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         references: { repoContract: "ai-coding/project.json" },
       },
       allowManagedMcpServersOnly: true,
@@ -660,7 +699,7 @@ describe("orgPolicyProjectionActions", () => {
       { ...ctx(), posture: "enterprise" },
       parseOrgPolicy(
         policy({
-          minimumPosture: "enterprise",
+          minimumPosture: "vibe",
           mcp: {
             allowedServers: ["code-review-graph", "sequential-thinking"],
             allowManagedOnly: true,
@@ -681,7 +720,7 @@ describe("orgPolicyProjectionActions", () => {
       { ...ctx(), posture: "enterprise" },
       parseOrgPolicy(
         policy({
-          minimumPosture: "enterprise",
+          minimumPosture: "vibe",
           mcp: { allowedServers: [], allowManagedOnly: true },
         }),
       ),
@@ -706,7 +745,7 @@ describe("orgPolicyProjectionActions", () => {
       { ...ctx(), posture: "enterprise" },
       parseOrgPolicy(
         policy({
-          minimumPosture: "enterprise",
+          minimumPosture: "vibe",
           mcp: {
             allowedServers: ["code-review-graph", "sequential-thinking"],
             allowManagedOnly: true,
@@ -735,7 +774,7 @@ describe("orgPolicyProjectionActions", () => {
     const activeCtx: PlanContext = { ...ctx(), posture: "enterprise", apply: true };
     const activePolicy = parseOrgPolicy(
       policy({
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
       }),
     );
@@ -750,7 +789,7 @@ describe("orgPolicyProjectionActions", () => {
 
     const inactivePolicy = parseOrgPolicy(
       policy({
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: false },
       }),
     );
@@ -793,7 +832,7 @@ describe("orgPolicyProjectionActions", () => {
     const activeCtx: PlanContext = { ...ctx(), posture: "enterprise", apply: true };
     const activePolicy = parseOrgPolicy(
       policy({
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
       }),
     );
@@ -804,7 +843,7 @@ describe("orgPolicyProjectionActions", () => {
 
     const inactivePolicy = parseOrgPolicy(
       policy({
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: false },
       }),
     );
@@ -830,7 +869,7 @@ describe("orgPolicyProjectionActions", () => {
     const activeCtx: PlanContext = { ...ctx(), posture: "enterprise", apply: true };
     const activePolicy = parseOrgPolicy(
       policy({
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
       }),
     );
@@ -841,7 +880,7 @@ describe("orgPolicyProjectionActions", () => {
 
     const inactivePolicy = parseOrgPolicy(
       policy({
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: false },
       }),
     );
@@ -871,7 +910,7 @@ describe("orgPolicyDriftProbes — target scope (#554)", () => {
   // missing projection is a hard fail rather than a posture-downgraded warning.
   const denyPolicy = () =>
     policy({
-      minimumPosture: "enterprise",
+      minimumPosture: "vibe",
       command: { deny: { add: [{ pattern: "terraform destroy*" }] } },
     });
 
@@ -906,7 +945,7 @@ describe("orgPolicyDriftProbes — target scope (#554)", () => {
   // one must carry a DISTINCT code so an agent escalates instead of looping.
   it("names aih prune for a marker-proven dropped-target residue", async () => {
     const managedOnly = policy({
-      minimumPosture: "enterprise",
+      minimumPosture: "vibe",
       mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
     });
     writeScopePolicy(managedOnly);
@@ -965,7 +1004,7 @@ describe("orgPolicyDriftProbes — target scope (#554)", () => {
   it("does not prescribe policy projection for an untargeted managed allowlist", async () => {
     writeScopePolicy(
       policy({
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
       }),
     );
@@ -1054,8 +1093,8 @@ describe("orgPolicyDriftProbes", () => {
   });
 
   it("fails closed at enterprise when local settings drift from org policy", async () => {
-    writePolicy(policy({ minimumPosture: "enterprise" }));
-    writeManagedSettings({ organizationPolicy: { minimumPosture: "enterprise" } });
+    writePolicy(policy({ minimumPosture: "vibe" }));
+    writeManagedSettings({ organizationPolicy: { minimumPosture: "vibe" } });
     const c: PlanContext = { ...ctx(), posture: "enterprise" };
     const probes = orgPolicyDriftProbes(c);
     const check = await probes
@@ -1100,7 +1139,7 @@ describe("orgPolicyDriftProbes", () => {
   });
 
   it("projects drift expectations at the resolved posture, not only the policy floor", () => {
-    writePolicy(policy({ minimumPosture: "enterprise" }));
+    writePolicy(policy({ minimumPosture: "vibe" }));
     const c: PlanContext = { ...ctx(), posture: "enterprise", postureSource: "flag" };
     const probes = orgPolicyDriftProbes(c);
 
@@ -1113,7 +1152,7 @@ describe("orgPolicyDriftProbes", () => {
   // #501 — an in-place upgrade leaves managed artifacts aih itself generated
   // under an older shape. That is a generation delta (aih's generated output
   // evolved), not user drift, and the message must name the re-projection command.
-  function writeOldGenerationFixture(minimumPosture: "vibe" | "enterprise" = "enterprise"): void {
+  function writeOldGenerationFixture(minimumPosture: "vibe" | "enterprise" = "vibe"): void {
     writePolicy(
       policy({
         minimumPosture,
@@ -1173,6 +1212,7 @@ describe("orgPolicyDriftProbes", () => {
 
   it("fails closed as drift when a generation-shaped delta is mixed with a real edit", async () => {
     const value = policy({
+      minimumPosture: "vibe",
       mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
     });
     const parsed = parseOrgPolicy(value);
@@ -1185,8 +1225,9 @@ describe("orgPolicyDriftProbes", () => {
     writeManagedSettings({
       allowManagedMcpServersOnly: true,
       allowedMcpServers: [{ serverCommand: ["uvx", "code-review-graph@2.1.0", "serve"] }],
-      // a value both sides carry but with different content: a real local edit
-      organizationPolicy: { ...expected.organizationPolicy, minimumPosture: "vibe" },
+      // A generation-shaped old allowlist plus an unrelated operator key is real drift.
+      operatorManagedKey: true,
+      organizationPolicy: { ...expected.organizationPolicy, minimumPosture: "enterprise" },
     });
 
     const check = await orgPolicyDriftProbes(c)
@@ -1237,8 +1278,8 @@ describe("orgPolicyIntegrityProbes", () => {
   });
 
   it("flags working-tree policy drift from HEAD", async () => {
-    const head = JSON.stringify(policy({ minimumPosture: "enterprise" }));
-    writePolicy(policy({ minimumPosture: "enterprise" }));
+    const head = JSON.stringify(policy({ minimumPosture: "vibe" }));
+    writePolicy(policy({ minimumPosture: "vibe" }));
     const run = fakeRunner((argv) => {
       if (argv[0] === "git" && argv.includes(`HEAD:aih-org-policy.json`)) {
         return { code: 0, stdout: head };

@@ -1,6 +1,9 @@
 import { type ZodTypeAny, z } from "zod";
 import { PolicyAuthorityReceiptSchema } from "../org-policy/authority.js";
-import { OrgPolicySchema } from "../org-policy/schema.js";
+import {
+  enterpriseSupportedClisJsonSchemaConstraint,
+  OrgPolicySchema,
+} from "../org-policy/schema.js";
 import { AihConfigSchema } from "./marker.js";
 
 export interface GeneratedConfigSchema {
@@ -20,7 +23,10 @@ export function generatedConfigSchemas(): GeneratedConfigSchema[] {
     },
     {
       path: "schemas/aih-org-policy.schema.json",
-      schema: schemaFor("aih-org-policy.json", OrgPolicySchema),
+      schema: {
+        ...schemaFor("aih-org-policy.json", OrgPolicySchema),
+        allOf: [enterpriseSupportedClisJsonSchemaConstraint()],
+      },
     },
     {
       path: "schemas/aih-policy-authority-receipt.schema.json",

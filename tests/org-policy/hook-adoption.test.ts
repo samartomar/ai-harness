@@ -140,6 +140,7 @@ describe("A1 — adoption captures the destination's own bytes and emits the pol
       references: { repoContract: "ai-coding/project.json" },
       governance: {
         policyVersion: "2026-08-06.1",
+        supportedClis: ["claude"],
         catalog: { reviewed: [], custom: [] },
         hookRegistrations: adopted,
       },

@@ -12,6 +12,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Org policies must use `schemaVersion: 2`; schema version 1 and the removed
   `team` value fail closed with a migration message directing administrators to
   set `schemaVersion: 2` and choose `vibe` or `enterprise`.
+- **Breaking:** At Enterprise posture, an org policy must carry a non-empty
+  `governance.supportedClis` allow-list drawn from the supported CLI registry.
+  Its absence fails closed with the current registry ids and a paste-all remedy;
+  wildcard sentinels are unsupported. At Vibe posture absence is unrestricted,
+  while a present list enforces an organization sanction gate at either posture.
 
 ## [4.0.0] - 2026-08-07
 

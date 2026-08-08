@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Command } from "commander";
 import { afterEach, describe, expect, it } from "vitest";
 import { runCapability } from "../../src/commands/run.js";
+import { SUPPORTED_CLIS } from "../../src/internals/clis.js";
 import { upsertTextBlock } from "../../src/internals/envfile.js";
 import { executePlan, resolveContents } from "../../src/internals/execute.js";
 import type { DigestAction, PlanContext, WriteAction } from "../../src/internals/plan.js";
@@ -55,6 +56,7 @@ function writeMcpPolicy(
       schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
+      governance: { supportedClis: [...SUPPORTED_CLIS] },
       mcp,
     }),
   );
@@ -191,6 +193,7 @@ describe("mcp enterprise modes", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
           disabledServers: ["code-review-graph"],
         },
@@ -773,6 +776,7 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
           githubHost: "https://evil.example",
           incumbentHosts: ["evil.example"],
@@ -803,6 +807,7 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
           githubHost: "https://github.internal.example",
           incumbentHosts: ["github.internal.example"],
@@ -815,6 +820,7 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
           incumbentHosts: ["api.githubcopilot.com"],
         },
@@ -1026,6 +1032,7 @@ describe("aih mcp — remote scope emits SSO gateway doc (cloud is doc, not writ
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
           allowedServers: ["code-review-graph", "better-email", "missing-server"],
           allowManagedOnly: false,
@@ -1176,6 +1183,7 @@ describe("aih mcp — MCP write hygiene", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
           githubHost: "https://github.internal.example",
           incumbentHosts: ["github.internal.example"],
@@ -2096,6 +2104,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
           allowedServers: ["context7"],
           approvals: [
@@ -2271,6 +2280,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
           allowedServers: ["code-review-graph"],
           allowManagedOnly: true,
@@ -2299,6 +2309,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
           githubHost: "https://github.internal.example",
           incumbentHosts: ["github.internal.example"],
@@ -2348,6 +2359,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
           allowedServers: ["code-review-graph", "github"],
           allowManagedOnly: true,
@@ -2373,6 +2385,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
           disabledServers: ["github"],
         },
@@ -2402,6 +2415,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
           disabledServers: ["github", "context7"],
         },
@@ -2426,6 +2440,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
           disabledServers: ["github"],
         },
@@ -2450,6 +2465,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
       }),
     );
@@ -2485,6 +2501,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
           allowedServers: ["code-review-graph", "sequential-thinking"],
           allowManagedOnly: true,
@@ -2536,6 +2553,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
           allowedServers: ["context7"],
           approvals: [
@@ -2577,6 +2595,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
           allowedServers: ["context7"],
           approvals: [
@@ -2598,6 +2617,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
           allowedServers: ["github"],
           incumbentHosts: ["api.githubcopilot.com"],
@@ -2680,6 +2700,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
       schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
+      governance: { supportedClis: [...SUPPORTED_CLIS] },
       mcp: { allowedServers: ["github"], allowManagedOnly: false },
     });
     writeFileSync(join(root, "aih-org-policy.json"), changed);
@@ -2715,6 +2736,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         references: { repoContract: "ai-coding/project.json" },
         governance: {
           policyVersion: "2026.08.0",
+          supportedClis: ["claude"],
           catalog: { reviewed: [], custom: [] },
           activations: [],
           authority: { approvals: [] },

@@ -74,6 +74,7 @@ function fullAuthoringPolicy(): Record<string, unknown> {
     references: { repoContract: "ai-coding/project.json" },
     governance: {
       policyVersion: "2026.08",
+      supportedClis: ["claude"],
       catalog: {
         reviewed: [],
         custom: [

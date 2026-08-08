@@ -155,6 +155,21 @@ describe("mcpServersDigest", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          supportedClis: [
+            "claude",
+            "codex",
+            "cursor",
+            "antigravity",
+            "gemini",
+            "copilot",
+            "windsurf",
+            "opencode",
+            "zed",
+            "kimi",
+            "kiro",
+          ],
+        },
         mcp: { incumbentHosts: [], disabledServers: ["context7"] },
       }),
     );
@@ -175,6 +190,21 @@ describe("mcpServersDigest", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          supportedClis: [
+            "claude",
+            "codex",
+            "cursor",
+            "antigravity",
+            "gemini",
+            "copilot",
+            "windsurf",
+            "opencode",
+            "zed",
+            "kimi",
+            "kiro",
+          ],
+        },
         mcp: { disabledServers: ["github"] },
       }),
     );
@@ -1195,7 +1225,22 @@ describe("skillGovernanceDigest", () => {
       JSON.stringify({
         schemaVersion: 2,
         minimumPosture: "enterprise",
-        references: { repoContract: `${DIR}/project.md` },
+        references: { repoContract: `/project.md` },
+        governance: {
+          supportedClis: [
+            "claude",
+            "codex",
+            "cursor",
+            "antigravity",
+            "gemini",
+            "copilot",
+            "windsurf",
+            "opencode",
+            "zed",
+            "kimi",
+            "kiro",
+          ],
+        },
       }),
     );
     const d = skillGovernanceDigest(ctx());

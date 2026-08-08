@@ -6,6 +6,7 @@ function policy(override: Record<string, unknown> = {}) {
     schemaVersion: 2,
     minimumPosture: "enterprise",
     references: { repoContract: "ai-coding/project.json" },
+    governance: { supportedClis: ["claude"] },
     trust: {
       baselineOverrides: [
         {

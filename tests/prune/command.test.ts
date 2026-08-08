@@ -157,6 +157,7 @@ describe("aih prune command", () => {
           schemaVersion: 2,
           minimumPosture: "enterprise",
           references: { repoContract: "ai-coding/project.json" },
+          governance: { supportedClis: ["claude", "kiro"] },
           mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
         }),
       );

@@ -4,7 +4,7 @@ import {
   type PolicyAuthorityReceipt,
   type VerifiedPolicyAuthority,
 } from "./authority.js";
-import type { OrgPolicy } from "./schema.js";
+import { governanceOwnsAihSurfaces, type OrgPolicy } from "./schema.js";
 
 /**
  * Assertions a detector made about a completed scan. A severe label is
@@ -720,9 +720,8 @@ export function resolveEffectiveOrgPolicy(
   policy: OrgPolicy,
   context: EffectivePolicyContext = {},
 ): EffectiveOrgPolicy {
-  const governance = policy.governance;
   const authority = isVerifiedPolicyAuthority(context.authority) ? context.authority : undefined;
-  if (governance === undefined) {
+  if (!governanceOwnsAihSurfaces(policy)) {
     return {
       candidates: [],
       activeMcpServerIds: [],
@@ -736,6 +735,7 @@ export function resolveEffectiveOrgPolicy(
       },
     };
   }
+  const governance = policy.governance;
   const candidates = [
     ...governance.catalog.reviewed.map((candidate) =>
       resolveCandidate(policy, governance, candidate, "reviewed", context),
@@ -954,6 +954,7 @@ function prefixedConsumers(
 /** Exact, mechanically compared schema-leaf consumer contract. */
 export const POLICY_ENGINE_FIELD_CONSUMERS: Readonly<Record<string, string>> = Object.freeze({
   "governance.policyVersion": "effective resolver: approval policy-version and report consumer",
+  "governance.supportedClis.*": "target resolution: organization sanction gate",
   ...prefixedConsumers("governance.activations.*", ACTIVATION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.authority", AUTHORITY_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.externalCuration.*", EXTERNAL_CURATION_LEAF_CONSUMERS),

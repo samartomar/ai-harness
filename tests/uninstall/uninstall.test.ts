@@ -105,6 +105,7 @@ async function managedMcpProjectionFixture(): Promise<void> {
       schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
+      governance: { supportedClis: ["claude"] },
       mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
     }),
   );
@@ -182,6 +183,7 @@ async function coOwnedClaudeContextFixture(): Promise<void> {
       schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: ".claude/project.json" },
+      governance: { supportedClis: ["claude"] },
       mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
     }),
   );

@@ -1059,7 +1059,7 @@ describe("doctor — MCP managed allowlist drift", () => {
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
         schemaVersion: 2,
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
       }),
@@ -1078,7 +1078,7 @@ describe("doctor — MCP managed allowlist drift", () => {
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
         schemaVersion: 2,
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { allowedServers: [], allowManagedOnly: true },
       }),
@@ -1106,7 +1106,7 @@ describe("doctor — MCP managed allowlist drift", () => {
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
         schemaVersion: 2,
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
       }),
@@ -1172,14 +1172,14 @@ describe("doctor — org-policy drift", () => {
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
         schemaVersion: 2,
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         references: { repoContract: "ai-coding/project.json" },
       }),
     );
     mkdirSync(join(dir, ".claude"), { recursive: true });
     writeFileSync(
       join(dir, ".claude", "managed-settings.json"),
-      JSON.stringify({ organizationPolicy: { minimumPosture: "enterprise" } }),
+      JSON.stringify({ organizationPolicy: { minimumPosture: "vibe" } }),
     );
 
     const c = rooted();
@@ -1222,7 +1222,7 @@ describe("doctor — enterprise baseline attestation", () => {
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
         schemaVersion: 2,
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         references: { repoContract: "ai-coding/project.json" },
         mcp: { allowedServers: [], allowManagedOnly: true },
       }),
@@ -1795,6 +1795,7 @@ describe("doctor — Claude probe target scope from the committed marker (#554)"
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: ["claude", "kiro"] },
         command: { deny: { add: [{ pattern: "terraform destroy*" }] } },
         ...(mcp === undefined ? {} : { mcp }),
       }),

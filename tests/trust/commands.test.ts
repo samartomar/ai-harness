@@ -100,6 +100,21 @@ describe("trust allow/list/pin commands", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          supportedClis: [
+            "claude",
+            "codex",
+            "cursor",
+            "antigravity",
+            "gemini",
+            "copilot",
+            "windsurf",
+            "opencode",
+            "zed",
+            "kimi",
+            "kiro",
+          ],
+        },
         trust: { approvedSources: [{ owner: "owner", repo: "repo" }] },
       }),
     );
@@ -130,6 +145,21 @@ describe("trust allow/list/pin commands", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          supportedClis: [
+            "claude",
+            "codex",
+            "cursor",
+            "antigravity",
+            "gemini",
+            "copilot",
+            "windsurf",
+            "opencode",
+            "zed",
+            "kimi",
+            "kiro",
+          ],
+        },
         trust: {
           skillspector: {
             approvedDigests: [
@@ -187,6 +217,21 @@ describe("trust allow/list/pin commands", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          supportedClis: [
+            "claude",
+            "codex",
+            "cursor",
+            "antigravity",
+            "gemini",
+            "copilot",
+            "windsurf",
+            "opencode",
+            "zed",
+            "kimi",
+            "kiro",
+          ],
+        },
         trust: { approvedSources: [{ owner: "owner", repo: "repo", reason: "reviewed" }] },
       }),
     );

@@ -102,6 +102,37 @@ describe("policy studio component relations", () => {
     expect(note).toContain("claude and codex");
   });
 
+  it("authors sanctioned CLIs independently of policy activation targets", () => {
+    const window = studio();
+    click(window, `[data-sanctioned-cli="kiro"]`);
+    click(window, `[data-sanctioned-cli="codex"]`);
+    const preview = window.document.getElementById("config-preview") as unknown as {
+      value: string;
+    } | null;
+    if (preview === null) throw new Error("expected authored policy preview");
+    const policy = JSON.parse(preview.value);
+    expect(policy.governance.supportedClis.sort()).toEqual(["codex", "kiro"]);
+    expect(policy.governance.activations).toEqual([]);
+    expect(window.document.getElementById("rail-host-note")?.textContent).toContain("2 sanctioned");
+    click(window, `[data-sanctioned-cli="kiro"]`);
+    expect(JSON.parse(preview.value).governance.supportedClis).toEqual(["codex"]);
+    expect(
+      window.document.querySelector('[data-sanctioned-cli="kiro"]')?.getAttribute("aria-disabled"),
+    ).not.toBe("true");
+  });
+
+  it("makes the Enterprise preset write an explicit all-registry allow-list", () => {
+    const window = studio();
+    click(window, '[data-preset="enterprise"]');
+    const preview = window.document.getElementById("config-preview") as unknown as {
+      value: string;
+    } | null;
+    if (preview === null) throw new Error("expected authored policy preview");
+    const policy = JSON.parse(preview.value);
+    expect(policy.minimumPosture).toBe("enterprise");
+    expect(policy.governance.supportedClis).toEqual(model.catalog.hosts.map((host) => host.id));
+  });
+
   it("gives every inventory row a hover description", () => {
     const window = studio();
     const rows = [...window.document.querySelectorAll("#framework-rows .row .rid")];

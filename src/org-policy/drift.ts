@@ -33,7 +33,12 @@ import {
 } from "../mcp/managed-projection.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import { orgPolicyProjectionActions, verifiedOrgPolicyProjectionActions } from "./project.js";
-import { OrgPolicyError, orgPolicyPath, readOrgPolicy } from "./schema.js";
+import {
+  governanceOwnsAihSurfaces,
+  OrgPolicyError,
+  orgPolicyPath,
+  readOrgPolicy,
+} from "./schema.js";
 
 const POSTURE_RANK: Record<Posture, number> = { vibe: 0, enterprise: 1 };
 
@@ -654,7 +659,7 @@ export function orgPolicyDriftProbes(ctx: PlanContext): ProbeAction[] {
   };
   let actions: WriteAction[];
   try {
-    if (policy.governance !== undefined) return [];
+    if (governanceOwnsAihSurfaces(policy)) return [];
     // Legacy managed-settings drift has no governance activation. Keep its
     // historical Claude-residue inspection; governed inventories use the
     // verified path below with the actual invocation target set.
@@ -690,7 +695,7 @@ export async function verifiedOrgPolicyDriftProbes(ctx: PlanContext): Promise<Pr
   } catch (err) {
     return [invalidPolicyProbe(err)];
   }
-  if (policy === undefined || policy.governance === undefined) return orgPolicyDriftProbes(ctx);
+  if (!governanceOwnsAihSurfaces(policy)) return orgPolicyDriftProbes(ctx);
   const posture = ctx.posture ?? policy.minimumPosture;
   const projectionCtx: PlanContext = {
     ...ctx,

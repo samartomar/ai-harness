@@ -55,6 +55,7 @@ function governedPolicy(registrations: readonly HookRegistration[] | undefined) 
     minimumPosture: "enterprise",
     references: { repoContract: "ai-coding/project.json" },
     governance: {
+      supportedClis: ["claude"],
       policyVersion: "2026-08-06.1",
       catalog: { reviewed: [], custom: [] },
       ...(registrations === undefined ? {} : { hookRegistrations: registrations }),
@@ -102,6 +103,7 @@ function usageAndRegistrationsPolicy(
     references: { repoContract: "ai-coding/project.json" },
     governance: {
       policyVersion: "2026-08-06.1",
+      supportedClis: ["claude"],
       catalog: {
         reviewed: [
           {

@@ -27,6 +27,7 @@ function orgPolicy(minimumPosture: string, path = join(dir, "aih-org-policy.json
       schemaVersion: 2,
       minimumPosture,
       references: { repoContract: "ai-coding/project.json" },
+      ...(minimumPosture === "enterprise" ? { governance: { supportedClis: ["claude"] } } : {}),
     }),
   );
 }

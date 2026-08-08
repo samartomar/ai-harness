@@ -43,6 +43,21 @@ describe("resolveInternalScopes", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          supportedClis: [
+            "claude",
+            "codex",
+            "cursor",
+            "antigravity",
+            "gemini",
+            "copilot",
+            "windsurf",
+            "opencode",
+            "zed",
+            "kimi",
+            "kiro",
+          ],
+        },
         trust: { internalScopes: ["policy", "@shared"] },
       }),
     );

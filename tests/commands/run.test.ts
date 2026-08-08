@@ -225,6 +225,7 @@ describe("runCapability — posture precedence ladder (org floor > flag > marker
         schemaVersion: 2,
         minimumPosture,
         references: { repoContract: "ai-coding/project.json" },
+        ...(minimumPosture === "enterprise" ? { governance: { supportedClis: ["claude"] } } : {}),
       }),
     );
   }

@@ -7,7 +7,7 @@ import type { Action, PlanContext } from "../internals/plan.js";
 import { writeJson } from "../internals/plan.js";
 import { isExternalMcp, mcpConfigAbs, mcpEntries } from "../mcp/render.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
-import type { OrgPolicy } from "../org-policy/schema.js";
+import { governanceOwnsAihSurfaces, type OrgPolicy } from "../org-policy/schema.js";
 import type { RepoStack } from "../profile/scan.js";
 import type { EccComponentSelection, EccMcpComponentId } from "./components.js";
 import type { ProjectRegistration } from "./registration.js";
@@ -39,7 +39,7 @@ export function orgAllowedEccMcpComponents(
   components: readonly EccMcpComponentId[],
   policy: OrgPolicy | undefined,
 ): EccMcpComponentId[] {
-  if (policy?.governance !== undefined) return [];
+  if (governanceOwnsAihSurfaces(policy)) return [];
   const disabled = new Set(policy?.mcp?.disabledServers ?? []);
   const allowManagedOnly = policy?.mcp?.allowManagedOnly === true;
   const allowed = new Set(policy?.mcp?.allowedServers ?? []);

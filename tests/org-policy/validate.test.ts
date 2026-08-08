@@ -49,11 +49,22 @@ function write(rel: string, content: string): void {
   writeFileSync(p, content);
 }
 
+function enterpriseGovernance(): Record<string, unknown> {
+  return {
+    policyVersion: "1",
+    catalog: { reviewed: [], custom: [] },
+    activations: [],
+    authority: { approvals: [] },
+    supportedClis: ["claude"],
+  };
+}
+
 function validPolicy(): string {
   return `${JSON.stringify({
     schemaVersion: 2,
     minimumPosture: "enterprise",
     references: { repoContract: "ai-coding/project.json" },
+    governance: enterpriseGovernance(),
   })}\n`;
 }
 
@@ -71,6 +82,7 @@ function validBundle(overrides: Record<string, unknown> = {}): string {
       schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
+      governance: enterpriseGovernance(),
     },
     ...overrides,
   })}\n`;
@@ -184,6 +196,7 @@ describe("policy validate — local aih-org-policy.json", () => {
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         governance: {
+          supportedClis: ["claude"],
           policyVersion: "2026.08.0",
           catalog: { reviewed: [], custom: [] },
           activations: [],
@@ -204,6 +217,39 @@ describe("policy validate — local aih-org-policy.json", () => {
 
     const [evaluation] = await evaluateChecks(ctx());
     expect(evaluation?.verdict).toBe("pass");
+  });
+
+  it("policy project enforces the org supported-CLI allow-list on resolved targets", async () => {
+    const policy = {
+      schemaVersion: 2,
+      minimumPosture: "enterprise",
+      references: { repoContract: "ai-coding/project.json" },
+      governance: {
+        policyVersion: "2026.08.0",
+        catalog: { reviewed: [], custom: [] },
+        activations: [],
+        authority: { approvals: [] },
+        supportedClis: ["codex"],
+      },
+    };
+    write("aih-org-policy.json", JSON.stringify(policy));
+
+    await expect(
+      policyProjectCommand.plan({ ...ctx(), targets: ["codex"] }),
+    ).resolves.toMatchObject({
+      capability: "policy project",
+    });
+
+    write(
+      "aih-org-policy.json",
+      JSON.stringify({
+        ...policy,
+        governance: { ...policy.governance, supportedClis: ["claude"] },
+      }),
+    );
+    await expect(policyProjectCommand.plan({ ...ctx(), targets: ["codex"] })).rejects.toThrow(
+      /organization sanction gate.*codex.*Allowed: claude/,
+    );
   });
 
   it("honors the AIH_ORG_POLICY env override", async () => {
@@ -262,6 +308,14 @@ describe("policy validate — --bundle envelope mode", () => {
 });
 
 describe("policy evaluate — effective governed candidates", () => {
+  it("enforces the org supported-CLI allow-list before evaluating requested targets", async () => {
+    write("aih-org-policy.json", validPolicy());
+
+    await expect(policyEvaluateCommand.plan(ctx({ targets: ["codex"] }))).rejects.toThrow(
+      /organization sanction gate.*codex.*Allowed: claude/,
+    );
+  });
+
   it("is read-only and exports a deterministic requested-versus-effective digest", async () => {
     write(
       "aih-org-policy.json",
@@ -271,6 +325,7 @@ describe("policy evaluate — effective governed candidates", () => {
         references: { repoContract: "ai-coding/project.json" },
         governance: {
           policyVersion: "2026.08.0",
+          supportedClis: ["claude"],
           catalog: { reviewed: [], custom: [] },
           activations: [],
           authority: { approvals: [] },
@@ -302,6 +357,7 @@ describe("policy evaluate — effective governed candidates", () => {
         references: { repoContract: "ai-coding/project.json" },
         governance: {
           policyVersion: "2026.08.0",
+          supportedClis: ["claude"],
           catalog: {
             reviewed: [
               {
@@ -348,6 +404,7 @@ describe("policy evaluate — effective governed candidates", () => {
       references: { repoContract: "ai-coding/project.json" },
       governance: {
         policyVersion: "2026.08.0",
+        supportedClis: ["claude"],
         catalog: {
           reviewed: [
             {
@@ -385,6 +442,7 @@ describe("policy evaluate — effective governed candidates", () => {
         references: { repoContract: "ai-coding/project.json" },
         governance: {
           policyVersion: "2026.08.0",
+          supportedClis: ["claude"],
           catalog: { reviewed: [], custom: [] },
           activations: [],
           authority: { approvals: [] },
