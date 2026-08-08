@@ -36,7 +36,7 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
     apply: false,
     verify: false,
     json: false,
-    posture: "team",
+    posture: "enterprise",
     postureSource: "flag",
     run,
     host: makeHostAdapter({ platform: "linux", run, env: {} }),
@@ -129,7 +129,7 @@ describe("guardrails command", () => {
   });
 
   it("at team posture writes project managed command policy and CI sidecar", async () => {
-    const p = await command.plan(ctx({ posture: "team" }));
+    const p = await command.plan(ctx({ posture: "enterprise" }));
     const managed = writeAt(p.actions, ".claude/managed-settings.json");
     expect(managed?.merge).toBe(true);
     expect(JSON.stringify(managed?.json)).toContain("commandPolicy");
@@ -181,7 +181,7 @@ describe("guardrails command", () => {
   });
 
   it("wires the sidecar to a generated consumer: the risk-gates PR-diff workflow (team+)", async () => {
-    const p = await command.plan(ctx({ posture: "team" }));
+    const p = await command.plan(ctx({ posture: "enterprise" }));
     const wf = writeAt(p.actions, ".github/workflows/risk-gates.yml");
     expect(wf).toBeDefined();
     expect(wf?.merge).toBeFalsy(); // aih-owned generated file, like sca.yml
@@ -196,7 +196,7 @@ describe("guardrails command", () => {
   });
 
   it("emits the identical risk-gates workflow at enterprise (required-ness lives in the sidecar)", async () => {
-    const team = await command.plan(ctx({ posture: "team" }));
+    const team = await command.plan(ctx({ posture: "enterprise" }));
     const enterprise = await command.plan(ctx({ posture: "enterprise" }));
     const teamYaml = writeAt(team.actions, ".github/workflows/risk-gates.yml")?.contents;
     const entYaml = writeAt(enterprise.actions, ".github/workflows/risk-gates.yml")?.contents;

@@ -132,7 +132,7 @@ function optionSingleLine(ctx: PlanContext, key: string, label: string): string 
 
 function emptyPolicy(ctx: PlanContext): OrgPolicy {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     minimumPosture: "vibe",
     references: { repoContract: `${ctx.contextDir}/project.json` },
   };

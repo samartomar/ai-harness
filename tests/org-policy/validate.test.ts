@@ -12,6 +12,7 @@ import { verifiedOrgPolicyProjectionActions } from "../../src/org-policy/project
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 import {
   policyEvaluateCommand,
+  policyProjectCommand,
   policyValidateCommand,
   policyVerifyCommand,
 } from "../../src/org-policy/validate.js";
@@ -50,8 +51,8 @@ function write(rel: string, content: string): void {
 
 function validPolicy(): string {
   return `${JSON.stringify({
-    schemaVersion: 1,
-    minimumPosture: "team",
+    schemaVersion: 2,
+    minimumPosture: "enterprise",
     references: { repoContract: "ai-coding/project.json" },
   })}\n`;
 }
@@ -67,8 +68,8 @@ function validBundle(overrides: Record<string, unknown> = {}): string {
     issuer: "platform-team",
     issuedAt: "2026-07-01T00:00:00Z",
     policy: {
-      schemaVersion: 1,
-      minimumPosture: "team",
+      schemaVersion: 2,
+      minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
     },
     ...overrides,
@@ -115,7 +116,7 @@ describe("policy validate — local aih-org-policy.json", () => {
     const [check] = await checks(ctx());
     expect(check?.verdict).toBe("pass");
     expect(check?.code).toBeUndefined();
-    expect(check?.detail).toContain("minimumPosture team");
+    expect(check?.detail).toContain("minimumPosture enterprise");
   });
 
   it("skips (never fails) when the policy file is absent", async () => {
@@ -150,12 +151,59 @@ describe("policy validate — local aih-org-policy.json", () => {
   it("fails coded with the zod issue list on a schema violation", async () => {
     write(
       "aih-org-policy.json",
-      JSON.stringify({ schemaVersion: 1, minimumPosture: "wild", references: {} }),
+      JSON.stringify({ schemaVersion: 2, minimumPosture: "wild", references: {} }),
     );
     const [check] = await checks(ctx());
     expect(check?.verdict).toBe("fail");
     expect(check?.code).toBe("org-policy.invalid");
     expect(check?.detail).toContain("org-policy is invalid");
+  });
+
+  it("refuses schema-version-1 policy documents with the explicit migration", async () => {
+    write(
+      "aih-org-policy.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "team",
+        references: { repoContract: "ai-coding/project.json" },
+      }),
+    );
+
+    const [check] = await checks(ctx());
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("org-policy.invalid");
+    expect(check?.detail).toContain("set schemaVersion to 2");
+    expect(check?.detail).toContain("replace team with vibe or enterprise");
+  });
+
+  it("round-trips a schema-version-2 enterprise policy through validation, projection, and evaluation", async () => {
+    write(
+      "aih-org-policy.json",
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          policyVersion: "2026.08.0",
+          catalog: { reviewed: [], custom: [] },
+          activations: [],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+
+    const [validation] = await checks(ctx());
+    expect(validation?.verdict).toBe("pass");
+
+    const projected = await policyProjectCommand.plan({
+      ...ctx(),
+      apply: true,
+      targets: ["claude"],
+    });
+    await executePlan(projected, { ...ctx(), apply: true, targets: ["claude"] });
+
+    const [evaluation] = await evaluateChecks(ctx());
+    expect(evaluation?.verdict).toBe("pass");
   });
 
   it("honors the AIH_ORG_POLICY env override", async () => {
@@ -172,7 +220,7 @@ describe("policy validate — --bundle envelope mode", () => {
     const [check] = await checks(ctx({ options: { bundle: "org-bundle.json" } }));
     expect(check?.verdict).toBe("pass");
     expect(check?.detail).toContain("from platform-team");
-    expect(check?.detail).toContain("minimumPosture team");
+    expect(check?.detail).toContain("minimumPosture enterprise");
     expect(check?.detail).toContain("1 ring(s)");
   });
 
@@ -203,7 +251,7 @@ describe("policy validate — --bundle envelope mode", () => {
     write(
       "org-bundle.json",
       validBundle({
-        policy: { schemaVersion: 1, minimumPosture: "wild", references: {} },
+        policy: { schemaVersion: 2, minimumPosture: "wild", references: {} },
       }),
     );
     const [check] = await checks(ctx({ options: { bundle: "org-bundle.json" } }));
@@ -218,8 +266,8 @@ describe("policy evaluate — effective governed candidates", () => {
     write(
       "aih-org-policy.json",
       JSON.stringify({
-        schemaVersion: 1,
-        minimumPosture: "team",
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         governance: {
           policyVersion: "2026.08.0",
@@ -249,8 +297,8 @@ describe("policy evaluate — effective governed candidates", () => {
     write(
       "aih-org-policy.json",
       JSON.stringify({
-        schemaVersion: 1,
-        minimumPosture: "team",
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         governance: {
           policyVersion: "2026.08.0",
@@ -295,8 +343,8 @@ describe("policy evaluate — effective governed candidates", () => {
   it("reports a retained hook receipt instead of deleting a no-longer-effective host hook", async () => {
     const scriptDigest = `sha256:${sha256(usageRecorderScript())}`;
     const active = parseOrgPolicy({
-      schemaVersion: 1,
-      minimumPosture: "team",
+      schemaVersion: 2,
+      minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
       governance: {
         policyVersion: "2026.08.0",
@@ -332,8 +380,8 @@ describe("policy evaluate — effective governed candidates", () => {
     write(
       "aih-org-policy.json",
       JSON.stringify({
-        schemaVersion: 1,
-        minimumPosture: "team",
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         governance: {
           policyVersion: "2026.08.0",
@@ -395,7 +443,7 @@ describe("policy verify — pinned policy integrity", () => {
     write(
       "aih-org-policy.json",
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "vibe",
         references: { repoContract: "ai-coding/project.json" },
       }),

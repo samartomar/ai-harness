@@ -93,8 +93,8 @@ describe("policy init — starter org policy from observed fleet state", () => {
   });
 
   it("records the resolved posture, not a hardcoded one", async () => {
-    const { starter } = await planned(ctx({ posture: "team" }));
-    expect(starter.minimumPosture).toBe("team");
+    const { starter } = await planned(ctx({ posture: "enterprise" }));
+    expect(starter.minimumPosture).toBe("enterprise");
   });
 
   it("lets a fresh enterprise setup pass attestation with no hand-editing (AC1)", async () => {
@@ -117,7 +117,7 @@ describe("policy init — starter org policy from observed fleet state", () => {
       "aih-org-policy.json",
       JSON.stringify({
         schemaVersion: 1,
-        minimumPosture: "team",
+        minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
       }),
     );
@@ -130,7 +130,7 @@ describe("policy init — starter org policy from observed fleet state", () => {
       "policies/org.json",
       JSON.stringify({
         schemaVersion: 1,
-        minimumPosture: "team",
+        minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
       }),
     );

@@ -32,7 +32,7 @@ function ctx(): PlanContext {
   return {
     root: dir,
     contextDir: "ai-coding",
-    posture: "team",
+    posture: "enterprise",
     postureSource: "org-floor",
     apply: false,
     verify: false,
@@ -47,7 +47,7 @@ function ctx(): PlanContext {
 function policy(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     schemaVersion: 1,
-    minimumPosture: "team",
+    minimumPosture: "enterprise",
     references: { repoContract: "ai-coding/project.json" },
     ...overrides,
   };
@@ -199,7 +199,7 @@ describe("OrgPolicySchema", () => {
         }),
       ),
     ).toMatchObject({
-      minimumPosture: "team",
+      minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
       command: { deny: { remove: ["printenv*"] } },
     });
@@ -549,7 +549,7 @@ describe("orgPolicyProjectionActions", () => {
     const managed = writes(actions).find((w) => w.path === ".claude/managed-settings.json");
     expect(managed?.json).toMatchObject({
       organizationPolicy: {
-        minimumPosture: "team",
+        minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
       },
       allowManagedMcpServersOnly: true,
@@ -784,17 +784,16 @@ describe("orgPolicyDriftProbes — target scope (#554)", () => {
   /** Every registered CLI that does NOT own the projected `.claude/` artifacts. */
   const nonOwners = REGISTRY_IDS.filter((id) => !entry(id).configDirs.includes(".claude"));
 
-  it.each(nonOwners)(
-    "does not fail a %s-only repo for an artifact it never projects",
-    async (cli) => {
-      writeScopePolicy(denyPolicy());
-      const c = scopeCtx([cli]);
-      const checks = await Promise.all(orgPolicyDriftProbes(c).map((p) => p.run(c)));
-      // `aih policy project` emits zero actions when the owning CLI is untargeted,
-      // so a failing drift finding here would be unsatisfiable by construction.
-      expect(checks.filter((k) => k?.verdict === "fail").map((k) => k?.detail ?? "")).toEqual([]);
-    },
-  );
+  it.each(
+    nonOwners,
+  )("does not fail a %s-only repo for an artifact it never projects", async (cli) => {
+    writeScopePolicy(denyPolicy());
+    const c = scopeCtx([cli]);
+    const checks = await Promise.all(orgPolicyDriftProbes(c).map((p) => p.run(c)));
+    // `aih policy project` emits zero actions when the owning CLI is untargeted,
+    // so a failing drift finding here would be unsatisfiable by construction.
+    expect(checks.filter((k) => k?.verdict === "fail").map((k) => k?.detail ?? "")).toEqual([]);
+  });
 
   it("still fails a Claude-targeted repo when the projection is missing", async () => {
     writeScopePolicy(denyPolicy());
@@ -1001,7 +1000,7 @@ describe("orgPolicyDriftProbes", () => {
   });
 
   it("projects drift expectations at the resolved posture, not only the policy floor", () => {
-    writePolicy(policy({ minimumPosture: "team" }));
+    writePolicy(policy({ minimumPosture: "enterprise" }));
     const c: PlanContext = { ...ctx(), posture: "enterprise", postureSource: "flag" };
     const probes = orgPolicyDriftProbes(c);
 
@@ -1124,7 +1123,11 @@ describe("orgPolicyIntegrityProbes", () => {
 
   it("downgrades env override visibility to warning-only at team posture", async () => {
     writeFileSync(join(dir, "override.json"), JSON.stringify(policy()));
-    const c: PlanContext = { ...ctx(), posture: "team", env: { AIH_ORG_POLICY: "override.json" } };
+    const c: PlanContext = {
+      ...ctx(),
+      posture: "enterprise",
+      env: { AIH_ORG_POLICY: "override.json" },
+    };
     const check = await orgPolicyIntegrityProbes(c)
       .find((p) => p.describe === "org-policy source")
       ?.run(c);
@@ -1134,7 +1137,7 @@ describe("orgPolicyIntegrityProbes", () => {
   });
 
   it("flags working-tree policy drift from HEAD", async () => {
-    const head = JSON.stringify(policy({ minimumPosture: "team" }));
+    const head = JSON.stringify(policy({ minimumPosture: "enterprise" }));
     writePolicy(policy({ minimumPosture: "enterprise" }));
     const run = fakeRunner((argv) => {
       if (argv[0] === "git" && argv.includes(`HEAD:aih-org-policy.json`)) {

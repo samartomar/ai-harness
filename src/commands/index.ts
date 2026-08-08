@@ -276,7 +276,7 @@ export function addSharedFlags(cmd: Command): Command {
     )
     .option("--verify", "run verification probes after applying")
     .option("--json", "emit machine-readable JSON")
-    .option("--posture <posture>", "governance posture: vibe | team | enterprise", "vibe")
+    .option("--posture <posture>", "governance posture: vibe | enterprise", "vibe")
     .option("--support-out <dir>", "write IT/support tickets for failed checks to <dir>")
     .option("--no-log", "do not append a row to the local run ledger (.aih/runs/)")
     .option("--context-dir <dir>", "canonical context directory name (any name works)", "ai-coding")
@@ -296,7 +296,7 @@ export function addSharedFlags(cmd: Command): Command {
 function addReadOnlyFlags(cmd: Command): Command {
   return cmd
     .option("--json", "emit machine-readable JSON")
-    .option("--posture <posture>", "governance posture: vibe | team | enterprise", "vibe")
+    .option("--posture <posture>", "governance posture: vibe | enterprise", "vibe")
     .option("--root <dir>", "target root")
     .option("--support-out <dir>", "write IT/support tickets for failed checks to <dir>")
     .option("--no-log", "do not append a row to the local run ledger (.aih/runs/)")

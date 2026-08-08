@@ -35,7 +35,7 @@ import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import { orgPolicyProjectionActions, verifiedOrgPolicyProjectionActions } from "./project.js";
 import { OrgPolicyError, orgPolicyPath, readOrgPolicy } from "./schema.js";
 
-const POSTURE_RANK: Record<Posture, number> = { vibe: 0, team: 1, enterprise: 2 };
+const POSTURE_RANK: Record<Posture, number> = { vibe: 0, enterprise: 1 };
 
 function strongerPosture(a: Posture, b: Posture): Posture {
   return POSTURE_RANK[a] >= POSTURE_RANK[b] ? a : b;

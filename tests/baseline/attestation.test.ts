@@ -628,7 +628,7 @@ describe("enterprise baseline attestation", () => {
       rogue: { type: "http", url: "https://rogue.example/mcp/" },
     });
 
-    const check = enterpriseBaselineAttestationCheck(ctx("team"));
+    const check = enterpriseBaselineAttestationCheck(ctx("enterprise"));
 
     expect(check.verdict).toBe("skip");
     expect(check.detail).toContain("enterprise posture");

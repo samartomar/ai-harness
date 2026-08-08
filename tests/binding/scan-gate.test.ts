@@ -277,7 +277,7 @@ describe("fast scan disposition (D12 gate + posture-graded coverage)", () => {
 
   it("allows a clean, fully-covered tree at every posture (all 11 dimensions produced)", async () => {
     const src = await scannable();
-    for (const posture of ["vibe", "team", "enterprise"] as const) {
+    for (const posture of ["vibe", "enterprise", "enterprise"] as const) {
       const disposition = runFastScanGate(src, { posture }, { cacheHome });
       expect(disposition.verdict).toBe("allow");
       expect(disposition.digest).toBe(src.digest);
@@ -287,7 +287,7 @@ describe("fast scan disposition (D12 gate + posture-graded coverage)", () => {
 
   it("blocks at team/enterprise when a (future deep) dimension is unavailable (incomplete coverage fails closed)", async () => {
     const src = await scannable();
-    for (const posture of ["team", "enterprise"] as const) {
+    for (const posture of ["enterprise", "enterprise"] as const) {
       const disposition = runFastScanGate(
         src,
         { posture },

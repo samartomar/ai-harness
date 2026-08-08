@@ -29,7 +29,7 @@ import { ContextDir } from "./settings.js";
  * design, so the `paths`/`pathAliases`/`artifactRoot` map is deliberately dropped.
  */
 export const AIH_CONFIG_FILE = ".aih-config.json";
-const AihConfigPostureSchema = z.enum(["vibe", "team", "enterprise"]);
+const AihConfigPostureSchema = z.enum(["vibe", "enterprise"]);
 const ManagedMcpProjectionExpectedSchema = z
   .object({
     allowManagedMcpServersOnly: z.literal(true),
@@ -199,10 +199,13 @@ export function readAihConfigPosture(
   const posture = (parsed as { posture?: unknown }).posture;
   if (posture === undefined) return undefined;
   const result = AihConfigPostureSchema.safeParse(posture);
+  if (posture === "team") {
+    throw new SettingsError(
+      `invalid posture in ${AIH_CONFIG_FILE}: team posture was removed; replace team with vibe or enterprise (the administrator chooses)`,
+    );
+  }
   if (result.success) return result.data;
-  throw new SettingsError(
-    `invalid posture in ${AIH_CONFIG_FILE}: expected vibe, team, or enterprise`,
-  );
+  throw new SettingsError(`invalid posture in ${AIH_CONFIG_FILE}: expected vibe or enterprise`);
 }
 
 /**

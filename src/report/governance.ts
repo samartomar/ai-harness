@@ -83,11 +83,7 @@ function commandPolicyRow(posture: Posture): GovernanceRow {
     control: "command-policy",
     verdict: gradeVerdict("warn", "command-policy", posture),
     detail: `${deny} deny pattern(s), ${ask} ask pattern(s); ${
-      posture === "vibe"
-        ? "advisory-only"
-        : posture === "team"
-          ? "project managed-settings/CI sidecar"
-          : "required CI + enterprise managed-settings"
+      posture === "vibe" ? "advisory-only" : "required CI + enterprise managed-settings"
     }`,
     count: deny + ask,
   };

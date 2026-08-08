@@ -6,7 +6,7 @@ import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 
-const PostureSchema = z.enum(["vibe", "team", "enterprise"]);
+const PostureSchema = z.enum(["vibe", "enterprise"]);
 
 const CommandRuleSchema = z
   .object({
@@ -1103,7 +1103,7 @@ export function policyGovernanceLeafPaths(): string[] {
 
 export const OrgPolicySchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(2),
     minimumPosture: PostureSchema,
     references: z.object({
       repoContract: z.string().min(1),
@@ -1185,6 +1185,26 @@ export class OrgPolicyError extends AihError {
 }
 
 export function parseOrgPolicy(value: unknown): OrgPolicy {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value as { schemaVersion?: unknown }).schemaVersion === 1
+  ) {
+    throw new OrgPolicyError(
+      "org-policy schemaVersion 1 is no longer supported; set schemaVersion to 2; replace team with vibe or enterprise (the administrator chooses)",
+    );
+  }
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value as { minimumPosture?: unknown }).minimumPosture === "team"
+  ) {
+    throw new OrgPolicyError(
+      "org-policy minimumPosture team was removed; replace team with vibe or enterprise (the administrator chooses)",
+    );
+  }
   try {
     return OrgPolicySchema.parse(value);
   } catch (err) {

@@ -9,7 +9,7 @@ import {
   samePaths,
 } from "../../src/internals/check-baseline-installable.js";
 
-const ALL_POSTURES = ["vibe", "team", "enterprise"] as const;
+const ALL_POSTURES = ["vibe", "enterprise", "enterprise"] as const;
 
 describe("shipped baseline installability", () => {
   it("reproduces the v2.8.0 zero-installable enterprise lock", async () => {
@@ -245,7 +245,7 @@ describe("postureOkForCatalog preview-escape gating for non-installer catalogs (
     const splicedReport = await checkInstallableBaseline({ lock: splicedLock, fixtureOnly: true });
 
     expect(splicedReport.ok).toBe(baseline.ok);
-    for (const posture of ["vibe", "team", "enterprise"] as const) {
+    for (const posture of ["vibe", "enterprise", "enterprise"] as const) {
       expect(splicedReport.catalogs.ecc.postures[posture].installedComponentIds).toEqual(
         baseline.catalogs.ecc.postures[posture].installedComponentIds,
       );

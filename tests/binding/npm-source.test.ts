@@ -382,12 +382,12 @@ describe("acquireNpmTree — digest comparability & non-collision with git", () 
 
     const gitDisp = runFastScanGate(
       scannableFromGit(gitResolved),
-      { posture: "team" },
+      { posture: "enterprise" },
       { cacheHome },
     );
     const npmDisp = runFastScanGate(
       scannableFromNpm(npmResolved),
-      { posture: "team" },
+      { posture: "enterprise" },
       { cacheHome },
     );
 

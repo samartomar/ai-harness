@@ -16,8 +16,8 @@ import {
 /** Valid, no-repository starting point for the generated Policy Workbench. */
 export function defaultStudioPolicy(): OrgPolicy {
   return parseOrgPolicy({
-    schemaVersion: 1,
-    minimumPosture: "team",
+    schemaVersion: 2,
+    minimumPosture: "vibe",
     references: { repoContract: "ai-coding/project.json" },
     governance: {
       policyVersion: "1",

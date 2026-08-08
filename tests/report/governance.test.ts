@@ -90,12 +90,12 @@ describe("governanceRollupDigest", () => {
   it("grades secrets and contract path-portability under the active posture", () => {
     writeFileSync(join(dir, ".env"), "API_KEY=sk-nope-nope-nope\n");
     writeContract(CONTRACT);
-    const d = governanceRollupDigest(ctx({ posture: "team", postureSource: "flag" }));
+    const d = governanceRollupDigest(ctx({ posture: "enterprise", postureSource: "flag" }));
     const byControl = Object.fromEntries(controls(d).map((c) => [c.control, c.verdict]));
 
     expect(byControl.secrets).toBe("deny");
     expect(byControl["path-portability"]).toBe("deny");
-    expect(d.text).toContain("team");
+    expect(d.text).toContain("enterprise");
     expect(d.text).toContain("plaintext");
   });
 
@@ -112,7 +112,7 @@ describe("governanceRollupDigest", () => {
       return;
     }
 
-    const d = governanceRollupDigest(ctx({ posture: "team" }));
+    const d = governanceRollupDigest(ctx({ posture: "enterprise" }));
     rmSync(dirname(outside), { recursive: true, force: true });
     const secrets = controls(d).find((c) => c.control === "secrets");
 
@@ -122,7 +122,7 @@ describe("governanceRollupDigest", () => {
   });
 
   it("marks CA trust as enterprise-deny until a trust env var is present", () => {
-    const team = governanceRollupDigest(ctx({ posture: "team" }));
+    const team = governanceRollupDigest(ctx({ posture: "enterprise" }));
     const missing = governanceRollupDigest(ctx({ posture: "enterprise" }));
     const configured = governanceRollupDigest(
       ctx({ posture: "enterprise", env: { NODE_EXTRA_CA_CERTS: "/corp/root.pem" } }),

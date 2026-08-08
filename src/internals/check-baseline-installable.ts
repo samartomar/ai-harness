@@ -35,7 +35,7 @@ import {
 } from "../ecc/registration.js";
 import { TRUST_POLICY_VERSION } from "../trust/evidence.js";
 
-const POSTURES: readonly Posture[] = ["vibe", "team", "enterprise"];
+const POSTURES: readonly Posture[] = ["vibe", "enterprise"];
 const DEFAULT_CLI = "claude";
 const VENDOR_ISSUER = "@aihq/harness release";
 

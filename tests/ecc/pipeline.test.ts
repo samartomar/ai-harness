@@ -401,7 +401,7 @@ describe("ECC baseline evidence pipeline", () => {
     );
     writeRegistrationLedgerAtomic(home, prior);
     const context = ctx(false);
-    context.posture = "team";
+    context.posture = "enterprise";
     context.env = { HOME: home };
     context.host = makeHostAdapter({ platform: "linux", run: context.run, env: context.env });
     context.options = { profile: "core", with: ["security-review"] };

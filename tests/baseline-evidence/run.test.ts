@@ -26,7 +26,7 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-function ctx(posture: "vibe" | "team" | "enterprise" = "enterprise"): PlanContext {
+function ctx(posture: "vibe" | "enterprise" | "enterprise" = "enterprise"): PlanContext {
   const run = fakeRunner(() => undefined);
   return {
     root,

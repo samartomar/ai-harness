@@ -6,7 +6,7 @@ import { orgPolicyPath, readOrgPolicy } from "../org-policy/schema.js";
 import type { AihConfig } from "./marker.js";
 import { AIH_CONFIG_FILE, readAihConfig, readAihConfigBaseline } from "./marker.js";
 
-export type Posture = "vibe" | "team" | "enterprise";
+export type Posture = "vibe" | "enterprise";
 export type PostureSource = "flag" | "marker" | "env" | "default" | "org-floor";
 export type PolicyVerdict = "allow" | "warn" | "deny";
 export type GovernanceControl =
@@ -41,20 +41,24 @@ interface ResolvePostureInput {
   skipOrgPolicyFloor?: boolean;
 }
 
-const POSTURE_RANK: Record<Posture, number> = { vibe: 0, team: 1, enterprise: 2 };
+const POSTURE_RANK: Record<Posture, number> = { vibe: 0, enterprise: 1 };
+const REMOVED_TEAM_POSTURE_MIGRATION =
+  "team posture was removed; replace team with vibe or enterprise (the administrator chooses)";
 
-/** Resolve the v2 three-valued posture dial, defaulting only when no value is supplied. */
+/** Resolve the v2 two-valued posture dial, defaulting only when no value is supplied. */
 export function asPosture(value: unknown): Posture {
   if (value === undefined) return "vibe";
   if (value === "enterprise") return "enterprise";
-  if (value === "team") return "team";
+  if (value === "team") throw new SettingsError(REMOVED_TEAM_POSTURE_MIGRATION);
   if (value === "vibe") return "vibe";
-  throw new SettingsError("invalid posture: expected vibe, team, or enterprise");
+  throw new SettingsError("invalid posture: expected vibe or enterprise");
 }
 
 export function parsePostureInput(value: unknown, source: "--posture" | "AIH_POSTURE"): Posture {
-  if (value === "enterprise" || value === "team" || value === "vibe") return value;
-  throw new SettingsError(`invalid ${source}: expected vibe, team, or enterprise`);
+  if (value === "enterprise" || value === "vibe") return value;
+  if (value === "team")
+    throw new SettingsError(`invalid ${source}: ${REMOVED_TEAM_POSTURE_MIGRATION}`);
+  throw new SettingsError(`invalid ${source}: expected vibe or enterprise`);
 }
 
 export function postureFromContext(ctx: PlanContext): Posture {
@@ -135,12 +139,5 @@ export function gradeVerdict(
   if (control === "trust-danger") return "deny";
   if (control === "risk-gates") return "warn";
   if (posture === "vibe") return "warn";
-  if (posture === "team") {
-    return control === "secrets" ||
-      control === "path-portability" ||
-      control === "contract-freshness"
-      ? "deny"
-      : "warn";
-  }
   return "deny";
 }

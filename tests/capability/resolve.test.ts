@@ -347,8 +347,8 @@ describe("aih capability resolve", () => {
     seedNodeRepo();
 
     const result = await executePlan(
-      await capabilityResolveCommand.plan(ctx({ posture: "team" })),
-      ctx({ posture: "team" }),
+      await capabilityResolveCommand.plan(ctx({ posture: "enterprise" })),
+      ctx({ posture: "enterprise" }),
     );
     const digest = result.digests.find((item) => item.describe === "capability resolve");
     const data = digest?.data as {

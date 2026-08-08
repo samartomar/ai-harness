@@ -231,10 +231,7 @@ export function selectEccComponents(input: SelectEccComponentsInput): EccCompone
   }
 
   const recommendations: EccComponentId[] = [];
-  if (
-    (input.posture === "team" || input.posture === "enterprise") &&
-    !componentSet.has("capability:security")
-  ) {
+  if (input.posture === "enterprise" && !componentSet.has("capability:security")) {
     recommendations.push("capability:security");
   }
 

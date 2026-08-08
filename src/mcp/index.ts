@@ -514,7 +514,7 @@ function readLocalOrgPolicyForApproval(ctx: PlanContext): {
   if (raw === undefined) {
     return {
       policy: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: posix.join(ctx.contextDir, "project.json") },
       },
