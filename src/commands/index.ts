@@ -598,7 +598,10 @@ export function registerCommands(
   const scan = trust
     .command(trustScanCommand.name)
     .description(trustScanCommand.summary)
-    .argument("<target>", "local path or GitHub owner/repo trust source");
+    .argument(
+      "<target>",
+      "local path, GitHub owner/repo, or policy-pinned npm package trust source",
+    );
   addFlagsForSpec(scan, trustScanCommand);
   addOptionsForSpec(scan, trustScanCommand);
   scan.action(async (target: string, _options: Record<string, unknown>, command: Command) => {

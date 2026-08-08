@@ -5229,6 +5229,125 @@ describe("checkDetectorsAvailable", () => {
 });
 
 describe("trustScanCommand", () => {
+  it("keeps a bare registry package name out of the tarball scan target grammar", async () => {
+    await expect(trustScanCommand.plan(ctx({ target: "@acme/mcp-server" }))).rejects.toThrow(
+      /unsupported trust source/i,
+    );
+  });
+
+  it("plans a policy-bound npm tarball scan and names the emitted preflight evidence record", async () => {
+    const source = {
+      type: "stdio",
+      resolver: "npx",
+      registry: "https://registry.npmjs.org",
+      package: "@acme/mcp-server",
+      version: "1.4.2",
+      integrity: `sha256:${"a".repeat(64)}`,
+    };
+    write(
+      "aih-org-policy.json",
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "vibe",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          policyVersion: "2026.08.08",
+          catalog: {
+            reviewed: [],
+            custom: [
+              {
+                id: "acme-mcp",
+                kind: "mcp",
+                description: "Pending custom MCP",
+                capabilities: [],
+                risks: ["custom source"],
+                source,
+                targets: ["claude"],
+                projector: "mcp-managed-settings",
+                lifecycle: "supported",
+                evidence: { record: "acme-scan-001" },
+              },
+            ],
+          },
+          activations: [],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+
+    const plan = await trustScanCommand.plan(ctx({ target: "@acme/mcp-server@1.4.2" }));
+    const pack = plan.actions.find(
+      (action) =>
+        action.kind === "exec" &&
+        action.describe === "fetch @acme/mcp-server@1.4.2 pinned npm tarball into quarantine",
+    );
+    expect(pack).toMatchObject({
+      kind: "exec",
+      argv: expect.arrayContaining([
+        "npm",
+        "pack",
+        "@acme/mcp-server@1.4.2",
+        "--registry=https://registry.npmjs.org",
+        "--ignore-scripts",
+      ]),
+      blockProbesOnFailure: true,
+    });
+    const verify = plan.actions.find(
+      (action) =>
+        action.kind === "exec" &&
+        action.describe ===
+          "verify @acme/mcp-server@1.4.2 npm tarball SHA-256 and extract into quarantine",
+    );
+    if (verify?.kind !== "exec") throw new Error("expected package tarball verification action");
+    const input = JSON.parse(verify.argv[3] ?? "{}") as Record<string, unknown>;
+    expect(input).toMatchObject({
+      candidate: "acme-mcp",
+      evidenceRecord: "acme-scan-001",
+      source,
+      expectedSha256: source.integrity,
+    });
+    expect(verify.argv[2]).toContain("npm tarball SHA-256 does not match the policy pin");
+    expect(
+      plan.actions.find(
+        (action) =>
+          action.kind === "digest" && action.describe === "preflight evidence record acme-scan-001",
+      ),
+    ).toMatchObject({ kind: "digest" });
+    const preflight = plan.actions.find(
+      (action) =>
+        action.kind === "digest" && action.describe === "preflight evidence record acme-scan-001",
+    );
+    if (preflight?.kind !== "digest" || preflight.run === undefined) {
+      throw new Error("expected runnable preflight evidence digest");
+    }
+    const treePath = String(input.treePath);
+    const quarantineRoot = String(input.quarantineRoot);
+    mkdirSync(treePath, { recursive: true });
+    writeFileSync(join(treePath, "SKILL.md"), "# Clean\n", "utf8");
+    try {
+      const emitted = await preflight.run({ ...ctx(), apply: true });
+      const text = typeof emitted === "string" ? emitted : emitted.text;
+      const bundle = JSON.parse(text.slice(text.indexOf("{"))) as {
+        evidence?: Record<string, unknown>[];
+      };
+      const record = bundle.evidence?.[0];
+      if (record === undefined) throw new Error("expected an importable preflight evidence record");
+      expect(record).toMatchObject({
+        id: "acme-scan-001",
+        candidate: "acme-mcp",
+        kind: "mcp",
+        source,
+        state: "missing",
+      });
+      for (const field of ["sourceDigest", "evidenceDigest", "identityDigest"]) {
+        expect(record[field]).toMatch(/^sha256:[a-f0-9]{64}/);
+        expect(String(record[field])).toHaveLength(71);
+      }
+    } finally {
+      rmSync(quarantineRoot, { recursive: true, force: true });
+    }
+  });
+
   it("documents scan acknowledgements as invocation-local previews", () => {
     const acknowledgeOption = trustScanCommand.options?.find((option) =>
       option.flags.startsWith("--acknowledge "),

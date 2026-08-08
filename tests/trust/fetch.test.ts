@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import process from "node:process";
 import { runInNewContext } from "node:vm";
+import { gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -23,11 +24,13 @@ import {
   assertTrustTreeSafe,
   isFirstPartySource,
   localFileHash,
+  resolvePackageTrustSource,
   resolveTrustSource,
   safeSourceRelative,
   scrubDockerClientEnv,
   scrubFetchEnv,
   trustFetchExec,
+  trustPackageFetchActions,
 } from "../../src/trust/fetch.js";
 
 let dir: string;
@@ -129,6 +132,44 @@ function tarHeader(name: string, type: string, linkName = "", size = 0): Buffer 
   for (const byte of header) checksum += byte;
   write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148, 8);
   return header;
+}
+
+async function runPackageFetchScript(
+  script: string,
+  input: Record<string, unknown>,
+): Promise<void> {
+  const stderr: string[] = [];
+  const sandbox = {
+    Buffer,
+    URL,
+    console,
+    process: {
+      argv: ["node", JSON.stringify(input)],
+      env: {},
+      exit: (code: number) => {
+        throw new Error(`script exited ${code}: ${stderr.join("")}`);
+      },
+      stderr: {
+        write: (text: string) => {
+          stderr.push(text);
+          return text.length;
+        },
+      },
+    },
+    require: nodeRequire,
+    setTimeout,
+  };
+  await runInNewContext(script, sandbox);
+}
+
+function tarWithRegularFile(name: string, contents: Buffer): Buffer {
+  const padding = Buffer.alloc((512 - (contents.length % 512)) % 512);
+  return Buffer.concat([
+    tarHeader(name, "0", "", contents.length),
+    contents,
+    padding,
+    Buffer.alloc(1024),
+  ]);
 }
 
 function tarWithSymlinkEntry(): Buffer {
@@ -233,6 +274,42 @@ describe("trust fetch source resolution", () => {
     } finally {
       if (first.kind === "github") rmSync(first.quarantineRoot, { recursive: true, force: true });
       if (second.kind === "github") rmSync(second.quarantineRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when a fetched npm tarball does not match the policy SHA-256 pin", async () => {
+    const source = resolvePackageTrustSource({
+      package: "@acme/mcp-server",
+      version: "1.4.2",
+      integrity: `sha256:${"a".repeat(64)}`,
+      registry: "https://registry.npmjs.org",
+      candidate: "acme-mcp",
+      source: {
+        type: "stdio",
+        resolver: "npx",
+        registry: "https://registry.npmjs.org",
+        package: "@acme/mcp-server",
+        version: "1.4.2",
+        integrity: `sha256:${"a".repeat(64)}`,
+      },
+      evidenceRecord: "acme-scan-001",
+    });
+    try {
+      writeFileSync(
+        join(source.quarantineRoot, "mcp-server-1.4.2.tgz"),
+        gzipSync(tarWithRegularFile("package/SKILL.md", Buffer.from("# Safe\n", "utf8"))),
+      );
+      const verify = trustPackageFetchActions(source, ctx())[1];
+      if (verify === undefined || verify.kind !== "exec") {
+        throw new Error("expected package verification action");
+      }
+      const input = JSON.parse(verify.argv[3] ?? "{}") as Record<string, unknown>;
+      await expect(runPackageFetchScript(verify.argv[2] ?? "", input)).rejects.toThrow(
+        /npm tarball SHA-256 does not match the policy pin/,
+      );
+      expect(existsSync(join(source.treePath, "SKILL.md"))).toBe(false);
+    } finally {
+      rmSync(source.quarantineRoot, { recursive: true, force: true });
     }
   });
 
