@@ -187,6 +187,7 @@ describe("acceptance — governed hook registrations on a temporary fixture root
           references: { repoContract: "ai-coding/project.json" },
           governance: {
             policyVersion: "2026-08-06.acceptance",
+            supportedClis: ["claude"],
             catalog: { reviewed: [], custom: [] },
             externalSelections: [{ framework: "ecc", items: [] }],
             hookRegistrations: registrations,
@@ -306,6 +307,7 @@ describe("acceptance — governed hook registrations on a temporary fixture root
         references: { repoContract: "ai-coding/project.json" },
         governance: {
           policyVersion: "2026-08-06.acceptance",
+          supportedClis: ["claude"],
           catalog: { reviewed: [], custom: [] },
           hookRegistrations: [{ ...first, command: `${first.command} --new-flag` }, ...rest],
         },

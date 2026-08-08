@@ -51,7 +51,7 @@ function writePolicy(
     join(dir, "aih-org-policy.json"),
     JSON.stringify({
       schemaVersion: 2,
-      minimumPosture: "enterprise",
+      minimumPosture: "vibe",
       references: { repoContract: "ai-coding/project.json" },
       mcp: { allowedServers, allowManagedOnly: true },
       trust: { approvedSources },

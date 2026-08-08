@@ -238,6 +238,21 @@ describe("ECC baseline evidence pipeline", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          supportedClis: [
+            "claude",
+            "codex",
+            "cursor",
+            "antigravity",
+            "gemini",
+            "copilot",
+            "windsurf",
+            "opencode",
+            "zed",
+            "kimi",
+            "kiro",
+          ],
+        },
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
       }),
     );
@@ -256,6 +271,21 @@ describe("ECC baseline evidence pipeline", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          supportedClis: [
+            "claude",
+            "codex",
+            "cursor",
+            "antigravity",
+            "gemini",
+            "copilot",
+            "windsurf",
+            "opencode",
+            "zed",
+            "kimi",
+            "kiro",
+          ],
+        },
         mcp: { allowedServers: [], allowManagedOnly: false },
       }),
     );
@@ -274,6 +304,7 @@ describe("ECC baseline evidence pipeline", () => {
         references: { repoContract: "ai-coding/project.json" },
         mcp: { allowManagedOnly: true, allowedServers: ["code-review-graph"] },
         governance: {
+          supportedClis: ["claude"],
           policyVersion: "2026.08.0",
           catalog: { reviewed: [], custom: [] },
           activations: [],
@@ -301,6 +332,7 @@ describe("ECC baseline evidence pipeline", () => {
         references: { repoContract: "ai-coding/project.json" },
         governance: {
           policyVersion: "2026.08.0",
+          supportedClis: ["claude"],
           catalog: { reviewed: [], custom: [] },
           activations: [],
           authority: { approvals: [] },
@@ -328,6 +360,7 @@ describe("ECC baseline evidence pipeline", () => {
         references: { repoContract: "ai-coding/project.json" },
         governance: {
           policyVersion: "2026.08.0",
+          supportedClis: ["claude"],
           catalog: { reviewed: [], custom: [] },
           activations: [],
           authority: { approvals: [] },

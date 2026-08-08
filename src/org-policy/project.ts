@@ -37,7 +37,7 @@ import {
 } from "./effective.js";
 import { HOOK_REGISTRAR_DESTINATION, hookRegistrarProjectionActions } from "./hook-registrar.js";
 import { type RuntimeOrgPolicyResolution, resolveRuntimeOrgPolicy } from "./runtime.js";
-import { type OrgPolicy, OrgPolicyError } from "./schema.js";
+import { governanceOwnsAihSurfaces, type OrgPolicy, OrgPolicyError } from "./schema.js";
 
 export const ORG_POLICY_HOOK_RECEIPT_PATH = ".aih/org-policy-hook-receipt.json";
 
@@ -75,7 +75,7 @@ function stdioAllowedServers(
   // Governance is authoritative: legacy `mcp.allowedServers` / `disabledServers`
   // never add to or subtract from a reviewed control selection. `allowManagedOnly`
   // is still the explicit adapter enablement gate checked by the resolver.
-  const governed = policy.governance !== undefined;
+  const governed = governanceOwnsAihSurfaces(policy);
   const allowedSet = new Set(governed ? effective.activeMcpServerIds : [...allowed]);
   const disabledSet = new Set(governed ? [] : disabled);
   const out: Record<string, StdioServer> = {};
@@ -937,7 +937,7 @@ function projectionActionsFromRuntime(
   // governed inventory owns hook activation and conservative rollback; running
   // that lifecycle for a legacy policy would mistake its generic recorder for
   // an unreceipted governed artifact.
-  if (policy.governance !== undefined) {
+  if (governanceOwnsAihSurfaces(policy)) {
     const usage = usageHookProjectionActions(ctx, runtime.effective);
     actions.push(...usage);
     if (targets.includes("claude")) {
@@ -999,7 +999,7 @@ export async function verifiedOrgPolicyProjectionActions(
  * bypass external authority verification.
  */
 export function orgPolicyProjectionActions(ctx: PlanContext, policy: OrgPolicy): Action[] {
-  if (policy.governance !== undefined) {
+  if (governanceOwnsAihSurfaces(policy)) {
     throw new OrgPolicyError(
       "governed policy projection requires externally verified authority; use the verified policy projector",
     );

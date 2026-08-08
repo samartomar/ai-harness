@@ -110,6 +110,7 @@ function customPolicy(targets: string[] = ["claude"], approvals: unknown[] = [])
     mcp: { allowManagedOnly: true },
     governance: {
       policyVersion: "2026.08.0",
+      supportedClis: ["claude"],
       catalog: {
         reviewed: [],
         custom: [
@@ -237,6 +238,7 @@ function usageHookPolicy(state: "active" | "disabled", targets: string[] = ["cla
     references: { repoContract: "ai-coding/project.json" },
     governance: {
       policyVersion: "2026.08.0",
+      supportedClis: ["claude"],
       catalog: {
         reviewed: [
           {
@@ -287,6 +289,7 @@ function reviewedMcpPolicy({
     mcp: { allowManagedOnly, allowedServers, disabledServers },
     governance: {
       policyVersion: "2026.08.0",
+      supportedClis: ["claude"],
       catalog: {
         reviewed: [
           {
@@ -445,6 +448,7 @@ describe("governed candidate projection", () => {
     const policy = parseOrgPolicy({
       ...base,
       governance: {
+        supportedClis: ["claude"],
         ...base.governance,
         externalCuration: [
           {
@@ -566,6 +570,7 @@ describe("governed candidate projection", () => {
   it("rejects catalog aliases, stale activation decisions, duplicate approvals, and conflicting framework intents", () => {
     const policy = JSON.parse(JSON.stringify(customPolicy())) as {
       governance: {
+        supportedClis: ["claude"];
         catalog: {
           reviewed: Array<Record<string, unknown>>;
           custom: Array<Record<string, unknown>>;
@@ -743,6 +748,7 @@ describe("governed candidate projection", () => {
     const policy = parseOrgPolicy({
       ...JSON.parse(JSON.stringify(firstPolicy)),
       governance: {
+        supportedClis: ["claude"],
         ...JSON.parse(JSON.stringify(firstPolicy)).governance,
         catalog: { reviewed: [first, second], custom: [] },
         activations: [
@@ -1007,6 +1013,7 @@ describe("governed candidate projection", () => {
       mcp: { allowManagedOnly: true },
       governance: {
         policyVersion: "2026.08.0",
+        supportedClis: ["claude"],
         catalog: {
           reviewed: [
             {
@@ -1161,6 +1168,7 @@ describe("governed candidate projection", () => {
       references: { repoContract: "ai-coding/project.json" },
       governance: {
         policyVersion: "2026.08.0",
+        supportedClis: ["claude"],
         catalog: {
           reviewed: [
             {

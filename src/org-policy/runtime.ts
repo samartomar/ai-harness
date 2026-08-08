@@ -10,7 +10,7 @@ import {
   resolveEffectiveOrgPolicy,
   reviewedControlDigest,
 } from "./effective.js";
-import type { OrgPolicy } from "./schema.js";
+import { governanceOwnsAihSurfaces, type OrgPolicy } from "./schema.js";
 
 export interface RuntimeOrgPolicyResolution {
   catalog: Record<string, McpServer>;
@@ -31,9 +31,10 @@ export async function resolveRuntimeOrgPolicy(
     "project",
     scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir }),
   );
+  const governance = governanceOwnsAihSurfaces(policy) ? policy.governance : undefined;
   const policyCandidates = [
-    ...(policy.governance?.catalog.reviewed ?? []),
-    ...(policy.governance?.catalog.custom ?? []),
+    ...(governance?.catalog.reviewed ?? []),
+    ...(governance?.catalog.custom ?? []),
   ];
   const aihReviewedControls: Record<string, RuntimeReviewedControl> = Object.fromEntries(
     aihPolicyControls(catalog).map((control) => [

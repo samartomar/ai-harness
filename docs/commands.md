@@ -323,9 +323,7 @@ In a **governed** repository (an org policy carrying `governance`), `--lifecycle
 profile installer: it materializes the policy's evidence-passed component selection AIH-directly, and
 removal lives in `aih uninstall`. That governed install does read `--cli`, because which tools a
 materialization lands for is the ordinary workstation target selection — `--cli`, `--all-tools`, the
-committed `.aih-config.json` targets, else the `claude` default. The governed materialization targets
-are `claude`, `codex`, `kimi`, `cursor`, and `opencode`, and all five are wired; any other CLI is
-refused as not a governed materialization target. Four of them carry their own project root —
+committed `.aih-config.json` targets, else the `claude` default. At Enterprise posture, the active org policy must carry a non-empty `governance.supportedClis` allow-list; omission fails closed with the current registry ids and a paste-all remedy, never a wildcard. At Vibe posture, omission is unrestricted. A present list at either posture is the organization sanction gate and refuses any selected, detected, or marker-derived CLI outside it by name. The materialization capability gate then allows only `claude`, `codex`, `kimi`, `cursor`, and `opencode`; a sanctioned CLI outside that set is refused as not a governed materialization target. Four of them carry their own project root —
 `.claude/`, `.codex/`, `.cursor/`, and for Kimi `.kimi-code/`, which is where the framework's own
 Kimi adapter roots a project install. OpenCode materializes only the tool-shared project surfaces
 (`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`), because its only framework adapter is
@@ -598,7 +596,8 @@ like `aih init .` (`--root` and `AIH_ROOT` still apply).
 `aih-org-policy.json` schema, with schema-backed audit references for ECC or Superpowers agents, skills, and commands.
 Those records are external curation guidance only: AIH does not install, project, or enforce the external assets. Its
 catalog is an authoring projection of the same pinned AIH controls and framework catalog data used by the engine; it does
-not scan a repository. Browser import/export preserves policy semantics, including pinned stdio candidates, fenced remote endpoint candidates, annotations,
+not scan a repository. The workbench can also author `governance.supportedClis`, the organization-sanctioned CLI
+allow-list. At Enterprise posture it is required and non-empty; omission is refused with the current registry ids and a paste-all remedy, while wildcard sentinels are not supported. At Vibe posture omission is unrestricted, and a present list enforces at either posture. The list is independent of activation targets: sanctioned, materialization-capable, and projector-capable are three separate host sets. Browser import/export preserves policy semantics, including pinned stdio candidates, fenced remote endpoint candidates, annotations,
 signed-approval clarification, and external curation intent. A remote candidate records only an exact HTTPS origin,
 approval-shaped metadata, a pinned tool-surface digest, an `approved`, `drifted`, or `revoked` verdict, and an explicit
 no-content-scan marker; the workbench never contacts or scans that endpoint. The workbench can preflight JSON and preserve an
@@ -677,8 +676,7 @@ with an otherwise valid approval.
 `validate` is the **read-only CI gate** over the active local org policy source: the default
 committed `aih-org-policy.json`, or an explicit `AIH_ORG_POLICY` override. The policy source is
 JSON only; JavaScript/module policy files are not executed and fail as `org-policy.invalid` with
-remediation guidance. A missing default repo file is a friendly skip (vibe repos carry no org
-policy), and a parse/schema failure is a coded finding (`org-policy.invalid`) — or, under
+remediation guidance. At Enterprise posture, `governance.supportedClis` is required and must be a non-empty unique list drawn from AIH's supported CLI registry; absence fails closed with the current registry ids and a paste-all remedy, and wildcard sentinels are not supported. At Vibe posture absence is unrestricted, while a present list enforces at either posture. A missing default repo file is a friendly skip (vibe repos carry no org policy), and a parse/schema failure is a coded finding (`org-policy.invalid`) — or, under
 `--bundle <path>`, over a distributable **policy-bundle envelope**
 (`org-policy.bundle-invalid`, naming which layer failed: the envelope or the embedded policy).
 `verify --against <sha256|bundle>` compares the active policy (including an explicit

@@ -9,7 +9,7 @@ import {
   orgPolicyMcpReceiptState,
 } from "./project.js";
 import { resolveRuntimeOrgPolicy } from "./runtime.js";
-import { readOrgPolicy } from "./schema.js";
+import { governanceOwnsAihSurfaces, readOrgPolicy } from "./schema.js";
 
 function requestedCandidates(effective: EffectiveOrgPolicy) {
   return effective.candidates.filter((candidate) => candidate.requested);
@@ -58,7 +58,7 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
     const effective = (await resolveRuntimeOrgPolicy(ctx, policy)).effective;
     const hookReceipt = orgPolicyHookReceiptState(ctx, effective);
     const mcpReceipt = orgPolicyMcpReceiptState(ctx, effective);
-    if (policy.governance === undefined) {
+    if (!governanceOwnsAihSurfaces(policy)) {
       if (hookReceipt.state !== "absent" && hookReceipt.state !== "active") {
         return {
           name: "org policy effective resolution",
@@ -129,7 +129,7 @@ export async function orgPolicyEffectiveDigest(
 ): Promise<DigestAction | undefined> {
   try {
     const policy = readOrgPolicy(ctx.root, ctx.env);
-    if (policy?.governance === undefined) return undefined;
+    if (!governanceOwnsAihSurfaces(policy)) return undefined;
     const effective = (await resolveRuntimeOrgPolicy(ctx, policy)).effective;
     const hookReceipt = orgPolicyHookReceiptState(ctx, effective);
     const mcpReceipt = orgPolicyMcpReceiptState(ctx, effective);

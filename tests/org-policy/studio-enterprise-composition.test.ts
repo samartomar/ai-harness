@@ -35,6 +35,7 @@ function selectProfile(window: Window, value: string): void {
 function authoredPolicy(window: Window): {
   minimumPosture: string;
   governance: {
+    supportedClis: ["claude"];
     catalog: { reviewed: { id: string }[] };
     activations: { candidate: string; state: string }[];
     externalCuration: unknown[];

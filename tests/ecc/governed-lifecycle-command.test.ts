@@ -18,6 +18,7 @@ import { walkManagedRoot } from "../../src/ecc/install-manifest.js";
 import { eccMaterializationReceiptPath } from "../../src/ecc/materialization.js";
 import { readEccMaterializationReceipt } from "../../src/ecc/materialization-receipt.js";
 import { executeEccCommand } from "../../src/ecc/pipeline.js";
+import { SUPPORTED_CLIS } from "../../src/internals/clis.js";
 import type { PlanResult } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -189,6 +190,7 @@ function writeGovernedPolicy(
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         governance: {
+          supportedClis: SUPPORTED_CLIS,
           policyVersion: "2026-08-07.f6",
           catalog: { reviewed: [], custom: [] },
           externalSelections: [
@@ -220,7 +222,7 @@ function writeUngovernedPolicy(): void {
     `${JSON.stringify(
       {
         schemaVersion: 2,
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         references: { repoContract: "ai-coding/project.json" },
       },
       null,
@@ -482,6 +484,7 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
         references: { repoContract: "ai-coding/project.json" },
         governance: {
           policyVersion: "2026-08-07.f6",
+          supportedClis: ["claude"],
           catalog: { reviewed: [], custom: [] },
           externalSelections: [{ framework: "superpowers", items: [] }],
         },

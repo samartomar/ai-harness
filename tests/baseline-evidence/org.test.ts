@@ -28,7 +28,7 @@ function policy(signingRepository = "acme/engineering-governance") {
   const catalog = baselineCatalogById("ecc");
   return parseOrgPolicy({
     schemaVersion: 2,
-    minimumPosture: "enterprise",
+    minimumPosture: "vibe",
     references: { repoContract: "ai-coding/project.json" },
     trust: {
       baselineOverrides: [

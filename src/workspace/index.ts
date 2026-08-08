@@ -23,7 +23,7 @@ import {
 } from "../mcp/policy.js";
 import type { McpServer } from "../mcp/servers.js";
 import { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
-import type { OrgPolicy } from "../org-policy/schema.js";
+import { governanceOwnsAihSurfaces, type OrgPolicy } from "../org-policy/schema.js";
 import { classifyIncomingMcp } from "../trust/mcp-classify.js";
 import {
   checkWorkspaceChildPath,
@@ -587,7 +587,7 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const policyResult = readMcpOrgPolicy(ctx);
   if (policyResult.error !== undefined) throw invalidOrgPolicyError(policyResult.error);
   const mcpPolicy = policyResult.policy?.mcp;
-  const governedMcp = policyResult.policy?.governance !== undefined;
+  const governedMcp = governanceOwnsAihSurfaces(policyResult.policy);
   const allowWorkspaceGraph =
     !governedMcp &&
     (mcpPolicy?.allowManagedOnly !== true ||

@@ -293,11 +293,13 @@ function policyVerifyPlan(ctx: PlanContext): Plan {
 }
 
 async function policyEvaluatePlan(ctx: PlanContext): Promise<Plan> {
-  const effective = await orgPolicyEffectiveDigest(ctx);
+  const { clis } = await resolveTargets(ctx);
+  const evaluationCtx: PlanContext = { ...ctx, targets: clis };
+  const effective = await orgPolicyEffectiveDigest(evaluationCtx);
   return plan(
     "policy evaluate",
     ...(effective === undefined ? [] : [effective]),
-    probe("org policy effective resolution", (c) => orgPolicyEffectiveCheck(c)),
+    probe("org policy effective resolution", () => orgPolicyEffectiveCheck(evaluationCtx)),
   );
 }
 

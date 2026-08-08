@@ -145,7 +145,7 @@ export function assertGovernedMaterializationTargets(
   const unruled = requested.filter((cli) => !isGovernedTarget(cli));
   if (unruled.length > 0) {
     throw new AihError(
-      `refusing the governed ECC framework materialization: ${unruled.map((cli) => displaySafe(cli)).join(", ")} is not a governed materialization target — the governed targets are ${GOVERNED_MATERIALIZATION_TARGETS.join(", ")}, of which ${wired} ${WIRED_MATERIALIZATION_TARGETS.length === 1 ? "is" : "are"} wired today; ${wiredTargetRemedy()}`,
+      `materialization capability gate refused governed ECC framework materialization: ${unruled.map((cli) => displaySafe(cli)).join(", ")} is not a governed materialization target — the governed targets are ${GOVERNED_MATERIALIZATION_TARGETS.join(", ")}, of which ${wired} ${WIRED_MATERIALIZATION_TARGETS.length === 1 ? "is" : "are"} wired today; ${wiredTargetRemedy()}`,
       "AIH_CONFIG",
     );
   }
@@ -156,7 +156,7 @@ export function assertGovernedMaterializationTargets(
   // without it that target would materialize nothing and report success.
   if (unwired.length > 0) {
     throw new AihError(
-      `refusing the governed ECC framework materialization: the ${unwired.map((target) => TARGET_NAME[target]).join(", ")} target is a governed materialization target that is not wired yet — ${wired} ${WIRED_MATERIALIZATION_TARGETS.length === 1 ? "is" : "are"} wired today; ${wiredTargetRemedy()}`,
+      `materialization capability gate refused governed ECC framework materialization: the ${unwired.map((target) => TARGET_NAME[target]).join(", ")} target is a governed materialization target that is not wired yet — ${wired} ${WIRED_MATERIALIZATION_TARGETS.length === 1 ? "is" : "are"} wired today; ${wiredTargetRemedy()}`,
       "AIH_CONFIG",
     );
   }
@@ -165,7 +165,7 @@ export function assertGovernedMaterializationTargets(
   // request this lifecycle can honour.
   if (targets.length === 0) {
     throw new AihError(
-      "refusing the governed ECC framework materialization: no target was requested",
+      "materialization capability gate refused governed ECC framework materialization: no target was requested",
       "AIH_CONFIG",
     );
   }

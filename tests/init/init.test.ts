@@ -62,7 +62,7 @@ function seedOrgPolicy(allowedServers = ["code-review-graph"]): void {
     join(dir, "aih-org-policy.json"),
     JSON.stringify({
       schemaVersion: 2,
-      minimumPosture: "enterprise",
+      minimumPosture: "vibe",
       references: { repoContract: ".ai-context/project.json" },
       mcp: { allowedServers, allowManagedOnly: true },
     }),
@@ -75,10 +75,11 @@ function seedGovernedUsage(state: "active" | "disabled", targets: string[] = ["c
     join(dir, "aih-org-policy.json"),
     JSON.stringify({
       schemaVersion: 2,
-      minimumPosture: "enterprise",
+      minimumPosture: "vibe",
       references: { repoContract: ".ai-context/project.json" },
       governance: {
         policyVersion: "2026.08.0",
+        supportedClis: ["claude", "codex"],
         catalog: {
           reviewed: [
             {
@@ -216,7 +217,7 @@ describe("aih init — command surface", () => {
 
     expect(managed?.json).toMatchObject({
       organizationPolicy: {
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         references: { repoContract: ".ai-context/project.json" },
       },
     });
@@ -302,7 +303,7 @@ describe("aih init — command surface", () => {
       join(dir, "aih-org-policy.json"),
       JSON.stringify({
         schemaVersion: 2,
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         references: { repoContract: ".ai-context/project.json" },
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: false },
       }),

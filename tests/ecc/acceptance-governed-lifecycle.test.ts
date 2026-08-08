@@ -288,6 +288,7 @@ describe("acceptance — the governed framework lifecycle on a temporary fixture
           references: { repoContract: "ai-coding/project.json" },
           governance: {
             policyVersion: "2026-08-07.acceptance",
+            supportedClis: ["claude"],
             catalog: { reviewed: [], custom: [] },
             externalSelections: [
               {

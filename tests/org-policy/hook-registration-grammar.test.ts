@@ -16,6 +16,7 @@ function governedPolicy(governance: Record<string, unknown>): Record<string, unk
     references: { repoContract: "ai-coding/project.json" },
     governance: {
       policyVersion: "2026-08-06.1",
+      supportedClis: ["claude"],
       catalog: { reviewed: [], custom: [] },
       ...governance,
     },

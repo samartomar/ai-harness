@@ -171,6 +171,21 @@ describe("governanceRollupDigest", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          supportedClis: [
+            "claude",
+            "codex",
+            "cursor",
+            "antigravity",
+            "gemini",
+            "copilot",
+            "windsurf",
+            "opencode",
+            "zed",
+            "kimi",
+            "kiro",
+          ],
+        },
         mcp: { incumbentHosts: [], disabledServers: ["context7"] },
       }),
     );
@@ -194,6 +209,21 @@ describe("governanceRollupDigest", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          supportedClis: [
+            "claude",
+            "codex",
+            "cursor",
+            "antigravity",
+            "gemini",
+            "copilot",
+            "windsurf",
+            "opencode",
+            "zed",
+            "kimi",
+            "kiro",
+          ],
+        },
         mcp: {
           allowedServers: ["context7", "github"],
           approvals: [
@@ -229,6 +259,21 @@ describe("governanceRollupDigest", () => {
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          supportedClis: [
+            "claude",
+            "codex",
+            "cursor",
+            "antigravity",
+            "gemini",
+            "copilot",
+            "windsurf",
+            "opencode",
+            "zed",
+            "kimi",
+            "kiro",
+          ],
+        },
         mcp: { disabledServers: ["github"] },
       }),
     );

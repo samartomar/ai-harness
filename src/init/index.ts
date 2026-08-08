@@ -18,7 +18,7 @@ import type { Action, CommandSpec, PlanContext, WriteAction } from "../internals
 import { doc, plan, writeJson } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { verifiedOrgPolicyProjectionActions } from "../org-policy/project.js";
-import { readOrgPolicy } from "../org-policy/schema.js";
+import { governanceOwnsAihSurfaces, readOrgPolicy } from "../org-policy/schema.js";
 import { sidecarInitActions } from "../truth/index.js";
 import { INIT_PHASES } from "./phases.js";
 import { initV3Actions } from "./v3.js";
@@ -199,7 +199,7 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   for (const phase of INIT_PHASES) {
     if (phase.command.name === "superpowers" && baseline.id !== "ecc") continue;
     if (
-      policy?.governance !== undefined &&
+      governanceOwnsAihSurfaces(policy) &&
       (phase.command.name === "mcp" || phase.command.name === "usage")
     ) {
       actions.push(

@@ -49,6 +49,7 @@ function policy(overrides: Record<string, unknown> = {}) {
     mcp: { allowManagedOnly: true },
     governance: {
       policyVersion: "2026.08.0",
+      supportedClis: ["claude"],
       catalog: { reviewed: [candidate()], custom: [] },
       activations: [{ candidate: "catalog-mcp", state: "active", targets: ["claude"] }],
       authority: { approvals: [] },
@@ -122,6 +123,7 @@ describe("headless effective org policy", () => {
       references: { repoContract: "ai-coding/project.json" },
       governance: {
         policyVersion: "2026.08.0",
+        supportedClis: ["claude"],
         catalog: { reviewed: [candidate()], custom: [] },
         activations: [{ candidate: "catalog-mcp", state: "active", targets: ["claude"] }],
         authority: {
@@ -175,6 +177,7 @@ describe("headless effective org policy", () => {
       resolveEffectiveOrgPolicy(
         policy({
           governance: {
+            supportedClis: ["claude"],
             ...base.governance,
             catalog: { reviewed: [item], custom: [] },
             activations: [{ candidate: String(item.id), state: "active", targets: [...targets] }],
@@ -214,6 +217,7 @@ describe("headless effective org policy", () => {
     expect(() =>
       policy({
         governance: {
+          supportedClis: ["claude"],
           ...base.governance,
           catalog: { reviewed: [candidate({ framework: "ecc" })], custom: [] },
         },
@@ -229,6 +233,7 @@ describe("headless effective org policy", () => {
         references: { repoContract: "ai-coding/project.json" },
         governance: {
           policyVersion: "2026.08.0",
+          supportedClis: ["claude"],
           catalog: {
             reviewed: [],
             custom: [
@@ -262,6 +267,7 @@ describe("headless effective org policy", () => {
     const effective = resolveEffectiveOrgPolicy(
       policy({
         governance: {
+          supportedClis: ["claude"],
           ...base.governance,
           catalog: {
             reviewed: [],
@@ -310,6 +316,7 @@ describe("headless effective org policy", () => {
       parseOrgPolicy({
         ...base,
         governance: {
+          supportedClis: ["claude"],
           ...base.governance,
           catalog: { reviewed: [], custom: [hook] },
           activations: [{ candidate: "alias-hook", state: "active", targets: ["claude"] }],
@@ -414,6 +421,7 @@ describe("headless effective org policy", () => {
     const effective = resolveEffectiveOrgPolicy(
       policy({
         governance: {
+          supportedClis: ["claude"],
           policyVersion: "2026.08.0",
           catalog: { reviewed: [candidate({ findings: [danger] })], custom: [] },
           activations: [{ candidate: "catalog-mcp", state: "active", targets: ["claude"] }],
@@ -440,6 +448,7 @@ describe("headless effective org policy", () => {
       policy({
         governance: {
           policyVersion: "2026.08.0",
+          supportedClis: ["claude"],
           catalog: {
             reviewed: [],
             custom: [

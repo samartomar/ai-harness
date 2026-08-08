@@ -174,6 +174,7 @@ describe("policy studio framework selection", () => {
       parseOrgPolicy({
         ...policy,
         governance: {
+          supportedClis: ["claude"],
           ...governance,
           externalSelections: [
             {
@@ -232,6 +233,7 @@ describe("policy studio framework selection", () => {
       const authored = {
         ...policy,
         governance: {
+          supportedClis: ["claude"],
           ...governance,
           externalSelections: [
             {
@@ -256,6 +258,7 @@ describe("policy studio framework selection", () => {
       parseOrgPolicy({
         ...policy,
         governance: {
+          supportedClis: ["claude"],
           ...governance,
           externalSelections: [
             {

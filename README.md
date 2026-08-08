@@ -254,6 +254,7 @@ telemetry. `aih report --demo --v9` opens the same dashboard locally.*
 Pass `--cli` with a comma-separated list, `--all-tools` for every supported CLI, or `--detect` to
 auto-target the CLIs found on this machine; the default is `claude`. Supported:
 `claude, codex, cursor, antigravity, gemini, copilot, windsurf, opencode, zed, kimi, kiro`.
+At Enterprise posture, an org policy must declare a non-empty `governance.supportedClis` allow-list. Its absence fails closed and names the current registry ids so an administrator can deliberately paste the full list; wildcard sentinels are not supported. At Vibe posture, absence is unrestricted. A present list at either posture is an organization sanction gate: selected, detected, or marker-derived CLI targets outside it are refused by name before later capability checks, materialization, or projection.
 
 ```bash
 aih bootstrap-ai --cli claude       # writes CLAUDE.md (the default target, auto-loaded)

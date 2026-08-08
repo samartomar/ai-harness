@@ -68,6 +68,45 @@ describe("committed JSON Schemas", () => {
     });
   });
 
+  it("requires an explicit non-empty registry allow-list at enterprise posture", () => {
+    const base = {
+      schemaVersion: 2,
+      minimumPosture: "enterprise",
+      references: { repoContract: "ai-coding/project.json" },
+    };
+    rejectCommittedSchema("schemas/aih-org-policy.schema.json", base);
+    rejectCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...base,
+      governance: {
+        policyVersion: "1",
+        catalog: { reviewed: [], custom: [] },
+        activations: [],
+        authority: { approvals: [] },
+        supportedClis: [],
+      },
+    });
+    rejectCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...base,
+      governance: {
+        policyVersion: "1",
+        catalog: { reviewed: [], custom: [] },
+        activations: [],
+        authority: { approvals: [] },
+        supportedClis: ["*"],
+      },
+    });
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...base,
+      governance: {
+        policyVersion: "1",
+        catalog: { reviewed: [], custom: [] },
+        activations: [],
+        authority: { approvals: [] },
+        supportedClis: ["claude"],
+      },
+    });
+  });
+
   it("rejects unknown baseline ids in .aih-config.json", () => {
     rejectCommittedSchema("schemas/aih-config.schema.json", {
       schemaVersion: 1,
@@ -88,7 +127,7 @@ describe("committed JSON Schemas", () => {
   it("rejects unsupported fields in org-policy add-item schemas", () => {
     const base = {
       schemaVersion: 2,
-      minimumPosture: "enterprise",
+      minimumPosture: "vibe",
       references: { repoContract: "ai-coding/project.json" },
     };
     rejectCommittedSchema("schemas/aih-org-policy.schema.json", {
@@ -112,10 +151,11 @@ describe("committed JSON Schemas", () => {
   it("accepts governed hook registrations in the org policy editor schema", () => {
     validateCommittedSchema("schemas/aih-org-policy.schema.json", {
       schemaVersion: 2,
-      minimumPosture: "enterprise",
+      minimumPosture: "vibe",
       references: { repoContract: "ai-coding/project.json" },
       governance: {
         policyVersion: "2026-08-06.1",
+        supportedClis: ["claude"],
         catalog: { reviewed: [], custom: [] },
         hookRegistrations: [
           {
@@ -146,7 +186,7 @@ describe("committed JSON Schemas", () => {
   it("rejects githubHost values that are not bare https origins", () => {
     const base = {
       schemaVersion: 2,
-      minimumPosture: "enterprise",
+      minimumPosture: "vibe",
       references: { repoContract: "ai-coding/project.json" },
     };
     validateCommittedSchema("schemas/aih-org-policy.schema.json", {
@@ -171,7 +211,7 @@ describe("committed JSON Schemas", () => {
   it("validates MCP approval evidence in the org policy editor schema", () => {
     const base = {
       schemaVersion: 2,
-      minimumPosture: "enterprise",
+      minimumPosture: "vibe",
       references: { repoContract: "ai-coding/project.json" },
     };
     validateCommittedSchema("schemas/aih-org-policy.schema.json", {
@@ -230,13 +270,14 @@ describe("committed JSON Schemas", () => {
   it("preserves signed approval clarifications and report-only external curation intent", () => {
     const base = {
       schemaVersion: 2,
-      minimumPosture: "enterprise",
+      minimumPosture: "vibe",
       references: { repoContract: "ai-coding/project.json" },
     };
     validateCommittedSchema("schemas/aih-org-policy.schema.json", {
       ...base,
       governance: {
         policyVersion: "2026.08",
+        supportedClis: ["claude"],
         catalog: { reviewed: [], custom: [] },
         activations: [],
         authority: { approvals: [] },
@@ -265,7 +306,7 @@ describe("committed JSON Schemas", () => {
   it("validates attributable baseline override evidence in the org policy editor schema", () => {
     validateCommittedSchema("schemas/aih-org-policy.schema.json", {
       schemaVersion: 2,
-      minimumPosture: "enterprise",
+      minimumPosture: "vibe",
       references: { repoContract: "ai-coding/project.json" },
       trust: {
         baselineOverrides: [

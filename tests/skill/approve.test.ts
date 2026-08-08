@@ -280,7 +280,7 @@ describe("skillApproveCommand", () => {
       "aih-org-policy.json",
       JSON.stringify({
         schemaVersion: 2,
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         references: { repoContract: "ai-coding/project.json" },
         trust: { requiredChecks: ["no-exec", "skillspector"] },
       }),
@@ -310,7 +310,7 @@ describe("skillApproveCommand", () => {
       "aih-org-policy.json",
       JSON.stringify({
         schemaVersion: 2,
-        minimumPosture: "enterprise",
+        minimumPosture: "vibe",
         references: { repoContract: "ai-coding/project.json" },
         trust: { requiredChecks: ["license", "pin", "no-exec", "no-mcp", "skillspector"] },
       }),

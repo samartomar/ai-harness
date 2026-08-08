@@ -31,6 +31,7 @@ function studio(): Window {
 interface Authored {
   minimumPosture: string;
   governance: {
+    supportedClis: ["claude"];
     catalog: { reviewed: { id: string }[]; custom: unknown[] };
     activations: unknown[];
     externalSelections: Array<{ framework: string; items: Array<{ id: string }> }>;
@@ -76,6 +77,7 @@ describe("policy studio framework exclusivity", () => {
       parseOrgPolicy({
         ...policy,
         governance: {
+          supportedClis: ["claude"],
           ...governance,
           externalSelections: [
             {
@@ -158,7 +160,9 @@ describe("policy studio framework exclusivity", () => {
   it("changes posture without rewriting selected components", () => {
     const window = studio();
     click(window, selectKey(ecc, eccAsset));
+    click(window, `[data-sanctioned-cli="claude"]`);
     const before = structuredClone(selections(window));
+    const sanctionedBefore = structuredClone(authored(window).governance.supportedClis);
     const posture = window.document.getElementById("posture");
     if (posture === null) throw new Error("expected posture control");
     (posture as unknown as { value: string }).value = "enterprise";
@@ -166,6 +170,7 @@ describe("policy studio framework exclusivity", () => {
 
     expect(authored(window).minimumPosture).toBe("enterprise");
     expect(selections(window)).toEqual(before);
+    expect(authored(window).governance.supportedClis).toEqual(sanctionedBefore);
     expect(window.document.querySelector('option[value="team"]')).toBeNull();
   });
 

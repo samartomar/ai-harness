@@ -3,7 +3,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
-import { readOrgPolicy } from "../org-policy/schema.js";
+import { governanceOwnsAihSurfaces, readOrgPolicy } from "../org-policy/schema.js";
 import { checkWorkspaceChildPath } from "../workspace/detect.js";
 import {
   workspaceGitignoreMissing,
@@ -713,7 +713,7 @@ export async function workspaceReportDigest(ctx: PlanContext): Promise<DigestAct
   const contracts = manifest.edges.map((edge) => contractStatus(ctx.root, edge));
   let governed = false;
   try {
-    governed = readOrgPolicy(ctx.root, ctx.env)?.governance !== undefined;
+    governed = governanceOwnsAihSurfaces(readOrgPolicy(ctx.root, ctx.env));
   } catch {
     // The report already renders malformed workspace state as a finding; an
     // invalid policy must not be treated as authority for a mutation hint.

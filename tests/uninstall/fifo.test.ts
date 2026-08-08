@@ -57,6 +57,7 @@ it.skipIf(process.platform === "win32")(
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: ["claude"] },
         mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
       }),
     );

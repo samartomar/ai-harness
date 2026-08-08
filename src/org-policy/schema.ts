@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { AihError } from "../errors.js";
+import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
@@ -197,7 +198,36 @@ const SafePolicyTextSchema = z
 const SafePolicyIdentifierSchema = z
   .string()
   .regex(/^[a-z][a-z0-9-]{0,63}$/, "must be a lowercase stable identifier");
+export const SupportedCliSchema = z.enum(SUPPORTED_CLIS);
+const SupportedCliListSchema = z
+  .array(SupportedCliSchema)
+  .min(1)
+  .max(SUPPORTED_CLIS.length)
+  .superRefine((clis, ctx) => {
+    const duplicate = clis.find((cli, index) => clis.indexOf(cli) !== index);
+    if (duplicate !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: `supported CLI ${duplicate} appears more than once`,
+      });
+    }
+  });
 const PolicyTargetSchema = z.enum(["claude", "codex"]);
+
+export function enterpriseSupportedClisJsonSchemaConstraint(): Record<string, unknown> {
+  // JSON Schema conditional keyword; computed so this helper result is not a thenable.
+  const conditionalThen = "then";
+  return {
+    if: {
+      properties: { minimumPosture: { const: "enterprise" } },
+      required: ["minimumPosture"],
+    },
+    [conditionalThen]: {
+      required: ["governance"],
+      properties: { governance: { required: ["supportedClis"] } },
+    },
+  };
+}
 
 const Sha256Schema = z.string().regex(/^sha256:[0-9a-f]{64}$/, "must be a sha256 digest");
 const GitRepositorySchema = z
@@ -887,7 +917,7 @@ export function hookRegistrationSetIssues(
   return issues;
 }
 
-const PolicyGovernanceSchema = z
+const GovernedPolicyGovernanceSchema = z
   .object({
     policyVersion: SafePolicyTextSchema,
     catalog: z
@@ -916,6 +946,14 @@ const PolicyGovernanceSchema = z
      * installer or projector.
      */
     externalSelections: z.array(ExternalFrameworkSelectionSchema).default([]),
+    /**
+     * Organization-sanctioned AI CLIs. This is a governance boundary, not the
+     * projector target set: every value comes from AIH's supported CLI registry,
+     * while materialization/projector support remains capability-specific.
+     * At enterprise posture it is an explicit, non-empty allow-list; at vibe,
+     * absence means unrestricted. A present list enforces at either posture.
+     */
+    supportedClis: SupportedCliListSchema.optional(),
     /**
      * Registrations the `hook-managed-settings` projector emits into the client
      * destination AIH owns. The command is a third party's own launcher carried
@@ -1097,6 +1135,16 @@ const PolicyGovernanceSchema = z
     }
   });
 
+/** An allow-list-only governance object sanctions CLI targets without taking over projection. */
+const SupportedCliOnlyGovernanceSchema = z
+  .object({ supportedClis: SupportedCliListSchema })
+  .strict();
+
+const PolicyGovernanceSchema = z.union([
+  SupportedCliOnlyGovernanceSchema,
+  GovernedPolicyGovernanceSchema,
+]);
+
 /** Stable flattened input leaves for mechanical consumer-completeness contracts. */
 export function schemaLeafPaths(schema: unknown, path = ""): string[] {
   if (schema === null || typeof schema !== "object" || Array.isArray(schema)) {
@@ -1196,14 +1244,48 @@ export const OrgPolicySchema = z
      */
     governance: PolicyGovernanceSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((policy, ctx) => {
+    if (policy.minimumPosture !== "enterprise" || policy.governance?.supportedClis?.length) return;
+    ctx.addIssue({
+      code: "custom",
+      path: ["governance", "supportedClis"],
+      message:
+        "enterprise posture requires a non-empty governance.supportedClis allow-list; current registry ids: " +
+        SUPPORTED_CLIS.join(", ") +
+        ". To sanction every supported CLI, paste every id; wildcard sentinels are not supported",
+    });
+  });
 
-export type OrgPolicy = z.infer<typeof OrgPolicySchema>;
+type ParsedOrgPolicy = z.infer<typeof OrgPolicySchema>;
+export type OrgPolicy = Omit<ParsedOrgPolicy, "governance"> & {
+  governance?: z.infer<typeof GovernedPolicyGovernanceSchema>;
+};
+
+type GovernedOrgPolicy = OrgPolicy & { governance: NonNullable<OrgPolicy["governance"]> };
+
+/**
+ * A supported-CLI allow-list is a sanction gate, not a request to take over
+ * MCP or hook projection. Only a policy carrying governed inventory, decisions,
+ * authority, curation, or registrar records owns those AIH surfaces.
+ */
+export function governanceOwnsAihSurfaces(
+  policy: OrgPolicy | undefined,
+): policy is GovernedOrgPolicy {
+  const governance = policy?.governance;
+  return governance !== undefined && "policyVersion" in governance;
+}
 
 export class OrgPolicyError extends AihError {
   constructor(message: string) {
     super(message, "AIH_ORG_POLICY");
   }
+}
+
+function zodIssueMessages(issues: z.ZodError["issues"]): string[] {
+  return issues.flatMap((issue) =>
+    issue.code === "invalid_union" ? issue.errors.flatMap(zodIssueMessages) : [issue.message],
+  );
 }
 
 export function parseOrgPolicy(value: unknown): OrgPolicy {
@@ -1228,12 +1310,10 @@ export function parseOrgPolicy(value: unknown): OrgPolicy {
     );
   }
   try {
-    return OrgPolicySchema.parse(value);
+    return OrgPolicySchema.parse(value) as OrgPolicy;
   } catch (err) {
     if (err instanceof z.ZodError) {
-      throw new OrgPolicyError(
-        `org-policy is invalid: ${err.issues.map((i) => i.message).join("; ")}`,
-      );
+      throw new OrgPolicyError(`org-policy is invalid: ${zodIssueMessages(err.issues).join("; ")}`);
     }
     throw err;
   }
@@ -1245,7 +1325,7 @@ export function parseOrgPolicy(value: unknown): OrgPolicy {
  */
 export function assertGovernanceOwnsSurface(ctx: PlanContext, surface: "mcp" | "usage"): void {
   const policy = readOrgPolicy(ctx.root, ctx.env);
-  if (policy?.governance === undefined) return;
+  if (!governanceOwnsAihSurfaces(policy)) return;
   throw new OrgPolicyError(
     `governance exclusively owns AIH ${surface} projection; use \`aih policy project\` to evaluate and apply the verified policy`,
   );

@@ -3,7 +3,7 @@ import { join, posix } from "node:path";
 import { SettingsError } from "../errors.js";
 import { homeDir, isTargeted, resolveTargets } from "../internals/cli-detect.js";
 import { type CliEntry, entry } from "../internals/cli-registry.js";
-import type { Cli } from "../internals/clis.js";
+import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import { upsertTextBlock } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
@@ -21,6 +21,7 @@ import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
 import {
   assertGovernanceOwnsSurface,
+  governanceOwnsAihSurfaces,
   type OrgPolicy,
   parseOrgPolicy,
   readOrgPolicy,
@@ -513,11 +514,12 @@ function readLocalOrgPolicyForApproval(ctx: PlanContext): {
   const raw = readIfExists(join(ctx.root, AIH_ORG_POLICY_FILE));
   if (raw === undefined) {
     return {
-      policy: {
+      policy: parseOrgPolicy({
         schemaVersion: 2,
         minimumPosture: "enterprise",
         references: { repoContract: posix.join(ctx.contextDir, "project.json") },
-      },
+        governance: { supportedClis: [...SUPPORTED_CLIS] },
+      }),
       exists: false,
       raw: undefined,
     };
@@ -563,7 +565,7 @@ function guardMcpPlan(ctx: PlanContext, planned: ReturnType<typeof plan>): Retur
 }
 
 function approveMcpPlan(ctx: PlanContext): ReturnType<typeof plan> {
-  if (readOrgPolicy(ctx.root, ctx.env)?.governance !== undefined) {
+  if (governanceOwnsAihSurfaces(readOrgPolicy(ctx.root, ctx.env))) {
     throw new SettingsError(
       "governance exclusively owns AIH MCP activation; `aih mcp approve` would only write a legacy approval with no governed effect. Record externally verified evidence or a signed authority receipt for the exact governed candidate, then run `aih policy evaluate` and `aih policy project`",
     );

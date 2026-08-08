@@ -56,6 +56,7 @@ interface FrameworkGroup {
 function authoredPolicy(window: Window): {
   minimumPosture: string;
   governance: {
+    supportedClis: ["claude"];
     catalog: { reviewed: { id: string }[]; custom: { id: string }[] };
     activations: { candidate: string; state: string }[];
     externalSelections: FrameworkGroup[];

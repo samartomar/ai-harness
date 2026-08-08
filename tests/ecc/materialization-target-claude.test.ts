@@ -322,6 +322,7 @@ function policyDocument(): Record<string, unknown> {
     references: { repoContract: "ai-coding/project.json" },
     governance: {
       policyVersion: "2026-08-07.1",
+      supportedClis: ["claude"],
       catalog: { reviewed: [], custom: [] },
       externalSelections: [
         {

@@ -258,6 +258,7 @@ through the repository or another reviewed channel, then bind it in
   "schemaVersion": 2,
   "minimumPosture": "enterprise",
   "references": { "repoContract": "ai-coding/project.json" },
+  "governance": { "supportedClis": ["claude"] },
   "trust": {
     "baselineOverrides": [
       {

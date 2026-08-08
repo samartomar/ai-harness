@@ -111,6 +111,7 @@
   "references": {
     "repoContract": "ai-coding/project.json"
   },
+  "governance": { "supportedClis": ["claude"] },
   "licenses": {
     "disposition": {
       "Apache-2.0": "auto-approve",
@@ -157,6 +158,7 @@
   "references": {
     "repoContract": "ai-coding/project.json"
   },
+  "governance": { "supportedClis": ["claude"] },
   "command": {
     "deny": {
       "add": [
@@ -246,6 +248,7 @@ would write for the same server. This JSON shape passes `aih policy validate`:
   "references": {
     "repoContract": "ai-coding/project.json"
   },
+  "governance": { "supportedClis": ["claude"] },
   "mcp": {
     "allowedServers": ["figma"],
     "approvals": [

@@ -26,7 +26,7 @@ import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
 import { doc, type Plan, type PlanContext, plan } from "../internals/plan.js";
 import { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
-import { readOrgPolicy } from "../org-policy/schema.js";
+import { governanceOwnsAihSurfaces, readOrgPolicy } from "../org-policy/schema.js";
 import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
 import { cleanupQuarantine, resolveTrustSource, type TrustSource } from "../trust/fetch.js";
@@ -215,7 +215,7 @@ export function buildEccRegistrationRequest(ctx: PlanContext, clis: Cli[]): EccR
     },
     project,
     ledger,
-    ...(policy?.governance !== undefined ? { governance: true } : {}),
+    ...(governanceOwnsAihSurfaces(policy) ? { governance: true } : {}),
   };
 }
 
@@ -296,7 +296,7 @@ export async function executeEccCommand(
   if (ctx.options.lifecycle !== undefined) {
     const lifecycle = String(ctx.options.lifecycle);
     const policy = readOrgPolicy(ctx.root, ctx.env);
-    if (policy?.governance !== undefined && lifecycle === "install") {
+    if (governanceOwnsAihSurfaces(policy) && lifecycle === "install") {
       // The governed framework lifecycle, reached by an operator. It replaces
       // the profile installer here rather than wrapping it: AIH-direct
       // materialization is what makes per-component governed control possible,
@@ -327,7 +327,7 @@ export async function executeEccCommand(
       );
     }
     if (
-      policy?.governance !== undefined &&
+      governanceOwnsAihSurfaces(policy) &&
       (lifecycle === "update" || lifecycle === "repair" || lifecycle === "rollback")
     ) {
       throw new AihError(
