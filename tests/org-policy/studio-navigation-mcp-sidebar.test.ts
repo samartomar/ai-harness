@@ -54,11 +54,8 @@ function hidden(window: Window, id: string): boolean | undefined {
   return (window.document.getElementById(id) as unknown as { hidden: boolean } | null)?.hidden;
 }
 
-function detailFact(window: Window, label: string): string {
-  const fact = [...window.document.querySelectorAll("#drawer-detail .kv > div")].find(
-    (row) => row.querySelector("span")?.textContent === label,
-  );
-  return fact?.querySelector("b")?.textContent ?? "";
+function detailNarration(window: Window): string {
+  return window.document.querySelector("#drawer-detail .journey-effective")?.textContent ?? "";
 }
 
 function setValue(window: Window, id: string, value: string): void {
@@ -141,7 +138,7 @@ describe("policy studio navigation ownership and ECC MCP authoring", () => {
     query.dispatchEvent(new window.Event("input", { bubbles: true }));
     click(window, window.document.querySelector("#hits .hit"), `search result ${asset.id}`);
     expect(window.document.getElementById("drawer-detail")?.textContent).toContain(asset.id);
-    expect(detailFact(window, "Requested")).toBe("no");
+    expect(detailNarration(window)).toContain("Authored intent: not selected.");
     expect(window.document.querySelector("#drawer-detail [data-framework-select]")).toBeNull();
     expect(window.document.querySelector("#drawer-detail [data-add-riders]")).toBeNull();
     click(window, window.document.querySelector("[data-drawer-close]"), "close detail");
@@ -156,8 +153,10 @@ describe("policy studio navigation ownership and ECC MCP authoring", () => {
     query.value = asset.id;
     query.dispatchEvent(new window.Event("input", { bubbles: true }));
     click(window, window.document.querySelector("#hits .hit"), `selected result ${asset.id}`);
-    expect(detailFact(window, "Requested")).toBe("yes");
-    expect(detailFact(window, "Gate")).toBe("records intent only");
+    expect(detailNarration(window)).toContain("Authored intent: selected.");
+    expect(detailNarration(window)).toContain(
+      "Effective count: not evaluated in this portable artifact",
+    );
     expect(window.document.querySelector("#drawer-detail [data-framework-select]")).toBeNull();
     expect(window.document.querySelector("#drawer-detail [data-add-riders]")).toBeNull();
     window.close();

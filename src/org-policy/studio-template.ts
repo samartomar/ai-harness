@@ -36,84 +36,45 @@ export function policyStudioHtml(model: PolicyStudioModel): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AIH Policy Workbench</title>
 <style>
-/* Policy Workbench - Sahara, warm minimalism. Ported verbatim in structure from
-   the owner-accepted acceptance artifact and wired to the real catalog.
-
-   Sun-baked simplicity: burnt sienna on warm linen, EB Garamond headings against
-   Manrope labels, whitespace as the primary tool. The whole palette is warm-shifted;
-   even the grays carry warm undertones, and there is no cold white anywhere.
-
-   The state ramp stays semantic while going warm. Selected and requested are the
-   same sienna hue at different strengths, because requested is a weaker form of the
-   same intent; gold means evidence is still owed; the dusty rose tertiary is spent
-   on blocked, which is the one state that must stop you; taupe means the catalog
-   cannot reach it at all.
-
-   No blur anywhere, by measurement rather than taste: three drifting blur(90px)
-   layers spend a 63ms frame per row toggle and 18ms without them. The field is the
-   same three radial gradients painted straight onto the background.
-
-   Fonts are stacks, not webfonts: this artifact opens with no repository and no
-   network, so a remote font would be a dependency it must not have.
-
-   Interactive floors are this repository's, not the artifact's: controls stay at
-   32px and chips at 24px (WCAG 2.2 target size). Compactness does not lower a
-   tap target. */
+/* Ledger: paper and ink define chrome; colour is reserved for evidence. The
+   portable artifact uses local font stacks, five type sizes, flat rules, hatch
+   custody, 120ms ease-out motion, 32px controls, and 24px compact controls. */
 :root{
-  --ease-out:cubic-bezier(.16,1,.3,1);
-  --spring:cubic-bezier(.34,1.35,.44,1);
+  --motion:120ms ease-out;
+  --paper:#fcfcfa;--ink:#16181d;--rule:#d9dbd6;--pass:#1a6b45;--blocked:#a3232b;--owed:#8a6d1c;
+  --target-control:32px;--target-chip:24px;
+  --type-caption:10px;--type-meta:11px;--type-body:13px;--type-title:16px;--type-masthead:20px;
   --display:"EB Garamond",Georgia,"Times New Roman",serif;
   --sans:"Manrope","Segoe UI Variable","Segoe UI",system-ui,-apple-system,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
-  --shadow-soft:0 2px 16px rgba(58,48,42,.04);
+  --shadow-soft:none;
 }
 html[data-theme="light"]{
   color-scheme:light;
-  --bg:#faf5ee;--bg-deep:#f2ebe1;
-  --glass:rgba(255,252,247,.72);--glass-strong:#fffcf7;--glass-line:rgba(216,208,200,.6);
-  --fill:rgba(58,48,42,.045);--fill-2:rgba(58,48,42,.09);
-  --ink:#3a302a;--ink-2:#6b5d52;--ink-3:#7d6f62;
-  --accent:#c2652a;--accent-ink:#a8541f;--accent-soft:rgba(194,101,42,.1);--accent-line:rgba(194,101,42,.34);
-  --cyan:#a8541f;--cyan-soft:rgba(194,101,42,.1);
-  --amber:#8a6316;--amber-soft:rgba(169,123,31,.12);
-  --danger:#8c3c3c;--danger-soft:rgba(140,60,60,.1);
-  --on-accent:#fffcf7;
-  --s-sel:#c2652a;--s-req:#c98a4f;--s-wait:#a9871f;--s-blk:#8c3c3c;
-  --s-uns:#8f8474;--s-avail:rgba(58,48,42,.13);
-  --blob-1:rgba(194,101,42,.09);--blob-2:rgba(201,162,39,.07);--blob-3:rgba(140,60,60,.06);
-  --shadow-lg:0 8px 40px -12px rgba(58,48,42,.14);
-  --b-pending-bg:#f5e9c8;--b-pending-fg:#6b4c08;
-  --b-blocked-bg:#f3dcdc;--b-blocked-fg:#7a2f2f;
-  --b-external-bg:#eae3d8;--b-external-fg:#544a3e;
-  --b-requested-bg:#f7e0cf;--b-requested-fg:#8f4517;
+  --paper:#fcfcfa;--surface:#fff;--rule:#d9dbd6;--rule-soft:#ecece8;--fill:#f7f7f4;--fill-2:#e3e4df;--fill-hover:#f0f0ec;
+  --ink:#16181d;--ink-2:#3d4047;--ink-3:#5c5f66;
+  --pass:#1a6b45;--blocked:#a3232b;--owed:#8a6d1c;
+  --accent:#16181d;--accent-ink:#16181d;--accent-soft:#f0f0ec;--accent-line:#16181d;
+  --pass-soft:#e8f3ec;--owed-soft:#f5f0dd;--blocked-soft:#faeced;--on-accent:var(--paper);
+  --s-sel:var(--ink);--s-req:var(--ink);--s-wait:var(--owed);--s-blk:var(--blocked);--s-uns:#8b8e86;--s-avail:#e3e4df;
+  --shadow-lg:none;
 }
-/* Sahara after sundown: the same warmth, inverted. Warm charcoal, never blue-black. */
 html[data-theme="dark"]{
   color-scheme:dark;
-  --bg:#1c1714;--bg-deep:#15110f;
-  --glass:rgba(46,38,33,.66);--glass-strong:#2a231e;--glass-line:rgba(216,208,200,.14);
-  --fill:rgba(240,228,214,.07);--fill-2:rgba(240,228,214,.13);
-  --ink:#f4ece1;--ink-2:#cbbdad;--ink-3:#a2937f;
-  --accent:#e08344;--accent-ink:#eda468;--accent-soft:rgba(224,131,68,.14);--accent-line:rgba(224,131,68,.4);
-  --cyan:#eda468;--cyan-soft:rgba(224,131,68,.12);
-  --amber:#d9b23f;--amber-soft:rgba(217,178,63,.14);
-  --danger:#c96363;--danger-soft:rgba(201,99,99,.14);
-  --on-accent:#231c17;
-  --s-sel:#e08344;--s-req:#a9754c;--s-wait:#d9b23f;--s-blk:#c96363;
-  --s-uns:#8a7f72;--s-avail:rgba(240,228,214,.16);
-  --blob-1:rgba(224,131,68,.1);--blob-2:rgba(217,178,63,.07);--blob-3:rgba(201,99,99,.06);
-  --shadow-lg:0 12px 48px -14px rgba(0,0,0,.5);
-  --b-pending-bg:#40361c;--b-pending-fg:#e8cd7a;
-  --b-blocked-bg:#45272a;--b-blocked-fg:#f0b3b3;
-  --b-external-bg:#332c25;--b-external-fg:#cbbdad;
-  --b-requested-bg:#4a2f1c;--b-requested-fg:#f0a670;
+  --paper:#1d1f23;--surface:#25282d;--rule:#4b4e54;--rule-soft:#373a40;--fill:#2d3036;--fill-2:#3a3d44;--fill-hover:#34373d;
+  --ink:#f5f5ef;--ink-2:#d7d8d2;--ink-3:#b1b4ae;
+  --pass:#8ed3aa;--blocked:#f08c94;--owed:#d8be73;
+  --accent:#f5f5ef;--accent-ink:#f5f5ef;--accent-soft:#34373d;--accent-line:#f5f5ef;
+  --pass-soft:#223b2c;--owed-soft:#3f3820;--blocked-soft:#452d32;--on-accent:#1d1f23;
+  --s-sel:var(--ink);--s-req:var(--ink);--s-wait:var(--owed);--s-blk:var(--blocked);--s-uns:#a9aca5;--s-avail:#3a3d44;
+  --shadow-lg:none;
 }
 *,*::before,*::after{box-sizing:border-box}
 html,body{height:100%}
 /* vh first, dvh second: dynamic viewport units resolve to 0 in engines with no
    live visual viewport, which collapses the whole stage to nothing. The vh
    declaration is the floor; dvh upgrades it wherever it actually resolves. */
-body{margin:0;min-height:100vh;min-height:100dvh;overflow:hidden;font:400 13px/1.5 var(--sans);
+body{margin:0;min-height:100vh;min-height:100dvh;overflow:hidden;font:400 var(--type-body)/1.5 var(--sans);
   color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
 h1,h2,h3,p{margin:0}
 button{font-family:inherit;color:inherit;cursor:pointer;border:0;background:none}
@@ -122,19 +83,12 @@ input,select,textarea{font:inherit}
 *:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .skip{position:absolute;left:-9999px}
-.skip:focus{left:.75rem;top:.75rem;z-index:999;background:var(--glass-strong);padding:.5rem;
-  border-radius:8px;border:1px solid var(--glass-line)}
+.skip:focus{left:.75rem;top:.75rem;z-index:999;background:var(--surface);padding:.5rem;
+  border-radius:8px;border:1px solid var(--rule)}
 .hidden{display:none}
 
 /* ── field ───────────────────────────────────────────── */
-.field{position:fixed;inset:0;overflow:hidden;
-  background:
-    radial-gradient(56vw 56vw at 14% -6%,var(--blob-1),transparent 65%),
-    radial-gradient(44vw 44vw at 92% 22%,var(--blob-2),transparent 65%),
-    radial-gradient(40vw 40vw at 44% 118%,var(--blob-3),transparent 65%),
-    var(--bg)}
-.grain{position:absolute;inset:0;pointer-events:none;opacity:.5;mix-blend-mode:overlay;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.16'/%3E%3C/svg%3E")}
+.field{position:fixed;inset:0;overflow:hidden;background:var(--paper)}
 
 /* ── stage ───────────────────────────────────────────── */
 .stage{position:relative;z-index:1;height:100vh;height:100dvh;display:grid;grid-template-rows:56px auto auto minmax(0,1fr) 34px}
@@ -142,49 +96,49 @@ input,select,textarea{font:inherit}
    a list, not from markup, so a new owner is a data change. */
 .ticker{display:flex;align-items:center;gap:6px;padding:0 18px 8px;flex-wrap:wrap}
 .ticker button{height:28px;padding:0 12px;border-radius:999px;background:transparent;color:var(--ink-3);
-  font:600 12px/1 var(--sans);border:1px solid transparent;display:inline-flex;align-items:center;gap:6px;
-  transition:color 160ms ease,background 160ms ease}
+  font:600 var(--type-meta)/1 var(--sans);border:1px solid transparent;display:inline-flex;align-items:center;gap:6px;
+  transition:color var(--motion),background var(--motion)}
 .ticker button:hover{color:var(--ink);background:var(--fill)}
 .ticker button[aria-pressed="true"]{color:var(--accent-ink);background:var(--accent-soft);border-color:var(--accent-line)}
-.ticker button b{font-family:var(--mono);font-weight:700;font-size:11px}
+.ticker button b{font-family:var(--mono);font-weight:700;font-size:var(--type-meta)}
 .ticker button[data-empty="true"]{opacity:.5}
-.ticker .sep{color:var(--glass-line);user-select:none}
-.ticker .soon{font:600 9.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;
+.ticker .sep{color:var(--rule);user-select:none}
+.ticker .soon{font:600 var(--type-caption)/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;
   color:var(--ink-3);opacity:.7;margin-left:auto;display:inline-flex;align-items:center;gap:6px}
 .bar{display:flex;align-items:center;gap:10px;padding:0 16px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:9px;min-width:0}
 .brand-mark{width:26px;height:26px;border-radius:9px;display:grid;place-items:center;flex:0 0 auto;
   background:var(--accent);box-shadow:var(--shadow-soft)}
 .brand-mark svg{width:15px;height:15px}
-.brand-name{font:600 13.5px/1.2 var(--display);letter-spacing:-.01em;white-space:nowrap}
-.brand-name span{color:var(--ink-3);font-weight:400;font-family:var(--sans);font-size:11px}
+.brand-name{font:600 var(--type-masthead)/1.2 var(--display);letter-spacing:-.01em;white-space:nowrap}
+.brand-name span{color:var(--ink-3);font-weight:400;font-family:var(--sans);font-size:var(--type-meta)}
 .pill{display:inline-flex;align-items:center;gap:2px;padding:2px;border-radius:999px;
-  border:1px solid var(--glass-line);background:var(--glass)}
+  border:1px solid var(--rule);background:var(--surface)}
 .pill button{height:26px;min-width:44px;padding:0 11px;border-radius:999px;color:var(--ink-3);
-  font-weight:600;font-size:11.5px;transition:color 180ms ease,background 180ms ease}
+  font-weight:600;font-size:var(--type-meta);transition:color var(--motion),background var(--motion)}
 .pill button:hover{color:var(--ink-2)}
 .pill button[aria-pressed="true"]{color:var(--ink);background:var(--fill-2)}
 .bar .sp{flex:1}
 .btn{height:32px;padding:0 12px;border-radius:999px;background:var(--fill);color:var(--ink);
-  font-weight:600;font-size:12px;display:inline-flex;align-items:center;gap:6px;
-  transition:background 180ms ease,transform 120ms var(--ease-out)}
+  font-weight:600;font-size:var(--type-meta);display:inline-flex;align-items:center;gap:6px;
+  transition:background var(--motion),transform var(--motion)}
 .btn:hover{background:var(--fill-2)}
 .btn:active{transform:scale(.97)}
 .btn.primary{background:var(--accent);color:var(--on-accent)}
 .btn.primary:hover{filter:brightness(1.08)}
-.btn.sm{height:32px;padding:0 10px;font-size:11.5px}
-.btn.danger{color:var(--danger);background:var(--danger-soft)}
+.btn.sm{height:32px;padding:0 10px;font-size:var(--type-meta)}
+.btn.danger{color:var(--blocked);background:var(--blocked-soft)}
 .btn[disabled]{opacity:.5;cursor:not-allowed}
 .seek{display:flex;align-items:center;gap:8px;height:32px;padding:0 8px 0 12px;border-radius:999px;
-  border:1px solid var(--glass-line);background:var(--glass);
-  color:var(--ink-3);font-size:12px;min-width:200px;transition:border-color 200ms ease}
+  border:1px solid var(--rule);background:var(--surface);
+  color:var(--ink-3);font-size:var(--type-meta);min-width:200px;transition:border-color var(--motion)}
 .seek:hover{border-color:var(--accent-line)}
-.seek kbd{font:500 10px/1 var(--mono);background:var(--fill-2);border-radius:4px;padding:3px 6px;margin-left:auto}
-.bar label{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-3)}
-.bar select{height:32px;border-radius:999px;border:1px solid var(--glass-line);background:var(--glass);
-  color:var(--ink);padding:0 8px;font-size:12px}
-.announce{grid-row:2;min-height:20px;padding:0 18px 4px;font-size:12px;color:var(--ink-2)}
-.announce.error{color:var(--danger)}
+.seek kbd{font:500 var(--type-caption)/1 var(--mono);background:var(--fill-2);border-radius:4px;padding:3px 6px;margin-left:auto}
+.bar label{display:inline-flex;align-items:center;gap:6px;font-size:var(--type-meta);color:var(--ink-3)}
+.bar select{height:32px;border-radius:999px;border:1px solid var(--rule);background:var(--surface);
+  color:var(--ink);padding:0 8px;font-size:var(--type-meta)}
+.announce{grid-row:2;min-height:20px;padding:0 18px 4px;font-size:var(--type-meta);color:var(--ink-2)}
+.announce.error{color:var(--blocked)}
 /* The announcement is already shown in full under the bar, so a truncated copy
    of it in the bar was noise. Kept in the DOM as a live region for assistive
    technology, which is the only reader it was ever serving. */
@@ -192,8 +146,8 @@ input,select,textarea{font:inherit}
 
 /* ── body layout ─────────────────────────────────────── */
 .work{display:grid;grid-template-columns:236px minmax(0,1fr);gap:12px;padding:0 16px 10px;min-height:0}
-@media(max-width:880px){.work{grid-template-columns:1fr}.rail{display:none}}
-.gcard{border-radius:16px;border:1px solid var(--glass-line);background:var(--glass);
+@media(max-width:880px){.work{grid-template-columns:1fr}}
+.gcard{border-radius:16px;border:1px solid var(--rule);background:var(--surface);
   box-shadow:var(--shadow-soft)}
 
 /* rail */
@@ -201,24 +155,24 @@ input,select,textarea{font:inherit}
 .rail::-webkit-scrollbar,.plane::-webkit-scrollbar,.drawer::-webkit-scrollbar{width:8px}
 .rail::-webkit-scrollbar-thumb,.plane::-webkit-scrollbar-thumb,.drawer::-webkit-scrollbar-thumb{background:var(--fill-2);border-radius:9px}
 .sect{padding:10px 11px;display:grid;gap:7px}
-.cap{font:600 9.5px/1.3 var(--mono);letter-spacing:.15em;text-transform:uppercase;color:var(--ink-3);
+.cap{font:600 var(--type-caption)/1.3 var(--mono);letter-spacing:.15em;text-transform:uppercase;color:var(--ink-3);
   display:flex;align-items:center;gap:7px}
-.cap .end{margin-left:auto;color:var(--accent-ink);font-size:9.5px;letter-spacing:0;text-transform:none}
+.cap .end{margin-left:auto;color:var(--accent-ink);font-size:var(--type-caption);letter-spacing:0;text-transform:none}
 .preset{display:grid;gap:2px;text-align:left;padding:7px 9px;border-radius:10px;background:var(--fill);
-  transition:background 160ms ease;min-height:32px}
+  transition:background var(--motion);min-height:32px}
 .preset:hover{background:var(--fill-2)}
 .preset[aria-pressed="true"]{background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent-line)}
-.preset b{font:600 12px/1.3 var(--display)}
+.preset b{font:600 var(--type-meta)/1.3 var(--display)}
 .preset[aria-pressed="true"] b{color:var(--accent-ink)}
-.preset span{font-size:10.5px;color:var(--ink-3);line-height:1.35}
+.preset span{font-size:var(--type-caption);color:var(--ink-3);line-height:1.35}
 .chips{display:flex;flex-wrap:wrap;gap:4px}
 .chip{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 9px;border-radius:999px;
-  background:var(--fill);color:var(--ink-2);font-size:11px;font-weight:600;
-  transition:background 160ms ease,color 160ms ease}
+  background:var(--fill);color:var(--ink-2);font-size:var(--type-meta);font-weight:600;
+  transition:background var(--motion),color var(--motion)}
 .chip:hover{background:var(--fill-2);color:var(--ink)}
-.chip[aria-pressed="true"]{background:var(--cyan-soft);color:var(--cyan);box-shadow:inset 0 0 0 1px var(--cyan)}
+.chip[aria-pressed="true"]{background:var(--fill-2);color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
 .chip[aria-disabled="true"]{opacity:.55;cursor:default}
-.chip[data-host][aria-disabled="false"]{color:var(--cyan);box-shadow:inset 0 0 0 1px var(--cyan)}
+.chip[data-host][aria-disabled="false"]{color:var(--ink);box-shadow:inset 0 0 0 1px var(--rule)}
 
 /* plane */
 /* flex column, not grid: as direct grid items these cards resolved to a 2px
@@ -229,26 +183,26 @@ input,select,textarea{font:inherit}
 #framework-rows{display:flex;flex-direction:column;gap:7px}
 .planetop{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:8px 11px}
 .f{height:24px;padding:0 10px;border-radius:999px;background:var(--fill);color:var(--ink-3);
-  font-size:11px;font-weight:600;transition:background 160ms ease,color 160ms ease}
+  font-size:var(--type-meta);font-weight:600;transition:background var(--motion),color var(--motion)}
 .f:hover{color:var(--ink-2)}
 .f[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent-ink);box-shadow:inset 0 0 0 1px var(--accent-line)}
 .f[data-empty="true"]{opacity:.55}
 .f b{font-family:var(--mono);font-weight:700}
 #plane-empty{padding:14px 14px;color:var(--ink-2)}
 .planetop .sp{flex:1}
-.planetop .n{font:500 11px/1 var(--mono);color:var(--ink-3)}
+.planetop .n{font:500 var(--type-meta)/1 var(--mono);color:var(--ink-3)}
 .planetop .n b{color:var(--ink);font-weight:600}
 
 /* group */
 .grp{overflow:hidden}
 .grphead{display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px;text-align:left;
-  transition:background 160ms ease;min-height:32px}
+  transition:background var(--motion);min-height:32px}
 .grphead:hover{background:var(--fill)}
-.grphead .tw{width:10px;color:var(--ink-3);font-size:9px;transition:transform 220ms var(--ease-out);flex:0 0 auto}
+.grphead .tw{width:10px;color:var(--ink-3);font-size:var(--type-caption);transition:transform var(--motion);flex:0 0 auto}
 .grp[data-open="1"] .grphead .tw{transform:rotate(90deg)}
-.grphead h2{font:600 12.5px/1 var(--display);letter-spacing:-.01em;white-space:nowrap}
-.grphead .own{font:500 9.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
-.grphead .ct{font:500 11px/1 var(--mono);color:var(--ink-3);margin-left:auto;flex:0 0 auto}
+.grphead h2{font:600 var(--type-meta)/1 var(--display);letter-spacing:-.01em;white-space:nowrap}
+.grphead .own{font:500 var(--type-caption)/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.grphead .ct{font:500 var(--type-meta)/1 var(--mono);color:var(--ink-3);margin-left:auto;flex:0 0 auto}
 .meter{display:flex;gap:1px;height:5px;width:104px;border-radius:999px;overflow:hidden;
   background:var(--s-avail);flex:0 0 auto}
 .meter i{display:block;height:100%}
@@ -260,37 +214,37 @@ input,select,textarea{font:inherit}
 .grpbody{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:0 14px;
   padding:0 11px 8px}
 .grpbody.stack{grid-template-columns:minmax(0,1fr)}
-.grpnote{padding:0 11px 9px;font-size:11.5px;color:var(--ink-2);line-height:1.5;max-width:88ch}
-.grpnote code{font-size:11px;color:var(--cyan)}
+.grpnote{padding:0 11px 9px;font-size:var(--type-meta);color:var(--ink-2);line-height:1.5;max-width:88ch}
+.grpnote code{font-size:var(--type-meta);color:var(--ink)}
 
 /* row - compact */
 .row{display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:8px;
-  min-height:26px;padding:0 4px;border-radius:7px;transition:background 130ms ease}
+  min-height:26px;padding:0 4px;border-radius:7px;transition:background var(--motion)}
 .row:hover{background:var(--fill)}
 .row.evidence-linked{outline:1px solid var(--accent);outline-offset:2px;background:var(--fill)}
 .row.on{background:var(--accent-soft)}
 .row[hidden]{display:none}
-.rid{font:400 11.5px/1.2 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+.rid{font:400 var(--type-meta)/1.2 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   color:var(--ink-2);text-align:left;min-width:0;padding:5px 0;min-height:26px}
 .row.on .rid{color:var(--ink)}
 /* Verdict is a separate axis from selection, so it reads as a separate mark:
    a rule on the row's leading edge plus a mono flag, never a restyled tick.
    Colour alone would not carry it, so the blocked flag also states its code. */
-.row[data-vetted="blocked"]{box-shadow:inset 2px 0 0 var(--warn,#b4541f)}
-.vet{font:400 10px/1 var(--mono);flex:0 0 auto;padding:4px 5px;border-radius:5px;
+.row[data-vetted="blocked"]{box-shadow:inset 2px 0 0 var(--blocked)}
+.vet{font:400 var(--type-caption)/1 var(--mono);flex:0 0 auto;padding:4px 5px;border-radius:5px;
   min-height:24px;display:grid;place-items:center;white-space:nowrap}
 .vet[data-vet="pass"]{color:var(--ink-3);background:transparent}
-.vet[data-vet="blocked"]{color:var(--warn,#b4541f);background:color-mix(in srgb,var(--warn,#b4541f) 12%,transparent)}
+.vet[data-vet="blocked"]{color:var(--blocked);background:var(--blocked-soft)}
 .row[data-vetted="blocked"] .rid strong{text-decoration:underline;text-decoration-style:dotted;
-  text-underline-offset:3px;text-decoration-color:var(--warn,#b4541f)}
+  text-underline-offset:3px;text-decoration-color:var(--blocked)}
 .rid strong{font-weight:400}
 .rid u{text-decoration:none;color:var(--ink-3)}
 .tick{width:24px;height:24px;border-radius:6px;background:var(--fill-2);display:grid;place-items:center;
-  font-size:10px;color:transparent;flex:0 0 auto;transition:background 160ms var(--spring),color 160ms ease}
+  font-size:var(--type-caption);color:transparent;flex:0 0 auto;transition:background var(--motion),color var(--motion)}
 .row.on .tick{background:var(--accent);color:var(--on-accent)}
 .row.on:hover .tick{background:var(--accent)}
-.more{width:24px;height:24px;border-radius:6px;color:var(--ink-3);font-size:12px;line-height:1;
-  display:grid;place-items:center;opacity:.35;transition:opacity 140ms ease,color 140ms ease}
+.more{width:24px;height:24px;border-radius:6px;color:var(--ink-3);font-size:var(--type-meta);line-height:1;
+  display:grid;place-items:center;opacity:.35;transition:opacity var(--motion),color var(--motion)}
 .row:hover .more,.row:focus-within .more{opacity:1}
 .more:hover{color:var(--accent-ink);background:var(--fill-2)}
 .badge{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -305,60 +259,60 @@ input,select,textarea{font:inherit}
 
 /* ── drawer ──────────────────────────────────────────── */
 .scrim{position:fixed;inset:0;z-index:800;background:rgba(58,48,42,.42);
-  opacity:0;pointer-events:none;transition:opacity 200ms var(--ease-out)}
+  opacity:0;pointer-events:none;transition:opacity var(--motion)}
 .scrim.open{opacity:1;pointer-events:auto}
 .drawer{position:fixed;top:0;right:0;bottom:0;z-index:810;width:min(460px,94vw);overflow:auto;
-  background:var(--glass-strong);border-left:1px solid var(--glass-line);
+  background:var(--surface);border-left:1px solid var(--rule);
   box-shadow:var(--shadow-lg);padding:16px 18px 28px;display:grid;gap:12px;align-content:start;
-  transform:translateX(24px);opacity:0;transition:transform 260ms var(--spring),opacity 180ms var(--ease-out)}
+  transform:translateX(24px);opacity:0;transition:transform var(--motion),opacity var(--motion)}
 .scrim.open+.drawer{transform:none;opacity:1}
 .drawer[hidden]{display:none}
 .dhead{display:flex;align-items:flex-start;gap:10px}
-.dhead h2{font:600 15px/1.25 var(--mono);letter-spacing:-.01em;word-break:break-all}
-.dhead .x{margin-left:auto;color:var(--ink-3);font-size:15px;line-height:1;width:32px;height:32px;
+.dhead h2{font:600 var(--type-title)/1.25 var(--mono);letter-spacing:-.01em;word-break:break-all}
+.dhead .x{margin-left:auto;color:var(--ink-3);font-size:var(--type-title);line-height:1;width:32px;height:32px;
   display:grid;place-items:center;border-radius:8px;flex:0 0 auto}
 .dhead .x:hover{background:var(--fill-2);color:var(--ink)}
 .badges{display:flex;gap:5px;flex-wrap:wrap}
 .b{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;
-  background:var(--fill);color:var(--ink-2);font:600 10.5px/1 var(--sans)}
-.b.ok{color:var(--cyan);background:var(--cyan-soft)}
+  background:var(--fill);color:var(--ink-2);font:600 var(--type-caption)/1 var(--sans)}
+.b.ok{color:var(--pass);background:var(--pass-soft)}
 .b.ext{color:var(--accent-ink);background:var(--accent-soft)}
-.b.warn{color:var(--amber);background:var(--amber-soft)}
-.b.bad{color:var(--danger);background:var(--danger-soft)}
+.b.warn{color:var(--owed);background:var(--owed-soft)}
+.b.bad{color:var(--blocked);background:var(--blocked-soft)}
 .kv{display:grid;gap:0}
 .kv div{display:flex;justify-content:space-between;gap:14px;padding:7px 0;
-  border-bottom:1px solid var(--glass-line);align-items:baseline}
+  border-bottom:1px solid var(--rule);align-items:baseline}
 .kv div:last-child{border-bottom:0}
-.kv span{color:var(--ink-3);font-size:11.5px;flex:0 0 auto}
-.kv b{font:500 11.5px/1.45 var(--mono);text-align:right;word-break:break-word}
-.note{font-size:12px;line-height:1.55;color:var(--ink-2);border-left:2px solid var(--accent-line);padding-left:9px}
-.note.bad{border-left-color:var(--danger)}
-.note.ok{border-left-color:var(--cyan)}
+.kv span{color:var(--ink-3);font-size:var(--type-meta);flex:0 0 auto}
+.kv b{font:500 var(--type-meta)/1.45 var(--mono);text-align:right;word-break:break-word}
+.note{font-size:var(--type-meta);line-height:1.55;color:var(--ink-2);border-left:2px solid var(--accent-line);padding-left:9px}
+.note.bad{border-left-color:var(--blocked)}
+.note.ok{border-left-color:var(--pass)}
 .note b{color:var(--ink);font-weight:600}
 .cmdline{display:flex;align-items:center;gap:9px;background:var(--fill);border-radius:10px;padding:8px 10px}
-.cmdline code{color:var(--cyan);font-size:11.5px;flex:1;overflow-wrap:anywhere}
-.copy{border-radius:999px;background:var(--fill-2);color:var(--ink-2);font:700 9.5px/1 var(--sans);
-  letter-spacing:.06em;padding:0 10px;height:32px;transition:color 150ms ease,background 150ms ease}
+.cmdline code{color:var(--ink);font-size:var(--type-meta);flex:1;overflow-wrap:anywhere}
+.copy{border-radius:999px;background:var(--fill-2);color:var(--ink-2);font:700 var(--type-caption)/1 var(--sans);
+  letter-spacing:.06em;padding:0 10px;height:32px;transition:color var(--motion),background var(--motion)}
 .copy:hover{color:var(--accent-ink);background:var(--accent-soft)}
 .brow{display:flex;gap:6px;flex-wrap:wrap}
 .dform{display:grid;gap:7px}
-.dform label{display:grid;gap:3px;color:var(--ink-3);font-size:11px}
-.dform input,.dform select,.form-grid input,.form-grid select{border:1px solid var(--glass-line);border-radius:9px;
-  background:var(--fill);color:var(--ink);font:400 12px/1.4 var(--sans);padding:0 10px;height:32px;width:100%}
+.dform label{display:grid;gap:3px;color:var(--ink-3);font-size:var(--type-meta)}
+.dform input,.dform select,.form-grid input,.form-grid select{border:1px solid var(--rule);border-radius:9px;
+  background:var(--fill);color:var(--ink);font:400 var(--type-meta)/1.4 var(--sans);padding:0 10px;height:32px;width:100%}
 .dform input:focus,.form-grid input:focus{border-color:var(--accent-line);outline:none}
 .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
-.form-grid label{display:grid;gap:3px;color:var(--ink-3);font-size:11px}
-fieldset{border:1px solid var(--glass-line);border-radius:12px;margin:0;padding:10px}
-legend{padding:0 5px;color:var(--ink-3);font-size:11px}
-[aria-invalid="true"]{border-color:var(--danger)!important}
-.field-error{display:block;color:var(--danger);font-size:10.5px;line-height:1.3}
-.help{color:var(--ink-2);font-size:11.5px;line-height:1.5;max-width:88ch}
-.mono{font-family:var(--mono);font-size:10.5px;overflow-wrap:anywhere;color:var(--ink-2)}
-.error{color:var(--danger)}
-textarea{width:100%;min-height:8rem;resize:vertical;border:1px solid var(--glass-line);border-radius:10px;
-  background:var(--fill);color:var(--ink);font:400 11px/1.5 var(--mono);padding:8px 10px}
+.form-grid label{display:grid;gap:3px;color:var(--ink-3);font-size:var(--type-meta)}
+fieldset{border:1px solid var(--rule);border-radius:12px;margin:0;padding:10px}
+legend{padding:0 5px;color:var(--ink-3);font-size:var(--type-meta)}
+[aria-invalid="true"]{border-color:var(--blocked)!important}
+.field-error{display:block;color:var(--blocked);font-size:var(--type-caption);line-height:1.3}
+.help{color:var(--ink-2);font-size:var(--type-meta);line-height:1.5;max-width:88ch}
+.mono{font-family:var(--mono);font-size:var(--type-caption);overflow-wrap:anywhere;color:var(--ink-2)}
+.error{color:var(--blocked)}
+textarea{width:100%;min-height:8rem;resize:vertical;border:1px solid var(--rule);border-radius:10px;
+  background:var(--fill);color:var(--ink);font:400 var(--type-meta)/1.5 var(--mono);padding:8px 10px}
 details{margin:0}
-summary{cursor:pointer;color:var(--accent-ink);font-size:11.5px;display:flex;align-items:center}
+summary{cursor:pointer;color:var(--accent-ink);font-size:var(--type-meta);display:flex;align-items:center}
 summary{min-height:32px}
 .row-actions{display:flex;gap:5px;flex-wrap:wrap}
 .row-details{margin:0}
@@ -367,66 +321,93 @@ summary{min-height:32px}
 .receipt-record{white-space:pre-wrap;max-width:100%;max-height:20rem;overflow:auto}
 .tip-wrap{display:inline-flex;position:relative;vertical-align:middle;margin-left:.3rem}
 .help-button{min-width:24px;min-height:24px;padding:0;border-radius:999px;font-weight:700;
-  line-height:1;font-size:11px;background:var(--fill-2);color:var(--ink-2)}
+  line-height:1;font-size:var(--type-meta);background:var(--fill-2);color:var(--ink-2)}
 .help-button:hover{color:var(--accent-ink)}
 .tooltip{display:none;position:fixed;left:1rem;right:auto;width:auto;z-index:900;
-  max-width:calc(100vw - 2rem);padding:.5rem .6rem;border:1px solid var(--glass-line);border-radius:9px;
-  background:var(--glass-strong);color:var(--ink);font-size:11.5px;line-height:1.45;box-shadow:var(--shadow-lg)}
+  max-width:calc(100vw - 2rem);padding:.5rem .6rem;border:1px solid var(--rule);border-radius:9px;
+  background:var(--surface);color:var(--ink);font-size:var(--type-meta);line-height:1.45;box-shadow:var(--shadow-lg)}
 .tip-wrap .tooltip[data-open="true"]{display:block}
 
 /* ── spotlight ───────────────────────────────────────── */
 .spot-bd{position:fixed;inset:0;z-index:900;background:rgba(58,48,42,.5);
   display:grid;place-items:start center;padding:10vh 24px 24px;opacity:0;pointer-events:none;
-  transition:opacity 200ms var(--ease-out)}
+  transition:opacity var(--motion)}
 .spot-bd.open{opacity:1;pointer-events:auto}
-.spot{width:min(100%,620px);border-radius:18px;border:1px solid var(--glass-line);
-  background:var(--glass-strong);box-shadow:var(--shadow-lg);
+.spot{width:min(100%,620px);border-radius:18px;border:1px solid var(--rule);
+  background:var(--surface);box-shadow:var(--shadow-lg);
   padding:16px;display:grid;gap:11px;transform:scale(.95) translateY(10px);opacity:0;
-  transition:transform 220ms var(--spring),opacity 180ms var(--ease-out)}
+  transition:transform var(--motion),opacity var(--motion)}
 .spot-bd.open .spot{transform:none;opacity:1}
-.spot input{border:0;background:transparent;color:var(--ink);font:400 16px/1.5 var(--sans);
-  outline:none;width:100%;border-bottom:1px solid var(--glass-line);padding-bottom:10px}
+.spot input{border:0;background:transparent;color:var(--ink);font:400 var(--type-title)/1.5 var(--sans);
+  outline:none;width:100%;border-bottom:1px solid var(--rule);padding-bottom:10px}
 .hits{display:grid;gap:2px;max-height:46vh;overflow:auto}
 .hit{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px;text-align:left;
-  min-height:32px;transition:background 130ms ease}
+  min-height:32px;transition:background var(--motion)}
 .hit:hover,.hit.sel{background:var(--fill-2)}
-.hit .hid{font:400 12px/1 var(--mono);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.hit .hg{font-size:10.5px;color:var(--ink-3);flex:0 0 auto}
-.spot-foot{display:flex;gap:11px;color:var(--ink-3);font-size:11px;flex-wrap:wrap}
-.spot-foot kbd{font:500 10px/1 var(--mono);background:var(--fill-2);border-radius:4px;padding:3px 5px}
+.hit .hid{font:400 var(--type-meta)/1 var(--mono);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hit .hg{font-size:var(--type-caption);color:var(--ink-3);flex:0 0 auto}
+.spot-foot{display:flex;gap:11px;color:var(--ink-3);font-size:var(--type-meta);flex-wrap:wrap}
+.spot-foot kbd{font:500 var(--type-caption)/1 var(--mono);background:var(--fill-2);border-radius:4px;padding:3px 5px}
 
 /* ── ledger ──────────────────────────────────────────── */
-.ledger{display:flex;align-items:center;gap:14px;padding:0 18px;font-size:11.5px;flex-wrap:wrap;
-  border-top:1px solid var(--glass-line);background:var(--glass)}
+.ledger{display:flex;align-items:center;gap:14px;padding:0 18px;font-size:var(--type-meta);flex-wrap:wrap;
+  border-top:1px solid var(--rule);background:var(--surface)}
 .ledger i{font-style:normal;color:var(--ink-3)}
 .ledger b{font-weight:700;font-family:var(--mono)}
-.l-req b{color:var(--accent-ink)}.l-wait b{color:var(--amber)}.l-blk b{color:var(--danger)}
+.l-req b{color:var(--ink)}.l-wait b{color:var(--owed)}.l-blk b{color:var(--blocked)}
 .l-ext b{color:var(--ink-2)}
 .ledger .sp{flex:1}
 .ledger .eff{color:var(--ink-3)}
 
 /* ── sheet ───────────────────────────────────────────── */
 .sheet{position:fixed;inset:auto 0 0 0;z-index:850;height:min(70vh,560px);display:none;flex-direction:column;
-  background:var(--glass-strong);border-top:1px solid var(--accent-line);
+  background:var(--surface);border-top:1px solid var(--accent-line);
   box-shadow:var(--shadow-lg);border-radius:18px 18px 0 0}
 .sheet.open{display:flex}
-.sheet header{display:flex;align-items:center;gap:11px;padding:11px 16px;border-bottom:1px solid var(--glass-line)}
-.sheet h3{font:600 12.5px/1 var(--display)}
-.sheet .sub{font-size:11px;color:var(--ink-3)}
+.sheet header{display:flex;align-items:center;gap:11px;padding:11px 16px;border-bottom:1px solid var(--rule)}
+.sheet h3{font:600 var(--type-meta)/1 var(--display)}
+.sheet .sub{font-size:var(--type-meta);color:var(--ink-3)}
 .sheet .sbody{flex:1;margin:0;overflow:auto;padding:13px 16px;display:grid;gap:10px;align-content:start}
 .sheet textarea{min-height:16rem}
+
+/* ── Ledger: paper, ink, and evidence ─────────────────────────────── */
+body{font:400 var(--type-body)/1.55 var(--sans);color:var(--ink);background:var(--paper)}
+*:focus-visible{outline:2px solid var(--ink);outline-offset:2px;border-radius:3px}
+.skip:focus{background:#fff;border:1px solid var(--rule);border-radius:3px}
+.brand-mark{border-radius:4px;background:var(--ink);color:var(--paper);box-shadow:none}
+.brand-name{font:700 var(--type-masthead)/1.2 var(--display);letter-spacing:.01em}
+.brand-name span{font:400 var(--type-meta)/1 var(--sans);color:var(--ink-3);letter-spacing:.02em}
+.bar{border-bottom:2px solid var(--ink);padding-bottom:10px}.ticker{padding-bottom:8px}
+.ticker button,.pill,.pill button,.btn,.seek,.bar select,.preset,.chip,.f,.help-button,.copy,.spot-foot kbd{border-radius:3px}
+.ticker button,.pill button,.chip,.f{transition:background var(--motion),color var(--motion),border-color var(--motion)}
+.ticker button[aria-pressed="true"],.pill button[aria-pressed="true"],.preset[aria-pressed="true"],.f[aria-pressed="true"],.chip[aria-pressed="true"]{color:var(--ink);background:var(--fill-hover);border-color:var(--ink);box-shadow:none}
+.pill,.seek,.bar select{border-color:var(--rule);background:var(--surface)}.btn{height:var(--target-control);border:1px solid var(--rule);background:var(--surface);transition:background var(--motion),color var(--motion),transform var(--motion)}
+.btn:hover,.btn.primary:hover{background:var(--fill-hover);filter:none}.btn.primary{background:var(--ink);border-color:var(--ink);color:var(--paper)}.btn:active{transform:none}.btn.danger{color:var(--blocked);background:var(--surface);border-color:var(--blocked)}
+.preset{background:var(--surface);border:1px solid var(--rule);min-height:var(--target-control)}.preset b{font:600 var(--type-body)/1.3 var(--sans)}.preset span,.cap,.cap .end{font-size:var(--type-meta)}
+.chip,.f{height:var(--target-chip);background:var(--surface);border:1px solid var(--rule);font-size:var(--type-meta)}
+.gcard{border:1px solid var(--rule);border-radius:6px;background:var(--surface);box-shadow:none}.rail,.plane{gap:8px}.sect{border-bottom:1px solid var(--rule)}
+.rail::-webkit-scrollbar-thumb,.plane::-webkit-scrollbar-thumb,.drawer::-webkit-scrollbar-thumb{background:#b9bcb4;border-radius:0}
+.planetop{border-bottom:1px solid var(--rule);background:var(--fill)}.grphead{padding:9px 13px;border-bottom:1px solid var(--rule);background:var(--fill);transition:background var(--motion)}.grphead:hover{background:var(--fill-hover)}.grphead h2{font:600 var(--type-meta)/1.3 var(--sans);letter-spacing:.01em}.grphead .own,.cap{font-size:var(--type-caption)}.meter{border-radius:0;background:var(--s-avail)}.grpbody{padding:0 13px 8px}.grpnote,.help{font-size:var(--type-meta);color:var(--ink-2)}
+.row{border-radius:0;border-bottom:1px solid var(--rule-soft);min-height:var(--target-control);padding:2px 4px;transition:background var(--motion)}.row:hover,.row.on,.row.evidence-linked{background:var(--fill)}.row.evidence-linked{outline:1px solid var(--ink)}.row[data-vetted="blocked"]{box-shadow:inset 3px 0 0 var(--blocked)}.rid{font-size:var(--type-meta);color:var(--ink-2)}.tick{width:var(--target-chip);height:var(--target-chip);border:1.5px solid var(--rule);border-radius:4px;background:var(--surface);transition:background var(--motion),color var(--motion)}.row.on .tick{background:var(--ink);border-color:var(--ink)}.more{border-radius:3px}.more:hover{color:var(--ink);background:var(--fill-hover)}.vet{border-radius:3px;font-size:var(--type-caption)}.vet[data-vet="pass"]{color:var(--pass)}.vet[data-vet="blocked"]{color:var(--blocked);border:1px solid var(--blocked);background:var(--blocked-soft)}.cust i{border-radius:1px}.cust i[data-s="hatch"]{background:repeating-linear-gradient(45deg,var(--s-uns) 0 1px,transparent 1px 3px);box-shadow:inset 0 0 0 1px var(--s-uns)}
+.scrim,.spot-bd{background:rgba(22,24,29,.24);transition:opacity var(--motion)}.drawer{background:var(--surface);border-left:1px solid var(--rule);box-shadow:none;transition:transform var(--motion),opacity var(--motion)}.dhead h2{font:600 var(--type-title)/1.25 var(--mono);overflow-wrap:anywhere}.dhead .x{border-radius:3px;width:var(--target-control);height:var(--target-control)}.badges .b,.b{border:1px solid var(--rule);border-radius:3px;background:var(--surface);color:var(--ink);font-size:var(--type-meta)}.b.ok{color:var(--pass);border-color:var(--pass);background:var(--surface)}.b.warn{color:var(--owed);border-color:var(--owed);background:var(--surface)}.b.bad{color:var(--blocked);border-color:var(--blocked);background:var(--surface)}.b.ext{color:var(--ink);border-color:var(--ink);background:var(--surface)}.kv div{border-color:var(--rule-soft)}.kv span{font-size:var(--type-meta);letter-spacing:.06em;text-transform:uppercase}.kv b,.cmdline code,.mono{font-size:var(--type-meta);overflow-wrap:anywhere}.note{color:var(--ink-2);border-left-color:var(--ink)}.note.bad{border-left-color:var(--blocked)}.note.ok{border-left-color:var(--pass)}.cmdline{border:1px solid var(--rule);border-radius:4px;background:var(--fill)}.cmdline code{color:var(--ink)}.copy{height:var(--target-control);border:1px solid var(--ink);background:var(--surface);color:var(--ink);transition:background var(--motion),color var(--motion)}.copy:hover{background:var(--fill-hover);color:var(--ink)}
+.journey,.journey-effective{margin:10px 0;padding:8px 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);font:600 var(--type-meta)/1.45 var(--mono);letter-spacing:.04em;overflow-wrap:anywhere}.journey-effective{font-weight:400;letter-spacing:0;color:var(--ink-2)}
+.dform label,.form-grid label,legend{font-size:var(--type-meta);color:var(--ink-3)}.dform input,.dform select,.form-grid input,.form-grid select,textarea{height:var(--target-control);border-color:var(--rule);border-radius:4px;background:var(--surface);font-size:var(--type-body)}textarea{height:auto}.field-error,.help,.mono,.tooltip,.spot-foot,.hit .hg{font-size:var(--type-meta)}.field-error,.error{color:var(--blocked)}summary{color:var(--ink)}.tooltip{border-color:var(--rule);border-radius:4px;background:var(--surface);box-shadow:none}
+.spot{width:min(100%,620px);border-radius:6px;border:1px solid var(--rule);background:var(--surface);box-shadow:none;transform:translateY(10px);transition:transform var(--motion),opacity var(--motion)}.spot input{font:400 var(--type-title)/1.5 var(--sans);border-color:var(--rule)}.hit{border-radius:3px;transition:background var(--motion)}.hit:hover,.hit.sel{background:var(--fill-hover)}
+.ledger{border-top:1px solid var(--rule);background:var(--surface);font-size:var(--type-meta)}.l-req b{color:var(--ink)}.l-wait b{color:var(--owed)}.l-blk b{color:var(--blocked)}
+.sheet{position:fixed;background:var(--surface);border-top:2px solid var(--ink);box-shadow:none;border-radius:0}.sheet header{border-color:var(--rule)}.sheet h3{font:600 var(--type-title)/1.2 var(--sans)}.sheet .sub{font-size:var(--type-meta)}
+@media(max-width:880px){.stage{grid-template-rows:auto auto auto minmax(0,1fr) auto}.bar{padding:8px;align-content:flex-start}.work{grid-template-columns:1fr}.rail{display:flex;gap:6px;overflow:auto;padding:2px 0 8px;scrollbar-width:thin}.rail .sect{min-width:max-content;border:1px solid var(--rule);padding:8px}.rail .chips{max-width:260px}.rail .cap{position:sticky;left:0;background:var(--paper)}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;
   transition-duration:.01ms!important}}
 </style>
 </head>
 <body>
 <a class="skip" href="#workbench">Skip to policy workbench</a>
-<div class="field" aria-hidden="true"><div class="grain"></div></div>
+<div class="field" aria-hidden="true"></div>
 
 <div class="stage">
   <header class="bar" aria-label="Policy workbench toolbar">
     <span class="brand">
-      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.4" fill="none" stroke="#fffcf7" stroke-opacity=".92" stroke-width="1.7"/><circle cx="12" cy="12" r="2.7" fill="#fffcf7"/><circle cx="17.3" cy="6.7" r="2.1" fill="#fffcf7"/></svg></span>
+      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.4" fill="none" stroke="currentColor" stroke-opacity=".92" stroke-width="1.7"/><circle cx="12" cy="12" r="2.7" fill="currentColor"/><circle cx="17.3" cy="6.7" r="2.1" fill="currentColor"/></svg></span>
       <h1 class="brand-name">Policy Workbench <span>&middot; no repository required</span></h1>
     </span>
     <button type="button" class="seek" id="seek">Find any item&hellip; <kbd>/</kbd></button>
@@ -521,9 +502,14 @@ summary{min-height:32px}
 </div>
 
 <div class="scrim" id="scrim"></div>
-<aside class="drawer" id="drawer" hidden aria-label="Item detail and authoring">
+<aside class="drawer" id="drawer" hidden aria-label="Item detail">
   <div id="drawer-detail"></div>
-  <div id="drawer-forms">
+</aside>
+
+<div class="scrim" id="authoring-scrim"></div>
+<aside class="drawer" id="authoring-sidebar" hidden aria-label="Policy authoring">
+  <div class="dhead"><h2>Policy authoring</h2><button type="button" class="x" id="authoring-close" aria-label="Close policy authoring">&#10005;</button></div>
+  <div id="authoring-forms">
     <details id="curation-editor"><summary>Record external curation intent</summary>
       <div class="dform" style="margin-top:8px">
         <p class="help">AIH preserves audited curation intent for agents, skills and commands. It never installs or enforces them.</p>
@@ -1009,7 +995,7 @@ const FILTER_EMPTY={requested:"Nothing is selected yet. Select an item, or compo
   blocked:"Nothing is blocked. A row lands here when an AIH-owned gate fails - a custom source without a completed scan bound to its exact pin is the usual one."};
 document.addEventListener("click",function(event){const head=event.target.closest&&event.target.closest("[data-group]");if(!head){return}const group=head.closest(".grp");const next=group.dataset.open==="1"?"0":"1";group.dataset.open=next;head.setAttribute("aria-expanded",next==="1"?"true":"false");const label=head.querySelector("h2");if(label){openGroups[label.textContent]=next==="1"}});
 /* ── drawer: every detail the compact row deliberately does not carry ────── */
-const drawerNode=byId("drawer"),scrimNode=byId("scrim"),eccMcpSidebarNode=byId("ecc-mcp-sidebar"),eccMcpScrimNode=byId("ecc-mcp-scrim");
+const drawerNode=byId("drawer"),scrimNode=byId("scrim"),authoringSidebarNode=byId("authoring-sidebar"),authoringScrimNode=byId("authoring-scrim"),eccMcpSidebarNode=byId("ecc-mcp-sidebar"),eccMcpScrimNode=byId("ecc-mcp-scrim");
 const kv=function(key,value){return '<div><span>'+esc(key)+'</span><b>'+value+'</b></div>'};
 const describeRow=function(id){
   const mcp=model.catalog.mcp.find(function(item){return item.id===id});
@@ -1029,18 +1015,17 @@ const paintDrawer=function(id){
   if(!item){host.innerHTML='<div class="dhead"><h2>'+esc(id)+'</h2>'+close+'</div>';return}
   const selected=item.asset?isFrameworkSelected(item.framework.id,item.asset.id):
     (item.control?governance().catalog.reviewed.some(function(entry){return entry.id===item.id}):false);
-  const railOwned=Boolean(item.asset&&isRailOwnedAsset(item.framework,item.asset));
   const state=item.custom?"blocked":selected?(item.enforce?"selected":"requested"):"available";
+  const kind=item.asset?item.asset.kind:item.hook?"hook":item.custom?"custom MCP":"MCP";
+  const journey=item.enforce&&!item.custom?"Selected · Enforced":"Selected · Evidence · Verdict · Materializes";
   let html='<div class="dhead"><h2>'+esc(item.id)+'</h2>'+close+'</div>'+
-    '<div class="badges"><span class="b '+(item.owner==="AIH"?"ok":"ext")+'">'+esc(item.owner)+(item.enforce?" enforces":" &mdash; records only")+'</span>'+
-    '<span class="b '+(state==="blocked"?"bad":state==="selected"?"ok":state==="requested"?"ext":"")+'">'+esc(state)+'</span></div>';
-  html+='<div class="kv">'+kv("Requested",(selected||item.custom)?"yes":"no")+
-    kv("Gate",item.custom?"blocked":state==="requested"?"records intent only":state==="selected"?"pass":"n/a");
-  if(item.control){html+=kv("Projector",esc(item.control.projector)+" &rarr; "+esc(item.control.targets.join(", ")))+kv("Lifecycle",esc(item.control.lifecycle))}
-  if(item.asset){html+=kv("Kind",esc(item.asset.kind))+kv("Repository",esc(item.asset.source.repository))+kv("Pinned commit",esc(item.asset.source.commit))+kv("Source path",esc(item.asset.source.path))}
-  html+='</div>';
-  if(item.desc){html+='<p class="note ok">'+esc(item.desc)+'</p>'}
-  if(item.asset){html+='<p class="note">'+esc(item.framework.id)+' owns this component; by default it installs and runs it. AIH records the selection with its pinned source; recording intent is not enforcement.</p>'}
+    '<div class="badges"><span class="b '+(item.owner==="AIH"?"":"ext")+'">'+esc(item.owner)+(item.enforce?" enforces":" &mdash; records only")+'</span>'+
+    '<span class="b">'+esc(kind)+'</span><span class="b '+(state==="blocked"?"bad":state==="requested"?"ext":"")+'">'+esc(state)+'</span></div>';
+  if(item.asset){html+='<p class="note">Pinned provenance: '+esc(item.framework.id)+' / '+esc(item.asset.source.repository)+' @ '+esc(item.asset.source.commit)+' / '+esc(item.asset.source.path)+'. '+esc(item.framework.id)+' owns this component; by default it installs and runs it. AIH records the selection.</p>'}
+  html+='<p class="journey">'+esc(journey)+'</p>';
+  if(item.control){html+='<div class="kv">'+kv("Projector",esc(item.control.projector)+" &rarr; "+esc(item.control.targets.join(", ")))+kv("Lifecycle",esc(item.control.lifecycle))+'</div>'+
+    '<p class="journey-effective">Authored intent: '+(selected?"selected.":"not selected.")+' Effective count: not evaluated in this portable artifact; target-repository evaluation decides effectiveness.</p>'}
+  if(item.desc){html+='<p class="note">'+esc(item.desc)+'</p>'}
   /* The row and its detail state the fulfillment consequence once selected -
      the drawer is exactly the "detail" the compact row deliberately does not
      carry (see the comment above paintDrawer). Gated the same way the row's
@@ -1049,14 +1034,14 @@ const paintDrawer=function(id){
     const classification=classifyFulfillment(item.asset.vet);
     const fulfillment=fulfillmentNote(item.framework,item.asset.vet);
     html+='<p class="note'+(classification===FULFILLMENT_VET_BLOCKED?" bad":classification===FULFILLMENT_MATERIALIZES?" ok":"")+'">'+esc(fulfillment)+'</p>'}
+  if(item.asset){const vet=item.asset.vet;html+=(vet?'<p class="note '+(vet.verdict==="blocked"?"bad":"ok")+'">Vet '+esc(vet.verdict)+': analyzers '+esc(vet.analyzers.map(function(analyzer){return analyzer.name+" "+analyzer.version}).join(", "))+'; tree '+esc(vet.treeSha256)+"; findings "+esc(vet.findings.map(function(finding){return finding.code+" [count: "+(finding.count===undefined?"not reported":finding.count)+"] "+finding.detail}).join("; ")||"none")+'.</p>':'<p class="note">Vet absent at this pin; no analyzer, tree digest, or finding has been recorded.</p>')+'<p class="journey-effective">Authored intent: '+(selected?"selected.":"not selected.")+' Effective count: not evaluated in this portable artifact; target-repository evaluation decides effectiveness.</p>'}
   /* ECC's own declaration riders, stated before the click rather than
      discovered after it. Adding them is a separate, explicit action: the
      policy document has no field in which to refcount who pulled what in, so
      inventing an implicit cascade would author state it cannot represent. */
-  if(item.asset&&item.asset.riders&&item.asset.riders.length){const missing=item.asset.riders.filter(function(id){return !isFrameworkSelected(item.framework.id,id)});
+  if(item.asset&&item.asset.riders&&item.asset.riders.length){
     html+='<div class="cap">Brings in with it</div><div class="kv">'+item.asset.riders.map(function(id){return kv(id,isFrameworkSelected(item.framework.id,id)?"selected":"not selected")}).join("")+'</div>'+
-      '<p class="note">'+esc(item.framework.id)+' declares these alongside '+esc(item.asset.id)+'. Selecting it does not pull them in on its own'+(railOwned?"; this rail-owned detail is read-only.":" - add them here so every selection in the policy is one you made.")+'</p>'+
-      (!railOwned&&missing.length?'<div class="brow"><button type="button" class="btn sm" data-add-riders="'+esc(item.framework.id+"|"+item.asset.id)+'">Add '+missing.length+' rider(s) too</button></div>':"")}
+      '<p class="note">'+esc(item.framework.id)+' declares these alongside '+esc(item.asset.id)+'. Selecting it does not pull them in on its own; select any rider from its canonical inventory control.</p>'}
   if(item.hook){html+='<div class="cap">Hook disclosure</div><div class="kv">'+
     kv("Trigger / event",esc(item.hook.behaviour.trigger))+kv("Records",esc(item.hook.behaviour.records))+
     kv("Artifact written",esc(item.hook.behaviour.artifact))+kv("Failure behaviour",esc(item.hook.behaviour.failureMode))+
@@ -1066,14 +1051,18 @@ const paintDrawer=function(id){
   if(item.asset){const command=evidenceCommand(item.framework,item.asset);
     html+='<div class="cmdline"><code>'+esc(command)+'</code><button type="button" class="copy" data-copy="'+esc(command)+'">COPY</button></div>'+
       '<p class="note">Run this where you have repository access. Evidence returns to <code>.aih/evidence/</code> in the governed repository, and is what moves this selection into external curation.</p>'+
-      (railOwned?'<p class="note">This detail is read-only. Select or remove this item from the left navigation.</p>':'<div class="brow"><button type="button" class="btn sm '+(selected?"danger":"primary")+'" data-framework-select="'+esc(item.framework.id+"|"+item.asset.kind+"|"+item.asset.id)+'">'+(selected?"Remove from policy":"Add to policy")+'</button>'+(item.asset.curationKind?'<button type="button" class="btn sm" data-curation-prefill="'+esc(item.framework.id+"|"+item.asset.curationKind+"|"+item.asset.id)+'">Record curation evidence</button>':"")+'</div>')}
-  if(item.control&&!item.hook){html+='<div class="brow"><button type="button" class="btn sm '+(selected?"danger":"primary")+'" data-reviewed="'+esc(item.id)+'">'+(selected?"Remove request":"Request intent")+'</button></div>'}
-  if(item.custom){html+='<p class="note bad">'+esc(customNextAction(item.custom))+'</p>'}
+      (item.asset.curationKind?'<div class="brow"><button type="button" class="btn sm" data-next-action data-open-authoring="curation" data-curation-prefill="'+esc(item.framework.id+"|"+item.asset.curationKind+"|"+item.asset.id)+'">Open curation authoring</button></div>':'<div class="brow"><button type="button" class="btn sm" data-next-action data-inspector-selection>Go to canonical selection</button></div>')}
+  if(item.control){html+='<div class="brow"><button type="button" class="btn sm" data-next-action data-inspector-selection>Go to canonical selection</button></div>'}
+  if(item.custom){html+='<p class="note bad">'+esc(customNextAction(item.custom))+'</p><p class="journey-effective">Effective count: zero. This pending custom candidate is blocked and cannot materialize.</p><div class="brow"><button type="button" class="btn sm" data-next-action data-open-authoring="custom">Open custom MCP authoring</button></div>'}
   host.innerHTML=html};
-const openDrawer=function(id){closeEccMcpSidebar();drawerNode.hidden=false;scrimNode.classList.add("open");paintDrawer(id);drawerNode.dataset.item=id};
+const closeAuthoring=function(){authoringScrimNode.classList.remove("open");authoringSidebarNode.hidden=true};
+const openAuthoring=function(kind){closeDrawer();closeEccMcpSidebar();authoringSidebarNode.hidden=false;authoringScrimNode.classList.add("open");const editor=byId(kind+"-editor");if(editor){editor.open=true}const field=byId(kind==="curation"?"curation-id":kind==="remote-custom"?"remote-custom-id":"custom-id");if(field){field.focus()}};
+authoringScrimNode.addEventListener("click",closeAuthoring);
+byId("authoring-close").addEventListener("click",closeAuthoring);
+const openDrawer=function(id){closeAuthoring();closeEccMcpSidebar();drawerNode.hidden=false;scrimNode.classList.add("open");paintDrawer(id);drawerNode.dataset.item=id};
 const closeDrawer=function(){scrimNode.classList.remove("open");drawerNode.hidden=true;delete drawerNode.dataset.item};
 scrimNode.addEventListener("click",closeDrawer);
-const openEccMcpSidebar=function(){closeDrawer();eccMcpSidebarNode.hidden=false;eccMcpScrimNode.classList.add("open");byId("ecc-mcp-id").focus()};
+const openEccMcpSidebar=function(){closeDrawer();closeAuthoring();eccMcpSidebarNode.hidden=false;eccMcpScrimNode.classList.add("open");byId("ecc-mcp-id").focus()};
 const closeEccMcpSidebar=function(){eccMcpScrimNode.classList.remove("open");eccMcpSidebarNode.hidden=true};
 eccMcpScrimNode.addEventListener("click",closeEccMcpSidebar);
 byId("ecc-mcp-close").addEventListener("click",closeEccMcpSidebar);
@@ -1082,7 +1071,7 @@ byId("ecc-mcp-close").addEventListener("click",closeEccMcpSidebar);
    every click inside a group and opened a stub drawer whose scrim then blocked
    the toolbar. Distinct attributes for distinct jobs. */
 document.addEventListener("click",function(event){const opener=event.target.closest&&event.target.closest("[data-detail]");if(opener){openDrawer(opener.getAttribute("data-detail"));return}
-  if(event.target.closest&&event.target.closest("[data-drawer-close]")){closeDrawer()}});
+  if(event.target.closest&&event.target.closest("[data-drawer-close]")){closeDrawer();return}const author=event.target.closest&&event.target.closest("[data-open-authoring]");if(author){openAuthoring(author.getAttribute("data-open-authoring"));return}const selection=event.target.closest&&event.target.closest("[data-inspector-selection]");if(selection){closeDrawer();byId("workbench").focus();announce("Selection stays on its canonical inventory or left-rail control.")}});
 document.addEventListener("click",function(event){const rider=event.target.closest&&event.target.closest("[data-add-riders]");if(!rider){return}
   const parts=String(rider.getAttribute("data-add-riders")).split("|");const found=frameworkAsset(parts[0],parts[1]);if(!found||!found.asset.riders){return}
   const previous=structuredClone(state.policy);const g=ensureGovernance();if(!Array.isArray(g.externalSelections)){g.externalSelections=[]}
@@ -1101,7 +1090,7 @@ const closeSheet=function(){sheetNode.classList.remove("open")};
 document.addEventListener("click",function(event){if(!event.target.closest){return}
   if(event.target.closest("#sheet-close")){closeSheet();return}
   if(event.target.closest("#export")){openSheet()}});
-byId("open-custom").addEventListener("click",function(){openDrawer("Your sources");byId("custom-editor").open=true;byId("custom-id").focus()});
+byId("open-custom").addEventListener("click",function(){openAuthoring("custom")});
 byId("open-ecc-mcp").addEventListener("click",openEccMcpSidebar);
 const spotNode=byId("spot-bd"),spotQuery=byId("spot-q"),hitsNode=byId("hits");
 let spotIndex=0;
@@ -1124,7 +1113,7 @@ spotNode.addEventListener("click",function(event){if(event.target===spotNode){cl
   const hit=event.target.closest&&event.target.closest("[data-hit]");if(hit){closeSpot();openDrawer(hit.getAttribute("data-hit"))}});
 document.addEventListener("keydown",function(event){
   if(event.key==="/"&&!/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)){event.preventDefault();openSpot();return}
-  if(event.key==="Escape"){closeSpot();closeDrawer();closeEccMcpSidebar();closeSheet();return}
+  if(event.key==="Escape"){closeSpot();closeDrawer();closeAuthoring();closeEccMcpSidebar();closeSheet();return}
   if(!spotNode.classList.contains("open")){return}
   const matches=spotMatches();
   if(event.key==="ArrowDown"){event.preventDefault();spotIndex=Math.min(spotIndex+1,matches.length-1);paintHits()}
@@ -1151,7 +1140,7 @@ document.addEventListener("click",function(event){const button=event.target.clos
    selected removes exactly its own components and leaves anything another part
    or a row click selected alone. */
 document.addEventListener("click",function(event){const button=event.target.closest&&event.target.closest("[data-composition-add]");if(!button){return}const part=model.catalog.enterpriseComposition.parts.find(function(item){return item.id===button.getAttribute("data-composition-add")});if(!part){return}const previous=structuredClone(state.policy);const g=ensureGovernance();if(!Array.isArray(g.externalSelections)){g.externalSelections=[]}if(partSelectedCount(part)===part.componentIds.length){const group=g.externalSelections.find(function(item){return item.framework===model.catalog.enterpriseComposition.framework});if(group){group.items=group.items.filter(function(item){return part.componentIds.indexOf(item.id)===-1});if(!group.items.length){g.externalSelections=g.externalSelections.filter(function(item){return item.framework!==model.catalog.enterpriseComposition.framework})}}commitPolicy(previous,"Removed "+part.label+": "+part.componentIds.length+" component(s) are no longer requested.");return}const added=selectCompositionPart(g,part);commitPolicy(previous,"Added "+part.label+": "+added+" component(s) selected as requested intent with their pinned sources. Audit evidence is still owed for each.")});
-document.addEventListener("click",function(event){const button=event.target.closest&&event.target.closest("[data-curation-prefill]");if(!button){return}const key=String(button.getAttribute("data-curation-prefill")).split("|");byId("curation-framework").value=key[0];syncFrameworkSelect();byId("curation-asset").value=key[1]+"|"+key[2];prefillCurationAsset();announce("Curation form prefilled from "+key[2]+"; add an audit record to record report-only intent.")});
+document.addEventListener("click",function(event){const button=event.target.closest&&event.target.closest("[data-curation-prefill]");if(!button){return}openAuthoring("curation");const key=String(button.getAttribute("data-curation-prefill")).split("|");byId("curation-framework").value=key[0];syncFrameworkSelect();byId("curation-asset").value=key[1]+"|"+key[2];prefillCurationAsset();announce("Curation form prefilled from "+key[2]+"; add an audit record to record report-only intent.")});
 byId("add-curation").addEventListener("click",function(){const frameworkId=byId("curation-framework").value;const kind=byId("curation-kind").value;const id=byId("curation-id").value.trim();const repository=byId("curation-repository").value.trim();const commit=byId("curation-commit").value.trim();const path=byId("curation-path").value.trim();const record=byId("audit-record").value.trim();const digest=byId("audit-digest").value.trim();const unsafePath=!path||path.startsWith("/")||path.startsWith("./")||path.includes("\\")||path.includes("//")||path.split("/").some(function(part){return !part||part==="."||part===".."});if(!/^(agent|skill|command)$/.test(kind)||!id||!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)||!/^[0-9a-f]{40}$/.test(commit)||unsafePath||!record||!/^sha256:[0-9a-f]{64}$/.test(digest)){announce("Use a kind, identifier, pinned repository/40-character commit/safe path, audit record, and sha256 digest.",true);return}const g=governance();let group=g.externalCuration.find(function(item){return item.framework===frameworkId});if(!group){group={framework:frameworkId,items:[]};g.externalCuration.push(group)}if(group.items.some(function(item){return item.kind===kind&&item.id===id})){announce("That external curation item is already present.",true);return}const previous=structuredClone(state.policy);group.items.push({kind:kind,id:id,source:{repository:repository,commit:commit,path:path},audit:{record:record,digest:digest},clarification:byId("curation-note").value.trim()||undefined});commitPolicy(previous,"External curation intent added; it is report-only and not enforced by AIH.")});
 byId("custom-form").addEventListener("submit",function(event){event.preventDefault();const id=byId("custom-id").value.trim(),pkg=byId("custom-package").value.trim(),version=byId("custom-version").value.trim(),integrity=byId("custom-integrity").value.trim(),evidence=byId("custom-evidence").value.trim(),note=byId("custom-note").value.trim();const g=governance();if(g.catalog.custom.some(function(item){return item.id===id})){announce("Custom candidate identifier already exists.",true);return}const previous=structuredClone(state.policy);g.catalog.custom.push({id:id,kind:"mcp",description:"Pending custom MCP",capabilities:[],risks:["custom source"],source:{type:"stdio",resolver:"npx",registry:"https://registry.npmjs.org",package:pkg,version:version,integrity:integrity},targets:["claude"],projector:"mcp-managed-settings",lifecycle:"supported",evidence:{record:evidence},clarification:note||undefined});if(commitPolicy(previous,"Pending custom MCP added. It cannot be activated.")){event.target.reset()}});
 byId("save-ecc-mcp-approval").addEventListener("click",function(){const id=byId("ecc-mcp-id").value;const approvedBy=byId("ecc-mcp-approved-by").value.trim();const authenticationMode=byId("ecc-mcp-authentication-mode").value.trim();const dataClassesText=byId("ecc-mcp-data-classes").value.trim();const dataClasses=dataClassesText.split(",").map(function(value){return value.trim()});const stateValue=byId("ecc-mcp-state").value;const entry=model.catalog.externalMcp.find(function(item){return item.id===id});if(!entry||!approvedBy||!authenticationMode||!dataClassesText||dataClasses.some(function(value){return !value})||new Set(dataClasses).size!==dataClasses.length||(stateValue!=="approved"&&stateValue!=="revoked")){announce("Choose a pinned ECC MCP and provide its administrator, authentication mode, and unique allowed data classes.",true);return}const previous=structuredClone(state.policy);const g=ensureGovernance();const existing=Array.isArray(g.eccMcpApprovals)?g.eccMcpApprovals:[];g.eccMcpApprovals=existing.filter(function(item){return item.id!==id});g.eccMcpApprovals.push({id:id,sourceContentSha256:model.catalog.eccMcpApproval.sourceContentSha256,state:stateValue,approvedBy:approvedBy,authenticationMode:authenticationMode,allowedDataClasses:dataClasses});commitPolicy(previous,"ECC MCP approval recorded for "+id+". "+(entry.addability==="https-configurable"?"It is eligible for a later explicit Add to one selected client.":"It is approval-only; current explicit Add is unavailable for its manual configuration."))});
@@ -1243,7 +1232,7 @@ byId("copy-approvals").addEventListener("click",function(event){event.preventDef
   const remoteDetails=function(item){const source=item.source;const administrative=Object.prototype.hasOwnProperty.call(source,"administrativeStatus");const governance=administrative?["Administrative status: "+source.administrativeStatus]:["Legacy tool-surface digest: "+source.toolSurfaceDigest,"Legacy verdict: "+source.verdict,"Legacy snapshot metadata is preserved read-only; remove and re-add to migrate."];return {administrative:administrative,lines:["Status: pending and blocked; no activation affordance.","Remote origin: "+source.origin,"Approved by: "+source.approval.approvedBy,"Authentication: "+source.approval.authenticationMode,"Allowed data classes: "+source.approval.allowedDataClasses.join(", ")].concat(governance,["Content scan: none","Evidence record: "+item.evidence.record,"Clarification: "+(item.clarification||"none")])}};
   const enhanceRows=function(){setCurationEditState(Boolean(state.editing&&state.editing.kind==="curation"));const g=governance();Array.from(byId("custom-rows").querySelectorAll(".row")).forEach(function(row,index){const item=g.catalog.custom[index];if(!item){return}row.dataset.evidenceRecord=item.evidence.record;const remote=item.source.type==="remote";const remoteState=remote?remoteDetails(item):null;detail(row,item.id,remote?remoteState.lines:["Status: pending and blocked; no activation affordance.","Package: "+item.source.package+" @ "+item.source.version,"Registry: "+item.source.registry,"Integrity: "+item.source.integrity,"Evidence record: "+item.evidence.record,"Clarification: "+(item.clarification||"none")]);action(row,item.id,remote?"remote":"custom",index,undefined,Boolean(remoteState&&!remoteState.administrative))});let curationIndex=0;g.externalCuration.forEach(function(group){group.items.forEach(function(item,index){const row=byId("curation-rows").querySelectorAll(".row")[curationIndex++];if(!row){return}detail(row,group.framework+" "+item.kind+" "+item.id,["Status: report-only external guidance; not enforced by AIH.","Repository: "+item.source.repository,"Commit: "+item.source.commit,"Path: "+item.source.path,"Audit record: "+item.audit.record,"Audit digest: "+item.audit.digest,"Clarification: "+(item.clarification||"none")]);action(row,item.id,"curation",index,group.framework)})});const receipt=state.receipt||{};const approvalItems=Array.isArray(receipt.approvals)?receipt.approvals:[];const evidenceItems=Array.isArray(receipt.evidence)?receipt.evidence:[];const receiptRows=byId("approval-rows").querySelectorAll(".row");approvalItems.forEach(function(item,index){const row=receiptRows[index];if(!row){return}receiptDetail(row,item.id||"approval","approval",item)});evidenceItems.forEach(function(item,index){const row=receiptRows[approvalItems.length+index];if(!row){return}const evidenceId=typeof item.id==="string"?item.id:"evidence";row.dataset.evidenceRecord=evidenceId;const customRow=Array.from(byId("custom-rows").querySelectorAll(".row")).find(function(candidateRow){return candidateRow.dataset.evidenceRecord===evidenceId});if(customRow){row.classList.add("evidence-linked");customRow.classList.add("evidence-linked");row.dataset.evidenceAssociation="pending-custom";customRow.dataset.evidenceAssociation="preflight-receipt";row.setAttribute("aria-label","Preflight evidence record "+evidenceId+" matches a pending custom MCP; it is not verified or effective.");customRow.setAttribute("aria-label","Pending custom MCP has matching preflight evidence record "+evidenceId+"; it is not verified or effective.")}receiptDetail(row,evidenceId,"evidence",item)})};
   document.addEventListener("click",function(event){const button=event.target.closest&&event.target.closest('[data-workbench-kind="curation"]');if(!button){return}if(button.dataset.workbenchAction==="edit"){setCurationEditState(true)}if(button.dataset.workbenchAction==="remove"){resetCurationEditor()}});
-  document.addEventListener("click",function(event){const button=event.target.closest&&event.target.closest("[data-workbench-action]");if(!button){return}event.preventDefault();const g=governance();const index=Number(button.dataset.workbenchIndex);const kind=button.dataset.workbenchKind;const mode=button.dataset.workbenchAction;if(!Number.isInteger(index)){return}if(kind==="custom"){const item=g.catalog.custom[index];if(!item){return}if(mode==="edit"){byId("custom-id").value=item.id;byId("custom-package").value=item.source.package;byId("custom-version").value=item.source.version;byId("custom-integrity").value=item.source.integrity;byId("custom-evidence").value=item.evidence.record;byId("custom-note").value=item.clarification||"";state.editing={kind:"custom",index:index};announce("Editing pending custom MCP. Save validates before replacing the existing blocked candidate.")}else{const previous=structuredClone(state.policy);g.catalog.custom.splice(index,1);if(commitPolicy(previous,"Pending custom MCP removed; it was never active.")){state.editing=null}}}else if(kind==="remote"){const item=g.catalog.custom[index];if(!item||item.source.type!=="remote"){return}if(mode==="readonly"){announce("Legacy remote MCP records are preserved read-only. Remove and recreate one to use the administrative-status model.");return}if(mode==="edit"){byId("remote-custom-id").value=item.id;byId("remote-custom-origin").value=item.source.origin;byId("remote-custom-approved-by").value=item.source.approval.approvedBy;byId("remote-custom-authentication-mode").value=item.source.approval.authenticationMode;byId("remote-custom-data-classes").value=item.source.approval.allowedDataClasses.join(", ");byId("remote-custom-administrative-status").value=item.source.administrativeStatus;byId("remote-custom-evidence").value=item.evidence.record;byId("remote-custom-note").value=item.clarification||"";state.editing={kind:"remote",index:index};announce("Editing pending remote MCP. Save validates before replacing the existing blocked candidate.")}else{const previous=structuredClone(state.policy);g.catalog.custom.splice(index,1);if(commitPolicy(previous,"Pending remote MCP removed; it was never active.")){state.editing=null}}}else if(kind==="curation"){const framework=button.dataset.workbenchFramework;const group=g.externalCuration.find(function(entry){return entry.framework===framework});const item=group&&group.items[index];if(!item){return}if(mode==="edit"){byId("curation-framework").value=framework;syncFrameworkSelect();byId("curation-kind").value=item.kind;byId("curation-id").value=item.id;byId("curation-repository").value=item.source.repository;byId("curation-commit").value=item.source.commit;byId("curation-path").value=item.source.path;byId("audit-record").value=item.audit.record;byId("audit-digest").value=item.audit.digest;byId("curation-note").value=item.clarification||"";state.editing={kind:"curation",framework:framework,index:index};announce("Editing external curation. Save validates before replacing the report-only intent.")}else{const previous=structuredClone(state.policy);group.items.splice(index,1);if(!group.items.length){g.externalCuration=g.externalCuration.filter(function(entry){return entry!==group})}if(commitPolicy(previous,"External curation intent removed; it was report-only and never enforced by AIH.")){state.editing=null}}}});
+  document.addEventListener("click",function(event){const button=event.target.closest&&event.target.closest("[data-workbench-action]");if(!button){return}event.preventDefault();const g=governance();const index=Number(button.dataset.workbenchIndex);const kind=button.dataset.workbenchKind;const mode=button.dataset.workbenchAction;if(!Number.isInteger(index)){return}if(kind==="custom"){const item=g.catalog.custom[index];if(!item){return}if(mode==="edit"){byId("custom-id").value=item.id;byId("custom-package").value=item.source.package;byId("custom-version").value=item.source.version;byId("custom-integrity").value=item.source.integrity;byId("custom-evidence").value=item.evidence.record;byId("custom-note").value=item.clarification||"";state.editing={kind:"custom",index:index};openAuthoring("custom");announce("Editing pending custom MCP. Save validates before replacing the existing blocked candidate.")}else{const previous=structuredClone(state.policy);g.catalog.custom.splice(index,1);if(commitPolicy(previous,"Pending custom MCP removed; it was never active.")){state.editing=null}}}else if(kind==="remote"){const item=g.catalog.custom[index];if(!item||item.source.type!=="remote"){return}if(mode==="readonly"){announce("Legacy remote MCP records are preserved read-only. Remove and recreate one to use the administrative-status model.");return}if(mode==="edit"){byId("remote-custom-id").value=item.id;byId("remote-custom-origin").value=item.source.origin;byId("remote-custom-approved-by").value=item.source.approval.approvedBy;byId("remote-custom-authentication-mode").value=item.source.approval.authenticationMode;byId("remote-custom-data-classes").value=item.source.approval.allowedDataClasses.join(", ");byId("remote-custom-administrative-status").value=item.source.administrativeStatus;byId("remote-custom-evidence").value=item.evidence.record;byId("remote-custom-note").value=item.clarification||"";state.editing={kind:"remote",index:index};openAuthoring("remote-custom");announce("Editing pending remote MCP. Save validates before replacing the existing blocked candidate.")}else{const previous=structuredClone(state.policy);g.catalog.custom.splice(index,1);if(commitPolicy(previous,"Pending remote MCP removed; it was never active.")){state.editing=null}}}else if(kind==="curation"){const framework=button.dataset.workbenchFramework;const group=g.externalCuration.find(function(entry){return entry.framework===framework});const item=group&&group.items[index];if(!item){return}if(mode==="edit"){byId("curation-framework").value=framework;syncFrameworkSelect();byId("curation-kind").value=item.kind;byId("curation-id").value=item.id;byId("curation-repository").value=item.source.repository;byId("curation-commit").value=item.source.commit;byId("curation-path").value=item.source.path;byId("audit-record").value=item.audit.record;byId("audit-digest").value=item.audit.digest;byId("curation-note").value=item.clarification||"";state.editing={kind:"curation",framework:framework,index:index};openAuthoring("curation");announce("Editing external curation. Save validates before replacing the report-only intent.")}else{const previous=structuredClone(state.policy);group.items.splice(index,1);if(!group.items.length){g.externalCuration=g.externalCuration.filter(function(entry){return entry!==group})}if(commitPolicy(previous,"External curation intent removed; it was report-only and never enforced by AIH.")){state.editing=null}}}});
   const detailKey=function(frameworkId,id){const framework=model.catalog.frameworks.find(function(item){return item.id===frameworkId});const asset=framework&&framework.assets.find(function(item){return item.id===id});return asset?framework.id+" / "+asset.kind+": "+asset.id:null};
   const idReference=function(id,key){const button=document.createElement("button");button.type="button";button.className="rid";button.dataset.idReference=id;button.dataset.detail=key;button.textContent=id;return button};
   const enhanceIdReferences=function(){const composition=model.catalog.enterpriseComposition;Array.from(byId("composition-parts").querySelectorAll(":scope > .row")).forEach(function(row,index){const part=composition.parts[index];const host=row.querySelector("p.mono");if(!part||!host||host.querySelector("[data-id-reference]")){return}host.textContent="";part.componentIds.forEach(function(id,itemIndex){const key=detailKey(composition.framework,id);if(!key){return}if(itemIndex){host.append(document.createTextNode(" "))}host.append(idReference(id,key))})});Array.from(byId("hook-registry-rows").querySelectorAll(".hookreg")).forEach(function(row,index){const entry=model.catalog.hookRegistry.entries[index];const host=row.querySelector("b");if(!entry||!host||host.querySelector("[data-id-reference]")){return}const framework=entry.owner==="aih"?null:model.catalog.frameworks.find(function(item){return item.assets.some(function(asset){return asset.id===entry.id})&&((item.id==="superpowers"?"Superpowers":"ECC")===entry.ownerLabel)});const key=entry.owner==="aih"?entry.id:(framework&&detailKey(framework.id,entry.id));if(!key){return}host.textContent="";host.append(idReference(entry.id,key))})};
