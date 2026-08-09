@@ -28,6 +28,7 @@ export * from "./platform/detect.js";
 export * from "./platform/parse.js";
 export * from "./plugins/registry.js";
 export { buildProgram, buildProgramWithPlugins, VERSION } from "./program.js";
+export * from "./security/index.js";
 export {
   createSessionGuardrailPasses,
   runSessionGuardrails,

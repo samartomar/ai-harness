@@ -86,6 +86,14 @@ lock/receipt registrations, catalog-only membership, undeclared immutable residu
 divergence, and unsupported mutable observations separate. GitLab, Bitbucket,
 Azure DevOps, and GHES adapters are not implemented.
 
+<!-- aih:claim CM-54 -->
+The exported Strix detector contract is separate from static trust scanning. It
+pins the verified Strix v1.5.2 source and immutable sandbox image identities,
+preflights an operator-installed CLI plus an already-present runnable platform
+manifest, and normalizes bounded headless output into strict PoC-redacted evidence.
+Org policy can declare local-fixture-only intent with telemetry off and AIH hard
+ceilings of $10, 20 turns, and five minutes. This foundation performs no scan,
+image pull, install, posture enforcement, or evidence-bundle publication.
 <details><summary>From source (contributors)</summary>
 
 ```bash

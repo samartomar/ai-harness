@@ -19,6 +19,7 @@ import {
   PolicyDangerCodeSchema,
   parseOrgPolicy,
   policyGovernanceLeafPaths,
+  policySecurityLeafPaths,
 } from "../../src/org-policy/schema.js";
 
 const SUBJECT = `mcp-server-sha256:${"a".repeat(64)}`;
@@ -478,7 +479,9 @@ describe("headless effective org policy", () => {
   });
 
   it("mechanically covers every authorable schema leaf with an explicit consumer", () => {
-    expect(Object.keys(POLICY_ENGINE_FIELD_CONSUMERS).sort()).toEqual(policyGovernanceLeafPaths());
+    expect(Object.keys(POLICY_ENGINE_FIELD_CONSUMERS).sort()).toEqual(
+      [...policyGovernanceLeafPaths(), ...policySecurityLeafPaths()].sort(),
+    );
     expect(Object.keys(POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS).sort()).toEqual(
       policyAuthorityReceiptLeafPaths(),
     );
