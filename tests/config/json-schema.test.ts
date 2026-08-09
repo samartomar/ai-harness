@@ -159,6 +159,49 @@ describe("committed JSON Schemas", () => {
     });
   });
 
+  it("publishes strict bounded local-only Strix policy inputs", () => {
+    const base = {
+      schemaVersion: 2,
+      minimumPosture: "vibe",
+      references: { repoContract: "ai-coding/project.json" },
+    };
+    const strix = {
+      enabled: true,
+      required: true,
+      targetKind: "local-fixture",
+      mode: "standard",
+      maxBudgetCents: 500,
+      maxTurns: 10,
+      timeoutMs: 120_000,
+      telemetry: "off",
+      imageDigest: `sha256:${"a".repeat(64)}`,
+    };
+
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...base,
+      security: { strix },
+    });
+    for (const invalid of [
+      { ...strix, imageDigest: "ghcr.io/usesecurity/strix:latest" },
+      { ...strix, targetKind: "live" },
+      { ...strix, allowLiveTargets: true },
+      { ...strix, allowMounts: true },
+      { ...strix, enabled: false, required: true },
+      { ...strix, maxBudgetCents: 0 },
+      { ...strix, maxTurns: 0 },
+      { ...strix, timeoutMs: 0 },
+      { ...strix, maxBudgetCents: 1_001 },
+      { ...strix, maxTurns: 21 },
+      { ...strix, timeoutMs: 300_001 },
+      { ...strix, roe: { approved: true } },
+    ]) {
+      rejectCommittedSchema("schemas/aih-org-policy.schema.json", {
+        ...base,
+        security: { strix: invalid },
+      });
+    }
+  });
+
   it("models source-locked ECC external MCP approvals as declarative records", () => {
     const base = {
       schemaVersion: 2,

@@ -5,6 +5,7 @@ import { AihError } from "../errors.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
+import { STRIX_INVOCATION_LIMITS } from "../security/detectors/types.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import {
   canonicalEccDisabledHookIds,
@@ -131,6 +132,45 @@ const SingleLinePolicyTextSchema = z
 const ImageDigestSchema = z
   .string()
   .regex(/^sha256:[0-9a-f]{64}$/, "imageDigest must be sha256:<64 lowercase hex chars>");
+
+/**
+ * AIH hard ceilings for the declarative Strix security policy. These are not
+ * claimed as upstream Strix limits: this repository has no upstream owner
+ * ceiling yet, so the conservative bounds keep a future headless scan bounded
+ * until an execution consumer owns tighter per-mode budgets.
+ */
+export const STRIX_POLICY_LIMITS = STRIX_INVOCATION_LIMITS;
+
+const StrixSecurityPolicyBaseSchema = z
+  .object({
+    targetKind: z.literal("local-fixture"),
+    mode: z.enum(["quick", "standard", "deep"]),
+    maxBudgetCents: z.number().int().min(1).max(STRIX_POLICY_LIMITS.maxBudgetCents),
+    maxTurns: z.number().int().min(1).max(STRIX_POLICY_LIMITS.maxTurns),
+    timeoutMs: z.number().int().min(1).max(STRIX_POLICY_LIMITS.timeoutMs),
+    telemetry: z.literal("off"),
+    imageDigest: ImageDigestSchema,
+    allowLiveTargets: z.literal(false).default(false),
+    allowMounts: z.literal(false).default(false),
+  })
+  .strict();
+
+export const StrixSecurityPolicySchema = z.discriminatedUnion("enabled", [
+  StrixSecurityPolicyBaseSchema.extend({
+    enabled: z.literal(true),
+    required: z.boolean(),
+  }),
+  StrixSecurityPolicyBaseSchema.extend({
+    enabled: z.literal(false),
+    required: z.literal(false),
+  }),
+]);
+
+const SecurityPolicySchema = z
+  .object({
+    strix: StrixSecurityPolicySchema,
+  })
+  .strict();
 
 const SkillSpectorDigestApprovalSchema = z
   .object({
@@ -1266,6 +1306,14 @@ export function policyGovernanceLeafPaths(): string[] {
   );
 }
 
+/** Exact authorable Strix leaves used by the policy consumer-completeness gate. */
+export function policySecurityLeafPaths(): string[] {
+  const jsonSchema = z.toJSONSchema(SecurityPolicySchema, { io: "input" });
+  return [...new Set(schemaLeafPaths(jsonSchema, "security"))].sort((left, right) =>
+    left.localeCompare(right),
+  );
+}
+
 export const OrgPolicySchema = z
   .object({
     schemaVersion: z.literal(2),
@@ -1293,6 +1341,7 @@ export const OrgPolicySchema = z
       })
       .strict()
       .optional(),
+    security: SecurityPolicySchema.optional(),
     mcp: z
       .object({
         allowedServers: z.array(z.string().min(1)).default([]),

@@ -970,6 +970,27 @@ function prefixedConsumers(
 
 /** Exact, mechanically compared schema-leaf consumer contract. */
 export const POLICY_ENGINE_FIELD_CONSUMERS: Readonly<Record<string, string>> = Object.freeze({
+  "security.strix.enabled":
+    "declarative Strix scan intent; no runtime security-scan consumer is wired",
+  "security.strix.required":
+    "declarative Strix requirement; no posture enforcement consumer is wired",
+  "security.strix.targetKind":
+    "declarative local-fixture boundary; no runtime security-scan consumer is wired",
+  "security.strix.mode":
+    "declarative bounded scan mode; no runtime security-scan consumer is wired",
+  "security.strix.maxBudgetCents":
+    "declarative cost ceiling; no runtime budget enforcement consumer is wired",
+  "security.strix.maxTurns":
+    "declarative turn ceiling; no runtime turn enforcement consumer is wired",
+  "security.strix.timeoutMs":
+    "declarative timeout ceiling; no runtime timeout enforcement consumer is wired",
+  "security.strix.telemetry":
+    "declarative telemetry-off boundary; no runtime security-scan consumer is wired",
+  "security.strix.imageDigest":
+    "declarative immutable container identity; no container execution consumer is wired",
+  "security.strix.allowLiveTargets":
+    "declarative live-target denial; no live-target execution consumer is wired",
+  "security.strix.allowMounts": "declarative mount denial; no mount execution consumer is wired",
   "governance.policyVersion": "effective resolver: approval policy-version and report consumer",
   "governance.supportedClis.*": "target resolution: organization sanction gate",
   ...prefixedConsumers("governance.activations.*", ACTIVATION_LEAF_CONSUMERS),

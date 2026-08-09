@@ -191,6 +191,158 @@
       },
       "additionalProperties": false
     },
+    "security": {
+      "type": "object",
+      "properties": {
+        "strix": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "targetKind": {
+                  "type": "string",
+                  "const": "local-fixture"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "quick",
+                    "standard",
+                    "deep"
+                  ]
+                },
+                "maxBudgetCents": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000
+                },
+                "maxTurns": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 20
+                },
+                "timeoutMs": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 300000
+                },
+                "telemetry": {
+                  "type": "string",
+                  "const": "off"
+                },
+                "imageDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "allowLiveTargets": {
+                  "default": false,
+                  "type": "boolean",
+                  "const": false
+                },
+                "allowMounts": {
+                  "default": false,
+                  "type": "boolean",
+                  "const": false
+                },
+                "enabled": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "required": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "targetKind",
+                "mode",
+                "maxBudgetCents",
+                "maxTurns",
+                "timeoutMs",
+                "telemetry",
+                "imageDigest",
+                "enabled",
+                "required"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "targetKind": {
+                  "type": "string",
+                  "const": "local-fixture"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "quick",
+                    "standard",
+                    "deep"
+                  ]
+                },
+                "maxBudgetCents": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000
+                },
+                "maxTurns": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 20
+                },
+                "timeoutMs": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 300000
+                },
+                "telemetry": {
+                  "type": "string",
+                  "const": "off"
+                },
+                "imageDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "allowLiveTargets": {
+                  "default": false,
+                  "type": "boolean",
+                  "const": false
+                },
+                "allowMounts": {
+                  "default": false,
+                  "type": "boolean",
+                  "const": false
+                },
+                "enabled": {
+                  "type": "boolean",
+                  "const": false
+                },
+                "required": {
+                  "type": "boolean",
+                  "const": false
+                }
+              },
+              "required": [
+                "targetKind",
+                "mode",
+                "maxBudgetCents",
+                "maxTurns",
+                "timeoutMs",
+                "telemetry",
+                "imageDigest",
+                "enabled",
+                "required"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "strix"
+      ],
+      "additionalProperties": false
+    },
     "mcp": {
       "type": "object",
       "properties": {
