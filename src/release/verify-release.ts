@@ -10,6 +10,14 @@ import { PACKAGE_NAME, REPO } from "../version.js";
 
 type ReleasePlanContext = Parameters<CommandSpec["plan"]>[0];
 type VersionResolver = (ctx: ReleasePlanContext) => Promise<string | undefined>;
+type ReleaseAssetsReadiness = { status: "ready" } | { status: "fail" | "skip"; detail: string };
+type ReleaseAssetsResolver = (
+  ctx: ReleasePlanContext,
+  version: string,
+) => Promise<ReleaseAssetsReadiness>;
+
+const RELEASE_ASSET_NAMES = ["SHA256SUMS.txt", "SHA256SUMS.txt.sigstore.json"] as const;
+const RELEASE_ASSET_POLL_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000] as const;
 
 function normalizeVersion(raw: unknown): string | undefined {
   if (typeof raw !== "string") return undefined;
@@ -77,6 +85,69 @@ function outputDetail(
   return redactEnvValues(redactText(raw, ctx.env), ctx.env);
 }
 
+function releaseAssetNames(raw: string): Set<string> | undefined {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (typeof parsed !== "object" || parsed === null || !("assets" in parsed)) return undefined;
+    const assets = (parsed as { assets?: unknown }).assets;
+    if (!Array.isArray(assets)) return undefined;
+    const names = new Set<string>();
+    for (const asset of assets) {
+      if (typeof asset !== "object" || asset === null || !("name" in asset)) return undefined;
+      const name = (asset as { name?: unknown }).name;
+      if (typeof name !== "string") return undefined;
+      names.add(name);
+    }
+    return names;
+  } catch {
+    return undefined;
+  }
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function releaseAssetsReady(
+  ctx: ReleasePlanContext,
+  version: string,
+): Promise<ReleaseAssetsReadiness> {
+  for (let attempt = 0; attempt <= RELEASE_ASSET_POLL_DELAYS_MS.length; attempt += 1) {
+    const view = await ctx.run(
+      ["gh", "release", "view", `v${version}`, "--repo", REPO, "--json", "assets"],
+      { timeoutMs: 60_000 },
+    );
+    if (view.spawnError) return { status: "skip", detail: "gh not found" };
+    if (view.code !== 0) {
+      return {
+        status: "fail",
+        detail: outputDetail(ctx, view.stdout, view.stderr, `gh release view exited ${view.code}`),
+      };
+    }
+    const names = releaseAssetNames(view.stdout);
+    if (names === undefined) {
+      return {
+        status: "fail",
+        detail: `gh release view returned malformed asset metadata for existing release v${version}`,
+      };
+    }
+    const missing = RELEASE_ASSET_NAMES.filter((name) => !names.has(name));
+    if (missing.length === 0) return { status: "ready" };
+    const delay = RELEASE_ASSET_POLL_DELAYS_MS[attempt];
+    if (delay === undefined) {
+      const waitedMs = RELEASE_ASSET_POLL_DELAYS_MS.reduce((sum, value) => sum + value, 0);
+      return {
+        status: "fail",
+        detail:
+          `release v${version} exists but required checksum assets are still unavailable after ` +
+          `${waitedMs / 1_000}s: ${missing.join(", ")}`,
+      };
+    }
+    await wait(delay);
+  }
+  return { status: "fail", detail: `release v${version} asset polling exhausted unexpectedly` };
+}
+
 async function npmSignaturesCheck(
   ctx: ReleasePlanContext,
   versionFor: VersionResolver,
@@ -134,12 +205,16 @@ async function withReleaseAssets(
   ctx: ReleasePlanContext,
   name: string,
   versionFor: VersionResolver,
+  assetsReadyFor: ReleaseAssetsResolver,
   run: (dir: string, version: string) => Promise<Check>,
 ): Promise<Check> {
   const version = await versionFor(ctx);
   if (version === undefined) {
     return skip(name, `could not resolve ${PACKAGE_NAME} version from npm`);
   }
+  const readiness = await assetsReadyFor(ctx, version);
+  if (readiness.status === "skip") return skip(name, readiness.detail);
+  if (readiness.status === "fail") return fail(name, readiness.detail);
   const dir = mkdtempSync(join(tmpdir(), "aih-release-"));
   try {
     const download = await ctx.run(
@@ -150,10 +225,7 @@ async function withReleaseAssets(
         `v${version}`,
         "--repo",
         REPO,
-        "--pattern",
-        "SHA256SUMS.txt",
-        "--pattern",
-        "SHA256SUMS.txt.sigstore.json",
+        ...RELEASE_ASSET_NAMES.flatMap((asset) => ["--pattern", asset]),
         "--dir",
         dir,
         "--clobber",
@@ -181,8 +253,9 @@ async function withReleaseAssets(
 async function cosignBundleCheck(
   ctx: ReleasePlanContext,
   versionFor: VersionResolver,
+  assetsReadyFor: ReleaseAssetsResolver,
 ): Promise<Check> {
-  return withReleaseAssets(ctx, "release cosign bundle", versionFor, async (dir, version) => {
+  const verifyAssets = async (dir: string, version: string): Promise<Check> => {
     const sums = join(dir, "SHA256SUMS.txt");
     const bundle = join(dir, "SHA256SUMS.txt.sigstore.json");
     if (!existsSync(sums) || !existsSync(bundle)) {
@@ -205,8 +278,12 @@ async function cosignBundleCheck(
       ],
       { timeoutMs: 120_000 },
     );
-    if (res.spawnError || res.code === 127)
-      return skip("release cosign bundle", "cosign not found");
+    if (res.spawnError || res.code === 127) {
+      return skip(
+        "release cosign bundle",
+        "cosign not found; install with `winget install sigstore.cosign` (Windows) or `brew install cosign` (macOS), then ensure `cosign` resolves on PATH",
+      );
+    }
     if (res.code !== 0) {
       return fail(
         "release cosign bundle",
@@ -214,7 +291,8 @@ async function cosignBundleCheck(
       );
     }
     return pass("release cosign bundle", "cosign verified SHA256SUMS.txt sigstore bundle");
-  });
+  };
+  return withReleaseAssets(ctx, "release cosign bundle", versionFor, assetsReadyFor, verifyAssets);
 }
 
 function sha256File(path: string): string {
@@ -234,8 +312,9 @@ function parseSums(raw: string): Map<string, string> {
 async function tarballHashCheck(
   ctx: ReleasePlanContext,
   versionFor: VersionResolver,
+  assetsReadyFor: ReleaseAssetsResolver,
 ): Promise<Check> {
-  return withReleaseAssets(ctx, "release tarball hash", versionFor, async (dir, version) => {
+  const verifyAssets = async (dir: string, version: string): Promise<Check> => {
     const sumsPath = join(dir, "SHA256SUMS.txt");
     if (!existsSync(sumsPath)) return fail("release tarball hash", "SHA256SUMS.txt is missing");
     const pack = await ctx.run(
@@ -277,7 +356,8 @@ async function tarballHashCheck(
       return fail("release tarball hash", `${tarball} expected ${expected}, got ${actual}`);
     }
     return pass("release tarball hash", `${tarball} matches SHA256SUMS.txt`);
-  });
+  };
+  return withReleaseAssets(ctx, "release tarball hash", versionFor, assetsReadyFor, verifyAssets);
 }
 
 export const verifyReleaseCommand: CommandSpec = {
@@ -292,15 +372,20 @@ export const verifyReleaseCommand: CommandSpec = {
   },
   plan: () => {
     let versionPromise: Promise<string | undefined> | undefined;
+    let assetsReadyPromise: Promise<ReleaseAssetsReadiness> | undefined;
     const versionFor: VersionResolver = (ctx) => {
       versionPromise ??= publishedVersion(ctx);
       return versionPromise;
     };
+    const assetsReadyFor: ReleaseAssetsResolver = (ctx, version) => {
+      assetsReadyPromise ??= releaseAssetsReady(ctx, version);
+      return assetsReadyPromise;
+    };
     return plan(
       "verify-release",
       probe("release npm signatures", (ctx) => npmSignaturesCheck(ctx, versionFor)),
-      probe("release cosign bundle", (ctx) => cosignBundleCheck(ctx, versionFor)),
-      probe("release tarball hash", (ctx) => tarballHashCheck(ctx, versionFor)),
+      probe("release cosign bundle", (ctx) => cosignBundleCheck(ctx, versionFor, assetsReadyFor)),
+      probe("release tarball hash", (ctx) => tarballHashCheck(ctx, versionFor, assetsReadyFor)),
     );
   },
 };

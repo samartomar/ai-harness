@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type Runner } from "../../src/internals/proc.js";
@@ -39,6 +39,10 @@ describe("verify-release command", () => {
     writeFileSync(`${dir}/${tarball}`, tarballBody, "utf8");
   }
 
+  function releaseAssets(names: string[]): string {
+    return JSON.stringify({ assets: names.map((name) => ({ name })) });
+  }
+
   it("is a read-only top-level command with a version positional", () => {
     expect(verifyReleaseCommand).toMatchObject({
       name: "verify-release",
@@ -56,6 +60,12 @@ describe("verify-release command", () => {
       }
       if (argv[0] === "npm" && argv[1] === "install") return { code: 0, stdout: "installed" };
       if (argv.slice(0, 3).join(" ") === "npm audit signatures") return { code: 0, stdout: "ok" };
+      if (argv[0] === "gh" && argv[1] === "release" && argv[2] === "view") {
+        return {
+          code: 0,
+          stdout: releaseAssets(["SHA256SUMS.txt", "SHA256SUMS.txt.sigstore.json"]),
+        };
+      }
       if (argv[0] === "gh" && argv[1] === "release" && argv[2] === "download") {
         seedReleaseAssets(argv);
         return { code: 0 };
@@ -98,9 +108,157 @@ describe("verify-release command", () => {
     );
   });
 
+  it("polls an existing release until both checksum assets appear before downloading", async () => {
+    vi.useFakeTimers();
+    try {
+      let releaseViews = 0;
+      let downloads = 0;
+      const run = fakeRunner((argv) => {
+        if (argv[0] === "npm" && argv[1] === "install") return { code: 0 };
+        if (argv.slice(0, 3).join(" ") === "npm audit signatures") return { code: 0 };
+        if (argv[0] === "gh" && argv[1] === "release" && argv[2] === "view") {
+          releaseViews += 1;
+          return {
+            code: 0,
+            stdout:
+              releaseViews < 3
+                ? releaseAssets([])
+                : releaseAssets(["SHA256SUMS.txt", "SHA256SUMS.txt.sigstore.json"]),
+          };
+        }
+        if (argv[0] === "gh" && argv[1] === "release" && argv[2] === "download") {
+          downloads += 1;
+          if (releaseViews < 3) return { code: 1, stderr: "no assets match the file pattern" };
+          seedReleaseAssets(argv);
+          return { code: 0 };
+        }
+        if (argv[0] === "cosign") return { code: 0 };
+        if (argv[0] === "npm" && argv[1] === "pack") {
+          seedPackedTarball(argv);
+          return { code: 0, stdout: `${tarball}\n` };
+        }
+        return undefined;
+      });
+      const c = ctx(run, { version: "1.0.1" });
+
+      const pending = executePlan(await verifyReleaseCommand.plan(c), c);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      expect(result.report?.ok).toBe(true);
+      expect(releaseViews).toBe(3);
+      expect(downloads).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fails distinctly after bounded polling when the release exists without checksum assets", async () => {
+    vi.useFakeTimers();
+    try {
+      let releaseViews = 0;
+      let downloads = 0;
+      const run = fakeRunner((argv) => {
+        if (argv[0] === "npm" && argv[1] === "install") return { code: 0 };
+        if (argv.slice(0, 3).join(" ") === "npm audit signatures") return { code: 0 };
+        if (argv[0] === "gh" && argv[1] === "release" && argv[2] === "view") {
+          releaseViews += 1;
+          return { code: 0, stdout: releaseAssets([]) };
+        }
+        if (argv[0] === "gh" && argv[1] === "release" && argv[2] === "download") {
+          downloads += 1;
+          return { code: 1, stderr: "no assets match the file pattern" };
+        }
+        return undefined;
+      });
+      const c = ctx(run, { version: "1.0.1" });
+
+      const pending = executePlan(await verifyReleaseCommand.plan(c), c);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+      const assetChecks = result.report?.checks.filter(
+        (check) => check.name === "release cosign bundle" || check.name === "release tarball hash",
+      );
+
+      expect(assetChecks).toHaveLength(2);
+      expect(assetChecks?.every((check) => check.verdict === "fail")).toBe(true);
+      expect(
+        assetChecks?.every((check) => check.detail?.includes("release v1.0.1 exists") === true),
+      ).toBe(true);
+      expect(releaseViews).toBe(6);
+      expect(downloads).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fails immediately when the release lookup fails instead of calling it an asset race", async () => {
+    let releaseViews = 0;
+    let downloads = 0;
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "npm" && argv[1] === "install") return { code: 0 };
+      if (argv.slice(0, 3).join(" ") === "npm audit signatures") return { code: 0 };
+      if (argv[0] === "gh" && argv[1] === "release" && argv[2] === "view") {
+        releaseViews += 1;
+        return { code: 1, stderr: "release not found" };
+      }
+      if (argv[0] === "gh" && argv[1] === "release" && argv[2] === "download") {
+        downloads += 1;
+      }
+      return undefined;
+    });
+    const c = ctx(run, { version: "1.0.1" });
+
+    const result = await executePlan(await verifyReleaseCommand.plan(c), c);
+    const assetChecks = result.report?.checks.filter(
+      (check) => check.name === "release cosign bundle" || check.name === "release tarball hash",
+    );
+
+    expect(assetChecks?.every((check) => check.detail === "release not found")).toBe(true);
+    expect(
+      assetChecks?.every((check) => check.detail?.includes("release v1.0.1 exists") !== true),
+    ).toBe(true);
+    expect(releaseViews).toBe(1);
+    expect(downloads).toBe(0);
+  });
+
+  it("fails closed on malformed release asset metadata without downloading", async () => {
+    let releaseViews = 0;
+    let downloads = 0;
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "npm" && argv[1] === "install") return { code: 0 };
+      if (argv.slice(0, 3).join(" ") === "npm audit signatures") return { code: 0 };
+      if (argv[0] === "gh" && argv[1] === "release" && argv[2] === "view") {
+        releaseViews += 1;
+        return { code: 0, stdout: JSON.stringify({ assets: [{ size: 42 }] }) };
+      }
+      if (argv[0] === "gh" && argv[1] === "release" && argv[2] === "download") {
+        downloads += 1;
+      }
+      return undefined;
+    });
+    const c = ctx(run, { version: "1.0.1" });
+
+    const result = await executePlan(await verifyReleaseCommand.plan(c), c);
+    const assetChecks = result.report?.checks.filter(
+      (check) => check.name === "release cosign bundle" || check.name === "release tarball hash",
+    );
+
+    expect(assetChecks?.every((check) => check.verdict === "fail")).toBe(true);
+    expect(assetChecks?.every((check) => check.detail?.includes("malformed") === true)).toBe(true);
+    expect(releaseViews).toBe(1);
+    expect(downloads).toBe(0);
+  });
+
   it("skips only the cosign leg when cosign is unavailable", async () => {
     const run = fakeRunner((argv) => {
       if (argv.slice(0, 3).join(" ") === "npm audit signatures") return { code: 0, stdout: "ok" };
+      if (argv[0] === "gh" && argv[1] === "release" && argv[2] === "view") {
+        return {
+          code: 0,
+          stdout: releaseAssets(["SHA256SUMS.txt", "SHA256SUMS.txt.sigstore.json"]),
+        };
+      }
       if (argv[0] === "gh" && argv[1] === "release" && argv[2] === "download") {
         seedReleaseAssets(argv);
         return { code: 0 };
@@ -129,6 +287,12 @@ describe("verify-release command", () => {
         }),
       ]),
     );
+    const detail = result.report?.checks.find(
+      (check) => check.name === "release cosign bundle",
+    )?.detail;
+    expect(detail).toContain("winget install sigstore.cosign");
+    expect(detail).toContain("brew install cosign");
+    expect(detail).toContain("PATH");
   });
 
   it("fails rather than skips an npm signature command with truncated output", async () => {
