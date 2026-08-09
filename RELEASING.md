@@ -10,6 +10,22 @@ bundle `SHA256SUMS.txt.sigstore.json`), `provenance.intoto.jsonl`, and `aih-sbom
 
 Your job is everything up to the tag.
 
+## Choose the release channel
+
+Stable-direct is the default release path after every mechanical gate passes and
+the exact SHA-bound publication approval is recorded. Use a release candidate
+before stable when the cut includes any of these higher-risk conditions:
+
+- a major-version or schema migration;
+- a change to an evidence format;
+- a change to publishing machinery; or
+- behavior that has not received adequate production-equivalent verification.
+
+An RC follows the same preflight, CI, authorization, immutability, and verification
+rules as a stable cut. It publishes under `next` and never touches `latest`; promoting
+to stable is a separate cut with its own exact-SHA approval. A maintainer may also
+choose an RC for any other cut when extra observation would be useful.
+
 ## One-time setup (done — kept for reference)
 
 This bootstrap is complete: `@aihq/harness` is live on npm and publishing is OIDC-only

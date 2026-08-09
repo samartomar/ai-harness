@@ -28,6 +28,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Release guidance now makes stable-direct the default after mechanical gates and exact-SHA approval, while requiring a release candidate for major or schema migrations, evidence-format changes, publishing-machinery changes, and cuts without adequate production-equivalent verification.
 - The portable Policy Workbench now uses a flat Ledger paper-and-ink identity across light and dark themes, with evidence colours reserved for pass, blocked, and owed states. The inspector is mutation-free and narrates the selected-to-materialized journey with one routed next action; curation and custom-source forms live in a separate authoring sidebar, and the canonical selection rail remains available on compact screens.
 - The Policy Workbench now keeps ECC language, framework, capability, and module selection in the left rail instead of duplicating those controls in the main inventory, preset toolbar, and inspector. A separate Add MCP sidebar authors source-digest-bound ECC approvals; approval alone never configures a client or contacts, scans, attests, or observes an endpoint.
 - The Policy Workbench now makes every selectable control reversible, files every group under resolvable owner filters, links component ids in composition and registrar panels to their details, omits constant pseudo-state rows, and narrates requested versus browser-effective counts at export and download.

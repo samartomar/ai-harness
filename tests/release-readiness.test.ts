@@ -102,6 +102,18 @@ describe("release readiness metadata", () => {
     expect(npmCiIndex).toBeGreaterThan(tagGateIndex);
   });
 
+  it("documents stable-direct as the default and names every required RC trigger", () => {
+    const releasing = read("RELEASING.md");
+
+    expect(releasing).toContain("Stable-direct is the default release path");
+    expect(releasing).toContain("SHA-bound publication approval");
+    expect(releasing).toContain("major-version or schema migration");
+    expect(releasing).toContain("evidence format");
+    expect(releasing).toContain("publishing machinery");
+    expect(releasing).toContain("production-equivalent verification");
+    expect(releasing).toContain("publishes under `next` and never touches `latest`");
+  });
+
   it("documents the SLSA Build L2 release claim and the Build L3 gap", () => {
     const doc = read("docs/security/release-slsa.md");
     expect(doc).toContain("SLSA v1.2");
