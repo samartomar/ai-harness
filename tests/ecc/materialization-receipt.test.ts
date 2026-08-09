@@ -43,6 +43,16 @@ function authorization(componentId = "skill:tdd-workflow"): BaselineAuthorizatio
   };
 }
 
+function runtimeAuthorization(
+  overrides: Partial<BaselineAuthorization> = {},
+): BaselineAuthorization {
+  return {
+    ...authorization("runtime:ecc-kiro"),
+    treeSha256: "e".repeat(64),
+    ...overrides,
+  };
+}
+
 function provenance() {
   return {
     repository: "affaan-m/ECC",
@@ -188,6 +198,314 @@ describe("F5 — the destination-scoped materialization receipt document", () =>
     const text = serializeEccMaterializationReceipt(receipt);
     expect(text.endsWith("\n")).toBe(true);
     expect(serializeEccMaterializationReceipt(parseEccMaterializationReceipt(text))).toBe(text);
+  });
+
+  it("keeps legacy non-Kiro version-one receipts readable without content authorization", () => {
+    const parsed = parseEccMaterializationReceipt(JSON.stringify(receiptValue()));
+
+    expect(parsed.components[0]?.files[0]).not.toHaveProperty("contentAuthorization");
+  });
+
+  it("round-trips separate selected and exact Kiro runtime authorization", () => {
+    const contentAuthorization = runtimeAuthorization();
+    const receipt = parseEccMaterializationReceipt(
+      JSON.stringify(
+        receiptValue({
+          components: [
+            {
+              ...componentValue(),
+              files: [
+                {
+                  path: ".kiro/skills/tdd-workflow/SKILL.md",
+                  operation: "copy-file",
+                  contentSha256: "d".repeat(64),
+                  contentAuthorization,
+                  contentSourcePath: ".kiro/skills/tdd-workflow/SKILL.md",
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(receipt.components[0]).toMatchObject({
+      id: "skill:tdd-workflow",
+      authorization: expect.objectContaining({ treeSha256: "b".repeat(64) }),
+      files: [
+        {
+          contentAuthorization: expect.objectContaining({ treeSha256: "e".repeat(64) }),
+          contentSourcePath: ".kiro/skills/tdd-workflow/SKILL.md",
+        },
+      ],
+    });
+    expect(parseEccMaterializationReceipt(serializeEccMaterializationReceipt(receipt))).toEqual(
+      receipt,
+    );
+  });
+
+  it("accepts only the governed direct-copy custody shapes in durable receipts", () => {
+    const contentAuthorization = runtimeAuthorization();
+    const file = (path: string) => ({
+      path,
+      operation: "copy-file" as const,
+      contentSha256: "d".repeat(64),
+      contentAuthorization,
+      contentSourcePath: path,
+    });
+    const receipt = parseEccMaterializationReceipt(
+      JSON.stringify(
+        receiptValue({
+          components: [
+            {
+              id: "skill:tdd-workflow",
+              authorization: authorization(),
+              provenance: provenance(),
+              files: [file(".kiro/skills/tdd-workflow/SKILL.md")],
+            },
+            {
+              id: "agent:code-reviewer",
+              authorization: authorization("agent:code-reviewer"),
+              provenance: { ...provenance(), componentPath: "agents/code-reviewer.md" },
+              files: [
+                file(".kiro/agents/code-reviewer.md"),
+                file(".kiro/agents/code-reviewer.json"),
+              ],
+            },
+            {
+              id: "baseline:rules",
+              authorization: authorization("baseline:rules"),
+              provenance: { ...provenance(), componentPath: "rules" },
+              files: [file(".kiro/steering/00-canon.md")],
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(receipt.components.map((component) => component.id)).toEqual([
+      "agent:code-reviewer",
+      "baseline:rules",
+      "skill:tdd-workflow",
+    ]);
+  });
+
+  it("retains independent component-scoped acceptance decisions", () => {
+    const selectedAuthorization: BaselineAuthorization = {
+      ...authorization(),
+      effective: "accepted-with-conditions",
+      acceptance: {
+        decisionId: "selected-decision",
+        recordSha256: "1".repeat(64),
+        acceptedFindingCodes: ["SELECTED-1"],
+      },
+    };
+    const contentAuthorization = runtimeAuthorization({
+      effective: "accepted-with-conditions",
+      acceptance: {
+        decisionId: "runtime-decision",
+        recordSha256: "2".repeat(64),
+        acceptedFindingCodes: ["RUNTIME-1"],
+      },
+    });
+    const receipt = parseEccMaterializationReceipt(
+      JSON.stringify(
+        receiptValue({
+          components: [
+            {
+              ...componentValue(),
+              authorization: selectedAuthorization,
+              files: [
+                {
+                  path: ".kiro/skills/tdd-workflow/SKILL.md",
+                  operation: "copy-file",
+                  contentSha256: "d".repeat(64),
+                  contentAuthorization,
+                  contentSourcePath: ".kiro/skills/tdd-workflow/SKILL.md",
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(receipt.components[0]?.authorization.acceptance?.decisionId).toBe("selected-decision");
+    expect(receipt.components[0]?.files[0]?.contentAuthorization?.acceptance?.decisionId).toBe(
+      "runtime-decision",
+    );
+  });
+
+  it("rejects unsupported Kiro receipt operations and surfaces", () => {
+    const candidates = [
+      { path: ".kiro/settings/mcp.json", operation: "copy-file" },
+      { path: ".kiro/hooks/on-save.json", operation: "copy-file" },
+      { path: ".kiro/scripts/install.sh", operation: "copy-file" },
+      { path: ".kiro/agents/reviewer.txt", operation: "copy-file" },
+      { path: ".kiro/agents/nested/reviewer.md", operation: "copy-file" },
+      {
+        path: ".kiro/steering/product.json",
+        operation: "merge-json",
+        ownedKeys: ["product"],
+        createdByAih: true,
+      },
+    ];
+
+    for (const candidate of candidates) {
+      expect(
+        () =>
+          parseEccMaterializationReceipt(
+            JSON.stringify(
+              receiptValue({
+                components: [
+                  {
+                    ...componentValue(),
+                    files: [
+                      {
+                        ...candidate,
+                        contentSha256: "d".repeat(64),
+                        contentAuthorization: runtimeAuthorization({
+                          treeSha256: "b".repeat(64),
+                        }),
+                        contentSourcePath: candidate.path,
+                      },
+                    ],
+                  },
+                ],
+              }),
+            ),
+          ),
+        candidate.path,
+      ).toThrow(/unsupported Kiro materialization/i);
+    }
+  });
+
+  it("rejects Kiro receipt paths mislabeled under another selected component", () => {
+    const cases = [
+      ["skill:tdd-workflow", ".kiro/skills/other/SKILL.md"],
+      ["agent:code-reviewer", ".kiro/agents/other.md"],
+      ["command:review", ".kiro/steering/review.md"],
+    ] as const;
+
+    for (const [id, path] of cases) {
+      expect(
+        () =>
+          parseEccMaterializationReceipt(
+            JSON.stringify(
+              receiptValue({
+                components: [
+                  {
+                    ...componentValue(),
+                    id,
+                    authorization: authorization(id),
+                    files: [
+                      {
+                        path,
+                        operation: "copy-file",
+                        contentSha256: "d".repeat(64),
+                        contentAuthorization: runtimeAuthorization({
+                          treeSha256: "b".repeat(64),
+                        }),
+                        contentSourcePath: path,
+                      },
+                    ],
+                  },
+                ],
+              }),
+            ),
+          ),
+        path,
+      ).toThrow(/unsupported Kiro materialization/i);
+    }
+  });
+
+  it("matches repository identity case-insensitively while preserving recorded spelling", () => {
+    const selectedAuthorization = { ...authorization(), source: "Affaan-M/ECC" };
+    const contentAuthorization = runtimeAuthorization({ source: "affaan-m/ecc" });
+    const receipt = parseEccMaterializationReceipt(
+      JSON.stringify(
+        receiptValue({
+          components: [
+            {
+              ...componentValue(),
+              authorization: selectedAuthorization,
+              provenance: { ...provenance(), repository: "AFFAAN-M/Ecc" },
+              files: [
+                {
+                  path: ".kiro/skills/tdd-workflow/SKILL.md",
+                  operation: "copy-file",
+                  contentSha256: "d".repeat(64),
+                  contentAuthorization,
+                  contentSourcePath: ".kiro/skills/tdd-workflow/SKILL.md",
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(receipt.components[0]?.authorization.source).toBe("Affaan-M/ECC");
+    expect(receipt.components[0]?.files[0]?.contentAuthorization?.source).toBe("affaan-m/ecc");
+  });
+
+  it("rejects mismatched selected, provenance, and Kiro content evidence identities", () => {
+    const valid = {
+      ...componentValue(),
+      files: [
+        {
+          path: ".kiro/skills/tdd-workflow/SKILL.md",
+          operation: "copy-file" as const,
+          contentSha256: "d".repeat(64),
+          contentAuthorization: runtimeAuthorization(),
+          contentSourcePath: ".kiro/skills/tdd-workflow/SKILL.md",
+        },
+      ],
+    };
+    const cases: Array<[string, unknown]> = [
+      ["selected component", { ...valid, authorization: authorization("skill:other") }],
+      [
+        "content source path",
+        {
+          ...valid,
+          files: [{ ...valid.files[0], contentSourcePath: ".kiro/skills/other/SKILL.md" }],
+        },
+      ],
+      [
+        "provenance repository",
+        { ...valid, provenance: { ...provenance(), repository: "other/ECC" } },
+      ],
+      ["provenance pin", { ...valid, provenance: { ...provenance(), commit: "d".repeat(40) } }],
+      ...(
+        [
+          ["content component", { componentId: "runtime:other" }],
+          ["content repository", { source: "other/ECC" }],
+          ["content pin", { pinnedSha: "d".repeat(40) }],
+          ["content tier", { tier: "org" }],
+          ["content issuer", { issuer: "other issuer" }],
+          ["content evidence", { evidenceSha256: "d".repeat(64) }],
+        ] as Array<[string, Partial<BaselineAuthorization>]>
+      ).map(([label, overrides]): [string, unknown] => [
+        label,
+        {
+          ...valid,
+          files: [
+            {
+              ...valid.files[0],
+              contentAuthorization: runtimeAuthorization(overrides),
+            },
+          ],
+        },
+      ]),
+    ];
+
+    for (const [label, component] of cases) {
+      expect(
+        () =>
+          parseEccMaterializationReceipt(JSON.stringify(receiptValue({ components: [component] }))),
+        label,
+      ).toThrow(/materialization receipt/i);
+    }
   });
 
   it("refuses a malformed, foreign, or unknown-version receipt instead of guessing", () => {

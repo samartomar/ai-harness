@@ -10,6 +10,7 @@ import {
 } from "./materialization-fs.js";
 import {
   assertComponentSourcePath,
+  assertEccMaterializationEvidenceBinding,
   assertMaterializedComponentId,
   assertOwnedJsonKey,
   assertOwnedRelativePath,
@@ -222,6 +223,18 @@ export function resolveRequest(request: EccMaterializationRequest): ResolvedRequ
         );
       }
       seenPaths.add(identity);
+      if (identity.startsWith(".kiro/")) {
+        throw new Error(
+          "ECC Kiro materialization requires the future verified-source Kiro adapter",
+        );
+      }
+      assertEccMaterializationEvidenceBinding({
+        id: componentId,
+        authorization: component.authorization,
+        provenance: component.provenance,
+        path,
+        operation: file.kind,
+      });
       recordBytes += Buffer.byteLength(path, "utf8") + MIN_RECORD_BYTES_PER_FILE;
       if (recordBytes > MAX_MATERIALIZATION_RECEIPT_BYTES) {
         throw new Error(
