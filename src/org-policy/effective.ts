@@ -916,6 +916,19 @@ const EXTERNAL_SELECTION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   "items.*.source.repository": "effective report: requested external source repository only",
 };
 
+/**
+ * Seat-side Add authority only. These fields deliberately do not feed the
+ * effective candidate resolver, a projector, a scanner, or any network action.
+ */
+const ECC_MCP_APPROVAL_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
+  "allowedDataClasses.*": "seat Add authority: declarative permitted-data disclosure only",
+  approvedBy: "seat Add authority: declarative administrator identity only",
+  authenticationMode: "seat Add authority: declarative authentication disclosure only",
+  id: "seat Add authority: source-locked external ECC MCP lookup only",
+  sourceContentSha256: "seat Add authority: pinned source-match refusal only",
+  state: "seat Add authority: declarative approved/revoked decision only",
+};
+
 const HOOK_REGISTRATION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   command:
     "hook-managed-settings projector: written verbatim into the owned client destination; the effective resolver never reads it",
@@ -963,6 +976,7 @@ export const POLICY_ENGINE_FIELD_CONSUMERS: Readonly<Record<string, string>> = O
   ...prefixedConsumers("governance.authority", AUTHORITY_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.externalCuration.*", EXTERNAL_CURATION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.externalSelections.*", EXTERNAL_SELECTION_LEAF_CONSUMERS),
+  ...prefixedConsumers("governance.eccMcpApprovals.*", ECC_MCP_APPROVAL_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.hookRegistrations.*", HOOK_REGISTRATION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.reviewed.*", CANDIDATE_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.custom.*", CANDIDATE_LEAF_CONSUMERS),

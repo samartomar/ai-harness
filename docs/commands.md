@@ -616,6 +616,15 @@ digest/verdict records remain readable; their `drifted` vocabulary is legacy
 metadata, never evidence that AIH contacted the endpoint or a live blocking
 check.
 
+The headless schema also accepts `governance.eccMcpApprovals`. Each strict
+record names one of the 31 external ECC catalog entries, the catalog's exact
+raw source digest, an `approved` or `revoked` state, administrator,
+authentication mode, and permitted data classes. Duplicate, unknown,
+AIH-owned, or source-mismatched records fail closed. This field is declarative
+seat-Add authority only: parsing it performs no client write, endpoint contact,
+scan, projection, or tool-surface check. The explicit user-triggered Add
+lifecycle is a separate command surface.
+
 `init` seeds a starter `aih-org-policy.json` from **observed fleet state**, so authoring the policy
 becomes a review exercise instead of a blank page — and a fresh enterprise setup passes baseline
 attestation for aih-generated MCP servers without hand-editing. The starter declares exactly what

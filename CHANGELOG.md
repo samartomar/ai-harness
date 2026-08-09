@@ -8,6 +8,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Org policies can now record approved or revoked use of one exact external ECC
+  MCP catalog entry at the pinned source digest, including administrator,
+  authentication, and permitted-data disclosures. The record is declarative
+  seat-Add authority only; it performs no configuration, contact, scan,
+  projection, or tool-surface check.
 - Policy authoring now carries the pinned ECC MCP inventory as a source-locked
   external catalog: all 35 upstream entries are classified, four AIH-owned
   entries are excluded, and the remaining 31 are kept separate from AIH's
