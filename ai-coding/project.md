@@ -29,7 +29,7 @@ packaged skill script and four pinned `uv` analyzer/runtime manifests under
 
 ## Scale
 
-- 1027 tracked files · medium · single-package repository
+- 1035 tracked files · medium · single-package repository
 
 ## Entry points
 

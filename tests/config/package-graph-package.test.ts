@@ -3,10 +3,33 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import {
+  adaptSkillPackageGraph,
+  classifyPackageGraphResidue,
+  normalizeGitHubRepository,
+  projectBaselinePackageGraphAuthority,
+  projectEccMaterializationAuthority,
+} from "../../src/index.js";
 
 const root = process.cwd();
 
 describe("Package Graph public package surface", () => {
+  it("exports every Package Graph authority adapter from the library root", () => {
+    expect([
+      projectBaselinePackageGraphAuthority,
+      projectEccMaterializationAuthority,
+      normalizeGitHubRepository,
+      adaptSkillPackageGraph,
+      classifyPackageGraphResidue,
+    ]).toEqual([
+      expect.any(Function),
+      expect.any(Function),
+      expect.any(Function),
+      expect.any(Function),
+      expect.any(Function),
+    ]);
+  });
+
   it("ships and exports the committed Package Graph JSON Schema", () => {
     const npmCli = process.env.npm_execpath;
     if (!npmCli) throw new Error("npm_execpath is required for the cross-platform pack test");

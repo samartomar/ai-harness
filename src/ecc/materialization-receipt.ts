@@ -312,7 +312,13 @@ export type EccMaterializationReceipt = z.infer<typeof ReceiptSchema>;
 
 export type EccMaterializationReceiptRead =
   | { state: "absent" }
-  | { state: "valid"; receipt: EccMaterializationReceipt; raw: string }
+  | {
+      state: "valid";
+      receipt: EccMaterializationReceipt;
+      raw: string;
+      sourceBytes: Buffer;
+      sourceSha256: string;
+    }
   | { state: "malformed"; detail: string };
 
 function duplicateIssues(
@@ -411,9 +417,16 @@ export function readEccMaterializationReceipt(root: string): EccMaterializationR
       detail: `invalid ECC materialization receipt: ${ECC_MATERIALIZATION_RECEIPT_PATH} is unreadable or oversized`,
     };
   }
-  const raw = opened.contents.toString("utf8");
+  const sourceBytes = Buffer.from(opened.contents);
   try {
-    return { state: "valid", receipt: parseEccMaterializationReceipt(raw), raw };
+    const raw = new TextDecoder("utf-8", { fatal: true }).decode(sourceBytes);
+    return {
+      state: "valid",
+      receipt: parseEccMaterializationReceipt(raw),
+      raw,
+      sourceBytes,
+      sourceSha256: sha256(sourceBytes),
+    };
   } catch (error) {
     return { state: "malformed", detail: (error as Error).message };
   }

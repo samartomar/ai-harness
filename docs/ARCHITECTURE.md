@@ -29,7 +29,10 @@ and the executor is the only layer that performs filesystem or process effects.
   composition. Its pure additive index preserves each authority claim, binds the
   normalized projection separately from the caller-asserted source-store digest,
   and reports divergence without selecting a winner. It performs no I/O and is
-  metadata, never approval or evidence.
+  metadata, never approval or evidence. Source-specific adapters hash the exact
+  bytes they parse for the shipped baseline lock, ECC materialization receipts,
+  and strict GitHub skill lock/pack artifacts; the separate residue classifier
+  never promotes discovery into an authority claim.
 - **Evidence and release verification** (`src/evidence/`, `src/bundle/`,
   `src/release/`) package local audit material and verify published releases.
 - **Reporting and local telemetry** (`src/report/`, `src/logging/`,
