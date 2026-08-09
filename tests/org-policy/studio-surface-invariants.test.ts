@@ -5,8 +5,6 @@ import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
 const model = policyStudioModel();
-const STATE_FACTS = new Set(["Availability", "Requested", "Effective", "Gate"]);
-
 function studio(studioModel: PolicyStudioModel = model): Window {
   const window = new Window({ url: "http://localhost/" });
   const html = policyStudioHtml(studioModel);
@@ -59,14 +57,9 @@ function openDetail(window: Window, key: string): void {
   click(window, byAttribute(window.document, "data-detail", key), `detail ${key}`);
 }
 
-function detailFacts(window: Window, key: string): Map<string, string> {
+function detailNarration(window: Window, key: string): string {
   openDetail(window, key);
-  const facts = new Map<string, string>();
-  for (const row of window.document.querySelectorAll("#drawer-detail .kv > div")) {
-    const label = row.querySelector("span")?.textContent ?? "";
-    if (STATE_FACTS.has(label)) facts.set(label, row.querySelector("b")?.textContent ?? "");
-  }
-  return facts;
+  return window.document.querySelector("#drawer-detail .journey-effective")?.textContent ?? "";
 }
 
 function frameworkDetailKey(frameworkId: string, kind: string, id: string): string {
@@ -93,16 +86,11 @@ function modelWithFrameworkSelected(frameworkId: string): PolicyStudioModel {
   return selectedModel;
 }
 
-function expectEveryStateFactToVary(
-  label: string,
-  baseline: Map<string, string>,
-  selected: Map<string, string>,
-): void {
-  expect([...baseline.keys()], `${label} state facts`).toEqual([...selected.keys()]);
-  expect(baseline.size, `${label} exposes state facts`).toBeGreaterThan(0);
-  for (const [name, value] of baseline) {
-    expect(selected.get(name), `${label} ${name} changes with selection state`).not.toBe(value);
-  }
+function expectDetailNarrationToVary(label: string, baseline: string, selected: string): void {
+  expect(baseline, `${label} baseline narration`).toContain("Authored intent: not selected.");
+  expect(selected, `${label} selected narration`).toContain("Authored intent: selected.");
+  expect(baseline, `${label} effective truth`).toContain("Effective count: not evaluated");
+  expect(selected, `${label} selected effective truth`).toContain("Effective count: not evaluated");
 }
 
 describe("policy studio surface invariants", () => {
@@ -215,16 +203,16 @@ describe("policy studio surface invariants", () => {
     }
   });
 
-  it("renders no detail state fact as a constant across selectable states", () => {
+  it("narrates authored selection without inventing a target-evaluated state", () => {
     const baseline = studio();
     const selectedEcc = studio();
     click(selectedEcc, byAttribute(selectedEcc.document, "data-preset", "vibe"), "vibe preset");
 
     for (const item of [...model.catalog.mcp, ...model.catalog.hooks]) {
-      expectEveryStateFactToVary(
+      expectDetailNarrationToVary(
         item.id,
-        detailFacts(baseline, item.id),
-        detailFacts(selectedEcc, item.id),
+        detailNarration(baseline, item.id),
+        detailNarration(selectedEcc, item.id),
       );
     }
     const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc");
@@ -233,7 +221,11 @@ describe("policy studio surface invariants", () => {
       (asset) => !["lang", "framework", "capability", "module"].includes(asset.kind),
     )) {
       const key = frameworkDetailKey(ecc.id, asset.kind, asset.id);
-      expectEveryStateFactToVary(key, detailFacts(baseline, key), detailFacts(selectedEcc, key));
+      expectDetailNarrationToVary(
+        key,
+        detailNarration(baseline, key),
+        detailNarration(selectedEcc, key),
+      );
     }
 
     const superpowers = model.catalog.frameworks.find(
@@ -243,10 +235,10 @@ describe("policy studio surface invariants", () => {
     const selectedSuperpowers = studio(modelWithFrameworkSelected(superpowers.id));
     for (const asset of superpowers.assets) {
       const key = frameworkDetailKey(superpowers.id, asset.kind, asset.id);
-      expectEveryStateFactToVary(
+      expectDetailNarrationToVary(
         key,
-        detailFacts(baseline, key),
-        detailFacts(selectedSuperpowers, key),
+        detailNarration(baseline, key),
+        detailNarration(selectedSuperpowers, key),
       );
     }
   }, 15_000);

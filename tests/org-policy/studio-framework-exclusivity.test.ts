@@ -126,7 +126,7 @@ describe("policy studio framework exclusivity", () => {
 
   // The excluded framework stays reachable through search, so the refusal has
   // to hold on that path too rather than relying on the row simply being gone.
-  it("still refuses the excluded framework from its drawer", () => {
+  it("explains the excluded framework through its inspector and requires Clear before changing", () => {
     const window = studio();
     click(window, selectKey(ecc, eccAsset));
     click(window, "#seek");
@@ -138,13 +138,19 @@ describe("policy studio framework exclusivity", () => {
     query.value = spAsset.id;
     query.dispatchEvent(new window.Event("input", { bubbles: true }));
     click(window, "#hits .hit");
-    const add = window.document.querySelector("#drawer-detail [data-framework-select]");
-    expect(add, "the drawer still offers the item").not.toBeNull();
-    add?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(window.document.querySelector("#drawer-detail [data-framework-select]")).toBeNull();
+    expect(window.document.getElementById("drawer-detail")?.textContent).toContain(
+      "Go to canonical selection",
+    );
     const groups = selections(window);
     expect(groups, "policy still holds exactly one framework").toHaveLength(1);
     expect(groups[0]?.framework).toBe("ecc");
-    expect(announcement(window).toLowerCase()).toContain("one framework at a time");
+    expect(window.document.querySelector("[data-framework-notice]")?.textContent).toContain(
+      "Clear",
+    );
+    click(window, "#clear-policy");
+    click(window, selectKey(superpowers, spAsset));
+    expect(selections(window)[0]?.framework).toBe("superpowers");
   });
 
   // Acceptance demonstration step 3 opens with "Reset, select Enterprise, ...".
