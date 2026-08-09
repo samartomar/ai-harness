@@ -760,6 +760,9 @@ instead of being treated as best effort. Re-check any copy with
 Baseline reports are indexed as `baseline-evidence`; `build --sign gh --require-signature --apply`
 produces the attributable bundle consumed by `trust.baselineOverrides[]`. See
 [Baseline Component Evidence](security/baseline-evidence.md).
+Strict typed Strix records placed under `.aih/security/strix/*.json` are indexed as
+`strix-security-evidence` only after a 32 MiB read cap plus fatal-UTF-8, whole-document
+validation. Evidence publication does not run Strix or claim the harness produced the record.
 
 ## aih truth
 

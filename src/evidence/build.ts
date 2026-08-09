@@ -1,7 +1,9 @@
 import { type Dirent, readdirSync } from "node:fs";
 import { isAbsolute, join, posix } from "node:path";
+import { TextDecoder } from "node:util";
 import { BASELINE_REPORTS_DIR } from "../baseline-evidence/schema.js";
 import { sha256Hex, signAction } from "../bundle/index.js";
+import { AihError } from "../errors.js";
 import { readRegularFile } from "../internals/fsxn.js";
 import {
   type Action,
@@ -20,6 +22,7 @@ import type { Check } from "../internals/verify.js";
 import { RUNS_DIR } from "../logging/run-log.js";
 import { AIH_PACKS_FILE } from "../pack/manifest.js";
 import { REPORTS_DIR } from "../report/index.js";
+import { StrixEvidenceSchema } from "../security/detectors/types.js";
 import { EVIDENCE_DIR } from "../skill/approve.js";
 import { skillCardsDir } from "../skill/card.js";
 import { AIH_SKILLS_LOCK_FILE } from "../skill/lockfile.js";
@@ -33,6 +36,7 @@ import {
   type EvidenceBundle,
   type EvidenceHarness,
   type EvidenceKind,
+  STRIX_SECURITY_EVIDENCE_DIR,
 } from "./manifest.js";
 
 /**
@@ -59,6 +63,11 @@ import {
 
 const CHECKSUMS_FILE = "SHA256SUMS";
 const MANIFEST_FILE = "manifest.json";
+
+/** Hard ceiling for one typed Strix evidence document (bounded schema permits large location sets). */
+export const MAX_STRIX_SECURITY_EVIDENCE_BYTES = 32 * 1024 * 1024;
+
+const STRIX_SECURITY_EVIDENCE_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}\.json$/;
 
 function optionString(ctx: PlanContext, key: string): string | undefined {
   const raw = ctx.options[key];
@@ -99,6 +108,25 @@ function listFiles(root: string, relDir: string): string[] {
     .map((name) => posix.join(toPosix(relDir), name));
 }
 
+function listStrixEvidenceFiles(root: string): string[] {
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(join(root, STRIX_SECURITY_EVIDENCE_DIR), { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const files: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+    if (!STRIX_SECURITY_EVIDENCE_FILENAME.test(entry.name) || entry.name.includes("..")) {
+      throw new AihError("invalid Strix security evidence entry name", "AIH_EVIDENCE");
+    }
+    files.push(posix.join(STRIX_SECURITY_EVIDENCE_DIR, entry.name));
+  }
+  return files.sort((left, right) => left.localeCompare(right));
+}
+
 interface Candidate {
   kind: EvidenceKind;
   rel: string;
@@ -134,6 +162,9 @@ function candidates(
   for (const rel of listFiles(ctx.root, RUNS_DIR)) {
     if (rel.endsWith(".jsonl")) out.push({ kind: "run-log", rel });
   }
+  for (const rel of listStrixEvidenceFiles(ctx.root)) {
+    out.push({ kind: "strix-security-evidence", rel });
+  }
   for (const rel of listFiles(ctx.root, REPORTS_DIR)) {
     if (rel.endsWith(".md") || rel.endsWith(".html")) out.push({ kind: "report", rel });
     if (rel.endsWith(".sarif")) out.push({ kind: "sarif", rel });
@@ -163,6 +194,29 @@ interface DiscoveredArtifact {
  * A run-log (`.jsonl`), a markdown/HTML report, or a SARIF file (which
  * declares `version`, not `schemaVersion`) all fall through to 1.
  */
+function invalidStrixEvidence(rel: string): AihError {
+  return new AihError(`invalid Strix security evidence: ${rel}`, "AIH_EVIDENCE");
+}
+
+function readStrictStrixEvidence(sourceBytes: Uint8Array, rel: string): string {
+  let raw: string;
+  try {
+    raw = new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(sourceBytes));
+  } catch {
+    throw invalidStrixEvidence(rel);
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw invalidStrixEvidence(rel);
+  }
+  if (!StrixEvidenceSchema.safeParse(value).success) {
+    throw invalidStrixEvidence(rel);
+  }
+  return raw;
+}
+
 function artifactSchemaVersion(raw: string): number {
   try {
     const parsed = JSON.parse(raw) as { schemaVersion?: unknown } | null;
@@ -189,10 +243,24 @@ function discoverArtifacts(
 ): DiscoveredArtifact[] {
   const found: DiscoveredArtifact[] = [];
   for (const candidate of candidates(ctx, truthPack)) {
+    const isStrixEvidence = candidate.kind === "strix-security-evidence";
     const buf =
-      candidate.contents === undefined ? readRegularFile(join(ctx.root, candidate.rel)) : undefined;
-    if (buf === undefined && candidate.contents === undefined) continue; // absent kind → silently not indexed
-    const raw = candidate.contents ?? buf?.toString("utf8") ?? "";
+      candidate.contents === undefined
+        ? readRegularFile(
+            join(ctx.root, candidate.rel),
+            isStrixEvidence ? { maxBytes: MAX_STRIX_SECURITY_EVIDENCE_BYTES } : {},
+          )
+        : undefined;
+    if (buf === undefined && candidate.contents === undefined) {
+      if (isStrixEvidence) {
+        throw new AihError("Strix security evidence could not be read", "AIH_EVIDENCE");
+      }
+      continue; // absent generic kind → silently not indexed
+    }
+    const raw =
+      candidate.kind === "strix-security-evidence" && buf !== undefined
+        ? readStrictStrixEvidence(buf, candidate.rel)
+        : (candidate.contents ?? buf?.toString("utf8") ?? "");
     const contents = ensureTrailingNewline(raw);
     found.push({
       kind: candidate.kind,
