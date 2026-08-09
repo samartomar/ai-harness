@@ -928,13 +928,13 @@ let planeFilter="all";
 
    OWNERS is the whole contract: a new surface is one entry here plus group
    cards carrying its data-owner, and nothing about the layout changes. That is
-   where VibeSec and Voice land when they arrive - they are AIH-owned
-   capability surfaces, so they sit after AIH and before the third-party
+   where Voice lands when it arrives - it is an AIH-owned capability surface,
+   so it sits after AIH and before the third-party
    frameworks, which keeps the ticker ordered first-party then third-party.
-   UPCOMING renders them as declared-but-not-yet-shipped rather than leaving the
+   UPCOMING renders it as declared-but-not-yet-shipped rather than leaving the
    administrator to wonder whether the surface exists and is empty. */
 const OWNERS=[["all","All"],["AIH","AIH"],["ECC","ECC"],["Superpowers","Superpowers"],["You","Your sources"]];
-const UPCOMING=["VibeSec","Voice"];
+const UPCOMING=["Voice"];
 let ownerFocus="all";
 let activePreset="";
 const PRESETS=[["vibe","Vibe","Everything this catalog offers. Nothing is hidden for want of AIH enforcement."],
