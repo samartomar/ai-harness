@@ -95,6 +95,7 @@ function adoptedUsageRegistration(): HookRegistration {
 function usageAndRegistrationsPolicy(
   registrations: readonly HookRegistration[] = eccStopRegistrations(),
   usageState: "active" | "disabled" = "active",
+  eccHookControls?: { profile: "minimal" | "standard" | "strict" },
 ) {
   const scriptDigest = `sha256:${createHash("sha256").update(usageRecorderScript(), "utf8").digest("hex")}`;
   return parseOrgPolicy({
@@ -121,6 +122,7 @@ function usageAndRegistrationsPolicy(
       },
       activations: [{ candidate: "usage-metering", state: usageState, targets: ["claude"] }],
       hookRegistrations: [...registrations],
+      ...(eccHookControls === undefined ? {} : { eccHookControls }),
     },
   });
 }
@@ -194,6 +196,18 @@ describe("G4 — the registrar is reachable end to end through the verified proj
     // raised against.
     await expect(
       verifiedOrgPolicyProjectionActions(ctx(), usageAndRegistrationsPolicy([])),
+    ).resolves.toBeDefined();
+  });
+
+  it("refuses usage-hook and controls-only writes into the same destination", async () => {
+    await expect(
+      verifiedOrgPolicyProjectionActions(
+        ctx(),
+        usageAndRegistrationsPolicy([], "active", { profile: "minimal" }),
+      ),
+    ).rejects.toThrow(/usage-hook projector and ECC hook controls cannot both own it/);
+    await expect(
+      verifiedOrgPolicyProjectionActions(ctx(), usageAndRegistrationsPolicy([], "active")),
     ).resolves.toBeDefined();
   });
 

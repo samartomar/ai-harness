@@ -9,6 +9,13 @@ import { type McpServer, mcpServers } from "../mcp/servers.js";
 import { usageRecorderScript } from "../usage/capture.js";
 import { claudeUsageHookCommand } from "../usage/hooks.js";
 import {
+  ECC_DISABLE_ELIGIBLE_HOOK_IDS,
+  ECC_HOOK_CONTROL_SOURCE_CONTENT_SHA256,
+  ECC_HOOK_PROFILES,
+  type EccHookControlCatalogEntry,
+  eccHookControlCatalog,
+} from "./ecc-hook-controls.js";
+import {
   ECC_MCP_CATALOG_PROVENANCE,
   type EccMcpCatalogEntry,
   eccExternalMcpCatalog,
@@ -255,6 +262,16 @@ export interface PolicyAuthoringCatalog {
   externalMcp: readonly EccMcpCatalogEntry[];
   /** Digest paired with externalMcp when authoring an exact declarative ECC approval. */
   eccMcpApproval: { sourceContentSha256: string };
+  eccHookControls: {
+    sourceContentSha256: string;
+    profiles: typeof ECC_HOOK_PROFILES;
+    hooks: readonly EccHookControlCatalogEntry[];
+    disabledHooks: {
+      availability: "supported";
+      detail: string;
+      eligibleIds: readonly string[];
+    };
+  };
   hooks: PolicyAuthoringHook[];
   hookRegistry: PolicyAuthoringHookRegistry;
   frameworks: PolicyAuthoringFramework[];
@@ -475,8 +492,8 @@ function enterpriseComposition(ecc: PolicyAuthoringFramework): PolicyAuthoringCo
 const THIRD_PARTY_HOOK_COMPONENT_IDS = ["baseline:hooks", "module:hooks-runtime"] as const;
 
 /**
- * Gating controls third-party sources declare for their own hooks, recorded
- * read-only. AIH does not implement, mirror, or override any of them.
+ * Gating controls third-party sources declare for their own hooks. AIH authors
+ * only their supported client environment intent; ECC remains the executor.
  *
  * The `detail` on each is the one operational fact an administrator cannot infer
  * from the name: these are evaluated INSIDE the source's launcher, so a hook the
@@ -489,14 +506,14 @@ const DECLARED_THIRD_PARTY_HOOK_CONTROLS: PolicyAuthoringHookControl[] = [
     owner: "ecc",
     enforcedByAih: false,
     detail:
-      "ECC selects its own hook profile. AIH records that the control exists and never sets, mirrors, or overrides it.",
+      "AIH projects the selected profile through supported Claude settings environment intent. ECC executes and enforces it; AIH never rewrites ECC hook commands.",
   },
   {
     name: "ECC_DISABLED_HOOKS",
     owner: "ecc",
     enforcedByAih: false,
     detail:
-      "ECC reads this list inside its own launcher, after the operating-system process already exists — a hook named here still spawns one process per firing.",
+      "AIH projects the disabled list through supported Claude settings environment intent. ECC evaluates it after process spawn, so a disabled hook still spawns one process and disabling does not erase spawn cost.",
   },
 ];
 
@@ -574,6 +591,17 @@ export function policyAuthoringCatalog(): PolicyAuthoringCatalog {
     externalMcp: eccExternalMcpCatalog,
     eccMcpApproval: {
       sourceContentSha256: ECC_MCP_CATALOG_PROVENANCE.contentSha256,
+    },
+    eccHookControls: {
+      sourceContentSha256: ECC_HOOK_CONTROL_SOURCE_CONTENT_SHA256,
+      profiles: ECC_HOOK_PROFILES,
+      hooks: eccHookControlCatalog,
+      disabledHooks: {
+        availability: "supported",
+        detail:
+          "ECC evaluates profile and disabled-hook choices after process spawn. AIH projects only the two supported Claude settings environment keys; ECC executes and enforces its hooks.",
+        eligibleIds: ECC_DISABLE_ELIGIBLE_HOOK_IDS,
+      },
     },
     hookRegistry: hookRegistry(frameworks),
     enterpriseComposition: enterpriseComposition(ecc),

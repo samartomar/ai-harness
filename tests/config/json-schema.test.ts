@@ -144,6 +144,38 @@ describe("committed JSON Schemas", () => {
     }
   });
 
+  it("models source-locked ECC hook controls in the committed editor schema", () => {
+    const base = {
+      schemaVersion: 2,
+      minimumPosture: "vibe",
+      references: { repoContract: "ai-coding/project.json" },
+      governance: {
+        policyVersion: "2026.08",
+        supportedClis: ["claude"],
+        catalog: { reviewed: [], custom: [] },
+        activations: [],
+        authority: { approvals: [] },
+      },
+    };
+    const policy = (eccHookControls: unknown) => ({
+      ...base,
+      governance: { ...base.governance, eccHookControls },
+    });
+
+    validateCommittedSchema(
+      "schemas/aih-org-policy.schema.json",
+      policy({ profile: "standard", disabledIds: ["pre:observe", "post:quality-gate"] }),
+    );
+    for (const invalid of [
+      { profile: "standard", disabledIds: ["unknown:hook"] },
+      { profile: "standard", disabledIds: ["pre:bash:dispatcher"] },
+      { profile: "standard", extra: true },
+      { disabledIds: ["pre:observe"] },
+    ]) {
+      rejectCommittedSchema("schemas/aih-org-policy.schema.json", policy(invalid));
+    }
+  });
+
   it("rejects unknown baseline ids in .aih-config.json", () => {
     rejectCommittedSchema("schemas/aih-config.schema.json", {
       schemaVersion: 1,

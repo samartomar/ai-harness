@@ -2164,6 +2164,72 @@
                 "additionalProperties": false
               }
             },
+            "eccHookControls": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "enum": [
+                    "minimal",
+                    "standard",
+                    "strict"
+                  ]
+                },
+                "disabledIds": {
+                  "maxItems": 40,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "pre:write:doc-file-warning",
+                      "pre:edit-write:suggest-compact",
+                      "pre:observe",
+                      "pre:governance-capture",
+                      "pre:config-protection",
+                      "pre:mcp-health-check",
+                      "pre:edit-write:gateguard-fact-force",
+                      "pre:compact",
+                      "session:start",
+                      "session-start:plan-canvas-sessions",
+                      "post:dispatcher:sync",
+                      "post:dispatcher:async",
+                      "post:mcp-health-check",
+                      "stop:format-typecheck",
+                      "stop:check-console-log",
+                      "stop:session-end",
+                      "stop:evaluate-session",
+                      "stop:cost-tracker",
+                      "stop:desktop-notify",
+                      "session:end:marker",
+                      "pre:bash:block-no-verify",
+                      "pre:bash:auto-tmux-dev",
+                      "pre:bash:tmux-reminder",
+                      "pre:bash:git-push-reminder",
+                      "pre:bash:commit-quality",
+                      "pre:bash:gateguard-fact-force",
+                      "post:bash:command-log-audit",
+                      "post:bash:command-log-cost",
+                      "post:bash:pr-created",
+                      "post:bash:build-complete",
+                      "post:edit:design-quality-check",
+                      "post:edit:accumulator",
+                      "post:edit:console-warn",
+                      "post:governance-capture",
+                      "post:session-activity-tracker",
+                      "post:ecc-metrics-bridge",
+                      "post:ecc-context-monitor",
+                      "post:bash:dispatcher",
+                      "post:quality-gate",
+                      "post:observe:continuous-learning"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "profile"
+              ],
+              "additionalProperties": false
+            },
             "supportedClis": {
               "minItems": 1,
               "maxItems": 11,

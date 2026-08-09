@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { isPlainObject } from "../internals/merge.js";
 import { type Action, type PlanContext, remove, writeJson } from "../internals/plan.js";
 import { withExpectedContents } from "../mcp/managed-projection.js";
+import type { EccHookEnvKey, EccHookEnvPatch } from "./ecc-hook-controls-projection.js";
 import { stableJson } from "./effective.js";
 import type { HookAdoptionOffer } from "./hook-registrar-adoption.js";
 import {
@@ -608,6 +609,31 @@ function hookRegistrarVerdict(
   return hookRegistrarOwnership(receipt, read).report;
 }
 
+function settingsPayload(
+  base: Record<string, unknown>,
+  envPatch: EccHookEnvPatch | undefined,
+): Record<string, unknown> {
+  return envPatch === undefined || Object.keys(envPatch.set).length === 0
+    ? base
+    : { ...base, env: envPatch.set };
+}
+
+function settingsEnvOptions(envPatch: EccHookEnvPatch | undefined): {
+  replaceJsonChildKeys?: Record<string, readonly string[]>;
+  removeJsonKeys?: Record<string, readonly string[]>;
+} {
+  if (envPatch === undefined) return {};
+  const setKeys = Object.keys(envPatch.set) as EccHookEnvKey[];
+  const overlap = setKeys.find((key) => envPatch.remove.includes(key));
+  if (overlap !== undefined) {
+    throw new OrgPolicyError(`ECC hook env patch both sets and removes ${overlap}`);
+  }
+  return {
+    ...(setKeys.length === 0 ? {} : { replaceJsonChildKeys: { env: setKeys } }),
+    ...(envPatch.remove.length === 0 ? {} : { removeJsonKeys: { env: envPatch.remove } }),
+  };
+}
+
 /**
  * Emit every selected hook entry into the destination AIH owns, and record the
  * receipt that can revoke them. Entries AIH did not emit are refused rather than
@@ -616,10 +642,19 @@ function hookRegistrarVerdict(
 export function hookRegistrarProjectionActions(
   ctx: PlanContext,
   registrations: readonly HookRegistration[],
-  options: { policyVersion?: string } = {},
+  options: {
+    policyVersion?: string;
+    envPatch?: EccHookEnvPatch;
+    destinationRead?: GuardedRead;
+  } = {},
 ): Action[] {
   const parsed = assertHookRegistrations(registrations);
-  if (parsed.length === 0) return hookRegistrarRevocationActions(ctx);
+  if (parsed.length === 0) {
+    return hookRegistrarRevocationActions(ctx, {
+      envPatch: options.envPatch,
+      destinationRead: options.destinationRead,
+    });
+  }
   // ONE read of the receipt: the same bytes decide what AIH already owns and
   // pin the receipt write below.
   const receiptRead = readReceipt(ctx.root);
@@ -629,7 +664,7 @@ export function hookRegistrarProjectionActions(
   const existingReceiptRaw = receiptRead.state === "present" ? receiptRead.contents : undefined;
   const existingReceipt =
     existingReceiptRaw === undefined ? undefined : parseHookRegistrarReceipt(existingReceiptRaw);
-  const read = readDestination(ctx.root);
+  const read = options.destinationRead ?? readDestination(ctx.root);
   if (read.state === "unreadable") {
     throw new OrgPolicyError(`refusing hook registrar projection: ${read.reason}`);
   }
@@ -718,9 +753,16 @@ export function hookRegistrarProjectionActions(
     withExpectedContents(
       writeJson(
         HOOK_REGISTRAR_DESTINATION,
-        { hooks: composeProjectedHooks(parsed.map(registrationNativeEntry), carriedThrough) },
+        settingsPayload(
+          { hooks: composeProjectedHooks(parsed.map(registrationNativeEntry), carriedThrough) },
+          options.envPatch,
+        ),
         "project AIH-registered hook entries, third-party launchers verbatim",
-        { merge: true, replaceJsonKeys: ["hooks"] },
+        {
+          merge: true,
+          replaceJsonKeys: ["hooks"],
+          ...settingsEnvOptions(options.envPatch),
+        },
       ),
       bytes,
     ),
@@ -740,7 +782,10 @@ export function hookRegistrarProjectionActions(
  * bytes the destination had before AIH first projected. No hand editing, and no
  * dependence on the source shipping an uninstall path of its own.
  */
-export function hookRegistrarRevocationActions(ctx: PlanContext): Action[] {
+export function hookRegistrarRevocationActions(
+  ctx: PlanContext,
+  options: { envPatch?: EccHookEnvPatch; destinationRead?: GuardedRead } = {},
+): Action[] {
   // ONE read of each file. The ownership verdict, the sole-key decision, the
   // apply-time pin and the merge base all come from these exact bytes, so a
   // write landing after the verdict can never be pinned as if it had been
@@ -756,7 +801,7 @@ export function hookRegistrarRevocationActions(ctx: PlanContext): Action[] {
   if (receiptRead.state === "absent") return [];
   const receiptRaw = receiptRead.contents;
   const receipt = parseHookRegistrarReceipt(receiptRaw);
-  const read = readDestination(ctx.root);
+  const read = options.destinationRead ?? readDestination(ctx.root);
   const ownership = hookRegistrarOwnership(receipt, read);
   if (ownership.subtraction === undefined || read.state !== "present") {
     throw new OrgPolicyError(
@@ -793,22 +838,32 @@ export function hookRegistrarRevocationActions(ctx: PlanContext): Action[] {
       ? withExpectedContents(
           writeJson(
             HOOK_REGISTRAR_DESTINATION,
-            { hooks: remainder },
+            settingsPayload({ hooks: remainder }, options.envPatch),
             "subtract every AIH-registered hook entry, keeping every group AIH did not emit",
-            { merge: true, replaceJsonKeys: ["hooks"] },
+            {
+              merge: true,
+              replaceJsonKeys: ["hooks"],
+              ...settingsEnvOptions(options.envPatch),
+            },
           ),
           bytes,
         )
-      : receipt.prior.state === "absent" && onlyHooksRemain
+      : receipt.prior.state === "absent" &&
+          onlyHooksRemain &&
+          Object.keys(options.envPatch?.set ?? {}).length === 0
         ? remove(HOOK_REGISTRAR_DESTINATION, "remove the hook destination AIH created", {
             expect: { sha256: sha256(bytes) },
           })
         : withExpectedContents(
             writeJson(
               HOOK_REGISTRAR_DESTINATION,
-              {},
+              settingsPayload({}, options.envPatch),
               "subtract every AIH-registered hook entry and restore the prior destination",
-              { merge: true, removeJsonTopLevelKeys: ["hooks"] },
+              {
+                merge: true,
+                removeJsonTopLevelKeys: ["hooks"],
+                ...settingsEnvOptions(options.envPatch),
+              },
             ),
             bytes,
           );

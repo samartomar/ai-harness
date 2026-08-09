@@ -977,6 +977,10 @@ export const POLICY_ENGINE_FIELD_CONSUMERS: Readonly<Record<string, string>> = O
   ...prefixedConsumers("governance.externalCuration.*", EXTERNAL_CURATION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.externalSelections.*", EXTERNAL_SELECTION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.eccMcpApprovals.*", ECC_MCP_APPROVAL_LEAF_CONSUMERS),
+  "governance.eccHookControls.profile":
+    "ECC hook-controls resolver and Claude settings receipt-backed projection; no launcher execution or enforcement claim",
+  "governance.eccHookControls.disabledIds.*":
+    "ECC hook-controls resolver canonicalizes source-gated IDs and the receipt-backed projection writes only ECC_DISABLED_HOOKS",
   ...prefixedConsumers("governance.hookRegistrations.*", HOOK_REGISTRATION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.reviewed.*", CANDIDATE_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.custom.*", CANDIDATE_LEAF_CONSUMERS),

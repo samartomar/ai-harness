@@ -29,6 +29,7 @@ import { scanRepo } from "../profile/scan.js";
 import { usageRecorderScript } from "../usage/capture.js";
 import { usageHookActions } from "../usage/hooks.js";
 import { composeOrgPolicy } from "./compose.js";
+import { planEccHookControlsProjection } from "./ecc-hook-controls-projection.js";
 import {
   candidateIdentityDigest,
   type EffectiveOrgPolicy,
@@ -944,8 +945,11 @@ function projectionActionsFromRuntime(
       // G4: the hook registrar is reachable through the verified projector. A
       // policy declaring registrations gets the registrar's projection; one
       // declaring none gets its revocation (a no-op without a receipt).
+      const controls = planEccHookControlsProjection(ctx, policy.governance.eccHookControls);
       const registrar = hookRegistrarProjectionActions(ctx, policy.governance.hookRegistrations, {
         policyVersion: policy.governance.policyVersion,
+        envPatch: controls.envPatch,
+        destinationRead: controls.destinationRead,
       });
       const touchesDestination = (planned: readonly Action[]) =>
         planned.some((action) => "path" in action && action.path === HOOK_REGISTRAR_DESTINATION);
@@ -962,7 +966,17 @@ function projectionActionsFromRuntime(
       //    executor collapses repeated writes to one path, dropping an owner's
       //    entries.
       const usageOwnsDestination = usageHookReceiptOwnsPath(ctx, HOOK_REGISTRAR_DESTINATION);
-      if ((usageOwnsDestination || touchesDestination(usage)) && touchesDestination(registrar)) {
+      const registrarTouchesDestination = touchesDestination(registrar);
+      const controlsWriteStandalone =
+        !registrarTouchesDestination && controls.standaloneSettingsAction !== undefined;
+      if ((usageOwnsDestination || touchesDestination(usage)) && controlsWriteStandalone) {
+        throw new OrgPolicyError(
+          `policy project refuses two hook writers into ${HOOK_REGISTRAR_DESTINATION}: the ` +
+            "usage-hook projector and ECC hook controls cannot both own it; deactivate the " +
+            "usage-hook selection or remove eccHookControls before projecting",
+        );
+      }
+      if ((usageOwnsDestination || touchesDestination(usage)) && registrarTouchesDestination) {
         // Branch-specific, because the remedies differ. Once the usage receipt
         // owns the destination, "deactivate the usage-hook selection" does NOT
         // clear the refusal: deactivation itself emits a write, so it re-refuses
@@ -979,7 +993,14 @@ function projectionActionsFromRuntime(
                 "or drop the hook registrations before projecting"),
         );
       }
-      actions.push(...registrar);
+      if (registrarTouchesDestination) {
+        actions.push(...registrar, ...controls.receiptActions);
+      } else {
+        if (controls.standaloneSettingsAction !== undefined) {
+          actions.push(controls.standaloneSettingsAction);
+        }
+        actions.push(...controls.receiptActions, ...registrar);
+      }
     }
   }
   return actions;

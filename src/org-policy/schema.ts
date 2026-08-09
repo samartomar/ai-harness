@@ -6,6 +6,11 @@ import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
+import {
+  canonicalEccDisabledHookIds,
+  ECC_DISABLE_ELIGIBLE_HOOK_IDS,
+  type EccHookProfile,
+} from "./ecc-hook-controls.js";
 import { ECC_EXTERNAL_MCP_APPROVAL_IDS } from "./ecc-mcp-approval.js";
 import { ECC_MCP_CATALOG_PROVENANCE } from "./ecc-mcp-catalog.js";
 
@@ -200,6 +205,37 @@ const SafePolicyTextSchema = z
 const SafePolicyIdentifierSchema = z
   .string()
   .regex(/^[a-z][a-z0-9-]{0,63}$/, "must be a lowercase stable identifier");
+
+const EccHookProfileSchema = z.enum(["minimal", "standard", "strict"]);
+const EccHookControlsSchema = z
+  .object({
+    profile: EccHookProfileSchema,
+    disabledIds: z
+      .array(z.enum([...ECC_DISABLE_ELIGIBLE_HOOK_IDS] as [string, ...string[]]))
+      .max(40)
+      .optional(),
+  })
+  .strict()
+  .transform((value, ctx) => {
+    let disabledIds: string[];
+    try {
+      disabledIds = canonicalEccDisabledHookIds(
+        value.disabledIds ?? [],
+        value.profile as EccHookProfile,
+      );
+    } catch (error) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["disabledIds"],
+        message: error instanceof Error ? error.message : "invalid ECC disabled hook ids",
+      });
+      return z.NEVER;
+    }
+    return {
+      profile: value.profile,
+      ...(disabledIds.length === 0 ? {} : { disabledIds }),
+    };
+  });
 export const SupportedCliSchema = z.enum(SUPPORTED_CLIS);
 const SupportedCliListSchema = z
   .array(SupportedCliSchema)
@@ -992,6 +1028,8 @@ const GovernedPolicyGovernanceSchema = z
      * side effect and deliberately creates no candidate or activation.
      */
     eccMcpApprovals: z.array(EccMcpApprovalSchema).default([]),
+    /** ECC-owned runtime controls projected only through receipt-owned Claude env keys. */
+    eccHookControls: EccHookControlsSchema.optional(),
     /**
      * Organization-sanctioned AI CLIs. This is a governance boundary, not the
      * projector target set: every value comes from AIH's supported CLI registry,
