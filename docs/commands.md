@@ -633,6 +633,8 @@ hard-blocked candidates with no activation affordance until supported scanning, 
 
 The left rail is the sole selection surface for ECC languages, frameworks, capabilities, and modules; those controls are not repeated in the main inventory, preset toolbar, or inspector. A separate Add MCP sidebar authors approved/revoked `governance.eccMcpApprovals` records at the pinned catalog digest. It lists all 31 external ECC entries and records declarative permission. Only entries labeled HTTPS-configurable can use the later `aih ecc mcp add <id> --cli <client>` path; manual entries remain approval-only. The browser does not install, contact, scan, attest, or observe the endpoint.
 
+The Workbench's ECC hook-controls panel is bound to the pinned runtime inventory: 40 individually gated hook IDs plus one non-disableable Bash wrapper. It authors a required Minimal, Standard, or Strict profile and an optional canonical disabled-ID list, prunes disables that are ineligible after a profile change, and offers a clear inverse back to the policy baseline. AIH configures supported Claude environment intent; ECC executes and enforces it after process spawn.
+
 The headless schema also accepts a declarative remote record with an
 administrator-managed `approved` or `revoked` status and no tool-surface digest.
 It still requires the exact HTTPS origin, approver, authentication mode,
@@ -669,8 +671,8 @@ verified evidence/approval receipt, then `aih policy evaluate` and `aih policy p
 committed `aih-org-policy.json` into only its generated policy artifacts —
 `.claude/managed-settings.json` and, at enterprise posture, the two system-path examples. An active
 AIH-owned `usage-metering` policy hook may also project to the selected Claude or Codex host through
-the existing host-specific generator. It does
-not run `aih init`, regenerate the canon, or modify unrelated settings. The managed settings/MCP
+the existing host-specific generator. A policy may separately declare `governance.eccHookControls`; for a Claude target, projection merges only receipt-owned `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` values into `.claude/settings.json.env`, preserves every operator sibling, refuses unreceipted collisions or drift, and shares one content-pinned settings snapshot with the hook registrar. ECC not AIH executes and enforces those controls after process spawn, so a disabled hook still incurs one spawn.
+It does not run `aih init`, regenerate the canon, or modify unrelated settings. The managed settings/MCP
 portion is a Claude projection: it writes only when Claude is selected (the default); `--cli cursor`,
 for example, produces no managed-settings projection. When managed-only MCP is active, it records existing AIH ownership provenance in
 `.aih-config.json` so later deactivation can remove only the exact generated values. It refuses a

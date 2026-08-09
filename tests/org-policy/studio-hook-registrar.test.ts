@@ -142,7 +142,7 @@ describe("H5 and H7 — overlap and cost on the signing screen", () => {
 });
 
 describe("S1 — annotate, never duplicate", () => {
-  it("labels the panel a read-only projection view with no authoring affordance", () => {
+  it("keeps the registrar inventory read-only while ECC controls remain a distinct surface", () => {
     const window = workbenchWindow();
     const rows = window.document.getElementById("hook-registry-rows");
     if (rows === null) throw new Error("workbench renders no #hook-registry-rows");
@@ -150,15 +150,14 @@ describe("S1 — annotate, never duplicate", () => {
     expect(panel?.textContent?.toLowerCase()).toContain("read-only projection view");
     expect(panel?.textContent).toContain("governance.hookRegistrations");
     // Id links navigate to the one inventory row that authors the component;
-    // the registrar itself still carries no selection or form affordance.
+    // the registrar inventory itself still carries no selection or form
+    // affordance. The separately headed ECC controls surface may author its
+    // pinned environment choices without turning the inventory into a second
+    // component-selection path.
     expect(panel?.querySelectorAll(".grpbody [data-id-reference]").length).toBe(
       model.catalog.hookRegistry.entries.length,
     );
-    expect(
-      panel?.querySelectorAll(
-        ".grpbody [data-reviewed], .grpbody [data-framework-select], .grpbody input",
-      ).length,
-    ).toBe(0);
+    expect(rows.querySelectorAll("[data-reviewed], [data-framework-select], input").length).toBe(0);
   });
 
   it("annotates without duplicating: panel entries are never counted rows", () => {

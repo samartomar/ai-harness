@@ -347,6 +347,8 @@ approved entries.
 
 The portable Policy Workbench keeps ECC language, framework, capability, and module selection in its left rail, with the inspector read-only for those items. Its separate Add MCP sidebar records the exact `governance.eccMcpApprovals` decision; it does not choose a client or configure one. For an entry marked HTTPS-configurable, the seat operator still selects one client explicitly with the command above; manual entries remain approval-only until a supported lifecycle exists.
 
+The Workbench also authors source-locked ECC hook controls: Minimal, Standard, or Strict profile selection and eligible per-hook disables. Policy projection records those choices only as receipt-owned `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` keys in Claude `settings.json.env`; it never rewrites ECC launchers. ECC executes and enforces the selection after process spawn, so disabling a hook does not erase its spawn cost.
+
 ### Layered AI canon (`bootstrap-ai`)
 
 The harness models the same two-layer setup used in the reference repos (eicp / ai-os / syntegris):
