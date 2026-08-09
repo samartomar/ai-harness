@@ -334,6 +334,28 @@ run are one materialization into one root with one receipt: destinations two tar
 component does not stop the targets that own it, and a later `--apply` with a narrower target set
 subtracts the dropped target's files and reports each removal.
 
+ECC MCP approvals have a separate explicit Add/Remove surface:
+
+```sh
+aih ecc mcp add <ecc-mcp-id> --cli <client> --root <project>
+aih ecc mcp add <ecc-mcp-id> --cli <client> --root <project> --apply
+aih ecc mcp remove <ecc-mcp-id> --cli <client> --root <project> --apply
+```
+
+`add` requires exactly one explicit `--cli` target and a valid target-root `aih-org-policy.json`
+whose `governance.eccMcpApprovals` approves the requested id at the pinned ECC catalog digest. A
+present `governance.supportedClis` list must also sanction the selected client. It renders only the
+approved HTTPS entry for that one client, preserves unrelated client config, writes
+the client entry before `.aih/ecc-mcp-explicit-add-v1.json`, and pins both files against plan-to-apply
+changes. Dry-run is the default. `remove` does not need current approval; it subtracts only an
+unchanged entry whose receipt still proves AIH wrote that exact id/target/config digest. Missing,
+malformed, unsafe, absent, or drifted state is report-only and leaves the client config untouched.
+The initial write set is intentionally narrow: Claude `.mcp.json`, Cursor `.cursor/mcp.json`, Copilot
+`.vscode/mcp.json`, Kimi `.mcp.json`, and Kiro `.kiro/settings/mcp.json`. Codex TOML and other
+global or TOML clients are refused until the shared executor has a reviewed external-path parent
+symlink guard. This command does not contact an endpoint, scan remote tools, attest behavior, install
+all approved MCPs, or treat approval as automatic projection.
+
 The same lifecycle manages project-local Claude and Codex hook/MCP registration without claiming
 either client's whole shared settings file. It adds one AIH composite hook per supported native
 event, registers the reviewed MCP identities, preserves unrelated operator entries, and records

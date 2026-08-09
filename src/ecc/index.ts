@@ -1,8 +1,9 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { SettingsError } from "../errors.js";
 import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
-import type { Cli } from "../internals/clis.js";
+import { type Cli, resolveClis } from "../internals/clis.js";
 import { HERMETIC_GIT_ENV_SCRIPT_LINE } from "../internals/git-env.js";
 import {
   type Action,
@@ -16,6 +17,7 @@ import {
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import type { McpServer } from "../mcp/servers.js";
+import { readOrgPolicy } from "../org-policy/schema.js";
 import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
 import { execArgv } from "../tools/install.js";
@@ -40,6 +42,7 @@ import {
 } from "./install.js";
 import { eccInstallDriftForRoot, eccInstallManifestPath } from "./install-manifest.js";
 import type { EccMaterializationSpec } from "./materialize.js";
+import { planExplicitEccMcpAdd, planExplicitEccMcpRemove } from "./mcp-explicit-add.js";
 import { eccLanguages } from "./select.js";
 
 const ECC_REPO_URL = "https://github.com/affaan-m/ECC.git";
@@ -890,6 +893,69 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
   actions.push(summaryDoc(clis, inputs, stack));
   return plan("ecc", ...actions);
 }
+
+const EXPLICIT_ECC_MCP_TARGET_ERROR =
+  "ecc mcp add/remove requires exactly one explicit --cli target (for example, --cli claude)";
+
+async function explicitEccMcpTarget(ctx: PlanContext): Promise<Cli> {
+  if (
+    typeof ctx.options.cli !== "string" ||
+    ctx.options.cli.trim().length === 0 ||
+    ctx.options.allTools === true ||
+    ctx.options.detect === true
+  ) {
+    throw new SettingsError(EXPLICIT_ECC_MCP_TARGET_ERROR);
+  }
+  const selected = resolveClis(ctx.options, { strict: true });
+  const [target] = selected;
+  if (selected.length !== 1 || target === undefined) {
+    throw new SettingsError(EXPLICIT_ECC_MCP_TARGET_ERROR);
+  }
+  return target;
+}
+
+function explicitEccMcpId(ctx: PlanContext): string {
+  if (typeof ctx.options.id !== "string" || ctx.options.id.trim().length === 0) {
+    throw new SettingsError("ecc mcp add/remove requires an ECC MCP id");
+  }
+  return ctx.options.id.trim();
+}
+
+async function eccMcpAddPlan(ctx: PlanContext): Promise<Plan> {
+  const target = await explicitEccMcpTarget(ctx);
+  const policy = readOrgPolicy(ctx.root, ctx.env);
+  if (policy === undefined) {
+    throw new SettingsError("ecc mcp add requires a valid aih-org-policy.json in the target root");
+  }
+  return planExplicitEccMcpAdd({
+    root: ctx.root,
+    policy,
+    id: explicitEccMcpId(ctx),
+    target,
+  });
+}
+
+async function eccMcpRemovePlan(ctx: PlanContext): Promise<Plan> {
+  return planExplicitEccMcpRemove({
+    root: ctx.root,
+    id: explicitEccMcpId(ctx),
+    target: await explicitEccMcpTarget(ctx),
+  });
+}
+
+export const eccMcpAddCommand: CommandSpec = {
+  name: "add",
+  summary: "Add one policy-approved ECC HTTPS MCP to one project-local CLI configuration",
+  positional: { name: "id", required: true, optionName: "id", description: "ECC MCP id" },
+  plan: eccMcpAddPlan,
+};
+
+export const eccMcpRemoveCommand: CommandSpec = {
+  name: "remove",
+  summary: "Remove one receipt-owned ECC HTTPS MCP from one project-local CLI configuration",
+  positional: { name: "id", required: true, optionName: "id", description: "ECC MCP id" },
+  plan: eccMcpRemovePlan,
+};
 
 export const command: CommandSpec = {
   name: "ecc",
