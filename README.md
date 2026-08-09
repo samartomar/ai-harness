@@ -92,8 +92,10 @@ pins the verified Strix v1.5.2 source and immutable sandbox image identities,
 preflights an operator-installed CLI plus an already-present runnable platform
 manifest, and normalizes bounded headless output into strict PoC-redacted evidence.
 Org policy can declare local-fixture-only intent with telemetry off and AIH hard
-ceilings of $10, 20 turns, and five minutes. This foundation performs no scan,
-image pull, install, posture enforcement, or evidence-bundle publication.
+ceilings of $10, 20 turns, and five minutes. `aih evidence build` packages typed
+records found under `.aih/security/strix` only after bounded, fatal-UTF-8,
+whole-document validation. This foundation performs no scan, image pull, install,
+or posture enforcement; publication does not claim AIH executed the detector.
 <details><summary>From source (contributors)</summary>
 
 ```bash

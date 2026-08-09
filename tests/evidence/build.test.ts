@@ -1,10 +1,18 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sha256Hex, verifyBundleChecksums } from "../../src/bundle/index.js";
-import { evidenceBuildCommand } from "../../src/evidence/build.js";
-import { EvidenceBundleSchema } from "../../src/evidence/manifest.js";
+import {
+  evidenceBuildCommand,
+  isSafeStrixSecurityEvidenceFilename,
+  MAX_STRIX_SECURITY_EVIDENCE_BYTES,
+} from "../../src/evidence/build.js";
+import {
+  EvidenceBundleSchema,
+  EvidenceKindSchema,
+  STRIX_SECURITY_EVIDENCE_DIR,
+} from "../../src/evidence/manifest.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type {
   DigestAction,
@@ -47,6 +55,35 @@ function write(rel: string, content: string): void {
   writeFileSync(p, content);
 }
 
+function strixEvidence(): Record<string, unknown> {
+  return {
+    format: "aih-strix-detector-evidence",
+    schemaVersion: 1,
+    detector: {
+      name: "strix",
+      repository: "usestrix/strix",
+      version: "1.5.2",
+      sourceRevision: "597aae67159636ee794a02a3cc1694138d619c44",
+    },
+    image: {
+      repository: "ghcr.io/usestrix/strix-sandbox",
+      tag: "1.3.0",
+      indexDigest: "sha256:f6906c3114e504fd1a218fcf028d7a0e46851118403a438b63956de6ea7c4331",
+      platform: "linux/amd64",
+      manifestDigest: "sha256:e5e5d9927f15ca95ad49804ef7d22439771cd27378f400da6edd47556799baff",
+    },
+    subject: { kind: "local-fixture", treeSha256: "a".repeat(64) },
+    invocation: {
+      mode: "quick",
+      maxBudgetCents: 100,
+      maxTurns: 5,
+      timeoutMs: 60_000,
+      telemetry: "off",
+    },
+    result: { exitCode: 0, verdict: "no-findings", findings: [] },
+  };
+}
+
 /** Seed one artifact of every indexed kind (all with trailing newlines, byte-stable). */
 function seedAllKinds(): void {
   write("aih-skills.lock.json", '{"schemaVersion":1,"skills":[]}\n');
@@ -61,6 +98,7 @@ function seedAllKinds(): void {
   write(".aih/reports/local-report.html", "<html></html>\n");
   write("results.sarif", '{"version":"2.1.0","runs":[]}\n');
   write(".aih/drift.sarif", '{"version":"2.1.0","runs":[]}\n');
+  write(`${STRIX_SECURITY_EVIDENCE_DIR}/run-001.json`, jsonFile(strixEvidence()));
 }
 
 type Actions = Awaited<ReturnType<typeof evidenceBuildCommand.plan>>["actions"];
@@ -102,7 +140,10 @@ describe("evidence build — kind index", () => {
     expect(byPath.get(".aih/reports/local-report.html")?.kind).toBe("report");
     expect(byPath.get("results.sarif")?.kind).toBe("sarif");
     expect(byPath.get(".aih/drift.sarif")?.kind).toBe("sarif");
-    expect(index.artifacts).toHaveLength(12);
+    expect(byPath.get(`${STRIX_SECURITY_EVIDENCE_DIR}/run-001.json`)?.kind).toBe(
+      "strix-security-evidence",
+    );
+    expect(index.artifacts).toHaveLength(13);
 
     // name-sorted by path
     const paths = index.artifacts.map((a) => a.path);
@@ -149,6 +190,75 @@ describe("evidence build — kind index", () => {
     expect(old.harness).toBeUndefined();
   });
 
+  it("publishes Strix as its own versioned kind only after strict typed validation", async () => {
+    expect(EvidenceKindSchema.parse("strix-security-evidence")).toBe("strix-security-evidence");
+    const evidence = strixEvidence();
+    const sourcePath = `${STRIX_SECURITY_EVIDENCE_DIR}/valid.json`;
+    write(sourcePath, jsonFile(evidence));
+
+    const p = await evidenceBuildCommand.plan(ctx());
+    const out = writesOf(p.actions);
+    const index = EvidenceBundleSchema.parse(out[".aih/evidence-bundle/evidence.json"]?.json);
+    const artifact = index.artifacts.find((item) => item.path === sourcePath);
+    expect(artifact).toEqual({
+      kind: "strix-security-evidence",
+      path: sourcePath,
+      schemaVersion: 1,
+      sha256: sha256Hex(jsonFile(evidence)),
+    });
+    expect(out[`.aih/evidence-bundle/files/${sourcePath}`]?.contents).toBe(jsonFile(evidence));
+  });
+
+  it("fails closed instead of publishing malformed or payload-bearing Strix evidence", async () => {
+    const malformed = { ...strixEvidence(), rawPayload: "secret PoC" };
+    write(`${STRIX_SECURITY_EVIDENCE_DIR}/malformed.json`, jsonFile(malformed));
+
+    await expect(evidenceBuildCommand.plan(ctx())).rejects.toThrow(
+      "invalid Strix security evidence",
+    );
+  });
+
+  it("fails closed on non-UTF-8 Strix evidence bytes", async () => {
+    const rel = `${STRIX_SECURITY_EVIDENCE_DIR}/invalid-utf8.json`;
+    const target = join(dir, rel);
+    mkdirSync(dirname(target), { recursive: true });
+    const valid = Buffer.from(jsonFile(strixEvidence()), "utf8");
+    const marker = valid.indexOf(Buffer.from("usestrix/strix", "utf8"));
+    expect(marker).toBeGreaterThanOrEqual(0);
+    valid[marker] = 0xff;
+    writeFileSync(target, valid);
+
+    await expect(evidenceBuildCommand.plan(ctx())).rejects.toThrow(
+      "invalid Strix security evidence",
+    );
+  });
+
+  it("rejects hostile Strix entry names without echoing control or format characters", async () => {
+    expect(isSafeStrixSecurityEvidenceFilename("bad\u001b.json")).toBe(false);
+    expect(isSafeStrixSecurityEvidenceFilename("bad\u200b.json")).toBe(false);
+
+    const name = "bad\u200b.json";
+    write(`${STRIX_SECURITY_EVIDENCE_DIR}/${name}`, jsonFile(strixEvidence()));
+    const error = await Promise.resolve(evidenceBuildCommand.plan(ctx())).then(
+      () => undefined,
+      (cause: unknown) => cause as Error,
+    );
+    expect(error?.message).toBe("invalid Strix security evidence entry name");
+    expect(error?.message).not.toContain(name);
+    rmSync(join(dir, STRIX_SECURITY_EVIDENCE_DIR, name));
+  });
+
+  it("bounds Strix evidence reads and fails closed when a discovered file is unreadable", async () => {
+    expect(MAX_STRIX_SECURITY_EVIDENCE_BYTES).toBe(32 * 1024 * 1024);
+    const rel = `${STRIX_SECURITY_EVIDENCE_DIR}/oversized.json`;
+    write(rel, jsonFile(strixEvidence()));
+    truncateSync(join(dir, rel), MAX_STRIX_SECURITY_EVIDENCE_BYTES + 1);
+
+    await expect(evidenceBuildCommand.plan(ctx())).rejects.toThrow(
+      "Strix security evidence could not be read",
+    );
+  });
+
   it("refuses hostile directory-entry names instead of composing paths from them", async () => {
     write("ai-coding/skill-cards/ok.json", '{"schemaVersion":1}\n');
     write("ai-coding/skill-cards/x..y.json", '{"schemaVersion":1}\n');
@@ -173,7 +283,7 @@ describe("evidence build — bundle-standard layout", () => {
       files: Array<{ path: string; bytes: number; sha256: string }>;
     };
     expect(manifest.schemaVersion).toBe(1);
-    expect(manifest.files).toHaveLength(12);
+    expect(manifest.files).toHaveLength(13);
     const lockRow = manifest.files.find((f) => f.path === "aih-skills.lock.json");
     expect(lockRow?.sha256).toBe(sha256Hex('{"schemaVersion":1,"skills":[]}\n'));
     expect(lockRow?.bytes).toBe(Buffer.byteLength('{"schemaVersion":1,"skills":[]}\n', "utf8"));
@@ -299,7 +409,8 @@ describe("evidence build — signing and digest", () => {
     seedAllKinds();
     const p = await evidenceBuildCommand.plan(ctx());
     const d = p.actions.find((a): a is DigestAction => a.kind === "digest");
-    expect(d?.text).toContain("12 artifact(s)");
+    expect(d?.text).toContain("13 artifact(s)");
+    expect(d?.text).toContain("- strix-security-evidence  1 file(s)");
     expect(d?.text).toContain("- baseline-evidence  1 file(s)");
     expect(d?.text).toContain("- skill-card  2 file(s)");
     expect(d?.text).toContain("- report  2 file(s)");

@@ -19,6 +19,9 @@ export const EVIDENCE_FILE = "evidence.json";
 /** Default output directory for `evidence build` (gitignored `.aih/`). */
 export const DEFAULT_EVIDENCE_OUT = ".aih/evidence-bundle";
 
+/** Canonical source directory for separately versioned, typed Strix evidence. */
+export const STRIX_SECURITY_EVIDENCE_DIR = ".aih/security/strix";
+
 /** The closed set of artifact kinds aih emits today (all schemaVersion 1 on disk). */
 export const EVIDENCE_KINDS = [
   "run-log",
@@ -30,6 +33,7 @@ export const EVIDENCE_KINDS = [
   "packs",
   "report",
   "sarif",
+  "strix-security-evidence",
   "truth-pack",
 ] as const;
 
