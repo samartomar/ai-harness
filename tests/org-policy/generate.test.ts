@@ -354,7 +354,7 @@ describe("policy generate", () => {
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('role="tooltip"');
     expect(html).toContain("Escape");
-    expect(html).toContain("Blocked - no supported projector/scanning/evidence");
+    expect(html).toContain("Blocked - evidence owed at this pin");
     expect(html).toContain("report-only and not enforced by AIH");
     expect(html).toContain("Preserve approval subjects in policy (not effective)");
     expect(html).toContain("summary{min-height:32px}");

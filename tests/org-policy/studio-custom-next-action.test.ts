@@ -60,13 +60,18 @@ describe("policy studio custom candidate next action", () => {
     expect(text, "integrity").toContain(CANDIDATE.integrity);
   });
 
-  // aih trust scan takes a local path or a GitHub owner/repo. A registry
-  // package identity is not a scan target, and emitting one as if it were
-  // would hand the administrator a command that cannot run.
-  it("does not present the registry package as a scan target", () => {
+  it("makes the pinned npm tarball itself the exact scan target", () => {
     const text = customRowsText(studioWithCustomCandidate());
-    expect(text).not.toContain(`aih trust scan ${CANDIDATE.pkg}`);
-    expect(text).toMatch(/path|owner\/repo/);
+    expect(text).toContain(`aih trust scan ${CANDIDATE.pkg}@${CANDIDATE.version}`);
+    expect(text).toContain(CANDIDATE.integrity);
+    expect(text).toContain(CANDIDATE.evidence);
+    expect(text).not.toMatch(/<local path or owner\/repo/);
+  });
+
+  it("names evidence owed at this pin instead of an unsupported-forever status", () => {
+    const text = customRowsText(studioWithCustomCandidate());
+    expect(text).toContain("Blocked - evidence owed at this pin");
+    expect(text).not.toContain("Blocked - no supported projector/scanning/evidence");
   });
 
   it("names the fenced prerequisite that keeps it blocked, using a real code", () => {
@@ -83,5 +88,37 @@ describe("policy studio custom candidate next action", () => {
     const container = window.document.getElementById("custom-rows");
     expect(container?.querySelector("[data-reviewed]")).toBeFalsy();
     expect(customRowsText(window)).toContain("Blocked");
+  });
+
+  it("labels each import blast radius and visually associates matching preflight evidence", async () => {
+    const window = studioWithCustomCandidate();
+    const document = window.document;
+    expect(document.getElementById("import-policy")?.textContent).toContain("replaces current");
+    expect(document.getElementById("import-evidence")?.textContent).toContain(
+      "non-destructive preflight",
+    );
+
+    const input = document.getElementById("evidence-file");
+    if (input === null) throw new Error("expected evidence import input");
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [
+        new window.File(
+          [JSON.stringify({ evidence: [{ id: CANDIDATE.evidence, state: "verified" }] })],
+          "preflight-evidence.json",
+          { type: "application/json" },
+        ),
+      ],
+    });
+    input.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+
+    const associated = document.querySelectorAll(`[data-evidence-record="${CANDIDATE.evidence}"]`);
+    expect(associated).toHaveLength(2);
+    for (const row of associated) {
+      expect(row.classList.contains("evidence-linked")).toBe(true);
+      expect(row.getAttribute("data-evidence-association")).toBeTruthy();
+      expect(row.getAttribute("aria-label")).toContain("not verified or effective");
+    }
   });
 });

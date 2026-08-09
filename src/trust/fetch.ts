@@ -15,6 +15,7 @@ import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import process from "node:process";
 import { AihError, PathContainmentError } from "../errors.js";
 import { type ExecAction, exec, type PlanContext } from "../internals/plan.js";
+import type { RunResult } from "../internals/proc.js";
 
 export type TrustSource = LocalTrustSource | GitHubTrustSource;
 
@@ -34,6 +35,30 @@ export interface GitHubTrustSource {
   repo: string;
   ref: string;
   pin?: string;
+  quarantineRoot: string;
+  treePath: string;
+  metadataPath: string;
+  display: string;
+}
+
+export interface PackageTrustSource {
+  kind: "package";
+  id: string;
+  source: string;
+  package: string;
+  version: string;
+  integrity: string;
+  registry: string;
+  candidate: string;
+  candidateSource: {
+    type: "stdio";
+    resolver: "npx" | "uvx";
+    registry: string;
+    package: string;
+    version: string;
+    integrity: string;
+  };
+  evidenceRecord: string;
   quarantineRoot: string;
   treePath: string;
   metadataPath: string;
@@ -110,8 +135,10 @@ function quarantineRoot(): string {
   return root;
 }
 
-export function cleanupQuarantine(source: TrustSource | undefined): Error | undefined {
-  if (source?.kind !== "github") return;
+export function cleanupQuarantine(
+  source: TrustSource | PackageTrustSource | undefined,
+): Error | undefined {
+  if (source?.kind !== "github" && source?.kind !== "package") return;
   try {
     rmSync(source.quarantineRoot, { recursive: true, force: true });
     return undefined;
@@ -245,6 +272,34 @@ export function resolveTrustSource(
   };
 }
 
+export function resolvePackageTrustSource(input: {
+  package: string;
+  version: string;
+  integrity: string;
+  registry: string;
+  candidate: string;
+  source: PackageTrustSource["candidateSource"];
+  evidenceRecord: string;
+}): PackageTrustSource {
+  const root = quarantineRoot();
+  return {
+    kind: "package",
+    id: slugify(input.candidate),
+    source: `${input.package}@${input.version}`,
+    package: input.package,
+    version: input.version,
+    integrity: input.integrity,
+    registry: input.registry,
+    candidate: input.candidate,
+    candidateSource: input.source,
+    evidenceRecord: input.evidenceRecord,
+    quarantineRoot: root,
+    treePath: join(root, "tree"),
+    metadataPath: join(root, "metadata.json"),
+    display: `${input.package}@${input.version}`,
+  };
+}
+
 /**
  * A first-party source: a LOCAL path resolved UNDER the repo root (e.g. a bundled
  * skill in `packs/`). First-party sources are graded on aih-native coverage
@@ -319,6 +374,7 @@ export function readTrustFetchMetadata(source: GitHubTrustSource): TrustFetchMet
 }
 
 const GITHUB_FETCH_SCRIPT = String.raw`
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
 const https = require("node:https");
@@ -599,6 +655,41 @@ function extractTar(buffer, outRoot) {
 
 (async () => {
   prepareQuarantine(input.quarantineRoot, input.treePath, input.metadataPath);
+  if (input.kind === "npm") {
+    const tarballs = fs
+      .readdirSync(input.quarantineRoot, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".tgz"))
+      .map((entry) => entry.name);
+    if (tarballs.length !== 1) fail("expected exactly one npm tarball in quarantine");
+    const tarballPath = path.resolve(input.quarantineRoot, tarballs[0]);
+    ensureContained(path.resolve(input.quarantineRoot), tarballPath);
+    const tarball = fs.readFileSync(tarballPath);
+    const actualSha256 = "sha256:" + crypto.createHash("sha256").update(tarball).digest("hex");
+    if (actualSha256 !== input.expectedSha256) {
+      fail("npm tarball SHA-256 does not match the policy pin: expected " + input.expectedSha256 + ", got " + actualSha256);
+    }
+    extractTar(zlib.gunzipSync(tarball), input.treePath);
+    writeFileOwner(
+      input.metadataPath,
+      JSON.stringify(
+        {
+          kind: "package",
+          candidate: input.candidate,
+          evidenceRecord: input.evidenceRecord,
+          integrity: input.expectedSha256,
+          package: input.package,
+          registry: input.registry,
+          tarballSha256: actualSha256,
+          treePath: input.treePath,
+          version: input.version,
+        },
+        null,
+        2,
+      ) + "\n",
+      "utf8",
+    );
+    return;
+  }
   const sha = /^[a-f0-9]{40}$/.test(input.pin || "") ? input.pin : undefined;
   const resolvedSha =
     sha ||
@@ -678,6 +769,83 @@ export function trustFetchExec(source: GitHubTrustSource, ctx: PlanContext): Exe
       },
     },
   );
+}
+
+export function trustPackageFetchActions(
+  source: PackageTrustSource,
+  ctx: PlanContext,
+): ExecAction[] {
+  const failureCheck = (stage: string) => (result: RunResult) => {
+    const reason = (result.stderr || result.stdout || `${stage} command failed`)
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 400);
+    return {
+      name: "trust.fetch-blocked",
+      verdict: "fail" as const,
+      code: "trust.fetch-blocked" as const,
+      detail:
+        "could not " +
+        stage +
+        " " +
+        source.display +
+        " in quarantine (exit " +
+        (result.code ?? "signal") +
+        "): " +
+        reason,
+    };
+  };
+  return [
+    exec(
+      `fetch ${source.display} pinned npm tarball into quarantine`,
+      [
+        "npm",
+        "pack",
+        source.display,
+        `--registry=${source.registry}`,
+        "--ignore-scripts",
+        "--json",
+        "--pack-destination",
+        source.quarantineRoot,
+      ],
+      {
+        cwd: source.quarantineRoot,
+        env: scrubFetchEnv(ctx.env),
+        timeoutMs: 120_000,
+        blockProbesOnFailure: true,
+        failureCheck: failureCheck("fetch pinned npm tarball for"),
+      },
+    ),
+    exec(
+      `verify ${source.display} npm tarball SHA-256 and extract into quarantine`,
+      [
+        process.execPath,
+        "-e",
+        GITHUB_FETCH_SCRIPT,
+        JSON.stringify({
+          kind: "npm",
+          candidate: source.candidate,
+          evidenceRecord: source.evidenceRecord,
+          source: source.candidateSource,
+          expectedSha256: source.integrity,
+          package: source.package,
+          registry: source.registry,
+          version: source.version,
+          quarantineRoot: source.quarantineRoot,
+          treePath: source.treePath,
+          metadataPath: source.metadataPath,
+        }),
+      ],
+      {
+        cwd: source.quarantineRoot,
+        env: scrubFetchEnv(ctx.env),
+        timeoutMs: 120_000,
+        blockProbesOnFailure: true,
+        requiresPriorExecSuccess: true,
+        failureCheck: failureCheck("verify pinned npm tarball for"),
+      },
+    ),
+  ];
 }
 
 export function localFileHash(path: string): string {

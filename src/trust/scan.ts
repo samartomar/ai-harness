@@ -9,6 +9,7 @@ import type { Runner } from "../internals/proc.js";
 import type { Check } from "../internals/verify.js";
 import { evaluateMcpPolicy, mcpPolicyOptionsFromConfig } from "../mcp/policy.js";
 import type { McpServer } from "../mcp/servers.js";
+import { candidateIdentityDigest, stableJson } from "../org-policy/effective.js";
 import { type OrgPolicy, OrgPolicyError, readOrgPolicy } from "../org-policy/schema.js";
 import type { Platform } from "../platform/base.js";
 import { mcpConfigSecretCheck, plaintextSecretCheck } from "../secrets/probes.js";
@@ -33,10 +34,13 @@ import {
 import {
   assertTrustTreeSafe,
   cleanupQuarantine,
+  type PackageTrustSource,
   readTrustFetchMetadata,
+  resolvePackageTrustSource,
   resolveTrustSource,
   type TrustSource,
   trustFetchExec,
+  trustPackageFetchActions,
 } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
 import type { SkillSpectorImageApproval } from "./images.js";
@@ -100,9 +104,118 @@ interface IncomingMcpServerMap {
   servers: Record<string, unknown>;
 }
 
+type ScannableTrustSource = TrustSource | PackageTrustSource;
+
 interface TrustScanPlanOptions {
   cleanupQuarantine?: boolean;
   sandboxSmokeShape?: (root: string) => SandboxSmokeShape | undefined;
+}
+
+// npm accepts several non-registry specs (paths, git URLs) in `npm pack`.
+// This command must never reinterpret a policy-pinned tarball scan as one of
+// those sources, so accept only ordinary or scoped package names here.
+const PACKAGE_TARGET =
+  /^((?:@[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*|[A-Za-z0-9][A-Za-z0-9._-]*))@((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?)/;
+
+const POLICY_FINDING_FOR_TRUST_CODE = {
+  "trust.auto-exec-hook": "auto-executing-hook",
+  "trust.hidden-unicode": "hidden-unicode",
+  "trust.prompt-injection": "prompt-injection",
+  "trust.secrets": "secrets",
+} as const;
+
+function packageTrustSourceForTarget(
+  ctx: PlanContext,
+  target: string,
+): PackageTrustSource | undefined {
+  const normalizedTarget = target.trim();
+  const parsed = PACKAGE_TARGET.exec(normalizedTarget);
+  if (parsed === null || parsed[0] !== normalizedTarget) return undefined;
+  const packageName = parsed[1];
+  const version = parsed[2];
+  if (packageName === undefined || version === undefined) return undefined;
+  const policy = readOrgPolicy(ctx.root, ctx.env);
+  const matches = (policy?.governance?.catalog.custom ?? []).filter(
+    (candidate) =>
+      candidate.kind === "mcp" &&
+      candidate.source.type === "stdio" &&
+      candidate.source.package === packageName &&
+      candidate.source.version === version,
+  );
+  if (matches.length !== 1) {
+    throw new AihError(
+      "npm package scan target must match exactly one pinned custom MCP candidate in aih-org-policy.json",
+      "AIH_TRUST",
+    );
+  }
+  const candidate = matches[0];
+  if (candidate === undefined || candidate.source.type !== "stdio") {
+    throw new AihError("matched custom MCP is not a pinned stdio package", "AIH_TRUST");
+  }
+  return resolvePackageTrustSource({
+    package: candidate.source.package,
+    version: candidate.source.version,
+    integrity: candidate.source.integrity,
+    registry: candidate.source.registry,
+    candidate: candidate.id,
+    source: candidate.source,
+    evidenceRecord: candidate.evidence.record,
+  });
+}
+
+function evidenceDetectorId(name: string): string {
+  const normalized = name
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized.length > 0 ? normalized.slice(0, 64) : "aih-native";
+}
+
+function packagePreflightEvidenceRecord(source: PackageTrustSource, scan: TrustScanResult): string {
+  const sourceDigest = candidateIdentityDigest({ source: source.candidateSource });
+  const findings = [
+    ...new Set(
+      scan.checks
+        .filter((check) => check.verdict === "fail" && typeof check.code === "string")
+        .map(
+          (check) =>
+            POLICY_FINDING_FOR_TRUST_CODE[check.code as keyof typeof POLICY_FINDING_FOR_TRUST_CODE],
+        )
+        .filter((code) => code !== undefined),
+    ),
+  ];
+  const detectors = [...new Set(scan.analyzersRun.map(evidenceDetectorId))].map((id) => ({
+    id,
+    required: false,
+    status: "pass",
+  }));
+  const state = scan.checks.some((check) => check.verdict === "fail")
+    ? "failed"
+    : scan.checks.some((check) => check.verdict === "skip")
+      ? "missing"
+      : "verified";
+  const evidenceDigest =
+    "sha256:" +
+    createHash("sha256")
+      .update(stableJson({ checks: scan.checks, source: source.candidateSource }), "utf8")
+      .digest("hex");
+  return JSON.stringify(
+    {
+      id: source.evidenceRecord,
+      candidate: source.candidate,
+      kind: "mcp",
+      source: source.candidateSource,
+      sourceDigest,
+      evidenceDigest,
+      identityDigest: sourceDigest,
+      state,
+      waivable: false,
+      detectors,
+      findings,
+    },
+    null,
+    2,
+  );
 }
 
 function toPosix(path: string): string {
@@ -637,7 +750,7 @@ function orgPolicyDriftCheck(error: unknown): Check {
   };
 }
 
-export function trustSourceOriginChecks(ctx: PlanContext, source: TrustSource): Check[] {
+export function trustSourceOriginChecks(ctx: PlanContext, source: ScannableTrustSource): Check[] {
   if (source.kind !== "github") return [];
   let policy: OrgPolicy["trust"] | undefined;
   try {
@@ -884,7 +997,7 @@ export function scanOptionsFromContext(
 }
 
 export async function trustScanProbes(
-  source: TrustSource,
+  source: ScannableTrustSource,
   options: ScanTrustTreeOptions = {},
   ctx?: PlanContext,
 ): Promise<ProbeAction[]> {
@@ -919,14 +1032,15 @@ export async function trustScanProbes(
 
 export async function trustScanPlanForSource(
   ctx: PlanContext,
-  source: TrustSource,
+  source: ScannableTrustSource,
   options: TrustScanPlanOptions = {},
 ): Promise<ReturnType<typeof plan>> {
   const actions: Action[] = [];
   const keepQuarantine = ctx.options.keepQuarantine === true;
-  if (source.kind === "github" && keepQuarantine) {
+  const remoteSource = source.kind !== "local";
+  if (remoteSource && keepQuarantine) {
     ctx.progress?.(`retained quarantine: ${source.quarantineRoot}`);
-  } else if (source.kind === "github" && ctx.deferCleanup !== undefined) {
+  } else if (remoteSource && ctx.deferCleanup !== undefined) {
     ctx.deferCleanup(() => {
       const error = cleanupQuarantine(source);
       if (error !== undefined) throw error;
@@ -940,6 +1054,7 @@ export async function trustScanPlanForSource(
     requiredDetectors: policy.requiredDetectors,
   } satisfies ScanTrustTreeOptions;
   if (source.kind === "github") actions.push(trustFetchExec(source, ctx));
+  if (source.kind === "package") actions.push(...trustPackageFetchActions(source, ctx));
   actions.push(
     structuredChecksProbe("trust source origin", (probeCtx) =>
       acknowledgeChecks(
@@ -961,17 +1076,40 @@ export async function trustScanPlanForSource(
       digest("trust runtime advisory", trustRuntimeAdvisory(scan.analyzersRun)),
     );
   } else {
-    let githubScan: Promise<TrustScanResult> | undefined;
-    const scanGithubSource = (probeCtx: PlanContext): Promise<TrustScanResult> => {
-      githubScan ??= scanTrustTreeWithAnalyzers(
+    let remoteScan: Promise<TrustScanResult> | undefined;
+    const scanRemoteSource = (probeCtx: PlanContext): Promise<TrustScanResult> => {
+      remoteScan ??= scanTrustTreeWithAnalyzers(
         source.treePath,
         scanOptionsFromContext(probeCtx, {
           ...scanOptions,
           sandboxSmokeShape: sandboxSmokeShape(source.treePath),
         }),
       );
-      return githubScan;
+      return remoteScan;
     };
+    const preflightEvidence =
+      source.kind === "package"
+        ? dynamicDigest(`preflight evidence record ${source.evidenceRecord}`, async (digestCtx) => {
+            if (!digestCtx.apply) {
+              return (
+                "Preflight evidence record " +
+                source.evidenceRecord +
+                " is not emitted in dry-run; pass --apply to fetch, hash, and scan the pinned npm tarball."
+              );
+            }
+            const scan = await scanRemoteSource(digestCtx);
+            return (
+              "Preflight evidence record " +
+              source.evidenceRecord +
+              " (not authority; obtain independent receipt attestation before activation):\n" +
+              JSON.stringify(
+                { evidence: [JSON.parse(packagePreflightEvidenceRecord(source, scan))] },
+                null,
+                2,
+              )
+            );
+          })
+        : undefined;
     actions.push(
       structuredChecksProbe(`trust scan ${source.display}`, async (probeCtx) => {
         if (!probeCtx.apply) {
@@ -985,13 +1123,14 @@ export async function trustScanPlanForSource(
             },
           ];
         }
-        const scan = await scanGithubSource(probeCtx);
+        const scan = await scanRemoteSource(probeCtx);
         return acknowledgeChecks(scan.checks, probeCtx);
       }),
+      ...(preflightEvidence === undefined ? [] : [preflightEvidence]),
       dynamicDigest("trust runtime advisory", async (digestCtx) => {
         try {
           if (!digestCtx.apply) return trustRuntimeAdvisory(["aih-native"]);
-          const scan = await scanGithubSource(digestCtx);
+          const scan = await scanRemoteSource(digestCtx);
           return trustRuntimeAdvisory(scan.analyzersRun);
         } catch {
           return trustRuntimeAdvisory(["aih-native"]);
@@ -1009,7 +1148,14 @@ export async function trustScanPlanForSource(
 async function trustScanPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const target = ctx.options.target;
   if (typeof target !== "string" || target.trim().length === 0) {
-    throw new AihError("trust scan requires a path or owner/repo target", "AIH_TRUST");
+    throw new AihError(
+      "trust scan requires a path, owner/repo, or a policy-pinned package at an exact version",
+      "AIH_TRUST",
+    );
+  }
+  const packageSource = packageTrustSourceForTarget(ctx, target);
+  if (packageSource !== undefined) {
+    return trustScanPlanForSource(ctx, packageSource, { cleanupQuarantine: true });
   }
   const source = resolveTrustSource(target, {
     root: ctx.root,
@@ -1023,12 +1169,12 @@ async function trustScanPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>>
       display: toPosix(relative(ctx.root, resolve(ctx.root, target))) || source.display,
     });
   }
-  return trustScanPlanForSource(ctx, source, { cleanupQuarantine: source.kind === "github" });
+  return trustScanPlanForSource(ctx, source, { cleanupQuarantine: source.kind !== "local" });
 }
 
 export const trustScanCommand: CommandSpec = {
   name: "scan",
-  summary: "Scan a local trust source or GitHub owner/repo before promotion",
+  summary: "Scan a local source, GitHub owner/repo, or policy-pinned npm package before promotion",
   options: [
     {
       flags: "--pin <sha>",
@@ -1037,7 +1183,7 @@ export const trustScanCommand: CommandSpec = {
     { flags: "--ref <ref>", description: "GitHub ref to resolve before downloading the tarball" },
     {
       flags: "--keep-quarantine",
-      description: "retain the owned GitHub quarantine and print its path to stderr",
+      description: "retain the owned remote-source quarantine and print its path to stderr",
     },
     {
       flags: "--sarif <file>",
