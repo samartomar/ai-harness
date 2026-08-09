@@ -71,12 +71,9 @@ describe("policy studio owner ticker", () => {
     expect(visibleGroups(window).length).toBeGreaterThan(10);
   });
 
-  // The upcoming surfaces are declared rather than absent, so an administrator
-  // is not left wondering whether the surface exists and is empty.
-  it("declares the surfaces that are still coming", () => {
+  it("declares only approved upcoming surfaces", () => {
     const window = studio();
     const soon = window.document.querySelector("#owner-ticker .soon")?.textContent ?? "";
-    expect(soon).toContain("VibeSec");
-    expect(soon).toContain("Voice");
+    expect(soon).toBe("soon Voice");
   });
 });

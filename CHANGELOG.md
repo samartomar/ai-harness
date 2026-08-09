@@ -41,6 +41,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The Policy Workbench future-owner ticker now lists only approved AIH-owned
+  surfaces and no longer advertises a rejected third-party candidate.
 - Release guidance now makes stable-direct the default after mechanical gates and exact-SHA approval, while requiring a release candidate for major or schema migrations, evidence-format changes, publishing-machinery changes, and cuts without adequate production-equivalent verification.
 - The portable Policy Workbench now uses a flat Ledger paper-and-ink identity across light and dark themes, with evidence colours reserved for pass, blocked, and owed states. The inspector is mutation-free and narrates the selected-to-materialized journey with one routed next action; curation and custom-source forms live in a separate authoring sidebar, and the canonical selection rail remains available on compact screens.
 - The Policy Workbench now keeps ECC language, framework, capability, and module selection in the left rail instead of duplicating those controls in the main inventory, preset toolbar, and inspector. A separate Add MCP sidebar authors source-digest-bound ECC approvals; approval alone never configures a client or contacts, scans, attests, or observes an endpoint.
