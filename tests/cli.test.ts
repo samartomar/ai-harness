@@ -47,6 +47,12 @@ describe("CLI program", () => {
     expect(mcp?.commands.map((c) => c.name()).sort()).toEqual(["approve"]);
   });
 
+  it("registers explicit ECC MCP add and remove as nested commands", () => {
+    const ecc = buildProgram().commands.find((c) => c.name() === "ecc");
+    const mcp = ecc?.commands.find((c) => c.name() === "mcp");
+    expect(mcp?.commands.map((c) => c.name()).sort()).toEqual(["add", "remove"]);
+  });
+
   it("registers trust scan as a nested command", () => {
     const trust = buildProgram().commands.find((c) => c.name() === "trust");
     expect(trust?.commands.map((c) => c.name()).sort()).toEqual([
@@ -202,12 +208,15 @@ describe("CLI program", () => {
   });
 
   it("keeps the canonical CommandSpec registry complete for every registered built-in spec", () => {
-    const bareParentGroups = new Set<string>(PARENT_GROUPS.filter((name) => name !== "workspace"));
-    const registeredPaths = (program: Command): string[] =>
+    const bareParentPaths = new Set<string>([
+      ...PARENT_GROUPS.filter((name) => name !== "workspace"),
+      "ecc mcp",
+    ]);
+    const registeredPaths = (program: Command, parent: string[] = []): string[] =>
       program.commands.flatMap((cmd) => {
-        const root = cmd.name();
-        const paths = bareParentGroups.has(root) ? [] : [root];
-        return [...paths, ...cmd.commands.map((sub) => `${root} ${sub.name()}`)];
+        const path = [...parent, cmd.name()];
+        const ownPath = bareParentPaths.has(path.join(" ")) ? [] : [path.join(" ")];
+        return [...ownPath, ...registeredPaths(cmd, path)];
       });
     const expected = registeredPaths(buildProgram()).sort();
     const actual = ALL_COMMAND_SPEC_PATHS.map((path) => path.join(" ")).sort();

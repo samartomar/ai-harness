@@ -14,7 +14,7 @@ import { command as contract } from "../contract/index.js";
 import { command as crispy } from "../crispy/index.js";
 import { command as docsLint } from "../docs-lint/index.js";
 import { command as doctor } from "../doctor.js";
-import { command as ecc } from "../ecc/index.js";
+import { command as ecc, eccMcpAddCommand, eccMcpRemoveCommand } from "../ecc/index.js";
 import { executeEccCommand } from "../ecc/pipeline.js";
 import { evidenceBuildCommand } from "../evidence/build.js";
 import { command as guardrails } from "../guardrails/index.js";
@@ -218,6 +218,8 @@ export const GROUPED_COMMAND_SPECS = {
 export const ALL_COMMAND_SPECS: CommandSpec[] = [
   ...ALL_COMMANDS,
   mcpApproveCommand,
+  eccMcpAddCommand,
+  eccMcpRemoveCommand,
   ...Object.values(GROUPED_COMMAND_SPECS).flat(),
 ];
 
@@ -225,6 +227,8 @@ export const ALL_COMMAND_SPECS: CommandSpec[] = [
 export const ALL_COMMAND_SPEC_PATHS: ReadonlyArray<readonly string[]> = [
   ...ALL_COMMANDS.map((spec) => [spec.name] as const),
   ["mcp", mcpApproveCommand.name] as const,
+  ["ecc", "mcp", eccMcpAddCommand.name] as const,
+  ["ecc", "mcp", eccMcpRemoveCommand.name] as const,
   ...Object.entries(GROUPED_COMMAND_SPECS).flatMap(([parent, specs]) =>
     specs.map((spec) => [parent, spec.name] as const),
   ),
@@ -516,6 +520,23 @@ function registerSpec(program: Command, spec: CommandSpec): void {
         optionOverrides: { server },
       });
     });
+  }
+  if (spec.name === "ecc") {
+    const mcp = cmd.command("mcp").description("Explicit policy-approved ECC HTTPS MCP lifecycle");
+    for (const mcpCommand of [eccMcpAddCommand, eccMcpRemoveCommand]) {
+      const child = mcp
+        .command(mcpCommand.name)
+        .description(mcpCommand.summary)
+        .argument("<id>", "ECC MCP id");
+      addFlagsForSpec(child, mcpCommand);
+      addOptionsForSpec(child, mcpCommand);
+      child.action(async (id: string, _options: Record<string, unknown>, command: Command) => {
+        process.exitCode = await runCapability(mcpCommand, command, {
+          positionalRoot: false,
+          optionOverrides: { id },
+        });
+      });
+    }
   }
   program.addCommand(cmd);
 }

@@ -8,6 +8,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `aih ecc mcp add <id> --cli <client>` and `aih ecc mcp remove <id> --cli <client>` now provide an explicit, receipt-owned Add/Remove lifecycle for policy-approved ECC HTTPS MCP entries in project-local JSON clients. Add requires `governance.eccMcpApprovals` at the pinned ECC catalog digest and writes the client entry before the ownership receipt in one transaction; Remove subtracts only unchanged receipt-owned entries and reports drift without mutating. The first supported clients are Claude, Cursor, Copilot, Kimi, and Kiro; global/TOML clients remain refused until shared external-path safety exists.
 - Org policies can now record approved or revoked use of one exact external ECC
   MCP catalog entry at the pinned source digest, including administrator,
   authentication, and permitted-data disclosures. The record is declarative

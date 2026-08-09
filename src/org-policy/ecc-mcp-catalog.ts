@@ -87,6 +87,8 @@ export interface EccMcpCatalogEntry {
   command?: string;
   args?: readonly string[];
   url?: string;
+  /** Non-secret env-reference templates verified against upstream header placeholders. */
+  headerTemplates: Readonly<Record<string, string>>;
   /** Header names are preserved; upstream placeholder values are intentionally omitted. */
   headerNames: readonly string[];
   credentialRequirement: EccMcpCredentialRequirement;
@@ -103,6 +105,7 @@ interface Classification {
   credentialRequirement: EccMcpCredentialRequirement;
   configurationPlaceholders?: readonly string[];
   sourcePlaceholders?: readonly SourcePlaceholder[];
+  headerTemplates?: Readonly<Record<string, string>>;
 }
 
 interface SourcePlaceholder {
@@ -326,6 +329,8 @@ const CLASSIFICATIONS: readonly Classification[] = [
     supply: "remote-endpoint",
     credentialRequirement: required("MEMXUS_API_KEY"),
     sourcePlaceholders: [credential("YOUR_MEMXUS_API_KEY_HERE", "MEMXUS_API_KEY")],
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal env reference, never a credential
+    headerTemplates: { Authorization: "Bearer ${MEMXUS_API_KEY}" },
   },
   {
     id: "filesystem",
@@ -366,6 +371,8 @@ const CLASSIFICATIONS: readonly Classification[] = [
     supply: "remote-endpoint",
     credentialRequirement: required("BROWSER_USE_KEY"),
     sourcePlaceholders: [credential("YOUR_BROWSER_USE_KEY_HERE", "BROWSER_USE_KEY")],
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal env reference, never a credential
+    headerTemplates: { "x-browser-use-api-key": "${BROWSER_USE_KEY}" },
   },
   {
     id: "devfleet",
@@ -469,6 +476,38 @@ function headerNames(headers: unknown): string[] {
   return Object.keys(headers);
 }
 
+function headerTemplates(
+  id: EccMcpId,
+  headers: unknown,
+  classification: Classification,
+): Readonly<Record<string, string>> {
+  const templates = classification.headerTemplates ?? {};
+  const names = headerNames(headers);
+  if (
+    names.length !== Object.keys(templates).length ||
+    names.some((name) => templates[name] === undefined)
+  ) {
+    fail(`${id} has unclassified HTTP header templates`);
+  }
+  if (!isRecord(headers)) return templates;
+  for (const [name, template] of Object.entries(templates)) {
+    const variable =
+      /^Bearer \$\{([A-Z][A-Z0-9_]*)\}$/.exec(template)?.[1] ??
+      /^\$\{([A-Z][A-Z0-9_]*)\}$/.exec(template)?.[1];
+    const source = classification.sourcePlaceholders?.find(
+      (placeholder) => placeholder.kind === "credential" && placeholder.variable === variable,
+    );
+    if (
+      variable === undefined ||
+      source === undefined ||
+      headers[name] !== template.replace(`\${${variable}}`, source.literal)
+    ) {
+      fail(`${id} header template is not source-verified`);
+    }
+  }
+  return templates;
+}
+
 function sourceStrings(value: unknown): string[] {
   if (typeof value === "string") return [value];
   if (Array.isArray(value)) return value.flatMap(sourceStrings);
@@ -534,6 +573,7 @@ function readEntry(
       addability: classification.addability,
       supply: classification.supply,
       url: server.url,
+      headerTemplates: headerTemplates(id, server.headers, classification),
       headerNames: headerNames(server.headers),
       credentialRequirement: classification.credentialRequirement,
       configurationPlaceholders: classification.configurationPlaceholders ?? [],
@@ -556,6 +596,7 @@ function readEntry(
     supply: classification.supply,
     command: server.command,
     args: server.args ?? [],
+    headerTemplates: {},
     headerNames: [],
     credentialRequirement: classification.credentialRequirement,
     configurationPlaceholders: classification.configurationPlaceholders ?? [],
