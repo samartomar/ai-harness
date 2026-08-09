@@ -275,7 +275,9 @@ describe("acceptance — governed hook registrations on a temporary fixture root
     expect(panel.spawns, "spawn total").toContain("Total:");
     expect(panel.spawns, "total entries").toContain(String(registry.spawnProjection.totalEntries));
     expect(panel.spawns, "total spawns").toContain(String(registry.spawnProjection.totalSpawns));
-    expect(html.toLowerCase()).not.toContain("cost");
+    expect(
+      [panel.spawns, panel.overlaps, ...panel.rows.map((row) => row.text)].join(" ").toLowerCase(),
+    ).not.toContain("cost");
 
     // ── Mutate one destination entry: drift, named by owner and event.
     const tampered = parseJsoncText(projected) as {

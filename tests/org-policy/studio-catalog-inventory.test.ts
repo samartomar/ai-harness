@@ -2,6 +2,7 @@ import { Window } from "happy-dom";
 import { describe, expect, it } from "vitest";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import { policyAuthoringCatalog } from "../../src/org-policy/catalog.js";
+import { eccExternalMcpCatalog } from "../../src/org-policy/ecc-mcp-catalog.js";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
@@ -29,6 +30,17 @@ function loadStudio(window: Window, html: string): void {
 }
 
 describe("policy authoring catalog inventory", () => {
+  it("carries the source-locked ECC external MCP inventory outside AIH controls", () => {
+    const model = policyStudioModel();
+    expect(model.catalog.externalMcp).toEqual(eccExternalMcpCatalog);
+    expect(model.catalog.externalMcp).toHaveLength(31);
+    expect(
+      model.catalog.externalMcp.every(
+        (entry) => !("control" in entry) && !("server" in entry) && entry.owner === "ecc",
+      ),
+    ).toBe(true);
+  });
+
   // The locked ownership boundary: an unrecognised item is annotated, never
   // removed. Dropping it hides inventory an administrator is accountable for.
   it("carries every pinned baseline component, dropping none", () => {
