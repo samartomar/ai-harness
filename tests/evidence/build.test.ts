@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sha256Hex, verifyBundleChecksums } from "../../src/bundle/index.js";
 import {
   evidenceBuildCommand,
+  isSafeStrixSecurityEvidenceFilename,
   MAX_STRIX_SECURITY_EVIDENCE_BYTES,
 } from "../../src/evidence/build.js";
 import {
@@ -233,16 +234,18 @@ describe("evidence build — kind index", () => {
   });
 
   it("rejects hostile Strix entry names without echoing control or format characters", async () => {
-    for (const name of ["bad\u001b.json", "bad\u200b.json"]) {
-      write(`${STRIX_SECURITY_EVIDENCE_DIR}/${name}`, jsonFile(strixEvidence()));
-      const error = await Promise.resolve(evidenceBuildCommand.plan(ctx())).then(
-        () => undefined,
-        (cause: unknown) => cause as Error,
-      );
-      expect(error?.message).toBe("invalid Strix security evidence entry name");
-      expect(error?.message).not.toContain(name);
-      rmSync(join(dir, STRIX_SECURITY_EVIDENCE_DIR, name));
-    }
+    expect(isSafeStrixSecurityEvidenceFilename("bad\u001b.json")).toBe(false);
+    expect(isSafeStrixSecurityEvidenceFilename("bad\u200b.json")).toBe(false);
+
+    const name = "bad\u200b.json";
+    write(`${STRIX_SECURITY_EVIDENCE_DIR}/${name}`, jsonFile(strixEvidence()));
+    const error = await Promise.resolve(evidenceBuildCommand.plan(ctx())).then(
+      () => undefined,
+      (cause: unknown) => cause as Error,
+    );
+    expect(error?.message).toBe("invalid Strix security evidence entry name");
+    expect(error?.message).not.toContain(name);
+    rmSync(join(dir, STRIX_SECURITY_EVIDENCE_DIR, name));
   });
 
   it("bounds Strix evidence reads and fails closed when a discovered file is unreadable", async () => {

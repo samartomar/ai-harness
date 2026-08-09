@@ -69,6 +69,10 @@ export const MAX_STRIX_SECURITY_EVIDENCE_BYTES = 32 * 1024 * 1024;
 
 const STRIX_SECURITY_EVIDENCE_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}\.json$/;
 
+export function isSafeStrixSecurityEvidenceFilename(name: string): boolean {
+  return STRIX_SECURITY_EVIDENCE_FILENAME.test(name) && !name.includes("..");
+}
+
 function optionString(ctx: PlanContext, key: string): string | undefined {
   const raw = ctx.options[key];
   return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : undefined;
@@ -119,7 +123,7 @@ function listStrixEvidenceFiles(root: string): string[] {
   const files: string[] = [];
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-    if (!STRIX_SECURITY_EVIDENCE_FILENAME.test(entry.name) || entry.name.includes("..")) {
+    if (!isSafeStrixSecurityEvidenceFilename(entry.name)) {
       throw new AihError("invalid Strix security evidence entry name", "AIH_EVIDENCE");
     }
     files.push(posix.join(STRIX_SECURITY_EVIDENCE_DIR, entry.name));
