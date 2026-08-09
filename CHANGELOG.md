@@ -50,6 +50,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The Policy Workbench makes custom-MCP evidence work actionable: it names the tarball scan command, says evidence is owed at the exact pin, labels policy import as replacement versus evidence import as non-destructive preflight, and visually links matching imported preflight evidence without claiming it is trusted or effective.
 - `aih verify-release` now distinguishes a missing or inaccessible GitHub Release from an existing release whose checksum assets are still uploading, polls the latter with bounded backoff before failing, and tells operators how to install cosign when that verification leg cannot start.
 
+### Security
+
+- The development dependency lock now resolves `nanoid` 3.3.18 through
+  `tsup`/`postcss`, clearing GHSA-2v37-7h3g-55p8 without adding a direct runtime
+  dependency or broad dependency overrides.
+
 ## [5.0.0] - 2026-08-08
 
 ### Changed
