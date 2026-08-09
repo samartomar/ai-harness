@@ -57,7 +57,12 @@ describe("policy studio owner ticker", () => {
       (window.document.getElementById("config-preview") as unknown as { value: string }).value;
     const before = preview();
     click(window, '[data-owner-focus="AIH"]');
-    expect(visibleGroups(window)).toEqual(["AIH MCP servers", "AIH hooks", "Approval / evidence"]);
+    expect(visibleGroups(window)).toEqual([
+      "AIH MCP servers",
+      "AIH hooks",
+      "Hook registrar",
+      "Approval / evidence",
+    ]);
     expect(preview(), "focus authored nothing").toBe(before);
     click(window, '[data-owner-focus="Superpowers"]');
     expect(visibleGroups(window)).toContain("Superpowers");

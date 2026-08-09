@@ -82,6 +82,25 @@ describe("policy studio selection provenance", () => {
     }
   });
 
+  it("drops only the administrator origin when a profile still requests the control", () => {
+    const window = studio();
+    const target = window.document.querySelector("[data-reviewed]");
+    const id = target?.getAttribute("data-reviewed") ?? "";
+    target?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    selectProfile(window, "vibe");
+
+    window.document
+      .querySelector(`[data-reviewed="${id}"]`)
+      ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+    expect(activations(window).find((item) => item.candidate === id)?.clarification).toBe(
+      "Requested by: vibe profile",
+    );
+    expect(
+      window.document.querySelector(`[data-reviewed="${id}"]`)?.getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
   it("shows the provenance on the row it explains", () => {
     const window = studio();
     selectProfile(window, "vibe");

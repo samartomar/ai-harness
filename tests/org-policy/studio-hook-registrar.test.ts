@@ -149,8 +149,16 @@ describe("S1 — annotate, never duplicate", () => {
     const panel = rows.closest(".grp");
     expect(panel?.textContent?.toLowerCase()).toContain("read-only projection view");
     expect(panel?.textContent).toContain("governance.hookRegistrations");
-    // Never a second authoring path: the panel body carries no control at all.
-    expect(panel?.querySelectorAll(".grpbody button, .grpbody input").length).toBe(0);
+    // Id links navigate to the one inventory row that authors the component;
+    // the registrar itself still carries no selection or form affordance.
+    expect(panel?.querySelectorAll(".grpbody [data-id-reference]").length).toBe(
+      model.catalog.hookRegistry.entries.length,
+    );
+    expect(
+      panel?.querySelectorAll(
+        ".grpbody [data-reviewed], .grpbody [data-framework-select], .grpbody input",
+      ).length,
+    ).toBe(0);
   });
 
   it("annotates without duplicating: panel entries are never counted rows", () => {
