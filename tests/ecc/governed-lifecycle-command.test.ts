@@ -56,6 +56,12 @@ const SOURCE_TREE: Readonly<Record<string, string>> = {
   // ONLY rows OpenCode carries.
   "AGENTS.md": "# agents bootloader\n",
   ".agents/plugins/marketplace.json": '{"plugins":[]}\n',
+  ".kiro/skills/tdd-workflow/SKILL.md": "# Kiro tdd-workflow\n",
+  ".kiro/skills/not-selected/SKILL.md": "# not selected\n",
+  ".kiro/steering/security.md": "# Kiro security\n",
+  ".kiro/steering/testing.md": "# Kiro testing\n",
+  ".kiro/agents/code-reviewer.md": "# unresolved Kiro agent\n",
+  ".kiro/settings/mcp.json.example": "{}\n",
 };
 
 /** Operator content on the destination root, present before anything is applied. */
@@ -86,7 +92,12 @@ const PASSED: readonly SelectionFixture[] = [
     path: "skills/tdd-workflow",
     paths: [".agents/skills/tdd-workflow", "skills/tdd-workflow"],
   },
-  { kind: "baseline", id: "baseline:rules", path: "rules", paths: ["rules"] },
+  {
+    kind: "baseline",
+    id: "baseline:rules",
+    path: "rules",
+    paths: ["rules/README.md", "rules/common"],
+  },
 ];
 
 /** Selected and blocked by signed evidence: visible, selectable, never materialized. */
@@ -232,7 +243,20 @@ function writeUngovernedPolicy(): void {
   );
 }
 
-const CATALOGUED: readonly SelectionFixture[] = [...PASSED, BLOCKED, OTHER_LIFECYCLE, SHARED_ONLY];
+const KIRO_RUNTIME: SelectionFixture = {
+  kind: "runtime",
+  id: "runtime:ecc-kiro",
+  path: ".kiro",
+  paths: [".kiro"],
+};
+
+const CATALOGUED: readonly SelectionFixture[] = [
+  ...PASSED,
+  BLOCKED,
+  OTHER_LIFECYCLE,
+  SHARED_ONLY,
+  KIRO_RUNTIME,
+];
 
 function catalog() {
   return defineBaselineCatalog({
@@ -267,12 +291,17 @@ function vendorLock() {
   });
 }
 
-async function runLifecycle(lifecycle: string, apply: boolean, cli?: string): Promise<PlanResult> {
+async function runLifecycle(
+  lifecycle: string,
+  apply: boolean,
+  cli?: string,
+  lock = vendorLock(),
+): Promise<PlanResult> {
   return executeEccCommand(
     ctx(apply, { lifecycle, eccPath: sourceRoot, ...(cli === undefined ? {} : { cli }) }),
     {
       catalog: catalog(),
-      vendorLock: vendorLock(),
+      vendorLock: lock,
       vendorLockSha256: "f".repeat(64),
       executeProfileLifecycle: async () => {
         throw new Error("the governed install must not fall through to the profile lifecycle");
@@ -751,8 +780,10 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
 
     expect(failure?.message).toContain("zed is not a governed materialization target");
     expect(failure?.message).toContain("claude, codex, kimi, cursor, opencode");
-    // ...and what IS wired, which is now the whole ruled five.
-    expect(failure?.message).toContain("claude, codex, kimi, cursor, opencode are wired today");
+    // ...and what IS wired, which is now the whole ruled set.
+    expect(failure?.message).toContain(
+      "claude, codex, kimi, cursor, opencode, kiro are wired today",
+    );
     // The remedy, not just the diagnosis: the target set can come from a
     // committed marker the operator is not thinking about, so the refusal has
     // to say which flag overrides it.
@@ -1300,6 +1331,97 @@ describe("F4 — the governed framework lifecycle for the OpenCode target", () =
     }
     for (const path of Object.keys(OPERATOR_TREE)) {
       expect(bytesAt(root, path).toString("utf8"), path).toBe(OPERATOR_TREE[path]);
+    }
+  });
+});
+
+describe("the governed framework lifecycle for the Kiro target", () => {
+  const KIRO_MATERIALIZED = [
+    ".kiro/skills/tdd-workflow/SKILL.md",
+    ".kiro/steering/security.md",
+    ".kiro/steering/testing.md",
+  ] as const;
+
+  function lockWithoutRuntime() {
+    const lock = vendorLock();
+    return parseBaselineEvidenceLock({
+      ...lock,
+      sources: lock.sources.map((source) => ({
+        ...source,
+        components: source.components.filter((component) => component.id !== KIRO_RUNTIME.id),
+      })),
+    });
+  }
+
+  function lockWithHeldRuntime() {
+    const lock = vendorLock();
+    return parseBaselineEvidenceLock({
+      ...lock,
+      sources: lock.sources.map((source) => ({
+        ...source,
+        components: source.components.map((component) =>
+          component.id === KIRO_RUNTIME.id
+            ? {
+                ...component,
+                verdict: "blocked" as const,
+                findings: [{ code: "malicious-code", detail: "runtime held by vet" }],
+              }
+            : component,
+        ),
+      })),
+    });
+  }
+
+  it("applies only selected skills and steering with dual evidence", async () => {
+    writeGovernedPolicy([...PASSED]);
+
+    const reported = materializationDigest(await runLifecycle("install", true, "kiro"));
+
+    expect(reported.write.map((file) => file.path).sort()).toEqual([...KIRO_MATERIALIZED].sort());
+    expect(reported.refused).toContainEqual(
+      expect.objectContaining({
+        id: "agent:code-reviewer",
+        reason: "unsupported-component",
+      }),
+    );
+    expect(bytesAt(root, KIRO_MATERIALIZED[0]).toString("utf8")).toBe("# Kiro tdd-workflow\n");
+    const receipt = readEccMaterializationReceipt(root);
+    if (receipt.state !== "valid") throw new Error("expected a valid receipt");
+    expect(
+      receipt.receipt.components.find((component) => component.id === "skill:tdd-workflow")
+        ?.files[0],
+    ).toMatchObject({
+      contentAuthorization: { componentId: "runtime:ecc-kiro" },
+      contentSourcePath: ".kiro/skills/tdd-workflow/SKILL.md",
+    });
+    expect(existsSync(join(root, ".kiro", "agents", "code-reviewer.md"))).toBe(false);
+    expect(existsSync(join(root, ".kiro", "settings", "mcp.json.example"))).toBe(false);
+  });
+
+  it("subtracts a genuinely deselected Kiro surface", async () => {
+    writeGovernedPolicy([...PASSED]);
+    await runLifecycle("install", true, "kiro");
+    expect(existsSync(join(root, ".kiro", "steering", "security.md"))).toBe(true);
+
+    writeGovernedPolicy([PASSED[1] as SelectionFixture]);
+    await runLifecycle("install", true, "kiro");
+
+    expect(existsSync(join(root, ".kiro", "skills", "tdd-workflow", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(root, ".kiro", "steering", "security.md"))).toBe(false);
+  });
+
+  it("preserves prior Kiro ownership when runtime evidence is absent or held", async () => {
+    writeGovernedPolicy([PASSED[1] as SelectionFixture]);
+    await runLifecycle("install", true, "claude,kiro");
+    const settled = snapshot(root);
+
+    for (const lock of [lockWithoutRuntime(), lockWithHeldRuntime()]) {
+      const failure = await runLifecycle("install", true, "claude,kiro", lock).then(
+        () => undefined,
+        (error: Error) => error,
+      );
+      expect(failure?.message).toMatch(/runtime:ecc-kiro|runtime evidence/i);
+      expect(snapshot(root)).toEqual(settled);
     }
   });
 });

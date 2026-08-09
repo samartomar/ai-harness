@@ -8,6 +8,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Governed ECC materialization now supports the single `kiro` target for
+  evidence-passed selected skills and `baseline:rules` steering. AIH copies only
+  exact pinned `.kiro/skills/<name>/SKILL.md` and top-level
+  `.kiro/steering/*.md` bytes under independent selected-component and
+  `runtime:ecc-kiro` evidence, records both identities in the ownership receipt,
+  and subtracts only unchanged receipt-owned files. Agents, arbitrary `.kiro`
+  inputs, ECC hooks/settings/scripts, missing or held runtime evidence, and
+  hand-owned conflicts fail closed; AIH does not invoke ECC's native Kiro
+  installer or claim that Kiro loaded the projected files.
 - A separate Strix security-detector contract now pins the verified v1.5.2 source and immutable sandbox image index/platform manifests, preflights only an operator-installed CLI and already-present image, and normalizes bounded headless findings into strict PoC-redacted evidence with source-correct exit semantics. Org policy can declare a local-fixture-only Strix intent with telemetry off and AIH hard ceilings of $10, 20 turns, and five minutes. `aih evidence build` can package separately produced typed records from `.aih/security/strix` only after bounded, fatal-UTF-8, whole-document validation; this seam still does not run a scan or enforce the declarative requirement at posture.
 - Package Graph authority adapters now hash the exact bytes they parse for the shipped baseline evidence lock, ECC materialization receipts, and strict skill lock/pack artifacts; GitHub skill identities require a matching immutable commit. A separate deterministic classifier reports exact lock/receipt registrations, catalog-only members, undeclared immutable residue, divergent identities, and unsupported mutable observations without turning graph membership into approval or evidence.
 - Package Graph authority claims can now be combined through a pure additive index that retains every source claim, reports divergent definitions without choosing a winner, and emits canonical byte-identical JSON and SHA-256 identities for equal inputs. Source-store digests remain caller-asserted at this layer while the builder separately binds each normalized projection; the index performs no filesystem, network, clock, process, approval, or installation work.

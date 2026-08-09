@@ -15,6 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
 import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
 import type { EccComponentId } from "../../src/ecc/components.js";
 import {
@@ -37,6 +38,8 @@ import {
   MAX_MATERIALIZATION_RECEIPT_BYTES,
   readEccMaterializationReceipt,
 } from "../../src/ecc/materialization-receipt.js";
+import { resolveVerifiedKiroMaterialization } from "../../src/ecc/materialization-target-kiro.js";
+import { eccComponentSourcePaths } from "../../src/ecc/materialize.js";
 
 let root: string;
 
@@ -120,6 +123,71 @@ function settingsComponent(): EccMaterializationComponentInput {
 
 function request(...components: EccMaterializationComponentInput[]): EccMaterializationRequest {
   return { root, components };
+}
+
+function verifiedKiroComponentForEngine(accepted = false) {
+  const sourceRoot = mkdtempSync(join(tmpdir(), "aih-ecc-kiro-proof-"));
+  try {
+    for (const [path, contents] of Object.entries({
+      "skills/tdd-workflow/SKILL.md": "# selected skill\n",
+      ".agents/skills/tdd-workflow/SKILL.md": "# selected agent skill\n",
+      ".kiro/skills/tdd-workflow/SKILL.md": "# curated Kiro skill\n",
+      ".kiro/steering/security.md": "# security\n",
+    })) {
+      const absolute = join(sourceRoot, ...path.split("/"));
+      mkdirSync(dirname(absolute), { recursive: true });
+      writeFileSync(absolute, contents);
+    }
+    const selectedAuthorization: BaselineAuthorization = {
+      ...authorization("skill:tdd-workflow"),
+      treeSha256: hashComponentTree(sourceRoot, eccComponentSourcePaths("skill:tdd-workflow"))
+        .treeSha256,
+      ...(accepted
+        ? {
+            effective: "accepted-with-conditions" as const,
+            acceptance: {
+              decisionId: "selected-decision",
+              recordSha256: "e".repeat(64),
+              acceptedFindingCodes: ["selected-finding"],
+            },
+          }
+        : {}),
+    };
+    const runtimeAuthorization: BaselineAuthorization = {
+      ...authorization("runtime:ecc-kiro"),
+      treeSha256: hashComponentTree(sourceRoot, [".kiro"]).treeSha256,
+      ...(accepted
+        ? {
+            effective: "accepted-with-conditions" as const,
+            acceptance: {
+              decisionId: "runtime-decision",
+              recordSha256: "f".repeat(64),
+              acceptedFindingCodes: ["runtime-finding"],
+            },
+          }
+        : {}),
+    };
+    return resolveVerifiedKiroMaterialization({
+      sourceRoot,
+      components: [
+        {
+          id: "skill:tdd-workflow",
+          authorization: selectedAuthorization,
+          provenance: {
+            repository: "affaan-m/ECC",
+            commit: "a".repeat(40),
+            componentPath: "skills/tdd-workflow",
+          },
+        },
+      ],
+      evidence: {
+        authorizations: [selectedAuthorization, runtimeAuthorization],
+        held: [],
+      },
+    }).components[0];
+  } finally {
+    rmSync(sourceRoot, { recursive: true, force: true });
+  }
 }
 
 function put(relativePath: string, contents: string): void {
@@ -292,6 +360,201 @@ describe("F1/F5 — AIH-direct per-component materialization", () => {
     expect(() => applyEccMaterialization(request(laundered))).toThrow(
       /future verified-source Kiro adapter/i,
     );
+    expect(tree()).toEqual([]);
+  });
+
+  it("admits exact adapter-proven Kiro bytes and persists dual evidence", () => {
+    const component = verifiedKiroComponentForEngine();
+    if (component === undefined) throw new Error("expected a verified Kiro component");
+
+    applyEccMaterialization(request(component));
+
+    expect(read(".kiro/skills/tdd-workflow/SKILL.md")).toBe("# curated Kiro skill\n");
+    expect(ownedReceipt().components[0]?.files[0]).toMatchObject({
+      path: ".kiro/skills/tdd-workflow/SKILL.md",
+      contentAuthorization: { componentId: "runtime:ecc-kiro" },
+      contentSourcePath: ".kiro/skills/tdd-workflow/SKILL.md",
+    });
+  });
+
+  it("refuses forged or mutated adapter proof objects", () => {
+    const attempts: Array<() => EccMaterializationComponentInput> = [
+      () => {
+        const component = verifiedKiroComponentForEngine();
+        if (component === undefined) throw new Error("expected component");
+        const file = component.files[0];
+        if (file === undefined) throw new Error("expected file");
+        return { ...component, files: [{ ...file }] };
+      },
+      () => {
+        const component = verifiedKiroComponentForEngine();
+        if (component === undefined) throw new Error("expected component");
+        return { ...component, files: [new Proxy(component.files[0] as object, {}) as never] };
+      },
+      () => {
+        const component = verifiedKiroComponentForEngine();
+        if (component === undefined) throw new Error("expected component");
+        const file = component.files[0];
+        if (file === undefined) throw new Error("expected file");
+        const contents = file.contents;
+        contents[0] = (contents[0] ?? 0) ^ 1;
+        return component;
+      },
+      () => {
+        const component = verifiedKiroComponentForEngine();
+        if (component === undefined) throw new Error("expected component");
+        const file = component.files[0];
+        if (file === undefined) throw new Error("expected file");
+        file.path = ".kiro/skills/tdd-workflow/OTHER.md";
+        return component;
+      },
+      () => {
+        const component = verifiedKiroComponentForEngine();
+        if (component === undefined) throw new Error("expected component");
+        component.provenance = { ...component.provenance, componentPath: "skills/other" };
+        return component;
+      },
+      () => {
+        const component = verifiedKiroComponentForEngine();
+        if (component === undefined) throw new Error("expected component");
+        component.authorization = { ...component.authorization, treeSha256: "d".repeat(64) };
+        return component;
+      },
+      () => {
+        const component = verifiedKiroComponentForEngine(true);
+        if (component === undefined || component.authorization.acceptance === undefined) {
+          throw new Error("expected selected acceptance");
+        }
+        component.authorization.acceptance.decisionId = "mutated-selected-decision";
+        return component;
+      },
+      () => {
+        const component = verifiedKiroComponentForEngine(true);
+        const contentAuthorization = component?.files[0]?.contentAuthorization;
+        if (component === undefined || contentAuthorization?.acceptance === undefined) {
+          throw new Error("expected runtime acceptance");
+        }
+        contentAuthorization.acceptance.acceptedFindingCodes.push("mutated-runtime-code");
+        return component;
+      },
+    ];
+
+    for (const attempt of attempts) {
+      expect(() => previewEccMaterialization(request(attempt()))).toThrow(
+        /future verified-source Kiro adapter|adapter proof/i,
+      );
+    }
+    expect(tree()).toEqual([]);
+  });
+
+  it("never invokes branded file accessors or rereads enclosing component accessors", () => {
+    const invalid = verifiedKiroComponentForEngine();
+    const invalidFile = invalid?.files[0];
+    if (invalid === undefined || invalidFile === undefined) throw new Error("expected component");
+    let fileGetterCalls = 0;
+    Object.defineProperty(invalidFile, "contents", {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        fileGetterCalls += 1;
+        return Buffer.from("poison");
+      },
+    });
+    expect(() => previewEccMaterialization(request(invalid))).toThrow(/adapter proof/i);
+    expect(fileGetterCalls).toBe(0);
+
+    const valid = verifiedKiroComponentForEngine();
+    if (valid === undefined) throw new Error("expected component");
+    const selectedAuthorization = valid.authorization;
+    let authorizationGetterCalls = 0;
+    Object.defineProperty(valid, "authorization", {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        authorizationGetterCalls += 1;
+        return authorizationGetterCalls === 1
+          ? selectedAuthorization
+          : { ...selectedAuthorization, treeSha256: "d".repeat(64) };
+      },
+    });
+    expect(previewEccMaterialization(request(valid)).write.map((file) => file.path)).toEqual([
+      ".kiro/skills/tdd-workflow/SKILL.md",
+    ]);
+    expect(authorizationGetterCalls).toBe(1);
+
+    const nested = verifiedKiroComponentForEngine(true);
+    const acceptance = nested?.authorization.acceptance;
+    if (nested === undefined || acceptance === undefined) {
+      throw new Error("expected accepted component");
+    }
+    let decisionGetterCalls = 0;
+    Object.defineProperty(acceptance, "decisionId", {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        decisionGetterCalls += 1;
+        return decisionGetterCalls === 1 ? "selected-decision" : "poisoned-decision";
+      },
+    });
+    let provenanceGetterCalls = 0;
+    Object.defineProperty(nested.provenance, "componentPath", {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        provenanceGetterCalls += 1;
+        return provenanceGetterCalls === 1 ? "skills/tdd-workflow" : "skills/other";
+      },
+    });
+    expect(applyEccMaterialization(request(nested)).written.map((file) => file.path)).toEqual([
+      ".kiro/skills/tdd-workflow/SKILL.md",
+    ]);
+    expect(decisionGetterCalls).toBe(1);
+    expect(provenanceGetterCalls).toBe(1);
+    expect(ownedReceipt().components[0]).toMatchObject({
+      id: "skill:tdd-workflow",
+      authorization: {
+        effective: "accepted-with-conditions",
+        acceptance: { decisionId: "selected-decision" },
+      },
+      provenance: { componentPath: "skills/tdd-workflow" },
+    });
+  });
+
+  it("refuses mixed adapter proofs that disagree on the selected component identity", () => {
+    const passed = verifiedKiroComponentForEngine();
+    const accepted = verifiedKiroComponentForEngine(true);
+    const passedFile = passed?.files[0];
+    const acceptedFile = accepted?.files[0];
+    if (
+      passed === undefined ||
+      accepted === undefined ||
+      passedFile === undefined ||
+      acceptedFile === undefined ||
+      accepted.authorization.acceptance === undefined
+    ) {
+      throw new Error("expected two verified Kiro components");
+    }
+    let effectiveReads = 0;
+    let acceptanceReads = 0;
+    const authorization = {
+      ...passed.authorization,
+      get effective() {
+        effectiveReads += 1;
+        return effectiveReads === 1
+          ? passed.authorization.effective
+          : accepted.authorization.effective;
+      },
+      get acceptance() {
+        acceptanceReads += 1;
+        return acceptanceReads === 1 ? undefined : accepted.authorization.acceptance;
+      },
+    };
+
+    expect(() =>
+      previewEccMaterialization(
+        request({ ...passed, authorization, files: [passedFile, acceptedFile] }),
+      ),
+    ).toThrow(/every verified file proof to agree/i);
     expect(tree()).toEqual([]);
   });
 

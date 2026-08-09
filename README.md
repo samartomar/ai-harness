@@ -174,7 +174,7 @@ still initialize under the vendor CLI. Aih does not attest those customizations 
 | [`aih adopt`](docs/commands.md#aih-adopt) | Converge an existing AI canon onto aih's managed model without overwriting your work (brownfield migration). |
 | [`aih prune`](docs/commands.md#aih-prune) | Remove stale per-CLI artifacts and reconcile orphaned aih-managed ECC components from the machine registration ledger. <!-- aih:claim CM-22 --> |
 | [`aih uninstall`](docs/commands.md#aih-uninstall) | Remove the marker-backed core aih install footprint from a repo; `aih clean` is an alias. |
-| [`aih ecc`](docs/commands.md#aih-ecc) | Register the additive ECC union, manage the reviewed Claude/Codex projection with `--lifecycle`, or explicitly add/remove policy-approved ECC HTTPS MCP entries for one selected native client with `aih ecc mcp add/remove`. In a governed repository, `--lifecycle install` materializes the org policy's evidence-passed selection for the targets `--cli` selects, and removal lives in `aih uninstall`. <!-- aih:claim CM-21 --> <!-- aih:claim CM-45 --> <!-- aih:claim CM-50 --> |
+| [`aih ecc`](docs/commands.md#aih-ecc) | Register the additive ECC union, manage the reviewed Claude/Codex projection with `--lifecycle`, or explicitly add/remove policy-approved ECC HTTPS MCP entries for one selected native client with `aih ecc mcp add/remove`. In a governed repository, `--lifecycle install` materializes the org policy's evidence-passed selection for the targets `--cli` selects, including the separately evidence-bound Kiro skill/steering projection; removal lives in `aih uninstall`. <!-- aih:claim CM-21 --> <!-- aih:claim CM-45 --> <!-- aih:claim CM-50 --> <!-- aih:claim CM-55 --> |
 | [`aih superpowers`](docs/commands.md#aih-superpowers) | Verify exact-pinned Superpowers components and emit evidence-bound target guidance. |
 | [`aih crispy`](docs/commands.md#aih-crispy) | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |
 | [`aih workspace`](docs/commands.md#aih-workspace) | Scaffold and restore a multi-repo workspace at the parent folder: cross-repo map, declared-repo graph MCP, snapshots, hydrate. |
@@ -317,6 +317,10 @@ real `.kiro/` tree):
   `aih-quality-gate` running the repo's real lint/test) in Kiro's real hook schema.
 - `aih ecc --cli kiro` → emits scoped consult guidance; Kiro's native installer cannot yet
   materialize the component union safely, so aih does not run it.
+- In a governed repository, `aih ecc --lifecycle install --cli kiro` is a separate AIH-owned
+  path: it projects only evidence-passed selected skills and steering from the exact pinned source,
+  under dual selected/runtime evidence and receipt ownership. It does not run or adopt the native
+  installer, project agents/hooks/settings/scripts, or claim that Kiro loaded the files.
 - `aih superpowers --cli kiro` → `.kiro/steering/superpowers-methodology.md` (the
   brainstorm → plan → TDD → review routing, since Kiro can't load `~/.claude/superpowers`).
 

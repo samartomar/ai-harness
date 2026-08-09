@@ -323,12 +323,18 @@ In a **governed** repository (an org policy carrying `governance`), `--lifecycle
 profile installer: it materializes the policy's evidence-passed component selection AIH-directly, and
 removal lives in `aih uninstall`. That governed install does read `--cli`, because which tools a
 materialization lands for is the ordinary workstation target selection — `--cli`, `--all-tools`, the
-committed `.aih-config.json` targets, else the `claude` default. At Enterprise posture, the active org policy must carry a non-empty `governance.supportedClis` allow-list; omission fails closed with the current registry ids and a paste-all remedy, never a wildcard. At Vibe posture, omission is unrestricted. A present list at either posture is the organization sanction gate and refuses any selected, detected, or marker-derived CLI outside it by name. The materialization capability gate then allows only `claude`, `codex`, `kimi`, `cursor`, and `opencode`; a sanctioned CLI outside that set is refused as not a governed materialization target. Four of them carry their own project root —
+committed `.aih-config.json` targets, else the `claude` default. At Enterprise posture, the active org policy must carry a non-empty `governance.supportedClis` allow-list; omission fails closed with the current registry ids and a paste-all remedy, never a wildcard. At Vibe posture, omission is unrestricted. A present list at either posture is the organization sanction gate and refuses any selected, detected, or marker-derived CLI outside it by name. The materialization capability gate then allows only `claude`, `codex`, `kimi`, `cursor`, `opencode`, and the single `kiro` identity; a sanctioned CLI outside that set is refused as not a governed materialization target. Four of the generic targets carry their own project root —
 `.claude/`, `.codex/`, `.cursor/`, and for Kimi `.kimi-code/`, which is where the framework's own
 Kimi adapter roots a project install. OpenCode materializes only the tool-shared project surfaces
 (`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`), because its only framework adapter is
 home-scoped and no evidenced per-tool `.opencode/` content layout exists; every other component
-refuses by name for that target rather than landing in an invented directory. Several targets in one
+refuses by name for that target rather than landing in an invented directory. Kiro materializes an
+evidence-passed selected `skill:<name>` only as the exact pinned
+`.kiro/skills/<name>/SKILL.md` file, and `baseline:rules` only as top-level pinned
+`.kiro/steering/*.md` files. Those bytes require a separate current, unheld
+`runtime:ecc-kiro` content authorization recorded beside the selected component identity. Agents
+and every other Kiro surface refuse by name; AIH does not invoke ECC's native Kiro installer or
+claim that the host loaded the files. Several targets in one
 run are one materialization into one root with one receipt: destinations two targets share
 (`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`) are written once, a target that refuses a
 component does not stop the targets that own it, and a later `--apply` with a narrower target set
