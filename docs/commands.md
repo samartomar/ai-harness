@@ -671,7 +671,7 @@ verified evidence/approval receipt, then `aih policy evaluate` and `aih policy p
 committed `aih-org-policy.json` into only its generated policy artifacts —
 `.claude/managed-settings.json` and, at enterprise posture, the two system-path examples. An active
 AIH-owned `usage-metering` policy hook may also project to the selected Claude or Codex host through
-the existing host-specific generator. A policy may separately declare `governance.eccHookControls`; for a Claude target, projection merges only receipt-owned `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` values into `.claude/settings.json.env`, preserves every operator sibling, refuses unreceipted collisions or drift, and shares one content-pinned settings snapshot with the hook registrar. ECC not AIH executes and enforces those controls after process spawn, so a disabled hook still incurs one spawn.
+the existing host-specific generator. A policy may separately declare `governance.eccHookControls`; for a Claude target, projection merges only receipt-owned `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` values into `.claude/settings.json.env`, preserves every operator sibling, refuses unreceipted collisions or drift, and shares one content-pinned settings snapshot with the hook registrar. ECC—not AIH—executes and enforces those controls after process spawn, so a disabled hook still incurs one spawn.
 It does not run `aih init`, regenerate the canon, or modify unrelated settings. The managed settings/MCP
 portion is a Claude projection: it writes only when Claude is selected (the default); `--cli cursor`,
 for example, produces no managed-settings projection. When managed-only MCP is active, it records existing AIH ownership provenance in
