@@ -86,6 +86,136 @@ export interface EccVerifiedKiroMaterialization {
   components: EccVerifiedKiroComponent[];
 }
 
+export interface VerifiedKiroMaterializationProof {
+  state: "valid";
+  path: string;
+  kind: "copy-file";
+  contents: Buffer;
+  contentAuthorization: BaselineAuthorization;
+  contentSourcePath: string;
+  componentId: string;
+  selectedAuthorization: BaselineAuthorization;
+  provenance: EccComponentProvenance;
+}
+
+export interface InvalidKiroMaterializationProof {
+  state: "invalid";
+}
+
+interface VerifiedKiroSnapshot extends Omit<VerifiedKiroMaterializationProof, "state"> {
+  byteLength: number;
+  sha256: string;
+}
+
+const VERIFIED_KIRO_FILES = new WeakMap<object, VerifiedKiroSnapshot>();
+
+function cloneAuthorization(value: BaselineAuthorization): BaselineAuthorization {
+  const clone: BaselineAuthorization = {
+    ...value,
+    ...(value.acceptance === undefined
+      ? {}
+      : {
+          acceptance: {
+            ...value.acceptance,
+            acceptedFindingCodes: [...value.acceptance.acceptedFindingCodes],
+          },
+        }),
+  };
+  if (clone.acceptance !== undefined) {
+    Object.freeze(clone.acceptance.acceptedFindingCodes);
+    Object.freeze(clone.acceptance);
+  }
+  return Object.freeze(clone);
+}
+
+function cloneProvenance(value: EccComponentProvenance): EccComponentProvenance {
+  return Object.freeze({ ...value });
+}
+
+function sameProvenance(left: EccComponentProvenance, right: EccComponentProvenance): boolean {
+  return (
+    left.repository === right.repository &&
+    left.commit === right.commit &&
+    left.componentPath === right.componentPath
+  );
+}
+
+function registerVerifiedKiroFile(
+  file: EccVerifiedKiroFile,
+  component: EccVerifiedKiroComponent,
+): void {
+  const contents = Buffer.from(file.contents);
+  VERIFIED_KIRO_FILES.set(
+    file,
+    Object.freeze({
+      path: file.path,
+      kind: file.kind,
+      contents,
+      byteLength: contents.byteLength,
+      sha256: createHash("sha256").update(contents).digest("hex"),
+      contentAuthorization: cloneAuthorization(file.contentAuthorization),
+      contentSourcePath: file.contentSourcePath,
+      componentId: component.id,
+      selectedAuthorization: cloneAuthorization(component.authorization),
+      provenance: cloneProvenance(component.provenance),
+    }),
+  );
+}
+
+function ownDataProperty(value: object, key: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  return descriptor !== undefined && "value" in descriptor ? descriptor.value : undefined;
+}
+
+/**
+ * Runtime capability check for the generic engine boundary. It invokes no file
+ * getters and returns fresh trusted copies from the private snapshot, so the
+ * planner never consumes mutable caller fields after admission.
+ */
+export function verifiedKiroMaterializationProof(
+  file: unknown,
+  component: Pick<EccEffectiveSelectionComponent, "id" | "authorization" | "provenance">,
+): VerifiedKiroMaterializationProof | InvalidKiroMaterializationProof | undefined {
+  if (file === null || typeof file !== "object") return undefined;
+  const snapshot = VERIFIED_KIRO_FILES.get(file);
+  if (snapshot === undefined) return undefined;
+  const path = ownDataProperty(file, "path");
+  const kind = ownDataProperty(file, "kind");
+  const contents = ownDataProperty(file, "contents");
+  const contentAuthorization = ownDataProperty(file, "contentAuthorization");
+  const contentSourcePath = ownDataProperty(file, "contentSourcePath");
+  if (
+    path !== snapshot.path ||
+    kind !== snapshot.kind ||
+    contentSourcePath !== snapshot.contentSourcePath ||
+    !Buffer.isBuffer(contents) ||
+    contents.byteLength !== snapshot.byteLength ||
+    createHash("sha256").update(contents).digest("hex") !== snapshot.sha256 ||
+    contentAuthorization === null ||
+    typeof contentAuthorization !== "object" ||
+    !sameAuthorization(
+      contentAuthorization as BaselineAuthorization,
+      snapshot.contentAuthorization,
+    ) ||
+    component.id !== snapshot.componentId ||
+    !sameAuthorization(component.authorization, snapshot.selectedAuthorization) ||
+    !sameProvenance(component.provenance, snapshot.provenance)
+  ) {
+    return { state: "invalid" };
+  }
+  return {
+    state: "valid",
+    path: snapshot.path,
+    kind: snapshot.kind,
+    contents: Buffer.from(snapshot.contents),
+    contentAuthorization: cloneAuthorization(snapshot.contentAuthorization),
+    contentSourcePath: snapshot.contentSourcePath,
+    componentId: snapshot.componentId,
+    selectedAuthorization: cloneAuthorization(snapshot.selectedAuthorization),
+    provenance: cloneProvenance(snapshot.provenance),
+  };
+}
+
 function byCodeUnit(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -434,6 +564,9 @@ export function resolveVerifiedKiroMaterialization(
   const after = runtimeTree(parsed.sourceRoot, runtime);
   if (after.treeSha256 !== runtimeTreeHash.treeSha256) {
     fail("runtime Kiro tree changed during projection");
+  }
+  for (const component of components) {
+    for (const file of component.files) registerVerifiedKiroFile(file, component);
   }
   return { components };
 }

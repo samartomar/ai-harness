@@ -17,7 +17,7 @@ import {
   type EccMaterializationFilePlan,
   previewEccMaterialization,
 } from "./materialization.js";
-import { displaySafe } from "./materialization-receipt.js";
+import { displaySafe, ECC_KIRO_RUNTIME_COMPONENT_ID } from "./materialization-receipt.js";
 import {
   type EccSelectionExclusion,
   resolveEccMaterializationSelection,
@@ -285,6 +285,7 @@ function governedMaterializationPlan(
     sourceRoot,
     targets,
     components: selection.included,
+    evidence: { authorizations: [...authorizations], held: [...held] },
   });
   // Total refusal is ambiguity, and the engine cannot see it: an empty request
   // is byte-identical to "every component was deselected", on which `apply`
@@ -347,12 +348,20 @@ export async function executeGovernedEccMaterialization(
       cleanupQuarantine(input.source);
     }
   }
+  const evidenceComponentIds = [...input.componentIds];
+  if (
+    input.targets.includes("kiro") &&
+    input.componentIds.some((id) => id === "baseline:rules" || id.startsWith("skill:")) &&
+    !evidenceComponentIds.includes(ECC_KIRO_RUNTIME_COMPONENT_ID)
+  ) {
+    evidenceComponentIds.push(ECC_KIRO_RUNTIME_COMPONENT_ID);
+  }
   return executeBaselineEvidencePipeline(
     ctx,
     {
       catalog: input.catalog,
       source: input.source,
-      componentIds: [...input.componentIds],
+      componentIds: evidenceComponentIds,
       // A governed selection is expected to carry components the vet blocked or
       // never recorded. Each is reported with its reason by the resolver; one of
       // them must not take the whole install down with it.

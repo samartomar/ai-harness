@@ -11,7 +11,11 @@ import {
   MAX_MATERIALIZED_FILE_BYTES,
   MAX_MATERIALIZED_FILES_PER_COMPONENT,
 } from "./materialization-receipt.js";
-import type { EccEffectiveSelectionComponent } from "./materialization-selection.js";
+import type {
+  EccEffectiveSelectionComponent,
+  EccSelectionEvidence,
+} from "./materialization-selection.js";
+import { resolveVerifiedKiroMaterialization } from "./materialization-target-kiro.js";
 import type {
   EccMaterializationComponentInput,
   EccMaterializationFileInput,
@@ -63,8 +67,8 @@ import { eccComponentSourcePaths, eccContentDestinationMapping } from "./materia
  */
 
 /**
- * The five targets the governed materialization lifecycle is ruled for.
- * Everything else — zed, gemini, kiro, antigravity, copilot, windsurf — waits,
+ * The six targets the governed materialization lifecycle is ruled for.
+ * Everything else — zed, gemini, antigravity, copilot, windsurf — waits,
  * and says so by name rather than by silently doing nothing.
  */
 export const GOVERNED_MATERIALIZATION_TARGETS = [
@@ -73,6 +77,7 @@ export const GOVERNED_MATERIALIZATION_TARGETS = [
   "kimi",
   "cursor",
   "opencode",
+  "kiro",
 ] as const;
 
 export type EccMaterializationTarget = (typeof GOVERNED_MATERIALIZATION_TARGETS)[number];
@@ -83,9 +88,9 @@ export type EccMaterializationTarget = (typeof GOVERNED_MATERIALIZATION_TARGETS)
  * discipline the lifecycle's other refusals follow. Adding a target to this
  * list is what ships its row.
  *
- * All five are wired: this list now EQUALS the governed list, which is the
+ * All six are wired: this list now EQUALS the governed list, which is the
  * completion of F4. `tests/ecc/materialization-target.test.ts` pins that
- * equality, so a sixth governed target cannot be added without deciding what
+ * equality, so a seventh governed target cannot be added without deciding what
  * the unwired branch below should say about it.
  */
 export const WIRED_MATERIALIZATION_TARGETS: readonly EccMaterializationTarget[] = [
@@ -94,6 +99,7 @@ export const WIRED_MATERIALIZATION_TARGETS: readonly EccMaterializationTarget[] 
   "kimi",
   "cursor",
   "opencode",
+  "kiro",
 ];
 
 /**
@@ -107,6 +113,7 @@ const TARGET_NAME: Readonly<Record<EccMaterializationTarget, string>> = {
   kimi: "Kimi",
   cursor: "Cursor",
   opencode: "OpenCode",
+  kiro: "Kiro",
 };
 
 /** The name this lifecycle calls a target by, in reports and refusals. */
@@ -133,7 +140,7 @@ function wiredTargetRemedy(): string {
 /**
  * Narrow a requested CLI list to governed materialization targets, or refuse by
  * name. Two distinct refusals, because they mean different things to whoever
- * reads them: a CLI outside the ruled five is not a materialization target at
+ * reads them: a CLI outside the ruled six is not a materialization target at
  * all, while a ruled one that has not landed yet is a row still to come. Both
  * name what IS wired and how to ask for it, so neither reads as "AIH does
  * nothing here" or as a dead end.
@@ -177,7 +184,8 @@ export type EccTargetRefusalReason =
   | "unowned-destination"
   | "missing-source"
   | "unreadable-source"
-  | "duplicate-destination";
+  | "duplicate-destination"
+  | "unsupported-component";
 
 export interface EccTargetRefusal {
   id: string;
@@ -197,6 +205,8 @@ export interface EccTargetMaterializationRequest {
   targets: readonly EccMaterializationTarget[];
   /** The F2 resolver's evidence-passed components, carried through unchanged. */
   components: readonly EccEffectiveSelectionComponent[];
+  /** Full current verification result, required only by the governed Kiro target. */
+  evidence?: EccSelectionEvidence;
 }
 
 export interface EccTargetMaterializationResult {
@@ -415,9 +425,29 @@ export function resolveEccTargetMaterialization(
   const sourceRoot = assertComponentSourceRoot(request.sourceRoot);
   const components: EccMaterializationComponentInput[] = [];
   const refused: EccTargetedRefusal[] = [];
+  const kiroRequested = request.targets.includes("kiro");
+  const genericTargets = request.targets.filter((target) => target !== "kiro");
+  const kiroSupported = request.components.filter(
+    (component) => component.id === "baseline:rules" || component.id.startsWith("skill:"),
+  );
+
+  if (kiroRequested && kiroSupported.length > 0) {
+    const runtimeAuthorizations =
+      request.evidence?.authorizations.filter(
+        (authorization) => authorization.componentId === "runtime:ecc-kiro",
+      ) ?? [];
+    const runtimeHeld =
+      request.evidence?.held.filter((held) => held.componentId === "runtime:ecc-kiro") ?? [];
+    if (runtimeAuthorizations.length !== 1 || runtimeHeld.length > 0) {
+      throw new AihError(
+        "governed Kiro materialization requires exactly one current unheld runtime:ecc-kiro authorization",
+        "AIH_TRUST",
+      );
+    }
+  }
   for (const component of request.components) {
     const union = new Map<string, EccMaterializationFileInput>();
-    for (const target of request.targets) {
+    for (const target of genericTargets) {
       try {
         for (const file of componentFiles(sourceRoot, component.id, target)) {
           const identity = destinationIdentity(file.path);
@@ -429,6 +459,39 @@ export function resolveEccTargetMaterialization(
       }
     }
     if (union.size > 0) components.push({ ...component, files: [...union.values()] });
+  }
+
+  if (kiroRequested) {
+    for (const component of request.components) {
+      if (kiroSupported.includes(component)) continue;
+      refused.push({
+        target: "kiro",
+        id: component.id,
+        reason: "unsupported-component",
+        detail:
+          "the Kiro target does not govern " +
+          displaySafe(component.id) +
+          "; only selected skills and baseline:rules steering are supported",
+      });
+    }
+    const kiro = resolveVerifiedKiroMaterialization({
+      sourceRoot,
+      components: kiroSupported,
+      evidence: request.evidence ?? { authorizations: [], held: [] },
+    });
+    const byId = new Map(components.map((component) => [component.id, component]));
+    for (const component of kiro.components) {
+      const existing = byId.get(component.id);
+      if (existing === undefined) {
+        components.push(component);
+        byId.set(component.id, component);
+        continue;
+      }
+      const index = components.indexOf(existing);
+      const combined = { ...existing, files: [...existing.files, ...component.files] };
+      components[index] = combined;
+      byId.set(component.id, combined);
+    }
   }
   return { components, refused };
 }

@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
 import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
 import type { EccComponentId } from "../../src/ecc/components.js";
 import { walkManagedRoot } from "../../src/ecc/install-manifest.js";
@@ -71,6 +72,9 @@ const SOURCE_TREE: Readonly<Record<string, string | Buffer>> = {
   ".mcp.json": '{"mcpServers":{}}\n',
   "mcp-configs/mcp-servers.json": '{"servers":{}}\n',
   "hooks/hooks.json": '{"hooks":{}}\n',
+  ".kiro/skills/tdd-workflow/SKILL.md": "# Kiro tdd-workflow\n",
+  ".kiro/steering/security.md": "# Kiro security\n",
+  ".kiro/steering/testing.md": "# Kiro testing\n",
 };
 
 function writeSource(root: string, tree: Readonly<Record<string, string | Buffer>>): void {
@@ -892,6 +896,70 @@ describe("two of one target's own sources may not claim one destination", () => 
   );
 });
 
+describe("the governed Kiro target uses only verified curated Kiro surfaces", () => {
+  it("projects selected skills and steering while naming unsupported agents", () => {
+    const verified = (id: string, path: string): EccEffectiveSelectionComponent => ({
+      id: id as EccComponentId,
+      authorization: {
+        ...authorization(id),
+        treeSha256: hashComponentTree(sourceRoot, eccComponentSourcePaths(id as EccComponentId))
+          .treeSha256,
+      },
+      provenance: { repository: REPOSITORY, commit: COMMIT, componentPath: path },
+    });
+    const skill = verified("skill:tdd-workflow", "skills/tdd-workflow");
+    const rules = verified("baseline:rules", "rules");
+    const agent = verified("agent:code-reviewer", "agents/code-reviewer.md");
+    const runtime = {
+      ...authorization("runtime:ecc-kiro"),
+      treeSha256: hashComponentTree(sourceRoot, [".kiro"]).treeSha256,
+    };
+
+    const result = resolveEccTargetMaterialization({
+      sourceRoot,
+      targets: ["kiro" as EccMaterializationTarget],
+      components: [skill, rules, agent],
+      evidence: {
+        authorizations: [skill.authorization, rules.authorization, agent.authorization, runtime],
+        held: [],
+      },
+    } as Parameters<typeof resolveEccTargetMaterialization>[0] & {
+      evidence: { authorizations: BaselineAuthorization[]; held: [] };
+    });
+
+    expect(destinations(result, "skill:tdd-workflow")).toEqual([
+      ".kiro/skills/tdd-workflow/SKILL.md",
+    ]);
+    expect(destinations(result, "baseline:rules")).toEqual([
+      ".kiro/steering/security.md",
+      ".kiro/steering/testing.md",
+    ]);
+    expect(
+      Buffer.from(
+        result.components.find((component) => component.id === "skill:tdd-workflow")?.files[0]
+          ?.contents ?? "",
+      ).toString("utf8"),
+    ).toBe("# Kiro tdd-workflow\n");
+    expect(refusalFor(result, "agent:code-reviewer", "kiro")).toMatchObject({
+      reason: "unsupported-component",
+    });
+  });
+  it("names an agent-only Kiro refusal without demanding runtime evidence", () => {
+    const agent = selected("agent:code-reviewer", "agents/code-reviewer.md");
+
+    const result = resolveEccTargetMaterialization({
+      sourceRoot,
+      targets: ["kiro" as EccMaterializationTarget],
+      components: [agent],
+    });
+
+    expect(result.components).toEqual([]);
+    expect(refusalFor(result, agent.id, "kiro")).toMatchObject({
+      reason: "unsupported-component",
+    });
+  });
+});
+
 describe("which CLIs are governed materialization targets", () => {
   it("accepts the wired targets and collapses a repeated one", () => {
     expect(assertGovernedMaterializationTargets(["claude"])).toEqual(["claude"]);
@@ -900,9 +968,17 @@ describe("which CLIs are governed materialization targets", () => {
     expect(assertGovernedMaterializationTargets(["kimi"])).toEqual(["kimi"]);
     expect(assertGovernedMaterializationTargets(["cursor"])).toEqual(["cursor"]);
     expect(assertGovernedMaterializationTargets(["opencode"])).toEqual(["opencode"]);
+    expect(assertGovernedMaterializationTargets(["kiro"])).toEqual(["kiro"]);
     expect(
-      assertGovernedMaterializationTargets(["claude", "codex", "kimi", "cursor", "opencode"]),
-    ).toEqual(["claude", "codex", "kimi", "cursor", "opencode"]);
+      assertGovernedMaterializationTargets([
+        "claude",
+        "codex",
+        "kimi",
+        "cursor",
+        "opencode",
+        "kiro",
+      ]),
+    ).toEqual(["claude", "codex", "kimi", "cursor", "opencode", "kiro"]);
   });
 
   /**
@@ -921,11 +997,17 @@ describe("which CLIs are governed materialization targets", () => {
    * No test exercises the guarded branch. It cannot be reached without mutating
    * the lists, and a pin that cannot fail is worse than no pin.
    */
-  it("has every governed target wired — the ruled five are complete", () => {
+  it("has every governed target wired — the ruled six are complete", () => {
     expect([...WIRED_MATERIALIZATION_TARGETS]).toEqual([...GOVERNED_MATERIALIZATION_TARGETS]);
   });
 
-  it("refuses a CLI outside the governed five, by name", () => {
+  it("refuses Kiro variants and every CLI outside the single governed Kiro identity", () => {
+    expect(() => assertGovernedMaterializationTargets(["kiro-ide"])).toThrowError(
+      /kiro-ide is not a governed materialization target/,
+    );
+    expect(() => assertGovernedMaterializationTargets(["kiro-cli"])).toThrowError(
+      /kiro-cli is not a governed materialization target/,
+    );
     expect(() => assertGovernedMaterializationTargets(["zed"])).toThrowError(
       /zed is not a governed materialization target/,
     );
@@ -933,13 +1015,13 @@ describe("which CLIs are governed materialization targets", () => {
     // the operator can read rather than an absence they have to infer.
     const failure = (() => {
       try {
-        assertGovernedMaterializationTargets(["gemini", "kiro"]);
+        assertGovernedMaterializationTargets(["gemini", "kiro-ide"]);
       } catch (error) {
         return (error as Error).message;
       }
       return "";
     })();
-    expect(failure).toContain("gemini, kiro");
+    expect(failure).toContain("gemini, kiro-ide");
     // The refusal names both lists, which now coincide — see the completion pin
     // above. The remedy still has to be reachable from the message, so the
     // wired list is asserted on its own rather than folded into the other.

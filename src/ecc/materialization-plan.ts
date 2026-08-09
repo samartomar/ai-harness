@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
+import type { EccComponentId } from "./components.js";
 import {
   type DestinationExpectation,
   type DestinationRead,
@@ -18,6 +20,7 @@ import {
   displaySafe,
   ECC_MATERIALIZATION_RECEIPT_FORMAT,
   ECC_MATERIALIZATION_RECEIPT_PATH,
+  type EccComponentProvenance,
   type EccMaterializationReceipt,
   type EccMaterializedComponent,
   type EccOwnedFile,
@@ -30,6 +33,7 @@ import {
   readEccMaterializationReceipt,
   serializeEccMaterializationReceipt,
 } from "./materialization-receipt.js";
+import { verifiedKiroMaterializationProof } from "./materialization-target-kiro.js";
 import type {
   EccMaterializationAdvisory,
   EccMaterializationFilePlan,
@@ -70,6 +74,39 @@ function byText(left: string, right: string): number {
 
 function toBytes(value: Buffer | string): Buffer {
   return typeof value === "string" ? Buffer.from(value, "utf8") : Buffer.from(value);
+}
+
+function sameAuthorization(left: BaselineAuthorization, right: BaselineAuthorization): boolean {
+  const leftAcceptance = left.acceptance;
+  const rightAcceptance = right.acceptance;
+  return (
+    left.componentId === right.componentId &&
+    left.source === right.source &&
+    left.pinnedSha === right.pinnedSha &&
+    left.treeSha256 === right.treeSha256 &&
+    left.tier === right.tier &&
+    left.issuer === right.issuer &&
+    left.evidenceSha256 === right.evidenceSha256 &&
+    left.effective === right.effective &&
+    (leftAcceptance === undefined
+      ? rightAcceptance === undefined
+      : rightAcceptance !== undefined &&
+        leftAcceptance.decisionId === rightAcceptance.decisionId &&
+        leftAcceptance.recordSha256 === rightAcceptance.recordSha256 &&
+        leftAcceptance.acceptedFindingCodes.length ===
+          rightAcceptance.acceptedFindingCodes.length &&
+        leftAcceptance.acceptedFindingCodes.every(
+          (code, index) => code === rightAcceptance.acceptedFindingCodes[index],
+        ))
+  );
+}
+
+function sameProvenance(left: EccComponentProvenance, right: EccComponentProvenance): boolean {
+  return (
+    left.repository === right.repository &&
+    left.commit === right.commit &&
+    left.componentPath === right.componentPath
+  );
 }
 
 export function jsonText(value: unknown): string {
@@ -199,23 +236,66 @@ export function resolveRequest(request: EccMaterializationRequest): ResolvedRequ
 
   const components = request.components.map((component) => {
     const componentId = assertMaterializedComponentId(component.id);
+    const authorization = component.authorization;
+    const provenance = component.provenance;
+    const inputFiles = component.files;
     if (seenComponents.has(componentId)) {
       throw new Error(`duplicate ECC materialization component: ${displaySafe(componentId)}`);
     }
     seenComponents.add(componentId);
-    assertComponentSourcePath(component.provenance.componentPath);
     recordBytes += MIN_RECORD_BYTES_PER_COMPONENT;
-    if (
-      component.files.length === 0 ||
-      component.files.length > MAX_MATERIALIZED_FILES_PER_COMPONENT
-    ) {
+    if (inputFiles.length === 0 || inputFiles.length > MAX_MATERIALIZED_FILES_PER_COMPONENT) {
       throw new Error(
         `ECC materialization component file count is outside the lifecycle boundary: ${componentId}`,
       );
     }
+    const proofs = inputFiles.map((file) =>
+      verifiedKiroMaterializationProof(file, {
+        id: componentId as EccComponentId,
+        authorization,
+        provenance,
+      }),
+    );
+    let trustedComponent:
+      | {
+          id: string;
+          authorization: typeof authorization;
+          provenance: typeof provenance;
+        }
+      | undefined;
+    for (const proof of proofs) {
+      if (proof?.state === "invalid") {
+        throw new Error(
+          "ECC Kiro materialization requires an unchanged verified-source Kiro adapter proof",
+        );
+      }
+      if (proof?.state !== "valid") continue;
+      if (trustedComponent === undefined) {
+        trustedComponent = {
+          id: proof.componentId,
+          authorization: proof.selectedAuthorization,
+          provenance: proof.provenance,
+        };
+        continue;
+      }
+      if (
+        proof.componentId !== trustedComponent.id ||
+        !sameAuthorization(proof.selectedAuthorization, trustedComponent.authorization) ||
+        !sameProvenance(proof.provenance, trustedComponent.provenance)
+      ) {
+        throw new Error(
+          "ECC Kiro materialization requires every verified file proof to agree on one selected component identity",
+        );
+      }
+    }
+    if (trustedComponent === undefined) {
+      assertComponentSourcePath(provenance.componentPath);
+    }
     const seenPaths = new Set<string>();
-    const files = component.files.map((file): ResolvedFile => {
-      const path = assertOwnedRelativePath(file.path);
+    const files = inputFiles.map((file, index): ResolvedFile => {
+      const proof = proofs[index];
+      const trusted = proof?.state === "valid" ? proof : undefined;
+      const path = assertOwnedRelativePath(trusted?.path ?? file.path);
       const identity = destinationIdentity(path);
       if (seenPaths.has(identity)) {
         throw new Error(
@@ -223,17 +303,23 @@ export function resolveRequest(request: EccMaterializationRequest): ResolvedRequ
         );
       }
       seenPaths.add(identity);
-      if (identity.startsWith(".kiro/")) {
+      if (identity.startsWith(".kiro/") && trusted === undefined) {
         throw new Error(
-          "ECC Kiro materialization requires the future verified-source Kiro adapter",
+          "ECC Kiro materialization requires the future verified-source Kiro adapter proof",
         );
       }
       assertEccMaterializationEvidenceBinding({
-        id: componentId,
-        authorization: component.authorization,
-        provenance: component.provenance,
+        id: trustedComponent?.id ?? componentId,
+        authorization: trustedComponent?.authorization ?? authorization,
+        provenance: trustedComponent?.provenance ?? provenance,
         path,
-        operation: file.kind,
+        operation: trusted?.kind ?? file.kind,
+        ...(trusted === undefined
+          ? {}
+          : {
+              contentAuthorization: trusted.contentAuthorization,
+              contentSourcePath: trusted.contentSourcePath,
+            }),
       });
       recordBytes += Buffer.byteLength(path, "utf8") + MIN_RECORD_BYTES_PER_FILE;
       if (recordBytes > MAX_MATERIALIZATION_RECEIPT_BYTES) {
@@ -241,22 +327,35 @@ export function resolveRequest(request: EccMaterializationRequest): ResolvedRequ
           "ECC materialization ownership record would exceed the size this engine can read back",
         );
       }
-      const bytes = toBytes(file.contents);
+      const bytes = trusted === undefined ? toBytes(file.contents) : Buffer.from(trusted.contents);
       total += bytes.byteLength;
       if (bytes.byteLength > MAX_MATERIALIZED_FILE_BYTES || total > MAX_TOTAL_BYTES) {
         throw new Error(
           `ECC materialization bytes exceed the lifecycle boundary: ${displaySafe(path)}`,
         );
       }
-      if (file.kind === "copy-file") {
+      if ((trusted?.kind ?? file.kind) === "copy-file") {
         const owner = wholeFileOwners.get(identity);
         if (owner !== undefined) {
           throw new Error(
-            `ECC materialization destination is claimed by two components: ${path} (${owner}, ${component.id})`,
+            `ECC materialization destination is claimed by two components: ${path} (${owner}, ${componentId})`,
           );
         }
-        wholeFileOwners.set(identity, component.id);
-        return { path, operation: "copy-file", bytes, contentSha256: ownedFileSha256(bytes) };
+        wholeFileOwners.set(identity, componentId);
+        return {
+          path,
+          operation: "copy-file",
+          bytes,
+          contentSha256: ownedFileSha256(bytes),
+          ...(trusted === undefined
+            ? {}
+            : {
+                kiroEvidence: {
+                  contentAuthorization: trusted.contentAuthorization,
+                  contentSourcePath: trusted.contentSourcePath,
+                },
+              }),
+        };
       }
       const fragment = parseJsonObject(bytes.toString("utf8"));
       if (fragment === undefined) {
@@ -270,16 +369,16 @@ export function resolveRequest(request: EccMaterializationRequest): ResolvedRequ
           `ECC materialization merge-json content owns no keys: ${displaySafe(path)}`,
         );
       }
-      mergeOwners.set(identity, component.id);
+      mergeOwners.set(identity, componentId);
       for (const key of ownedKeys) {
         const keyIdentity = `${identity}/${key}`;
         const owner = jsonKeyOwners.get(keyIdentity);
         if (owner !== undefined) {
           throw new Error(
-            `ECC materialization JSON key is claimed by two components: ${key} in ${path} (${owner}, ${component.id})`,
+            `ECC materialization JSON key is claimed by two components: ${key} in ${path} (${owner}, ${componentId})`,
           );
         }
-        jsonKeyOwners.set(keyIdentity, component.id);
+        jsonKeyOwners.set(keyIdentity, componentId);
       }
       return {
         path,
@@ -290,9 +389,9 @@ export function resolveRequest(request: EccMaterializationRequest): ResolvedRequ
       };
     });
     return {
-      id: component.id,
-      authorization: component.authorization,
-      provenance: component.provenance,
+      id: trustedComponent?.id ?? componentId,
+      authorization: trustedComponent?.authorization ?? authorization,
+      provenance: trustedComponent?.provenance ?? provenance,
       files: files.sort((left, right) => byText(left.path, right.path)),
     };
   });
@@ -562,6 +661,12 @@ function planMaterialize(
           path: file.path,
           operation: "copy-file",
           contentSha256: file.contentSha256,
+          ...(file.kiroEvidence === undefined
+            ? {}
+            : {
+                contentAuthorization: file.kiroEvidence.contentAuthorization,
+                contentSourcePath: file.kiroEvidence.contentSourcePath,
+              }),
         });
         if (liveSha === file.contentSha256) {
           unchanged.push({ ...plan, action: "unchanged" });

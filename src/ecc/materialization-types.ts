@@ -130,7 +130,16 @@ export interface PlannedOperation {
 }
 
 export type ResolvedFile =
-  | { path: string; operation: "copy-file"; bytes: Buffer; contentSha256: string }
+  | {
+      path: string;
+      operation: "copy-file";
+      bytes: Buffer;
+      contentSha256: string;
+      kiroEvidence?: {
+        contentAuthorization: InstalledComponentRegistration["authorization"];
+        contentSourcePath: string;
+      };
+    }
   | {
       path: string;
       operation: "merge-json";
