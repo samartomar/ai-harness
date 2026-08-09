@@ -8,6 +8,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A strict Capability Package Manifest v1 and pure deterministic resolver now
+  model exact Package Graph authority, claim, source-pin, direct-member, and
+  dependency intent without granting approval or installing anything. Relevant
+  authority conflicts, drift, missing references, unsupported member kinds,
+  cycles, and partial projections fail closed; equal inputs produce a frozen,
+  dependency-first resolution. The schema ships with the npm package, while
+  filesystem lifecycle and commands remain future serial slices.
 - Governed ECC materialization now supports the single `kiro` target for
   evidence-passed selected skills and `baseline:rules` steering. AIH copies only
   exact pinned `.kiro/skills/<name>/SKILL.md` and top-level

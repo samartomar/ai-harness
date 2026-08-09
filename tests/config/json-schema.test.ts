@@ -29,6 +29,7 @@ describe("committed JSON Schemas", () => {
       "schemas/aih-org-policy.schema.json",
       "schemas/aih-policy-authority-receipt.schema.json",
       "schemas/aih-package-graph.schema.json",
+      "schemas/aih-capability-package-manifest.schema.json",
     ]);
     expect(schemas[0]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -49,6 +50,12 @@ describe("committed JSON Schemas", () => {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $comment: expect.stringContaining("PackageGraphSchema.parse"),
       title: "aih-package-graph.schema.json",
+      type: "object",
+    });
+    expect(schemas[4]?.schema).toMatchObject({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      $comment: expect.stringContaining("CapabilityPackageManifestSchema.parse"),
+      title: "aih-capability-package-manifest.schema.json",
       type: "object",
     });
   });
@@ -117,6 +124,46 @@ describe("committed JSON Schemas", () => {
     rejectCommittedSchema("schemas/aih-package-graph.schema.json", {
       ...valid,
       packages: [{ ...valid.packages[0], members: ["package:baseline/other"] }],
+    });
+  });
+
+  it("publishes strict Capability Package Manifest v1 editor validation", () => {
+    const valid = {
+      schemaVersion: 1,
+      authorities: [
+        {
+          id: "catalog:public",
+          kind: "catalog",
+          sourceDigest: { algorithm: "sha256", value: "a".repeat(64) },
+          projectionDigest: "b".repeat(64),
+        },
+      ],
+      roots: ["package:baseline/ecc"],
+      packages: [
+        {
+          kind: "package",
+          id: "package:baseline/ecc",
+          authorityId: "catalog:public",
+          claimDigest: "c".repeat(64),
+          sourceDigest: { algorithm: "git-sha1", value: "d".repeat(40) },
+          dependencies: [],
+          members: ["skill:security-review"],
+        },
+      ],
+    };
+
+    validateCommittedSchema("schemas/aih-capability-package-manifest.schema.json", valid);
+    rejectCommittedSchema("schemas/aih-capability-package-manifest.schema.json", {
+      ...valid,
+      packages: [{ ...valid.packages[0], kind: "surface" }],
+    });
+    rejectCommittedSchema("schemas/aih-capability-package-manifest.schema.json", {
+      ...valid,
+      packages: [{ ...valid.packages[0], members: ["hook:pre-commit"] }],
+    });
+    rejectCommittedSchema("schemas/aih-capability-package-manifest.schema.json", {
+      ...valid,
+      authorities: [{ ...valid.authorities[0], id: "receipt:wrong-kind" }],
     });
   });
 
