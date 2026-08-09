@@ -143,6 +143,10 @@ function receiptBytes(value = receipt()): Buffer {
   return Buffer.from(serializeEccMaterializationReceipt(value), "utf8");
 }
 
+function rawReceiptBytes(value: EccMaterializationReceipt): Buffer {
+  return Buffer.from(`${JSON.stringify(value)}\n`, "utf8");
+}
+
 describe("Package Graph baseline authority adapter", () => {
   it("projects every shipped catalog from the exact committed vendor-lock bytes", () => {
     const bytes = vendorBaselineLockBytes();
@@ -357,15 +361,15 @@ describe("Package Graph ECC materialization receipt adapter", () => {
       { state: "unsupported", bytes: receiptBytes(receipt({ id: "skill:missing" })) },
       {
         state: "invalid",
-        bytes: receiptBytes(receipt({ authorization: { componentId: "skill:other" } })),
+        bytes: rawReceiptBytes(receipt({ authorization: { componentId: "skill:other" } })),
       },
       {
         state: "invalid",
-        bytes: receiptBytes(receipt({ provenance: { repository: "other/repo" } })),
+        bytes: rawReceiptBytes(receipt({ provenance: { repository: "other/repo" } })),
       },
       {
         state: "invalid",
-        bytes: receiptBytes(receipt({ provenance: { commit: "2".repeat(40) } })),
+        bytes: rawReceiptBytes(receipt({ provenance: { commit: "2".repeat(40) } })),
       },
       {
         state: "invalid",
@@ -377,7 +381,7 @@ describe("Package Graph ECC materialization receipt adapter", () => {
       },
       {
         state: "invalid",
-        bytes: receiptBytes(receipt({ authorization: { source: "other/repo" } })),
+        bytes: rawReceiptBytes(receipt({ authorization: { source: "other/repo" } })),
       },
     ] as const;
 

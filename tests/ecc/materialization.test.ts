@@ -72,9 +72,21 @@ function authorization(componentId: string): BaselineAuthorization {
   };
 }
 
+function provenanceForTest(): EccMaterializationComponentInput["provenance"] {
+  return {
+    repository: "affaan-m/ECC",
+    commit: "a".repeat(40),
+    componentPath: "skills/tdd-workflow",
+  };
+}
+
 function componentInput(
   id: EccComponentId,
-  files: Array<{ path: string; kind?: "copy-file" | "merge-json"; contents: string }>,
+  files: Array<{
+    path: string;
+    kind?: "copy-file" | "merge-json";
+    contents: string;
+  }>,
 ): EccMaterializationComponentInput {
   return {
     id,
@@ -270,6 +282,92 @@ describe("F1/F5 — AIH-direct per-component materialization", () => {
         ],
       },
     ]);
+  });
+
+  it("refuses to launder curated Kiro bytes through only the selected component authorization", () => {
+    const laundered = componentInput("skill:tdd-workflow", [
+      { path: ".kiro/skills/tdd-workflow/SKILL.md", contents: SKILL_BODY },
+    ]);
+
+    expect(() => applyEccMaterialization(request(laundered))).toThrow(
+      /future verified-source Kiro adapter/i,
+    );
+    expect(tree()).toEqual([]);
+  });
+
+  it("refuses generic Kiro writes until the verified-source adapter exists", () => {
+    const paths = [
+      ".kiro/skills/tdd-workflow/SKILL.md",
+      ".kiro/agents/code-reviewer.md",
+      ".kiro/agents/code-reviewer.json",
+      ".kiro/steering/rules.md",
+      ".kiro/settings/mcp.json",
+      ".kiro/hooks/on-save.json",
+      ".kiro/scripts/install.sh",
+    ];
+
+    for (const path of paths) {
+      const component = componentInput("skill:tdd-workflow", [
+        {
+          path,
+          contents: SKILL_BODY,
+        },
+      ]);
+      expect(() => previewEccMaterialization(request(component)), path).toThrow(
+        /future verified-source Kiro adapter/i,
+      );
+      expect(() => applyEccMaterialization(request(component)), path).toThrow(
+        /future verified-source Kiro adapter/i,
+      );
+    }
+    expect(tree()).toEqual([]);
+  });
+
+  it("refuses cross-component Kiro claims before any generic preview or apply", () => {
+    const component = componentInput("skill:tdd-workflow", [
+      {
+        path: ".kiro/skills/other/SKILL.md",
+        contents: SKILL_BODY,
+      },
+    ]);
+
+    expect(() => previewEccMaterialization(request(component))).toThrow(
+      /future verified-source Kiro adapter/i,
+    );
+    expect(tree()).toEqual([]);
+  });
+
+  it("fails closed when selected authorization and component provenance diverge", () => {
+    const cases: Array<[string, EccMaterializationComponentInput]> = [
+      [
+        "selected component",
+        {
+          ...componentInput("skill:tdd-workflow", [{ path: SKILL_PATH, contents: SKILL_BODY }]),
+          authorization: authorization("skill:verification-loop"),
+        },
+      ],
+      [
+        "provenance repository",
+        {
+          ...componentInput("skill:tdd-workflow", [{ path: SKILL_PATH, contents: SKILL_BODY }]),
+          provenance: { ...provenanceForTest(), repository: "other/ECC" },
+        },
+      ],
+      [
+        "provenance pin",
+        {
+          ...componentInput("skill:tdd-workflow", [{ path: SKILL_PATH, contents: SKILL_BODY }]),
+          provenance: { ...provenanceForTest(), commit: "d".repeat(40) },
+        },
+      ],
+    ];
+
+    for (const [label, component] of cases) {
+      expect(() => previewEccMaterialization(request(component)), label).toThrow(
+        /materialization receipt evidence binding/i,
+      );
+    }
+    expect(tree()).toEqual([]);
   });
 
   it("keeps apply atomic: a failed rename leaves no partial content and no ownership claim", () => {

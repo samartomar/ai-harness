@@ -26,6 +26,8 @@ import { AuthorizationSchema } from "./registration.js";
 /** Where the receipt lives, relative to the destination root that holds the owned bytes. */
 export const ECC_MATERIALIZATION_RECEIPT_PATH = ".aih/ecc/materialization-v1.json";
 export const ECC_MATERIALIZATION_RECEIPT_FORMAT = "aih-ecc-materialization-receipt";
+/** Exact curated runtime authorization required for every governed Kiro destination byte. */
+export const ECC_KIRO_RUNTIME_COMPONENT_ID = "runtime:ecc-kiro";
 
 /**
  * AIH's own namespace at the root of a destination. Matched case-insensitively
@@ -223,21 +225,23 @@ const normalizedDestinationPath = z
 
 const ComponentIdSchema = z.string().min(3).max(160).regex(COMPONENT_ID);
 
+const ComponentSourcePathSchema = z
+  .string()
+  .min(1)
+  .max(MAX_PATH_LENGTH)
+  .refine((value) => {
+    try {
+      return assertComponentSourcePath(value) === value;
+    } catch {
+      return false;
+    }
+  }, "component source path is unsafe or not normalized");
+
 const ProvenanceSchema = z
   .object({
     repository: z.string().min(1).max(240).regex(REPOSITORY),
     commit: z.string().regex(SHA40),
-    componentPath: z
-      .string()
-      .min(1)
-      .max(MAX_PATH_LENGTH)
-      .refine((value) => {
-        try {
-          return assertComponentSourcePath(value) === value;
-        } catch {
-          return false;
-        }
-      }, "component source path is unsafe or not normalized"),
+    componentPath: ComponentSourcePathSchema,
   })
   .strict();
 
@@ -256,6 +260,8 @@ const OwnedFileSchema = z.discriminatedUnion("operation", [
       path: normalizedDestinationPath,
       operation: z.literal("copy-file"),
       contentSha256: z.string().regex(SHA256),
+      contentAuthorization: AuthorizationSchema.optional(),
+      contentSourcePath: ComponentSourcePathSchema.optional(),
     })
     .strict(),
   z
@@ -265,9 +271,137 @@ const OwnedFileSchema = z.discriminatedUnion("operation", [
       contentSha256: z.string().regex(SHA256),
       ownedKeys: z.array(OwnedKeySchema).min(1).max(MAX_MATERIALIZED_OWNED_KEYS),
       createdByAih: z.boolean(),
+      contentAuthorization: AuthorizationSchema.optional(),
+      contentSourcePath: ComponentSourcePathSchema.optional(),
     })
     .strict(),
 ]);
+
+type Authorization = z.infer<typeof AuthorizationSchema>;
+type Provenance = z.infer<typeof ProvenanceSchema>;
+
+function sameRepository(left: string, right: string): boolean {
+  return left.toLowerCase() === right.toLowerCase();
+}
+
+function kiroCustodyIssue(binding: {
+  id: string;
+  path: string;
+  operation: EccMaterializationOperation;
+  contentSourcePath?: string;
+}): string | undefined {
+  const { id, path, operation, contentSourcePath } = binding;
+  const foldedPath = destinationIdentity(path);
+  if (!foldedPath.startsWith(".kiro/")) return undefined;
+  if (!path.startsWith(".kiro/") || operation !== "copy-file") {
+    return "unsupported Kiro materialization operation or path";
+  }
+  if (contentSourcePath !== path) {
+    return "unsupported Kiro materialization without exact direct-copy content source";
+  }
+
+  const segments = path.split("/");
+  const separator = id.indexOf(":");
+  const kind = id.slice(0, separator);
+  const name = id.slice(separator + 1);
+  if (kind === "skill") {
+    return segments.length >= 4 && segments[1] === "skills" && segments[2] === name
+      ? undefined
+      : "unsupported Kiro materialization skill custody";
+  }
+  if (kind === "agent") {
+    const file = segments[2];
+    return segments.length === 3 &&
+      segments[1] === "agents" &&
+      (file === `${name}.md` || file === `${name}.json`)
+      ? undefined
+      : "unsupported Kiro materialization agent custody";
+  }
+  if (id === "baseline:rules") {
+    const file = segments[2] ?? "";
+    return segments.length === 3 &&
+      segments[1] === "steering" &&
+      file.length > 3 &&
+      file.endsWith(".md")
+      ? undefined
+      : "unsupported Kiro materialization steering custody";
+  }
+  return "unsupported Kiro materialization selected component";
+}
+
+function materializationEvidenceBindingIssue(binding: {
+  id: string;
+  authorization: Authorization;
+  provenance: Provenance;
+  path: string;
+  operation: EccMaterializationOperation;
+  contentAuthorization?: Authorization;
+  contentSourcePath?: string;
+}): string | undefined {
+  const {
+    id,
+    authorization,
+    provenance,
+    path,
+    operation,
+    contentAuthorization,
+    contentSourcePath,
+  } = binding;
+  if (authorization.componentId !== id) {
+    return "selected authorization does not identify the selected component";
+  }
+  if (!sameRepository(authorization.source, provenance.repository)) {
+    return "selected authorization repository does not match provenance";
+  }
+  if (authorization.pinnedSha !== provenance.commit) {
+    return "selected authorization pin does not match provenance";
+  }
+
+  const isKiroRuntimePath = destinationIdentity(path).startsWith(".kiro/");
+  if (!isKiroRuntimePath) {
+    return contentAuthorization === undefined && contentSourcePath === undefined
+      ? undefined
+      : "content evidence is only valid for governed Kiro runtime paths";
+  }
+  const custodyIssue = kiroCustodyIssue({
+    id,
+    path,
+    operation,
+    ...(contentSourcePath === undefined ? {} : { contentSourcePath }),
+  });
+  if (custodyIssue !== undefined) return custodyIssue;
+  if (contentAuthorization === undefined) {
+    return `governed Kiro bytes require ${ECC_KIRO_RUNTIME_COMPONENT_ID} content authorization`;
+  }
+  if (contentAuthorization.componentId !== ECC_KIRO_RUNTIME_COMPONENT_ID) {
+    return `governed Kiro bytes require exact ${ECC_KIRO_RUNTIME_COMPONENT_ID} content authorization`;
+  }
+  if (!sameRepository(contentAuthorization.source, provenance.repository)) {
+    return "content authorization repository does not match provenance";
+  }
+  if (contentAuthorization.pinnedSha !== provenance.commit) {
+    return "content authorization pin does not match provenance";
+  }
+  if (!sameRepository(contentAuthorization.source, authorization.source)) {
+    return "selected and content authorization repositories do not match";
+  }
+  if (contentAuthorization.pinnedSha !== authorization.pinnedSha) {
+    return "selected and content authorization pins do not match";
+  }
+  if (contentAuthorization.evidenceSha256 !== authorization.evidenceSha256) {
+    return "selected and content authorization verification evidence does not match";
+  }
+  if (contentAuthorization.tier !== authorization.tier) {
+    return "selected and content authorization tiers do not match";
+  }
+  if (contentAuthorization.issuer !== authorization.issuer) {
+    return "selected and content authorization issuers do not match";
+  }
+  // Trees and acceptance decisions are component-scoped. The selected content
+  // and the Kiro runtime must retain their own tree and acceptance identities;
+  // only their common evidence document and trust issuer are bound here.
+  return undefined;
+}
 
 const ComponentSchema = z
   .object({
@@ -283,7 +417,27 @@ const ComponentSchema = z
       "owned file",
       context,
     );
-    for (const file of component.files) {
+    for (const [index, file] of component.files.entries()) {
+      const evidenceIssue = materializationEvidenceBindingIssue({
+        id: component.id,
+        authorization: component.authorization,
+        provenance: component.provenance,
+        path: file.path,
+        operation: file.operation,
+        ...(file.contentAuthorization === undefined
+          ? {}
+          : { contentAuthorization: file.contentAuthorization }),
+        ...(file.contentSourcePath === undefined
+          ? {}
+          : { contentSourcePath: file.contentSourcePath }),
+      });
+      if (evidenceIssue !== undefined) {
+        context.addIssue({
+          code: "custom",
+          path: ["files", index, "contentAuthorization"],
+          message: evidenceIssue,
+        });
+      }
       if (file.operation !== "merge-json") continue;
       duplicateIssues(file.ownedKeys, "owned JSON key", context);
     }
@@ -309,6 +463,50 @@ export type EccOwnedFile = z.infer<typeof OwnedFileSchema>;
 export type EccComponentProvenance = z.infer<typeof ProvenanceSchema>;
 export type EccMaterializedComponent = z.infer<typeof ComponentSchema>;
 export type EccMaterializationReceipt = z.infer<typeof ReceiptSchema>;
+
+/**
+ * Validate the policy/content evidence split before planning can read or write
+ * destination bytes. Error text is intentionally value-free.
+ */
+export function assertEccMaterializationEvidenceBinding(binding: {
+  id: string;
+  authorization: unknown;
+  provenance: unknown;
+  path: string;
+  operation: unknown;
+  contentAuthorization?: unknown;
+  contentSourcePath?: unknown;
+}): void {
+  try {
+    const id = ComponentIdSchema.parse(binding.id);
+    const authorization = AuthorizationSchema.parse(binding.authorization);
+    const provenance = ProvenanceSchema.parse(binding.provenance);
+    const path = normalizedDestinationPath.parse(binding.path);
+    const operation = z.enum(["copy-file", "merge-json"]).parse(binding.operation);
+    const contentAuthorization =
+      binding.contentAuthorization === undefined
+        ? undefined
+        : AuthorizationSchema.parse(binding.contentAuthorization);
+    const contentSourcePath =
+      binding.contentSourcePath === undefined
+        ? undefined
+        : ComponentSourcePathSchema.parse(binding.contentSourcePath);
+    const issue = materializationEvidenceBindingIssue({
+      id,
+      authorization,
+      provenance,
+      path,
+      operation,
+      ...(contentAuthorization === undefined ? {} : { contentAuthorization }),
+      ...(contentSourcePath === undefined ? {} : { contentSourcePath }),
+    });
+    if (issue !== undefined) throw new Error(issue);
+  } catch (error) {
+    throw new Error(
+      `invalid ECC materialization receipt evidence binding: ${(error as Error).message}`,
+    );
+  }
+}
 
 export type EccMaterializationReceiptRead =
   | { state: "absent" }
