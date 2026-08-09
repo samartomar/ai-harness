@@ -1,6 +1,6 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ALL_COMMAND_SPEC_PATHS, ALL_COMMAND_SPECS } from "../../src/commands/index.js";
 import { eccMcpAddCommand, eccMcpRemoveCommand } from "../../src/ecc/index.js";
@@ -16,7 +16,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function fixture(): string {
+function fixture(supportedClis: string[] = ["claude"]): string {
   const root = mkdtempSync(join(tmpdir(), "aih-explicit-mcp-command-"));
   roots.push(root);
   writeFileSync(join(root, ".mcp.json"), '{"mcpServers":{}}\n');
@@ -28,7 +28,7 @@ function fixture(): string {
       references: { repoContract: "ai-coding/project.json" },
       governance: {
         policyVersion: "2026.08",
-        supportedClis: ["claude"],
+        supportedClis,
         catalog: { reviewed: [], custom: [] },
         activations: [],
         authority: { approvals: [] },
@@ -48,7 +48,12 @@ function fixture(): string {
   return root;
 }
 
-function context(root: string, apply: boolean, options: Record<string, unknown>): PlanContext {
+function context(
+  root: string,
+  apply: boolean,
+  options: Record<string, unknown>,
+  env: NodeJS.ProcessEnv = {},
+): PlanContext {
   const run = fakeRunner(() => undefined);
   return {
     root,
@@ -57,8 +62,8 @@ function context(root: string, apply: boolean, options: Record<string, unknown>)
     verify: false,
     json: false,
     run,
-    host: makeHostAdapter({ platform: "linux", run, env: {} }),
-    env: {},
+    host: makeHostAdapter({ platform: "linux", run, env }),
+    env,
     posture: "vibe",
     options,
   };
@@ -98,5 +103,40 @@ describe("ecc mcp add/remove command specs", () => {
     await expect(
       eccMcpAddCommand.plan(context(root, false, { id: "memxus", cli: "claude,cursor" })),
     ).rejects.toThrow(/exactly one explicit --cli target/i);
+  });
+
+  it("uses the explicit temporary HOME for Gemini config without touching project MCP settings", async () => {
+    const root = fixture(["gemini"]);
+    const home = mkdtempSync(join(tmpdir(), "aih-explicit-mcp-command-home-"));
+    roots.push(home);
+    const env = { HOME: home, USERPROFILE: home };
+    const settings = join(home, ".gemini", "settings.json");
+    mkdirSync(dirname(settings), { recursive: true });
+    writeFileSync(
+      settings,
+      JSON.stringify({
+        unrelated: true,
+        mcpServers: { operator: { url: "https://operator.example" } },
+      }),
+    );
+
+    const add = await eccMcpAddCommand.plan(
+      context(root, true, { id: "memxus", cli: "gemini" }, env),
+    );
+    await executePlan(add, context(root, true, { id: "memxus", cli: "gemini" }, env));
+    const afterAdd = JSON.parse(readFileSync(settings, "utf8"));
+    expect(afterAdd.unrelated).toBe(true);
+    expect(afterAdd.mcpServers.operator).toEqual({ url: "https://operator.example" });
+    expect(afterAdd.mcpServers.memxus).toBeDefined();
+    expect(readFileSync(join(root, ".mcp.json"), "utf8")).toBe('{"mcpServers":{}}\n');
+
+    const remove = await eccMcpRemoveCommand.plan(
+      context(root, true, { id: "memxus", cli: "gemini" }, env),
+    );
+    await executePlan(remove, context(root, true, { id: "memxus", cli: "gemini" }, env));
+    const afterRemove = JSON.parse(readFileSync(settings, "utf8"));
+    expect(afterRemove.unrelated).toBe(true);
+    expect(afterRemove.mcpServers.operator).toEqual({ url: "https://operator.example" });
+    expect(afterRemove.mcpServers.memxus).toBeUndefined();
   });
 });

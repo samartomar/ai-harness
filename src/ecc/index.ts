@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { SettingsError } from "../errors.js";
-import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
+import { detectFallbackNotice, homeDir, resolveTargets } from "../internals/cli-detect.js";
 import { type Cli, resolveClis } from "../internals/clis.js";
 import { HERMETIC_GIT_ENV_SCRIPT_LINE } from "../internals/git-env.js";
 import {
@@ -929,6 +929,7 @@ async function eccMcpAddPlan(ctx: PlanContext): Promise<Plan> {
   }
   return planExplicitEccMcpAdd({
     root: ctx.root,
+    home: homeDir(ctx),
     policy,
     id: explicitEccMcpId(ctx),
     target,
@@ -938,6 +939,7 @@ async function eccMcpAddPlan(ctx: PlanContext): Promise<Plan> {
 async function eccMcpRemovePlan(ctx: PlanContext): Promise<Plan> {
   return planExplicitEccMcpRemove({
     root: ctx.root,
+    home: homeDir(ctx),
     id: explicitEccMcpId(ctx),
     target: await explicitEccMcpTarget(ctx),
   });
@@ -945,14 +947,14 @@ async function eccMcpRemovePlan(ctx: PlanContext): Promise<Plan> {
 
 export const eccMcpAddCommand: CommandSpec = {
   name: "add",
-  summary: "Add one policy-approved ECC HTTPS MCP to one project-local CLI configuration",
+  summary: "Add one policy-approved ECC HTTPS MCP to one selected CLI configuration",
   positional: { name: "id", required: true, optionName: "id", description: "ECC MCP id" },
   plan: eccMcpAddPlan,
 };
 
 export const eccMcpRemoveCommand: CommandSpec = {
   name: "remove",
-  summary: "Remove one receipt-owned ECC HTTPS MCP from one project-local CLI configuration",
+  summary: "Remove one receipt-owned ECC HTTPS MCP from one selected CLI configuration",
   positional: { name: "id", required: true, optionName: "id", description: "ECC MCP id" },
   plan: eccMcpRemovePlan,
 };

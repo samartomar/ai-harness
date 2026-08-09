@@ -285,6 +285,66 @@ describe("executePlan", () => {
     }
   });
 
+  it("refuses a trusted external write when its parent is swapped to a symlink after planning", async () => {
+    const home = mkdtempSync(join(tmpdir(), "aih-trusted-home-"));
+    const outside = mkdtempSync(join(tmpdir(), "aih-trusted-outside-"));
+    const configDir = join(home, ".gemini");
+    const target = join(configDir, "settings.json");
+    mkdirSync(configDir, { recursive: true });
+    const planned = plan(
+      "t",
+      writeText(target, "safe", "guarded external write", {
+        external: true,
+        trustedBase: home,
+      }),
+    );
+    try {
+      rmSync(configDir, { recursive: true, force: true });
+      try {
+        symlinkSync(outside, configDir, "dir");
+      } catch {
+        return; // symlink creation not permitted on this host
+      }
+      await expect(executePlan(planned, ctx({ apply: true }))).rejects.toBeInstanceOf(
+        PathContainmentError,
+      );
+      expect(existsSync(join(outside, "settings.json"))).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a trusted external target-file symlink before reading or writing it", async () => {
+    const home = mkdtempSync(join(tmpdir(), "aih-trusted-home-"));
+    const outside = join(home, "outside.txt");
+    const target = join(home, ".gemini", "settings.json");
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(outside, "operator\n");
+    try {
+      try {
+        symlinkSync(outside, target, "file");
+      } catch {
+        return; // symlink creation not permitted on this host
+      }
+      await expect(
+        executePlan(
+          plan(
+            "t",
+            writeText(target, "safe", "guarded external write", {
+              external: true,
+              trustedBase: home,
+            }),
+          ),
+          ctx({ apply: true }),
+        ),
+      ).rejects.toBeInstanceOf(PathContainmentError);
+      expect(readFileSync(outside, "utf8")).toBe("operator\n");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it("merge writes preserve existing user JSON keys", async () => {
     writeFileSync(join(dir, "c.json"), JSON.stringify({ user: 1 }));
     const res = await executePlan(

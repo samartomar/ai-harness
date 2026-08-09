@@ -15,6 +15,7 @@ import {
   explicitEccMcpRenderPlan,
   planExplicitEccMcpAdd,
   planExplicitEccMcpRemove,
+  readExplicitEccMcpReceiptStates,
 } from "../../src/ecc/mcp-explicit-add.js";
 import {
   emptyExplicitAddReceipt,
@@ -206,18 +207,288 @@ describe("project-local explicit ECC MCP lifecycle", () => {
     },
   );
 
-  it("refuses global or TOML targets for Add until shared external-path safety exists", () => {
-    const { root } = fixture();
-    for (const target of ["codex", "antigravity", "gemini", "windsurf", "opencode", "zed"]) {
-      expect(() =>
+  it.each([
+    ["antigravity", ".antigravity/mcp.json", "mcpServers"],
+    ["gemini", ".gemini/settings.json", "mcpServers"],
+    ["windsurf", ".codeium/windsurf/mcp_config.json", "mcpServers"],
+    ["opencode", ".config/opencode/opencode.json", "mcp"],
+    ["zed", ".config/zed/settings.json", "context_servers"],
+  ])(
+    "adds and removes %s under an explicit guarded HOME",
+    async (target, configPath, configKey) => {
+      const { root, home } = fixture();
+      const path = join(home, configPath);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(
+        path,
+        JSON.stringify({ unrelated: true, [configKey]: { operator: { url: "x" } } }),
+      );
+      await executePlan(
         planExplicitEccMcpAdd({
           root,
-          policy: policy("memxus", "approved", REGISTRY_IDS),
+          home,
+          policy: policy("memxus", "approved", [target]),
           id: "memxus",
           target,
         }),
-      ).toThrow(/supported project-local JSON MCP target/);
+        context(root, home, true),
+      );
+      expect(JSON.parse(readFileSync(path, "utf8"))[configKey].memxus).toBeDefined();
+      await executePlan(
+        planExplicitEccMcpRemove({ root, home, id: "memxus", target }),
+        context(root, home, true),
+      );
+      const after = JSON.parse(readFileSync(path, "utf8"));
+      expect(after.unrelated).toBe(true);
+      expect(after[configKey].operator).toEqual({ url: "x" });
+      expect(after[configKey].memxus).toBeUndefined();
+      expect(existsSync(path)).toBe(true);
+    },
+  );
+
+  it("adds and removes only an exact receipt-owned Codex table", async () => {
+    const { root, home } = fixture();
+    const path = join(home, ".codex/config.toml");
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, '[mcp_servers."operator"]\nurl = "https://operator.example"\n');
+    await executePlan(
+      planExplicitEccMcpAdd({
+        root,
+        home,
+        policy: policy("memxus", "approved", ["codex"]),
+        id: "memxus",
+        target: "codex",
+      }),
+      context(root, home, true),
+    );
+    expect(readFileSync(path, "utf8")).toContain('[mcp_servers."memxus"]');
+    await executePlan(
+      planExplicitEccMcpRemove({ root, home, id: "memxus", target: "codex" }),
+      context(root, home, true),
+    );
+    const after = readFileSync(path, "utf8");
+    expect(after).toContain('[mcp_servers."operator"]');
+    expect(after).not.toContain('[mcp_servers."memxus"]');
+    expect(existsSync(path)).toBe(true);
+  });
+
+  it("keeps a selected Codex table exact among direct siblings and nested subtables", async () => {
+    const { root, home } = fixture();
+    const path = join(home, ".codex/config.toml");
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(
+      path,
+      '# operator comment\n[mcp_servers."operator"]\nurl = "https://operator.example"\n\n[other]\nkeep = true\n',
+    );
+    for (const id of ["memxus", "browser-use"] as const) {
+      await executePlan(
+        planExplicitEccMcpAdd({
+          root,
+          home,
+          policy: policy(id, "approved", ["codex"]),
+          id,
+          target: "codex",
+        }),
+        context(root, home, true),
+      );
     }
+    expect(
+      planExplicitEccMcpAdd({
+        root,
+        home,
+        policy: policy("memxus", "approved", ["codex"]),
+        id: "memxus",
+        target: "codex",
+      }).actions,
+    ).toHaveLength(0);
+    const withBoth = readFileSync(path, "utf8");
+    expect(withBoth.indexOf('[mcp_servers."operator"]')).toBeLessThan(
+      withBoth.indexOf('[mcp_servers."memxus"]'),
+    );
+    expect(withBoth.indexOf('[mcp_servers."memxus"]')).toBeLessThan(
+      withBoth.indexOf('[mcp_servers."browser-use"]'),
+    );
+    expect(withBoth).toContain('[mcp_servers."browser-use".env_http_headers]');
+    await executePlan(
+      planExplicitEccMcpRemove({ root, home, id: "memxus", target: "codex" }),
+      context(root, home, true),
+    );
+    const after = readFileSync(path, "utf8");
+    expect(after).toContain("# operator comment");
+    expect(after).toContain('[mcp_servers."operator"]');
+    expect(after).toContain('[mcp_servers."browser-use"]');
+    expect(after).toContain('[mcp_servers."browser-use".env_http_headers]');
+    expect(after).toContain("[other]");
+    expect(after).not.toContain('[mcp_servers."memxus"]');
+  });
+
+  it("refuses orphaned or child-before-direct Codex MCP tables without deleting them", () => {
+    const { root, home } = fixture();
+    const path = join(home, ".codex/config.toml");
+    mkdirSync(dirname(path), { recursive: true });
+    const orphan = '[mcp_servers."memxus".http_headers]\nAuthorization = "operator"\n';
+    writeFileSync(path, orphan);
+    expect(() =>
+      planExplicitEccMcpAdd({
+        root,
+        home,
+        policy: policy("memxus", "approved", ["codex"]),
+        id: "memxus",
+        target: "codex",
+      }),
+    ).toThrow(/operator-owned/);
+    writeFileSync(path, `${orphan}\n[mcp_servers."memxus"]\nurl = "https://operator.example"\n`);
+    expect(() =>
+      planExplicitEccMcpAdd({
+        root,
+        home,
+        policy: policy("memxus", "approved", ["codex"]),
+        id: "memxus",
+        target: "codex",
+      }),
+    ).toThrow(/operator-owned/);
+    expect(
+      planExplicitEccMcpRemove({ root, home, id: "memxus", target: "codex" }).actions.map(
+        (action) => action.kind,
+      ),
+    ).toEqual(["digest"]);
+    expect(readFileSync(path, "utf8")).toContain('Authorization = "operator"');
+  });
+
+  it.each([
+    '[mcp_servers."memxus".http_headers]\nAuthorization = "operator"\n',
+    "[mcp_servers.'memxus'.http_headers]\nAuthorization = \"operator\"\n",
+    '[mcp_servers.memxus.http_headers]\nAuthorization = "operator"\n',
+  ])("treats an orphaned Codex nested table as operator-owned: %s", (orphan) => {
+    const { root, home } = fixture();
+    const path = join(home, ".codex/config.toml");
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, orphan);
+
+    expect(() =>
+      planExplicitEccMcpAdd({
+        root,
+        home,
+        policy: policy("memxus", "approved", ["codex"]),
+        id: "memxus",
+        target: "codex",
+      }),
+    ).toThrow(/operator-owned/);
+    expect(
+      planExplicitEccMcpRemove({ root, home, id: "memxus", target: "codex" }).actions.map(
+        (action) => action.kind,
+      ),
+    ).toEqual(["digest"]);
+    expect(readFileSync(path, "utf8")).toBe(orphan);
+  });
+
+  it.each([
+    '[mcp_servers."memxus".http_headers]\nAuthorization = "operator"\n',
+    '[mcp_servers."memxus"]\nurl = "https://operator.example"\n',
+  ])("refuses a later same-id Codex %s table after the receipt-owned tree", async (laterTable) => {
+    const { root, home } = fixture();
+    const path = join(home, ".codex/config.toml");
+    mkdirSync(dirname(path), { recursive: true });
+    await executePlan(
+      planExplicitEccMcpAdd({
+        root,
+        home,
+        policy: policy("memxus", "approved", ["codex"]),
+        id: "memxus",
+        target: "codex",
+      }),
+      context(root, home, true),
+    );
+    const hostile = `${readFileSync(path, "utf8")}\n[other]\nkeep = true\n\n${laterTable}`;
+    writeFileSync(path, hostile);
+
+    expect(() =>
+      planExplicitEccMcpAdd({
+        root,
+        home,
+        policy: policy("memxus", "approved", ["codex"]),
+        id: "memxus",
+        target: "codex",
+      }),
+    ).toThrow(/Add is refused/);
+    expect(readExplicitEccMcpReceiptStates({ root, home })[0]?.state).not.toBe("clean");
+    expect(
+      planExplicitEccMcpRemove({ root, home, id: "memxus", target: "codex" }).actions.map(
+        (action) => action.kind,
+      ),
+    ).toEqual(["digest"]);
+    expect(readFileSync(path, "utf8")).toBe(hostile);
+  });
+
+  it.each(["gemini", "codex"])(
+    "refuses global %s target and parent symlink swaps at apply",
+    async (target) => {
+      const { root, home } = fixture();
+      const planned = planExplicitEccMcpAdd({
+        root,
+        home,
+        policy: policy("memxus", "approved", [target]),
+        id: "memxus",
+        target,
+      });
+      const configDir = target === "codex" ? join(home, ".codex") : join(home, ".gemini");
+      const outside = mkdtempSync(join(tmpdir(), "aih-explicit-mcp-outside-"));
+      roots.push(outside);
+      mkdirSync(configDir, { recursive: true });
+      const targetPath =
+        target === "codex" ? join(configDir, "config.toml") : join(configDir, "settings.json");
+      try {
+        symlinkSync(join(outside, "target"), targetPath, "file");
+      } catch {
+        return;
+      }
+      await expect(executePlan(planned, context(root, home, true))).rejects.toThrow(/symlink/);
+      rmSync(targetPath);
+      rmSync(configDir, { recursive: true, force: true });
+      try {
+        symlinkSync(outside, configDir, "dir");
+      } catch {
+        return;
+      }
+      await expect(executePlan(planned, context(root, home, true))).rejects.toThrow(/symlink/);
+    },
+  );
+
+  it("reports every explicit receipt state without contacting a server", async () => {
+    const { root, home } = fixture();
+    expect(readExplicitEccMcpReceiptStates({ root, home })[0]?.state).toBe("absent");
+    const config = join(root, ".mcp.json");
+    await executePlan(
+      planExplicitEccMcpAdd({ root, policy: policy(), id: "memxus", target: "claude" }),
+      context(root, home, true),
+    );
+    expect(readExplicitEccMcpReceiptStates({ root, home })[0]?.state).toBe("clean");
+    writeFileSync(config, '{"mcpServers":{"memxus":{"url":"changed"}}}\n');
+    expect(readExplicitEccMcpReceiptStates({ root, home })[0]?.state).toBe("altered");
+    rmSync(config);
+    expect(readExplicitEccMcpReceiptStates({ root, home })[0]?.state).toBe("absent");
+    writeFileSync(join(root, ".aih", "ecc-mcp-explicit-add-v1.json"), "{}\n");
+    expect(readExplicitEccMcpReceiptStates({ root, home })[0]?.state).toBe("malformed");
+    const record = explicitEccMcpReceiptRecord(
+      explicitEccMcpRenderPlan(policy(), "memxus", "claude"),
+    );
+    writeFileSync(
+      join(root, ".aih", "ecc-mcp-explicit-add-v1.json"),
+      JSON.stringify({
+        format: "aih-ecc-mcp-explicit-add",
+        version: 1,
+        records: [
+          { ...record, config: { ...record.config, renderedSha256: `sha256:${"0".repeat(64)}` } },
+        ],
+      }),
+    );
+    expect(readExplicitEccMcpReceiptStates({ root, home })[0]?.state).toBe("revoked");
+    writeFileSync(
+      join(root, ".aih", "ecc-mcp-explicit-add-v1.json"),
+      JSON.stringify({ format: "aih-ecc-mcp-explicit-add", version: 1, records: [record] }),
+    );
+    symlinkSync(join(root, "outside"), config);
+    expect(readExplicitEccMcpReceiptStates({ root, home })[0]?.state).toBe("unsafe-path");
   });
 
   it("pins add against a plan-to-apply config race and writes no receipt", async () => {

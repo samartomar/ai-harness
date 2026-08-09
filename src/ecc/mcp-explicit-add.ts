@@ -13,7 +13,15 @@ import {
   writeJson,
   writeText,
 } from "../internals/plan.js";
-import { isExternalMcp, type McpEntry, mcpEntryFor, mcpTomlBody } from "../mcp/render.js";
+import {
+  existingMcpTomlNames,
+  isExternalMcp,
+  type McpEntry,
+  mcpConfigAbs,
+  mcpEntryFor,
+  mcpTomlBody,
+  removeMcpTomlServers,
+} from "../mcp/render.js";
 import type { HttpServer } from "../mcp/servers.js";
 import { resolveEccMcpApproval } from "../org-policy/ecc-mcp-approval.js";
 import {
@@ -144,12 +152,29 @@ export function explicitEccMcpReceiptRecord(
 export interface ExplicitEccMcpFilesystemOptions {
   /** Explicit target root. Never inferred from the checkout or cwd. */
   root: string;
+  /** Explicit HOME is required only for a global client configuration. */
+  home?: string;
   id: string;
   target: string;
 }
 
 export interface ExplicitEccMcpAddOptions extends ExplicitEccMcpFilesystemOptions {
   policy: unknown;
+}
+
+export type ExplicitEccMcpReceiptState =
+  | "clean"
+  | "absent"
+  | "altered"
+  | "revoked"
+  | "malformed"
+  | "unsafe-path";
+
+export interface ExplicitEccMcpReceiptStateResult {
+  id?: string;
+  target?: string;
+  state: ExplicitEccMcpReceiptState;
+  detail: string;
 }
 
 function sha256(source: string): string {
@@ -219,13 +244,89 @@ function jsonServers(
   return servers;
 }
 
-function localJsonPlan(rendered: ExplicitEccMcpRenderPlan): ExplicitEccMcpRenderPlan {
-  if (rendered.config.format !== "json" || isExternalMcp(rendered.config.path)) {
-    throw new Error(
-      `CLI ${rendered.target} is not a supported project-local JSON MCP target; global and TOML targets are refused`,
-    );
+interface ResolvedConfig {
+  path: string;
+  source: string | undefined;
+  external: boolean;
+  trustedBase?: string;
+}
+
+function resolvedConfig(
+  root: string,
+  home: string | undefined,
+  rendered: ExplicitEccMcpRenderPlan,
+): ResolvedConfig {
+  const external = isExternalMcp(rendered.config.path);
+  if (!external) {
+    return {
+      path: rendered.config.path,
+      source: regularProjectSource(root, rendered.config.path),
+      external,
+    };
   }
-  return rendered;
+  if (home === undefined)
+    throw new Error(`CLI ${rendered.target} needs an explicit HOME for global MCP configuration`);
+  const trustedBase = resolve(home);
+  const absolute = mcpConfigAbs(trustedBase, rendered.config.path);
+  const rel = relative(trustedBase, resolve(absolute));
+  if (rel === "" || rel.startsWith("..") || /^[/\\]/.test(rel)) {
+    throw new Error(`unsafe explicit ECC MCP global config path: ${absolute}`);
+  }
+  return {
+    path: absolute,
+    source: regularProjectSource(trustedBase, rel),
+    external: true,
+    trustedBase,
+  };
+}
+
+function writeOptions(config: ResolvedConfig): { external?: boolean; trustedBase?: string } {
+  return config.external ? { external: true, trustedBase: config.trustedBase } : {};
+}
+
+function tomlServerSection(source: string, name: string): string | undefined {
+  const header =
+    /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|'([^']+)'|([^.\]'"]+))(\.[^\]]+)?\][ \t]*(?:#.*)?$/;
+  const lines = source.replace(/\r\n/g, "\n").split("\n");
+  const parsed = lines.map((line) => {
+    const match = header.exec(line);
+    return match === null
+      ? undefined
+      : { name: match[1] ?? match[2] ?? match[3], nested: match[4] !== undefined };
+  });
+  const start = parsed.findIndex((item) => item?.name === name);
+  if (start < 0 || parsed[start]?.nested) return undefined;
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const item = parsed[index];
+    if (item?.name === name) {
+      if (item.nested) continue;
+      return undefined;
+    }
+    if (item !== undefined || /^[ \t]*\[/.test(lines[index] ?? "")) {
+      end = index;
+      break;
+    }
+  }
+  if (parsed.slice(end).some((item) => item?.name === name)) return undefined;
+  return lines.slice(start, end).join("\n").trim();
+}
+
+function hasTomlServerTree(source: string, name: string): boolean {
+  const tree =
+    /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|'([^']+)'|([^.\]'"]+))(?:\.[^\]]+)?\][ \t]*(?:#.*)?$/;
+  return source
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .some((line) => {
+      const match = tree.exec(line);
+      return (match?.[1] ?? match?.[2] ?? match?.[3]) === name;
+    });
+}
+
+function appendToml(source: string | undefined, body: string): string {
+  const prefix = source?.trimEnd() ?? "";
+  return prefix.length === 0 ? body : `${prefix}\n\n${body}`;
 }
 
 function receiptSource(root: string): string | undefined {
@@ -269,47 +370,175 @@ function removalReport(detail: string): Plan {
 }
 
 /**
+ * Enumerates local receipt ownership without contacting an endpoint or launching
+ * a client. Doctor consumes this instead of re-parsing client-specific JSON/TOML.
+ */
+export function readExplicitEccMcpReceiptStates(options: {
+  root: string;
+  home?: string;
+}): ExplicitEccMcpReceiptStateResult[] {
+  let receiptState: { source: string | undefined; receipt: EccMcpExplicitAddReceipt };
+  try {
+    receiptState = parsedReceipt(options.root);
+  } catch (error) {
+    const detail = (error as Error).message;
+    return [{ state: detail.includes("unsafe") ? "unsafe-path" : "malformed", detail }];
+  }
+  if (receiptState.source === undefined)
+    return [{ state: "absent", detail: "explicit ECC MCP receipt is absent" }];
+  return receiptState.receipt.records.map((record) => {
+    let rendered: ExplicitEccMcpRenderPlan;
+    let config: ResolvedConfig;
+    try {
+      rendered = renderPlan(catalogHttpsEntry(record.id), record.target);
+      config = resolvedConfig(options.root, options.home, rendered);
+    } catch (error) {
+      const detail = (error as Error).message;
+      return {
+        id: record.id,
+        target: record.target,
+        state: detail.includes("unsafe") ? "unsafe-path" : "revoked",
+        detail,
+      };
+    }
+    if (!sameRecord(record, rendered)) {
+      return {
+        id: record.id,
+        target: record.target,
+        state: "revoked",
+        detail: "receipt no longer matches the pinned catalog renderer",
+      };
+    }
+    if (config.source === undefined) {
+      return {
+        id: record.id,
+        target: record.target,
+        state: "absent",
+        detail: "client config is absent",
+      };
+    }
+    try {
+      const current =
+        rendered.config.format === "json"
+          ? jsonServers(jsonRoot(config.source, config.path), rendered.config.key, config.path)[
+              rendered.id
+            ]
+          : tomlServerSection(config.source, rendered.id);
+      if (current === undefined) {
+        return {
+          id: record.id,
+          target: record.target,
+          state: "absent",
+          detail: "receipt-owned entry is absent",
+        };
+      }
+      return explicitAddDigest(current) === record.config.renderedSha256
+        ? {
+            id: record.id,
+            target: record.target,
+            state: "clean",
+            detail: "receipt-owned entry is unchanged",
+          }
+        : {
+            id: record.id,
+            target: record.target,
+            state: "altered",
+            detail: "receipt-owned entry drifted",
+          };
+    } catch (error) {
+      const detail = (error as Error).message;
+      return {
+        id: record.id,
+        target: record.target,
+        state: detail.includes("unsafe") ? "unsafe-path" : "malformed",
+        detail,
+      };
+    }
+  });
+}
+
+/**
  * Plan a project-local JSON add. It does not contact an endpoint, scan, launch a
  * client, or apply files; callers pass its actions to the normal plan executor.
  */
 export function planExplicitEccMcpAdd(options: ExplicitEccMcpAddOptions): Plan {
-  const rendered = localJsonPlan(
-    explicitEccMcpRenderPlan(options.policy, options.id, options.target),
-  );
-  const source = regularProjectSource(options.root, rendered.config.path);
-  const config = jsonRoot(source, rendered.config.path);
-  const servers = jsonServers(config, rendered.config.key, rendered.config.path);
+  const rendered = explicitEccMcpRenderPlan(options.policy, options.id, options.target);
+  const config = resolvedConfig(options.root, options.home, rendered);
   const receiptState = parsedReceipt(options.root);
   const record = receiptState.receipt.records.find(
     (candidate) => candidate.id === rendered.id && candidate.target === rendered.target,
   );
-  const existing = servers[rendered.id];
-  if (existing !== undefined) {
-    if (
-      record !== undefined &&
-      sameRecord(record, rendered) &&
-      explicitAddDigest(existing) === rendered.renderedDigest
-    ) {
-      return plan("explicit ECC MCP add");
+  let configAction: WriteAction;
+  if (rendered.config.format === "json") {
+    if (typeof rendered.rendered === "string") throw new Error("JSON renderer returned TOML");
+    const servers = jsonServers(
+      jsonRoot(config.source, config.path),
+      rendered.config.key,
+      config.path,
+    );
+    const existing = servers[rendered.id];
+    if (existing !== undefined) {
+      if (
+        record !== undefined &&
+        sameRecord(record, rendered) &&
+        explicitAddDigest(existing) === rendered.renderedDigest
+      )
+        return plan("explicit ECC MCP add");
+      throw new Error(
+        `explicit ECC MCP ${rendered.id} is operator-owned or drifted; Add is refused`,
+      );
     }
-    throw new Error(`explicit ECC MCP ${rendered.id} is operator-owned or drifted; Add is refused`);
-  }
-  if (record !== undefined) {
-    throw new Error(
-      `explicit ECC MCP ${rendered.id} receipt no longer matches its config; Add is refused`,
+    if (record !== undefined)
+      throw new Error(
+        `explicit ECC MCP ${rendered.id} receipt no longer matches its config; Add is refused`,
+      );
+    configAction = withExpectedSource(
+      writeJson(
+        config.path,
+        { [rendered.config.key]: { [rendered.id]: rendered.rendered } },
+        `add approved ECC MCP ${rendered.id} to ${rendered.target}`,
+        {
+          merge: true,
+          replaceJsonChildKeys: { [rendered.config.key]: [rendered.id] },
+          ...writeOptions(config),
+        },
+      ),
+      config.source,
+    );
+  } else {
+    const body = rendered.rendered as string;
+    const existing = tomlServerSection(config.source ?? "", rendered.id);
+    if (existing !== undefined) {
+      if (
+        record !== undefined &&
+        sameRecord(record, rendered) &&
+        explicitAddDigest(existing) === rendered.renderedDigest
+      )
+        return plan("explicit ECC MCP add");
+      throw new Error(
+        `explicit ECC MCP ${rendered.id} is operator-owned or drifted; Add is refused`,
+      );
+    }
+    if (record !== undefined)
+      throw new Error(
+        `explicit ECC MCP ${rendered.id} receipt no longer matches its config; Add is refused`,
+      );
+    if (hasTomlServerTree(config.source ?? "", rendered.id)) {
+      throw new Error(`explicit ECC MCP ${rendered.id} is operator-owned; Add is refused`);
+    }
+    if (existingMcpTomlNames(config.source ?? "", "__explicit_ecc__").has(rendered.id)) {
+      throw new Error(`explicit ECC MCP ${rendered.id} is operator-owned; Add is refused`);
+    }
+    configAction = withExpectedSource(
+      writeText(
+        config.path,
+        appendToml(config.source, body),
+        `add approved ECC MCP ${rendered.id} to ${rendered.target}`,
+        writeOptions(config),
+      ),
+      config.source,
     );
   }
-  if (typeof rendered.rendered === "string")
-    throw new Error("project-local JSON renderer returned TOML");
-  const configAction = withExpectedSource(
-    writeJson(
-      rendered.config.path,
-      { [rendered.config.key]: { [rendered.id]: rendered.rendered } },
-      `add approved ECC MCP ${rendered.id} to ${rendered.target}`,
-      { merge: true, replaceJsonChildKeys: { [rendered.config.key]: [rendered.id] } },
-    ),
-    source,
-  );
   const nextReceipt = {
     ...receiptState.receipt,
     records: [...receiptState.receipt.records, explicitEccMcpReceiptRecord(rendered)],
@@ -332,26 +561,18 @@ export function planExplicitEccMcpAdd(options: ExplicitEccMcpAddOptions): Plan {
 export function planExplicitEccMcpRemove(options: ExplicitEccMcpFilesystemOptions): Plan {
   let rendered: ExplicitEccMcpRenderPlan;
   let source: string | undefined;
+  let config: ResolvedConfig;
   let receiptState: { source: string | undefined; receipt: EccMcpExplicitAddReceipt };
   try {
-    rendered = localJsonPlan(renderPlan(catalogHttpsEntry(options.id), options.target));
-    source = regularProjectSource(options.root, rendered.config.path);
+    rendered = renderPlan(catalogHttpsEntry(options.id), options.target);
+    config = resolvedConfig(options.root, options.home, rendered);
+    source = config.source;
     receiptState = parsedReceipt(options.root);
   } catch (error) {
     return removalReport((error as Error).message);
   }
   if (source === undefined)
     return removalReport(`configuration is absent: ${rendered.config.path}`);
-  let servers: Record<string, unknown>;
-  try {
-    servers = jsonServers(
-      jsonRoot(source, rendered.config.path),
-      rendered.config.key,
-      rendered.config.path,
-    );
-  } catch (error) {
-    return removalReport((error as Error).message);
-  }
   const record = receiptState.receipt.records.find(
     (candidate) => candidate.id === rendered.id && candidate.target === rendered.target,
   );
@@ -360,21 +581,45 @@ export function planExplicitEccMcpRemove(options: ExplicitEccMcpFilesystemOption
       `no exact receipt-owned ECC MCP record exists for ${rendered.id}/${rendered.target}`,
     );
   }
-  if (
-    servers[rendered.id] === undefined ||
-    explicitAddDigest(servers[rendered.id]) !== record.config.renderedSha256
-  ) {
-    return removalReport(`ECC MCP ${rendered.id}/${rendered.target} drifted or is absent`);
+  let configAction: WriteAction;
+  try {
+    if (rendered.config.format === "json") {
+      const servers = jsonServers(jsonRoot(source, config.path), rendered.config.key, config.path);
+      if (
+        servers[rendered.id] === undefined ||
+        explicitAddDigest(servers[rendered.id]) !== record.config.renderedSha256
+      )
+        return removalReport(`ECC MCP ${rendered.id}/${rendered.target} drifted or is absent`);
+      configAction = withExpectedSource(
+        writeJson(
+          config.path,
+          {},
+          `remove unchanged receipt-owned ECC MCP ${rendered.id} from ${rendered.target}`,
+          {
+            merge: true,
+            removeJsonKeys: { [rendered.config.key]: [rendered.id] },
+            ...writeOptions(config),
+          },
+        ),
+        source,
+      );
+    } else {
+      const existing = tomlServerSection(source, rendered.id);
+      if (existing === undefined || explicitAddDigest(existing) !== record.config.renderedSha256)
+        return removalReport(`ECC MCP ${rendered.id}/${rendered.target} drifted or is absent`);
+      configAction = withExpectedSource(
+        writeText(
+          config.path,
+          removeMcpTomlServers(source, [rendered.id]),
+          `remove unchanged receipt-owned ECC MCP ${rendered.id} from ${rendered.target}`,
+          writeOptions(config),
+        ),
+        source,
+      );
+    }
+  } catch (error) {
+    return removalReport((error as Error).message);
   }
-  const configAction = withExpectedSource(
-    writeJson(
-      rendered.config.path,
-      {},
-      `remove unchanged receipt-owned ECC MCP ${rendered.id} from ${rendered.target}`,
-      { merge: true, removeJsonKeys: { [rendered.config.key]: [rendered.id] } },
-    ),
-    source,
-  );
   const nextReceipt = {
     ...receiptState.receipt,
     records: receiptState.receipt.records.filter((candidate) => candidate !== record),

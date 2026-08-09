@@ -482,6 +482,34 @@ function assertNoSymlinkParents(root: string, absPath: string, displayPath: stri
   }
 }
 
+/**
+ * External writes normally have no containment boundary. A caller that knows a
+ * specific trusted base (for example an explicitly supplied HOME) can opt into
+ * the same no-follow rule the repo executor uses, without changing legacy host
+ * file behavior.
+ */
+function assertTrustedExternalPath(base: string, absPath: string, displayPath: string): void {
+  let baseInfo: ReturnType<typeof lstatSync>;
+  try {
+    baseInfo = lstatSync(base);
+  } catch {
+    throw new PathContainmentError(`trusted external base is missing: ${base}`);
+  }
+  if (!baseInfo.isDirectory() || baseInfo.isSymbolicLink()) {
+    throw new PathContainmentError(`trusted external base is not a real directory: ${base}`);
+  }
+  const rel = relative(base, absPath);
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
+    throw new PathContainmentError(
+      `refusing to write outside trusted external base\n  base:   ${base}\n  target: ${absPath}`,
+    );
+  }
+  assertNoSymlinkParents(base, absPath, displayPath);
+  if (lstatKind(absPath)?.isSymlink) {
+    throw new PathContainmentError(`refusing to write through a symlink: ${displayPath}`);
+  }
+}
+
 /** realpath, or a plain resolve if the path does not exist yet. */
 function realpathSafe(p: string): string {
   try {
@@ -790,6 +818,8 @@ export async function executePlan(
       if (!action.external) {
         assertContained(ctx.root, absPath);
         assertNoSymlinkParents(ctx.root, absPath, action.path);
+      } else if (action.trustedBase !== undefined) {
+        assertTrustedExternalPath(action.trustedBase, absPath, action.path);
       }
       const existing = readIfExists(absPath);
       if (ctx.apply && action.expect !== undefined) {
