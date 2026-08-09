@@ -598,12 +598,23 @@ Those records are external curation guidance only: AIH does not install, project
 catalog is an authoring projection of the same pinned AIH controls and framework catalog data used by the engine; it does
 not scan a repository. The workbench can also author `governance.supportedClis`, the organization-sanctioned CLI
 allow-list. At Enterprise posture it is required and non-empty; omission is refused with the current registry ids and a paste-all remedy, while wildcard sentinels are not supported. At Vibe posture omission is unrestricted, and a present list enforces at either posture. The list is independent of activation targets: sanctioned, materialization-capable, and projector-capable are three separate host sets. Browser import/export preserves policy semantics, including pinned stdio candidates, fenced remote endpoint candidates, annotations,
-signed-approval clarification, and external curation intent. A remote candidate records only an exact HTTPS origin,
-approval-shaped metadata, a pinned tool-surface digest, an `approved`, `drifted`, or `revoked` verdict, and an explicit
-no-content-scan marker; the workbench never contacts or scans that endpoint. The workbench can preflight JSON and preserve an
+signed-approval clarification, and external curation intent. A newly authored
+remote candidate records only an exact HTTPS origin, approval metadata, an
+administrator-managed `approved` or `revoked` status, and an explicit
+no-content-scan marker; the workbench never contacts or scans that endpoint.
+Imported legacy digest/verdict records remain exact and read-only until removed
+and recreated under the administrative-status model. The workbench can preflight JSON and preserve an
 imported authority receipt's subjects in `governance.authority.approvals`, but it does not verify a receipt or make any
 approval effective. Target-repository `evaluate` remains the source of effective state. Both custom-MCP forms remain pending,
 hard-blocked candidates with no activation affordance until supported scanning, evidence, and projection exist.
+
+The headless schema also accepts a declarative remote record with an
+administrator-managed `approved` or `revoked` status and no tool-surface digest.
+It still requires the exact HTTPS origin, approver, authentication mode,
+permitted data classes, and `contentScanned: false`. Previously valid schema-v2
+digest/verdict records remain readable; their `drifted` vocabulary is legacy
+metadata, never evidence that AIH contacted the endpoint or a live blocking
+check.
 
 `init` seeds a starter `aih-org-policy.json` from **observed fleet state**, so authoring the policy
 becomes a review exercise instead of a blank page — and a fresh enterprise setup passes baseline

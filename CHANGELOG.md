@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Org-policy remote MCP records can now use an administrator-managed `approved`
+  or `revoked` status without claiming a tool-surface observation; legacy
+  schema-v2 digest/verdict records remain parse-compatible but never become a
+  live drift check.
 - `aih trust scan` can now vet a policy-bound custom npm package by fetching its exact package/version tarball with scripts disabled, verifying the policy SHA-256 pin, scanning only the quarantined contents, and emitting the named preflight evidence record for independent authority attestation.
 
 ### Changed

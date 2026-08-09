@@ -267,6 +267,68 @@ describe("committed JSON Schemas", () => {
     }
   });
 
+  it("models declarative remote MCP status without requiring a live tool-surface digest", () => {
+    const base = {
+      schemaVersion: 2,
+      minimumPosture: "vibe",
+      references: { repoContract: "ai-coding/project.json" },
+    };
+    const remotePolicy = (source: Record<string, unknown>) => ({
+      ...base,
+      governance: {
+        policyVersion: "2026.08",
+        supportedClis: ["claude"],
+        catalog: {
+          reviewed: [],
+          custom: [
+            {
+              id: "figma-remote",
+              kind: "mcp",
+              description: "Approved hosted design MCP",
+              capabilities: [],
+              risks: ["hosted endpoint"],
+              source: {
+                type: "remote",
+                origin: "https://mcp.figma.com",
+                approval: {
+                  approvedBy: "security-admin",
+                  authenticationMode: "oauth",
+                  allowedDataClasses: ["design-metadata"],
+                },
+                contentScanned: false,
+                ...source,
+              },
+              targets: ["claude"],
+              projector: "mcp-managed-settings",
+              lifecycle: "supported",
+              evidence: { record: "figma-remote-approval" },
+            },
+          ],
+        },
+        activations: [],
+        authority: { approvals: [] },
+      },
+    });
+    const legacy = {
+      toolSurfaceDigest: `sha256:${"a".repeat(64)}`,
+      verdict: "drifted",
+    };
+
+    validateCommittedSchema(
+      "schemas/aih-org-policy.schema.json",
+      remotePolicy({ administrativeStatus: "approved" }),
+    );
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", remotePolicy(legacy));
+    for (const invalid of [
+      {},
+      { toolSurfaceDigest: legacy.toolSurfaceDigest },
+      { verdict: legacy.verdict },
+      { administrativeStatus: "approved", ...legacy },
+    ]) {
+      rejectCommittedSchema("schemas/aih-org-policy.schema.json", remotePolicy(invalid));
+    }
+  });
+
   it("preserves signed approval clarifications and report-only external curation intent", () => {
     const base = {
       schemaVersion: 2,

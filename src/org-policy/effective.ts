@@ -825,6 +825,8 @@ const CANDIDATE_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
     "effective report metadata consumer; remote approval record is fenced until later machinery",
   "source.approval.authenticationMode":
     "effective report metadata consumer; remote approval record is fenced until later machinery",
+  "source.administrativeStatus":
+    "effective report metadata consumer; remote availability remains administrator-managed",
   "source.contentScanned":
     "effective report metadata consumer; remote records explicitly state no content scan",
   "source.origin": "effective resolver: exact remote HTTPS origin identity",
@@ -832,7 +834,7 @@ const CANDIDATE_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
     "effective report metadata consumer; remote tool-surface snapshot is fenced until later machinery",
   "source.type": "effective resolver: source union and identity gate",
   "source.verdict":
-    "effective report metadata consumer; remote verdict vocabulary is fenced until later machinery",
+    "effective report metadata consumer; legacy remote verdict vocabulary is fenced until later machinery",
   "source.version":
     "effective resolver: immutable stdio curation/evidence version identity; no launch projector exists",
   "targets.*": "effective resolver: declared target parity gate",
@@ -882,6 +884,8 @@ const AUTHORITY_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   "approvals.*.source.approval.approvedBy": "authority resolver: exact remote source binding",
   "approvals.*.source.approval.authenticationMode":
     "authority resolver: exact remote source binding",
+  "approvals.*.source.administrativeStatus":
+    "authority resolver: administrator-managed remote availability binding",
   "approvals.*.source.contentScanned": "authority resolver: exact remote source binding",
   "approvals.*.source.origin": "authority resolver: exact remote source binding",
   "approvals.*.source.toolSurfaceDigest": "authority resolver: exact remote source binding",

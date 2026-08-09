@@ -283,7 +283,44 @@ const IsoTimestampSchema = z.string().refine((value) => {
   return Number.isFinite(Date.parse(value));
 }, "must be an ISO-8601 timestamp");
 
-export const CandidateSourceSchema = z.discriminatedUnion("type", [
+const RemoteMcpApprovalSchema = z
+  .object({
+    approvedBy: SafePolicyIdentifierSchema,
+    authenticationMode: SafePolicyTextSchema,
+    allowedDataClasses: z.array(SafePolicyIdentifierSchema).min(1).max(20),
+  })
+  .strict();
+
+const RemoteMcpSourceFields = {
+  type: z.literal("remote"),
+  origin: HttpsOriginSchema,
+  approval: RemoteMcpApprovalSchema,
+  contentScanned: z.literal(false),
+};
+
+const RemoteMcpSourceSchema = z.union([
+  z
+    .object({
+      ...RemoteMcpSourceFields,
+      /**
+       * An administrator-controlled availability record. It makes no claim
+       * that AIH has contacted the endpoint or observed its tool surface.
+       */
+      administrativeStatus: z.enum(["approved", "revoked"]),
+    })
+    .strict(),
+  z
+    .object({
+      ...RemoteMcpSourceFields,
+      /** Legacy snapshot metadata; retained for schema-v2 document compatibility. */
+      toolSurfaceDigest: Sha256Schema,
+      /** Legacy snapshot metadata; `drifted` never becomes an AIH live check. */
+      verdict: z.enum(["approved", "drifted", "revoked"]),
+    })
+    .strict(),
+]);
+
+export const CandidateSourceSchema = z.union([
   z
     .object({
       type: z.literal("git"),
@@ -320,22 +357,7 @@ export const CandidateSourceSchema = z.discriminatedUnion("type", [
       integrity: Sha256Schema,
     })
     .strict(),
-  z
-    .object({
-      type: z.literal("remote"),
-      origin: HttpsOriginSchema,
-      approval: z
-        .object({
-          approvedBy: SafePolicyIdentifierSchema,
-          authenticationMode: SafePolicyTextSchema,
-          allowedDataClasses: z.array(SafePolicyIdentifierSchema).min(1).max(20),
-        })
-        .strict(),
-      toolSurfaceDigest: Sha256Schema,
-      verdict: z.enum(["approved", "drifted", "revoked"]),
-      contentScanned: z.literal(false),
-    })
-    .strict(),
+  RemoteMcpSourceSchema,
   z
     .object({
       type: z.literal("mcp"),
