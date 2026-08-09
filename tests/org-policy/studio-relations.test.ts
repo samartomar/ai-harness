@@ -62,24 +62,30 @@ describe("policy studio component relations", () => {
         expect(present.has(rider), `${asset.id} -> ${rider}`).toBe(true);
   });
 
-  it("states the relation on the row without selecting it silently", () => {
+  it("keeps a rail-owned declaration out of the duplicate main-plane row", () => {
     const window = studio();
     click(window, `[data-framework-select="ecc|${declarer.kind}|${declarer.id}"]`);
     expect(selectedIds(window), "only the item the administrator picked").toEqual([declarer.id]);
-    const row = window.document.querySelector(
-      `[data-row="ecc / ${declarer.kind}: ${declarer.id}"]`,
-    );
-    const text = row?.textContent ?? "";
-    for (const rider of declarer.riders ?? [])
-      expect(text, "row states the rider").toContain(rider);
+    expect(
+      window.document.querySelector(`[data-row="ecc / ${declarer.kind}: ${declarer.id}"]`),
+    ).toBeNull();
   });
 
-  it("adds the declared riders as one explicit action", () => {
+  it("shows rail-owned rider facts through search without exposing mutation", () => {
     const window = studio();
-    click(window, `[data-detail="ecc / ${declarer.kind}: ${declarer.id}"]`);
-    click(window, "[data-add-riders]");
-    const selected = selectedIds(window);
-    for (const rider of declarer.riders ?? []) expect(selected).toContain(rider);
+    click(window, "#seek");
+    const query = window.document.getElementById("spot-q") as unknown as {
+      value: string;
+      dispatchEvent(event: unknown): boolean;
+    } | null;
+    if (query === null) throw new Error("expected search input");
+    query.value = declarer.id;
+    query.dispatchEvent(new window.Event("input", { bubbles: true }));
+    click(window, "#hits .hit");
+    const detail = window.document.getElementById("drawer-detail")?.textContent ?? "";
+    for (const rider of declarer.riders ?? []) expect(detail).toContain(rider);
+    expect(window.document.querySelector("#drawer-detail [data-add-riders]")).toBeNull();
+    expect(window.document.querySelector("#drawer-detail [data-framework-select]")).toBeNull();
   });
 
   // AIH knows eleven CLIs and a policy can target two. Showing only the two

@@ -345,6 +345,8 @@ receipt-owned entries with `aih ecc mcp remove <id> --cli <client> --apply`, and
 receipt/config ownership state. It does not contact the endpoint, scan the remote tool list, or install all
 approved entries.
 
+The portable Policy Workbench keeps ECC language, framework, capability, and module selection in its left rail, with the inspector read-only for those items. Its separate Add MCP sidebar records the exact `governance.eccMcpApprovals` decision; it does not choose a client or configure one. For an entry marked HTTPS-configurable, the seat operator still selects one client explicitly with the command above; manual entries remain approval-only until a supported lifecycle exists.
+
 ### Layered AI canon (`bootstrap-ai`)
 
 The harness models the same two-layer setup used in the reference repos (eicp / ai-os / syntegris):

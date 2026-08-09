@@ -38,13 +38,9 @@ function studio(): Window {
 }
 
 function selectProfile(window: Window, value: string): void {
-  const profile = window.document.getElementById("profile") as unknown as {
-    value: string;
-    dispatchEvent: (event: unknown) => boolean;
-  } | null;
-  if (profile === null) throw new Error("expected profile selector");
-  profile.value = value;
-  profile.dispatchEvent(new window.Event("change", { bubbles: true }));
+  const preset = window.document.querySelector(`[data-preset="${value}"]`);
+  if (preset === null) throw new Error(`expected ${value} preset`);
+  preset.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 }
 
 /** The authored policy exactly as the surface shows it, not internal state. */
@@ -94,7 +90,12 @@ function curatedIds(window: Window): string[] {
 function curateFromFirstRow(window: Window): string {
   // Per-item authoring lives in the drawer, so open a curatable row before
   // reaching for its curation control.
-  const curatable = frameworkAssets.find(({ asset }) => asset.curationKind !== undefined);
+  const curatable = frameworkAssets.find(
+    ({ framework, asset }) =>
+      asset.curationKind !== undefined &&
+      (framework.id !== "ecc" ||
+        !["lang", "framework", "capability", "module"].includes(asset.kind)),
+  );
   if (curatable === undefined) throw new Error("expected a curatable asset in the catalog");
   const key = `${curatable.framework.id} / ${curatable.asset.kind}: ${curatable.asset.id}`;
   window.document

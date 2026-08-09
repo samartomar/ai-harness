@@ -5,6 +5,7 @@ import {
 } from "../../src/org-policy/ecc-mcp-approval.js";
 import { ECC_MCP_CATALOG_PROVENANCE } from "../../src/org-policy/ecc-mcp-catalog.js";
 import { OrgPolicySchema, parseOrgPolicy } from "../../src/org-policy/schema.js";
+import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 
 function policy(approvals: unknown[]): Record<string, unknown> {
   return {
@@ -32,6 +33,11 @@ const approval = {
 };
 
 describe("declarative ECC external MCP approvals", () => {
+  it("exposes the pinned source digest alongside the existing external-MCP inventory", () => {
+    const approvalCatalog = policyStudioModel().catalog.eccMcpApproval;
+    expect(approvalCatalog.sourceContentSha256).toBe(ECC_MCP_CATALOG_PROVENANCE.contentSha256);
+    expect(policyStudioModel().catalog.externalMcp).toHaveLength(31);
+  });
   it("accepts an exact approval record without creating an activation or projector", () => {
     const parsed = parseOrgPolicy(policy([approval]));
     expect(parsed.governance?.eccMcpApprovals).toEqual([approval]);

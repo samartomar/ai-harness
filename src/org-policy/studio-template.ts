@@ -432,7 +432,6 @@ summary{min-height:32px}
     <button type="button" class="seek" id="seek">Find any item&hellip; <kbd>/</kbd></button>
     <span class="sp"></span>
     <span id="status">Ready - no repository is required.</span>
-    <label>Preset <select id="profile"><option value="">Custom</option><option value="vibe">Vibe</option><option value="enterprise">Enterprise</option></select></label>
     <label>Posture <select id="posture"><option value="vibe">Vibe</option><option value="enterprise">Enterprise</option></select></label>
     <span class="pill" role="group" aria-label="Theme">
       <button type="button" data-theme-set="light" aria-pressed="true">Light</button>
@@ -458,14 +457,18 @@ summary{min-height:32px}
         <div class="cap">Preset <span class="end" id="rail-posture">vibe</span></div>
         <div id="presets" style="display:grid;gap:4px"></div>
       </section>
-      <section class="gcard sect"><div class="cap">Languages</div><div class="chips" id="rail-langs"></div></section>
-      <section class="gcard sect"><div class="cap">Frameworks</div><div class="chips" id="rail-frameworks"></div></section>
-      <section class="gcard sect"><div class="cap">Capabilities</div><div class="chips" id="rail-caps"></div></section>
-      <section class="gcard sect"><div class="cap">ECC modules</div><div class="chips" id="rail-modules"></div></section>
+      <section class="gcard sect" data-owner="ECC"><div class="cap">Languages</div><div class="chips" id="rail-langs"></div></section>
+      <section class="gcard sect" data-owner="ECC"><div class="cap">Frameworks</div><div class="chips" id="rail-frameworks"></div></section>
+      <section class="gcard sect" data-owner="ECC"><div class="cap">Capabilities</div><div class="chips" id="rail-caps"></div></section>
+      <section class="gcard sect" data-owner="ECC"><div class="cap">ECC modules</div><div class="chips" id="rail-modules"></div></section>
       <section class="gcard sect">
         <div class="cap">Hosts <span class="end" id="rail-host-count"></span></div>
         <div class="chips" id="rail-hosts"></div>
         <p class="help" id="rail-host-note"></p>
+      </section>
+      <section class="gcard sect">
+        <div class="cap">MCP approvals</div>
+        <button type="button" class="btn sm" id="open-ecc-mcp" style="justify-content:center">Add MCP</button>
       </section>
       <section class="gcard sect">
         <div class="cap">Your sources</div>
@@ -577,6 +580,23 @@ summary{min-height:32px}
       </form>
     </details>
   </div>
+</aside>
+
+<div class="scrim" id="ecc-mcp-scrim"></div>
+<aside class="drawer" id="ecc-mcp-sidebar" hidden aria-label="ECC MCP approval authoring">
+  <div class="dhead"><h2>Add MCP</h2><button type="button" class="x" id="ecc-mcp-close" aria-label="Close Add MCP">&#10005;</button></div>
+  <section id="ecc-mcp-editor" class="dform">
+    <p class="help">Approval records permission for this pinned ECC MCP. Only <code>https-configurable</code> entries can use later explicit Add; manual entries remain approval-only/manual. For an eligible entry, the seat operator explicitly chooses one client with <code>aih ecc mcp add &lt;id&gt; --cli &lt;client&gt;</code>; no policy field chooses it. This panel does not install, contact, scan, attest, or claim reachability or a tool surface.</p>
+    <div class="form-grid">
+      <label>ECC MCP <select id="ecc-mcp-id"></select></label>
+      <label>Administrative status <select id="ecc-mcp-state"><option value="approved">approved</option><option value="revoked">revoked</option></select></label>
+      <label>Approved by <input id="ecc-mcp-approved-by" placeholder="security-admin" required></label>
+      <label>Authentication mode <input id="ecc-mcp-authentication-mode" placeholder="oauth" required></label>
+      <label>Allowed data classes <input id="ecc-mcp-data-classes" placeholder="issue-metadata, design-metadata" required></label>
+    </div>
+    <div class="brow" style="margin-top:8px"><button type="button" class="btn sm primary" id="save-ecc-mcp-approval">Save MCP approval</button></div>
+    <div id="ecc-mcp-approval-rows"></div>
+  </section>
 </aside>
 
 <div class="spot-bd" id="spot-bd" role="dialog" aria-modal="true" aria-label="Find item">
@@ -841,6 +861,7 @@ const openGroups={};
 const tick=function(attr,key,selected,label){return '<button\n type="button" class="tick" '+attr+'="'+esc(key)+'" aria-pressed="'+(selected?"true":"false")+'" aria-label="'+(selected?"Deselect ":"Select ")+esc(label)+'">&#10003;</button>'};
 const frameworkGroups=function(){const groups=[];const index={};
   model.catalog.frameworks.forEach(function(framework){framework.assets.forEach(function(asset){
+    if(isRailOwnedAsset(framework,asset)){return}
     const label=assetGroup(framework,asset);
     if(!index[label]){index[label]={label:label,framework:framework.id,owner:framework.id==="superpowers"?"Superpowers":"ECC",rows:[]};groups.push(index[label])}
     index[label].rows.push({framework:framework,asset:asset})})});
@@ -880,31 +901,25 @@ const customNextAction=function(item){const source=item.source||{};return "Next:
 const renderHookRegistry=function(){const reg=model.catalog.hookRegistry;byId("hook-registry-rows").innerHTML=reg.entries.map(function(e){const label=e.owner==="aih"?"AIH-owned":"Third party - owned by "+e.ownerLabel;const enforce=e.enforcement==="aih-enforced"?"AIH-enforced":"Not AIH-enforced - the source installs and runs it; AIH registers and revokes the entry";return "<div class=\"hookreg\"><p><b>"+esc(e.id)+"</b> &mdash; "+esc(label)+"</p>"+"<p class=\"help\">"+esc(e.description)+"</p>"+"<p class=\"help\">Source: "+esc(e.source)+"</p>"+"<p class=\"help\">"+esc(enforce)+".</p><p class=\"help\">Counted under "+esc(e.ownerLabel)+" on its own inventory row. Authored there, not here — this panel is a read-only view of what the destination will contain.</p></div>"}).join("");byId("hook-registry-controls").innerHTML=reg.declaredControls.length?reg.declaredControls.map(function(c){return "<p class=\"help\"><code>"+esc(c.name)+"</code> (declared by "+esc(c.owner)+", not owned by AIH): "+esc(c.detail)+"</p>"}).join(""):"<p class=\"help\">No third-party hook controls declared.</p>";byId("hook-registry-overlaps").innerHTML=reg.overlaps.length?reg.overlaps.map(function(o){return "<p class=\"help\">Overlap on <code>"+esc(o.event)+"</code> / <code>"+esc(o.functionTag)+"</code> between "+esc(o.owners.join(" and "))+". AIH reports it and does not resolve it; you decide.</p>"}).join(""):"<p class=\"help\">No overlap between the selected hooks. AIH never merges an overlap on your behalf: silent merging causes capability loss that cannot be diagnosed from the resulting configuration.</p>";byId("hook-registry-spawns").innerHTML=reg.spawnProjection.events.map(function(ev){return "<p class=\"help\"><code>"+esc(ev.event)+"</code>: "+ev.entries+" entries, "+ev.spawns+" expected process spawns (nested launcher spawns included).</p>"}).join("")+"<p class=\"help\">Total: "+reg.spawnProjection.totalEntries+" entries, "+reg.spawnProjection.totalSpawns+" process spawns per full firing. A hook a source reports as disabled still spawns a process: that control is read inside the launcher, after the process exists ("+reg.spawnProjection.sourceDisabledSpawns+" spawns here)."+(reg.entries.some(function(e){return e.owner!=="aih"})?" The pinned catalog carries third-party hook components with provenance but no per-hook registration table, so these counts cover only the registrations recorded here — a small number is not a complete one.":"")+"</p>"};const renderRows=function(){const g=governance();byId("mcp-rows").innerHTML=model.catalog.mcp.map(function(item){const existing=g.catalog.reviewed.find(function(c){return c.id===item.id});const status=existing?candidateStatus(existing):["Disabled","pending"];return row(item.id,item.description,status[0],status[1],tick("data-reviewed",item.id,Boolean(existing),item.id).replace("<button ",existing?"<button disabled ":"<button "),controlProvenance(item.id))}).join("");byId("hook-rows").innerHTML=model.catalog.hooks.map(function(item){const existing=g.catalog.reviewed.find(function(c){return c.id===item.id});const status=existing?candidateStatus(existing):["Disabled","pending"];const provenance=controlProvenance(item.id);return row(item.id,item.description,status[0],status[1],tick("data-reviewed",item.id,Boolean(existing),item.id).replace("<button ",existing?"<button disabled ":"<button "),hookDisclosure(item)+(provenance?" "+provenance:""))}).join("");byId("custom-rows").innerHTML=g.catalog.custom.length?g.catalog.custom.map(function(item){const status=candidateStatus(item);return row(item.id,"Pinned custom source - no activation affordance",status[0],status[1],"",customNextAction(item))}).join(""):"<p class=\"help\">No custom candidates.</p>";byId("curation-rows").innerHTML=g.externalCuration.length?g.externalCuration.flatMap(function(group){return group.items.map(function(item){return row(group.framework+": "+item.kind+" / "+item.id,"Audit "+item.audit.record+" - report-only", "External guidance - not enforced","external")})}).join(""):"<p class=\"help\">No external curation intent.</p>";byId("framework-rows").innerHTML=frameworkInventoryRows();renderHookRegistry()};
 const compositionNamedCount=function(){return model.catalog.enterpriseComposition.parts.reduce(function(total,part){return total+part.componentIds.length},0)};
 const partSelectedCount=function(part){const ids=selectedItems(model.catalog.enterpriseComposition.framework).map(function(item){return item.id});return part.componentIds.filter(function(id){return ids.indexOf(id)!==-1}).length};
+const renderEccMcpApprovals=function(){const entries=model.catalog.externalMcp||[];const g=governance();const approvals=Array.isArray(g.eccMcpApprovals)?g.eccMcpApprovals:[];const select=byId("ecc-mcp-id");const prior=select.value;select.innerHTML='<option value="">Choose pinned ECC MCP</option>'+entries.map(function(item){return '<option value="'+esc(item.id)+'">'+esc(item.id+' — '+item.addability)+'</option>'}).join("");select.value=entries.some(function(item){return item.id===prior})?prior:"";byId("ecc-mcp-approval-rows").innerHTML=approvals.length?approvals.map(function(item){return '<p class="help"><code>'+esc(item.id)+'</code> — '+esc(item.state)+'; '+esc(item.authenticationMode)+'. <button type="button" class="btn sm" data-ecc-mcp-approval-remove="'+esc(item.id)+'">Remove approval</button></p>'}).join(""):"<p class=\"help\">No ECC MCP approvals recorded.</p>"};
 const renderComposition=function(){const composition=model.catalog.enterpriseComposition;byId("composition-parts").innerHTML='<p class="help">Every component below is owned by '+esc(composition.framework)+', which installs and runs it; AIH records the selection with its pinned source. Choosing Enterprise selects the Core parts. The additive parts are yours to add, here or from any inventory row.</p>'+composition.parts.map(function(part){const selected=partSelectedCount(part);const complete=selected===part.componentIds.length;const action=part.selection==="additive"?'<button type="button" data-composition-add="'+esc(part.id)+'">'+(complete?"Remove these":"Add these")+'</button>':"";return '<div class="row"><div><strong>'+esc(part.label)+'</strong><p>Derived from '+esc(part.rule)+'.</p><p class="mono">'+esc(part.componentIds.join(" "))+'</p></div><span class="badge '+(complete?"requested":"external")+'">'+esc(selected+" of "+part.componentIds.length+" selected"+(part.selection==="additive"?" - additive":" - Core"))+'</span>'+action+'</div>'}).join("")};
 const renderReceipt=function(){const receipt=state.receipt;const rows=[];if(receipt&&Array.isArray(receipt.approvals)){receipt.approvals.forEach(function(item){rows.push(row(item.id||"approval",(item.issuer||"unknown issuer")+" — preserved/preflight-only", "Not verified / not effective","pending"))})}if(receipt&&Array.isArray(receipt.evidence)){receipt.evidence.forEach(function(item){rows.push(row(item.id||"evidence",(item.state||"unknown")+" evidence — preserved/preflight-only", "Not verified / not effective","pending"))})}byId("approval-rows").innerHTML=rows.length?rows.join(""):"<p class=\"help\">Import an authority receipt to preserve and inspect its subjects; target-repository verification decides authority.</p>";byId("receipt-state").textContent=receipt?"Receipt preserved for preflight only; this browser does not verify it or create effective approval.":"No authority receipt imported.";byId("copy-approvals").disabled=!(receipt&&Array.isArray(receipt.approvals))};
-/* The report preview's fulfillment summary extends the same three states as
-   three counts, over exactly the rows the plane actually annotates - walking
-   the identical (activeSelectionFramework, frameworkGroups,
-   isFrameworkSelected, selectedAssetAuthorizable) primitives the rows above
-   are built from, so a row and this tally can never disagree about the same
-   component (previously they could: this used to walk the raw selections
-   directly, which could count a selection shadowed by a duplicate framework
-   group, a selection for the framework not currently shown, or an id the pin
-   does not carry, none of which render as an annotated row at all).
+/* The report preview's fulfillment summary walks selected catalog assets,
+   including the four namespaces whose selection controls live in the rail.
+   It recognizes only a selected asset that still matches the pinned catalog
+   and policy kind; unknown, malformed, or stale selections stay honestly
+   separate rather than being counted as evidence owed.
    Anything selected in the raw policy this pass does not recognize is never
    folded into "evidence owed", which the engine reserves for a component the
    pin DOES carry - it gets its own, honestly-named count instead. */
 const fulfillmentCounts=function(){
   const counts={materializes:0,vetBlocked:0,evidenceOwed:0,notShownAsRow:0};
-  const active=activeSelectionFramework(governance());
   const recognized=new Set();
-  frameworkGroups().filter(function(group){return !active||group.framework===active})
-    .forEach(function(group){group.rows.forEach(function(entry){
-      const framework=entry.framework,asset=entry.asset;
-      if(!isFrameworkSelected(framework.id,asset.id))return;
-      if(!selectedAssetAuthorizable(framework.id,asset))return;
-      recognized.add(framework.id+"|"+asset.id);
-      const classification=classifyFulfillment(asset.vet);
+  externalSelectionGroups().forEach(function(group){group.items.forEach(function(selection){
+      const found=frameworkAsset(group.framework,selection.id);
+      if(!found||!selectedAssetAuthorizable(found.framework.id,found.asset))return;
+      recognized.add(found.framework.id+"|"+found.asset.id);
+      const classification=classifyFulfillment(found.asset.vet);
       if(classification===FULFILLMENT_VET_BLOCKED){counts.vetBlocked++}
       else if(classification===FULFILLMENT_MATERIALIZES){counts.materializes++}
       else{counts.evidenceOwed++}
@@ -918,11 +933,7 @@ const selectedFramework=function(){return model.catalog.frameworks.find(function
 const curatableAssets=function(framework){return framework?framework.assets.filter(function(item){return item.curationKind}):[]};
 const prefillCurationAsset=function(){const framework=selectedFramework();const key=byId("curation-asset").value.split("|");const asset=curatableAssets(framework).find(function(item){return item.curationKind===key[0]&&item.id===key[1]});if(!asset){return}byId("curation-kind").value=asset.curationKind;byId("curation-id").value=asset.id;byId("curation-repository").value=asset.source.repository;byId("curation-commit").value=asset.source.commit;byId("curation-path").value=asset.source.path};
 const syncFrameworkSelect=function(){const framework=byId("curation-framework");const prior=framework.value;framework.innerHTML=model.catalog.frameworks.map(function(item){return '<option value="'+item.id+'">'+item.id.toUpperCase()+" - external guidance"+'</option>'}).join("");framework.value=prior||model.catalog.frameworks[0].id;const current=selectedFramework();byId("curation-asset").innerHTML='<option value="">Manual item</option>'+curatableAssets(current).map(function(item){return '<option value="'+esc(item.curationKind+"|"+item.id)+'">'+esc(item.curationKind+": "+item.id)+'</option>'}).join("")};
-/* ── shell: rail, group cards, filter, ledger ──────────────────────────────
-   Ported from the owner-accepted acceptance artifact. The rail exposes the
-   catalog's own selectable namespaces as chips; the chips carry the same
-   data-framework-select key a row does, so they go through one authoring path
-   and cannot drift from the rows they mirror. */
+/* ── shell: rail, group cards, filter, ledger ────────────────────────────── */
 const ROW_STATES=["requested","pending","blocked","external"];
 let planeFilter="all";
 /* The owner ticker. One surface at a time, so an administrator can look at what
@@ -941,8 +952,10 @@ let ownerFocus="all";
 let activePreset="";
 const PRESETS=[["vibe","Vibe","Everything this catalog offers. Nothing is hidden for want of AIH enforcement."],
   ["enterprise","Enterprise","ECC Core selected; languages and security offered as additive choices."]];
-const railKinds=[["rail-langs","lang"],["rail-frameworks","framework"],["rail-caps","capability"],["rail-modules","module"]];
-const buildRail=function(){const framework=eccFramework();if(!framework){return}railKinds.forEach(function(entry){const host=byId(entry[0]);if(!host){return}host.innerHTML=framework.assets.filter(function(asset){return asset.kind===entry[1]}).map(function(asset){return '<button type="button" class="chip" data-framework-select="'+esc(framework.id+"|"+asset.kind+"|"+asset.id)+'" aria-pressed="false">'+esc(asset.id.slice(asset.id.indexOf(":")+1))+'</button>'}).join("")})};
+const railKinds=["lang","framework","capability","module"];
+const isRailOwnedAsset=function(framework,asset){return framework.id==="ecc"&&railKinds.indexOf(asset.kind)!==-1};
+const railSections=[["rail-langs","lang"],["rail-frameworks","framework"],["rail-caps","capability"],["rail-modules","module"]];
+const buildRail=function(){const framework=eccFramework();if(!framework){return}railSections.forEach(function(entry){const host=byId(entry[0]);if(!host){return}host.innerHTML=framework.assets.filter(function(asset){return asset.kind===entry[1]}).map(function(asset){return '<button type="button" class="chip" data-framework-select="'+esc(framework.id+"|"+asset.kind+"|"+asset.id)+'" aria-pressed="false">'+esc(asset.id.slice(asset.id.indexOf(":")+1))+'</button>'}).join("")})};
 const syncRail=function(){const framework=eccFramework();if(!framework){return}const chosen=selectedItems(framework.id).map(function(item){return item.id});document.querySelectorAll(".chip[data-framework-select]").forEach(function(chip){const id=String(chip.getAttribute("data-framework-select")).split("|")[2];chip.setAttribute("aria-pressed",chosen.indexOf(id)===-1?"false":"true")});const posture=byId("rail-posture");if(posture){posture.textContent=state.policy.minimumPosture||"vibe"}
   document.querySelectorAll("[data-preset]").forEach(function(node){node.setAttribute("aria-pressed",node.getAttribute("data-preset")===activePreset?"true":"false")})};
 /* One pass over the rendered rows: it applies the filter, counts each group,
@@ -956,8 +969,10 @@ const paintShell=function(){const totals={requested:0,pending:0,blocked:0,extern
     total+=rows;shown+=visible;
     const count=group.querySelector(".ct");if(count){count.textContent=rows?(planeFilter==="all"?String(rows):visible+" / "+rows):""}
     const meter=group.querySelector(".meter");if(meter){meter.innerHTML=rows?ROW_STATES.filter(function(s){return counts[s]}).map(function(s){return '<i data-s="'+s+'" style="width:'+(counts[s]/rows*100)+'%"></i>'}).join(""):""}});
-  byId("c-shown").textContent=shown;byId("c-total").textContent=total;
-  ROW_STATES.forEach(function(s){const node=byId(s==="requested"?"t-req":s==="pending"?"t-wait":s==="blocked"?"t-blk":"t-ext");if(node){node.textContent=totals[s]}});
+  const railSelected=document.querySelectorAll(".rail [data-framework-select][aria-pressed='true']").length;
+  const railInventory=document.querySelectorAll(".rail [data-framework-select]").length;
+  byId("c-shown").textContent=String(shown);byId("c-total").textContent=String(total);
+  ROW_STATES.forEach(function(s){const node=byId(s==="requested"?"t-req":s==="pending"?"t-wait":s==="blocked"?"t-blk":"t-ext");if(node){node.textContent=String(totals[s]+(s==="requested"?railSelected:0))}});
   /* Every filter states how many rows it would show. A zero is information, not
      a dead end: its title says what would put a row there rather than leaving the
      administrator guessing. "Blocked" counts selection state and "Vet blocked"
@@ -978,21 +993,22 @@ const paintShell=function(){const totals={requested:0,pending:0,blocked:0,extern
     const count=group.querySelectorAll(".row[data-state]").length;
     owners.forEach(function(owner){ownerRows[owner]=(ownerRows[owner]||0)+count});
     group.hidden=ownerFocus!=="all"&&owners.indexOf(ownerFocus)===-1});
+  ownerRows.ECC=(ownerRows.ECC||0)+railInventory;
   document.querySelectorAll("#owner-ticker [data-owner-focus]").forEach(function(button){
     const owner=button.getAttribute("data-owner-focus");
-    const count=owner==="all"?total:(ownerRows[owner]||0);
+    const count=owner==="all"?total+railInventory:(ownerRows[owner]||0);
     button.querySelector("b").textContent=String(count);
     button.setAttribute("data-empty",count===0?"true":"false");
     button.setAttribute("aria-pressed",owner===ownerFocus?"true":"false")});
   const empty=byId("plane-empty");
-  if(empty){empty.hidden=shown!==0;empty.textContent=shown===0?(FILTER_EMPTY[planeFilter]||"No row is in this state right now."):""}};
+  if(empty){empty.hidden=shown!==0;empty.textContent=shown===0?(planeFilter==="requested"&&railSelected?"Selected items appear in the left navigation; no selected item is in this plane.":FILTER_EMPTY[planeFilter]||"No row is in this state right now."):""}};
 const FILTER_EMPTY={requested:"Nothing is selected yet. Select an item, or compose a preset.",
   external:"Everything selectable has been selected.",
   pending:"No AIH control is awaiting a request.",
   blocked:"Nothing is blocked. A row lands here when an AIH-owned gate fails - a custom source without a completed scan bound to its exact pin is the usual one."};
 document.addEventListener("click",function(event){const head=event.target.closest&&event.target.closest("[data-group]");if(!head){return}const group=head.closest(".grp");const next=group.dataset.open==="1"?"0":"1";group.dataset.open=next;head.setAttribute("aria-expanded",next==="1"?"true":"false");const label=head.querySelector("h2");if(label){openGroups[label.textContent]=next==="1"}});
 /* ── drawer: every detail the compact row deliberately does not carry ────── */
-const drawerNode=byId("drawer"),scrimNode=byId("scrim");
+const drawerNode=byId("drawer"),scrimNode=byId("scrim"),eccMcpSidebarNode=byId("ecc-mcp-sidebar"),eccMcpScrimNode=byId("ecc-mcp-scrim");
 const kv=function(key,value){return '<div><span>'+esc(key)+'</span><b>'+value+'</b></div>'};
 const describeRow=function(id){
   const mcp=model.catalog.mcp.find(function(item){return item.id===id});
@@ -1012,6 +1028,7 @@ const paintDrawer=function(id){
   if(!item){host.innerHTML='<div class="dhead"><h2>'+esc(id)+'</h2>'+close+'</div>';return}
   const selected=item.asset?isFrameworkSelected(item.framework.id,item.asset.id):
     (item.control?governance().catalog.reviewed.some(function(entry){return entry.id===item.id}):false);
+  const railOwned=Boolean(item.asset&&isRailOwnedAsset(item.framework,item.asset));
   const state=item.custom?"blocked":selected?(item.enforce?"selected":"requested"):"available";
   let html='<div class="dhead"><h2>'+esc(item.id)+'</h2>'+close+'</div>'+
     '<div class="badges"><span class="b '+(item.owner==="AIH"?"ok":"ext")+'">'+esc(item.owner)+(item.enforce?" enforces":" &mdash; records only")+'</span>'+
@@ -1037,8 +1054,8 @@ const paintDrawer=function(id){
      inventing an implicit cascade would author state it cannot represent. */
   if(item.asset&&item.asset.riders&&item.asset.riders.length){const missing=item.asset.riders.filter(function(id){return !isFrameworkSelected(item.framework.id,id)});
     html+='<div class="cap">Brings in with it</div><div class="kv">'+item.asset.riders.map(function(id){return kv(id,isFrameworkSelected(item.framework.id,id)?"selected":"not selected")}).join("")+'</div>'+
-      '<p class="note">'+esc(item.framework.id)+' declares these alongside '+esc(item.asset.id)+'. Selecting it does not pull them in on its own - add them here so every selection in the policy is one you made.</p>'+
-      (missing.length?'<div class="brow"><button type="button" class="btn sm" data-add-riders="'+esc(item.framework.id+"|"+item.asset.id)+'">Add '+missing.length+' rider(s) too</button></div>':"")}
+      '<p class="note">'+esc(item.framework.id)+' declares these alongside '+esc(item.asset.id)+'. Selecting it does not pull them in on its own'+(railOwned?"; this rail-owned detail is read-only.":" - add them here so every selection in the policy is one you made.")+'</p>'+
+      (!railOwned&&missing.length?'<div class="brow"><button type="button" class="btn sm" data-add-riders="'+esc(item.framework.id+"|"+item.asset.id)+'">Add '+missing.length+' rider(s) too</button></div>':"")}
   if(item.hook){html+='<div class="cap">Hook disclosure</div><div class="kv">'+
     kv("Trigger / event",esc(item.hook.behaviour.trigger))+kv("Records",esc(item.hook.behaviour.records))+
     kv("Artifact written",esc(item.hook.behaviour.artifact))+kv("Failure behaviour",esc(item.hook.behaviour.failureMode))+
@@ -1048,14 +1065,17 @@ const paintDrawer=function(id){
   if(item.asset){const command=evidenceCommand(item.framework,item.asset);
     html+='<div class="cmdline"><code>'+esc(command)+'</code><button type="button" class="copy" data-copy="'+esc(command)+'">COPY</button></div>'+
       '<p class="note">Run this where you have repository access. Evidence returns to <code>.aih/evidence/</code> in the governed repository, and is what moves this selection into external curation.</p>'+
-      '<div class="brow"><button type="button" class="btn sm '+(selected?"danger":"primary")+'" data-framework-select="'+esc(item.framework.id+"|"+item.asset.kind+"|"+item.asset.id)+'">'+(selected?"Remove from policy":"Add to policy")+'</button>'+
-      (item.asset.curationKind?'<button type="button" class="btn sm" data-curation-prefill="'+esc(item.framework.id+"|"+item.asset.curationKind+"|"+item.asset.id)+'">Record curation evidence</button>':"")+'</div>'}
+      (railOwned?'<p class="note">This detail is read-only. Select or remove this item from the left navigation.</p>':'<div class="brow"><button type="button" class="btn sm '+(selected?"danger":"primary")+'" data-framework-select="'+esc(item.framework.id+"|"+item.asset.kind+"|"+item.asset.id)+'">'+(selected?"Remove from policy":"Add to policy")+'</button>'+(item.asset.curationKind?'<button type="button" class="btn sm" data-curation-prefill="'+esc(item.framework.id+"|"+item.asset.curationKind+"|"+item.asset.id)+'">Record curation evidence</button>':"")+'</div>')}
   if(item.control&&!item.hook){html+='<div class="brow"><button type="button" class="btn sm '+(selected?"danger":"primary")+'" data-reviewed="'+esc(item.id)+'">'+(selected?"Remove request":"Request intent")+'</button></div>'}
   if(item.custom){html+='<p class="note bad">'+esc(customNextAction(item.custom))+'</p>'}
   host.innerHTML=html};
-const openDrawer=function(id){drawerNode.hidden=false;scrimNode.classList.add("open");paintDrawer(id);drawerNode.dataset.item=id};
+const openDrawer=function(id){closeEccMcpSidebar();drawerNode.hidden=false;scrimNode.classList.add("open");paintDrawer(id);drawerNode.dataset.item=id};
 const closeDrawer=function(){scrimNode.classList.remove("open");drawerNode.hidden=true;delete drawerNode.dataset.item};
 scrimNode.addEventListener("click",closeDrawer);
+const openEccMcpSidebar=function(){closeDrawer();eccMcpSidebarNode.hidden=false;eccMcpScrimNode.classList.add("open");byId("ecc-mcp-id").focus()};
+const closeEccMcpSidebar=function(){eccMcpScrimNode.classList.remove("open");eccMcpSidebarNode.hidden=true};
+eccMcpScrimNode.addEventListener("click",closeEccMcpSidebar);
+byId("ecc-mcp-close").addEventListener("click",closeEccMcpSidebar);
 /* data-detail, not data-open: the group cards carry data-open for their own
    collapsed state, so an opener keyed on it matched the enclosing card from
    every click inside a group and opened a stub drawer whose scrim then blocked
@@ -1081,6 +1101,7 @@ document.addEventListener("click",function(event){if(!event.target.closest){retu
   if(event.target.closest("#sheet-close")){closeSheet();return}
   if(event.target.closest("#export")){openSheet()}});
 byId("open-custom").addEventListener("click",function(){openDrawer("Your sources");byId("custom-editor").open=true;byId("custom-id").focus()});
+byId("open-ecc-mcp").addEventListener("click",openEccMcpSidebar);
 const spotNode=byId("spot-bd"),spotQuery=byId("spot-q"),hitsNode=byId("hits");
 let spotIndex=0;
 const spotItems=function(){const list=[];
@@ -1102,15 +1123,15 @@ spotNode.addEventListener("click",function(event){if(event.target===spotNode){cl
   const hit=event.target.closest&&event.target.closest("[data-hit]");if(hit){closeSpot();openDrawer(hit.getAttribute("data-hit"))}});
 document.addEventListener("keydown",function(event){
   if(event.key==="/"&&!/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)){event.preventDefault();openSpot();return}
-  if(event.key==="Escape"){closeSpot();closeDrawer();closeSheet();return}
+  if(event.key==="Escape"){closeSpot();closeDrawer();closeEccMcpSidebar();closeSheet();return}
   if(!spotNode.classList.contains("open")){return}
   const matches=spotMatches();
   if(event.key==="ArrowDown"){event.preventDefault();spotIndex=Math.min(spotIndex+1,matches.length-1);paintHits()}
   if(event.key==="ArrowUp"){event.preventDefault();spotIndex=Math.max(spotIndex-1,0);paintHits()}
   if(event.key==="Enter"&&matches[spotIndex]){event.preventDefault();closeSpot();openDrawer(matches[spotIndex].id)}});
 document.addEventListener("click",function(event){const filter=event.target.closest&&event.target.closest(".f[data-filter]");if(!filter){return}planeFilter=filter.getAttribute("data-filter");document.querySelectorAll(".f[data-filter]").forEach(function(node){node.setAttribute("aria-pressed",node===filter?"true":"false")});paintShell()});
-const render=function(){byId("posture").value=state.policy.minimumPosture||"vibe";byId("profile").value=activePreset;syncFrameworkSelect();renderRows();renderComposition();renderReceipt();renderPreview();syncRail();paintHosts();paintShell();byId("dispositionable-findings").textContent=model.findings.dispositionable.join(" | ");byId("hard-blockers").textContent=model.findings.fenced.join(" | ");if(typeof window.__aihPolicyWorkbenchEnhanceRows==="function"){window.__aihPolicyWorkbenchEnhanceRows()}};
-byId("profile").addEventListener("change",function(event){const value=event.target.value;activePreset=value;if(value==="vibe"){composeVibeProfile();return}if(value==="enterprise"){composeEnterpriseProfile()}});
+const render=function(){byId("posture").value=state.policy.minimumPosture||"vibe";syncFrameworkSelect();renderRows();renderEccMcpApprovals();renderComposition();renderReceipt();renderPreview();syncRail();paintHosts();paintShell();byId("dispositionable-findings").textContent=model.findings.dispositionable.join(" | ");byId("hard-blockers").textContent=model.findings.fenced.join(" | ");if(typeof window.__aihPolicyWorkbenchEnhanceRows==="function"){window.__aihPolicyWorkbenchEnhanceRows()}};
+const applyPreset=function(value){activePreset=value;if(value==="vibe"){composeVibeProfile();return}if(value==="enterprise"){composeEnterpriseProfile()}};
 byId("posture").addEventListener("change",function(event){const value=event.target.value;activePreset="";state.policy.minimumPosture=value;announce("Posture changed without modifying selections. Enterprise requires an explicit supported-CLI allow-list before export.");render()});
 const closeTooltips=function(){document.querySelectorAll(".tooltip[data-open='true']").forEach(function(tip){tip.setAttribute("data-open","false")});document.querySelectorAll("[data-tooltip-button][aria-expanded='true']").forEach(function(button){button.setAttribute("aria-expanded","false")})};
 const openTooltip=function(button){closeTooltips();button.setAttribute("aria-expanded","true");button.removeAttribute("data-tooltip-dismissed");const tip=byId(button.getAttribute("data-tooltip-button"));if(tip){const rect=button.getBoundingClientRect();const width=Math.min(368,Math.max(24,window.innerWidth-32));tip.style.width=width+"px";tip.style.left=Math.max(16,Math.min(rect.left,window.innerWidth-16-width))+"px";tip.style.top=Math.max(16,rect.bottom+4)+"px";tip.setAttribute("data-open","true")}};
@@ -1130,6 +1151,8 @@ document.addEventListener("click",function(event){const button=event.target.clos
 document.addEventListener("click",function(event){const button=event.target.closest&&event.target.closest("[data-curation-prefill]");if(!button){return}const key=String(button.getAttribute("data-curation-prefill")).split("|");byId("curation-framework").value=key[0];syncFrameworkSelect();byId("curation-asset").value=key[1]+"|"+key[2];prefillCurationAsset();announce("Curation form prefilled from "+key[2]+"; add an audit record to record report-only intent.")});
 byId("add-curation").addEventListener("click",function(){const frameworkId=byId("curation-framework").value;const kind=byId("curation-kind").value;const id=byId("curation-id").value.trim();const repository=byId("curation-repository").value.trim();const commit=byId("curation-commit").value.trim();const path=byId("curation-path").value.trim();const record=byId("audit-record").value.trim();const digest=byId("audit-digest").value.trim();const unsafePath=!path||path.startsWith("/")||path.startsWith("./")||path.includes("\\")||path.includes("//")||path.split("/").some(function(part){return !part||part==="."||part===".."});if(!/^(agent|skill|command)$/.test(kind)||!id||!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)||!/^[0-9a-f]{40}$/.test(commit)||unsafePath||!record||!/^sha256:[0-9a-f]{64}$/.test(digest)){announce("Use a kind, identifier, pinned repository/40-character commit/safe path, audit record, and sha256 digest.",true);return}const g=governance();let group=g.externalCuration.find(function(item){return item.framework===frameworkId});if(!group){group={framework:frameworkId,items:[]};g.externalCuration.push(group)}if(group.items.some(function(item){return item.kind===kind&&item.id===id})){announce("That external curation item is already present.",true);return}const previous=structuredClone(state.policy);group.items.push({kind:kind,id:id,source:{repository:repository,commit:commit,path:path},audit:{record:record,digest:digest},clarification:byId("curation-note").value.trim()||undefined});commitPolicy(previous,"External curation intent added; it is report-only and not enforced by AIH.")});
 byId("custom-form").addEventListener("submit",function(event){event.preventDefault();const id=byId("custom-id").value.trim(),pkg=byId("custom-package").value.trim(),version=byId("custom-version").value.trim(),integrity=byId("custom-integrity").value.trim(),evidence=byId("custom-evidence").value.trim(),note=byId("custom-note").value.trim();const g=governance();if(g.catalog.custom.some(function(item){return item.id===id})){announce("Custom candidate identifier already exists.",true);return}const previous=structuredClone(state.policy);g.catalog.custom.push({id:id,kind:"mcp",description:"Pending custom MCP",capabilities:[],risks:["custom source"],source:{type:"stdio",resolver:"npx",registry:"https://registry.npmjs.org",package:pkg,version:version,integrity:integrity},targets:["claude"],projector:"mcp-managed-settings",lifecycle:"supported",evidence:{record:evidence},clarification:note||undefined});if(commitPolicy(previous,"Pending custom MCP added. It cannot be activated.")){event.target.reset()}});
+byId("save-ecc-mcp-approval").addEventListener("click",function(){const id=byId("ecc-mcp-id").value;const approvedBy=byId("ecc-mcp-approved-by").value.trim();const authenticationMode=byId("ecc-mcp-authentication-mode").value.trim();const dataClassesText=byId("ecc-mcp-data-classes").value.trim();const dataClasses=dataClassesText.split(",").map(function(value){return value.trim()});const stateValue=byId("ecc-mcp-state").value;const entry=model.catalog.externalMcp.find(function(item){return item.id===id});if(!entry||!approvedBy||!authenticationMode||!dataClassesText||dataClasses.some(function(value){return !value})||new Set(dataClasses).size!==dataClasses.length||(stateValue!=="approved"&&stateValue!=="revoked")){announce("Choose a pinned ECC MCP and provide its administrator, authentication mode, and unique allowed data classes.",true);return}const previous=structuredClone(state.policy);const g=ensureGovernance();const existing=Array.isArray(g.eccMcpApprovals)?g.eccMcpApprovals:[];g.eccMcpApprovals=existing.filter(function(item){return item.id!==id});g.eccMcpApprovals.push({id:id,sourceContentSha256:model.catalog.eccMcpApproval.sourceContentSha256,state:stateValue,approvedBy:approvedBy,authenticationMode:authenticationMode,allowedDataClasses:dataClasses});commitPolicy(previous,"ECC MCP approval recorded for "+id+". "+(entry.addability==="https-configurable"?"It is eligible for a later explicit Add to one selected client.":"It is approval-only; current explicit Add is unavailable for its manual configuration."))});
+document.addEventListener("click",function(event){const button=event.target.closest&&event.target.closest("[data-ecc-mcp-approval-remove]");if(!button){return}const id=button.getAttribute("data-ecc-mcp-approval-remove");const previous=structuredClone(state.policy);const g=ensureGovernance();g.eccMcpApprovals=(Array.isArray(g.eccMcpApprovals)?g.eccMcpApprovals:[]).filter(function(item){return item.id!==id});commitPolicy(previous,"ECC MCP approval removed for "+id+".")});
 const readFile=function(input,callback){const file=input.files&&input.files[0];if(!file){return}const reader=new FileReader();reader.onload=function(){callback(String(reader.result||""))};reader.readAsText(file)};
 byId("import-policy").addEventListener("click",function(){byId("policy-file").click()});byId("policy-file").addEventListener("change",function(event){readFile(event.target,function(text){try{const value=JSON.parse(text);if(!value||typeof value!=="object"||Array.isArray(value)){throw new Error("not an object")}const problems=schemaErrors(model.schema,value,"").concat(policySemantics(value),policyTextSemantics(value));if(problems.length){throw new Error(problems.slice(0,3).join("; "))}state.policy=value;announce("Policy imported without transformation after schema and policy-grammar validation.");render()}catch(error){announce("Policy import rejected: "+(error&&error.message?error.message:"valid policy JSON required"),true)}})});
 byId("import-evidence").addEventListener("click",function(){byId("evidence-file").click()});byId("evidence-file").addEventListener("change",function(event){readFile(event.target,function(text){try{const value=JSON.parse(text);if(!value||typeof value!=="object"||Array.isArray(value)){throw new Error("not an object")}state.receipt=value;announce("Authority/audit data preserved for preflight only; it is not verified and does not create effective approval.");renderReceipt();if(typeof window.__aihPolicyWorkbenchEnhanceRows==="function"){window.__aihPolicyWorkbenchEnhanceRows()}}catch(error){announce("Evidence import failed: valid JSON object required.",true)}})});
@@ -1170,7 +1193,7 @@ byId("owner-ticker").innerHTML=OWNERS.map(function(entry,index){
 document.addEventListener("click",function(event){const button=event.target.closest&&event.target.closest("[data-owner-focus]");if(!button){return}
   ownerFocus=button.getAttribute("data-owner-focus");paintShell()});
 byId("presets").innerHTML=PRESETS.map(function(entry){return '<button type="button" class="preset" data-preset="'+esc(entry[0])+'" aria-pressed="false"><b>'+esc(entry[1])+'</b><span>'+esc(entry[2])+'</span></button>'}).join("");
-document.addEventListener("click",function(event){const preset=event.target.closest&&event.target.closest("[data-preset]");if(!preset){return}const select=byId("profile");select.value=preset.getAttribute("data-preset");select.dispatchEvent(new Event("change",{bubbles:true}))});
+document.addEventListener("click",function(event){const preset=event.target.closest&&event.target.closest("[data-preset]");if(!preset){return}applyPreset(preset.getAttribute("data-preset"))});
 buildRail();
 render();
 </script>

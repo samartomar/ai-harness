@@ -964,15 +964,11 @@ describe("policy generate", () => {
           .getElementById("validate")
           ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
         expect(announcement?.textContent).toContain("validation passed");
-        const profile = document.getElementById("profile") as {
-          value: string;
-          dispatchEvent: (event: unknown) => boolean;
-        } | null;
-        if (profile === null) throw new Error("expected profile selector");
+        const preset = document.querySelector('[data-preset="vibe"]');
+        if (preset === null) throw new Error("expected Vibe preset");
         // Presets compose selections; posture-only behavior is covered separately.
-        // This assertion is about the selector still working after an import.
-        profile.value = "vibe";
-        profile.dispatchEvent(new window.Event("change", { bubbles: true }));
+        // This assertion is about the canonical rail control still working after an import.
+        preset.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
         expect(announcement?.textContent).toContain("Vibe composed:");
       } else {
         expect(

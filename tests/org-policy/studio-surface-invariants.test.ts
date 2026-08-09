@@ -135,10 +135,9 @@ describe("policy studio surface invariants", () => {
     ]) {
       assertRoundTrip(window, () => document, "data-reviewed", control.id);
     }
-    const inventoryKeys = [
-      ...(document.getElementById("framework-rows")?.querySelectorAll("[data-framework-select]") ??
-        []),
-    ].map((control) => control.getAttribute("data-framework-select"));
+    const inventoryKeys = [...document.querySelectorAll("[data-framework-select]")].map((control) =>
+      control.getAttribute("data-framework-select"),
+    );
     expect(inventoryKeys.sort()).toEqual(
       model.catalog.frameworks
         .flatMap((framework) =>
@@ -152,7 +151,7 @@ describe("policy studio surface invariants", () => {
       if (asset === undefined) throw new Error(`expected an asset for ${framework.id}`);
       assertRoundTrip(
         frameworkWindow,
-        () => frameworkWindow.document.getElementById("framework-rows") ?? frameworkWindow.document,
+        () => frameworkWindow.document,
         "data-framework-select",
         `${framework.id}|${asset.kind}|${asset.id}`,
       );
@@ -230,7 +229,9 @@ describe("policy studio surface invariants", () => {
     }
     const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc");
     if (ecc === undefined) throw new Error("expected ECC framework");
-    for (const asset of ecc.assets) {
+    for (const asset of ecc.assets.filter(
+      (asset) => !["lang", "framework", "capability", "module"].includes(asset.kind),
+    )) {
       const key = frameworkDetailKey(ecc.id, asset.kind, asset.id);
       expectEveryStateFactToVary(key, detailFacts(baseline, key), detailFacts(selectedEcc, key));
     }
