@@ -107,6 +107,43 @@ describe("committed JSON Schemas", () => {
     });
   });
 
+  it("models source-locked ECC external MCP approvals as declarative records", () => {
+    const base = {
+      schemaVersion: 2,
+      minimumPosture: "vibe",
+      references: { repoContract: "ai-coding/project.json" },
+    };
+    const governance = (eccMcpApprovals: unknown[]) => ({
+      ...base,
+      governance: {
+        policyVersion: "2026.08",
+        supportedClis: ["claude"],
+        catalog: { reviewed: [], custom: [] },
+        activations: [],
+        authority: { approvals: [] },
+        eccMcpApprovals,
+      },
+    });
+    const approval = {
+      id: "vercel",
+      sourceContentSha256: "a4426254c55a5352db2672bc86a87f10b0029f5e4ae1b74817841e87d9ab1e57",
+      state: "approved",
+      approvedBy: "security-admin",
+      authenticationMode: "oauth",
+      allowedDataClasses: ["deployment-metadata"],
+    };
+
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", governance([approval]));
+    for (const invalid of [
+      { ...approval, id: "github" },
+      { ...approval, sourceContentSha256: "0".repeat(64) },
+      { ...approval, allowedDataClasses: [] },
+      { ...approval, unexpected: true },
+    ]) {
+      rejectCommittedSchema("schemas/aih-org-policy.schema.json", governance([invalid]));
+    }
+  });
+
   it("rejects unknown baseline ids in .aih-config.json", () => {
     rejectCommittedSchema("schemas/aih-config.schema.json", {
       schemaVersion: 1,

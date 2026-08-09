@@ -6,6 +6,8 @@ import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
+import { ECC_EXTERNAL_MCP_APPROVAL_IDS } from "./ecc-mcp-approval.js";
+import { ECC_MCP_CATALOG_PROVENANCE } from "./ecc-mcp-catalog.js";
 
 const PostureSchema = z.enum(["vibe", "enterprise"]);
 
@@ -285,6 +287,22 @@ const IsoTimestampSchema = z.string().refine((value) => {
 
 const RemoteMcpApprovalSchema = z
   .object({
+    approvedBy: SafePolicyIdentifierSchema,
+    authenticationMode: SafePolicyTextSchema,
+    allowedDataClasses: z.array(SafePolicyIdentifierSchema).min(1).max(20),
+  })
+  .strict();
+
+/**
+ * An administrator's declaration over an external ECC MCP from the exact
+ * source-locked snapshot. It is neither a client configuration nor a grant to
+ * contact, scan, inspect, project, or install that MCP.
+ */
+const EccMcpApprovalSchema = z
+  .object({
+    id: z.enum(ECC_EXTERNAL_MCP_APPROVAL_IDS),
+    sourceContentSha256: z.literal(ECC_MCP_CATALOG_PROVENANCE.contentSha256),
+    state: z.enum(["approved", "revoked"]),
     approvedBy: SafePolicyIdentifierSchema,
     authenticationMode: SafePolicyTextSchema,
     allowedDataClasses: z.array(SafePolicyIdentifierSchema).min(1).max(20),
@@ -969,6 +987,12 @@ const GovernedPolicyGovernanceSchema = z
      */
     externalSelections: z.array(ExternalFrameworkSelectionSchema).default([]),
     /**
+     * Source-locked, declarative approval records for ECC external MCP options.
+     * A later explicit Add flow must resolve these; this grammar has no runtime
+     * side effect and deliberately creates no candidate or activation.
+     */
+    eccMcpApprovals: z.array(EccMcpApprovalSchema).default([]),
+    /**
      * Organization-sanctioned AI CLIs. This is a governance boundary, not the
      * projector target set: every value comes from AIH's supported CLI registry,
      * while materialization/projector support remains capability-specific.
@@ -1096,6 +1120,17 @@ const GovernedPolicyGovernanceSchema = z
       ctx.addIssue({
         code: "custom",
         message: `external framework selection ${duplicateSelection} is duplicated`,
+      });
+    }
+    const eccMcpApprovalIds = governance.eccMcpApprovals.map((approval) => approval.id);
+    const duplicateEccMcpApproval = eccMcpApprovalIds.find(
+      (id, index) => eccMcpApprovalIds.indexOf(id) !== index,
+    );
+    if (duplicateEccMcpApproval !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["eccMcpApprovals"],
+        message: `ECC MCP approval ${duplicateEccMcpApproval} is duplicated`,
       });
     }
     // The same contradiction the activation rule above already forbids, one
