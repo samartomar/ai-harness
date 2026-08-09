@@ -4,6 +4,7 @@
  */
 
 export * from "./capability/package-graph/index.js";
+export * from "./capability/package-manager/index.js";
 export {
   ALL_COMMANDS,
   builtinCommandNames,
