@@ -8,6 +8,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Policy authoring now carries the pinned ECC MCP inventory as a source-locked
+  external catalog: all 35 upstream entries are classified, four AIH-owned
+  entries are excluded, and the remaining 31 are kept separate from AIH's
+  reviewed controls. Ten exact HTTPS endpoints are marked configurable; unsafe
+  localhost and unpinned or local-command entries remain manual.
 - Org-policy remote MCP records can now use an administrator-managed `approved`
   or `revoked` status without claiming a tool-surface observation; legacy
   schema-v2 digest/verdict records remain parse-compatible but never become a

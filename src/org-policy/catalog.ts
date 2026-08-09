@@ -8,6 +8,7 @@ import { mcpApprovalSubject } from "../mcp/policy.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
 import { usageRecorderScript } from "../usage/capture.js";
 import { claudeUsageHookCommand } from "../usage/hooks.js";
+import { type EccMcpCatalogEntry, eccExternalMcpCatalog } from "./ecc-mcp-catalog.js";
 import { type HookRegistration, hookOverlaps, hookSpawnProjection } from "./hook-registrar.js";
 
 /**
@@ -247,6 +248,7 @@ export interface PolicyAuthoringHookRegistry {
 
 export interface PolicyAuthoringCatalog {
   mcp: Array<{ id: string; description: string; server: McpServer; control: AihPolicyControl }>;
+  externalMcp: readonly EccMcpCatalogEntry[];
   hooks: PolicyAuthoringHook[];
   hookRegistry: PolicyAuthoringHookRegistry;
   frameworks: PolicyAuthoringFramework[];
@@ -563,6 +565,7 @@ export function policyAuthoringCatalog(): PolicyAuthoringCatalog {
   const frameworks = [ecc, frameworkCatalog("superpowers")];
   return {
     hosts: policyAuthoringHosts(),
+    externalMcp: eccExternalMcpCatalog,
     hookRegistry: hookRegistry(frameworks),
     enterpriseComposition: enterpriseComposition(ecc),
     mcp: Object.entries(mcp).flatMap(([id, server]) => {

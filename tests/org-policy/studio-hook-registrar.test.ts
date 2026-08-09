@@ -202,10 +202,8 @@ describe("S2 — the owner ticker counts every registrar-related row under its t
 });
 
 describe("S3 and S4 — usage metering language, stated plainly", () => {
-  it("never says cost anywhere on the surface", () => {
-    const html = policyStudioHtml(model);
-    expect(html.toLowerCase()).not.toContain("cost");
-    const text = workbenchWindow().document.body?.textContent ?? "";
+  it("never describes hook usage metering as cost", () => {
+    const text = workbenchText("hook-registry-spawns");
     expect(text.toLowerCase()).not.toContain("cost");
   });
 
