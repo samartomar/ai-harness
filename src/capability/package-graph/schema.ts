@@ -29,6 +29,12 @@ function duplicateIssues(
   }
 }
 
+function lengthPrefixedIdentity(parts: readonly string[]): string {
+  let identity = "";
+  for (const part of parts) identity += `${part.length}:${part}`;
+  return identity;
+}
+
 export const SurfaceIdSchema = z.string().min(3).max(MAX_ID_LENGTH).regex(SURFACE_ID);
 
 export const PackageIdSchema = z.string().min(9).max(MAX_ID_LENGTH).regex(PACKAGE_ID);
@@ -121,7 +127,7 @@ const ObservedRiskListSchema = z
   .superRefine((risks, context) => {
     duplicateIssues(
       risks.map((risk) =>
-        JSON.stringify([
+        lengthPrefixedIdentity([
           risk.detector.name,
           risk.detector.version,
           risk.evidence.sha256,

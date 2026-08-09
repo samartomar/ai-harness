@@ -69,6 +69,14 @@ Library integrations can import the strict Package Graph v1 TypeScript schema fr
 identity uniqueness, direct-member resolution, and evidence subject binding belong
 to the TypeScript parser; graph metadata is never approval or evidence by itself.
 
+<!-- aih:claim CM-52 -->
+`buildPackageGraphIndex` retains every authority claim, preserves identical claims,
+and reports divergent definitions without choosing a winner. Its canonical serializer
+validates source references, claim and projection digests, and conflict records before
+emitting byte-identical JSON. Source-store digests are caller assertions at this
+layer; authority adapters are responsible for hashing exact store bytes. The pure
+builder performs no I/O and never turns graph metadata into approval or evidence.
+
 <details><summary>From source (contributors)</summary>
 
 ```bash

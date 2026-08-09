@@ -254,6 +254,51 @@ describe("Package Graph v1 schema", () => {
     }
   });
 
+  it("does not execute inherited array toJSON while distinguishing observed-risk identities", () => {
+    const originalToJSON = Object.getOwnPropertyDescriptor(Array.prototype, "toJSON");
+    const observedRisk = [
+      {
+        detector: { name: "a", version: "bc" },
+        evidence: {
+          sha256: SHA256,
+          subjectDigest: { algorithm: "git-sha1", value: SHA1 },
+        },
+        verdict: "pass",
+        findings: [],
+      },
+      {
+        detector: { name: "ab", version: "c" },
+        evidence: {
+          sha256: SHA256,
+          subjectDigest: { algorithm: "git-sha1", value: SHA1 },
+        },
+        verdict: "pass",
+        findings: [],
+      },
+    ];
+    let hookCalls = 0;
+    let parsedSuccessfully = false;
+
+    try {
+      Object.defineProperty(Array.prototype, "toJSON", {
+        configurable: true,
+        value() {
+          hookCalls += 1;
+          return "polluted-array";
+        },
+      });
+      parsedSuccessfully = PackageGraphSchema.safeParse(
+        graph({ surfaces: [surface({ observedRisk })] }),
+      ).success;
+    } finally {
+      if (originalToJSON === undefined) Reflect.deleteProperty(Array.prototype, "toJSON");
+      else Object.defineProperty(Array.prototype, "toJSON", originalToJSON);
+    }
+
+    expect(hookCalls).toBe(0);
+    expect(parsedSuccessfully).toBe(true);
+  });
+
   it.each([
     { algorithm: "git-sha1", value: "a".repeat(39) },
     { algorithm: "git-sha1", value: "A".repeat(40) },
