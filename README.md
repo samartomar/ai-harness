@@ -62,6 +62,13 @@ Per-version release notes — what changed, and why — live in
 [CHANGELOG.md](https://github.com/samartomar/ai-harness/blob/main/CHANGELOG.md). It ships inside the
 npm tarball too, so an evaluator can read the version history straight from the unpacked package.
 
+<!-- aih:claim CM-51 -->
+Library integrations can import the strict Package Graph v1 TypeScript schema from
+`@aihq/harness` and resolve its structural editor schema at
+`@aihq/harness/schemas/aih-package-graph.schema.json`. Cross-record checks such as
+identity uniqueness, direct-member resolution, and evidence subject binding belong
+to the TypeScript parser; graph metadata is never approval or evidence by itself.
+
 <details><summary>From source (contributors)</summary>
 
 ```bash

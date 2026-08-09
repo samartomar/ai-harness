@@ -1,0 +1,494 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "surfaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^(?!package:)[a-z][a-z0-9-]*:[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*$"
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"
+              },
+              "repository": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 240,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?:\\/[A-Za-z0-9][A-Za-z0-9._-]*)+$"
+              }
+            },
+            "required": [
+              "provider",
+              "repository"
+            ],
+            "additionalProperties": false
+          },
+          "sourceDigest": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "algorithm": {
+                    "type": "string",
+                    "const": "git-sha1"
+                  },
+                  "value": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}$"
+                  }
+                },
+                "required": [
+                  "algorithm",
+                  "value"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "algorithm": {
+                    "type": "string",
+                    "const": "sha256"
+                  },
+                  "value": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "algorithm",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "declaredRisk": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "axis": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+                }
+              },
+              "required": [
+                "axis",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "observedRisk": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "detector": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^(?=.*\\S)[^\\p{Cc}\\p{Cf}\\u2028\\u2029]+$"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "additionalProperties": false
+                },
+                "evidence": {
+                  "type": "object",
+                  "properties": {
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "subjectDigest": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "algorithm": {
+                              "type": "string",
+                              "const": "git-sha1"
+                            },
+                            "value": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{40}$"
+                            }
+                          },
+                          "required": [
+                            "algorithm",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "algorithm": {
+                              "type": "string",
+                              "const": "sha256"
+                            },
+                            "value": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            }
+                          },
+                          "required": [
+                            "algorithm",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "sha256",
+                    "subjectDigest"
+                  ],
+                  "additionalProperties": false
+                },
+                "verdict": {
+                  "type": "string",
+                  "enum": [
+                    "pass",
+                    "warn",
+                    "blocked",
+                    "unknown"
+                  ]
+                },
+                "findings": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "code": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "code"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "detector",
+                "evidence",
+                "verdict",
+                "findings"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "sourceDigest"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 9,
+            "maxLength": 160,
+            "pattern": "^package:[a-z][a-z0-9-]*\\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*$"
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"
+              },
+              "repository": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 240,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?:\\/[A-Za-z0-9][A-Za-z0-9._-]*)+$"
+              }
+            },
+            "required": [
+              "provider",
+              "repository"
+            ],
+            "additionalProperties": false
+          },
+          "sourceDigest": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "algorithm": {
+                    "type": "string",
+                    "const": "git-sha1"
+                  },
+                  "value": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}$"
+                  }
+                },
+                "required": [
+                  "algorithm",
+                  "value"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "algorithm": {
+                    "type": "string",
+                    "const": "sha256"
+                  },
+                  "value": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "algorithm",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "members": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 160,
+              "pattern": "^(?!package:)[a-z][a-z0-9-]*:[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*$"
+            }
+          },
+          "declaredRisk": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "axis": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+                }
+              },
+              "required": [
+                "axis",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "observedRisk": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "detector": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^(?=.*\\S)[^\\p{Cc}\\p{Cf}\\u2028\\u2029]+$"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "additionalProperties": false
+                },
+                "evidence": {
+                  "type": "object",
+                  "properties": {
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "subjectDigest": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "algorithm": {
+                              "type": "string",
+                              "const": "git-sha1"
+                            },
+                            "value": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{40}$"
+                            }
+                          },
+                          "required": [
+                            "algorithm",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "algorithm": {
+                              "type": "string",
+                              "const": "sha256"
+                            },
+                            "value": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            }
+                          },
+                          "required": [
+                            "algorithm",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "sha256",
+                    "subjectDigest"
+                  ],
+                  "additionalProperties": false
+                },
+                "verdict": {
+                  "type": "string",
+                  "enum": [
+                    "pass",
+                    "warn",
+                    "blocked",
+                    "unknown"
+                  ]
+                },
+                "findings": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "code": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "code"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "detector",
+                "evidence",
+                "verdict",
+                "findings"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "sourceDigest",
+          "members"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "surfaces",
+    "packages"
+  ],
+  "additionalProperties": false,
+  "title": "aih-package-graph.schema.json",
+  "$comment": "This JSON Schema validates the portable editor structure. Use PackageGraphSchema.parse for semantic invariants including identity uniqueness, direct-member resolution, and evidence subject-digest binding."
+}
+

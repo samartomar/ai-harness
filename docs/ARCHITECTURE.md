@@ -24,7 +24,9 @@ and the executor is the only layer that performs filesystem or process effects.
   `src/marketplace/`) vets external skill sources, pins commits, records
   approvals, and blocks unapproved installs at enterprise posture.
 - **Policy and schemas** (`src/org-policy/`, `src/config/`, `schemas/`) validate
-  committed org policy and bootstrap markers.
+  committed org policy and bootstrap markers. The public Package Graph v1 grammar
+  lives under `src/capability/package-graph/` and models only direct package-to-surface
+  composition; it is metadata, never approval or evidence.
 - **Evidence and release verification** (`src/evidence/`, `src/bundle/`,
   `src/release/`) package local audit material and verify published releases.
 - **Reporting and local telemetry** (`src/report/`, `src/logging/`,

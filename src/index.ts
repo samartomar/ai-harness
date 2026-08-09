@@ -3,6 +3,7 @@
  * re-exports the reusable core so the harness can be embedded programmatically.
  */
 
+export * from "./capability/package-graph/index.js";
 export {
   ALL_COMMANDS,
   builtinCommandNames,
