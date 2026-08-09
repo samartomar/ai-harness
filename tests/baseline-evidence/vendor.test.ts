@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   baselineAnalyzerVersions,
@@ -7,6 +9,7 @@ import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import type { BaselineComponentEvidence } from "../../src/baseline-evidence/schema.js";
 import {
   readVendorBaselineLock,
+  vendorBaselineLockBytes,
   vendorBaselineLockSha256,
 } from "../../src/baseline-evidence/vendor.js";
 
@@ -89,8 +92,14 @@ describe("shipped vendor baseline lock", () => {
     ).toBe(true);
   });
 
-  it("exposes a stable lowercase SHA-256 receipt for the shipped lock bytes", () => {
-    expect(vendorBaselineLockSha256()).toMatch(/^[0-9a-f]{64}$/);
-    expect(vendorBaselineLockSha256()).toBe(vendorBaselineLockSha256());
+  it("exposes copied authoritative bytes and hashes the exact committed lock file", () => {
+    const committed = readFileSync("src/baseline-evidence/vendor-lock.json");
+    const bytes = vendorBaselineLockBytes();
+
+    expect(bytes).toEqual(committed);
+    expect(vendorBaselineLockSha256()).toBe(createHash("sha256").update(committed).digest("hex"));
+
+    bytes[0] = 0;
+    expect(vendorBaselineLockBytes()).toEqual(committed);
   });
 });

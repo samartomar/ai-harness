@@ -77,6 +77,15 @@ emitting byte-identical JSON. Source-store digests are caller assertions at this
 layer; authority adapters are responsible for hashing exact store bytes. The pure
 builder performs no I/O and never turns graph metadata into approval or evidence.
 
+<!-- aih:claim CM-53 -->
+The exported Package Graph authority adapters hash the exact bytes they parse. They
+join the shipped baseline catalog to its evidence lock, enrich exact ECC
+materialization receipts, and project strict GitHub skill locks and pack catalogs
+without mutating any source store. Discovery classification keeps exact
+lock/receipt registrations, catalog-only membership, undeclared immutable residue,
+divergence, and unsupported mutable observations separate. GitLab, Bitbucket,
+Azure DevOps, and GHES adapters are not implemented.
+
 <details><summary>From source (contributors)</summary>
 
 ```bash

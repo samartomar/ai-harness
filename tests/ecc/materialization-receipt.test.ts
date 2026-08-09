@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -432,13 +433,97 @@ describe("F5 — the destination-scoped materialization receipt document", () =>
     const receipt = parseEccMaterializationReceipt(JSON.stringify(receiptValue()));
     const text = serializeEccMaterializationReceipt(receipt);
     put(ECC_MATERIALIZATION_RECEIPT_PATH, text);
-    expect(readEccMaterializationReceipt(root)).toEqual({ state: "valid", receipt, raw: text });
+    expect(readEccMaterializationReceipt(root)).toEqual({
+      state: "valid",
+      receipt,
+      raw: text,
+      sourceBytes: Buffer.from(text, "utf8"),
+      sourceSha256: createHash("sha256").update(Buffer.from(text, "utf8")).digest("hex"),
+    });
 
     put(ECC_MATERIALIZATION_RECEIPT_PATH, "{ not json");
     const malformed = readEccMaterializationReceipt(root);
     expect(malformed.state).toBe("malformed");
     if (malformed.state !== "malformed") throw new Error("expected a malformed receipt state");
     expect(malformed.detail).toMatch(/materialization receipt/i);
+  });
+
+  it("hashes the exact opened receipt bytes instead of normalized decoded text", () => {
+    const receipt = parseEccMaterializationReceipt(JSON.stringify(receiptValue()));
+    const canonical = serializeEccMaterializationReceipt(receipt);
+    const crlf = canonical.replace(/\n/g, "\r\n");
+    put(ECC_MATERIALIZATION_RECEIPT_PATH, crlf);
+
+    const read = readEccMaterializationReceipt(root);
+    expect(read.state).toBe("valid");
+    if (read.state !== "valid") throw new Error("expected a valid receipt state");
+    expect(read.receipt).toEqual(receipt);
+    expect(read.raw).toBe(crlf);
+    expect(read.sourceBytes).toEqual(Buffer.from(crlf, "utf8"));
+    expect(read.sourceSha256).toBe(
+      createHash("sha256").update(Buffer.from(crlf, "utf8")).digest("hex"),
+    );
+    expect(read.sourceSha256).not.toBe(
+      createHash("sha256").update(Buffer.from(canonical, "utf8")).digest("hex"),
+    );
+
+    read.sourceBytes[0] = 0;
+    const reread = readEccMaterializationReceipt(root);
+    expect(reread.state).toBe("valid");
+    if (reread.state !== "valid") throw new Error("expected a valid receipt state");
+    expect(reread.sourceBytes).toEqual(Buffer.from(crlf, "utf8"));
+  });
+
+  it("rejects malformed UTF-8 even when replacement text would satisfy the schema", () => {
+    const value = receiptValue({
+      components: [
+        {
+          ...componentValue(),
+          files: [
+            {
+              path: ".claude/settings.json",
+              operation: "merge-json",
+              contentSha256: "f".repeat(64),
+              ownedKeys: ["safeKey"],
+              createdByAih: true,
+            },
+          ],
+        },
+      ],
+    });
+    const text = serializeEccMaterializationReceipt(
+      parseEccMaterializationReceipt(JSON.stringify(value)),
+    );
+    const bytes = Buffer.from(text, "utf8");
+    const ownedKeyOffset = bytes.indexOf("safeKey");
+    if (ownedKeyOffset < 0) throw new Error("expected owned key in serialized receipt");
+    bytes[ownedKeyOffset + 1] = 0xff;
+    mkdirSync(dirname(eccMaterializationReceiptPath(root)), { recursive: true });
+    writeFileSync(eccMaterializationReceiptPath(root), bytes);
+
+    expect(readEccMaterializationReceipt(root).state).toBe("malformed");
+  });
+
+  it("refuses non-regular, linked, and oversized receipt files", () => {
+    mkdirSync(eccMaterializationReceiptPath(root), { recursive: true });
+    expect(readEccMaterializationReceipt(root).state).toBe("malformed");
+    rmSync(eccMaterializationReceiptPath(root), { recursive: true, force: true });
+
+    const target = join(root, "receipt-target.json");
+    writeFileSync(
+      target,
+      serializeEccMaterializationReceipt(
+        parseEccMaterializationReceipt(JSON.stringify(receiptValue())),
+      ),
+      "utf8",
+    );
+    mkdirSync(dirname(eccMaterializationReceiptPath(root)), { recursive: true });
+    symlinkSync(target, eccMaterializationReceiptPath(root));
+    expect(readEccMaterializationReceipt(root).state).toBe("malformed");
+    rmSync(eccMaterializationReceiptPath(root), { force: true });
+
+    writeFileSync(eccMaterializationReceiptPath(root), "x".repeat(4 * 1024 * 1024 + 1), "utf8");
+    expect(readEccMaterializationReceipt(root).state).toBe("malformed");
   });
 
   it("scopes the receipt to the written root's own AIH area", () => {
