@@ -249,7 +249,7 @@ describe("headless effective org policy", () => {
     );
   });
 
-  it("preserves a remote custom MCP record but keeps it non-projectable", () => {
+  it("keeps declarative remote governance free of tool-surface drift enforcement", () => {
     const source = {
       type: "remote" as const,
       origin: "https://mcp.figma.com",
@@ -258,8 +258,7 @@ describe("headless effective org policy", () => {
         authenticationMode: "oauth",
         allowedDataClasses: ["design-metadata"],
       },
-      toolSurfaceDigest: DIGEST,
-      verdict: "approved" as const,
+      administrativeStatus: "approved" as const,
       contentScanned: false as const,
     };
     const base = policy();

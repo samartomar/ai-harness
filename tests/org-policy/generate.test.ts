@@ -338,6 +338,137 @@ describe("policy generate", () => {
     }
   });
 
+  it("round-trips administrator-managed remote status without inventing legacy drift fields", async () => {
+    const imported = fullAuthoringPolicy();
+    const governance = imported.governance as {
+      catalog: { custom: Array<Record<string, unknown>> };
+    };
+    governance.catalog.custom.push({
+      id: "figma-remote",
+      kind: "mcp",
+      description: "Approved hosted design MCP",
+      capabilities: [],
+      risks: ["hosted endpoint"],
+      source: {
+        type: "remote",
+        origin: "https://mcp.figma.com",
+        approval: {
+          approvedBy: "security-admin",
+          authenticationMode: "oauth",
+          allowedDataClasses: ["design-metadata"],
+        },
+        administrativeStatus: "approved",
+        contentScanned: false,
+      },
+      targets: ["claude"],
+      projector: "mcp-managed-settings",
+      lifecycle: "supported",
+      evidence: { record: "audit-remote-2026" },
+    });
+
+    const window = new Window({ url: "http://localhost/" });
+    const html = policyStudioHtml(policyStudioModel());
+    window.document.write(html);
+    loadStudio(window, html);
+    const document = window.document;
+    const policyFile = document.getElementById("policy-file");
+    if (policyFile === null) throw new Error("expected policy file input");
+    Object.defineProperty(policyFile, "files", {
+      configurable: true,
+      value: [
+        new window.File([JSON.stringify(imported)], "remote-policy.json", {
+          type: "application/json",
+        }),
+      ],
+    });
+    policyFile.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await settle(window, () =>
+      Boolean(
+        document.getElementById("announcement")?.textContent?.includes("without transformation"),
+      ),
+    );
+
+    document
+      .querySelector('[data-workbench-action="edit"][data-workbench-kind="remote"]')
+      ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const status = document.getElementById("remote-custom-administrative-status") as unknown as {
+      value: string;
+    } | null;
+    expect(status?.value).toBe("approved");
+    expect(document.getElementById("remote-custom-tool-surface-digest")).toBeNull();
+    expect(document.getElementById("remote-custom-verdict")).toBeNull();
+    if (status === null) throw new Error("expected administrative status select");
+    status.value = "revoked";
+    document
+      .getElementById("remote-custom-form")
+      ?.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+
+    const exported = JSON.parse(
+      (document.getElementById("config-preview") as unknown as { value: string }).value,
+    ) as {
+      governance: { catalog: { custom: Array<{ id: string; source: Record<string, unknown> }> } };
+    };
+    const remote = exported.governance.catalog.custom.find((item) => item.id === "figma-remote");
+    expect(remote?.source).toMatchObject({
+      type: "remote",
+      origin: "https://mcp.figma.com",
+      administrativeStatus: "revoked",
+      contentScanned: false,
+    });
+    expect(remote?.source).not.toHaveProperty("toolSurfaceDigest");
+    expect(remote?.source).not.toHaveProperty("verdict");
+    expect(document.getElementById("custom-rows")?.textContent).toContain(
+      "Administrative status: revoked",
+    );
+    expect(document.getElementById("custom-rows")?.textContent).toContain("Content scan: none");
+
+    const legacy = structuredClone(imported);
+    const legacyRemote = (
+      legacy.governance as {
+        catalog: { custom: Array<{ id: string; source: Record<string, unknown> }> };
+      }
+    ).catalog.custom.find((item) => item.id === "figma-remote");
+    if (legacyRemote === undefined) throw new Error("expected legacy remote fixture");
+    legacyRemote.source = {
+      type: "remote",
+      origin: "https://mcp.figma.com",
+      approval: {
+        approvedBy: "security-admin",
+        authenticationMode: "oauth",
+        allowedDataClasses: ["design-metadata"],
+      },
+      toolSurfaceDigest: sha("d"),
+      verdict: "drifted",
+      contentScanned: false,
+    };
+    Object.defineProperty(policyFile, "files", {
+      configurable: true,
+      value: [new window.File([JSON.stringify(legacy)], "legacy-remote-policy.json")],
+    });
+    policyFile.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await settle(window, () =>
+      Boolean(
+        (
+          document.getElementById("config-preview") as unknown as { value?: string } | null
+        )?.value?.includes('"verdict": "drifted"'),
+      ),
+    );
+    const readOnly = document.querySelector(
+      '[data-workbench-action="readonly"][data-workbench-kind="remote"]',
+    );
+    expect(readOnly).not.toBeNull();
+    readOnly?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(document.getElementById("announcement")?.textContent).toContain("preserved read-only");
+    const preserved = JSON.parse(
+      (document.getElementById("config-preview") as unknown as { value: string }).value,
+    ) as {
+      governance: { catalog: { custom: Array<{ id: string; source: Record<string, unknown> }> } };
+    };
+    expect(
+      preserved.governance.catalog.custom.find((item) => item.id === "figma-remote")?.source,
+    ).toEqual(legacyRemote.source);
+  });
+
   it("derives catalog data and embeds all authored workbench surfaces without persistent catalog prose", () => {
     const model = policyStudioModel();
     expect(model.catalog.mcp.length).toBeGreaterThan(0);
@@ -471,7 +602,6 @@ describe("policy generate", () => {
     setValue("remote-custom-approved-by", "security-admin");
     setValue("remote-custom-authentication-mode", "oauth");
     setValue("remote-custom-data-classes", "design-metadata");
-    setValue("remote-custom-tool-surface-digest", sha("d"));
     setValue("remote-custom-evidence", "audit-remote-2026");
     const remoteForm = document.getElementById("remote-custom-form");
     if (remoteForm === null) throw new Error("expected remote custom form");
@@ -606,8 +736,7 @@ describe("policy generate", () => {
     set("remote-custom-approved-by", "security-admin");
     set("remote-custom-authentication-mode", "oauth");
     set("remote-custom-data-classes", "design-metadata");
-    set("remote-custom-tool-surface-digest", sha("d"));
-    set("remote-custom-verdict", "approved");
+    set("remote-custom-administrative-status", "approved");
     set("remote-custom-evidence", "audit-remote-2026");
     const remoteForm = document.getElementById("remote-custom-form");
     remoteForm?.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));

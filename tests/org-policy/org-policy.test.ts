@@ -15,7 +15,11 @@ import {
   orgPolicyIntegrityProbes,
 } from "../../src/org-policy/drift.js";
 import { orgPolicyProjectionActions } from "../../src/org-policy/project.js";
-import { parseOrgPolicy, readOrgPolicy } from "../../src/org-policy/schema.js";
+import {
+  CandidateSourceSchema,
+  parseOrgPolicy,
+  readOrgPolicy,
+} from "../../src/org-policy/schema.js";
 import { policyProjectCommand } from "../../src/org-policy/validate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
@@ -292,6 +296,135 @@ describe("OrgPolicySchema", () => {
       verdict: "approved",
       contentScanned: false,
     });
+  });
+
+  it("accepts a declarative remote record without a tool-surface digest", () => {
+    const parsed = parseOrgPolicy(
+      policy({
+        governance: {
+          policyVersion: "2026.08.0",
+          supportedClis: ["claude"],
+          catalog: {
+            reviewed: [],
+            custom: [
+              {
+                id: "figma-remote",
+                kind: "mcp",
+                description: "Approved hosted design MCP",
+                capabilities: [],
+                risks: ["hosted endpoint"],
+                source: {
+                  type: "remote",
+                  origin: "https://mcp.figma.com",
+                  approval: {
+                    approvedBy: "security-admin",
+                    authenticationMode: "oauth",
+                    allowedDataClasses: ["design-metadata"],
+                  },
+                  administrativeStatus: "approved",
+                  contentScanned: false,
+                },
+                targets: ["claude"],
+                projector: "mcp-managed-settings",
+                lifecycle: "supported",
+                evidence: { record: "figma-remote-approval" },
+              },
+            ],
+          },
+          activations: [],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+
+    expect(parsed.governance?.catalog.custom[0]?.source).toMatchObject({
+      type: "remote",
+      administrativeStatus: "approved",
+      contentScanned: false,
+    });
+  });
+
+  it("keeps legacy remote tool-surface records parse-compatible", () => {
+    const parsed = parseOrgPolicy(
+      policy({
+        governance: {
+          policyVersion: "2026.08.0",
+          supportedClis: ["claude"],
+          catalog: {
+            reviewed: [],
+            custom: [
+              {
+                id: "figma-remote",
+                kind: "mcp",
+                description: "Approved hosted design MCP",
+                capabilities: [],
+                risks: ["hosted endpoint"],
+                source: {
+                  type: "remote",
+                  origin: "https://mcp.figma.com",
+                  approval: {
+                    approvedBy: "security-admin",
+                    authenticationMode: "oauth",
+                    allowedDataClasses: ["design-metadata"],
+                  },
+                  toolSurfaceDigest:
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  verdict: "drifted",
+                  contentScanned: false,
+                },
+                targets: ["claude"],
+                projector: "mcp-managed-settings",
+                lifecycle: "supported",
+                evidence: { record: "figma-remote-approval" },
+              },
+            ],
+          },
+          activations: [],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+
+    expect(parsed.governance?.catalog.custom[0]?.source).toMatchObject({
+      type: "remote",
+      verdict: "drifted",
+      contentScanned: false,
+    });
+  });
+
+  it.each([
+    ["no status model", {}],
+    [
+      "only a legacy digest",
+      {
+        toolSurfaceDigest:
+          "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      },
+    ],
+    ["only a legacy verdict", { verdict: "drifted" }],
+    [
+      "both new and legacy models",
+      {
+        administrativeStatus: "approved",
+        toolSurfaceDigest:
+          "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        verdict: "drifted",
+      },
+    ],
+  ])("rejects remote records with %s", (_label, status) => {
+    expect(
+      CandidateSourceSchema.safeParse({
+        type: "remote",
+        origin: "https://mcp.figma.com",
+        approval: {
+          approvedBy: "security-admin",
+          authenticationMode: "oauth",
+          allowedDataClasses: ["design-metadata"],
+        },
+        ...status,
+        contentScanned: false,
+      }).success,
+    ).toBe(false);
   });
 
   it.each([

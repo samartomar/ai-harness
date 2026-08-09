@@ -145,6 +145,7 @@ const RECEIPT_SOURCE_CONSUMERS: Readonly<Record<string, string>> = {
   "approval.allowedDataClasses.*": "authority resolver: exact remote source binding",
   "approval.approvedBy": "authority resolver: exact remote source binding",
   "approval.authenticationMode": "authority resolver: exact remote source binding",
+  administrativeStatus: "authority resolver: administrator-managed remote availability binding",
   contentScanned: "authority resolver: exact remote source binding",
   "args.*": "authority resolver: immutable source binding",
   command: "authority resolver: immutable source binding",
