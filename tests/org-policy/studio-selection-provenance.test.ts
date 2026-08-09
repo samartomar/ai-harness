@@ -19,13 +19,9 @@ function studio(): Window {
 }
 
 function selectProfile(window: Window, value: string): void {
-  const profile = window.document.getElementById("profile") as unknown as {
-    value: string;
-    dispatchEvent: (event: unknown) => boolean;
-  } | null;
-  if (profile === null) throw new Error("expected profile selector");
-  profile.value = value;
-  profile.dispatchEvent(new window.Event("change", { bubbles: true }));
+  const preset = window.document.querySelector(`[data-preset="${value}"]`);
+  if (preset === null) throw new Error(`expected ${value} preset`);
+  preset.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 }
 
 function activations(window: Window): { candidate: string; clarification?: string }[] {

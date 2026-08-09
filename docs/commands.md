@@ -631,6 +631,8 @@ imported authority receipt's subjects in `governance.authority.approvals`, but i
 approval effective. Target-repository `evaluate` remains the source of effective state. Both custom-MCP forms remain pending,
 hard-blocked candidates with no activation affordance until supported scanning, evidence, and projection exist.
 
+The left rail is the sole selection surface for ECC languages, frameworks, capabilities, and modules; those controls are not repeated in the main inventory, preset toolbar, or inspector. A separate Add MCP sidebar authors approved/revoked `governance.eccMcpApprovals` records at the pinned catalog digest. It lists all 31 external ECC entries and records declarative permission. Only entries labeled HTTPS-configurable can use the later `aih ecc mcp add <id> --cli <client>` path; manual entries remain approval-only. The browser does not install, contact, scan, attest, or observe the endpoint.
+
 The headless schema also accepts a declarative remote record with an
 administrator-managed `approved` or `revoked` status and no tool-surface digest.
 It still requires the exact HTTPS origin, approver, authentication mode,

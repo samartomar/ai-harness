@@ -181,7 +181,10 @@ describe("S2 — the owner ticker counts every registrar-related row under its t
     expect(owners("usage-metering")).toContain("AIH");
     for (const entry of model.catalog.hookRegistry.entries) {
       if (entry.owner === "aih") continue;
-      const filed = owners(entry.id);
+      const railOwners = [...window.document.querySelectorAll(".rail [data-framework-select]")]
+        .filter((node) => node.getAttribute("data-framework-select")?.endsWith(`|${entry.id}`))
+        .map((node) => node.closest("[data-owner]")?.getAttribute("data-owner") ?? "(unfiled)");
+      const filed = owners(entry.id).concat(railOwners);
       expect(filed.length, `${entry.id} has a counted inventory row`).toBeGreaterThan(0);
       for (const owner of filed) expect(owner).toBe(entry.ownerLabel);
     }
@@ -194,9 +197,12 @@ describe("S2 — the owner ticker counts every registrar-related row under its t
       const domRows = [...document.querySelectorAll(".grp[data-owner]")]
         .filter((group) => String(group.getAttribute("data-owner")).split(" ").includes(owner))
         .reduce((total, group) => total + group.querySelectorAll(".row[data-state]").length, 0);
+      const railSelections = [
+        ...document.querySelectorAll(`.rail [data-owner="${owner}"] [data-framework-select]`),
+      ].length;
       const button = document.querySelector(`#owner-ticker [data-owner-focus="${owner}"] b`);
       expect(button, `${owner} ticker entry`).not.toBeNull();
-      expect(Number(button?.textContent), `${owner} tally`).toBe(domRows);
+      expect(Number(button?.textContent), `${owner} tally`).toBe(domRows + railSelections);
     }
   });
 });

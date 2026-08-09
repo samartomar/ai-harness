@@ -9,15 +9,19 @@ const model = policyStudioModel();
 const assets = model.catalog.frameworks.flatMap((framework) =>
   framework.assets.map((asset) => ({ framework, asset })),
 );
+const mainAssets = assets.filter(
+  ({ framework, asset }) =>
+    framework.id !== "ecc" || !["lang", "framework", "capability", "module"].includes(asset.kind),
+);
 
 // Real, shipped fixtures for the two vet verdicts the vendor lock actually
 // carries at this pin. A second, distinct pass example lets the fulfillment
 // summary test select an asymmetric count (2 pass, 1 blocked) - with equal
 // counts a swapped counter reads identically and the assertion cannot fail
 // for the reason it claims (this program's own recurring defect class).
-const passExample = assets.find(({ asset }) => asset.vet?.verdict === "pass");
-const blockedExample = assets.find(({ asset }) => asset.vet?.verdict === "blocked");
-const passExample2 = assets.find(
+const passExample = mainAssets.find(({ asset }) => asset.vet?.verdict === "pass");
+const blockedExample = mainAssets.find(({ asset }) => asset.vet?.verdict === "blocked");
+const passExample2 = mainAssets.find(
   ({ asset }) => asset.vet?.verdict === "pass" && asset.id !== passExample?.asset.id,
 );
 if (passExample === undefined || blockedExample === undefined || passExample2 === undefined) {
@@ -403,7 +407,9 @@ describe("selection to fulfillment affordance", () => {
     click(window, selectSelector(passExample));
     const rowCountAfterFirstSelection =
       window.document.querySelectorAll("#framework-rows .row").length;
-    expect(rowCountAfterFirstSelection).toBe(passExample.framework.assets.length);
+    expect(rowCountAfterFirstSelection).toBe(
+      mainAssets.filter(({ framework }) => framework.id === passExample.framework.id).length,
+    );
     click(window, selectSelector(blockedExample));
     const rowCountAfterSecondSelection =
       window.document.querySelectorAll("#framework-rows .row").length;

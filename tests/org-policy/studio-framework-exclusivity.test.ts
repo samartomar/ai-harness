@@ -16,6 +16,12 @@ const spAsset = superpowers.assets[0];
 if (eccAsset === undefined || spAsset === undefined)
   throw new Error("expected both frameworks to carry assets");
 
+const planeCount = (framework: (typeof frameworks)[number]): number =>
+  framework.assets.filter(
+    (asset) =>
+      framework.id !== "ecc" || !["lang", "framework", "capability", "module"].includes(asset.kind),
+  ).length;
+
 function studio(): Window {
   const window = new Window({ url: "http://localhost/" });
   const html = policyStudioHtml(model);
@@ -101,9 +107,9 @@ describe("policy studio framework exclusivity", () => {
   it("takes the other framework out of the plane and states the count", () => {
     const window = studio();
     click(window, selectKey(ecc, eccAsset));
-    expect(window.document.querySelectorAll("#framework-rows .row").length).toBe(ecc.assets.length);
+    expect(window.document.querySelectorAll("#framework-rows .row").length).toBe(planeCount(ecc));
     const notice = window.document.querySelector("[data-framework-notice]")?.textContent ?? "";
-    expect(notice).toContain(String(superpowers.assets.length));
+    expect(notice).toContain(String(planeCount(superpowers)));
     expect(notice.toLowerCase()).toContain("one framework at a time");
     expect(notice).toContain("Clear");
   });
@@ -112,10 +118,10 @@ describe("policy studio framework exclusivity", () => {
     const window = studio();
     click(window, selectKey(superpowers, spAsset));
     expect(window.document.querySelectorAll("#framework-rows .row").length).toBe(
-      superpowers.assets.length,
+      planeCount(superpowers),
     );
     const notice = window.document.querySelector("[data-framework-notice]")?.textContent ?? "";
-    expect(notice).toContain(String(ecc.assets.length));
+    expect(notice).toContain(String(planeCount(ecc)));
   });
 
   // The excluded framework stays reachable through search, so the refusal has

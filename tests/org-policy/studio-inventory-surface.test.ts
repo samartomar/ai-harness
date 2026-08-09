@@ -7,6 +7,10 @@ const model = policyStudioModel();
 const assets = model.catalog.frameworks.flatMap((framework) =>
   framework.assets.map((asset) => ({ framework, asset })),
 );
+const mainAssets = assets.filter(
+  ({ framework, asset }) =>
+    framework.id !== "ecc" || !["lang", "framework", "capability", "module"].includes(asset.kind),
+);
 
 function studio(): Window {
   const window = new Window({ url: "http://localhost/" });
@@ -40,8 +44,8 @@ describe("policy studio framework inventory", () => {
   // this, all 151 framework components fed a prefill dropdown and nothing else.
   it("presents every framework-owned component as visible inventory", () => {
     const { rows, text } = inventory(studio());
-    expect(rows.length).toBe(assets.length);
-    for (const { asset } of assets) {
+    expect(rows.length).toBe(mainAssets.length);
+    for (const { asset } of mainAssets) {
       expect(text, `${asset.id} is missing from the inventory`).toContain(asset.id);
     }
   });
@@ -71,7 +75,7 @@ describe("policy studio framework inventory", () => {
   // replaced by the dead end this row originally shipped.
   it("keeps kinds that policy cannot curate, with their evidence path stated", () => {
     const { text } = inventory(studio());
-    for (const kind of ["module:", "lang:", "framework:", "capability:", "mcp:", "runtime:"]) {
+    for (const kind of ["mcp:", "runtime:"]) {
       expect(text, `${kind} inventory`).toContain(kind);
     }
     expect(text).toContain("aih evidence vet-baseline");
@@ -82,7 +86,7 @@ describe("policy studio framework inventory", () => {
   // that used to be unnecessary; the round-trip it guards is unchanged.
   it("makes the curatable next action real by prefilling the curation form", () => {
     const window = studio();
-    const curatable = assets.find(({ asset }) => asset.curationKind !== undefined);
+    const curatable = mainAssets.find(({ asset }) => asset.curationKind !== undefined);
     if (curatable === undefined) throw new Error("expected a curatable asset in the catalog");
     const rowKey = `${curatable.framework.id} / ${curatable.asset.kind}: ${curatable.asset.id}`;
     window.document

@@ -8,7 +8,11 @@ import { mcpApprovalSubject } from "../mcp/policy.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
 import { usageRecorderScript } from "../usage/capture.js";
 import { claudeUsageHookCommand } from "../usage/hooks.js";
-import { type EccMcpCatalogEntry, eccExternalMcpCatalog } from "./ecc-mcp-catalog.js";
+import {
+  ECC_MCP_CATALOG_PROVENANCE,
+  type EccMcpCatalogEntry,
+  eccExternalMcpCatalog,
+} from "./ecc-mcp-catalog.js";
 import { type HookRegistration, hookOverlaps, hookSpawnProjection } from "./hook-registrar.js";
 
 /**
@@ -249,6 +253,8 @@ export interface PolicyAuthoringHookRegistry {
 export interface PolicyAuthoringCatalog {
   mcp: Array<{ id: string; description: string; server: McpServer; control: AihPolicyControl }>;
   externalMcp: readonly EccMcpCatalogEntry[];
+  /** Digest paired with externalMcp when authoring an exact declarative ECC approval. */
+  eccMcpApproval: { sourceContentSha256: string };
   hooks: PolicyAuthoringHook[];
   hookRegistry: PolicyAuthoringHookRegistry;
   frameworks: PolicyAuthoringFramework[];
@@ -566,6 +572,9 @@ export function policyAuthoringCatalog(): PolicyAuthoringCatalog {
   return {
     hosts: policyAuthoringHosts(),
     externalMcp: eccExternalMcpCatalog,
+    eccMcpApproval: {
+      sourceContentSha256: ECC_MCP_CATALOG_PROVENANCE.contentSha256,
+    },
     hookRegistry: hookRegistry(frameworks),
     enterpriseComposition: enterpriseComposition(ecc),
     mcp: Object.entries(mcp).flatMap(([id, server]) => {

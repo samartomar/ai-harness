@@ -39,13 +39,9 @@ const value = (window: Window, id: string): string =>
   (window.document.getElementById(id) as unknown as { value: string } | null)?.value ?? "";
 
 function chooseProfile(window: Window, profile: string): void {
-  const select = window.document.getElementById("profile") as unknown as {
-    value: string;
-    dispatchEvent: (event: unknown) => boolean;
-  } | null;
-  if (select === null) throw new Error("expected profile selector");
-  select.value = profile;
-  select.dispatchEvent(new window.Event("change", { bubbles: true }));
+  const preset = window.document.querySelector(`[data-preset="${profile}"]`);
+  if (preset === null) throw new Error(`expected ${profile} preset`);
+  preset.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 }
 
 function click(window: Window, id: string): void {
@@ -66,11 +62,16 @@ describe("policy workbench administrator journey", () => {
       "Requested by:",
     );
 
-    // 2. SURVEY. Every framework-owned component is visible, not hidden behind
-    //    a dropdown, and each says who owns it, that it is selectable, and how
-    //    its evidence is earned. The earlier `Unsupported` / `no projector`
-    //    wording described an AIH gate these rows do not have.
-    expect(rowCount(window, "framework-rows"), "full inventory").toBe(inventoryCount);
+    // 2. SURVEY. The main plane holds the non-duplicated inventory; the four
+    //    ECC namespaces owned by the rail remain selectable there.
+    const railOwned = model.catalog.frameworks
+      .find((framework) => framework.id === "ecc")
+      ?.assets.filter((asset) =>
+        ["lang", "framework", "capability", "module"].includes(asset.kind),
+      ).length;
+    expect(rowCount(window, "framework-rows"), "non-duplicated inventory").toBe(
+      inventoryCount - (railOwned ?? 0),
+    );
     expect(text(window, "framework-rows")).toContain("Selectable");
     expect(text(window, "framework-rows")).toContain("installs and runs it");
     expect(text(window, "framework-rows")).toContain("aih evidence vet-baseline");

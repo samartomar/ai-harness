@@ -14,6 +14,10 @@ const model = policyStudioModel();
 const assets = model.catalog.frameworks.flatMap((framework) =>
   framework.assets.map((asset) => ({ framework, asset })),
 );
+const mainAssets = assets.filter(
+  ({ framework, asset }) =>
+    framework.id !== "ecc" || !["lang", "framework", "capability", "module"].includes(asset.kind),
+);
 type InventoryEntry = (typeof assets)[number];
 
 /**
@@ -22,8 +26,8 @@ type InventoryEntry = (typeof assets)[number];
  * enforcement is a label, not a disabled authoring experience, and these are
  * the 79 the surface previously called `No next action`.
  */
-const uncuratable = assets.find(({ asset }) => asset.curationKind === undefined);
-const curatable = assets.find(({ asset }) => asset.curationKind !== undefined);
+const uncuratable = mainAssets.find(({ asset }) => asset.curationKind === undefined);
+const curatable = mainAssets.find(({ asset }) => asset.curationKind !== undefined);
 if (uncuratable === undefined || curatable === undefined)
   throw new Error("expected the pinned catalogs to carry both curatable and uncuratable assets");
 
@@ -92,7 +96,7 @@ describe("policy studio framework selection", () => {
   it("offers every framework-owned component as a selectable row", () => {
     const window = studio();
     const rows = inventoryRows(window);
-    expect(rows.length).toBe(assets.length);
+    expect(rows.length).toBe(mainAssets.length);
     for (const row of rows) {
       const status = row.querySelector(".badge")?.textContent ?? "";
       expect(status, `status for ${row.textContent?.slice(0, 60)}`).not.toContain("Unsupported");
