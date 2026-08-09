@@ -5320,6 +5320,10 @@ describe("trustScanCommand", () => {
     if (preflight?.kind !== "digest" || preflight.run === undefined) {
       throw new Error("expected runnable preflight evidence digest");
     }
+    const dryRun = await preflight.run({ ...ctx(), apply: false });
+    expect(typeof dryRun === "string" ? dryRun : dryRun.text).toBe(
+      "Preflight evidence record acme-scan-001 is not emitted in dry-run; pass --apply to fetch, hash, and scan the pinned npm tarball.",
+    );
     const treePath = String(input.treePath);
     const quarantineRoot = String(input.quarantineRoot);
     mkdirSync(treePath, { recursive: true });
