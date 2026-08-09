@@ -12,6 +12,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The Policy Workbench now makes every selectable control reversible, files every group under resolvable owner filters, links component ids in composition and registrar panels to their details, omits constant pseudo-state rows, and narrates requested versus browser-effective counts at export and download.
 - The Policy Workbench makes custom-MCP evidence work actionable: it names the tarball scan command, says evidence is owed at the exact pin, labels policy import as replacement versus evidence import as non-destructive preflight, and visually links matching imported preflight evidence without claiming it is trusted or effective.
 - `aih verify-release` now distinguishes a missing or inaccessible GitHub Release from an existing release whose checksum assets are still uploading, polls the latter with bounded backoff before failing, and tells operators how to install cosign when that verification leg cannot start.
 

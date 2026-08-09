@@ -148,7 +148,9 @@ describe("policy studio profile composition", () => {
         expect(row.querySelector(".badge")?.textContent ?? "", container).toContain(
           "Requested intent",
         );
-        expect(row.querySelector("[data-reviewed]")?.hasAttribute("disabled") ?? false).toBe(true);
+        const inverse = row.querySelector("[data-reviewed]");
+        expect(inverse?.hasAttribute("disabled") ?? true).toBe(false);
+        expect(inverse?.getAttribute("aria-label")).toContain("Deselect");
       }
     }
   });
