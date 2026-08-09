@@ -140,7 +140,7 @@ still initialize under the vendor CLI. Aih does not attest those customizations 
 | [`aih adopt`](docs/commands.md#aih-adopt) | Converge an existing AI canon onto aih's managed model without overwriting your work (brownfield migration). |
 | [`aih prune`](docs/commands.md#aih-prune) | Remove stale per-CLI artifacts and reconcile orphaned aih-managed ECC components from the machine registration ledger. <!-- aih:claim CM-22 --> |
 | [`aih uninstall`](docs/commands.md#aih-uninstall) | Remove the marker-backed core aih install footprint from a repo; `aih clean` is an alias. |
-| [`aih ecc`](docs/commands.md#aih-ecc) | Register the additive ECC union, manage the reviewed Claude/Codex projection with `--lifecycle`, or explicitly add/remove policy-approved ECC HTTPS MCP entries for project-local JSON clients with `aih ecc mcp add/remove`. In a governed repository, `--lifecycle install` materializes the org policy's evidence-passed selection for the targets `--cli` selects, and removal lives in `aih uninstall`. <!-- aih:claim CM-21 --> <!-- aih:claim CM-45 --> <!-- aih:claim CM-50 --> |
+| [`aih ecc`](docs/commands.md#aih-ecc) | Register the additive ECC union, manage the reviewed Claude/Codex projection with `--lifecycle`, or explicitly add/remove policy-approved ECC HTTPS MCP entries for one selected native client with `aih ecc mcp add/remove`. In a governed repository, `--lifecycle install` materializes the org policy's evidence-passed selection for the targets `--cli` selects, and removal lives in `aih uninstall`. <!-- aih:claim CM-21 --> <!-- aih:claim CM-45 --> <!-- aih:claim CM-50 --> |
 | [`aih superpowers`](docs/commands.md#aih-superpowers) | Verify exact-pinned Superpowers components and emit evidence-bound target guidance. |
 | [`aih crispy`](docs/commands.md#aih-crispy) | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |
 | [`aih workspace`](docs/commands.md#aih-workspace) | Scaffold and restore a multi-repo workspace at the parent folder: cross-repo map, declared-repo graph MCP, snapshots, hydrate. |
@@ -338,11 +338,12 @@ repo-declared local graph/memory servers); Context7 and Exa are never defaults.
 
 For ECC's separate external MCP catalog, `governance.eccMcpApprovals` is only a seat approval record.
 An operator still performs an explicit Add when a project needs one approved HTTPS entry:
-`aih ecc mcp add memxus --cli claude --apply`. That path currently writes only project-local JSON
-client configs for Claude, Cursor, Copilot, Kimi, and Kiro, records ownership under `.aih/`, and removes
-only unchanged receipt-owned entries with `aih ecc mcp remove <id> --cli <client> --apply`. It does not
-contact the endpoint, scan the remote tool list, install all approved entries, or write global/TOML client
-configs.
+`aih ecc mcp add memxus --cli claude --apply`. That path writes project-local JSON client configs for
+Claude, Cursor, Copilot, Kimi, and Kiro; guarded global JSON configs for Antigravity, Gemini, Windsurf,
+OpenCode, and Zed; and guarded Codex TOML. It records ownership under `.aih/`, removes only unchanged
+receipt-owned entries with `aih ecc mcp remove <id> --cli <client> --apply`, and doctor reports local
+receipt/config ownership state. It does not contact the endpoint, scan the remote tool list, or install all
+approved entries.
 
 ### Layered AI canon (`bootstrap-ai`)
 

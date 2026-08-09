@@ -88,6 +88,13 @@ export interface WriteAction {
    * and the executor fails closed if their resolved path escapes the root.
    */
   external?: boolean;
+  /**
+   * Opt-in no-follow boundary for an external write. The executor requires the
+   * target to remain beneath this existing real directory and rejects a symlinked
+   * parent at apply time. Existing external writes remain unguarded for backwards
+   * compatibility; new HOME-config lifecycles must set this explicitly.
+   */
+  trustedBase?: string;
   /** Commit this file only after every non-allowed exec in the plan has succeeded. */
   requiresPriorExecSuccess?: boolean;
 }
@@ -409,6 +416,7 @@ export function writeText(
     mode?: number;
     once?: boolean;
     external?: boolean;
+    trustedBase?: string;
     sensitive?: ActionSensitivity;
     requiresPriorExecSuccess?: boolean;
   } = {},
@@ -422,6 +430,7 @@ export function writeText(
     mode: opts.mode,
     once: opts.once,
     external: opts.external,
+    trustedBase: opts.trustedBase,
     requiresPriorExecSuccess: opts.requiresPriorExecSuccess,
     ...(opts.sensitive === undefined ? {} : { sensitive: opts.sensitive }),
   };
@@ -434,6 +443,7 @@ export function writeJson(
   opts: {
     merge?: boolean;
     external?: boolean;
+    trustedBase?: string;
     removeJsonKeys?: Record<string, readonly string[]>;
     replaceJsonKeys?: readonly string[];
     replaceJsonChildKeys?: Record<string, readonly string[]>;
@@ -458,6 +468,7 @@ export function writeJson(
     describe,
     merge: opts.merge,
     external: opts.external,
+    trustedBase: opts.trustedBase,
     removeJsonKeys: opts.removeJsonKeys,
     replaceJsonKeys: opts.replaceJsonKeys,
     replaceJsonChildKeys: opts.replaceJsonChildKeys,

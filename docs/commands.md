@@ -350,11 +350,12 @@ the client entry before `.aih/ecc-mcp-explicit-add-v1.json`, and pins both files
 changes. Dry-run is the default. `remove` does not need current approval; it subtracts only an
 unchanged entry whose receipt still proves AIH wrote that exact id/target/config digest. Missing,
 malformed, unsafe, absent, or drifted state is report-only and leaves the client config untouched.
-The initial write set is intentionally narrow: Claude `.mcp.json`, Cursor `.cursor/mcp.json`, Copilot
-`.vscode/mcp.json`, Kimi `.mcp.json`, and Kiro `.kiro/settings/mcp.json`. Codex TOML and other
-global or TOML clients are refused until the shared executor has a reviewed external-path parent
-symlink guard. This command does not contact an endpoint, scan remote tools, attest behavior, install
-all approved MCPs, or treat approval as automatic projection.
+The write set covers project-local JSON for Claude `.mcp.json`, Cursor `.cursor/mcp.json`, Copilot
+`.vscode/mcp.json`, Kimi `.mcp.json`, and Kiro `.kiro/settings/mcp.json`; global JSON for Antigravity,
+Gemini, Windsurf, OpenCode, and Zed; and Codex TOML. Global writes opt into an execution-time
+trusted-HOME containment and no-symlink-parent guard. Doctor reports clean, absent, altered, revoked,
+malformed, or unsafe receipt/config state from local files only. This command does not contact an endpoint,
+scan remote tools, attest behavior, install all approved MCPs, or treat approval as automatic projection.
 
 The same lifecycle manages project-local Claude and Codex hook/MCP registration without claiming
 either client's whole shared settings file. It adds one AIH composite hook per supported native
