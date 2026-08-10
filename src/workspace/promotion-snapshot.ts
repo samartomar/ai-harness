@@ -243,11 +243,13 @@ function selectedSkillDirs(
   if (selectedInput === undefined) return [...discovered];
   const selected = [...selectedInput].sort(compareCodeUnits);
   if (selected.length === 0) refuse("no skills selected for promotion");
+  const foldedSelected = selected.map((name) => name.toLowerCase());
   if (
     new Set(selected).size !== selected.length ||
+    new Set(foldedSelected).size !== foldedSelected.length ||
     selected.some((name) => !validRelativePath(name))
   ) {
-    refuse("invalid selected promotion skills");
+    refuse("invalid selected promotion skills or folded collision");
   }
   const byName = new Map(discovered.map((dir) => [promotedSkillRel(root, dir), dir]));
   const missing = selected.filter((name) => !byName.has(name));
@@ -303,10 +305,6 @@ function readPromotionFile(
   const targetPath = realpathSync(sourcePath);
   safeSourceRelative(root, targetPath);
   deps.afterFileResolve?.(sourcePath);
-  const before = lstatSync(targetPath, { bigint: true });
-  if (!before.isFile() || before.nlink > 1n || before.ino === 0n) {
-    refuse("promotion source changed before read");
-  }
   const noFollow = "O_NOFOLLOW" in constants ? constants.O_NOFOLLOW : 0;
   const descriptor = openSync(targetPath, constants.O_RDONLY | noFollow);
   try {
@@ -315,7 +313,7 @@ function readPromotionFile(
       !opened.isFile() ||
       opened.nlink > 1n ||
       opened.size > BigInt(PROMOTION_SNAPSHOT_LIMITS.maxFileBytes) ||
-      !sameProvableIdentity(opened, before)
+      opened.ino === 0n
     ) {
       refuse("promotion source changed before read");
     }

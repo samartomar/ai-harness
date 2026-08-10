@@ -504,11 +504,9 @@ describe("repo-local skill promotion snapshots", () => {
       /nested/i,
     );
 
-    skill("Alpha");
     expect(() =>
       snapshotSkillPromotion(request({ selectedSkills: new Set(["alpha", "Alpha"]) })),
     ).toThrow(/duplicate|collision/i);
-    rmSync(join(sourceRoot, "skills", "Alpha"), { recursive: true });
 
     const outsideRoot = mkdtempSync(join(tmpdir(), "aih-promotion-outside-"));
     const outsideFile = join(outsideRoot, "outside.md");
