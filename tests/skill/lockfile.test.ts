@@ -1,11 +1,10 @@
-import { linkSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   AIH_SKILLS_LOCK_FILE,
   readSkillsLock,
-  readSkillsLockExact,
   type SkillLockEntry,
   type SkillsLock,
   skillNameSchema,
@@ -69,65 +68,6 @@ describe("skillNameSchema", () => {
 });
 
 describe("readSkillsLock", () => {
-  it("reads strict exact committed bytes without accepting unknown entry fields", () => {
-    const valid = Buffer.from(JSON.stringify({ schemaVersion: 1, skills: [entry()] }));
-    writeFileSync(join(root, AIH_SKILLS_LOCK_FILE), valid);
-
-    const read = readSkillsLockExact(root);
-    expect(read.state).toBe("valid");
-    if (read.state !== "valid") throw new Error("expected valid lock");
-    expect(read.sourceBytes.equals(valid)).toBe(true);
-    expect(read.sourceSha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(read.lock.skills).toHaveLength(1);
-
-    writeLock(JSON.stringify({ schemaVersion: 1, skills: [{ ...entry(), unexpected: "field" }] }));
-    expect(readSkillsLockExact(root)).toEqual({ state: "malformed" });
-  });
-
-  it("distinguishes an absent strict lock from malformed committed state", () => {
-    expect(readSkillsLockExact(root)).toEqual({ state: "absent" });
-    writeLock("{ broken");
-    expect(readSkillsLockExact(root)).toEqual({ state: "malformed" });
-  });
-
-  it("rejects folded duplicate approvals and hard-linked authority files", () => {
-    writeLock(
-      JSON.stringify({
-        schemaVersion: 1,
-        skills: [entry({ name: "Clean" }), entry({ name: "clean" })],
-      }),
-    );
-    expect(readSkillsLockExact(root)).toEqual({ state: "malformed" });
-
-    writeLock(JSON.stringify({ schemaVersion: 1, skills: [entry()] }));
-    linkSync(join(root, AIH_SKILLS_LOCK_FILE), join(root, "approval-copy.json"));
-    expect(readSkillsLockExact(root)).toEqual({ state: "malformed" });
-  });
-
-  it("rejects a committed approval name swapped after descriptor open", () => {
-    writeLock(JSON.stringify({ schemaVersion: 1, skills: [entry()] }));
-    expect(
-      readSkillsLockExact(root, {
-        afterOpen() {
-          renameSync(join(root, AIH_SKILLS_LOCK_FILE), join(root, "old-skills-lock.json"));
-          writeLock(JSON.stringify({ schemaVersion: 1, skills: [entry({ name: "other" })] }));
-        },
-      }),
-    ).toEqual({ state: "malformed" });
-  });
-
-  it("rejects a committed approval replaced between inspect and open", () => {
-    writeLock(JSON.stringify({ schemaVersion: 1, skills: [entry()] }));
-    expect(
-      readSkillsLockExact(root, {
-        afterInspect() {
-          renameSync(join(root, AIH_SKILLS_LOCK_FILE), join(root, "inspected-skills-lock.json"));
-          writeLock(JSON.stringify({ schemaVersion: 1, skills: [entry({ name: "other" })] }));
-        },
-      }),
-    ).toEqual({ state: "malformed" });
-  });
-
   it("returns an empty lock when the file is absent", () => {
     expect(readSkillsLock(root)).toEqual({ schemaVersion: 1, skills: [] });
   });

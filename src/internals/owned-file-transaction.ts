@@ -19,12 +19,9 @@ export type OwnedFileRead =
   | { state: "present"; bytes: Buffer; mode: number }
   | { state: "unreadable"; detail: string };
 
-export type OwnedFileAction = "assert" | "write" | "remove";
-
-export type OwnedFileExpectation = { absent: true } | { sha256: string; mode?: number };
+export type OwnedFileExpectation = { absent: true } | { sha256: string };
 
 export interface OwnedFileStep {
-  action?: OwnedFileAction;
   path: string;
   mode: number;
   contents?: Buffer;
@@ -42,13 +39,10 @@ export interface OwnedFilePolicy {
   statePaths: ReadonlySet<string>;
   assertOwnedPath(path: string, ownState: boolean): void;
   assertResolvedSegments(segments: readonly string[], requested: string, ownState: boolean): void;
-  assertAction?(path: string, action: OwnedFileAction, ownState: boolean): void;
 }
 
 export interface OwnedFileTransactionDeps {
   rename?: (from: string, to: string) => void;
-  beforeEffects?: () => void;
-  afterEffects?: () => void;
 }
 
 const MAX_STEPS = 100_000;
@@ -56,26 +50,10 @@ const MAX_TOTAL_SNAPSHOT_BYTES = 128 * 1024 * 1024;
 const SAFE_LABEL = /^[\x20-\x7e]{1,80}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const UNSAFE_PATH_TEXT = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
-const STEP_KEYS = new Set([
-  "action",
-  "path",
-  "mode",
-  "contents",
-  "expect",
-  "prior",
-  "priorMode",
-  "announce",
-]);
-const DEP_KEYS = new Set(["rename", "beforeEffects", "afterEffects"]);
+const STEP_KEYS = new Set(["path", "mode", "contents", "expect", "prior", "priorMode", "announce"]);
 
 interface SnapshotPolicy extends OwnedFilePolicy {
   statePaths: ReadonlySet<string>;
-}
-
-interface SnapshotDeps {
-  rename?: (from: string, to: string) => void;
-  beforeEffects?: () => void;
-  afterEffects?: () => void;
 }
 
 const nativeRealpath = (realpathSync as unknown as { native?: (path: string) => string }).native;
@@ -139,51 +117,14 @@ function snapshotExpectation(value: unknown): OwnedFileExpectation {
     return { absent: true };
   }
   if (
-    (names.length === 1 || names.length === 2) &&
-    names.includes("sha256") &&
-    names.every((name) => name === "sha256" || name === "mode")
+    names.length === 1 &&
+    names[0] === "sha256" &&
+    typeof ownData(value, "sha256") === "string" &&
+    SHA256.test(ownData(value, "sha256") as string)
   ) {
-    const digest = ownData(value, "sha256");
-    const hasMode = names.includes("mode");
-    const mode = optionalOwnData(value, "mode");
-    if (typeof digest === "string" && SHA256.test(digest) && (!hasMode || validMode(mode))) {
-      return { sha256: digest, ...(hasMode ? { mode: mode as number } : {}) };
-    }
+    return { sha256: ownData(value, "sha256") as string };
   }
   throw new Error("invalid owned file transaction steps");
-}
-
-function snapshotDeps(value: unknown): SnapshotDeps {
-  if (!plainObject(value) || Object.getOwnPropertySymbols(value).length !== 0) {
-    throw new Error("owned file transaction dependencies are invalid");
-  }
-  const names = Object.getOwnPropertyNames(value);
-  if (names.some((name) => !DEP_KEYS.has(name))) {
-    throw new Error("owned file transaction dependencies are invalid");
-  }
-  const read = (key: string): unknown => {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (descriptor === undefined) return undefined;
-    if (!("value" in descriptor) || !descriptor.enumerable) {
-      throw new Error("owned file transaction dependencies are invalid");
-    }
-    return descriptor.value;
-  };
-  const rename = read("rename");
-  const beforeEffects = read("beforeEffects");
-  const afterEffects = read("afterEffects");
-  if (
-    (rename !== undefined && typeof rename !== "function") ||
-    (beforeEffects !== undefined && typeof beforeEffects !== "function") ||
-    (afterEffects !== undefined && typeof afterEffects !== "function")
-  ) {
-    throw new Error("owned file transaction dependencies are invalid");
-  }
-  return {
-    ...(rename === undefined ? {} : { rename: rename as (from: string, to: string) => void }),
-    ...(beforeEffects === undefined ? {} : { beforeEffects: beforeEffects as () => void }),
-    ...(afterEffects === undefined ? {} : { afterEffects: afterEffects as () => void }),
-  };
 }
 
 function sha256(bytes: Buffer): string {
@@ -223,17 +164,13 @@ function snapshotSteps(input: readonly OwnedFileStep[], policy: SnapshotPolicy):
     const path = ownData(candidate, "path");
     const mode = ownData(candidate, "mode");
     const expect = snapshotExpectation(ownData(candidate, "expect"));
-    const rawAction = optionalOwnData(candidate, "action");
     const rawContents = optionalOwnData(candidate, "contents");
     const rawPrior = optionalOwnData(candidate, "prior");
     const priorMode = optionalOwnData(candidate, "priorMode");
     const announce = optionalOwnData(candidate, "announce");
-    const action =
-      rawAction === undefined ? (rawContents === undefined ? "remove" : "write") : rawAction;
     if (
       !validPath(path) ||
       !validMode(mode) ||
-      (action !== "assert" && action !== "write" && action !== "remove") ||
       (rawContents !== undefined && !Buffer.isBuffer(rawContents)) ||
       (rawPrior !== undefined && !Buffer.isBuffer(rawPrior)) ||
       (priorMode !== undefined && !validMode(priorMode)) ||
@@ -253,30 +190,15 @@ function snapshotSteps(input: readonly OwnedFileStep[], policy: SnapshotPolicy):
     if (totalBytes > MAX_TOTAL_SNAPSHOT_BYTES) {
       throw new Error("invalid owned file transaction steps");
     }
-    const mutation = action !== "assert";
     if (
-      (action === "assert" &&
-        (contents !== undefined || prior !== undefined || priorMode !== undefined)) ||
-      (action === "write" && contents === undefined) ||
-      (action === "remove" && contents !== undefined) ||
       ("absent" in expect && (prior !== undefined || priorMode !== undefined)) ||
-      ("sha256" in expect &&
-        mutation &&
-        (prior === undefined ||
-          sha256(prior) !== expect.sha256 ||
-          (expect.mode !== undefined && priorMode !== expect.mode)))
+      ("sha256" in expect && (prior === undefined || sha256(prior) !== expect.sha256))
     ) {
       throw new Error("invalid owned file transaction steps");
     }
     const ownState = policy.statePaths.has(path);
     policy.assertOwnedPath(path, ownState);
-    policy.assertAction?.(path, "assert", ownState);
-    if (action !== "assert") {
-      policy.assertAction?.(path, action, ownState);
-      policy.assertAction?.(path, prior === undefined ? "remove" : "write", ownState);
-    }
     snapshots.push({
-      action,
       path,
       mode,
       ...(contents === undefined ? {} : { contents }),
@@ -290,28 +212,15 @@ function snapshotSteps(input: readonly OwnedFileStep[], policy: SnapshotPolicy):
 }
 
 function snapshotPolicy(policy: OwnedFilePolicy): SnapshotPolicy {
-  if (isProxy(policy)) {
-    throw new Error("invalid owned file transaction policy");
-  }
   const label = SAFE_LABEL.test(policy.label) ? policy.label : "owned file transaction";
-  const actionDescriptor = Object.getOwnPropertyDescriptor(policy, "assertAction");
-  const inheritedAction = actionDescriptor === undefined && "assertAction" in policy;
-  const assertAction =
-    actionDescriptor === undefined
-      ? undefined
-      : "value" in actionDescriptor && actionDescriptor.enumerable
-        ? actionDescriptor.value
-        : null;
   if (
-    inheritedAction ||
     !Number.isSafeInteger(policy.maxFileBytes) ||
     policy.maxFileBytes < 0 ||
     !validMode(policy.contentDirectoryMode) ||
     !validMode(policy.stateDirectoryMode) ||
     !(policy.statePaths instanceof Set) ||
     typeof policy.assertOwnedPath !== "function" ||
-    typeof policy.assertResolvedSegments !== "function" ||
-    (assertAction !== undefined && typeof assertAction !== "function")
+    typeof policy.assertResolvedSegments !== "function"
   ) {
     throw new Error("invalid owned file transaction policy");
   }
@@ -323,9 +232,6 @@ function snapshotPolicy(policy: OwnedFilePolicy): SnapshotPolicy {
     statePaths: new Set(policy.statePaths),
     assertOwnedPath: policy.assertOwnedPath,
     assertResolvedSegments: policy.assertResolvedSegments,
-    ...(assertAction === undefined
-      ? {}
-      : { assertAction: assertAction as OwnedFilePolicy["assertAction"] }),
   };
 }
 
@@ -361,24 +267,15 @@ export class OwnedFileTransaction {
   private readonly root: string;
   private readonly policy: SnapshotPolicy;
   private readonly rename?: (from: string, to: string) => void;
-  private readonly beforeEffects?: () => void;
-  private readonly afterEffects?: () => void;
 
   constructor(root: string, policy: OwnedFilePolicy, deps: OwnedFileTransactionDeps = {}) {
-    const safeDeps = snapshotDeps(deps);
     this.policy = snapshotPolicy(policy);
     this.root = resolveOwnedFileRoot(root, this.policy.label);
-    this.rename = safeDeps.rename;
-    this.beforeEffects = safeDeps.beforeEffects;
-    this.afterEffects = safeDeps.afterEffects;
+    this.rename = deps.rename;
   }
 
   private ownState(path: string): boolean {
     return this.policy.statePaths.has(path);
-  }
-
-  private assertAction(path: string, action: OwnedFileAction): void {
-    this.policy.assertAction?.(path, action, this.ownState(path));
   }
 
   private assertSafeParents(path: string): void {
@@ -421,7 +318,6 @@ export class OwnedFileTransaction {
   inspect(path: string): OwnedFileRead {
     try {
       if (!validPath(path)) throw new Error(`invalid ${this.policy.label} destination path`);
-      this.assertAction(path, "assert");
       this.assertSafeParents(path);
       const inspected = inspectContainedRelativePath(this.root, path);
       if (inspected.state === "absent") return { state: "absent" };
@@ -506,7 +402,6 @@ export class OwnedFileTransaction {
     if (!validPath(path) || !Buffer.isBuffer(contents) || !validMode(mode)) {
       throw new Error(`invalid ${this.policy.label} write`);
     }
-    this.assertAction(path, "write");
     const snapshot = Buffer.from(contents);
     if (snapshot.byteLength > this.policy.maxFileBytes) {
       throw new Error(`invalid ${this.policy.label} write`);
@@ -533,7 +428,6 @@ export class OwnedFileTransaction {
 
   remove(path: string): void {
     if (!validPath(path)) throw new Error(`invalid ${this.policy.label} removal`);
-    this.assertAction(path, "remove");
     this.assertSafeParents(path);
     const target = join(this.root, ...path.split("/"));
     const stats = lstatOrAbsent(target, this.policy.label);
@@ -556,9 +450,7 @@ export class OwnedFileTransaction {
     const unchanged =
       "absent" in step.expect
         ? live.state === "absent"
-        : live.state === "present" &&
-          sha256(live.bytes) === step.expect.sha256 &&
-          (step.expect.mode === undefined || live.mode === step.expect.mode);
+        : live.state === "present" && sha256(live.bytes) === step.expect.sha256;
     if (!unchanged) {
       throw new Error(
         `${this.policy.label} destination changed before commit: ${safeText(step.path)}`,
@@ -571,16 +463,13 @@ export class OwnedFileTransaction {
     for (const step of steps) this.assertSafeParents(step.path);
     const applied: OwnedFileStep[] = [];
     try {
-      this.beforeEffects?.();
       for (const step of steps) {
         step.announce?.();
         this.assertExpected(step);
-        if (step.action === "assert") continue;
-        if (step.action === "remove") this.remove(step.path);
-        else this.writeAtomic(step.path, step.contents as Buffer, step.mode);
+        if (step.contents === undefined) this.remove(step.path);
+        else this.writeAtomic(step.path, step.contents, step.mode);
         applied.push(step);
       }
-      this.afterEffects?.();
     } catch (error) {
       const unrestored = this.rollback(applied);
       if (unrestored.length === 0) throw error;
@@ -598,10 +487,9 @@ export class OwnedFileTransaction {
       try {
         const live = this.inspect(step.path);
         const asLeft =
-          step.action === "remove"
+          step.contents === undefined
             ? live.state === "absent"
             : live.state === "present" &&
-              step.contents !== undefined &&
               sha256(live.bytes) === sha256(step.contents) &&
               (process.platform === "win32" || live.mode === step.mode);
         if (!asLeft) {
