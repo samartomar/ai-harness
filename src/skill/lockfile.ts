@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto";
+import { type BigIntStats, closeSync, constants, fstatSync, lstatSync, openSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { AihError } from "../errors.js";
-import { readIfExists } from "../internals/fsxn.js";
+import { inspectContainedRelativePath } from "../internals/contained-path.js";
+import { readBoundedFileDescriptor, readIfExists } from "../internals/fsxn.js";
 
 /**
  * Committed skill approval lockfile at the repo ROOT (`aih-skills.lock.json`) —
@@ -83,6 +86,119 @@ export interface SkillsLock {
 const SkillsLockSchema = z
   .object({ schemaVersion: z.literal(1), skills: z.array(SkillLockEntrySchema) })
   .strict();
+
+const StrictSkillLockEntrySchema = SkillLockEntrySchema.extend({
+  sourceScope: z
+    .strictObject({
+      selectedSkillNames: z.array(skillNameSchema).nonempty(),
+      includedPaths: z.array(sourceScopePathSchema).nonempty(),
+      excludedSkillPaths: z.array(sourceScopePathSchema),
+    })
+    .optional(),
+}).strict();
+const ExactSkillsLockSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  skills: z.array(StrictSkillLockEntrySchema),
+});
+
+export const MAX_SKILLS_LOCK_BYTES = 8 * 1024 * 1024;
+
+export type ExactSkillsLockRead =
+  | { state: "absent" }
+  | { state: "malformed" }
+  | {
+      state: "valid";
+      lock: SkillsLock;
+      sourceBytes: Buffer;
+      sourceSha256: string;
+      mode: number;
+    };
+
+export interface ExactSkillsLockReadDeps {
+  afterInspect?: () => void;
+  afterOpen?: () => void;
+}
+
+function sameFile(left: BigIntStats, right: BigIntStats): boolean {
+  return left.ino !== 0n && left.dev === right.dev && left.ino === right.ino;
+}
+
+function currentSkillsLockStats(root: string, realPath: string, opened: BigIntStats): boolean {
+  const currentInfo = inspectContainedRelativePath(root, AIH_SKILLS_LOCK_FILE);
+  if (
+    currentInfo.state !== "present" ||
+    currentInfo.kind !== "file" ||
+    currentInfo.realPath !== realPath
+  )
+    return false;
+  try {
+    const current = lstatSync(currentInfo.realPath, { bigint: true });
+    return current.isFile() && current.nlink === 1n && sameFile(opened, current);
+  } catch {
+    return false;
+  }
+}
+
+export function readSkillsLockExact(
+  root: string,
+  deps: ExactSkillsLockReadDeps = {},
+): ExactSkillsLockRead {
+  const inspected = inspectContainedRelativePath(root, AIH_SKILLS_LOCK_FILE);
+  if (inspected.state === "absent") return { state: "absent" };
+  if (inspected.state !== "present" || inspected.kind !== "file") return { state: "malformed" };
+  const noFollow = "O_NOFOLLOW" in constants ? constants.O_NOFOLLOW : 0;
+  let descriptor: number;
+  try {
+    descriptor = openSync(inspected.realPath, constants.O_RDONLY | noFollow);
+  } catch {
+    return { state: "malformed" };
+  }
+  try {
+    const opened = fstatSync(descriptor, { bigint: true });
+    deps.afterInspect?.();
+    deps.afterOpen?.();
+    if (
+      !opened.isFile() ||
+      opened.ino === 0n ||
+      opened.nlink !== 1n ||
+      opened.size > BigInt(MAX_SKILLS_LOCK_BYTES) ||
+      !currentSkillsLockStats(root, inspected.realPath, opened)
+    )
+      return { state: "malformed" };
+    const contents = readBoundedFileDescriptor(descriptor, MAX_SKILLS_LOCK_BYTES);
+    if (contents === undefined) return { state: "malformed" };
+    const after = fstatSync(descriptor, { bigint: true });
+    if (
+      !sameFile(opened, after) ||
+      after.nlink !== opened.nlink ||
+      after.mode !== opened.mode ||
+      after.size !== opened.size ||
+      after.mtimeNs !== opened.mtimeNs ||
+      !currentSkillsLockStats(root, inspected.realPath, opened)
+    )
+      return { state: "malformed" };
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(contents);
+    const parsed = ExactSkillsLockSchema.parse(JSON.parse(text));
+    const names = parsed.skills.map(({ name }) => name.toLowerCase());
+    if (new Set(names).size !== names.length) return { state: "malformed" };
+    const sourceBytes = Buffer.from(contents);
+    return {
+      state: "valid",
+      lock: parsed,
+      sourceBytes,
+      sourceSha256: createHash("sha256").update(sourceBytes).digest("hex"),
+      mode: Number(opened.mode & 0o777n),
+    };
+  } catch {
+    return { state: "malformed" };
+  } finally {
+    try {
+      closeSync(descriptor);
+    } catch {
+      // A close failure cannot make a parsed authority usable; reads above already fail closed.
+    }
+  }
+}
 
 /**
  * Read the committed skills lockfile. Fail-SOFT per entry (mirrors

@@ -62,6 +62,30 @@ Per-version release notes — what changed, and why — live in
 [CHANGELOG.md](https://github.com/samartomar/ai-harness/blob/main/CHANGELOG.md). It ships inside the
 npm tarball too, so an evaluator can read the version history straight from the unpacked package.
 
+<!-- aih:claim CM-51 -->
+Library integrations can import the strict Package Graph v1 TypeScript schema from
+`@aihq/harness` and resolve its structural editor schema at
+`@aihq/harness/schemas/aih-package-graph.schema.json`. Cross-record checks such as
+identity uniqueness, direct-member resolution, and evidence subject binding belong
+to the TypeScript parser; graph metadata is never approval or evidence by itself.
+
+<!-- aih:claim CM-52 -->
+`buildPackageGraphIndex` retains every authority claim, preserves identical claims,
+and reports divergent definitions without choosing a winner. Its canonical serializer
+validates source references, claim and projection digests, and conflict records before
+emitting byte-identical JSON. Source-store digests are caller assertions at this
+layer; authority adapters are responsible for hashing exact store bytes. The pure
+builder performs no I/O and never turns graph metadata into approval or evidence.
+
+<!-- aih:claim CM-53 -->
+The exported Package Graph authority adapters hash the exact bytes they parse. They
+join the shipped baseline catalog to its evidence lock, enrich exact ECC
+materialization receipts, and project strict GitHub skill locks and pack catalogs
+without mutating any source store. Discovery classification keeps exact
+lock/receipt registrations, catalog-only membership, undeclared immutable residue,
+divergence, and unsupported mutable observations separate. GitLab, Bitbucket,
+Azure DevOps, and GHES adapters are not implemented.
+
 <!-- aih:claim CM-54 -->
 The exported Strix detector contract is separate from static trust scanning. It
 pins the verified Strix v1.5.2 source and immutable sandbox image identities,
