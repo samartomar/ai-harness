@@ -244,6 +244,68 @@ describe("workspace add acquisition plans", () => {
     });
   });
 
+  it("refuses phase 2 when its report or cleared gate is absent", async () => {
+    const context = ctx(sourceRoot, true, true);
+    await expect(captureWorkspaceAddTrustGate(context, undefined)).rejects.toThrow(
+      /requires a phase 1 report/,
+    );
+    await expect(workspaceAddPhase2Plan(context, undefined)).rejects.toThrow(
+      /requires a cleared trust gate/,
+    );
+  });
+
+  it("executes hardened phase-2 trust-lock bytes without invoking JSON hooks", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    const report = new VerificationReport().pass("trust scan", "clean");
+    const gate = await captureClearedWorkspaceAddTrustGate(ctx(sourceRoot, true, true), report);
+    const phase2 = await workspaceAddPhase2Plan(ctx(sourceRoot, true, true), gate);
+    const lockWrite = phase2.actions.find(
+      (action) => action.kind === "write" && action.path === ".aih/trust-lock.json",
+    );
+    const expected = lockWrite?.kind === "write" ? lockWrite.contents : undefined;
+    const objectPrototype = Object.prototype as { toJSON?: () => unknown };
+    const arrayPrototype = Array.prototype as unknown as { toJSON?: () => unknown };
+    const objectHook = objectPrototype.toJSON;
+    const arrayHook = arrayPrototype.toJSON;
+    let calls = 0;
+    objectPrototype.toJSON = () => {
+      calls += 1;
+      return { corrupted: true };
+    };
+    arrayPrototype.toJSON = () => {
+      calls += 1;
+      return ["corrupted"];
+    };
+    let observed:
+      | {
+          ok: boolean | undefined;
+          durable: string;
+          calls: number;
+        }
+      | undefined;
+    try {
+      const result = await executePlan(phase2, ctx(sourceRoot, true, true));
+      observed = {
+        ok: result.report?.ok,
+        durable: readFileSync(join(workspace, ".aih", "trust-lock.json"), "utf8"),
+        calls,
+      };
+    } finally {
+      if (objectHook === undefined) delete objectPrototype.toJSON;
+      else objectPrototype.toJSON = objectHook;
+      if (arrayHook === undefined) delete arrayPrototype.toJSON;
+      else arrayPrototype.toJSON = arrayHook;
+    }
+    expect(lockWrite).toMatchObject({
+      kind: "write",
+      path: ".aih/trust-lock.json",
+    });
+    expect(lockWrite).toHaveProperty("contents");
+    expect(observed?.ok).toBe(true);
+    expect(observed?.calls).toBe(0);
+    expect(observed?.durable).toBe(expected);
+  });
+
   it("phase 2 refuses duplicate physical skill dirs with the same promoted name", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n\nUse checked documentation patterns.\n");
     const shadow = join(sourceRoot, "a", "skills", "clean");
@@ -612,7 +674,7 @@ describe("workspace add acquisition plans", () => {
     const lock = JSON.parse(readFileSync(join(workspace, ".aih", "trust-lock.json"), "utf8")) as {
       sources: Array<{ id: string }>;
     };
-    expect(lock.sources.map((item) => item.id)).toEqual(["existing", sourceId]);
+    expect(lock.sources.map((item) => item.id)).toEqual([sourceId, "existing"]);
   });
 
   it("phase 2 fails closed when phase 1 had trust failures", async () => {
