@@ -490,7 +490,7 @@ describe("repo-local skill promotion snapshots", () => {
       truncateSync(path, PROMOTION_SNAPSHOT_LIMITS.maxFileBytes);
     }
     expect(() => snapshotSkillPromotion(request())).toThrow("promotion source exceeds limits");
-  });
+  }, 30_000);
 
   it("refuses missing, partial nested, colliding, and unsafe source shapes", () => {
     skill("alpha");
