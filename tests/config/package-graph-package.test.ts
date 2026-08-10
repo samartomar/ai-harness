@@ -8,7 +8,10 @@ import {
   classifyPackageGraphResidue,
   normalizeGitHubRepository,
   projectBaselinePackageGraphAuthority,
+  projectEccCapabilityPackageAuthority,
   projectEccMaterializationAuthority,
+  projectEccMcpCapabilityPackageAuthority,
+  projectEccMcpReceiptAuthority,
 } from "../../src/index.js";
 
 const root = process.cwd();
@@ -17,11 +20,17 @@ describe("Package Graph public package surface", () => {
   it("exports every Package Graph authority adapter from the library root", () => {
     expect([
       projectBaselinePackageGraphAuthority,
+      projectEccCapabilityPackageAuthority,
       projectEccMaterializationAuthority,
+      projectEccMcpCapabilityPackageAuthority,
+      projectEccMcpReceiptAuthority,
       normalizeGitHubRepository,
       adaptSkillPackageGraph,
       classifyPackageGraphResidue,
     ]).toEqual([
+      expect.any(Function),
+      expect.any(Function),
+      expect.any(Function),
       expect.any(Function),
       expect.any(Function),
       expect.any(Function),

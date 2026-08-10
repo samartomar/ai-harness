@@ -295,13 +295,15 @@ aih capability package remove <package-id> [--apply] [--json]
 `remove` are also local read-only previews unless `--apply` is explicit. Preview emits no
 filesystem action, process, network request, acquisition, or component load.
 
-The current apply adapter is deliberately narrow: it reconciles GitHub skill packs whose exact
-approved bytes are already present in the repo promotion store and bound by
-`.aih/trust-lock.json`. Add/update publish the derived intent, ownership receipt, and
-content-addressed custody receipt without fetching or executing anything. Remove is permitted only
-after effective policy deselects the package; it subtracts unchanged custody-proven files, preserves
-unrelated promoted sources, and retains both drifted content and its ownership record. The ordered
-file transaction provides compensating rollback, not crash journaling.
+Apply reconciles only domain state that already exists under an authoritative receipt: GitHub skill
+bytes in the repo promotion store bound by `.aih/trust-lock.json`, ECC agent/rule files bound by the
+ECC materialization receipt, and HTTPS ECC MCP configuration bound by the explicit-add receipt.
+Add/update publish derived intent, exact content-addressed custody, and ownership without fetching,
+loading, or executing a component. Remove is permitted only after effective policy deselects the
+package; it subtracts unchanged last-owned files, preserves shared members and unrelated domain
+state, issues successor custody for retained packages, and retains drifted content with its prior
+ownership. A mixed closure is coordinated in one ordered local transaction with compensating
+rollback, not crash journaling or filesystem isolation.
 
 If a requested root set differs from effective policy, preview or apply says
 `refused at policy: selection-change-required`; the CLI argument never becomes policy authority.

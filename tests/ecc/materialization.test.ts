@@ -32,7 +32,10 @@ import {
   MAX_MATERIALIZED_FILE_BYTES,
   writeDestinationAtomic,
 } from "../../src/ecc/materialization-fs.js";
-import { planEccMaterialization } from "../../src/ecc/materialization-plan.js";
+import {
+  planEccComponentSubtraction,
+  planEccMaterialization,
+} from "../../src/ecc/materialization-plan.js";
 import {
   ECC_MATERIALIZATION_RECEIPT_PATH,
   MAX_MATERIALIZATION_RECEIPT_BYTES,
@@ -713,6 +716,19 @@ describe("F1/F5 — AIH-direct per-component materialization", () => {
     expect(ownedReceipt().components.map((component) => component.id)).toEqual([
       "skill:tdd-workflow",
     ]);
+  });
+
+  it("plans receipt-only subtraction for one component without source bytes", () => {
+    applyEccMaterialization(request(skillComponent(), agentComponent()));
+
+    const operation = planEccComponentSubtraction(root, ["agent:code-reviewer"]);
+
+    expect(operation.subtract.map(({ componentId, path }) => ({ componentId, path }))).toEqual([
+      { componentId: "agent:code-reviewer", path: AGENT_PATH },
+    ]);
+    expect(operation.components.map(({ id }) => id)).toEqual(["skill:tdd-workflow"]);
+    expect(operation.steps.at(-1)?.phase).toBe("receipt");
+    expect(read(AGENT_PATH)).toBe(AGENT_BODY);
   });
 
   it("subtracts an owned file a still-selected component no longer carries", () => {

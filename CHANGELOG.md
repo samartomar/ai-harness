@@ -9,13 +9,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - `aih capability package list/show/status/doctor` now provide one local, typed read-only view of
-  policy-requested package roots, exact approval/catalog Package Graph claims, committed intent,
-  ownership, custody, and current skill-domain state. `add/update/remove` remain local zero-write
-  previews by default; explicit `--apply` now reconciles already-promoted, policy-selected GitHub
-  skill packs into exact intent, ownership, and content-addressed custody state, or conservatively
-  subtracts unchanged receipt-owned files after policy deselection. Apply performs no acquisition,
-  process execution, network request, or component loading; drift is retained without advancing
-  ownership, and a requested root change still requires an explicit org-policy update.
+  policy-requested package roots, exact approval/evidence/catalog Package Graph claims, committed
+  intent, ownership, custody, and current domain receipts. `add/update/remove` remain local
+  zero-write previews by default; explicit `--apply` reconciles already-promoted, policy-selected
+  GitHub skill packs, existing receipt-owned ECC agent/rule materialization, and explicitly added
+  HTTPS ECC MCP configuration. Mixed closures publish exact content-addressed custody and ownership
+  through one ordered compensating transaction; conservative removal subtracts only unchanged,
+  last-owned files and issues successor custody for retained packages. Apply performs no
+  acquisition, process execution, network request, or component loading; drift is retained without
+  advancing ownership, and a requested root change still requires an explicit org-policy update.
 - A strict Capability Package Manifest v1 and pure deterministic resolver now
   model exact Package Graph authority, claim, source-pin, direct-member, and
   dependency intent without granting approval or installing anything. Relevant
@@ -69,14 +71,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Legacy ECC write/remove steps keep their existing inferred behavior; this is
   a coordinator prerequisite only and does not expose package execution or
   claim isolation, crash atomicity, or cross-domain rollback.
-- Capability Package Manager physical custody now has a strict, internal,
-  content-addressed receipt and a read-only skill-pack verifier. Each receipt
-  binds the exact ownership-receipt and promotion trust-lock bytes to a
-  deterministic set of package members and repo-local file digests; missing
-  evidence remains explicitly unowned, malformed or drifted evidence fails
-  closed, and final-root removal creates no empty custody claim. The verifier
-  performs no writes, adoption, installation, removal, command registration,
-  or receipt issuance; those remain gated on a future reversible coordinator.
+- Capability Package Manager physical custody uses strict, internal,
+  content-addressed receipts for skill promotion, ECC materialization, and explicit ECC MCP state.
+  Each receipt binds exact ownership and domain-receipt bytes to deterministic package members and
+  repo-local file digests; missing evidence remains explicitly unowned, malformed or drifted
+  evidence fails closed, shared files are retained until their final owner is removed, and
+  final-root removal creates no empty custody claim.
 - Capability Package Manager lifecycle state can now be projected into an
   immutable, plan-only sequence for the committed intent and local ownership
   receipt. The planner binds exact live bytes and, where the host supports
@@ -84,25 +84,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and receipt before intent on final removal, and refuses malformed or unsafe
   state. It exposes no commit API and does not install, configure, adopt,
   remove, or claim ownership of package members.
-- Capability Package Manager prerequisites can now verify an already-promoted
+- Capability Package Manager domain verification can verify an already-promoted
   GitHub skill-pack against its exact Package Graph authorities, promotion
   receipt, routed repository paths, and current bounded file bytes. The shared
-  projector also keeps uninstall routing deterministic. This read-only snapshot
-  performs no acquisition, installation, adoption, removal, or ownership
-  mutation; executable package lifecycle and physical custody remain future
-  slices.
+  projector also keeps uninstall routing deterministic. The verifier itself is
+  read-only; the package coordinator consumes its copied result only alongside
+  exact live authority, ownership, and custody state.
 - Workspace skill promotion now derives one bounded, Buffer-preserving snapshot
   that canonically threads multi-source trust-lock state before the legacy plan
   renders it. The internal seam revalidates GitHub pins and source files at the
   point of use, rejects hostile or oversized input, and preserves exact hardened
-  lock bytes for future Capability Package Manager adapters; it does not add a
-  package command, advance package ownership, or claim installation.
+  lock bytes for the Capability Package Manager skill adapter; it does not by
+  itself advance package ownership or claim installation.
 - ECC's ordered, byte-safe materialization commit now delegates to a shared
   internal owned-file transaction. The primitive preserves caller order,
   re-pins each destination before its effect, and compensates applied steps in
-  reverse without overwriting concurrent operator changes. This is a reusable
-  prerequisite for Capability Package Manager domain adapters; it is not crash
-  journaling, cross-domain atomicity, member installation, or a new command.
+  reverse without overwriting concurrent operator changes. Capability package
+  coordinators use the same primitive for ordered local reconciliation; it is
+  not crash journaling, filesystem isolation, or a remote acquisition mechanism.
 - The Policy Workbench future-owner ticker now lists only approved AIH-owned
   surfaces and no longer advertises a rejected third-party candidate.
 - Release guidance now makes stable-direct the default after mechanical gates and exact-SHA approval, while requiring a release candidate for major or schema migrations, evidence-format changes, publishing-machinery changes, and cuts without adequate production-equivalent verification.

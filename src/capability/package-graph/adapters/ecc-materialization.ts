@@ -122,7 +122,11 @@ export function projectEccMaterializationAuthority(
 
     let surfaceId: string;
     try {
-      surfaceId = baselineComponentIdToSurfaceId(component.id);
+      const direct = baselineComponentIdToSurfaceId(component.id);
+      surfaceId =
+        component.id === "baseline:rules" && surfacesById.has("rule:ecc/rules")
+          ? "rule:ecc/rules"
+          : direct;
     } catch {
       return { state: "invalid", code: "component-authorization" };
     }

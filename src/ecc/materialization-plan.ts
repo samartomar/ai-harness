@@ -884,3 +884,52 @@ export function planEccUninstall(root: string): PlannedOperation {
     receipt: committed,
   };
 }
+
+/**
+ * Plan subtraction for an exact subset already named by the live receipt. No
+ * source bytes are accepted or reconstructed; unrelated receipt ownership is
+ * preserved and drifted selected content remains recorded.
+ */
+export function planEccComponentSubtraction(
+  root: string,
+  componentIds: readonly string[],
+): PlannedOperation {
+  const rootReal = materializationRoot(root);
+  if (
+    componentIds.length === 0 ||
+    componentIds.length > MAX_MATERIALIZED_COMPONENTS ||
+    new Set(componentIds).size !== componentIds.length
+  ) {
+    throw new Error("ECC component subtraction selection is invalid");
+  }
+  const ids = new Set(componentIds.map((id) => assertMaterializedComponentId(id)));
+  const receipt = currentReceipt(rootReal);
+  if (
+    receipt === undefined ||
+    [...ids].some((id) => !receipt.components.some((c) => c.id === id))
+  ) {
+    throw new Error("ECC component subtraction requires exact receipt ownership");
+  }
+  const selected = receipt.components.filter(({ id }) => ids.has(id));
+  const state = new DestinationState(rootReal);
+  const subtraction = planSubtraction(state, selected);
+  const components = receipt.components
+    .flatMap((component): EccMaterializedComponent[] => {
+      if (!ids.has(component.id)) return [structuredClone(component)];
+      const retained = subtraction.retained.get(component.id) ?? [];
+      return retained.length === 0 ? [] : [{ ...structuredClone(component), files: retained }];
+    })
+    .sort((left, right) => byText(left.id, right.id));
+  const steps = [...subtraction.steps];
+  const committed = planReceipt(state, rootReal, components, steps);
+  return {
+    root: rootReal,
+    steps,
+    write: [],
+    subtract: subtraction.plans,
+    unchanged: [],
+    advisories: subtraction.advisories,
+    components,
+    receipt: committed,
+  };
+}

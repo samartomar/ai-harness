@@ -1,4 +1,5 @@
 export * from "./adapters/baseline.js";
+export * from "./adapters/ecc-domains.js";
 export * from "./adapters/ecc-materialization.js";
 export * from "./adapters/github.js";
 export * from "./adapters/residue.js";
