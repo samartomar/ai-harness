@@ -10,7 +10,7 @@ purpose: Human-readable guide to posture behavior and positioning.
 
 This guide explains how to reason about `vibe` and `enterprise` posture without turning posture into pricing language or mixing shipped behavior with unshipped plans.
 
-The current release baseline is `@aihq/harness@5.0.0`. The `vibe`/`enterprise` model below is shipped behavior in the 5.x line; use the installed version's release notes and CLI help as the syntax authority.
+The current release baseline is `@aihq/harness@5.1.0`. The `vibe`/`enterprise` model below is shipped behavior in the 5.x line; use the installed version's release notes and CLI help as the syntax authority.
 
 ## Read this as
 
