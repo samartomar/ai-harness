@@ -55,6 +55,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The internal ordered owned-file transaction can now express no-effect
+  assertions, optional mode preimages, action-specific path policy, and
+  side-effect-free pre/post verification guards inside compensating rollback.
+  Legacy ECC write/remove steps keep their existing inferred behavior; this is
+  a coordinator prerequisite only and does not expose package execution or
+  claim isolation, crash atomicity, or cross-domain rollback.
 - Capability Package Manager physical custody now has a strict, internal,
   content-addressed receipt and a read-only skill-pack verifier. Each receipt
   binds the exact ownership-receipt and promotion trust-lock bytes to a
