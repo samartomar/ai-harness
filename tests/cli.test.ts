@@ -102,12 +102,16 @@ describe("CLI program", () => {
     ]);
   });
 
-  it("keeps capability package commands on a zero-write CLI flag surface", () => {
+  it("keeps package reads zero-write and exposes apply only on mutations", () => {
     const capability = buildProgram().commands.find((command) => command.name() === "capability");
     const packageCommand = capability?.commands.find((command) => command.name() === "package");
     for (const command of packageCommand?.commands ?? []) {
       const flags = command.options.map((option) => option.long);
-      expect(flags).not.toContain("--apply");
+      if (["add", "update", "remove"].includes(command.name())) {
+        expect(flags).toContain("--apply");
+      } else {
+        expect(flags).not.toContain("--apply");
+      }
       expect(flags).not.toContain("--force");
       expect(flags).not.toContain("--support-out");
       expect(flags).not.toContain("--no-log");

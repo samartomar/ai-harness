@@ -77,6 +77,7 @@ function commitFixture(): void {
   git("init", "-q");
   git("config", "user.email", "t@t.com");
   git("config", "user.name", "t");
+  git("config", "commit.gpgSign", "false");
   git("add", "-A");
   git("commit", "-qm", "base");
 }

@@ -113,6 +113,7 @@ function initRepo(): void {
   run("git", ["init"], repo);
   run("git", ["config", "user.email", "aih@example.invalid"], repo);
   run("git", ["config", "user.name", "AIH Test"], repo);
+  run("git", ["config", "commit.gpgSign", "false"], repo);
   run("git", ["commit", "--allow-empty", "-m", "base"], repo);
 }
 
