@@ -1,0 +1,272 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "authorities": {
+      "minItems": 1,
+      "maxItems": 256,
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^catalog:[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "catalog"
+              },
+              "sourceDigest": {
+                "type": "object",
+                "properties": {
+                  "algorithm": {
+                    "type": "string",
+                    "const": "sha256"
+                  },
+                  "value": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "algorithm",
+                  "value"
+                ],
+                "additionalProperties": false
+              },
+              "projectionDigest": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "sourceDigest",
+              "projectionDigest"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^lock:[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "lock"
+              },
+              "sourceDigest": {
+                "type": "object",
+                "properties": {
+                  "algorithm": {
+                    "type": "string",
+                    "const": "sha256"
+                  },
+                  "value": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "algorithm",
+                  "value"
+                ],
+                "additionalProperties": false
+              },
+              "projectionDigest": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "sourceDigest",
+              "projectionDigest"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^receipt:[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "receipt"
+              },
+              "sourceDigest": {
+                "type": "object",
+                "properties": {
+                  "algorithm": {
+                    "type": "string",
+                    "const": "sha256"
+                  },
+                  "value": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "algorithm",
+                  "value"
+                ],
+                "additionalProperties": false
+              },
+              "projectionDigest": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "sourceDigest",
+              "projectionDigest"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "roots": {
+      "minItems": 1,
+      "maxItems": 128,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 9,
+        "maxLength": 160,
+        "pattern": "^package:[a-z][a-z0-9-]*\\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*$"
+      }
+    },
+    "packages": {
+      "minItems": 1,
+      "maxItems": 512,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "package"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 9,
+            "maxLength": 160,
+            "pattern": "^package:[a-z][a-z0-9-]*\\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*$"
+          },
+          "authorityId": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^(?!package:)[a-z][a-z0-9-]*:[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*$"
+          },
+          "claimDigest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "sourceDigest": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "algorithm": {
+                    "type": "string",
+                    "const": "git-sha1"
+                  },
+                  "value": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}$"
+                  }
+                },
+                "required": [
+                  "algorithm",
+                  "value"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "algorithm": {
+                    "type": "string",
+                    "const": "sha256"
+                  },
+                  "value": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "algorithm",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "dependencies": {
+            "maxItems": 128,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 9,
+              "maxLength": 160,
+              "pattern": "^package:[a-z][a-z0-9-]*\\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*$"
+            }
+          },
+          "members": {
+            "minItems": 1,
+            "maxItems": 1024,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 160,
+              "pattern": "^(?:skill|agent|rule|mcp):[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*$"
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "authorityId",
+          "claimDigest",
+          "sourceDigest",
+          "dependencies",
+          "members"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "authorities",
+    "roots",
+    "packages"
+  ],
+  "additionalProperties": false,
+  "title": "aih-capability-package-manifest.schema.json",
+  "$comment": "This JSON Schema validates the portable editor structure. Use CapabilityPackageManifestSchema.parse for semantic invariants including identity uniqueness and total direct-reference bounds, then resolveCapabilityPackages for exact Package Graph authority, claim, source, membership, dependency, and conflict validation."
+}
