@@ -4,7 +4,6 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
-  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -416,7 +415,10 @@ describe("installed skill-pack snapshots", () => {
     install();
     const folded = join(root, "ai-coding", "skills", "owner-repo", "clean", "skill.md");
     writeFileSync(folded, FILE_BYTES);
-    if (realpathSync(folded) !== realpathSync(installedPath())) {
+    const foldedEntries = readdirSync(
+      join(root, "ai-coding", "skills", "owner-repo", "clean"),
+    ).filter((name) => name.toLowerCase() === "skill.md");
+    if (foldedEntries.length > 1) {
       expectCode(() => resolveInstalledSkillPackSnapshot(input()), "unsafe-installed-artifact");
     }
   });
