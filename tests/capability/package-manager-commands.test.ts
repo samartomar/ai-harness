@@ -147,17 +147,22 @@ describe("aih capability package commands", () => {
     }
   });
 
-  it("marks every package command read-only so --apply cannot become an execution path", () => {
+  it("keeps inspection read-only while making mutations explicit apply-only commands", () => {
     for (const command of [
       capabilityPackageListCommand,
       capabilityPackageShowCommand,
       capabilityPackageStatusCommand,
       capabilityPackageDoctorCommand,
+    ]) {
+      expect(command.readOnly).toBe(true);
+      expect(command.zeroWrite).toBe(true);
+    }
+    for (const command of [
       capabilityPackageAddCommand,
       capabilityPackageUpdateCommand,
       capabilityPackageRemoveCommand,
     ]) {
-      expect(command.readOnly).toBe(true);
+      expect(command.readOnly).toBe(false);
       expect(command.zeroWrite).toBe(true);
     }
   });
