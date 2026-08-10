@@ -55,6 +55,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Capability Package Manager physical custody now has a strict, internal,
+  content-addressed receipt and a read-only skill-pack verifier. Each receipt
+  binds the exact ownership-receipt and promotion trust-lock bytes to a
+  deterministic set of package members and repo-local file digests; missing
+  evidence remains explicitly unowned, malformed or drifted evidence fails
+  closed, and final-root removal creates no empty custody claim. The verifier
+  performs no writes, adoption, installation, removal, command registration,
+  or receipt issuance; those remain gated on a future reversible coordinator.
 - Capability Package Manager lifecycle state can now be projected into an
   immutable, plan-only sequence for the committed intent and local ownership
   receipt. The planner binds exact live bytes and, where the host supports
