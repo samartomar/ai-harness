@@ -1,6 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { basename, extname, join, posix, relative, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import type { Command } from "commander";
 import { readAihConfig } from "../config/marker.js";
 import { postureFromContext, resolvePosture } from "../config/posture.js";
@@ -13,9 +13,9 @@ import {
   summarizeResult,
   writeArtifact,
 } from "../internals/execute.js";
-import { readIfExists, readRegularFile } from "../internals/fsxn.js";
+import { readIfExists } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
-import type { Action, CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
+import type { Action, CommandSpec, Plan, PlanContext } from "../internals/plan.js";
 import { plan, structuredChecksProbe, writeJson, writeText } from "../internals/plan.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { Check, VerificationReport } from "../internals/verify.js";
@@ -33,7 +33,6 @@ import {
 import { policyWithApprovedSourceReason } from "../trust/commands.js";
 import { resolveInternalScopes } from "../trust/depnames.js";
 import {
-  assertTrustTreeSafe,
   cleanupQuarantine,
   readTrustFetchMetadata,
   resolveTrustSource,
@@ -41,7 +40,7 @@ import {
   type TrustFetchMetadata,
   type TrustSource,
 } from "../trust/fetch.js";
-import { readTrustLock, type TrustLock, type TrustLockSource } from "../trust/lock.js";
+import { readTrustLock } from "../trust/lock.js";
 import {
   scanOptionsFromContext,
   scanTrustTreeWithAnalyzers,
@@ -51,6 +50,7 @@ import {
 } from "../trust/scan.js";
 import { isInstallScriptEvidenceFilePath } from "../trust/script-files.js";
 import type { SandboxSmokeShape } from "../trust/smoke.js";
+import { snapshotSkillPromotion } from "./promotion-snapshot.js";
 
 interface WorkspaceAddDeps {
   run?: Runner;
@@ -58,20 +58,6 @@ interface WorkspaceAddDeps {
   write?: (text: string) => void;
   now?: () => Date;
   newRunId?: () => string;
-}
-
-interface PromotionFile {
-  sourcePath: string;
-  sourceRel: string;
-  targetRel: string;
-  hash: string;
-  contents: string;
-}
-
-interface PromotionPlan {
-  writes: WriteAction[];
-  promotedSkills: string[];
-  artifactHashes: Array<{ path: string; sha256: string }>;
 }
 
 interface TrustSourceBinding {
@@ -178,25 +164,6 @@ export function collectSkillDirs(root: string): string[] {
   return out.sort((a, b) => sourceDirSortKey(root, a).localeCompare(sourceDirSortKey(root, b)));
 }
 
-function collectFiles(root: string): string[] {
-  const out: string[] = [];
-  const visit = (abs: string): void => {
-    const st = lstatSync(abs);
-    if (st.isSymbolicLink()) {
-      if (statSync(abs).isFile()) out.push(abs);
-      return;
-    }
-    if (st.isDirectory()) {
-      if (abs !== root && SKIP_DIRS.has(basename(abs))) return;
-      for (const entry of readdirSync(abs)) visit(join(abs, entry));
-      return;
-    }
-    if (st.isFile()) out.push(abs);
-  };
-  visit(root);
-  return out.sort((a, b) => safeSourceRelative(root, a).localeCompare(safeSourceRelative(root, b)));
-}
-
 function sourceDirSortKey(sourceRoot: string, skillDir: string): string {
   return skillDir === sourceRoot ? "." : safeSourceRelative(sourceRoot, skillDir);
 }
@@ -248,132 +215,6 @@ export function assertUniquePromotedSkillNames(
   );
 }
 
-function isTextPromotionFile(path: string): boolean {
-  const ext = extname(path).toLowerCase();
-  return ext === "" || [".md", ".txt", ".json", ".yaml", ".yml", ".toml"].includes(ext);
-}
-
-function sha256Bytes(bytes: Buffer): string {
-  return createHash("sha256").update(bytes).digest("hex");
-}
-
-function promotionFileBytes(sourceRoot: string, sourcePath: string): Buffer {
-  const st = lstatSync(sourcePath);
-  const readPath = st.isSymbolicLink() ? realpathSync(sourcePath) : sourcePath;
-  if (st.isSymbolicLink()) safeSourceRelative(sourceRoot, readPath);
-  const bytes = readRegularFile(readPath);
-  if (bytes === undefined) {
-    throw new AihError(
-      `refusing unreadable or non-regular promotion file: ${sourcePath}`,
-      "AIH_TRUST",
-    );
-  }
-  return bytes;
-}
-
-/**
- * `selectSkills` (pack installs) narrows the promotion to the skill dirs whose
- * {@link promotedSkillRel} name is in the set — writes, `promotedSkills`, and
- * `artifactHashes` are all filtered. A selected name the source does not ship is
- * a fail-closed refusal: silently promoting fewer skills than the pack curates
- * would leave a half-installed pack that reports success. Default (no set) is
- * byte-identical to the original promote-everything behavior.
- */
-function buildPromotion(
-  ctx: PlanContext,
-  source: TrustSource,
-  selectSkills?: ReadonlySet<string>,
-): PromotionPlan {
-  const sourceRoot = assertTrustTreeSafe(source.kind === "local" ? source.root : source.treePath, {
-    skipDirs: SKIP_DIRS,
-  });
-  const discovered = collectSkillDirs(sourceRoot);
-  if (discovered.length === 0) {
-    throw new AihError(`no SKILL.md files found in trust source: ${source.display}`, "AIH_TRUST");
-  }
-  assertUniquePromotedSkillNames(sourceRoot, discovered, selectSkills);
-  if (selectSkills !== undefined) {
-    const available = new Set(discovered.map((skillDir) => promotedSkillRel(sourceRoot, skillDir)));
-    const missing = [...selectSkills].filter((name) => !available.has(name)).sort();
-    if (missing.length > 0) {
-      throw new AihError(
-        `pack ref ${missing.join(", ")} not found in source ${source.display}`,
-        "AIH_TRUST",
-      );
-    }
-  }
-  const skills =
-    selectSkills === undefined
-      ? discovered
-      : discovered.filter((skillDir) => selectSkills.has(promotedSkillRel(sourceRoot, skillDir)));
-  if (skills.length === 0) {
-    throw new AihError(
-      `no skills selected for promotion from trust source: ${source.display}`,
-      "AIH_TRUST",
-    );
-  }
-  // NESTED-CHILD guard under a subset: a selected skill's directory can CONTAIN
-  // another discovered skill (parent/ and parent/child/ are both valid roots).
-  // `collectFiles` descends the whole subtree, so an UNSELECTED nested skill's
-  // content would ride along under the parent — promoted without appearing in
-  // `promotedSkills`, invisible to the approval gate. Fail closed: every nested
-  // skill root under a selected skill must itself be selected (and thus approved).
-  if (selectSkills !== undefined) {
-    const smuggled: string[] = [];
-    for (const skillDir of skills) {
-      const parentPrefix = `${skillDir.replace(/\\/g, "/")}/`;
-      for (const other of discovered) {
-        const otherPosix = other.replace(/\\/g, "/");
-        const otherName = promotedSkillRel(sourceRoot, other);
-        if (otherPosix.startsWith(parentPrefix) && !selectSkills.has(otherName)) {
-          smuggled.push(
-            `${promotedSkillRel(sourceRoot, skillDir)} contains nested skill ${otherName}`,
-          );
-        }
-      }
-    }
-    if (smuggled.length > 0) {
-      throw new AihError(
-        `refusing subset promotion — unselected nested skill(s) would ride along unapproved:\n` +
-          `${smuggled.map((line) => `  - ${line}`).join("\n")}\n` +
-          "select (and approve) the nested skill(s) too, or restructure the source",
-        "AIH_TRUST",
-      );
-    }
-  }
-
-  const files: PromotionFile[] = skills.flatMap((skillDir) => {
-    const skillRel = promotedSkillRel(sourceRoot, skillDir);
-    const targetBase = posix.join(ctx.contextDir, "skills", source.id, skillRel);
-    return collectFiles(skillDir)
-      .filter(isTextPromotionFile)
-      .map((sourcePath) => {
-        const fileRel = safeSourceRelative(skillDir, sourcePath);
-        const sourceRel = safeSourceRelative(sourceRoot, sourcePath);
-        const bytes = promotionFileBytes(sourceRoot, sourcePath);
-        return {
-          sourcePath,
-          sourceRel,
-          targetRel: posix.join(targetBase, fileRel),
-          hash: sha256Bytes(bytes),
-          contents: bytes.toString("utf8"),
-        };
-      });
-  });
-
-  return {
-    writes: files.map((file) =>
-      writeText(file.targetRel, file.contents, `promote trusted skill file ${file.sourceRel}`),
-    ),
-    promotedSkills: skills.map((skillDir) => promotedSkillRel(sourceRoot, skillDir)),
-    artifactHashes: files.map((file) => ({ path: file.sourceRel, sha256: file.hash })),
-  };
-}
-
-function existingLock(root: string): TrustLock {
-  return readTrustLock(root);
-}
-
 function metadataFor(source: TrustSource): TrustFetchMetadata | undefined {
   return source.kind === "github" ? readTrustFetchMetadata(source) : undefined;
 }
@@ -403,86 +244,13 @@ function sameArtifactHashes(
   left: Array<{ path: string; sha256: string }>,
   right: Array<{ path: string; sha256: string }>,
 ): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-/**
- * Union-merge guard for repeat promotions of the SAME source content: when the
- * existing lock entry shares the entry's kind + origin AND (for github) the same
- * pinned SHA — i.e. two subset promotions of one identical tree, the pack-install
- * case — replacing it would clobber the earlier promotion's receipts. Merge
- * instead: `promotedSkills` = sorted union, `artifactHashes` = union by path
- * (the NEW promotion wins on a shared path), findings / analyzersRun /
- * promotedAt from the LATEST promotion. A different pinned SHA is a different
- * tree ⇒ replace (the pre-existing behavior); an undefined SHA on either side
- * never merges (fail-closed).
- */
-function mergedLockEntry(
-  existing: TrustLockSource | undefined,
-  entry: TrustLockSource,
-): TrustLockSource {
-  const sameOrigin =
-    existing !== undefined &&
-    existing.kind === entry.kind &&
-    existing.source === entry.source &&
-    (entry.kind !== "github" ||
-      (existing.pinnedSha !== undefined && existing.pinnedSha === entry.pinnedSha));
-  if (existing === undefined || !sameOrigin) return entry;
-  const newPaths = new Set(entry.artifactHashes.map((item) => item.path));
-  const carried = existing.artifactHashes.filter((item) => !newPaths.has(item.path));
-  return {
-    ...entry,
-    promotedSkills: [...new Set([...existing.promotedSkills, ...entry.promotedSkills])].sort(
-      (a, b) => a.localeCompare(b),
-    ),
-    artifactHashes: [...carried, ...entry.artifactHashes],
-  };
-}
-
-/**
- * `subset` = this promotion installed a SELECTED slice of the source (a pack
- * install). Only then do receipts UNION-MERGE with the prior entry — two packs
- * sharing a source must not clobber each other's promotedSkills. A DEFAULT
- * (whole-source) promotion keeps the original replace semantics: it re-promoted
- * everything the source currently ships, so carrying old receipts forward would
- * let a mutable local source's REMOVED skills linger as stale trust-lock evidence.
- */
-function lockWithSource(
-  ctx: PlanContext,
-  source: TrustSource,
-  gate: ClearedWorkspaceAddTrustGate,
-  promotion: PromotionPlan,
-  subset: boolean,
-): TrustLock {
-  const meta = metadataFor(source);
-  const current = existingLock(ctx.root);
-  const entry: TrustLockSource = {
-    id: source.id,
-    kind: source.kind,
-    source: source.kind === "github" ? source.source : source.root,
-    ref: source.kind === "github" ? source.ref : undefined,
-    pinnedSha: meta?.pinnedSha,
-    promotedAt: new Date().toISOString(),
-    promotedSkills: promotion.promotedSkills,
-    analyzersRun: [...gate.analyzersRun],
-    artifactHashes: promotion.artifactHashes,
-    findings: gate.report.checks.map((check) => ({
-      name: check.name,
-      verdict: check.verdict,
-      code: check.code,
-      detail: check.detail,
-      location: check.location,
-      fingerprint: check.fingerprint,
-    })),
-  };
-  const existing = current.sources.find((item) => item.id === source.id);
-  return {
-    schemaVersion: 1,
-    sources: [
-      ...current.sources.filter((item) => item.id !== source.id),
-      subset ? mergedLockEntry(existing, entry) : entry,
-    ],
-  };
+  return (
+    left.length === right.length &&
+    left.every(
+      (artifact, index) =>
+        artifact.path === right[index]?.path && artifact.sha256 === right[index]?.sha256,
+    )
+  );
 }
 
 function probesForChecks(checks: Check[]): Action[] {
@@ -759,9 +527,19 @@ export async function captureWorkspaceAddTrustGate(
   const phase1BlockingChecks = promotionBlockingChecks(report.checks);
   const currentScan = await currentTrustScan(ctx, source, internalScopes);
   const currentBlockingChecks = promotionBlockingChecks(currentScan.checks);
-  const promotion = buildPromotion(ctx, source, selectSkills);
+  const binding = sourceBinding(source);
+  const promotion = snapshotSkillPromotion({
+    contextDir: ctx.contextDir,
+    source,
+    sourceBinding: binding,
+    selectedSkills: selectSkills,
+    workingTrustLock: readTrustLock(ctx.root),
+    promotedAt: new Date().toISOString(),
+    analyzersRun: currentScan.analyzersRun,
+    findings: report.checks,
+  });
   return {
-    source: sourceBinding(source),
+    source: binding,
     artifactHashes: promotion.artifactHashes,
     report,
     analyzersRun: currentScan.analyzersRun,
@@ -814,7 +592,16 @@ export async function workspaceAddPhase2Plan(
   if (currentBlockingChecks.length > 0) {
     return plan("workspace add: promote", ...probesForChecks(currentBlockingChecks));
   }
-  const promotion = buildPromotion(ctx, source, selectSkills);
+  const promotion = snapshotSkillPromotion({
+    contextDir: ctx.contextDir,
+    source,
+    sourceBinding: currentBinding,
+    selectedSkills: selectSkills,
+    workingTrustLock: readTrustLock(ctx.root),
+    promotedAt: new Date().toISOString(),
+    analyzersRun: currentScan.analyzersRun,
+    findings: gate.report.checks,
+  });
   const approvalChecks = unapprovedSkillChecks(ctx, source, promotion.promotedSkills);
   if (approvalChecks.some((check) => check.verdict === "fail")) {
     return plan("workspace add: promote", ...probesForChecks(approvalChecks));
@@ -827,11 +614,20 @@ export async function workspaceAddPhase2Plan(
       ]),
     );
   }
-  const lock = lockWithSource(ctx, source, gate, promotion, selectSkills !== undefined);
   const actions: Action[] = [
     ...probesForChecks(approvalChecks),
-    ...promotion.writes,
-    writeJson(".aih/trust-lock.json", lock, "trusted external skill acquisition lock"),
+    ...promotion.files.map((file) =>
+      writeText(
+        file.targetRel,
+        new TextDecoder("utf-8", { fatal: true }).decode(file.contents),
+        `promote trusted skill file ${file.sourceRel}`,
+      ),
+    ),
+    writeText(
+      ".aih/trust-lock.json",
+      new TextDecoder("utf-8", { fatal: true }).decode(promotion.nextTrustLockBytes),
+      "trusted external skill acquisition lock",
+    ),
     structuredChecksProbe("trust promotion guard", () => [
       {
         name: "trust promotion guard",

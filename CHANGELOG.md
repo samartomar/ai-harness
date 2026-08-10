@@ -55,6 +55,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Workspace skill promotion now derives one bounded, Buffer-preserving snapshot
+  that canonically threads multi-source trust-lock state before the legacy plan
+  renders it. The internal seam revalidates GitHub pins and source files at the
+  point of use, rejects hostile or oversized input, and preserves exact hardened
+  lock bytes for future Capability Package Manager adapters; it does not add a
+  package command, advance package ownership, or claim installation.
 - ECC's ordered, byte-safe materialization commit now delegates to a shared
   internal owned-file transaction. The primitive preserves caller order,
   re-pins each destination before its effect, and compensates applied steps in
