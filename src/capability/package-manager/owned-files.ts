@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
+import { platform as hostPlatform } from "node:process";
 import { isProxy } from "node:util/types";
 import {
   type OwnedFilePolicy,
@@ -40,7 +41,7 @@ const STATE_PATHS = new Set([
 
 export type CapabilityPackageOwnedFileExpectation =
   | Readonly<{ absent: true }>
-  | Readonly<{ sha256: string; mode: number }>;
+  | Readonly<{ sha256: string; mode?: number }>;
 
 export interface CapabilityPackageOwnedFileStep {
   readonly action: "assert" | "write" | "remove";
@@ -274,7 +275,7 @@ function targetMatches(target: StateTarget): boolean {
   if (target.desired === undefined) return target.live.state === "absent";
   return (
     target.live.state === "present" &&
-    target.live.mode === target.mode &&
+    (hostPlatform === "win32" || target.live.mode === target.mode) &&
     target.live.bytes.equals(target.desired)
   );
 }
@@ -297,7 +298,9 @@ function stepFor(target: StateTarget): Readonly<CapabilityPackageOwnedFileStep> 
   const expect = Object.freeze(
     target.live.state === "absent"
       ? { absent: true as const }
-      : { sha256: sha256(target.live.bytes), mode: target.live.mode },
+      : hostPlatform === "win32"
+        ? { sha256: sha256(target.live.bytes) }
+        : { sha256: sha256(target.live.bytes), mode: target.live.mode },
   );
   const contents = publicBuffer(action === "write" ? target.desired : undefined);
   const prior = publicBuffer(target.live.state === "present" ? target.live.bytes : undefined);
@@ -314,13 +317,16 @@ function stepFor(target: StateTarget): Readonly<CapabilityPackageOwnedFileStep> 
     });
   }
   if (prior !== undefined) {
-    Object.defineProperties(step, {
-      prior: { enumerable: true, get: prior },
-      priorMode: {
+    Object.defineProperty(step, "prior", {
+      enumerable: true,
+      get: prior,
+    });
+    if (hostPlatform !== "win32") {
+      Object.defineProperty(step, "priorMode", {
         enumerable: true,
         value: target.live.state === "present" ? target.live.mode : undefined,
-      },
-    });
+      });
+    }
   }
   return Object.freeze(step);
 }

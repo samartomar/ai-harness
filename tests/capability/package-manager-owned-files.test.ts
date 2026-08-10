@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { adaptSkillPackageGraph } from "../../src/capability/package-graph/adapters/skills.js";
 import { buildPackageGraphIndex } from "../../src/capability/package-graph/build.js";
 import { CAPABILITY_PACKAGE_INTENT_PATH } from "../../src/capability/package-manager/intent.js";
@@ -26,6 +26,16 @@ import {
 const SHA = "a".repeat(40);
 const RECEIPT_PATH = CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH;
 let root: string;
+
+async function ownedFilesForPlatform(platform: NodeJS.Platform) {
+  vi.doUnmock("node:process");
+  vi.resetModules();
+  vi.doMock("node:process", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("node:process")>()),
+    platform,
+  }));
+  return import("../../src/capability/package-manager/owned-files.js");
+}
 
 function json(value: unknown, spacing?: number): Buffer {
   return Buffer.from(`${JSON.stringify(value, null, spacing)}\n`, "utf8");
@@ -111,6 +121,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.doUnmock("node:process");
+  vi.resetModules();
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -180,19 +192,22 @@ describe("Capability Package Manager owned state planning", () => {
     ]);
     expect(plan.steps[0]).toMatchObject({
       action: "assert",
-      expect: { sha256: expect.stringMatching(/^[0-9a-f]{64}$/), mode: 0o644 },
+      expect: { sha256: expect.stringMatching(/^[0-9a-f]{64}$/) },
     });
     expect(plan.steps[1]?.expect).toEqual({
       sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
-      mode: 0o640,
+      ...(process.platform === "win32" ? {} : { mode: 0o640 }),
     });
+    if (process.platform === "win32") expect(plan.steps[0]?.expect).not.toHaveProperty("mode");
+    else expect(plan.steps[0]?.expect).toHaveProperty("mode", 0o644);
     expect(plan.steps[1]?.prior).toEqual(staleBytes);
     expect(plan.steps[1]?.prior).not.toBe(staleBytes);
-    expect(plan.steps[1]?.priorMode).toBe(0o640);
+    expect(plan.steps[1]?.priorMode).toBe(process.platform === "win32" ? undefined : 0o640);
     expect(bytesAt(CAPABILITY_PACKAGE_INTENT_PATH)).toEqual(originalIntent);
   });
 
   it("plans mode-only normalization and binds unchanged partner bytes against later drift", () => {
+    if (process.platform === "win32") return;
     const initial = planCapabilityPackageOwnedFiles(request());
     materialize(initial);
     chmodSync(join(root, CAPABILITY_PACKAGE_INTENT_PATH), 0o600);
@@ -213,6 +228,44 @@ describe("Capability Package Manager owned state planning", () => {
     const pinnedIntent = structuredClone(plan.steps[0]?.expect);
     writeFileSync(join(root, CAPABILITY_PACKAGE_INTENT_PATH), "changed after planning\n");
     expect(plan.steps[0]?.expect).toEqual(pinnedIntent);
+  });
+
+  it("uses convergent Windows effective modes while retaining exact POSIX target modes", async () => {
+    const windows = await ownedFilesForPlatform("win32");
+    const windowsInitial = windows.planCapabilityPackageOwnedFiles(request());
+    expect(windowsInitial.steps.map(({ mode }) => mode)).toEqual([0o644, 0o600]);
+    materialize(windowsInitial);
+    chmodSync(join(root, CAPABILITY_PACKAGE_INTENT_PATH), 0o666);
+    chmodSync(join(root, RECEIPT_PATH), 0o666);
+    expect(windows.planCapabilityPackageOwnedFiles(request()).steps).toEqual([]);
+
+    const stale = parseCapabilityPackageOwnershipReceipt(bytesAt(RECEIPT_PATH).toString("utf8"));
+    const stalePackage = stale.packages[0];
+    if (stalePackage === undefined) throw new Error("expected receipt fixture");
+    stalePackage.claimDigest = "b".repeat(64);
+    put(RECEIPT_PATH, Buffer.from(serializeCapabilityPackageOwnershipReceipt(stale)), 0o666);
+    const changed = windows.planCapabilityPackageOwnedFiles(request());
+    expect(changed.steps).toEqual([
+      expect.objectContaining({
+        action: "assert",
+        path: CAPABILITY_PACKAGE_INTENT_PATH,
+      }),
+      expect.objectContaining({
+        action: "write",
+        path: RECEIPT_PATH,
+        mode: 0o600,
+      }),
+    ]);
+    for (const step of changed.steps) {
+      expect(step.expect).not.toHaveProperty("mode");
+      expect(step).not.toHaveProperty("priorMode");
+    }
+
+    const posix = await ownedFilesForPlatform("linux");
+    const posixPlan = posix.planCapabilityPackageOwnedFiles(request());
+    expect(posixPlan.steps.map(({ mode }) => mode)).toEqual([0o644, 0o600]);
+    expect(posixPlan.steps.every((step) => "mode" in step.expect)).toBe(true);
+    expect(posixPlan.steps.every((step) => step.priorMode === 0o666)).toBe(true);
   });
 
   it("plans partial removal with reduced intent first and receipt last", () => {
