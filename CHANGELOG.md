@@ -55,6 +55,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Capability Package Manager lifecycle state can now be projected into an
+  immutable, plan-only sequence for the committed intent and local ownership
+  receipt. The planner binds exact live bytes and, where the host supports
+  POSIX modes, exact mode preimages; it orders intent before receipt on writes
+  and receipt before intent on final removal, and refuses malformed or unsafe
+  state. It exposes no commit API and does not install, configure, adopt,
+  remove, or claim ownership of package members.
 - Capability Package Manager prerequisites can now verify an already-promoted
   GitHub skill-pack against its exact Package Graph authorities, promotion
   receipt, routed repository paths, and current bounded file bytes. The shared
