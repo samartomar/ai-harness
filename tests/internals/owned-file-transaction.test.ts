@@ -469,9 +469,12 @@ describe("OwnedFileTransaction", () => {
         action: "remove",
         path: "ephemeral.txt",
         mode: 0o600,
-        expect: { sha256: sha256(ephemeral), mode: 0o600 },
+        expect:
+          process.platform === "win32"
+            ? { sha256: sha256(ephemeral) }
+            : { sha256: sha256(ephemeral), mode: 0o600 },
         prior: ephemeral,
-        priorMode: 0o600,
+        ...(process.platform === "win32" ? {} : { priorMode: 0o600 }),
       },
     ] as never);
     expect(existsSync(join(root, "ephemeral.txt"))).toBe(false);
