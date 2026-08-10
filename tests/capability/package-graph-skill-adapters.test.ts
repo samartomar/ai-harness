@@ -206,7 +206,7 @@ describe("Package Graph skill authority adapters", () => {
     expect(index.claims.filter(({ id }) => id === "skill:clean")).toHaveLength(2);
   });
 
-  it("keeps requiredChecks diagnostic-only and out of declared and observed risk", () => {
+  it("fails the catalog authority when requiredChecks cannot be represented", () => {
     const packsBytes = bytes({
       schemaVersion: 1,
       packs: [{ name: "docs-quality", requiredChecks: ["no-exec"], skills: [packRef()] }],
@@ -221,9 +221,7 @@ describe("Package Graph skill authority adapters", () => {
         entityId: "package:skill-pack/docs-quality",
       }),
     ]);
-    expect(catalog?.authority.sourceDigest.value).toBe(exactSha256(packsBytes));
-    expect(catalog?.graph.packages[0]).toMatchObject({ declaredRisk: [], observedRisk: [] });
-    expect(catalog?.graph.packages[0]).not.toHaveProperty("requiredChecks");
+    expect(catalog).toBeUndefined();
   });
 
   it("rejects malformed lock input at document granularity with no partial lock claim", () => {
