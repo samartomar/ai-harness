@@ -365,6 +365,13 @@ export interface CommandSpec {
   /** Read-only commands (doctor/status) skip the apply path entirely. */
   readOnly?: boolean;
   /**
+   * Suppress cross-cutting file outputs as well as capability actions. These
+   * commands do not expose artifact-writing flags and never append the run
+   * ledger, so a read/preview invocation leaves the repository byte-identical.
+   * Requires {@link readOnly}; intended for strict local inspection surfaces.
+   */
+  zeroWrite?: boolean;
+  /**
    * Read-only commands usually validate `--posture` for script compatibility but
    * do not let it change the resolved posture. Set this for read-only verifiers
    * whose checks are explicitly posture-scoped and remain mutation-free.

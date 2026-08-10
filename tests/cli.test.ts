@@ -93,9 +93,25 @@ describe("CLI program", () => {
     ]);
   });
 
-  it("registers capability resolve and prune as nested commands", () => {
+  it("registers capability resolve, prune, and package commands", () => {
     const capability = buildProgram().commands.find((c) => c.name() === "capability");
-    expect(capability?.commands.map((c) => c.name()).sort()).toEqual(["prune", "resolve"]);
+    expect(capability?.commands.map((c) => c.name()).sort()).toEqual([
+      "package",
+      "prune",
+      "resolve",
+    ]);
+  });
+
+  it("keeps capability package commands on a zero-write CLI flag surface", () => {
+    const capability = buildProgram().commands.find((command) => command.name() === "capability");
+    const packageCommand = capability?.commands.find((command) => command.name() === "package");
+    for (const command of packageCommand?.commands ?? []) {
+      const flags = command.options.map((option) => option.long);
+      expect(flags).not.toContain("--apply");
+      expect(flags).not.toContain("--force");
+      expect(flags).not.toContain("--support-out");
+      expect(flags).not.toContain("--no-log");
+    }
   });
 
   it("registers policy workbench generation, starter, evaluation, projection, validation, and pin verification as nested commands", () => {
@@ -210,6 +226,7 @@ describe("CLI program", () => {
   it("keeps the canonical CommandSpec registry complete for every registered built-in spec", () => {
     const bareParentPaths = new Set<string>([
       ...PARENT_GROUPS.filter((name) => name !== "workspace"),
+      "capability package",
       "ecc mcp",
     ]);
     const registeredPaths = (program: Command, parent: string[] = []): string[] =>

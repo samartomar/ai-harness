@@ -82,6 +82,23 @@ describe("committed JSON Schemas", () => {
     });
   });
 
+  it("publishes package-root-only policy selection without authority fields", () => {
+    const base = {
+      schemaVersion: 2,
+      minimumPosture: "vibe",
+      references: { repoContract: "ai-coding/project.json" },
+      capabilityPackages: {
+        catalog: { provider: "github", repository: "Owner/Capabilities" },
+        roots: ["package:skill-pack/docs-quality"],
+      },
+    };
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", base);
+    rejectCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...base,
+      capabilityPackages: { ...base.capabilityPackages, authorities: [] },
+    });
+  });
+
   it("publishes strict Package Graph v1 editor validation", () => {
     const valid = {
       schemaVersion: 1,

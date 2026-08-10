@@ -608,6 +608,46 @@
       },
       "additionalProperties": false
     },
+    "capabilityPackages": {
+      "type": "object",
+      "properties": {
+        "catalog": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "const": "github"
+            },
+            "repository": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 160,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*\\/[A-Za-z0-9][A-Za-z0-9._-]*$"
+            }
+          },
+          "required": [
+            "provider",
+            "repository"
+          ],
+          "additionalProperties": false
+        },
+        "roots": {
+          "maxItems": 128,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 9,
+            "maxLength": 160,
+            "pattern": "^package:[a-z][a-z0-9-]*\\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*$"
+          }
+        }
+      },
+      "required": [
+        "catalog",
+        "roots"
+      ],
+      "additionalProperties": false
+    },
     "governance": {
       "anyOf": [
         {

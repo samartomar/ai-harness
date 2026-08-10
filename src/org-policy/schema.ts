@@ -1280,6 +1280,43 @@ const PolicyGovernanceSchema = z.union([
   GovernedPolicyGovernanceSchema,
 ]);
 
+const CapabilityPackageRootSchema = z
+  .string()
+  .min(9)
+  .max(160)
+  .regex(
+    /^package:[a-z][a-z0-9-]*\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*$/,
+  );
+
+const CapabilityPackagePolicySchema = z
+  .object({
+    catalog: z
+      .object({
+        provider: z.literal("github"),
+        repository: z
+          .string()
+          .min(3)
+          .max(160)
+          .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/),
+      })
+      .strict(),
+    roots: z.array(CapabilityPackageRootSchema).max(128),
+  })
+  .strict()
+  .superRefine((selection, context) => {
+    const seen = new Set<string>();
+    for (const [index, root] of selection.roots.entries()) {
+      if (seen.has(root)) {
+        context.addIssue({
+          code: "custom",
+          path: ["roots", index],
+          message: "duplicate package root",
+        });
+      }
+      seen.add(root);
+    }
+  });
+
 /** Stable flattened input leaves for mechanical consumer-completeness contracts. */
 export function schemaLeafPaths(schema: unknown, path = ""): string[] {
   if (schema === null || typeof schema !== "object" || Array.isArray(schema)) {
@@ -1378,6 +1415,8 @@ export const OrgPolicySchema = z
       })
       .strict()
       .optional(),
+    /** Requested package roots only; catalogs, locks, evidence, and receipts remain external authority. */
+    capabilityPackages: CapabilityPackagePolicySchema.optional(),
     /**
      * Candidate inventory and headless activation decisions. This intentionally
      * does not replace the established MCP/trust controls above; it gives the

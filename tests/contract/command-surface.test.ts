@@ -205,6 +205,24 @@ describe("v1 contract — CLI command surface", () => {
       expect(flags).not.toContain("--force");
       expect(flags).toContain("--context-dir <dir>");
     }
+    const capabilityPackage = root.commands
+      .find((command) => command.name === "capability")
+      ?.commands.find((command) => command.name === "package");
+    expect(capabilityPackage?.commands.map(({ name }) => name)).toEqual([
+      "add",
+      "doctor",
+      "list",
+      "remove",
+      "show",
+      "status",
+      "update",
+    ]);
+    for (const command of capabilityPackage?.commands ?? []) {
+      const flags = command.options.map(({ flags }) => flags);
+      expect(flags).not.toContain("--apply");
+      expect(flags).not.toContain("--force");
+      expect(flags).toContain("--json");
+    }
   });
 
   it("walk captures aliases (aliases ARE contract)", () => {

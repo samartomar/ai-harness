@@ -8,20 +8,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `aih capability package list/show/status/doctor` now provide one local, typed read-only view of
+  policy-requested package roots, exact approval/catalog Package Graph claims, committed intent,
+  ownership, custody, and current skill-domain state. `add/update/remove` are preview-only in this
+  slice and emit zero writes, processes, network requests, acquisitions, or component loads;
+  proposed root changes remain blocked on an explicit org-policy update.
 - A strict Capability Package Manifest v1 and pure deterministic resolver now
   model exact Package Graph authority, claim, source-pin, direct-member, and
   dependency intent without granting approval or installing anything. Relevant
   authority conflicts, drift, missing references, unsupported member kinds,
   cycles, and partial projections fail closed; equal inputs produce a frozen,
-  dependency-first resolution. The schema ships with the npm package, while
-  filesystem lifecycle and commands remain future serial slices.
-- Capability Package Manager lifecycle foundations now read exact committed
-  `aih-capability-packages.json` intent, preserve strict derived orchestration state in
+  dependency-first resolution. The schema ships with the npm package and now
+  feeds the local command journey without becoming a second policy or approval authority.
+- Capability Package Manager lifecycle foundations now read the exact derived
+  `aih-capability-packages.json` resolution manifest, preserve strict orchestration state in
   `.aih/capability-packages/ownership-v1.json`, require every supported GitHub
   skill-pack member to have an exact lock-authority claim, and compute frozen,
-  deterministic add/update/remove metadata. This slice performs no member
-  installation, configuration, acquisition, or command registration; those
-  remain blocked on the shared rollback-safe transaction and domain adapters.
+  deterministic add/update/remove metadata. The new commands expose that state and preview only;
+  member installation, configuration, acquisition, and execution remain outside this slice.
 - Governed ECC materialization now supports the single `kiro` target for
   evidence-passed selected skills and `baseline:rules` steering. AIH copies only
   exact pinned `.kiro/skills/<name>/SKILL.md` and top-level
