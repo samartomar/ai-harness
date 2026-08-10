@@ -286,17 +286,27 @@ aih capability package list [--json]
 aih capability package show <package-id> [--json]
 aih capability package status [<package-id>] [--json]
 aih capability package doctor [--json]
-aih capability package add <package-id> [--json]
-aih capability package update <package-id> [--json]
-aih capability package remove <package-id> [--json]
+aih capability package add <package-id> [--apply] [--json]
+aih capability package update <package-id> [--apply] [--json]
+aih capability package remove <package-id> [--apply] [--json]
 ```
 
-`list`, `show`, `status`, and `doctor` are local read-only views. In this first vertical slice,
-`add`, `update`, and `remove` are also read-only previews: they emit no filesystem action, process,
-network request, acquisition, or component load. If the proposed root set differs from effective
-policy, the preview says `refused at policy: selection-change-required`; it never treats a CLI
-argument as policy authority. Human and JSON rendering use the same typed report, and every
-fail-closed result names its stage and stable reason.
+`list`, `show`, `status`, and `doctor` are local read-only views. `add`, `update`, and
+`remove` are also local read-only previews unless `--apply` is explicit. Preview emits no
+filesystem action, process, network request, acquisition, or component load.
+
+The current apply adapter is deliberately narrow: it reconciles GitHub skill packs whose exact
+approved bytes are already present in the repo promotion store and bound by
+`.aih/trust-lock.json`. Add/update publish the derived intent, ownership receipt, and
+content-addressed custody receipt without fetching or executing anything. Remove is permitted only
+after effective policy deselects the package; it subtracts unchanged custody-proven files, preserves
+unrelated promoted sources, and retains both drifted content and its ownership record. The ordered
+file transaction provides compensating rollback, not crash journaling.
+
+If a requested root set differs from effective policy, preview or apply says
+`refused at policy: selection-change-required`; the CLI argument never becomes policy authority.
+Human and JSON rendering use the same typed result, and every fail-closed result names its stage and
+stable reason.
 
 ## aih uninstall
 

@@ -20,6 +20,7 @@ import { CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH } from "../../src/capability/
 const SHA = "a".repeat(40);
 const PACKAGE_ID = "package:skill-pack/docs-quality";
 const SKILL_BYTES = Buffer.from("# Clean\n", "utf8");
+const SECOND_SKILL_BYTES = Buffer.from("# Review\n", "utf8");
 let root: string;
 
 function sha256(bytes: Buffer): string {
@@ -133,6 +134,62 @@ function apply(operation: "add" | "update" | "remove") {
   });
 }
 
+function addSecondApprovedPromotion(): void {
+  const evidencePath = ".aih/skill-reports/owner-repo-bbbbbbbb.json";
+  const evidence = {
+    schemaVersion: 1,
+    source: `owner/repo@${SHA}`,
+    pinnedSha: SHA,
+    checks: [],
+    analyzersRun: ["aih-native"],
+    verdict: "GREEN",
+    reasons: [],
+  };
+  const evidenceBytes = Buffer.from(`${JSON.stringify(evidence, null, 2)}\n`, "utf8");
+  put(evidencePath, evidenceBytes);
+  put("ai-coding/skill-cards/review.json", {
+    schemaVersion: 1,
+    name: "review",
+    source: `owner/repo@${SHA}`,
+    commit: SHA,
+    license: "Apache-2.0",
+    installScope: "repo",
+    riskClass: "green",
+    requiresMcp: false,
+    requiresShell: false,
+    scanEvidence: [evidencePath],
+    approval: {
+      verdict: "GREEN",
+      approvedBy: "security",
+      approvedAt: "2026-08-10T00:00:00.000Z",
+    },
+  });
+  const approval = JSON.parse(readFileSync(join(root, "aih-skills.lock.json"), "utf8"));
+  approval.skills.push({
+    name: "review",
+    source: `owner/repo@${SHA}`,
+    commit: SHA,
+    verdict: "GREEN",
+    scope: "repo",
+    card: "ai-coding/skill-cards/review.json",
+    evidenceSha256: sha256(evidenceBytes),
+    approvedBy: "security",
+    approvedAt: "2026-08-10T00:00:00.000Z",
+  });
+  put("aih-skills.lock.json", approval);
+  const catalog = JSON.parse(readFileSync(join(root, "aih-packs.json"), "utf8"));
+  catalog.packs[0].skills.push({ name: "review", source: `owner/repo@${SHA}`, commit: SHA });
+  put("aih-packs.json", catalog);
+  const trust = JSON.parse(readFileSync(join(root, ".aih/trust-lock.json"), "utf8"));
+  trust.sources[0].promotedSkills.push("review");
+  trust.sources[0].artifactHashes.push({
+    path: "skills/review/SKILL.md",
+    sha256: sha256(SECOND_SKILL_BYTES),
+  });
+  put(".aih/trust-lock.json", trust, 0o600);
+  put("ai-coding/skills/owner-repo/review/SKILL.md", SECOND_SKILL_BYTES, 0o640);
+}
+
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "aih-package-coordinator-"));
   seed();
@@ -158,6 +215,53 @@ describe("GitHub skill-pack package reconciliation", () => {
     );
 
     expect(apply("update")).toMatchObject({ status: "unchanged" });
+  });
+
+  it("updates ownership and custody after an exact approved promotion adds a member", () => {
+    expect(apply("add").status).toBe("applied");
+    addSecondApprovedPromotion();
+
+    const result = apply("update");
+
+    expect(result.status, JSON.stringify(result)).toBe("applied");
+    const ownership = JSON.parse(
+      readFileSync(join(root, CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH), "utf8"),
+    );
+    expect(ownership.packages[0].members.map(({ id }: { id: string }) => id)).toEqual([
+      "skill:clean",
+      "skill:review",
+    ]);
+    const ownershipBytes = readFileSync(join(root, CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH));
+    const trustBytes = readFileSync(join(root, ".aih/trust-lock.json"));
+    const custody = JSON.parse(
+      readFileSync(
+        join(root, capabilityPackageCustodyReceiptPath(sha256(ownershipBytes), sha256(trustBytes))),
+        "utf8",
+      ),
+    );
+    expect(custody.files.map(({ memberId }: { memberId: string }) => memberId)).toEqual([
+      "skill:clean",
+      "skill:review",
+    ]);
+  });
+
+  it("rejects hostile request accessors before observing repository state", () => {
+    let calls = 0;
+    const hostile = Object.defineProperty({}, "root", {
+      enumerable: true,
+      get() {
+        calls += 1;
+        return root;
+      },
+    });
+
+    expect(reconcileSkillPackCapabilityPackage(hostile)).toMatchObject({
+      status: "refused",
+      stage: "input",
+      reason: "invalid-input",
+    });
+    expect(calls).toBe(0);
+    expect(existsSync(join(root, CAPABILITY_PACKAGE_INTENT_PATH))).toBe(false);
   });
 
   it("refuses without exact promoted-domain proof and advances no package state", () => {

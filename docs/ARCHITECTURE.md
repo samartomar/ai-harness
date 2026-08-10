@@ -33,6 +33,12 @@ and the executor is the only layer that performs filesystem or process effects.
   bytes they parse for the shipped baseline lock, ECC materialization receipts,
   and strict GitHub skill lock/pack artifacts; the separate residue classifier
   never promotes discovery into an authority claim.
+- **Capability package reconciliation** (`src/capability/package-manager/`) projects effective
+  org-policy roots through exact approval, evidence, catalog, Package Graph, intent, ownership,
+  custody, and domain receipts. Read commands and previews are local and side-effect-free. The first
+  apply adapter handles only already-promoted GitHub skill packs, publishes ownership last through
+  an ordered compensating transaction, and conservatively retains drift; it is not an acquisition
+  or general dependency-management authority.
 - **Evidence and release verification** (`src/evidence/`, `src/bundle/`,
   `src/release/`) package local audit material and verify published releases.
 - **Reporting and local telemetry** (`src/report/`, `src/logging/`,
