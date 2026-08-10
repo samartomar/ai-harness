@@ -219,7 +219,11 @@ describe("v1 contract — CLI command surface", () => {
     ]);
     for (const command of capabilityPackage?.commands ?? []) {
       const flags = command.options.map(({ flags }) => flags);
-      expect(flags).not.toContain("--apply");
+      if (["add", "update", "remove"].includes(command.name)) {
+        expect(flags).toContain("--apply");
+      } else {
+        expect(flags).not.toContain("--apply");
+      }
       expect(flags).not.toContain("--force");
       expect(flags).toContain("--json");
     }

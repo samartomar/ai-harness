@@ -112,7 +112,7 @@ export interface CapabilityPackageContextReport {
   preview?: CapabilityPackagePreview;
 }
 
-interface ExactBytes {
+export interface CapabilityPackageExactBytes {
   bytes: Buffer;
   sha256: string;
 }
@@ -166,7 +166,10 @@ function currentFile(root: string, path: string, realPath: string, opened: BigIn
   }
 }
 
-function exactRootFile(root: string, path: string): ExactBytes | undefined {
+export function readCapabilityPackageExactFile(
+  root: string,
+  path: string,
+): CapabilityPackageExactBytes | undefined {
   if (!safeParents(root, path)) return undefined;
   const inspected = inspectContainedRelativePath(root, path);
   if (inspected.state !== "present" || inspected.kind !== "file") return undefined;
@@ -299,7 +302,7 @@ function freeze<T>(value: T): T {
   return value;
 }
 
-function manifestFor(
+export function capabilityPackageManifestFor(
   index: PackageGraphIndex,
   roots: readonly string[],
 ): CapabilityPackageManifest {
@@ -334,7 +337,7 @@ function manifestFor(
   });
 }
 
-function manifestBytes(manifest: CapabilityPackageManifest): Buffer {
+export function capabilityPackageManifestBytes(manifest: CapabilityPackageManifest): Buffer {
   return Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 }
 
@@ -356,7 +359,7 @@ function exactEvidence(
     if (entry === undefined || entry.card !== `${contextDir}/skill-cards/${name}.json`) {
       return { state: "malformed", reason: "invalid-skill-card-binding" };
     }
-    const cardSource = exactRootFile(root, entry.card);
+    const cardSource = readCapabilityPackageExactFile(root, entry.card);
     if (cardSource === undefined)
       return { state: "malformed", reason: "missing-or-unsafe-skill-card" };
     let card: ReturnType<typeof SkillCardSchema.parse>;
@@ -376,7 +379,7 @@ function exactEvidence(
     ) {
       return { state: "malformed", reason: "skill-card-approval-mismatch" };
     }
-    const evidenceSource = exactRootFile(root, card.scanEvidence[0] ?? "");
+    const evidenceSource = readCapabilityPackageExactFile(root, card.scanEvidence[0] ?? "");
     if (evidenceSource === undefined)
       return { state: "malformed", reason: "missing-or-unsafe-evidence" };
     if (evidenceSource.sha256 !== entry.evidenceSha256) {
@@ -434,7 +437,7 @@ export function inspectCapabilityPackageContext(input: unknown): CapabilityPacka
     return refusal(emptyReport(fallbackOperation), "input", "invalid-input");
   const report = emptyReport(snapshot.operation);
 
-  const policySource = exactRootFile(snapshot.root, AIH_ORG_POLICY_FILE);
+  const policySource = readCapabilityPackageExactFile(snapshot.root, AIH_ORG_POLICY_FILE);
   if (policySource === undefined) return refusal(report, "policy", "missing-or-unsafe-policy");
   let policy: ReturnType<typeof parseOrgPolicy>;
   try {
@@ -461,7 +464,7 @@ export function inspectCapabilityPackageContext(input: unknown): CapabilityPacka
   }
   report.sources.approval = { state: "valid", sha256: approval.sourceSha256 };
 
-  const catalogSource = exactRootFile(snapshot.root, AIH_PACKS_FILE);
+  const catalogSource = readCapabilityPackageExactFile(snapshot.root, AIH_PACKS_FILE);
   if (catalogSource === undefined)
     return refusal(report, "catalog", "missing-or-unsafe-pack-catalog");
   let packs: ReturnType<typeof PacksFileSchema.parse>;
@@ -574,11 +577,11 @@ export function inspectCapabilityPackageContext(input: unknown): CapabilityPacka
   if (roots.length > 0) {
     let manifest: CapabilityPackageManifest;
     try {
-      manifest = manifestFor(index, roots);
+      manifest = capabilityPackageManifestFor(index, roots);
     } catch {
       return refusal(report, "package-graph", "unresolvable-package-selection");
     }
-    intentBytes = manifestBytes(manifest);
+    intentBytes = capabilityPackageManifestBytes(manifest);
     const planned = planCapabilityPackageLifecycle({
       intentBytes,
       index,

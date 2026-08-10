@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Command } from "commander";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   capabilityPackageAddCommand,
   capabilityPackageDoctorCommand,
@@ -17,6 +17,7 @@ import { runCapability } from "../../src/commands/run.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { buildProgram } from "../../src/program.js";
 
 const SHA = "a".repeat(40);
 let root: string;
@@ -97,6 +98,32 @@ beforeEach(() => {
       },
     ],
   });
+  const skillBytes = Buffer.from("# Clean\n", "utf8");
+  write(".aih/trust-lock.json", {
+    schemaVersion: 1,
+    sources: [
+      {
+        id: "owner-repo",
+        kind: "github",
+        source: "owner/repo",
+        ref: "main",
+        pinnedSha: SHA,
+        promotedAt: "2026-08-10T00:00:00.000Z",
+        promotedSkills: ["clean"],
+        analyzersRun: ["aih-native"],
+        artifactHashes: [
+          {
+            path: "skills/clean/SKILL.md",
+            sha256: createHash("sha256").update(skillBytes).digest("hex"),
+          },
+        ],
+        findings: [],
+      },
+    ],
+  });
+  const installed = join(root, "ai-coding/skills/owner-repo/clean/SKILL.md");
+  mkdirSync(dirname(installed), { recursive: true });
+  writeFileSync(installed, skillBytes, { mode: 0o640 });
 });
 
 afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -147,17 +174,22 @@ describe("aih capability package commands", () => {
     }
   });
 
-  it("marks every package command read-only so --apply cannot become an execution path", () => {
+  it("keeps inspection read-only while making mutations explicit apply-only commands", () => {
     for (const command of [
       capabilityPackageListCommand,
       capabilityPackageShowCommand,
       capabilityPackageStatusCommand,
       capabilityPackageDoctorCommand,
+    ]) {
+      expect(command.readOnly).toBe(true);
+      expect(command.zeroWrite).toBe(true);
+    }
+    for (const command of [
       capabilityPackageAddCommand,
       capabilityPackageUpdateCommand,
       capabilityPackageRemoveCommand,
     ]) {
-      expect(command.readOnly).toBe(true);
+      expect(command.readOnly).toBe(false);
       expect(command.zeroWrite).toBe(true);
     }
   });
@@ -181,5 +213,46 @@ describe("aih capability package commands", () => {
 
     expect(code).toBe(0);
     expect(existsSync(join(root, ".aih", "runs"))).toBe(false);
+  });
+
+  it("dispatches --apply through the registered command without acquisition or run-ledger writes", async () => {
+    const output: string[] = [];
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation((chunk: string | Uint8Array) => {
+        output.push(String(chunk));
+        return true;
+      });
+    const priorExit = process.exitCode;
+    try {
+      process.exitCode = undefined;
+      const program = buildProgram();
+      program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+      await program.parseAsync([
+        "node",
+        "aih",
+        "capability",
+        "package",
+        "add",
+        "package:skill-pack/docs-quality",
+        "--root",
+        root,
+        "--apply",
+        "--json",
+      ]);
+
+      expect(process.exitCode ?? 0).toBe(0);
+      expect(JSON.parse(output.join(""))).toMatchObject({
+        capability: "capability package add",
+        applied: true,
+        digests: [{ data: { status: "applied" } }],
+      });
+      expect(existsSync(join(root, "aih-capability-packages.json"))).toBe(true);
+      expect(existsSync(join(root, ".aih/capability-packages/ownership-v1.json"))).toBe(true);
+      expect(existsSync(join(root, ".aih/runs"))).toBe(false);
+    } finally {
+      stdout.mockRestore();
+      process.exitCode = priorExit;
+    }
   });
 });

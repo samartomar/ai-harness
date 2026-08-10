@@ -276,6 +276,9 @@
               ],
               "options": [
                 {
+                  "flags": "--apply"
+                },
+                {
                   "flags": "--context-dir <dir>",
                   "defaultValue": "ai-coding"
                 },
@@ -346,6 +349,9 @@
                 }
               ],
               "options": [
+                {
+                  "flags": "--apply"
+                },
                 {
                   "flags": "--context-dir <dir>",
                   "defaultValue": "ai-coding"
@@ -427,6 +433,9 @@
                 }
               ],
               "options": [
+                {
+                  "flags": "--apply"
+                },
                 {
                   "flags": "--context-dir <dir>",
                   "defaultValue": "ai-coding"

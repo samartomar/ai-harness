@@ -614,7 +614,7 @@ function jsonObject(entries: Array<[string, unknown]>): Record<string, unknown> 
   return value;
 }
 
-function serializeTrustLock(lock: TrustLock): Buffer {
+export function serializeTrustLockBytes(lock: TrustLock): Buffer {
   const sources = lock.sources.map((source) =>
     jsonObject([
       ["id", source.id],
@@ -715,7 +715,7 @@ export function snapshotSkillPromotion(
       .map(({ sourceRel: path, sha256: value }) => ({ path, sha256: value }))
       .sort((left, right) => compareCodeUnits(left.path, right.path));
     const nextTrustLock = nextLock(snapshot, files, promotedSkills);
-    const nextTrustLockBytes = serializeTrustLock(nextTrustLock);
+    const nextTrustLockBytes = serializeTrustLockBytes(nextTrustLock);
     return {
       files: files.map((file) => ({ ...file, contents: Buffer.from(file.contents) })),
       promotedSkills: [...promotedSkills],

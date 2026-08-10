@@ -1,4 +1,7 @@
+import { AihError } from "../../errors.js";
+import { executePlan, type PlanResult } from "../../internals/execute.js";
 import { type CommandSpec, digest, type PlanContext, plan } from "../../internals/plan.js";
+import { reconcileSkillPackCapabilityPackage } from "./domains/skill-pack-coordinator.js";
 import {
   type CapabilityPackageContextOperation,
   type CapabilityPackageContextReport,
@@ -50,6 +53,52 @@ function commandPlan(operation: CapabilityPackageContextOperation, ctx: PlanCont
   );
 }
 
+export async function executeCapabilityPackageCommand(
+  operation: "add" | "update" | "remove",
+  ctx: PlanContext,
+): Promise<PlanResult> {
+  if (!ctx.apply) return executePlan(commandPlan(operation, ctx), ctx);
+  const id = packageId(ctx);
+  if (id === undefined) throw new AihError("capability package id is required", "AIH_CONFIG");
+  const mutation = reconcileSkillPackCapabilityPackage({
+    root: ctx.root,
+    contextDir: ctx.contextDir,
+    operation,
+    packageId: id,
+    apply: true,
+  });
+  if (mutation.status === "refused") {
+    throw new AihError(
+      `capability package reconciliation refused at ${mutation.stage}: ${mutation.reason}`,
+      "AIH_TRUST",
+    );
+  }
+  const text =
+    mutation.status === "retained-drift"
+      ? `Capability package ${operation} retained drifted owned content; no ownership state was advanced.\n`
+      : `Capability package ${operation} ${mutation.status}.\n`;
+  return {
+    capability: `capability package ${operation}`,
+    applied: true,
+    writes: mutation.writes.map((path) => ({
+      path,
+      describe: "capability package reconciliation",
+      merged: false,
+      effect: "overwrite" as const,
+    })),
+    docs: [],
+    probes: [],
+    execs: [],
+    digests: [{ describe: `capability package ${operation}`, text, data: mutation }],
+    backups: [],
+    removed: mutation.removes.map((path) => ({
+      path,
+      describe: "receipt-bound capability package subtraction",
+      effect: "delete" as const,
+    })),
+  };
+}
+
 const REQUIRED_PACKAGE = {
   name: "package-id",
   description: "policy package id",
@@ -99,8 +148,8 @@ export const capabilityPackageDoctorCommand: CommandSpec = {
 
 export const capabilityPackageAddCommand: CommandSpec = {
   name: "add",
-  summary: "Preview adding a package root; writes nothing",
-  readOnly: true,
+  summary: "Preview or apply a policy-selected capability package",
+  readOnly: false,
   zeroWrite: true,
   positional: REQUIRED_PACKAGE,
   plan: (ctx) => commandPlan("add", ctx),
@@ -108,8 +157,8 @@ export const capabilityPackageAddCommand: CommandSpec = {
 
 export const capabilityPackageUpdateCommand: CommandSpec = {
   name: "update",
-  summary: "Preview reconciling a selected package; writes nothing",
-  readOnly: true,
+  summary: "Preview or apply reconciliation of a selected capability package",
+  readOnly: false,
   zeroWrite: true,
   positional: REQUIRED_PACKAGE,
   plan: (ctx) => commandPlan("update", ctx),
@@ -117,8 +166,8 @@ export const capabilityPackageUpdateCommand: CommandSpec = {
 
 export const capabilityPackageRemoveCommand: CommandSpec = {
   name: "remove",
-  summary: "Preview subtracting a package root; writes nothing",
-  readOnly: true,
+  summary: "Preview or apply conservative subtraction of a deselected package",
+  readOnly: false,
   zeroWrite: true,
   positional: REQUIRED_PACKAGE,
   plan: (ctx) => commandPlan("remove", ctx),

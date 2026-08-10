@@ -158,6 +158,7 @@ function initGitRepoWithInstalledSkill(): void {
   git("init", "-q");
   git("config", "user.email", "t@t.com");
   git("config", "user.name", "t");
+  git("config", "commit.gpgSign", "false");
   installApproved("owner-repo", "clean");
   git("add", "-A");
   git("commit", "-qm", "base");

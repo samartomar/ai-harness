@@ -10,9 +10,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `aih capability package list/show/status/doctor` now provide one local, typed read-only view of
   policy-requested package roots, exact approval/catalog Package Graph claims, committed intent,
-  ownership, custody, and current skill-domain state. `add/update/remove` are preview-only in this
-  slice and emit zero writes, processes, network requests, acquisitions, or component loads;
-  proposed root changes remain blocked on an explicit org-policy update.
+  ownership, custody, and current skill-domain state. `add/update/remove` remain local zero-write
+  previews by default; explicit `--apply` now reconciles already-promoted, policy-selected GitHub
+  skill packs into exact intent, ownership, and content-addressed custody state, or conservatively
+  subtracts unchanged receipt-owned files after policy deselection. Apply performs no acquisition,
+  process execution, network request, or component loading; drift is retained without advancing
+  ownership, and a requested root change still requires an explicit org-policy update.
 - A strict Capability Package Manifest v1 and pure deterministic resolver now
   model exact Package Graph authority, claim, source-pin, direct-member, and
   dependency intent without granting approval or installing anything. Relevant
@@ -24,8 +27,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `aih-capability-packages.json` resolution manifest, preserve strict orchestration state in
   `.aih/capability-packages/ownership-v1.json`, require every supported GitHub
   skill-pack member to have an exact lock-authority claim, and compute frozen,
-  deterministic add/update/remove metadata. The new commands expose that state and preview only;
-  member installation, configuration, acquisition, and execution remain outside this slice.
+  deterministic add/update/remove metadata. The command coordinator consumes that state only for
+  exact already-promoted GitHub skills, commits repository state with compensating rollback, and
+  publishes ownership last. Acquisition and remote dependency management remain outside this slice.
 - Governed ECC materialization now supports the single `kiro` target for
   evidence-passed selected skills and `baseline:rules` steering. AIH copies only
   exact pinned `.kiro/skills/<name>/SKILL.md` and top-level

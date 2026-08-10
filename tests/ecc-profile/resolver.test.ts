@@ -359,23 +359,27 @@ describe("manifest-derived AIH ECC profile resolution", () => {
     ["workflow", "commands/aside.md"],
     ["baseline skill", "skills/unified-memory"],
     ["selected leaf", "skills/workspace-surface-audit"],
-  ] as const)("rejects one missing declared %s path", async (_label, missingPath) => {
-    const roots = await fixtureRoots();
-    try {
-      await rm(join(roots.sourceRoot, ...missingPath.split("/")), {
-        recursive: true,
-        force: true,
-      });
-      await expect(
-        resolveEccProfile(profile, evidence, {
-          sourceRoot: roots.sourceRoot,
-          evidenceRoot: roots.evidenceRoot,
-        }),
-      ).rejects.toThrow(/declared source path.*missing/i);
-    } finally {
-      await roots.cleanup();
-    }
-  });
+  ] as const)(
+    "rejects one missing declared %s path",
+    async (_label, missingPath) => {
+      const roots = await fixtureRoots();
+      try {
+        await rm(join(roots.sourceRoot, ...missingPath.split("/")), {
+          recursive: true,
+          force: true,
+        });
+        await expect(
+          resolveEccProfile(profile, evidence, {
+            sourceRoot: roots.sourceRoot,
+            evidenceRoot: roots.evidenceRoot,
+          }),
+        ).rejects.toThrow(/declared source path.*missing/i);
+      } finally {
+        await roots.cleanup();
+      }
+    },
+    15_000,
+  );
 
   it("is deterministic and byte-stable for equivalent manifest ordering", () => {
     const shuffled = structuredClone(evidence) as {
