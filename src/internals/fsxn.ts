@@ -461,7 +461,7 @@ export function readRegularFileWithStats(
 ): { contents: Buffer; stats: Stats } | undefined {
   let fd: number;
   try {
-    fd = openSync(abs, fsConstants.O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    fd = openSync(abs, fsConstants.O_RDONLY | O_NOFOLLOW | O_NONBLOCK, 0o600);
   } catch {
     return undefined;
   }

@@ -18,9 +18,11 @@ const MAX_JSON_DEPTH = 64;
 const MAX_JSON_NODES = 250_000;
 
 const DigestSchema = z.string().regex(SHA256);
-const SkillMemberIdSchema = SurfaceIdSchema.refine((id) => id.startsWith("skill:"));
-const SkillPackPackageIdSchema = PackageIdSchema.refine((id) =>
-  id.startsWith("package:skill-pack/"),
+const SupportedMemberIdSchema = SurfaceIdSchema.refine((id) =>
+  /^(?:skill|agent|rule|mcp):/.test(id),
+);
+const SupportedPackageIdSchema = PackageIdSchema.refine((id) =>
+  /^package:(?:skill-pack|ecc-agent|ecc-rule|ecc-mcp)\//.test(id),
 );
 const RelativePathSchema = z
   .string()
@@ -35,12 +37,12 @@ const RelativePathSchema = z
   );
 
 const CustodyMemberSchema = z.strictObject({
-  id: SkillMemberIdSchema,
-  packageIds: z.array(SkillPackPackageIdSchema).min(1).max(MAX_CAPABILITY_PACKAGE_CUSTODY_MEMBERS),
+  id: SupportedMemberIdSchema,
+  packageIds: z.array(SupportedPackageIdSchema).min(1).max(MAX_CAPABILITY_PACKAGE_CUSTODY_MEMBERS),
 });
 
 const CustodyFileSchema = z.strictObject({
-  memberId: SkillMemberIdSchema,
+  memberId: SupportedMemberIdSchema,
   path: RelativePathSchema,
   sha256: DigestSchema,
   mode: z.number().int().min(0).max(0o777).optional(),
@@ -52,7 +54,7 @@ export const CapabilityPackageCustodyReceiptSchema = z
     schemaVersion: z.literal(1),
     ownershipReceipt: z.strictObject({ sha256: DigestSchema }),
     domainReceipt: z.strictObject({
-      kind: z.literal("skill-promotion-trust-lock"),
+      kind: z.enum(["skill-promotion-trust-lock", "ecc-materialization", "ecc-mcp-explicit-add"]),
       sha256: DigestSchema,
     }),
     members: z.array(CustodyMemberSchema).min(1).max(MAX_CAPABILITY_PACKAGE_CUSTODY_MEMBERS),
@@ -76,8 +78,22 @@ export const CapabilityPackageCustodyReceiptSchema = z
           path: ["members", memberIndex, "packageIds"],
         });
       }
+      const packagePrefix = member.id.startsWith("skill:")
+        ? "package:skill-pack/"
+        : member.id.startsWith("agent:")
+          ? "package:ecc-agent/"
+          : member.id.startsWith("rule:")
+            ? "package:ecc-rule/"
+            : "package:ecc-mcp/";
+      if (member.packageIds.some((id) => !id.startsWith(packagePrefix))) {
+        context.addIssue({
+          code: "custom",
+          message: "capability package custody member family does not match package family",
+          path: ["members", memberIndex, "packageIds"],
+        });
+      }
     }
-    const foldedPaths = new Set<string>();
+    const foldedPaths = new Map<string, (typeof receipt.files)[number]>();
     const membersWithFiles = new Set<string>();
     for (const [fileIndex, file] of receipt.files.entries()) {
       if (!memberIds.has(file.memberId)) {
@@ -89,14 +105,21 @@ export const CapabilityPackageCustodyReceiptSchema = z
       }
       membersWithFiles.add(file.memberId);
       const folded = file.path.toLowerCase();
-      if (foldedPaths.has(folded)) {
+      const prior = foldedPaths.get(folded);
+      if (
+        prior !== undefined &&
+        (prior.path !== file.path ||
+          prior.sha256 !== file.sha256 ||
+          prior.mode !== file.mode ||
+          prior.memberId === file.memberId)
+      ) {
         context.addIssue({
           code: "custom",
           message: "ambiguous capability package custody file path",
           path: ["files", fileIndex, "path"],
         });
       }
-      foldedPaths.add(folded);
+      foldedPaths.set(folded, file);
     }
     for (const [memberIndex, member] of receipt.members.entries()) {
       if (!membersWithFiles.has(member.id)) {

@@ -1,12 +1,14 @@
 import { AihError } from "../../errors.js";
 import { executePlan, type PlanResult } from "../../internals/execute.js";
 import { type CommandSpec, digest, type PlanContext, plan } from "../../internals/plan.js";
+import { reconcileMixedCapabilityPackages } from "./domains/mixed-coordinator.js";
 import { reconcileSkillPackCapabilityPackage } from "./domains/skill-pack-coordinator.js";
 import {
   type CapabilityPackageContextOperation,
   type CapabilityPackageContextReport,
   inspectCapabilityPackageContext,
 } from "./live-context.js";
+import { readCapabilityPackageOwnershipReceipt } from "./receipt.js";
 
 function packageId(ctx: PlanContext): string | undefined {
   const value = ctx.options.packageId;
@@ -60,7 +62,14 @@ export async function executeCapabilityPackageCommand(
   if (!ctx.apply) return executePlan(commandPlan(operation, ctx), ctx);
   const id = packageId(ctx);
   if (id === undefined) throw new AihError("capability package id is required", "AIH_CONFIG");
-  const mutation = reconcileSkillPackCapabilityPackage({
+  const currentOwnership = readCapabilityPackageOwnershipReceipt(ctx.root);
+  const reconcile =
+    operation === "remove" &&
+    id.startsWith("package:skill-pack/") &&
+    (currentOwnership.state !== "valid" || currentOwnership.receipt.packages.length <= 1)
+      ? reconcileSkillPackCapabilityPackage
+      : reconcileMixedCapabilityPackages;
+  const mutation = reconcile({
     root: ctx.root,
     contextDir: ctx.contextDir,
     operation,

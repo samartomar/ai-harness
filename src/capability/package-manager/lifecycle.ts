@@ -4,9 +4,15 @@ import type { DeepReadonly, PackageGraphIndex } from "../package-graph/build.js"
 import { codeUnitCompare } from "../package-graph/canonical.js";
 import { type PackageId, PackageIdSchema } from "../package-graph/schema.js";
 import {
+  CapabilityPackageEccDomainError,
+  type CapabilityPackageEccDomainErrorCode,
+  resolveEccDomainAuthorityBindings,
+} from "./domains/ecc.js";
+import {
   CapabilityPackageSkillPackError,
   type CapabilityPackageSkillPackErrorCode,
   resolveSkillPackAuthorityBindings,
+  type SkillPackAuthorityBinding,
 } from "./domains/skill-pack.js";
 import { parseCapabilityPackageIntentBytes } from "./intent.js";
 import {
@@ -33,6 +39,7 @@ export type CapabilityPackageLifecycleRefusal =
   | { stage: "receipt"; code: "invalid-current-receipt" }
   | { stage: "resolution"; code: CapabilityPackageResolutionErrorCode }
   | { stage: "skill-pack"; code: CapabilityPackageSkillPackErrorCode }
+  | { stage: "domain"; code: CapabilityPackageEccDomainErrorCode }
   | { stage: "receipt"; code: "invalid-desired-receipt" }
   | {
       stage: "operation";
@@ -495,19 +502,48 @@ export function planCapabilityPackageLifecycle(
     });
   }
 
-  let bindings: ReturnType<typeof resolveSkillPackAuthorityBindings>;
-  try {
-    bindings = resolveSkillPackAuthorityBindings({
-      resolution,
-      index: snapshot.index,
-      diagnostics: snapshot.diagnostics,
-    });
-  } catch (error) {
-    return refused({
-      stage: "skill-pack",
-      code: error instanceof CapabilityPackageSkillPackError ? error.code : "invalid-diagnostics",
-    });
+  let bindings: DeepReadonly<SkillPackAuthorityBinding>[] = [];
+  const skillPackages = resolution.packages.filter(({ id }) =>
+    id.startsWith("package:skill-pack/"),
+  );
+  const eccPackages = resolution.packages.filter(({ id }) =>
+    /^package:ecc-(?:agent|rule|mcp)\//.test(id),
+  );
+  if (skillPackages.length + eccPackages.length !== resolution.packages.length) {
+    return refused({ stage: "domain", code: "unsupported-package-family" });
   }
+  if (skillPackages.length > 0) {
+    try {
+      bindings = bindings.concat(
+        resolveSkillPackAuthorityBindings({
+          resolution: { ...resolution, packages: skillPackages },
+          index: snapshot.index,
+          diagnostics: snapshot.diagnostics,
+        }),
+      );
+    } catch (error) {
+      return refused({
+        stage: "skill-pack",
+        code: error instanceof CapabilityPackageSkillPackError ? error.code : "invalid-diagnostics",
+      });
+    }
+  }
+  if (eccPackages.length > 0) {
+    try {
+      bindings = bindings.concat(
+        resolveEccDomainAuthorityBindings({
+          resolution: { ...resolution, packages: eccPackages },
+          index: snapshot.index,
+        }),
+      );
+    } catch (error) {
+      return refused({
+        stage: "domain",
+        code: error instanceof CapabilityPackageEccDomainError ? error.code : "invalid-input",
+      });
+    }
+  }
+  bindings = [...bindings].sort((left, right) => codeUnitCompare(left.id, right.id));
 
   const receiptInput: CapabilityPackageOwnershipReceipt = {
     format: "aih-capability-package-ownership-receipt",

@@ -35,10 +35,12 @@ and the executor is the only layer that performs filesystem or process effects.
   never promotes discovery into an authority claim.
 - **Capability package reconciliation** (`src/capability/package-manager/`) projects effective
   org-policy roots through exact approval, evidence, catalog, Package Graph, intent, ownership,
-  custody, and domain receipts. Read commands and previews are local and side-effect-free. The first
-  apply adapter handles only already-promoted GitHub skill packs, publishes ownership last through
-  an ordered compensating transaction, and conservatively retains drift; it is not an acquisition
-  or general dependency-management authority.
+  custody, and domain receipts. Read commands and previews are local and side-effect-free. Apply
+  coordinates already-promoted GitHub skill packs, existing receipt-owned ECC agent/rule
+  materialization, and explicitly added HTTPS ECC MCP configuration. Mixed closures publish
+  ownership last through one ordered compensating transaction and conservatively retain drift or
+  shared files; this layer is not an acquisition, approval, or general dependency-management
+  authority and does not claim crash atomicity.
 - **Evidence and release verification** (`src/evidence/`, `src/bundle/`,
   `src/release/`) package local audit material and verify published releases.
 - **Reporting and local telemetry** (`src/report/`, `src/logging/`,

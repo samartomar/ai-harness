@@ -48,6 +48,39 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe("Capability Package Manager custody receipt", () => {
+  it("accepts receipt-bound agent, rule, and MCP custody without widening authority", () => {
+    for (const candidate of [
+      ["agent:code-reviewer", "package:ecc-agent/code-reviewer", "ecc-materialization"],
+      ["rule:ecc/rules", "package:ecc-rule/rules", "ecc-materialization"],
+      ["mcp:memxus", "package:ecc-mcp/memxus", "ecc-mcp-explicit-add"],
+    ] as const) {
+      const value = receipt({
+        domainReceipt: { kind: candidate[2], sha256: TRUST_SHA },
+        members: [{ id: candidate[0], packageIds: [candidate[1]] }],
+        files: [{ memberId: candidate[0], path: "domain/state.json", sha256: FILE_SHA }],
+      });
+      expect(parseCapabilityPackageCustodyReceipt(JSON.stringify(value))).toMatchObject(value);
+    }
+  });
+
+  it("allows distinct MCP members to share one exact domain receipt file", () => {
+    expect(
+      serializeCapabilityPackageCustodyReceipt(
+        receipt({
+          domainReceipt: { kind: "ecc-mcp-explicit-add", sha256: TRUST_SHA },
+          members: [
+            { id: "mcp:memxus", packageIds: ["package:ecc-mcp/memxus"] },
+            { id: "mcp:vercel", packageIds: ["package:ecc-mcp/vercel"] },
+          ],
+          files: [
+            { memberId: "mcp:memxus", path: ".aih/ecc-mcp-explicit-add-v1.json", sha256: FILE_SHA },
+            { memberId: "mcp:vercel", path: ".aih/ecc-mcp-explicit-add-v1.json", sha256: FILE_SHA },
+          ],
+        }),
+      ),
+    ).toContain('"memberId": "mcp:vercel"');
+  });
+
   it("canonically binds both content-addressing digests and exact member files", () => {
     const parsed = parseCapabilityPackageCustodyReceipt(JSON.stringify(receipt()));
     expect(parsed.members[0]?.packageIds).toEqual([

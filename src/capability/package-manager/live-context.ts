@@ -2,6 +2,10 @@ import { createHash } from "node:crypto";
 import { type BigIntStats, closeSync, constants, fstatSync, lstatSync, openSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { isProxy } from "node:util/types";
+import { baselineCatalogById } from "../../baseline-evidence/catalogs.js";
+import { vendorBaselineLockBytes } from "../../baseline-evidence/vendor.js";
+import { ECC_MATERIALIZATION_RECEIPT_PATH } from "../../ecc/materialization-receipt.js";
+import { ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH } from "../../ecc/mcp-explicit-add-receipt.js";
 import { inspectContainedRelativePath } from "../../internals/contained-path.js";
 import { readBoundedFileDescriptor } from "../../internals/fsxn.js";
 import { AIH_ORG_POLICY_FILE } from "../../org-policy/constants.js";
@@ -11,9 +15,17 @@ import { AIH_PACKS_FILE, PacksFileSchema } from "../../pack/manifest.js";
 import { SkillCardSchema } from "../../skill/card.js";
 import { readSkillsLockExact } from "../../skill/lockfile.js";
 import { readTrustLockExact } from "../../trust/lock.js";
+import { projectBaselinePackageGraphAuthority } from "../package-graph/adapters/baseline.js";
+import {
+  projectEccCapabilityPackageAuthority,
+  projectEccMcpCapabilityPackageAuthority,
+  projectEccMcpReceiptAuthority,
+} from "../package-graph/adapters/ecc-domains.js";
+import { projectEccMaterializationAuthority } from "../package-graph/adapters/ecc-materialization.js";
 import { adaptSkillPackageGraph } from "../package-graph/adapters/skills.js";
 import {
   buildPackageGraphIndex,
+  type PackageGraphAuthorityDocument,
   type PackageGraphIndex,
   type PackageGraphPackageClaim,
 } from "../package-graph/build.js";
@@ -453,8 +465,31 @@ export function inspectCapabilityPackageContext(input: unknown): CapabilityPacka
   report.requestedRoots = [...selection.roots];
   report.sources.intent = { state: "valid", sha256: policySource.sha256 };
 
+  const requestedFamily = [...selection.roots, ...(snapshot.packageId ? [snapshot.packageId] : [])];
+  const needsSkills = requestedFamily.some((id) => id.startsWith("package:skill-pack/"));
+  const documents: PackageGraphAuthorityDocument[] = [];
+  const diagnostics: ReturnType<typeof adaptSkillPackageGraph>["diagnostics"] = [];
+  let packs: ReturnType<typeof PacksFileSchema.parse> = { schemaVersion: 1, packs: [] };
   const approval = readSkillsLockExact(snapshot.root);
-  if (approval.state !== "valid") {
+  const catalogSource = readCapabilityPackageExactFile(snapshot.root, AIH_PACKS_FILE);
+  if (approval.state === "valid" && catalogSource !== undefined) {
+    try {
+      packs = PacksFileSchema.parse(fatalJson(catalogSource.bytes));
+      const skillProjection = adaptSkillPackageGraph({
+        lockBytes: approval.sourceBytes,
+        packsBytes: catalogSource.bytes,
+        lockAuthorityId: "lock:aih-skills",
+        catalogAuthorityId: "catalog:aih-packs",
+        hostSource: selection.catalog,
+      });
+      documents.push(...skillProjection.documents);
+      diagnostics.push(...skillProjection.diagnostics);
+      report.sources.approval = { state: "valid", sha256: approval.sourceSha256 };
+      report.sources.catalog = { state: "valid", sha256: catalogSource.sha256 };
+    } catch {
+      if (needsSkills) return refusal(report, "catalog", "invalid-pack-catalog");
+    }
+  } else if (needsSkills) {
     report.sources.approval = { state: approval.state === "absent" ? "absent" : "malformed" };
     return refusal(
       report,
@@ -462,58 +497,93 @@ export function inspectCapabilityPackageContext(input: unknown): CapabilityPacka
       approval.state === "absent" ? "missing-skills-lock" : "invalid-skills-lock",
     );
   }
-  report.sources.approval = { state: "valid", sha256: approval.sourceSha256 };
 
-  const catalogSource = readCapabilityPackageExactFile(snapshot.root, AIH_PACKS_FILE);
-  if (catalogSource === undefined)
-    return refusal(report, "catalog", "missing-or-unsafe-pack-catalog");
-  let packs: ReturnType<typeof PacksFileSchema.parse>;
+  let baseline: PackageGraphAuthorityDocument;
+  let eccPackages: PackageGraphAuthorityDocument;
+  let mcpPackages: PackageGraphAuthorityDocument;
   try {
-    packs = PacksFileSchema.parse(fatalJson(catalogSource.bytes));
+    const baselineBytes = vendorBaselineLockBytes();
+    baseline = projectBaselinePackageGraphAuthority({
+      authorityId: "lock:baseline-evidence",
+      catalog: baselineCatalogById("ecc"),
+      lockBytes: baselineBytes,
+    });
+    eccPackages = projectEccCapabilityPackageAuthority({
+      authorityId: "lock:ecc-capability-packages",
+      baseline,
+    });
+    mcpPackages = projectEccMcpCapabilityPackageAuthority({ authorityId: "catalog:ecc-mcp" });
+    documents.push(eccPackages, mcpPackages);
+    const baselineSha = baseline.authority.sourceDigest.value;
+    if (report.sources.approval.state !== "valid") {
+      report.sources.approval = { state: "valid", sha256: baselineSha };
+    }
+    if (report.sources.catalog.state !== "valid") {
+      report.sources.catalog = { state: "valid", sha256: mcpPackages.authority.sourceDigest.value };
+    }
+    report.sources.evidence = { state: "valid", sha256: baselineSha };
   } catch {
-    report.sources.catalog = { state: "malformed" };
-    return refusal(report, "catalog", "invalid-pack-catalog");
+    return refusal(report, "package-graph", "invalid-baseline-authority");
   }
-  report.sources.catalog = { state: "valid", sha256: catalogSource.sha256 };
 
-  const projected = adaptSkillPackageGraph({
-    lockBytes: approval.sourceBytes,
-    packsBytes: catalogSource.bytes,
-    lockAuthorityId: "lock:aih-skills",
-    catalogAuthorityId: "catalog:aih-packs",
-    hostSource: selection.catalog,
-  });
+  const materialization = readCapabilityPackageExactFile(
+    snapshot.root,
+    ECC_MATERIALIZATION_RECEIPT_PATH,
+  );
+  if (materialization !== undefined) {
+    const outcome = projectEccMaterializationAuthority({
+      authorityId: "receipt:ecc-materialization",
+      receiptBytes: materialization.bytes,
+      baseline: eccPackages,
+    });
+    if (outcome.state === "ready") documents.push(outcome.document);
+    else if (requestedFamily.some((id) => /^package:ecc-(?:agent|rule)\//.test(id))) {
+      return refusal(report, "domain", outcome.code);
+    }
+  }
+  const explicitMcp = readCapabilityPackageExactFile(
+    snapshot.root,
+    ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH,
+  );
+  if (explicitMcp !== undefined) {
+    const outcome = projectEccMcpReceiptAuthority({
+      authorityId: "receipt:ecc-mcp",
+      receiptBytes: explicitMcp.bytes,
+      catalog: mcpPackages,
+    });
+    if (outcome.state === "ready") documents.push(outcome.document);
+    else if (requestedFamily.some((id) => id.startsWith("package:ecc-mcp/"))) {
+      return refusal(report, "domain", outcome.code);
+    }
+  }
+
   let index: PackageGraphIndex;
   try {
-    index = buildPackageGraphIndex(projected.documents);
+    index = buildPackageGraphIndex(documents);
   } catch {
     report.sources.packageGraph = { state: "malformed" };
     return refusal(report, "package-graph", "invalid-authority-projection");
   }
   report.sources.packageGraph = { state: "valid" };
-  if (projected.diagnostics.length > 0) {
-    return refusal(
-      report,
-      "package-graph",
-      projected.diagnostics[0]?.code ?? "invalid-authority-projection",
-    );
+  if (diagnostics.length > 0) {
+    return refusal(report, "package-graph", diagnostics[0]?.code ?? "invalid-authority-projection");
   }
 
   const availableClaims = index.claims
     .filter((claim) => claim.entityKind === "package")
     .sort((left, right) => codeUnitCompare(left.id, right.id));
   const available = new Set(availableClaims.map(({ id }) => id));
-  const evidence = exactEvidence(
-    snapshot.root,
-    snapshot.contextDir,
-    approval.lock,
-    [...new Set(availableClaims.flatMap((claim) => claim.entity.members))].sort(codeUnitCompare),
-  );
-  if (evidence.state === "malformed") {
-    report.sources.evidence = { state: "malformed" };
-    return refusal(report, "evidence", evidence.reason);
+  const skillMembers = [...new Set(availableClaims.flatMap((claim) => claim.entity.members))]
+    .filter((id) => id.startsWith("skill:"))
+    .sort(codeUnitCompare);
+  if (skillMembers.length > 0 && approval.state === "valid") {
+    const evidence = exactEvidence(snapshot.root, snapshot.contextDir, approval.lock, skillMembers);
+    if (evidence.state === "malformed") {
+      report.sources.evidence = { state: "malformed" };
+      return refusal(report, "evidence", evidence.reason);
+    }
+    report.sources.evidence = { state: "valid", sha256: evidence.sha256 };
   }
-  report.sources.evidence = { state: "valid", sha256: evidence.sha256 };
   const packageId = snapshot.packageId;
   if (
     (snapshot.operation === "show" ||
@@ -586,7 +656,7 @@ export function inspectCapabilityPackageContext(input: unknown): CapabilityPacka
       intentBytes,
       index,
       currentReceipt: ownershipRead.state === "valid" ? ownershipRead.receipt : undefined,
-      diagnostics: projected.diagnostics,
+      diagnostics,
     });
     lifecycle = planned;
     if (planned.status === "refused") {
@@ -619,7 +689,11 @@ export function inspectCapabilityPackageContext(input: unknown): CapabilityPacka
     report.packages = report.packages.filter(({ id }) => id === packageId);
   }
 
-  if (ownershipRead.state === "valid" && intentBytes !== undefined) {
+  if (
+    ownershipRead.state === "valid" &&
+    intentBytes !== undefined &&
+    roots.every((id) => id.startsWith("package:skill-pack/"))
+  ) {
     const custody = planSkillPackCustody({
       root: snapshot.root,
       contextDir: snapshot.contextDir,
@@ -627,7 +701,7 @@ export function inspectCapabilityPackageContext(input: unknown): CapabilityPacka
         intentBytes,
         index,
         currentReceipt: ownershipRead.receipt,
-        diagnostics: projected.diagnostics,
+        diagnostics,
       },
     });
     report.sources.custody = {
