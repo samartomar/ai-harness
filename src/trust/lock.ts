@@ -129,13 +129,6 @@ export function readTrustLockExact(
   const inspected = inspectContainedRelativePath(root, TRUST_LOCK_FILE);
   if (inspected.state === "absent") return { state: "absent" };
   if (inspected.state !== "present" || inspected.kind !== "file") return { state: "malformed" };
-  let expected: BigIntStats;
-  try {
-    expected = lstatSync(inspected.realPath, { bigint: true });
-    deps.afterInspect?.();
-  } catch {
-    return { state: "malformed" };
-  }
   const noFollow = "O_NOFOLLOW" in constants ? constants.O_NOFOLLOW : 0;
   let descriptor: number;
   try {
@@ -145,13 +138,9 @@ export function readTrustLockExact(
   }
   try {
     const opened = fstatSync(descriptor, { bigint: true });
+    deps.afterInspect?.();
     deps.afterOpen?.();
     if (
-      !sameExactFile(expected, opened) ||
-      expected.nlink !== opened.nlink ||
-      expected.mode !== opened.mode ||
-      expected.size !== opened.size ||
-      expected.mtimeNs !== opened.mtimeNs ||
       !opened.isFile() ||
       opened.ino === 0n ||
       opened.nlink !== 1n ||
