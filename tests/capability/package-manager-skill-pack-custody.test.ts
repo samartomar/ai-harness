@@ -352,7 +352,7 @@ describe("skill-pack custody planning", () => {
       const custodyPath = putExactCustody(owned);
       let memberReads = 0;
       const dynamic = await custodyWithReaddir((path) => {
-        if (!path.endsWith("owner-repo/clean")) return;
+        if (!path.replaceAll("\\", "/").endsWith("owner-repo/clean")) return;
         memberReads += 1;
         if (memberReads !== 3) return;
         const changedPath =
