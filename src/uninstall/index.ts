@@ -31,7 +31,8 @@ import {
   hookRegistrarRevocationActions,
   hookRegistrarState,
 } from "../org-policy/hook-registrar.js";
-import { parseTrustLockSource, TRUST_LOCK_FILE, type TrustLockSource } from "../trust/lock.js";
+import { projectPromotedSkillArtifacts } from "../skill/promoted-artifacts.js";
+import { parseTrustLockSource, TRUST_LOCK_FILE } from "../trust/lock.js";
 import {
   ECC_MATERIALIZATION_RECEIPT_PATH,
   type EccMaterializationRemovalOutcome,
@@ -281,129 +282,6 @@ function readContainedOwnershipFile(ctx: PlanContext, relPath: string): Buffer |
     : undefined;
 }
 
-interface PromotedSkillRoute {
-  skill: string;
-  parts: string[];
-}
-
-interface PromotedRouteTrie {
-  routes: PromotedSkillRoute[];
-  children: Map<string, PromotedRouteTrie>;
-}
-
-interface PromotedSourceLayout {
-  routes: PromotedSkillRoute[];
-  routeTrie: PromotedRouteTrie;
-  rootSkill?: string;
-}
-
-// GitHub acquisition promotes from `<quarantine>/tree`; unlike a local source,
-// the lock's owner/repo origin does not preserve that filesystem basename.
-const GITHUB_PROMOTION_ROOT_SKILL = "tree";
-
-function promotedRouteTrie(routes: PromotedSkillRoute[]): PromotedRouteTrie {
-  const root: PromotedRouteTrie = { routes: [], children: new Map() };
-  for (const route of routes) {
-    let node = root;
-    for (const part of route.parts) {
-      let child = node.children.get(part);
-      if (child === undefined) {
-        child = { routes: [], children: new Map() };
-        node.children.set(part, child);
-      }
-      node = child;
-    }
-    node.routes.push(route);
-  }
-  return root;
-}
-
-function matchingPromotedRoutes(
-  routeTrie: PromotedRouteTrie,
-  artifactPath: string,
-): Array<{ route: PromotedSkillRoute; rel: string }> {
-  const parts = artifactPath.split("/");
-  const starts = [0];
-  for (let index = 1; index <= parts.length - 2; index += 1) {
-    if (parts[index - 1] === "skills") starts.push(index);
-  }
-  const matches = new Map<string, { route: PromotedSkillRoute; rel: string }>();
-  for (const start of starts) {
-    let node = routeTrie;
-    for (let index = start; index < parts.length - 1; index += 1) {
-      const child = node.children.get(parts[index] ?? "");
-      if (child === undefined) break;
-      node = child;
-      for (const route of node.routes) {
-        if (!matches.has(route.skill)) {
-          matches.set(route.skill, { route, rel: parts.slice(index + 1).join("/") });
-        }
-      }
-    }
-  }
-  return [...matches.values()];
-}
-
-function promotedSourceLayout(source: TrustLockSource): PromotedSourceLayout {
-  const routes = [...new Set(source.promotedSkills)].map(
-    (skill): PromotedSkillRoute => ({
-      skill,
-      parts: skill.split("/"),
-    }),
-  );
-  const routeTrie = promotedRouteTrie(routes);
-  // GitHub promotions originate at the fixed quarantine tree directory; the
-  // lock's `source` is owner/repo and therefore cannot recover that basename.
-  const sourceName =
-    source.kind === "github"
-      ? GITHUB_PROMOTION_ROOT_SKILL
-      : cleanRel(source.source)
-          .split("/")
-          .at(-1)
-          ?.replace(/\.git$/i, "");
-  const receiptProvesSourceRoot = source.artifactHashes.some(
-    (artifact) => artifact.path === "SKILL.md",
-  );
-  const explicitSourceRoot = receiptProvesSourceRoot
-    ? routes.find((route) => route.skill === sourceName)?.skill
-    : undefined;
-  const prefixedSkills = new Set<string>();
-  for (const artifact of source.artifactHashes) {
-    for (const { route } of matchingPromotedRoutes(routeTrie, artifact.path)) {
-      if (route.skill === explicitSourceRoot) continue;
-      prefixedSkills.add(route.skill);
-    }
-  }
-  const rootSkills = routes.filter((route) => !prefixedSkills.has(route.skill));
-  return {
-    routes,
-    routeTrie,
-    rootSkill: explicitSourceRoot ?? (rootSkills.length === 1 ? rootSkills[0]?.skill : undefined),
-  };
-}
-
-function promotedArtifactTargets(
-  contextDir: string,
-  source: TrustLockSource,
-  layout: PromotedSourceLayout,
-  artifactPath: string,
-): string[] {
-  const targets = matchingPromotedRoutes(layout.routeTrie, artifactPath).flatMap(
-    ({ route, rel }) => {
-      if (route.skill === layout.rootSkill) return [];
-      return [`${contextDir}/skills/${source.id}/${route.skill}/${rel}`];
-    },
-  );
-  // A source-root skill has no source-path prefix: its receipts are `SKILL.md`,
-  // README.md, or paths through nested skills. Promotion copies every such file
-  // beneath the one promoted skill name not represented by a receipt prefix.
-  // More than one unmatched name is ambiguous lock evidence, so claim neither.
-  if (layout.rootSkill !== undefined) {
-    targets.push(`${contextDir}/skills/${source.id}/${layout.rootSkill}/${artifactPath}`);
-  }
-  return [...new Set(targets)];
-}
-
 function promotedContextArtifacts(ctx: PlanContext, contextDir: string): string[] {
   const bytes = readContainedOwnershipFile(ctx, TRUST_LOCK_FILE);
   if (bytes === undefined) return [];
@@ -424,15 +302,14 @@ function promotedContextArtifacts(ctx: PlanContext, contextDir: string): string[
       })
     : [];
   const paths = sources.flatMap((source) => {
-    const layout = promotedSourceLayout(source);
-    return source.artifactHashes.flatMap((artifact) => {
-      return promotedArtifactTargets(contextDir, source, layout, artifact.path).filter((target) => {
-        const bytes = readContainedOwnershipFile(ctx, target);
-        return (
-          bytes !== undefined &&
-          createHash("sha256").update(bytes).digest("hex") === artifact.sha256
-        );
-      });
+    const projection = projectPromotedSkillArtifacts(contextDir, source);
+    if (projection.status === "refused") return [];
+    return projection.targets.flatMap((target) => {
+      const bytes = readContainedOwnershipFile(ctx, target.targetPath);
+      return bytes !== undefined &&
+        createHash("sha256").update(bytes).digest("hex") === target.sha256
+        ? [target.targetPath]
+        : [];
     });
   });
   return [...new Set(paths)].sort((left, right) => left.localeCompare(right));
