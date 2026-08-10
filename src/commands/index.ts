@@ -9,7 +9,10 @@ import { command as bootstrap } from "../bootstrap/index.js";
 import { command as bootstrapAi } from "../bootstrap-ai/index.js";
 import { command as bundle, verifyCommand as verifyBundle } from "../bundle/index.js";
 import { capabilityPruneCommand, capabilityResolveCommand } from "../capability/index.js";
-import { CAPABILITY_PACKAGE_COMMAND_SPECS } from "../capability/package-manager/commands.js";
+import {
+  CAPABILITY_PACKAGE_COMMAND_SPECS,
+  executeCapabilityPackageCommand,
+} from "../capability/package-manager/commands.js";
 import { command as certs } from "../certs/index.js";
 import { command as contract } from "../contract/index.js";
 import { command as crispy } from "../crispy/index.js";
@@ -326,8 +329,16 @@ function addZeroWriteFlags(cmd: Command): Command {
     );
 }
 
+function addIsolatedApplyFlags(cmd: Command): Command {
+  return addZeroWriteFlags(cmd).option(
+    "--apply",
+    "apply the exact local reconciliation (default: preview only)",
+  );
+}
+
 function addFlagsForSpec(cmd: Command, spec: CommandSpec): Command {
-  if (spec.zeroWrite === true) return addZeroWriteFlags(cmd);
+  if (spec.zeroWrite === true)
+    return spec.readOnly ? addZeroWriteFlags(cmd) : addIsolatedApplyFlags(cmd);
   return spec.readOnly ? addReadOnlyFlags(cmd) : addSharedFlags(cmd);
 }
 
@@ -783,6 +794,12 @@ export function registerCommands(
           process.exitCode = await runCapability(spec, command, {
             positionalRoot: false,
             optionOverrides: { [spec.positional?.optionName ?? "packageId"]: value },
+            ...(spec.readOnly
+              ? {}
+              : {
+                  execute: (ctx) =>
+                    executeCapabilityPackageCommand(spec.name as "add" | "update" | "remove", ctx),
+                }),
           });
         },
       );

@@ -368,7 +368,9 @@ export interface CommandSpec {
    * Suppress cross-cutting file outputs as well as capability actions. These
    * commands do not expose artifact-writing flags and never append the run
    * ledger, so a read/preview invocation leaves the repository byte-identical.
-   * Requires {@link readOnly}; intended for strict local inspection surfaces.
+   * Mutating commands may combine this with an explicit, capability-owned
+   * `--apply` transaction; in that case no unrelated ledger/support write is
+   * allowed to escape that transaction.
    */
   zeroWrite?: boolean;
   /**

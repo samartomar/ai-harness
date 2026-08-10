@@ -1,12 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -142,7 +135,8 @@ describe("GitHub skill-pack package reconciliation", () => {
   it("publishes exact ownership and custody from the existing promotion receipt", () => {
     const result = apply("add");
 
-    expect(result).toMatchObject({ status: "applied", operation: "add", packageId: PACKAGE_ID });
+    expect(result.status, JSON.stringify(result)).toBe("applied");
+    expect(result).toMatchObject({ operation: "add", packageId: PACKAGE_ID });
     expect(existsSync(join(root, CAPABILITY_PACKAGE_INTENT_PATH))).toBe(true);
     expect(existsSync(join(root, CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH))).toBe(true);
     const ownership = readFileSync(join(root, CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH));
