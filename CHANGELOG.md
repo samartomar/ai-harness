@@ -55,6 +55,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- ECC's ordered, byte-safe materialization commit now delegates to a shared
+  internal owned-file transaction. The primitive preserves caller order,
+  re-pins each destination before its effect, and compensates applied steps in
+  reverse without overwriting concurrent operator changes. This is a reusable
+  prerequisite for Capability Package Manager domain adapters; it is not crash
+  journaling, cross-domain atomicity, member installation, or a new command.
 - The Policy Workbench future-owner ticker now lists only approved AIH-owned
   surfaces and no longer advertises a rejected third-party candidate.
 - Release guidance now makes stable-direct the default after mechanical gates and exact-SHA approval, while requiring a release candidate for major or schema migrations, evidence-format changes, publishing-machinery changes, and cuts without adequate production-equivalent verification.
