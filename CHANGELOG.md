@@ -55,6 +55,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Capability Package Manager prerequisites can now verify an already-promoted
+  GitHub skill-pack against its exact Package Graph authorities, promotion
+  receipt, routed repository paths, and current bounded file bytes. The shared
+  projector also keeps uninstall routing deterministic. This read-only snapshot
+  performs no acquisition, installation, adoption, removal, or ownership
+  mutation; executable package lifecycle and physical custody remain future
+  slices.
 - Workspace skill promotion now derives one bounded, Buffer-preserving snapshot
   that canonically threads multi-source trust-lock state before the legacy plan
   renders it. The internal seam revalidates GitHub pins and source files at the
