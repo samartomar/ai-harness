@@ -3,7 +3,16 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { CapabilityPackageManifestSchema, resolveCapabilityPackages } from "../../src/index.js";
+import {
+  CAPABILITY_PACKAGE_INTENT_PATH,
+  CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH,
+  CapabilityPackageManifestSchema,
+  planCapabilityPackageLifecycle,
+  readCapabilityPackageIntent,
+  readCapabilityPackageOwnershipReceipt,
+  resolveCapabilityPackages,
+  resolveSkillPackAuthorityBindings,
+} from "../../src/index.js";
 
 const root = process.cwd();
 
@@ -11,6 +20,17 @@ describe("Capability Package Manager public package surface", () => {
   it("exports the strict manifest and pure resolver from the library root", () => {
     expect(CapabilityPackageManifestSchema.safeParse).toEqual(expect.any(Function));
     expect(resolveCapabilityPackages).toEqual(expect.any(Function));
+  });
+
+  it("exports the bounded intent, receipt, authority bridge, and pure lifecycle", () => {
+    expect(CAPABILITY_PACKAGE_INTENT_PATH).toBe("aih-capability-packages.json");
+    expect(CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH).toBe(
+      ".aih/capability-packages/ownership-v1.json",
+    );
+    expect(readCapabilityPackageIntent).toEqual(expect.any(Function));
+    expect(readCapabilityPackageOwnershipReceipt).toEqual(expect.any(Function));
+    expect(resolveSkillPackAuthorityBindings).toEqual(expect.any(Function));
+    expect(planCapabilityPackageLifecycle).toEqual(expect.any(Function));
   });
 
   it("ships and exports the committed Capability Package Manifest JSON Schema", () => {

@@ -15,6 +15,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   cycles, and partial projections fail closed; equal inputs produce a frozen,
   dependency-first resolution. The schema ships with the npm package, while
   filesystem lifecycle and commands remain future serial slices.
+- Capability Package Manager lifecycle foundations now read exact committed
+  `aih-capability-packages.json` intent, preserve strict derived orchestration state in
+  `.aih/capability-packages/ownership-v1.json`, require every supported GitHub
+  skill-pack member to have an exact lock-authority claim, and compute frozen,
+  deterministic add/update/remove metadata. This slice performs no member
+  installation, configuration, acquisition, or command registration; those
+  remain blocked on the shared rollback-safe transaction and domain adapters.
 - Governed ECC materialization now supports the single `kiro` target for
   evidence-passed selected skills and `baseline:rules` steering. AIH copies only
   exact pinned `.kiro/skills/<name>/SKILL.md` and top-level

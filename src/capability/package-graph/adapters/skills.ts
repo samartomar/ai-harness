@@ -325,6 +325,7 @@ function projectCatalog(
       "package-graph.source-commit-mismatch",
       "package-graph.invalid-surface-id",
       "package-graph.invalid-package-id",
+      "package-graph.required-checks-unsupported",
     ].includes(code),
   );
   if (fatal) return { diagnostics };
