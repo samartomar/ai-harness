@@ -411,6 +411,39 @@ describe("mixed capability package coordinator", () => {
     expect(existsSync(join(root, CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH))).toBe(false);
   });
 
+  it("retains operator-modified ECC content and its ownership metadata", () => {
+    seed({ roots: ["package:ecc-agent/code-reviewer"] });
+    expect(
+      reconcileMixedCapabilityPackages({
+        root,
+        contextDir: "ai-coding",
+        operation: "add",
+        packageId: "package:ecc-agent/code-reviewer",
+        apply: true,
+      }),
+    ).toMatchObject({ status: "applied" });
+    const ownershipBefore = readFileSync(join(root, CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH));
+    const operatorBytes = Buffer.from("# operator-owned change\n", "utf8");
+    writeFileSync(join(root, ".claude/agents/code-reviewer.md"), operatorBytes);
+    const policy = JSON.parse(readFileSync(join(root, "aih-org-policy.json"), "utf8"));
+    policy.capabilityPackages.roots = [];
+    write("aih-org-policy.json", policy);
+
+    expect(
+      reconcileMixedCapabilityPackages({
+        root,
+        contextDir: "ai-coding",
+        operation: "remove",
+        packageId: "package:ecc-agent/code-reviewer",
+        apply: true,
+      }),
+    ).toMatchObject({ status: "retained-drift" });
+    expect(readFileSync(join(root, ".claude/agents/code-reviewer.md"))).toEqual(operatorBytes);
+    expect(readFileSync(join(root, CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH))).toEqual(
+      ownershipBefore,
+    );
+  });
+
   it("reconciles a sole rules package through add and final removal", () => {
     seed({ roots: ["package:ecc-rule/rules"] });
     const baseline = projectBaselinePackageGraphAuthority({
@@ -803,6 +836,47 @@ describe("mixed capability package coordinator", () => {
       "package:ecc-agent/code-reviewer",
       "package:skill-pack/review-quality",
     ]);
+  });
+
+  it("refuses partial skill subtraction when retained content has drifted", () => {
+    seed({ secondSkill: true });
+    expect(
+      reconcileMixedCapabilityPackages({
+        root,
+        contextDir: "ai-coding",
+        operation: "add",
+        packageId: "package:skill-pack/docs-quality",
+        apply: true,
+      }).status,
+    ).toBe("applied");
+    const ownershipBefore = readFileSync(join(root, CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH));
+    const retainedPath = join(root, "ai-coding/skills/owner-repo/review/SKILL.md");
+    const operatorBytes = Buffer.from("# operator changed review\n", "utf8");
+    writeFileSync(retainedPath, operatorBytes);
+    const policy = JSON.parse(readFileSync(join(root, "aih-org-policy.json"), "utf8"));
+    policy.capabilityPackages.roots = [
+      "package:skill-pack/review-quality",
+      "package:ecc-agent/code-reviewer",
+    ];
+    write("aih-org-policy.json", policy);
+
+    expect(
+      reconcileMixedCapabilityPackages({
+        root,
+        contextDir: "ai-coding",
+        operation: "remove",
+        packageId: "package:skill-pack/docs-quality",
+        apply: true,
+      }),
+    ).toMatchObject({
+      status: "refused",
+      stage: "domain",
+      reason: "retained-skill-content-drifted",
+    });
+    expect(readFileSync(retainedPath)).toEqual(operatorBytes);
+    expect(readFileSync(join(root, CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH))).toEqual(
+      ownershipBefore,
+    );
   });
 
   it("subtracts one MCP package while retaining skill and ECC packages", async () => {

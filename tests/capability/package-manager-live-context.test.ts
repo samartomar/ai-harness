@@ -311,4 +311,50 @@ describe("capability package live context", () => {
       reason: "selection-change-required",
     });
   });
+
+  it("reports stable operation and state refusals from exact live bytes", () => {
+    seed();
+
+    expect(
+      inspectCapabilityPackageContext({ root, contextDir: "ai-coding", operation: "show" })
+        .refusals,
+    ).toContainEqual({ stage: "operation", reason: "missing-package-id" });
+    expect(
+      inspectCapabilityPackageContext({
+        root,
+        contextDir: "ai-coding",
+        operation: "show",
+        packageId: "package:skill-pack/unknown",
+      }).refusals,
+    ).toContainEqual({ stage: "operation", reason: "unknown-package-id" });
+    expect(
+      inspectCapabilityPackageContext({
+        root,
+        contextDir: "ai-coding",
+        operation: "update",
+        packageId: "package:ecc-agent/security-reviewer",
+      }).refusals,
+    ).toContainEqual({ stage: "policy", reason: "package-not-requested" });
+
+    writeFileSync(join(root, "aih-capability-packages.json"), "{", "utf8");
+    expect(
+      inspectCapabilityPackageContext({ root, contextDir: "ai-coding", operation: "doctor" })
+        .refusals,
+    ).toContainEqual({ stage: "resolution", reason: "invalid-resolution-manifest" });
+
+    rmSync(join(root, "aih-capability-packages.json"));
+    const ownershipPath = join(root, ".aih/capability-packages/ownership-v1.json");
+    mkdirSync(dirname(ownershipPath), { recursive: true });
+    writeFileSync(ownershipPath, "{", "utf8");
+    expect(
+      inspectCapabilityPackageContext({ root, contextDir: "ai-coding", operation: "doctor" })
+        .refusals,
+    ).toContainEqual({ stage: "ownership", reason: "invalid-ownership-receipt" });
+
+    writeFileSync(join(root, "aih-org-policy.json"), "{", "utf8");
+    expect(
+      inspectCapabilityPackageContext({ root, contextDir: "ai-coding", operation: "doctor" })
+        .refusals,
+    ).toEqual([{ stage: "policy", reason: "invalid-policy" }]);
+  });
 });
