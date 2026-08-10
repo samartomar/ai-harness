@@ -8,20 +8,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- A strict Capability Package Manifest v1 and pure deterministic resolver now
-  model exact Package Graph authority, claim, source-pin, direct-member, and
-  dependency intent without granting approval or installing anything. Relevant
-  authority conflicts, drift, missing references, unsupported member kinds,
-  cycles, and partial projections fail closed; equal inputs produce a frozen,
-  dependency-first resolution. The schema ships with the npm package, while
-  filesystem lifecycle and commands remain future serial slices.
-- Capability Package Manager lifecycle foundations now read exact committed
-  `aih-capability-packages.json` intent, preserve strict derived orchestration state in
-  `.aih/capability-packages/ownership-v1.json`, require every supported GitHub
-  skill-pack member to have an exact lock-authority claim, and compute frozen,
-  deterministic add/update/remove metadata. This slice performs no member
-  installation, configuration, acquisition, or command registration; those
-  remain blocked on the shared rollback-safe transaction and domain adapters.
 - Governed ECC materialization now supports the single `kiro` target for
   evidence-passed selected skills and `baseline:rules` steering. AIH copies only
   exact pinned `.kiro/skills/<name>/SKILL.md` and top-level
@@ -32,9 +18,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   hand-owned conflicts fail closed; AIH does not invoke ECC's native Kiro
   installer or claim that Kiro loaded the projected files.
 - A separate Strix security-detector contract now pins the verified v1.5.2 source and immutable sandbox image index/platform manifests, preflights only an operator-installed CLI and already-present image, and normalizes bounded headless findings into strict PoC-redacted evidence with source-correct exit semantics. Org policy can declare a local-fixture-only Strix intent with telemetry off and AIH hard ceilings of $10, 20 turns, and five minutes. `aih evidence build` can package separately produced typed records from `.aih/security/strix` only after bounded, fatal-UTF-8, whole-document validation; this seam still does not run a scan or enforce the declarative requirement at posture.
-- Package Graph authority adapters now hash the exact bytes they parse for the shipped baseline evidence lock, ECC materialization receipts, and strict skill lock/pack artifacts; GitHub skill identities require a matching immutable commit. A separate deterministic classifier reports exact lock/receipt registrations, catalog-only members, undeclared immutable residue, divergent identities, and unsupported mutable observations without turning graph membership into approval or evidence.
-- Package Graph authority claims can now be combined through a pure additive index that retains every source claim, reports divergent definitions without choosing a winner, and emits canonical byte-identical JSON and SHA-256 identities for equal inputs. Source-store digests remain caller-asserted at this layer while the builder separately binds each normalized projection; the index performs no filesystem, network, clock, process, approval, or installation work.
-- A public Package Graph Schema v1 now defines strict, namespaced surface and package identities, provider-neutral source identity with separate immutable digests, shallow direct composition, and independent declared versus scanner-observed risk facts. The generated JSON Schema ships with the npm package for editor and integration use; indexing and authority adapters remain separate additive layers rather than a new approval source.
+- An internal read-only Package Graph model can normalize exact authority bytes,
+  immutable source identities, direct package-to-surface membership, and
+  declared versus observed risk without selecting a winner from conflicts.
+  It has no command, mutation path, root export, or packaged schema and does
+  not grant approval, install dependencies, or replace existing authorities.
 - Org policies can now author source-locked ECC hook controls: Minimal, Standard, or Strict profile selection plus eligible per-hook disables. `aih policy project` writes only `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` into receipt-owned Claude settings environment keys, preserves operator settings, and removes only unchanged owned values. ECC remains the executor and enforcement point; disabled hooks are evaluated after process spawn and still incur that spawn.
 - `aih ecc mcp add <id> --cli <client>` and `aih ecc mcp remove <id> --cli <client>` now provide an explicit, receipt-owned Add/Remove lifecycle for policy-approved ECC HTTPS MCP entries across all native client configs. Add requires `governance.eccMcpApprovals` at the pinned ECC catalog digest and writes the client entry before the ownership receipt in one transaction; Remove subtracts only unchanged receipt-owned entries and reports drift without mutating. Claude, Cursor, Copilot, Kimi, and Kiro use project-local JSON; an execution-time trusted-HOME guard protects global JSON for Antigravity, Gemini, Windsurf, OpenCode, and Zed plus Codex TOML. Doctor reports local receipt/config state without endpoint or tool-surface claims.
 - Org policies can now record approved or revoked use of one exact external ECC
@@ -55,46 +43,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- The internal ordered owned-file transaction can now express no-effect
-  assertions, optional mode preimages, action-specific path policy, and
-  side-effect-free pre/post verification guards inside compensating rollback.
-  Legacy ECC write/remove steps keep their existing inferred behavior; this is
-  a coordinator prerequisite only and does not expose package execution or
-  claim isolation, crash atomicity, or cross-domain rollback.
-- Capability Package Manager physical custody now has a strict, internal,
-  content-addressed receipt and a read-only skill-pack verifier. Each receipt
-  binds the exact ownership-receipt and promotion trust-lock bytes to a
-  deterministic set of package members and repo-local file digests; missing
-  evidence remains explicitly unowned, malformed or drifted evidence fails
-  closed, and final-root removal creates no empty custody claim. The verifier
-  performs no writes, adoption, installation, removal, command registration,
-  or receipt issuance; those remain gated on a future reversible coordinator.
-- Capability Package Manager lifecycle state can now be projected into an
-  immutable, plan-only sequence for the committed intent and local ownership
-  receipt. The planner binds exact live bytes and, where the host supports
-  POSIX modes, exact mode preimages; it orders intent before receipt on writes
-  and receipt before intent on final removal, and refuses malformed or unsafe
-  state. It exposes no commit API and does not install, configure, adopt,
-  remove, or claim ownership of package members.
-- Capability Package Manager prerequisites can now verify an already-promoted
-  GitHub skill-pack against its exact Package Graph authorities, promotion
-  receipt, routed repository paths, and current bounded file bytes. The shared
-  projector also keeps uninstall routing deterministic. This read-only snapshot
-  performs no acquisition, installation, adoption, removal, or ownership
-  mutation; executable package lifecycle and physical custody remain future
-  slices.
 - Workspace skill promotion now derives one bounded, Buffer-preserving snapshot
   that canonically threads multi-source trust-lock state before the legacy plan
   renders it. The internal seam revalidates GitHub pins and source files at the
   point of use, rejects hostile or oversized input, and preserves exact hardened
-  lock bytes for future Capability Package Manager adapters; it does not add a
-  package command, advance package ownership, or claim installation.
+  lock bytes for the shipped workspace acquisition flow.
 - ECC's ordered, byte-safe materialization commit now delegates to a shared
   internal owned-file transaction. The primitive preserves caller order,
   re-pins each destination before its effect, and compensates applied steps in
-  reverse without overwriting concurrent operator changes. This is a reusable
-  prerequisite for Capability Package Manager domain adapters; it is not crash
-  journaling, cross-domain atomicity, member installation, or a new command.
+  reverse without overwriting concurrent operator changes. This hardens the
+  shipped ECC workflow; it is not crash journaling or a new command.
 - The Policy Workbench future-owner ticker now lists only approved AIH-owned
   surfaces and no longer advertises a rejected third-party candidate.
 - Release guidance now makes stable-direct the default after mechanical gates and exact-SHA approval, while requiring a release candidate for major or schema migrations, evidence-format changes, publishing-machinery changes, and cuts without adequate production-equivalent verification.

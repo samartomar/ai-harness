@@ -21,15 +21,13 @@ describe("committed JSON Schemas", () => {
     expect(validate(value)).toBe(false);
   }
 
-  it("emits editor schemas for config, governed policy, authority receipt, and package graph", () => {
+  it("emits editor schemas for config, governed policy, and authority receipts", () => {
     const schemas = generatedConfigSchemas();
 
     expect(schemas.map((schema) => schema.path)).toEqual([
       "schemas/aih-config.schema.json",
       "schemas/aih-org-policy.schema.json",
       "schemas/aih-policy-authority-receipt.schema.json",
-      "schemas/aih-package-graph.schema.json",
-      "schemas/aih-capability-package-manifest.schema.json",
     ]);
     expect(schemas[0]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -44,18 +42,6 @@ describe("committed JSON Schemas", () => {
     expect(schemas[2]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
       title: ".aih/policy-authority-receipt.json",
-      type: "object",
-    });
-    expect(schemas[3]?.schema).toMatchObject({
-      $schema: "https://json-schema.org/draft/2020-12/schema",
-      $comment: expect.stringContaining("PackageGraphSchema.parse"),
-      title: "aih-package-graph.schema.json",
-      type: "object",
-    });
-    expect(schemas[4]?.schema).toMatchObject({
-      $schema: "https://json-schema.org/draft/2020-12/schema",
-      $comment: expect.stringContaining("CapabilityPackageManifestSchema.parse"),
-      title: "aih-capability-package-manifest.schema.json",
       type: "object",
     });
   });
@@ -79,91 +65,6 @@ describe("committed JSON Schemas", () => {
       references: { repoContract: "ai-coding/project.json" },
       command: { deny: {} },
       trust: {},
-    });
-  });
-
-  it("publishes strict Package Graph v1 editor validation", () => {
-    const valid = {
-      schemaVersion: 1,
-      surfaces: [
-        {
-          id: "skill:security-review",
-          source: { provider: "github", repository: "acme/security-skills" },
-          sourceDigest: { algorithm: "git-sha1", value: "a".repeat(40) },
-          declaredRisk: [{ axis: "egress", value: "none" }],
-          observedRisk: [
-            {
-              detector: { name: "aih-native", version: "5.0.0" },
-              evidence: {
-                sha256: "b".repeat(64),
-                subjectDigest: { algorithm: "git-sha1", value: "a".repeat(40) },
-              },
-              verdict: "pass",
-              findings: [],
-            },
-          ],
-        },
-      ],
-      packages: [
-        {
-          id: "package:baseline/ecc",
-          source: { provider: "github", repository: "affaan-m/ecc" },
-          sourceDigest: { algorithm: "sha256", value: "c".repeat(64) },
-          members: ["skill:security-review"],
-          declaredRisk: [],
-          observedRisk: [],
-        },
-      ],
-    };
-
-    validateCommittedSchema("schemas/aih-package-graph.schema.json", valid);
-    rejectCommittedSchema("schemas/aih-package-graph.schema.json", {
-      ...valid,
-      surfaces: [{ ...valid.surfaces[0], extra: true }],
-    });
-    rejectCommittedSchema("schemas/aih-package-graph.schema.json", {
-      ...valid,
-      packages: [{ ...valid.packages[0], members: ["package:baseline/other"] }],
-    });
-  });
-
-  it("publishes strict Capability Package Manifest v1 editor validation", () => {
-    const valid = {
-      schemaVersion: 1,
-      authorities: [
-        {
-          id: "catalog:public",
-          kind: "catalog",
-          sourceDigest: { algorithm: "sha256", value: "a".repeat(64) },
-          projectionDigest: "b".repeat(64),
-        },
-      ],
-      roots: ["package:baseline/ecc"],
-      packages: [
-        {
-          kind: "package",
-          id: "package:baseline/ecc",
-          authorityId: "catalog:public",
-          claimDigest: "c".repeat(64),
-          sourceDigest: { algorithm: "git-sha1", value: "d".repeat(40) },
-          dependencies: [],
-          members: ["skill:security-review"],
-        },
-      ],
-    };
-
-    validateCommittedSchema("schemas/aih-capability-package-manifest.schema.json", valid);
-    rejectCommittedSchema("schemas/aih-capability-package-manifest.schema.json", {
-      ...valid,
-      packages: [{ ...valid.packages[0], kind: "surface" }],
-    });
-    rejectCommittedSchema("schemas/aih-capability-package-manifest.schema.json", {
-      ...valid,
-      packages: [{ ...valid.packages[0], members: ["hook:pre-commit"] }],
-    });
-    rejectCommittedSchema("schemas/aih-capability-package-manifest.schema.json", {
-      ...valid,
-      authorities: [{ ...valid.authorities[0], id: "receipt:wrong-kind" }],
     });
   });
 
