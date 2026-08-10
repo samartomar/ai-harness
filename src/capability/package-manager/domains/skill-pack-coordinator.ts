@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isAbsolute } from "node:path";
 import { platform as hostPlatform } from "node:process";
 import { isProxy } from "node:util/types";
 import {
@@ -126,7 +127,7 @@ function snapshotInput(input: unknown): Input | undefined {
     );
     if (
       typeof candidate.root !== "string" ||
-      !candidate.root.startsWith("/") ||
+      !isAbsolute(candidate.root) ||
       typeof candidate.contextDir !== "string" ||
       candidate.contextDir.length === 0 ||
       !["add", "update", "remove"].includes(String(candidate.operation)) ||
@@ -216,6 +217,13 @@ function assemble(input: Input): Assembled {
       catalogAuthorityId: "catalog:aih-packs",
       hostSource: policy.capabilityPackages.catalog,
     });
+    if (
+      report.sources.policy.sha256 !== policyBytes.sha256 ||
+      report.sources.approval.sha256 !== approval.sourceSha256 ||
+      report.sources.catalog.sha256 !== catalogBytes.sha256
+    ) {
+      return { report };
+    }
     const index = buildPackageGraphIndex(adapted.documents);
     if (adapted.diagnostics.length > 0) return { report } as const;
     return {
@@ -400,15 +408,18 @@ function currentCustodyMatchesAuthority(
     }
   }
   const expectedFiles = [];
+  const ownedMembers = new Set(packagesByMember.keys());
   for (const source of trust.lock.sources) {
     const projected = projectPromotedSkillArtifacts(contextDir, source);
     if (projected.status === "refused") return false;
     expectedFiles.push(
-      ...projected.targets.map((target) => ({
-        memberId: `skill:${target.skill}`,
-        path: target.targetPath,
-        sha256: target.sha256,
-      })),
+      ...projected.targets
+        .map((target) => ({
+          memberId: `skill:${target.skill}`,
+          path: target.targetPath,
+          sha256: target.sha256,
+        }))
+        .filter(({ memberId }) => ownedMembers.has(memberId)),
     );
   }
   expectedFiles.sort((a, b) => codeUnitCompare(a.path, b.path));
@@ -496,8 +507,24 @@ export function reconcileSkillPackCapabilityPackage(
     );
   }
   const readyLifecycle = owned.lifecycle;
+  if (snapshot.operation === "remove") {
+    const desiredRoots =
+      readyLifecycle.desiredIntent === undefined
+        ? []
+        : parseCapabilityPackageIntentBytes(Buffer.from(readyLifecycle.desiredIntent.bytes))
+            .manifest.roots;
+    if (
+      desiredRoots.length !== assembled.roots.length ||
+      ![...desiredRoots]
+        .sort(codeUnitCompare)
+        .every((root, index) => root === [...assembled.roots].sort(codeUnitCompare)[index])
+    ) {
+      return refused("policy", "desired-roots-do-not-match-policy", snapshot, report);
+    }
+  }
 
   let desiredCustody: { path: string; bytes: Buffer } | undefined;
+  let verifiedFiles: Array<{ memberId: string; path: string; sha256: string; mode: number }> = [];
   let removalFiles: Array<{ memberId: string; path: string; sha256: string; mode?: number }> = [];
   let nextTrustBytes: Buffer<ArrayBufferLike> = Buffer.from(trust.sourceBytes);
   const currentIdentity = authorityIdentity(report);
@@ -573,6 +600,12 @@ export function reconcileSkillPackCapabilityPackage(
       readyLifecycle.desiredReceipt.receipt,
       installed.files,
     );
+    verifiedFiles = installed.files.map((file) => ({
+      memberId: file.memberId,
+      path: file.path,
+      sha256: file.sha256,
+      mode: file.mode,
+    }));
   }
 
   const allowed = new Set<string>([
@@ -580,6 +613,7 @@ export function reconcileSkillPackCapabilityPackage(
     CAPABILITY_PACKAGE_INTENT_PATH,
     CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH,
     ...removalFiles.map(({ path }) => path),
+    ...verifiedFiles.map(({ path }) => path),
     ...(desiredCustody === undefined ? [] : [desiredCustody.path]),
   ]);
   const mutable = new Set<string>([
@@ -613,6 +647,19 @@ export function reconcileSkillPackCapabilityPackage(
           if (verified.status !== "verified-existing") {
             throw new Error("capability package custody verification failed after commit");
           }
+        } else {
+          const finalIntent = readCapabilityPackageIntent(snapshot.root);
+          const finalOwnership = readCapabilityPackageOwnershipReceipt(snapshot.root);
+          const finalTrust = readTrustLockExact(snapshot.root);
+          if (
+            finalIntent.state !== "absent" ||
+            finalOwnership.state !== "absent" ||
+            finalTrust.state !== "valid" ||
+            !finalTrust.sourceBytes.equals(nextTrustBytes) ||
+            removalFiles.some(({ path }) => transaction.inspect(path).state !== "absent")
+          ) {
+            throw new Error("capability package subtraction verification failed after commit");
+          }
         }
       },
     });
@@ -635,6 +682,18 @@ export function reconcileSkillPackCapabilityPackage(
       path: TRUST_LOCK_FILE,
       mode: 0o600,
       expect: expectation(trustLive),
+    });
+  }
+
+  for (const file of verifiedFiles) {
+    steps.push({
+      action: "assert",
+      path: file.path,
+      mode: file.mode,
+      expect:
+        hostPlatform === "win32"
+          ? { sha256: file.sha256 }
+          : { sha256: file.sha256, mode: file.mode },
     });
   }
 
@@ -674,6 +733,8 @@ export function reconcileSkillPackCapabilityPackage(
   const receiptStep = stateSteps.find(
     ({ path }) => path === CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH,
   );
+  const finalRemoval = readyLifecycle.desiredReceipt === undefined;
+  if (finalRemoval && receiptStep !== undefined) steps.push(receiptStep);
   if (intentStep !== undefined) steps.push(intentStep);
 
   if (desiredCustody !== undefined) {
@@ -683,18 +744,28 @@ export function reconcileSkillPackCapabilityPackage(
       return refused("custody", "custody-target-collision", snapshot, report);
     }
     steps.push(
-      live.state === "present"
+      live.state === "present" && (hostPlatform === "win32" || live.mode === 0o600)
         ? { action: "assert", path: desiredCustody.path, mode: 0o600, expect: expectation(live) }
-        : {
-            action: "write",
-            path: desiredCustody.path,
-            mode: 0o600,
-            expect: { absent: true },
-            contents: desiredCustody.bytes,
-          },
+        : live.state === "present"
+          ? {
+              action: "write",
+              path: desiredCustody.path,
+              mode: 0o600,
+              expect: expectation(live),
+              contents: desiredCustody.bytes,
+              prior: Buffer.from(live.bytes),
+              priorMode: live.mode,
+            }
+          : {
+              action: "write",
+              path: desiredCustody.path,
+              mode: 0o600,
+              expect: { absent: true },
+              contents: desiredCustody.bytes,
+            },
     );
   }
-  if (receiptStep !== undefined) steps.push(receiptStep);
+  if (!finalRemoval && receiptStep !== undefined) steps.push(receiptStep);
 
   if (steps.every(({ action }) => action === "assert")) {
     const custody = planSkillPackCustody({
@@ -709,8 +780,15 @@ export function reconcileSkillPackCapabilityPackage(
 
   try {
     transaction.commit(steps);
-  } catch {
-    return refused("ownership", "transaction-refused", snapshot, report);
+  } catch (error) {
+    return refused(
+      "ownership",
+      error instanceof Error && error.message.includes("rollback did not restore")
+        ? "rollback-incomplete"
+        : "transaction-refused",
+      snapshot,
+      report,
+    );
   }
   return result(
     "applied",

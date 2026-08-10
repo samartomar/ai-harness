@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -160,7 +169,8 @@ describe("GitHub skill-pack package reconciliation", () => {
   });
 
   it("subtracts an unchanged final member only after policy deselection", () => {
-    expect(apply("add").status).toBe("applied");
+    const added = apply("add");
+    expect(added.status, JSON.stringify(added)).toBe("applied");
     const policy = JSON.parse(readFileSync(join(root, "aih-org-policy.json"), "utf8"));
     policy.capabilityPackages.roots = [];
     put("aih-org-policy.json", policy);
@@ -187,5 +197,52 @@ describe("GitHub skill-pack package reconciliation", () => {
       "operator edit\n",
     );
     expect(existsSync(join(root, CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH))).toBe(true);
+  });
+
+  it("normalizes an exact custody receipt mode on POSIX instead of reporting unchanged", () => {
+    if (process.platform === "win32") return;
+    expect(apply("add").status).toBe("applied");
+    const ownership = readFileSync(join(root, CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH));
+    const trust = readFileSync(join(root, ".aih/trust-lock.json"));
+    const custody = join(
+      root,
+      capabilityPackageCustodyReceiptPath(sha256(ownership), sha256(trust)),
+    );
+    chmodSync(custody, 0o644);
+
+    expect(apply("update")).toMatchObject({ status: "applied" });
+    expect(statSync(custody).mode & 0o777).toBe(0o600);
+  });
+
+  it("removes only the package source while preserving unrelated promoted state", () => {
+    const trustPath = join(root, ".aih/trust-lock.json");
+    const trust = JSON.parse(readFileSync(trustPath, "utf8"));
+    const otherBytes = Buffer.from("# Other\n", "utf8");
+    trust.sources.push({
+      id: "other-repo",
+      kind: "github",
+      source: "other/repo",
+      ref: "main",
+      pinnedSha: "b".repeat(40),
+      promotedAt: "2026-08-10T00:00:00.000Z",
+      promotedSkills: ["other"],
+      analyzersRun: ["aih-native"],
+      artifactHashes: [{ path: "skills/other/SKILL.md", sha256: sha256(otherBytes) }],
+      findings: [],
+    });
+    put(".aih/trust-lock.json", trust, 0o600);
+    put("ai-coding/skills/other-repo/other/SKILL.md", otherBytes, 0o640);
+    expect(apply("add").status).toBe("applied");
+    const policy = JSON.parse(readFileSync(join(root, "aih-org-policy.json"), "utf8"));
+    policy.capabilityPackages.roots = [];
+    put("aih-org-policy.json", policy);
+
+    expect(apply("remove")).toMatchObject({ status: "applied" });
+    expect(readFileSync(join(root, "ai-coding/skills/other-repo/other/SKILL.md"))).toEqual(
+      otherBytes,
+    );
+    expect(JSON.parse(readFileSync(trustPath, "utf8")).sources).toEqual([
+      expect.objectContaining({ id: "other-repo", promotedSkills: ["other"] }),
+    ]);
   });
 });
