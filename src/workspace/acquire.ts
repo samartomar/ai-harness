@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 import type { Command } from "commander";
+import { parseGitHubSkillSource } from "../capability/package-graph/adapters/github.js";
 import { readAihConfig } from "../config/marker.js";
 import { postureFromContext, resolvePosture } from "../config/posture.js";
 import { loadSettings } from "../config/settings.js";
@@ -18,11 +19,11 @@ import { aihIgnoreWrite } from "../internals/gitignore.js";
 import type { Action, CommandSpec, Plan, PlanContext } from "../internals/plan.js";
 import { plan, structuredChecksProbe, writeJson, writeText } from "../internals/plan.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
-import type { Check, VerificationReport } from "../internals/verify.js";
+import { type Check, VerificationReport } from "../internals/verify.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { makeHostAdapter } from "../platform/detect.js";
 import { MCP_CONFIG_FILES } from "../secrets/scan.js";
-import { readSkillsLock } from "../skill/lockfile.js";
+import { readSkillsLock, readSkillsLockExact } from "../skill/lockfile.js";
 import { buildSupport, supportSummary } from "../support/integrate.js";
 import {
   acknowledgeCommandHint,
@@ -40,7 +41,7 @@ import {
   type TrustFetchMetadata,
   type TrustSource,
 } from "../trust/fetch.js";
-import { readTrustLock } from "../trust/lock.js";
+import { readTrustLock, readTrustLockExact } from "../trust/lock.js";
 import {
   scanOptionsFromContext,
   scanTrustTreeWithAnalyzers,
@@ -51,6 +52,11 @@ import {
 import { isInstallScriptEvidenceFilePath } from "../trust/script-files.js";
 import type { SandboxSmokeShape } from "../trust/smoke.js";
 import { snapshotSkillPromotion } from "./promotion-snapshot.js";
+import {
+  createVerifiedPromotionChannel,
+  type VerifiedPromotionHandle,
+  type VerifiedPromotionSnapshot,
+} from "./verified-promotion.js";
 
 interface WorkspaceAddDeps {
   run?: Runner;
@@ -87,6 +93,22 @@ export interface ClearedWorkspaceAddTrustGate {
 
 export interface WorkspaceAddTrustGate extends ClearedWorkspaceAddTrustGate {
   blockingChecks: Check[];
+}
+
+interface CapturedClearedGate {
+  ctx: PlanContext;
+  source: TrustSource;
+  selectedSkills: string[];
+  artifactHashes: Array<{ path: string; sha256: string }>;
+}
+
+const clearedGateAuthority = new WeakMap<object, CapturedClearedGate>();
+const verifiedPromotionChannel = createVerifiedPromotionChannel();
+
+export function readVerifiedWorkspacePromotion(
+  candidate: unknown,
+): VerifiedPromotionSnapshot | undefined {
+  return verifiedPromotionChannel.read(candidate);
 }
 
 export class WorkspaceAddTrustGateBlockedError extends AihError {
@@ -558,7 +580,205 @@ export async function captureClearedWorkspaceAddTrustGate(
   if (gate.blockingChecks.length > 0) {
     throw new WorkspaceAddTrustGateBlockedError(gate.blockingChecks);
   }
-  return gate;
+  const copiedReport = new VerificationReport();
+  for (const check of gate.report.checks) {
+    const copy = {
+      ...check,
+      ...(check.location === undefined ? {} : { location: { ...check.location } }),
+    };
+    if (copy.location !== undefined) Object.freeze(copy.location);
+    copiedReport.add(Object.freeze(copy));
+  }
+  Object.freeze(copiedReport.checks);
+  Object.freeze(copiedReport);
+  const cleared = {
+    source: Object.freeze({ ...gate.source }),
+    artifactHashes: Object.freeze(
+      gate.artifactHashes.map((artifact) => Object.freeze({ ...artifact })),
+    ),
+    report: copiedReport,
+    analyzersRun: Object.freeze([...gate.analyzersRun]),
+    internalScopes: Object.freeze([...gate.internalScopes]),
+  } as unknown as ClearedWorkspaceAddTrustGate;
+  Object.freeze(cleared);
+  const source = resolvedSource ?? sourceFromContext(ctx);
+  const storedSource = Object.freeze({ ...source }) as TrustSource;
+  const storedCtx = {
+    ...ctx,
+    env: { ...ctx.env },
+    options: { ...ctx.options },
+  };
+  clearedGateAuthority.set(cleared, {
+    ctx: storedCtx,
+    source: storedSource,
+    selectedSkills:
+      gate.artifactHashes.length === 0
+        ? []
+        : [
+            ...new Set(
+              snapshotSkillPromotion({
+                contextDir: ctx.contextDir,
+                source: storedSource,
+                sourceBinding: gate.source,
+                selectedSkills: selectSkills,
+                workingTrustLock: readTrustLock(ctx.root),
+                promotedAt: new Date().toISOString(),
+                analyzersRun: [],
+                findings: [],
+              }).promotedSkills,
+            ),
+          ],
+    artifactHashes: gate.artifactHashes.map((artifact) => ({ ...artifact })),
+  });
+  return cleared;
+}
+
+function exactPromotionIdentity(
+  left: ReturnType<typeof snapshotSkillPromotion>,
+  right: ReturnType<typeof snapshotSkillPromotion>,
+): boolean {
+  return (
+    sameArtifactHashes(left.artifactHashes, right.artifactHashes) &&
+    left.files.length === right.files.length &&
+    left.files.every(
+      (file, index) =>
+        file.sourceRel === right.files[index]?.sourceRel &&
+        file.targetRel === right.files[index]?.targetRel &&
+        file.sha256 === right.files[index]?.sha256 &&
+        file.contents.equals(right.files[index]?.contents),
+    )
+  );
+}
+
+function verifiedPromotionRefusal(): never {
+  throw new AihError("verified workspace promotion could not be issued", "AIH_TRUST");
+}
+
+function sourceScopeContains(parent: string, child: string): boolean {
+  return parent === "." || parent === child || child.startsWith(`${parent}/`);
+}
+
+export async function issueVerifiedWorkspacePromotion(
+  candidate: unknown,
+): Promise<VerifiedPromotionHandle> {
+  if ((typeof candidate !== "object" && typeof candidate !== "function") || candidate === null) {
+    verifiedPromotionRefusal();
+  }
+  const captured = clearedGateAuthority.get(candidate);
+  if (captured === undefined || captured.source.kind !== "github") verifiedPromotionRefusal();
+  const { ctx, source, selectedSkills, artifactHashes } = captured;
+  const binding = sourceBinding(source);
+  if (binding.pinnedSha === undefined) verifiedPromotionRefusal();
+  const trustBefore = readTrustLockExact(ctx.root);
+  if (trustBefore.state === "malformed") verifiedPromotionRefusal();
+  const approvalBefore = readSkillsLockExact(ctx.root);
+  if (approvalBefore.state !== "valid") verifiedPromotionRefusal();
+  const expectedRepository = `${source.owner.toLowerCase()}/${source.repo.toLowerCase()}`;
+  const selectedApprovals = new Map<string, (typeof approvalBefore.lock.skills)[number]>();
+  for (const name of selectedSkills) {
+    const entries = approvalBefore.lock.skills.filter((entry) => entry.name === name);
+    if (entries.length !== 1) verifiedPromotionRefusal();
+    const entry = entries[0];
+    const parsed = parseGitHubSkillSource(entry?.source ?? "", entry?.commit ?? "");
+    if (
+      !parsed.success ||
+      parsed.source.repository !== expectedRepository ||
+      parsed.sourceDigest.value !== binding.pinnedSha
+    ) {
+      verifiedPromotionRefusal();
+    }
+    if (entry !== undefined) selectedApprovals.set(name, entry);
+  }
+  const workingTrustLock =
+    trustBefore.state === "valid" ? trustBefore.lock : { schemaVersion: 1 as const, sources: [] };
+  const promotedAt = new Date().toISOString();
+  const before = snapshotSkillPromotion({
+    contextDir: ctx.contextDir,
+    source,
+    sourceBinding: binding,
+    selectedSkills: new Set(selectedSkills),
+    workingTrustLock,
+    promotedAt,
+    analyzersRun: [],
+    findings: [],
+  });
+  for (const name of selectedSkills) {
+    const scope = selectedApprovals.get(name)?.sourceScope;
+    if (scope === undefined) continue;
+    const targetSuffix = `/${source.id}/${name}/SKILL.md`;
+    const skillCard = before.files.find(({ targetRel }) => targetRel.endsWith(targetSuffix));
+    if (skillCard === undefined) verifiedPromotionRefusal();
+    const separator = skillCard.sourceRel.lastIndexOf("/");
+    const included = separator < 0 ? "." : skillCard.sourceRel.slice(0, separator);
+    const overlaps = scope.excludedSkillPaths.some(
+      (excluded) =>
+        sourceScopeContains(included, excluded) || sourceScopeContains(excluded, included),
+    );
+    if (
+      scope.selectedSkillNames.length !== 1 ||
+      scope.selectedSkillNames[0] !== name ||
+      scope.includedPaths.length !== 1 ||
+      scope.includedPaths[0] !== included ||
+      overlaps
+    ) {
+      verifiedPromotionRefusal();
+    }
+  }
+  if (!sameArtifactHashes(artifactHashes, before.artifactHashes)) verifiedPromotionRefusal();
+  const currentScan = await currentTrustScan(ctx, source, resolveInternalScopes(ctx));
+  if (promotionBlockingChecks(currentScan.checks).length > 0) verifiedPromotionRefusal();
+  const after = snapshotSkillPromotion({
+    contextDir: ctx.contextDir,
+    source,
+    sourceBinding: binding,
+    selectedSkills: new Set(selectedSkills),
+    workingTrustLock,
+    promotedAt,
+    analyzersRun: currentScan.analyzersRun,
+    findings: currentScan.checks,
+  });
+  if (!exactPromotionIdentity(before, after)) verifiedPromotionRefusal();
+  const trustAfter = readTrustLockExact(ctx.root);
+  const approvalAfter = readSkillsLockExact(ctx.root);
+  if (
+    trustAfter.state !== trustBefore.state ||
+    (trustBefore.state === "valid" &&
+      (trustAfter.state !== "valid" ||
+        !trustAfter.sourceBytes.equals(trustBefore.sourceBytes) ||
+        (process.platform !== "win32" && trustAfter.mode !== trustBefore.mode))) ||
+    approvalAfter.state !== "valid" ||
+    !approvalAfter.sourceBytes.equals(approvalBefore.sourceBytes) ||
+    (process.platform !== "win32" && approvalAfter.mode !== approvalBefore.mode)
+  ) {
+    verifiedPromotionRefusal();
+  }
+  return verifiedPromotionChannel.issue({
+    source: {
+      id: source.id,
+      kind: "github",
+      repository: expectedRepository,
+      ref: source.ref,
+      pinnedSha: binding.pinnedSha,
+    },
+    selectedSkills: [...selectedSkills],
+    files: after.files.map((file) => ({ ...file, contents: Buffer.from(file.contents) })),
+    artifactHashes: after.artifactHashes.map((artifact) => ({ ...artifact })),
+    nextTrustLockBytes: Buffer.from(after.nextTrustLockBytes),
+    trustLockPreimage:
+      trustBefore.state === "absent"
+        ? { state: "absent" }
+        : {
+            state: "present",
+            sourceBytes: Buffer.from(trustBefore.sourceBytes),
+            sourceSha256: trustBefore.sourceSha256,
+            ...(process.platform === "win32" ? {} : { mode: trustBefore.mode }),
+          },
+    approvalLockPreimage: {
+      sourceBytes: Buffer.from(approvalBefore.sourceBytes),
+      sourceSha256: approvalBefore.sourceSha256,
+      ...(process.platform === "win32" ? {} : { mode: approvalBefore.mode }),
+    },
+  });
 }
 
 function gateBlockingChecks(gate: ClearedWorkspaceAddTrustGate | WorkspaceAddTrustGate): Check[] {
