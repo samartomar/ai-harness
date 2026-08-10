@@ -956,7 +956,10 @@ describe("policy generate", () => {
       });
       Object.defineProperty(policyFile, "files", { configurable: true, value: [file] });
       policyFile.dispatchEvent(new window.Event("change", { bubbles: true }));
-      await new Promise((resolve) => window.setTimeout(resolve, 50));
+      await settle(
+        window,
+        () => (document.getElementById("announcement")?.textContent ?? "") !== "",
+      );
       const announcement = document.getElementById("announcement");
       if (fixture.accepted) {
         expect(announcement?.textContent).toContain("without transformation");

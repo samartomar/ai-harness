@@ -198,6 +198,41 @@ describe("policy project", () => {
 });
 
 describe("OrgPolicySchema", () => {
+  it("accepts package roots as policy selection without embedding package authority", () => {
+    const parsed = parseOrgPolicy(
+      policy({
+        capabilityPackages: {
+          catalog: { provider: "github", repository: "Owner/Capabilities" },
+          roots: ["package:skill-pack/docs-quality"],
+        },
+      }),
+    );
+
+    expect(parsed.capabilityPackages).toEqual({
+      catalog: { provider: "github", repository: "Owner/Capabilities" },
+      roots: ["package:skill-pack/docs-quality"],
+    });
+    expect(parsed.capabilityPackages).not.toHaveProperty("authorities");
+    expect(parsed.capabilityPackages).not.toHaveProperty("packages");
+  });
+
+  it("rejects duplicate, malformed, and unsupported package-root policy", () => {
+    for (const capabilityPackages of [
+      {
+        catalog: { provider: "github", repository: "owner/repo" },
+        roots: ["package:skill-pack/docs-quality", "package:skill-pack/docs-quality"],
+      },
+      { catalog: { provider: "github", repository: "owner/repo" }, roots: ["skill:clean"] },
+      { catalog: { provider: "github", repository: "owner/repo" }, roots: ["package:clean"] },
+      {
+        catalog: { provider: "github", repository: "owner/repo", pin: "a".repeat(40) },
+        roots: ["package:skill-pack/docs-quality"],
+      },
+    ]) {
+      expect(() => parseOrgPolicy(policy({ capabilityPackages }))).toThrow(/org-policy is invalid/);
+    }
+  });
+
   it("parses the separate org-owned policy shape", () => {
     expect(
       parseOrgPolicy(

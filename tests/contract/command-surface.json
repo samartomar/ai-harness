@@ -260,6 +260,193 @@
       "options": [],
       "commands": [
         {
+          "name": "package",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [],
+          "commands": [
+            {
+              "name": "add",
+              "hasDescription": true,
+              "arguments": [
+                {
+                  "name": "package-id",
+                  "required": true
+                }
+              ],
+              "options": [
+                {
+                  "flags": "--context-dir <dir>",
+                  "defaultValue": "ai-coding"
+                },
+                {
+                  "flags": "--json"
+                },
+                {
+                  "flags": "--posture <posture>",
+                  "defaultValue": "vibe"
+                },
+                {
+                  "flags": "--root <dir>"
+                }
+              ],
+              "commands": []
+            },
+            {
+              "name": "doctor",
+              "hasDescription": true,
+              "arguments": [],
+              "options": [
+                {
+                  "flags": "--context-dir <dir>",
+                  "defaultValue": "ai-coding"
+                },
+                {
+                  "flags": "--json"
+                },
+                {
+                  "flags": "--posture <posture>",
+                  "defaultValue": "vibe"
+                },
+                {
+                  "flags": "--root <dir>"
+                }
+              ],
+              "commands": []
+            },
+            {
+              "name": "list",
+              "hasDescription": true,
+              "arguments": [],
+              "options": [
+                {
+                  "flags": "--context-dir <dir>",
+                  "defaultValue": "ai-coding"
+                },
+                {
+                  "flags": "--json"
+                },
+                {
+                  "flags": "--posture <posture>",
+                  "defaultValue": "vibe"
+                },
+                {
+                  "flags": "--root <dir>"
+                }
+              ],
+              "commands": []
+            },
+            {
+              "name": "remove",
+              "hasDescription": true,
+              "arguments": [
+                {
+                  "name": "package-id",
+                  "required": true
+                }
+              ],
+              "options": [
+                {
+                  "flags": "--context-dir <dir>",
+                  "defaultValue": "ai-coding"
+                },
+                {
+                  "flags": "--json"
+                },
+                {
+                  "flags": "--posture <posture>",
+                  "defaultValue": "vibe"
+                },
+                {
+                  "flags": "--root <dir>"
+                }
+              ],
+              "commands": []
+            },
+            {
+              "name": "show",
+              "hasDescription": true,
+              "arguments": [
+                {
+                  "name": "package-id",
+                  "required": true
+                }
+              ],
+              "options": [
+                {
+                  "flags": "--context-dir <dir>",
+                  "defaultValue": "ai-coding"
+                },
+                {
+                  "flags": "--json"
+                },
+                {
+                  "flags": "--posture <posture>",
+                  "defaultValue": "vibe"
+                },
+                {
+                  "flags": "--root <dir>"
+                }
+              ],
+              "commands": []
+            },
+            {
+              "name": "status",
+              "hasDescription": true,
+              "arguments": [
+                {
+                  "name": "package-id",
+                  "required": false
+                }
+              ],
+              "options": [
+                {
+                  "flags": "--context-dir <dir>",
+                  "defaultValue": "ai-coding"
+                },
+                {
+                  "flags": "--json"
+                },
+                {
+                  "flags": "--posture <posture>",
+                  "defaultValue": "vibe"
+                },
+                {
+                  "flags": "--root <dir>"
+                }
+              ],
+              "commands": []
+            },
+            {
+              "name": "update",
+              "hasDescription": true,
+              "arguments": [
+                {
+                  "name": "package-id",
+                  "required": true
+                }
+              ],
+              "options": [
+                {
+                  "flags": "--context-dir <dir>",
+                  "defaultValue": "ai-coding"
+                },
+                {
+                  "flags": "--json"
+                },
+                {
+                  "flags": "--posture <posture>",
+                  "defaultValue": "vibe"
+                },
+                {
+                  "flags": "--root <dir>"
+                }
+              ],
+              "commands": []
+            }
+          ]
+        },
+        {
           "name": "prune",
           "hasDescription": true,
           "arguments": [],

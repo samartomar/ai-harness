@@ -274,6 +274,30 @@ vendors third-party bytes. At `vibe` posture detected capabilities are auto-add 
 retained manifests. The committed repo file remains the source of truth; `~/.aih/` is safe to
 delete and rebuild.
 
+`aih capability package` is the policy-driven package reconciliation surface. The org policy
+records only requested package roots and the GitHub repository identity of the committed pack
+catalog; it does not carry pins, approvals, evidence, or package claims. The commands join those
+roots against the exact local `aih-skills.lock.json`, `aih-packs.json`, Package Graph claims,
+derived `aih-capability-packages.json` resolution manifest, ownership receipt, custody receipt, and
+promotion trust-lock bytes.
+
+```sh
+aih capability package list [--json]
+aih capability package show <package-id> [--json]
+aih capability package status [<package-id>] [--json]
+aih capability package doctor [--json]
+aih capability package add <package-id> [--json]
+aih capability package update <package-id> [--json]
+aih capability package remove <package-id> [--json]
+```
+
+`list`, `show`, `status`, and `doctor` are local read-only views. In this first vertical slice,
+`add`, `update`, and `remove` are also read-only previews: they emit no filesystem action, process,
+network request, acquisition, or component load. If the proposed root set differs from effective
+policy, the preview says `refused at policy: selection-change-required`; it never treats a CLI
+argument as policy authority. Human and JSON rendering use the same typed report, and every
+fail-closed result names its stage and stable reason.
+
 ## aih uninstall
 
 Remove the core aih install footprint from a repo; `aih clean` is the same command. Dry-run

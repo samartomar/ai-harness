@@ -196,7 +196,7 @@ export async function runCapability(
     positionalRoot ?? (opts.root as string | undefined) ?? env.AIH_ROOT ?? process.cwd(),
   );
   // `--no-log` is a commander NEGATABLE flag → it sets `opts.log = false`.
-  const noLog = opts.log === false;
+  const noLog = spec.zeroWrite === true || opts.log === false;
   const logRun = (entry: RunEntryInput): void => {
     if (isLoggingEnabled(resolvedRoot, env, { noLog }))
       appendRunLog(resolvedRoot, buildRunEntry(entry), startedAt);
@@ -344,7 +344,12 @@ export async function runCapability(
     // operator named the path, so this is consent, exactly like `--sarif <file>`.
     let savedSupport: Record<string, string> | undefined;
     const supportOut = opts.supportOut as string | undefined;
-    if (support && typeof supportOut === "string" && supportOut.length > 0) {
+    if (
+      spec.zeroWrite !== true &&
+      support &&
+      typeof supportOut === "string" &&
+      supportOut.length > 0
+    ) {
       savedSupport = {};
       for (const t of support.templates) {
         const rel = `${supportOut}/${t.code.replace(/[^a-z0-9.-]/gi, "_")}.md`;

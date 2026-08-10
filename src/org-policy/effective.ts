@@ -174,6 +174,10 @@ export interface EffectivePolicyCandidate {
 }
 
 export interface EffectiveOrgPolicy {
+  capabilityPackages?: {
+    catalog: { provider: "github"; repository: string };
+    roots: string[];
+  };
   policyVersion?: string;
   candidates: EffectivePolicyCandidate[];
   activeMcpServerIds: string[];
@@ -723,6 +727,17 @@ export function resolveEffectiveOrgPolicy(
   const authority = isVerifiedPolicyAuthority(context.authority) ? context.authority : undefined;
   if (!governanceOwnsAihSurfaces(policy)) {
     return {
+      ...(policy.capabilityPackages === undefined
+        ? {}
+        : {
+            capabilityPackages: {
+              catalog: {
+                provider: "github" as const,
+                repository: policy.capabilityPackages.catalog.repository.toLowerCase(),
+              },
+              roots: [...policy.capabilityPackages.roots].sort(),
+            },
+          }),
       candidates: [],
       activeMcpServerIds: [],
       frameworkSelections: [],
@@ -745,6 +760,17 @@ export function resolveEffectiveOrgPolicy(
     ),
   ].sort((left, right) => left.id.localeCompare(right.id));
   return {
+    ...(policy.capabilityPackages === undefined
+      ? {}
+      : {
+          capabilityPackages: {
+            catalog: {
+              provider: "github" as const,
+              repository: policy.capabilityPackages.catalog.repository.toLowerCase(),
+            },
+            roots: [...policy.capabilityPackages.roots].sort(),
+          },
+        }),
     policyVersion: governance.policyVersion,
     candidates,
     activeMcpServerIds: candidates

@@ -9,6 +9,7 @@ import { command as bootstrap } from "../bootstrap/index.js";
 import { command as bootstrapAi } from "../bootstrap-ai/index.js";
 import { command as bundle, verifyCommand as verifyBundle } from "../bundle/index.js";
 import { capabilityPruneCommand, capabilityResolveCommand } from "../capability/index.js";
+import { CAPABILITY_PACKAGE_COMMAND_SPECS } from "../capability/package-manager/commands.js";
 import { command as certs } from "../certs/index.js";
 import { command as contract } from "../contract/index.js";
 import { command as crispy } from "../crispy/index.js";
@@ -221,6 +222,7 @@ export const ALL_COMMAND_SPECS: CommandSpec[] = [
   eccMcpAddCommand,
   eccMcpRemoveCommand,
   ...Object.values(GROUPED_COMMAND_SPECS).flat(),
+  ...CAPABILITY_PACKAGE_COMMAND_SPECS,
 ];
 
 /** Stable command paths for the spec registry completeness guard. */
@@ -232,6 +234,7 @@ export const ALL_COMMAND_SPEC_PATHS: ReadonlyArray<readonly string[]> = [
   ...Object.entries(GROUPED_COMMAND_SPECS).flatMap(([parent, specs]) =>
     specs.map((spec) => [parent, spec.name] as const),
   ),
+  ...CAPABILITY_PACKAGE_COMMAND_SPECS.map((spec) => ["capability", "package", spec.name] as const),
 ];
 
 /**
@@ -311,7 +314,20 @@ function addReadOnlyFlags(cmd: Command): Command {
     );
 }
 
+function addZeroWriteFlags(cmd: Command): Command {
+  return cmd
+    .option("--json", "emit machine-readable JSON")
+    .option("--posture <posture>", "governance posture: vibe | enterprise", "vibe")
+    .option("--root <dir>", "target root")
+    .option(
+      "--context-dir <dir>",
+      "canonical context directory name (any name works)",
+      "ai-coding",
+    );
+}
+
 function addFlagsForSpec(cmd: Command, spec: CommandSpec): Command {
+  if (spec.zeroWrite === true) return addZeroWriteFlags(cmd);
   return spec.readOnly ? addReadOnlyFlags(cmd) : addSharedFlags(cmd);
 }
 
@@ -747,6 +763,34 @@ export function registerCommands(
     sub.action(async (_options: Record<string, unknown>, command: Command) => {
       process.exitCode = await runCapability(spec, command, { positionalRoot: false });
     });
+  }
+  const capabilityPackage = capability
+    .command("package")
+    .description("Inspect and preview policy-driven capability package reconciliation");
+  for (const spec of CAPABILITY_PACKAGE_COMMAND_SPECS) {
+    const sub = capabilityPackage.command(spec.name).description(spec.summary);
+    if (spec.positional !== undefined) {
+      sub.argument(
+        spec.positional.required ? `<${spec.positional.name}>` : `[${spec.positional.name}]`,
+        spec.positional.description ?? spec.positional.name,
+      );
+    }
+    addFlagsForSpec(sub, spec);
+    addOptionsForSpec(sub, spec);
+    if (spec.positional?.optionName !== undefined) {
+      sub.action(
+        async (value: string | undefined, _options: Record<string, unknown>, command: Command) => {
+          process.exitCode = await runCapability(spec, command, {
+            positionalRoot: false,
+            optionOverrides: { [spec.positional?.optionName ?? "packageId"]: value },
+          });
+        },
+      );
+    } else {
+      sub.action(async (_options: Record<string, unknown>, command: Command) => {
+        process.exitCode = await runCapability(spec, command, { positionalRoot: false });
+      });
+    }
   }
 
   // `marketplace` mirrors the `pack` group: options-only subcommands (no
