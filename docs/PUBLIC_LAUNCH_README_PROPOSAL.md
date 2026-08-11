@@ -1,10 +1,12 @@
 # AI-Harness (`aih`)
 
-**Make repositories and developer environments ready for AI coding agents — with context, guardrails, governed tools, and verifiable controls.**
+**The open-source engineering control plane for AI coding agents.**
+
+Use the coding agent you want. AI-Harness gives your repository and developer environment the context, guardrails, governed tools, and verification needed to move from ad-hoc AI coding to repeatable engineering.
 
 AI coding agents can move fast. Real software teams also need them to work with the right repository context, respect security boundaries, use approved tools, and leave evidence that humans and CI can review.
 
-AI-Harness is an open-source, cross-platform CLI for putting those controls around AI-assisted development without locking teams into a single coding agent.
+AI-Harness is a cross-platform CLI that prepares the engineering environment around the agent without locking teams into a single coding surface.
 
 ## Try it in minutes
 
@@ -19,13 +21,23 @@ aih init . --apply
 
 > **Dry-run first.** AI-Harness is designed so you can inspect the plan before changing the repository.
 
-## The problem
+## Why teams need a harness
 
-Giving a coding agent access to a repository is easy. Making that access repeatable, reviewable, and governable across real engineering teams is harder.
+Giving a coding agent access to a repository is easy. Making that access repeatable, reviewable, and governable across a real engineering team is harder.
 
-Without a shared harness, teams can end up with fragmented agent instructions, inconsistent repository context, uncontrolled tool integrations, secret-handling risk, environment-specific setup, and little evidence of what was configured or trusted.
+Without a shared harness, teams can end up with fragmented instructions, inconsistent context, uncontrolled tool integrations, secret-handling risk, environment-specific setup, and little evidence of what was configured or trusted.
 
-AI-Harness provides one command surface for preparing the environment around the agent.
+AI-Harness gives those concerns one repository-aware control surface.
+
+| Without a harness | With AI-Harness |
+| --- | --- |
+| Agent instructions scattered across tools | Repository-owned context and canon |
+| Different setup per developer | Repeatable workstation and repo bootstrap |
+| Tool and MCP access configured ad hoc | Explicit, reviewable integrations |
+| External skills trusted implicitly | Vet → approve → pack → evidence lifecycle |
+| Security controls bolted on later | Guardrails and secret checks built into setup |
+| Hard to prove what was configured | Verifiable state, bundles, and evidence |
+| AI tooling changes force governance rework | Tool-agnostic controls that outlive individual agents |
 
 ## What AI-Harness brings together
 
@@ -42,7 +54,7 @@ AI-Harness provides one command surface for preparing the environment around the
 
 ## One harness, multiple AI coding workflows
 
-AI-Harness is designed around the engineering environment rather than a single model or IDE. The repository remains the durable source of context and controls while supported coding-agent surfaces can consume the appropriate projection.
+AI-Harness is designed around the engineering environment rather than a single model or IDE. The repository remains the durable source of context and controls while supported coding-agent surfaces consume the appropriate projection.
 
 That means teams can evolve their AI tooling without rebuilding their engineering governance from scratch.
 
@@ -73,15 +85,6 @@ AI-assisted engineering with reviewable controls
 - **Rolling it out across an organization:** use the Enterprise Admin guide.
 - **Working inside an approved enterprise configuration:** use the Enterprise Developer guide.
 
-The full project README should retain the existing architecture, command contract, security boundaries, design posture, command reference, claim markers, and implementation evidence below this public-facing introduction.
+## What stays below this landing section
 
-## Why this proposal exists
-
-The underlying project is already technically deep. This proposed landing section intentionally does not replace that depth. Its purpose is to let a new developer answer four questions quickly:
-
-1. What is AI-Harness?
-2. What problem does it solve?
-3. Can I try it safely in a few minutes?
-4. Why would I use it instead of maintaining ad-hoc agent configuration myself?
-
-Once those are clear, the existing technical documentation can provide the deeper architecture and governance detail.
+The full README should retain the existing architecture, command contract, security boundaries, design posture, command reference, claim markers, implementation evidence, and enterprise rollout detail below this public-facing introduction.
