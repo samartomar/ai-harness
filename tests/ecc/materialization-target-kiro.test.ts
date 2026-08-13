@@ -20,6 +20,7 @@ const COMMIT = "a".repeat(40);
 const EVIDENCE = "c".repeat(64);
 const SOURCE_TREE: Readonly<Record<string, string | Buffer>> = {
   "agents/code-reviewer.md": "# generic selected agent\n",
+  "agents/code-architect.md": "# generic agent without a curated Kiro mapping\n",
   "skills/tdd-workflow/SKILL.md": "# generic selected skill\n",
   ".agents/skills/tdd-workflow/SKILL.md": "# agent selected skill\n",
   "rules/README.md": "# generic selected rules\n",
@@ -192,6 +193,8 @@ describe("the verified-source Kiro projection", () => {
       '{"name":"other","mcpServers":{},"hooks":{}}\n',
       '{"name":"code-reviewer","mcpServers":{"github":{"command":"node"}},"hooks":{}}\n',
       '{"name":"code-reviewer","mcpServers":{},"hooks":{"stop":[{"command":"echo no"}]}}\n',
+      '{"name":"code-reviewer","mcpServers":{},"hooks":{},"includeMcpJson":true}\n',
+      '{"name":"code-reviewer","mcpServers":{},"hooks":{},"useLegacyMcpJson":true}\n',
       "not json\n",
     ];
 
@@ -348,6 +351,10 @@ describe("the verified-source Kiro projection", () => {
     };
     expect(() => resolveVerifiedKiroMaterialization(request([missing]))).toThrow(
       /unsupported Kiro component|selected component tree/i,
+    );
+    const unmappedAgent = selected("agent:code-architect", "agents/code-architect.md");
+    expect(() => resolveVerifiedKiroMaterialization(request([unmappedAgent]))).toThrow(
+      /no pinned Kiro agent configuration/i,
     );
     put(".kiro/skills/tdd-workflow/nested/ignored.md", "# must not trim\n");
     const skill = selected("skill:tdd-workflow", "skills/tdd-workflow");

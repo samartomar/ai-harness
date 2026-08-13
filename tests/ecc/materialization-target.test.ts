@@ -64,6 +64,7 @@ const SOURCE_TREE: Readonly<Record<string, string | Buffer>> = {
   "AGENTS.md": "# agents bootloader\n",
   ".agents/plugins/marketplace.json": '{"plugins":[]}\n',
   "agents/code-reviewer.md": "# code-reviewer\n",
+  "agents/code-architect.md": "# code-architect\n",
   "skills/tdd-workflow/SKILL.md": "# tdd-workflow\n",
   "skills/tdd-workflow/assets/marker.bin": BINARY_ASSET,
   ".agents/skills/tdd-workflow/SKILL.md": "# tdd-workflow (agent copy)\n",
@@ -958,6 +959,44 @@ describe("the governed Kiro target uses only verified curated Kiro surfaces", ()
         components: [agent],
       }),
     ).toThrow(/runtime:ecc-kiro/i);
+  });
+
+  it("refuses an unmapped agent by name without vetoing a mapped Kiro agent", () => {
+    const verified = (id: string): EccEffectiveSelectionComponent => ({
+      id: id as EccComponentId,
+      authorization: {
+        ...authorization(id),
+        treeSha256: hashComponentTree(sourceRoot, eccComponentSourcePaths(id as EccComponentId))
+          .treeSha256,
+      },
+      provenance: {
+        repository: REPOSITORY,
+        commit: COMMIT,
+        componentPath: `agents/${id.slice("agent:".length)}.md`,
+      },
+    });
+    const mapped = verified("agent:code-reviewer");
+    const unmapped = verified("agent:code-architect");
+    const runtime = {
+      ...authorization("runtime:ecc-kiro"),
+      treeSha256: hashComponentTree(sourceRoot, [".kiro"]).treeSha256,
+    };
+
+    const result = resolveEccTargetMaterialization({
+      sourceRoot,
+      targets: ["kiro"],
+      components: [mapped, unmapped],
+      evidence: {
+        authorizations: [mapped.authorization, unmapped.authorization, runtime],
+        held: [],
+      },
+    });
+
+    expect(destinations(result, mapped.id)).toEqual([".kiro/agents/code-reviewer.json"]);
+    expect(refusalFor(result, unmapped.id, "kiro")).toMatchObject({
+      reason: "unsupported-component",
+      detail: expect.stringMatching(/no pinned Kiro agent configuration/i),
+    });
   });
 });
 
