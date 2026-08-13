@@ -893,7 +893,6 @@ function managedSettings(
               ...(candidate.approval === undefined ? {} : { approval: candidate.approval }),
               dangerCodes: candidate.dangerCodes,
               blockingCodes: candidate.blockingCodes,
-              resolutionReasons: candidate.resolutionReasons,
               ...(candidate.clarification === undefined
                 ? {}
                 : { clarification: candidate.clarification }),
