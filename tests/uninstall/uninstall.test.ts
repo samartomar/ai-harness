@@ -299,9 +299,9 @@ describe("aih uninstall", () => {
 
     expect(removed.get(".kiro/steering/agent-tools.md")?.effect).toBe("delete");
     expect(removed.get(".kiro/hooks/aih-tests-on-edit.json")?.effect).toBe("delete");
-    expect(removed.get(".kiro/hooks/aih-secret-scan-on-create.kiro.hook")?.effect).toBe("delete");
+    expect(removed.get(".kiro/hooks/aih-secret-scan-on-create.json")?.effect).toBe("delete");
     expect(removed.get(".kiro/hooks/aih-tests-on-edit.kiro.hook")?.effect).toBe("delete");
-    expect(removed.get(".kiro/hooks/aih-metrics-on-stop.kiro.hook")?.effect).toBe("delete");
+    expect(removed.get(".kiro/hooks/aih-metrics-on-stop.json")?.effect).toBe("delete");
     expect(removed.has(".kiro/hooks/aih-custom.json")).toBe(false);
     expect(removed.has(".kiro/hooks/aih-custom.kiro.hook")).toBe(false);
     expect(removed.has(".kiro/hooks/team-custom.kiro.hook")).toBe(false);
@@ -322,7 +322,7 @@ describe("aih uninstall", () => {
       ".kiro/steering/agent-tools.md",
     );
     expect(preview.removed.map((entry) => entry.path)).not.toContain(
-      ".kiro/hooks/aih-secret-scan-on-create.kiro.hook",
+      ".kiro/hooks/aih-secret-scan-on-create.json",
     );
 
     const applied = await executePlan(await uninstallCommand.plan(bootstrapCtx), bootstrapCtx);
@@ -330,12 +330,10 @@ describe("aih uninstall", () => {
       ".kiro/steering/agent-tools.md",
     );
     expect(applied.removed.map((entry) => entry.path)).not.toContain(
-      ".kiro/hooks/aih-secret-scan-on-create.kiro.hook",
+      ".kiro/hooks/aih-secret-scan-on-create.json",
     );
     expect(existsSync(join(tmp, ".kiro", "steering", "agent-tools.md"))).toBe(true);
-    expect(existsSync(join(tmp, ".kiro", "hooks", "aih-secret-scan-on-create.kiro.hook"))).toBe(
-      true,
-    );
+    expect(existsSync(join(tmp, ".kiro", "hooks", "aih-secret-scan-on-create.json"))).toBe(true);
     expect(existsSync(join(tmp, ".kiro", "hooks", "team-custom.kiro.hook"))).toBe(true);
   });
 
@@ -356,7 +354,9 @@ describe("aih uninstall", () => {
       | undefined;
 
     expect(result.removed.map((r) => r.path)).not.toContain(".kiro/steering/agent-tools.md");
-    expect(result.removed.map((r) => r.path)).not.toContain(".kiro/hooks/aih-tests-on-edit.kiro.hook");
+    expect(result.removed.map((r) => r.path)).not.toContain(
+      ".kiro/hooks/aih-tests-on-edit.kiro.hook",
+    );
     expect(result.removed.map((r) => r.path)).not.toContain(".kiro/hooks/aih-team.kiro.hook");
     expect(artifacts?.artifacts).toEqual(
       expect.arrayContaining([

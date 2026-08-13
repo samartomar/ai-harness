@@ -301,7 +301,7 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   }
 
   // Kiro-native extras (Kiro can't read ~/.claude): always-on agent-tools steering
-  // + a small stack-aware hook set in Kiro's real `.kiro.hook` schema.
+  // + a small stack-aware hook set in the current standalone v1 hook schema.
   if (clis.includes("kiro")) {
     actions.push(
       writeText(
@@ -311,9 +311,15 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
       ),
     );
     for (const h of kiroHooks(stack)) {
-      const label = h.path.replace(/^\.kiro\/hooks\//, "").replace(/\.kiro\.hook$/, "");
-      actions.push(writeJson(h.path, h.hook, `Kiro hook: ${label} (.kiro.hook schema)`));
+      const label = h.path.replace(/^\.kiro\/hooks\//, "").replace(/\.json$/, "");
+      actions.push(writeJson(h.path, h.hook, `Kiro hook: ${label} (standalone v1 schema)`));
     }
+    actions.push(
+      doc(
+        "Kiro CLI 2.x hook limitation",
+        "AIH writes standalone Kiro v1 hook files for Kiro IDE 1.x and Kiro CLI 3.x. Kiro CLI 2.x stores hooks inside each custom-agent configuration, so AIH does not modify a default agent or claim these hooks load there. Upgrade with `kiro-cli agent migrate` before relying on hook automation.",
+      ),
+    );
   }
 
   // Doctor probes (run under --verify): router present + every bootloader in sync,

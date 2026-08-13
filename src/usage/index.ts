@@ -57,7 +57,7 @@ const TOOL_HOOK: Partial<Record<string, string>> = {
   windsurf: "`.windsurf/hooks.json` → `post_mcp_tool_use`",
   opencode: "OpenCode TS plugin (`tool.execute.after`) + storage JSON",
   kimi: "`.kimi/config.toml` `[[hooks]]` → `PostToolUse`",
-  kiro: "`.kiro/hooks/*.kiro.hook` Run Command (aih already generates these)",
+  kiro: "`.kiro/hooks/*.json` standalone v1 (IDE 1.x / CLI 3.x; CLI 2.x needs agent config)",
   antigravity: "`.agents/hooks.json` → `PostToolUse`",
   zed: "`threads.db` SQLite capture via the current Node runtime (no local hook surface)",
 };

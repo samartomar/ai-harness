@@ -94,16 +94,16 @@ describe("cliFootprint", () => {
   it("offers Kiro agent, skill, and prompt content for migration but leaves JSON runtime config alone", () => {
     put(".kiro/agents/reviewer.md", "# reviewer\n");
     put(".kiro/agents/legacy.json", '{"name":"legacy"}\n');
+    put(".kiro/agents/generated.yaml", "name: generated\n");
     put(".kiro/skills/release/SKILL.md", "# release\n");
     put(".kiro/prompts/release.md", "# release prompt\n");
     put(".kiro/settings/mcp.json", '{"mcpServers":{}}\n');
 
-    const fp = cliFootprint(tmp, DIR);
     expect(find(".kiro/agents")?.kind).toBe("tool-owned-content");
     expect(find(".kiro/agents")?.detail).toContain("1 agents");
     expect(find(".kiro/skills")?.kind).toBe("tool-owned-content");
     expect(find(".kiro/prompts")?.kind).toBe("tool-owned-content");
-    expect(find(".kiro/agents/*.json")?.kind).toBe("runtime-config");
+    expect(find(".kiro/agents/*.{json,yaml,yml}")?.kind).toBe("runtime-config");
     expect(find(".kiro/settings/mcp.json")?.kind).toBe("runtime-config");
   });
 });

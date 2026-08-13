@@ -13,7 +13,7 @@ import type { Check } from "../internals/verify.js";
  */
 
 const RECORDER_REL = ".aih/usage-record.mjs";
-const METRICS_HOOK_REL = ".kiro/hooks/aih-metrics-on-stop.kiro.hook";
+const METRICS_HOOK_REL = ".kiro/hooks/aih-metrics-on-stop.json";
 
 /** Hook host files that (may) invoke the usage recorder, across every supported CLI. */
 const HOOK_HOSTS = [
@@ -28,7 +28,7 @@ const HOOK_HOSTS = [
   ".windsurf/hooks.json",
   ".opencode/plugins/aih-usage-metering.js",
   ".kimi/config.toml",
-  ".kiro/hooks/aih-usage-metering.kiro.hook",
+  ".kiro/hooks/aih-usage-metering.json",
 ] as const;
 
 /**

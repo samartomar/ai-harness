@@ -132,6 +132,8 @@ export interface CandidateProjectionState {
   coverage: "complete" | "blocked";
   ownership:
     | "managed-settings-receipt"
+    | "kiro-mcp-receipt"
+    | "managed-settings-and-kiro-mcp-receipt"
     | "usage-hook-receipt"
     | "hook-registrar-receipt"
     | "unavailable";
@@ -352,10 +354,15 @@ function projectorFor(
     return {
       projector: candidate.projector,
       requestedTargets: requested,
-      supportedTargets: ["claude"],
+      supportedTargets: ["claude", "kiro"],
       availableTargets,
-      coverage: projectionCoverage(requested, ["claude"], availableTargets),
-      ownership: "managed-settings-receipt",
+      coverage: projectionCoverage(requested, ["claude", "kiro"], availableTargets),
+      ownership:
+        requested.length === 1 && requested[0] === "kiro"
+          ? "kiro-mcp-receipt"
+          : requested.includes("kiro")
+            ? "managed-settings-and-kiro-mcp-receipt"
+            : "managed-settings-receipt",
       receipt: "pending-projection",
     };
   }
@@ -402,7 +409,7 @@ function completeCoverage(projection: CandidateProjectionState, candidate: Candi
     projection.coverage === "complete" &&
     projection.requestedTargets.every((target) => supported.has(target) && available.has(target)) &&
     projection.requestedTargets.every((target) =>
-      candidate.targets.includes(target as "claude" | "codex"),
+      candidate.targets.includes(target as "claude" | "codex" | "kiro"),
     )
   );
 }
@@ -413,10 +420,15 @@ function aihShippedEvidence(
 ): EvidenceRecord | undefined {
   const sourceDigest = candidateIdentityDigest(candidate);
   const reviewed = context.aihReviewedControls?.[candidate.id];
+  const candidateAtShippedTargetCoverage = {
+    ...candidate,
+    targets: reviewed?.control.targets ?? candidate.targets,
+  };
   if (
     reviewed === undefined ||
     reviewed.controlDigest !== reviewedControlDigest(reviewed.control) ||
-    reviewed.controlDigest !== reviewedControlDigest(candidate)
+    reviewed.controlDigest !== reviewedControlDigest(candidateAtShippedTargetCoverage) ||
+    !candidate.targets.every((target) => reviewed.control.targets.includes(target))
   ) {
     return undefined;
   }
@@ -542,7 +554,8 @@ function matchingApproval(
   if (
     !requestedTargets.every(
       (target) =>
-        (target === "claude" || target === "codex") && authority.receipt.targets.includes(target),
+        (target === "claude" || target === "codex" || target === "kiro") &&
+        authority.receipt.targets.includes(target),
     )
   ) {
     return { code: "approval-scope-mismatch" };
@@ -625,7 +638,8 @@ function resolveCandidate(
     authority !== undefined &&
     !requestedTargets.every(
       (target) =>
-        (target === "claude" || target === "codex") && authority.receipt.targets.includes(target),
+        (target === "claude" || target === "codex" || target === "kiro") &&
+        authority.receipt.targets.includes(target),
     )
   ) {
     // Receipt-wide target coverage constrains verified evidence too, not just

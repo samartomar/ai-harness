@@ -23,6 +23,7 @@ interface KiroHookJson {
   hooks: Array<{
     enabled?: boolean;
     name: string;
+    description?: string;
     trigger: string;
     matcher?: string;
     timeout?: number;
@@ -84,17 +85,7 @@ describe("kiroHooks — base set is unchanged", () => {
     expect(names).toContain("aih-secret-scan-on-create");
     expect(names).toContain("aih-tests-on-edit");
     expect(names).toContain("aih-metrics-on-stop");
-    expect(names).toContain("aih-quality-gate");
-  });
-
-  it("uses the declared verify command as the manual quality gate when available", () => {
-    const gate = hookByName("aih-quality-gate", {
-      verifyCommand: "npm run verify",
-      testRunner: "npm test",
-      lintCommand: "npm run lint",
-    });
-
-    expect(gate.action.command).toBe("npm run verify");
+    expect(names).not.toContain("aih-quality-gate");
   });
 
   it("uses current standalone JSON paths and PascalCase file triggers", () => {
@@ -104,5 +95,8 @@ describe("kiroHooks — base set is unchanged", () => {
     expect(tests.trigger).toBe("PostFileSave");
     expect(tests.matcher).toBe("\\.(ts|tsx|js|jsx)$");
     expect(tests.action.type).toBe("agent");
+    expect(
+      generated.flatMap((file) => (file.hook as KiroHookJson).hooks.map((hook) => hook.trigger)),
+    ).not.toContain("Manual");
   });
 });

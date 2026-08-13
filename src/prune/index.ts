@@ -28,6 +28,7 @@ import {
   writeText,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { kiroMcpProjectionActions } from "../mcp/kiro-managed-projection.js";
 import {
   MANAGED_MCP_PROJECTION_KEYS,
   managedMcpDeactivationActions,
@@ -75,6 +76,7 @@ const KIND_LABEL: Record<PruneArtifact["kind"], string> = {
   mcp: "MCP config",
   settings: "settings",
   "managed-settings": "projected managed-MCP allowlist",
+  "kiro-managed-mcp": "Kiro workspace-MCP distribution",
   "kiro-steering": "Kiro steering",
   "kiro-hook": "Kiro hook",
 };
@@ -143,6 +145,24 @@ function managedMcpLines(set: StalePruneSet): string[] {
   ];
 }
 
+function kiroMcpLines(set: StalePruneSet): string[] {
+  const artifact = set.artifacts.find((a) => a.kind === "kiro-managed-mcp");
+  if (artifact === undefined) return [];
+  if (artifact.disposition === "block") {
+    return [
+      "",
+      `Dropped-target Kiro workspace-MCP distribution — ${artifact.path}:`,
+      "  [subtract] exactly the receipt-proven mcpServers entries; every other server and top-level key is preserved.",
+      "  This proves project distribution only; custom agents may override or exclude workspace MCP.",
+    ];
+  }
+  return [
+    "",
+    `Dropped-target Kiro workspace-MCP distribution — ${artifact.path}:`,
+    "  [manual] aih will NOT touch drifted entries; its stale ownership claim is revoked.",
+  ];
+}
+
 /** The loud `--unrunnable` warning: a PATH problem looks identical to a dropped CLI. */
 function unrunnableLines(set: StalePruneSet): string[] {
   if (set.unrunnable.length === 0) return [];
@@ -207,6 +227,7 @@ function contextBody(
       `Kept (${SOURCE_LABEL[set.source]}): ${set.targeted.join(", ") || "none"}.`,
       ...ignoredSelectionLines(ignoredFlags),
       ...managedMcpLines(set),
+      ...kiroMcpLines(set),
     );
   }
   const disposal = hardDelete
@@ -222,6 +243,7 @@ function contextBody(
     "subtracted in place; the actions above list each. Pass --apply to execute.",
     ...advisoryLines(set),
     ...managedMcpLines(set),
+    ...kiroMcpLines(set),
   );
 }
 
@@ -230,7 +252,7 @@ function actionFor(ctx: PlanContext, a: PruneArtifact, hardDelete: boolean): Act
   const who = `${a.clis.join(", ")} dropped`;
   // The projected managed-MCP allowlist is reconciled by the shared lifecycle helper
   // in prunePlan (an ordered subtract → ownership pair), not by this per-artifact map.
-  if (a.kind === "managed-settings") return undefined;
+  if (a.kind === "managed-settings" || a.kind === "kiro-managed-mcp") return undefined;
   if (a.disposition === "file") {
     return remove(a.path, `stale ${KIND_LABEL[a.kind]} (${who})`, { hardDelete });
   }
@@ -296,6 +318,10 @@ async function prunePlan(ctx: PlanContext): Promise<Plan> {
     );
     actions.push(...deactivation);
     if (set.managedMcp.matches) subtracted += 1;
+  }
+  if (set.kiroMcp !== undefined) {
+    actions.push(...kiroMcpProjectionActions(ctx, {}));
+    if (set.kiroMcp.matches) subtracted += 1;
   }
   const coordinatedEccPrune = hasEccRegistrationLedger(ctx);
   const coordinatedCodexPrune = coordinatedEccPrune && hasEccRegisteredTarget(ctx, "codex");

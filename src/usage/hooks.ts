@@ -114,24 +114,21 @@ function antigravityHooks(): unknown {
 }
 
 function kiroUsageHook(): unknown {
-  const hook: Record<string, unknown> = {
-    version: "1.0.0",
-    enabled: true,
-    name: "aih-usage-metering",
-    description: "Record a local usage sample when Kiro finishes an agent turn.",
-    when: { type: "agentStop" },
-    // Kiro hook `timeout` is in SECONDS (default 60). agentStop is non-blocking, but a
-    // cap keeps a slow recorder from stalling the turn. The recorder itself is a plain
-    // `node` invocation (a real cross-platform executable) whose committed script is
-    // internally best-effort, so no shell guard is added — `; exit 0` would break under
-    // a cmd.exe host, and the recorder is designed never to throw.
-    timeout: 5,
+  return {
+    version: "v1",
+    hooks: [
+      {
+        enabled: true,
+        name: "aih-usage-metering",
+        description: "Record a local usage sample when Kiro finishes an agent turn.",
+        trigger: "Stop",
+        // Kiro hook `timeout` is in seconds (default 60). The recorder itself is a
+        // plain cross-platform `node` invocation and internally best-effort.
+        timeout: 5,
+        action: { type: "command", command: hookCommand("kiro") },
+      },
+    ],
   };
-  Object.defineProperty(hook, "th" + "en", {
-    enumerable: true,
-    value: { type: "runCommand", command: hookCommand("kiro") },
-  });
-  return hook;
 }
 
 function opencodePlugin(): string {
@@ -275,9 +272,9 @@ export function usageHookActions(ctx: PlanContext, clis: Cli[]): Action[] {
   if (selected.has("kiro")) {
     actions.push(
       writeJson(
-        ".kiro/hooks/aih-usage-metering.kiro.hook",
+        ".kiro/hooks/aih-usage-metering.json",
         kiroUsageHook(),
-        "Kiro run-command usage hook",
+        "Kiro standalone v1 usage hook (IDE 1.x / CLI 3.x; CLI 2.x requires agent config)",
       ),
     );
   }

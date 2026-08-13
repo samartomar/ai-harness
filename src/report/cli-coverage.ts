@@ -276,11 +276,15 @@ function mcpCell(ctx: PlanContext, cli: Cli): CliCell {
   }
   const n = m.configFormat === "toml" ? tomlServerCount(raw) : serverCount(raw, m.configKey);
   const unit = m.configFormat === "toml" ? "[mcp_servers.*]" : `\`${m.configKey}\``;
+  // Kiro custom agents can replace or decline the workspace MCP map. This scan can
+  // prove only the shared project configuration, never every agent's effective tools.
+  const agentScopeNote =
+    cli === "kiro" ? "; workspace config only; custom-agent MCP overrides are not evaluated" : "";
   return n > 0
     ? {
         state: "wired",
         path: m.configPath,
-        detail: `${n} server(s) under ${unit}${scopeNote}`,
+        detail: `${n} server(s) under ${unit}${scopeNote}${agentScopeNote}`,
         scope,
         count: n,
       }

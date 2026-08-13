@@ -283,12 +283,8 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     expect(hook.version).toBe("v1");
     expect(hook.hooks[0]?.trigger).toBe("PostFileSave");
     expect(hook.hooks[0]?.action.type).toBe("agent");
-    // Quality gate runs the repo's real (detected) test + lint commands.
-    const gate = w.get(".kiro/hooks/aih-quality-gate.json")?.json as {
-      hooks: Array<{ trigger: string; action: { command: string } }>;
-    };
-    expect(gate.hooks[0]?.trigger).toBe("Manual");
-    expect(gate.hooks[0]?.action.command).toContain("npm test");
+    // IDE 1.x removed the Manual hook trigger; AIH never emits an inert v1 hook.
+    expect(w.has(".kiro/hooks/aih-quality-gate.json")).toBe(false);
     // Metrics hook fires on the verified agentStop event and records a sample,
     // fail-open: `aih track` runs inside a one-shot `node -e` try/catch so a missing
     // or hung `aih` can never fail the turn, with a seconds-unit timeout cap.

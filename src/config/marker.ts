@@ -45,14 +45,68 @@ const ManagedMcpProjectionOwnershipSchema = z
   })
   .strict();
 
+const KiroMcpServerEntrySchema = z
+  .object({
+    type: z.literal("stdio"),
+    command: z.string().min(1).max(512),
+    args: z.array(z.string().max(2048)).max(128),
+    description: z.string().min(1).max(4096),
+    classification: z.enum(["local", "third-party-hosted"]),
+    egress: z.enum(["none", "local-only", "vendor-incumbent", "third-party"]),
+    credentials: z.enum(["none", "oauth", "token"]),
+    supplyChain: z.enum(["pinned", "hosted-remote", "unpinned"]),
+    env: z.record(z.string().min(1).max(120), z.string().max(4096)).optional(),
+    skillsProvider: z
+      .object({
+        provider: z.enum([
+          "SkillProvider",
+          "SkillsProvider",
+          "SkillsDirectoryProvider",
+          "ClaudeSkillsProvider",
+          "skills",
+        ]),
+        serverVersion: z.string().max(120).optional(),
+        manifestSha256: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .optional(),
+        hotReload: z.boolean(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+const KiroMcpProjectionExpectedSchema = z
+  .object({
+    mcpServers: z.record(z.string().regex(/^[a-z][a-z0-9-]{0,119}$/), KiroMcpServerEntrySchema),
+  })
+  .strict();
+const KiroMcpProjectionOwnershipSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.enum(["active", "revoked"]),
+    expected: KiroMcpProjectionExpectedSchema,
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+
 export type ManagedMcpProjectionOwnership = z.infer<typeof ManagedMcpProjectionOwnershipSchema>;
 export type ActiveManagedMcpProjectionOwnership = ManagedMcpProjectionOwnership & {
   state: "active";
 };
+export type KiroMcpProjectionOwnership = z.infer<typeof KiroMcpProjectionOwnershipSchema>;
+export type ActiveKiroMcpProjectionOwnership = KiroMcpProjectionOwnership & { state: "active" };
 
 function managedMcpProjectionSha256(
   state: ManagedMcpProjectionOwnership["state"],
   expected: ManagedMcpProjectionOwnership["expected"],
+): string {
+  return createHash("sha256").update(JSON.stringify({ state, expected }), "utf8").digest("hex");
+}
+
+function kiroMcpProjectionSha256(
+  state: KiroMcpProjectionOwnership["state"],
+  expected: KiroMcpProjectionOwnership["expected"],
 ): string {
   return createHash("sha256").update(JSON.stringify({ state, expected }), "utf8").digest("hex");
 }
@@ -73,6 +127,8 @@ export const AihConfigSchema = z.object({
    * legacy or operator-owned values are never treated as removable by aih.
    */
   managedMcpProjection: ManagedMcpProjectionOwnershipSchema.optional(),
+  /** Provenance for AIH-owned Kiro workspace MCP server entries, never an enforcement control. */
+  kiroMcpProjection: KiroMcpProjectionOwnershipSchema.optional(),
   /**
    * `aih adopt`'s team decisions: CLI-native paths the team has acknowledged as
    * intentionally tool-native (so re-runs stop flagging them as import candidates —
@@ -261,6 +317,43 @@ export function revokedManagedMcpProjectionOwnership(
   };
 }
 
+export function kiroMcpProjectionOwnership(
+  expected: KiroMcpProjectionOwnership["expected"],
+): KiroMcpProjectionOwnership {
+  const state = "active";
+  return {
+    schemaVersion: 1,
+    state,
+    expected,
+    sha256: kiroMcpProjectionSha256(state, expected),
+  };
+}
+
+export function isKiroMcpProjectionOwnership(
+  value: KiroMcpProjectionOwnership | undefined,
+): value is KiroMcpProjectionOwnership {
+  return (
+    value !== undefined && value.sha256 === kiroMcpProjectionSha256(value.state, value.expected)
+  );
+}
+
+export function isActiveKiroMcpProjectionOwnership(
+  value: KiroMcpProjectionOwnership | undefined,
+): value is ActiveKiroMcpProjectionOwnership {
+  return isKiroMcpProjectionOwnership(value) && value.state === "active";
+}
+
+export function revokedKiroMcpProjectionOwnership(
+  ownership: KiroMcpProjectionOwnership,
+): KiroMcpProjectionOwnership {
+  const state = "revoked";
+  return {
+    ...ownership,
+    state,
+    sha256: kiroMcpProjectionSha256(state, ownership.expected),
+  };
+}
+
 /**
  * Build a merge-safe marker update for managed-MCP provenance. A malformed
  * existing marker is never repaired or used as ownership evidence.
@@ -310,4 +403,29 @@ export function managedMcpProjectionConfigJsonFromRaw(
     targets,
     managedMcpProjection: ownership,
   };
+}
+
+/** Merge-safe marker update for Kiro workspace-MCP provenance. */
+export function kiroMcpProjectionConfigJsonFromRaw(
+  raw: string | undefined,
+  contextDir: string,
+  targets: string[],
+  ownership: KiroMcpProjectionOwnership,
+): Record<string, unknown> {
+  if (raw !== undefined) {
+    const parsed = AihConfigSchema.safeParse(
+      (() => {
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return undefined;
+        }
+      })(),
+    );
+    if (parsed.success) return { kiroMcpProjection: ownership };
+    throw new SettingsError(
+      `cannot record Kiro workspace-MCP provenance: ${AIH_CONFIG_FILE} is malformed; repair it before applying the projection`,
+    );
+  }
+  return { schemaVersion: 1, contextDir, targets, kiroMcpProjection: ownership };
 }

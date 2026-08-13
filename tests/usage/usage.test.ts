@@ -881,7 +881,7 @@ describe("aih usage command", () => {
       [".windsurf/hooks.json", "--from windsurf"],
       [".opencode/plugins/aih-usage-metering.js", "--from opencode"],
       [".kimi/config.toml", "--from kimi"],
-      [".kiro/hooks/aih-usage-metering.kiro.hook", "--from kiro"],
+      [".kiro/hooks/aih-usage-metering.json", "--from kiro"],
     ]);
     for (const [path, commandText] of expected) {
       const write = writes.find(([p]) => p === path);
@@ -959,12 +959,12 @@ describe("aih usage command", () => {
     const actions = (await command.plan(makeCtx({ cli: "kiro" }))).actions;
     const hook = actions.find(
       (a) =>
-        a.kind === "write" &&
-        a.path.replace(/\\/g, "/") === ".kiro/hooks/aih-usage-metering.json",
+        a.kind === "write" && a.path.replace(/\\/g, "/") === ".kiro/hooks/aih-usage-metering.json",
     );
-    const json = hook?.kind === "write"
-      ? (hook.json as { version?: string; hooks?: Array<{ timeout?: number; trigger?: string }> })
-      : {};
+    const json =
+      hook?.kind === "write"
+        ? (hook.json as { version?: string; hooks?: Array<{ timeout?: number; trigger?: string }> })
+        : {};
     expect(json.version).toBe("v1");
     expect(json.hooks?.[0]?.timeout).toBeGreaterThan(0);
     expect(json.hooks?.[0]?.trigger).toBe("Stop");

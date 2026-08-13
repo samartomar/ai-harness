@@ -12,6 +12,12 @@ import { type Action, type PlanContext, remove, writeJson, writeText } from "../
 import { managedMcpAllowlistSettings } from "../mcp/allowlist.js";
 import { managedMcpExample } from "../mcp/enterprise.js";
 import {
+  kiroMcpProjectionActions,
+  kiroMcpProjectionExpected,
+  kiroMcpProjectionOnDisk,
+  kiroMcpProjectionState,
+} from "../mcp/kiro-managed-projection.js";
+import {
   clearManagedMcpProjectionOwnershipAction,
   MANAGED_MCP_PROJECTION_KEYS,
   MANAGED_SETTINGS_PATH,
@@ -591,7 +597,12 @@ export function orgPolicyMcpReceiptState(
   detail: string;
 } {
   const activeIds = effective.candidates
-    .filter((candidate) => candidate.effective && candidate.kind === "mcp")
+    .filter(
+      (candidate) =>
+        candidate.effective &&
+        candidate.kind === "mcp" &&
+        candidate.projection.requestedTargets.includes("claude"),
+    )
     .map((candidate) => candidate.id);
   const catalog = mcpServers(
     "project",
@@ -625,6 +636,73 @@ export function orgPolicyMcpReceiptState(
       state: "retained",
       detail:
         "managed-MCP receipt and owned settings retain a different governed selection; policy project must reconcile the requested selection",
+    };
+  }
+  return state;
+}
+
+/** Read-only Kiro workspace-MCP ownership/drift state for policy report and doctor. */
+export function orgPolicyKiroMcpReceiptState(
+  ctx: PlanContext,
+  effective: EffectiveOrgPolicy,
+): {
+  state:
+    | "not-requested"
+    | "clean"
+    | "retained"
+    | "absent"
+    | "altered"
+    | "missing"
+    | "unsafe-path"
+    | "revoked"
+    | "malformed";
+  detail: string;
+} {
+  const activeIds = effective.candidates
+    .filter(
+      (candidate) =>
+        candidate.effective &&
+        candidate.kind === "mcp" &&
+        candidate.projection.requestedTargets.includes("kiro"),
+    )
+    .map((candidate) => candidate.id);
+  const catalog = mcpServers(
+    "project",
+    scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir }),
+  );
+  const expected = kiroMcpProjectionExpected(
+    Object.fromEntries(
+      activeIds.flatMap((id) => {
+        const server = catalog[id];
+        return server?.type === "stdio" ? [[id, server] as const] : [];
+      }),
+    ),
+  );
+  const state = kiroMcpProjectionState(ctx.root);
+  const prior = kiroMcpProjectionOnDisk(ctx.root);
+  if (activeIds.length === 0) {
+    return state.state === "clean" && prior !== undefined
+      ? {
+          state: "retained",
+          detail:
+            "Kiro workspace-MCP receipt retains a prior governed selection; policy project must reconcile its removal",
+        }
+      : state.state === "absent"
+        ? {
+            state: "not-requested",
+            detail: "no effective Kiro workspace-MCP control or ownership receipt",
+          }
+        : state;
+  }
+  if (
+    state.state === "clean" &&
+    prior !== undefined &&
+    stableJson(prior.ownership.expected) !== stableJson(expected)
+  ) {
+    return {
+      state: "retained",
+      detail:
+        "Kiro workspace-MCP receipt retains a different governed selection; policy project must reconcile the requested selection",
     };
   }
   return state;
@@ -860,11 +938,10 @@ function projectionActionsFromRuntime(
   }
   if (posture === "vibe") return [];
   const actions: Action[] = [];
+  const mcpSettings = targets.includes("claude") ? managedSettings(policy, runtime) : undefined;
   if (targets.includes("claude")) {
-    const { settings, managedMcp, managedMcpEnabled, managedMcpSettings } = managedSettings(
-      policy,
-      runtime,
-    );
+    const { settings, managedMcp, managedMcpEnabled, managedMcpSettings } =
+      mcpSettings ?? managedSettings(policy, runtime);
     const onDisk = managedMcpProjectionOnDisk(ctx.root);
     if (onDisk?.unprovable === "not-a-regular-file") {
       throw new OrgPolicyError(
@@ -932,6 +1009,27 @@ function projectionActionsFromRuntime(
           "org admin: system-path managed-mcp.json example compiled from aih-org-policy.json",
         ),
       );
+    }
+  }
+  if (targets.includes("kiro")) {
+    const selectedIds = runtime.effective.candidates
+      .filter(
+        (candidate) =>
+          candidate.effective &&
+          candidate.kind === "mcp" &&
+          candidate.projection.requestedTargets.includes("kiro"),
+      )
+      .map((candidate) => candidate.id);
+    const selected = Object.fromEntries(
+      selectedIds.flatMap((id) => {
+        const server = runtime.catalog[id];
+        return server?.type === "stdio" ? [[id, server] as const] : [];
+      }),
+    );
+    // No Kiro activation and no Kiro receipt is a true no-op. In particular it
+    // must never turn a Claude-only governed policy into a Kiro projection.
+    if (selectedIds.length > 0 || kiroMcpProjectionOnDisk(ctx.root) !== undefined) {
+      actions.push(...kiroMcpProjectionActions(ctx, selected));
     }
   }
   // Legacy org policies retain the established generic usage lifecycle. Only a

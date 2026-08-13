@@ -70,7 +70,7 @@ describe("bootstrap-ai fleet regeneration (#507)", () => {
       );
       const orphanExtras =
         orphan === "kiro"
-          ? [".kiro/steering/agent-tools.md", ".kiro/hooks/aih-session.kiro.hook"]
+          ? [".kiro/steering/agent-tools.md", ".kiro/hooks/aih-tests-on-edit.json"]
           : [];
       for (const path of orphanExtras) put(root, path, "generated orphan\n");
       const bootloader = cli === "claude" ? "CLAUDE.md" : "AGENTS.md";
