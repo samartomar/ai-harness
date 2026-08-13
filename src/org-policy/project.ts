@@ -928,7 +928,11 @@ function projectionActionsFromRuntime(
       .filter((candidate) => candidate.requested && !candidate.effective)
       .map(
         (candidate) =>
-          `${candidate.id}: ${[...candidate.dangerCodes, ...candidate.blockingCodes].join(", ")}`,
+          `${candidate.id}: ${[...candidate.dangerCodes, ...candidate.blockingCodes].join(", ")}${
+            candidate.resolutionReasons.length === 0
+              ? ""
+              : `; resolution=${candidate.resolutionReasons.join(", ")}`
+          }`,
       )
       .join("; ");
     throw new OrgPolicyError(

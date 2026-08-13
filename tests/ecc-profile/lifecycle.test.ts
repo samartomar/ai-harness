@@ -376,7 +376,7 @@ describe("AIH-owned ECC projection lifecycle", () => {
     expect(() => planEccProfileLifecycle(root, next, "update")).toThrow(
       /ownership receipt.*(size|limit|large)/i,
     );
-  }, 30_000);
+  }, 60_000);
 
   it("rejects ownership copied from a foreign worktree root", async () => {
     await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));

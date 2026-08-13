@@ -435,13 +435,28 @@ describe("governed candidate projection", () => {
   it("keeps an externally evidenced custom stdio MCP authorable but blocked without an integrity-enforcing projector", async () => {
     writeAuthorityReceipt();
     await expect(verifiedOrgPolicyProjectionActions(ctx(), customPolicy())).rejects.toThrow(
-      /missing-projector/,
+      /missing-projector.*custom-stdio-source-is-authorable-only/,
     );
     writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(customPolicy()));
     const report = await orgPolicyEffectiveDigest(ctx());
     expect(report?.text).toContain(candidateIdentityDigest({ source: customSource() } as never));
     expect(report?.text).toContain("missing-projector");
+    expect(report?.text).toContain("custom-stdio-source-is-authorable-only");
     expect(report?.text).toContain("Runs only against the approved internal package registry.");
+  });
+
+  it("maps the resolved vibe posture to its actionable projector reason", async () => {
+    const governed = reviewedMcpPolicy({
+      allowedServers: [],
+      disabledServers: [],
+      targets: ["kiro"],
+    });
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(governed));
+
+    const report = await orgPolicyEffectiveDigest(ctx({ posture: "vibe", targets: ["kiro"] }));
+
+    expect(report?.text).toContain("missing-projector");
+    expect(report?.text).toContain("projector-disabled-at-vibe-posture");
   });
 
   it("reports external framework curation as pinned, audited, and non-enforcing guidance", async () => {

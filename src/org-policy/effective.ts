@@ -119,6 +119,8 @@ export interface EffectivePolicyContext {
   targets?: readonly string[];
   /** Whether this invocation can emit managed adapter actions at all. */
   projectorsEnabled?: boolean;
+  /** Exact runtime reason when projectors are intentionally unavailable. */
+  projectorDisabledReason?: "vibe-posture";
   mcpIdentities?: Readonly<Record<string, RuntimeMcpIdentity>>;
   hookIdentities?: Readonly<Record<string, RuntimeHookIdentity>>;
   /** Exact AIH-shipped control identities, built from live catalog + owned hooks. */
@@ -171,10 +173,59 @@ export interface EffectivePolicyCandidate {
   };
   dangerCodes: PolicyDangerCode[];
   blockingCodes: ResolutionBlockCode[];
+  /** Actionable resolver diagnostics; danger codes remain the stable policy fence. */
+  resolutionReasons: string[];
   clarification?: string;
   annotation?: string;
   lifecycle: "supported" | "deprecated" | "retired";
   projection: CandidateProjectionState;
+}
+
+function candidateResolutionReasons(
+  policy: OrgPolicy,
+  candidate: Candidate,
+  projection: CandidateProjectionState,
+  context: EffectivePolicyContext,
+): string[] {
+  if (context.projectorsEnabled === false) {
+    return [
+      context.projectorDisabledReason === "vibe-posture"
+        ? "projector-disabled-at-vibe-posture"
+        : "projector-disabled-for-invocation",
+    ];
+  }
+  if (
+    candidate.kind === "mcp" &&
+    (candidate.source.type === "stdio" || candidate.source.type === "remote")
+  ) {
+    return [`custom-${candidate.source.type}-source-is-authorable-only`];
+  }
+
+  const reasons: string[] = [];
+  if (candidate.kind === "mcp" && policy.mcp?.allowManagedOnly !== true) {
+    reasons.push("managed-only-projector-disabled-by-policy");
+  }
+  if (candidate.kind === "mcp" && candidate.source.type === "mcp") {
+    const identity = context.mcpIdentities?.[candidate.source.server];
+    if (identity === undefined || identity.subject !== candidate.source.subject) {
+      reasons.push("runtime-mcp-identity-mismatch");
+    } else if (!identity.projectable) {
+      reasons.push("runtime-mcp-entry-is-not-projectable");
+    }
+  }
+
+  const unavailable = projection.requestedTargets.filter(
+    (target) => !projection.availableTargets.includes(target),
+  );
+  if (unavailable.length > 0) reasons.push(`target-not-selected:${unavailable.join(",")}`);
+  const unsupported = projection.requestedTargets.filter(
+    (target) => !projection.supportedTargets.includes(target),
+  );
+  if (unsupported.length > 0) reasons.push(`target-not-supported:${unsupported.join(",")}`);
+  if (projection.coverage === "blocked" && reasons.length === 0) {
+    reasons.push("projector-unavailable-for-candidate");
+  }
+  return sortedUnique(reasons);
 }
 
 export interface EffectiveOrgPolicy {
@@ -583,6 +634,7 @@ function resolveCandidate(
   const dangerCodes: PolicyDangerCode[] = [];
   const blockingCodes: ResolutionBlockCode[] = [];
   const projection = projectorFor(candidate, requestedTargets, context);
+  const resolutionReasons = candidateResolutionReasons(policy, candidate, projection, context);
   const sourceDigest = candidateIdentityDigest(candidate);
 
   for (const finding of candidate.findings) if (isUnwaivable(finding)) dangerCodes.push(finding);
@@ -730,6 +782,7 @@ function resolveCandidate(
     ...(revocation === undefined ? {} : { revocation }),
     dangerCodes: uniqueDangerCodes,
     blockingCodes: uniqueBlockingCodes,
+    resolutionReasons,
     ...((activation?.clarification ?? candidate.clarification)
       ? { clarification: activation?.clarification ?? candidate.clarification }
       : {}),

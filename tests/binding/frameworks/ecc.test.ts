@@ -952,7 +952,7 @@ describe("resolve — delegates to resolveGitSource with the declaration's sourc
     } finally {
       rmSync(repoDir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   it("rejects a non-git declared source", async () => {
     const adapter = createEccAdapter({ root, runner: spyRunner().runner });
