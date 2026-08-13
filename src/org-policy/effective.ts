@@ -119,6 +119,8 @@ export interface EffectivePolicyContext {
   targets?: readonly string[];
   /** Whether this invocation can emit managed adapter actions at all. */
   projectorsEnabled?: boolean;
+  /** Exact runtime reason when projectors are intentionally unavailable. */
+  projectorDisabledReason?: "vibe-posture";
   mcpIdentities?: Readonly<Record<string, RuntimeMcpIdentity>>;
   hookIdentities?: Readonly<Record<string, RuntimeHookIdentity>>;
   /** Exact AIH-shipped control identities, built from live catalog + owned hooks. */
@@ -185,7 +187,13 @@ function candidateResolutionReasons(
   projection: CandidateProjectionState,
   context: EffectivePolicyContext,
 ): string[] {
-  if (context.projectorsEnabled === false) return ["projector-disabled-for-invocation"];
+  if (context.projectorsEnabled === false) {
+    return [
+      context.projectorDisabledReason === "vibe-posture"
+        ? "projector-disabled-at-vibe-posture"
+        : "projector-disabled-for-invocation",
+    ];
+  }
   if (
     candidate.kind === "mcp" &&
     (candidate.source.type === "stdio" || candidate.source.type === "remote")

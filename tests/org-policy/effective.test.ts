@@ -149,7 +149,7 @@ describe("headless effective org policy", () => {
     expect(() => parseOrgPolicy(withEvidenceVerdict)).toThrow(/unrecognized key/i);
   });
 
-  it("blocks a requested candidate when the actual invocation has no enabled projector", () => {
+  it("names vibe posture when it disables the requested projector", () => {
     const item = candidate();
     const base = policy();
     if (base.governance === undefined) throw new Error("expected governance fixture");
@@ -160,6 +160,7 @@ describe("headless effective org policy", () => {
       {
         targets: ["claude"],
         projectorsEnabled: false,
+        projectorDisabledReason: "vibe-posture",
         aihReviewedControls: reviewedControls(),
         mcpIdentities: { "catalog-mcp": { subject: SUBJECT, projectable: true } },
       },
@@ -167,7 +168,7 @@ describe("headless effective org policy", () => {
     expect(effective.candidates[0]).toMatchObject({
       effective: false,
       dangerCodes: expect.arrayContaining(["missing-projector", "unsupported-target"]),
-      resolutionReasons: ["projector-disabled-for-invocation"],
+      resolutionReasons: ["projector-disabled-at-vibe-posture"],
     });
     expect(effective.blocking).toBe(true);
   });

@@ -13,7 +13,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Blocked organization-policy candidates keep the stable `missing-projector` and
   `unsupported-target` danger codes while also reporting the actionable resolver cause. In
   particular, custom stdio MCP sources are authorable-only until AIH has an
-  integrity-enforcing materializer, and invocations with projectors disabled say so directly.
+  integrity-enforcing materializer, and `vibe` invocations say directly that the posture disabled
+  projection.
 
 ## [5.2.0] - 2026-08-13
 

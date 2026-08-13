@@ -47,10 +47,12 @@ export async function resolveRuntimeOrgPolicy(
     throw new Error("AIH policy catalog is missing the usage-metering hook control");
   }
   const verification = await verifyPolicyAuthorityReceipt(ctx);
+  const projectorsDisabledAtVibe = (ctx.posture ?? policy.minimumPosture) === "vibe";
   const effective = resolveEffectiveOrgPolicy(policy, {
     authority: verification.authority,
     targets: ctx.targets ?? ["claude"],
-    projectorsEnabled: (ctx.posture ?? policy.minimumPosture) !== "vibe",
+    projectorsEnabled: !projectorsDisabledAtVibe,
+    ...(projectorsDisabledAtVibe ? { projectorDisabledReason: "vibe-posture" as const } : {}),
     aihReviewedControls,
     mcpIdentities: Object.fromEntries(
       Object.entries(catalog).map(([name, server]) => [

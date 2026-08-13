@@ -91,8 +91,7 @@ resolver cause: a disabled invocation, an unselected or unsupported target, or
 an authorable-only custom source that has no integrity-enforcing materializer.
 The proof is `tests/ecc/command.test.ts` (`lists every governed lifecycle target
 and scopes Kiro to rules and skills`), `tests/org-policy/effective.test.ts`
-(`blocks a requested candidate when the actual invocation has no enabled
-projector`, `explains that a custom Kiro stdio source has no
+(`names vibe posture when it disables the requested projector`, `explains that a custom Kiro stdio source has no
 integrity-enforcing materializer`), and
 `tests/org-policy/governance-projection.test.ts` (`keeps an externally evidenced
 custom stdio MCP authorable but blocked without an integrity-enforcing
