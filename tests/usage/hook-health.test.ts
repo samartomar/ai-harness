@@ -149,10 +149,20 @@ describe("metricsToolCheck", () => {
 
   it("passes when the metrics hook exists and `aih` resolves on PATH", async () => {
     write(".kiro/hooks/aih-metrics-on-stop.json", METRICS_HOOK_TEXT);
+    write(
+      ".aih-config.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        contextDir: "ai-coding",
+        targets: ["kiro"],
+        kiroHookRuntime: "ide1-cli3",
+      }),
+    );
     const run = fakeRunner((argv) =>
       argv[0] === "which" && argv[1] === "aih" ? { code: 0, stdout: "/usr/bin/aih" } : undefined,
     );
-    const c = await metricsToolCheck(makeCtx(run));
+    const ctx = makeCtx(run);
+    const c = await metricsToolCheck(ctx);
     expect(c.verdict).toBe("pass");
   });
 
@@ -161,8 +171,18 @@ describe("metricsToolCheck", () => {
     // `where aih` (Windows) returns non-zero when not found — the hook is fail-open, so
     // this must be an advisory skip, never a hard fail.
     const run = fakeRunner((argv) => (argv[0] === "where" ? { code: 1, stdout: "" } : undefined));
-    const c = await metricsToolCheck(makeCtx(run, "windows"));
+    const ctx = makeCtx(run, "windows");
+    ctx.options.kiroHookRuntime = "ide1-cli3";
+    const c = await metricsToolCheck(ctx);
     expect(c.verdict).toBe("skip");
     expect(c.code).toBe("usage.metrics-tool-missing");
+  });
+
+  it("does not report a standalone Kiro hook healthy when CLI 3 capability is unverified", async () => {
+    write(".kiro/hooks/aih-metrics-on-stop.json", METRICS_HOOK_TEXT);
+    const c = await metricsToolCheck(makeCtx());
+    expect(c.verdict).toBe("skip");
+    expect(c.code).toBe("usage.kiro-hook-runtime-unverified");
+    expect(c.detail).toContain("CLI 2.x ignores");
   });
 });

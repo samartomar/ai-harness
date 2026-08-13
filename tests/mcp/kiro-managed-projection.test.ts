@@ -4,13 +4,18 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Cli } from "../../src/internals/clis.js";
 import { executePlan } from "../../src/internals/execute.js";
-import { type PlanContext, plan } from "../../src/internals/plan.js";
+import { type PlanContext, plan, writeJson } from "../../src/internals/plan.js";
+import { managedMcpAllowlistSettings } from "../../src/mcp/allowlist.js";
 import {
   KIRO_MCP_SETTINGS_PATH,
   kiroMcpProjectionActions,
   kiroMcpProjectionOnDisk,
   kiroMcpProjectionState,
 } from "../../src/mcp/kiro-managed-projection.js";
+import {
+  MANAGED_SETTINGS_PATH,
+  managedMcpProjectionOwnershipAction,
+} from "../../src/mcp/managed-projection.js";
 import type { McpServer } from "../../src/mcp/servers.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command as pruneCommand } from "../../src/prune/index.js";
@@ -92,6 +97,66 @@ describe("Kiro governed MCP ownership", () => {
       },
     });
     expect(kiroMcpProjectionOnDisk(root)?.matches).toBe(true);
+  });
+
+  it("preserves unrelated JSONC server bytes while changing an owned entry", async () => {
+    const path = join(root, ".kiro", "settings");
+    mkdirSync(path, { recursive: true });
+    const source = `{
+  // keep this operator server exactly as written
+  "mcpServers": {
+    "team": { "command": "team", /* operator note */ "args": [] }
+  }
+}\n`;
+    writeFileSync(join(path, "mcp.json"), source);
+
+    await apply({ "code-review-graph": graph });
+    const afterCreate = readFileSync(join(path, "mcp.json"), "utf8");
+    expect(afterCreate).toContain('"team": { "command": "team", /* operator note */ "args": [] }');
+
+    const updated = { ...graph, description: "Updated graph analysis" } satisfies McpServer;
+    await apply({ "code-review-graph": updated });
+    expect(readFileSync(join(path, "mcp.json"), "utf8")).toContain(
+      '"team": { "command": "team", /* operator note */ "args": [] }',
+    );
+  });
+
+  it("inserts into a compact mcpServers object that has a trailing newline", async () => {
+    const path = join(root, ".kiro", "settings");
+    mkdirSync(path, { recursive: true });
+    writeFileSync(join(path, "mcp.json"), '{"mcpServers":{}}\n');
+
+    await apply({ "code-review-graph": graph });
+
+    expect(JSON.parse(readFileSync(join(path, "mcp.json"), "utf8"))).toMatchObject({
+      mcpServers: { "code-review-graph": graph },
+    });
+  });
+
+  it("refuses duplicate Kiro MCP keys instead of rewriting an ambiguous JSONC map", async () => {
+    const path = join(root, ".kiro", "settings");
+    mkdirSync(path, { recursive: true });
+    writeFileSync(
+      join(path, "mcp.json"),
+      `{"mcpServers":{"team":{"command":"first"},"team":{"command":"second"}}}`,
+    );
+
+    expect(() => kiroMcpProjectionActions(ctx(), { "code-review-graph": graph })).toThrow(
+      /duplicate.*mcpServers/i,
+    );
+  });
+
+  it("refuses duplicate keys inside a Kiro-owned server entry", async () => {
+    const path = join(root, ".kiro", "settings");
+    mkdirSync(path, { recursive: true });
+    writeFileSync(
+      join(path, "mcp.json"),
+      `{"mcpServers":{"code-review-graph":{"command":"first","command":"second"}}}`,
+    );
+
+    expect(() => kiroMcpProjectionActions(ctx(), { "code-review-graph": graph })).toThrow(
+      /duplicate.*code-review-graph\.command/i,
+    );
   });
 
   it("keeps nested skills-provider evidence parseable in the ownership receipt", async () => {
@@ -210,5 +275,42 @@ describe("Kiro governed MCP ownership", () => {
         mcpServers: { team: { command: "team" } },
       });
     }
+  });
+
+  it("prune clears Claude and Kiro receipts together after subtracting both owned projections", async () => {
+    await apply({ "code-review-graph": graph });
+    const both = ctx(true, ["claude", "kiro"]);
+    const managed = managedMcpAllowlistSettings({ "code-review-graph": graph });
+    await executePlan(
+      plan(
+        "create Claude receipt",
+        writeJson(MANAGED_SETTINGS_PATH, managed, "project Claude allowlist", { merge: true }),
+        managedMcpProjectionOwnershipAction(both, ["claude"], managed),
+      ),
+      both,
+    );
+    const markerPath = join(root, ".aih-config.json");
+    const marker = JSON.parse(readFileSync(markerPath, "utf8"));
+    marker.targets = ["codex"];
+    writeFileSync(markerPath, JSON.stringify(marker));
+
+    const pruneCtx = ctx(true, ["codex"]);
+    const prune = await pruneCommand.plan(pruneCtx);
+    expect(
+      prune.actions.filter(
+        (action) => action.kind === "write" && action.path === ".aih-config.json",
+      ),
+    ).toHaveLength(1);
+    await executePlan(prune, pruneCtx);
+
+    const after = JSON.parse(readFileSync(markerPath, "utf8"));
+    expect(after.managedMcpProjection).toBeUndefined();
+    expect(after.kiroMcpProjection).toBeUndefined();
+    expect(JSON.parse(readFileSync(join(root, MANAGED_SETTINGS_PATH), "utf8"))).not.toHaveProperty(
+      "allowedMcpServers",
+    );
+    expect(JSON.parse(readFileSync(join(root, KIRO_MCP_SETTINGS_PATH), "utf8"))).toEqual({
+      mcpServers: {},
+    });
   });
 });

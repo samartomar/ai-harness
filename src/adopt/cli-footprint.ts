@@ -73,8 +73,6 @@ interface Loc {
   rel: string;
   kind: LocKind;
   label: string;
-  /** Agent config files here are executable runtime configuration, never canon content. */
-  excludeAgentConfig?: boolean;
 }
 
 /**
@@ -95,13 +93,6 @@ const LOCATIONS: Loc[] = [
   { cli: "cursor", rel: ".cursor/rules", kind: "rule-dir", label: "rules" },
   { cli: "kiro", rel: ".kiro/steering", kind: "rule-dir", label: "steering" },
   { cli: "kiro", rel: ".kiro/hooks", kind: "runtime", label: "hooks" },
-  {
-    cli: "kiro",
-    rel: ".kiro/agents",
-    kind: "content-dir",
-    label: "agents",
-    excludeAgentConfig: true,
-  },
   { cli: "kiro", rel: ".kiro/agents", kind: "runtime-config-dir", label: "agent config" },
   { cli: "kiro", rel: ".kiro/skills", kind: "content-dir", label: "skills" },
   { cli: "kiro", rel: ".kiro/prompts", kind: "content-dir", label: "prompts" },
@@ -207,9 +198,7 @@ function classifyRuleDir(loc: Loc, full: string, fp: Fp): CliArtifact | undefine
 }
 
 function classifyContentDir(loc: Loc, full: string, fp: Fp): CliArtifact | undefined {
-  const files = safeWalkFiles(fp.root, full).filter(
-    (file) => !loc.excludeAgentConfig || !/\.(?:json|ya?ml)$/i.test(file),
-  );
+  const files = safeWalkFiles(fp.root, full);
   if (files.length === 0) return undefined;
   return {
     cli: loc.cli,
@@ -224,13 +213,13 @@ function classifyContentDir(loc: Loc, full: string, fp: Fp): CliArtifact | undef
   };
 }
 
-/** Report agent configurations separately so migration cannot copy them into canon. */
+/** Report Kiro custom-agent definitions separately so migration cannot copy them into canon. */
 function classifyRuntimeConfigDir(loc: Loc, full: string, fp: Fp): CliArtifact | undefined {
-  const files = safeWalkFiles(fp.root, full).filter((file) => /\.(?:json|ya?ml)$/i.test(file));
+  const files = safeWalkFiles(fp.root, full);
   if (files.length === 0) return undefined;
   return {
     cli: loc.cli,
-    path: `${loc.rel}/*.{json,yaml,yml}`,
+    path: `${loc.rel}/**`,
     kind: "runtime-config",
     disposition: "runtime",
     detail: `${files.length} ${loc.label} file(s) — tool runtime (left as-is)`,

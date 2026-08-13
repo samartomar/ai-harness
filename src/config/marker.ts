@@ -30,6 +30,7 @@ import { ContextDir } from "./settings.js";
  */
 export const AIH_CONFIG_FILE = ".aih-config.json";
 const AihConfigPostureSchema = z.enum(["vibe", "enterprise"]);
+const KiroHookRuntimeSchema = z.enum(["ide1-cli3", "cli2"]);
 const ManagedMcpProjectionExpectedSchema = z
   .object({
     allowManagedMcpServersOnly: z.literal(true),
@@ -122,6 +123,8 @@ export const AihConfigSchema = z.object({
   targets: z.array(z.string()).default([]),
   baseline: BaselineSourceIdSchema.optional(),
   posture: AihConfigPostureSchema.optional(),
+  /** Explicit Kiro hook capability; binary detection alone cannot distinguish CLI 2 from CLI 3. */
+  kiroHookRuntime: KiroHookRuntimeSchema.optional(),
   /**
    * Provenance for the two Claude managed-MCP settings. Missing provenance means
    * legacy or operator-owned values are never treated as removable by aih.
@@ -274,9 +277,11 @@ export function aihConfigJson(
   contextDir: string,
   targets: string[],
   baseline: BaselineSourceId = DEFAULT_BASELINE_SOURCE_ID,
+  kiroHookRuntime?: z.infer<typeof KiroHookRuntimeSchema>,
 ): AihConfig {
   const body: AihConfig = { schemaVersion: 1, contextDir, targets };
   if (baseline !== DEFAULT_BASELINE_SOURCE_ID) body.baseline = baseline;
+  if (kiroHookRuntime !== undefined) body.kiroHookRuntime = kiroHookRuntime;
   return body;
 }
 

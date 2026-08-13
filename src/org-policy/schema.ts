@@ -551,6 +551,16 @@ const PolicyCandidateSchema = z
           "MCP managed-settings candidates support Claude targets only; Kiro workspace distribution is also supported",
       });
     }
+    if (
+      candidate.kind === "mcp" &&
+      candidate.source.type === "remote" &&
+      candidate.targets.includes("kiro")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Kiro MCP projection supports stdio catalog entries only",
+      });
+    }
     if (candidate.kind === "hook" && candidate.source.type !== "hook") {
       ctx.addIssue({
         code: "custom",

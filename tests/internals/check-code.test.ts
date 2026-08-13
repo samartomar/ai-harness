@@ -456,6 +456,7 @@ describe("Check.code — invariants", () => {
       "guardrails.gitleaks-missing": true,
       "usage.no-data": true,
       "usage.recorder-missing": true,
+      "usage.kiro-hook-runtime-unverified": true,
       "usage.metrics-tool-missing": true,
       "scale.code-review-graph-missing": true,
       "contract.path-unportable": true,

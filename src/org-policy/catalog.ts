@@ -184,7 +184,7 @@ export interface PolicyAuthoringComposition {
 /**
  * Every AI CLI this build knows, and whether an org policy can project onto it.
  * AIH's registry carries eleven; `PolicyTargetSchema` carries three. Stating that
- * asymmetry is the point: an administrator who sees only claude and codex has
+ * asymmetry is the point: an administrator who sees only Claude, Codex, and Kiro has
  * no way to tell whether the others are unknown or merely unprojectable.
  */
 export interface PolicyAuthoringHost {
@@ -325,7 +325,11 @@ export function aihPolicyControls(
       id,
       kind: "mcp" as const,
       source: { type: "mcp" as const, server: id, subject: mcpApprovalSubject(server) },
-      targets: ["claude", "kiro"] as ("claude" | "codex" | "kiro")[],
+      targets: (server.type === "stdio" ? ["claude", "kiro"] : ["claude"]) as (
+        | "claude"
+        | "codex"
+        | "kiro"
+      )[],
       projector: "mcp-managed-settings" as const,
       lifecycle: "supported" as const,
     })),

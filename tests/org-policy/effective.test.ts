@@ -250,6 +250,73 @@ describe("headless effective org policy", () => {
     );
   });
 
+  it("rejects a Kiro-targeted remote MCP at the policy boundary", () => {
+    const source = {
+      type: "remote" as const,
+      origin: "https://mcp.example.com",
+      approval: {
+        approvedBy: "security-admin",
+        authenticationMode: "oauth",
+        allowedDataClasses: ["design-metadata"],
+      },
+      administrativeStatus: "approved" as const,
+      contentScanned: false,
+    };
+    expect(() =>
+      parseOrgPolicy(
+        policy({
+          governance: {
+            policyVersion: "2026.08.0",
+            supportedClis: ["kiro"],
+            catalog: {
+              reviewed: [],
+              custom: [
+                candidate({
+                  id: "remote-kiro",
+                  source,
+                  targets: ["kiro"],
+                  evidence: { record: "remote-kiro-evidence" },
+                }),
+              ],
+            },
+            activations: [{ candidate: "remote-kiro", state: "active", targets: ["kiro"] }],
+            authority: { approvals: [] },
+          },
+        }),
+      ),
+    ).toThrow(/Kiro MCP projection supports stdio catalog entries only/);
+  });
+
+  it("blocks a built-in remote catalog MCP before it can reach Kiro projection", () => {
+    const base = policy();
+    if (base.governance === undefined) throw new Error("expected governance fixture");
+    const remote = candidate({ targets: ["kiro"] });
+    const effective = resolveEffectiveOrgPolicy(
+      policy({
+        governance: {
+          ...base.governance,
+          supportedClis: ["kiro"],
+          catalog: { reviewed: [remote], custom: [] },
+          activations: [{ candidate: "catalog-mcp", state: "active", targets: ["kiro"] }],
+        },
+      }),
+      {
+        targets: ["kiro"],
+        aihReviewedControls: reviewedControls(),
+        mcpIdentities: {
+          "catalog-mcp": { subject: SUBJECT, projectable: true, kiroProjectable: false },
+        },
+      },
+    );
+
+    expect(effective.candidates[0]).toMatchObject({
+      requested: true,
+      effective: false,
+      dangerCodes: expect.arrayContaining(["unsupported-target"]),
+    });
+    expect(effective.activeMcpServerIds).toEqual([]);
+  });
+
   it("keeps declarative remote governance free of tool-surface drift enforcement", () => {
     const source = {
       type: "remote" as const,

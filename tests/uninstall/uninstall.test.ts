@@ -285,7 +285,7 @@ describe("aih uninstall", () => {
     );
   });
 
-  it("backs up exact current and legacy Kiro hook extras without touching lookalikes", async () => {
+  it("keeps exact current and legacy Kiro hook names advisory without touching lookalikes", async () => {
     await bootstrapFixture("kiro");
     put(".kiro/hooks/aih-tests-on-edit.json", "{}\n");
     put(".kiro/hooks/aih-tests-on-edit.kiro.hook", "{}\n");
@@ -296,21 +296,37 @@ describe("aih uninstall", () => {
     const ctx = makeCtx();
     const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
     const removed = new Map(result.removed.map((r) => [r.path, r]));
+    const digest = result.digests.find((d) => d.describe.includes("core install footprint"));
+    const artifacts = digest?.data as
+      | { artifacts?: Array<{ path: string; disposition: string; kind: string }> }
+      | undefined;
 
     expect(removed.get(".kiro/steering/agent-tools.md")?.effect).toBe("delete");
-    expect(removed.get(".kiro/hooks/aih-tests-on-edit.json")?.effect).toBe("delete");
-    expect(removed.get(".kiro/hooks/aih-secret-scan-on-create.json")?.effect).toBe("delete");
-    expect(removed.get(".kiro/hooks/aih-tests-on-edit.kiro.hook")?.effect).toBe("delete");
-    expect(removed.get(".kiro/hooks/aih-metrics-on-stop.json")?.effect).toBe("delete");
+    expect(removed.has(".kiro/hooks/aih-tests-on-edit.json")).toBe(false);
+    expect(removed.has(".kiro/hooks/aih-tests-on-edit.kiro.hook")).toBe(false);
     expect(removed.has(".kiro/hooks/aih-custom.json")).toBe(false);
     expect(removed.has(".kiro/hooks/aih-custom.kiro.hook")).toBe(false);
     expect(removed.has(".kiro/hooks/team-custom.kiro.hook")).toBe(false);
+    expect(artifacts?.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: ".kiro/hooks/aih-tests-on-edit.json",
+          kind: "kiro-hook",
+          disposition: "advisory",
+        }),
+        expect.objectContaining({
+          path: ".kiro/hooks/aih-tests-on-edit.kiro.hook",
+          kind: "kiro-hook",
+          disposition: "advisory",
+        }),
+      ]),
+    );
   });
 
   it("keeps Kiro extras inside a co-owned .kiro context in preview and apply", async () => {
     put("package.json", JSON.stringify({ name: "fixture" }));
     const bootstrapCtx: PlanContext = {
-      ...makeCtx({ cli: "kiro", canon: "compact" }, { apply: true }),
+      ...makeCtx({ cli: "kiro", canon: "compact", kiroHookRuntime: "ide1-cli3" }, { apply: true }),
       contextDir: ".kiro",
     };
     await executePlan(await bootstrapAiCommand.plan(bootstrapCtx), bootstrapCtx);

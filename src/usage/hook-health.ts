@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
+import { kiroHookRuntime } from "../kiro/runtime.js";
 
 /**
  * Doctor probes for the usage-capture hook layer. A committed hook that fires against
@@ -115,6 +116,15 @@ export async function metricsToolCheck(ctx: PlanContext): Promise<Check> {
       name: "metrics-hook-tool",
       verdict: "skip",
       detail: "no Kiro metrics-on-stop hook to verify",
+    };
+  }
+  if (kiroHookRuntime(ctx) !== "ide1-cli3") {
+    return {
+      name: "metrics-hook-tool",
+      verdict: "skip",
+      code: "usage.kiro-hook-runtime-unverified",
+      detail:
+        "standalone Kiro hook exists, but this run did not establish Kiro IDE 1.x / CLI 3.x capability; CLI 2.x ignores this surface",
     };
   }
   const argv = ctx.host.platform === "windows" ? ["where", "aih"] : ["which", "aih"];

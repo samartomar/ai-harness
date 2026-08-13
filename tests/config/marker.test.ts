@@ -114,6 +114,28 @@ describe("aihConfigJson", () => {
     });
   });
 
+  it("round-trips an explicit Kiro hook runtime capability", () => {
+    const body = aihConfigJson("ai-coding", ["kiro"], "ecc", "ide1-cli3");
+    writeMarker(body);
+    expect(readAihConfig(dir)).toEqual({
+      schemaVersion: 1,
+      contextDir: "ai-coding",
+      targets: ["kiro"],
+      kiroHookRuntime: "ide1-cli3",
+    });
+  });
+
+  it("rejects an invalid persisted Kiro hook runtime capability", () => {
+    writeMarker({
+      schemaVersion: 1,
+      contextDir: "ai-coding",
+      targets: ["kiro"],
+      kiroHookRuntime: "cli4",
+    });
+    expect(readAihConfigDiagnostic(dir)).toEqual({ invalid: true, present: true });
+    expect(readAihConfig(dir)).toBeUndefined();
+  });
+
   it("fails closed with the migration diagnostic on a persisted removed baseline", () => {
     writeMarker({
       schemaVersion: 1,

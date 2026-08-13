@@ -174,11 +174,11 @@ function keptPaths(targeted: readonly Cli[]): Set<string> {
 /**
  * aih-GENERATED Kiro hook files only. aih namespaces every hook it writes with an
  * `aih-` prefix precisely so it never clashes with ECC's or the team's own hooks
- * (src/kiro/content.ts `kiroHooks`). The exact names, not merely the `aih-` prefix,
- * are the ownership signal: a bare `aih-*` glob would flag a user/team hook for
- * removal. Both current `.json` and legacy `.kiro.hook` names remain removable so a
- * format upgrade cannot strand AIH-owned files. Written wholesale by bootstrap-ai →
- * `file` disposition.
+ * (src/kiro/content.ts `kiroHooks`). Exact names bound the inventory: a bare `aih-*`
+ * glob would flag unrelated user/team hooks. Both current `.json` and legacy
+ * `.kiro.hook` names remain visible after a format upgrade, but names alone do not
+ * prove ownership, so they stay advisory unless a future per-file receipt proves
+ * exact custody.
  */
 const KIRO_HOOK_BASENAMES = [
   "aih-secret-scan-on-create",
@@ -413,7 +413,8 @@ export function stalePruneSet(
     });
   }
 
-  // 5. Kiro-native extras (aih-exclusive files) when Kiro is dropped.
+  // 5. Kiro-native extras when Kiro is dropped. Steering has marker-backed
+  // ownership; reserved hook names do not, so they remain manual advisories.
   if (dropped.includes("kiro")) {
     const steering = ".kiro/steering/agent-tools.md";
     if (onDisk(steering)) {
@@ -425,7 +426,12 @@ export function stalePruneSet(
       });
     }
     for (const hook of kiroHookFiles(ctx.root)) {
-      artifacts.push({ kind: "kiro-hook", path: hook, disposition: "file", clis: ["kiro"] });
+      artifacts.push({
+        kind: "kiro-hook",
+        path: hook,
+        disposition: "advisory",
+        clis: ["kiro"],
+      });
     }
   }
 

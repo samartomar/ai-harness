@@ -181,7 +181,8 @@ describe("stalePruneSet — never-prune invariants", () => {
     write(".kiro/hooks/aih-custom.kiro.hook"); // NOT an aih-owned legacy hook
     write(".kiro/hooks/aih-tests-on-edit.txt"); // NOT a hook format
     write(".kiro/hooks/team-custom.kiro.hook"); // NOT aih-owned
-    const p = paths(stalePruneSet(ctx()));
+    const set = stalePruneSet(ctx());
+    const p = paths(set);
     expect(p).toContain(".kiro/hooks/aih-tests-on-edit.json");
     expect(p).toContain(".kiro/hooks/aih-tests-on-edit.kiro.hook");
     expect(p).toContain(".kiro/steering/agent-tools.md");
@@ -189,6 +190,11 @@ describe("stalePruneSet — never-prune invariants", () => {
     expect(p).not.toContain(".kiro/hooks/aih-custom.kiro.hook");
     expect(p).not.toContain(".kiro/hooks/aih-tests-on-edit.txt");
     expect(p).not.toContain(".kiro/hooks/team-custom.kiro.hook");
+    expect(
+      set.artifacts
+        .filter((artifact) => artifact.kind === "kiro-hook")
+        .every((artifact) => artifact.disposition === "advisory"),
+    ).toBe(true);
   });
 });
 

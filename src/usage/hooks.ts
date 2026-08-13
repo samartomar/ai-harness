@@ -4,6 +4,8 @@ import { upsertTextBlock } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { type Action, doc, type PlanContext, writeJson, writeText } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { kiroHookWriteAction } from "../kiro/hook-projection.js";
+import { supportsKiroStandaloneHooks } from "../kiro/runtime.js";
 
 const USAGE_HOOK_SCOPE = "usage-metering";
 
@@ -269,14 +271,14 @@ export function usageHookActions(ctx: PlanContext, clis: Cli[]): Action[] {
       ),
     );
   }
-  if (selected.has("kiro")) {
-    actions.push(
-      writeJson(
-        ".kiro/hooks/aih-usage-metering.json",
-        kiroUsageHook(),
-        "Kiro standalone v1 usage hook (IDE 1.x / CLI 3.x; CLI 2.x requires agent config)",
-      ),
+  if (selected.has("kiro") && supportsKiroStandaloneHooks(ctx)) {
+    const action = kiroHookWriteAction(
+      ctx,
+      ".kiro/hooks/aih-usage-metering.json",
+      kiroUsageHook(),
+      "Kiro standalone v1 usage hook (IDE 1.x / CLI 3.x; CLI 2.x requires agent config)",
     );
+    if (action !== undefined) actions.push(action);
   }
   if (selected.has("zed")) {
     actions.push(

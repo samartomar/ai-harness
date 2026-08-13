@@ -1086,7 +1086,47 @@ describe("governed candidate projection", () => {
     expect(marker.managedMcpProjection).toBeUndefined();
     expect(existsSync(join(dir, ".claude", "managed-settings.json"))).toBe(false);
 
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(governed));
+    const digest = await orgPolicyEffectiveDigest(applied);
+    expect(digest?.text).toContain("kiro / workspace MCP distribution");
+    expect(digest?.text).not.toContain("kiro / mcp-managed-settings");
+
     expect(await verifiedOrgPolicyProjectionActions(applied, governed)).toEqual([]);
+  });
+
+  it("keeps both Claude and Kiro ownership receipts through one activation and deactivation", async () => {
+    const active = reviewedMcpPolicy({
+      allowedServers: [],
+      disabledServers: [],
+      targets: ["claude", "kiro"],
+    });
+    const applied = ctx({ apply: true, targets: ["claude", "kiro"] });
+    await executePlan(
+      plan("governed dual MCP", ...(await verifiedOrgPolicyProjectionActions(applied, active))),
+      applied,
+    );
+    let marker = JSON.parse(readFileSync(join(dir, ".aih-config.json"), "utf8"));
+    expect(marker.managedMcpProjection).toMatchObject({ state: "active" });
+    expect(marker.kiroMcpProjection).toMatchObject({ state: "active" });
+
+    const disabled = JSON.parse(JSON.stringify(active)) as {
+      governance: { activations: Array<{ state: string }> };
+      mcp: { allowManagedOnly: boolean };
+    };
+    const [activation] = disabled.governance.activations;
+    if (activation === undefined) throw new Error("expected governed MCP activation");
+    activation.state = "disabled";
+    disabled.mcp.allowManagedOnly = false;
+    await executePlan(
+      plan(
+        "governed dual MCP deactivation",
+        ...(await verifiedOrgPolicyProjectionActions(applied, disabled as typeof active)),
+      ),
+      applied,
+    );
+    marker = JSON.parse(readFileSync(join(dir, ".aih-config.json"), "utf8"));
+    expect(marker.managedMcpProjection).toBeUndefined();
+    expect(marker.kiroMcpProjection).toBeUndefined();
   });
 
   it("reports clean then altered managed-MCP receipt state from the live ownership pair", async () => {

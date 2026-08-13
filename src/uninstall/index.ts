@@ -441,8 +441,9 @@ function kiroExtraArtifacts(ctx: PlanContext, owned: boolean): UninstallArtifact
     artifacts.push({
       path: hook,
       kind: "kiro-hook",
-      disposition,
-      reason: `aih-namespaced Kiro hook ${ownership}`,
+      disposition: "advisory",
+      reason:
+        "Kiro hook uses an AIH-reserved filename, but no per-file receipt proves AIH created it; review manually",
     });
   }
   return artifacts;

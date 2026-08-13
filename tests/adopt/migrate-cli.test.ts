@@ -82,16 +82,16 @@ describe("migrateCliActions — what migrates, what doesn't", () => {
     expect(paths).not.toContain(".claude/agents/security.md");
   });
 
-  it("migrates Kiro markdown agents, skills, and prompts but never JSON agent configuration", () => {
-    put(".kiro/agents/reviewer.md", "# reviewer\n");
+  it("never migrates Kiro custom-agent definitions, including Markdown", () => {
+    put(".kiro/agents/reviewer.md", "---\nname: reviewer\nmcpServers: {}\n---\n");
     put(".kiro/agents/legacy.json", '{"name":"legacy"}\n');
     put(".kiro/agents/generated.yaml", "name: generated\n");
     put(".kiro/skills/release/SKILL.md", "# release\n");
     put(".kiro/prompts/release.md", "# release prompt\n");
     const paths = writePaths(migrateCliActions(tmp, cliFootprint(tmp, DIR), DIR));
-    expect(paths).toContain("ai-coding/agents/reviewer.md");
     expect(paths).toContain("ai-coding/skills/release/SKILL.md");
     expect(paths).toContain("ai-coding/prompts/release.md");
+    expect(paths).not.toContain("ai-coding/agents/reviewer.md");
     expect(paths).not.toContain("ai-coding/agents/legacy.json");
     expect(paths).not.toContain("ai-coding/agents/generated.yaml");
   });

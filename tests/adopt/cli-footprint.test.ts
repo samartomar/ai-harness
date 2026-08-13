@@ -91,19 +91,19 @@ describe("cliFootprint", () => {
     expect(find(".kiro/hooks")?.kind).toBe("runtime-config");
   });
 
-  it("offers Kiro agent, skill, and prompt content for migration but leaves JSON runtime config alone", () => {
-    put(".kiro/agents/reviewer.md", "# reviewer\n");
+  it("keeps every Kiro custom-agent definition as operator-owned runtime configuration", () => {
+    put(".kiro/agents/reviewer.md", "---\nname: reviewer\ntools: [shell]\n---\n");
     put(".kiro/agents/legacy.json", '{"name":"legacy"}\n');
     put(".kiro/agents/generated.yaml", "name: generated\n");
     put(".kiro/skills/release/SKILL.md", "# release\n");
     put(".kiro/prompts/release.md", "# release prompt\n");
     put(".kiro/settings/mcp.json", '{"mcpServers":{}}\n');
 
-    expect(find(".kiro/agents")?.kind).toBe("tool-owned-content");
-    expect(find(".kiro/agents")?.detail).toContain("1 agents");
+    expect(find(".kiro/agents")).toBeUndefined();
     expect(find(".kiro/skills")?.kind).toBe("tool-owned-content");
     expect(find(".kiro/prompts")?.kind).toBe("tool-owned-content");
-    expect(find(".kiro/agents/*.{json,yaml,yml}")?.kind).toBe("runtime-config");
+    expect(find(".kiro/agents/**")?.kind).toBe("runtime-config");
+    expect(find(".kiro/agents/**")?.detail).toContain("3 agent config file(s)");
     expect(find(".kiro/settings/mcp.json")?.kind).toBe("runtime-config");
   });
 });

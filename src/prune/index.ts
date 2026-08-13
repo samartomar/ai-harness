@@ -34,6 +34,7 @@ import {
   managedMcpDeactivationActions,
   unprovableResidueReason,
 } from "../mcp/managed-projection.js";
+import { coalesceMcpProjectionMarkerActions } from "../mcp/projection-marker.js";
 import { execArgv } from "../tools/install.js";
 import {
   type PruneArtifact,
@@ -353,7 +354,7 @@ async function prunePlan(ctx: PlanContext): Promise<Plan> {
       set,
     ),
   );
-  return plan("prune", ...actions);
+  return plan("prune", ...coalesceMcpProjectionMarkerActions(actions));
 }
 
 export const command: CommandSpec = {

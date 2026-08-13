@@ -54,7 +54,6 @@ const MIGRATION: Record<string, MigSpec> = {
   ".claude/agents": { destSub: "agents", mode: "dir" },
   ".claude/commands": { destSub: "commands", mode: "dir" },
   ".claude/skills": { destSub: "skills", mode: "dir" },
-  ".kiro/agents": { destSub: "agents", mode: "dir" },
   ".kiro/skills": { destSub: "skills", mode: "dir" },
   ".kiro/prompts": { destSub: "prompts", mode: "dir" },
   ".kiro/specs": { destSub: "specs", mode: "dir" },
@@ -154,9 +153,6 @@ function migrateArtifact(root: string, dir: string, a: CliArtifact): Action[] {
   const destSub = dirDestSub(a, spec);
   for (const fileAbs of safeWalkFiles(root, srcDirAbs)) {
     const rel = relative(srcDirAbs, fileAbs).replace(/\\/g, "/");
-    // Kiro CLI 2.x custom agents are JSON runtime configuration. It must be
-    // inventoried but never copied into the tool-agnostic canon.
-    if (a.path === ".kiro/agents" && /\.(?:json|ya?ml)$/i.test(rel)) continue;
     const content = safeReadText(root, fileAbs);
     if (content === undefined) continue;
     const canonRel = posix.join(dir, destSub, rel);

@@ -70,6 +70,7 @@ export type CheckCode =
   // usage
   | "usage.no-data"
   | "usage.recorder-missing"
+  | "usage.kiro-hook-runtime-unverified"
   | "usage.metrics-tool-missing"
   // scale safety
   | "scale.code-review-graph-missing"

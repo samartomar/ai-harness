@@ -162,7 +162,18 @@ export async function orgPolicyEffectiveDigest(
           approval === undefined
             ? candidate.evidence
             : `${approval.issuer} @ ${approval.repository}; ${approval.attestationId}; ${approval.reason}; clarification=${approval.clarification}`;
-        const projection = `${candidate.projection.requestedTargets.join(",") || "none"} / ${candidate.projection.projector}; supported=${candidate.projection.supportedTargets.join(",") || "none"}; available=${candidate.projection.availableTargets.join(",") || "none"}; ${candidate.projection.coverage}`;
+        const requestedTargets = candidate.projection.requestedTargets;
+        const targetProjector =
+          candidate.kind === "mcp" && candidate.projection.projector === "mcp-managed-settings"
+            ? requestedTargets
+                .map((target) =>
+                  target === "kiro"
+                    ? "kiro / workspace MCP distribution"
+                    : `${target} / mcp-managed-settings`,
+                )
+                .join(", ") || "none / mcp-managed-settings"
+            : `${requestedTargets.join(",") || "none"} / ${candidate.projection.projector}`;
+        const projection = `${targetProjector}; supported=${candidate.projection.supportedTargets.join(",") || "none"}; available=${candidate.projection.availableTargets.join(",") || "none"}; ${candidate.projection.coverage}`;
         const receipt =
           candidate.kind === "hook"
             ? `${hookReceipt.state}: ${hookReceipt.detail}`

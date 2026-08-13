@@ -55,7 +55,11 @@ export async function resolveRuntimeOrgPolicy(
     mcpIdentities: Object.fromEntries(
       Object.entries(catalog).map(([name, server]) => [
         name,
-        { subject: mcpApprovalSubject(server), projectable: server.type === "stdio" },
+        {
+          subject: mcpApprovalSubject(server),
+          projectable: server.type === "stdio",
+          kiroProjectable: server.type === "stdio",
+        },
       ]),
     ),
     hookIdentities: {

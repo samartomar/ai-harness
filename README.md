@@ -295,7 +295,7 @@ aih bootstrap-ai --cli claude       # writes CLAUDE.md (the default target, auto
 # repeatable declarations add to detection and the prior machine union
 aih ecc --cli claude,codex --with framework:react --with lang:typescript
 aih superpowers --cli antigravity   # verify exact pin; guidance only (no mutable plugin exec)
-aih bootstrap-ai --cli kiro         # Kiro: .kiro/steering/00-canon.md (inclusion: always)
+aih bootstrap-ai --cli kiro --kiro-hook-runtime ide1-cli3  # Kiro IDE1/CLI3 hooks opt-in
 aih bootstrap-ai --detect           # target only the CLIs installed here
 aih init . --all-tools              # bootstrap a repo for every CLI at once
 ```
@@ -312,9 +312,22 @@ documents how to point it at `RULE_ROUTER.md`.
 deepest case (schemas verified against [Kiro's docs](https://kiro.dev/docs/steering/) and ECC's
 real `.kiro/` tree):
 
-- `aih bootstrap-ai --cli kiro` → `.kiro/steering/agent-tools.md` (stack-aware CLI usage) +
-  stack-aware `.kiro/hooks/*.kiro.hook` files (`aih-secret-scan-on-create`, `aih-tests-on-edit`,
-  `aih-quality-gate` running the repo's real lint/test) in Kiro's real hook schema.
+- `aih bootstrap-ai --cli kiro` → `.kiro/steering/agent-tools.md` (stack-aware CLI usage).
+  Add `--kiro-hook-runtime ide1-cli3` to project standalone v1 `.kiro/hooks/*.json` hooks for
+  secret scan, tests-on-edit, and metrics-on-stop; the explicit capability is persisted for doctor.
+  Those hook files load in Kiro IDE 1.x and Kiro CLI 3.x. Kiro CLI 2.x keeps hooks inside each
+  custom-agent definition, so AIH does not mutate an arbitrary agent or claim hook coverage there.
+  A pre-existing reserved hook filename is never overwritten, and prune/uninstall leave current or
+  legacy hook names advisory because a filename alone cannot prove AIH ownership.
+- `aih bootstrap-ai --detect` recognizes the documented `kiro-cli` executable. The public target
+  remains `kiro`; bare `kiro` is not treated as proof of the CLI because it can be an IDE/CLI router.
+- `aih adopt --migrate-cli` inventories Kiro steering, hooks, custom-agent definitions, skills,
+  prompts, settings, and specs. Every `.kiro/agents/**` definition, including Markdown, remains
+  operator-owned runtime configuration; steering, skills, prompts, and specs can move into the canon.
+- `aih policy project` can distribute reviewed stdio MCP selections to
+  `.kiro/settings/mcp.json` under receipt ownership of exact server names. It preserves unrelated
+  workspace configuration and never calls that managed enforcement: custom agents may override or
+  opt out of workspace MCP inheritance.
 - `aih ecc --cli kiro` → emits scoped consult guidance; Kiro's native installer cannot yet
   materialize the component union safely, so aih does not run it.
 - In a governed repository, `aih ecc --lifecycle install --cli kiro` is a separate AIH-owned
@@ -323,6 +336,8 @@ real `.kiro/` tree):
   installer, project agents/hooks/settings/scripts, or claim that Kiro loaded the files.
 - `aih superpowers --cli kiro` → `.kiro/steering/superpowers-methodology.md` (the
   brainstorm → plan → TDD → review routing, since Kiro can't load `~/.claude/superpowers`).
+
+<!-- aih:claim CM-58 -->
 
 **Detection** (`--detect`) targets runnable CLI binaries on PATH — and it is the *only* thing that
 does. Nothing on your machine changes what a bare run targets: runnable binaries need `--detect`,

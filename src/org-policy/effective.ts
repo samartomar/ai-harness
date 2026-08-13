@@ -102,6 +102,8 @@ export interface RuntimeReviewedControl {
 export interface RuntimeMcpIdentity {
   subject: string;
   projectable: boolean;
+  /** Whether the rendered runtime entry has a Kiro-supported stdio transport. */
+  kiroProjectable?: boolean;
 }
 
 export interface RuntimeHookIdentity {
@@ -351,12 +353,16 @@ function projectorFor(
         receipt: "unavailable",
       };
     }
+    const kiroProjectable =
+      candidate.source.type !== "mcp" ||
+      context.mcpIdentities?.[candidate.source.server]?.kiroProjectable !== false;
+    const supportedTargets = kiroProjectable ? ["claude", "kiro"] : ["claude"];
     return {
       projector: candidate.projector,
       requestedTargets: requested,
-      supportedTargets: ["claude", "kiro"],
+      supportedTargets,
       availableTargets,
-      coverage: projectionCoverage(requested, ["claude", "kiro"], availableTargets),
+      coverage: projectionCoverage(requested, supportedTargets, availableTargets),
       ownership:
         requested.length === 1 && requested[0] === "kiro"
           ? "kiro-mcp-receipt"

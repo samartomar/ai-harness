@@ -30,6 +30,7 @@ import {
   withExpectedContents,
 } from "../mcp/managed-projection.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
+import { coalesceMcpProjectionMarkerActions } from "../mcp/projection-marker.js";
 import { type McpServer, mcpServers, type StdioServer } from "../mcp/servers.js";
 import { scanRepo } from "../profile/scan.js";
 import { usageRecorderScript } from "../usage/capture.js";
@@ -1101,7 +1102,7 @@ function projectionActionsFromRuntime(
       }
     }
   }
-  return actions;
+  return coalesceMcpProjectionMarkerActions(actions);
 }
 
 /** Governed projection: authority is verified before any policy-selected action is emitted. */
@@ -1132,7 +1133,11 @@ export function orgPolicyProjectionActions(ctx: PlanContext, policy: OrgPolicy):
     mcpIdentities: Object.fromEntries(
       Object.entries(catalog).map(([name, server]) => [
         name,
-        { subject: mcpApprovalSubject(server), projectable: server.type === "stdio" },
+        {
+          subject: mcpApprovalSubject(server),
+          projectable: server.type === "stdio",
+          kiroProjectable: server.type === "stdio",
+        },
       ]),
     ),
   });

@@ -7,6 +7,7 @@ import {
   bareDefaultNarrowingNotice,
   confirmDetectedClis,
   detectClis,
+  detectClisByConfig,
   detectFallbackNotice,
   detectOne,
   presentClis,
@@ -35,11 +36,14 @@ function fakePrompter(answer: string): { prompter: Prompter; asked: string[] } {
 }
 
 let home: string;
+let kiroHome: string;
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "aih-home-"));
+  kiroHome = mkdtempSync(join(tmpdir(), "aih-kiro-home-"));
 });
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
+  rmSync(kiroHome, { recursive: true, force: true });
 });
 
 /** Create a home-relative config dir to simulate an installed CLI. */
@@ -111,6 +115,30 @@ describe("detectOne", () => {
     expect(p.detail).toBe("~/.kiro");
   });
 
+  it("uses KIRO_HOME as Kiro's config root without changing other CLI home lookup", async () => {
+    mkdirSync(kiroHome, { recursive: true });
+    configDir(".claude");
+    const ctx = { ...makeCtx(), env: { HOME: home, KIRO_HOME: kiroHome } };
+
+    await expect(detectOne(ctx, "kiro")).resolves.toMatchObject({
+      present: true,
+      via: "config",
+      detail: "KIRO_HOME",
+    });
+    await expect(detectOne(ctx, "claude")).resolves.toMatchObject({
+      present: true,
+      detail: "~/.claude",
+    });
+  });
+
+  it("falls back to ~/.kiro when KIRO_HOME is unset", async () => {
+    configDir(".kiro");
+    await expect(detectOne(makeCtx(), "kiro")).resolves.toMatchObject({
+      present: true,
+      detail: "~/.kiro",
+    });
+  });
+
   it("detects the public Kiro target through the documented kiro-cli executable", async () => {
     const p = await detectOne(makeCtx({}, ["kiro-cli"]), "kiro");
     expect(p.present).toBe(true);
@@ -127,6 +155,15 @@ describe("detectClis / presentClis", () => {
     expect(all).toHaveLength(SUPPORTED_CLIS.length);
     expect(presentClis(all)).toEqual(expect.arrayContaining(["claude", "cursor", "codex"]));
     expect(presentClis(all)).not.toContain("zed");
+  });
+
+  it("includes a KIRO_HOME config trace in the report-safe config-only inventory", () => {
+    mkdirSync(kiroHome, { recursive: true });
+    const ctx = { ...makeCtx(), env: { HOME: home, KIRO_HOME: kiroHome } };
+    expect(detectClisByConfig(ctx).find((presence) => presence.cli === "kiro")).toMatchObject({
+      present: true,
+      detail: "KIRO_HOME",
+    });
   });
 });
 
