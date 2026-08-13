@@ -268,7 +268,7 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     expect(w.has("CLAUDE.md")).toBe(false);
   });
 
-  it("--cli kiro generates real .kiro.hook files + agent-tools steering", async () => {
+  it("--cli kiro generates current standalone v1 JSON hooks + agent-tools steering", async () => {
     put(
       "package.json",
       JSON.stringify({ name: "svc", scripts: { test: "vitest run", lint: "biome" } }),
@@ -276,35 +276,32 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     put("tsconfig.json", "{}");
     const w = writesByPath((await command.plan(makeCtx({ cli: "kiro" }))).actions);
     expect(w.has(".kiro/steering/agent-tools.md")).toBe(true);
-    // Hook uses Kiro's verified real schema (when/then types).
-    const hook = w.get(".kiro/hooks/aih-tests-on-edit.kiro.hook")?.json as {
-      when: { type: string };
-      then: { type: string };
+    const hook = w.get(".kiro/hooks/aih-tests-on-edit.json")?.json as {
+      version: string;
+      hooks: Array<{ trigger: string; action: { type: string } }>;
     };
-    expect(hook.when.type).toBe("fileEdited");
-    expect(hook.then.type).toBe("askAgent");
+    expect(hook.version).toBe("v1");
+    expect(hook.hooks[0]?.trigger).toBe("PostFileSave");
+    expect(hook.hooks[0]?.action.type).toBe("agent");
     // Quality gate runs the repo's real (detected) test + lint commands.
-    const gate = w.get(".kiro/hooks/aih-quality-gate.kiro.hook")?.json as {
-      when: { type: string };
-      then: { command: string };
+    const gate = w.get(".kiro/hooks/aih-quality-gate.json")?.json as {
+      hooks: Array<{ trigger: string; action: { command: string } }>;
     };
-    expect(gate.when.type).toBe("userTriggered");
-    expect(gate.then.command).toContain("npm test");
+    expect(gate.hooks[0]?.trigger).toBe("Manual");
+    expect(gate.hooks[0]?.action.command).toContain("npm test");
     // Metrics hook fires on the verified agentStop event and records a sample,
     // fail-open: `aih track` runs inside a one-shot `node -e` try/catch so a missing
     // or hung `aih` can never fail the turn, with a seconds-unit timeout cap.
-    const metrics = w.get(".kiro/hooks/aih-metrics-on-stop.kiro.hook")?.json as {
-      when: { type: string };
-      timeout: number;
-      then: { command: string };
+    const metrics = w.get(".kiro/hooks/aih-metrics-on-stop.json")?.json as {
+      hooks: Array<{ trigger: string; timeout: number; action: { command: string } }>;
     };
-    expect(metrics.when.type).toBe("agentStop");
-    expect(metrics.then.command).toContain("['track','--apply']");
-    expect(metrics.then.command.startsWith("node -e ")).toBe(true);
-    expect(metrics.then.command).toContain("execFileSync");
-    expect(metrics.then.command).toContain("shell:false");
-    expect(metrics.then.command).toContain("catch"); // warns on missing/failing aih
-    expect(metrics.timeout).toBeGreaterThan(0); // caps a stuck aih (Kiro timeout is seconds)
+    expect(metrics.hooks[0]?.trigger).toBe("Stop");
+    expect(metrics.hooks[0]?.action.command).toContain("['track','--apply']");
+    expect(metrics.hooks[0]?.action.command.startsWith("node -e ")).toBe(true);
+    expect(metrics.hooks[0]?.action.command).toContain("execFileSync");
+    expect(metrics.hooks[0]?.action.command).toContain("shell:false");
+    expect(metrics.hooks[0]?.action.command).toContain("catch");
+    expect(metrics.hooks[0]?.timeout).toBeGreaterThan(0);
   });
 
   it("persists the .aih-config.json marker for the resolved targets (standalone)", async () => {

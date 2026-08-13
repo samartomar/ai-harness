@@ -82,6 +82,18 @@ describe("migrateCliActions — what migrates, what doesn't", () => {
     expect(paths).not.toContain(".claude/agents/security.md");
   });
 
+  it("migrates Kiro markdown agents, skills, and prompts but never JSON agent configuration", () => {
+    put(".kiro/agents/reviewer.md", "# reviewer\n");
+    put(".kiro/agents/legacy.json", '{"name":"legacy"}\n');
+    put(".kiro/skills/release/SKILL.md", "# release\n");
+    put(".kiro/prompts/release.md", "# release prompt\n");
+    const paths = writePaths(migrateCliActions(tmp, cliFootprint(tmp, DIR), DIR));
+    expect(paths).toContain("ai-coding/agents/reviewer.md");
+    expect(paths).toContain("ai-coding/skills/release/SKILL.md");
+    expect(paths).toContain("ai-coding/prompts/release.md");
+    expect(paths).not.toContain("ai-coding/agents/legacy.json");
+  });
+
   it("rule dirs are namespaced by source so duplicate filenames cannot overwrite each other", () => {
     put(".claude/rules/security.md", "# Claude security\n");
     put(".cursor/rules/security.md", "# Cursor security\n");

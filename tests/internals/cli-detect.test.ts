@@ -110,6 +110,13 @@ describe("detectOne", () => {
     expect(p.present).toBe(true);
     expect(p.detail).toBe("~/.kiro");
   });
+
+  it("detects the public Kiro target through the documented kiro-cli executable", async () => {
+    const p = await detectOne(makeCtx({}, ["kiro-cli"]), "kiro");
+    expect(p.present).toBe(true);
+    expect(p.via).toBe("binary");
+    expect(p.detail).toBe("kiro-cli");
+  });
 });
 
 describe("detectClis / presentClis", () => {

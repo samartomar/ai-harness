@@ -73,6 +73,9 @@ describe("CLI registry", () => {
     expect(entry("claude").binaries).toEqual(["claude"]);
     expect(entry("antigravity").configDirs).toContain(".antigravity");
     expect(entry("windsurf").configDirs).toContain(".codeium/windsurf");
+    // `kiro` can be an optional IDE/CLI command router; `kiro-cli` is the
+    // documented executable that unambiguously proves the CLI is installed.
+    expect(entry("kiro").binaries).toEqual(["kiro-cli"]);
   });
 
   it("bootloadersFor dedupes the AGENTS.md convention (codex/opencode/zed/kimi)", () => {

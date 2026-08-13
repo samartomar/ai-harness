@@ -93,8 +93,8 @@ describe("usageRecorderCheck", () => {
 
   it("passes once the recorder is present, not ignored, AND git-tracked", async () => {
     write(
-      ".kiro/hooks/aih-usage-metering.kiro.hook",
-      '{"when":{"type":"agentStop"},"command":"node .aih/usage-record.mjs --from kiro"}',
+      ".kiro/hooks/aih-usage-metering.json",
+      '{"version":"v1","hooks":[{"trigger":"Stop","action":{"command":"node .aih/usage-record.mjs --from kiro"}}]}',
     );
     write(".aih/usage-record.mjs", "// recorder\n");
     const c = await usageRecorderCheck(makeCtx(gitRunner({ ignored: false, tracked: true })));
@@ -138,7 +138,7 @@ describe("usageRecorderCheck", () => {
 
 // The metrics hook's file text always carries `aih track`; the probe keys off that.
 const METRICS_HOOK_TEXT =
-  '{"when":{"type":"agentStop"},"command":"node -e \\"...aih track --apply...\\""}';
+  '{"version":"v1","hooks":[{"trigger":"Stop","action":{"command":"node -e \\"...aih track --apply...\\""}}]}';
 
 describe("metricsToolCheck", () => {
   it("skips when there is no Kiro metrics-on-stop hook", async () => {
@@ -148,7 +148,7 @@ describe("metricsToolCheck", () => {
   });
 
   it("passes when the metrics hook exists and `aih` resolves on PATH", async () => {
-    write(".kiro/hooks/aih-metrics-on-stop.kiro.hook", METRICS_HOOK_TEXT);
+    write(".kiro/hooks/aih-metrics-on-stop.json", METRICS_HOOK_TEXT);
     const run = fakeRunner((argv) =>
       argv[0] === "which" && argv[1] === "aih" ? { code: 0, stdout: "/usr/bin/aih" } : undefined,
     );
@@ -157,7 +157,7 @@ describe("metricsToolCheck", () => {
   });
 
   it("advises (usage.metrics-tool-missing, skip) when `aih` is not on PATH", async () => {
-    write(".kiro/hooks/aih-metrics-on-stop.kiro.hook", METRICS_HOOK_TEXT);
+    write(".kiro/hooks/aih-metrics-on-stop.json", METRICS_HOOK_TEXT);
     // `where aih` (Windows) returns non-zero when not found — the hook is fail-open, so
     // this must be an advisory skip, never a hard fail.
     const run = fakeRunner((argv) => (argv[0] === "where" ? { code: 1, stdout: "" } : undefined));

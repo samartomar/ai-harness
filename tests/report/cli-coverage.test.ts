@@ -219,6 +219,15 @@ describe("mcp cell — content check + manual model", () => {
     r = row(scanCliCoverage(ctx()), "copilot");
     expect(r.mcp.state).toBe("wired");
   });
+
+  it("Kiro MCP wiring reports only project configuration, not custom-agent enforcement", () => {
+    marker("kiro");
+    writeMcp(".kiro/settings/mcp.json");
+    const r = row(scanCliCoverage(ctx()), "kiro");
+    expect(r.mcp.state).toBe("wired");
+    expect(r.mcp.detail).toContain("workspace config only");
+    expect(r.mcp.detail).toContain("custom-agent MCP overrides are not evaluated");
+  });
 });
 
 describe("settings cell", () => {
