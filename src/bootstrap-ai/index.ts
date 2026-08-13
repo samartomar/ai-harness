@@ -31,6 +31,13 @@ import {
 import { repoDisplayName } from "../internals/repo-name.js";
 import type { Check } from "../internals/verify.js";
 import { agentToolsSteering, kiroHooks } from "../kiro/content.js";
+import { kiroHookWriteAction } from "../kiro/hook-projection.js";
+import {
+  explicitKiroHookRuntime,
+  KIRO_HOOK_RUNTIME_OPTION,
+  kiroHookRuntime,
+  supportsKiroStandaloneHooks,
+} from "../kiro/runtime.js";
 import { type GeneratedDoc, lintProbes } from "../lint/run.js";
 import { scanRepo } from "../profile/scan.js";
 import {
@@ -196,6 +203,7 @@ function generatedTextProbe(relPath: string, expected: string): Action {
  * Honors `--cli`/`--all-tools` (default claude) and `--context-dir`.
  */
 async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
+  explicitKiroHookRuntime(ctx);
   const dir = ctx.contextDir;
   const canon = canonMode(ctx);
   const { clis, detectFellBack, bareDefault } = await resolveTargets(ctx);
@@ -285,23 +293,26 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   // marker-driven re-run silently regenerated the dropped CLI's adapter and
   // bootloader again (#506).
   if (ctx.targets === undefined) {
+    const hookRuntime = clis.includes("kiro") ? kiroHookRuntime(ctx) : "unknown";
     actions.push(
       writeJson(
         ".aih-config.json",
-        aihConfigJson(dir, clis, baseline.id),
+        aihConfigJson(dir, clis, baseline.id, hookRuntime === "unknown" ? undefined : hookRuntime),
         "persist bootstrap intent (context-dir + CLI targets) so report/doctor read it",
         {
           merge: true,
           replaceJsonKeys: ["targets"],
-          removeJsonTopLevelKeys:
-            ctx.options.baseline === DEFAULT_BASELINE_SOURCE_ID ? ["baseline"] : undefined,
+          removeJsonTopLevelKeys: [
+            ...(ctx.options.baseline === DEFAULT_BASELINE_SOURCE_ID ? ["baseline"] : []),
+            ...(!clis.includes("kiro") ? ["kiroHookRuntime"] : []),
+          ],
         },
       ),
     );
   }
 
   // Kiro-native extras (Kiro can't read ~/.claude): always-on agent-tools steering
-  // + a small stack-aware hook set in Kiro's real `.kiro.hook` schema.
+  // + a small stack-aware hook set in the current standalone v1 hook schema.
   if (clis.includes("kiro")) {
     actions.push(
       writeText(
@@ -310,10 +321,26 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
         "Kiro steering: stack-aware CLI tool usage",
       ),
     );
-    for (const h of kiroHooks(stack)) {
-      const label = h.path.replace(/^\.kiro\/hooks\//, "").replace(/\.kiro\.hook$/, "");
-      actions.push(writeJson(h.path, h.hook, `Kiro hook: ${label} (.kiro.hook schema)`));
+    if (supportsKiroStandaloneHooks(ctx)) {
+      for (const h of kiroHooks(stack)) {
+        const label = h.path.replace(/^\.kiro\/hooks\//, "").replace(/\.json$/, "");
+        const action = kiroHookWriteAction(
+          ctx,
+          h.path,
+          h.hook,
+          `Kiro hook: ${label} (standalone v1 schema)`,
+        );
+        if (action !== undefined) actions.push(action);
+      }
     }
+    actions.push(
+      doc(
+        "Kiro hook runtime capability",
+        kiroHookRuntime(ctx) === "ide1-cli3"
+          ? "Standalone Kiro v1 hooks are enabled for Kiro IDE 1.x / Kiro CLI 3.x."
+          : "AIH did not write Kiro hooks because the selected runtime is CLI 2.x or unknown. CLI 2.x stores hooks inside each custom-agent configuration, which AIH does not modify. To opt into the standalone surface, run Kiro CLI 3 with `kiro-cli --v3`, migrate reviewed agents with `/upgrade-agent`, then rerun with `--kiro-hook-runtime ide1-cli3`.",
+      ),
+    );
   }
 
   // Doctor probes (run under --verify): router present + every bootloader in sync,
@@ -439,6 +466,7 @@ export const command: CommandSpec = {
     },
     CANON_OPTION,
     BASELINE_OPTION,
+    KIRO_HOOK_RUNTIME_OPTION,
   ],
   plan: bootstrapAiPlan,
 };

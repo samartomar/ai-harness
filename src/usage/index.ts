@@ -1,4 +1,5 @@
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { AIH_CONFIG_FILE, readAihConfig } from "../config/marker.js";
 import { resolveTargets } from "../internals/cli-detect.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { gitRead } from "../internals/git.js";
@@ -13,10 +14,17 @@ import {
   type PlanContext,
   plan,
   probe,
+  writeJson,
   writeText,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
+import {
+  explicitKiroHookRuntime,
+  KIRO_HOOK_RUNTIME_OPTION,
+  kiroHookRuntime,
+} from "../kiro/runtime.js";
+import { withExpectedContents } from "../mcp/managed-projection.js";
 import { assertGovernanceOwnsSurface } from "../org-policy/schema.js";
 import { aggregateUsage } from "./aggregate.js";
 import { gitPostCommitChainSnippet, gitPostCommitHook, usageRecorderScript } from "./capture.js";
@@ -57,7 +65,7 @@ const TOOL_HOOK: Partial<Record<string, string>> = {
   windsurf: "`.windsurf/hooks.json` → `post_mcp_tool_use`",
   opencode: "OpenCode TS plugin (`tool.execute.after`) + storage JSON",
   kimi: "`.kimi/config.toml` `[[hooks]]` → `PostToolUse`",
-  kiro: "`.kiro/hooks/*.kiro.hook` Run Command (aih already generates these)",
+  kiro: "standalone v1 hooks require explicit Kiro IDE 1.x / CLI 3.x capability; CLI 2.x agent config is untouched",
   antigravity: "`.agents/hooks.json` → `PostToolUse`",
   zed: "`threads.db` SQLite capture via the current Node runtime (no local hook surface)",
 };
@@ -148,6 +156,7 @@ function describeZedSource(dbPath: string, ctx: PlanContext): string {
  * history accrues in `.aih/history.jsonl`; `aih report` renders both.
  */
 async function usagePlan(ctx: PlanContext): Promise<Plan> {
+  const requestedKiroRuntime = explicitKiroHookRuntime(ctx);
   const roots = rollupRoots(ctx);
   if (roots.length > 0) return usageRollupPlan(ctx, roots);
   assertGovernanceOwnsSurface(ctx, "usage");
@@ -172,6 +181,39 @@ async function usagePlan(ctx: PlanContext): Promise<Plan> {
     ...usageHookActions(ctx, clis),
     coverageDoc(clis),
   ];
+  const explicitKiroRuntime = clis.includes("kiro") ? requestedKiroRuntime : undefined;
+  if (explicitKiroRuntime !== undefined && ctx.targets === undefined) {
+    const marker = readAihConfig(ctx.root);
+    const markerSource = readIfExists(join(ctx.root, AIH_CONFIG_FILE));
+    if (marker !== undefined && markerSource !== undefined) {
+      actions.push(
+        withExpectedContents(
+          writeJson(
+            AIH_CONFIG_FILE,
+            { kiroHookRuntime: explicitKiroRuntime },
+            "persist the explicit Kiro hook runtime capability for doctor",
+            { merge: true },
+          ),
+          markerSource,
+        ),
+      );
+    } else {
+      actions.push(
+        doc(
+          "Kiro hook runtime capability is not persisted",
+          "No valid .aih-config.json marker exists. The hook projection is capability-gated for this run, but a later `aih doctor` will report the runtime as unverified until `aih bootstrap-ai --cli kiro --kiro-hook-runtime ide1-cli3 --apply` persists it.",
+        ),
+      );
+    }
+  }
+  if (clis.includes("kiro") && kiroHookRuntime(ctx) !== "ide1-cli3") {
+    actions.push(
+      doc(
+        "Kiro usage hook not projected",
+        "Kiro CLI 2.x or an unknown Kiro runtime does not prove standalone v1 hook support. Run Kiro CLI 3 with `kiro-cli --v3`, review/migrate agents as needed, then rerun with `--kiro-hook-runtime ide1-cli3`.",
+      ),
+    );
+  }
   if (hookTarget.path !== undefined) {
     actions.splice(
       1,
@@ -272,6 +314,7 @@ export const command: CommandSpec = {
       flags: "--zed-threads-db <path>",
       description: "read a specific Zed threads.db SQLite file when capturing zed usage samples",
     },
+    KIRO_HOOK_RUNTIME_OPTION,
   ],
   plan: usagePlan,
 };

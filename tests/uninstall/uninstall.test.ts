@@ -285,25 +285,48 @@ describe("aih uninstall", () => {
     );
   });
 
-  it("backs up Kiro-owned steering and hook extras without touching team hooks", async () => {
+  it("keeps exact current and legacy Kiro hook names advisory without touching lookalikes", async () => {
     await bootstrapFixture("kiro");
+    put(".kiro/hooks/aih-tests-on-edit.json", "{}\n");
+    put(".kiro/hooks/aih-tests-on-edit.kiro.hook", "{}\n");
+    put(".kiro/hooks/aih-custom.json", "{}\n");
+    put(".kiro/hooks/aih-custom.kiro.hook", "{}\n");
     put(".kiro/hooks/team-custom.kiro.hook", "{}\n");
 
     const ctx = makeCtx();
     const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
     const removed = new Map(result.removed.map((r) => [r.path, r]));
+    const digest = result.digests.find((d) => d.describe.includes("core install footprint"));
+    const artifacts = digest?.data as
+      | { artifacts?: Array<{ path: string; disposition: string; kind: string }> }
+      | undefined;
 
     expect(removed.get(".kiro/steering/agent-tools.md")?.effect).toBe("delete");
-    expect(removed.get(".kiro/hooks/aih-secret-scan-on-create.kiro.hook")?.effect).toBe("delete");
-    expect(removed.get(".kiro/hooks/aih-tests-on-edit.kiro.hook")?.effect).toBe("delete");
-    expect(removed.get(".kiro/hooks/aih-metrics-on-stop.kiro.hook")?.effect).toBe("delete");
+    expect(removed.has(".kiro/hooks/aih-tests-on-edit.json")).toBe(false);
+    expect(removed.has(".kiro/hooks/aih-tests-on-edit.kiro.hook")).toBe(false);
+    expect(removed.has(".kiro/hooks/aih-custom.json")).toBe(false);
+    expect(removed.has(".kiro/hooks/aih-custom.kiro.hook")).toBe(false);
     expect(removed.has(".kiro/hooks/team-custom.kiro.hook")).toBe(false);
+    expect(artifacts?.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: ".kiro/hooks/aih-tests-on-edit.json",
+          kind: "kiro-hook",
+          disposition: "advisory",
+        }),
+        expect.objectContaining({
+          path: ".kiro/hooks/aih-tests-on-edit.kiro.hook",
+          kind: "kiro-hook",
+          disposition: "advisory",
+        }),
+      ]),
+    );
   });
 
   it("keeps Kiro extras inside a co-owned .kiro context in preview and apply", async () => {
     put("package.json", JSON.stringify({ name: "fixture" }));
     const bootstrapCtx: PlanContext = {
-      ...makeCtx({ cli: "kiro", canon: "compact" }, { apply: true }),
+      ...makeCtx({ cli: "kiro", canon: "compact", kiroHookRuntime: "ide1-cli3" }, { apply: true }),
       contextDir: ".kiro",
     };
     await executePlan(await bootstrapAiCommand.plan(bootstrapCtx), bootstrapCtx);
@@ -315,7 +338,7 @@ describe("aih uninstall", () => {
       ".kiro/steering/agent-tools.md",
     );
     expect(preview.removed.map((entry) => entry.path)).not.toContain(
-      ".kiro/hooks/aih-secret-scan-on-create.kiro.hook",
+      ".kiro/hooks/aih-secret-scan-on-create.json",
     );
 
     const applied = await executePlan(await uninstallCommand.plan(bootstrapCtx), bootstrapCtx);
@@ -323,12 +346,10 @@ describe("aih uninstall", () => {
       ".kiro/steering/agent-tools.md",
     );
     expect(applied.removed.map((entry) => entry.path)).not.toContain(
-      ".kiro/hooks/aih-secret-scan-on-create.kiro.hook",
+      ".kiro/hooks/aih-secret-scan-on-create.json",
     );
     expect(existsSync(join(tmp, ".kiro", "steering", "agent-tools.md"))).toBe(true);
-    expect(existsSync(join(tmp, ".kiro", "hooks", "aih-secret-scan-on-create.kiro.hook"))).toBe(
-      true,
-    );
+    expect(existsSync(join(tmp, ".kiro", "hooks", "aih-secret-scan-on-create.json"))).toBe(true);
     expect(existsSync(join(tmp, ".kiro", "hooks", "team-custom.kiro.hook"))).toBe(true);
   });
 
@@ -338,7 +359,8 @@ describe("aih uninstall", () => {
       JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["kiro"] }),
     );
     put(".kiro/steering/agent-tools.md", "# Team-owned tools\n");
-    put(".kiro/hooks/aih-team.kiro.hook", "{}\n");
+    put(".kiro/hooks/aih-tests-on-edit.kiro.hook", "{}\n");
+    put(".kiro/hooks/aih-team.kiro.hook", "{}\n"); // a prefix lookalike is user-owned
 
     const ctx = makeCtx();
     const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
@@ -348,6 +370,9 @@ describe("aih uninstall", () => {
       | undefined;
 
     expect(result.removed.map((r) => r.path)).not.toContain(".kiro/steering/agent-tools.md");
+    expect(result.removed.map((r) => r.path)).not.toContain(
+      ".kiro/hooks/aih-tests-on-edit.kiro.hook",
+    );
     expect(result.removed.map((r) => r.path)).not.toContain(".kiro/hooks/aih-team.kiro.hook");
     expect(artifacts?.artifacts).toEqual(
       expect.arrayContaining([
@@ -357,11 +382,14 @@ describe("aih uninstall", () => {
           disposition: "advisory",
         }),
         expect.objectContaining({
-          path: ".kiro/hooks/aih-team.kiro.hook",
+          path: ".kiro/hooks/aih-tests-on-edit.kiro.hook",
           kind: "kiro-hook",
           disposition: "advisory",
         }),
       ]),
+    );
+    expect(artifacts?.artifacts).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: ".kiro/hooks/aih-team.kiro.hook" })]),
     );
   });
 

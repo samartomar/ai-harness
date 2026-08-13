@@ -865,6 +865,7 @@ describe("aih usage command", () => {
       await command.plan(
         makeCtx({
           cli: "claude,codex,cursor,antigravity,gemini,copilot,windsurf,opencode,kimi,kiro,zed",
+          kiroHookRuntime: "ide1-cli3",
         }),
       )
     ).actions;
@@ -881,7 +882,7 @@ describe("aih usage command", () => {
       [".windsurf/hooks.json", "--from windsurf"],
       [".opencode/plugins/aih-usage-metering.js", "--from opencode"],
       [".kimi/config.toml", "--from kimi"],
-      [".kiro/hooks/aih-usage-metering.kiro.hook", "--from kiro"],
+      [".kiro/hooks/aih-usage-metering.json", "--from kiro"],
     ]);
     for (const [path, commandText] of expected) {
       const write = writes.find(([p]) => p === path);
@@ -912,6 +913,54 @@ describe("aih usage command", () => {
     expect(docs).toContain("trusted");
     expect(docs).toContain("zed");
     expect(docs).toContain("no hooks");
+  });
+
+  it("does not claim or emit a standalone Kiro usage hook for CLI 2.x or an unknown runtime", async () => {
+    for (const kiroHookRuntime of [undefined, "cli2"] as const) {
+      const options = {
+        cli: "kiro",
+        ...(kiroHookRuntime === undefined ? {} : { kiroHookRuntime }),
+      };
+      const actions = (await command.plan(makeCtx(options))).actions;
+      expect(
+        actions.some(
+          (action) => action.kind === "write" && action.path.includes("aih-usage-metering.json"),
+        ),
+      ).toBe(false);
+      expect(
+        actions
+          .filter((action) => action.kind === "doc")
+          .map((action) => (action.kind === "doc" ? action.text : ""))
+          .join("\n"),
+      ).toContain("does not prove standalone v1 hook support");
+    }
+  });
+
+  it("refuses to overwrite an operator usage hook at the reserved Kiro filename", async () => {
+    mkdirSync(join(root, ".kiro", "hooks"), { recursive: true });
+    writeFileSync(
+      join(root, ".kiro", "hooks", "aih-usage-metering.json"),
+      '{"team":"owned"}\n',
+      "utf8",
+    );
+    await expect(
+      command.plan(makeCtx({ cli: "kiro", kiroHookRuntime: "ide1-cli3" })),
+    ).rejects.toThrow(/refusing to overwrite an unowned Kiro hook/);
+  });
+
+  it("pins the marker snapshot when persisting a standalone Kiro runtime selection", async () => {
+    writeFileSync(
+      join(root, ".aih-config.json"),
+      `${JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["kiro"] })}\n`,
+      "utf8",
+    );
+    const marker = (
+      await command.plan(makeCtx({ cli: "kiro", kiroHookRuntime: "ide1-cli3" }))
+    ).actions.find((action) => action.kind === "write" && action.path === ".aih-config.json");
+    expect(marker?.kind === "write" ? marker.expect : undefined).toHaveProperty("sha256");
+    expect(marker?.kind === "write" ? marker.json : undefined).toEqual({
+      kiroHookRuntime: "ide1-cli3",
+    });
   });
 
   it("makes the Claude PostToolUse command fail-open (`; exit 0`, no PowerShell-hostile guards)", async () => {
@@ -955,16 +1004,20 @@ describe("aih usage command", () => {
     }
   });
 
-  it("gives the Kiro usage hook a seconds-unit timeout (agentStop is non-blocking)", async () => {
-    const actions = (await command.plan(makeCtx({ cli: "kiro" }))).actions;
+  it("gives the Kiro standalone v1 usage hook a seconds-unit timeout", async () => {
+    const actions = (await command.plan(makeCtx({ cli: "kiro", kiroHookRuntime: "ide1-cli3" })))
+      .actions;
     const hook = actions.find(
       (a) =>
-        a.kind === "write" &&
-        a.path.replace(/\\/g, "/") === ".kiro/hooks/aih-usage-metering.kiro.hook",
+        a.kind === "write" && a.path.replace(/\\/g, "/") === ".kiro/hooks/aih-usage-metering.json",
     );
-    const json = hook?.kind === "write" ? (hook.json as { timeout?: number; when?: unknown }) : {};
-    expect(json.timeout).toBeGreaterThan(0);
-    expect(json.when).toMatchObject({ type: "agentStop" });
+    const json =
+      hook?.kind === "write"
+        ? (hook.json as { version?: string; hooks?: Array<{ timeout?: number; trigger?: string }> })
+        : {};
+    expect(json.version).toBe("v1");
+    expect(json.hooks?.[0]?.timeout).toBeGreaterThan(0);
+    expect(json.hooks?.[0]?.trigger).toBe("Stop");
   });
 
   it("merges the Claude usage hook additively and idempotently", async () => {

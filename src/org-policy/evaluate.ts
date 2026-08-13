@@ -6,6 +6,7 @@ import { hookRegistrarReport } from "./hook-registrar.js";
 import {
   ORG_POLICY_HOOK_RECEIPT_PATH,
   orgPolicyHookReceiptState,
+  orgPolicyKiroMcpReceiptState,
   orgPolicyMcpReceiptState,
 } from "./project.js";
 import { resolveRuntimeOrgPolicy } from "./runtime.js";
@@ -58,6 +59,7 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
     const effective = (await resolveRuntimeOrgPolicy(ctx, policy)).effective;
     const hookReceipt = orgPolicyHookReceiptState(ctx, effective);
     const mcpReceipt = orgPolicyMcpReceiptState(ctx, effective);
+    const kiroMcpReceipt = orgPolicyKiroMcpReceiptState(ctx, effective);
     if (!governanceOwnsAihSurfaces(policy)) {
       if (hookReceipt.state !== "absent" && hookReceipt.state !== "active") {
         return {
@@ -106,6 +108,16 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
         fingerprint: `org-policy-mcp-receipt:${mcpReceipt.state}`,
       };
     }
+    if (kiroMcpReceipt.state !== "not-requested" && kiroMcpReceipt.state !== "clean") {
+      return {
+        name: "org policy effective resolution",
+        verdict: "fail",
+        code: "org-policy.effective-blocked",
+        detail: `Kiro workspace-MCP ownership is ${kiroMcpReceipt.state}: ${kiroMcpReceipt.detail}`,
+        location: { uri: ".kiro/settings/mcp.json" },
+        fingerprint: `org-policy-kiro-mcp-receipt:${kiroMcpReceipt.state}`,
+      };
+    }
     return {
       name: "org policy effective resolution",
       verdict: "pass",
@@ -133,6 +145,7 @@ export async function orgPolicyEffectiveDigest(
     const effective = (await resolveRuntimeOrgPolicy(ctx, policy)).effective;
     const hookReceipt = orgPolicyHookReceiptState(ctx, effective);
     const mcpReceipt = orgPolicyMcpReceiptState(ctx, effective);
+    const kiroMcpReceipt = orgPolicyKiroMcpReceiptState(ctx, effective);
     const hookRegistrar = hookRegistrarReport(ctx.root);
     const candidates = effective.candidates;
     const body = lines(
@@ -149,12 +162,23 @@ export async function orgPolicyEffectiveDigest(
           approval === undefined
             ? candidate.evidence
             : `${approval.issuer} @ ${approval.repository}; ${approval.attestationId}; ${approval.reason}; clarification=${approval.clarification}`;
-        const projection = `${candidate.projection.requestedTargets.join(",") || "none"} / ${candidate.projection.projector}; supported=${candidate.projection.supportedTargets.join(",") || "none"}; available=${candidate.projection.availableTargets.join(",") || "none"}; ${candidate.projection.coverage}`;
+        const requestedTargets = candidate.projection.requestedTargets;
+        const targetProjector =
+          candidate.kind === "mcp" && candidate.projection.projector === "mcp-managed-settings"
+            ? requestedTargets
+                .map((target) =>
+                  target === "kiro"
+                    ? "kiro / workspace MCP distribution"
+                    : `${target} / mcp-managed-settings`,
+                )
+                .join(", ") || "none / mcp-managed-settings"
+            : `${requestedTargets.join(",") || "none"} / ${candidate.projection.projector}`;
+        const projection = `${targetProjector}; supported=${candidate.projection.supportedTargets.join(",") || "none"}; available=${candidate.projection.availableTargets.join(",") || "none"}; ${candidate.projection.coverage}`;
         const receipt =
           candidate.kind === "hook"
             ? `${hookReceipt.state}: ${hookReceipt.detail}`
             : candidate.kind === "mcp"
-              ? `${mcpReceipt.state}: ${mcpReceipt.detail}`
+              ? `${candidate.projection.requestedTargets.includes("kiro") ? `${kiroMcpReceipt.state}: ${kiroMcpReceipt.detail}` : `${mcpReceipt.state}: ${mcpReceipt.detail}`}`
               : candidate.projection.receipt;
         const notes =
           [candidate.clarification, candidate.annotation].filter(Boolean).join(" / ") || "—";
@@ -168,6 +192,7 @@ export async function orgPolicyEffectiveDigest(
       "",
       `Hook receipt: ${hookReceipt.state} — ${hookReceipt.detail}.`,
       `Managed-MCP receipt: ${mcpReceipt.state} — ${mcpReceipt.detail}.`,
+      `Kiro workspace-MCP receipt: ${kiroMcpReceipt.state} — ${kiroMcpReceipt.detail}.`,
       `Hook registrar: ${hookRegistrar.state} — ${hookRegistrar.detail}.`,
       ...(hookRegistrar.unowned.length === 0
         ? []
@@ -202,6 +227,7 @@ export async function orgPolicyEffectiveDigest(
         authority: effective.authority,
         hookReceipt,
         mcpReceipt,
+        kiroMcpReceipt,
         hookRegistrar,
       },
     );

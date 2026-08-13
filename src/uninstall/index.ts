@@ -18,6 +18,12 @@ import {
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import {
+  KIRO_MCP_SETTINGS_PATH,
+  type KiroMcpProjectionResidue,
+  kiroMcpProjectionOnDisk,
+  kiroMcpSubtractionAction,
+} from "../mcp/kiro-managed-projection.js";
+import {
   MANAGED_MCP_PROJECTION_KEYS,
   MANAGED_SETTINGS_PATH,
   type ManagedMcpProjectionResidue,
@@ -53,6 +59,7 @@ interface UninstallArtifact {
     | "kiro-steering"
     | "kiro-hook"
     | "managed-settings"
+    | "kiro-managed-mcp"
     | "hook-registrar"
     | "ecc-materialization";
   disposition: UninstallDisposition;
@@ -67,6 +74,8 @@ interface UninstallSet {
    * BEFORE the marker goes (issue #567).
    */
   managedMcp?: ManagedMcpProjectionResidue;
+  /** Receipt-proven Kiro workspace-MCP entries to subtract before marker removal. */
+  kiroMcp?: KiroMcpProjectionResidue;
   /**
    * Receipt-proven hook registration revocation (subtract the owned `hooks`
    * key, remove the receipt). Third-party entries have no removal path of
@@ -386,10 +395,22 @@ function repoMcpAdvisories(ctx: PlanContext): UninstallArtifact[] {
   }));
 }
 
+const KIRO_HOOK_BASENAMES = [
+  "aih-secret-scan-on-create",
+  "aih-tests-on-edit",
+  "aih-metrics-on-stop",
+  "aih-quality-gate",
+  "aih-usage-metering",
+] as const;
+
+const KIRO_OWNED_HOOK_FILENAMES = new Set(
+  KIRO_HOOK_BASENAMES.flatMap((name) => [`${name}.json`, `${name}.kiro.hook`]),
+);
+
 function kiroHookFiles(ctx: PlanContext): string[] {
   try {
     return readdirSync(join(ctx.root, ".kiro", "hooks"))
-      .filter((name) => name.startsWith("aih-") && name.endsWith(".kiro.hook"))
+      .filter((name) => KIRO_OWNED_HOOK_FILENAMES.has(name))
       .sort()
       .map((name) => `.kiro/hooks/${name}`);
   } catch {
@@ -420,8 +441,9 @@ function kiroExtraArtifacts(ctx: PlanContext, owned: boolean): UninstallArtifact
     artifacts.push({
       path: hook,
       kind: "kiro-hook",
-      disposition,
-      reason: `aih-namespaced Kiro hook ${ownership}`,
+      disposition: "advisory",
+      reason:
+        "Kiro hook uses an AIH-reserved filename, but no per-file receipt proves AIH created it; review manually",
     });
   }
   return artifacts;
@@ -471,6 +493,25 @@ function managedMcpArtifact(residue: ManagedMcpProjectionResidue): UninstallArti
     disposition: "advisory",
     reason: `aih managed-MCP residue becomes unattributable once the marker is removed — ${unprovableResidueReason(residue.unprovable ?? "pair-drifted")}`,
   };
+}
+
+function kiroMcpArtifact(residue: KiroMcpProjectionResidue): UninstallArtifact | undefined {
+  if (residue.unprovable === "settings-absent") return undefined;
+  return residue.matches
+    ? {
+        path: KIRO_MCP_SETTINGS_PATH,
+        kind: "kiro-managed-mcp",
+        disposition: "subtract",
+        reason:
+          "marker-proven Kiro workspace MCP server entries; custom-agent overrides and every unowned server are preserved",
+      }
+    : {
+        path: KIRO_MCP_SETTINGS_PATH,
+        kind: "kiro-managed-mcp",
+        disposition: "advisory",
+        reason:
+          "Kiro workspace-MCP residue becomes unattributable once the marker is removed; entries drifted from the ownership receipt and are left untouched",
+      };
 }
 
 function coreUninstallSet(ctx: PlanContext): UninstallSet {
@@ -536,6 +577,13 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
   if (managedMcp !== undefined && managedMcp.unprovable !== "settings-absent") {
     artifacts.push(managedMcpArtifact(managedMcp));
   }
+  const kiroMcp = removedTrees(artifacts).some((tree) =>
+    isUnderTree(ctx, KIRO_MCP_SETTINGS_PATH, tree),
+  )
+    ? undefined
+    : kiroMcpProjectionOnDisk(ctx.root);
+  const kiroMcpArtifactEntry = kiroMcp === undefined ? undefined : kiroMcpArtifact(kiroMcp);
+  if (kiroMcpArtifactEntry !== undefined) artifacts.push(kiroMcpArtifactEntry);
 
   // Receipt-proven hook registrations are revoked the same owned-content-first
   // way. The registrar receipt is the only removal authority a projected
@@ -648,6 +696,7 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
   return {
     artifacts,
     ...(managedMcp === undefined ? {} : { managedMcp }),
+    ...(kiroMcp === undefined ? {} : { kiroMcp }),
     ...(hookRegistrarActions === undefined ? {} : { hookRegistrarActions }),
     ...(removeMaterialization === undefined
       ? {}
@@ -749,6 +798,13 @@ function uninstallPlan(ctx: PlanContext): Plan {
         "subtract the aih-owned Claude managed-MCP keys before removing the ownership marker",
       ),
     );
+  }
+  if (planned.kiroMcp?.matches === true) {
+    const subtraction = kiroMcpSubtractionAction(
+      planned.kiroMcp,
+      "subtract the receipt-owned Kiro workspace MCP servers before removing the ownership marker",
+    );
+    if (subtraction !== undefined) actions.push(subtraction);
   }
   // A2: subtract every receipt-owned hook registration — third-party launchers
   // included — before the ownership record leaves. The revocation never

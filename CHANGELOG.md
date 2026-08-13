@@ -6,6 +6,31 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Kiro is now a first-class governed MCP target. Reviewed stdio controls selected for Kiro are
+  distributed to `.kiro/settings/mcp.json` through a separate receipt that owns only the exact
+  `mcpServers` names AIH added. Reprojection is deterministic; deselection, prune, and uninstall
+  subtract only unchanged owned entries; collisions, drift, malformed paths, and linked paths fail
+  closed without taking operator content. This is workspace distribution, not managed enforcement:
+  a Kiro custom agent can still override or decline workspace MCP configuration.
+- Kiro adoption now inventories steering, hooks, custom-agent definitions, skills, prompts, MCP
+  settings, CLI settings, and specs. Every `.kiro/agents/**` definition, including Markdown, and
+  runtime settings remain operator-owned; `--migrate-cli` can preserve Kiro steering, skills,
+  prompts, and specs in the canon.
+
+### Changed
+
+- `--detect` now recognizes the documented `kiro-cli` executable while keeping `kiro` as the one
+  public target id. `--kiro-hook-runtime ide1-cli3` explicitly enables and persists standalone v1
+  `.kiro/hooks/*.json` projection with current PascalCase triggers for Kiro IDE 1.x and Kiro CLI
+  3.x; unknown runtimes and CLI 2.x remain advisory. AIH does not mutate embedded custom-agent
+  hooks, overwrite a pre-existing reserved hook filename, or infer deletion ownership from current
+  or legacy hook names; prune and uninstall surface those files for manual review.
+- Policy authoring, activation, approval, effective-resolution, and projector coverage can target
+  Kiro for AIH-reviewed stdio MCP controls. Claude managed settings remain a separate lifecycle,
+  and Kiro does not gain unsupported hook or governed ECC agent/command projection.
+
 ## [5.1.0] - 2026-08-10
 
 ### Added

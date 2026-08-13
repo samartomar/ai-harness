@@ -30,4 +30,11 @@ describe("policy workbench data embedding", () => {
     // Nothing spliced a second copy of the template's tail into the page.
     expect(scriptCloseCount(html)).toBe(scriptCloseCount(policyStudioHtml(policyStudioModel())));
   });
+
+  it("mirrors the server fence against remote MCP projection to Kiro", () => {
+    const html = policyStudioHtml(policyStudioModel());
+    expect(html).toContain('candidate.source.type==="remote"');
+    expect(html).toContain('candidate.targets.includes("kiro")');
+    expect(html).toContain("Kiro MCP projection supports stdio catalog entries only");
+  });
 });

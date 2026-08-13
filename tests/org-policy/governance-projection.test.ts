@@ -267,11 +267,13 @@ function reviewedMcpPolicy({
   allowedServers = ["unrelated-legacy-server"],
   disabledServers = ["code-review-graph"],
   serverId = "code-review-graph",
+  targets = ["claude"],
 }: {
   allowManagedOnly?: boolean;
   allowedServers?: string[];
   disabledServers?: string[];
   serverId?: "code-review-graph" | "sequential-thinking";
+  targets?: ("claude" | "kiro")[];
 } = {}) {
   const server = mcpServers("project", scanRepo(dir, { maxDepth: 8, contextDir: "ai-coding" }))[
     serverId
@@ -289,7 +291,7 @@ function reviewedMcpPolicy({
     mcp: { allowManagedOnly, allowedServers, disabledServers },
     governance: {
       policyVersion: "2026.08.0",
-      supportedClis: ["claude"],
+      supportedClis: targets,
       catalog: {
         reviewed: [
           {
@@ -299,7 +301,7 @@ function reviewedMcpPolicy({
             capabilities: [],
             risks: [],
             source,
-            targets: ["claude"],
+            targets,
             projector: "mcp-managed-settings",
             lifecycle: "supported",
             evidence: { record: "ignored-self-assertion" },
@@ -307,7 +309,7 @@ function reviewedMcpPolicy({
         ],
         custom: [],
       },
-      activations: [{ candidate: serverId, state: "active", targets: ["claude"] }],
+      activations: [{ candidate: serverId, state: "active", targets }],
       authority: { approvals: [] },
     },
   });
@@ -1060,6 +1062,71 @@ describe("governed candidate projection", () => {
       ],
     });
     expect(JSON.stringify(managed?.json)).not.toContain("unrelated-legacy-server");
+  });
+
+  it("projects a Kiro-only reviewed MCP through its separate workspace receipt", async () => {
+    const governed = reviewedMcpPolicy({
+      allowedServers: [],
+      disabledServers: [],
+      targets: ["kiro"],
+    });
+    const applied = ctx({ apply: true, targets: ["kiro"] });
+    await executePlan(
+      plan("governed Kiro MCP", ...(await verifiedOrgPolicyProjectionActions(applied, governed))),
+      applied,
+    );
+
+    const settings = JSON.parse(readFileSync(join(dir, ".kiro", "settings", "mcp.json"), "utf8"));
+    expect(settings.mcpServers["code-review-graph"]).toMatchObject({
+      type: "stdio",
+      command: "uvx",
+    });
+    const marker = JSON.parse(readFileSync(join(dir, ".aih-config.json"), "utf8"));
+    expect(marker.kiroMcpProjection).toMatchObject({ state: "active" });
+    expect(marker.managedMcpProjection).toBeUndefined();
+    expect(existsSync(join(dir, ".claude", "managed-settings.json"))).toBe(false);
+
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(governed));
+    const digest = await orgPolicyEffectiveDigest(applied);
+    expect(digest?.text).toContain("kiro / workspace MCP distribution");
+    expect(digest?.text).not.toContain("kiro / mcp-managed-settings");
+
+    expect(await verifiedOrgPolicyProjectionActions(applied, governed)).toEqual([]);
+  });
+
+  it("keeps both Claude and Kiro ownership receipts through one activation and deactivation", async () => {
+    const active = reviewedMcpPolicy({
+      allowedServers: [],
+      disabledServers: [],
+      targets: ["claude", "kiro"],
+    });
+    const applied = ctx({ apply: true, targets: ["claude", "kiro"] });
+    await executePlan(
+      plan("governed dual MCP", ...(await verifiedOrgPolicyProjectionActions(applied, active))),
+      applied,
+    );
+    let marker = JSON.parse(readFileSync(join(dir, ".aih-config.json"), "utf8"));
+    expect(marker.managedMcpProjection).toMatchObject({ state: "active" });
+    expect(marker.kiroMcpProjection).toMatchObject({ state: "active" });
+
+    const disabled = JSON.parse(JSON.stringify(active)) as {
+      governance: { activations: Array<{ state: string }> };
+      mcp: { allowManagedOnly: boolean };
+    };
+    const [activation] = disabled.governance.activations;
+    if (activation === undefined) throw new Error("expected governed MCP activation");
+    activation.state = "disabled";
+    disabled.mcp.allowManagedOnly = false;
+    await executePlan(
+      plan(
+        "governed dual MCP deactivation",
+        ...(await verifiedOrgPolicyProjectionActions(applied, disabled as typeof active)),
+      ),
+      applied,
+    );
+    marker = JSON.parse(readFileSync(join(dir, ".aih-config.json"), "utf8"));
+    expect(marker.managedMcpProjection).toBeUndefined();
+    expect(marker.kiroMcpProjection).toBeUndefined();
   });
 
   it("reports clean then altered managed-MCP receipt state from the live ownership pair", async () => {

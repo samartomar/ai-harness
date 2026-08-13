@@ -268,43 +268,88 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     expect(w.has("CLAUDE.md")).toBe(false);
   });
 
-  it("--cli kiro generates real .kiro.hook files + agent-tools steering", async () => {
+  it("--cli kiro generates current standalone v1 JSON hooks only for an explicit IDE1/CLI3 runtime", async () => {
     put(
       "package.json",
       JSON.stringify({ name: "svc", scripts: { test: "vitest run", lint: "biome" } }),
     );
     put("tsconfig.json", "{}");
-    const w = writesByPath((await command.plan(makeCtx({ cli: "kiro" }))).actions);
+    const w = writesByPath(
+      (await command.plan(makeCtx({ cli: "kiro", kiroHookRuntime: "ide1-cli3" }))).actions,
+    );
     expect(w.has(".kiro/steering/agent-tools.md")).toBe(true);
-    // Hook uses Kiro's verified real schema (when/then types).
-    const hook = w.get(".kiro/hooks/aih-tests-on-edit.kiro.hook")?.json as {
-      when: { type: string };
-      then: { type: string };
+    const hook = w.get(".kiro/hooks/aih-tests-on-edit.json")?.json as {
+      version: string;
+      hooks: Array<{ trigger: string; action: { type: string } }>;
     };
-    expect(hook.when.type).toBe("fileEdited");
-    expect(hook.then.type).toBe("askAgent");
-    // Quality gate runs the repo's real (detected) test + lint commands.
-    const gate = w.get(".kiro/hooks/aih-quality-gate.kiro.hook")?.json as {
-      when: { type: string };
-      then: { command: string };
-    };
-    expect(gate.when.type).toBe("userTriggered");
-    expect(gate.then.command).toContain("npm test");
+    expect(hook.version).toBe("v1");
+    expect(hook.hooks[0]?.trigger).toBe("PostFileSave");
+    expect(hook.hooks[0]?.action.type).toBe("agent");
+    // IDE 1.x removed the Manual hook trigger; AIH never emits an inert v1 hook.
+    expect(w.has(".kiro/hooks/aih-quality-gate.json")).toBe(false);
     // Metrics hook fires on the verified agentStop event and records a sample,
     // fail-open: `aih track` runs inside a one-shot `node -e` try/catch so a missing
     // or hung `aih` can never fail the turn, with a seconds-unit timeout cap.
-    const metrics = w.get(".kiro/hooks/aih-metrics-on-stop.kiro.hook")?.json as {
-      when: { type: string };
-      timeout: number;
-      then: { command: string };
+    const metrics = w.get(".kiro/hooks/aih-metrics-on-stop.json")?.json as {
+      hooks: Array<{ trigger: string; timeout: number; action: { command: string } }>;
     };
-    expect(metrics.when.type).toBe("agentStop");
-    expect(metrics.then.command).toContain("['track','--apply']");
-    expect(metrics.then.command.startsWith("node -e ")).toBe(true);
-    expect(metrics.then.command).toContain("execFileSync");
-    expect(metrics.then.command).toContain("shell:false");
-    expect(metrics.then.command).toContain("catch"); // warns on missing/failing aih
-    expect(metrics.timeout).toBeGreaterThan(0); // caps a stuck aih (Kiro timeout is seconds)
+    expect(metrics.hooks[0]?.trigger).toBe("Stop");
+    expect(metrics.hooks[0]?.action.command).toContain("['track','--apply']");
+    expect(metrics.hooks[0]?.action.command.startsWith("node -e ")).toBe(true);
+    expect(metrics.hooks[0]?.action.command).toContain("execFileSync");
+    expect(metrics.hooks[0]?.action.command).toContain("shell:false");
+    expect(metrics.hooks[0]?.action.command).toContain("catch");
+    expect(metrics.hooks[0]?.timeout).toBeGreaterThan(0);
+  });
+
+  it("keeps Kiro steering but emits no hooks when the CLI hook runtime is unknown or 2.x", async () => {
+    for (const kiroHookRuntime of [undefined, "cli2"] as const) {
+      const options = {
+        cli: "kiro",
+        ...(kiroHookRuntime === undefined ? {} : { kiroHookRuntime }),
+      };
+      const actions = (await command.plan(makeCtx(options))).actions;
+      const w = writesByPath(actions);
+      expect(w.has(".kiro/steering/agent-tools.md")).toBe(true);
+      expect([...w.keys()].some((path) => path.startsWith(".kiro/hooks/"))).toBe(false);
+      expect(
+        actions
+          .filter((action) => action.kind === "doc")
+          .map((action) => (action.kind === "doc" ? action.text : ""))
+          .join("\n"),
+      ).toContain("did not write Kiro hooks");
+      expect(
+        actions
+          .filter((action) => action.kind === "doc")
+          .map((action) => (action.kind === "doc" ? action.text : ""))
+          .join("\n"),
+      ).toContain("/upgrade-agent");
+    }
+  });
+
+  it("refuses to overwrite an operator hook that uses an AIH-reserved Kiro filename", async () => {
+    put(".kiro/hooks/aih-tests-on-edit.json", '{"team":"owned"}\n');
+    await expect(
+      command.plan(makeCtx({ cli: "kiro", kiroHookRuntime: "ide1-cli3" })),
+    ).rejects.toThrow(/refusing to overwrite an unowned Kiro hook/);
+  });
+
+  it("pins a new Kiro hook as absent so an apply-time collision cannot be overwritten", async () => {
+    const plannedCtx = makeCtx({ cli: "kiro", kiroHookRuntime: "ide1-cli3" });
+    const p = await command.plan(plannedCtx);
+    put(".kiro/hooks/aih-tests-on-edit.json", '{"team":"arrived-after-plan"}\n');
+    await expect(executePlan(p, { ...plannedCtx, apply: true })).rejects.toThrow(
+      /changed after the plan was computed/,
+    );
+    expect(readFileSync(join(tmp, ".kiro/hooks/aih-tests-on-edit.json"), "utf8")).toBe(
+      '{"team":"arrived-after-plan"}\n',
+    );
+  });
+
+  it("rejects an unknown Kiro hook runtime capability", async () => {
+    await expect(command.plan(makeCtx({ cli: "kiro", kiroHookRuntime: "cli4" }))).rejects.toThrow(
+      /expected ide1-cli3 or cli2/,
+    );
   });
 
   it("persists the .aih-config.json marker for the resolved targets (standalone)", async () => {
@@ -313,6 +358,16 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     expect(marker).toBeDefined();
     expect(marker?.merge).toBe(true);
     expect((marker?.json as { targets?: string[] })?.targets).toEqual(["claude", "codex"]);
+  });
+
+  it("persists the explicit Kiro hook runtime capability for later doctor runs", async () => {
+    const marker = writesByPath(
+      (await command.plan(makeCtx({ cli: "kiro", kiroHookRuntime: "ide1-cli3" }))).actions,
+    ).get(".aih-config.json");
+    expect(marker?.json).toMatchObject({
+      targets: ["kiro"],
+      kiroHookRuntime: "ide1-cli3",
+    });
   });
 
   // #506 F3: the marker previously deep-merged, and deepMerge UNIONS arrays — so an
@@ -516,7 +571,7 @@ describe("bootstrap-ai — selectable Layer-1 baseline", () => {
     ).get(".aih-config.json");
 
     expect(marker?.json).not.toHaveProperty("baseline");
-    expect(marker?.removeJsonTopLevelKeys).toEqual(["baseline"]);
+    expect(marker?.removeJsonTopLevelKeys).toEqual(["baseline", "kiroHookRuntime"]);
   });
 });
 

@@ -301,7 +301,9 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     id: "kiro",
     label: "Kiro",
     configDirs: [".kiro"],
-    binaries: ["kiro"],
+    // `kiro` may be Kiro's optional IDE/CLI command router. `kiro-cli` is the
+    // documented executable that proves the terminal client is available.
+    binaries: ["kiro-cli"],
     bootloaders: [".kiro/steering/00-canon.md"],
     loadsDirectory: ".kiro/steering",
     readsAgentsMd: true,
