@@ -445,6 +445,20 @@ describe("governed candidate projection", () => {
     expect(report?.text).toContain("Runs only against the approved internal package registry.");
   });
 
+  it("maps the resolved vibe posture to its actionable projector reason", async () => {
+    const governed = reviewedMcpPolicy({
+      allowedServers: [],
+      disabledServers: [],
+      targets: ["kiro"],
+    });
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(governed));
+
+    const report = await orgPolicyEffectiveDigest(ctx({ posture: "vibe", targets: ["kiro"] }));
+
+    expect(report?.text).toContain("missing-projector");
+    expect(report?.text).toContain("projector-disabled-at-vibe-posture");
+  });
+
   it("reports external framework curation as pinned, audited, and non-enforcing guidance", async () => {
     const base = customPolicy();
     if (base.governance === undefined) throw new Error("expected governance");

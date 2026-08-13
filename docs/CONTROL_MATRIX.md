@@ -95,7 +95,7 @@ and scopes Kiro to rules and skills`), `tests/org-policy/effective.test.ts`
 integrity-enforcing materializer`), and
 `tests/org-policy/governance-projection.test.ts` (`keeps an externally evidenced
 custom stdio MCP authorable but blocked without an integrity-enforcing
-projector`).
+projector`, `maps the resolved vibe posture to its actionable projector reason`).
 
 ## Posture Table
 
