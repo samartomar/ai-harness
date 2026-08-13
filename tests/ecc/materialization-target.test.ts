@@ -75,6 +75,9 @@ const SOURCE_TREE: Readonly<Record<string, string | Buffer>> = {
   ".kiro/skills/tdd-workflow/SKILL.md": "# Kiro tdd-workflow\n",
   ".kiro/steering/security.md": "# Kiro security\n",
   ".kiro/steering/testing.md": "# Kiro testing\n",
+  ".kiro/agents/code-reviewer.md": "---\nname: code-reviewer\n---\n\n# Markdown agent\n",
+  ".kiro/agents/code-reviewer.json":
+    '{"name":"code-reviewer","mcpServers":{},"hooks":{},"prompt":"JSON agent"}\n',
 };
 
 function writeSource(root: string, tree: Readonly<Record<string, string | Buffer>>): void {
@@ -897,7 +900,7 @@ describe("two of one target's own sources may not claim one destination", () => 
 });
 
 describe("the governed Kiro target uses only verified curated Kiro surfaces", () => {
-  it("projects selected skills and steering while naming unsupported agents", () => {
+  it("projects selected agents, skills, and steering through the verified Kiro adapter", () => {
     const verified = (id: string, path: string): EccEffectiveSelectionComponent => ({
       id: id as EccComponentId,
       authorization: {
@@ -934,29 +937,27 @@ describe("the governed Kiro target uses only verified curated Kiro surfaces", ()
       ".kiro/steering/security.md",
       ".kiro/steering/testing.md",
     ]);
+    expect(destinations(result, "agent:code-reviewer")).toEqual([
+      ".kiro/agents/code-reviewer.json",
+    ]);
     expect(
       Buffer.from(
         result.components.find((component) => component.id === "skill:tdd-workflow")?.files[0]
           ?.contents ?? "",
       ).toString("utf8"),
     ).toBe("# Kiro tdd-workflow\n");
-    expect(refusalFor(result, "agent:code-reviewer", "kiro")).toMatchObject({
-      reason: "unsupported-component",
-    });
+    expect(refusalFor(result, "agent:code-reviewer", "kiro")).toBeUndefined();
   });
-  it("names an agent-only Kiro refusal without demanding runtime evidence", () => {
+  it("requires current runtime evidence for an agent-only Kiro selection", () => {
     const agent = selected("agent:code-reviewer", "agents/code-reviewer.md");
 
-    const result = resolveEccTargetMaterialization({
-      sourceRoot,
-      targets: ["kiro" as EccMaterializationTarget],
-      components: [agent],
-    });
-
-    expect(result.components).toEqual([]);
-    expect(refusalFor(result, agent.id, "kiro")).toMatchObject({
-      reason: "unsupported-component",
-    });
+    expect(() =>
+      resolveEccTargetMaterialization({
+        sourceRoot,
+        targets: ["kiro" as EccMaterializationTarget],
+        components: [agent],
+      }),
+    ).toThrow(/runtime:ecc-kiro/i);
   });
 });
 

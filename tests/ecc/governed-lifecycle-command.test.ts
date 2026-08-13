@@ -60,7 +60,9 @@ const SOURCE_TREE: Readonly<Record<string, string>> = {
   ".kiro/skills/not-selected/SKILL.md": "# not selected\n",
   ".kiro/steering/security.md": "# Kiro security\n",
   ".kiro/steering/testing.md": "# Kiro testing\n",
-  ".kiro/agents/code-reviewer.md": "# unresolved Kiro agent\n",
+  ".kiro/agents/code-reviewer.md": "---\nname: code-reviewer\n---\n\n# Markdown agent\n",
+  ".kiro/agents/code-reviewer.json":
+    '{"name":"code-reviewer","mcpServers":{},"hooks":{},"prompt":"JSON agent"}\n',
   ".kiro/settings/mcp.json.example": "{}\n",
 };
 
@@ -1337,6 +1339,7 @@ describe("F4 — the governed framework lifecycle for the OpenCode target", () =
 
 describe("the governed framework lifecycle for the Kiro target", () => {
   const KIRO_MATERIALIZED = [
+    ".kiro/agents/code-reviewer.json",
     ".kiro/skills/tdd-workflow/SKILL.md",
     ".kiro/steering/security.md",
     ".kiro/steering/testing.md",
@@ -1372,19 +1375,16 @@ describe("the governed framework lifecycle for the Kiro target", () => {
     });
   }
 
-  it("applies only selected skills and steering with dual evidence", async () => {
+  it("applies selected agents, skills, and steering with dual evidence", async () => {
     writeGovernedPolicy([...PASSED]);
 
     const reported = materializationDigest(await runLifecycle("install", true, "kiro"));
 
     expect(reported.write.map((file) => file.path).sort()).toEqual([...KIRO_MATERIALIZED].sort());
-    expect(reported.refused).toContainEqual(
-      expect.objectContaining({
-        id: "agent:code-reviewer",
-        reason: "unsupported-component",
-      }),
+    expect(reported.refused.find((entry) => entry.id === "agent:code-reviewer")).toBeUndefined();
+    expect(bytesAt(root, ".kiro/skills/tdd-workflow/SKILL.md").toString("utf8")).toBe(
+      "# Kiro tdd-workflow\n",
     );
-    expect(bytesAt(root, KIRO_MATERIALIZED[0]).toString("utf8")).toBe("# Kiro tdd-workflow\n");
     const receipt = readEccMaterializationReceipt(root);
     if (receipt.state !== "valid") throw new Error("expected a valid receipt");
     expect(
@@ -1394,6 +1394,15 @@ describe("the governed framework lifecycle for the Kiro target", () => {
       contentAuthorization: { componentId: "runtime:ecc-kiro" },
       contentSourcePath: ".kiro/skills/tdd-workflow/SKILL.md",
     });
+    expect(
+      receipt.receipt.components.find((component) => component.id === "agent:code-reviewer")
+        ?.files[0],
+    ).toMatchObject({
+      path: ".kiro/agents/code-reviewer.json",
+      contentAuthorization: { componentId: "runtime:ecc-kiro" },
+      contentSourcePath: ".kiro/agents/code-reviewer.json",
+    });
+    expect(existsSync(join(root, ".kiro", "agents", "code-reviewer.json"))).toBe(true);
     expect(existsSync(join(root, ".kiro", "agents", "code-reviewer.md"))).toBe(false);
     expect(existsSync(join(root, ".kiro", "settings", "mcp.json.example"))).toBe(false);
   });
@@ -1408,6 +1417,60 @@ describe("the governed framework lifecycle for the Kiro target", () => {
 
     expect(existsSync(join(root, ".kiro", "skills", "tdd-workflow", "SKILL.md"))).toBe(true);
     expect(existsSync(join(root, ".kiro", "steering", "security.md"))).toBe(false);
+    expect(existsSync(join(root, ".kiro", "agents", "code-reviewer.json"))).toBe(false);
+  });
+
+  it("is deterministic when the selected Kiro agent is reapplied", async () => {
+    writeGovernedPolicy([PASSED[0] as SelectionFixture]);
+    await runLifecycle("install", true, "kiro");
+    const settled = snapshot(root);
+
+    const repeated = materializationDigest(await runLifecycle("install", true, "kiro"));
+
+    expect(repeated.write).toEqual([]);
+    expect(snapshot(root)).toEqual(settled);
+  });
+
+  it("refuses a same-name operator Markdown agent without changing either representation", async () => {
+    writeGovernedPolicy([PASSED[0] as SelectionFixture]);
+    writeTree(root, { ".kiro/agents/code-reviewer.md": "# operator Markdown agent\n" });
+    const before = snapshot(root);
+
+    const failure = await runLifecycle("install", true, "kiro").then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toMatch(/Kiro agent.*collision|same-name.*agent/i);
+    expect(snapshot(root)).toEqual(before);
+  });
+
+  it("refuses a case-folded operator JSON agent on case-sensitive filesystems", async () => {
+    writeGovernedPolicy([PASSED[0] as SelectionFixture]);
+    writeTree(root, { ".kiro/agents/Code-Reviewer.JSON": '{"name":"operator"}\n' });
+    const before = snapshot(root);
+
+    const failure = await runLifecycle("install", true, "kiro").then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toMatch(/Kiro agent.*collision|unowned.*destination/i);
+    expect(snapshot(root)).toEqual(before);
+  });
+
+  it("uninstalls only the unchanged receipt-owned Kiro agent", async () => {
+    writeGovernedPolicy([PASSED[0] as SelectionFixture]);
+    await runLifecycle("install", true, "kiro");
+    writeTree(root, { ".kiro/agents/operator.json": '{"name":"operator"}\n' });
+
+    const removed = removeEccMaterialization(root);
+
+    expect(removed.removed).toContain(".kiro/agents/code-reviewer.json");
+    expect(existsSync(join(root, ".kiro", "agents", "code-reviewer.json"))).toBe(false);
+    expect(bytesAt(root, ".kiro/agents/operator.json").toString("utf8")).toBe(
+      '{"name":"operator"}\n',
+    );
   });
 
   it("preserves prior Kiro ownership when runtime evidence is absent or held", async () => {

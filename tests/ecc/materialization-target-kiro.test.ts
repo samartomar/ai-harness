@@ -19,6 +19,7 @@ const REPOSITORY = "affaan-m/ECC";
 const COMMIT = "a".repeat(40);
 const EVIDENCE = "c".repeat(64);
 const SOURCE_TREE: Readonly<Record<string, string | Buffer>> = {
+  "agents/code-reviewer.md": "# generic selected agent\n",
   "skills/tdd-workflow/SKILL.md": "# generic selected skill\n",
   ".agents/skills/tdd-workflow/SKILL.md": "# agent selected skill\n",
   "rules/README.md": "# generic selected rules\n",
@@ -27,8 +28,9 @@ const SOURCE_TREE: Readonly<Record<string, string | Buffer>> = {
   ".kiro/skills/not-selected/SKILL.md": "# do not project\n",
   ".kiro/steering/security.md": "# security\n",
   ".kiro/steering/testing.md": "# testing\n",
-  ".kiro/agents/code-reviewer.md": "# unresolved Markdown agent\n",
-  ".kiro/agents/code-reviewer.json": '{"name":"code-reviewer"}\n',
+  ".kiro/agents/code-reviewer.md": "---\nname: code-reviewer\n---\n\n# Markdown agent\n",
+  ".kiro/agents/code-reviewer.json":
+    '{"name":"code-reviewer","mcpServers":{},"hooks":{},"prompt":"JSON agent"}\n',
   ".kiro/hooks/on-save.json": "{}\n",
   ".kiro/scripts/format.sh": "exit 0\n",
   ".kiro/settings/mcp.json.example": "{}\n",
@@ -172,6 +174,36 @@ describe("the verified-source Kiro projection", () => {
     );
   });
 
+  it("projects one verified JSON agent configuration loadable by Kiro IDE 1 and CLI 3", () => {
+    const agent = selected("agent:code-reviewer", "agents/code-reviewer.md");
+    const result = resolveVerifiedKiroMaterialization(request([agent]));
+
+    expect(result.components.map((component) => component.id)).toEqual(["agent:code-reviewer"]);
+    expect(result.components[0]?.files.map((file) => file.path)).toEqual([
+      ".kiro/agents/code-reviewer.json",
+    ]);
+    expect(Buffer.from(result.components[0]?.files[0]?.contents ?? "").toString("utf8")).toBe(
+      SOURCE_TREE[".kiro/agents/code-reviewer.json"],
+    );
+  });
+
+  it("refuses Kiro agents whose curated JSON identity or excluded runtime fields are unsafe", () => {
+    const invalidConfigs = [
+      '{"name":"other","mcpServers":{},"hooks":{}}\n',
+      '{"name":"code-reviewer","mcpServers":{"github":{"command":"node"}},"hooks":{}}\n',
+      '{"name":"code-reviewer","mcpServers":{},"hooks":{"stop":[{"command":"echo no"}]}}\n',
+      "not json\n",
+    ];
+
+    for (const contents of invalidConfigs) {
+      put(".kiro/agents/code-reviewer.json", contents);
+      const agent = selected("agent:code-reviewer", "agents/code-reviewer.md");
+      expect(() => resolveVerifiedKiroMaterialization(request([agent])), contents).toThrow(
+        /Kiro agent.*configuration|agent.*identity|MCP|hooks/i,
+      );
+    }
+  });
+
   it("accepts no caller byte or prebuilt file surface", () => {
     const skill = selected("skill:tdd-workflow", "skills/tdd-workflow");
     const poisoned = {
@@ -280,10 +312,9 @@ describe("the verified-source Kiro projection", () => {
     }
   });
 
-  it("rejects agents and every non-approved selected component without trimming", () => {
+  it("rejects every non-approved selected component without trimming", () => {
     const seed = selected("skill:tdd-workflow", "skills/tdd-workflow");
     for (const [id, path] of [
-      ["agent:code-reviewer", "agents/code-reviewer.md"],
       ["command:review", "commands/review.md"],
       ["rule:security", "rules/security.md"],
       ["baseline:hooks", "hooks"],
