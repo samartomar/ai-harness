@@ -980,7 +980,7 @@ export const command: CommandSpec = {
     {
       flags: "--lifecycle <operation>",
       description:
-        "manage the AIH-owned Claude/Codex profile: install|update|repair|rollback|uninstall. In a governed repository `install` instead materializes the policy's evidence-passed component selection (removal lives in `aih uninstall`), and update|repair|rollback are refused. The governed install materializes for the targets `--cli` selects (default claude); all five governed targets are wired — claude, codex, kimi, cursor, opencode — and any other CLI is refused by name. OpenCode materializes only the tool-shared project surfaces (AGENTS.md, .agents/), because no evidenced per-tool .opencode/ content layout exists; every other component refuses by name for it",
+        "manage the AIH-owned Claude/Codex profile: install|update|repair|rollback|uninstall. In a governed repository `install` instead materializes the policy's evidence-passed component selection (removal lives in `aih uninstall`), and update|repair|rollback are refused. The governed install materializes for the targets `--cli` selects (default claude); all six governed targets are wired — claude, codex, kimi, cursor, opencode, kiro — and any other CLI is refused by name. Kiro materializes only evidence-passed baseline:rules and skill:* selections; agents and every other unsupported component refuse by name. OpenCode materializes only the tool-shared project surfaces (AGENTS.md, .agents/), because no evidenced per-tool .opencode/ content layout exists; every other component refuses by name for it",
     },
   ],
   plan: eccPlan,

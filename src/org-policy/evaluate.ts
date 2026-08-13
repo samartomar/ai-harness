@@ -21,7 +21,10 @@ function blockedDetail(effective: EffectiveOrgPolicy): string {
   return blocked
     .map((candidate) => {
       const codes = [...candidate.dangerCodes, ...candidate.blockingCodes];
-      return `${candidate.id}: ${codes.length === 0 ? "not-effective" : codes.join(", ")}`;
+      const reasons = candidate.resolutionReasons;
+      return `${candidate.id}: ${codes.length === 0 ? "not-effective" : codes.join(", ")}${
+        reasons.length === 0 ? "" : `; resolution=${reasons.join(", ")}`
+      }`;
     })
     .join("; ");
 }
@@ -182,7 +185,11 @@ export async function orgPolicyEffectiveDigest(
               : candidate.projection.receipt;
         const notes =
           [candidate.clarification, candidate.annotation].filter(Boolean).join(" / ") || "—";
-        const blocked = [...candidate.dangerCodes, ...candidate.blockingCodes].join(", ") || "—";
+        const codes = [...candidate.dangerCodes, ...candidate.blockingCodes].join(", ") || "—";
+        const blocked =
+          candidate.resolutionReasons.length === 0
+            ? codes
+            : `${codes}; resolution=${candidate.resolutionReasons.join(", ")}`;
         const revocation =
           candidate.revocation === undefined
             ? ""

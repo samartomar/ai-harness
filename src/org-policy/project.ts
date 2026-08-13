@@ -893,6 +893,7 @@ function managedSettings(
               ...(candidate.approval === undefined ? {} : { approval: candidate.approval }),
               dangerCodes: candidate.dangerCodes,
               blockingCodes: candidate.blockingCodes,
+              resolutionReasons: candidate.resolutionReasons,
               ...(candidate.clarification === undefined
                 ? {}
                 : { clarification: candidate.clarification }),
@@ -928,7 +929,11 @@ function projectionActionsFromRuntime(
       .filter((candidate) => candidate.requested && !candidate.effective)
       .map(
         (candidate) =>
-          `${candidate.id}: ${[...candidate.dangerCodes, ...candidate.blockingCodes].join(", ")}`,
+          `${candidate.id}: ${[...candidate.dangerCodes, ...candidate.blockingCodes].join(", ")}${
+            candidate.resolutionReasons.length === 0
+              ? ""
+              : `; resolution=${candidate.resolutionReasons.join(", ")}`
+          }`,
       )
       .join("; ");
     throw new OrgPolicyError(

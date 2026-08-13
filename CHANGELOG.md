@@ -6,6 +6,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `aih ecc --lifecycle` help now lists Kiro alongside the other governed targets and states the
+  verified Kiro boundary: evidence-passed `baseline:rules` and `skill:*` selections only.
+- Blocked organization-policy candidates keep the stable `missing-projector` and
+  `unsupported-target` danger codes while also reporting the actionable resolver cause. In
+  particular, custom stdio MCP sources are authorable-only until AIH has an
+  integrity-enforcing materializer, and invocations with projectors disabled say so directly.
+
 ## [5.2.0] - 2026-08-13
 
 ### Added
