@@ -167,8 +167,44 @@ describe("headless effective org policy", () => {
     expect(effective.candidates[0]).toMatchObject({
       effective: false,
       dangerCodes: expect.arrayContaining(["missing-projector", "unsupported-target"]),
+      resolutionReasons: ["projector-disabled-for-invocation"],
     });
     expect(effective.blocking).toBe(true);
+  });
+
+  it("explains that a custom Kiro stdio source has no integrity-enforcing materializer", () => {
+    const base = policy();
+    if (base.governance === undefined) throw new Error("expected governance fixture");
+    const custom = candidate({
+      id: "custom-kiro",
+      source: {
+        type: "stdio",
+        resolver: "npx",
+        registry: "https://registry.npmjs.org",
+        package: "example-mcp",
+        version: "1.2.3",
+        integrity: DIGEST,
+      },
+      targets: ["kiro"],
+      evidence: { record: "custom-kiro-evidence" },
+    });
+    const effective = resolveEffectiveOrgPolicy(
+      policy({
+        governance: {
+          ...base.governance,
+          supportedClis: ["kiro"],
+          catalog: { reviewed: [], custom: [custom] },
+          activations: [{ candidate: "custom-kiro", state: "active", targets: ["kiro"] }],
+        },
+      }),
+      { targets: ["kiro"], projectorsEnabled: true },
+    );
+
+    expect(effective.candidates[0]).toMatchObject({
+      effective: false,
+      dangerCodes: expect.arrayContaining(["missing-projector", "unsupported-target"]),
+      resolutionReasons: ["custom-stdio-source-is-authorable-only"],
+    });
   });
 
   it("requires an exact runtime-reviewed control record rather than a copied built-in source", () => {

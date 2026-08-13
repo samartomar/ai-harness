@@ -46,6 +46,11 @@ describe("registered ECC command", () => {
       with: ["tdd-workflow", "security-review"],
     });
     expect(ecc?.options.map((option) => option.flags)).toContain("--lifecycle <operation>");
+    const lifecycle = ecc?.options.find((option) => option.flags === "--lifecycle <operation>");
+    expect(lifecycle?.description).toContain("claude, codex, kimi, cursor, opencode, kiro");
+    expect(lifecycle?.description).toContain(
+      "Kiro materializes only evidence-passed baseline:rules and skill:* selections",
+    );
   });
 
   it("previews exact-pin contingent install operations without acquisition before apply", async () => {
