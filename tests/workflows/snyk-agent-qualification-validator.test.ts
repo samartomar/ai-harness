@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { trustRuntimeAdvisory } from "../../src/trust/detectors.js";
 
 const root = resolve(import.meta.dirname, "../..");
 const validator = resolve(root, "tools/validate-snyk-agent-qualification.mjs");
@@ -36,7 +37,7 @@ function report(check: Record<string, unknown>): Record<string, unknown> {
     digests: [
       {
         describe: "trust runtime advisory",
-        text: `No findings != safe. Static analyzers actually run: aih-native, ${analyzer}.`,
+        text: trustRuntimeAdvisory(["aih-native", analyzer]),
       },
     ],
   };
