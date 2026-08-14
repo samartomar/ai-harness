@@ -37,9 +37,9 @@ Result: **PASS**, 1 file / 3 tests passed.
 
 The workflow is manual-only, read-only, pins every action by immutable SHA, scopes
 `SNYK_TOKEN` to the scan step, builds AIH, warms the exact committed uv environment, and invokes
-the built CLI with a generated temporary skill as both root and scan target. It uploads only a
-five-day sanitized summary containing the commit, workflow run identity, analyzer identity,
-status, target class, and SHA-256 of the ephemeral raw result.
+the built CLI with the temporary fixture as root and its generated skill as the scan target. It
+uploads only a five-day sanitized summary containing the commit, workflow run identity, analyzer
+identity, status, target class, and SHA-256 of the ephemeral raw result.
 
 ### Review-driven RED — ref and evidence integrity
 
