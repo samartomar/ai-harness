@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
+import { opendirSync } from "node:fs";
 import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
+import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import type { EccComponentId } from "./components.js";
 import {
   type DestinationExpectation,
@@ -33,7 +35,10 @@ import {
   readEccMaterializationReceipt,
   serializeEccMaterializationReceipt,
 } from "./materialization-receipt.js";
-import { verifiedKiroMaterializationProof } from "./materialization-target-kiro.js";
+import {
+  kiroAgentSemanticIdentity,
+  verifiedKiroMaterializationProof,
+} from "./materialization-target-kiro.js";
 import type {
   EccMaterializationAdvisory,
   EccMaterializationFilePlan,
@@ -613,6 +618,79 @@ function staleOwnership(
     .filter((component) => component.files.length > 0);
 }
 
+export function readBoundedKiroAgentPaths(
+  root: string,
+  maxEntries = MAX_MATERIALIZED_COMPONENTS * 2,
+): string[] {
+  const relative = ".kiro/agents";
+  const inspected = inspectContainedRelativePath(root, relative);
+  if (inspected.state === "absent") return [];
+  if (inspected.state !== "present" || inspected.kind !== "directory") {
+    throw new Error("refusing Kiro agent materialization because .kiro/agents is unsafe");
+  }
+  if (!Number.isSafeInteger(maxEntries) || maxEntries < 0) {
+    throw new Error("refusing Kiro agent materialization because its directory bound is invalid");
+  }
+  let directory: ReturnType<typeof opendirSync> | undefined;
+  const entries: string[] = [];
+  let problem: "oversized" | "unreadable" | undefined;
+  try {
+    directory = opendirSync(inspected.realPath);
+    for (;;) {
+      const entry = directory.readSync();
+      if (entry === null) break;
+      if (entries.length >= maxEntries) {
+        problem = "oversized";
+        break;
+      }
+      entries.push(entry.name);
+    }
+  } catch {
+    problem = "unreadable";
+  }
+  if (directory !== undefined) {
+    try {
+      directory.closeSync();
+    } catch {
+      problem = "unreadable";
+    }
+  }
+  if (problem !== undefined) {
+    throw new Error(`refusing Kiro agent materialization because .kiro/agents is ${problem}`);
+  }
+  return entries.map((name) => `${relative}/${name}`);
+}
+
+function assertNoKiroAgentSemanticCollision(
+  resolved: ResolvedRequest,
+  state: DestinationState,
+): void {
+  const desired = resolved.components.flatMap((component) =>
+    component.files
+      .map((file) => file.path)
+      .filter((path) => kiroAgentSemanticIdentity(path) !== undefined),
+  );
+  if (desired.length === 0) return;
+  const desiredPaths = new Set(desired);
+  const existing = readBoundedKiroAgentPaths(resolved.root);
+  for (const path of desired) {
+    const identity = kiroAgentSemanticIdentity(path);
+    for (const candidate of existing) {
+      if (
+        candidate === path ||
+        desiredPaths.has(candidate) ||
+        kiroAgentSemanticIdentity(candidate) !== identity
+      ) {
+        continue;
+      }
+      if (state.inspect(candidate).state === "absent") continue;
+      throw new Error(
+        `refusing Kiro agent semantic collision between ${displaySafe(path)} and ${displaySafe(candidate)}`,
+      );
+    }
+  }
+}
+
 interface MaterializeOutcome {
   steps: PlannedStep[];
   plans: EccMaterializationFilePlan[];
@@ -841,6 +919,7 @@ export function planEccMaterialization(request: EccMaterializationRequest): Plan
   const receipt = currentReceipt(resolved.root);
   const state = new DestinationState(resolved.root);
   const subtraction = planSubtraction(state, staleOwnership(resolved, receipt));
+  assertNoKiroAgentSemanticCollision(resolved, state);
   const materialize = planMaterialize(resolved, receipt, state);
   const components = receiptComponents(
     resolved,

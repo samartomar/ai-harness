@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Governed ECC materialization for the single `kiro` target now includes evidence-passed selected
+  `agent:*` components with exact pinned Kiro mappings. Each mapped agent copies the selected
+  `agents/<name>.md` bytes to `.kiro/agents/<name>.md` for the IDE representation and the curated
+  `.kiro/agents/<name>.json` bytes for CLI configuration. Both stay under the existing
+  selected-component and `runtime:ecc-kiro` evidence binding; an unmapped agent is refused by name.
+  Reapply is deterministic;
+  narrowing and uninstall remove only unchanged receipt-owned files; an operator's same-name
+  Markdown/JSON definition or case-folded spelling refuses without mutation. Non-empty embedded MCP
+  or hook configuration, settings, scripts, and the native installer remain excluded.
+
 ## [5.2.1] - 2026-08-13
 
 ### Fixed

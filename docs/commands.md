@@ -382,12 +382,20 @@ Kimi adapter roots a project install. OpenCode materializes only the tool-shared
 (`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`), because its only framework adapter is
 home-scoped and no evidenced per-tool `.opencode/` content layout exists; every other component
 refuses by name for that target rather than landing in an invented directory. Kiro materializes an
-evidence-passed selected `skill:<name>` only as the exact pinned
+evidence-passed selected `agent:<name>` with exact pinned Kiro mappings as the selected source
+Markdown at `.kiro/agents/<name>.md` for the IDE representation and the curated
+`.kiro/agents/<name>.json` CLI configuration. It projects a selected `skill:<name>` only as the exact pinned
 `.kiro/skills/<name>/SKILL.md` file, and `baseline:rules` only as top-level pinned
 `.kiro/steering/*.md` files. Those bytes require a separate current, unheld
-`runtime:ecc-kiro` content authorization recorded beside the selected component identity. Agents
-and every other Kiro surface refuse by name; AIH does not invoke ECC's native Kiro installer or
-claim that the host loaded the files. Several targets in one
+`runtime:ecc-kiro` content authorization recorded beside the selected component identity. Current
+[Kiro custom-agent documentation](https://kiro.dev/docs/custom-agents/) (verified 2026-08-13)
+describes JSON and Markdown agent configurations loaded from `.kiro/agents/` by IDE 1.x and CLI
+3.x. AIH projects both exact ECC mappings under one component receipt; it does not synthesize or
+convert either representation. An unmapped agent is refused by name; a pre-existing same-name
+Markdown/JSON or case-folded operator definition is refused without overwrite. Non-empty agent MCP or hook
+configuration, every other Kiro surface, and
+the native installer remain outside this lifecycle. The mapping is source-documented and
+receipt-verified; it is not a live host probe. Several targets in one
 run are one materialization into one root with one receipt: destinations two targets share
 (`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`) are written once, a target that refuses a
 component does not stop the targets that own it, and a later `--apply` with a narrower target set

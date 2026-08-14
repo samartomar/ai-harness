@@ -351,7 +351,9 @@ export async function executeGovernedEccMaterialization(
   const evidenceComponentIds = [...input.componentIds];
   if (
     input.targets.includes("kiro") &&
-    input.componentIds.some((id) => id === "baseline:rules" || id.startsWith("skill:")) &&
+    input.componentIds.some(
+      (id) => id === "baseline:rules" || id.startsWith("agent:") || id.startsWith("skill:"),
+    ) &&
     !evidenceComponentIds.includes(ECC_KIRO_RUNTIME_COMPONENT_ID)
   ) {
     evidenceComponentIds.push(ECC_KIRO_RUNTIME_COMPONENT_ID);
