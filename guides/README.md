@@ -23,6 +23,7 @@ Guide baseline: `@aihq/harness@2.4.3`. Use [docs/commands.md](../docs/commands.m
 | Understand posture behavior and boundaries | [Postures](postures.md) |
 | Individual developer or evaluator | [Vibe Developer](vibe-developer-guide.md) |
 | Shared repository | [Shared Repository](shared-repository-guide.md) |
+| Engineering team applying AI-Harness during application delivery | [Enterprise Application Adoption](enterprise-application-adoption.md) |
 | Governed organization or enterprise rollout | [Enterprise Admin](enterprise-admin-guide.md) |
 | Developer consuming an admin enterprise config | [Enterprise Developer](enterprise-developer-guide.md) |
 

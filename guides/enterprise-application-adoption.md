@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-08-10
+last_verified: 2026-08-13
 owner: AI-Harness maintainers
 purpose: Practical adoption guide for engineering teams applying
   AI-Harness during enterprise application delivery.
@@ -33,9 +33,9 @@ establish whether the developer environment itself is ready:
 aih doctor
 ```
 
-AI-Harness also provides workstation and runtime commands such as
-`certs`, `heal`, `tools`, `ready`, and `bootstrap` for supported
-readiness workflows. In TLS-intercepted or otherwise controlled
+AI-Harness also provides related workstation setup and diagnostic
+commands such as `certs`, `heal`, `tools`, `ready`, and `bootstrap`. In
+TLS-intercepted or otherwise controlled
 enterprise environments, separating workstation problems from
 application problems can reduce misleading agent debugging and
 developer-specific setup drift.
@@ -256,8 +256,8 @@ may need to answer more than whether the tooling works. They may need to
 understand which policy, approved capabilities, repository context, and
 harness configuration were in effect.
 
-AI-Harness provides evidence and bundle capabilities for supported
-governed workflows. Use those mechanisms according to the organization's
+AI-Harness can build evidence and bundle artifacts for supported governed
+workflows. Use those mechanisms according to the organization's
 policy and evidence requirements; do not treat the existence of an
 artifact as a compliance certification by itself.
 
