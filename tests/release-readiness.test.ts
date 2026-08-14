@@ -198,6 +198,10 @@ describe("release readiness metadata", () => {
         `For a major-version upgrade, install the approved explicit version (currently\n\`npm install -g @aihq/harness@${currentVersion}\`); \`npm update -g\` may stay within the current major. Re-run\n\`aih verify-release ${currentVersion}\` after an upgrade.`,
       );
     }
+    const postures = read("guides/postures.md");
+    expect(postures).toContain(
+      `The current release baseline is \`@aihq/harness@${currentVersion}\`.`,
+    );
   });
 
   it("ships basic repository governance files for controlled rollout", () => {
