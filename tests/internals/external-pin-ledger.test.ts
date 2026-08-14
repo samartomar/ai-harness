@@ -268,6 +268,9 @@ describe("active external-pin ledger", () => {
     expect(snyk.reason).toContain(
       "sha256:31259b2a91f04c092a87be560907136d8263861d1f32c8818564a40217bad4d0",
     );
+    expect(snyk.reason).toContain(
+      "sha256:22e5dc96b689af87589b32f96570a0da407a6562281d7c94021c57b849737daa",
+    );
     expect(snyk.reason).toContain("synthetic fixture");
     expect(entry("semgrep")).toMatchObject({
       version: SEMGREP_VERSION,
