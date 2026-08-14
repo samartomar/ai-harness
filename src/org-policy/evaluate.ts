@@ -176,7 +176,12 @@ export async function orgPolicyEffectiveDigest(
                 )
                 .join(", ") || "none / mcp-managed-settings"
             : `${requestedTargets.join(",") || "none"} / ${candidate.projection.projector}`;
-        const projection = `${targetProjector}; supported=${candidate.projection.supportedTargets.join(",") || "none"}; available=${candidate.projection.availableTargets.join(",") || "none"}; ${candidate.projection.coverage}`;
+        // `supported` is per-candidate capability; `selected` is this INVOCATION's target
+        // set, identical on every row. Rendering the latter as `available` beside the
+        // former read as a per-candidate value, so an operator seeing `supported=claude;
+        // available=claude,kiro` concluded the two were meant to intersect. The field name
+        // now says which axis it is; the values are unchanged.
+        const projection = `${targetProjector}; supported=${candidate.projection.supportedTargets.join(",") || "none"}; selected=${candidate.projection.availableTargets.join(",") || "none"} (this invocation); ${candidate.projection.coverage}`;
         const receipt =
           candidate.kind === "hook"
             ? `${hookReceipt.state}: ${hookReceipt.detail}`

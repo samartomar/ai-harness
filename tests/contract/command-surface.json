@@ -2302,6 +2302,9 @@
           ],
           "options": [
             {
+              "flags": "--cli <list>"
+            },
+            {
               "flags": "--context-dir <dir>",
               "defaultValue": "ai-coding"
             },

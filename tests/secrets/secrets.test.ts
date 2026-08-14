@@ -666,9 +666,25 @@ describe("secrets --verify gate", () => {
     expect(matches).toHaveLength(3);
   });
 
-  it("plans no probe for a clean repo (green gate)", async () => {
+  /**
+   * A clean repo stays a GREEN gate — no fail verdict, exit 0 — but it must not be a
+   * SILENT one. With zero probes the executor suppresses the verification section
+   * entirely, so `--verify` printed no checks and exited 0, indistinguishable from
+   * never having run; the generated canon points every downstream repo at this command
+   * to "validate secret presence". The clean scan now says it scanned and found nothing.
+   */
+  it("plans exactly one passing probe for a clean repo (green, not silent)", async () => {
     const p = await command.plan(ctx());
-    expect(p.actions.some((a) => a.kind === "probe")).toBe(false);
+    const probes = p.actions.filter((a) => a.kind === "probe");
+    expect(probes).toHaveLength(1);
+    const result = await executePlan(
+      await command.plan(ctx({ verify: true })),
+      ctx({ verify: true }),
+    );
+    const report = result.report;
+    if (!report) throw new Error("expected a verification report under --verify");
+    expect(report.checks.map((c) => c.verdict)).toEqual(["pass"]);
+    expect(report.exitCode()).toBe(0);
   });
 
   it("each secret yields a fail verdict that flips the gate exit code", async () => {

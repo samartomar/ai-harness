@@ -6,7 +6,9 @@ import type { Check } from "../internals/verify.js";
 import type { RepoStack } from "../profile/scan.js";
 import { execArgv } from "../tools/install.js";
 import {
+  MCP_PIN_CONFIG_FILES,
   type McpPackageResolver,
+  mcpLaunchLabel,
   mcpResolverLike,
   mcpResolverPinState,
   npxLaunchPins,
@@ -122,37 +124,48 @@ function envRecord(value: unknown): Record<string, string> | undefined {
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
-/** Every npx/uvx-like stdio launch declared in the repo's root `.mcp.json`. */
+/** Every npx/uvx-like stdio launch declared in the repo's repo-local MCP configs. */
 function readResolverLaunches(root: string): LaunchConfig {
-  const raw = readRegularFile(join(root, ".mcp.json"))?.toString("utf8");
-  if (raw === undefined) return { state: "absent" };
-  let parsed: unknown;
-  try {
-    parsed = parseJsoncText(raw);
-  } catch {
-    return { state: "invalid" };
-  }
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { state: "invalid" };
-  }
-  const servers = (parsed as { mcpServers?: unknown }).mcpServers;
-  if (servers === undefined) return { state: "none" };
-  if (servers === null || typeof servers !== "object" || Array.isArray(servers)) {
-    return { state: "invalid" };
-  }
   const launches: PinnedLaunchConfig[] = [];
-  for (const [server, entry] of Object.entries(servers)) {
-    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
-    const record = entry as Record<string, unknown>;
-    const command = typeof record.command === "string" ? record.command : "";
-    if (mcpResolverLike(command) === undefined) continue;
-    launches.push({
-      server,
-      command,
-      args: stringArray(record.args),
-      env: envRecord(record.env),
-    });
+  let sawFile = false;
+  let sawInvalid = false;
+  for (const rel of MCP_PIN_CONFIG_FILES) {
+    const raw = readRegularFile(join(root, rel))?.toString("utf8");
+    if (raw === undefined) continue;
+    sawFile = true;
+    let parsed: unknown;
+    try {
+      parsed = parseJsoncText(raw);
+    } catch {
+      sawInvalid = true;
+      continue;
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      sawInvalid = true;
+      continue;
+    }
+    const servers = (parsed as { mcpServers?: unknown }).mcpServers;
+    if (servers === undefined) continue;
+    if (servers === null || typeof servers !== "object" || Array.isArray(servers)) {
+      sawInvalid = true;
+      continue;
+    }
+    for (const [server, entry] of Object.entries(servers)) {
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
+      const record = entry as Record<string, unknown>;
+      const command = typeof record.command === "string" ? record.command : "";
+      if (mcpResolverLike(command) === undefined) continue;
+      launches.push({
+        server: mcpLaunchLabel(server, rel),
+        command,
+        args: stringArray(record.args),
+        env: envRecord(record.env),
+      });
+    }
   }
+  if (!sawFile) return { state: "absent" };
+  // An unreadable config must never read as clean — see the same gate in attest.ts.
+  if (sawInvalid) return { state: "invalid" };
   return launches.length === 0 ? { state: "none" } : { state: "servers", launches };
 }
 
@@ -278,7 +291,12 @@ export async function mcpPinCurrencyProbe(ctx: PlanContext): Promise<Check> {
   const name = PROBE_NAME;
   const cfg = readResolverLaunches(ctx.root);
   if (cfg.state === "absent") {
-    return { name, verdict: "skip", detail: "no .mcp.json (no MCP servers configured)" };
+    return {
+      name,
+      verdict: "skip",
+      detail:
+        "no repo-local MCP config (.mcp.json / .kiro/settings/mcp.json) — no MCP servers configured",
+    };
   }
   if (cfg.state === "invalid") {
     return {

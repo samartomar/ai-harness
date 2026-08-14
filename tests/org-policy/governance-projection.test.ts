@@ -458,7 +458,7 @@ describe("governed candidate projection", () => {
     expect(report?.text).toContain("missing-projector");
     expect(report?.text).toContain("projector-disabled-at-vibe-posture");
     expect(report?.text).toContain(
-      "kiro / workspace MCP distribution; supported=claude,kiro; available=kiro; blocked",
+      "kiro / workspace MCP distribution; supported=claude,kiro; selected=kiro (this invocation); blocked",
     );
   });
 
@@ -520,7 +520,7 @@ describe("governed candidate projection", () => {
     expect(report?.text).toContain(candidateIdentityDigest({ source: customSource() } as never));
     expect(report?.text).toContain(`evidence=${DIGEST}`);
     expect(report?.text).toContain("platform-security @ acme/governance");
-    expect(report?.text).toContain("supported=none; available=claude; blocked");
+    expect(report?.text).toContain("supported=none; selected=claude (this invocation); blocked");
     expect(report?.text).toContain("Security exception ownership: platform-security.");
   });
 

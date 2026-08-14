@@ -218,3 +218,24 @@ export function mcpResolverPinState(
       return undefined;
   }
 }
+
+/**
+ * Repo-local MCP configs whose servers carry pin evidence. Both `.mcp.json` (Claude/Kimi)
+ * and `.kiro/settings/mcp.json` use the identical `mcpServers` → `{command,args,env}`
+ * shape, so pin attestation and currency read both without normalization. Kiro was absent
+ * here while `aih policy project` was writing governed servers into it — the two most
+ * security-relevant doctor flags had no Kiro coverage at all.
+ *
+ * Deliberately NOT the full `MCP_CONFIG_FILES` set: `.vscode/mcp.json` and `opencode.json`
+ * use different shapes and would need the normalization `baseline/attestation.ts` carries.
+ */
+export const MCP_PIN_CONFIG_FILES: readonly string[] = [".mcp.json", ".kiro/settings/mcp.json"];
+
+/**
+ * Qualify a server name with its config file so same-named servers across configs stay
+ * distinguishable in reports. `.mcp.json` keeps the bare name, so existing Claude-only
+ * output is unchanged.
+ */
+export function mcpLaunchLabel(server: string, configRel: string): string {
+  return configRel === ".mcp.json" ? server : `${server} @ ${configRel}`;
+}

@@ -6,6 +6,60 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Doctor's `usage.recorder-missing` remediation no longer names a command the active policy
+  refuses. When governance owns the usage surface, `aih usage --apply` is rejected by design, so
+  the recorder check now points at `aih policy project --apply` and names the unreceipted-hook
+  case that projection will not adopt. Previously an enterprise repo could reach a state whose
+  only advice was a command governance blocks.
+- Blocked-target resolution reasons now state the whole requirement instead of only the deficit.
+  An activation declaring `targets: ["claude","kiro"]` reported `target-not-selected:kiro` when
+  neither was selected and `target-not-selected:claude` when only Kiro was, which read as a
+  contradiction; the reason now also carries the required target set and the actual selection.
+  The stable `target-not-selected:` / `target-not-supported:` prefixes are unchanged.
+- `aih doctor`'s org-policy effective-resolution probe is now scoped to the committed
+  `.aih-config.json` target set, like the MCP-allowlist and policy-drift probes beside it. Doctor
+  has no `--cli` flag, so the unscoped probe collapsed to `["claude"]` and reported a permanent
+  `target-not-selected:<cli>` on a correctly projected repo — in the same run whose baseline
+  attestation read those servers off disk and passed.
+- `aih policy evaluate` now honors a typed `--posture`. Posture gates projector availability, so
+  the command's checks are posture-scoped, but the spec omitted `honorReadOnlyPostureFlag` and the
+  flag was dropped for this read-only command — every posture produced identical output reporting
+  `projector-disabled-at-vibe-posture`. `aih doctor` already set this for the same check.
+- `aih policy evaluate` now accepts `--cli`. Its plan already resolved targets through the same
+  `resolveTargets` as `aih policy project`, but the read-only flag set omits `--cli`, so the
+  command rejected it outright and could not model the multi-target selection that projection
+  requires. Other read-only verifiers keep deriving targets from committed evidence.
+- `aih secrets --verify` now reports an affirmative check on a clean repository. Its probes were
+  emitted only per finding, so a repo with nothing to report planned zero probes — and because the
+  executor suppresses the verification section at zero checks, the command printed no checks and
+  exited 0, indistinguishable from never having run. The generated canon points every downstream
+  repo at this command to validate secret presence, so that silence read as proof. A clean scan
+  stays a green gate and now says what it scanned and that it found nothing.
+
+- An explicitly configured `AIH_ORG_POLICY` that points at a missing file now fails closed.
+  `readOrgPolicy` returned the same `undefined` for "no policy anywhere" and "the operator named
+  a file that isn't there", so a typo'd or moved path silently dropped the org posture floor and
+  the governed inventory while `aih policy validate` reported a clean skip and exit 0 — validating
+  nothing. Absence of the default `aih-org-policy.json` remains an honest skip.
+- `aih doctor --attest-mcp-pins` and `--check-pin-currency` now read `.kiro/settings/mcp.json`
+  alongside `.mcp.json`. Both pin checks were `.mcp.json`-only, so a repo whose governed servers
+  are projected into the Kiro config — the shape `aih policy project` writes — got no pin
+  attestation or currency verification at all, while the same doctor run attested those servers as
+  declared registry members. An unreadable MCP config now fails closed rather than reading clean.
+- The effective-policy digest renders the invocation's target set as `selected=… (this invocation)`
+  instead of `available=`. Sitting beside the per-candidate `supported=`, the old label read as a
+  per-candidate value and invited the conclusion that the two should intersect. Values unchanged.
+
+### Documentation
+
+- Documented that a governed policy (any `governance.policyVersion`) exclusively owns AIH MCP and
+  usage-hook projection, in the `aih mcp` and `aih usage` command sections and in the enterprise
+  onboarding guide. The onboarding guide still instructed `aih mcp --posture enterprise
+  --mcp-compliant --apply`, which fails closed under a governed policy, and pointed at no
+  alternative. The behavior is unchanged and was already stated under `aih policy`.
+
 ### Security
 
 - Activated the governed Snyk Agent Scan 0.5.17 integration after a protected `main` qualification

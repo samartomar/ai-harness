@@ -1815,6 +1815,59 @@ describe("doctor — Claude probe target scope from the committed marker (#554)"
     expect(res?.verdict).not.toBe("fail");
   });
 
+  /**
+   * Reproduction C: the effective-resolution probe must be scoped to the committed marker
+   * like its allowlist/drift siblings. Doctor has no `--cli` flag, so an unscoped probe
+   * leaves `ctx.targets` undefined, it collapses to `["claude"]`, and a Kiro repo reports a
+   * permanent `target-not-selected:kiro` — a red on a correctly projected repo, in the same
+   * run whose baseline attestation reads those Kiro servers off disk and passes.
+   */
+  it("does not report target-not-selected for a CLI the committed marker declares", async () => {
+    kiroOnlyMarker();
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowManagedOnly: true },
+        governance: {
+          policyVersion: "2026.08.0",
+          supportedClis: ["claude", "kiro"],
+          catalog: {
+            reviewed: [
+              {
+                id: "catalog-mcp",
+                kind: "mcp",
+                description: "AIH catalog MCP",
+                capabilities: [],
+                risks: [],
+                source: {
+                  type: "mcp",
+                  server: "catalog-mcp",
+                  subject: `mcp-server-sha256:${"a".repeat(64)}`,
+                },
+                targets: ["kiro"],
+                projector: "mcp-managed-settings",
+                lifecycle: "supported",
+                evidence: { record: "catalog-evidence" },
+              },
+            ],
+            custom: [],
+          },
+          activations: [{ candidate: "catalog-mcp", state: "active", targets: ["kiro"] }],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "org policy effective resolution");
+    const res = await probe?.run(c);
+    // The candidate may still be blocked for unrelated reasons (identity, evidence); what
+    // must never appear is a complaint that Kiro wasn't selected when the marker says it is.
+    expect(res?.detail ?? "").not.toContain("target-not-selected:kiro");
+  });
+
   // Reproduction B: stale Claude allowlist residue must route to prune, never to a
   // projection that emits zero actions for this repo's targets.
   it("does not prescribe policy projection for a Kiro-only repo's stale allowlist", async () => {

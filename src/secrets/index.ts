@@ -13,7 +13,7 @@ import {
 } from "../internals/plan.js";
 import { acceptChanged, changedSince } from "../internals/scan-allowlist.js";
 import { isExternalMcp, mcpConfigAbs } from "../mcp/render.js";
-import { mcpConfigSecretProbes, secretProbes } from "./probes.js";
+import { mcpConfigSecretProbes, secretProbes, secretScanCleanProbe } from "./probes.js";
 import {
   type ExternalMcpConfigFile,
   scanConfigSecrets,
@@ -124,6 +124,12 @@ async function planSecrets(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       ),
       ...mcpConfigSecretProbes(configFindings, posture),
     );
+  }
+
+  // Both scans clean: say so. Otherwise this plan carries no probe at all, the executor
+  // suppresses the verification section at zero checks, and `--verify` exits 0 in silence.
+  if (scan.matches.length === 0 && configFindings.length === 0) {
+    actions.push(secretScanCleanProbe());
   }
 
   return plan("secrets", ...actions);

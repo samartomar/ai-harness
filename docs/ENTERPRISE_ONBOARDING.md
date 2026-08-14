@@ -232,6 +232,16 @@ to write the local `aih-org-policy.json` entry; this is the safest path when the
 repo-local policy is active. If `AIH_ORG_POLICY` points at a distributed policy,
 update that source directly because org policy wins over local approval files and
 local approval writes are refused.
+
+> **Governed policies own these surfaces.** The `aih mcp` commands above apply to the
+> CLI-allow-list governance shape used in this guide (`governance: { supportedClis: [...] }`).
+> Once the policy carries a governed inventory — any `governance.policyVersion` — governance
+> exclusively owns AIH MCP and usage-hook projection, and `aih mcp`, `aih mcp approve`, and
+> `aih usage` all fail closed with `governance exclusively owns AIH <surface> projection`.
+> Reach those surfaces through `aih policy evaluate` and `aih policy project --apply`
+> instead, selecting every CLI named in the activation's `targets` (activations are
+> all-or-nothing, so `--cli claude,kiro` for a two-target activation). See
+> [commands.md](commands.md) under `aih policy`.
 An empty list with `allowManagedOnly: true` is deny-all for every AIH MCP projection; a populated
 list emits only listed, non-disabled servers. Setting it to `false` retains the enabled catalog,
 and AIH preserves unrelated or customized operator entries while reconciling its generated output.

@@ -348,7 +348,26 @@ export const policyEvaluateCommand: CommandSpec = {
   summary:
     "Resolve requested governed candidates against live identity, evidence, authority, targets, and projectors (read-only)",
   readOnly: true,
+  // Posture gates projector availability, so this verifier's checks ARE posture-scoped:
+  // without this, a typed `--posture` is dropped at `runCapability` and every posture
+  // resolves the same way, reporting `projector-disabled-at-vibe-posture` on a repo the
+  // operator asked to evaluate at enterprise. `aih doctor` already sets this for the very
+  // same downstream `orgPolicyEffectiveCheck`; evaluate was the outlier.
+  honorReadOnlyPostureFlag: true,
   skipOrgPolicyFloor: true,
+  // `policyEvaluatePlan` already resolves targets through the same `resolveTargets` that
+  // `policy project` uses, but the read-only flag set omits `--cli`, so the selection could
+  // never be stated. Evaluate could not model the very selection project requires — the
+  // dry-run diagnostic for an all-or-nothing multi-target activation was unable to express
+  // it. Registered here rather than in `addReadOnlyFlags` so other read-only verifiers keep
+  // deriving targets from committed evidence instead of a silencing flag.
+  options: [
+    {
+      flags: "--cli <list>",
+      description:
+        "evaluate against these AI CLIs (comma-separated) — name every target in the activation, e.g. claude,kiro",
+    },
+  ],
   plan: policyEvaluatePlan,
 };
 

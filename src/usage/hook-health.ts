@@ -4,6 +4,7 @@ import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { kiroHookRuntime } from "../kiro/runtime.js";
+import { governanceOwnsAihSurfaces, readOrgPolicy } from "../org-policy/schema.js";
 
 /**
  * Doctor probes for the usage-capture hook layer. A committed hook that fires against
@@ -15,6 +16,40 @@ import { kiroHookRuntime } from "../kiro/runtime.js";
 
 const RECORDER_REL = ".aih/usage-record.mjs";
 const METRICS_HOOK_REL = ".kiro/hooks/aih-metrics-on-stop.json";
+
+/**
+ * Who owns the usage surface decides which command can actually repair the recorder.
+ * A governed policy refuses `aih usage` outright (`assertGovernanceOwnsSurface`), so
+ * advising it hands the operator a command that cannot run — the recorder is reachable
+ * only through `aih policy project`. A malformed policy is not this probe's failure to
+ * report: fall back to the ungoverned wording and let the org-policy checks speak.
+ */
+function usageSurfaceIsGoverned(ctx: PlanContext): boolean {
+  try {
+    return governanceOwnsAihSurfaces(readOrgPolicy(ctx.root, ctx.env));
+  } catch {
+    return false;
+  }
+}
+
+/** The apply command that is actually runnable for whoever owns the usage surface. */
+function recorderApplyCommand(governed: boolean): string {
+  return governed
+    ? "`aih policy project --apply` (selecting every CLI in the activation's `targets`)"
+    : "`aih usage --apply`";
+}
+
+/**
+ * Naming `aih policy project` alone would be its own dead end, because projection is not
+ * unconditionally a fix. It writes a recorder only when the policy activates a
+ * `usage-metering` candidate for these targets; with none, `usageHookProjectionActions`
+ * falls through to deactivation, which no-ops without a prior receipt — a successful run
+ * that writes nothing. And a hook predating the policy is unreceipted, which projection
+ * refuses to adopt rather than overwrite. Both escapes are policy-authoring or manual
+ * actions no `aih` command performs, so the remediation has to say so.
+ */
+const GOVERNED_LEGACY_NOTE =
+  " Projection writes the recorder only if the policy activates a `usage-metering` candidate for these targets — if it does not, the policy owner must add one, or this hook reference is stale and should be removed. A hook predating the policy is unreceipted and projection will not adopt it.";
 
 /** Hook host files that (may) invoke the usage recorder, across every supported CLI. */
 const HOOK_HOSTS = [
@@ -51,12 +86,13 @@ export async function usageRecorderCheck(ctx: PlanContext): Promise<Check> {
       detail: "no committed hooks reference the usage recorder",
     };
   }
+  const governed = usageSurfaceIsGoverned(ctx);
   if (!existsSync(join(ctx.root, RECORDER_REL))) {
     return {
       name: "usage-recorder",
       verdict: "fail",
       code: "usage.recorder-missing",
-      detail: `${referencing.join(", ")} reference ${RECORDER_REL} but it is absent — run \`aih usage --apply\` and commit ${RECORDER_REL} so a fresh clone has the recorder the hooks invoke`,
+      detail: `${referencing.join(", ")} reference ${RECORDER_REL} but it is absent — run ${recorderApplyCommand(governed)} and commit ${RECORDER_REL} so a fresh clone has the recorder the hooks invoke${governed ? GOVERNED_LEGACY_NOTE : ""}`,
     };
   }
   // Present on disk — but if it's still git-ignored it won't be committed, so a fresh
@@ -69,7 +105,7 @@ export async function usageRecorderCheck(ctx: PlanContext): Promise<Check> {
       name: "usage-recorder",
       verdict: "fail",
       code: "usage.recorder-missing",
-      detail: `${RECORDER_REL} exists locally but is git-ignored — it won't survive a fresh clone; run \`aih usage --apply\` to narrow \`.aih/\` to \`.aih/*\` + the recorder negation, then commit it`,
+      detail: `${RECORDER_REL} exists locally but is git-ignored — it won't survive a fresh clone; run ${recorderApplyCommand(governed)} to narrow \`.aih/\` to \`.aih/*\` + the recorder negation, then commit it`,
     };
   }
   // Not ignored is NOT the same as tracked: `check-ignore` also exits non-zero for a
@@ -93,7 +129,7 @@ export async function usageRecorderCheck(ctx: PlanContext): Promise<Check> {
       name: "usage-recorder",
       verdict: "fail",
       code: "usage.recorder-missing",
-      detail: `${RECORDER_REL} exists locally but is untracked/uncommitted — a fresh clone won't have it; run \`aih usage --apply\` then commit ${RECORDER_REL}`,
+      detail: `${RECORDER_REL} exists locally but is untracked/uncommitted — a fresh clone won't have it; run ${recorderApplyCommand(governed)} then commit ${RECORDER_REL}`,
     };
   }
   return {

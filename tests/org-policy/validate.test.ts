@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { readOrgPolicyFloor } from "../../src/config/posture.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { plan } from "../../src/internals/plan.js";
@@ -11,6 +12,7 @@ import type { Check } from "../../src/internals/verify.js";
 import { verifiedOrgPolicyProjectionActions } from "../../src/org-policy/project.js";
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 import {
+  localPolicyCheck,
   policyEvaluateCommand,
   policyProjectCommand,
   policyValidateCommand,
@@ -516,5 +518,133 @@ describe("policy verify — pinned policy integrity", () => {
 
     expect(check?.verdict).toBe("pass");
     expect(check?.detail).toContain("policies/org.json");
+  });
+});
+
+/**
+ * `aih policy evaluate --posture X` reported byte-identical output for every posture.
+ * Posture gates projector availability, so evaluate's checks ARE posture-scoped — but the
+ * spec omitted `honorReadOnlyPostureFlag`, so `runCapability` dropped the typed flag for
+ * this read-only command and every invocation resolved the same posture.
+ */
+describe("policy evaluate — posture is honored", () => {
+  function governedPolicy(): string {
+    return JSON.stringify({
+      schemaVersion: 2,
+      minimumPosture: "enterprise",
+      references: { repoContract: "ai-coding/project.json" },
+      mcp: { allowManagedOnly: true },
+      governance: {
+        policyVersion: "2026.08.0",
+        supportedClis: ["claude"],
+        catalog: {
+          reviewed: [
+            {
+              id: "catalog-mcp",
+              kind: "mcp",
+              description: "AIH catalog MCP",
+              capabilities: [],
+              risks: [],
+              source: {
+                type: "mcp",
+                server: "catalog-mcp",
+                subject: `mcp-server-sha256:${"a".repeat(64)}`,
+              },
+              targets: ["claude"],
+              projector: "mcp-managed-settings",
+              lifecycle: "supported",
+              evidence: { record: "catalog-evidence" },
+            },
+          ],
+          custom: [],
+        },
+        activations: [{ candidate: "catalog-mcp", state: "active", targets: ["claude"] }],
+        authority: { approvals: [] },
+      },
+    });
+  }
+
+  /**
+   * The plumbing half: without this field `runCapability` discards a typed `--posture`
+   * for read-only specs (see the posture precedence ladder in tests/commands/run.test.ts).
+   * `aih doctor` already sets it for the identical downstream `orgPolicyEffectiveCheck`.
+   */
+  it("declares that it honors the read-only posture flag", () => {
+    expect(policyEvaluateCommand.honorReadOnlyPostureFlag).toBe(true);
+  });
+
+  /** The behavior half: posture must actually change what evaluate reports. */
+  it("reports the vibe projector block only at vibe posture", async () => {
+    write("aih-org-policy.json", governedPolicy());
+    const detailAt = async (posture: "vibe" | "enterprise"): Promise<string> => {
+      const c = ctx({ posture, targets: ["claude"] });
+      const p = await policyEvaluateCommand.plan(c);
+      const out: string[] = [];
+      for (const a of p.actions) {
+        if (a.kind === "probe") out.push(JSON.stringify(await a.run(c)));
+      }
+      return out.join("\n");
+    };
+    expect(await detailAt("vibe")).toContain("projector-disabled-at-vibe-posture");
+    expect(await detailAt("enterprise")).not.toContain("projector-disabled-at-vibe-posture");
+  });
+});
+
+/**
+ * `aih policy evaluate --cli claude,kiro` failed with `unknown option '--cli'`, so the
+ * dry-run diagnostic could not model the very selection `aih policy project` requires for
+ * an all-or-nothing multi-target activation. `policyEvaluatePlan` already resolves targets
+ * through the same `resolveTargets` as project; only the flag registration was missing.
+ */
+describe("policy evaluate — target selection", () => {
+  it("declares the --cli flag the read-only flag set omits", () => {
+    const flags = (policyEvaluateCommand.options ?? []).map((o) => o.flags);
+    expect(flags).toContain("--cli <list>");
+  });
+
+  it("routes a --cli selection through the same target resolution as policy project", async () => {
+    write("aih-org-policy.json", validPolicy());
+    // The org sanction gate names the rejected CLI only if `options.cli` actually reached
+    // `resolveTargets`; a dropped flag would resolve the default and never mention codex.
+    await expect(policyEvaluateCommand.plan(ctx({ options: { cli: "codex" } }))).rejects.toThrow(
+      /organization sanction gate.*codex.*Allowed: claude/,
+    );
+  });
+});
+
+/**
+ * A governance bootstrap exported `AIH_ORG_POLICY=/does-not-exist.json`. `readOrgPolicy`
+ * returned `undefined` for BOTH "no policy anywhere" and "explicitly named file missing",
+ * so `policy validate` reported a clean skip ("absence is not a failure") and exit 0 while
+ * validating nothing — and every other caller silently lost the org posture floor and the
+ * governed inventory with it. An explicitly named policy must resolve or fail closed.
+ */
+describe("org policy — explicit AIH_ORG_POLICY must resolve", () => {
+  it("fails closed when AIH_ORG_POLICY points at a missing file", () => {
+    const check = localPolicyCheck(ctx({ env: { AIH_ORG_POLICY: "missing/org.json" } }));
+    expect(check.verdict).toBe("fail");
+    expect(check.code).toBe("org-policy.invalid");
+    expect(check.detail).toContain("AIH_ORG_POLICY");
+    expect(check.detail).not.toContain("absence is not a failure");
+  });
+
+  it("still skips when no policy is configured at all (vibe repos carry none)", () => {
+    const check = localPolicyCheck(ctx({ env: {} }));
+    expect(check.verdict).toBe("skip");
+    expect(check.detail).toContain("absence is not a failure");
+  });
+
+  it("still passes when AIH_ORG_POLICY points at a real policy", () => {
+    write("policies/org.json", validPolicy());
+    const check = localPolicyCheck(ctx({ env: { AIH_ORG_POLICY: "policies/org.json" } }));
+    expect(check.verdict).toBe("pass");
+  });
+
+  /** The severe case: a dropped floor silently downgrades posture for every command. */
+  it("does not silently drop the org posture floor when the path is broken", () => {
+    expect(() => readOrgPolicyFloor(dir, { AIH_ORG_POLICY: "missing/org.json" })).toThrow(
+      /AIH_ORG_POLICY/,
+    );
+    expect(readOrgPolicyFloor(dir, {})).toBeUndefined();
   });
 });

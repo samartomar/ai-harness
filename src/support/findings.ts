@@ -436,7 +436,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "degraded",
     title: "Usage recorder missing but referenced by a committed hook",
     action:
-      "Run `aih usage --apply` and commit `.aih/usage-record.mjs` so a fresh clone has the recorder the hooks invoke (it is kept out of the `.aih/*` ignore by design).",
+      "Run `aih usage --apply` — or, when an org policy governs the usage surface (that command is then refused), `aih policy project --apply` selecting every CLI in the activation's `targets` — and commit `.aih/usage-record.mjs` so a fresh clone has the recorder the hooks invoke (it is kept out of the `.aih/*` ignore by design).",
   },
   "usage.kiro-hook-runtime-unverified": {
     audience: "developer",
