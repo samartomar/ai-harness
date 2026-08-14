@@ -11,9 +11,11 @@ import { beginMarker, endMarker } from "../internals/render.js";
 import { existingMcpTomlNames } from "../mcp/render.js";
 import {
   buildEccMcpProfileProjection,
+  buildSerena161ReceiptProjection,
   CONTEXT7_SUBJECT_SHA256,
   ECC_MCP_DISABLED,
   type EccMcpProjection,
+  SERENA_RUNTIME_PIN,
 } from "./mcp-profile.js";
 
 const MAX_RUNTIME_FILE_BYTES = 128 * 1024 * 1024;
@@ -28,6 +30,13 @@ export const SERENA_DEPENDENCY_LOCK_SHA256 =
 /** Append-only identities that newer packages may use to recover older registrations. */
 const TRUSTED_SERENA_RUNTIME_LOCKS = [
   {
+    package: "serena-agent==1.6.1",
+    pyprojectSha256: "25dbee035cd2c3ce2e65110eda0cc20f066ec37aea37210fab9569b81ca6a5ba",
+    uvLockSha256: "ba888b113354c146cc8ecd925e6821d4284ebfad984a8544163be2803295f460",
+    aggregateSha256: "1eaf5dcffef9426f9024d03e6875ccbaf2a6857cbcfecf22127a7d1876ebf5b0",
+  },
+  {
+    package: SERENA_RUNTIME_PIN.package,
     pyprojectSha256: SERENA_RUNTIME_PYPROJECT_SHA256,
     uvLockSha256: SERENA_RUNTIME_UV_LOCK_SHA256,
     aggregateSha256: SERENA_DEPENDENCY_LOCK_SHA256,
@@ -271,7 +280,7 @@ function assertTrustedSerenaReceiptIdentity(
   value: NativeEccRegistration["runtime"]["serena"],
   projectRoot: string,
   stateRoot: string,
-): void {
+): (typeof TRUSTED_SERENA_RUNTIME_LOCKS)[number] {
   if (
     !isAbsolute(value.root) ||
     contains(projectRoot, value.root) ||
@@ -283,18 +292,19 @@ function assertTrustedSerenaReceiptIdentity(
   ) {
     throw new Error("native registration ownership receipt has an invalid Serena runtime root");
   }
-  const trusted = TRUSTED_SERENA_RUNTIME_LOCKS.some(
+  const trusted = TRUSTED_SERENA_RUNTIME_LOCKS.find(
     (identity) =>
       identity.pyprojectSha256 === value.pyproject.sha256 &&
       identity.uvLockSha256 === value.uvLock.sha256 &&
       identity.aggregateSha256 === value.aggregateSha256,
   );
   if (
-    !trusted ||
+    trusted === undefined ||
     sha256(`${value.pyproject.sha256}\0${value.uvLock.sha256}`) !== value.aggregateSha256
   ) {
     throw new Error("native registration ownership receipt has an unauthenticated Serena runtime");
   }
+  return trusted;
 }
 
 function hooksFor(
@@ -375,6 +385,7 @@ function registrationFromIdentities(
   root: string,
   stateRoot: string,
   runtime: NativeEccRegistration["runtime"],
+  serenaPackage: (typeof TRUSTED_SERENA_RUNTIME_LOCKS)[number]["package"] = SERENA_RUNTIME_PIN.package,
 ): NativeEccRegistration {
   const mcpInput = {
     canonicalWorktree: root,
@@ -382,7 +393,7 @@ function registrationFromIdentities(
     wrapperCommand: runtime.executable.path,
     wrapperArgsPrefix: [runtime.cliScript.path],
     wrapperSha256: runtime.cliScript.sha256,
-    serenaDependencyLockSha256: SERENA_DEPENDENCY_LOCK_SHA256,
+    serenaDependencyLockSha256: runtime.serena.aggregateSha256,
     serenaRuntimeRoot: runtime.serena.root,
     context7Attestation: {
       endpoint: "https://mcp.context7.com/mcp",
@@ -390,8 +401,12 @@ function registrationFromIdentities(
       reviewedAt: "2026-08-03T00:00:00.000Z",
     },
   } as const;
-  const claudeMcp = buildEccMcpProfileProjection({ ...mcpInput, client: "claude" });
-  const codexMcp = buildEccMcpProfileProjection({ ...mcpInput, client: "codex" });
+  const buildProjection =
+    serenaPackage === SERENA_RUNTIME_PIN.package
+      ? buildEccMcpProfileProjection
+      : buildSerena161ReceiptProjection;
+  const claudeMcp = buildProjection({ ...mcpInput, client: "claude" });
+  const codexMcp = buildProjection({ ...mcpInput, client: "codex" });
   if (claudeMcp.native.kind !== "claude-json" || codexMcp.native.kind !== "codex-toml") {
     throw new Error("native MCP projection returned an unexpected client shape");
   }
@@ -695,7 +710,11 @@ function parseReceipt(
   ) {
     throw new Error("native registration ownership receipt has ambiguous runtime paths");
   }
-  assertTrustedSerenaReceiptIdentity(receipt.runtime.serena, receipt.root, receipt.stateRoot);
+  const trustedSerena = assertTrustedSerenaReceiptIdentity(
+    receipt.runtime.serena,
+    receipt.root,
+    receipt.stateRoot,
+  );
   const expectedOwnership = new Map<string, NativeRegistrationFile["ownership"]>([
     [".claude/settings.json", "json-array-children"],
     [".mcp.json", "json-object-children"],
@@ -713,7 +732,12 @@ function parseReceipt(
       throw new Error("native registration receipt content hash is invalid");
   }
   const expectedFiles = nativeRegistrationFiles(
-    registrationFromIdentities(receipt.root, receipt.stateRoot, receipt.runtime),
+    registrationFromIdentities(
+      receipt.root,
+      receipt.stateRoot,
+      receipt.runtime,
+      trustedSerena.package,
+    ),
   );
   if (!sameJson(receipt.files, expectedFiles)) {
     throw new Error("native registration receipt contradicts the reviewed native policy");

@@ -14,6 +14,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `unsupported-target`, and `projector-disabled-at-vibe-posture` diagnostics. Unsupported custom
   materializers still report `supported=none`.
 
+### Security
+
+- Governed Python supply chains now pin Semgrep 1.173.0, Snyk Agent Scan 0.5.17, and Serena 1.7.0.
+  The five committed uv locks resolve `cryptography` 50.0.0; Semgrep and Snyk resolve fixed MCP
+  releases 1.29.0 and 1.28.1 respectively; governed aiohttp closures resolve 3.14.3. Exact upstream
+  pins and full baseline analyzer evidence were regenerated, and the Serena 1.6.1 lock identity
+  remains trusted only for update/uninstall receipt recovery. Snyk behavioral qualification remains
+  blocked until an operator supplies `SNYK_TOKEN`; its pinned package and offline CLI help are
+  verified without claiming a scan.
+
 ## [5.3.0] - 2026-08-13
 
 ### Added

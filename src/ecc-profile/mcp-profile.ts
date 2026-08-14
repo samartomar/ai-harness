@@ -27,6 +27,20 @@ export const SERENA_RUNTIME_PIN = {
   metadataSha256: "124f3562913efb9aa13d06ab92a64eb0a09c976490169e86b39d2c0b09b5643c",
 } as const;
 
+const SERENA_1_6_1_RUNTIME_PIN = {
+  package: "serena-agent==1.6.1",
+  sourceCommit: "bcac0969fb8685783ea6d0f2642468fcc47e6395",
+  wheelSha256: "04ddd985bd3feb25598ab8732bf3a998f961d5b46dce271b816126c0a68a91e1",
+  metadataSha256: "4c95007465c14bed34e4d0022cc9382e826feafb9212eb6c9a1888ea2548bd7d",
+} as const;
+
+interface SerenaRuntimePin {
+  package: string;
+  sourceCommit: string;
+  wheelSha256: string;
+  metadataSha256: string;
+}
+
 /**
  * The reviewed symbol/refactor surface. A fixed set is deliberate: Serena's
  * client contexts and modes are convenience defaults, not an authorization
@@ -103,7 +117,7 @@ export interface EccMcpProjection {
   disabled: typeof ECC_MCP_DISABLED;
   serenaConfig: string;
   provenance: {
-    serena: typeof SERENA_RUNTIME_PIN & {
+    serena: SerenaRuntimePin & {
       dependencyLockSha256: string;
       wrapperSha256: string;
     };
@@ -221,7 +235,10 @@ function localServers(): Pick<
   return { "code-review-graph": graph, "codebase-memory-mcp": memory };
 }
 
-export function buildEccMcpProfileProjection(input: EccMcpProjectionInput): EccMcpProjection {
+function buildEccMcpProfileProjectionForRuntime(
+  input: EccMcpProjectionInput,
+  runtimePin: SerenaRuntimePin,
+): EccMcpProjection {
   const canonicalWorktree = requireAbsoluteSafePath(input.canonicalWorktree, "canonicalWorktree");
   const serenaHome = requireAbsoluteSafePath(input.serenaHome, "serenaHome");
   const serenaRuntimeRoot = requireAbsoluteSafePath(input.serenaRuntimeRoot, "serenaRuntimeRoot");
@@ -258,7 +275,7 @@ export function buildEccMcpProfileProjection(input: EccMcpProjectionInput): EccM
         ...wrapperArgsPrefix,
         "serena",
         "--package",
-        SERENA_RUNTIME_PIN.package,
+        runtimePin.package,
         "--dependency-lock-sha256",
         input.serenaDependencyLockSha256,
         "--lock-root",
@@ -293,7 +310,7 @@ export function buildEccMcpProfileProjection(input: EccMcpProjectionInput): EccM
     serenaConfig: renderSerenaConfig(),
     provenance: {
       serena: {
-        ...SERENA_RUNTIME_PIN,
+        ...runtimePin,
         dependencyLockSha256: input.serenaDependencyLockSha256,
         wrapperSha256: input.wrapperSha256,
       },
@@ -301,6 +318,15 @@ export function buildEccMcpProfileProjection(input: EccMcpProjectionInput): EccM
     },
     native,
   };
+}
+
+export function buildEccMcpProfileProjection(input: EccMcpProjectionInput): EccMcpProjection {
+  return buildEccMcpProfileProjectionForRuntime(input, SERENA_RUNTIME_PIN);
+}
+
+/** Reconstructs only receipt-owned 1.6.1 fragments; new runtime projection always uses 1.7.0. */
+export function buildSerena161ReceiptProjection(input: EccMcpProjectionInput): EccMcpProjection {
+  return buildEccMcpProfileProjectionForRuntime(input, SERENA_1_6_1_RUNTIME_PIN);
 }
 
 interface SerenaToolDescription {
