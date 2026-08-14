@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute } from "node:path";
 
 const ANALYZER = "snyk-agent-scan@uv:0.5.17";
@@ -44,12 +44,17 @@ if (
   fail("qualification requires distinct absolute result and summary paths");
 }
 
-const resultSize = statSync(resultPath).size;
-if (resultSize < 2 || resultSize > MAX_RESULT_BYTES) {
-  fail("qualification result size is outside the reviewed boundary");
+const resultFd = openSync(resultPath, "r");
+let raw;
+try {
+  const resultSize = fstatSync(resultFd).size;
+  if (resultSize < 2 || resultSize > MAX_RESULT_BYTES) {
+    fail("qualification result size is outside the reviewed boundary");
+  }
+  raw = readFileSync(resultFd, "utf8");
+} finally {
+  closeSync(resultFd);
 }
-
-const raw = readFileSync(resultPath, "utf8");
 let parsed;
 try {
   parsed = JSON.parse(raw);
