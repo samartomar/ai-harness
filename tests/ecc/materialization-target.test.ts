@@ -940,6 +940,7 @@ describe("the governed Kiro target uses only verified curated Kiro surfaces", ()
     ]);
     expect(destinations(result, "agent:code-reviewer")).toEqual([
       ".kiro/agents/code-reviewer.json",
+      ".kiro/agents/code-reviewer.md",
     ]);
     expect(
       Buffer.from(
@@ -992,7 +993,10 @@ describe("the governed Kiro target uses only verified curated Kiro surfaces", ()
       },
     });
 
-    expect(destinations(result, mapped.id)).toEqual([".kiro/agents/code-reviewer.json"]);
+    expect(destinations(result, mapped.id)).toEqual([
+      ".kiro/agents/code-reviewer.json",
+      ".kiro/agents/code-reviewer.md",
+    ]);
     expect(refusalFor(result, unmapped.id, "kiro")).toMatchObject({
       reason: "unsupported-component",
       detail: expect.stringMatching(/no pinned Kiro agent configuration/i),

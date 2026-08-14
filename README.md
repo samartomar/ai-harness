@@ -331,9 +331,13 @@ real `.kiro/` tree):
 - `aih ecc --cli kiro` → emits scoped consult guidance; Kiro's native installer cannot yet
   materialize the component union safely, so aih does not run it.
 - In a governed repository, `aih ecc --lifecycle install --cli kiro` is a separate AIH-owned
-  path: it projects only evidence-passed selected skills and steering from the exact pinned source,
-  under dual selected/runtime evidence and receipt ownership. It does not run or adopt the native
-  installer, project agents/hooks/settings/scripts, or claim that Kiro loaded the files.
+  path: it projects only evidence-passed selected agents with an exact pinned Kiro mapping, skills,
+  and steering from the exact pinned source, under dual selected/runtime evidence and receipt
+  ownership. A mapped agent lands as its exact selected `.kiro/agents/<name>.md` IDE representation
+  and curated `.kiro/agents/<name>.json` CLI configuration; an unmapped agent is reported by name,
+  while a pre-existing same-name Markdown/JSON definition, including a
+  case-folded spelling on a case-sensitive filesystem, is refused rather than overwritten. It does
+  not run or adopt the native installer or project hooks/settings/scripts.
 - `aih superpowers --cli kiro` → `.kiro/steering/superpowers-methodology.md` (the
   brainstorm → plan → TDD → review routing, since Kiro can't load `~/.claude/superpowers`).
 

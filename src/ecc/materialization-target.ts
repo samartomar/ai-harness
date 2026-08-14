@@ -15,7 +15,10 @@ import type {
   EccEffectiveSelectionComponent,
   EccSelectionEvidence,
 } from "./materialization-selection.js";
-import { resolveVerifiedKiroMaterialization } from "./materialization-target-kiro.js";
+import {
+  kiroAgentMappingState,
+  resolveVerifiedKiroMaterialization,
+} from "./materialization-target-kiro.js";
 import type {
   EccMaterializationComponentInput,
   EccMaterializationFileInput,
@@ -427,9 +430,22 @@ export function resolveEccTargetMaterialization(
   const refused: EccTargetedRefusal[] = [];
   const kiroRequested = request.targets.includes("kiro");
   const genericTargets = request.targets.filter((target) => target !== "kiro");
-  const kiroSupported = request.components.filter(
-    (component) => component.id === "baseline:rules" || component.id.startsWith("skill:"),
+  const kiroCandidates = request.components.filter(
+    (component) =>
+      component.id === "baseline:rules" ||
+      component.id.startsWith("agent:") ||
+      component.id.startsWith("skill:"),
   );
+  const kiroUnmappedAgents = new Set(
+    kiroCandidates
+      .filter(
+        (component) =>
+          component.id.startsWith("agent:") &&
+          kiroAgentMappingState(sourceRoot, component.id) === "absent",
+      )
+      .map((component) => component.id),
+  );
+  const kiroSupported = kiroCandidates.filter((component) => !kiroUnmappedAgents.has(component.id));
 
   if (kiroRequested && kiroSupported.length > 0) {
     const runtimeAuthorizations =
@@ -464,14 +480,16 @@ export function resolveEccTargetMaterialization(
   if (kiroRequested) {
     for (const component of request.components) {
       if (kiroSupported.includes(component)) continue;
+      const unmappedAgent = kiroUnmappedAgents.has(component.id);
       refused.push({
         target: "kiro",
         id: component.id,
         reason: "unsupported-component",
-        detail:
-          "the Kiro target does not govern " +
-          displaySafe(component.id) +
-          "; only selected skills and baseline:rules steering are supported",
+        detail: unmappedAgent
+          ? `the pinned Kiro runtime has no pinned Kiro agent configuration for ${displaySafe(component.id)}`
+          : "the Kiro target does not govern " +
+            displaySafe(component.id) +
+            "; only selected agents, skills, and baseline:rules steering are supported",
       });
     }
     const kiro = resolveVerifiedKiroMaterialization({

@@ -11,6 +11,7 @@ import type { EccComponentId } from "../../src/ecc/components.js";
 import type { EccEffectiveSelectionComponent } from "../../src/ecc/materialization-selection.js";
 import {
   foldedKiroProjectionCollision,
+  kiroAgentSemanticIdentity,
   resolveVerifiedKiroMaterialization,
 } from "../../src/ecc/materialization-target-kiro.js";
 import { eccComponentSourcePaths } from "../../src/ecc/materialize.js";
@@ -91,6 +92,23 @@ function caseSensitiveVolume(): boolean {
   rmSync(probe);
   return sensitive;
 }
+
+function fileSymlinksAvailable(): boolean {
+  const probeRoot = mkdtempSync(join(tmpdir(), "aih-ecc-kiro-symlink-probe-"));
+  const source = join(probeRoot, "source");
+  const destination = join(probeRoot, "destination");
+  try {
+    writeFileSync(source, "probe");
+    symlinkSync(source, destination, "file");
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(probeRoot, { recursive: true, force: true });
+  }
+}
+
+const FILE_SYMLINKS_AVAILABLE = fileSymlinksAvailable();
 
 function request(
   components: readonly EccEffectiveSelectionComponent[],
@@ -175,17 +193,37 @@ describe("the verified-source Kiro projection", () => {
     );
   });
 
-  it("projects one verified JSON agent configuration loadable by Kiro IDE 1 and CLI 3", () => {
+  it("projects the exact IDE Markdown and CLI JSON agent mappings under one Kiro target", () => {
     const agent = selected("agent:code-reviewer", "agents/code-reviewer.md");
     const result = resolveVerifiedKiroMaterialization(request([agent]));
 
     expect(result.components.map((component) => component.id)).toEqual(["agent:code-reviewer"]);
     expect(result.components[0]?.files.map((file) => file.path)).toEqual([
       ".kiro/agents/code-reviewer.json",
+      ".kiro/agents/code-reviewer.md",
     ]);
-    expect(Buffer.from(result.components[0]?.files[0]?.contents ?? "").toString("utf8")).toBe(
-      SOURCE_TREE[".kiro/agents/code-reviewer.json"],
+    const projected = Object.fromEntries(
+      (result.components[0]?.files ?? []).map((file) => [
+        file.path,
+        {
+          contents: Buffer.from(file.contents).toString("utf8"),
+          authorization: file.contentAuthorization.componentId,
+          source: file.contentSourcePath,
+        },
+      ]),
     );
+    expect(projected).toEqual({
+      ".kiro/agents/code-reviewer.json": {
+        contents: SOURCE_TREE[".kiro/agents/code-reviewer.json"],
+        authorization: "runtime:ecc-kiro",
+        source: ".kiro/agents/code-reviewer.json",
+      },
+      ".kiro/agents/code-reviewer.md": {
+        contents: SOURCE_TREE["agents/code-reviewer.md"],
+        authorization: "agent:code-reviewer",
+        source: "agents/code-reviewer.md",
+      },
+    });
   });
 
   it("refuses Kiro agents whose curated JSON identity or excluded runtime fields are unsafe", () => {
@@ -195,6 +233,11 @@ describe("the verified-source Kiro projection", () => {
       '{"name":"code-reviewer","mcpServers":{},"hooks":{"stop":[{"command":"echo no"}]}}\n',
       '{"name":"code-reviewer","mcpServers":{},"hooks":{},"includeMcpJson":true}\n',
       '{"name":"code-reviewer","mcpServers":{},"hooks":{},"useLegacyMcpJson":true}\n',
+      '{"name":"other","name":"code-reviewer","mcpServers":{},"hooks":{}}\n',
+      '{"name":"code-reviewer","mcpServers":{},"hooks":{"stop":[{"command":"echo no"}]},"hooks":{}}\n',
+      '{"name":"code-reviewer","mcpServers":{},"hooks":{},"includeMcpJson":true,"includeMcpJson":false}\n',
+      '{"name":"code-reviewer","mcpServers":{},"hooks":{},"resources":{"file":"first","file":"second"}}\n',
+      `{"name":"code-reviewer","mcpServers":{},"hooks":{},"resources":${"[".repeat(101)}null${"]".repeat(101)}}\n`,
       "not json\n",
     ];
 
@@ -380,7 +423,7 @@ describe("the verified-source Kiro projection", () => {
     );
   });
 
-  it("rejects symlinks and hostile selected provenance", () => {
+  it.skipIf(!FILE_SYMLINKS_AVAILABLE)("rejects source-side file symlinks", () => {
     const skill = selected("skill:tdd-workflow", "skills/tdd-workflow");
     const runtime = runtimeAuthorization();
     symlinkSync(
@@ -390,7 +433,9 @@ describe("the verified-source Kiro projection", () => {
     expect(() => resolveVerifiedKiroMaterialization(request([skill], [runtime]))).toThrow(
       /symbolic link/i,
     );
-    rmSync(join(sourceRoot, ".kiro", "skills", "tdd-workflow", "linked.md"));
+  });
+
+  it("rejects hostile selected provenance", () => {
     const hostile = {
       ...selected("skill:tdd-workflow", "skills/tdd-workflow"),
       provenance: {
@@ -450,5 +495,8 @@ describe("the verified-source Kiro projection", () => {
       first: ".kiro/skills/tdd-workflow/README.md",
       second: ".kiro/skills/tdd-workflow/readme.md",
     });
+    expect(kiroAgentSemanticIdentity(".kiro/agents/Résumé.md")).toBe(
+      kiroAgentSemanticIdentity(".kiro/agents/RÉSUMÉ.json"),
+    );
   });
 });
