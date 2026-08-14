@@ -88,12 +88,12 @@ function approval(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function reviewedControls() {
+function reviewedControls(targets: ("claude" | "codex" | "kiro")[] = ["claude"]) {
   const control = {
     id: "catalog-mcp",
     kind: "mcp" as const,
     source: { type: "mcp" as const, server: "catalog-mcp", subject: SUBJECT },
-    targets: ["claude"] as ("claude" | "codex")[],
+    targets,
     projector: "mcp-managed-settings" as const,
     lifecycle: "supported" as const,
   };
@@ -150,25 +150,40 @@ describe("headless effective org policy", () => {
   });
 
   it("names vibe posture when it disables the requested projector", () => {
-    const item = candidate();
+    const item = candidate({ targets: ["kiro"] });
     const base = policy();
     if (base.governance === undefined) throw new Error("expected governance fixture");
     const effective = resolveEffectiveOrgPolicy(
       policy({
-        governance: { ...base.governance, catalog: { reviewed: [item], custom: [] } },
+        governance: {
+          ...base.governance,
+          supportedClis: ["kiro"],
+          catalog: { reviewed: [item], custom: [] },
+          activations: [{ candidate: "catalog-mcp", state: "active", targets: ["kiro"] }],
+        },
       }),
       {
-        targets: ["claude"],
+        targets: ["kiro"],
         projectorsEnabled: false,
         projectorDisabledReason: "vibe-posture",
-        aihReviewedControls: reviewedControls(),
-        mcpIdentities: { "catalog-mcp": { subject: SUBJECT, projectable: true } },
+        aihReviewedControls: reviewedControls(["kiro"]),
+        mcpIdentities: {
+          "catalog-mcp": { subject: SUBJECT, projectable: true, kiroProjectable: true },
+        },
       },
     );
     expect(effective.candidates[0]).toMatchObject({
       effective: false,
       dangerCodes: expect.arrayContaining(["missing-projector", "unsupported-target"]),
       resolutionReasons: ["projector-disabled-at-vibe-posture"],
+      projection: {
+        requestedTargets: ["kiro"],
+        supportedTargets: ["claude", "kiro"],
+        availableTargets: ["kiro"],
+        coverage: "blocked",
+        ownership: "unavailable",
+        receipt: "unavailable",
+      },
     });
     expect(effective.blocking).toBe(true);
   });
