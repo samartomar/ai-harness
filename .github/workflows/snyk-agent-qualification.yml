@@ -1,0 +1,83 @@
+name: snyk-agent-qualification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    environment: snyk-agent-qualification
+    timeout-minutes: 20
+    steps:
+      - name: Check out ai-harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Bind qualification to the protected main ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = "refs/heads/main"
+          test "${GITHUB_SHA}" = "$(git rev-parse HEAD)"
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install and build AIH
+        run: |
+          npm ci
+          npm run build
+      - name: Set up scanner Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Set up pinned uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.2"
+          cache-dependency-glob: tools/trust-scanners/snyk-agent-scan/uv.lock
+      - name: Warm and verify the exact Snyk runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f tools/trust-scanners/snyk-agent-scan/uv.lock
+          uv run --project tools/trust-scanners/snyk-agent-scan --locked --isolated --python 3.12 \
+            --no-python-downloads --no-env-file snyk-agent-scan help >/dev/null
+          uv run --project tools/trust-scanners/snyk-agent-scan --locked --isolated --python 3.12 \
+            --offline --no-python-downloads --no-env-file snyk-agent-scan help >/dev/null
+      - name: Run AIH against the synthetic fixture
+        shell: bash
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${SNYK_TOKEN}"
+          fixture="$(mktemp -d "${RUNNER_TEMP}/aih-snyk-qualification.XXXXXX")"
+          mkdir -p "$fixture/skill"
+          printf '%s\n' \
+            '---' \
+            'name: aih-snyk-qualification' \
+            'description: Synthetic public fixture for Snyk Agent Scan qualification.' \
+            '---' \
+            '# Snyk Agent Scan qualification fixture' \
+            '' \
+            'This generated fixture contains only benign public demonstration text.' \
+            > "$fixture/skill/SKILL.md"
+
+          export AIH_SNYK_RESULT="${RUNNER_TEMP}/aih-snyk-qualification-result.json"
+          export AIH_SNYK_SUMMARY="${RUNNER_TEMP}/aih-snyk-qualification-summary.json"
+          node dist/cli.js trust scan "$fixture/skill" --json --verify --root "$fixture" --no-log \
+            > "$AIH_SNYK_RESULT"
+          node tools/validate-snyk-agent-qualification.mjs \
+            "$AIH_SNYK_RESULT" "$AIH_SNYK_SUMMARY"
+      - name: Upload sanitized qualification evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: snyk-agent-qualification-${{ github.run_id }}
+          path: ${{ runner.temp }}/aih-snyk-qualification-summary.json
+          if-no-files-found: error
+          retention-days: 5
