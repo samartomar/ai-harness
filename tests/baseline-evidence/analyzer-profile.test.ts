@@ -56,8 +56,8 @@ describe("required baseline analyzer applicability", () => {
       const required = requiredBaselineAnalyzersForComponent(component(id, paths));
       expect(required).toEqual(
         includesCisco
-          ? ["aih-native", "skillspector@docker", "semgrep@uv:1.172.0", "cisco@uvx"]
-          : ["aih-native", "skillspector@docker", "semgrep@uv:1.172.0"],
+          ? ["aih-native", "skillspector@docker", "semgrep@uv:1.173.0", "cisco@uvx"]
+          : ["aih-native", "skillspector@docker", "semgrep@uv:1.173.0"],
       );
       expect(requiredBaselineDetectorsForComponent(component(id, paths))).toEqual(
         includesCisco ? ["skillspector", "semgrep", "cisco"] : ["skillspector", "semgrep"],
@@ -75,7 +75,7 @@ describe("required baseline analyzer applicability", () => {
     expect(requiredBaselineAnalyzersForComponent(nested, root)).toEqual([
       "aih-native",
       "skillspector@docker",
-      "semgrep@uv:1.172.0",
+      "semgrep@uv:1.173.0",
       "cisco@uvx",
     ]);
     expect(requiredBaselineDetectorsForComponent(nested, root)).toEqual([
@@ -93,7 +93,7 @@ describe("required baseline analyzer applicability", () => {
     expect(requiredBaselineAnalyzersForComponent(nested, root)).toEqual([
       "aih-native",
       "skillspector@docker",
-      "semgrep@uv:1.172.0",
+      "semgrep@uv:1.173.0",
     ]);
     expect(requiredBaselineDetectorsForComponent(nested, root)).toEqual([
       "skillspector",
@@ -113,8 +113,8 @@ describe("required baseline analyzer applicability", () => {
 
   it.each([
     ["mcp-scanner@uv:4.8.2", CISCO_MCP_SCANNER_VERSION, CISCO_MCP_SCANNER_LOCK],
-    ["semgrep@uv:1.172.0", SEMGREP_VERSION, SEMGREP_LOCK],
-    ["snyk-agent-scan@uv:0.5.15", SNYK_AGENT_SCAN_VERSION, SNYK_AGENT_SCAN_LOCK],
+    ["semgrep@uv:1.173.0", SEMGREP_VERSION, SEMGREP_LOCK],
+    ["snyk-agent-scan@uv:0.5.17", SNYK_AGENT_SCAN_VERSION, SNYK_AGENT_SCAN_LOCK],
   ])("binds optional analyzer %s to its committed uv lock", (label, version, lock) => {
     const digest = createHash("sha256").update(readFileSync(lock)).digest("hex").slice(0, 12);
     expect(baselineAnalyzerVersions()[label]).toBe(`${version}+uvlock.${digest}`);
@@ -132,6 +132,24 @@ describe("required baseline analyzer applicability", () => {
     expect(readFileSync(join(project, "uv.lock"), "utf8")).toContain(
       `name = "${dependency}"\nversion = "${version}"`,
     );
+  });
+
+  it("locks cryptography 50.0.0 across every governed Python runtime", () => {
+    for (const lock of [
+      "src/ecc-profile/serena-runtime/uv.lock",
+      CISCO_SKILL_SCANNER_LOCK,
+      CISCO_MCP_SCANNER_LOCK,
+      SEMGREP_LOCK,
+      SNYK_AGENT_SCAN_LOCK,
+    ]) {
+      expect(readFileSync(lock, "utf8")).toContain('name = "cryptography"\nversion = "50.0.0"');
+    }
+  });
+
+  it("pins the Serena runtime to the reviewed 1.7.0 cutoff", () => {
+    const manifest = readFileSync("src/ecc-profile/serena-runtime/pyproject.toml", "utf8");
+    expect(manifest).toContain('"serena-agent==1.7.0"');
+    expect(manifest).toContain('exclude-newer = "2026-08-10T00:00:00Z"');
   });
 });
 
@@ -185,7 +203,7 @@ describe("checkDetectorsAvailable", () => {
       },
       {
         name: "snyk-agent-scan",
-        analyzerLabel: "snyk-agent-scan@uv:0.5.15",
+        analyzerLabel: "snyk-agent-scan@uv:0.5.17",
         reason: "snyk-agent-scan help check emitted no output",
       },
     ]);
@@ -193,7 +211,7 @@ describe("checkDetectorsAvailable", () => {
 
   it("rejects a different Semgrep version that merely mentions the pinned version", async () => {
     const run = fakeRunner((argv) =>
-      argv.includes("--version") ? { code: 0, stdout: "9.9.9\nupgrade from 1.172.0\n" } : undefined,
+      argv.includes("--version") ? { code: 0, stdout: "9.9.9\nupgrade from 1.173.0\n" } : undefined,
     );
     const probes = await checkDetectorsAvailable(["semgrep"], {
       run,
@@ -204,8 +222,8 @@ describe("checkDetectorsAvailable", () => {
     expect(probes).toEqual([
       {
         name: "semgrep",
-        analyzerLabel: "semgrep@uv:1.172.0",
-        reason: expect.stringContaining("does not match 1.172.0"),
+        analyzerLabel: "semgrep@uv:1.173.0",
+        reason: expect.stringContaining("does not match 1.173.0"),
       },
     ]);
   });

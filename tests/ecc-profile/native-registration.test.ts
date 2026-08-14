@@ -30,6 +30,12 @@ const roots: string[] = [];
 const packagedSerenaRuntimeRoot = fileURLToPath(
   new URL("../../src/ecc-profile/serena-runtime", import.meta.url),
 );
+const SERENA_1_6_1_RUNTIME_IDENTITY = {
+  package: "serena-agent==1.6.1",
+  pyprojectSha256: "25dbee035cd2c3ce2e65110eda0cc20f066ec37aea37210fab9569b81ca6a5ba",
+  uvLockSha256: "ba888b113354c146cc8ecd925e6821d4284ebfad984a8544163be2803295f460",
+  aggregateSha256: "1eaf5dcffef9426f9024d03e6875ccbaf2a6857cbcfecf22127a7d1876ebf5b0",
+} as const;
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -512,6 +518,54 @@ describe("native ECC registration", () => {
       context(input.root),
     );
     expect(existsSync(join(input.root, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(false);
+  });
+
+  it("retains the Serena 1.6.1 lock identity for receipt recovery after an upgrade", async () => {
+    const input = fixture();
+    const registration = buildNativeEccRegistration(input);
+    await executePlan(
+      planNativeEccRegistration(input.root, registration, "install"),
+      context(input.root),
+    );
+
+    const receiptPath = join(input.root, NATIVE_ECC_REGISTRATION_RECEIPT);
+    const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+    receipt.runtime.serena.pyproject.sha256 = SERENA_1_6_1_RUNTIME_IDENTITY.pyprojectSha256;
+    receipt.runtime.serena.uvLock.sha256 = SERENA_1_6_1_RUNTIME_IDENTITY.uvLockSha256;
+    receipt.runtime.serena.aggregateSha256 = SERENA_1_6_1_RUNTIME_IDENTITY.aggregateSha256;
+    for (const file of receipt.files) {
+      file.content = file.content
+        .replaceAll("serena-agent==1.7.0", SERENA_1_6_1_RUNTIME_IDENTITY.package)
+        .replaceAll(
+          registration.runtime.serena.aggregateSha256,
+          SERENA_1_6_1_RUNTIME_IDENTITY.aggregateSha256,
+        );
+      file.normalizedSha256 = createHash("sha256").update(file.content).digest("hex");
+      const installedPath = join(input.root, file.destination);
+      const installed = readFileSync(installedPath, "utf8")
+        .replaceAll("serena-agent==1.7.0", SERENA_1_6_1_RUNTIME_IDENTITY.package)
+        .replaceAll(
+          registration.runtime.serena.aggregateSha256,
+          SERENA_1_6_1_RUNTIME_IDENTITY.aggregateSha256,
+        );
+      writeFileSync(installedPath, installed);
+    }
+    writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+
+    await executePlan(
+      planNativeEccRegistration(input.root, registration, "update"),
+      context(input.root),
+    );
+    expect(readFileSync(join(input.root, ".mcp.json"), "utf8")).toContain("serena-agent==1.7.0");
+    expect(readFileSync(join(input.root, ".mcp.json"), "utf8")).toContain(
+      registration.runtime.serena.aggregateSha256,
+    );
+
+    await executePlan(
+      planInstalledNativeEccRegistration(input.root, "uninstall"),
+      context(input.root),
+    );
+    expect(existsSync(receiptPath)).toBe(false);
   });
 
   it("rejects project-contained state, linked launchers, and mutable or ambiguous runtime paths", () => {

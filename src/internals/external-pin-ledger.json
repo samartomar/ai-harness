@@ -39,11 +39,11 @@
     {
       "surface": "serena",
       "identity": "serena-agent",
-      "version": "1.6.1",
-      "commit": "bcac0969fb8685783ea6d0f2642468fcc47e6395",
-      "integrity": "sha256:04ddd985bd3feb25598ab8732bf3a998f961d5b46dce271b816126c0a68a91e1",
+      "version": "1.7.0",
+      "commit": "949a27ef1e5fda1a6e7b561e777bcece345c6ffd",
+      "integrity": "sha256:6dbf1459670d96fb0595f84932adef34260a6fe14ba5135b901fdb3c8c76e891",
       "disposition": "active",
-      "reason": "The exact MIT package installed in the project-keyed user cache on Python 3.13 with the three pinned security overrides, completed an offline MCP initialize in no-memories IDE mode, and returned a symbol overview from the qualification checkout."
+      "reason": "Official v1.7.0 pins cryptography==50.0.0 and mcp==1.28.1. Its committed uv 0.12.2 lock was regenerated under the fixed 2026-08-10 cutoff; locked Serena 1.7.0 version, offline help, and offline import checks passed. The runtime retains the protocol-level allowlist and isolated no-memories boundary."
     },
     {
       "surface": "token-savior",
@@ -120,7 +120,7 @@
       "version": "2.0.13",
       "integrity": "sha256:d81fde291d60b6f8134375c33b49a2f41f5bb3072b74153dafea4774d627a837",
       "disposition": "active",
-      "reason": "PyPI now reports 2.0.13. The committed uv lock was regenerated on a vet runner with the pinned uv 0.12.2 and picks up one new direct dependency (click); the `mcp` dependency is unchanged, so the #574 situation is untouched. Verified at the exact lock: skill-scanner reports 2.0.13 online and with --offline."
+      "reason": "The committed uv 0.12.2 lock now resolves aiohttp 3.14.3 and cryptography 50.0.0 without overrides. Its scanner pin remains 2.0.13; locked version checks remain required before release."
     },
     {
       "surface": "cisco-mcp-scanner",
@@ -129,22 +129,22 @@
       "commit": "94e61145a5bd6ae39eabcc52a686830e1ec73be0",
       "integrity": "sha256:ee96cc8e7d4641a5b96047552c426a9a7d6d2736a65a4bcbd77797f2f1add202",
       "disposition": "active",
-      "reason": "Moved 4.8.1 -> 4.8.2. The 106-package lock re-resolves with the `mcp` dependency unchanged, so the #574 situation is untouched. Verified starting from its locked environment on a vet runner with uv 0.12.2."
+      "reason": "The committed uv 0.12.2 lock now resolves cryptography 50.0.0 without overrides. The governed cisco-ai-mcp-scanner pin remains 4.8.2; locked help checks remain required before release."
     },
     {
       "surface": "snyk-agent-scan",
       "identity": "snyk-agent-scan",
-      "version": "0.5.15",
-      "integrity": "sha256:4983e6d54168fc10237677478255826ab7d474e934e88c6bbb5c8d8928127017",
+      "version": "0.5.17",
+      "integrity": "sha256:ae928b023023fba12fdaaaa31e9da5dad4252c181545dfba72d46534d694b935",
       "disposition": "blocked",
-      "reason": "The exact 62-package lock, online help, and offline help are green, but behavioral scan qualification requires SNYK_TOKEN and was not run; no token was inferred or requested from local secret files."
+      "reason": "The committed 62-package uv 0.12.2 lock now carries mcp 1.28.1 and cryptography 50.0.0; locked online and offline help passed. Behavioral scan qualification remains blocked on SNYK_TOKEN; no token was inferred or requested from local secret files."
     },
     {
       "surface": "semgrep",
       "identity": "semgrep",
-      "version": "1.172.0",
-      "commit": "651f37efa397bf066e1cf627414eeabe40b07e27",
-      "integrity": "sha256:7bcac633a0ffb7dfe75b7b99e44876f839590f2c01cd159c44caecc35e591df4",
+      "version": "1.173.0",
+      "commit": "abce3b5391706850837d4339f84bfaa3ec08604b",
+      "integrity": "sha256:95e504f01bf9ae20c23359a76bf9ada3e10c88906de58964f489e6332753260a",
       "disposition": "active"
     },
     {

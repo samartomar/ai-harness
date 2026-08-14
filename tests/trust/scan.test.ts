@@ -186,7 +186,7 @@ function semgrepRunner(
     const skillspector = successfulSkillspector(argv);
     if (skillspector !== undefined) return skillspector;
     if (!argv.includes("semgrep")) return undefined;
-    if (argv.includes("--version")) return { code: 0, stdout: "1.172.0\n" };
+    if (argv.includes("--version")) return { code: 0, stdout: "1.173.0\n" };
     if (argv.includes("scan")) {
       onScan?.(argv, opts);
       return { code: 0, stdout: JSON.stringify(sarif) };
@@ -235,7 +235,7 @@ function snykAgentScanRunnerWithHooks(
       }
     }
     if (argv.includes("semgrep")) {
-      if (argv.includes("--version")) return { code: 0, stdout: "1.172.0\n" };
+      if (argv.includes("--version")) return { code: 0, stdout: "1.173.0\n" };
       if (argv.includes("scan")) return { code: 0, stdout: JSON.stringify(EMPTY_SARIF) };
     }
     if (argv[0] === "agentshield") {
@@ -281,7 +281,7 @@ function agentshieldRunner(
       }
     }
     if (argv.includes("semgrep")) {
-      if (argv.includes("--version")) return { code: 0, stdout: "1.172.0\n" };
+      if (argv.includes("--version")) return { code: 0, stdout: "1.173.0\n" };
       if (argv.includes("scan")) return { code: 0, stdout: JSON.stringify(EMPTY_SARIF) };
     }
     if (argv.includes("snyk-agent-scan")) {
@@ -316,7 +316,7 @@ function agentDetectorMissingRunner(): Runner {
       }
     }
     if (argv.includes("semgrep")) {
-      if (argv.includes("--version")) return { code: 0, stdout: "1.172.0\n" };
+      if (argv.includes("--version")) return { code: 0, stdout: "1.173.0\n" };
       if (argv.includes("scan")) return { code: 0, stdout: JSON.stringify(EMPTY_SARIF) };
     }
     if (argv.includes("snyk-agent-scan")) {
@@ -3504,7 +3504,7 @@ describe("scanTrustTree", () => {
       run: semgrepRunner(sarif, (argv, opts) => seen.push({ argv, env: opts?.env })),
     });
 
-    expect(result.analyzersRun).toEqual(expect.arrayContaining(["semgrep@uv:1.172.0"]));
+    expect(result.analyzersRun).toEqual(expect.arrayContaining(["semgrep@uv:1.173.0"]));
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -3642,7 +3642,7 @@ describe("scanTrustTree", () => {
       run: snykAgentScanRunner(report, (argv, opts) => seen.push({ argv, env: opts?.env })),
     });
 
-    expect(result.analyzersRun).toEqual(expect.arrayContaining(["snyk-agent-scan@uv:0.5.15"]));
+    expect(result.analyzersRun).toEqual(expect.arrayContaining(["snyk-agent-scan@uv:0.5.17"]));
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -3723,7 +3723,7 @@ describe("scanTrustTree", () => {
       ]),
     });
 
-    expect(result.analyzersRun).toEqual(expect.arrayContaining(["snyk-agent-scan@uv:0.5.15"]));
+    expect(result.analyzersRun).toEqual(expect.arrayContaining(["snyk-agent-scan@uv:0.5.17"]));
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -3756,7 +3756,7 @@ describe("scanTrustTree", () => {
       }),
     });
 
-    expect(result.analyzersRun).toEqual(expect.arrayContaining(["snyk-agent-scan@uv:0.5.15"]));
+    expect(result.analyzersRun).toEqual(expect.arrayContaining(["snyk-agent-scan@uv:0.5.17"]));
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -3782,7 +3782,7 @@ describe("scanTrustTree", () => {
       run: snykAgentScanRunnerWithHooks({ findings: [] }, { scanCode: 0 }),
     });
 
-    expect(result.analyzersRun).toEqual(expect.arrayContaining(["snyk-agent-scan@uv:0.5.15"]));
+    expect(result.analyzersRun).toEqual(expect.arrayContaining(["snyk-agent-scan@uv:0.5.17"]));
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -3812,7 +3812,7 @@ describe("scanTrustTree", () => {
       run: snykAgentScanRunnerWithHooks({ findings: [] }, { scanCode: 0, scanStdout: "" }),
     });
 
-    expect(result.analyzersRun).not.toEqual(expect.arrayContaining(["snyk-agent-scan@uv:0.5.15"]));
+    expect(result.analyzersRun).not.toEqual(expect.arrayContaining(["snyk-agent-scan@uv:0.5.17"]));
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -3836,7 +3836,7 @@ describe("scanTrustTree", () => {
       run: snykAgentScanRunner({ findings: [] }),
     });
 
-    expect(result.analyzersRun).not.toEqual(expect.arrayContaining(["snyk-agent-scan@uv:0.5.15"]));
+    expect(result.analyzersRun).not.toEqual(expect.arrayContaining(["snyk-agent-scan@uv:0.5.17"]));
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -4147,7 +4147,7 @@ describe("scanTrustTree", () => {
       run: semgrepRunner({ version: "2.0.0", runs: [] }),
     });
 
-    expect(result.analyzersRun).not.toEqual(expect.arrayContaining(["semgrep@uv:1.172.0"]));
+    expect(result.analyzersRun).not.toEqual(expect.arrayContaining(["semgrep@uv:1.173.0"]));
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -4182,7 +4182,7 @@ describe("scanTrustTree", () => {
       const skillspector = successfulSkillspector(argv);
       if (skillspector !== undefined) return skillspector;
       if (!argv.includes("semgrep")) return undefined;
-      if (argv.includes("--version")) return { code: 0, stdout: "1.172.0\n" };
+      if (argv.includes("--version")) return { code: 0, stdout: "1.173.0\n" };
       if (argv.includes("scan")) {
         return { code: 1, stdout: JSON.stringify(errorSarif), stderr: "configuration failed" };
       }
@@ -4197,7 +4197,7 @@ describe("scanTrustTree", () => {
       run: runner,
     });
 
-    expect(result.analyzersRun).not.toContain("semgrep@uv:1.172.0");
+    expect(result.analyzersRun).not.toContain("semgrep@uv:1.173.0");
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -5945,7 +5945,7 @@ describe("trustScanCommand", () => {
     });
     const slowRunner: Runner = async (argv) => {
       if (argv.includes("semgrep") && argv.includes("--version")) {
-        return { code: 0, stdout: "1.172.0\n", stderr: "" };
+        return { code: 0, stdout: "1.173.0\n", stderr: "" };
       }
       if (argv.includes("semgrep") && argv.includes("scan")) {
         markScanStarted?.();

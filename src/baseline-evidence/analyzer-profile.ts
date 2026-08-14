@@ -65,7 +65,7 @@ export const REQUIRED_BASELINE_DETECTORS = [
 export const REQUIRED_BASELINE_ANALYZERS = [
   "aih-native",
   "skillspector@docker",
-  "semgrep@uv:1.172.0",
+  "semgrep@uv:1.173.0",
   "cisco@uvx",
 ] as const;
 
@@ -177,7 +177,7 @@ function analyzerProvisioningHint(analyzerLabel: string): string {
   if (analyzerLabel === "skillspector@docker") {
     return "build and load the pinned SkillSpector image per docs/security/skillspector.md";
   }
-  if (analyzerLabel === "semgrep@uv:1.172.0") {
+  if (analyzerLabel === "semgrep@uv:1.173.0") {
     return "warm the committed Semgrep runtime once online (`uv run --project tools/trust-scanners/semgrep --locked --isolated --python 3.12 --no-env-file --no-python-downloads semgrep --version`); the trust scan itself always runs --offline";
   }
   return "provision the analyzer toolchain before vetting";

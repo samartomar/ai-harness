@@ -75,7 +75,7 @@ the release vet records exact analyzer receipts before the lock is written:
   detector change always moves the identity even between release version bumps
   (see `src/baseline-evidence/native-identity.ts`) — and pinned SkillSpector
   through Docker are required for every declared component;
-- `semgrep==1.172.0` through its committed uv project is required for every
+- `semgrep==1.173.0` through its committed uv project is required for every
   declared component;
 - `cisco-ai-skill-scanner==2.0.13` through its committed uv project is additionally required
   for every component whose declared bytes contain a regular `SKILL.md` file;

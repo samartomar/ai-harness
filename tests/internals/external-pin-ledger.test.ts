@@ -6,7 +6,6 @@ import {
   CISCO_MCP_SCANNER_VERSION,
   CISCO_SKILL_SCANNER_VERSION,
   SEMGREP_VERSION,
-  SNYK_AGENT_SCAN_VERSION,
 } from "../../src/baseline-evidence/analyzer-profile.js";
 import { CHECKOUT_ACTION_PIN } from "../../src/guardrails/sca.js";
 import { BASELINE_SOURCES } from "../../src/internals/baseline-sources.js";
@@ -257,12 +256,14 @@ describe("active external-pin ledger", () => {
       disposition: "active",
     });
     expect(entry("snyk-agent-scan")).toMatchObject({
-      version: SNYK_AGENT_SCAN_VERSION,
-      integrity: "sha256:4983e6d54168fc10237677478255826ab7d474e934e88c6bbb5c8d8928127017",
+      version: "0.5.17",
+      integrity: "sha256:ae928b023023fba12fdaaaa31e9da5dad4252c181545dfba72d46534d694b935",
       disposition: "blocked",
     });
     expect(entry("semgrep")).toMatchObject({
       version: SEMGREP_VERSION,
+      commit: "abce3b5391706850837d4339f84bfaa3ec08604b",
+      integrity: "sha256:95e504f01bf9ae20c23359a76bf9ada3e10c88906de58964f489e6332753260a",
       disposition: "active",
     });
     expect(entry("agentshield")).toMatchObject({
@@ -282,7 +283,9 @@ describe("active external-pin ledger", () => {
       commit: "5fda3b95a4ea91299a34e894583c3862153e4b97",
       disposition: "active",
     });
-    expect(entry("serena").reason).toMatch(/Python 3\.13.*no-memories.*symbol overview/i);
+    expect(entry("serena").reason).toMatch(
+      /locked Serena 1\.7\.0 version.*offline help.*offline import/i,
+    );
     expect(entry("token-savior").reason).toMatch(
       /Python 3\.13.*memory and shell hooks disabled.*entry-point/i,
     );

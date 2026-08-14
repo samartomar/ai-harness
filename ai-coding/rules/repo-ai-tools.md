@@ -65,7 +65,7 @@ run `node tools/repo-ai-tools.mjs token-optimizer-coach`. These are the same
 entry points for Claude and Codex and do not modify either client's global
 configuration.
 
-Serena 1.6.1 and Token Savior 4.21.0 are MIT-licensed. Serena's installer applies
+Serena 1.7.0 and Token Savior 4.21.0 are MIT-licensed. Serena's installer applies
 the exact patched transitive overrides recorded by `repo-ai-tools.mjs`; changing
 them requires a fresh dependency audit and health/start probe. Token Optimizer
 5.11.68 uses PolyForm Noncommercial 1.0.0; this repo installs an untracked local
