@@ -109,7 +109,7 @@ describe("active external-pin ledger", () => {
 
   it("binds refreshed MCP and repo-tool runtimes to production generators", () => {
     expect(ledger.schemaVersion).toBe(1);
-    expect(ledger.verifiedAt).toBe("2026-08-06");
+    expect(ledger.verifiedAt).toBe("2026-08-14");
     expect(ledger.historicalEvidencePolicy).toMatch(/immutable history/i);
 
     // The ECC pin is 32 untagged commits past v2.1.0, which is still ECC's
@@ -206,7 +206,7 @@ describe("active external-pin ledger", () => {
     expect(entry("claude-code-action")).toMatchObject({
       commit: claude?.[1],
     });
-    expect(entry("claude-code-action").version).toBe("v1.0.183");
+    expect(entry("claude-code-action").version).toBe("v1.0.191");
 
     const baselineWorkflow = readFileSync(
       resolve(root, ".github/workflows/baseline-evidence.yml"),
@@ -215,6 +215,34 @@ describe("active external-pin ledger", () => {
     expect(entry("setup-python-action")).toMatchObject(
       workflowActionPin(baselineWorkflow, "actions/setup-python"),
     );
+  });
+
+  it("binds the release provenance action to the governed external pin ledger", () => {
+    const releaseWorkflow = readFileSync(resolve(root, ".github/workflows/release.yml"), "utf8");
+    expect(entry("attest-build-provenance-action")).toMatchObject({
+      ...workflowActionPin(releaseWorkflow, "actions/attest-build-provenance"),
+      disposition: "active",
+    });
+  });
+
+  it("binds every CodeQL workflow action to one governed ledger identity", () => {
+    const workflows = [
+      readFileSync(resolve(root, ".github/workflows/codeql.yml"), "utf8"),
+      readFileSync(resolve(root, ".github/workflows/scorecard.yml"), "utf8"),
+    ].join("\n");
+    const pins = [
+      ...workflows.matchAll(
+        /github\/codeql-action\/(?:init|analyze|upload-sarif)@([0-9a-f]{40}) # (v\S+)/g,
+      ),
+    ];
+
+    expect(pins).toHaveLength(3);
+    for (const pin of pins) {
+      expect(entry("codeql-action")).toMatchObject({
+        commit: pin[1],
+        version: pin[2],
+      });
+    }
   });
 
   it("records governed scanner identities and fails closed on AgentShield provenance", () => {

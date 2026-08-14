@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "verifiedAt": "2026-08-06",
+  "verifiedAt": "2026-08-14",
   "historicalEvidencePolicy": "Archived receipts, dated plans, prior releases, and old acceptance evidence are immutable history and are not repinned by this ledger.",
   "entries": [
     {
@@ -218,9 +218,10 @@
     {
       "surface": "claude-code-action",
       "identity": "anthropics/claude-code-action",
-      "version": "v1.0.183",
-      "commit": "be7b93b1907a4abad570368f3c74b6fe3807510b",
-      "disposition": "active"
+      "version": "v1.0.191",
+      "commit": "239e3a730883eeb5c53db12b0fc9573b3024b126",
+      "disposition": "active",
+      "reason": "The official v1.0.191 annotated tag dereferences to this immutable SHA; the workflow remains pinned to the commit rather than the movable v1 tag."
     },
     {
       "surface": "setup-node-action",
@@ -241,8 +242,8 @@
     {
       "surface": "codeql-action",
       "identity": "github/codeql-action",
-      "version": "v4.37.3",
-      "commit": "e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81",
+      "version": "v4.37.6",
+      "commit": "5595ccaf912efad79be6eef63a5619ff05969be3",
       "disposition": "retained",
       "reason": "Latest stable action tag resolves to the existing dereferenced immutable SHA."
     },
@@ -273,10 +274,10 @@
     {
       "surface": "attest-build-provenance-action",
       "identity": "actions/attest-build-provenance",
-      "version": "v4.1.1",
-      "commit": "0f67c3f4856b2e3261c31976d6725780e5e4c373",
-      "disposition": "retained",
-      "reason": "Latest stable action release resolves to the existing immutable SHA."
+      "version": "v4.2.2",
+      "commit": "4d101475d8b20a2381f78447822ac1eab6504dd8",
+      "disposition": "active",
+      "reason": "The official v4.2.2 tag resolves to this immutable, verified commit SHA."
     },
     {
       "surface": "cosign-installer-action",
