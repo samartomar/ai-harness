@@ -265,6 +265,8 @@ describe("active external-pin ledger", () => {
       "https://github.com/samartomar/ai-harness/actions/runs/31828959167",
     );
     expect(snyk.reason).toContain("b4c76cbc88ff300c1f3e241e9b9c1f25ef921760");
+    expect(snyk.reason).toContain("snyk-agent-scan@uv:0.5.17");
+    expect(snyk.reason).toContain("status=qualified");
     expect(snyk.reason).toContain(
       "sha256:31259b2a91f04c092a87be560907136d8263861d1f32c8818564a40217bad4d0",
     );
