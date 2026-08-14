@@ -71,6 +71,27 @@ Snyk detector check with `verdict: pass`, cross-checks its exact analyzer list a
 runtime advisory, rejects magic strings in unavailable details, and requires numeric GitHub run
 identities.
 
+### CodeQL RED — result path race
+
+GitHub CodeQL check `94848995868` reported a high-severity potential file-system race because the
+validator called `statSync(resultPath)` before reopening the path with `readFileSync(resultPath)`.
+The regression at `369cc8b7` requires size validation and content reads to share one descriptor.
+
+```text
+npm test -- --run tests/workflows/snyk-agent-qualification-validator.test.ts
+Test Files 1 failed; Tests 1 failed | 3 passed
+```
+
+### CodeQL GREEN — descriptor-pinned read
+
+The fix at `212b82d0` opens the result once, validates its size with `fstatSync`, reads through the
+same descriptor, and closes it in `finally`.
+
+```text
+npm test -- --run tests/workflows/snyk-agent-qualification.test.ts tests/workflows/snyk-agent-qualification-validator.test.ts
+Test Files 2 passed; Tests 7 passed
+```
+
 ## Test specification
 
 | # | What is guaranteed | Test | Type | Result |
@@ -83,6 +104,7 @@ identities.
 | 6 | A branch ref cannot satisfy the committed workflow contract, and the token-bearing job names the protected environment | `is manual-only, read-only, and keeps the secret scoped to the scan step` | secret-boundary regression | PASS |
 | 7 | An unavailable check carrying the expected magic strings cannot produce a qualification receipt | `rejects an unavailable check even when its detail contains every magic string` | negative security regression | PASS |
 | 8 | Missing GitHub run identities fail instead of producing `unknown` evidence | `rejects missing GitHub run identities instead of writing unknown placeholders` | evidence-integrity regression | PASS |
+| 9 | The raw result cannot be replaced between size validation and reading | `size-checks and reads the result through one file descriptor` | file-race regression | PASS |
 
 ## Coverage and known gaps
 
@@ -102,3 +124,5 @@ a follow-up evidence change.
 - GREEN checkpoint: `4038b6f6 ci: qualify Snyk on a synthetic fixture`
 - Review RED checkpoint: `0543802e test: harden Snyk qualification evidence`
 - Review GREEN checkpoint: `a5f3605c fix: protect Snyk qualification evidence`
+- CodeQL RED checkpoint: `369cc8b7 test: reject Snyk result path race`
+- CodeQL GREEN checkpoint: `212b82d0 fix: pin Snyk qualification result reads`
