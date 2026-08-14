@@ -17,6 +17,7 @@ interface QualificationWorkflow {
   jobs: {
     qualify: {
       env?: Record<string, string>;
+      environment?: string;
       permissions?: Record<string, string>;
       "runs-on": string;
       steps: WorkflowStep[];
@@ -47,12 +48,18 @@ describe("Snyk Agent Scan behavioral qualification workflow", () => {
   it("is manual-only, read-only, and keeps the secret scoped to the scan step", () => {
     const { raw, parsed } = readWorkflow();
     const job = parsed.jobs.qualify;
+    const refGuard = job.steps.find(
+      (step) => step.name === "Bind qualification to the protected main ref",
+    );
     const scan = job.steps.find((step) => step.name === "Run AIH against the synthetic fixture");
 
     expect(Object.keys(parsed.on ?? {})).toEqual(["workflow_dispatch"]);
     expect(parsed.permissions).toEqual({ contents: "read" });
+    expect(job.environment).toBe("snyk-agent-qualification");
     expect(job.permissions).toBeUndefined();
     expect(job.env).toBeUndefined();
+    expect(refGuard?.run).toContain('test "${GITHUB_REF}" = "refs/heads/main"');
+    expect(refGuard?.run).toContain('test "${GITHUB_SHA}" = "$(git rev-parse HEAD)"');
     expect(scan?.env).toEqual({ SNYK_TOKEN: githubExpression("secrets.SNYK_TOKEN") });
     expect(raw.match(/secrets\.SNYK_TOKEN/g)).toHaveLength(1);
     expect(raw).not.toMatch(/(?:echo|printf|cat).*SNYK_TOKEN/);
@@ -74,6 +81,7 @@ describe("Snyk Agent Scan behavioral qualification workflow", () => {
     const { parsed } = readWorkflow();
     const steps = parsed.jobs.qualify.steps;
     const commands = steps.map((step) => step.run ?? "").join("\n");
+    const warm = steps.find((step) => step.name === "Warm and verify the exact Snyk runtime");
     const checkout = steps.find((step) => step.uses?.startsWith("actions/checkout@"));
     const upload = steps.find((step) => step.name === "Upload sanitized qualification evidence");
 
@@ -97,6 +105,15 @@ describe("Snyk Agent Scan behavioral qualification workflow", () => {
     expect(commands).toContain("--locked");
     expect(commands).toContain("snyk-agent-scan help");
     expect(commands).toContain("snyk-agent-scan@uv:0.5.17");
+    const warmInvocations = (warm?.run ?? "")
+      .replace(/\\\r?\n\s*/g, " ")
+      .split(/\r?\n/g)
+      .filter((line) => line.includes("uv run") && line.includes("snyk-agent-scan help"));
+    expect(warmInvocations).toHaveLength(2);
+    expect(warmInvocations[0]).not.toContain("--offline");
+    expect(warmInvocations[1]).toContain("--offline");
+    expect(commands).toContain('if (!/^[1-9][0-9]*$/.test(runId)');
+    expect(commands).not.toContain('?? "unknown"');
     expect(upload?.with).toMatchObject({
       path: `${githubExpression("runner.temp")}/aih-snyk-qualification-summary.json`,
       "if-no-files-found": "error",
