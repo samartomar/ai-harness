@@ -542,15 +542,13 @@ describe("native ECC registration", () => {
         );
       file.normalizedSha256 = createHash("sha256").update(file.content).digest("hex");
       const installedPath = join(input.root, file.destination);
-      if (existsSync(installedPath)) {
-        const installed = readFileSync(installedPath, "utf8")
-          .replaceAll("serena-agent==1.7.0", SERENA_1_6_1_RUNTIME_IDENTITY.package)
-          .replaceAll(
-            registration.runtime.serena.aggregateSha256,
-            SERENA_1_6_1_RUNTIME_IDENTITY.aggregateSha256,
-          );
-        writeFileSync(installedPath, installed);
-      }
+      const installed = readFileSync(installedPath, "utf8")
+        .replaceAll("serena-agent==1.7.0", SERENA_1_6_1_RUNTIME_IDENTITY.package)
+        .replaceAll(
+          registration.runtime.serena.aggregateSha256,
+          SERENA_1_6_1_RUNTIME_IDENTITY.aggregateSha256,
+        );
+      writeFileSync(installedPath, installed);
     }
     writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
 
