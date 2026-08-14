@@ -43,6 +43,15 @@ function isCoveredByPackageFiles(assetPath: string, files: readonly string[]): b
 }
 
 describe("README docs currency", () => {
+  it("keeps README major-version guidance aligned with the current package", () => {
+    const readme = read("README.md");
+    const pkg = JSON.parse(read("package.json")) as { version: string };
+    const major = pkg.version.split(".")[0];
+
+    expect(major).toMatch(/^\d+$/u);
+    expect(readme).toContain(`For the current v${major} line, pin \`@aihq/harness@^${major}\``);
+  });
+
   it("keeps README image metadata aligned with the current release assets", () => {
     const readme = read("README.md");
     const overview = read("docs/assets/aih-overview.svg");
