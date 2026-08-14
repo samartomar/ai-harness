@@ -136,8 +136,8 @@
       "identity": "snyk-agent-scan",
       "version": "0.5.17",
       "integrity": "sha256:ae928b023023fba12fdaaaa31e9da5dad4252c181545dfba72d46534d694b935",
-      "disposition": "blocked",
-      "reason": "The committed 62-package uv 0.12.2 lock now carries mcp 1.28.1 and cryptography 50.0.0; locked online and offline help passed. Behavioral scan qualification remains blocked on SNYK_TOKEN; no token was inferred or requested from local secret files."
+      "disposition": "active",
+      "reason": "The committed 62-package uv 0.12.2 lock carries mcp 1.28.1 and cryptography 50.0.0; locked online and offline help passed. Protected main qualification run https://github.com/samartomar/ai-harness/actions/runs/31828959167 at b4c76cbc88ff300c1f3e241e9b9c1f25ef921760 completed snyk-agent-scan@uv:0.5.17 against the synthetic fixture and emitted a status=qualified sanitized receipt. GitHub reports artifact digest sha256:31259b2a91f04c092a87be560907136d8263861d1f32c8818564a40217bad4d0, and the receipt binds ephemeral raw output hash sha256:22e5dc96b689af87589b32f96570a0da407a6562281d7c94021c57b849737daa. This activates only the governed Snyk detector integration; it does not claim arbitrary input is safe."
     },
     {
       "surface": "semgrep",

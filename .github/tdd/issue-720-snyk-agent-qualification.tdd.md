@@ -115,6 +115,20 @@ npm test -- --run tests/workflows/snyk-agent-qualification.test.ts tests/workflo
 Test Files 2 passed; Tests 7 passed
 ```
 
+### Protected-main qualification GREEN — sanitized receipt
+
+Protected `main` run
+[31828959167](https://github.com/samartomar/ai-harness/actions/runs/31828959167) at exact commit
+`b4c76cbc88ff300c1f3e241e9b9c1f25ef921760` completed the locked Snyk detector and receipt
+validation. GitHub stored exactly one sanitized artifact with digest
+`sha256:31259b2a91f04c092a87be560907136d8263861d1f32c8818564a40217bad4d0`. Its receipt records
+schema version 1, run attempt 1, analyzer `snyk-agent-scan@uv:0.5.17`, target
+`synthetic-skill-fixture`, status `qualified`, and raw-result SHA-256
+`22e5dc96b689af87589b32f96570a0da407a6562281d7c94021c57b849737daa`.
+
+This qualifies the governed adapter and pinned runtime against the synthetic fixture. It does not
+claim that arbitrary skill content is safe.
+
 ## Test specification
 
 | # | What is guaranteed | Test | Type | Result |
@@ -123,7 +137,7 @@ Test Files 2 passed; Tests 7 passed
 | 2 | The token is referenced once, only on the scan step, and is never echoed | same | secret boundary | PASS |
 | 3 | AIH targets a `mktemp` skill fixture, never `.`, and no MCP configuration or dangerous auto-run flag appears | `targets only a disposable skill fixture and never enables MCP execution` | security regression | PASS |
 | 4 | Checkout, Node, Python, uv, and artifact actions use immutable commit pins | `uses immutable actions, the exact locked runtime, and a sanitized short-lived artifact` | supply-chain regression | PASS |
-| 5 | The committed Snyk lock is warmed and the exact `snyk-agent-scan@uv:0.5.17` identity must appear in AIH output | same | behavioral contract | PASS locally; credentialed detector completed, qualified receipt pending |
+| 5 | The committed Snyk lock is warmed and the exact `snyk-agent-scan@uv:0.5.17` identity must appear in AIH output | same | behavioral contract | PASS; protected run `31828959167` emitted a qualified sanitized receipt |
 | 6 | A branch ref cannot satisfy the committed workflow contract, and the token-bearing job names the protected environment | `is manual-only, read-only, and keeps the secret scoped to the scan step` | secret-boundary regression | PASS |
 | 7 | An unavailable check carrying the expected magic strings cannot produce a qualification receipt | `rejects an unavailable check even when its detail contains every magic string` | negative security regression | PASS |
 | 8 | Missing GitHub run identities fail instead of producing `unknown` evidence | `rejects missing GitHub run identities instead of writing unknown placeholders` | evidence-integrity regression | PASS |
@@ -137,10 +151,11 @@ The repository declares npm with Vitest in `package.json`; the generic
 the repository contract and lockfile were used instead.
 
 The workflow cannot be dispatched from a pull-request-only branch because GitHub requires a
-`workflow_dispatch` workflow to exist on the default branch. The ledger remains `blocked` until a
-protected run against the exact `main` commit succeeds and its public run URL is recorded in a
-follow-up evidence change. Run `31827407969` proved the credentialed scanner completed, but it is
-not qualification evidence because receipt validation failed.
+`workflow_dispatch` workflow to exist on the default branch. Run `31827407969` proved the
+credentialed scanner completed, but it is not qualification evidence because receipt validation
+failed. Protected run `31828959167` then succeeded at exact `main` commit
+`b4c76cbc88ff300c1f3e241e9b9c1f25ef921760`; its sanitized receipt is the evidence bound to the
+ledger activation in this follow-up change.
 
 ## Merge evidence
 
@@ -152,3 +167,5 @@ not qualification evidence because receipt validation failed.
 - CodeQL GREEN checkpoint: `212b82d0 fix: pin Snyk qualification result reads`
 - Live-shape RED checkpoint: `aa8024d5 test: reproduce live Snyk advisory shape`
 - Live-shape GREEN checkpoint: `0cf60765 fix: parse multiline Snyk advisory evidence`
+- Ledger-activation RED checkpoint: `69df80c6 test: require qualified Snyk ledger evidence`
+- Ledger-activation GREEN checkpoint: `6921ff94 security: activate qualified Snyk detector`
