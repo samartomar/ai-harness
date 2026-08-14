@@ -268,8 +268,14 @@ describe("F5 — the destination-scoped materialization receipt document", () =>
               authorization: authorization("agent:code-reviewer"),
               provenance: { ...provenance(), componentPath: "agents/code-reviewer.md" },
               files: [
-                file(".kiro/agents/code-reviewer.md"),
                 file(".kiro/agents/code-reviewer.json"),
+                {
+                  path: ".kiro/agents/code-reviewer.md",
+                  operation: "copy-file" as const,
+                  contentSha256: "d".repeat(64),
+                  contentAuthorization: authorization("agent:code-reviewer"),
+                  contentSourcePath: "agents/code-reviewer.md",
+                },
               ],
             },
             {

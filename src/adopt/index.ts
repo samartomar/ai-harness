@@ -1,6 +1,7 @@
-import { basename, posix, resolve } from "node:path";
+import { basename, join, posix, resolve } from "node:path";
 import { AIH_CONFIG_FILE, aihConfigJson, readAihConfig } from "../config/marker.js";
 import { SettingsError } from "../errors.js";
+import { readIfExists } from "../internals/fsxn.js";
 import {
   type Action,
   type CommandSpec,
@@ -13,6 +14,8 @@ import {
 import { lines } from "../internals/render.js";
 import { gitCommittedSet } from "../internals/scan-allowlist.js";
 import type { Check } from "../internals/verify.js";
+import { explicitKiroHookRuntime, KIRO_HOOK_RUNTIME_OPTION } from "../kiro/runtime.js";
+import { withExpectedContents } from "../mcp/managed-projection.js";
 import { adoptApplyActions } from "./apply.js";
 import {
   type BootloaderState,
@@ -279,6 +282,7 @@ function migrateReport(fp: CliFootprint, contextDir: string): string {
  * `.aih.bak` backups). Greenfield → `init`; already-adopted → no-op.
  */
 async function adoptPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
+  const explicitHookRuntime = explicitKiroHookRuntime(ctx);
   // The committed marker is authoritative for which context dir to inspect — same
   // precedence `doctor` uses, so adopt and doctor never disagree on the dir.
   const cfg = readAihConfig(ctx.root);
@@ -325,15 +329,49 @@ async function adoptPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
 
   // `--ack` records the team decision in the committed marker (merge-write unions
   // the acknowledged array), so future runs stop flagging those paths.
-  if (ackPaths.length > 0) {
-    actions.push(
-      writeJson(
-        AIH_CONFIG_FILE,
-        { ...aihConfigJson(contextDir, cfg?.targets ?? []), adopt: { acknowledged: ackPaths } },
-        `acknowledge ${ackPaths.length} CLI-native path(s) as intentionally tool-native`,
-        { merge: true },
-      ),
+  const markerIndex = actions.findIndex(
+    (action) => action.kind === "write" && action.path === AIH_CONFIG_FILE,
+  );
+  const generatedMarker = markerIndex < 0 ? undefined : actions[markerIndex];
+  const generatedTargets =
+    generatedMarker?.kind === "write" &&
+    generatedMarker.json !== null &&
+    typeof generatedMarker.json === "object" &&
+    Array.isArray((generatedMarker.json as { targets?: unknown }).targets)
+      ? ((generatedMarker.json as { targets: string[] }).targets ?? [])
+      : [];
+  const runtimeTargeted =
+    generatedTargets.includes("kiro") || cfg?.targets.includes("kiro") === true;
+  if (explicitHookRuntime !== undefined && !runtimeTargeted && cls.kind !== "greenfield") {
+    throw new SettingsError(
+      "--kiro-hook-runtime requires Kiro in the adopted target set; pass --cli kiro",
     );
+  }
+  if (ackPaths.length > 0 || (explicitHookRuntime !== undefined && runtimeTargeted)) {
+    const markerJson = {
+      ...(markerIndex < 0 ? aihConfigJson(contextDir, cfg?.targets ?? []) : {}),
+      ...(ackPaths.length === 0 ? {} : { adopt: { acknowledged: ackPaths } }),
+      ...(explicitHookRuntime === undefined ? {} : { kiroHookRuntime: explicitHookRuntime }),
+    };
+    if (generatedMarker?.kind === "write") {
+      actions[markerIndex] = {
+        ...generatedMarker,
+        json: { ...(generatedMarker.json as Record<string, unknown>), ...markerJson },
+      };
+    } else {
+      const source = readIfExists(join(ctx.root, AIH_CONFIG_FILE));
+      const markerAction = writeJson(
+        AIH_CONFIG_FILE,
+        markerJson,
+        ackPaths.length > 0
+          ? `acknowledge ${ackPaths.length} CLI-native path(s) and persist Kiro hook runtime intent`
+          : "persist the explicit Kiro hook runtime capability for later bootstrap and doctor runs",
+        { merge: true },
+      );
+      actions.push(
+        source === undefined ? markerAction : withExpectedContents(markerAction, source),
+      );
+    }
   }
 
   return plan("adopt", ...actions);
@@ -354,6 +392,7 @@ export const command: CommandSpec = {
       description:
         "mark CLI-native path(s) (comma-separated) as intentionally tool-native so adopt stops flagging them",
     },
+    KIRO_HOOK_RUNTIME_OPTION,
   ],
   plan: adoptPlan,
 };

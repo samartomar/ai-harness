@@ -194,6 +194,10 @@ soft-imperative/taste-word prose is advisory). Existing bootloaders are merged: 
 content outside the managed block is preserved, and dry-run/apply summaries report those writes as
 `merge` rather than `overwrite`. Use `--baseline ecc` to render the Layer-1 references; the
 choice is persisted so later `contract` and `bootstrap-ai` runs stay aligned.
+For Kiro, steering is always projected. Standalone v1 hooks require the explicit
+`--kiro-hook-runtime ide1-cli3` capability because finding `kiro-cli` cannot distinguish the CLI 2
+default from CLI 3 mode. `cli2` and an omitted value leave hooks advisory; a valid selection is
+persisted for later doctor runs. Existing files at reserved hook names are never overwritten.
 Regeneration scope honors `--cli`: the run regenerates adapters/bootloaders only for the resolved
 CLI set, and the `.aih-config.json` marker's `targets` are **replaced** with that set — an explicit
 `--cli claude,codex` run narrows the persisted targets, so a later bare (marker-driven) re-run no
@@ -222,6 +226,13 @@ every bootloader that already exists on disk (an existing `GEMINI.md` is converg
 names fewer tools), because reaching the already-adopted state requires every existing bootloader to
 carry the managed block; content outside the block is merge-preserved. The converged set is what the
 `.aih-config.json` marker records. To actually drop a CLI's artifacts, use `aih prune`.
+
+For Kiro, adopt inventories steering, standalone hooks, custom-agent definitions, skills, prompts,
+settings, and specs. Every `.kiro/agents/**` definition, including Markdown, and
+`.kiro/settings/*.json` remain operator-owned runtime configuration: they are reported but never
+auto-migrated or rewritten. `--migrate-cli` can copy Kiro steering, skills, prompts, and specs into
+the canon. Pass `--kiro-hook-runtime ide1-cli3` only when the converged target will load the
+standalone IDE 1.x/CLI 3.x hook surface.
 
 ## aih prune
 
@@ -315,15 +326,20 @@ stable reason.
 Remove the core aih install footprint from a repo; `aih clean` is the same command. Dry-run
 preview by default. Under `--apply`, marker-backed aih-owned whole paths (`ai-coding/` or the
 committed context dir, `.aih-config.json`, `.aih/`, and marker-owned Kiro extras such as
-`.kiro/steering/agent-tools.md` plus `.kiro/hooks/aih-*.kiro.hook`) move to reversible sibling
+`.kiro/steering/agent-tools.md`) move to reversible sibling
 `*.aih.bak` backups, which avoids archiving into `.aih/legacy/` while `.aih/` itself is being
 removed. The context dir and `.aih/` are only backed up when the root marker and generated canon
-evidence agree; Kiro extras require the generated Kiro bootloader marker too. Otherwise these
+evidence agree; the Kiro steering extra requires the generated Kiro bootloader marker too.
+Current `.json` and legacy `.kiro.hook` files at AIH-reserved names remain manual advisories because
+the filename is not per-file ownership evidence. Otherwise these
 paths are advisory/no-op. Co-owned files such as repo-scoped MCP configs from registered CLIs
 (`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.kiro/settings/mcp.json`; legacy
 `opencode.json` residues are advisory)
 and root bootloaders that still carry an aih managed block are surfaced as manual advisories
 instead of being edited or deleted. Dirty/untracked removal targets refuse without `--force`.
+An active Kiro MCP projection receipt is handled before marker removal: uninstall subtracts only
+unchanged receipt-owned `mcpServers` names and leaves unrelated top-level keys and servers intact;
+drift or unsafe paths revoke the claim without mutating `.kiro/settings/mcp.json`.
 
 ## aih ecc
 
@@ -331,8 +347,9 @@ Register [affaan-m/ECC](https://github.com/affaan-m/ECC) for the selected CLIs. 
 additive union of the locked common baseline, components detected from every registered project,
 repeatable advance declarations (`--with lang:cpp --with framework:react`), posture-selected
 security, and validated MCPs. Use `--profile full` only for an explicit full-surface install.
-Unknown declarations fail closed. Kiro and unsupported targets remain consult-only guidance because
-their installers cannot yet materialize the scoped union safely.
+Unknown declarations fail closed. The ordinary native-installer path keeps Kiro and unsupported
+targets consult-only because their installers cannot materialize the scoped union safely. The
+governed lifecycle described below has a separate verified Kiro rules-and-skills adapter.
 
 The AIH-owned Claude/Codex profile has a separate, explicit lifecycle mode on the same command:
 
@@ -365,12 +382,20 @@ Kimi adapter roots a project install. OpenCode materializes only the tool-shared
 (`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`), because its only framework adapter is
 home-scoped and no evidenced per-tool `.opencode/` content layout exists; every other component
 refuses by name for that target rather than landing in an invented directory. Kiro materializes an
-evidence-passed selected `skill:<name>` only as the exact pinned
+evidence-passed selected `agent:<name>` with exact pinned Kiro mappings as the selected source
+Markdown at `.kiro/agents/<name>.md` for the IDE representation and the curated
+`.kiro/agents/<name>.json` CLI configuration. It projects a selected `skill:<name>` only as the exact pinned
 `.kiro/skills/<name>/SKILL.md` file, and `baseline:rules` only as top-level pinned
 `.kiro/steering/*.md` files. Those bytes require a separate current, unheld
-`runtime:ecc-kiro` content authorization recorded beside the selected component identity. Agents
-and every other Kiro surface refuse by name; AIH does not invoke ECC's native Kiro installer or
-claim that the host loaded the files. Several targets in one
+`runtime:ecc-kiro` content authorization recorded beside the selected component identity. Current
+[Kiro custom-agent documentation](https://kiro.dev/docs/custom-agents/) (verified 2026-08-13)
+describes JSON and Markdown agent configurations loaded from `.kiro/agents/` by IDE 1.x and CLI
+3.x. AIH projects both exact ECC mappings under one component receipt; it does not synthesize or
+convert either representation. An unmapped agent is refused by name; a pre-existing same-name
+Markdown/JSON or case-folded operator definition is refused without overwrite. Non-empty agent MCP or hook
+configuration, every other Kiro surface, and
+the native installer remain outside this lifecycle. The mapping is source-documented and
+receipt-verified; it is not a live host probe. Several targets in one
 run are one materialization into one root with one receipt: destinations two targets share
 (`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`) are written once, a target that refuses a
 component does not stop the targets that own it, and a later `--apply` with a narrower target set
@@ -709,9 +734,10 @@ same schema gate as `validate`. Declaring `mcp.allowedServers` records registry 
 `aih mcp approve` is a legacy, non-governed approval path. Governed operators use an externally
 verified evidence/approval receipt, then `aih policy evaluate` and `aih policy project`.
 
-`project --apply` compiles the
-committed `aih-org-policy.json` into only its generated policy artifacts —
-`.claude/managed-settings.json` and, at enterprise posture, the two system-path examples. An active
+`project --apply` compiles the committed `aih-org-policy.json` into generated policy artifacts. For
+Claude this includes `.claude/managed-settings.json` and, at enterprise posture, the two system-path
+examples; selected Kiro reviewed stdio MCP candidates are distributed separately to
+`.kiro/settings/mcp.json`. An active
 AIH-owned `usage-metering` policy hook may also project to the selected Claude or Codex host through
 the existing host-specific generator. A policy may separately declare `governance.eccHookControls`; for a Claude target, projection merges only receipt-owned `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` values into `.claude/settings.json.env`, preserves every operator sibling, refuses unreceipted collisions or drift, and shares one content-pinned settings snapshot with the hook registrar. ECC—not AIH—executes and enforces those controls after process spawn, so a disabled hook still incurs one spawn.
 It does not run `aih init`, regenerate the canon, or modify unrelated settings. The managed settings/MCP
@@ -905,7 +931,10 @@ Record one metrics sample (commits 7d, LOC delta, adoption score, branch count, 
 dry-run previews, `--apply` appends (idempotent per commit). `aih usage --apply` installs the
 universal post-commit hook that runs `aih track --apply` automatically when Git uses the default or
 a repo-local hooks path; external/global `core.hooksPath` configurations get chain guidance instead.
-Kiro's `metrics-on-stop` hook (`aih bootstrap-ai --cli kiro`) records on agent stop.
+Kiro's `metrics-on-stop` hook
+(`aih bootstrap-ai --cli kiro --kiro-hook-runtime ide1-cli3`) records on agent stop.
+It uses Kiro's standalone v1 JSON hook surface for Kiro IDE 1.x and Kiro CLI 3.x. Kiro CLI 2.x
+stores hooks inside custom-agent JSON, which AIH deliberately does not mutate.
 
 ## aih usage
 
@@ -923,6 +952,10 @@ metadata are skipped, and continued threads refresh previous imported rows by st
 instead of duplicating old tool calls. The importer is best-effort: the active Node runtime must
 expose its built-in SQLite reader, and compressed Zed rows also need runtime zstd support; if either
 is unavailable, hook setup still succeeds and no Zed rows are imported.
+Kiro's usage hook is a standalone v1 `.kiro/hooks/aih-usage-metering.json` Stop hook for Kiro IDE
+1.x and Kiro CLI 3.x. Enable it explicitly with `--kiro-hook-runtime ide1-cli3`; the selection is
+persisted in a valid `.aih-config.json` marker so later doctor runs can grade it. AIH does not inject
+the embedded agent hooks used by Kiro CLI 2.x or overwrite a pre-existing reserved filename.
 Skills aggregate by source (ECC/canon/user), and `--rollup <repo,repo>` aggregates local logs across
 repos on demand. Usage is local activity counts only — **no cost, no prompts, no arguments**,
 machine-local and gitignored. Session rows may include deterministic token/cache counters (`input`,
@@ -972,6 +1005,14 @@ declaring registry membership is still not an egress approval.
 With `allowManagedOnly: true`, an empty list is deny-all across direct, offline, init, and client
 writers; a populated list emits only listed, enabled servers. With `false`, the enabled catalog
 remains available, and cleanup preserves operator entries while replacing exact AIH output.
+
+Governed candidate projection is separate from this standalone generator. When an AIH-reviewed
+stdio MCP activation targets Kiro, `aih policy project` merges only its selected server names into
+`.kiro/settings/mcp.json` and records a separate `kiroMcpProjection` ownership receipt. Repeating the
+same projection is a no-op; deselection, prune, and uninstall subtract only unchanged receipt-owned
+names. Existing collisions, drift, malformed files, and linked paths fail closed without taking
+ownership. This is workspace distribution, not managed enforcement: Kiro custom agents can supply
+their own `mcpServers` or decline workspace inheritance.
 <!-- aih:claim CM-18 -->
 GitHub auth defaults to `--github-auth oauth`, which works for clients with a registered OAuth
 app; use `--github-auth token` for clients that need a PAT-backed `Authorization` header. The token

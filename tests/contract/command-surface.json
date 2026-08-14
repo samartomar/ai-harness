@@ -44,6 +44,9 @@
           "flags": "--json"
         },
         {
+          "flags": "--kiro-hook-runtime <runtime>"
+        },
+        {
           "flags": "--migrate-cli"
         },
         {
@@ -163,6 +166,9 @@
         },
         {
           "flags": "--json"
+        },
+        {
+          "flags": "--kiro-hook-runtime <runtime>"
         },
         {
           "flags": "--no-log"
@@ -1442,6 +1448,9 @@
         },
         {
           "flags": "--json"
+        },
+        {
+          "flags": "--kiro-hook-runtime <runtime>"
         },
         {
           "flags": "--mcp-compliant"
@@ -4285,6 +4294,9 @@
         },
         {
           "flags": "--json"
+        },
+        {
+          "flags": "--kiro-hook-runtime <runtime>"
         },
         {
           "flags": "--no-log"

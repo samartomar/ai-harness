@@ -154,6 +154,7 @@ describe("aih init — command surface", () => {
       "--v3",
       "--canon <mode>",
       "--baseline <id>",
+      "--kiro-hook-runtime <runtime>",
     ]);
     const p = await command.plan(ctx());
     expect(p.capability).toBe("init");
@@ -682,6 +683,21 @@ describe("aih init — target-gated tool artifacts (.cursor on cursor, .claude o
     // #506 F3: the resolved set REPLACES any previously persisted targets — the
     // marker merge must never union a scoped run back up to old CLI targets.
     expect(marker?.replaceJsonKeys).toContain("targets");
+  });
+
+  it("records an explicit Kiro hook runtime and exposes only current standalone hooks", async () => {
+    const p = await command.plan(ctx({ options: { cli: "kiro", kiroHookRuntime: "ide1-cli3" } }));
+    const marker = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".aih-config.json",
+    );
+    expect(marker?.json).toMatchObject({
+      targets: ["kiro"],
+      kiroHookRuntime: "ide1-cli3",
+    });
+    expect(
+      p.actions.some((a) => a.kind === "write" && a.path === ".kiro/hooks/aih-tests-on-edit.json"),
+    ).toBe(true);
+    expect(p.actions.some((a) => a.kind === "write" && a.path.endsWith(".kiro.hook"))).toBe(false);
   });
 });
 

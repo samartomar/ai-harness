@@ -315,7 +315,7 @@ export function validationDoc(dir: string, stack: RepoStack): string {
     "- ⚠️ GAP: missing → install (winget/scoop/brew) or, on a locked-down VDI, add your bundle to PATH.",
     "",
     "### 7. Kiro (only if `.kiro/` exists)",
-    "- Steering files load (`inclusion: always`); `.kiro/hooks/*.kiro.hook` appear in the Agent Hooks panel.",
+    "- Steering files load (`inclusion: always`); standalone `.kiro/hooks/*.json` hooks load in IDE 1.x / CLI 3.x (CLI 2.x requires agent-config hooks).",
     "- ⚠️ GAP: enabling a hook is a one-click action in Kiro's Agent Hooks panel — only the human can.",
     "",
     "### 8. Sandbox (only if `.devcontainer/` exists)",

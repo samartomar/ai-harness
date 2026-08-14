@@ -17,6 +17,11 @@ import { deepMerge, isPlainObject } from "../internals/merge.js";
 import type { Action, CommandSpec, PlanContext, WriteAction } from "../internals/plan.js";
 import { doc, plan, writeJson } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import {
+  explicitKiroHookRuntime,
+  KIRO_HOOK_RUNTIME_OPTION,
+  kiroHookRuntime,
+} from "../kiro/runtime.js";
 import { verifiedOrgPolicyProjectionActions } from "../org-policy/project.js";
 import { governanceOwnsAihSurfaces, readOrgPolicy } from "../org-policy/schema.js";
 import { sidecarInitActions } from "../truth/index.js";
@@ -146,6 +151,7 @@ function plannedMcpServerNames(actions: readonly Action[]): readonly string[] {
  * produce, so the harness's "no faked provisioning" guarantee is preserved.
  */
 async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
+  explicitKiroHookRuntime(ctx);
   // Brownfield guard FIRST: never bulldoze an existing hand-built canon — redirect
   // to `aih adopt` and emit nothing else, so a dry-run or `--apply` both stop here.
   const redirect = brownfieldRedirect(ctx);
@@ -243,18 +249,26 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // resolution computed above (it already honored `--detect`/`--cli` and any
   // interactive edit), so the marker records exactly the set the phases used and
   // no extra confirmation fires. Mirrors `.aih-workspace.json` in `workspace/`.
+  const hookRuntime = resolution.clis.includes("kiro") ? kiroHookRuntime(baseCtx) : "unknown";
   actions.push(
     writeJson(
       ".aih-config.json",
-      aihConfigJson(ctx.contextDir, resolution.clis, baseline.id),
+      aihConfigJson(
+        ctx.contextDir,
+        resolution.clis,
+        baseline.id,
+        hookRuntime === "unknown" ? undefined : hookRuntime,
+      ),
       "persist bootstrap intent (context-dir + CLI targets) so re-runs and doctor read it",
       {
         merge: true,
         // `targets` records exactly the set this run resolved — replaced, never
         // array-unioned with a previous run's set, so `--cli` can narrow (#506).
         replaceJsonKeys: ["targets"],
-        removeJsonTopLevelKeys:
-          ctx.options.baseline === DEFAULT_BASELINE_SOURCE_ID ? ["baseline"] : undefined,
+        removeJsonTopLevelKeys: [
+          ...(ctx.options.baseline === DEFAULT_BASELINE_SOURCE_ID ? ["baseline"] : []),
+          ...(!resolution.clis.includes("kiro") ? ["kiroHookRuntime"] : []),
+        ],
       },
     ),
   );
@@ -361,6 +375,7 @@ export const command: CommandSpec = {
     },
     CANON_OPTION,
     BASELINE_OPTION,
+    KIRO_HOOK_RUNTIME_OPTION,
   ],
   plan: initPlan,
 };

@@ -6,6 +6,11 @@ import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import type { PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import {
+  KIRO_MCP_SETTINGS_PATH,
+  type KiroMcpProjectionResidue,
+  kiroMcpProjectionOnDisk,
+} from "../mcp/kiro-managed-projection.js";
+import {
   MANAGED_SETTINGS_PATH,
   type ManagedMcpProjectionResidue,
   managedMcpProjectionOnDisk,
@@ -60,6 +65,7 @@ export type PruneArtifactKind =
   | "mcp"
   | "settings"
   | "managed-settings"
+  | "kiro-managed-mcp"
   | "kiro-steering"
   | "kiro-hook";
 
@@ -99,6 +105,8 @@ export interface StalePruneSet {
    * `undefined` when claude is kept, or when the marker records no active claim.
    */
   managedMcp?: ManagedMcpProjectionResidue;
+  /** Receipt-proven Kiro workspace-MCP distribution for a dropped Kiro target. */
+  kiroMcp?: KiroMcpProjectionResidue;
 }
 
 const VALID = new Set<string>(SUPPORTED_CLIS);
@@ -166,14 +174,28 @@ function keptPaths(targeted: readonly Cli[]): Set<string> {
 /**
  * aih-GENERATED Kiro hook files only. aih namespaces every hook it writes with an
  * `aih-` prefix precisely so it never clashes with ECC's or the team's own hooks
- * (src/kiro/content.ts `kiroHooks`), so that prefix is the ownership signal: a bare
- * `*.kiro.hook` glob would flag a user/team hook for removal. Written wholesale by
- * bootstrap-ai → `file` disposition.
+ * (src/kiro/content.ts `kiroHooks`). Exact names bound the inventory: a bare `aih-*`
+ * glob would flag unrelated user/team hooks. Both current `.json` and legacy
+ * `.kiro.hook` names remain visible after a format upgrade, but names alone do not
+ * prove ownership, so they stay advisory unless a future per-file receipt proves
+ * exact custody.
  */
+const KIRO_HOOK_BASENAMES = [
+  "aih-secret-scan-on-create",
+  "aih-tests-on-edit",
+  "aih-metrics-on-stop",
+  "aih-quality-gate",
+  "aih-usage-metering",
+] as const;
+
+const KIRO_OWNED_HOOK_FILENAMES = new Set(
+  KIRO_HOOK_BASENAMES.flatMap((name) => [`${name}.json`, `${name}.kiro.hook`]),
+);
+
 function kiroHookFiles(root: string): string[] {
   try {
     return readdirSync(join(root, ".kiro", "hooks"))
-      .filter((n) => n.startsWith("aih-") && n.endsWith(".kiro.hook"))
+      .filter((name) => KIRO_OWNED_HOOK_FILENAMES.has(name))
       .sort()
       .map((n) => `.kiro/hooks/${n}`);
   } catch {
@@ -219,6 +241,18 @@ function managedMcpArtifacts(residue: ManagedMcpProjectionResidue | undefined): 
       path: MANAGED_SETTINGS_PATH,
       disposition: "advisory",
       clis: ["claude"],
+    },
+  ];
+}
+
+function kiroMcpArtifacts(residue: KiroMcpProjectionResidue | undefined): PruneArtifact[] {
+  if (residue === undefined || residue.unprovable === "settings-absent") return [];
+  return [
+    {
+      kind: "kiro-managed-mcp",
+      path: KIRO_MCP_SETTINGS_PATH,
+      disposition: residue.matches ? "block" : "advisory",
+      clis: ["kiro"],
     },
   ];
 }
@@ -307,6 +341,13 @@ export function stalePruneSet(
   const managedMcp = claudeCommitted ? undefined : managedMcpProjectionOnDisk(ctx.root);
   const managed = managedMcpArtifacts(managedMcp);
   const managedField = managedMcp === undefined ? {} : { managedMcp };
+  // Kiro MCP is a project distribution, not an enforcement surface. Its receipt still
+  // proves individual mcpServers children, so a committed removal of Kiro can safely
+  // subtract only an unchanged receipt-owned set (or revoke a drifted claim).
+  const kiroCommitted = committed.includes("kiro");
+  const kiroMcp = kiroCommitted ? undefined : kiroMcpProjectionOnDisk(ctx.root);
+  const kiroManaged = kiroMcpArtifacts(kiroMcp);
+  const kiroManagedField = kiroMcp === undefined ? {} : { kiroMcp };
   if (dropped.length === 0) {
     return {
       targeted,
@@ -314,8 +355,9 @@ export function stalePruneSet(
       dropped,
       unrunnable,
       unknownTargets: [],
-      artifacts: managed,
+      artifacts: [...managed, ...kiroManaged],
       ...managedField,
+      ...kiroManagedField,
     };
   }
 
@@ -371,7 +413,8 @@ export function stalePruneSet(
     });
   }
 
-  // 5. Kiro-native extras (aih-exclusive files) when Kiro is dropped.
+  // 5. Kiro-native extras when Kiro is dropped. Steering has marker-backed
+  // ownership; reserved hook names do not, so they remain manual advisories.
   if (dropped.includes("kiro")) {
     const steering = ".kiro/steering/agent-tools.md";
     if (onDisk(steering)) {
@@ -383,13 +426,27 @@ export function stalePruneSet(
       });
     }
     for (const hook of kiroHookFiles(ctx.root)) {
-      artifacts.push({ kind: "kiro-hook", path: hook, disposition: "file", clis: ["kiro"] });
+      artifacts.push({
+        kind: "kiro-hook",
+        path: hook,
+        disposition: "advisory",
+        clis: ["kiro"],
+      });
     }
   }
 
-  artifacts.push(...managed);
+  artifacts.push(...managed, ...kiroManaged);
 
-  return { targeted, source, dropped, unrunnable, unknownTargets: [], artifacts, ...managedField };
+  return {
+    targeted,
+    source,
+    dropped,
+    unrunnable,
+    unknownTargets: [],
+    artifacts,
+    ...managedField,
+    ...kiroManagedField,
+  };
 }
 
 /**

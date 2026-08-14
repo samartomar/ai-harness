@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -24,7 +24,14 @@ function put(rel: string, contents: string): void {
   writeFileSync(full, contents, "utf8");
 }
 
-function makeCtx(flags: { apply?: boolean; verify?: boolean; run?: Runner } = {}): PlanContext {
+function makeCtx(
+  flags: {
+    apply?: boolean;
+    verify?: boolean;
+    run?: Runner;
+    options?: Record<string, unknown>;
+  } = {},
+): PlanContext {
   const run = flags.run ?? fakeRunner(() => undefined);
   return {
     root: tmp,
@@ -35,7 +42,7 @@ function makeCtx(flags: { apply?: boolean; verify?: boolean; run?: Runner } = {}
     run,
     host: makeHostAdapter({ platform: "linux", run, env: {} }),
     env: { HOME: tmp },
-    options: {},
+    options: flags.options ?? {},
   };
 }
 
@@ -184,5 +191,43 @@ describe("aih adopt — digest + routing", () => {
     expect(digestOf(actions)?.text).toContain("class: already-adopted");
     const check = await probeOf(actions)?.run(makeCtx());
     expect(check?.verdict).toBe("pass");
+  });
+
+  it("persists an explicit Kiro hook runtime on an already-adopted Kiro marker", async () => {
+    const body = sharedCanonicalBlockBody("ai-coding").trim();
+    put(
+      "AGENTS.md",
+      `# Preamble\n\n${beginLine(SHARED_MARKER, "s")}\n\n${body}\n\n${endLine(SHARED_MARKER)}\n`,
+    );
+    put(
+      ".aih-config.json",
+      `${JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["kiro"] })}\n`,
+    );
+    const ctx = makeCtx({
+      apply: true,
+      options: { cli: "kiro", kiroHookRuntime: "ide1-cli3" },
+    });
+    const result = await executePlan(await command.plan(ctx), ctx);
+    expect(result.writes.find((write) => write.path === ".aih-config.json")?.effect).toBe("merge");
+    expect(JSON.parse(readFileSync(join(tmp, ".aih-config.json"), "utf8"))).toMatchObject({
+      targets: ["kiro"],
+      kiroHookRuntime: "ide1-cli3",
+    });
+  });
+
+  it("unions explicit Kiro adoption with an existing AGENTS bootloader", async () => {
+    put("AGENTS.md", divergentBootloader());
+    const actions = (
+      await command.plan(makeCtx({ options: { cli: "kiro", kiroHookRuntime: "ide1-cli3" } }))
+    ).actions;
+    const writes = actions.filter((action) => action.kind === "write");
+    expect(writes.some((write) => write.path === "AGENTS.md")).toBe(true);
+    expect(writes.some((write) => write.path === ".kiro/steering/00-canon.md")).toBe(true);
+    expect(writes.some((write) => write.path === ".kiro/hooks/aih-tests-on-edit.json")).toBe(true);
+    const marker = writes.find((write) => write.path === ".aih-config.json");
+    expect(marker?.json).toMatchObject({
+      targets: ["codex", "kiro"],
+      kiroHookRuntime: "ide1-cli3",
+    });
   });
 });

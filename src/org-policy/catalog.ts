@@ -47,7 +47,7 @@ export interface AihPolicyControl {
   source:
     | { type: "mcp"; server: string; subject: string }
     | { type: "hook"; handler: "usage-metering"; scriptDigest: string };
-  targets: ("claude" | "codex")[];
+  targets: ("claude" | "codex" | "kiro")[];
   projector: "mcp-managed-settings" | "usage-hook";
   lifecycle: "supported";
 }
@@ -183,8 +183,8 @@ export interface PolicyAuthoringComposition {
 
 /**
  * Every AI CLI this build knows, and whether an org policy can project onto it.
- * AIH's registry carries eleven; `PolicyTargetSchema` carries two. Stating that
- * asymmetry is the point: an administrator who sees only claude and codex has
+ * AIH's registry carries eleven; `PolicyTargetSchema` carries three. Stating that
+ * asymmetry is the point: an administrator who sees only Claude, Codex, and Kiro has
  * no way to tell whether the others are unknown or merely unprojectable.
  */
 export interface PolicyAuthoringHost {
@@ -196,7 +196,7 @@ export interface PolicyAuthoringHost {
 }
 
 export function policyAuthoringHosts(): PolicyAuthoringHost[] {
-  const targets = new Set(["claude", "codex"]);
+  const targets = new Set(["claude", "codex", "kiro"]);
   return REGISTRY_IDS.map((id) => {
     const cli = CLI_REGISTRY[id];
     if (cli === undefined) throw new Error(`cli registry is missing ${id}`);
@@ -325,7 +325,11 @@ export function aihPolicyControls(
       id,
       kind: "mcp" as const,
       source: { type: "mcp" as const, server: id, subject: mcpApprovalSubject(server) },
-      targets: ["claude"] as ("claude" | "codex")[],
+      targets: (server.type === "stdio" ? ["claude", "kiro"] : ["claude"]) as (
+        | "claude"
+        | "codex"
+        | "kiro"
+      )[],
       projector: "mcp-managed-settings" as const,
       lifecycle: "supported" as const,
     })),

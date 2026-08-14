@@ -853,13 +853,14 @@
           },
           "scope": {
             "minItems": 1,
-            "maxItems": 2,
+            "maxItems": 3,
             "type": "array",
             "items": {
               "type": "string",
               "enum": [
                 "claude",
-                "codex"
+                "codex",
+                "kiro"
               ]
             }
           },
@@ -947,13 +948,14 @@
     },
     "targets": {
       "minItems": 1,
-      "maxItems": 2,
+      "maxItems": 3,
       "type": "array",
       "items": {
         "type": "string",
         "enum": [
           "claude",
-          "codex"
+          "codex",
+          "kiro"
         ]
       }
     }

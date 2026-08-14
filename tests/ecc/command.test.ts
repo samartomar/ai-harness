@@ -45,7 +45,19 @@ describe("registered ECC command", () => {
       profile: "core",
       with: ["tdd-workflow", "security-review"],
     });
+  });
+
+  it("lists every governed lifecycle target and scopes Kiro to agents, rules, and skills", () => {
+    const program = buildProgram();
+    const ecc = program.commands.find((candidate) => candidate.name() === "ecc");
+    expect(ecc).toBeDefined();
+
     expect(ecc?.options.map((option) => option.flags)).toContain("--lifecycle <operation>");
+    const lifecycle = ecc?.options.find((option) => option.flags === "--lifecycle <operation>");
+    expect(lifecycle?.description).toContain("claude, codex, kimi, cursor, opencode, kiro");
+    expect(lifecycle?.description).toContain(
+      "Kiro materializes only evidence-passed agent:* selections with an exact pinned Kiro mapping, baseline:rules, and skill:* selections",
+    );
   });
 
   it("previews exact-pin contingent install operations without acquisition before apply", async () => {

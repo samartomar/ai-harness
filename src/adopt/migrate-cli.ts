@@ -54,6 +54,8 @@ const MIGRATION: Record<string, MigSpec> = {
   ".claude/agents": { destSub: "agents", mode: "dir" },
   ".claude/commands": { destSub: "commands", mode: "dir" },
   ".claude/skills": { destSub: "skills", mode: "dir" },
+  ".kiro/skills": { destSub: "skills", mode: "dir" },
+  ".kiro/prompts": { destSub: "prompts", mode: "dir" },
   ".kiro/specs": { destSub: "specs", mode: "dir" },
   ".github/prompts": { destSub: "prompts", mode: "dir" },
   ".claude/memory": { destSub: "", mode: "skip-memory" },
