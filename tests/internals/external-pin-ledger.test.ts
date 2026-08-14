@@ -255,11 +255,20 @@ describe("active external-pin ledger", () => {
       integrity: "sha256:ee96cc8e7d4641a5b96047552c426a9a7d6d2736a65a4bcbd77797f2f1add202",
       disposition: "active",
     });
-    expect(entry("snyk-agent-scan")).toMatchObject({
+    const snyk = entry("snyk-agent-scan");
+    expect(snyk).toMatchObject({
       version: "0.5.17",
       integrity: "sha256:ae928b023023fba12fdaaaa31e9da5dad4252c181545dfba72d46534d694b935",
-      disposition: "blocked",
+      disposition: "active",
     });
+    expect(snyk.reason).toContain(
+      "https://github.com/samartomar/ai-harness/actions/runs/31828959167",
+    );
+    expect(snyk.reason).toContain("b4c76cbc88ff300c1f3e241e9b9c1f25ef921760");
+    expect(snyk.reason).toContain(
+      "sha256:31259b2a91f04c092a87be560907136d8263861d1f32c8818564a40217bad4d0",
+    );
+    expect(snyk.reason).toContain("synthetic fixture");
     expect(entry("semgrep")).toMatchObject({
       version: SEMGREP_VERSION,
       commit: "abce3b5391706850837d4339f84bfaa3ec08604b",
