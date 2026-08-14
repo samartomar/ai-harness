@@ -12,6 +12,9 @@ describe("public docs policy", () => {
   it("keeps the agent-ready demo source-scoped and cross-platform", () => {
     const demo = read("examples/agent-ready-demo/README.md");
 
+    expect(demo).toContain(
+      "> Public demo data only. No customer data, no private org telemetry, no real user activity,\n> and no production export.",
+    );
     expect(demo).toContain("source-checkout-only");
     expect(demo).toContain(`mktemp -d "\${TMPDIR:-/tmp}/aih-demo.XXXXXX"`);
     expect(demo).toContain('"aih-demo-$([guid]::NewGuid())"');
