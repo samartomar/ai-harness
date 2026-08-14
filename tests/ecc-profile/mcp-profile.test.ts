@@ -83,10 +83,10 @@ describe("ECC MCP profile projection", () => {
     const serena = projection.servers.serena;
 
     expect(SERENA_RUNTIME_PIN).toEqual({
-      package: "serena-agent==1.6.1",
-      sourceCommit: "bcac0969fb8685783ea6d0f2642468fcc47e6395",
-      wheelSha256: "04ddd985bd3feb25598ab8732bf3a998f961d5b46dce271b816126c0a68a91e1",
-      metadataSha256: "4c95007465c14bed34e4d0022cc9382e826feafb9212eb6c9a1888ea2548bd7d",
+      package: "serena-agent==1.7.0",
+      sourceCommit: "949a27ef1e5fda1a6e7b561e777bcece345c6ffd",
+      wheelSha256: "6dbf1459670d96fb0595f84932adef34260a6fe14ba5135b901fdb3c8c76e891",
+      metadataSha256: "124f3562913efb9aa13d06ab92a64eb0a09c976490169e86b39d2c0b09b5643c",
     });
     expect(serena?.type).toBe("stdio");
     if (serena?.type !== "stdio") throw new Error("expected stdio Serena server");

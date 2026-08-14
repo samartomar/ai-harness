@@ -270,14 +270,14 @@ describe("native ECC hook runtime", () => {
     ).rejects.toThrow(/package pin is not accepted/i);
     await expect(
       runNativeEccRuntime(
-        serenaArgs.map((value) => (value === "wrong-package" ? "serena-agent==1.6.1" : value)),
+        serenaArgs.map((value) => (value === "wrong-package" ? "serena-agent==1.7.0" : value)),
         { stdin: Readable.from([]), env: {} },
       ),
     ).rejects.toThrow(/SERENA_HOME.*absolute/i);
     await expect(
       runNativeEccRuntime(
         serenaArgs
-          .map((value) => (value === "wrong-package" ? "serena-agent==1.6.1" : value))
+          .map((value) => (value === "wrong-package" ? "serena-agent==1.7.0" : value))
           .map((value) => (value === SERENA_DEPENDENCY_LOCK_SHA256 ? "0".repeat(64) : value)),
         { stdin: Readable.from([]), env: { SERENA_HOME: scope.stateRoot } },
       ),
@@ -286,7 +286,7 @@ describe("native ECC hook runtime", () => {
       runNativeEccRuntime(
         serenaArgs.map((value) =>
           value === "wrong-package"
-            ? "serena-agent==1.6.1"
+            ? "serena-agent==1.7.0"
             : value === "codex"
               ? "unsupported-context"
               : value,
@@ -297,7 +297,7 @@ describe("native ECC hook runtime", () => {
     await expect(
       runNativeEccRuntime(
         serenaArgs
-          .map((value) => (value === "wrong-package" ? "serena-agent==1.6.1" : value))
+          .map((value) => (value === "wrong-package" ? "serena-agent==1.7.0" : value))
           .map((value) => (value === "no-memories" ? "memory-enabled" : value)),
         { stdin: Readable.from([]), env: { SERENA_HOME: join(scope.stateRoot, "serena") } },
       ),
@@ -308,7 +308,7 @@ describe("native ECC hook runtime", () => {
     await expect(
       runNativeEccRuntime(
         serenaArgs
-          .map((value) => (value === "wrong-package" ? "serena-agent==1.6.1" : value))
+          .map((value) => (value === "wrong-package" ? "serena-agent==1.7.0" : value))
           .map((value) => (value === scope.root ? projectFile : value)),
         { stdin: Readable.from([]), env: { SERENA_HOME: join(scope.stateRoot, "serena") } },
       ),
@@ -319,7 +319,7 @@ describe("native ECC hook runtime", () => {
     writeFileSync(join(serenaHome, "serena_config.yml"), "operator-owned: true\n");
     await expect(
       runNativeEccRuntime(
-        serenaArgs.map((value) => (value === "wrong-package" ? "serena-agent==1.6.1" : value)),
+        serenaArgs.map((value) => (value === "wrong-package" ? "serena-agent==1.7.0" : value)),
         { stdin: Readable.from([]), env: { SERENA_HOME: serenaHome } },
       ),
     ).rejects.toThrow(/config conflicts/i);
@@ -421,7 +421,7 @@ describe("native ECC hook runtime", () => {
       [
         "serena",
         "--package",
-        "serena-agent==1.6.1",
+        "serena-agent==1.7.0",
         "--dependency-lock-sha256",
         SERENA_DEPENDENCY_LOCK_SHA256,
         "--lock-root",
@@ -490,7 +490,7 @@ describe("native ECC hook runtime", () => {
         [
           "serena",
           "--package",
-          "serena-agent==1.6.1",
+          "serena-agent==1.7.0",
           "--dependency-lock-sha256",
           SERENA_DEPENDENCY_LOCK_SHA256,
           "--lock-root",
@@ -520,7 +520,7 @@ describe("native ECC hook runtime", () => {
     const args = [
       "serena",
       "--package",
-      "serena-agent==1.6.1",
+      "serena-agent==1.7.0",
       "--dependency-lock-sha256",
       SERENA_DEPENDENCY_LOCK_SHA256,
       "--lock-root",

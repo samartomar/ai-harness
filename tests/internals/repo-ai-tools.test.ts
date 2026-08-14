@@ -68,13 +68,9 @@ describe("ai-harness repo AI tooling", () => {
     expect(toolingPlan()).toMatchObject({
       pins: {
         serena: {
-          package: "serena-agent==1.6.1",
+          package: "serena-agent==1.7.0",
           license: "MIT",
-          securityOverrides: [
-            "cryptography==49.0.0",
-            "python-multipart==0.0.32",
-            "starlette==1.3.1",
-          ],
+          securityOverrides: ["python-multipart==0.0.32", "starlette==1.3.1"],
         },
         tokenOptimizer: {
           tag: "v5.11.68",

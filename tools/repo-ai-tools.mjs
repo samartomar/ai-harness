@@ -24,11 +24,10 @@ const serenaOverridesPath = join(installRoot, "serena-security-overrides.txt");
 const plan = {
   pins: {
     serena: {
-      package: "serena-agent==1.6.1",
+      package: "serena-agent==1.7.0",
       license: "MIT",
       source: "https://github.com/oraios/serena",
       securityOverrides: [
-        "cryptography==49.0.0",
         "python-multipart==0.0.32",
         "starlette==1.3.1",
       ],
@@ -163,7 +162,7 @@ function verify() {
     capture: true,
     env: localToolEnv(),
   });
-  for (const expected of ["token-savior-recall v4.21.0", "serena-agent v1.6.1"]) {
+  for (const expected of ["token-savior-recall v4.21.0", "serena-agent v1.7.0"]) {
     if (!installed.includes(expected)) throw new Error(`missing repo-local tool: ${expected}`);
   }
   for (const name of ["token-savior", "serena"]) {
@@ -173,11 +172,11 @@ function verify() {
     toolPython("serena-agent"),
     [
       "-c",
-      "import importlib.metadata as m; print('|'.join(m.version(n) for n in ('cryptography','python-multipart','starlette')))",
+      "import importlib.metadata as m; print('|'.join(m.version(n) for n in ('python-multipart','starlette')))",
     ],
     { capture: true },
   );
-  if (serenaDependencyVersions !== "49.0.0|0.0.32|1.3.1") {
+  if (serenaDependencyVersions !== "0.0.32|1.3.1") {
     throw new Error(`Serena security override mismatch: ${serenaDependencyVersions}`);
   }
   const optimizerCommit = runChecked("git", ["-C", tokenOptimizerRoot, "rev-parse", "HEAD"], {

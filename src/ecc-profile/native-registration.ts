@@ -19,11 +19,11 @@ import {
 const MAX_RUNTIME_FILE_BYTES = 128 * 1024 * 1024;
 
 export const SERENA_RUNTIME_PYPROJECT_SHA256 =
-  "25dbee035cd2c3ce2e65110eda0cc20f066ec37aea37210fab9569b81ca6a5ba";
+  "755b08fb0271d68f7e8fcc9eb6e823b95d3688a6cb1d3f693c13cde2cade7897";
 export const SERENA_RUNTIME_UV_LOCK_SHA256 =
-  "ba888b113354c146cc8ecd925e6821d4284ebfad984a8544163be2803295f460";
+  "cd73b07cbc10dc932021f741033a88219b86272b05223d06d9820dc6109309b4";
 export const SERENA_DEPENDENCY_LOCK_SHA256 =
-  "1eaf5dcffef9426f9024d03e6875ccbaf2a6857cbcfecf22127a7d1876ebf5b0";
+  "623c83ede4efc2b1afc8534d60638871556d95cd685db218714379cfdba0104e";
 
 /** Append-only identities that newer packages may use to recover older registrations. */
 const TRUSTED_SERENA_RUNTIME_LOCKS = [

@@ -176,7 +176,7 @@ function detectorRunner(
       if (argv.includes("scan")) return { code: 0, stdout: JSON.stringify({ findings: [] }) };
     }
     if (argv.includes("semgrep")) {
-      if (argv.includes("--version")) return { code: 0, stdout: "1.172.0\n" };
+      if (argv.includes("--version")) return { code: 0, stdout: "1.173.0\n" };
       if (argv.includes("scan")) {
         return { code: 0, stdout: JSON.stringify({ version: "2.1.0", runs: [] }) };
       }
@@ -289,8 +289,8 @@ describe("skillVetCommand", () => {
       "aih-native",
       "skillspector@docker",
       "cisco@uvx",
-      "semgrep@uv:1.172.0",
-      "snyk-agent-scan@uv:0.5.15",
+      "semgrep@uv:1.173.0",
+      "snyk-agent-scan@uv:0.5.17",
     ]);
     expect(result.report?.checks).toEqual(
       expect.arrayContaining([
@@ -535,8 +535,8 @@ describe("skillVetCommand", () => {
       "aih-native",
       "skillspector@docker",
       "cisco@uvx",
-      "semgrep@uv:1.172.0",
-      "snyk-agent-scan@uv:0.5.15",
+      "semgrep@uv:1.173.0",
+      "snyk-agent-scan@uv:0.5.17",
     ]);
     expect(evidence.checks).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "skill license", verdict: "pass" })]),

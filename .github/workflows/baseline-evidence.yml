@@ -85,6 +85,7 @@ jobs:
           cache-dependency-glob: |
             tools/cisco-skill-scanner/uv.lock
             tools/trust-scanners/semgrep/uv.lock
+            tools/trust-scanners/snyk-agent-scan/uv.lock
             tools/trust-scanners/cisco-mcp/uv.lock
       - name: Cache and verify pinned Cisco skill-scanner
         shell: bash
@@ -104,7 +105,12 @@ jobs:
           semgrep_version="$(uv run --project tools/trust-scanners/semgrep \
             --locked --isolated --python 3.12 --offline --no-python-downloads --no-env-file \
             semgrep --version)"
-          test "$semgrep_version" = "1.172.0"
+          test "$semgrep_version" = "1.173.0"
+          uv run --project tools/trust-scanners/snyk-agent-scan --locked --isolated --python 3.12 \
+            --no-python-downloads --no-env-file snyk-agent-scan help >/dev/null
+          uv run --project tools/trust-scanners/snyk-agent-scan --locked --isolated \
+            --python 3.12 --offline --no-python-downloads --no-env-file \
+            snyk-agent-scan help >/dev/null
           uv run --project tools/trust-scanners/cisco-mcp --locked --isolated --python 3.12 \
             --no-python-downloads --no-env-file mcp-scanner --help >/dev/null
           uv run --project tools/trust-scanners/cisco-mcp --locked --isolated \

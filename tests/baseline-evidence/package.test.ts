@@ -102,6 +102,7 @@ describe("baseline evidence release payload", () => {
     );
     expect(workflow).toContain("tools/cisco-skill-scanner/uv.lock");
     expect(workflow).toContain("tools/trust-scanners/semgrep/uv.lock");
+    expect(workflow).toContain("tools/trust-scanners/snyk-agent-scan/uv.lock");
     expect(workflow).toContain("tools/trust-scanners/cisco-mcp/uv.lock");
     expect(workflow).toContain("actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97");
     expect(workflow).toContain('python-version: "3.12"');
@@ -109,8 +110,10 @@ describe("baseline evidence release payload", () => {
     expect(workflow).toContain("uv run");
     expect(workflow).toContain("--project tools/cisco-skill-scanner");
     expect(workflow).toContain("--project tools/trust-scanners/semgrep");
+    expect(workflow).toContain("--project tools/trust-scanners/snyk-agent-scan");
     expect(workflow).toContain("--project tools/trust-scanners/cisco-mcp");
-    expect(workflow).toContain('test "$semgrep_version" = "1.172.0"');
+    expect(workflow).toContain('test "$semgrep_version" = "1.173.0"');
+    expect(workflow).toContain("snyk-agent-scan help");
     expect(workflow).toContain("mcp-scanner --help");
     expect(workflow).toContain("--locked");
     expect(workflow).toContain("--offline");

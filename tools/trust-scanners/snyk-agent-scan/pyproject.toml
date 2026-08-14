@@ -2,7 +2,7 @@
 name = "aih-snyk-agent-scan"
 version = "0.0.0"
 requires-python = ">=3.10"
-dependencies = ["snyk-agent-scan==0.5.15"]
+dependencies = ["snyk-agent-scan==0.5.17"]
 
 [tool.uv]
 package = false
