@@ -34,7 +34,7 @@ the claim -> implementation -> test proof map.
 
 ## The stable command contract
 
-For the current v4 line, pin `@aihq/harness@^4` unless your organization pins an
+For the current v5 line, pin `@aihq/harness@^5` unless your organization pins an
 exact release for reproducible rollout. Every command, flag, and deprecated alias is
 snapshot-tested in CI against a committed fixture, the `--json` envelope is
 schema-pinned, and exit-code semantics are pinned — a surface change fails the build
