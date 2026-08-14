@@ -127,6 +127,7 @@ right workflow for a reader or rollout stage.
 | Understand posture behavior and boundaries | [Postures](guides/postures.md) |
 | Individual developer or evaluator | [Vibe Developer](guides/vibe-developer-guide.md) |
 | Shared repository | [Shared Repository](guides/shared-repository-guide.md) |
+| Engineering team applying AI-Harness during application delivery | [Enterprise Application Adoption](guides/enterprise-application-adoption.md) |
 | Governed organization or enterprise rollout | [Enterprise Admin](guides/enterprise-admin-guide.md) |
 | Developer consuming an admin-approved config | [Enterprise Developer](guides/enterprise-developer-guide.md) |
 
