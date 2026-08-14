@@ -123,7 +123,7 @@ Test Files 2 passed; Tests 7 passed
 | 2 | The token is referenced once, only on the scan step, and is never echoed | same | secret boundary | PASS |
 | 3 | AIH targets a `mktemp` skill fixture, never `.`, and no MCP configuration or dangerous auto-run flag appears | `targets only a disposable skill fixture and never enables MCP execution` | security regression | PASS |
 | 4 | Checkout, Node, Python, uv, and artifact actions use immutable commit pins | `uses immutable actions, the exact locked runtime, and a sanitized short-lived artifact` | supply-chain regression | PASS |
-| 5 | The committed Snyk lock is warmed and the exact `snyk-agent-scan@uv:0.5.17` identity must appear in AIH output | same | behavioral contract | PASS locally; live credentialed run pending |
+| 5 | The committed Snyk lock is warmed and the exact `snyk-agent-scan@uv:0.5.17` identity must appear in AIH output | same | behavioral contract | PASS locally; credentialed detector completed, qualified receipt pending |
 | 6 | A branch ref cannot satisfy the committed workflow contract, and the token-bearing job names the protected environment | `is manual-only, read-only, and keeps the secret scoped to the scan step` | secret-boundary regression | PASS |
 | 7 | An unavailable check carrying the expected magic strings cannot produce a qualification receipt | `rejects an unavailable check even when its detail contains every magic string` | negative security regression | PASS |
 | 8 | Missing GitHub run identities fail instead of producing `unknown` evidence | `rejects missing GitHub run identities instead of writing unknown placeholders` | evidence-integrity regression | PASS |
