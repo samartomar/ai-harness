@@ -32,6 +32,11 @@ function analyzerList(value, prefix, suffix, name) {
   return analyzers;
 }
 
+function firstLine(value, name) {
+  if (typeof value !== "string") fail(`${name} must be a string`);
+  return value.split(/\r?\n/, 1)[0];
+}
+
 const [resultPath, summaryPath, ...extraArgs] = process.argv.slice(2);
 if (
   extraArgs.length > 0 ||
@@ -96,7 +101,7 @@ const advisories = result.digests.filter(
 );
 if (advisories.length !== 1) fail("qualification requires one trust runtime advisory");
 const advisoryAnalyzers = analyzerList(
-  advisories[0].text,
+  firstLine(advisories[0].text, "trust runtime advisory"),
   ADVISORY_PREFIX,
   ".",
   "trust runtime advisory",
