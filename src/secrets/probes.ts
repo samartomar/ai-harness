@@ -89,28 +89,3 @@ export function mcpConfigSecretProbes(hits: ConfigSecretHit[], posture: Posture)
     ),
   );
 }
-
-/**
- * The affirmative clean verdict, emitted only when BOTH scans found nothing (when they
- * find something, the per-finding probes above speak for themselves).
- *
- * Without it a clean repo plans zero probes, and the executor suppresses the whole
- * verification section at zero checks — so `aih secrets --verify` printed no checks and
- * exited 0, which is indistinguishable from never having run. That silence is read as
- * proof: the generated canon tells every downstream repo to "validate secret presence
- * with `aih secrets --verify`". A scan that found nothing must SAY it found nothing.
- *
- * Pure like its siblings — the scans already ran at plan-build time, so this carries a
- * precomputed verdict and spawns, reads, and mutates nothing.
- */
-export function secretScanCleanProbe(): ProbeAction {
-  return probe(
-    "secret scan",
-    (): Check => ({
-      name: "secret-scan",
-      verdict: "pass",
-      detail:
-        "scanned for plaintext secret files (.env*, secrets/**) and hardcoded MCP config credentials — none found",
-    }),
-  );
-}

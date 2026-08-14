@@ -8,7 +8,7 @@
 [![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-339933.svg)](package.json)
 
 <p align="center">
-<img src="docs/assets/aih-overview.svg" alt="aih v5.4.0 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
+<img src="docs/assets/aih-overview.svg" alt="aih v6.0.0 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
 </p>
 
 Use the coding agent that fits your workflow. `aih` is a cross-platform CLI that
@@ -34,7 +34,7 @@ the claim -> implementation -> test proof map.
 
 ## The stable command contract
 
-For the current v5 line, pin `@aihq/harness@^5` unless your organization pins an
+For the current v6 line, pin `@aihq/harness@^6` unless your organization pins an
 exact release for reproducible rollout. Every command, flag, and deprecated alias is
 snapshot-tested in CI against a committed fixture, the `--json` envelope is
 schema-pinned, and exit-code semantics are pinned — a surface change fails the build
@@ -55,8 +55,8 @@ Install and verify a published release. Current releases publish npm provenance 
 checksums and a keyless cosign bundle:
 
 ```bash
-npm install -g @aihq/harness@5.4.0      # then run: aih --help
-aih verify-release 5.4.0   # checks npm signatures, GitHub release sums, and cosign evidence for 5.4.0
+npm install -g @aihq/harness@6.0.0      # then run: aih --help
+aih verify-release 6.0.0   # checks npm signatures, GitHub release sums, and cosign evidence for 6.0.0
 ```
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs
