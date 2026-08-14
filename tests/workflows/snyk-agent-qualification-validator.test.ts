@@ -47,6 +47,16 @@ afterEach(() => {
 });
 
 describe("Snyk Agent Scan qualification validator", () => {
+  it("size-checks and reads the result through one file descriptor", () => {
+    const source = readFileSync(validator, "utf8");
+
+    expect(source).toContain('const resultFd = openSync(resultPath, "r")');
+    expect(source).toContain("fstatSync(resultFd).size");
+    expect(source).toContain('readFileSync(resultFd, "utf8")');
+    expect(source).toContain("closeSync(resultFd)");
+    expect(source).not.toContain("statSync(resultPath)");
+  });
+
   it("emits only commit-bound sanitized evidence for one exact passing Snyk check", () => {
     const temp = tempRoot();
     const input = resolve(temp, "result.json");
