@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.3.0] - 2026-08-13
+
 ### Added
 
 - Governed ECC materialization for the single `kiro` target now includes evidence-passed selected
@@ -2253,7 +2255,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v5.2.1...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v5.3.0...HEAD
+[5.3.0]: https://github.com/samartomar/ai-harness/compare/v5.2.1...v5.3.0
 [5.2.1]: https://github.com/samartomar/ai-harness/compare/v5.2.0...v5.2.1
 [5.2.0]: https://github.com/samartomar/ai-harness/compare/v5.1.0...v5.2.0
 [5.1.0]: https://github.com/samartomar/ai-harness/compare/v5.0.0...v5.1.0
