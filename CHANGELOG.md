@@ -16,9 +16,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Refined the public launch README and refreshed reviewed developer-tool and immutable GitHub Actions
-  pins, including Biome, Node types, Happy DOM, tsx, CodeQL, attest-build-provenance, Claude Code
-  Action, setup-python, and their governed external-pin ledger coverage.
+- Refined the public launch README and refreshed reviewed developer-tool pins for Biome, Node types,
+  Happy DOM, and tsx. Updated immutable GitHub Actions pins for CodeQL,
+  attest-build-provenance, Claude Code Action, and setup-python, including their governed external-pin
+  ledger coverage.
 
 ### Fixed
 
