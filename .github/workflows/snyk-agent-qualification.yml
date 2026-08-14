@@ -1,0 +1,112 @@
+name: snyk-agent-qualification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out ai-harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install and build AIH
+        run: |
+          npm ci
+          npm run build
+      - name: Set up scanner Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Set up pinned uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.2"
+          cache-dependency-glob: tools/trust-scanners/snyk-agent-scan/uv.lock
+      - name: Warm and verify the exact Snyk runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f tools/trust-scanners/snyk-agent-scan/uv.lock
+          uv run --project tools/trust-scanners/snyk-agent-scan --locked --isolated --python 3.12 \
+            --no-python-downloads --no-env-file snyk-agent-scan help >/dev/null
+          uv run --project tools/trust-scanners/snyk-agent-scan --locked --isolated --python 3.12 \
+            --offline --no-python-downloads --no-env-file snyk-agent-scan help >/dev/null
+      - name: Run AIH against the synthetic fixture
+        shell: bash
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${SNYK_TOKEN}"
+          fixture="$(mktemp -d "${RUNNER_TEMP}/aih-snyk-qualification.XXXXXX")"
+          mkdir -p "$fixture/skill"
+          printf '%s\n' \
+            '---' \
+            'name: aih-snyk-qualification' \
+            'description: Synthetic public fixture for Snyk Agent Scan qualification.' \
+            '---' \
+            '# Snyk Agent Scan qualification fixture' \
+            '' \
+            'This generated fixture contains only benign public demonstration text.' \
+            > "$fixture/skill/SKILL.md"
+
+          export AIH_SNYK_RESULT="${RUNNER_TEMP}/aih-snyk-qualification-result.json"
+          export AIH_SNYK_SUMMARY="${RUNNER_TEMP}/aih-snyk-qualification-summary.json"
+          node dist/cli.js trust scan "$fixture/skill" --json --root "$fixture" --no-log \
+            > "$AIH_SNYK_RESULT"
+
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { readFileSync, writeFileSync } from "node:fs";
+
+          const resultPath = process.env.AIH_SNYK_RESULT;
+          const summaryPath = process.env.AIH_SNYK_SUMMARY;
+          const commit = process.env.GITHUB_SHA;
+          if (!resultPath || !summaryPath || !commit || !/^[0-9a-f]{40}$/.test(commit)) {
+            throw new Error("qualification paths or commit identity are missing");
+          }
+
+          const raw = readFileSync(resultPath, "utf8");
+          const parsed = JSON.parse(raw);
+          const serialized = JSON.stringify(parsed);
+          const analyzer = "snyk-agent-scan@uv:0.5.17";
+          if (!serialized.includes(analyzer)) {
+            throw new Error(`qualification did not record ${analyzer}`);
+          }
+          if (!serialized.includes("Snyk Agent Scan completed with JSON output")) {
+            throw new Error("qualification did not record a completed Snyk Agent Scan");
+          }
+          if (serialized.includes("SNYK_TOKEN is not set")) {
+            throw new Error("qualification reported a missing Snyk credential");
+          }
+
+          const summary = {
+            schemaVersion: 1,
+            commit,
+            workflowRunId: process.env.GITHUB_RUN_ID ?? "unknown",
+            workflowRunAttempt: process.env.GITHUB_RUN_ATTEMPT ?? "unknown",
+            analyzer,
+            target: "synthetic-skill-fixture",
+            status: "qualified",
+            resultSha256: createHash("sha256").update(raw).digest("hex"),
+          };
+          writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, { mode: 0o600 });
+          NODE
+      - name: Upload sanitized qualification evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: snyk-agent-qualification-${{ github.run_id }}
+          path: ${{ runner.temp }}/aih-snyk-qualification-summary.json
+          if-no-files-found: error
+          retention-days: 5

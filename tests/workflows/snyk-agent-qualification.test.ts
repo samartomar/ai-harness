@@ -27,6 +27,10 @@ interface QualificationWorkflow {
 const root = resolve(import.meta.dirname, "../..");
 const workflowPath = resolve(root, ".github/workflows/snyk-agent-qualification.yml");
 
+function githubExpression(value: string): string {
+  return `${String.fromCharCode(36)}{{ ${value} }}`;
+}
+
 function readWorkflow(): { raw: string; parsed: QualificationWorkflow } {
   expect(existsSync(workflowPath)).toBe(true);
   const raw = readFileSync(workflowPath, "utf8");
@@ -49,7 +53,7 @@ describe("Snyk Agent Scan behavioral qualification workflow", () => {
     expect(parsed.permissions).toEqual({ contents: "read" });
     expect(job.permissions).toBeUndefined();
     expect(job.env).toBeUndefined();
-    expect(scan?.env).toEqual({ SNYK_TOKEN: "${{ secrets.SNYK_TOKEN }}" });
+    expect(scan?.env).toEqual({ SNYK_TOKEN: githubExpression("secrets.SNYK_TOKEN") });
     expect(raw.match(/secrets\.SNYK_TOKEN/g)).toHaveLength(1);
     expect(raw).not.toMatch(/(?:echo|printf|cat).*SNYK_TOKEN/);
   });
@@ -58,7 +62,7 @@ describe("Snyk Agent Scan behavioral qualification workflow", () => {
     const { raw, parsed } = readWorkflow();
     const commands = parsed.jobs.qualify.steps.map((step) => step.run ?? "").join("\n");
 
-    expect(commands).toContain('mktemp -d "${RUNNER_TEMP}/aih-snyk-qualification.XXXXXX"');
+    expect(commands).toMatch(/mktemp -d "\$\{RUNNER_TEMP\}\/aih-snyk-qualification\.XXXXXX"/);
     expect(commands).toContain('node dist/cli.js trust scan "$fixture/skill" --json');
     expect(commands).not.toMatch(/trust scan\s+["']?\.["']?(?:\s|$)/);
     expect(raw).not.toContain(".mcp.json");
@@ -94,7 +98,7 @@ describe("Snyk Agent Scan behavioral qualification workflow", () => {
     expect(commands).toContain("snyk-agent-scan help");
     expect(commands).toContain("snyk-agent-scan@uv:0.5.17");
     expect(upload?.with).toMatchObject({
-      path: "${{ runner.temp }}/aih-snyk-qualification-summary.json",
+      path: `${githubExpression("runner.temp")}/aih-snyk-qualification-summary.json`,
       "if-no-files-found": "error",
       "retention-days": 5,
     });
