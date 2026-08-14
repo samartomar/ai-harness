@@ -767,7 +767,9 @@ codes remain blocked.
 
 The target-coverage triplet separates capability from invocation state: `supported` lists targets with
 a shipped projector adapter for that candidate, `available` lists targets selected in the current
-runtime, and `complete` or `blocked` says whether the requested projection can execute now. For example,
+runtime, and `complete` or `blocked` says whether those requested targets are covered by shipped adapters
+and this invocation's selected runtime targets. Coverage alone does not make a candidate effective;
+evidence, danger, and other blocking gates still apply. For example,
 Vibe posture can report `supported=claude,kiro; available=kiro; blocked`: the Kiro workspace adapter
 exists, but posture intentionally disabled this invocation. Custom stdio candidates without an
 integrity-enforcing materializer continue to report `supported=none`.
