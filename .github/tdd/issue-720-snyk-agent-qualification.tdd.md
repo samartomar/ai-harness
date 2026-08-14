@@ -41,6 +41,36 @@ the built CLI with a generated temporary skill as both root and scan target. It 
 five-day sanitized summary containing the commit, workflow run identity, analyzer identity,
 status, target class, and SHA-256 of the ephemeral raw result.
 
+### Review-driven RED — ref and evidence integrity
+
+Independent CI/trust and security review found that the first draft used a repository secret on a
+branch-selectable manual workflow and accepted whole-document magic strings as qualification. The
+review reproducer was committed at `0543802e`.
+
+Command:
+
+```text
+npm test -- --run tests/workflows/snyk-agent-qualification.test.ts tests/workflows/snyk-agent-qualification-validator.test.ts
+```
+
+Result: **FAIL**, 2 files / 5 tests failed. The workflow lacked a protected environment and main
+ref guard; the structured validator did not exist.
+
+### Review-driven GREEN — protected environment and structured receipt
+
+Command:
+
+```text
+npm test -- --run tests/workflows/snyk-agent-qualification.test.ts tests/workflows/snyk-agent-qualification-validator.test.ts
+```
+
+Result: **PASS**, 2 files / 6 tests passed. The workflow now requires the
+`snyk-agent-qualification` environment, checks `refs/heads/main`, runs trust scan with `--verify`,
+and delegates receipt creation to a bounded validator. The validator requires exactly one named
+Snyk detector check with `verdict: pass`, cross-checks its exact analyzer list against the trust
+runtime advisory, rejects magic strings in unavailable details, and requires numeric GitHub run
+identities.
+
 ## Test specification
 
 | # | What is guaranteed | Test | Type | Result |
@@ -50,6 +80,9 @@ status, target class, and SHA-256 of the ephemeral raw result.
 | 3 | AIH targets a `mktemp` skill fixture, never `.`, and no MCP configuration or dangerous auto-run flag appears | `targets only a disposable skill fixture and never enables MCP execution` | security regression | PASS |
 | 4 | Checkout, Node, Python, uv, and artifact actions use immutable commit pins | `uses immutable actions, the exact locked runtime, and a sanitized short-lived artifact` | supply-chain regression | PASS |
 | 5 | The committed Snyk lock is warmed and the exact `snyk-agent-scan@uv:0.5.17` identity must appear in AIH output | same | behavioral contract | PASS locally; live credentialed run pending |
+| 6 | A branch ref cannot satisfy the committed workflow contract, and the token-bearing job names the protected environment | `is manual-only, read-only, and keeps the secret scoped to the scan step` | secret-boundary regression | PASS |
+| 7 | An unavailable check carrying the expected magic strings cannot produce a qualification receipt | `rejects an unavailable check even when its detail contains every magic string` | negative security regression | PASS |
+| 8 | Missing GitHub run identities fail instead of producing `unknown` evidence | `rejects missing GitHub run identities instead of writing unknown placeholders` | evidence-integrity regression | PASS |
 
 ## Coverage and known gaps
 
@@ -66,4 +99,6 @@ a follow-up evidence change.
 ## Merge evidence
 
 - RED checkpoint: `9e7cfc26 test: require safe Snyk qualification workflow`
-- GREEN checkpoint: recorded by the implementation commit after focused and repository gates pass
+- GREEN checkpoint: `4038b6f6 ci: qualify Snyk on a synthetic fixture`
+- Review RED checkpoint: `0543802e test: harden Snyk qualification evidence`
+- Review GREEN checkpoint: recorded by the remediation commit after focused and repository gates pass
