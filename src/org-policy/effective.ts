@@ -102,6 +102,8 @@ export interface RuntimeReviewedControl {
 export interface RuntimeMcpIdentity {
   subject: string;
   projectable: boolean;
+  /** Whether the rendered runtime entry has a Kiro-supported stdio transport. */
+  kiroProjectable?: boolean;
 }
 
 export interface RuntimeHookIdentity {
@@ -117,6 +119,8 @@ export interface EffectivePolicyContext {
   targets?: readonly string[];
   /** Whether this invocation can emit managed adapter actions at all. */
   projectorsEnabled?: boolean;
+  /** Exact runtime reason when projectors are intentionally unavailable. */
+  projectorDisabledReason?: "vibe-posture";
   mcpIdentities?: Readonly<Record<string, RuntimeMcpIdentity>>;
   hookIdentities?: Readonly<Record<string, RuntimeHookIdentity>>;
   /** Exact AIH-shipped control identities, built from live catalog + owned hooks. */
@@ -132,6 +136,8 @@ export interface CandidateProjectionState {
   coverage: "complete" | "blocked";
   ownership:
     | "managed-settings-receipt"
+    | "kiro-mcp-receipt"
+    | "managed-settings-and-kiro-mcp-receipt"
     | "usage-hook-receipt"
     | "hook-registrar-receipt"
     | "unavailable";
@@ -167,10 +173,59 @@ export interface EffectivePolicyCandidate {
   };
   dangerCodes: PolicyDangerCode[];
   blockingCodes: ResolutionBlockCode[];
+  /** Actionable resolver diagnostics; danger codes remain the stable policy fence. */
+  resolutionReasons: string[];
   clarification?: string;
   annotation?: string;
   lifecycle: "supported" | "deprecated" | "retired";
   projection: CandidateProjectionState;
+}
+
+function candidateResolutionReasons(
+  policy: OrgPolicy,
+  candidate: Candidate,
+  projection: CandidateProjectionState,
+  context: EffectivePolicyContext,
+): string[] {
+  if (context.projectorsEnabled === false) {
+    return [
+      context.projectorDisabledReason === "vibe-posture"
+        ? "projector-disabled-at-vibe-posture"
+        : "projector-disabled-for-invocation",
+    ];
+  }
+  if (
+    candidate.kind === "mcp" &&
+    (candidate.source.type === "stdio" || candidate.source.type === "remote")
+  ) {
+    return [`custom-${candidate.source.type}-source-is-authorable-only`];
+  }
+
+  const reasons: string[] = [];
+  if (candidate.kind === "mcp" && policy.mcp?.allowManagedOnly !== true) {
+    reasons.push("managed-only-projector-disabled-by-policy");
+  }
+  if (candidate.kind === "mcp" && candidate.source.type === "mcp") {
+    const identity = context.mcpIdentities?.[candidate.source.server];
+    if (identity === undefined || identity.subject !== candidate.source.subject) {
+      reasons.push("runtime-mcp-identity-mismatch");
+    } else if (!identity.projectable) {
+      reasons.push("runtime-mcp-entry-is-not-projectable");
+    }
+  }
+
+  const unavailable = projection.requestedTargets.filter(
+    (target) => !projection.availableTargets.includes(target),
+  );
+  if (unavailable.length > 0) reasons.push(`target-not-selected:${unavailable.join(",")}`);
+  const unsupported = projection.requestedTargets.filter(
+    (target) => !projection.supportedTargets.includes(target),
+  );
+  if (unsupported.length > 0) reasons.push(`target-not-supported:${unsupported.join(",")}`);
+  if (projection.coverage === "blocked" && reasons.length === 0) {
+    reasons.push("projector-unavailable-for-candidate");
+  }
+  return sortedUnique(reasons);
 }
 
 export interface EffectiveOrgPolicy {
@@ -349,13 +404,22 @@ function projectorFor(
         receipt: "unavailable",
       };
     }
+    const kiroProjectable =
+      candidate.source.type !== "mcp" ||
+      context.mcpIdentities?.[candidate.source.server]?.kiroProjectable !== false;
+    const supportedTargets = kiroProjectable ? ["claude", "kiro"] : ["claude"];
     return {
       projector: candidate.projector,
       requestedTargets: requested,
-      supportedTargets: ["claude"],
+      supportedTargets,
       availableTargets,
-      coverage: projectionCoverage(requested, ["claude"], availableTargets),
-      ownership: "managed-settings-receipt",
+      coverage: projectionCoverage(requested, supportedTargets, availableTargets),
+      ownership:
+        requested.length === 1 && requested[0] === "kiro"
+          ? "kiro-mcp-receipt"
+          : requested.includes("kiro")
+            ? "managed-settings-and-kiro-mcp-receipt"
+            : "managed-settings-receipt",
       receipt: "pending-projection",
     };
   }
@@ -402,7 +466,7 @@ function completeCoverage(projection: CandidateProjectionState, candidate: Candi
     projection.coverage === "complete" &&
     projection.requestedTargets.every((target) => supported.has(target) && available.has(target)) &&
     projection.requestedTargets.every((target) =>
-      candidate.targets.includes(target as "claude" | "codex"),
+      candidate.targets.includes(target as "claude" | "codex" | "kiro"),
     )
   );
 }
@@ -413,10 +477,15 @@ function aihShippedEvidence(
 ): EvidenceRecord | undefined {
   const sourceDigest = candidateIdentityDigest(candidate);
   const reviewed = context.aihReviewedControls?.[candidate.id];
+  const candidateAtShippedTargetCoverage = {
+    ...candidate,
+    targets: reviewed?.control.targets ?? candidate.targets,
+  };
   if (
     reviewed === undefined ||
     reviewed.controlDigest !== reviewedControlDigest(reviewed.control) ||
-    reviewed.controlDigest !== reviewedControlDigest(candidate)
+    reviewed.controlDigest !== reviewedControlDigest(candidateAtShippedTargetCoverage) ||
+    !candidate.targets.every((target) => reviewed.control.targets.includes(target))
   ) {
     return undefined;
   }
@@ -542,7 +611,8 @@ function matchingApproval(
   if (
     !requestedTargets.every(
       (target) =>
-        (target === "claude" || target === "codex") && authority.receipt.targets.includes(target),
+        (target === "claude" || target === "codex" || target === "kiro") &&
+        authority.receipt.targets.includes(target),
     )
   ) {
     return { code: "approval-scope-mismatch" };
@@ -564,6 +634,7 @@ function resolveCandidate(
   const dangerCodes: PolicyDangerCode[] = [];
   const blockingCodes: ResolutionBlockCode[] = [];
   const projection = projectorFor(candidate, requestedTargets, context);
+  const resolutionReasons = candidateResolutionReasons(policy, candidate, projection, context);
   const sourceDigest = candidateIdentityDigest(candidate);
 
   for (const finding of candidate.findings) if (isUnwaivable(finding)) dangerCodes.push(finding);
@@ -625,7 +696,8 @@ function resolveCandidate(
     authority !== undefined &&
     !requestedTargets.every(
       (target) =>
-        (target === "claude" || target === "codex") && authority.receipt.targets.includes(target),
+        (target === "claude" || target === "codex" || target === "kiro") &&
+        authority.receipt.targets.includes(target),
     )
   ) {
     // Receipt-wide target coverage constrains verified evidence too, not just
@@ -710,6 +782,7 @@ function resolveCandidate(
     ...(revocation === undefined ? {} : { revocation }),
     dangerCodes: uniqueDangerCodes,
     blockingCodes: uniqueBlockingCodes,
+    resolutionReasons,
     ...((activation?.clarification ?? candidate.clarification)
       ? { clarification: activation?.clarification ?? candidate.clarification }
       : {}),

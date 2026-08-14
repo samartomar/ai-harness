@@ -169,18 +169,32 @@ describe("stalePruneSet — never-prune invariants", () => {
     expect(paths(set).some((p) => p.includes("RULE_ROUTER"))).toBe(false);
   });
 
-  it("only flags aih-namespaced Kiro hooks, never user/team hooks", () => {
+  it("flags only exact current or legacy aih Kiro hooks, never user/team hooks", () => {
     marker("claude");
     adapter("claude");
     adapter("kiro");
     write(".kiro/steering/00-canon.md"); // kiro's exclusive bootloader
     write(".kiro/steering/agent-tools.md"); // aih-generated steering extra
-    write(".kiro/hooks/aih-tests-on-edit.kiro.hook"); // aih-owned
+    write(".kiro/hooks/aih-tests-on-edit.json"); // current aih-owned hook
+    write(".kiro/hooks/aih-tests-on-edit.kiro.hook"); // legacy aih-owned hook
+    write(".kiro/hooks/aih-custom.json"); // NOT an aih-owned hook
+    write(".kiro/hooks/aih-custom.kiro.hook"); // NOT an aih-owned legacy hook
+    write(".kiro/hooks/aih-tests-on-edit.txt"); // NOT a hook format
     write(".kiro/hooks/team-custom.kiro.hook"); // NOT aih-owned
-    const p = paths(stalePruneSet(ctx()));
+    const set = stalePruneSet(ctx());
+    const p = paths(set);
+    expect(p).toContain(".kiro/hooks/aih-tests-on-edit.json");
     expect(p).toContain(".kiro/hooks/aih-tests-on-edit.kiro.hook");
     expect(p).toContain(".kiro/steering/agent-tools.md");
+    expect(p).not.toContain(".kiro/hooks/aih-custom.json");
+    expect(p).not.toContain(".kiro/hooks/aih-custom.kiro.hook");
+    expect(p).not.toContain(".kiro/hooks/aih-tests-on-edit.txt");
     expect(p).not.toContain(".kiro/hooks/team-custom.kiro.hook");
+    expect(
+      set.artifacts
+        .filter((artifact) => artifact.kind === "kiro-hook")
+        .every((artifact) => artifact.disposition === "advisory"),
+    ).toBe(true);
   });
 });
 

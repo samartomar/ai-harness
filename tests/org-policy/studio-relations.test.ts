@@ -100,7 +100,7 @@ describe("policy studio component relations", () => {
         .filter((host) => host.policyTarget)
         .map((host) => host.id)
         .sort(),
-    ).toEqual(["claude", "codex"]);
+    ).toEqual(["claude", "codex", "kiro"]);
     const window = studio();
     const rail = window.document.getElementById("rail-hosts")?.textContent ?? "";
     for (const cli of ids) expect(rail, cli).toContain(cli);

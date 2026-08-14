@@ -68,11 +68,12 @@ describe("bootstrap-ai fleet regeneration (#507)", () => {
         `ai-coding/adapters/${orphan}.md`,
         adapterNote(orphan as "gemini" | "kiro", "ai-coding", "compact"),
       );
-      const orphanExtras =
-        orphan === "kiro"
-          ? [".kiro/steering/agent-tools.md", ".kiro/hooks/aih-session.kiro.hook"]
-          : [];
-      for (const path of orphanExtras) put(root, path, "generated orphan\n");
+      const removableOrphanExtras = orphan === "kiro" ? [".kiro/steering/agent-tools.md"] : [];
+      const unreceiptedOrphanExtras =
+        orphan === "kiro" ? [".kiro/hooks/aih-tests-on-edit.json"] : [];
+      for (const path of [...removableOrphanExtras, ...unreceiptedOrphanExtras]) {
+        put(root, path, "generated orphan\n");
+      }
       const bootloader = cli === "claude" ? "CLAUDE.md" : "AGENTS.md";
       put(root, bootloader, "# Operator header\n\nKeep this note.\n");
       const ctx = context(root, cli);
@@ -87,10 +88,14 @@ describe("bootstrap-ai fleet regeneration (#507)", () => {
 
       const swept = await executePlan(await pruneCommand.plan(ctx), ctx);
       expect(swept.removed.map((entry) => entry.path)).toEqual(
-        expect.arrayContaining([`ai-coding/adapters/${orphan}.md`, ...orphanExtras]),
+        expect.arrayContaining([`ai-coding/adapters/${orphan}.md`, ...removableOrphanExtras]),
       );
       expect(existsSync(join(root, "ai-coding", "adapters", `${orphan}.md`))).toBe(false);
-      for (const path of orphanExtras) expect(existsSync(join(root, path))).toBe(false);
+      for (const path of removableOrphanExtras) expect(existsSync(join(root, path))).toBe(false);
+      for (const path of unreceiptedOrphanExtras) {
+        expect(swept.removed.map((entry) => entry.path)).not.toContain(path);
+        expect(existsSync(join(root, path))).toBe(true);
+      }
 
       const second = await executePlan(await command.plan(ctx), ctx);
       expect(generatedBytes(root, cli)).toEqual(firstBytes);

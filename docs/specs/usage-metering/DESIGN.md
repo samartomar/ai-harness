@@ -43,7 +43,7 @@ Those four landed, so the "usages" + cross-project feedback loop the report arc 
 | `aggregateUsage(events)` → tools / commits / token/cache counters / skills{top, bySource} / mcp{servers,tools} | `src/usage/aggregate.ts` | ✅ |
 | Recorder `.aih/usage-record.mjs` (`node … <tool> skill <name> <ecc\|canon\|user>`) | `src/usage/capture.ts` | ✅ |
 | **Universal git floor** (`post-commit` hook → commit events for ANY tool + `aih track --apply`) | `aih usage --apply` | ✅ |
-| Per-tool hook generators (`TOOL_HOOK`: claude PostToolUse, kiro `.kiro.hook`, codex, cursor, gemini, copilot, windsurf, opencode, kimi, antigravity) | `src/usage/hooks.ts` | ✅ |
+| Per-tool hook generators (`TOOL_HOOK`: claude PostToolUse, kiro standalone v1 JSON, codex, cursor, gemini, copilot, windsurf, opencode, kimi, antigravity) | `src/usage/hooks.ts` | ✅ |
 | Zed `threads.db` importer (read-only SQLite → `.aih/usage.jsonl`) | `src/usage/zed.ts` | ✅ |
 | Legacy report usage panel | `src/report/usage.ts` | ✅ |
 
@@ -66,8 +66,10 @@ node .aih/usage-record.mjs <tool> skill <name> <ecc|canon|user>
 - **claude** — merge a `PostToolUse` hook into `.claude/settings.json` (idempotent, additive to
   existing hooks). Fires on every tool call; captures `mcp__<server>__<tool>` (→ `kind:mcp`) and
   `Task`/subagent + Skill calls (→ `kind:skill`/`tool`). Highest-fidelity surface.
-- **kiro** — `.kiro/hooks/*.kiro.hook` Run Command (aih already generates Kiro hooks elsewhere —
-  reuse that path).
+- **kiro** — standalone v1 `.kiro/hooks/*.json` command action only after the explicit
+  `--kiro-hook-runtime ide1-cli3` capability is selected for Kiro IDE 1.x or Kiro CLI 3.x. Kiro
+  CLI 2.x embeds hooks in each custom-agent JSON file; AIH does not mutate arbitrary agents or
+  overwrite a pre-existing reserved hook filename.
 - **codex / cursor / gemini / opencode / windsurf / copilot / kimi / antigravity** — per the
   `TOOL_HOOK` map; wire **only targeted/installed** CLIs (detection-gated), using each tool's
   repo-local hook surface (`.github/hooks/*.json` for Copilot, `.agents/hooks.json` for

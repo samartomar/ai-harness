@@ -6,6 +6,59 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.3.0] - 2026-08-13
+
+### Added
+
+- Governed ECC materialization for the single `kiro` target now includes evidence-passed selected
+  `agent:*` components with exact pinned Kiro mappings. Each mapped agent copies the selected
+  `agents/<name>.md` bytes to `.kiro/agents/<name>.md` for the IDE representation and the curated
+  `.kiro/agents/<name>.json` bytes for CLI configuration. Both stay under the existing
+  selected-component and `runtime:ecc-kiro` evidence binding; an unmapped agent is refused by name.
+  Reapply is deterministic;
+  narrowing and uninstall remove only unchanged receipt-owned files; an operator's same-name
+  Markdown/JSON definition or case-folded spelling refuses without mutation. Non-empty embedded MCP
+  or hook configuration, settings, scripts, and the native installer remain excluded.
+
+## [5.2.1] - 2026-08-13
+
+### Fixed
+
+- `aih ecc --lifecycle` help now lists Kiro alongside the other governed targets and states the
+  verified Kiro boundary: evidence-passed `baseline:rules` and `skill:*` selections only.
+- Blocked organization-policy candidates keep the stable `missing-projector` and
+  `unsupported-target` danger codes while also reporting the actionable resolver cause. In
+  particular, custom stdio MCP sources are authorable-only until AIH has an
+  integrity-enforcing materializer, and `vibe` invocations say directly that the posture disabled
+  projection.
+
+## [5.2.0] - 2026-08-13
+
+### Added
+
+- Kiro is now a first-class governed MCP target. Reviewed stdio controls selected for Kiro are
+  distributed to `.kiro/settings/mcp.json` through a separate receipt that owns only the exact
+  `mcpServers` names AIH added. Reprojection is deterministic; deselection, prune, and uninstall
+  subtract only unchanged owned entries; collisions, drift, malformed paths, and linked paths fail
+  closed without taking operator content. This is workspace distribution, not managed enforcement:
+  a Kiro custom agent can still override or decline workspace MCP configuration.
+- Kiro adoption now inventories steering, hooks, custom-agent definitions, skills, prompts, MCP
+  settings, CLI settings, and specs. Every `.kiro/agents/**` definition, including Markdown, and
+  runtime settings remain operator-owned; `--migrate-cli` can preserve Kiro steering, skills,
+  prompts, and specs in the canon.
+
+### Changed
+
+- `--detect` now recognizes the documented `kiro-cli` executable while keeping `kiro` as the one
+  public target id. `--kiro-hook-runtime ide1-cli3` explicitly enables and persists standalone v1
+  `.kiro/hooks/*.json` projection with current PascalCase triggers for Kiro IDE 1.x and Kiro CLI
+  3.x; unknown runtimes and CLI 2.x remain advisory. AIH does not mutate embedded custom-agent
+  hooks, overwrite a pre-existing reserved hook filename, or infer deletion ownership from current
+  or legacy hook names; prune and uninstall surface those files for manual review.
+- Policy authoring, activation, approval, effective-resolution, and projector coverage can target
+  Kiro for AIH-reviewed stdio MCP controls. Claude managed settings remain a separate lifecycle,
+  and Kiro does not gain unsupported hook or governed ECC agent/command projection.
+
 ## [5.1.0] - 2026-08-10
 
 ### Added
@@ -2202,7 +2255,10 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v5.1.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v5.3.0...HEAD
+[5.3.0]: https://github.com/samartomar/ai-harness/compare/v5.2.1...v5.3.0
+[5.2.1]: https://github.com/samartomar/ai-harness/compare/v5.2.0...v5.2.1
+[5.2.0]: https://github.com/samartomar/ai-harness/compare/v5.1.0...v5.2.0
 [5.1.0]: https://github.com/samartomar/ai-harness/compare/v5.0.0...v5.1.0
 [5.0.0]: https://github.com/samartomar/ai-harness/compare/v4.0.0...v5.0.0
 [4.0.0]: https://github.com/samartomar/ai-harness/compare/v3.4.0...v4.0.0

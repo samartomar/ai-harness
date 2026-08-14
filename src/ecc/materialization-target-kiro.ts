@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdirSync } from "node:fs";
 import { isAbsolute } from "node:path";
+import { type Node, parseTree } from "jsonc-parser";
 import { z } from "zod";
 import { type BaselineTreeHash, hashComponentTree } from "../baseline-evidence/hash.js";
 import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
@@ -26,6 +27,7 @@ import { eccComponentSourcePaths } from "./materialize.js";
 
 const SHA40 = /^[a-f0-9]{40}$/;
 const REPOSITORY = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+const MAX_KIRO_AGENT_JSON_DEPTH = 100;
 
 const ProvenanceSchema = z
   .object({
@@ -356,6 +358,13 @@ function assertSupportedComponent(component: ParsedComponent): void {
     }
     return;
   }
+  if (component.id.startsWith("agent:")) {
+    const expected = `agents/${component.id.slice("agent:".length)}.md`;
+    if (component.provenance.componentPath !== expected) {
+      fail("agent provenance does not match the selected component");
+    }
+    return;
+  }
   fail(`unsupported Kiro component ${displaySafe(component.id)}`);
 }
 
@@ -405,14 +414,14 @@ function inspectDirectDirectory(sourceRoot: string, relative: string) {
   }
 }
 
-function expectedFile(runtime: BaselineTreeHash, path: string) {
-  return runtime.files.find((file) => file.path === path);
+function expectedFile(tree: BaselineTreeHash, path: string) {
+  return tree.files.find((file) => file.path === path);
 }
 
-function readExactRuntimeFile(sourceRoot: string, runtime: BaselineTreeHash, path: string): Buffer {
+function readExactVerifiedFile(sourceRoot: string, tree: BaselineTreeHash, path: string): Buffer {
   const normalized = assertOwnedRelativePath(path);
-  const expected = expectedFile(runtime, normalized);
-  if (expected === undefined) fail("projected Kiro file is absent from runtime evidence");
+  const expected = expectedFile(tree, normalized);
+  if (expected === undefined) fail("projected Kiro file is absent from its evidence tree");
   const inspected = inspectContainedRelativePath(sourceRoot, normalized);
   if (inspected.state !== "present" || inspected.kind !== "file" || inspected.stats.nlink !== 1) {
     fail("projected Kiro file is not a safe regular file");
@@ -439,9 +448,25 @@ function projectedFile(
   return {
     path,
     kind: "copy-file",
-    contents: readExactRuntimeFile(sourceRoot, runtimeTreeHash, path),
+    contents: readExactVerifiedFile(sourceRoot, runtimeTreeHash, path),
     contentAuthorization: runtime,
     contentSourcePath: path,
+  };
+}
+
+function projectedSelectedFile(
+  sourceRoot: string,
+  selectedTreeHash: BaselineTreeHash,
+  selected: BaselineAuthorization,
+  sourcePath: string,
+  destinationPath: string,
+): EccVerifiedKiroFile {
+  return {
+    path: destinationPath,
+    kind: "copy-file",
+    contents: readExactVerifiedFile(sourceRoot, selectedTreeHash, sourcePath),
+    contentAuthorization: selected,
+    contentSourcePath: sourcePath,
   };
 }
 
@@ -458,6 +483,146 @@ function skillFiles(
     fail("Kiro skill must contain exactly one direct regular SKILL.md file");
   }
   return [projectedFile(sourceRoot, runtimeTreeHash, runtime, `${relative}/SKILL.md`)];
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function assertEmptyAgentRuntimeField(
+  configuration: Record<string, unknown>,
+  field: "hooks" | "mcpServers",
+): void {
+  if (!Object.hasOwn(configuration, field)) return;
+  const value = configuration[field];
+  if (!isPlainObject(value) || Object.keys(value).length !== 0) {
+    fail(`Kiro agent ${field} configuration is outside governed materialization`);
+  }
+}
+
+function assertNoDuplicateJsonKeys(text: string): void {
+  const root = parseTree(text);
+  if (root === undefined) {
+    fail("Kiro agent configuration is not valid JSON");
+  }
+  const pending: Node[] = [root];
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (node === undefined) break;
+    if (node.type === "object") {
+      const seen = new Set<string>();
+      for (const property of node.children ?? []) {
+        const name = property.children?.[0]?.value;
+        if (typeof name === "string") {
+          if (seen.has(name)) {
+            fail(`Kiro agent configuration contains duplicate key ${displaySafe(name)}`);
+          }
+          seen.add(name);
+        }
+        const value = property.children?.[1];
+        if (value !== undefined) pending.push(value);
+      }
+      continue;
+    }
+    for (const child of node.children ?? []) pending.push(child);
+  }
+}
+
+function assertBoundedJsonNesting(text: string): void {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (const character of text) {
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+    if (character === "{" || character === "[") {
+      depth += 1;
+      if (depth > MAX_KIRO_AGENT_JSON_DEPTH) {
+        fail("Kiro agent configuration exceeds the JSON nesting boundary");
+      }
+      continue;
+    }
+    if (character === "}" || character === "]") depth -= 1;
+  }
+}
+
+function assertKiroAgentConfiguration(contents: Buffer, name: string): void {
+  let text: string;
+  let configuration: unknown;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(contents);
+  } catch {
+    fail("Kiro agent configuration is not valid UTF-8");
+  }
+  assertBoundedJsonNesting(text);
+  try {
+    configuration = JSON.parse(text);
+  } catch {
+    fail("Kiro agent configuration is not valid JSON");
+  }
+  assertNoDuplicateJsonKeys(text);
+  if (!isPlainObject(configuration) || configuration.name !== name) {
+    fail("Kiro agent configuration identity does not match the selected component");
+  }
+  assertEmptyAgentRuntimeField(configuration, "mcpServers");
+  assertEmptyAgentRuntimeField(configuration, "hooks");
+  if (configuration.includeMcpJson === true || configuration.useLegacyMcpJson === true) {
+    fail("Kiro agent MCP inheritance is outside governed materialization");
+  }
+}
+
+function agentFiles(
+  sourceRoot: string,
+  component: ParsedComponent,
+  selectedTreeHash: BaselineTreeHash,
+  runtimeTreeHash: BaselineTreeHash,
+  runtime: BaselineAuthorization,
+): EccVerifiedKiroFile[] {
+  const id = component.id;
+  const name = id.slice("agent:".length);
+  const jsonPath = `.kiro/agents/${name}.json`;
+  const markdownSourcePath = `agents/${name}.md`;
+  const markdownDestinationPath = `.kiro/agents/${name}.md`;
+  if (kiroAgentMappingState(sourceRoot, id) === "absent") {
+    fail(`no pinned Kiro agent configuration exists for ${displaySafe(id)}`);
+  }
+  const json = projectedFile(sourceRoot, runtimeTreeHash, runtime, jsonPath);
+  assertKiroAgentConfiguration(json.contents, name);
+  return [
+    json,
+    projectedSelectedFile(
+      sourceRoot,
+      selectedTreeHash,
+      component.authorization as BaselineAuthorization,
+      markdownSourcePath,
+      markdownDestinationPath,
+    ),
+  ];
+}
+
+export function kiroAgentMappingState(
+  sourceRoot: string,
+  id: string,
+): "present" | "absent" | "unsafe" {
+  if (!id.startsWith("agent:")) return "absent";
+  const name = id.slice("agent:".length);
+  const inspected = inspectContainedRelativePath(sourceRoot, `.kiro/agents/${name}.json`);
+  if (inspected.state === "absent") return "absent";
+  return inspected.state === "present" && inspected.kind === "file" && inspected.stats.nlink === 1
+    ? "present"
+    : "unsafe";
 }
 
 function steeringFiles(
@@ -482,6 +647,7 @@ function steeringFiles(
 function componentFiles(
   sourceRoot: string,
   component: ParsedComponent,
+  selectedTreeHash: BaselineTreeHash,
   runtimeTreeHash: BaselineTreeHash,
   runtime: BaselineAuthorization,
 ): EccVerifiedKiroFile[] {
@@ -491,7 +657,19 @@ function componentFiles(
   if (component.id.startsWith("skill:")) {
     return skillFiles(sourceRoot, component.id, runtimeTreeHash, runtime);
   }
+  if (component.id.startsWith("agent:")) {
+    return agentFiles(sourceRoot, component, selectedTreeHash, runtimeTreeHash, runtime);
+  }
   return fail(`unsupported Kiro component ${displaySafe(component.id)}`);
+}
+
+/**
+ * The semantic name Kiro assigns to a direct workspace agent definition.
+ * JSON and Markdown are the two evidenced representations of that one name.
+ * The lifecycle admits its exact owned pair and refuses any other sibling.
+ */
+export function kiroAgentSemanticIdentity(path: string): string | undefined {
+  return /^\.kiro\/agents\/([^/]+)\.(?:json|md)$/.exec(destinationIdentity(path))?.[1];
 }
 
 export function foldedKiroProjectionCollision(
@@ -535,8 +713,14 @@ export function resolveVerifiedKiroMaterialization(
       runtime,
       component.provenance,
     );
-    selectedTree(parsed.sourceRoot, component);
-    const files = componentFiles(parsed.sourceRoot, component, runtimeTreeHash, runtime);
+    const selectedTreeHash = selectedTree(parsed.sourceRoot, component);
+    const files = componentFiles(
+      parsed.sourceRoot,
+      component,
+      selectedTreeHash,
+      runtimeTreeHash,
+      runtime,
+    );
     for (const file of files) {
       assertEccMaterializationEvidenceBinding({
         id: component.id,

@@ -290,7 +290,7 @@ const SupportedCliListSchema = z
       });
     }
   });
-const PolicyTargetSchema = z.enum(["claude", "codex"]);
+const PolicyTargetSchema = z.enum(["claude", "codex", "kiro"]);
 
 export function enterpriseSupportedClisJsonSchemaConstraint(): Record<string, unknown> {
   // JSON Schema conditional keyword; computed so this helper result is not a thenable.
@@ -502,7 +502,7 @@ const PolicyCandidateSchema = z
     capabilities: z.array(SafePolicyTextSchema).max(20).default([]),
     risks: z.array(SafePolicyTextSchema).max(20).default([]),
     source: CandidateSourceSchema,
-    targets: z.array(PolicyTargetSchema).min(1).max(2),
+    targets: z.array(PolicyTargetSchema).min(1).max(3),
     projector: z.enum([
       "mcp-managed-settings",
       "hook-managed-settings",
@@ -541,10 +541,24 @@ const PolicyCandidateSchema = z
         message: "built-in MCP candidate id must exactly match source.server",
       });
     }
-    if (candidate.kind === "mcp" && candidate.targets.some((target) => target !== "claude")) {
+    if (
+      candidate.kind === "mcp" &&
+      candidate.targets.some((target) => target !== "claude" && target !== "kiro")
+    ) {
       ctx.addIssue({
         code: "custom",
-        message: "MCP managed-settings candidates support Claude targets only",
+        message:
+          "MCP managed-settings candidates support Claude targets only; Kiro workspace distribution is also supported",
+      });
+    }
+    if (
+      candidate.kind === "mcp" &&
+      candidate.source.type === "remote" &&
+      candidate.targets.includes("kiro")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Kiro MCP projection supports stdio catalog entries only",
       });
     }
     if (candidate.kind === "hook" && candidate.source.type !== "hook") {
@@ -594,7 +608,7 @@ const PolicyActivationSchema = z
   .object({
     candidate: SafePolicyIdentifierSchema,
     state: z.enum(["active", "disabled"]),
-    targets: z.array(PolicyTargetSchema).min(1).max(2),
+    targets: z.array(PolicyTargetSchema).min(1).max(3),
     clarification: SafePolicyTextSchema.optional(),
   })
   .strict();
@@ -622,7 +636,7 @@ export const PolicyApprovalSchema = z
      * can never satisfy a waivable evidence gap; when present it is signed.
      */
     clarification: SafePolicyTextSchema.optional(),
-    scope: z.array(PolicyTargetSchema).min(1).max(2),
+    scope: z.array(PolicyTargetSchema).min(1).max(3),
     notBefore: IsoTimestampSchema,
     expiresAt: IsoTimestampSchema,
     github: z

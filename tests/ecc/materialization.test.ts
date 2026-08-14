@@ -35,6 +35,7 @@ import {
 import {
   planEccComponentSubtraction,
   planEccMaterialization,
+  readBoundedKiroAgentPaths,
 } from "../../src/ecc/materialization-plan.js";
 import {
   ECC_MATERIALIZATION_RECEIPT_PATH,
@@ -52,6 +53,16 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
+});
+
+it("bounds Kiro agent collision inventory before accepting an oversized directory", () => {
+  const agents = join(root, ".kiro", "agents");
+  mkdirSync(agents, { recursive: true });
+  for (const name of ["one.json", "two.json", "three.json"]) {
+    writeFileSync(join(agents, name), "{}\n", "utf8");
+  }
+
+  expect(() => readBoundedKiroAgentPaths(root, 2)).toThrow(/Kiro agent.*oversized/i);
 });
 
 const SKILL_PATH = ".claude/skills/tdd-workflow/SKILL.md";

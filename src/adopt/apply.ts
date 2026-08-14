@@ -19,6 +19,7 @@ import { extractManagedBlock, splitManagedBody } from "../internals/markers.js";
 import { type Action, type PlanContext, writeJson, writeText } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { repoDisplayName } from "../internals/repo-name.js";
+import { kiroHookRuntime } from "../kiro/runtime.js";
 import { scanRepo } from "../profile/scan.js";
 import type { CanonClassification } from "./classify.js";
 
@@ -33,6 +34,7 @@ const BOOTLOADER_CLI: ReadonlyArray<readonly [Cli, string]> = [
   ["claude", "CLAUDE.md"],
   ["codex", "AGENTS.md"],
   ["gemini", "GEMINI.md"],
+  ["kiro", ".kiro/steering/00-canon.md"],
 ];
 
 /** The CLIs whose root bootloader already exists in the repo (what adopt converges). */
@@ -103,14 +105,19 @@ export async function adoptApplyActions(
   const extension = carveExtension(ctx, cls, dir);
   const carving = extension.length > 0;
 
-  // Converge EVERY existing bootloader (not just default `claude`), so the repo
-  // actually reaches already-adopted and re-runs are no-ops. Thread the targets
-  // through ctx so bootstrap-ai regenerates each one.
+  // Converge EVERY existing bootloader and union any explicit/marker/detected
+  // target. The bare first-run Claude fallback must not broaden a repo whose only
+  // existing bootloader is another host, but `--cli kiro` must survive alongside
+  // an existing AGENTS.md instead of being overwritten by the Codex inference.
   const existing = existingBootloaderTargets(ctx.root);
-  const applyCtx: PlanContext = existing.length > 0 ? { ...ctx, targets: existing } : ctx;
+  const requested = await resolveTargets(ctx);
+  const clis =
+    requested.bareDefault && existing.length > 0
+      ? existing
+      : [...new Set([...existing, ...requested.clis])];
+  const applyCtx: PlanContext = { ...ctx, targets: clis };
 
   const base = await bootstrapAiCommand.plan(applyCtx);
-  const { clis } = await resolveTargets(applyCtx);
   const baseline = resolveBaselineSource(applyCtx.options, readAihConfigBaseline(applyCtx.root));
   const routerRel = posix.join(dir, "RULE_ROUTER.md");
 
@@ -153,16 +160,19 @@ export async function adoptApplyActions(
   // Persist intent so the next run reads already-adopted (merge keeps adopt.acknowledged).
   // `targets` is replaced with the converged set — never array-unioned with a stale
   // marker — so a later scoped `bootstrap-ai --cli` narrow stays narrowed (#506).
+  const hookRuntime = clis.includes("kiro") ? kiroHookRuntime(ctx) : "unknown";
   actions.push(
     writeJson(
       AIH_CONFIG_FILE,
-      aihConfigJson(dir, clis, baseline.id),
+      aihConfigJson(dir, clis, baseline.id, hookRuntime === "unknown" ? undefined : hookRuntime),
       "persist adopt intent (context-dir + targets)",
       {
         merge: true,
         replaceJsonKeys: ["targets"],
-        removeJsonTopLevelKeys:
-          ctx.options.baseline === DEFAULT_BASELINE_SOURCE_ID ? ["baseline"] : undefined,
+        removeJsonTopLevelKeys: [
+          ...(ctx.options.baseline === DEFAULT_BASELINE_SOURCE_ID ? ["baseline"] : []),
+          ...(!clis.includes("kiro") ? ["kiroHookRuntime"] : []),
+        ],
       },
     ),
   );
