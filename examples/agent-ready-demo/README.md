@@ -1,5 +1,8 @@
 # AI-Harness Agent-Ready Demo
 
+> Public demo data only. No customer data, no private org telemetry, no real user activity,
+> and no production export.
+
 A deliberately small Node.js repository for demonstrating the AI-Harness first-run experience without using proprietary application code.
 
 This is a **source-checkout-only** demo. It is not included in the npm package; clone this repository and build its CLI before copying the demo to a temporary directory.
