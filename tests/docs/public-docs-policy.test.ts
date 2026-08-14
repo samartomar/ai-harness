@@ -9,6 +9,26 @@ function read(path: string): string {
 }
 
 describe("public docs policy", () => {
+  it("keeps the agent-ready demo source-scoped and cross-platform", () => {
+    const demo = read("examples/agent-ready-demo/README.md");
+
+    expect(demo).toContain("source-checkout-only");
+    expect(demo).toContain(`mktemp -d "\${TMPDIR:-/tmp}/aih-demo.XXXXXX"`);
+    expect(demo).toContain('"aih-demo-$([guid]::NewGuid())"');
+    expect(demo.match(/Get-ChildItem -File -Recurse/gu)).toHaveLength(2);
+    expect(demo).toContain('node "$repo_root/dist/cli.js" doctor .');
+    expect(demo).toContain('node (Join-Path $repoRoot "dist/cli.js") doctor .');
+    expect(
+      demo.match(
+        /git -c user\.name="AIH Demo" -c user\.email="aih-demo@example\.invalid" commit -m "chore: seed demo"/gu,
+      ),
+    ).toHaveLength(2);
+    expect(demo).toContain("What this demo demonstrates");
+    expect(demo).toContain("writes the supported repository-owned setup selected by the plan");
+    expect(demo).not.toContain("What this demo proves");
+    expect(demo).not.toContain("mkdir -p /tmp/aih-demo");
+  });
+
   it("keeps the documented scrub command aligned with published public docs roots", () => {
     const policy = read("PUBLIC_DOCS_POLICY.md");
     const pkg = JSON.parse(read("package.json")) as { files?: string[] };
