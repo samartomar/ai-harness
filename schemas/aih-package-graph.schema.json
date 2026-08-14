@@ -491,4 +491,3 @@
   "title": "aih-package-graph.schema.json",
   "$comment": "This JSON Schema validates the portable editor structure. Use PackageGraphSchema.parse for semantic invariants including identity uniqueness, direct-member resolution, and evidence subject-digest binding."
 }
-

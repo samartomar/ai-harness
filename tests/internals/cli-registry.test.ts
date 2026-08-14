@@ -57,6 +57,20 @@ describe("CLI registry", () => {
     });
   });
 
+  it("keeps the Kiro runtime contract exact for case-sensitive filesystems", () => {
+    expect(entry("kiro")).toMatchObject({
+      binaries: ["kiro-cli"],
+      configDirs: [".kiro"],
+      loadsDirectory: ".kiro/steering",
+      mcp: {
+        support: "native",
+        configPath: ".kiro/settings/mcp.json",
+        configKey: "mcpServers",
+        configFormat: "json",
+      },
+    });
+  });
+
   it("classifies MCP integration as native (aih writes) vs fallback (aih guides)", () => {
     const writes = SUPPORTED_CLIS.filter((c) => entry(c).mcp.support === "native");
     const guides = SUPPORTED_CLIS.filter((c) => entry(c).mcp.support === "fallback");
@@ -73,6 +87,9 @@ describe("CLI registry", () => {
     expect(entry("claude").binaries).toEqual(["claude"]);
     expect(entry("antigravity").configDirs).toContain(".antigravity");
     expect(entry("windsurf").configDirs).toContain(".codeium/windsurf");
+    // `kiro` can be an optional IDE/CLI command router; `kiro-cli` is the
+    // documented executable that unambiguously proves the CLI is installed.
+    expect(entry("kiro").binaries).toEqual(["kiro-cli"]);
   });
 
   it("bootloadersFor dedupes the AGENTS.md convention (codex/opencode/zed/kimi)", () => {

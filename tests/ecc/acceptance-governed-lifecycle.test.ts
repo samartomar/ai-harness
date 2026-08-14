@@ -3,10 +3,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
 import type {
   BaselineAuthorization,
   BaselineHeldComponent,
 } from "../../src/baseline-evidence/verify.js";
+import type { EccComponentId } from "../../src/ecc/components.js";
 import { walkManagedRoot } from "../../src/ecc/install-manifest.js";
 import {
   applyEccMaterialization,
@@ -23,6 +25,8 @@ import {
   type EccClaudeMaterializationResult,
   resolveEccClaudeMaterialization,
 } from "../../src/ecc/materialization-target-claude.js";
+import { resolveVerifiedKiroMaterialization } from "../../src/ecc/materialization-target-kiro.js";
+import { eccComponentSourcePaths } from "../../src/ecc/materialize.js";
 import { resolveEffectiveOrgPolicy } from "../../src/org-policy/effective.js";
 import { orgPolicyPath, readOrgPolicy } from "../../src/org-policy/schema.js";
 
@@ -99,6 +103,8 @@ const SOURCE_TREE: Readonly<Record<string, string | Buffer>> = {
   "rules/common/coding-style.md": "# coding style\n",
   ".mcp.json": '{"mcpServers":{}}\n',
   "mcp-configs/mcp-servers.json": '{"servers":{}}\n',
+  ".kiro/agents/code-reviewer.json":
+    '{"name":"code-reviewer","mcpServers":{},"hooks":{},"prompt":"CLI agent"}\n',
 };
 
 /** Operator content on the destination root, present before anything is applied. */
@@ -453,5 +459,71 @@ describe("acceptance — the governed framework lifecycle on a temporary fixture
       expect(bytesAt(root, path).equals(bytes), path).toBe(true);
     }
     expect(readFileSync(orgPolicyPath(root, {})).equals(policyBefore)).toBe(true);
+  });
+});
+
+describe("acceptance — Kiro IDE and CLI variants share one governed target", () => {
+  it("Kiro IDE and CLI variants share one governed target", () => {
+    const id = "agent:code-reviewer";
+    const selectedAuthorization: BaselineAuthorization = {
+      ...authorization(id),
+      treeSha256: hashComponentTree(sourceRoot, eccComponentSourcePaths(id as EccComponentId))
+        .treeSha256,
+    };
+    const runtimeAuthorization: BaselineAuthorization = {
+      ...authorization("runtime:ecc-kiro"),
+      treeSha256: hashComponentTree(sourceRoot, [".kiro"]).treeSha256,
+    };
+    const resolve = () =>
+      resolveVerifiedKiroMaterialization({
+        sourceRoot,
+        components: [
+          {
+            id: id as EccComponentId,
+            authorization: selectedAuthorization,
+            provenance: {
+              repository: REPOSITORY,
+              commit: COMMIT,
+              componentPath: "agents/code-reviewer.md",
+            },
+          },
+        ],
+        evidence: {
+          authorizations: [selectedAuthorization, runtimeAuthorization],
+          held: [],
+        },
+      });
+    const destinations = [".kiro/agents/code-reviewer.json", ".kiro/agents/code-reviewer.md"];
+
+    const target = resolve();
+    expect(target.components).toHaveLength(1);
+    expect(target.components[0]?.files.map((file) => file.path)).toEqual(destinations);
+    const before = snapshot(root);
+    expect(previewEccMaterialization({ root, components: target.components }).write).toHaveLength(
+      2,
+    );
+    expect(snapshot(root)).toEqual(before);
+
+    expect(applyEccMaterialization({ root, components: target.components }).written).toHaveLength(
+      2,
+    );
+    expect(
+      bytesAt(root, destinations[0] as string).equals(
+        bytesAt(sourceRoot, destinations[0] as string),
+      ),
+    ).toBe(true);
+    expect(
+      bytesAt(root, destinations[1] as string).equals(
+        bytesAt(sourceRoot, "agents/code-reviewer.md"),
+      ),
+    ).toBe(true);
+    const settled = snapshot(root);
+    expect(applyEccMaterialization({ root, components: resolve().components }).written).toEqual([]);
+    expect(snapshot(root)).toEqual(settled);
+
+    const removed = uninstallEccMaterialization(root);
+    expect(removed.removed.map((entry) => entry.path).sort()).toEqual([...destinations].sort());
+    for (const destination of destinations)
+      expect(existsSync(join(root, ...destination.split("/")))).toBe(false);
   });
 });

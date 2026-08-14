@@ -296,26 +296,26 @@ function kiroCustodyIssue(binding: {
   if (!path.startsWith(".kiro/") || operation !== "copy-file") {
     return "unsupported Kiro materialization operation or path";
   }
-  if (contentSourcePath !== path) {
-    return "unsupported Kiro materialization without exact direct-copy content source";
-  }
-
   const segments = path.split("/");
   const separator = id.indexOf(":");
   const kind = id.slice(0, separator);
   const name = id.slice(separator + 1);
+  if (kind === "agent") {
+    const file = segments[2];
+    if (segments.length !== 3 || segments[1] !== "agents") {
+      return "unsupported Kiro materialization agent custody";
+    }
+    if (file === `${name}.json` && contentSourcePath === path) return undefined;
+    if (file === `${name}.md` && contentSourcePath === `agents/${name}.md`) return undefined;
+    return "unsupported Kiro materialization agent custody";
+  }
+  if (contentSourcePath !== path) {
+    return "unsupported Kiro materialization without exact direct-copy content source";
+  }
   if (kind === "skill") {
     return segments.length >= 4 && segments[1] === "skills" && segments[2] === name
       ? undefined
       : "unsupported Kiro materialization skill custody";
-  }
-  if (kind === "agent") {
-    const file = segments[2];
-    return segments.length === 3 &&
-      segments[1] === "agents" &&
-      (file === `${name}.md` || file === `${name}.json`)
-      ? undefined
-      : "unsupported Kiro materialization agent custody";
   }
   if (id === "baseline:rules") {
     const file = segments[2] ?? "";
@@ -370,11 +370,16 @@ function materializationEvidenceBindingIssue(binding: {
     ...(contentSourcePath === undefined ? {} : { contentSourcePath }),
   });
   if (custodyIssue !== undefined) return custodyIssue;
+  const selectedAgentMarkdown =
+    id.startsWith("agent:") &&
+    path === `.kiro/agents/${id.slice("agent:".length)}.md` &&
+    contentSourcePath === `agents/${id.slice("agent:".length)}.md`;
+  const expectedContentComponent = selectedAgentMarkdown ? id : ECC_KIRO_RUNTIME_COMPONENT_ID;
   if (contentAuthorization === undefined) {
-    return `governed Kiro bytes require ${ECC_KIRO_RUNTIME_COMPONENT_ID} content authorization`;
+    return `governed Kiro bytes require ${expectedContentComponent} content authorization`;
   }
-  if (contentAuthorization.componentId !== ECC_KIRO_RUNTIME_COMPONENT_ID) {
-    return `governed Kiro bytes require exact ${ECC_KIRO_RUNTIME_COMPONENT_ID} content authorization`;
+  if (contentAuthorization.componentId !== expectedContentComponent) {
+    return `governed Kiro bytes require exact ${expectedContentComponent} content authorization`;
   }
   if (!sameRepository(contentAuthorization.source, provenance.repository)) {
     return "content authorization repository does not match provenance";
@@ -397,9 +402,17 @@ function materializationEvidenceBindingIssue(binding: {
   if (contentAuthorization.issuer !== authorization.issuer) {
     return "selected and content authorization issuers do not match";
   }
-  // Trees and acceptance decisions are component-scoped. The selected content
-  // and the Kiro runtime must retain their own tree and acceptance identities;
-  // only their common evidence document and trust issuer are bound here.
+  if (
+    selectedAgentMarkdown &&
+    (contentAuthorization.treeSha256 !== authorization.treeSha256 ||
+      contentAuthorization.effective !== authorization.effective ||
+      JSON.stringify(contentAuthorization.acceptance) !== JSON.stringify(authorization.acceptance))
+  ) {
+    return "selected Markdown content authorization differs from selected evidence";
+  }
+  // Runtime-derived content retains its runtime-scoped tree and acceptance.
+  // Selected Markdown is the selected component's own byte tree, so the
+  // stronger equality above applies to that one direct-copy representation.
   return undefined;
 }
 

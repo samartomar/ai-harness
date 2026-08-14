@@ -8,7 +8,7 @@
 [![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-339933.svg)](package.json)
 
 <p align="center">
-  <img src="docs/assets/aih-overview.svg" alt="aih v5.1.0 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
+<img src="docs/assets/aih-overview.svg" alt="aih v5.3.0 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
 </p>
 
 A cross-platform CLI that helps prepare developer workstations and repositories for
@@ -51,8 +51,8 @@ Install and verify a published release. Current releases publish npm provenance 
 checksums and a keyless cosign bundle:
 
 ```bash
-npm install -g @aihq/harness@5.1.0      # then run: aih --help
-aih verify-release 5.1.0   # checks npm signatures, GitHub release sums, and cosign evidence for 5.1.0
+npm install -g @aihq/harness@5.3.0      # then run: aih --help
+aih verify-release 5.3.0   # checks npm signatures, GitHub release sums, and cosign evidence for 5.3.0
 ```
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs
@@ -295,7 +295,7 @@ aih bootstrap-ai --cli claude       # writes CLAUDE.md (the default target, auto
 # repeatable declarations add to detection and the prior machine union
 aih ecc --cli claude,codex --with framework:react --with lang:typescript
 aih superpowers --cli antigravity   # verify exact pin; guidance only (no mutable plugin exec)
-aih bootstrap-ai --cli kiro         # Kiro: .kiro/steering/00-canon.md (inclusion: always)
+aih bootstrap-ai --cli kiro --kiro-hook-runtime ide1-cli3  # Kiro IDE1/CLI3 hooks opt-in
 aih bootstrap-ai --detect           # target only the CLIs installed here
 aih init . --all-tools              # bootstrap a repo for every CLI at once
 ```
@@ -312,17 +312,36 @@ documents how to point it at `RULE_ROUTER.md`.
 deepest case (schemas verified against [Kiro's docs](https://kiro.dev/docs/steering/) and ECC's
 real `.kiro/` tree):
 
-- `aih bootstrap-ai --cli kiro` → `.kiro/steering/agent-tools.md` (stack-aware CLI usage) +
-  stack-aware `.kiro/hooks/*.kiro.hook` files (`aih-secret-scan-on-create`, `aih-tests-on-edit`,
-  `aih-quality-gate` running the repo's real lint/test) in Kiro's real hook schema.
+- `aih bootstrap-ai --cli kiro` → `.kiro/steering/agent-tools.md` (stack-aware CLI usage).
+  Add `--kiro-hook-runtime ide1-cli3` to project standalone v1 `.kiro/hooks/*.json` hooks for
+  secret scan, tests-on-edit, and metrics-on-stop; the explicit capability is persisted for doctor.
+  Those hook files load in Kiro IDE 1.x and Kiro CLI 3.x. Kiro CLI 2.x keeps hooks inside each
+  custom-agent definition, so AIH does not mutate an arbitrary agent or claim hook coverage there.
+  A pre-existing reserved hook filename is never overwritten, and prune/uninstall leave current or
+  legacy hook names advisory because a filename alone cannot prove AIH ownership.
+- `aih bootstrap-ai --detect` recognizes the documented `kiro-cli` executable. The public target
+  remains `kiro`; bare `kiro` is not treated as proof of the CLI because it can be an IDE/CLI router.
+- `aih adopt --migrate-cli` inventories Kiro steering, hooks, custom-agent definitions, skills,
+  prompts, settings, and specs. Every `.kiro/agents/**` definition, including Markdown, remains
+  operator-owned runtime configuration; steering, skills, prompts, and specs can move into the canon.
+- `aih policy project` can distribute reviewed stdio MCP selections to
+  `.kiro/settings/mcp.json` under receipt ownership of exact server names. It preserves unrelated
+  workspace configuration and never calls that managed enforcement: custom agents may override or
+  opt out of workspace MCP inheritance.
 - `aih ecc --cli kiro` → emits scoped consult guidance; Kiro's native installer cannot yet
   materialize the component union safely, so aih does not run it.
 - In a governed repository, `aih ecc --lifecycle install --cli kiro` is a separate AIH-owned
-  path: it projects only evidence-passed selected skills and steering from the exact pinned source,
-  under dual selected/runtime evidence and receipt ownership. It does not run or adopt the native
-  installer, project agents/hooks/settings/scripts, or claim that Kiro loaded the files.
+  path: it projects only evidence-passed selected agents with an exact pinned Kiro mapping, skills,
+  and steering from the exact pinned source, under dual selected/runtime evidence and receipt
+  ownership. A mapped agent lands as its exact selected `.kiro/agents/<name>.md` IDE representation
+  and curated `.kiro/agents/<name>.json` CLI configuration; an unmapped agent is reported by name,
+  while a pre-existing same-name Markdown/JSON definition, including a
+  case-folded spelling on a case-sensitive filesystem, is refused rather than overwritten. It does
+  not run or adopt the native installer or project hooks/settings/scripts.
 - `aih superpowers --cli kiro` → `.kiro/steering/superpowers-methodology.md` (the
   brainstorm → plan → TDD → review routing, since Kiro can't load `~/.claude/superpowers`).
+
+<!-- aih:claim CM-58 -->
 
 **Detection** (`--detect`) targets runnable CLI binaries on PATH — and it is the *only* thing that
 does. Nothing on your machine changes what a bare run targets: runnable binaries need `--detect`,

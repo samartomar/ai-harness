@@ -20,7 +20,7 @@ const SafeId = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 const Sha256 = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 const Repository = z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
 const IsoTimestamp = z.string().refine((value) => Number.isFinite(Date.parse(value)));
-const Target = z.enum(["claude", "codex"]);
+const Target = z.enum(["claude", "codex", "kiro"]);
 
 const ReceiptEvidenceSchema = z
   .object({
@@ -74,7 +74,7 @@ export const PolicyAuthorityReceiptSchema = z
     approvals: z.array(PolicyApprovalSchema).default([]),
     revocations: z.array(ReceiptRevocationSchema).default([]),
     /** Receipt-wide control coverage, checked against every active activation. */
-    targets: z.array(Target).min(1).max(2),
+    targets: z.array(Target).min(1).max(3),
   })
   .strict()
   .superRefine((receipt, ctx) => {

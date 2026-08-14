@@ -438,6 +438,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Run `aih usage --apply` and commit `.aih/usage-record.mjs` so a fresh clone has the recorder the hooks invoke (it is kept out of the `.aih/*` ignore by design).",
   },
+  "usage.kiro-hook-runtime-unverified": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "Kiro standalone hook runtime is unverified",
+    action:
+      "Use Kiro IDE 1.x or start Kiro CLI 3 with `kiro-cli --v3`, review any agent migration, then rerun with `--kiro-hook-runtime ide1-cli3`; AIH does not modify CLI 2.x custom-agent hooks.",
+  },
   "usage.metrics-tool-missing": {
     audience: "developer",
     failSeverity: "degraded",

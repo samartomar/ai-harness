@@ -8,8 +8,8 @@
 1. Install from npm or an internal mirror and verify the release:
 
    ```bash
-   npm install -g @aihq/harness@5.1.0
-   aih verify-release 5.1.0
+npm install -g @aihq/harness@5.3.0
+aih verify-release 5.3.0
    ```
 
    `aih verify-release` is the provenance gate for a global install. Do not add a
@@ -24,7 +24,7 @@
    leg rather than a pass — a skipped leg is incomplete evidence, not a successful
    rollout gate.
    For a major-version upgrade, install the approved explicit version (currently
-   `npm install -g @aihq/harness@5.1.0`); `npm update -g` may stay within the
+`npm install -g @aihq/harness@5.3.0`); `npm update -g` may stay within the
    existing major. If a broken global install blocks replacement, rerun the install
    with `--force` only after reviewing the global npm prefix and confirming the
    package source is approved.

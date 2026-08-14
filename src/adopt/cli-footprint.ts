@@ -67,7 +67,7 @@ export interface CliFootprint {
   importCandidates: number;
 }
 
-type LocKind = "rule-file" | "rule-dir" | "content-dir" | "runtime";
+type LocKind = "rule-file" | "rule-dir" | "content-dir" | "runtime" | "runtime-config-dir";
 interface Loc {
   cli: string;
   rel: string;
@@ -93,6 +93,11 @@ const LOCATIONS: Loc[] = [
   { cli: "cursor", rel: ".cursor/rules", kind: "rule-dir", label: "rules" },
   { cli: "kiro", rel: ".kiro/steering", kind: "rule-dir", label: "steering" },
   { cli: "kiro", rel: ".kiro/hooks", kind: "runtime", label: "hooks" },
+  { cli: "kiro", rel: ".kiro/agents", kind: "runtime-config-dir", label: "agent config" },
+  { cli: "kiro", rel: ".kiro/skills", kind: "content-dir", label: "skills" },
+  { cli: "kiro", rel: ".kiro/prompts", kind: "content-dir", label: "prompts" },
+  { cli: "kiro", rel: ".kiro/settings/mcp.json", kind: "runtime", label: "MCP settings" },
+  { cli: "kiro", rel: ".kiro/settings/cli.json", kind: "runtime", label: "CLI settings" },
   { cli: "kiro", rel: ".kiro/specs", kind: "content-dir", label: "specs" },
   { cli: "windsurf", rel: ".windsurfrules", kind: "rule-file", label: "windsurfrules" },
   { cli: "windsurf", rel: ".windsurf/rules", kind: "rule-dir", label: "rules" },
@@ -208,6 +213,19 @@ function classifyContentDir(loc: Loc, full: string, fp: Fp): CliArtifact | undef
   };
 }
 
+/** Report Kiro custom-agent definitions separately so migration cannot copy them into canon. */
+function classifyRuntimeConfigDir(loc: Loc, full: string, fp: Fp): CliArtifact | undefined {
+  const files = safeWalkFiles(fp.root, full);
+  if (files.length === 0) return undefined;
+  return {
+    cli: loc.cli,
+    path: `${loc.rel}/**`,
+    kind: "runtime-config",
+    disposition: "runtime",
+    detail: `${files.length} ${loc.label} file(s) — tool runtime (left as-is)`,
+  };
+}
+
 function classifyRuntime(loc: Loc, full: string, fp: Fp): CliArtifact | undefined {
   if (!safePathExists(fp.root, full)) return undefined;
   return {
@@ -239,6 +257,7 @@ export function cliFootprint(
     if (loc.kind === "rule-file") a = classifyRuleFile(loc, full, fp);
     else if (loc.kind === "rule-dir") a = classifyRuleDir(loc, full, fp);
     else if (loc.kind === "content-dir") a = classifyContentDir(loc, full, fp);
+    else if (loc.kind === "runtime-config-dir") a = classifyRuntimeConfigDir(loc, full, fp);
     else a = classifyRuntime(loc, full, fp);
     if (a) artifacts.push(a);
   }

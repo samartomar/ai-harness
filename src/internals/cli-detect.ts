@@ -31,6 +31,20 @@ export function homeDir(ctx: PlanContext): string {
   return ctx.env.USERPROFILE || ctx.env.HOME || homedir();
 }
 
+/**
+ * Resolve a CLI-native global config directory. Kiro's KIRO_HOME is itself the
+ * `.kiro` root, unlike HOME which is the parent of every other registry path.
+ */
+function configDirPath(ctx: PlanContext, cli: Cli, rel: string): { path: string; detail: string } {
+  const kiroHome = ctx.env.KIRO_HOME?.trim();
+  if (cli === "kiro" && kiroHome) {
+    if (rel === ".kiro") return { path: kiroHome, detail: "KIRO_HOME" };
+    const suffix = rel.startsWith(".kiro/") ? rel.slice(".kiro/".length) : rel;
+    return { path: join(kiroHome, suffix), detail: `KIRO_HOME/${suffix}` };
+  }
+  return { path: join(homeDir(ctx), rel), detail: `~/${rel}` };
+}
+
 /** Is `name` resolvable on PATH? Uses `where` (Windows) / `which` (POSIX) via the Runner. */
 async function binaryOnPath(ctx: PlanContext, name: string): Promise<boolean> {
   const argv = ctx.host.platform === "windows" ? ["where", name] : ["which", name];
@@ -41,10 +55,10 @@ async function binaryOnPath(ctx: PlanContext, name: string): Promise<boolean> {
 /** Detect one CLI: config dir wins (cheap, deterministic), else a PATH probe. */
 export async function detectOne(ctx: PlanContext, cli: Cli): Promise<CliPresence> {
   const sig = entry(cli);
-  const home = homeDir(ctx);
   for (const rel of sig.configDirs) {
-    if (existsSync(join(home, rel)))
-      return { cli, present: true, via: "config", detail: `~/${rel}` };
+    const config = configDirPath(ctx, cli, rel);
+    if (existsSync(config.path))
+      return { cli, present: true, via: "config", detail: config.detail };
   }
   for (const bin of sig.binaries) {
     if (await binaryOnPath(ctx, bin)) return { cli, present: true, via: "binary", detail: bin };
@@ -81,15 +95,15 @@ export interface CliInstall {
  * leftover. Async — one PATH probe per binary through the Runner seam.
  */
 export async function detectInstall(ctx: PlanContext): Promise<CliInstall[]> {
-  const home = homeDir(ctx);
   return Promise.all(
     SUPPORTED_CLIS.map(async (cli): Promise<CliInstall> => {
       const sig = entry(cli);
       const out: CliInstall = { cli, config: false, binary: false };
       for (const rel of sig.configDirs) {
-        if (existsSync(join(home, rel))) {
+        const config = configDirPath(ctx, cli, rel);
+        if (existsSync(config.path)) {
           out.config = true;
-          out.configDetail = `~/${rel}`;
+          out.configDetail = config.detail;
           break;
         }
       }
@@ -111,11 +125,11 @@ export async function detectInstall(ctx: PlanContext): Promise<CliInstall[]> {
  * binary isn't worth it — reuses the same {@link SIGNALS} config dirs.
  */
 export function detectClisByConfig(ctx: PlanContext): CliPresence[] {
-  const home = homeDir(ctx);
   return SUPPORTED_CLIS.map((cli) => {
     for (const rel of entry(cli).configDirs) {
-      if (existsSync(join(home, rel)))
-        return { cli, present: true, via: "config", detail: `~/${rel}` };
+      const config = configDirPath(ctx, cli, rel);
+      if (existsSync(config.path))
+        return { cli, present: true, via: "config", detail: config.detail };
     }
     return { cli, present: false };
   });
