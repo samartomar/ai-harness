@@ -101,4 +101,4 @@ a follow-up evidence change.
 - RED checkpoint: `9e7cfc26 test: require safe Snyk qualification workflow`
 - GREEN checkpoint: `4038b6f6 ci: qualify Snyk on a synthetic fixture`
 - Review RED checkpoint: `0543802e test: harden Snyk qualification evidence`
-- Review GREEN checkpoint: recorded by the remediation commit after focused and repository gates pass
+- Review GREEN checkpoint: `a5f3605c fix: protect Snyk qualification evidence`
