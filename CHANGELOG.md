@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- Activated the governed Snyk Agent Scan 0.5.17 integration after a protected `main` qualification
+  completed the detector against a generated synthetic fixture and emitted a commit-bound sanitized
+  receipt. This qualifies the governed adapter path; it does not claim arbitrary scanned content is
+  safe. The public run and artifact digest are recorded in the external-pin ledger.
+
 ## [5.4.0] - 2026-08-14
 
 ### Added
