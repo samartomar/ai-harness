@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Organization-policy evaluation now preserves shipped projector capabilities when posture disables
+  an invocation. A Vibe Kiro workspace-MCP candidate reports `supported=claude,kiro` and
+  `available=kiro` while remaining blocked with the existing `missing-projector`,
+  `unsupported-target`, and `projector-disabled-at-vibe-posture` diagnostics. Unsupported custom
+  materializers still report `supported=none`.
+
 ## [5.3.0] - 2026-08-13
 
 ### Added

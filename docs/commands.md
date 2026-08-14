@@ -765,6 +765,13 @@ materialization and rollback lifecycle; policy evaluation and projection never c
 commands. Unsafe inputs, collisions, missing projectors, unsupported targets, and all unwaivable danger
 codes remain blocked.
 
+The target-coverage triplet separates capability from invocation state: `supported` lists targets with
+a shipped projector adapter for that candidate, `available` lists targets selected in the current
+runtime, and `complete` or `blocked` says whether the requested projection can execute now. For example,
+Vibe posture can report `supported=claude,kiro; available=kiro; blocked`: the Kiro workspace adapter
+exists, but posture intentionally disabled this invocation. Custom stdio candidates without an
+integrity-enforcing materializer continue to report `supported=none`.
+
 Custom evidence and approvals require `.aih/policy-authority-receipt.json`, a regular-file receipt that
 has passed `gh attestation verify` against the **out-of-band organization authority** named by
 `AIH_POLICY_AUTHORITY_REPOSITORY`; deployments can additionally constrain the exact signing workflow with

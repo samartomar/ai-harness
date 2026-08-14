@@ -371,6 +371,29 @@ function projectionCoverage(
     : "blocked";
 }
 
+function projectorSupportedTargets(
+  candidate: Candidate,
+  context: EffectivePolicyContext,
+): string[] {
+  if (candidate.kind === "mcp" && candidate.projector === "mcp-managed-settings") {
+    // A package/version/integrity declaration identifies the intended custom
+    // process but is not an integrity-enforcing materializer. Until AIH owns
+    // that lifecycle, it remains authorable/reportable and cannot project.
+    if (candidate.source.type === "stdio" || candidate.source.type === "remote") return [];
+    const kiroProjectable =
+      candidate.source.type !== "mcp" ||
+      context.mcpIdentities?.[candidate.source.server]?.kiroProjectable !== false;
+    return kiroProjectable ? ["claude", "kiro"] : ["claude"];
+  }
+  if (candidate.kind === "hook" && candidate.projector === "hook-managed-settings") {
+    return ["claude"];
+  }
+  if (candidate.kind === "hook" && candidate.projector === "usage-hook") {
+    return ["claude", "codex"];
+  }
+  return [];
+}
+
 function projectorFor(
   candidate: Candidate,
   requestedTargets: readonly string[],
@@ -378,11 +401,12 @@ function projectorFor(
 ): CandidateProjectionState {
   const availableTargets = runtimeTargets(context);
   const requested = sortedUnique(requestedTargets);
+  const supportedTargets = projectorSupportedTargets(candidate, context);
   if (context.projectorsEnabled === false) {
     return {
       projector: candidate.projector,
       requestedTargets: requested,
-      supportedTargets: [],
+      supportedTargets,
       availableTargets,
       coverage: "blocked",
       ownership: "unavailable",
@@ -390,10 +414,7 @@ function projectorFor(
     };
   }
   if (candidate.kind === "mcp" && candidate.projector === "mcp-managed-settings") {
-    // A package/version/integrity declaration identifies the intended custom
-    // process but is not an integrity-enforcing materializer. Until AIH owns
-    // that lifecycle, it remains authorable/reportable and cannot project.
-    if (candidate.source.type === "stdio" || candidate.source.type === "remote") {
+    if (supportedTargets.length === 0) {
       return {
         projector: candidate.projector,
         requestedTargets: requested,
@@ -404,10 +425,6 @@ function projectorFor(
         receipt: "unavailable",
       };
     }
-    const kiroProjectable =
-      candidate.source.type !== "mcp" ||
-      context.mcpIdentities?.[candidate.source.server]?.kiroProjectable !== false;
-    const supportedTargets = kiroProjectable ? ["claude", "kiro"] : ["claude"];
     return {
       projector: candidate.projector,
       requestedTargets: requested,
@@ -430,9 +447,9 @@ function projectorFor(
     return {
       projector: candidate.projector,
       requestedTargets: requested,
-      supportedTargets: ["claude"],
+      supportedTargets,
       availableTargets,
-      coverage: projectionCoverage(requested, ["claude"], availableTargets),
+      coverage: projectionCoverage(requested, supportedTargets, availableTargets),
       ownership: "hook-registrar-receipt",
       receipt: "pending-projection",
     };
@@ -441,9 +458,9 @@ function projectorFor(
     return {
       projector: candidate.projector,
       requestedTargets: requested,
-      supportedTargets: ["claude", "codex"],
+      supportedTargets,
       availableTargets,
-      coverage: projectionCoverage(requested, ["claude", "codex"], availableTargets),
+      coverage: projectionCoverage(requested, supportedTargets, availableTargets),
       ownership: "usage-hook-receipt",
       receipt: "pending-projection",
     };

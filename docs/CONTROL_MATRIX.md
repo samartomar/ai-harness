@@ -89,6 +89,11 @@ CM-58 diagnostic amendment: blocked projector evaluations retain the stable
 `missing-projector` and `unsupported-target` danger codes and also name the
 resolver cause: a disabled invocation, an unselected or unsupported target, or
 an authorable-only custom source that has no integrity-enforcing materializer.
+The `supported` field remains the candidate's shipped adapter capability even
+when posture disables the invocation; `available` remains the selected runtime
+target set, and coverage stays `blocked`. Thus a Vibe Kiro evaluation reports
+`supported=claude,kiro; available=kiro; blocked`, while an unsupported custom
+stdio materializer still reports `supported=none`.
 The proof is `tests/ecc/command.test.ts` (`lists every governed lifecycle target
 and scopes Kiro to rules and skills`), `tests/org-policy/effective.test.ts`
 (`names vibe posture when it disables the requested projector`, `explains that a custom Kiro stdio source has no
