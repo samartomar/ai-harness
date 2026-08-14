@@ -11,8 +11,12 @@
 <img src="docs/assets/aih-overview.svg" alt="aih v5.3.0 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
 </p>
 
-A cross-platform CLI that helps prepare developer workstations and repositories for
-**reviewable, governed AI-assisted coding in enterprise environments** — from
+Use the coding agent that fits your workflow. `aih` is a cross-platform CLI that
+prepares developer workstations and repositories for **reviewable, governed
+AI-assisted coding**, with repository-owned context, supported guardrails,
+governed capability workflows, and verification surfaces.
+
+It supports enterprise environments ranging from
 locked-down, TLS-intercepted networks to open ones. It extracts corporate trust,
 tunes local inference, adds repo guardrails, wires up MCP / observability /
 sandboxing, and lays down a tool-agnostic context architecture — all from one
