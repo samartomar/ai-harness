@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "verifiedAt": "2026-08-14",
+  "verifiedAtPolicy": "verifiedAt is the date of the last reconciliation that covered EVERY entry, not the freshest evidence in the file. A single-surface re-vet records its own date inside that entry's reason and deliberately does not move this field, so an entry reason may legitimately postdate verifiedAt; reading this field as the latest documented verification overstates what was checked.",
   "historicalEvidencePolicy": "Archived receipts, dated plans, prior releases, and old acceptance evidence are immutable history and are not repinned by this ledger.",
   "integrityCoveragePolicy": "An entry's integrity hash is assumed to cover the artifact that actually executes. When it does not — the distributed package is a launcher that fetches its real payload at run time — the entry must set integrityCovers to \"launcher-only\" and its reason must name the unrecorded hop. A launcher-only entry may not be declared egress \"none\" in src/mcp/servers.ts: provisioning is real egress even when steady-state operation is local.",
   "entries": [

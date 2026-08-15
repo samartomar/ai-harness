@@ -47,6 +47,7 @@ const ledger = JSON.parse(
 ) as {
   schemaVersion: number;
   verifiedAt: string;
+  verifiedAtPolicy: string;
   historicalEvidencePolicy: string;
   integrityCoveragePolicy: string;
   entries: LedgerEntry[];
@@ -127,7 +128,13 @@ describe("active external-pin ledger", () => {
 
   it("binds refreshed MCP and repo-tool runtimes to production generators", () => {
     expect(ledger.schemaVersion).toBe(1);
+    // Scope, not staleness: `verifiedAt` dates the last reconciliation that covered
+    // EVERY entry, so a single-surface re-vet records its date in that entry's reason
+    // and leaves this pinned (see #716/#723, which did exactly that). The policy string
+    // is asserted beside it so the distinction cannot be dropped without a failing test.
     expect(ledger.verifiedAt).toBe("2026-08-14");
+    expect(ledger.verifiedAtPolicy).toMatch(/covered EVERY entry/);
+    expect(ledger.verifiedAtPolicy).toMatch(/does not move this field/i);
     expect(ledger.historicalEvidencePolicy).toMatch(/immutable history/i);
 
     // The ECC pin is 32 untagged commits past v2.1.0, which is still ECC's
