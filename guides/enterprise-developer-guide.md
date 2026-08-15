@@ -82,7 +82,7 @@ workstation or base image:
 
 ```powershell
 uvx code-review-graph@2.3.7 --version
-uvx codebase-memory-mcp@0.9.0 --help
+uvx codebase-memory-mcp@0.10.5 --help
 uvx --offline --no-python-downloads --no-env-file code-review-graph@2.3.7 --version
 ```
 

@@ -442,7 +442,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
       "--offline",
       "--no-python-downloads",
       "--no-env-file",
-      "codebase-memory-mcp@0.9.0",
+      "codebase-memory-mcp@0.10.5",
     ]);
     expect(typeof memory.description).toBe("string");
   });

@@ -146,9 +146,9 @@ export function coreLocalMcpServers(): Record<string, McpServer> {
     "codebase-memory-mcp": {
       type: "stdio",
       command: "uvx",
-      args: ["--offline", "--no-python-downloads", "--no-env-file", "codebase-memory-mcp@0.9.0"],
+      args: ["--offline", "--no-python-downloads", "--no-env-file", "codebase-memory-mcp@0.10.5"],
       description:
-        "Local codebase memory/knowledge graph (index_repository, search_graph, query_graph, trace_path) — memory companion to code-review-graph, served over stdio via uvx. PROVISIONING EGRESS: the pinned wheel is a launcher shim, not the payload — on first run it downloads its ~273 MB native binary from the GitHub release and executes that. --offline pins wheel resolution only and does not govern that fetch, and the recorded wheel hash does not cover the fetched binary. Steady state after provisioning is local.",
+        "Local codebase memory/knowledge graph (index_repository, search_graph, query_graph, trace_path) — memory companion to code-review-graph, served over stdio via uvx. PROVISIONING EGRESS: the pinned wheel is a launcher shim, not the payload — on first run it downloads its ~273 MB native binary from the GitHub release and executes that. --offline pins wheel resolution only and does not govern that fetch, and the recorded wheel hash does not cover the fetched binary. LOCAL LISTENER: from 0.10.0 the graph UI is always included and its HTTP listener binds 127.0.0.1:9749 by default — loopback only, never a routable address. Steady state after provisioning is otherwise local: the coordination daemon is a child of the stdio launch and does not outlive it.",
       classification: "local",
       // Not `none`: the server process itself dials github.com on first run (see the
       // description). `vendor-incumbent` names the actual destination — the ledger's
