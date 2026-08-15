@@ -6,6 +6,32 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **`aih guardrails --verify` now fails at enterprise posture when `gitleaks` is not on PATH**,
+  instead of skipping at every posture. Generation is not activation: the committed
+  `.gitleaks.toml` and pre-commit hook enforce nothing until the tool is installed, so an
+  enterprise workstation without it reported green while its local secret gate was unenforced —
+  next to `aih tools --verify` reporting every tool it knows about as present. This was the only
+  check in the guardrails plan that ignored posture. Vibe keeps the advisory skip, and CI
+  enforcement via the pinned gitleaks in `sca.yml` is unchanged and independent of local PATH.
+
+### Fixed
+
+- The org authority-registry note is no longer appended to every blocked-candidate refusal.
+  `verifyPolicyAuthorityReceipt` runs on every invocation, so its "registry unavailable" problem
+  was suffixed onto any `policy project` refusal regardless of why the candidate blocked. An
+  operator whose candidates were merely target-unselected was sent chasing
+  `AIH_POLICY_AUTHORITY_REPOSITORY`, then saw the note vanish once the selection was fixed — not
+  because the registry became reachable, but because nothing threw. It now appears only when a
+  blocked candidate's own codes depend on the registry (evidence and approval verification).
+- `aih ecc` now emits the unpinned supply-chain advisory on the consult-only path. The advisory
+  naming ECC's mutable-upstream `latest` execution and how to pin it was pushed only inside
+  `eccPlan`, which real dispatch never runs (`deps.execute = executeEccCommand`). A consult-only
+  target such as Kiro therefore recommended `npx ecc consult` — an unpinned, latest-from-npm
+  fetch — with no pinning warning at any posture, while the rest of the product denies unpinned
+  supply chains at enterprise.
+
 ## [6.0.0] - 2026-08-14
 
 ### Changed
@@ -23,13 +49,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   config — the shape `aih policy project` writes — got no pin attestation or currency verification
   at all, while the same doctor run attested those servers as declared registry members. Repos with
   a Kiro MCP config will see new findings that were previously invisible.
-- **`aih guardrails --verify` now fails at enterprise posture when `gitleaks` is not on PATH**,
-  instead of skipping at every posture. Generation is not activation: the committed
-  `.gitleaks.toml` and pre-commit hook enforce nothing until the tool is installed, so an
-  enterprise workstation without it reported green while its local secret gate was unenforced —
-  next to `aih tools --verify` reporting every tool it knows about as present. This was the only
-  check in the guardrails plan that ignored posture. Vibe keeps the advisory skip, and CI
-  enforcement via the pinned gitleaks in `sca.yml` is unchanged and independent of local PATH.
 - `aih doctor`'s org-policy effective-resolution probe is now scoped to the committed
   `.aih-config.json` target set, like the MCP-allowlist and policy-drift probes beside it. Doctor
   has no `--cli` flag, so the unscoped probe collapsed to `["claude"]` and reported a permanent
@@ -59,19 +78,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   neither was selected and `target-not-selected:claude` when only Kiro was, which read as a
   contradiction; the reason now also carries the required target set and the actual selection.
   The stable `target-not-selected:` / `target-not-supported:` prefixes are unchanged.
-- The org authority-registry note is no longer appended to every blocked-candidate refusal.
-  `verifyPolicyAuthorityReceipt` runs on every invocation, so its "registry unavailable" problem
-  was suffixed onto any `policy project` refusal regardless of why the candidate blocked. An
-  operator whose candidates were merely target-unselected was sent chasing
-  `AIH_POLICY_AUTHORITY_REPOSITORY`, then saw the note vanish once the selection was fixed — not
-  because the registry became reachable, but because nothing threw. It now appears only when a
-  blocked candidate's own codes depend on the registry (evidence and approval verification).
-- `aih ecc` now emits the unpinned supply-chain advisory on the consult-only path. The advisory
-  naming ECC's mutable-upstream `latest` execution and how to pin it was pushed only inside
-  `eccPlan`, which real dispatch never runs (`deps.execute = executeEccCommand`). A consult-only
-  target such as Kiro therefore recommended `npx ecc consult` — an unpinned, latest-from-npm
-  fetch — with no pinning warning at any posture, while the rest of the product denies unpinned
-  supply chains at enterprise.
 - `aih policy evaluate` now honors a typed `--posture`. Posture gates projector availability, so
   the command's checks are posture-scoped, but the spec omitted `honorReadOnlyPostureFlag` and the
   flag was dropped for this read-only command — every posture produced identical output reporting
