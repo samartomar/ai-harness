@@ -83,7 +83,11 @@ function safeSourceValue(
     maxBytes: MAX_SOURCE_EVIDENCE_BYTES,
   });
   if (source.state !== "present") return undefined;
-  return source.contents.toString("utf8").split(/\r?\n/)[line - 1];
+  const lines = source.contents.toString("utf8").split(/\r?\n/);
+  // split() represents a terminal newline as one synthetic trailing empty item;
+  // it is not a source line that an evidence location may address.
+  if (line > lines.length || (line === lines.length && lines.at(-1) === "")) return undefined;
+  return lines[line - 1];
 }
 
 function inferredCode(check: Check): CheckCode | undefined {
