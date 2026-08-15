@@ -1560,6 +1560,59 @@ describe("doctor — MCP uvx pin attestation (issue #502)", () => {
     expect(res?.verdict).toBe("skip");
     expect(res?.code).toBeUndefined();
   });
+
+  /**
+   * The 5.4.0 field report's coverage gap: governed servers projected into Kiro's config
+   * got no pin attestation at all because this probe read only `.mcp.json`. Kiro-declared
+   * launches must surface (config-qualified, so same-named servers stay distinguishable),
+   * and one unreadable config among several must fail the whole read closed — a bad file
+   * must never let the rest attest green while its servers go uninspected.
+   */
+  it("surfaces uvx launches declared only in .kiro/settings/mcp.json", async () => {
+    mkdirSync(join(dir, ".kiro", "settings"), { recursive: true });
+    writeFileSync(
+      join(dir, ".kiro", "settings", "mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "code-review-graph": {
+            type: "stdio",
+            command: "uvx",
+            args: ["--offline", "code-review-graph==2.3.7", "serve"],
+          },
+        },
+      }),
+    );
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP uvx pin attestation");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.pin-unattested");
+    expect(res?.detail).toContain("code-review-graph @ .kiro/settings/mcp.json");
+  });
+
+  it("fails closed when one MCP config is unreadable, even if another parses", async () => {
+    writeMcp(["--offline", "code-review-graph==2.3.7", "serve"]);
+    mkdirSync(join(dir, ".kiro", "settings"), { recursive: true });
+    writeFileSync(join(dir, ".kiro", "settings", "mcp.json"), "{ not json");
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP uvx pin attestation");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.config-invalid");
+  });
+
+  it("treats a Kiro config whose mcpServers is a non-object as invalid, not clean", async () => {
+    mkdirSync(join(dir, ".kiro", "settings"), { recursive: true });
+    writeFileSync(
+      join(dir, ".kiro", "settings", "mcp.json"),
+      JSON.stringify({ mcpServers: ["not", "a", "map"] }),
+    );
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP uvx pin attestation");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.config-invalid");
+  });
 });
 
 describe("doctor — MCP pin currency (issue #504)", () => {
@@ -1746,6 +1799,41 @@ describe("doctor — MCP pin currency (issue #504)", () => {
     const res = await probe?.run(c);
     expect(res?.verdict).toBe("skip");
     expect(res?.code).toBeUndefined();
+  });
+
+  /** Same Kiro coverage as the attestation probe: field-report gap, mirrored here. */
+  it("tracks resolver launches declared only in .kiro/settings/mcp.json", async () => {
+    mkdirSync(join(dir, ".kiro", "settings"), { recursive: true });
+    writeFileSync(
+      join(dir, ".kiro", "settings", "mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "code-review-graph": {
+            type: "stdio",
+            command: "uvx",
+            args: ["--offline", "code-review-graph==0.0.1", "serve"],
+          },
+        },
+      }),
+    );
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP pin currency");
+    const res = await probe?.run(c);
+    // A Kiro-declared pin differing from this build's catalog must surface as
+    // projection lag, exactly as it would from .mcp.json — not vanish unread.
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.projection-stale");
+    expect(res?.detail).toContain("code-review-graph @ .kiro/settings/mcp.json");
+  });
+
+  it("fails closed on an unreadable Kiro config instead of reporting clean", async () => {
+    mkdirSync(join(dir, ".kiro", "settings"), { recursive: true });
+    writeFileSync(join(dir, ".kiro", "settings", "mcp.json"), "{ not json");
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP pin currency");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("mcp.config-invalid");
   });
 });
 

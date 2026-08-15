@@ -711,3 +711,19 @@ describe("ECC baseline evidence pipeline", () => {
     expect(existsSync(source.quarantineRoot)).toBe(false);
   });
 });
+
+/**
+ * The 5.4.0 field-report fix: the unpinned supply-chain advisory lived only in
+ * `eccPlan`, which real dispatch bypasses (`deps.execute = executeEccCommand`), so
+ * consult-only targets recommended a bare latest-from-npm `npx ecc consult` with no
+ * pinning warning at any posture. The consult path must carry the advisory.
+ */
+describe("executeEccCommand — consult-only targets", () => {
+  it("emits the supply-chain advisory alongside the consult recommendation", async () => {
+    const context: PlanContext = { ...ctx(false), options: { cli: "windsurf" }, apply: false };
+    const result = await executeEccCommand(context);
+    const docs = result.docs.map((d) => d.describe).join("\n");
+    expect(docs).toContain("Install ECC for windsurf (via the consult advisor)");
+    expect(docs).toContain("supply chain — ECC runs LATEST upstream unless you pin it");
+  });
+});

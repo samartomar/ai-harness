@@ -9,6 +9,7 @@ import {
   MCP_PIN_CONFIG_FILES,
   type McpPackageResolver,
   mcpLaunchLabel,
+  mcpLaunchServerName,
   mcpResolverLike,
   mcpResolverPinState,
   npxLaunchPins,
@@ -338,7 +339,11 @@ export async function mcpPinCurrencyProbe(ctx: PlanContext): Promise<Check> {
   const baked = bakedCatalogPins();
   const projectionLag: string[] = [];
   for (const pin of tracked) {
-    const counterpart = baked.get(pin.server);
+    // The launch label is config-qualified (`name @ .kiro/settings/mcp.json`) so reports
+    // stay unambiguous across files, but the catalog is keyed by bare server name — a
+    // qualified lookup would silently exempt every Kiro-declared catalog server from the
+    // offline projection-lag comparison.
+    const counterpart = baked.get(mcpLaunchServerName(pin.server));
     if (
       counterpart === undefined ||
       basePackageName(counterpart.packageName) !== basePackageName(pin.packageName) ||
@@ -355,7 +360,7 @@ export async function mcpPinCurrencyProbe(ctx: PlanContext): Promise<Check> {
           : "ahead of"
         : "off";
     projectionLag.push(
-      `${pin.server}: .mcp.json pins ${pin.spec} but this aih build's catalog pins ${counterpart.spec} (${direction} the catalog) — run \`aih mcp --apply\` to re-project`,
+      `${pin.server}: projected pin ${pin.spec} but this aih build's catalog pins ${counterpart.spec} (${direction} the catalog) — run \`aih mcp --apply\` to re-project`,
     );
   }
   const projectionNote = projectionLag.length > 0 ? `; ${projectionLag.join("; ")}` : "";

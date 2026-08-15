@@ -6,7 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [6.0.0] - 2026-08-14
+## [6.0.1] - 2026-08-14
+
+> Ships the entire v6.0.0 cut plus one fix found while covering it. The `v6.0.0` tag was cut but
+> **never published**: its release run failed the coverage gate before pack or publish (nothing
+> reached npm and no GitHub Release exists), and release tags are deletion-protected, so per the
+> fix-forward policy the content ships as 6.0.1. There is no published 6.0.0.
 
 ### Changed
 
@@ -49,6 +54,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Doctor's pin-currency catalog comparison resolves a Kiro-declared launch by its bare server
+  name. Launch labels are config-qualified (`name @ .kiro/settings/mcp.json`) so reports stay
+  unambiguous across files, but the offline projection-lag lookup keyed on the full label, so a
+  catalog server declared only in the Kiro config was silently exempt from `mcp.projection-stale`.
+  The lag message now says "projected pin" instead of naming `.mcp.json` unconditionally.
 - Doctor's `usage.recorder-missing` remediation no longer names a command the active policy
   refuses. When governance owns the usage surface, `aih usage --apply` is rejected by design, so
   the recorder check now points at `aih policy project --apply` and names the unreceipted-hook
@@ -2374,8 +2384,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v6.0.0...HEAD
-[6.0.0]: https://github.com/samartomar/ai-harness/compare/v5.4.0...v6.0.0
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v6.0.1...HEAD
+[6.0.1]: https://github.com/samartomar/ai-harness/compare/v5.4.0...v6.0.1
 [5.4.0]: https://github.com/samartomar/ai-harness/compare/v5.3.0...v5.4.0
 [5.3.0]: https://github.com/samartomar/ai-harness/compare/v5.2.1...v5.3.0
 [5.2.1]: https://github.com/samartomar/ai-harness/compare/v5.2.0...v5.2.1
