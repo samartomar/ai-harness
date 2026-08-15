@@ -49,6 +49,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Doctor's pin-currency catalog comparison resolves a Kiro-declared launch by its bare server
+  name. Launch labels are config-qualified (`name @ .kiro/settings/mcp.json`) so reports stay
+  unambiguous across files, but the offline projection-lag lookup keyed on the full label, so a
+  catalog server declared only in the Kiro config was silently exempt from `mcp.projection-stale`.
+  The lag message now says "projected pin" instead of naming `.mcp.json` unconditionally.
 - Doctor's `usage.recorder-missing` remediation no longer names a command the active policy
   refuses. When governance owns the usage surface, `aih usage --apply` is rejected by design, so
   the recorder check now points at `aih policy project --apply` and names the unreceipted-hook

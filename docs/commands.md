@@ -1095,11 +1095,15 @@ reported as unattestable). Attestation proves what the resolved artifact self-re
 it does not prove provenance or integrity, and it executes the pinned artifact — which is why the
 live handshake is opt-in.
 
-The `mcp-pin-currency` row tracks how current those pins are. The catalog pins are compile-time
-constants, so picking up an upstream improvement lags twice by construction: the pin must be bumped
-in an aih release, and each repo must then re-project its `.mcp.json`. The row surfaces both
-halves. Offline, on every run, each exactly-pinned npx/uvx launch in `.mcp.json` is compared
-against the pin this aih build's catalog generates for the same server; a difference reports
+The `mcp-pin-currency` row tracks how current those pins are. Both this row and pin attestation
+read every repo-local MCP config with the plain `mcpServers` shape — `.mcp.json` and
+`.kiro/settings/mcp.json` — and a launch from a non-root config is reported with its file
+qualified (`name @ .kiro/settings/mcp.json`); the catalog comparison still keys on the bare
+server name, so a Kiro-declared catalog server is compared exactly like a `.mcp.json` one. The
+catalog pins are compile-time constants, so picking up an upstream improvement lags twice by
+construction: the pin must be bumped in an aih release, and each repo must then re-project its
+config. The row surfaces both halves. Offline, on every run, each exactly-pinned npx/uvx launch is
+compared against the pin this aih build's catalog generates for the same server; a difference reports
 `mcp.projection-stale` and names the fix (`aih mcp --apply`) — after an aih upgrade, that
 re-projection is the second half of a pin refresh. `--check-pin-currency` opts in to the upstream
 half: doctor queries each pin's registry for its latest release (npm via `npm view`, PyPI via its

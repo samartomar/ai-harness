@@ -239,3 +239,9 @@ export const MCP_PIN_CONFIG_FILES: readonly string[] = [".mcp.json", ".kiro/sett
 export function mcpLaunchLabel(server: string, configRel: string): string {
   return configRel === ".mcp.json" ? server : `${server} @ ${configRel}`;
 }
+
+/** Inverse of {@link mcpLaunchLabel}: the bare server name for catalog/name-keyed lookups. */
+export function mcpLaunchServerName(label: string): string {
+  const separator = label.indexOf(" @ ");
+  return separator === -1 ? label : label.slice(0, separator);
+}
