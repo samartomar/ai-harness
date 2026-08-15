@@ -435,6 +435,7 @@ describe("Check.code — invariants", () => {
       "mcp.allowlist-generation-delta": true,
       "mcp.version-drift": true,
       "mcp.pin-unattested": true,
+      "mcp.server-startup-error": true,
       "mcp.pin-stale": true,
       "mcp.projection-stale": true,
       "cli.not-detected": true,

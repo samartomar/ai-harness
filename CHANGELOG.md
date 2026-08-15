@@ -6,6 +6,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **MCP pin attestation no longer tells an operator to pre-warm a cache that is already warm.** A
+  pinned server that dies before the `initialize` handshake was always read as the cold-uv-cache
+  case, so a server that answered with a real JSON-RPC error — `codebase-memory-mcp` 0.10.4
+  refusing to create its daemon endpoint on a hardened host — had that error silently discarded and
+  was handed the `--offline`/pre-warm remedy, which cannot fix it. The probe now reads what the
+  server actually said: a reported JSON-RPC error is echoed in the detail (sanitized and
+  length-bounded like every other cross-boundary echo) and routes to the new
+  `mcp.server-startup-error` code, whose remediation points at the reported condition instead of at
+  re-attesting. A launch that dies silently still gets the cold-cache diagnosis unchanged. Both
+  states stay advisory skips — the attestation launch carries no config-supplied environment, so it
+  cannot prove the server is broken under the operator's own launch — and the pin stays unattested
+  either way.
+
 ## [6.1.0] - 2026-08-14
 
 > Remediates the 6.0.1 enterprise field report: closes the high-severity projection

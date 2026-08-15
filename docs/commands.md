@@ -1095,6 +1095,14 @@ reported as unattestable). Attestation proves what the resolved artifact self-re
 it does not prove provenance or integrity, and it executes the pinned artifact — which is why the
 live handshake is opt-in.
 
+A launch that dies before the handshake is read from what the server said, not from its exit code
+alone. Hardened pins carry `--offline`, so a silent non-zero exit on a cold uv cache names that
+cause and the one-time pre-warm remedy. When the server instead answers with a JSON-RPC `error`
+object it resolved and ran, so pre-warming cannot help: the detail echoes the reported error
+(sanitized and length-bounded) and the row routes to `mcp.server-startup-error` — still an advisory
+skip, because the attestation launch carries no config-supplied environment and cannot prove the
+server is broken under the operator's own launch. The pin stays unattested either way.
+
 The `mcp-pin-currency` row tracks how current those pins are. Both this row and pin attestation
 read every repo-local MCP config with the plain `mcpServers` shape — `.mcp.json` and
 `.kiro/settings/mcp.json` — and a launch from a non-root config is reported with its file
