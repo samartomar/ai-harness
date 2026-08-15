@@ -249,7 +249,16 @@ export async function mcpUvxPinAttestationProbe(ctx: PlanContext): Promise<Check
         : res.code !== 0
           ? `exited ${res.code} without an initialize response`
           : "no serverInfo in the initialize response";
-      unattested.push(`${launch.server} (${launch.pin.spec}): ${why}`);
+      // Hardened pins carry `--offline`, and attestation requires execution: on
+      // a cold uv cache the package cannot resolve and the launch dies before
+      // the handshake — the exact machine (a fresh workstation) that most wants
+      // attestation. Name the cause and the one-time remedy instead of leaving
+      // an undiagnosable exit code (6.0.1 field report).
+      const offlineNote =
+        launch.args.includes("--offline") && (res.spawnError || res.code !== 0)
+          ? " — the launcher pins --offline, so a cold uv cache cannot resolve the package; pre-warm it by running the launcher once without --offline, then re-run --attest-mcp-pins"
+          : "";
+      unattested.push(`${launch.server} (${launch.pin.spec}): ${why}${offlineNote}`);
     } else if (version === launch.pin.version) {
       attested.push(`${launch.server} (${launch.pin.spec})`);
     } else {

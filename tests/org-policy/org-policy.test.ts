@@ -129,7 +129,9 @@ describe("policy project", () => {
       targets: ["cursor"],
     });
 
-    expect(planned.actions).toEqual([]);
+    // The plan always carries its read-only verification probes; "no Claude
+    // artifacts" means no mutating actions.
+    expect(planned.actions.filter((action) => action.kind !== "probe")).toEqual([]);
     expect(existsSync(join(dir, ".claude", "managed-settings.json"))).toBe(false);
   });
 
@@ -151,6 +153,20 @@ describe("policy project", () => {
     await expect(policyProjectCommand.plan({ ...ctx(), apply: true })).rejects.toThrow(
       /policy project requires a committed aih-org-policy\.json/,
     );
+  });
+
+  it("emits verification probes so --verify produces a verification section", async () => {
+    // 6.0.1 field report (New 7): `--apply --verify` printed no Verification block
+    // because the plan carried zero probes — the same silent shape the 6.0.0 cut
+    // fixed for `aih secrets --verify`.
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(policy()));
+    const applied: PlanContext = { ...ctx(), apply: true, verify: true, targets: ["claude"] };
+
+    const result = await executePlan(await policyProjectCommand.plan(applied), applied);
+
+    const names = (result.report?.checks ?? []).map((check) => check.name);
+    expect(names).toContain("org policy effective resolution");
+    expect(names).toContain("usage-recorder");
   });
 
   it("migrates an older-generation managed allowlist and projection under --apply (#501)", async () => {

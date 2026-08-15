@@ -122,6 +122,32 @@ export const TOOLS: ToolSpec[] = [
     manual: "https://jqlang.github.io/jq/download/",
   },
   {
+    // `aih guardrails --verify` fails at enterprise when gitleaks is absent
+    // (guardrails.gitleaks-missing): the committed .gitleaks.toml and pre-commit
+    // hook enforce nothing without the binary. Core, so the installer that
+    // claims tool completeness covers the gate's own dependency — on 6.0.1 it
+    // claimed "nothing to install" while the gate it feeds hard-failed.
+    tool: "gitleaks",
+    bin: "gitleaks",
+    tier: "core",
+    options: [
+      {
+        pm: "winget",
+        argv: [
+          "winget",
+          "install",
+          "-e",
+          "--id",
+          "Gitleaks.Gitleaks",
+          ...WINGET_NONINTERACTIVE_FLAGS,
+        ],
+      },
+      { pm: "scoop", argv: ["scoop", "install", "gitleaks"] },
+      { pm: "brew", argv: ["brew", "install", "gitleaks"] },
+    ],
+    manual: "https://github.com/gitleaks/gitleaks#installing",
+  },
+  {
     tool: "ast-grep (sg)",
     bin: "sg",
     tier: "optional",
