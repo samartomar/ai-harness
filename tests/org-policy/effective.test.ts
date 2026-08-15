@@ -188,6 +188,43 @@ describe("headless effective org policy", () => {
     expect(effective.blocking).toBe(true);
   });
 
+  /**
+   * The multi-target activation trap: an activation declaring `["claude","kiro"]` is
+   * all-or-nothing, so selecting one target names the OTHER as not-selected. Naming only
+   * the deficit reads as a contradiction — the operator re-runs with the named target and
+   * gets the mirror error. The reason must state the full requirement and the actual
+   * selection so one run is enough to see that BOTH are needed.
+   */
+  it("names the full activation requirement and the actual selection, not just the missing target", () => {
+    const item = candidate({ targets: ["claude", "kiro"] });
+    const base = policy();
+    if (base.governance === undefined) throw new Error("expected governance fixture");
+    const effective = resolveEffectiveOrgPolicy(
+      policy({
+        governance: {
+          ...base.governance,
+          supportedClis: ["claude", "kiro"],
+          catalog: { reviewed: [item], custom: [] },
+          activations: [{ candidate: "catalog-mcp", state: "active", targets: ["claude", "kiro"] }],
+        },
+      }),
+      {
+        targets: ["kiro"],
+        aihReviewedControls: reviewedControls(["claude", "kiro"]),
+        mcpIdentities: {
+          "catalog-mcp": { subject: SUBJECT, projectable: true, kiroProjectable: true },
+        },
+      },
+    );
+    const reason = effective.candidates[0]?.resolutionReasons.find((r) =>
+      r.startsWith("target-not-selected:"),
+    );
+    // The stable machine-readable prefix must survive for existing consumers.
+    expect(reason).toMatch(/^target-not-selected:claude/);
+    expect(reason).toContain("activation requires targets claude,kiro");
+    expect(reason).toContain("selected kiro");
+  });
+
   it("explains that a custom Kiro stdio source has no integrity-enforcing materializer", () => {
     const base = policy();
     if (base.governance === undefined) throw new Error("expected governance fixture");

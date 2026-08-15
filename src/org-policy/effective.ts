@@ -214,14 +214,30 @@ function candidateResolutionReasons(
     }
   }
 
+  // Naming only the deficit reads as a contradiction when an activation declares several
+  // targets: selecting `kiro` alone reports `target-not-selected:claude`, so the operator
+  // sees a target they never asked for and re-runs with the other one, flipping the error.
+  // An activation is all-or-nothing (see `completeCoverage`), so the reason must state the
+  // full requirement against what is actually selected — both are already in scope here.
+  const requested = projection.requestedTargets.join(",") || "none";
   const unavailable = projection.requestedTargets.filter(
     (target) => !projection.availableTargets.includes(target),
   );
-  if (unavailable.length > 0) reasons.push(`target-not-selected:${unavailable.join(",")}`);
+  if (unavailable.length > 0) {
+    reasons.push(
+      `target-not-selected:${unavailable.join(",")}` +
+        ` (activation requires targets ${requested}; selected ${projection.availableTargets.join(",") || "none"})`,
+    );
+  }
   const unsupported = projection.requestedTargets.filter(
     (target) => !projection.supportedTargets.includes(target),
   );
-  if (unsupported.length > 0) reasons.push(`target-not-supported:${unsupported.join(",")}`);
+  if (unsupported.length > 0) {
+    reasons.push(
+      `target-not-supported:${unsupported.join(",")}` +
+        ` (activation requires targets ${requested}; this AIH ships projectors for ${projection.supportedTargets.join(",") || "none"})`,
+    );
+  }
   if (projection.coverage === "blocked" && reasons.length === 0) {
     reasons.push("projector-unavailable-for-candidate");
   }

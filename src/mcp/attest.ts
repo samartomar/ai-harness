@@ -5,6 +5,8 @@ import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import {
   type ExactUvxPackagePin,
+  MCP_PIN_CONFIG_FILES,
+  mcpLaunchLabel,
   mcpResolverLike,
   mcpResolverPinState,
   uvxPrimaryPin,
@@ -87,35 +89,52 @@ function envRecord(value: unknown): Record<string, string> | undefined {
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
-/** Every uvx-like stdio launch declared in the repo's root `.mcp.json`. */
+/** Every uvx-like stdio launch declared in the repo's repo-local MCP configs. */
 function readUvxLaunches(root: string): UvxConfig {
-  const raw = readRegularFile(join(root, ".mcp.json"))?.toString("utf8");
-  if (raw === undefined) return { state: "absent" };
-  let parsed: unknown;
-  try {
-    parsed = parseJsoncText(raw);
-  } catch {
-    return { state: "invalid" };
-  }
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { state: "invalid" };
-  }
-  const servers = (parsed as { mcpServers?: unknown }).mcpServers;
-  if (servers === undefined) return { state: "none" };
-  if (servers === null || typeof servers !== "object" || Array.isArray(servers)) {
-    return { state: "invalid" };
-  }
   const launches: UvxLaunch[] = [];
-  for (const [server, entry] of Object.entries(servers)) {
-    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
-    const record = entry as Record<string, unknown>;
-    const command = typeof record.command === "string" ? record.command : "";
-    if (mcpResolverLike(command) !== "uvx") continue;
-    // Malformed args carry no exact-pin evidence — kept, so the launch surfaces
-    // as unattestable instead of silently vanishing from the report.
-    const args = stringArray(record.args) ?? [];
-    launches.push({ server, command, args, env: envRecord(record.env) });
+  let sawFile = false;
+  let sawInvalid = false;
+  for (const rel of MCP_PIN_CONFIG_FILES) {
+    const raw = readRegularFile(join(root, rel))?.toString("utf8");
+    if (raw === undefined) continue;
+    sawFile = true;
+    let parsed: unknown;
+    try {
+      parsed = parseJsoncText(raw);
+    } catch {
+      sawInvalid = true;
+      continue;
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      sawInvalid = true;
+      continue;
+    }
+    const servers = (parsed as { mcpServers?: unknown }).mcpServers;
+    if (servers === undefined) continue;
+    if (servers === null || typeof servers !== "object" || Array.isArray(servers)) {
+      sawInvalid = true;
+      continue;
+    }
+    for (const [server, entry] of Object.entries(servers)) {
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
+      const record = entry as Record<string, unknown>;
+      const command = typeof record.command === "string" ? record.command : "";
+      if (mcpResolverLike(command) !== "uvx") continue;
+      // Malformed args carry no exact-pin evidence — kept, so the launch surfaces
+      // as unattestable instead of silently vanishing from the report.
+      const args = stringArray(record.args) ?? [];
+      launches.push({
+        server: mcpLaunchLabel(server, rel),
+        command,
+        args,
+        env: envRecord(record.env),
+      });
+    }
   }
+  if (!sawFile) return { state: "absent" };
+  // An unreadable config must never read as clean: one bad file among several would
+  // otherwise let the rest attest green while its servers went uninspected.
+  if (sawInvalid) return { state: "invalid" };
   return launches.length === 0 ? { state: "none" } : { state: "servers", launches };
 }
 
@@ -158,7 +177,12 @@ export async function mcpUvxPinAttestationProbe(ctx: PlanContext): Promise<Check
   const name = PROBE_NAME;
   const cfg = readUvxLaunches(ctx.root);
   if (cfg.state === "absent") {
-    return { name, verdict: "skip", detail: "no .mcp.json (no MCP servers configured)" };
+    return {
+      name,
+      verdict: "skip",
+      detail:
+        "no repo-local MCP config (.mcp.json / .kiro/settings/mcp.json) — no MCP servers configured",
+    };
   }
   if (cfg.state === "invalid") {
     return {

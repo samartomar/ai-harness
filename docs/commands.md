@@ -947,6 +947,11 @@ stores hooks inside custom-agent JSON, which AIH deliberately does not mutate.
 
 ## aih usage
 
+> Under a policy carrying a governed inventory (any `governance.policyVersion`), this command
+> fails closed — governance exclusively owns AIH usage-hook projection. Use
+> `aih policy project --apply` instead, and note it wires usage only when the policy activates a
+> `usage-metering` candidate for the selected targets. See [`aih policy`](#aih-policy).
+
 Install the **multi-tool usage-capture** layer → `.aih/usage.jsonl` (rendered by `aih report` and
 `aih report --v9`). The **universal floor** is a git `post-commit` hook that records commit
 activity for **any** tool (it keys off the commit, not the agent) and runs `aih track --apply` so
@@ -977,6 +982,11 @@ Inject OpenTelemetry env, a redacting Bindplane collector, and an analytics fetc
 endpoints → `{ usage_report, skills }`).
 
 ## aih mcp
+
+> Under a policy carrying a governed inventory (any `governance.policyVersion`), this command and
+> `aih mcp approve` fail closed — governance exclusively owns AIH MCP projection. Use
+> `aih policy evaluate` then `aih policy project --apply`, selecting every CLI in the activation's
+> `targets`. See [`aih policy`](#aih-policy).
 
 Generate the MCP server config **for the targeted CLIs** (`--cli`/`--all-tools`/`--detect`;
 otherwise the committed `.aih-config.json` targets, then Claude on a first run):

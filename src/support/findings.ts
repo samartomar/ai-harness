@@ -421,9 +421,15 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
   },
   "guardrails.gitleaks-missing": {
     audience: "developer",
-    failSeverity: "degraded",
+    // Blocking for the same reason `pack.required-checks-unsupported` is: a declared but
+    // unenforced check must not be treated as a governance control. The committed
+    // .gitleaks.toml and pre-commit hook assert a local secret gate that does not exist
+    // until the tool is installed. Only reachable at enterprise — at vibe this check is a
+    // skip, and a skip forces severity to `optional` regardless of this field.
+    failSeverity: "blocking",
     title: "gitleaks not installed",
-    action: "Install gitleaks to enforce the pre-commit secret gate.",
+    action:
+      "Install gitleaks so the committed .gitleaks.toml and pre-commit hook actually enforce the local secret gate. CI enforcement is independent and unaffected, but it only catches a secret after it is already committed and pushed.",
   },
   "usage.no-data": {
     audience: "developer",
@@ -436,7 +442,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "degraded",
     title: "Usage recorder missing but referenced by a committed hook",
     action:
-      "Run `aih usage --apply` and commit `.aih/usage-record.mjs` so a fresh clone has the recorder the hooks invoke (it is kept out of the `.aih/*` ignore by design).",
+      "Run `aih usage --apply` — or, when an org policy governs the usage surface (that command is then refused), `aih policy project --apply` selecting every CLI in the activation's `targets` — and commit `.aih/usage-record.mjs` so a fresh clone has the recorder the hooks invoke (it is kept out of the `.aih/*` ignore by design).",
   },
   "usage.kiro-hook-runtime-unverified": {
     audience: "developer",

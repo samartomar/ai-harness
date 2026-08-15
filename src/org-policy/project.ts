@@ -58,6 +58,54 @@ function commandPolicyFor(composed: ReturnType<typeof composeOrgPolicy>): Record
   };
 }
 
+/**
+ * Blocking codes whose remediation actually reads the external authority registry —
+ * evidence and approval verification. Everything else (target coverage, projector
+ * availability, posture) resolves without it.
+ */
+const AUTHORITY_DEPENDENT_BLOCK_CODES: ReadonlySet<string> = new Set([
+  "evidence-missing",
+  "evidence-failed",
+  "evidence-identity-drift",
+  "authority-receipt-unverified",
+  "authority-receipt-mismatch",
+  "authority-target-coverage-mismatch",
+  "approval-missing",
+  "approval-ambiguous",
+  "approval-expired",
+  "approval-not-yet-valid",
+  "approval-revoked",
+  "approval-signer-untrusted",
+  "approval-digest-mismatch",
+  "approval-scope-mismatch",
+  "approval-clarification-missing",
+  "approval-policy-version-mismatch",
+  "approval-duration-invalid",
+]);
+
+/**
+ * The registry note, only when a blocked candidate's own codes depend on it.
+ *
+ * `verifyPolicyAuthorityReceipt` runs on every invocation, so its "registry
+ * unavailable" problem was appended to EVERY blocked-candidate refusal regardless of
+ * why the candidate blocked. An operator whose candidates were merely target-unselected
+ * got sent chasing `AIH_POLICY_AUTHORITY_REPOSITORY`, then watched the note vanish once
+ * the selection was fixed — not because the registry became available, but because
+ * nothing threw. That reads as a prerequisite when it is a cascade.
+ */
+export function authoritySuffix(runtime: RuntimeOrgPolicyResolution): string {
+  if (runtime.authorityProblem === undefined) return "";
+  const dependsOnAuthority = runtime.effective.candidates.some(
+    (candidate) =>
+      candidate.requested &&
+      !candidate.effective &&
+      [...candidate.dangerCodes, ...candidate.blockingCodes].some((code) =>
+        AUTHORITY_DEPENDENT_BLOCK_CODES.has(code),
+      ),
+  );
+  return dependsOnAuthority ? `; authority: ${runtime.authorityProblem}` : "";
+}
+
 function stdioAllowedServers(
   policy: OrgPolicy,
   runtime: RuntimeOrgPolicyResolution,
@@ -75,9 +123,7 @@ function stdioAllowedServers(
       )
       .join("; ");
     throw new OrgPolicyError(
-      `policy project refuses blocked candidate activation(s): ${blocked || "unknown policy resolution failure"}${
-        runtime.authorityProblem === undefined ? "" : `; authority: ${runtime.authorityProblem}`
-      }`,
+      `policy project refuses blocked candidate activation(s): ${blocked || "unknown policy resolution failure"}${authoritySuffix(runtime)}`,
     );
   }
   // Governance is authoritative: legacy `mcp.allowedServers` / `disabledServers`
@@ -936,9 +982,7 @@ function projectionActionsFromRuntime(
       )
       .join("; ");
     throw new OrgPolicyError(
-      `policy project refuses blocked candidate activation(s): ${blocked || "unknown policy resolution failure"}${
-        runtime.authorityProblem === undefined ? "" : `; authority: ${runtime.authorityProblem}`
-      }`,
+      `policy project refuses blocked candidate activation(s): ${blocked || "unknown policy resolution failure"}${authoritySuffix(runtime)}`,
     );
   }
   if (posture === "vibe") return [];

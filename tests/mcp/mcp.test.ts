@@ -2712,9 +2712,22 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
   });
 
   it("refuses mcp approve local writes while AIH_ORG_POLICY is active", () => {
+    // The override must name a policy that actually resolves: an explicitly configured
+    // AIH_ORG_POLICY pointing at a missing file is now its own fail-closed error, so a
+    // fixture without this write would exercise that instead of the write-refusal here.
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "operator-policy.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "vibe",
+        references: { repoContract: "ai-coding/project.json" },
+      }),
+    );
     expect(() =>
       mcpApproveCommand.plan(
         makeCtx({
+          root,
           env: { AIH_ORG_POLICY: "operator-policy.json" },
           options: {
             server: "context7",

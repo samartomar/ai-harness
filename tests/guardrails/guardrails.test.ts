@@ -477,14 +477,33 @@ describe("guardrails command", () => {
     );
   });
 
-  it("verify: gitleaks probe SKIPS when the tool is absent (never fails)", async () => {
+  it("verify: gitleaks probe SKIPS at vibe when the tool is absent (never fails)", async () => {
     const res = await executePlan(
-      await command.plan(ctx({ run: missingToolRunner })),
-      ctx({ verify: true, run: missingToolRunner }),
+      await command.plan(ctx({ posture: "vibe", run: missingToolRunner })),
+      ctx({ verify: true, posture: "vibe", run: missingToolRunner }),
     );
     const check = res.report?.checks.find((c) => c.name === "gitleaks present");
     expect(check?.verdict).toBe("skip");
     expect(res.report?.ok).toBe(true);
+  });
+
+  /**
+   * Generation is not activation: the committed `.gitleaks.toml` and pre-commit hook
+   * enforce nothing until gitleaks is on PATH. At enterprise that unenforced local gate
+   * is a finding. This probe used to be the only check in `guardrailsPlan` that ignored
+   * posture, so an enterprise workstation without gitleaks reported green — next to
+   * `aih tools --verify` reporting every tool it knows about as present.
+   */
+  it("verify: gitleaks probe FAILS at enterprise when the tool is absent", async () => {
+    const res = await executePlan(
+      await command.plan(ctx({ posture: "enterprise", run: missingToolRunner })),
+      ctx({ verify: true, posture: "enterprise", run: missingToolRunner }),
+    );
+    const check = res.report?.checks.find((c) => c.name === "gitleaks present");
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("guardrails.gitleaks-missing");
+    expect(check?.detail).toContain("unenforced");
+    expect(res.report?.ok).toBe(false);
   });
 
   it("verify: gitleaks probe PASSES and reports the version when present", async () => {

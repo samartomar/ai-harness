@@ -376,7 +376,13 @@ export const command: CommandSpec = {
         trustLockLocalDriftChecks(probeCtx),
       ),
       ...orgPolicyIntegrityProbes({ ...ctx, contextDir }),
-      probe("org policy effective resolution", (c) => orgPolicyEffectiveCheck(c)),
+      // Target-scoped like its allowlist/drift siblings above and below: this probe
+      // resolves activation targets against the invocation's selected CLIs, and doctor
+      // has no `--cli` flag to supply them. Unscoped, `ctx.targets` is undefined and
+      // collapses to `["claude"]`, so a repo whose marker declares e.g. Kiro reports a
+      // permanent `target-not-selected:kiro` on a correctly projected repo — in the same
+      // run whose baseline attestation reads those Kiro servers off disk and passes.
+      probe("org policy effective resolution", () => orgPolicyEffectiveCheck(scopedCtx)),
       ...(await verifiedOrgPolicyDriftProbes({ ...scopedCtx, contextDir })),
       probe("enterprise baseline attestation", () =>
         enterpriseBaselineAttestationCheck({ ...ctx, contextDir }),

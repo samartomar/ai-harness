@@ -59,6 +59,29 @@ const CLAUDE_HOOK = JSON.stringify({
   },
 });
 
+/**
+ * Governance ownership of the AIH usage/MCP surfaces keys off `governance.policyVersion`
+ * (see `governanceOwnsAihSurfaces`), NOT the mere presence of an org policy — so these
+ * two fixtures differ only by the governed `governance` block.
+ */
+const UNGOVERNED_POLICY = JSON.stringify({
+  schemaVersion: 2,
+  minimumPosture: "vibe",
+  references: { repoContract: "ai-coding/project.json" },
+});
+
+const GOVERNED_POLICY = JSON.stringify({
+  schemaVersion: 2,
+  minimumPosture: "enterprise",
+  references: { repoContract: "ai-coding/project.json" },
+  mcp: { allowManagedOnly: true },
+  governance: {
+    policyVersion: "2026.08.0",
+    supportedClis: ["claude"],
+    catalog: { reviewed: [], custom: [] },
+  },
+});
+
 describe("usageRecorderCheck", () => {
   it("skips when no committed hook references the recorder", async () => {
     const c = await usageRecorderCheck(makeCtx());
@@ -123,6 +146,63 @@ describe("usageRecorderCheck", () => {
     expect(c.verdict).toBe("fail");
     expect(c.code).toBe("usage.recorder-missing");
     expect(c.detail).toContain("untracked");
+  });
+
+  /**
+   * A governed policy refuses `aih usage` (`assertGovernanceOwnsSurface`), so the
+   * remediation must not name it — that is the doctor deadlock: a permanent red whose
+   * only advice is a command governance rejects. Governed repos reach the recorder
+   * through `aih policy project`.
+   */
+  it("advises policy projection, not `aih usage`, when governance owns the usage surface", async () => {
+    write(".claude/settings.json", CLAUDE_HOOK);
+    write("aih-org-policy.json", GOVERNED_POLICY);
+    const c = await usageRecorderCheck(makeCtx());
+    expect(c.verdict).toBe("fail");
+    expect(c.code).toBe("usage.recorder-missing");
+    expect(c.detail).toContain("aih policy project --apply");
+    expect(c.detail).not.toContain("aih usage --apply");
+    // Both escapes must be named: projection is a silent no-op when the policy activates
+    // no usage-metering candidate, and it refuses to adopt an unreceipted legacy hook.
+    expect(c.detail).toContain("usage-metering");
+    expect(c.detail).toContain("unreceipted");
+  });
+
+  it("advises policy projection for the git-ignored and untracked recorder states too", async () => {
+    write(".claude/settings.json", CLAUDE_HOOK);
+    write("aih-org-policy.json", GOVERNED_POLICY);
+    write(".aih/usage-record.mjs", "// recorder\n");
+    const ignored = await usageRecorderCheck(makeCtx(gitRunner({ ignored: true })));
+    expect(ignored.detail).toContain("aih policy project --apply");
+    expect(ignored.detail).not.toContain("aih usage --apply");
+    const untracked = await usageRecorderCheck(
+      makeCtx(gitRunner({ ignored: false, tracked: false })),
+    );
+    expect(untracked.detail).toContain("aih policy project --apply");
+    expect(untracked.detail).not.toContain("aih usage --apply");
+  });
+
+  /**
+   * An ungoverned policy (a supported-CLI allow-list without governed inventory) does
+   * NOT take over the usage surface, so `aih usage --apply` still runs and stays the
+   * correct advice. Governance ownership keys off `governance.policyVersion`, not the
+   * mere presence of an org policy.
+   */
+  it("keeps advising `aih usage` when an org policy does not govern the usage surface", async () => {
+    write(".claude/settings.json", CLAUDE_HOOK);
+    write("aih-org-policy.json", UNGOVERNED_POLICY);
+    const c = await usageRecorderCheck(makeCtx());
+    expect(c.detail).toContain("aih usage --apply");
+    expect(c.detail).not.toContain("aih policy project");
+  });
+
+  /** A malformed policy is another check's finding; this probe must not crash on it. */
+  it("falls back to the ungoverned wording when the org policy cannot be parsed", async () => {
+    write(".claude/settings.json", CLAUDE_HOOK);
+    write("aih-org-policy.json", "{ not json");
+    const c = await usageRecorderCheck(makeCtx());
+    expect(c.verdict).toBe("fail");
+    expect(c.detail).toContain("aih usage --apply");
   });
 
   it("skips (can't determine) when the recorder is present but git is unavailable", async () => {

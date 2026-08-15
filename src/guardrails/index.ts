@@ -210,10 +210,21 @@ function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
     probe("gitleaks present", async (c) => {
       const res = await c.run(["gitleaks", "version"]);
       if (res.spawnError) {
+        // Generation is not activation: the committed config only enforces anything once
+        // gitleaks is on PATH. At enterprise that unenforced gate is a finding, not a
+        // note — this probe was the one check in this plan that ignored posture, so an
+        // enterprise workstation missing gitleaks reported green next to `aih tools`
+        // reporting every tool present. Vibe keeps the advisory `skip`; it stays a `skip`
+        // rather than a `pass` in both directions, because a pass would assert a gate
+        // that is not there. CI enforcement is independent (the pinned gitleaks in
+        // sca.yml), so this grades the LOCAL pre-commit surface only.
         return {
           name: "gitleaks present",
-          verdict: "skip",
-          detail: "gitleaks not on PATH — install to enforce the pre-commit gate",
+          verdict: posture === "enterprise" ? "fail" : "skip",
+          detail:
+            posture === "enterprise"
+              ? "gitleaks not on PATH — the local pre-commit secret gate is unenforced; install gitleaks (the committed .gitleaks.toml and hook do nothing without it)"
+              : "gitleaks not on PATH — install to enforce the pre-commit gate",
           code: "guardrails.gitleaks-missing",
         };
       }

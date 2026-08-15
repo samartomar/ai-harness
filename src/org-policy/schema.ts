@@ -1546,16 +1546,37 @@ function modulePolicyFormatMessage(path: string, raw: string): string | undefine
 }
 
 export function orgPolicyPath(root: string, env: NodeJS.ProcessEnv): string {
-  if (env.AIH_ORG_POLICY && env.AIH_ORG_POLICY.trim().length > 0) {
-    return resolve(root, env.AIH_ORG_POLICY.trim());
+  if (hasExplicitOrgPolicySource(env)) {
+    return resolve(root, (env.AIH_ORG_POLICY as string).trim());
   }
   return join(root, AIH_ORG_POLICY_FILE);
+}
+
+/** Did the operator explicitly name a policy file, rather than relying on the repo default? */
+export function hasExplicitOrgPolicySource(env: NodeJS.ProcessEnv): boolean {
+  return typeof env.AIH_ORG_POLICY === "string" && env.AIH_ORG_POLICY.trim().length > 0;
 }
 
 export function readOrgPolicy(root: string, env: NodeJS.ProcessEnv): OrgPolicy | undefined {
   const path = orgPolicyPath(root, env);
   const raw = readIfExists(path);
-  if (raw === undefined) return undefined;
+  if (raw === undefined) {
+    // Absence of the DEFAULT repo file is optional harness state — vibe repos carry no
+    // org policy — so it stays an honest `undefined` that callers report as a skip. An
+    // explicit AIH_ORG_POLICY is a different claim: the operator named a file and
+    // asserted it exists, exactly as `--bundle` does. Collapsing the two made a typo'd or
+    // moved path indistinguishable from "no policy", silently dropping the org posture
+    // floor, the governed inventory, and every gate keyed off them, while `policy
+    // validate` reported a clean skip. Fail closed on the broken control plane instead.
+    if (hasExplicitOrgPolicySource(env)) {
+      throw new OrgPolicyError(
+        `AIH_ORG_POLICY points at ${path}, but no policy file exists there. An explicitly ` +
+          `configured org policy must resolve — fix the path, or unset AIH_ORG_POLICY to use ` +
+          `${AIH_ORG_POLICY_FILE} when the repo carries one.`,
+      );
+    }
+    return undefined;
+  }
   try {
     return parseOrgPolicy(JSON.parse(raw));
   } catch (err) {
