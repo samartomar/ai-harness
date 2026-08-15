@@ -108,7 +108,7 @@
       "commit": "0562b964ec5ceac67ee15c163738e5404f14a908",
       "integrity": "sha256:108b707cb98cb418680782f9745942b1d3904104a45d8f6fd62f102672285d55",
       "disposition": "active",
-      "reason": "Rotated 2.5.0 -> 2.5.3 under the four-step procedure. Two clean cache-disabled OCI exports agreed, and three further runners independently reproduced the same digest (five reproductions total). The method was validated against a known answer first: the same recipe on the 2.5.0 revision reproduced its committed digest exactly. The YR4 carve-out needs no change — all five yara_rules blobs carry identical git SHAs at both revisions, so no Gate-B string moved."
+      "reason": "Rotated 2.5.0 -> 2.5.3 under the four-step procedure. The YR4 carve-out needs no change — all five yara_rules blobs carry identical git SHAs at both revisions, so no Gate-B string moved. Reproduction claim corrected 2026-08-15: the five recorded reproductions were concurrent builds in a single window, which establishes only that the recipe is deterministic at one point in time, never that this digest can be rebuilt later. Rebuilding this same revision from this same recipe on 2026-08-15 produced sha256:1722c3f9f30bcd1a754c83aee871fa83d142e84d6e8092a6b17f4cc1aa2b8621 instead, because uv.lock does not pin the PEP 517 build backends: setuptools 83.0.0 -> 84.0.0 and hatchling 1.31.0 -> 1.32.0 changed the .dist-info metadata of the two from-source packages, and nothing else in the image moved. The pin stays controlled by pull-by-digest, which this does not affect; independent rebuild is not an available check until the build backends are pinned."
     },
     {
       "surface": "skillspector-python-base",
@@ -116,7 +116,7 @@
       "version": "3.12-slim-bookworm",
       "integrity": "sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b",
       "disposition": "active",
-      "reason": "The exact base digest was pulled and used for the reproducible SkillSpector v2.5.0 OCI build."
+      "reason": "The exact base digest was pulled and used for the controlled SkillSpector v2.5.0 OCI build. See the skillspector entry for why that build is not independently reproducible today: this base is pinned by digest, but the PEP 517 build backends layered on top of it are not."
     },
     {
       "surface": "cisco-skill-scanner",
