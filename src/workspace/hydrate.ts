@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { AihError } from "../errors.js";
-import { readIfExists } from "../internals/fsxn.js";
+import { readContainedRegularFile } from "../internals/contained-path.js";
 import { parseJsoncText } from "../internals/merge.js";
 import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
 import { doc, exec, plan } from "../internals/plan.js";
@@ -138,11 +138,9 @@ function parseWorkspaceSnapshot(raw: unknown, sourceLabel: string): WorkspaceSna
   };
 }
 
-function readSnapshotFile(path: string, label: string): WorkspaceSnapshot {
-  const text = readIfExists(path);
-  if (text === undefined) {
-    throw new AihError(`workspace hydrate could not read ${label}`, "AIH_WORKSPACE");
-  }
+const MAX_WORKSPACE_LOCK_BYTES = 1024 * 1024;
+
+function parseSnapshotFile(text: string, label: string): WorkspaceSnapshot {
   try {
     return parseWorkspaceSnapshot(parseJsoncText(text), label);
   } catch (err) {
@@ -161,10 +159,13 @@ function readHydrateSnapshot(ctx: PlanContext, contextDir: string): WorkspaceSna
       "AIH_WORKSPACE",
     );
   }
-  const lockPath = join(ctx.root, contextDir, "workspace-lock.json");
-  if (readIfExists(lockPath) !== undefined)
-    return readSnapshotFile(lockPath, "workspace-lock.json");
-  return undefined;
+  const lockPath = join(contextDir, "workspace-lock.json");
+  const file = readContainedRegularFile(ctx.root, lockPath, { maxBytes: MAX_WORKSPACE_LOCK_BYTES });
+  if (file.state === "absent") return undefined;
+  if (file.state !== "present") {
+    throw new AihError("workspace hydrate could not read workspace-lock.json", "AIH_WORKSPACE");
+  }
+  return parseSnapshotFile(file.contents.toString("utf8"), "workspace-lock.json");
 }
 
 async function gitRead(

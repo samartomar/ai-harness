@@ -310,6 +310,54 @@ describe("report workspace rollup", () => {
     expect(data.snapshot).toBeUndefined();
   });
 
+  it("ignores missing, linked, non-regular, and oversized workspace snapshots", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    child("ui");
+    mkdirSync(join(root, ".aih", "workspace-snapshots"), { recursive: true });
+    const snapshots = join(root, ".aih", "workspace-snapshots");
+    const external = mkdtempSync(join(tmpdir(), "aih-workspace-report-external-"));
+    try {
+      writeFileSync(
+        join(external, "outside.json"),
+        json({ createdAt: "2026-06-30T00:00:00.000Z" }),
+      );
+      try {
+        symlinkSync(
+          join(external, "outside.json"),
+          join(snapshots, "20260630T000000Z-link.json"),
+          "file",
+        );
+      } catch {
+        return;
+      }
+      mkdirSync(join(snapshots, "20260630T000001Z-directory.json"));
+      writeFileSync(join(snapshots, "20260630T000002Z-large.json"), "x".repeat(1_048_577));
+
+      expect(((await workspaceDigest()).data as WorkspaceReportDigest).snapshot).toBeUndefined();
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores a workspace snapshot reached through an in-root linked parent", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    child("ui");
+    const contained = join(root, "contained-snapshots");
+    mkdirSync(contained, { recursive: true });
+    writeFileSync(
+      join(contained, "20260630T000000Z-linked-parent.json"),
+      json({ createdAt: "2026-06-30T00:00:00.000Z", repos: [] }),
+    );
+    mkdirSync(join(root, ".aih"), { recursive: true });
+    try {
+      symlinkSync(contained, join(root, ".aih", "workspace-snapshots"), "junction");
+    } catch {
+      return;
+    }
+
+    expect(((await workspaceDigest()).data as WorkspaceReportDigest).snapshot).toBeUndefined();
+  });
+
   it("warns when declared workspace repos have no parent graph MCP config", async () => {
     writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
     child("ui");

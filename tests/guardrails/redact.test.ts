@@ -54,6 +54,37 @@ describe("redactSecrets() — secret fixtures", () => {
     expect(redactSecrets("MY_SECRET=hunter2")).toBe("[REDACTED]");
   });
 
+  it("redacts supported secret assignments without touching benign diagnostic text", () => {
+    for (const text of [
+      "API_KEY=abcdefgh",
+      'API_KEY = "abcdefgh"',
+      "SERVICE_TOKEN: 'abcdefgh'",
+      "my_secret: abcdefgh",
+      "MY_SECRET=hunter2",
+    ]) {
+      const output = redactSecrets(text);
+      expect(output).toContain("[REDACTED]");
+      expect(output).not.toContain("abcdefgh");
+    }
+    expect(redactSecrets("token=short diagnostic value")).toBe("token=short diagnostic value");
+    expect(redactSecrets("UPPERCASE_DIAGNOSTIC_TEXT without an assignment")).toBe(
+      "UPPERCASE_DIAGNOSTIC_TEXT without an assignment",
+    );
+  });
+
+  it("scales near-linearly for long uppercase diagnostic text without an assignment", () => {
+    const elapsed = (length: number): number => {
+      const input = "A".repeat(length);
+      const started = performance.now();
+      expect(redactSecrets(input)).toBe(input);
+      return performance.now() - started;
+    };
+
+    const small = elapsed(25_000);
+    const large = elapsed(100_000);
+    expect(large).toBeLessThan(Math.max(750, small * 8 + 100));
+  }, 5_000);
+
   it("redacts provider token shapes shared with the detector layer", () => {
     const cases = [
       ["Slack", `xoxb-${"a".repeat(12)}-${"b".repeat(12)}`],

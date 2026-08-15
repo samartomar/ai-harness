@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { basename, join, posix, resolve } from "node:path";
 import { SHARED_MARKER } from "../bootstrap-ai/canon.js";
 import { asPosture } from "../config/posture.js";
 import { AihError, SettingsError } from "../errors.js";
 import { bootloadersFor, entry as registryEntry } from "../internals/cli-registry.js";
 import { type Cli, resolveClis } from "../internals/clis.js";
-import { readIfExists, readRegularFile } from "../internals/fsxn.js";
+import { readContainedRegularFile } from "../internals/contained-path.js";
+import { readIfExists } from "../internals/fsxn.js";
 import { hasManagedBlockStart } from "../internals/markers.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 import type { Action, CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
@@ -115,50 +116,25 @@ function invalidOrgPolicyError(error: unknown): SettingsError {
   return new SettingsError(`aih-org-policy.json cannot be parsed (${errorDetail(error)})`);
 }
 
-function workspaceMcpConfigPath(ctx: PlanContext, repo: string | undefined): string {
-  return repo === undefined ? join(ctx.root, ".mcp.json") : join(ctx.root, repo, ".mcp.json");
-}
-
 function workspaceMcpConfigRel(repo: string | undefined): string {
   return repo === undefined ? ".mcp.json" : posix.join(repo, ".mcp.json");
 }
 
-function readWorkspaceMcpConfig(path: string): { text?: string; absent?: true; issue?: string } {
-  let stat: ReturnType<typeof lstatSync>;
-  try {
-    stat = lstatSync(path);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { absent: true };
-    return { issue: `cannot stat .mcp.json (${errorDetail(error)})` };
-  }
-  if (stat.isSymbolicLink()) {
+const MAX_WORKSPACE_MCP_BYTES = 1024 * 1024;
+
+function readWorkspaceMcpConfig(
+  root: string,
+  relativePath: string,
+): { text?: string; absent?: true; issue?: string } {
+  const file = readContainedRegularFile(root, relativePath, { maxBytes: MAX_WORKSPACE_MCP_BYTES });
+  if (file.state === "absent") return { absent: true };
+  if (file.state === "present") return { text: file.contents.toString("utf8") };
+  if (file.reason === "symlink") {
     return { issue: ".mcp.json is a symlink; replace it with a regular file" };
   }
-  if (!stat.isFile()) return { issue: ".mcp.json is not a regular file" };
-  const bytes = readRegularFile(path);
-  if (bytes === undefined) return { issue: ".mcp.json cannot be read as a regular file" };
-  // Defense in depth for platforms where O_NOFOLLOW is unavailable at open time:
-  // re-check that the path still names the same regular file after reading. This
-  // narrows the Windows race window, though a local writer with directory access
-  // can still modify the file directly and must not be considered trusted input.
-  let after: ReturnType<typeof lstatSync>;
-  try {
-    after = lstatSync(path);
-  } catch (error) {
-    return { issue: `cannot re-stat .mcp.json after reading (${errorDetail(error)})` };
-  }
-  if (after.isSymbolicLink() || !after.isFile()) {
-    return { issue: ".mcp.json changed while it was being read" };
-  }
-  if (
-    after.dev !== stat.dev ||
-    after.ino !== stat.ino ||
-    after.size !== stat.size ||
-    after.mtimeMs !== stat.mtimeMs
-  ) {
-    return { issue: ".mcp.json changed while it was being read" };
-  }
-  return { text: bytes.toString("utf8") };
+  if (file.reason === "not-file") return { issue: ".mcp.json is not a regular file" };
+  if (file.reason === "changed") return { issue: ".mcp.json changed while it was being read" };
+  return { issue: ".mcp.json cannot be read as a regular file" };
 }
 
 function commandName(command: string): string {
@@ -271,7 +247,7 @@ function workspaceMcpPolicyProbe(
   return probe(`${label} MCP policy`, (ctx: PlanContext): Check => {
     const name = `${label} MCP policy`;
     const rel = workspaceMcpConfigRel(repo);
-    const config = readWorkspaceMcpConfig(workspaceMcpConfigPath(ctx, repo));
+    const config = readWorkspaceMcpConfig(ctx.root, workspaceMcpConfigRel(repo));
     if (config.absent === true) {
       return {
         name,
@@ -326,7 +302,7 @@ function staleManagedMcpServerKeys(
   root: string,
   incomingKeys: readonly string[],
 ): { source: string | undefined; keys: string[] } {
-  const config = readWorkspaceMcpConfig(resolve(root, ".mcp.json"));
+  const config = readWorkspaceMcpConfig(root, ".mcp.json");
   if (config.text === undefined) return { source: undefined, keys: [] };
   try {
     const parsed = JSON.parse(config.text) as { mcpServers?: unknown };
@@ -351,7 +327,7 @@ function staleManagedMcpServerKeys(
 }
 
 function workspaceMcpResidue(root: string): { managed: string[]; ambiguous: string[] } {
-  const config = readWorkspaceMcpConfig(resolve(root, ".mcp.json"));
+  const config = readWorkspaceMcpConfig(root, ".mcp.json");
   if (config.text === undefined) return { managed: [], ambiguous: [] };
   try {
     const parsed = JSON.parse(config.text) as { mcpServers?: unknown };

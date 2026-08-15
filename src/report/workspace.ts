@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { readContainedRegularFile } from "../internals/contained-path.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
@@ -520,11 +521,15 @@ interface SnapshotFile {
   repos?: Array<{ id?: string; path?: string; branch?: string; sha?: string; dirty?: boolean }>;
 }
 
-function readSnapshot(path: string): SnapshotFile | undefined {
-  const text = readIfExists(path);
-  if (text === undefined) return undefined;
+const MAX_WORKSPACE_SNAPSHOT_BYTES = 1024 * 1024;
+
+function readSnapshot(root: string, relativePath: string): SnapshotFile | undefined {
+  const file = readContainedRegularFile(root, relativePath, {
+    maxBytes: MAX_WORKSPACE_SNAPSHOT_BYTES,
+  });
+  if (file.state !== "present") return undefined;
   try {
-    const parsed = JSON.parse(text) as SnapshotFile;
+    const parsed = JSON.parse(file.contents.toString("utf8")) as SnapshotFile;
     const label = normalizeWorkspaceDisplayText(parsed.label, "workspace snapshot label");
     const snapshot = { ...parsed };
     delete snapshot.label;
@@ -547,9 +552,11 @@ function workspaceSnapshot(
   const candidates = [
     latestWorkspaceSnapshotPath(root),
     join(root, manifest.contextDir, "workspace-lock.json"),
-  ].filter((path): path is string => path !== undefined);
+  ]
+    .filter((path): path is string => path !== undefined)
+    .map((path) => relative(root, path));
   const loaded = candidates
-    .map((path) => ({ path, snapshot: readSnapshot(path) }))
+    .map((path) => ({ path, snapshot: readSnapshot(root, path) }))
     .filter(
       (entry): entry is { path: string; snapshot: SnapshotFile } => entry.snapshot !== undefined,
     )
