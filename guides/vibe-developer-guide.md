@@ -32,8 +32,8 @@ Think in six layers:
 Verify a published release when release integrity matters:
 
 ```console
-npm install -g @aihq/harness@6.0.1
-aih verify-release 6.0.1
+npm install -g @aihq/harness@6.1.0
+aih verify-release 6.1.0
 ```
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs

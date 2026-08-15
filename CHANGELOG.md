@@ -6,6 +6,55 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.1.0] - 2026-08-14
+
+> Remediates the 6.0.1 enterprise field report: closes the high-severity projection
+> idempotency regression and the diagnostic/installer gaps it documented.
+
+### Fixed
+
+- **`aih policy project --apply` is idempotent again for policies whose hooks arrive as
+  registrations** (6.0.1 enterprise field report). The usage projector's legacy scan runs on every
+  projection and treated any `PostToolUse` in `.claude/settings.json` without a usage receipt as an
+  unreceipted legacy artifact — including the entries the hook registrar's own receipt claims — so
+  the second run of the same command refused AIH's own first-run output, and doctor /
+  `aih policy evaluate` reported the repo unowned for as long as the projected file existed. The
+  scan now recognizes a PostToolUse slot the registrar receipt claims exactly; anything beyond the
+  exact claim still fails closed, and a usage-metering activation meeting a registrar-owned
+  destination is refused with the registrar named instead of a generic "already has PostToolUse
+  hooks".
+- Doctor's `usage.recorder-missing` finding names the hook-registrar case with a remedy that can
+  actually run. A registration whose launcher references `.aih/usage-record.mjs` projects a hook
+  against a recorder the registrar never writes — two field reports running, projection created its
+  own failing check. The finding now says exactly that and points at moving usage metering to a
+  `usage-metering` candidate activation (drop the registration, project once, then activate), or
+  dropping the registration.
+- `aih policy project --verify` actually runs verification probes. The plan carried none, so the
+  flag produced no verification section at all — the same silent shape the 6.0.0 cut fixed for
+  `aih secrets --verify`. It now runs the org-policy effective-resolution check and the
+  usage-recorder check after applying.
+- Doctor's `metrics-hook-tool` probe recognizes the standalone v1 Kiro hook
+  `aih bootstrap-ai --kiro-hook-runtime ide1-cli3` actually writes. The probe matched only the
+  legacy literal `aih track` command, but the current fail-open one-shot invokes
+  `execFileSync('aih',['track','--apply'])`, so AIH's own hook was reported as "no Kiro
+  metrics-on-stop hook to verify" and left silently unverified.
+- `aih status` no longer calls the gitleaks secret gate green off the config file's presence. The
+  gitleaks row now runs the same `gitleaks version` activation check `aih guardrails --verify`
+  grades, and its detail says when the committed config is unenforced (binary not on PATH) — the
+  generation-is-not-activation treatment the pre-commit row already had. Verdicts and the exit-0
+  contract are unchanged; the detail carries the enforcement truth.
+- `aih doctor --attest-mcp-pins` names the cause when an `--offline`-pinned uvx launch dies before
+  the MCP handshake: hardened pins cannot resolve on a cold uv cache, so the advisory now states
+  that and the one-time pre-warm remedy (run the launcher once without `--offline`) instead of a
+  bare exit code.
+
+### Added
+
+- `aih tools` covers `gitleaks` as a core tool (winget / scoop / brew, with a manual fallback).
+  The installer claimed "All agent shell tools are on PATH. Nothing to install." while
+  `aih guardrails --verify` hard-failed at enterprise on the one tool it did not cover; a machine
+  without gitleaks now gets an install action, and a bare `aih tools` exits non-zero naming it.
+
 ## [6.0.1] - 2026-08-14
 
 > Ships the entire v6.0.0 cut plus one fix found while covering it. The `v6.0.0` tag was cut but
@@ -33,8 +82,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.gitleaks.toml` and pre-commit hook enforce nothing until the tool is installed, so an
   enterprise workstation without it reported green while its local secret gate was unenforced —
   next to `aih tools --verify` reporting every tool it knows about as present. This was the only
-  check in the guardrails plan that ignored posture. Vibe keeps the advisory skip, and CI
-  enforcement via the pinned gitleaks in `sca.yml` is unchanged and independent of local PATH.
+  check in the guardrails plan that ignored posture. Vibe keeps the advisory skip only where vibe
+  is actually the effective posture: an org policy's `minimumPosture: enterprise` floors the
+  effective posture, so `--posture vibe` still fails in a governed repo. CI enforcement via the
+  pinned gitleaks in `sca.yml` is unchanged and independent of local PATH.
 - `aih doctor`'s org-policy effective-resolution probe is now scoped to the committed
   `.aih-config.json` target set, like the MCP-allowlist and policy-drift probes beside it. Doctor
   has no `--cli` flag, so the unscoped probe collapsed to `["claude"]` and reported a permanent
@@ -2384,7 +2435,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v6.0.1...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v6.1.0...HEAD
+[6.1.0]: https://github.com/samartomar/ai-harness/compare/v6.0.1...v6.1.0
 [6.0.1]: https://github.com/samartomar/ai-harness/compare/v5.4.0...v6.0.1
 [5.4.0]: https://github.com/samartomar/ai-harness/compare/v5.3.0...v5.4.0
 [5.3.0]: https://github.com/samartomar/ai-harness/compare/v5.2.1...v5.3.0

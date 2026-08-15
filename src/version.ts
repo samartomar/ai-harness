@@ -1,3 +1,3 @@
 export const PACKAGE_NAME = "@aihq/harness";
 export const REPO = "samartomar/ai-harness";
-export const VERSION = "6.0.1";
+export const VERSION = "6.1.0";
