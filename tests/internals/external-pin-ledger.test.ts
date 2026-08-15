@@ -19,9 +19,27 @@ interface LedgerEntry {
   version?: string;
   commit?: string;
   integrity?: string;
+  /**
+   * Set only when `integrity` does NOT cover the artifact that executes — the
+   * distributed package is a launcher that fetches its real payload at run time.
+   * Absent is the normal case: the hash covers what runs.
+   */
+  integrityCovers?: "launcher-only";
   disposition: "active" | "retained" | "blocked";
   reason?: string;
 }
+
+/**
+ * Ledger surfaces that back a pinned MCP catalog server, mapped to the catalog key
+ * (they differ: `playwright-mcp` is generated as `playwright`). These are the
+ * launches whose integrity-coverage claim has to agree with their declared egress.
+ */
+const PINNED_MCP_SURFACES: Readonly<Record<string, string>> = {
+  "code-review-graph": "code-review-graph",
+  "codebase-memory-mcp": "codebase-memory-mcp",
+  "sequential-thinking": "sequential-thinking",
+  "playwright-mcp": "playwright",
+};
 
 const root = resolve(import.meta.dirname, "../..");
 const ledger = JSON.parse(
@@ -30,6 +48,7 @@ const ledger = JSON.parse(
   schemaVersion: number;
   verifiedAt: string;
   historicalEvidencePolicy: string;
+  integrityCoveragePolicy: string;
   entries: LedgerEntry[];
 };
 
@@ -165,6 +184,44 @@ describe("active external-pin ledger", () => {
       version: plan.pins.tokenOptimizer.tag,
       commit: plan.pins.tokenOptimizer.commit,
     });
+  });
+
+  it("declares launcher-shim pins honestly and never as zero egress", () => {
+    const servers = mcpServers("standard", webStack, { selfHost: true });
+
+    // codebase-memory-mcp's PyPI wheel is an ~8 KB launcher: its _cli.py fetches the
+    // platform release archive from GitHub on first run and exec's the unpacked ~273 MB
+    // binary. The recorded integrity is the WHEEL's, so it cannot cover what executes.
+    const memory = entry("codebase-memory-mcp");
+    expect(memory.integrityCovers).toBe("launcher-only");
+    expect(memory.reason).toMatch(/launcher shim/i);
+    expect(memory.reason).toMatch(/does not cover the executed artifact/i);
+    // The 0.9.0 shim's checksum step is fail-open, so an unreachable checksums.txt
+    // lets an unverified archive run — the reason must keep saying so while pinned here.
+    expect(memory.reason).toMatch(/_verify_checksum swallows/i);
+    expect(memory.reason).toMatch(/--offline governs uv wheel resolution only/i);
+
+    // The invariant the marker exists to enforce: provisioning is real egress, so a
+    // launcher-only pin may not also be declared `egress: "none"` in the catalog.
+    expect(ledger.integrityCoveragePolicy).toMatch(/launcher-only/);
+    for (const [surface, serverName] of Object.entries(PINNED_MCP_SURFACES)) {
+      const server = servers[serverName];
+      if (server === undefined) throw new Error(`missing catalog MCP server: ${serverName}`);
+      if (entry(surface).integrityCovers !== "launcher-only") continue;
+      expect(server.egress).not.toBe("none");
+    }
+    expect(servers["codebase-memory-mcp"]?.egress).toBe("vendor-incumbent");
+
+    // The other pinned MCP packages were re-probed and are NOT launchers: the
+    // code-review-graph wheel carries its own 73-file implementation, the
+    // sequential-thinking tarball is its whole server, and @playwright/mcp re-exports
+    // an exactly-pinned npm dependency rather than fetching code out of band. If a
+    // future pin turns into a shim, this list is what forces the decision.
+    for (const surface of ["code-review-graph", "sequential-thinking", "playwright-mcp"]) {
+      expect(entry(surface).integrityCovers).toBeUndefined();
+    }
+    expect(servers["code-review-graph"]?.egress).toBe("none");
+    expect(servers["sequential-thinking"]?.egress).toBe("none");
   });
 
   it("binds refreshed build and workflow identities to production sources", () => {

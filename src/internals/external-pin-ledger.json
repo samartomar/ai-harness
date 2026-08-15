@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "verifiedAt": "2026-08-14",
   "historicalEvidencePolicy": "Archived receipts, dated plans, prior releases, and old acceptance evidence are immutable history and are not repinned by this ledger.",
+  "integrityCoveragePolicy": "An entry's integrity hash is assumed to cover the artifact that actually executes. When it does not — the distributed package is a launcher that fetches its real payload at run time — the entry must set integrityCovers to \"launcher-only\" and its reason must name the unrecorded hop. A launcher-only entry may not be declared egress \"none\" in src/mcp/servers.ts: provisioning is real egress even when steady-state operation is local.",
   "entries": [
     {
       "surface": "ecc",
@@ -34,7 +35,9 @@
       "version": "0.9.0",
       "commit": "b637e3330c96cfe452da623db068c241aaa3ec01",
       "integrity": "sha256:10b86b08d5e330360cf4cfd3354d9507787e3c35f37e8c0d896a2757c843a9d4",
-      "disposition": "active"
+      "integrityCovers": "launcher-only",
+      "disposition": "active",
+      "reason": "The recorded integrity is the PyPI wheel's sha256, and at 0.9.0 that wheel is an 8456-byte launcher shim (__init__.py, __main__.py, _cli.py) rather than the payload. Its _cli.py main() fetches the platform release archive from https://github.com/DeusData/codebase-memory-mcp/releases on first run, unpacks a ~273 MB native binary into the per-user cache, and exec's it — so this hash does not cover the executed artifact and no recorded pin does. The shim's _verify_checksum swallows every non-SystemExit exception (`except Exception: pass`), so an unreachable or malformed checksums.txt lets an unverified archive execute; it is fetched from the same release origin as the archive, so it is not an independent pin even when it succeeds. The catalog launch's --offline governs uv wheel resolution only and does not reach urllib inside the shim: under the exact pinned launch with a cold binary cache, the shim still entered _download and dialed out. codebase-memory-mcp is therefore declared egress vendor-incumbent (github.com) in src/mcp/servers.ts, not egress none. Version movement off 0.9.0 is a separate decision and is not made here."
     },
     {
       "surface": "serena",

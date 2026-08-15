@@ -6,7 +6,9 @@ import { mcpResolverPinState } from "./pins.js";
  * boilerplate list:
  *  - `code-review-graph` + `codebase-memory-mcp` + `sequential-thinking` (local, stdio) —
  *    code intelligence (impact/blast radius), codebase memory (search/trace/ADR), and
- *    structured reasoning; useful in any repo, zero egress, zero credentials;
+ *    structured reasoning; useful in any repo, zero credentials. Two of the three are
+ *    zero-egress; `codebase-memory-mcp` ships a launcher shim that fetches its real
+ *    binary on first run, so it names that provisioning egress on its own entry;
  *  - `github` + `context7` — on-by-default remote servers (GitHub via the client's
  *    OAuth by default, or an env-sourced token header when requested; Context7 hosted docs). Each names its
  *    egress in its own description so it is visible in `.mcp.json` at a glance;
@@ -146,9 +148,12 @@ export function coreLocalMcpServers(): Record<string, McpServer> {
       command: "uvx",
       args: ["--offline", "--no-python-downloads", "--no-env-file", "codebase-memory-mcp@0.9.0"],
       description:
-        "Local codebase memory/knowledge graph (index_repository, search_graph, query_graph, trace_path) — memory companion to code-review-graph, served over stdio via uvx.",
+        "Local codebase memory/knowledge graph (index_repository, search_graph, query_graph, trace_path) — memory companion to code-review-graph, served over stdio via uvx. PROVISIONING EGRESS: the pinned wheel is a launcher shim, not the payload — on first run it downloads its ~273 MB native binary from the GitHub release and executes that. --offline pins wheel resolution only and does not govern that fetch, and the recorded wheel hash does not cover the fetched binary. Steady state after provisioning is local.",
       classification: "local",
-      egress: "none",
+      // Not `none`: the server process itself dials github.com on first run (see the
+      // description). `vendor-incumbent` names the actual destination — the ledger's
+      // integrityCovers="launcher-only" marker carries why the pin stops at the wheel.
+      egress: "vendor-incumbent",
       credentials: "none",
       supplyChain: "pinned",
     },
