@@ -23,6 +23,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   config — the shape `aih policy project` writes — got no pin attestation or currency verification
   at all, while the same doctor run attested those servers as declared registry members. Repos with
   a Kiro MCP config will see new findings that were previously invisible.
+- **`aih guardrails --verify` now fails at enterprise posture when `gitleaks` is not on PATH**,
+  instead of skipping at every posture. Generation is not activation: the committed
+  `.gitleaks.toml` and pre-commit hook enforce nothing until the tool is installed, so an
+  enterprise workstation without it reported green while its local secret gate was unenforced —
+  next to `aih tools --verify` reporting every tool it knows about as present. This was the only
+  check in the guardrails plan that ignored posture. Vibe keeps the advisory skip, and CI
+  enforcement via the pinned gitleaks in `sca.yml` is unchanged and independent of local PATH.
 - `aih doctor`'s org-policy effective-resolution probe is now scoped to the committed
   `.aih-config.json` target set, like the MCP-allowlist and policy-drift probes beside it. Doctor
   has no `--cli` flag, so the unscoped probe collapsed to `["claude"]` and reported a permanent
