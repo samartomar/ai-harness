@@ -44,6 +44,7 @@ import {
   stableJson,
 } from "./effective.js";
 import { HOOK_REGISTRAR_DESTINATION, hookRegistrarProjectionActions } from "./hook-registrar.js";
+import { expectedHooksFromReceipt, readHookRegistrarReceipt } from "./hook-registrar-receipt.js";
 import { type RuntimeOrgPolicyResolution, resolveRuntimeOrgPolicy } from "./runtime.js";
 import { governanceOwnsAihSurfaces, type OrgPolicy, OrgPolicyError } from "./schema.js";
 
@@ -382,6 +383,30 @@ const usageHostPaths = [
   ["codex", ".codex/hooks.json"],
 ] as const;
 
+/**
+ * The exact PostToolUse value the hook registrar's receipt proves AIH wrote
+ * into its destination, or undefined when no registrar receipt exists or it
+ * cannot be believed.
+ *
+ * The usage projector and the hook registrar are different owners of the same
+ * `.claude/settings.json`, and the usage scan below runs on EVERY projection —
+ * registrar-only policies included. Without consulting the registrar's receipt
+ * the scan mistook AIH's own receipted projection for an unreceipted legacy
+ * artifact and refused every run after the first (6.0.1 field regression). An
+ * unreadable or invalid registrar receipt proves nothing and keeps the
+ * fail-closed refusal.
+ */
+function hookRegistrarClaimedPostToolUse(ctx: PlanContext): unknown {
+  try {
+    const receipt = readHookRegistrarReceipt(ctx.root);
+    if (receipt === undefined) return undefined;
+    const hooks = expectedHooksFromReceipt(receipt);
+    return Object.hasOwn(hooks, "PostToolUse") ? hooks.PostToolUse : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function usagePostToolUseDescription(
   ctx: PlanContext,
   target: "claude" | "codex",
@@ -446,6 +471,13 @@ function usageArtifactOwnershipIssue(
       continue;
     }
     const entry = entries.get(path);
+    // A PostToolUse slot the hook registrar's receipt claims EXACTLY is that
+    // projector's own receipted output, not a legacy usage artifact. Anything
+    // beyond the exact claim (drift, an extra group) stays a fail-closed refusal.
+    if (entry?.kind !== "json-hook" && path === HOOK_REGISTRAR_DESTINATION) {
+      const claimed = hookRegistrarClaimedPostToolUse(ctx);
+      if (claimed !== undefined && stableJson(claimed) === stableJson(slot.postToolUse)) continue;
+    }
     const description = usagePostToolUseDescription(ctx, target, slot.postToolUse);
     if (receipt === undefined || entry?.kind !== "json-hook") {
       return `${path} has an unreceipted ${description}`;
@@ -828,8 +860,25 @@ function usageHookProjectionActions(ctx: PlanContext, effective: EffectiveOrgPol
     const raw = ownedText(ctx, expected.path);
     const slot = readHookSlot(raw, expected.path);
     if (slot.postToolUse !== undefined) {
+      // Reached before the two-writers plan-shape gate can name the conflict,
+      // because that gate needs this projector's actions computed first. When
+      // the registrar's receipt claims the slot, say so — "already has
+      // PostToolUse hooks" reads as operator-owned legacy and misdirects.
+      const claimed =
+        expected.path === HOOK_REGISTRAR_DESTINATION
+          ? hookRegistrarClaimedPostToolUse(ctx)
+          : undefined;
+      // The settling run needs the usage selection OFF too: this throw happens
+      // while the usage actions are being planned, before the registrar's
+      // revocation can ever be reached, so "drop the registrations" alone
+      // re-refuses right here on the next run.
       throw new OrgPolicyError(
-        `${expected.path} already has PostToolUse hooks; refusing ownership conflict`,
+        claimed !== undefined && stableJson(claimed) === stableJson(slot.postToolUse)
+          ? `${expected.path} PostToolUse is owned by the hook registrar receipt; a usage-metering ` +
+              "activation and hook registrations cannot both own it — drop the hook registrations " +
+              "and deactivate the usage-metering selection, project once so the registrar's " +
+              "receipt is revoked, then activate usage metering"
+          : `${expected.path} already has PostToolUse hooks; refusing ownership conflict`,
       );
     }
     const generated = usageHookActions(ctx, [target]).find(

@@ -6,6 +6,7 @@ import { resolveTargets } from "../internals/cli-detect.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { type CommandSpec, type Plan, type PlanContext, plan, probe } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
+import { usageRecorderCheck } from "../usage/hook-health.js";
 import { parsePolicyBundle } from "./bundle.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import { assertOrgPolicyMutationSource, sameJson } from "./drift.js";
@@ -317,7 +318,18 @@ async function policyProjectPlan(ctx: PlanContext): Promise<Plan> {
       "AIH_ORG_POLICY",
     );
   }
-  return plan("policy project", ...(await verifiedOrgPolicyProjectionActions(projectCtx, policy)));
+  return plan(
+    "policy project",
+    ...(await verifiedOrgPolicyProjectionActions(projectCtx, policy)),
+    // `--verify` promised probes and ran none: the plan carried zero, so the
+    // executor suppressed the whole verification section — the same silent
+    // shape the 6.0.0 cut fixed for `aih secrets --verify`. The
+    // effective-resolution check is the affirmative post-apply ownership gate;
+    // the usage-recorder check catches hooks projected against a recorder
+    // nothing writes.
+    probe("org policy effective resolution", () => orgPolicyEffectiveCheck(projectCtx)),
+    probe("usage-recorder", () => usageRecorderCheck(projectCtx)),
+  );
 }
 
 export const policyProjectCommand: CommandSpec = {

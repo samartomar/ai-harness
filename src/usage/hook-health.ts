@@ -4,6 +4,7 @@ import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { kiroHookRuntime } from "../kiro/runtime.js";
+import { readHookRegistrarReceipt } from "../org-policy/hook-registrar-receipt.js";
 import { governanceOwnsAihSurfaces, readOrgPolicy } from "../org-policy/schema.js";
 
 /**
@@ -51,6 +52,24 @@ function recorderApplyCommand(governed: boolean): string {
 const GOVERNED_LEGACY_NOTE =
   " Projection writes the recorder only if the policy activates a `usage-metering` candidate for these targets — if it does not, the policy owner must add one, or this hook reference is stale and should be removed. A hook predating the policy is unreceipted and projection will not adopt it.";
 
+/**
+ * Did the hook REGISTRAR project the recorder reference? Its receipt is direct
+ * evidence, and the remedy differs entirely from the legacy cases above: the
+ * registrar transports launchers verbatim and never writes the recorder, so
+ * "run projection again" cannot resolve this — only the policy can (6.0.1
+ * field report). An unreadable receipt proves nothing and keeps the generic
+ * wording.
+ */
+function hookRegistrarReferencesRecorder(root: string): boolean {
+  try {
+    return (readHookRegistrarReceipt(root)?.entries ?? []).some((entry) =>
+      entry.command.includes("usage-record.mjs"),
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Hook host files that (may) invoke the usage recorder, across every supported CLI. */
 const HOOK_HOSTS = [
   ".claude/settings.json",
@@ -92,7 +111,15 @@ export async function usageRecorderCheck(ctx: PlanContext): Promise<Check> {
       name: "usage-recorder",
       verdict: "fail",
       code: "usage.recorder-missing",
-      detail: `${referencing.join(", ")} reference ${RECORDER_REL} but it is absent — run ${recorderApplyCommand(governed)} and commit ${RECORDER_REL} so a fresh clone has the recorder the hooks invoke${governed ? GOVERNED_LEGACY_NOTE : ""}`,
+      detail: `${referencing.join(", ")} reference ${RECORDER_REL} but it is absent — ${
+        hookRegistrarReferencesRecorder(ctx.root)
+          ? "this reference was projected by the hook registrar from the policy's " +
+            "hookRegistrations, and the registrar transports launchers verbatim without ever " +
+            "writing the recorder; move usage metering to a usage-metering candidate activation " +
+            "(drop the registration, project once so the registrar's ownership settles, then " +
+            "activate the candidate), or drop the registration"
+          : `run ${recorderApplyCommand(governed)} and commit ${RECORDER_REL} so a fresh clone has the recorder the hooks invoke${governed ? GOVERNED_LEGACY_NOTE : ""}`
+      }`,
     };
   }
   // Present on disk — but if it's still git-ignored it won't be committed, so a fresh
@@ -147,7 +174,16 @@ export async function usageRecorderCheck(ctx: PlanContext): Promise<Check> {
  */
 export async function metricsToolCheck(ctx: PlanContext): Promise<Check> {
   const hook = readIfExists(join(ctx.root, METRICS_HOOK_REL));
-  if (hook === undefined || !hook.includes("aih track")) {
+  // Two generations of the hook command: the legacy direct `aih track …` form,
+  // and the current fail-open `node -e` one-shot whose call is
+  // `execFileSync('aih',['track','--apply'])` — the literal "aih track" never
+  // appears in it, so matching only the legacy form skipped the exact hook
+  // `aih bootstrap-ai --kiro-hook-runtime ide1-cli3` writes and left it
+  // silently unverified (6.0.1 field report).
+  const invokesAihTrack =
+    hook !== undefined &&
+    (hook.includes("aih track") || hook.includes("execFileSync('aih',['track'"));
+  if (!invokesAihTrack) {
     return {
       name: "metrics-hook-tool",
       verdict: "skip",

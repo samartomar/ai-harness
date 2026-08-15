@@ -1,7 +1,7 @@
 import type { ContainedPathKind } from "./internals/contained-path.js";
 import { inspectContainedRelativePath } from "./internals/contained-path.js";
 import { GITHOOKS_PATH_COMMAND, preCommitHookActive } from "./internals/git-hooks.js";
-import { type CommandSpec, plan, probe } from "./internals/plan.js";
+import { type CommandSpec, type PlanContext, plan, probe } from "./internals/plan.js";
 import type { Check } from "./internals/verify.js";
 
 /**
@@ -53,14 +53,31 @@ export function inventory(root: string, contextDir: string): ArtifactPresence[] 
  * verdict — `status` stays exit-0 — it only annotates the detail string. The
  * deeper fail-closed `required` model is tracked separately (verify-layer work).
  */
-function enforcementDetail(name: string, root: string, relative: string): string {
+async function enforcementDetail(
+  ctx: PlanContext,
+  name: string,
+  relative: string,
+): Promise<string> {
   if (name === "pre-commit") {
     // .pre-commit-config.yaml is inert until git runs a pre-commit hook. aih's
     // normal path is clone-local `.githooks/` via core.hooksPath; teams may also
     // have a default `.git/hooks/pre-commit`.
-    return preCommitHookActive(root)
+    return preCommitHookActive(ctx.root)
       ? `${relative} (git hook installed — active)`
       : `${relative} present, but no active git pre-commit hook was found — run \`${GITHOOKS_PATH_COMMAND}\` after scaffold`;
+  }
+  if (name === "gitleaks") {
+    // Generation is not activation: the committed config enforces nothing until
+    // gitleaks is on PATH. Same spawn `aih guardrails --verify` grades, so the
+    // two surfaces cannot disagree about the same machine (the 6.0.1 field
+    // report caught status calling an unenforced secret gate green beside a
+    // guardrails failure).
+    const res = await ctx.run(["gitleaks", "version"]);
+    if (!res.spawnError && res.code === 0) {
+      const version = res.stdout.trim() || res.stderr.trim();
+      return `${relative} (gitleaks ${version || "installed"} on PATH — enforceable)`;
+    }
+    return `${relative} present, but gitleaks is not on PATH — the local pre-commit secret gate is unenforced; install it (\`aih tools --apply\`); \`aih guardrails --verify\` fails this at enterprise`;
   }
   return relative;
 }
@@ -80,12 +97,12 @@ export const command: CommandSpec = {
       ...inventory(ctx.root, ctx.contextDir).map((a) =>
         probe(
           `presence: ${a.name}`,
-          (): Check =>
+          async (): Promise<Check> =>
             a.present
               ? {
                   name: a.name,
                   verdict: "pass",
-                  detail: enforcementDetail(a.name, ctx.root, a.relative),
+                  detail: await enforcementDetail(ctx, a.name, a.relative),
                 }
               : { name: a.name, verdict: "skip", detail: a.detail },
         ),

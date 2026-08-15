@@ -61,7 +61,7 @@ async function toolsPlan(ctx: PlanContext): Promise<Plan> {
 export const command: CommandSpec = {
   name: "tools",
   summary:
-    "Install the agent shell tools the harness leans on (rg/fd/jq + ast-grep/comby/tree/gh/code-review-graph); escalates a blocked install as a ticket",
+    "Install the agent shell tools the harness leans on (rg/fd/jq/gitleaks + ast-grep/comby/tree/gh/code-review-graph); escalates a blocked install as a ticket",
   // Diagnose by default so a bare `aih tools` surfaces what's missing + how to get it,
   // yet still install under `--apply` (the heal model).
   alwaysVerify: true,

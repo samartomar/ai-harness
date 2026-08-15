@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type Runner } from "../../src/internals/proc.js";
+import { kiroHooks } from "../../src/kiro/content.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { scanRepo } from "../../src/profile/scan.js";
 import { metricsToolCheck, usageRecorderCheck } from "../../src/usage/hook-health.js";
 
 let root: string;
@@ -216,7 +218,8 @@ describe("usageRecorderCheck", () => {
   });
 });
 
-// The metrics hook's file text always carries `aih track`; the probe keys off that.
+// The LEGACY hook command carried a literal `aih track`; the current writer emits an
+// `execFileSync('aih',['track','--apply'])` one-shot. The probe recognizes both.
 const METRICS_HOOK_TEXT =
   '{"version":"v1","hooks":[{"trigger":"Stop","action":{"command":"node -e \\"...aih track --apply...\\""}}]}';
 
@@ -264,5 +267,31 @@ describe("metricsToolCheck", () => {
     expect(c.verdict).toBe("skip");
     expect(c.code).toBe("usage.kiro-hook-runtime-unverified");
     expect(c.detail).toContain("CLI 2.x ignores");
+  });
+
+  it("recognizes the execFileSync one-shot hook bootstrap-ai actually writes", async () => {
+    // 6.0.1 field report (New 2): doctor said "no Kiro metrics-on-stop hook to
+    // verify" for the very hook `aih bootstrap-ai --kiro-hook-runtime ide1-cli3`
+    // had just written — the probe matched only the legacy `aih track` text. The
+    // fixture comes from the real writer so it can never drift from it again.
+    const metrics = kiroHooks(scanRepo(root, { maxDepth: 2, contextDir: "ai-coding" })).find(
+      (h) => h.path === ".kiro/hooks/aih-metrics-on-stop.json",
+    );
+    if (metrics === undefined) throw new Error("metrics hook missing from kiroHooks output");
+    write(".kiro/hooks/aih-metrics-on-stop.json", JSON.stringify(metrics.hook, null, 2));
+    write(
+      ".aih-config.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        contextDir: "ai-coding",
+        targets: ["kiro"],
+        kiroHookRuntime: "ide1-cli3",
+      }),
+    );
+    const run = fakeRunner((argv) =>
+      argv[0] === "which" && argv[1] === "aih" ? { code: 0, stdout: "/usr/bin/aih" } : undefined,
+    );
+    const c = await metricsToolCheck(makeCtx(run));
+    expect(c.verdict).toBe("pass");
   });
 });

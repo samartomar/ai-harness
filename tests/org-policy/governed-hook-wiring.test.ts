@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import { type PlanContext, plan } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { orgPolicyEffectiveCheck } from "../../src/org-policy/evaluate.js";
 import {
   HOOK_REGISTRAR_DESTINATION,
   HOOK_REGISTRAR_RECEIPT_PATH,
@@ -19,6 +20,7 @@ import {
 import { type HookRegistration, parseOrgPolicy } from "../../src/org-policy/schema.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { usageRecorderScript } from "../../src/usage/capture.js";
+import { usageRecorderCheck } from "../../src/usage/hook-health.js";
 import { claudeUsageHookCommand } from "../../src/usage/hooks.js";
 import { eccStopRegistrations } from "./hook-registrar-fixtures.js";
 
@@ -267,5 +269,75 @@ describe("G4 — the registrar is reachable end to end through the verified proj
     expect(existsSync(join(dir, ORG_POLICY_HOOK_RECEIPT_PATH))).toBe(false);
     await project(usageAndRegistrationsPolicy(adopted, "disabled"));
     expect(readHookRegistrarReceipt(dir)?.entries).toHaveLength(adopted.length);
+  });
+});
+
+describe("registrar-owned PostToolUse vs the usage projector's legacy scan (6.0.1 field regression)", () => {
+  // The field-reported shape: a governed policy whose usage metering arrives as a
+  // hook REGISTRATION, so the registrar owns .claude/settings.json PostToolUse and
+  // no usage receipt exists. The usage projector's deactivation scan runs on every
+  // projection; it must recognize the registrar receipt's claim instead of
+  // reporting AIH's own projection as an unreceipted legacy artifact.
+  it("re-projects a registrar-owned PostToolUse policy instead of refusing its own hook", async () => {
+    const adopted = [adoptedUsageRegistration()];
+    await project(governedPolicy(adopted));
+    await expect(project(governedPolicy(adopted))).resolves.toBeUndefined();
+  });
+
+  it("keeps the shared doctor/evaluate receipt state clean while the registrar owns PostToolUse", async () => {
+    await project(governedPolicy([adoptedUsageRegistration()]));
+    const check = await orgPolicyEffectiveCheck(ctx());
+    expect(check.verdict).not.toBe("fail");
+  });
+
+  it("still fails closed when the registrar-owned PostToolUse drifted after projection", async () => {
+    await project(governedPolicy([adoptedUsageRegistration()]));
+    const destinationPath = join(dir, HOOK_REGISTRAR_DESTINATION);
+    const settings = JSON.parse(readFileSync(destinationPath, "utf8"));
+    settings.hooks.PostToolUse.push({
+      matcher: "*",
+      hooks: [{ type: "command", command: "evil" }],
+    });
+    writeFileSync(destinationPath, JSON.stringify(settings));
+    await expect(project(governedPolicy([adoptedUsageRegistration()]))).rejects.toThrow(
+      /unreceipted|did not emit/,
+    );
+  });
+
+  it("names the hook registrar when a usage activation meets its receipted destination", async () => {
+    await project(governedPolicy([adoptedUsageRegistration()]));
+    await expect(
+      verifiedOrgPolicyProjectionActions(ctx(), usageAndRegistrationsPolicy([])),
+    ).rejects.toThrow(/owned by the hook registrar receipt/);
+
+    // Follow the remedy the message names: registrations dropped AND the
+    // selection deactivated, one settling projection revokes the registrar's
+    // receipt; activating usage metering then projects cleanly.
+    await project(usageAndRegistrationsPolicy([], "disabled"));
+    expect(existsSync(join(dir, HOOK_REGISTRAR_RECEIPT_PATH))).toBe(false);
+    await project(usageAndRegistrationsPolicy([]));
+    expect(existsSync(join(dir, ORG_POLICY_HOOK_RECEIPT_PATH))).toBe(true);
+  });
+
+  it("usage-recorder failure names the registrar-projected reference and the candidate remedy", async () => {
+    await project(governedPolicy([adoptedUsageRegistration()]));
+    const check = await usageRecorderCheck(ctx());
+    expect(check.verdict).toBe("fail");
+    expect(check.detail).toMatch(/hook registrar/);
+    expect(check.detail).toMatch(/usage-metering candidate/);
+  });
+
+  it("plans every path it applies, .gitignore included (dry-run parity)", async () => {
+    const actions = await verifiedOrgPolicyProjectionActions(
+      ctx(),
+      usageAndRegistrationsPolicy([]),
+    );
+    const paths = actions.flatMap((action) => ("path" in action ? [action.path] : []));
+    expect(paths).toContain(".gitignore");
+    const result = await executePlan(plan("policy project", ...actions), ctx({ apply: true }), {
+      skipWorktreeGate: true,
+    });
+    for (const write of result.writes) expect(paths).toContain(write.path);
+    for (const removed of result.removed) expect(paths).toContain(removed.path);
   });
 });

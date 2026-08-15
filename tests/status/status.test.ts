@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
-import { fakeRunner } from "../../src/internals/proc.js";
+import { fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/status.js";
 
@@ -16,8 +16,7 @@ afterEach(() => {
   rmSync(tmp, { recursive: true, force: true });
 });
 
-function makeCtx(): PlanContext {
-  const run = fakeRunner(() => undefined);
+function makeCtx(run: Runner = fakeRunner(() => undefined)): PlanContext {
   return {
     root: tmp,
     contextDir: ".ai-context",
@@ -70,6 +69,35 @@ describe("status — enforcement read-back (P1-F sliver)", () => {
     const check = res.report?.checks.find((c) => c.name === "pre-commit");
     expect(check?.verdict).toBe("pass");
     expect(check?.detail).toContain("hook installed — active");
+  });
+
+  it("flags a generated gitleaks config as unenforced when gitleaks is not on PATH", async () => {
+    // Generation is not activation (6.0.1 field report New 3): status called the
+    // secret gate green off the config file's presence while `aih guardrails
+    // --verify` failed it. Verdict stays pass (status is exit-0 by contract);
+    // the detail carries the enforcement truth, exactly like the pre-commit row.
+    put(".gitleaks.toml", "# managed\n");
+    const absent = fakeRunner((argv) =>
+      argv[0] === "gitleaks" ? { code: 127, stdout: "", spawnError: true } : undefined,
+    );
+    const res = await executePlan(await command.plan(makeCtx(absent)), makeCtx(absent));
+    const check = res.report?.checks.find((c) => c.name === "gitleaks");
+    expect(check?.verdict).toBe("pass");
+    expect(check?.detail).toContain("unenforced");
+    expect(check?.detail).toContain("aih guardrails --verify");
+    expect(res.report?.exitCode()).toBe(0);
+  });
+
+  it("reports the gitleaks gate enforceable when the binary is on PATH", async () => {
+    put(".gitleaks.toml", "# managed\n");
+    const present = fakeRunner((argv) =>
+      argv[0] === "gitleaks" ? { code: 0, stdout: "8.30.1\n" } : undefined,
+    );
+    const res = await executePlan(await command.plan(makeCtx(present)), makeCtx(present));
+    const check = res.report?.checks.find((c) => c.name === "gitleaks");
+    expect(check?.verdict).toBe("pass");
+    expect(check?.detail).toContain("enforceable");
+    expect(check?.detail).toContain("8.30.1");
   });
 
   it("does not mark a regular file as the context directory", async () => {

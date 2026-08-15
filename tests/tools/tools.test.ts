@@ -46,6 +46,21 @@ const probe = (a: Action[], needle: string): ProbeAction | undefined =>
   a.find((x): x is ProbeAction => x.kind === "probe" && x.describe.includes(needle));
 
 describe("install.ts pure helpers", () => {
+  it("covers gitleaks as a core tool so the guardrails gate's dependency is installable", () => {
+    // 6.0.1 field report (Carried Forward 5): `aih tools --apply` claimed "All
+    // agent shell tools are on PATH. Nothing to install." while `aih guardrails
+    // --verify` hard-failed on the absent gitleaks the installer did not cover.
+    const gitleaks = TOOLS.find((t) => t.bin === "gitleaks");
+    if (!gitleaks) throw new Error("gitleaks spec missing");
+    expect(gitleaks.tier).toBe("core");
+    expect(chooseOption(gitleaks, new Set(["brew"]))?.argv).toEqual([
+      "brew",
+      "install",
+      "gitleaks",
+    ]);
+    expect(chooseOption(gitleaks, new Set(["winget"]))?.argv).toContain("Gitleaks.Gitleaks");
+  });
+
   it("chooseOption picks the first option whose PM is available", () => {
     const rg = TOOLS.find((t) => t.bin === "rg");
     if (!rg) throw new Error("rg spec missing");
@@ -86,8 +101,8 @@ describe("install.ts pure helpers", () => {
     const wingetArgvs = TOOLS.flatMap((t) => t.options)
       .filter((o) => o.pm === "winget")
       .map((o) => o.argv);
-    // rg / fd / jq / gh — the four tools that ship winget installers.
-    expect(wingetArgvs).toHaveLength(4);
+    // rg / fd / jq / gitleaks / gh — the five tools that ship winget installers.
+    expect(wingetArgvs).toHaveLength(5);
     for (const argv of wingetArgvs) {
       expect(argv.slice(0, 3)).toEqual(["winget", "install", "-e"]);
       expect(argv).toContain("--id");
