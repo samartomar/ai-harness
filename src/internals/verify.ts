@@ -37,6 +37,12 @@ export type CheckCode =
   | "mcp.allowlist-generation-delta"
   | "mcp.version-drift"
   | "mcp.pin-unattested"
+  // A pinned MCP server that answered the attestation launch with its own
+  // JSON-RPC error: the artifact resolved and ran, so the pin is still
+  // unattested BUT re-attesting cannot change that — the operator has a host
+  // condition to clear first. Split from `mcp.pin-unattested` so the routed
+  // remediation is the one that can actually work.
+  | "mcp.server-startup-error"
   // Pin currency (issue #504): `mcp.pin-stale` — a registry publishes a newer
   // release than an exactly-pinned MCP package launch (a vet-then-bump candidate,
   // never an automatic upgrade); `mcp.projection-stale` — a `.mcp.json` pin

@@ -139,14 +139,17 @@ function readUvxLaunches(root: string): UvxConfig {
 }
 
 /** Printable, bounded echo of a cross-boundary string (server output → report). */
-function sanitizeExternal(value: string): string {
+function sanitizeExternal(value: string, max = 64): string {
   const cleaned = [...value]
     .map((ch) => (ch >= " " && ch <= "~" ? ch : " "))
     .join("")
     .replace(/\s+/g, " ")
     .trim();
-  return cleaned.length > 0 ? cleaned.slice(0, 64) : "<unprintable>";
+  return cleaned.length > 0 ? cleaned.slice(0, max) : "<unprintable>";
 }
+
+/** Echo bound for a reported error; a diagnostic needs more room than a version. */
+const ERROR_ECHO_MAX = 180;
 
 /** The first `serverInfo.version` in a stdio server's initialize output, if any. */
 function serverInfoVersion(stdout: string): string | undefined {
@@ -167,11 +170,45 @@ function serverInfoVersion(stdout: string): string | undefined {
 }
 
 /**
+ * The first JSON-RPC error a stdio server reported, if any. Presence is positive
+ * evidence about the launch that no exit code carries: a package that never
+ * resolved cannot answer in the protocol at all, so a server that emits an
+ * `error` object resolved, executed, and is stating why it refuses to serve.
+ */
+function serverReportedError(stdout: string): string | undefined {
+  for (const line of stdout.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    let message: unknown;
+    try {
+      message = JSON.parse(trimmed);
+    } catch {
+      // Not a JSON-RPC line (a misbehaving server logging to stdout) — keep scanning.
+      continue;
+    }
+    if (message === null || typeof message !== "object") continue;
+    const error = (message as { error?: unknown }).error;
+    if (error === null || typeof error !== "object" || Array.isArray(error)) continue;
+    const { code, message: text } = error as { code?: unknown; message?: unknown };
+    if (typeof text !== "string" || text.trim().length === 0) continue;
+    const label = typeof code === "number" ? `JSON-RPC error ${code}` : "a JSON-RPC error";
+    return `${label}: ${sanitizeExternal(text, ERROR_ECHO_MAX)}`;
+  }
+  return undefined;
+}
+
+/**
  * The doctor probe. Verdict grammar: `pass` only when every uvx pin was launched
  * and its `serverInfo.version` matches the pin; a mismatch is an advisory `skip`
  * coded `mcp.version-drift`; every not-attested state (opt-in flag absent,
  * unpinned launcher, launch/handshake failure) is an advisory `skip` coded
- * `mcp.pin-unattested` — visible, never green.
+ * `mcp.pin-unattested` — visible, never green. A launch the server itself
+ * refused with a JSON-RPC error splits off to `mcp.server-startup-error`: the
+ * pin is equally unattested, but re-attesting is the remedy for one and a no-op
+ * for the other. It stays advisory rather than a `fail` for the same reason the
+ * rest of this grammar does — the attestation launch is synthetic and carries no
+ * config-supplied environment, so a server refusing it is not proven broken under
+ * the operator's own launch, and a third-party artifact never gates a doctor run.
  */
 export async function mcpUvxPinAttestationProbe(ctx: PlanContext): Promise<Check> {
   const name = PROBE_NAME;
@@ -235,6 +272,8 @@ export async function mcpUvxPinAttestationProbe(ctx: PlanContext): Promise<Check
   const attested: string[] = [];
   const mismatched: string[] = [];
   const unattested: string[] = [];
+  /** Servers that answered with their own error — routing only; the text sits in `unattested`. */
+  const startupErrors: string[] = [];
   for (const launch of pinned) {
     // Safe by construction: mcpResolverPinState only returns "pinned" for the
     // literal `uvx` command, exact pins end-to-end, and no config-supplied env.
@@ -254,11 +293,24 @@ export async function mcpUvxPinAttestationProbe(ctx: PlanContext): Promise<Check
       // the handshake — the exact machine (a fresh workstation) that most wants
       // attestation. Name the cause and the one-time remedy instead of leaving
       // an undiagnosable exit code (6.0.1 field report).
-      const offlineNote =
-        launch.args.includes("--offline") && (res.spawnError || res.code !== 0)
-          ? " — the launcher pins --offline, so a cold uv cache cannot resolve the package; pre-warm it by running the launcher once without --offline, then re-run --attest-mcp-pins"
-          : "";
-      unattested.push(`${launch.server} (${launch.pin.spec}): ${why}${offlineNote}`);
+      //
+      // That remedy is an INFERENCE from an exit code, so it only holds while the
+      // server said nothing. When it answered with a JSON-RPC error it resolved
+      // and ran — the cache is already warm — and pre-warming cannot fix whatever
+      // it named (codebase-memory-mcp 0.10.4 refusing its daemon endpoint on a
+      // hardened host). The server's own words win; the inference is withheld
+      // rather than layered on top of evidence that contradicts it.
+      const reported = serverReportedError(res.stdout);
+      const offlineLaunchDied =
+        launch.args.includes("--offline") && (res.spawnError || res.code !== 0);
+      const note =
+        reported !== undefined
+          ? ` — the server itself reported ${reported}; resolve that condition on this host, then re-run --attest-mcp-pins`
+          : offlineLaunchDied
+            ? " — the launcher pins --offline, so a cold uv cache cannot resolve the package; pre-warm it by running the launcher once without --offline, then re-run --attest-mcp-pins"
+            : "";
+      if (reported !== undefined) startupErrors.push(launch.server);
+      unattested.push(`${launch.server} (${launch.pin.spec}): ${why}${note}`);
     } else if (version === launch.pin.version) {
       attested.push(`${launch.server} (${launch.pin.spec})`);
     } else {
@@ -286,7 +338,11 @@ export async function mcpUvxPinAttestationProbe(ctx: PlanContext): Promise<Check
     return {
       name,
       verdict: "skip",
-      code: "mcp.pin-unattested",
+      // A server that named its own startup failure is a different operator task
+      // from an unattested pin: re-running attestation is the remedy for the
+      // latter and a no-op for the former, so it routes to its own code rather
+      // than inheriting `mcp.pin-unattested`'s "pin exactly, then re-attest".
+      code: startupErrors.length > 0 ? "mcp.server-startup-error" : "mcp.pin-unattested",
       detail: `could not attest: ${unattested.join("; ")}${
         attested.length > 0 ? `; attested clean: ${attested.join(", ")}` : ""
       }${unpinnedNote}`,

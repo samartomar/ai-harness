@@ -293,6 +293,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Pin every uvx MCP launcher exactly (pkg==x.y.z), then run `aih doctor --attest-mcp-pins` to launch each pinned server once and compare its self-reported serverInfo.version to the pin.",
   },
+  "mcp.server-startup-error": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "pinned MCP server reported its own startup error",
+    action:
+      "Read the error the server reported in the verification detail and clear that condition on this host — the package resolved and ran, so re-running attestation and pre-warming the uv cache both change nothing. Re-run `aih doctor --attest-mcp-pins` once the server starts; until then its pin stays unattested.",
+  },
   "mcp.pin-stale": {
     audience: "developer",
     failSeverity: "degraded",
