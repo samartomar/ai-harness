@@ -203,9 +203,10 @@ describe("active external-pin ledger", () => {
     expect(memory.integrityCovers).toBe("launcher-only");
     expect(memory.reason).toMatch(/launcher shim/i);
     expect(memory.reason).toMatch(/does not cover the executed artifact/i);
-    // The 0.9.0 shim's checksum step is fail-open, so an unreachable checksums.txt
-    // lets an unverified archive run — the reason must keep saying so while pinned here.
-    expect(memory.reason).toMatch(/_verify_checksum swallows/i);
+    // Closing the fail-open checksum step is WHY this pin moved off 0.9.0, so the
+    // reason has to keep saying the shipped shim verifies fail-closed. If a future
+    // bump ever lands on a fail-open shim again, this assertion is the tripwire.
+    expect(memory.reason).toMatch(/_verify_checksum is fail-closed/i);
     expect(memory.reason).toMatch(/--offline governs uv wheel resolution only/i);
 
     // The invariant the marker exists to enforce: provisioning is real egress, so a

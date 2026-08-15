@@ -51,7 +51,7 @@ describe("mcpUvxPinAttestationProbe — offline pins on a cold uv cache", () => 
       "--offline",
       "--no-python-downloads",
       "--no-env-file",
-      "codebase-memory-mcp@0.9.0",
+      "codebase-memory-mcp@0.10.5",
     ]);
     const run = fakeRunner((argv) => (argv[0] === "uvx" ? { code: 1, stdout: "" } : undefined));
     const check = await mcpUvxPinAttestationProbe(ctx(run));
@@ -63,7 +63,7 @@ describe("mcpUvxPinAttestationProbe — offline pins on a cold uv cache", () => 
   });
 
   it("keeps the plain failure wording for a launcher that does not pin --offline", async () => {
-    writeKiroConfig(["--no-python-downloads", "--no-env-file", "codebase-memory-mcp@0.9.0"]);
+    writeKiroConfig(["--no-python-downloads", "--no-env-file", "codebase-memory-mcp@0.10.5"]);
     const run = fakeRunner((argv) => (argv[0] === "uvx" ? { code: 1, stdout: "" } : undefined));
     const check = await mcpUvxPinAttestationProbe(ctx(run));
     expect(check.verdict).toBe("skip");
@@ -77,7 +77,7 @@ describe("mcpUvxPinAttestationProbe — offline pins on a cold uv cache", () => 
       "--offline",
       "--no-python-downloads",
       "--no-env-file",
-      "codebase-memory-mcp@0.9.0",
+      "codebase-memory-mcp@0.10.5",
     ]);
     const initialize = JSON.stringify({
       jsonrpc: "2.0",
