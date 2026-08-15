@@ -37,7 +37,12 @@ import {
   executeGovernedEccMaterialization,
   governedEccComponentIds,
 } from "./governed-lifecycle.js";
-import { eccActionsForCli, eccToolsDoc, isAihDirectEccInstallTarget } from "./install.js";
+import {
+  eccActionsForCli,
+  eccSupplyChainDoc,
+  eccToolsDoc,
+  isAihDirectEccInstallTarget,
+} from "./install.js";
 import {
   contingentEccInstallPreviewPlan,
   type EccInstallPreviewArtifact,
@@ -353,6 +358,13 @@ export async function executeEccCommand(
     }),
   );
   actions.push(eccToolsDoc());
+  // The consult route recommends `npx ecc consult` — an unpinned, latest-from-npm fetch.
+  // The advisory that names that risk and how to pin it was pushed only inside `eccPlan`,
+  // which real dispatch never runs (`deps.execute = executeEccCommand`), so a consult-only
+  // target such as Kiro recommended a mutable-upstream command with no pinning warning at
+  // any posture — while the rest of the product denies unpinned supply chains at
+  // enterprise. Emitted here so the operator sees it on the path they actually take.
+  actions.push(eccSupplyChainDoc());
   if (detectFellBack) {
     actions.push(doc("no AI CLIs detected — defaulted to claude", detectFallbackNotice()));
   }

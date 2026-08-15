@@ -36,6 +36,7 @@ import {
   orgPolicyEffectiveDigest,
 } from "../../src/org-policy/evaluate.js";
 import {
+  authoritySuffix,
   orgPolicyHookReceiptState,
   orgPolicyProjectionActions,
   verifiedOrgPolicyProjectionActions,
@@ -1859,5 +1860,48 @@ describe("governed candidate projection", () => {
     await expect(mcpCommand.plan(ctx())).rejects.toThrow(
       /governance exclusively owns AIH mcp projection/,
     );
+  });
+});
+
+/**
+ * `verifyPolicyAuthorityReceipt` runs on every invocation, so its "registry unavailable"
+ * problem used to be appended to EVERY blocked-candidate refusal regardless of why the
+ * candidate blocked. An operator whose candidates were merely target-unselected got sent
+ * chasing AIH_POLICY_AUTHORITY_REPOSITORY, then watched the note vanish once the selection
+ * was fixed — not because the registry became reachable, but because nothing threw.
+ */
+describe("policy project — authority note is not a cascade", () => {
+  /** Minimal blocked-candidate shape; only the code arrays drive the suffix. */
+  const blockedWith = (codes: string[]) =>
+    ({
+      authorityProblem: "external organization authority registry is unavailable",
+      effective: {
+        candidates: [{ requested: true, effective: false, dangerCodes: codes, blockingCodes: [] }],
+      },
+    }) as never;
+
+  it("omits the note when the block has nothing to do with authority", () => {
+    // The reporter's exact case: candidates blocked purely on target coverage.
+    expect(authoritySuffix(blockedWith(["missing-projector", "unsupported-target"]))).toBe("");
+  });
+
+  it("reports the note when the block itself depends on the registry", () => {
+    expect(authoritySuffix(blockedWith(["evidence-missing"]))).toContain("authority:");
+    expect(authoritySuffix(blockedWith(["authority-receipt-unverified"]))).toContain("authority:");
+    expect(authoritySuffix(blockedWith(["approval-expired"]))).toContain("authority:");
+  });
+
+  it("omits the note when the registry is available, whatever the block", () => {
+    expect(authoritySuffix({ effective: { candidates: [] } } as never)).toBe("");
+  });
+
+  /** End-to-end: a real authority-dependent block still surfaces the note. */
+  it("still surfaces the note through the real projection path", async () => {
+    await expect(
+      verifiedOrgPolicyProjectionActions(
+        ctx({ env: { AIH_POLICY_AUTHORITY_REPOSITORY: "" }, targets: ["claude"] }),
+        customPolicy(["claude"]),
+      ),
+    ).rejects.toThrow(/authority: external organization authority registry is unavailable/);
   });
 });

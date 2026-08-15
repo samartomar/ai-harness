@@ -59,6 +59,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   neither was selected and `target-not-selected:claude` when only Kiro was, which read as a
   contradiction; the reason now also carries the required target set and the actual selection.
   The stable `target-not-selected:` / `target-not-supported:` prefixes are unchanged.
+- The org authority-registry note is no longer appended to every blocked-candidate refusal.
+  `verifyPolicyAuthorityReceipt` runs on every invocation, so its "registry unavailable" problem
+  was suffixed onto any `policy project` refusal regardless of why the candidate blocked. An
+  operator whose candidates were merely target-unselected was sent chasing
+  `AIH_POLICY_AUTHORITY_REPOSITORY`, then saw the note vanish once the selection was fixed — not
+  because the registry became reachable, but because nothing threw. It now appears only when a
+  blocked candidate's own codes depend on the registry (evidence and approval verification).
+- `aih ecc` now emits the unpinned supply-chain advisory on the consult-only path. The advisory
+  naming ECC's mutable-upstream `latest` execution and how to pin it was pushed only inside
+  `eccPlan`, which real dispatch never runs (`deps.execute = executeEccCommand`). A consult-only
+  target such as Kiro therefore recommended `npx ecc consult` — an unpinned, latest-from-npm
+  fetch — with no pinning warning at any posture, while the rest of the product denies unpinned
+  supply chains at enterprise.
 - `aih policy evaluate` now honors a typed `--posture`. Posture gates projector availability, so
   the command's checks are posture-scoped, but the spec omitted `honorReadOnlyPostureFlag` and the
   flag was dropped for this read-only command — every posture produced identical output reporting
