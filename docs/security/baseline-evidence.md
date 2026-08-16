@@ -309,8 +309,9 @@ first.
 
 The vet-once workflow checks out both canonical upstream SHAs, runs the same
 vetter, and fails when component hashes, analyzer receipts, or verdicts drift. It
-reproducibly builds the controlled SkillSpector image, proves the exact Cisco
-package can execute offline, and never commits regenerated evidence. The pure
+pulls the controlled SkillSpector image by digest and verifies that digest, proves
+the exact Cisco package can execute offline, and never commits regenerated
+evidence. No workflow builds the image; building is the local audit path only. The pure
 `check:baseline-analyzers` gate also runs in normal verification and before
 release packaging, so a stale or partial receipt set cannot reach a cut.
 

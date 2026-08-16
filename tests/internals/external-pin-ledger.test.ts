@@ -379,7 +379,13 @@ describe("active external-pin ledger", () => {
       integrity: "sha256:108b707cb98cb418680782f9745942b1d3904104a45d8f6fd62f102672285d55",
       disposition: "active",
     });
-    expect(entry("skillspector").reason).toMatch(/two clean cache-disabled OCI exports/i);
+    // The reason must record what the two-build check actually establishes. It
+    // previously claimed five reproductions proved a reproducible digest; those
+    // builds were concurrent, and the digest stopped reproducing once the
+    // unpinned PEP 517 backends moved. Assert the corrected claim, not the old one.
+    expect(entry("skillspector").reason).toMatch(
+      /Reproduction claim corrected 2026-08-15.*concurrent builds in a single window.*PEP 517 build backends/i,
+    );
     expect(entry("anthropic-skills-guide")).toMatchObject({
       commit: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
       disposition: "retained",

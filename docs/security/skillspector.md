@@ -77,8 +77,20 @@ docker tag ghcr.io/samartomar/skillspector:aih-0562b964ec5c \
 The harness-owned Dockerfile consumes the upstream commit's checked-in
 `uv.lock`, pins its Python base by digest, removes two path-bearing wheel-cache
 metadata files, and canonicalizes the virtual environment before the final
-networkless runtime image is created. Two clean cache-disabled builds must
-produce the controlled digest above before it changes.
+networkless runtime image is created. Two clean cache-disabled builds must agree
+before the controlled digest changes.
+
+That agreement check has a known limit, recorded here so it is not read as more
+than it is. Both builds run in the same window and therefore resolve the same
+PEP 517 build backends, so the check detects concurrent nondeterminism only. It
+does not establish that a digest can be rebuilt later: `uv.lock` pins the runtime
+dependencies but not the backends that build the two packages compiled from
+source, so a `setuptools` or `hatchling` release changes their `.dist-info`
+metadata and with it the layer digest. Rebuilding revision
+`0562b964ec5ceac67ee15c163738e5404f14a908` on 2026-08-15 produced a different
+digest for exactly that reason. Treat the local build as an audit of build
+inputs, not as re-derivation of the controlled digest, and see the `skillspector`
+entry in `src/internals/external-pin-ledger.json` for the recorded evidence.
 
 If your org mirrors third-party tools, build the same commit from the mirror and
 apply the same local tag. Local Docker builds can produce an image ID different
