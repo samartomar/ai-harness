@@ -99,7 +99,7 @@
       "version": "1.0.27",
       "integrity": "sha256:991c7220f249b6e512946e949115ecf514599a34c1f7e1545b46af0083539aa1",
       "disposition": "blocked",
-      "reason": "PyPI still reports 1.0.27 as latest, but its awslabs-aws-diagram-mcp-server>=1.0.5 dependency is entirely yanked in favor of the deploy-on-AWS Agent Toolkit plugin. Fresh uv resolution fails, so AIH no longer generates this launch."
+      "reason": "PyPI still reports 1.0.27 as the newest release, but that release is now itself yanked: both its wheel and its sdist carry the yank reason \"load individual MCPs\", so the pinned version is no longer an installable candidate on its own terms. The original blocker also stands and has hardened. 1.0.27 requires awslabs-aws-diagram-mcp-server>=1.0.5, and every diagram release in that range -- all 18 from 1.0.5 through the current newest 1.0.23 -- is yanked in favor of the deploy-on-AWS Agent Toolkit plugin, leaving the constraint with no unyanked solution. Fresh uv resolution fails, so AIH no longer generates this launch. Both yank facts were re-verified directly against the PyPI JSON API on 2026-08-15; this entry records a yank state, not a version move."
     },
     {
       "surface": "skillspector",
