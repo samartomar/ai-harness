@@ -81,7 +81,7 @@ describe("baseline evidence release payload", () => {
     expect(workflow).not.toContain("containerd-snapshotter");
     expect(workflow).not.toContain("systemctl restart docker");
     expect(workflow).not.toContain("docker build");
-    expect(workflow).toContain("astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9");
+    expect(workflow).toContain("astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d");
     expect(workflow).toContain(`skill-scanner ${CISCO_SKILL_SCANNER_VERSION}`);
     expect(workflow).toContain("actions/upload-artifact@");
     expect(workflow).toContain("src/baseline-evidence/vendor-lock.json");
