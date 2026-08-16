@@ -414,5 +414,30 @@ describe("active external-pin ledger", () => {
       /RED, degraded.*186 failing.*Cisco and Semgrep completed.*SkillSpector timed out.*Snyk/i,
     );
     expect(entry("aws-mcp-guide-source").reason).toMatch(/Agent Toolkit for AWS/i);
+
+    // The ECC candidate is recorded blocked WITHOUT moving the active pin, so the
+    // two entries must keep disagreeing on commit: a candidate that silently
+    // matched baseline-sources would mean the rotation happened.
+    expect(entry("ecc-candidate")).toMatchObject({
+      identity: "affaan-m/ECC",
+      version: "untagged, 100 commits past v2.1.0",
+      commit: "dcbf95bf63dc67701564198df9c3451940a2ca83",
+      disposition: "blocked",
+    });
+    expect(entry("ecc-candidate").commit).not.toBe(entry("ecc").commit);
+    expect(entry("ecc-candidate").reason).toMatch(/ECC_PREVIEW_DEPENDENCY_CLOSURE_UNQUALIFIED/);
+    // Counts and the run that produced them are the evidence; losing either
+    // would leave a verdict with nothing behind it.
+    expect(entry("ecc-candidate").reason).toMatch(/run 31922381993/);
+    expect(entry("ecc-candidate").reason).toMatch(/137 ECC components/);
+    expect(entry("ecc-candidate").reason).toMatch(/109 pass and 28 blocked/);
+    expect(entry("ecc-candidate").reason).toMatch(/NO newly blocked component ids/);
+    expect(entry("ecc-candidate").reason).toMatch(/15\/15 pass/);
+    expect(entry("ecc-candidate").reason).toMatch(/js-yaml@4\.3\.1/);
+    // These two disclaimers are the entry's load-bearing scope limits. Dropping
+    // either would overstate the finding into a content or execution claim.
+    expect(entry("ecc-candidate").reason).toMatch(/not a new malicious-content finding/i);
+    expect(entry("ecc-candidate").reason).toMatch(/not evidence that js-yaml executes/i);
+    expect(entry("ecc-candidate").reason).toMatch(/lexical/i);
   });
 });

@@ -14,6 +14,14 @@
       "reason": "Rebound to current upstream main for the full re-vet. ECC's own install manifests are byte-identical to the v2.1.0 pin, so the module and profile snapshots are unchanged; the delta is content inside modules. The npm-sha512 integrity of ecc-universal@2.1.0 was dropped from this entry because this commit is past that release and no longer describes it — the published-package lineage is recorded separately as releaseAncestorCommit in src/ecc-profile."
     },
     {
+      "surface": "ecc-candidate",
+      "identity": "affaan-m/ECC",
+      "version": "untagged, 100 commits past v2.1.0",
+      "commit": "dcbf95bf63dc67701564198df9c3451940a2ca83",
+      "disposition": "blocked",
+      "reason": "ECC_PREVIEW_DEPENDENCY_CLOSURE_UNQUALIFIED. Candidate dcbf95bf63dc67701564198df9c3451940a2ca83 is recorded blocked for promotion. The from-scratch four-shard vet, run 31922381993 on 2026-08-16 UTC, completed every shard successfully: 137 ECC components resolved 109 pass and 28 blocked, with NO newly blocked component ids relative to the active 623f2c02 pin, and obra/Superpowers held 15/15 pass. The assemble step then failed because js-yaml@4.3.1 is not a qualified package in the install-preview generator dependency closure. This is not a new malicious-content finding: the blocked set is the same 28 component ids as the active pin and none was added. It is also not evidence that js-yaml executes during preview generation. AIH calls createManifestInstallPlan, and the current closure check is lexical -- it follows literal requires out of scripts/lib/install-executor.js, including an apply-only chain through install/apply.js to install/antigravity-agent.js, and rejects the bare package import conservatively rather than showing the planning path reaches it. Nothing was promoted and nothing moved: no runtime execution, no pin movement, no projection, no lock. src/internals/baseline-sources.ts remains pinned to 623f2c02. The remedy is upstream-shaped -- expose createManifestInstallPlan through a pure planning module that imports neither apply-only transforms nor third-party packages -- and is deliberately NOT an allowlist, dynamic-require bypass, vendored shim, or custom YAML parser, each of which would widen an evidence boundary inside a pin rotation."
+    },
+    {
       "surface": "superpowers",
       "identity": "obra/Superpowers",
       "commit": "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
