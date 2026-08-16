@@ -191,7 +191,9 @@ describe("ai-harness repo AI tooling", () => {
     for (const file of [".serena/project.yml", ".serena/.gitignore"]) {
       expectUntrackedAndIgnored(file);
     }
-    expect(toolingPlan()).toMatchObject({ installRoot: "project-keyed user cache" });
+    expect(toolingPlan()).toMatchObject({
+      installRoot: "project-and-toolset-keyed user cache",
+    });
   });
 
   it("keeps Token Savior from indexing or dirtying the worktree with its own cache", () => {

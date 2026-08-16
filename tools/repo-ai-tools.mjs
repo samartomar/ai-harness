@@ -8,7 +8,36 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const repoKey = createHash("sha256").update(repoRoot).digest("hex").slice(0, 16);
+const pins = {
+  serena: {
+    package: "serena-agent==1.7.0",
+    license: "MIT",
+    source: "https://github.com/oraios/serena",
+    securityOverrides: [
+      "python-multipart==0.0.32",
+      "starlette==1.3.1",
+    ],
+  },
+  tokenOptimizer: {
+    tag: "v5.11.68",
+    commit: "0968d8e0a4afe07d3de37ac6a720e5fcc02e4987",
+    license: "PolyForm-Noncommercial-1.0.0",
+    source: "https://github.com/alexgreensh/token-optimizer",
+  },
+  tokenSavior: {
+    package: "token-savior-recall[mcp]==4.21.0",
+    license: "MIT",
+    source: "https://github.com/mibayy/token-savior",
+  },
+};
+const cacheGeneration = createHash("sha256")
+  .update(JSON.stringify(pins))
+  .digest("hex")
+  .slice(0, 16);
+const repoKey = createHash("sha256")
+  .update(`${repoRoot}\0${cacheGeneration}`)
+  .digest("hex")
+  .slice(0, 16);
 const cacheRoot =
   process.env.AIH_REPO_AI_TOOLS_HOME ||
   (process.platform === "win32"
@@ -22,27 +51,10 @@ const tokenOptimizerClaudeScope = join(installRoot, "token-optimizer", "claude-s
 const serenaOverridesPath = join(installRoot, "serena-security-overrides.txt");
 
 const plan = {
-  pins: {
-    serena: {
-      package: "serena-agent==1.7.0",
-      license: "MIT",
-      source: "https://github.com/oraios/serena",
-      securityOverrides: [
-        "python-multipart==0.0.32",
-        "starlette==1.3.1",
-      ],
-    },
-    tokenOptimizer: {
-      tag: "v5.11.68",
-      commit: "0968d8e0a4afe07d3de37ac6a720e5fcc02e4987",
-      license: "PolyForm-Noncommercial-1.0.0",
-      source: "https://github.com/alexgreensh/token-optimizer",
-    },
-    tokenSavior: {
-      package: "token-savior-recall[mcp]==4.21.0",
-      license: "MIT",
-      source: "https://github.com/mibayy/token-savior",
-    },
+  pins,
+  cache: {
+    generation: cacheGeneration,
+    keyInputs: ["repository-path", "tool-pins"],
   },
   runtime: {
     serena: { context: "ide", mode: "no-memories" },
@@ -60,7 +72,7 @@ const plan = {
       excludePatterns: [".token-savior-cache.json"],
     },
   },
-  installRoot: "project-keyed user cache",
+  installRoot: "project-and-toolset-keyed user cache",
 };
 
 function fail(message) {
