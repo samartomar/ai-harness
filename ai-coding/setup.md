@@ -4,34 +4,59 @@
 > `ai-coding/project.json`. Never run AIH against this checkout. The maintenance
 > boundary and current conditional shape are in `ai-coding/SELF-HOSTING.md`.
 
-## 1. Install & verify
+## Ready a clone for Codex work
 
-- Install dependencies: `npm install`.
-- Run the completion gate: `npm run verify`.
-- Fast partial checks: `npm run typecheck`, `npm test`, `npm run build`, `npm run lint`.
-- Treat the root as one npm package. The pinned `uv` manifests under `tools/`
-  are analyzer runtime inputs, not independently managed repository workspaces.
+Prerequisites are Node.js 20+, npm, Git, Codex CLI, `uv` with an installed
+Python 3.13, `rg`, `fd`, and `tree`. Then run:
 
-## 2. Turn on the guardrails (once per clone)
+```powershell
+npm install
+npm run repo:init
+```
 
-- `git config core.hooksPath .githooks` — enables the repo-owned pre-commit
-  lint/test hook.
-- `git ls-files -- ".env" ".env.*" "secrets/**"` — inspect tracked sensitive
-  path names only; readable `.env.example` / `.env.sample` templates are the only
-  expected exceptions.
-- `npm run check:self-hosting-canon` — verify bootloader mirrors, contract facts,
-  and the no-self-application boundary.
+`repo:init` is the single idempotent bootstrap. It enables the repository hook,
+installs the exact repo tool pins in a repository-and-pin-keyed user cache,
+installs or refreshes ECC through the native Codex plugin lifecycle, writes an
+ignored project-local Codex MCP projection, creates the graph and memory indexes,
+and runs the doctor. It preserves unrelated user MCP servers and Codex settings.
 
-## 3. MCP and AI tooling
+Start a new Codex task after setup so Codex loads ECC and the project MCP
+projection. That task can begin product work immediately; no separate helper
+registration or initial indexing step is expected.
 
-- No client-specific MCP or hook registration is committed in this checkout.
-- Optionally install the repo-pinned Token Savior, Token Optimizer, and Serena tools:
-  `node tools/repo-ai-tools.mjs install`.
-- Verify the exact local pins: `node tools/repo-ai-tools.mjs verify`.
-- Installation alone does not register those tools with Claude, Codex, or any
-  other client; local projection remains operator-owned.
+## Prove the setup
 
-## 4. Maintain the AIH-shaped canon
+Run `npm run repo:doctor`. A successful JSON result proves all of the following:
+
+- exact Serena, Token Savior, Token Optimizer, code-review-graph, and
+  codebase-memory-mcp pins;
+- the ECC plugin is installed, enabled, and has a real installed path;
+- Codex resolves the four repo launchers with their narrow tool allowlists;
+- every MCP completes a real protocol handshake and exposes its expected tools;
+- the external graph and memory indexes are present; and
+- the `ai-coding` routing contract is available.
+
+The doctor is a setup proof, not a product completion gate. If a helper later
+fails during normal work, warn once and continue from source, tests, schemas,
+and CI. Run `npm run repo:init` again only to repair or refresh the tool setup.
+Use `node tools/repo-ai-tools.mjs setup-codex --dry-run` to inspect its mutation
+scope without changing anything. A fresh setup installs the current ECC
+marketplace snapshot. Later ECC marketplace refresh is explicit because the
+native operation is network-bound: run
+`node tools/repo-ai-tools.mjs setup-codex --refresh-ecc` when that refresh is the
+assigned task; normal reruns retain and verify the installed plugin.
+
+## Work and verification
+
+- Fast product checks: `npm run typecheck`, `npm test`, `npm run build`, and
+  `npm run lint`.
+- Full product completion gate: `npm run verify`.
+- Sensitive path-name check: `git ls-files -- ".env" ".env.*" "secrets/**"`.
+- Self-hosting check: `npm run check:self-hosting-canon`.
+- Treat the root as one npm package. Pinned `uv` manifests under `tools/` are
+  analyzer runtime inputs, not independently managed repository workspaces.
+
+## Maintain the AIH-shaped canon
 
 - Update `project.json`, `project.md`, and this setup file together when detected
   repository facts change.
