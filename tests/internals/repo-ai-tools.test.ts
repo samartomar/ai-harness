@@ -98,6 +98,16 @@ describe("ai-harness repo AI tooling", () => {
     });
   });
 
+  it("versions the project cache by tool pins so live MCP environments are never replaced", () => {
+    expect(toolingPlan()).toMatchObject({
+      cache: {
+        generation: expect.stringMatching(/^[0-9a-f]{16}$/),
+        keyInputs: ["repository-path", "tool-pins"],
+      },
+      installRoot: "project-and-toolset-keyed user cache",
+    });
+  });
+
   it("keeps client-specific MCP and hook launchers out of the repository", () => {
     for (const file of [
       ".mcp.json",
