@@ -80,8 +80,8 @@ the release vet records exact analyzer receipts before the lock is written:
 - `cisco-ai-skill-scanner==2.0.13` through its committed uv project is additionally required
   for every component whose declared bytes contain a regular `SKILL.md` file;
 - SkillSpector is bound to source revision
-  `0562b964ec5ceac67ee15c163738e5404f14a908` and controlled image digest
-  `sha256:108b707cb98cb418680782f9745942b1d3904104a45d8f6fd62f102672285d55`.
+  `2d198ab910add401cad658d1087e7c7ba24fd640` and controlled image digest
+  `sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800`.
 
 Supplemental locked detectors are not part of the minimum release floor and do
 not enlarge the deterministic component-receipt closure. When one completes,

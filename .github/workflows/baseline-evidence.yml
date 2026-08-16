@@ -72,16 +72,16 @@ jobs:
           # keeps working unmodified. Verification checks RepoDigests rather than
           # `.Id`, so it is correct regardless of the runner's Docker image-store
           # type (containerd snapshotter vs legacy graphdriver).
-          image="ghcr.io/samartomar/skillspector@sha256:108b707cb98cb418680782f9745942b1d3904104a45d8f6fd62f102672285d55"
+          image="ghcr.io/samartomar/skillspector@sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800"
           docker pull "$image"
-          docker tag "$image" skillspector:aih-0562b964ec5c
-          digests="$(docker image inspect skillspector:aih-0562b964ec5c --format '{{json .RepoDigests}}')"
+          docker tag "$image" skillspector:aih-2d198ab910ad
+          digests="$(docker image inspect skillspector:aih-2d198ab910ad --format '{{json .RepoDigests}}')"
           echo "repo digests: ${digests}"
-          echo "$digests" | grep -q "sha256:108b707cb98cb418680782f9745942b1d3904104a45d8f6fd62f102672285d55"
+          echo "$digests" | grep -q "sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800"
       - name: Set up pinned uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          version: "0.12.2"
+          version: "0.12.5"
           cache-dependency-glob: |
             tools/cisco-skill-scanner/uv.lock
             tools/trust-scanners/semgrep/uv.lock
