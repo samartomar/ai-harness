@@ -20,7 +20,8 @@ const pins = {
   },
   tokenOptimizer: {
     tag: "v5.11.68",
-    commit: "0968d8e0a4afe07d3de37ac6a720e5fcc02e4987",
+    commit: "ffe3b8007542260b17648a2d9228c3dedda380ad",
+    tree: "d044ba6038ac705e8d0da6a4b545cbee00abe7d5",
     license: "PolyForm-Noncommercial-1.0.0",
     source: "https://github.com/alexgreensh/token-optimizer",
   },
@@ -115,6 +116,27 @@ function toolPython(name) {
     : join(uvToolRoot, name, "bin", "python");
 }
 
+function verifyTokenOptimizerCheckout() {
+  const optimizerCommit = runChecked("git", ["-C", tokenOptimizerRoot, "rev-parse", "HEAD"], {
+    capture: true,
+  });
+  if (optimizerCommit !== plan.pins.tokenOptimizer.commit) {
+    throw new Error(
+      `token-optimizer commit mismatch: expected ${plan.pins.tokenOptimizer.commit}, got ${optimizerCommit}`,
+    );
+  }
+  const optimizerTree = runChecked(
+    "git",
+    ["-C", tokenOptimizerRoot, "rev-parse", "HEAD^{tree}"],
+    { capture: true },
+  );
+  if (optimizerTree !== plan.pins.tokenOptimizer.tree) {
+    throw new Error(
+      `token-optimizer tree mismatch: expected ${plan.pins.tokenOptimizer.tree}, got ${optimizerTree}`,
+    );
+  }
+}
+
 function install() {
   mkdirSync(binRoot, { recursive: true });
   const env = localToolEnv();
@@ -157,14 +179,7 @@ function install() {
     ]);
   }
 
-  const optimizerCommit = runChecked("git", ["-C", tokenOptimizerRoot, "rev-parse", "HEAD"], {
-    capture: true,
-  });
-  if (optimizerCommit !== plan.pins.tokenOptimizer.commit) {
-    throw new Error(
-      `token-optimizer pin mismatch: expected ${plan.pins.tokenOptimizer.commit}, got ${optimizerCommit}`,
-    );
-  }
+  verifyTokenOptimizerCheckout();
 
   verify();
 }
@@ -191,12 +206,7 @@ function verify() {
   if (serenaDependencyVersions !== "0.0.32|1.3.1") {
     throw new Error(`Serena security override mismatch: ${serenaDependencyVersions}`);
   }
-  const optimizerCommit = runChecked("git", ["-C", tokenOptimizerRoot, "rev-parse", "HEAD"], {
-    capture: true,
-  });
-  if (optimizerCommit !== plan.pins.tokenOptimizer.commit) {
-    throw new Error("token-optimizer checkout does not match the approved commit");
-  }
+  verifyTokenOptimizerCheckout();
   process.stdout.write(
     `${JSON.stringify({ ok: true, installed: plan.pins, root: installRoot }, null, 2)}\n`,
   );
