@@ -270,7 +270,7 @@ describe("active external-pin ledger", () => {
     expect(entry("claude-code-action")).toMatchObject({
       commit: claude?.[1],
     });
-    expect(entry("claude-code-action").version).toBe("v1.0.191");
+    expect(entry("claude-code-action").version).toBe("v1.0.193");
 
     const baselineWorkflow = readFileSync(
       resolve(root, ".github/workflows/baseline-evidence.yml"),
@@ -356,6 +356,12 @@ describe("active external-pin ledger", () => {
       disposition: "blocked",
     });
     expect(entry("aws-core-mcp-server").reason).toMatch(/diagram.*yanked.*Agent Toolkit/i);
+    // The dependency blocker is no longer the only one: 1.0.27's own wheel and
+    // sdist are yanked, so the pinned version fails on its own terms even if the
+    // diagram constraint were ever satisfiable again. Recording only the
+    // dependency would understate why this entry stays blocked.
+    expect(entry("aws-core-mcp-server").reason).toMatch(/itself yanked/i);
+    expect(entry("aws-core-mcp-server").reason).toMatch(/load individual MCPs/i);
     expect(entry("setup-python-action")).toMatchObject({
       identity: "actions/setup-python",
       version: "v7.0.0",

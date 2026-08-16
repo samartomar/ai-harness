@@ -87,11 +87,11 @@
     {
       "surface": "github-mcp-container",
       "identity": "ghcr.io/github/github-mcp-server",
-      "version": "v1.8.0",
-      "commit": "ca8ab52dcc45b86fae190398178fd22edb7b1362",
-      "integrity": "sha256:d5a18c04b92714c309eb46a2305087e91a4dbd80420f6e462656699f95093520",
+      "version": "v1.9.0",
+      "commit": "cdfa34e0a9d3e1ae6825345471f25185dd61d74e",
+      "integrity": "sha256:881b53d6f75f69bdbc1b5b10fc2f1361717c19054143b3a8529fb5c32061a50e",
       "disposition": "active",
-      "reason": "Self-host launcher image moved v1.7.0 -> v1.8.0 by digest. The digest was resolved through the GHCR registry API after confirming the same method reproduces the previously committed v1.7.0 digest exactly."
+      "reason": "Self-host launcher image moved v1.8.0 -> v1.9.0 by digest on 2026-08-15. The digest was resolved through the GHCR registry API after confirming the same method reproduces the previously committed v1.8.0 digest sha256:d5a18c04... exactly, so the method was validated against a known answer before any new digest was trusted. The commit is the v1.9.0 annotated tag dereferenced to its commit. Upstream delta is 7 commits / 40 files with no security content. One tool-behavior change is recorded because it moves output against unchanged inputs rather than adding a surface: search_issues is now semantic by default (#2964). The new find_duplicate tool is not reachable by default -- it is gated behind the non-default duplicate_detection flag (#3020) -- so it does not enlarge the default tool surface this pin exposes."
     },
     {
       "surface": "aws-core-mcp-server",
@@ -99,7 +99,7 @@
       "version": "1.0.27",
       "integrity": "sha256:991c7220f249b6e512946e949115ecf514599a34c1f7e1545b46af0083539aa1",
       "disposition": "blocked",
-      "reason": "PyPI still reports 1.0.27 as latest, but its awslabs-aws-diagram-mcp-server>=1.0.5 dependency is entirely yanked in favor of the deploy-on-AWS Agent Toolkit plugin. Fresh uv resolution fails, so AIH no longer generates this launch."
+      "reason": "PyPI still reports 1.0.27 as the newest release, but that release is now itself yanked: both its wheel and its sdist carry the yank reason \"load individual MCPs\", so the pinned version is no longer an installable candidate on its own terms. The original blocker also stands and has hardened. 1.0.27 requires awslabs-aws-diagram-mcp-server>=1.0.5, and every diagram release in that range -- all 18 from 1.0.5 through the current newest 1.0.23 -- is yanked in favor of the deploy-on-AWS Agent Toolkit plugin, leaving the constraint with no unyanked solution. Fresh uv resolution fails, so AIH no longer generates this launch. Both yank facts were re-verified directly against the PyPI JSON API on 2026-08-15; this entry records a yank state, not a version move."
     },
     {
       "surface": "skillspector",
@@ -222,10 +222,10 @@
     {
       "surface": "claude-code-action",
       "identity": "anthropics/claude-code-action",
-      "version": "v1.0.191",
-      "commit": "239e3a730883eeb5c53db12b0fc9573b3024b126",
+      "version": "v1.0.193",
+      "commit": "9d7150bc8a3dae8149739a88019d192b579ad90c",
       "disposition": "active",
-      "reason": "The official v1.0.191 annotated tag dereferences to this immutable SHA; the workflow remains pinned to the commit rather than the movable v1 tag."
+      "reason": "Routine move v1.0.191 -> v1.0.193 on 2026-08-15. The official v1.0.193 annotated tag dereferences to this immutable SHA; the workflow remains pinned to the commit rather than the movable v1 tag. The workflow comment now names the exact version instead of the v1 alias, so the pinned identity and the comment beside it can no longer disagree."
     },
     {
       "surface": "setup-node-action",
@@ -246,10 +246,10 @@
     {
       "surface": "codeql-action",
       "identity": "github/codeql-action",
-      "version": "v4.37.6",
-      "commit": "5595ccaf912efad79be6eef63a5619ff05969be3",
-      "disposition": "retained",
-      "reason": "Latest stable action tag resolves to the existing dereferenced immutable SHA."
+      "version": "v4.37.7",
+      "commit": "ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd",
+      "disposition": "active",
+      "reason": "Moved v4.37.6 -> v4.37.7 on 2026-08-15; the entry leaves the retained disposition because the latest stable tag no longer resolves to the previously recorded SHA. The release carries the CodeQL bundle 2.26.3 and no action-code change. All three governed call sites -- init and analyze in codeql.yml and upload-sarif in scorecard.yml -- move together, because one ledger identity covers them and a partial move would leave two CodeQL versions analyzing the same repository."
     },
     {
       "surface": "scorecard-action",
