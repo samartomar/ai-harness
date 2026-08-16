@@ -136,6 +136,11 @@ describe("baseline evidence release payload", () => {
     );
     expect(dockerfile).toContain("COPY pyproject.toml uv.lock README.md ./");
     expect(dockerfile).toContain("uv sync --frozen --no-dev --no-editable");
+    // The build-backend cutoff is load-bearing: uv.lock does not pin the PEP 517
+    // backends, so without it setuptools/hatchling float and the image digest
+    // moves. Guard the exact value — silently losing it reintroduces the drift
+    // that made the controlled digest unrebuildable.
+    expect(dockerfile).toContain("UV_EXCLUDE_NEWER=2026-08-07T00:00:00Z");
     expect(dockerfile).not.toContain("apt-get");
     expect(dockerfile).not.toMatch(/pip\s+install\s+--no-cache-dir\s+\./);
   });

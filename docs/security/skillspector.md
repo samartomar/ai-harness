@@ -80,17 +80,24 @@ metadata files, and canonicalizes the virtual environment before the final
 networkless runtime image is created. Two clean cache-disabled builds must agree
 before the controlled digest changes.
 
-That agreement check has a known limit, recorded here so it is not read as more
-than it is. Both builds run in the same window and therefore resolve the same
-PEP 517 build backends, so the check detects concurrent nondeterminism only. It
-does not establish that a digest can be rebuilt later: `uv.lock` pins the runtime
+Agreement between two builds is necessary but not sufficient on its own. Both
+builds run in the same window and therefore resolve the same PEP 517 build
+backends, so agreement alone detects concurrent nondeterminism only — it cannot
+show that a digest is still rebuildable later. `uv.lock` pins the runtime
 dependencies but not the backends that build the two packages compiled from
-source, so a `setuptools` or `hatchling` release changes their `.dist-info`
-metadata and with it the layer digest. Rebuilding revision
-`0562b964ec5ceac67ee15c163738e5404f14a908` on 2026-08-15 produced a different
-digest for exactly that reason. Treat the local build as an audit of build
-inputs, not as re-derivation of the controlled digest, and see the `skillspector`
-entry in `src/internals/external-pin-ledger.json` for the recorded evidence.
+source, so a `setuptools` or `hatchling` release rewrites their `.dist-info`
+metadata and with it the layer digest.
+
+The builder therefore pins `UV_EXCLUDE_NEWER`, which fixes backend resolution to
+the date the controlled image was built. That is what makes the digest
+independently rebuildable: with the cutoff in place, revision
+`0562b964ec5ceac67ee15c163738e5404f14a908` reproduces
+`sha256:108b707cb98cb418680782f9745942b1d3904104a45d8f6fd62f102672285d55`
+exactly; built without it, the same revision yields
+`sha256:1722c3f9f30bcd1a754c83aee871fa83d142e84d6e8092a6b17f4cc1aa2b8621`.
+Treat the cutoff as a pinned build input: moving it rotates the digest and
+requires a re-vet. The `skillspector` entry in
+`src/internals/external-pin-ledger.json` records this evidence.
 
 If your org mirrors third-party tools, build the same commit from the mirror and
 apply the same local tag. Local Docker builds can produce an image ID different
@@ -130,7 +137,15 @@ order:
 
 1. **Derive the new controlled digest.** Use the two-clean-builds recipe
    above: build twice, cache-disabled, from the new commit, and confirm both
-   builds produce the same image ID before treating it as controlled.
+   builds produce the same image ID before treating it as controlled. Set
+   `UV_EXCLUDE_NEWER` to a cutoff at or after the new commit and record that date
+   with the digest — it is a pinned input, and a rotation that leaves it stale
+   pins backends older than the source being built. Then run the negative
+   control: build once more with the cutoff removed and confirm the digest
+   *differs*. Agreement alone only proves the builds were concurrent; the
+   negative control is what proves the cutoff is actually load-bearing, and it
+   is the check whose absence let a non-rebuildable digest be recorded as
+   reproducible.
 2. **Re-verify the [YR4 carve-out equivalence table](#yr4-corepack-advisory-carve-out)**
    against the new commit's `src/skillspector/yara_rules/agent_skills.yar`. Any
    changed or added Gate-B string must be mirrored in

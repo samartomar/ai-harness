@@ -386,6 +386,11 @@ describe("active external-pin ledger", () => {
     expect(entry("skillspector").reason).toMatch(
       /Reproduction claim corrected 2026-08-15.*concurrent builds in a single window.*PEP 517 build backends/i,
     );
+    // The reason must also carry the remedy and its negative control, so the
+    // cutoff cannot be dropped later as an unexplained line in the Dockerfile.
+    expect(entry("skillspector").reason).toMatch(
+      /UV_EXCLUDE_NEWER=2026-08-07T00:00:00Z.*reproduced sha256:108b707c.*without it yields sha256:1722c3f9/i,
+    );
     expect(entry("anthropic-skills-guide")).toMatchObject({
       commit: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
       disposition: "retained",
