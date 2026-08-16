@@ -222,10 +222,10 @@
     {
       "surface": "claude-code-action",
       "identity": "anthropics/claude-code-action",
-      "version": "v1.0.191",
-      "commit": "239e3a730883eeb5c53db12b0fc9573b3024b126",
+      "version": "v1.0.193",
+      "commit": "9d7150bc8a3dae8149739a88019d192b579ad90c",
       "disposition": "active",
-      "reason": "The official v1.0.191 annotated tag dereferences to this immutable SHA; the workflow remains pinned to the commit rather than the movable v1 tag."
+      "reason": "Routine move v1.0.191 -> v1.0.193 on 2026-08-15. The official v1.0.193 annotated tag dereferences to this immutable SHA; the workflow remains pinned to the commit rather than the movable v1 tag. The workflow comment now names the exact version instead of the v1 alias, so the pinned identity and the comment beside it can no longer disagree."
     },
     {
       "surface": "setup-node-action",
@@ -246,10 +246,10 @@
     {
       "surface": "codeql-action",
       "identity": "github/codeql-action",
-      "version": "v4.37.6",
-      "commit": "5595ccaf912efad79be6eef63a5619ff05969be3",
-      "disposition": "retained",
-      "reason": "Latest stable action tag resolves to the existing dereferenced immutable SHA."
+      "version": "v4.37.7",
+      "commit": "ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd",
+      "disposition": "active",
+      "reason": "Moved v4.37.6 -> v4.37.7 on 2026-08-15; the entry leaves the retained disposition because the latest stable tag no longer resolves to the previously recorded SHA. The release carries the CodeQL bundle 2.26.3 and no action-code change. All three governed call sites -- init and analyze in codeql.yml and upload-sarif in scorecard.yml -- move together, because one ledger identity covers them and a partial move would leave two CodeQL versions analyzing the same repository."
     },
     {
       "surface": "scorecard-action",
