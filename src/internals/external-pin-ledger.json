@@ -87,11 +87,11 @@
     {
       "surface": "github-mcp-container",
       "identity": "ghcr.io/github/github-mcp-server",
-      "version": "v1.8.0",
-      "commit": "ca8ab52dcc45b86fae190398178fd22edb7b1362",
-      "integrity": "sha256:d5a18c04b92714c309eb46a2305087e91a4dbd80420f6e462656699f95093520",
+      "version": "v1.9.0",
+      "commit": "cdfa34e0a9d3e1ae6825345471f25185dd61d74e",
+      "integrity": "sha256:881b53d6f75f69bdbc1b5b10fc2f1361717c19054143b3a8529fb5c32061a50e",
       "disposition": "active",
-      "reason": "Self-host launcher image moved v1.7.0 -> v1.8.0 by digest. The digest was resolved through the GHCR registry API after confirming the same method reproduces the previously committed v1.7.0 digest exactly."
+      "reason": "Self-host launcher image moved v1.8.0 -> v1.9.0 by digest on 2026-08-15. The digest was resolved through the GHCR registry API after confirming the same method reproduces the previously committed v1.8.0 digest sha256:d5a18c04... exactly, so the method was validated against a known answer before any new digest was trusted. The commit is the v1.9.0 annotated tag dereferenced to its commit. Upstream delta is 7 commits / 40 files with no security content. One tool-behavior change is recorded because it moves output against unchanged inputs rather than adding a surface: search_issues is now semantic by default (#2964). The new find_duplicate tool is not reachable by default -- it is gated behind the non-default duplicate_detection flag (#3020) -- so it does not enlarge the default tool surface this pin exposes."
     },
     {
       "surface": "aws-core-mcp-server",
@@ -99,7 +99,7 @@
       "version": "1.0.27",
       "integrity": "sha256:991c7220f249b6e512946e949115ecf514599a34c1f7e1545b46af0083539aa1",
       "disposition": "blocked",
-      "reason": "PyPI still reports 1.0.27 as latest, but its awslabs-aws-diagram-mcp-server>=1.0.5 dependency is entirely yanked in favor of the deploy-on-AWS Agent Toolkit plugin. Fresh uv resolution fails, so AIH no longer generates this launch."
+      "reason": "PyPI still reports 1.0.27 as the newest release, but that release is now itself yanked: both its wheel and its sdist carry the yank reason \"load individual MCPs\", so the pinned version is no longer an installable candidate on its own terms. The original blocker also stands and has hardened. 1.0.27 requires awslabs-aws-diagram-mcp-server>=1.0.5, and every diagram release in that range -- all 18 from 1.0.5 through the current newest 1.0.23 -- is yanked in favor of the deploy-on-AWS Agent Toolkit plugin, leaving the constraint with no unyanked solution. Fresh uv resolution fails, so AIH no longer generates this launch. Both yank facts were re-verified directly against the PyPI JSON API on 2026-08-15; this entry records a yank state, not a version move."
     },
     {
       "surface": "skillspector",
