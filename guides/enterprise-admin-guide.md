@@ -543,7 +543,7 @@ Keep compliance language scoped. AI-Harness can produce evidence, checks, and po
 - Do not install unpinned hosted MCP servers or external skills into governed repos without approval evidence.
 - Do not treat `pack scaffold` or a first-party local path as distribution approval for another repo. Vet and approve the copied source in that repo.
 - Do not rely on mutable local caches such as `.aih/` or `~/.aih/` as policy authority.
-- Do not expose non-public pricing, telemetry, customer, tenant, entitlement, or admin-plane details in public docs or issues.
+- Do not expose private telemetry, customer, tenant, or unshipped admin-plane details in public docs or issues.
 - Do not treat a missing scanner as a passing scanner when policy requires that detector.
 - Do not treat `docs-lint`, reports, truth packs, release provenance, or evidence bundles as formal compliance certification.
 - Avoid hidden prerequisites such as `gh`, `jq`, Homebrew, apt, winget, or shell-specific syntax. Name the approved path for each operating system or posture.
