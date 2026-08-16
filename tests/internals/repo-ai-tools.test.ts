@@ -74,7 +74,8 @@ describe("ai-harness repo AI tooling", () => {
         },
         tokenOptimizer: {
           tag: "v5.11.68",
-          commit: "0968d8e0a4afe07d3de37ac6a720e5fcc02e4987",
+          commit: "ffe3b8007542260b17648a2d9228c3dedda380ad",
+          tree: "d044ba6038ac705e8d0da6a4b545cbee00abe7d5",
           license: "PolyForm-Noncommercial-1.0.0",
         },
         tokenSavior: { package: "token-savior-recall[mcp]==4.21.0", license: "MIT" },
