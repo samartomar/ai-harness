@@ -104,19 +104,19 @@
     {
       "surface": "skillspector",
       "identity": "NVIDIA/SkillSpector",
-      "version": "2.5.3",
-      "commit": "0562b964ec5ceac67ee15c163738e5404f14a908",
-      "integrity": "sha256:108b707cb98cb418680782f9745942b1d3904104a45d8f6fd62f102672285d55",
+      "version": "2.9.4",
+      "commit": "2d198ab910add401cad658d1087e7c7ba24fd640",
+      "integrity": "sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800",
       "disposition": "active",
-      "reason": "Rotated 2.5.0 -> 2.5.3 under the four-step procedure. The YR4 carve-out needs no change — all five yara_rules blobs carry identical git SHAs at both revisions, so no Gate-B string moved. Reproduction claim corrected 2026-08-15: the five recorded reproductions were concurrent builds in a single window, which establishes only that the recipe is deterministic at one point in time, never that this digest can be rebuilt later. Rebuilding this same revision from this same recipe on 2026-08-15 produced sha256:1722c3f9f30bcd1a754c83aee871fa83d142e84d6e8092a6b17f4cc1aa2b8621 instead, because uv.lock does not pin the PEP 517 build backends: setuptools 83.0.0 -> 84.0.0 and hatchling 1.31.0 -> 1.32.0 changed the .dist-info metadata of the two from-source packages, and nothing else in the image moved. The pin stays controlled by pull-by-digest, which this does not affect. Rebuildability restored 2026-08-15 without moving the pin: the builder now sets UV_EXCLUDE_NEWER=2026-08-07T00:00:00Z, which pins backend resolution to the date this image was built rather than constraining it, and two clean cache-disabled builds of this same revision then reproduced sha256:108b707cb98cb418680782f9745942b1d3904104a45d8f6fd62f102672285d55 exactly. The cutoff is load-bearing and verified by a negative control: the same revision built without it yields sha256:1722c3f9f30bcd1a754c83aee871fa83d142e84d6e8092a6b17f4cc1aa2b8621. Three configuration routes do not work and were ruled out by experiment — UV_BUILD_CONSTRAINT, build-constraint-dependencies in uv.toml, and the same key under [tool.uv] in pyproject.toml are all valid settings that uv accepts and that leave the sync-time build backends untouched."
+      "reason": "Rotated 2.5.3 -> 2.9.4 under the four-step procedure, on the hermetic recipe. Delta is 12 commits / 74 files (+7158/-434) carrying real security content: symlinks rejected in the skill walk and git symlinks disabled on clone, nSpect High vulnerabilities remediated, local targets rejected over HTTP transport, and HIGH SC8 when a skill ships __pycache__ or .pyc. Two changes move verdicts and were not in the reported delta: a new whitespace-padding analyzer (P9) adds findings, and a locality check on agent_skill_destructive_autonomous_actions suppresses cross-context false HIGHs. The YR4 carve-out needs no change: all five yara_rules blobs and LICENSE carry identical git SHAs at both tags, and static_yara.py's changes leave _DEFAULT_RULE_ID and the meta-derived message untouched, so no Gate-B string moved. Digest method validated against a known answer first: the same hermetic recipe on the 2.5.3 revision reproduced its committed sha256:108b707cb98cb418680782f9745942b1d3904104a45d8f6fd62f102672285d55 exactly. This digest then reproduced five times -- two clean cache-disabled OCI exports on one runner and three further runners independently. The build cutoff moved 2026-08-07 -> 2026-08-15T00:00:00Z because it must sit at or after the source commit (2026-08-13); the perturbation control holds, since building this revision at the old cutoff yields sha256:8b13ea2631690da416e951195545511e63d85e18a0cc183000295a5dd48d5f80 instead."
     },
     {
       "surface": "skillspector-python-base",
       "identity": "docker.io/library/python",
       "version": "3.12-slim-bookworm",
-      "integrity": "sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b",
+      "integrity": "sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134",
       "disposition": "active",
-      "reason": "The exact base digest was pulled and used for the controlled SkillSpector v2.5.0 OCI build. See the skillspector entry for why that build is not independently reproducible today: this base is pinned by digest, but the PEP 517 build backends layered on top of it are not."
+      "reason": "Pulled by digest for the controlled SkillSpector v2.9.4 OCI build. The 3.12-slim-bookworm tag moved 3.12.13 -> 3.12.14, so the digest is repinned; the interpreter minor is unchanged, which is what the Dockerfile's hardcoded .venv/lib/python3.12 path depends on."
     },
     {
       "surface": "cisco-skill-scanner",
@@ -200,9 +200,9 @@
     {
       "surface": "uv",
       "identity": "uv",
-      "version": "0.12.2",
+      "version": "0.12.5",
       "disposition": "active",
-      "reason": "Toolchain pin for the locked scanner projects and the SkillSpector image build, moved 0.12.0 -> 0.12.2. Runners are provisioned to this exact version via the versioned standalone installer, never `uv self update`."
+      "reason": "Toolchain pin for the locked scanner projects and the SkillSpector image build, moved 0.12.2 -> 0.12.5. Vetted locally before the fleet was provisioned: all five committed uv.lock files pass uv lock --check under 0.12.5 with unchanged resolution and byte-stable locks, and their offline exports are byte-identical to 0.12.2 including every recorded hash. On Linux the four locked scanners run --locked --offline at their pinned versions. 0.12.4's post-quantum TLS preference cannot reach offline resolution, which opens no sockets, and the networked path resolves normally. Runners are provisioned to this exact version via the versioned standalone installer, never `uv self update`."
     },
     {
       "surface": "actions-checkout",

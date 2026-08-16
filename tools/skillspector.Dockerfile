@@ -1,4 +1,4 @@
-ARG PYTHON_IMAGE=python:3.12-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b
+ARG PYTHON_IMAGE=python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134
 
 FROM ${PYTHON_IMAGE} AS builder
 
@@ -13,9 +13,9 @@ ARG SOURCE_DATE_EPOCH=1785167267
 # Moving it is a pin rotation: it changes the digest and requires a re-vet.
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} \
     UV_NO_PROGRESS=1 \
-    UV_EXCLUDE_NEWER=2026-08-07T00:00:00Z
+    UV_EXCLUDE_NEWER=2026-08-15T00:00:00Z
 WORKDIR /app
-RUN pip install --no-cache-dir uv==0.12.2
+RUN pip install --no-cache-dir uv==0.12.5
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
 RUN uv sync --frozen --no-dev --no-editable \
@@ -31,7 +31,7 @@ RUN uv sync --frozen --no-dev --no-editable \
 FROM ${PYTHON_IMAGE}
 
 ARG SOURCE_DATE_EPOCH=1785167267
-LABEL org.opencontainers.image.revision="0562b964ec5ceac67ee15c163738e5404f14a908"
+LABEL org.opencontainers.image.revision="2d198ab910add401cad658d1087e7c7ba24fd640"
 ENV PATH="/app/.venv/bin:$PATH" \
     SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 RUN --mount=from=builder,source=/venv.tar,target=/tmp/venv.tar \

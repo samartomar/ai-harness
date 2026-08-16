@@ -375,21 +375,23 @@ describe("active external-pin ledger", () => {
 
   it("documents explicit retained and qualified-runner decisions", () => {
     expect(entry("skillspector")).toMatchObject({
-      commit: "0562b964ec5ceac67ee15c163738e5404f14a908",
-      integrity: "sha256:108b707cb98cb418680782f9745942b1d3904104a45d8f6fd62f102672285d55",
+      commit: "2d198ab910add401cad658d1087e7c7ba24fd640",
+      integrity: "sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800",
       disposition: "active",
     });
-    // The reason must record what the two-build check actually establishes. It
-    // previously claimed five reproductions proved a reproducible digest; those
-    // builds were concurrent, and the digest stopped reproducing once the
-    // unpinned PEP 517 backends moved. Assert the corrected claim, not the old one.
+    // A rotation is only trustworthy if the method was validated against a known
+    // answer first, so the reason must carry that validation, the reproduction
+    // count, and the perturbation control that proves the cutoff is load-bearing.
     expect(entry("skillspector").reason).toMatch(
-      /Reproduction claim corrected 2026-08-15.*concurrent builds in a single window.*PEP 517 build backends/i,
+      /method validated against a known answer first.*reproduced its committed\s+sha256:108b707c/i,
     );
-    // The reason must also carry the remedy and its negative control, so the
-    // cutoff cannot be dropped later as an unexplained line in the Dockerfile.
+    expect(entry("skillspector").reason).toMatch(/reproduced five times/i);
     expect(entry("skillspector").reason).toMatch(
-      /UV_EXCLUDE_NEWER=2026-08-07T00:00:00Z.*reproduced sha256:108b707c.*without it yields sha256:1722c3f9/i,
+      /cutoff moved 2026-08-07 -> 2026-08-15T00:00:00Z.*perturbation control holds.*sha256:8b13ea26/i,
+    );
+    // The YR4 carve-out equivalence must be restated at every rotation.
+    expect(entry("skillspector").reason).toMatch(
+      /all five yara_rules blobs and LICENSE carry identical git\s+SHAs at both tags/i,
     );
     expect(entry("anthropic-skills-guide")).toMatchObject({
       commit: "9d2f1ae187231d8199c64b5b762e1bdf2244733d",

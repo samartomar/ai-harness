@@ -128,11 +128,11 @@ describe("baseline evidence release payload", () => {
     expect(existsSync(path)).toBe(true);
     const dockerfile = readFileSync(path, "utf8");
     expect(dockerfile).toContain(
-      "python:3.12-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b",
+      "python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134",
     );
-    expect(dockerfile).toContain("uv==0.12.2");
+    expect(dockerfile).toContain("uv==0.12.5");
     expect(dockerfile).toContain(
-      'org.opencontainers.image.revision="0562b964ec5ceac67ee15c163738e5404f14a908"',
+      'org.opencontainers.image.revision="2d198ab910add401cad658d1087e7c7ba24fd640"',
     );
     expect(dockerfile).toContain("COPY pyproject.toml uv.lock README.md ./");
     expect(dockerfile).toContain("uv sync --frozen --no-dev --no-editable");
@@ -140,7 +140,7 @@ describe("baseline evidence release payload", () => {
     // backends, so without it setuptools/hatchling float and the image digest
     // moves. Guard the exact value — silently losing it reintroduces the drift
     // that made the controlled digest unrebuildable.
-    expect(dockerfile).toContain("UV_EXCLUDE_NEWER=2026-08-07T00:00:00Z");
+    expect(dockerfile).toContain("UV_EXCLUDE_NEWER=2026-08-15T00:00:00Z");
     expect(dockerfile).not.toContain("apt-get");
     expect(dockerfile).not.toMatch(/pip\s+install\s+--no-cache-dir\s+\./);
   });
