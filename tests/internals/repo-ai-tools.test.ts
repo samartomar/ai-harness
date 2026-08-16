@@ -16,6 +16,15 @@ function toolingPlan(): Record<string, unknown> {
   ) as Record<string, unknown>;
 }
 
+function toolingCommand(...args: string[]): Record<string, unknown> {
+  return JSON.parse(
+    execFileSync(process.execPath, ["tools/repo-ai-tools.mjs", ...args], {
+      cwd: root,
+      encoding: "utf8",
+    }),
+  ) as Record<string, unknown>;
+}
+
 /**
  * True when `git ls-files` reports the path as part of the tracked index.
  * `existsSync` cannot stand in for this: an operator's local, gitignored
@@ -64,7 +73,7 @@ function expectUntrackedAndIgnored(relativePath: string): void {
 }
 
 describe("ai-harness repo AI tooling", () => {
-  it("pins the three requested tools and keeps their runtime scope narrow", () => {
+  it("pins the complete repo toolchain and keeps each runtime scope narrow", () => {
     expect(toolingPlan()).toMatchObject({
       pins: {
         serena: {
@@ -79,9 +88,20 @@ describe("ai-harness repo AI tooling", () => {
           license: "PolyForm-Noncommercial-1.0.0",
         },
         tokenSavior: { package: "token-savior-recall[mcp]==4.21.0", license: "MIT" },
+        codeReviewGraph: { package: "code-review-graph==2.3.7", license: "MIT" },
+        codebaseMemory: { package: "codebase-memory-mcp==0.10.5", license: "MIT" },
       },
       runtime: {
-        serena: { context: "ide", mode: "no-memories" },
+        serena: {
+          context: "repo-symbols",
+          mode: "no-memories",
+          singleProject: true,
+          excludedTools: expect.arrayContaining([
+            "execute_shell_command",
+            "replace_content",
+            "replace_in_files",
+          ]),
+        },
         tokenOptimizer: {
           actions: ["report", "coach"],
           clients: ["claude", "codex"],
@@ -94,9 +114,62 @@ describe("ai-harness repo AI tooling", () => {
           memory: false,
           shellHooks: false,
           excludePatterns: [".token-savior-cache.json"],
+          enabledTools: [
+            "get_entry_points",
+            "search_codebase",
+            "find_symbol",
+            "get_call_chain",
+            "get_function_source",
+            "get_full_context",
+          ],
+        },
+        codeReviewGraph: { role: "broad-impact-review", advisory: true },
+        codebaseMemory: { role: "find-trace-recall", advisory: true },
+      },
+    });
+  });
+
+  it("defines one idempotent Codex bootstrap and one proof-oriented doctor", () => {
+    expect(toolingPlan()).toMatchObject({
+      bootstrap: {
+        codex: {
+          setupCommand: "setup-codex",
+          doctorCommand: "doctor-codex",
+          projection: ".codex/config.toml",
+          ecc: {
+            marketplace: "affaan-m/ECC",
+            plugin: "ecc@ecc",
+            lifecycle: "native-plugin",
+          },
+          tokenOptimizer: {
+            integration: "on-demand",
+            commands: ["token-optimizer-report", "token-optimizer-coach"],
+          },
+          mcpServers: {
+            serena: { launcher: "serena-mcp" },
+            tokenSavior: { launcher: "token-savior-mcp" },
+            codeReviewGraph: { launcher: "code-review-graph-mcp" },
+            codebaseMemory: { launcher: "codebase-memory-mcp" },
+          },
         },
       },
     });
+
+    expect(toolingCommand("setup-codex", "--dry-run")).toMatchObject({
+      command: "setup-codex",
+      dryRun: true,
+      mutations: expect.arrayContaining([
+        "install pinned repo AI tools",
+        "write ignored Codex project projection",
+        "install or refresh ECC through the native Codex plugin lifecycle",
+      ]),
+    });
+
+    const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as {
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts["repo:init"]).toBe("node tools/repo-ai-tools.mjs setup-codex");
+    expect(pkg.scripts["repo:doctor"]).toBe("node tools/repo-ai-tools.mjs doctor-codex");
   });
 
   it("versions the project cache by tool pins so live MCP environments are never replaced", () => {
@@ -117,6 +190,20 @@ describe("ai-harness repo AI tooling", () => {
       ".claude/settings.json",
     ]) {
       expectUntrackedAndIgnored(file);
+    }
+  });
+
+  it("portable ignore rules protect every generated project-local projection", () => {
+    const gitignore = readFileSync(resolve(root, ".gitignore"), "utf8");
+
+    for (const entry of [
+      "/.codex/config.toml",
+      "/.codex/hooks.json",
+      "/.serena/",
+      "/.code-review-graph/",
+      "/.codebase-memory/",
+    ]) {
+      expect(gitignore, entry).toContain(entry);
     }
   });
 
@@ -157,6 +244,20 @@ describe("ai-harness repo AI tooling", () => {
     expect(routing).toContain("`get_symbols_overview`");
     expect(routing).toContain("Do not use `replace_symbol_source`");
     expect(routing).toContain("Do not run the report or coach on every task");
+    expect(routing).toContain("codebase-memory-mcp");
+    expect(routing).toContain("broad impact");
+    expect(routing).toContain("find, trace, and recall");
+  });
+
+  it("documents the complete Codex bootstrap and local projection boundary", () => {
+    const setup = readFileSync(resolve(root, "ai-coding/setup.md"), "utf8");
+    const adapter = readFileSync(resolve(root, "ai-coding/adapters/codex.md"), "utf8");
+
+    expect(setup).toContain("npm run repo:init");
+    expect(setup).toContain("npm run repo:doctor");
+    expect(setup).toContain("Start a new Codex task");
+    expect(adapter).toContain("native Codex plugin lifecycle");
+    expect(adapter).toContain("ignored project-local `.codex/config.toml`");
   });
 
   it("makes graph use advisory and consistent in every session bootloader", () => {
