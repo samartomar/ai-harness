@@ -105,7 +105,7 @@ const WEB_FRAMEWORKS = new Set(["Next.js", "React", "Vue", "Svelte", "Angular"])
 
 /** Pinned GitHub MCP Docker image for the `--self-host` opt-out (bump deliberately). */
 const GITHUB_MCP_IMAGE =
-  "ghcr.io/github/github-mcp-server@sha256:d5a18c04b92714c309eb46a2305087e91a4dbd80420f6e462656699f95093520";
+  "ghcr.io/github/github-mcp-server@sha256:881b53d6f75f69bdbc1b5b10fc2f1361717c19054143b3a8529fb5c32061a50e";
 
 /** Hosted GitHub MCP endpoint used when no org-specific host is configured. */
 export const DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/";
