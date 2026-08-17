@@ -22,6 +22,7 @@ import nativeIdentityData from "./native-identity-data.json";
  */
 export const NATIVE_DETECTOR_GLOB_ROOTS = [
   "src/trust",
+  "src/observation",
   "src/secrets",
   "src/mcp/policy.ts",
   "src/skill/license.ts",
@@ -33,6 +34,10 @@ export const NATIVE_DETECTOR_GLOB_ROOTS = [
 // real baseline re-vet; treating dormant code as a live analyzer change would
 // otherwise manufacture pin drift without changing today's detector behavior.
 export const NATIVE_DETECTOR_DORMANT_SOURCE_EXCLUSIONS: ReadonlySet<string> = new Set([
+  "src/observation/native-observation-v1.ts",
+  "src/observation/observation-evidence-v1.ts",
+  "src/observation/scan-attestation-v1.ts",
+  "src/observation/scanner-manifest-v1.ts",
   "src/trust/normalization-v1-compatibility.ts",
   "src/trust/normalization-v1.ts",
 ]);

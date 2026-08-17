@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
+import { tokenizer } from "acorn";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   assessNativeObservationReuseV1,
@@ -95,30 +95,46 @@ function sourceFiles(rel = "src"): string[] {
 }
 
 function moduleSpecifiers(rel: string): string[] {
-  const source = ts.createSourceFile(rel, sourceText(rel), ts.ScriptTarget.ES2022, false);
+  const tokens: Array<{ label: string; value: unknown }> = [];
+  const scan = tokenizer(sourceText(rel), { ecmaVersion: "latest", sourceType: "module" });
+  for (;;) {
+    const token = scan.getToken();
+    tokens.push({ label: token.type.label, value: (token as { value?: unknown }).value });
+    if (token.type.label === "eof") break;
+  }
   const specifiers: string[] = [];
-  const visit = (node: ts.Node): void => {
-    if (
-      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
-      node.moduleSpecifier !== undefined &&
-      ts.isStringLiteral(node.moduleSpecifier)
-    ) {
-      specifiers.push(node.moduleSpecifier.text);
-    }
-    if (ts.isCallExpression(node) && node.arguments.length > 0) {
-      const argument = node.arguments[0];
-      if (
-        argument !== undefined &&
-        ts.isStringLiteral(argument) &&
-        (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-          (ts.isIdentifier(node.expression) && node.expression.text === "require"))
-      ) {
-        specifiers.push(argument.text);
-      }
-    }
-    ts.forEachChild(node, visit);
+  const stringAt = (index: number): string | undefined => {
+    const token = tokens[index];
+    return token?.label === "string" && typeof token.value === "string" ? token.value : undefined;
   };
-  visit(source);
+  const fromSpecifier = (start: number): string | undefined => {
+    for (let index = start; index < tokens.length; index += 1) {
+      const token = tokens[index];
+      if (token === undefined || token.label === ";" || token.label === "eof") return undefined;
+      if (token.label === "name" && token.value === "from") return stringAt(index + 1);
+    }
+    return undefined;
+  };
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === undefined) continue;
+    if (token.label === "import") {
+      const direct = stringAt(index + 1);
+      if (direct !== undefined) specifiers.push(direct);
+      const dynamic = tokens[index + 1]?.label === "(" ? stringAt(index + 2) : undefined;
+      if (dynamic !== undefined) specifiers.push(dynamic);
+      const from = fromSpecifier(index + 1);
+      if (from !== undefined) specifiers.push(from);
+    }
+    if (token.label === "export") {
+      const from = fromSpecifier(index + 1);
+      if (from !== undefined) specifiers.push(from);
+    }
+    if (token.label === "name" && token.value === "require" && tokens[index + 1]?.label === "(") {
+      const required = stringAt(index + 2);
+      if (required !== undefined) specifiers.push(required);
+    }
+  }
   return specifiers;
 }
 
@@ -434,7 +450,7 @@ describe("NativeObservationV1", () => {
       );
     }
     for (const platform of [
-      { ...input.platform, os: "linux/amd64" },
+      { ...input.platform, os: "plan9" },
       { ...input.platform, architecture: "x86_64" },
       { ...input.platform, unexpected: true },
     ]) {

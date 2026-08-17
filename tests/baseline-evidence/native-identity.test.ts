@@ -66,6 +66,7 @@ describe("discoverNativeDetectorSourceFiles", () => {
   it("excludes only dormant V1 contracts while retaining future trust and observation runtime sources", () => {
     const root = fixtureRoot();
     writeDeclaredFixture(root);
+    mkdirSync(join(root, "src", "observation"), { recursive: true });
     for (const path of NATIVE_DETECTOR_DORMANT_SOURCE_EXCLUSIONS) {
       writeFileSync(join(root, ...path.split("/")), "export const dormant = true;\n");
     }
@@ -73,7 +74,6 @@ describe("discoverNativeDetectorSourceFiles", () => {
       join(root, "src", "trust", "future-runtime-detector.ts"),
       "export const runtime = true;\n",
     );
-    mkdirSync(join(root, "src", "observation"), { recursive: true });
     writeFileSync(
       join(root, "src", "observation", "future-runtime-observation.ts"),
       "export const runtime = true;\n",
