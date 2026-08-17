@@ -72,6 +72,110 @@ function expectUntrackedAndIgnored(relativePath: string): void {
   ).toBe(true);
 }
 
+type AtomicWriterFilesystem = {
+  closeSync: (descriptor: string) => void;
+  files: Map<string, string>;
+  mkdirSync: () => void;
+  openSync: (path: string, flags: string, mode: number) => string;
+  readFileSync: (path: string, encoding: string) => string;
+  renameSync: (from: string, to: string) => void;
+  unlinkSync: (path: string) => void;
+  writeFileSync: (descriptor: string, contents: string, encoding: string) => void;
+};
+
+function errno(code: string): Error & { code: string } {
+  return Object.assign(new Error(code), { code });
+}
+
+function loadAtomicWriter(
+  filesystem: AtomicWriterFilesystem,
+  ids = ["first", "second"],
+): (path: string, contents: string, expectedExisting?: string) => void {
+  const launcher = readFileSync(resolve(root, "tools/repo-ai-tools.mjs"), "utf8");
+  const atomicFunctions = launcher.slice(
+    launcher.indexOf("function hasErrorCode"),
+    launcher.indexOf("function assertCommand"),
+  );
+  const factory = new Function(
+    "filesystem",
+    "ids",
+    `
+      const {
+        closeSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync,
+      } = filesystem;
+      const basename = (path) => path.slice(path.lastIndexOf("/") + 1);
+      const dirname = (path) => path.slice(0, path.lastIndexOf("/")) || ".";
+      const join = (...parts) => parts.join("/").replaceAll("//", "/");
+      const process = { pid: 1 };
+      const randomUUID = () => ids.shift();
+      ${atomicFunctions}
+      return writeFileAtomically;
+    `,
+  ) as (
+    fs: AtomicWriterFilesystem,
+    values: string[],
+  ) => (path: string, contents: string, expectedExisting?: string) => void;
+  return factory(filesystem, [...ids]);
+}
+
+function createAtomicWriterFilesystem(
+  options: {
+    collisionCount?: number;
+    failClose?: boolean;
+    failRename?: boolean;
+    failWrite?: boolean;
+    files?: Record<string, string>;
+  } = {},
+): AtomicWriterFilesystem & { openPaths: string[]; removedPaths: string[] } {
+  const files = new Map(Object.entries(options.files ?? {}));
+  let collisionsRemaining = options.collisionCount ?? 0;
+  const openPaths: string[] = [];
+  const removedPaths: string[] = [];
+  return {
+    files,
+    openPaths,
+    removedPaths,
+    mkdirSync() {},
+    openSync(path, flags, mode) {
+      expect(flags).toBe("wx");
+      expect(mode).toBe(0o600);
+      openPaths.push(path);
+      if (collisionsRemaining > 0) {
+        collisionsRemaining -= 1;
+        throw errno("EEXIST");
+      }
+      if (files.has(path)) throw errno("EEXIST");
+      files.set(path, "");
+      return path;
+    },
+    writeFileSync(descriptor, contents, encoding) {
+      expect(encoding).toBe("utf8");
+      if (options.failWrite) throw new Error("write failed");
+      files.set(descriptor, contents);
+    },
+    closeSync() {
+      if (options.failClose) throw new Error("close failed");
+    },
+    readFileSync(path, encoding) {
+      expect(encoding).toBe("utf8");
+      const value = files.get(path);
+      if (value === undefined) throw errno("ENOENT");
+      return value;
+    },
+    renameSync(from, to) {
+      if (options.failRename) throw new Error("rename failed");
+      const value = files.get(from);
+      if (value === undefined) throw errno("ENOENT");
+      files.set(to, value);
+      files.delete(from);
+    },
+    unlinkSync(path) {
+      removedPaths.push(path);
+      if (!files.delete(path)) throw errno("ENOENT");
+    },
+  };
+}
+
 describe("ai-harness repo AI tooling", () => {
   it("pins the complete repo toolchain and keeps each runtime scope narrow", () => {
     expect(toolingPlan()).toMatchObject({
@@ -330,21 +434,39 @@ describe("ai-harness repo AI tooling", () => {
     expect(pkg.scripts["check:canon-drift"]).toBeUndefined();
   });
 
-  it("writes generated projections and index markers without check-then-write races", () => {
-    const launcher = readFileSync(resolve(root, "tools/repo-ai-tools.mjs"), "utf8");
-    const projectionWriter = launcher.slice(
-      launcher.indexOf("function writeCodexProjection"),
-      launcher.indexOf("function configureEcc"),
-    );
-    const memoryInitializer = launcher.slice(
-      launcher.indexOf("function initializeCodebaseMemory"),
-      launcher.indexOf("function codebaseMemoryStatus"),
-    );
+  it("retries an exclusive temporary-file collision before publishing the projection", () => {
+    const filesystem = createAtomicWriterFilesystem({ collisionCount: 1 });
+    const writeAtomically = loadAtomicWriter(filesystem);
 
-    expect(launcher).toContain("function writeFileAtomically");
-    expect(launcher).toContain('openSync(path, "wx", 0o600)');
-    expect(launcher).toContain("renameSync(temporaryPath, path)");
-    expect(projectionWriter).not.toContain("existsSync(codexConfigPath)");
-    expect(memoryInitializer).not.toContain("existsSync(codebaseMemoryMarker)");
+    writeAtomically("/work/.codex/config.toml", "expected", undefined);
+
+    expect(filesystem.openPaths).toHaveLength(2);
+    expect(filesystem.files.get("/work/.codex/config.toml")).toBe("expected");
+  });
+
+  it.each([
+    ["write", { failWrite: true }],
+    ["close", { failClose: true }],
+    ["rename", { failRename: true }],
+  ])("removes an unpublished temporary file when %s fails", (_operation, options) => {
+    const filesystem = createAtomicWriterFilesystem(options);
+    const writeAtomically = loadAtomicWriter(filesystem);
+
+    expect(() => writeAtomically("/work/.codex/config.toml", "expected", undefined)).toThrow();
+    expect(filesystem.files.has("/work/.codex/config.toml")).toBe(false);
+    expect(filesystem.removedPaths).toHaveLength(1);
+  });
+
+  it("preserves a concurrent destination instead of replacing a stale projection", () => {
+    const filesystem = createAtomicWriterFilesystem({
+      files: { "/work/.codex/config.toml": "concurrent edit" },
+    });
+    const writeAtomically = loadAtomicWriter(filesystem);
+
+    expect(() =>
+      writeAtomically("/work/.codex/config.toml", "managed projection", "previous projection"),
+    ).toThrow("changed during atomic update");
+    expect(filesystem.files.get("/work/.codex/config.toml")).toBe("concurrent edit");
+    expect(filesystem.removedPaths).toHaveLength(1);
   });
 });
