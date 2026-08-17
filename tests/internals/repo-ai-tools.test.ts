@@ -16,6 +16,15 @@ function toolingPlan(): Record<string, unknown> {
   ) as Record<string, unknown>;
 }
 
+function toolingCommand(...args: string[]): Record<string, unknown> {
+  return JSON.parse(
+    execFileSync(process.execPath, ["tools/repo-ai-tools.mjs", ...args], {
+      cwd: root,
+      encoding: "utf8",
+    }),
+  ) as Record<string, unknown>;
+}
+
 /**
  * True when `git ls-files` reports the path as part of the tracked index.
  * `existsSync` cannot stand in for this: an operator's local, gitignored
@@ -63,8 +72,112 @@ function expectUntrackedAndIgnored(relativePath: string): void {
   ).toBe(true);
 }
 
+type AtomicWriterFilesystem = {
+  closeSync: (descriptor: string) => void;
+  files: Map<string, string>;
+  mkdirSync: () => void;
+  openSync: (path: string, flags: string, mode: number) => string;
+  readFileSync: (path: string, encoding: string) => string;
+  renameSync: (from: string, to: string) => void;
+  unlinkSync: (path: string) => void;
+  writeFileSync: (descriptor: string, contents: string, encoding: string) => void;
+};
+
+function errno(code: string): Error & { code: string } {
+  return Object.assign(new Error(code), { code });
+}
+
+function loadAtomicWriter(
+  filesystem: AtomicWriterFilesystem,
+  ids = ["first", "second"],
+): (path: string, contents: string, expectedExisting?: string) => void {
+  const launcher = readFileSync(resolve(root, "tools/repo-ai-tools.mjs"), "utf8");
+  const atomicFunctions = launcher.slice(
+    launcher.indexOf("function hasErrorCode"),
+    launcher.indexOf("function assertCommand"),
+  );
+  const factory = new Function(
+    "filesystem",
+    "ids",
+    `
+      const {
+        closeSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync,
+      } = filesystem;
+      const basename = (path) => path.slice(path.lastIndexOf("/") + 1);
+      const dirname = (path) => path.slice(0, path.lastIndexOf("/")) || ".";
+      const join = (...parts) => parts.join("/").replaceAll("//", "/");
+      const process = { pid: 1 };
+      const randomUUID = () => ids.shift();
+      ${atomicFunctions}
+      return writeFileAtomically;
+    `,
+  ) as (
+    fs: AtomicWriterFilesystem,
+    values: string[],
+  ) => (path: string, contents: string, expectedExisting?: string) => void;
+  return factory(filesystem, [...ids]);
+}
+
+function createAtomicWriterFilesystem(
+  options: {
+    collisionCount?: number;
+    failClose?: boolean;
+    failRename?: boolean;
+    failWrite?: boolean;
+    files?: Record<string, string>;
+  } = {},
+): AtomicWriterFilesystem & { openPaths: string[]; removedPaths: string[] } {
+  const files = new Map(Object.entries(options.files ?? {}));
+  let collisionsRemaining = options.collisionCount ?? 0;
+  const openPaths: string[] = [];
+  const removedPaths: string[] = [];
+  return {
+    files,
+    openPaths,
+    removedPaths,
+    mkdirSync() {},
+    openSync(path, flags, mode) {
+      expect(flags).toBe("wx");
+      expect(mode).toBe(0o600);
+      openPaths.push(path);
+      if (collisionsRemaining > 0) {
+        collisionsRemaining -= 1;
+        throw errno("EEXIST");
+      }
+      if (files.has(path)) throw errno("EEXIST");
+      files.set(path, "");
+      return path;
+    },
+    writeFileSync(descriptor, contents, encoding) {
+      expect(encoding).toBe("utf8");
+      if (options.failWrite) throw new Error("write failed");
+      files.set(descriptor, contents);
+    },
+    closeSync() {
+      if (options.failClose) throw new Error("close failed");
+    },
+    readFileSync(path, encoding) {
+      expect(encoding).toBe("utf8");
+      const value = files.get(path);
+      if (value === undefined) throw errno("ENOENT");
+      return value;
+    },
+    renameSync(from, to) {
+      if (options.failRename) throw new Error("rename failed");
+      const value = files.get(from);
+      if (value === undefined) throw errno("ENOENT");
+      files.set(to, value);
+      files.delete(from);
+    },
+    unlinkSync(path) {
+      removedPaths.push(path);
+      if (!files.delete(path)) throw errno("ENOENT");
+    },
+  };
+}
+
 describe("ai-harness repo AI tooling", () => {
-  it("pins the three requested tools and keeps their runtime scope narrow", () => {
+  it("pins the complete repo toolchain and keeps each runtime scope narrow", () => {
     expect(toolingPlan()).toMatchObject({
       pins: {
         serena: {
@@ -74,13 +187,25 @@ describe("ai-harness repo AI tooling", () => {
         },
         tokenOptimizer: {
           tag: "v5.11.68",
-          commit: "0968d8e0a4afe07d3de37ac6a720e5fcc02e4987",
+          commit: "ffe3b8007542260b17648a2d9228c3dedda380ad",
+          tree: "d044ba6038ac705e8d0da6a4b545cbee00abe7d5",
           license: "PolyForm-Noncommercial-1.0.0",
         },
         tokenSavior: { package: "token-savior-recall[mcp]==4.21.0", license: "MIT" },
+        codeReviewGraph: { package: "code-review-graph==2.3.7", license: "MIT" },
+        codebaseMemory: { package: "codebase-memory-mcp==0.10.5", license: "MIT" },
       },
       runtime: {
-        serena: { context: "ide", mode: "no-memories" },
+        serena: {
+          context: "repo-symbols",
+          mode: "no-memories",
+          singleProject: true,
+          excludedTools: expect.arrayContaining([
+            "execute_shell_command",
+            "replace_content",
+            "replace_in_files",
+          ]),
+        },
         tokenOptimizer: {
           actions: ["report", "coach"],
           clients: ["claude", "codex"],
@@ -93,8 +218,71 @@ describe("ai-harness repo AI tooling", () => {
           memory: false,
           shellHooks: false,
           excludePatterns: [".token-savior-cache.json"],
+          enabledTools: [
+            "get_entry_points",
+            "search_codebase",
+            "find_symbol",
+            "get_call_chain",
+            "get_function_source",
+            "get_full_context",
+          ],
+        },
+        codeReviewGraph: { role: "broad-impact-review", advisory: true },
+        codebaseMemory: { role: "find-trace-recall", advisory: true },
+      },
+    });
+  });
+
+  it("defines one idempotent Codex bootstrap and one proof-oriented doctor", () => {
+    expect(toolingPlan()).toMatchObject({
+      bootstrap: {
+        codex: {
+          setupCommand: "setup-codex",
+          doctorCommand: "doctor-codex",
+          projection: ".codex/config.toml",
+          ecc: {
+            marketplace: "affaan-m/ECC",
+            plugin: "ecc@ecc",
+            lifecycle: "native-plugin",
+          },
+          tokenOptimizer: {
+            integration: "on-demand",
+            commands: ["token-optimizer-report", "token-optimizer-coach"],
+          },
+          mcpServers: {
+            serena: { launcher: "serena-mcp" },
+            tokenSavior: { launcher: "token-savior-mcp" },
+            codeReviewGraph: { launcher: "code-review-graph-mcp" },
+            codebaseMemory: { launcher: "codebase-memory-mcp" },
+          },
         },
       },
+    });
+
+    expect(toolingCommand("setup-codex", "--dry-run")).toMatchObject({
+      command: "setup-codex",
+      dryRun: true,
+      mutations: expect.arrayContaining([
+        "install pinned repo AI tools",
+        "write ignored Codex project projection",
+        "install or refresh ECC through the native Codex plugin lifecycle",
+      ]),
+    });
+
+    const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as {
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts["repo:init"]).toBe("node tools/repo-ai-tools.mjs setup-codex");
+    expect(pkg.scripts["repo:doctor"]).toBe("node tools/repo-ai-tools.mjs doctor-codex");
+  });
+
+  it("versions the project cache by tool pins so live MCP environments are never replaced", () => {
+    expect(toolingPlan()).toMatchObject({
+      cache: {
+        generation: expect.stringMatching(/^[0-9a-f]{16}$/),
+        keyInputs: ["repository-path", "tool-pins"],
+      },
+      installRoot: "project-and-toolset-keyed user cache",
     });
   });
 
@@ -106,6 +294,20 @@ describe("ai-harness repo AI tooling", () => {
       ".claude/settings.json",
     ]) {
       expectUntrackedAndIgnored(file);
+    }
+  });
+
+  it("portable ignore rules protect every generated project-local projection", () => {
+    const gitignore = readFileSync(resolve(root, ".gitignore"), "utf8");
+
+    for (const entry of [
+      "/.codex/config.toml",
+      "/.codex/hooks.json",
+      "/.serena/",
+      "/.code-review-graph/",
+      "/.codebase-memory/",
+    ]) {
+      expect(gitignore, entry).toContain(entry);
     }
   });
 
@@ -146,6 +348,20 @@ describe("ai-harness repo AI tooling", () => {
     expect(routing).toContain("`get_symbols_overview`");
     expect(routing).toContain("Do not use `replace_symbol_source`");
     expect(routing).toContain("Do not run the report or coach on every task");
+    expect(routing).toContain("codebase-memory-mcp");
+    expect(routing).toContain("broad impact");
+    expect(routing).toContain("find, trace, and recall");
+  });
+
+  it("documents the complete Codex bootstrap and local projection boundary", () => {
+    const setup = readFileSync(resolve(root, "ai-coding/setup.md"), "utf8");
+    const adapter = readFileSync(resolve(root, "ai-coding/adapters/codex.md"), "utf8");
+
+    expect(setup).toContain("npm run repo:init");
+    expect(setup).toContain("npm run repo:doctor");
+    expect(setup).toContain("Start a new Codex task");
+    expect(adapter).toContain("native Codex plugin lifecycle");
+    expect(adapter).toContain("ignored project-local `.codex/config.toml`");
   });
 
   it("makes graph use advisory and consistent in every session bootloader", () => {
@@ -181,7 +397,9 @@ describe("ai-harness repo AI tooling", () => {
     for (const file of [".serena/project.yml", ".serena/.gitignore"]) {
       expectUntrackedAndIgnored(file);
     }
-    expect(toolingPlan()).toMatchObject({ installRoot: "project-keyed user cache" });
+    expect(toolingPlan()).toMatchObject({
+      installRoot: "project-and-toolset-keyed user cache",
+    });
   });
 
   it("keeps Token Savior from indexing or dirtying the worktree with its own cache", () => {
@@ -214,5 +432,41 @@ describe("ai-harness repo AI tooling", () => {
       "tests/self-hosting/self-hosting.test.ts",
     );
     expect(pkg.scripts["check:canon-drift"]).toBeUndefined();
+  });
+
+  it("retries an exclusive temporary-file collision before publishing the projection", () => {
+    const filesystem = createAtomicWriterFilesystem({ collisionCount: 1 });
+    const writeAtomically = loadAtomicWriter(filesystem);
+
+    writeAtomically("/work/.codex/config.toml", "expected", undefined);
+
+    expect(filesystem.openPaths).toHaveLength(2);
+    expect(filesystem.files.get("/work/.codex/config.toml")).toBe("expected");
+  });
+
+  it.each([
+    ["write", { failWrite: true }],
+    ["close", { failClose: true }],
+    ["rename", { failRename: true }],
+  ])("removes an unpublished temporary file when %s fails", (_operation, options) => {
+    const filesystem = createAtomicWriterFilesystem(options);
+    const writeAtomically = loadAtomicWriter(filesystem);
+
+    expect(() => writeAtomically("/work/.codex/config.toml", "expected", undefined)).toThrow();
+    expect(filesystem.files.has("/work/.codex/config.toml")).toBe(false);
+    expect(filesystem.removedPaths).toHaveLength(1);
+  });
+
+  it("preserves a concurrent destination instead of replacing a stale projection", () => {
+    const filesystem = createAtomicWriterFilesystem({
+      files: { "/work/.codex/config.toml": "concurrent edit" },
+    });
+    const writeAtomically = loadAtomicWriter(filesystem);
+
+    expect(() =>
+      writeAtomically("/work/.codex/config.toml", "managed projection", "previous projection"),
+    ).toThrow("changed during atomic update");
+    expect(filesystem.files.get("/work/.codex/config.toml")).toBe("concurrent edit");
+    expect(filesystem.removedPaths).toHaveLength(1);
   });
 });

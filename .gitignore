@@ -10,6 +10,13 @@ __pycache__/
 .aih-workflow/
 .token-savior-cache.json
 
+# generated, machine-local AI client projections and helper indexes
+/.codex/config.toml
+/.codex/hooks.json
+/.serena/
+/.code-review-graph/
+/.codebase-memory/
+
 # logs / os
 *.log
 .DS_Store

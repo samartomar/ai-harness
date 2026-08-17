@@ -39,6 +39,9 @@ temporary fixture roots in tests.
   manual maintenance map for the AIH-shaped canon.
 - `ai-coding/rules/project-canon-extension.md` — manually maintained
   project-specific canon; AIH never governs or regenerates this checkout.
+- `ai-coding/rules/repo-ai-tools.md` — repo initialization, doctor checks, and
+  the non-overlapping Serena / Token Savior / Token Optimizer /
+  code-review-graph / codebase-memory routing contract.
 
 Read depth: for read-only validation you may identify these files and confirm
 routing without opening each. For implementation, review, or security work, read
@@ -79,8 +82,9 @@ inventory, and security tests; never run an AIH security or guardrail command
 against this checkout.
 
 ### External AI tooling / adapters
-Load `ai-coding/adapters/<your-tool>.md` for tool-specific wiring (entry files,
-how it loads rules, boundaries).
+Load `ai-coding/rules/repo-ai-tools.md` first, then
+`ai-coding/adapters/<your-tool>.md` for client-specific wiring (entry files, how
+it loads rules, boundaries).
 
 ## External action boundary
 

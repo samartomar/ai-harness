@@ -70,7 +70,7 @@
       "surface": "token-optimizer",
       "identity": "alexgreensh/token-optimizer",
       "version": "v5.11.68",
-      "commit": "0968d8e0a4afe07d3de37ac6a720e5fcc02e4987",
+      "commit": "ffe3b8007542260b17648a2d9228c3dedda380ad",
       "disposition": "active",
       "reason": "The exact source commit retains the PolyForm Noncommercial 1.0.0 boundary, produced local reports in isolated Codex and Claude scopes, completed the quiet Stop path, and passed a reversible cache-root rollback/restore probe."
     },

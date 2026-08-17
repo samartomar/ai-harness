@@ -23,6 +23,15 @@ into the right loading path — not a new command, flag, or file family. Ask "wh
 existing capability falls short, and why can't routing fix it?" before proposing
 anything new. New knobs follow the `AIH_*` env-var → org-policy-field idiom.
 
+## Availability
+
+AIH is completely free to use. No capability, organization-administration
+surface, evidence collection, or report may require payment or an entitlement.
+The `vibe` and `enterprise` postures change governance strictness only; they are
+not availability tiers. Optional package seams may modularize implementation but
+must never introduce an upgrade boundary. Third-party tools and services retain
+their own licenses and charges; AIH does not charge for their integration.
+
 ## MCP catalog
 
 Secret-free-first (prefer OAuth/remote over tokens-in-file); the risk axes

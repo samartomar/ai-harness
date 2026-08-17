@@ -8,7 +8,7 @@ purpose: Human-readable guide to posture behavior and positioning.
 
 # Posture Guide
 
-This guide explains how to reason about `vibe` and `enterprise` posture without turning posture into pricing language or mixing shipped behavior with unshipped plans.
+This guide explains how to reason about `vibe` and `enterprise` posture without turning posture into feature availability or mixing shipped behavior with unshipped plans.
 
 The current release baseline is `@aihq/harness@6.1.0`. The `vibe`/`enterprise` model below is shipped behavior in the 5.x line; use the installed version's release notes and CLI help as the syntax authority.
 
@@ -23,14 +23,14 @@ Use this guide when:
 - writing docs, issue drafts, or roadmap notes that mention posture
 - reviewing capability/package-manager, trust-gate, MCP, workspace, or policy changes
 
-Use the command reference and `aih <command> --help` as syntax authorities. This guide explains posture behavior at a higher level and avoids describing unshipped admin-plane or commercial behavior as available setup.
+Use the command reference and `aih <command> --help` as syntax authorities. This guide explains posture behavior at a higher level and avoids describing unshipped admin-plane behavior as available setup.
 
 ## Shared invariants
 
 These apply across posture modes:
 
 - Posture mode is not a capability catalog by itself. Skills, agents, MCP servers, packages, marketplace/evidence/trust primitives, and local posture selection stay governed by their own command and policy rules.
-- Posture is not a public entitlement ladder. Do not describe it as "free vs paid" and do not create upgrade prompts around it.
+- Every AIH capability is free to use. Posture is a governance dial, never an entitlement or availability ladder; do not create upgrade prompts around it.
 - The CLI reads committed/signed policy and derived local state. The supported public claim is no default phone-home and no hidden telemetry transmission; network-capable behavior exists only in named command surfaces invoked by the operator.
 - Commands should reject hostile or malformed input and report explicit degraded coverage when optional tools, scanners, or network access are absent.
 - Registered package membership is not an exemption from checks. A registered source still needs trust, provenance, policy, and content verification appropriate to the surface.
@@ -91,7 +91,7 @@ Behavior rules:
 - Required detectors and required checks fail closed when configured and absent.
 - Hosted or mutable supply-chain surfaces should deny when they cannot be pinned or verified to the enterprise policy standard.
 - Evidence must be explicit: which policy bundle/version was enforced, which checks ran, which degraded, and which artifacts were approved.
-- Public docs should not include non-public pricing, customer, telemetry, entitlement, tenant, or unshipped commercial/admin-plane details.
+- Public docs should not include private customer, telemetry, tenant, or unshipped admin-plane details.
 - Enterprise behavior remains local-first in the CLI. If a future admin-plane feature is not shipped in the CLI, label it as future-facing or omit it from setup guidance.
 - Capability resolution produces approval-required hints unless policy already authorizes the capability. It must not fetch, install, or vendor third-party bytes as part of resolution.
 - `docs-lint`, `truth verify`, `policy verify`, `pack validate`, `marketplace validate --require-signature`, and `verify-bundle --require-signature` are enterprise-friendly gates because they turn missing or drifting evidence into explicit findings.
@@ -147,9 +147,9 @@ Use public language that is tied to shipped behavior:
 
 Avoid public language that implies unshipped or unsupported commitments:
 
-- "free tier" or "paid tier" posture framing
+- posture-based capability availability
 - upgrade prompts
-- customer names, tenant IDs, telemetry plans, pricing, GTM, or entitlement details
+- customer names, tenant IDs, telemetry plans, or unshipped operating details
 - formal compliance, certification, audit-readiness, production-proof, or legal-safe-harbor claims
 - admin-plane behavior unless the command reference and release evidence show it is shipped
 

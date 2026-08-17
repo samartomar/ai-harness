@@ -48,6 +48,8 @@
   "scripts": {
     "build": "tsup && tsc -p tsconfig.dts.json",
     "dev": "tsx src/cli.ts",
+    "repo:init": "node tools/repo-ai-tools.mjs setup-codex",
+    "repo:doctor": "node tools/repo-ai-tools.mjs doctor-codex",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",

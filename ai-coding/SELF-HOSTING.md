@@ -23,7 +23,7 @@ the current facts without letting AIH manage itself:
 | Targets | Claude and Codex | `CLAUDE.md`, `AGENTS.md`, and two adapters only |
 | Stack | TypeScript/Node.js product + auxiliary Python assets | npm owns the root lifecycle; pinned uv analyzer manifests are runtime inputs, not workspaces |
 | Repository shape | medium single-package repository | tracked count and package-shape facts stay mirrored in `project.json` / `project.md` |
-| Root MCP config | absent | `mcpServers: []`; local MCP projection remains operator-owned |
+| Root MCP config | absent from Git | `mcpServers: []`; `repo:init` generates an ignored, operator-owned Codex projection |
 | Client hooks/config | uncommitted | no client-specific launcher, settings, or hook registry becomes repo truth |
 | Brownfield extension | present | `rules/project-canon-extension.md` remains repo-owned and manually maintained |
 | Repo-curated skills | decision-partner + BetterDoc | `curated-skills/` holds manually adopted, CLI-neutral copies; AIH does not project or refresh them |
@@ -45,8 +45,9 @@ the current facts without letting AIH manage itself:
 
 Do not add `.aih-config.json`, `.mcp.json`, generated client directories, AIH
 state, or lifecycle receipts merely to make this checkout resemble an installed
-consumer repository. Local tools may be projected through ignored/operator-owned
-paths, but committed source and tests remain authoritative.
+consumer repository. `npm run repo:init` may write the ignored
+`.codex/config.toml` operator projection and external versioned tool caches, but
+neither becomes repository truth. Committed source and tests remain authoritative.
 
 ## Manual maintenance procedure
 
