@@ -174,6 +174,8 @@ describe("ObservationKeyV1 and ObservationSetV1", () => {
       "coverage",
       "observationSetSha256",
     ]);
+    expectExactKeys(key.sourceSeal, ["protocol", "sourceTreeSha256", "selectedClosureSha256"]);
+    expectExactKeys(key.platform, ["os", "architecture", "relevantFactsSha256"]);
     expectExactKeys(fact, ["rawOccurrenceFingerprint", "multiplicity"]);
     expectExactKeys(coverage, ["coverageKind", "coverageSha256"]);
     expect(forward.observationKey.observationKeySha256).toBe(key.observationKeySha256);
@@ -340,6 +342,21 @@ describe("ObservationKeyV1 and ObservationSetV1", () => {
       }),
     ).toThrow(/raw|fingerprint/i);
     expect(() =>
+      createObservationKeyV1({
+        ...keyInput(),
+        sourceSeal: { ...keyInput().sourceSeal, extra: true },
+      }),
+    ).toThrow(/unknown|unexpected|unrecognized/i);
+    expect(() =>
+      createObservationKeyV1({ ...keyInput(), platform: { ...keyInput().platform, extra: true } }),
+    ).toThrow(/unknown|unexpected|unrecognized/i);
+    expect(() =>
+      createObservationSetV1({ ...input, facts: [{ ...input.facts[0], extra: true }] }),
+    ).toThrow(/unknown|unexpected|unrecognized/i);
+    expect(() =>
+      createObservationSetV1({ ...input, coverage: [{ ...input.coverage[0], extra: true }] }),
+    ).toThrow(/unknown|unexpected|unrecognized/i);
+    expect(() =>
       parseObservationKeyV1Json('{"protocol":"ObservationKeyV1","protocol":"ObservationKeyV1"}'),
     ).toThrow(/duplicate/i);
     expect(() => parseObservationSetV1Json('{"protocol":"ObservationSetV1","extra":true}')).toThrow(
@@ -397,6 +414,12 @@ describe("EvidenceAnnexV1", () => {
         descriptors: [input.descriptors[0], input.descriptors[0]],
       }),
     ).toThrow(/duplicate|ambiguous/i);
+    expect(() =>
+      createEvidenceAnnexV1({
+        ...input,
+        descriptors: [{ ...input.descriptors[0], extra: true }, input.descriptors[1]],
+      }),
+    ).toThrow(/unknown|unexpected|unrecognized/i);
     expect(() => parseEvidenceAnnexV1Json('{"protocol":"EvidenceAnnexV1","x":"e\\u0300"}')).toThrow(
       /NFC|Unicode/i,
     );
