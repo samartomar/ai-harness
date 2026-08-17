@@ -263,12 +263,14 @@ export function verifyCatalogHeadEnvelopeV1(input: unknown): VerifiedEnvelope {
   const issuer = text(value.expectedIssuer, "issuer");
   const ref = text(value.expectedRef, "ref");
   const environment = text(value.expectedEnvironment, "environment");
+  const signerIdentity = text(value.expectedCatalogSignerIdentity, "catalog signer identity");
   const predicate = record(envelope.statement.predicate, "predicate");
   if (
     predicate.repository !== repository ||
     predicate.workflowIdentity !== workflow ||
     predicate.issuer !== issuer ||
     predicate.environment !== environment ||
+    predicate.signerIdentity !== signerIdentity ||
     ref !== "refs/heads/main"
   )
     fail("trust context");
@@ -285,6 +287,7 @@ export function verifyCatalogHeadEnvelopeV1(input: unknown): VerifiedEnvelope {
       issuer,
       ref,
       environment,
+      expectedCatalogSignerIdentity: signerIdentity,
     }) !== true
   )
     fail("signature");
@@ -296,6 +299,7 @@ function state(
   value: unknown,
   kind: "CachedCatalogStateV1" | "PackagedCatalogStateV1",
   context: Json,
+  verifyExpectedMaterial = true,
 ): { head: Json; state: Json; envelope: VerifiedEnvelope } {
   const item = record(value, "catalog state");
   const fields = [
@@ -337,6 +341,22 @@ function state(
     digest(item.packageRootSha256, "package root");
   }
   const head = parseHead(headBytes);
+  const resolutionNow = timestamp(context.now, "now");
+  if (resolutionNow < (head.validFrom as string) || resolutionNow >= (head.validUntil as string))
+    fail("head validity");
+  if (verifyExpectedMaterial) {
+    if (head.catalogSha256 !== digest(context.expectedCatalogSha256, "expected catalog"))
+      fail("expected catalog");
+    if (
+      head.promotionDecisionSha256 !==
+      digest(context.expectedPromotionDecisionSha256, "expected promotion decision")
+    )
+      fail("expected promotion decision");
+  }
+  if (
+    head.signerIdentity !== text(context.expectedCatalogSignerIdentity, "catalog signer identity")
+  )
+    fail("catalog signer identity");
   if (head.catalogSha256 !== item.catalogSnapshotSha256) fail("head catalog");
   const envelope = parseCatalogHeadEnvelopeV1(envelopeBytesValue);
   const subject = record((envelope.statement.subject as unknown[])[0], "subject");
@@ -366,10 +386,10 @@ export function resolveAdminCatalogV1(input: unknown): Json {
     ["packaged", value.packaged, "PackagedCatalogStateV1"],
   ];
   for (const [tier, candidate, kind] of tiers) {
-    if (record(candidate, "tier").kind === "unavailable") continue;
     try {
+      if (record(candidate, "tier").kind === "unavailable") continue;
       const next = state(candidate, kind, base);
-      const current = state(lastGood, "CachedCatalogStateV1", base);
+      const current = state(lastGood, "CachedCatalogStateV1", base, false);
       if (
         (next.head.sequence as number) < (current.head.sequence as number) ||
         ((next.head.sequence as number) === (current.head.sequence as number) &&

@@ -128,6 +128,7 @@ const resolutionContext = {
   now: "2026-08-17T12:00:00Z",
   headSignerRootSha256: headRoot,
   adminSignerRootSha256: adminRoot,
+  expectedCatalogSignerIdentity: "signer:catalog-head-v1",
   expectedRepository: "github.com/aih/supported-catalog",
   expectedWorkflowIdentity: "workflow:catalog-release-v1",
   expectedIssuer: "https://token.actions.githubusercontent.com",
@@ -149,7 +150,10 @@ function standardEnvelopeForHead(nextHead: Record<string, unknown>) {
         protocol: "CatalogHeadEnvelopeV1",
         recordType: "CatalogHeadV1",
         repository: resolutionContext.expectedRepository,
-        signerIdentity: "signer:catalog-head-v1",
+        signerIdentity:
+          typeof nextHead.signerIdentity === "string"
+            ? nextHead.signerIdentity
+            : "signer:catalog-head-v1",
         workflowIdentity: resolutionContext.expectedWorkflowIdentity,
       },
       predicateType: "https://aih.dev/CatalogHeadV1",
@@ -216,6 +220,7 @@ describe("signed catalog-head parsing and verification", () => {
       { expectedRef: "refs/heads/release" },
       { expectedEnvironment: "other-environment" },
       { expectedSignerRootSha256: adminRoot },
+      { expectedCatalogSignerIdentity: "signer:other-catalog-head-v1" },
     ])
       expect(() =>
         verifyCatalogHeadEnvelopeV1({
@@ -290,6 +295,100 @@ describe("catalog resolution internal boundary", () => {
 });
 
 describe("admin catalog resolution", () => {
+  it("requires an explicitly trusted catalog signer identity and context-bound catalog and promotion digests", () => {
+    const cached = cachedCatalogState();
+    const unavailable = { kind: "unavailable" };
+    for (const mismatch of [
+      { expectedCatalogSha256: sha("another catalog") },
+      { expectedPromotionDecisionSha256: sha("another promotion") },
+      { expectedCatalogSignerIdentity: "signer:other-catalog-head-v1" },
+    ])
+      expect(
+        resolveAdminCatalogV1({
+          ...resolutionContext,
+          ...mismatch,
+          lastGood: cached,
+          fresh: cached,
+          cachedVerified: unavailable,
+          packaged: unavailable,
+          verifyCanonicalPae: () => true,
+        }),
+      ).toEqual({ kind: "fatal", lastGood: cached });
+
+    const literalHead = JSON.parse(literalHeadBytes.toString("utf8")) as Record<string, unknown>;
+    const selfClaimed = stateForHead({ ...literalHead, signerIdentity: "signer:self-claimed-v1" });
+    expect(
+      resolveAdminCatalogV1({
+        ...resolutionContext,
+        lastGood: cached,
+        fresh: selfClaimed,
+        cachedVerified: unavailable,
+        packaged: unavailable,
+        verifyCanonicalPae: () => true,
+      }),
+    ).toEqual({ kind: "fatal", lastGood: cached });
+  });
+
+  it("treats head validity as [validFrom, validUntil) with explicit now and never falls back", () => {
+    const cached = cachedCatalogState();
+    const unavailable = { kind: "unavailable" };
+    expect(
+      resolveAdminCatalogV1({
+        ...resolutionContext,
+        now: "2026-08-17T00:00:00Z",
+        lastGood: cached,
+        fresh: cached,
+        cachedVerified: unavailable,
+        packaged: unavailable,
+        verifyCanonicalPae: () => true,
+      }),
+    ).toMatchObject({ kind: "resolved", tier: "fresh" });
+    for (const now of ["2026-08-16T23:59:59Z", "2026-08-18T00:00:00Z"])
+      expect(
+        resolveAdminCatalogV1({
+          ...resolutionContext,
+          now,
+          lastGood: cached,
+          fresh: cached,
+          cachedVerified: cachedCatalogState(),
+          packaged: packagedCatalogState(),
+          verifyCanonicalPae: () => true,
+        }),
+      ).toEqual({ kind: "fatal", lastGood: cached });
+  });
+
+  it("fails closed before inspecting hostile resolution-tier candidates", () => {
+    const cached = cachedCatalogState();
+    let getterCalls = 0;
+    const accessor = Object.defineProperty({}, "kind", {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return "unavailable";
+      },
+    });
+    const proxy = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          throw new Error("hostile prototype trap");
+        },
+      },
+    );
+    for (const fresh of [null, undefined, 42, "unavailable", accessor, proxy])
+      expect(
+        resolveAdminCatalogV1({
+          ...resolutionContext,
+          lastGood: cached,
+          fresh,
+          cachedVerified: cachedCatalogState(),
+          packaged: packagedCatalogState(),
+          verifyCanonicalPae: vi.fn(() => true),
+        }),
+      ).toEqual({ kind: "fatal", lastGood: cached });
+    expect(getterCalls).toBe(0);
+  });
+
   it("downgrades only explicit unavailable freshness tiers and preserves verified last-good", () => {
     const cached = cachedCatalogState();
     const packaged = packagedCatalogState();
