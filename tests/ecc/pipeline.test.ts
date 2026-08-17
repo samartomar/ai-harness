@@ -660,7 +660,7 @@ describe("ECC baseline evidence pipeline", () => {
             {
               catalog: "ecc",
               owner: "affaan-m",
-              repo: "ecc",
+              repo: "ECC",
               pinnedSha: stalePin,
               bundle: ".aih/org-evidence/ecc-stale",
               signingRepository: "acme/ecc-evidence",
