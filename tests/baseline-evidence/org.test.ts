@@ -75,6 +75,14 @@ function requiredEvidenceSkeleton(catalog = baselineCatalogById("ecc")): string 
   ].join("\n");
 }
 
+type OrgEvidenceInputWithPosture = Parameters<typeof resolveOrgBaselineEvidence>[0] & {
+  posture: "enterprise" | "vibe";
+};
+
+function resolveWithPosture(input: OrgEvidenceInputWithPosture) {
+  return resolveOrgBaselineEvidence(input);
+}
+
 function defaultLock(): unknown {
   const catalog = baselineCatalogById("ecc");
   return {
@@ -149,11 +157,12 @@ describe("resolveOrgBaselineEvidence", () => {
       seen(argv);
       return { code: 0, stdout: "verified" };
     });
-    const result = await resolveOrgBaselineEvidence({
+    const result = await resolveWithPosture({
       root,
       catalog: baselineCatalogById("ecc"),
       policy: policy(),
       run,
+      posture: "vibe",
     });
 
     expect(seen).toHaveBeenCalledWith([
@@ -177,7 +186,7 @@ describe("resolveOrgBaselineEvidence", () => {
     seedBundle();
     put(".aih/org-evidence/ecc/files/.aih/baseline-reports/ecc.json", "tampered\n");
     const seen = vi.fn();
-    const result = await resolveOrgBaselineEvidence({
+    const result = await resolveWithPosture({
       root,
       catalog: baselineCatalogById("ecc"),
       policy: policy(),
@@ -185,6 +194,7 @@ describe("resolveOrgBaselineEvidence", () => {
         seen(argv);
         return { code: 0 };
       }),
+      posture: "vibe",
     });
     expect(seen).not.toHaveBeenCalled();
     expect(result.evidence).toBeUndefined();
@@ -195,11 +205,12 @@ describe("resolveOrgBaselineEvidence", () => {
 
   it("returns no evidence when GitHub rejects the configured signing repository", async () => {
     seedBundle();
-    const result = await resolveOrgBaselineEvidence({
+    const result = await resolveWithPosture({
       root,
       catalog: baselineCatalogById("ecc"),
       policy: policy("wrong/repository"),
       run: fakeRunner(() => ({ code: 1, stderr: "attestation not found" })),
+      posture: "vibe",
     });
     expect(result.evidence).toBeUndefined();
     expect(result.checks.at(-1)).toMatchObject({ verdict: "fail", code: "bundle.signature" });
@@ -208,11 +219,12 @@ describe("resolveOrgBaselineEvidence", () => {
   it("rejects a signed lock newer than this build loudly, never as absent evidence", async () => {
     const lock = defaultLock() as { schemaVersion: number };
     seedBundle({ ...lock, schemaVersion: 2 });
-    const result = await resolveOrgBaselineEvidence({
+    const result = await resolveWithPosture({
       root,
       catalog: baselineCatalogById("ecc"),
       policy: policy(),
       run: fakeRunner(() => ({ code: 0, stdout: "verified" })),
+      posture: "vibe",
     });
     expect(result.evidence).toBeUndefined();
     const failure = result.checks.find((check) => check.verdict === "fail");
@@ -226,11 +238,12 @@ describe("resolveOrgBaselineEvidence", () => {
 
   it("rejects a signed artifact this build cannot parse instead of silently skipping it", async () => {
     seedBundle({ schemaVersion: 1, sources: [{ id: "ecc", componentsRenamed: [] }] });
-    const result = await resolveOrgBaselineEvidence({
+    const result = await resolveWithPosture({
       root,
       catalog: baselineCatalogById("ecc"),
       policy: policy(),
       run: fakeRunner(() => ({ code: 0, stdout: "verified" })),
+      posture: "vibe",
     });
     expect(result.evidence).toBeUndefined();
     expect(result.checks.at(-1)).toMatchObject({
@@ -240,13 +253,14 @@ describe("resolveOrgBaselineEvidence", () => {
   });
 
   it("does nothing when policy has no override for the requested source pin", async () => {
-    const result = await resolveOrgBaselineEvidence({
+    const result = await resolveWithPosture({
       root,
       catalog: baselineCatalogById("ecc", "b".repeat(40)),
       policy: policy(),
       run: fakeRunner(() => {
         throw new Error("should not run");
       }),
+      posture: "vibe",
     });
     expect(result).toEqual({ checks: [] });
   });
@@ -257,13 +271,14 @@ describe("resolveOrgBaselineEvidence", () => {
     ["an empty baseline override list", { baselineOverrides: [] }],
   ])("blocks Enterprise %s with only a paste-shaped evidence skeleton", async (_label, trust) => {
     const catalog = baselineCatalogById("ecc");
-    const result = await resolveOrgBaselineEvidence({
+    const result = await resolveWithPosture({
       root,
       catalog,
       policy: policyWithoutEvidence("enterprise", trust),
       run: fakeRunner(() => {
         throw new Error("absence must not invoke attestation verification");
       }),
+      posture: "enterprise",
     });
 
     expect(result).toEqual({
@@ -279,23 +294,108 @@ describe("resolveOrgBaselineEvidence", () => {
   });
 
   it("keeps Vibe absence empty so the packaged fallback remains available", async () => {
-    const result = await resolveOrgBaselineEvidence({
+    const result = await resolveWithPosture({
       root,
       catalog: baselineCatalogById("ecc"),
       policy: policyWithoutEvidence("vibe", undefined),
       run: fakeRunner(() => {
         throw new Error("Vibe absence must not invoke attestation verification");
       }),
+      posture: "vibe",
     });
 
     expect(result).toEqual({ checks: [] });
+  });
+
+  it("uses the invocation posture rather than the policy's minimum posture for absence", async () => {
+    const catalog = baselineCatalogById("ecc");
+    const result = await resolveWithPosture({
+      root,
+      catalog,
+      policy: policyWithoutEvidence("vibe", undefined),
+      run: fakeRunner(() => {
+        throw new Error("Enterprise absence must not invoke attestation verification");
+      }),
+      posture: "enterprise",
+    });
+
+    expect(result).toEqual({
+      checks: [
+        {
+          name: "org baseline evidence required",
+          verdict: "fail",
+          code: "baseline.org-evidence-required",
+          detail: requiredEvidenceSkeleton(catalog),
+        },
+      ],
+    });
+  });
+
+  it("uses only the first declared exact live override", async () => {
+    const catalog = baselineCatalogById("ecc");
+    const first = ".aih/org-evidence/ecc";
+    const second = ".aih/org-evidence/ecc-second";
+    const { sumsPath } = seedBundle();
+    const seen = vi.fn();
+    const result = await resolveWithPosture({
+      root,
+      catalog,
+      policy: parseOrgPolicy({
+        schemaVersion: 2,
+        minimumPosture: "vibe",
+        references: { repoContract: "ai-coding/project.json" },
+        trust: {
+          baselineOverrides: [
+            {
+              catalog: catalog.id,
+              owner: catalog.owner,
+              repo: catalog.repo,
+              pinnedSha: catalog.pinnedSha,
+              bundle: first,
+              signingRepository: "acme/first-exact",
+              reason: "First exact evidence",
+              reviewer: "first@example.com",
+              approvedAt: "2026-07-10T12:00:00.000Z",
+            },
+            {
+              catalog: catalog.id,
+              owner: catalog.owner,
+              repo: catalog.repo,
+              pinnedSha: catalog.pinnedSha,
+              bundle: second,
+              signingRepository: "acme/second-exact",
+              reason: "Second exact evidence must remain unused",
+              reviewer: "second@example.com",
+              approvedAt: "2026-07-10T12:00:00.000Z",
+            },
+          ],
+        },
+      }),
+      run: fakeRunner((argv) => {
+        seen(argv);
+        return { code: 0, stdout: "verified" };
+      }),
+      posture: "vibe",
+    });
+
+    expect(result.evidence?.issuer).toBe("github:acme/first-exact");
+    expect(seen).toHaveBeenCalledExactlyOnceWith([
+      "gh",
+      "attestation",
+      "verify",
+      sumsPath,
+      "--repo",
+      "acme/first-exact",
+    ]);
+    expect(seen.mock.calls.flat().join("\n")).not.toContain(second);
+    expect(seen.mock.calls.flat().join("\n")).not.toContain("acme/second-exact");
   });
 
   it("names only the first exact same-source stale override and never leaks unrelated entries", async () => {
     const catalog = baselineCatalogById("ecc");
     const firstStaleSha = "b".repeat(40);
     const laterStaleSha = "c".repeat(40);
-    const result = await resolveOrgBaselineEvidence({
+    const result = await resolveWithPosture({
       root,
       catalog,
       policy: parseOrgPolicy({
@@ -312,8 +412,8 @@ describe("resolveOrgBaselineEvidence", () => {
               pinnedSha: catalog.pinnedSha,
               bundle: ".aih/org-evidence/catalog-mismatch",
               signingRepository: "acme/catalog-mismatch",
-              reason: "Catalog mismatch must not match",
-              reviewer: "security@example.com",
+              reason: "Unique catalog mismatch reason",
+              reviewer: "catalog-mismatch@example.com",
               approvedAt: "2026-07-10T12:00:00.000Z",
             },
             {
@@ -323,8 +423,8 @@ describe("resolveOrgBaselineEvidence", () => {
               pinnedSha: "d".repeat(40),
               bundle: ".aih/org-evidence/superpowers",
               signingRepository: "acme/unrelated",
-              reason: "Unrelated evidence",
-              reviewer: "security@example.com",
+              reason: "Unique unrelated reason",
+              reviewer: "unrelated@example.com",
               approvedAt: "2026-07-10T12:00:00.000Z",
             },
             {
@@ -334,8 +434,8 @@ describe("resolveOrgBaselineEvidence", () => {
               pinnedSha: catalog.pinnedSha,
               bundle: ".aih/org-evidence/repo-case-alias",
               signingRepository: "acme/repo-case-alias",
-              reason: "Repository case alias must not match",
-              reviewer: "security@example.com",
+              reason: "Unique repository case alias reason",
+              reviewer: "repo-case@example.com",
               approvedAt: "2026-07-10T12:00:00.000Z",
             },
             {
@@ -345,8 +445,8 @@ describe("resolveOrgBaselineEvidence", () => {
               pinnedSha: firstStaleSha,
               bundle: ".aih/org-evidence/ecc-old",
               signingRepository: "acme/first-stale",
-              reason: "Stale ECC evidence",
-              reviewer: "security@example.com",
+              reason: "First same-source stale evidence",
+              reviewer: "first-stale@example.com",
               approvedAt: "2026-07-10T12:00:00.000Z",
             },
             {
@@ -356,8 +456,8 @@ describe("resolveOrgBaselineEvidence", () => {
               pinnedSha: laterStaleSha,
               bundle: ".aih/org-evidence/ecc-later",
               signingRepository: "acme/later-stale",
-              reason: "Later stale ECC evidence",
-              reviewer: "security@example.com",
+              reason: "Later same-source stale evidence",
+              reviewer: "later-stale@example.com",
               approvedAt: "2026-07-10T12:00:00.000Z",
             },
             {
@@ -367,8 +467,8 @@ describe("resolveOrgBaselineEvidence", () => {
               pinnedSha: catalog.pinnedSha,
               bundle: ".aih/org-evidence/ecc-case-alias",
               signingRepository: "acme/case-alias",
-              reason: "Case alias must not match",
-              reviewer: "security@example.com",
+              reason: "Unique owner case alias reason",
+              reviewer: "owner-case@example.com",
               approvedAt: "2026-07-10T12:00:00.000Z",
             },
           ],
@@ -377,6 +477,7 @@ describe("resolveOrgBaselineEvidence", () => {
       run: fakeRunner(() => {
         throw new Error("stale evidence must not invoke attestation verification");
       }),
+      posture: "enterprise",
     });
 
     const check = result.checks[0];
@@ -390,15 +491,26 @@ describe("resolveOrgBaselineEvidence", () => {
     expect(check?.detail).toContain("re-vet");
     expect(check?.detail).toContain("update");
     expect(check?.detail).not.toContain(laterStaleSha);
+    expect(check?.detail).not.toContain(".aih/org-evidence/catalog-mismatch");
     expect(check?.detail).not.toContain("acme/catalog-mismatch");
+    expect(check?.detail).not.toContain("Unique catalog mismatch reason");
+    expect(check?.detail).not.toContain("catalog-mismatch@example.com");
+    expect(check?.detail).not.toContain(".aih/org-evidence/superpowers");
     expect(check?.detail).not.toContain("acme/unrelated");
+    expect(check?.detail).not.toContain("Unique unrelated reason");
+    expect(check?.detail).not.toContain("unrelated@example.com");
+    expect(check?.detail).not.toContain(".aih/org-evidence/repo-case-alias");
     expect(check?.detail).not.toContain("acme/case-alias");
+    expect(check?.detail).not.toContain("Unique owner case alias reason");
+    expect(check?.detail).not.toContain("owner-case@example.com");
     expect(check?.detail).not.toContain("acme/repo-case-alias");
+    expect(check?.detail).not.toContain("Unique repository case alias reason");
+    expect(check?.detail).not.toContain("repo-case@example.com");
   });
 
   it("uses the live requested pin when an old same-source override is stale", async () => {
     const liveCatalog = baselineCatalogById("ecc", "e".repeat(40));
-    const result = await resolveOrgBaselineEvidence({
+    const result = await resolveWithPosture({
       root,
       catalog: liveCatalog,
       policy: parseOrgPolicy({
@@ -425,6 +537,7 @@ describe("resolveOrgBaselineEvidence", () => {
       run: fakeRunner(() => {
         throw new Error("stale evidence must not invoke attestation verification");
       }),
+      posture: "enterprise",
     });
 
     expect(result.checks[0]).toMatchObject({ code: "baseline.org-evidence-required" });

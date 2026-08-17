@@ -579,14 +579,41 @@ describe("ECC baseline evidence pipeline", () => {
 
   it("blocks Enterprise absence before reading vendor evidence or constructing a baseline gate", async () => {
     const buildInstallPlan = vi.fn(() => plan("must not build"));
+    const calls: string[] = [];
     const vendorLockRead = vi.fn(() => {
-      throw new Error("vendor lock must not be read without Enterprise org evidence");
+      calls.push("vendor-lock");
+      return vendorLock();
+    });
+    const resolveOrgEvidence = vi.fn(async (input) => {
+      calls.push("resolve-org");
+      expect((input as unknown as { posture?: unknown }).posture).toBe("enterprise");
+      return {
+        checks: [
+          {
+            name: "org baseline evidence required",
+            verdict: "fail",
+            code: "baseline.org-evidence-required",
+            detail: [
+              "catalog: ecc",
+              "owner: affaan-m",
+              "repo: ECC",
+              `pinnedSha: ${"a".repeat(40)}`,
+              "bundle:",
+              "signingRepository:",
+              "reason:",
+              "reviewer:",
+              "approvedAt:",
+            ].join("\n"),
+          },
+        ],
+      } as never;
     });
     const deps = {
       catalog: catalog(),
       source: resolveTrustSource(sourceRoot, { root }),
       vendorLockSha256: "f".repeat(64),
       buildInstallPlan,
+      resolveOrgEvidence,
     };
     Object.defineProperty(deps, "vendorLock", {
       enumerable: true,
@@ -596,6 +623,8 @@ describe("ECC baseline evidence pipeline", () => {
     const result = await executeEccEvidencePipeline(ctx(), request, deps);
 
     expect(vendorLockRead).not.toHaveBeenCalled();
+    expect(resolveOrgEvidence).toHaveBeenCalledOnce();
+    expect(calls).toEqual(["resolve-org"]);
     expect(buildInstallPlan).not.toHaveBeenCalled();
     expect(result.report?.checks).toEqual([
       expect.objectContaining({
@@ -614,6 +643,62 @@ describe("ECC baseline evidence pipeline", () => {
         ].join("\n"),
       }),
     ]);
+  });
+
+  it("uses AIH_ECC_REF as the live Enterprise pin before any vendor evidence work", async () => {
+    const livePin = "b".repeat(40);
+    const stalePin = "a".repeat(40);
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: ["kiro"] },
+        trust: {
+          baselineOverrides: [
+            {
+              catalog: "ecc",
+              owner: "affaan-m",
+              repo: "ecc",
+              pinnedSha: stalePin,
+              bundle: ".aih/org-evidence/ecc-stale",
+              signingRepository: "acme/ecc-evidence",
+              reason: "Stale packaged evidence",
+              reviewer: "evidence@example.com",
+              approvedAt: "2026-07-10T12:00:00.000Z",
+            },
+          ],
+        },
+      }),
+      "utf8",
+    );
+    const context = ctx();
+    context.env = { AIH_ECC_REF: livePin };
+    context.host = makeHostAdapter({ platform: "linux", run: context.run, env: context.env });
+    const buildInstallPlan = vi.fn(() => plan("must not build"));
+    const deps = {
+      source: resolveTrustSource(sourceRoot, { root }),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+    };
+    const vendorLockRead = vi.fn(() => {
+      throw new Error("live-pin drift must block before vendor evidence reads");
+    });
+    Object.defineProperty(deps, "vendorLock", { enumerable: true, get: vendorLockRead });
+
+    const result = await executeEccEvidencePipeline(context, request, deps);
+
+    expect(vendorLockRead).not.toHaveBeenCalled();
+    expect(buildInstallPlan).not.toHaveBeenCalled();
+    expect(result.report?.checks).toEqual([
+      expect.objectContaining({
+        verdict: "fail",
+        code: "baseline.org-evidence-required",
+        detail: expect.stringContaining(`pinnedSha: ${livePin}`),
+      }),
+    ]);
+    expect(result.report?.checks[0]?.detail).toContain(`declaredPinnedSha: ${stalePin}`);
   });
 
   it("keeps Vibe on the existing evidence fallback when no org override is configured", async () => {
