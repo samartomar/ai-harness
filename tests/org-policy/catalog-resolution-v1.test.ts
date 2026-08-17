@@ -2,10 +2,14 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
 import {
   canonicalCatalogHeadEnvelopeV1Bytes,
+  canonicalCatalogSnapshotV1Bytes,
   parseCatalogHeadEnvelopeV1,
+  parseCatalogSnapshotV1Json,
   resolveAdminCatalogV1,
+  resolveVerifiedCatalogMaterialV1,
   verifyCatalogHeadEnvelopeV1,
 } from "../../src/org-policy/catalog-resolution-v1.js";
 
@@ -312,6 +316,195 @@ describe("signed catalog-head parsing and verification", () => {
       Buffer.alloc(1_048_577, 0x20),
     ])
       expect(() => parseCatalogHeadEnvelopeV1(changed)).toThrow();
+  });
+});
+
+describe("CatalogSnapshotV1 strict material boundary", () => {
+  it("parses only canonical bytes into an immutable, branded, component-sorted snapshot", () => {
+    const parsed = parseCatalogSnapshotV1Json(literalSnapshotBytes);
+    expect(canonicalCatalogSnapshotV1Bytes(parsed)).toEqual(literalSnapshotBytes);
+    expect(parseCatalogSnapshotV1Json(new Uint8Array(literalSnapshotBytes))).toEqual(parsed);
+    expect(Object.isFrozen(parsed)).toBe(true);
+    expect(Object.isFrozen(parsed.members)).toBe(true);
+    expect(parsed.members.map((member: { componentId: string }) => member.componentId)).toEqual([
+      "skill:catalog-example",
+    ]);
+    expect(() => canonicalCatalogSnapshotV1Bytes({ ...parsed })).toThrow();
+    expect(() => {
+      (parsed.members[0] as { pinSha256: string }).pinSha256 = sha("forged");
+    }).toThrow();
+  });
+
+  it("accepts shared source, repository, and candidate identities across distinct components only", () => {
+    const first = JSON.parse(literalSnapshotBytes.toString("utf8")).members[0] as Record<
+      string,
+      unknown
+    >;
+    const bytes = canonicalStrictJsonBytesV1({
+      protocol: "CatalogSnapshotV1",
+      members: [
+        { ...first, componentId: "skill:catalog-a" },
+        { ...first, componentId: "skill:catalog-b" },
+      ],
+    });
+    expect(parseCatalogSnapshotV1Json(bytes).members).toHaveLength(2);
+  });
+
+  it("rejects byte aliases, malformed members, duplicate component IDs, and noncanonical schema ordering", () => {
+    const base = JSON.parse(literalSnapshotBytes.toString("utf8")) as {
+      members: Array<Record<string, unknown>>;
+    };
+    const first = base.members[0];
+    if (first === undefined) throw new Error("expected literal snapshot member");
+    const duplicate = canonicalStrictJsonBytesV1({
+      protocol: "CatalogSnapshotV1",
+      members: [first, { ...first }],
+    });
+    const reversed = canonicalStrictJsonBytesV1({
+      protocol: "CatalogSnapshotV1",
+      members: [
+        { ...first, componentId: "skill:z" },
+        { ...first, componentId: "skill:a" },
+      ],
+    });
+    const missingMemberField = { ...first };
+    delete missingMemberField.evidenceSha256;
+    const oversizedMembers = Array.from({ length: 4097 }, (_, index) => ({
+      ...first,
+      componentId: `skill:catalog-${String(index)}`,
+    }));
+    const digestFields = [
+      "candidateIdentitySha256",
+      "candidateSha256",
+      "evidenceSha256",
+      "gitCommitSha256",
+      "pinSha256",
+      "policyRevisionSha256",
+      "profileSha256",
+      "promotionDecisionSha256",
+      "qualificationBundleSha256",
+      "recipeSha256",
+      "sourceSha256",
+    ] as const;
+    for (const value of [
+      Buffer.from(`${literalSnapshotBytes.toString("utf8")} `, "utf8"),
+      Buffer.from('{"protocol":"CatalogSnapshotV1","members":[],"unknown":true}', "utf8"),
+      Buffer.from(
+        '{"protocol":"CatalogSnapshotV1","members":[{"componentId":"skill:a","componentId":"skill:a"}]}',
+        "utf8",
+      ),
+      new Uint8Array([0xc3, 0x28]),
+      duplicate,
+      reversed,
+      canonicalStrictJsonBytesV1({ protocol: "CatalogSnapshotV1", members: [] }),
+      canonicalStrictJsonBytesV1({
+        protocol: "CatalogSnapshotV1",
+        members: [missingMemberField],
+      }),
+      canonicalStrictJsonBytesV1({
+        protocol: "CatalogSnapshotV1",
+        members: [{ ...first, unknown: true }],
+      }),
+      canonicalStrictJsonBytesV1({ protocol: "CatalogSnapshotV1", members: oversizedMembers }),
+      canonicalStrictJsonBytesV1({
+        protocol: "CatalogSnapshotV1",
+        members: [{ ...first, sourceId: "x".repeat(257) }],
+      }),
+      canonicalStrictJsonBytesV1({
+        protocol: "CatalogSnapshotV1",
+        members: [{ ...first, repository: "github.com/Example/catalog-example" }],
+      }),
+      canonicalStrictJsonBytesV1({
+        protocol: "CatalogSnapshotV1",
+        members: [{ ...first, sourceId: "catalog/../example" }],
+      }),
+      canonicalStrictJsonBytesV1({
+        protocol: "CatalogSnapshotV1",
+        members: [{ ...first, sourceId: "https://example.invalid/catalog" }],
+      }),
+      Buffer.from(
+        JSON.stringify({
+          protocol: "CatalogSnapshotV1",
+          members: [{ ...first, sourceId: "catalog\u0301" }],
+        }),
+        "utf8",
+      ),
+      Buffer.from(
+        JSON.stringify({
+          protocol: "CatalogSnapshotV1",
+          members: [{ ...first, repository: "example/catalo\u0301g" }],
+        }),
+        "utf8",
+      ),
+      canonicalStrictJsonBytesV1({
+        protocol: "CatalogSnapshotV1",
+        members: [{ ...first, componentId: "skill:Catalog-example" }],
+      }),
+      Buffer.from(
+        JSON.stringify({
+          protocol: "CatalogSnapshotV1",
+          members: [{ ...first, componentId: "skill:catalog\u0301-example" }],
+        }),
+        "utf8",
+      ),
+    ])
+      expect(() => parseCatalogSnapshotV1Json(value)).toThrow();
+    for (const field of digestFields)
+      for (const invalid of [
+        `sha256:${String(first[field])}`,
+        "A".repeat(64),
+        "a".repeat(63),
+        "g".repeat(64),
+      ])
+        expect(() =>
+          parseCatalogSnapshotV1Json(
+            canonicalStrictJsonBytesV1({
+              protocol: "CatalogSnapshotV1",
+              members: [{ ...first, [field]: invalid }],
+            }),
+          ),
+        ).toThrow();
+  });
+});
+
+describe("hidden verified catalog material", () => {
+  it("admits selected material only after the existing signed resolution path and never exposes caller-forged state", () => {
+    const request = {
+      ...resolutionContext,
+      lastGood: cachedCatalogState(),
+      fresh: cachedCatalogState(),
+      cachedVerified: { kind: "unavailable" },
+      packaged: { kind: "unavailable" },
+      verifyCanonicalPae: () => true,
+    };
+    const material = resolveVerifiedCatalogMaterialV1(request);
+    expect(material).toMatchObject({
+      kind: "resolved",
+      catalogHeadSha256: literalHeadSha256,
+      catalogSha256: literalSnapshotSha256,
+      sequence: 42,
+      tier: "fresh",
+    });
+    expect(Object.isFrozen(material)).toBe(true);
+    // A caller state is raw data: an equivalent closed copy is valid when its bytes,
+    // hashes, DSSE, trust context, and continuity still verify.
+    expect(
+      resolveVerifiedCatalogMaterialV1({ ...request, fresh: { ...request.fresh } }),
+    ).toMatchObject({
+      kind: "resolved",
+      catalogHeadSha256: literalHeadSha256,
+    });
+    for (const next of [
+      {
+        ...request,
+        fresh: { kind: "unavailable" },
+        cachedVerified: { kind: "unavailable" },
+        packaged: { kind: "unavailable" },
+      },
+      { ...request, now: "2026-08-18T00:00:00Z" },
+      { ...request, expectedCatalogSha256: sha("wrong catalog") },
+    ])
+      expect(() => resolveVerifiedCatalogMaterialV1(next)).toThrow();
   });
 });
 

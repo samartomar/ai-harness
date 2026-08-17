@@ -11,6 +11,7 @@ const SHA256 = /^[a-f0-9]{64}$/;
 const MAX_MEMBERS = 4096;
 const bindingBytes = new WeakMap<object, Buffer>();
 const distributions = new WeakSet<object>();
+const distributionBytes = new WeakMap<object, Buffer>();
 
 type Json = Record<string, unknown>;
 
@@ -50,6 +51,13 @@ function exactKeys(value: Json, keys: readonly string[], label: string): void {
 
 function asRecord(value: unknown, label: string): Json {
   if (typeof value !== "object" || value === null || Array.isArray(value)) fail(label);
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) fail(label);
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") fail(label);
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !Object.hasOwn(descriptor, "value")) fail(label);
+  }
   return value as Json;
 }
 
@@ -250,20 +258,17 @@ function pae(payloadType: string, payload: Buffer): Buffer {
   ]);
 }
 
-export function createAdminSeatDistributionV1(input: unknown): AdminSeatDistributionV1 {
-  assertStrictJsonValueV1(input, "admin seat distribution");
-  const value = asRecord(input, "admin seat distribution");
-  exactKeys(value, ["binding", "signatures", "signerIdentity"], "admin seat distribution fields");
-  const binding = value.binding as ResolvedCatalogBindingV1;
-  const bytes = canonicalResolvedCatalogBindingV1Bytes(binding);
-  const signerIdentity = string(value.signerIdentity, "admin signer identity");
-  if (!Array.isArray(value.signatures) || value.signatures.length !== 1) fail("admin signatures");
-  const signature = asRecord(value.signatures[0], "admin signature");
-  exactKeys(signature, ["keyid", "sig"], "admin signature fields");
-  const keyid = string(signature.keyid, "admin key ID");
-  const sig = string(signature.sig, "admin signature");
+function signature(value: unknown): Json {
+  const item = asRecord(value, "admin signature");
+  exactKeys(item, ["keyid", "sig"], "admin signature fields");
+  const keyid = string(item.keyid, "admin key ID");
+  const sig = string(item.sig, "admin signature", 8192);
   if (Buffer.from(sig, "base64").toString("base64") !== sig) fail("admin signature");
-  const statement = {
+  return { keyid, sig };
+}
+
+function statementFor(binding: ResolvedCatalogBindingV1, signerIdentity: string): Json {
+  return {
     _type: "https://in-toto.io/Statement/v1",
     predicate: {
       protocol: "AdminSeatDistributionV1",
@@ -271,12 +276,46 @@ export function createAdminSeatDistributionV1(input: unknown): AdminSeatDistribu
       signerIdentity,
     },
     predicateType: "https://aih.dev/AdminSeatDistributionV1",
-    subject: [{ digest: { sha256: sha256(bytes) }, name: "aih/ResolvedCatalogBindingV1" }],
+    subject: [
+      {
+        digest: { sha256: canonicalResolvedCatalogBindingV1Sha256(binding) },
+        name: "aih/ResolvedCatalogBindingV1",
+      },
+    ],
   };
-  const envelope = {
-    payload: canonicalStrictJsonBytesV1(statement).toString("base64"),
+}
+
+function envelopeFor(
+  binding: ResolvedCatalogBindingV1,
+  signerIdentity: string,
+  signatures: readonly Json[],
+): Json {
+  const statement = canonicalStrictJsonBytesV1(statementFor(binding, signerIdentity));
+  return {
+    payload: statement.toString("base64"),
     payloadType: "application/vnd.in-toto+json",
-    signatures: [{ keyid, sig }],
+    signatures: signatures.map((item) => ({ ...item })),
+  };
+}
+
+function serializeBinding(binding: ResolvedCatalogBindingV1): Json {
+  const bytes = canonicalResolvedCatalogBindingV1Bytes(binding);
+  return {
+    ...JSON.parse(bytes.toString("utf8")),
+    resolvedCatalogBindingSha256: canonicalResolvedCatalogBindingV1Sha256(binding),
+  };
+}
+
+function createDistribution(
+  binding: ResolvedCatalogBindingV1,
+  signerIdentity: string,
+  signatures: readonly Json[],
+): AdminSeatDistributionV1 {
+  const envelope = envelopeFor(binding, signerIdentity, signatures);
+  const serialized = {
+    binding: serializeBinding(binding),
+    envelope,
+    protocol: "AdminSeatDistributionV1" as const,
   };
   const result = deepFreezeStrictJsonV1({
     binding,
@@ -284,6 +323,91 @@ export function createAdminSeatDistributionV1(input: unknown): AdminSeatDistribu
     protocol: "AdminSeatDistributionV1" as const,
   }) as AdminSeatDistributionV1;
   distributions.add(result);
+  distributionBytes.set(result, canonicalStrictJsonBytesV1(serialized));
+  return result;
+}
+
+export function createAdminSeatDistributionV1(input: unknown): AdminSeatDistributionV1 {
+  assertStrictJsonValueV1(input, "admin seat distribution");
+  const value = asRecord(input, "admin seat distribution");
+  exactKeys(value, ["binding", "signatures", "signerIdentity"], "admin seat distribution fields");
+  const binding = value.binding as ResolvedCatalogBindingV1;
+  canonicalResolvedCatalogBindingV1Bytes(binding);
+  const signerIdentity = string(value.signerIdentity, "admin signer identity");
+  if (!Array.isArray(value.signatures) || value.signatures.length !== 1) fail("admin signatures");
+  return createDistribution(binding, signerIdentity, [signature(value.signatures[0])]);
+}
+
+export function canonicalAdminSeatDistributionV1Bytes(value: AdminSeatDistributionV1): Buffer {
+  const bytes =
+    typeof value === "object" && value !== null ? distributionBytes.get(value) : undefined;
+  if (bytes === undefined) fail("admin distribution brand");
+  return Buffer.from(bytes);
+}
+
+function parseEmbeddedBinding(value: unknown): ResolvedCatalogBindingV1 {
+  const item = asRecord(value, "distribution binding");
+  const supplied = digest(item.resolvedCatalogBindingSha256, "binding digest");
+  const { resolvedCatalogBindingSha256: _digest, ...raw } = item;
+  const binding = parseResolvedCatalogBindingV1Json(canonicalStrictJsonBytesV1(raw));
+  if (canonicalResolvedCatalogBindingV1Sha256(binding) !== supplied) fail("binding digest");
+  return binding;
+}
+
+export function parseAdminSeatDistributionV1Json(value: unknown): AdminSeatDistributionV1 {
+  const text = decode(value, "admin distribution bytes");
+  const bytes = Buffer.from(text, "utf8");
+  const parsed = parseStrictJsonObjectV1(text, "admin distribution");
+  exactKeys(parsed, ["binding", "envelope", "protocol"], "admin distribution fields");
+  if (parsed.protocol !== "AdminSeatDistributionV1") fail("admin distribution protocol");
+  const binding = parseEmbeddedBinding(parsed.binding);
+  const envelope = asRecord(parsed.envelope, "admin envelope");
+  exactKeys(envelope, ["payload", "payloadType", "signatures"], "admin envelope");
+  if (
+    envelope.payloadType !== "application/vnd.in-toto+json" ||
+    !Array.isArray(envelope.signatures) ||
+    envelope.signatures.length !== 1
+  )
+    fail("admin envelope");
+  const signatures = envelope.signatures.map(signature);
+  const payloadText = string(envelope.payload, "admin payload", 16384);
+  const payload = Buffer.from(payloadText, "base64");
+  if (payload.toString("base64") !== payloadText) fail("admin payload");
+  const statement = parseStrictJsonObjectV1(
+    new TextDecoder("utf-8", { fatal: true }).decode(payload),
+    "admin statement",
+  );
+  exactKeys(
+    statement,
+    ["_type", "predicate", "predicateType", "subject"],
+    "admin statement fields",
+  );
+  const predicate = asRecord(statement.predicate, "admin predicate");
+  exactKeys(predicate, ["protocol", "recordType", "signerIdentity"], "admin predicate fields");
+  const signerIdentity = string(predicate.signerIdentity, "admin signer identity");
+  if (
+    statement._type !== "https://in-toto.io/Statement/v1" ||
+    statement.predicateType !== "https://aih.dev/AdminSeatDistributionV1" ||
+    predicate.protocol !== "AdminSeatDistributionV1" ||
+    predicate.recordType !== "ResolvedCatalogBindingV1"
+  )
+    fail("admin statement");
+  if (!Array.isArray(statement.subject) || statement.subject.length !== 1) fail("admin subject");
+  const subject = asRecord(statement.subject[0], "admin subject");
+  exactKeys(subject, ["digest", "name"], "admin subject fields");
+  const subjectDigest = asRecord(subject.digest, "admin subject digest");
+  exactKeys(subjectDigest, ["sha256"], "admin subject digest fields");
+  if (
+    subject.name !== "aih/ResolvedCatalogBindingV1" ||
+    digest(subjectDigest.sha256, "admin subject digest") !==
+      canonicalResolvedCatalogBindingV1Sha256(binding)
+  )
+    fail("admin subject");
+  if (canonicalStrictJsonBytesV1(statement).compare(payload) !== 0)
+    fail("noncanonical admin statement");
+  const result = createDistribution(binding, signerIdentity, signatures);
+  if (canonicalAdminSeatDistributionV1Bytes(result).compare(bytes) !== 0)
+    fail("noncanonical admin distribution");
   return result;
 }
 
@@ -293,6 +417,7 @@ export function verifyAdminSeatDistributionV1(input: unknown): AdminSeatDistribu
     value,
     [
       "distribution",
+      "expectedAdminSignerIdentity",
       "expectedAdminSignerRootSha256",
       "expectedHeadSignerRootSha256",
       "verifyCanonicalPae",
@@ -303,6 +428,7 @@ export function verifyAdminSeatDistributionV1(input: unknown): AdminSeatDistribu
   if (!distributions.has(distribution)) fail("admin distribution brand");
   const adminRoot = digest(value.expectedAdminSignerRootSha256, "admin root");
   const headRoot = digest(value.expectedHeadSignerRootSha256, "head root");
+  const signerIdentity = string(value.expectedAdminSignerIdentity, "admin signer identity");
   if (
     adminRoot === headRoot ||
     distribution.binding.adminSignerRootSha256 !== adminRoot ||
@@ -310,22 +436,22 @@ export function verifyAdminSeatDistributionV1(input: unknown): AdminSeatDistribu
   )
     fail("admin roots");
   const envelope = distribution.envelope as Json;
-  exactKeys(envelope, ["payload", "payloadType", "signatures"], "admin envelope");
-  if (
-    envelope.payloadType !== "application/vnd.in-toto+json" ||
-    !Array.isArray(envelope.signatures) ||
-    envelope.signatures.length !== 1
-  )
-    fail("admin envelope");
-  const payload = Buffer.from(string(envelope.payload, "admin payload", 8192), "base64");
+  const payload = Buffer.from(string(envelope.payload, "admin payload", 16384), "base64");
   if (payload.toString("base64") !== envelope.payload) fail("admin payload");
+  const statement = parseStrictJsonObjectV1(
+    new TextDecoder("utf-8", { fatal: true }).decode(payload),
+    "admin statement",
+  );
+  const predicate = asRecord(statement.predicate, "admin predicate");
+  if (predicate.signerIdentity !== signerIdentity) fail("admin signer identity");
   const verify = value.verifyCanonicalPae;
   if (
     typeof verify !== "function" ||
     verify({
       paeBytes: pae(envelope.payloadType as string, payload),
       signatures: envelope.signatures,
-      signerRootSha256: adminRoot,
+      expectedAdminSignerRootSha256: adminRoot,
+      expectedAdminSignerIdentity: signerIdentity,
     }) !== true
   )
     fail("admin signature");

@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  canonicalAdminSeatDistributionV1Bytes,
   canonicalResolvedCatalogBindingV1Bytes,
   canonicalResolvedCatalogBindingV1Sha256,
   createAdminSeatDistributionV1,
   createResolvedCatalogBindingV1,
+  parseAdminSeatDistributionV1Json,
   parseResolvedCatalogBindingV1Json,
   verifyAdminSeatDistributionV1,
 } from "../../src/org-policy/catalog-binding-v1.js";
@@ -258,13 +260,24 @@ describe("admin-signed seat distributions", () => {
     expect(seat.envelope.signatures).toHaveLength(1);
     expect(sha(literalAdminEnvelopeBytes.toString("utf8"))).toBe(literalAdminEnvelopeSha256);
     expect(Buffer.from(JSON.stringify(seat.envelope), "utf8")).toEqual(literalAdminEnvelopeBytes);
+    const bytes = canonicalAdminSeatDistributionV1Bytes(seat);
+    expect(parseAdminSeatDistributionV1Json(bytes)).toEqual(seat);
+    expect(parseAdminSeatDistributionV1Json(new Uint8Array(bytes))).toEqual(seat);
+    expect(() => canonicalAdminSeatDistributionV1Bytes({ ...seat })).toThrow();
     expect(
       verifyAdminSeatDistributionV1({
         distribution: seat,
         expectedAdminSignerRootSha256: "5".repeat(64),
         expectedHeadSignerRootSha256: "8".repeat(64),
-        verifyCanonicalPae: (request: { paeBytes: Buffer }) => {
+        expectedAdminSignerIdentity: "signer:admin-seat-v1",
+        verifyCanonicalPae: (request: {
+          paeBytes: Buffer;
+          expectedAdminSignerIdentity: string;
+          signatures: unknown;
+        }) => {
           expect(request.paeBytes).toEqual(Buffer.from(literalAdminPaeBase64, "base64"));
+          expect(request.expectedAdminSignerIdentity).toBe("signer:admin-seat-v1");
+          expect(request.signatures).toEqual([{ keyid: "admin-key-1", sig: "YWRtaW4tc2ln" }]);
           return true;
         },
       }),
@@ -274,6 +287,7 @@ describe("admin-signed seat distributions", () => {
         distribution: seat,
         expectedAdminSignerRootSha256: "8".repeat(64),
         expectedHeadSignerRootSha256: "5".repeat(64),
+        expectedAdminSignerIdentity: "signer:admin-seat-v1",
         verifyCanonicalPae: () => true,
       }),
     ).toThrow();
@@ -292,8 +306,69 @@ describe("admin-signed seat distributions", () => {
               distribution: changed,
               expectedAdminSignerRootSha256: adminRoot,
               expectedHeadSignerRootSha256: headRoot,
+              expectedAdminSignerIdentity: "signer:admin-seat-v1",
               verifyCanonicalPae: () => true,
             }),
       ).toThrow();
+  });
+
+  it("parses only an exact canonical distribution whose DSSE statement binds its branded binding", () => {
+    const binding = parseResolvedCatalogBindingV1Json(literalBindingBytes);
+    const distribution = createAdminSeatDistributionV1({
+      binding,
+      signerIdentity: "signer:admin-seat-v1",
+      signatures: [{ keyid: "admin-key-1", sig: "YWRtaW4tc2ln" }],
+    });
+    const bytes = canonicalAdminSeatDistributionV1Bytes(distribution);
+    const parsed = JSON.parse(bytes.toString("utf8")) as {
+      binding: Record<string, unknown>;
+      envelope: Record<string, unknown>;
+      protocol: string;
+    };
+    const payload = JSON.parse(
+      Buffer.from(parsed.envelope.payload as string, "base64").toString("utf8"),
+    ) as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      _type: "https://in-toto.io/Statement/v1",
+      predicateType: "https://aih.dev/AdminSeatDistributionV1",
+      subject: [{ digest: { sha256: literalBindingSha256 }, name: "aih/ResolvedCatalogBindingV1" }],
+    });
+    for (const changed of [
+      Buffer.from(`${bytes.toString("utf8")} `, "utf8"),
+      Buffer.from(JSON.stringify({ ...parsed, unknown: true }), "utf8"),
+      Buffer.from(
+        JSON.stringify({
+          ...parsed,
+          binding: { ...parsed.binding, resolvedCatalogBindingSha256: sha("forged") },
+        }),
+        "utf8",
+      ),
+      Buffer.from(
+        JSON.stringify({
+          ...parsed,
+          envelope: { ...parsed.envelope, payload: "eyJ4Ijp0cnVlfQ==" },
+        }),
+        "utf8",
+      ),
+    ])
+      expect(() => parseAdminSeatDistributionV1Json(changed)).toThrow();
+  });
+
+  it("treats the expected admin signer identity as trusted verification context", () => {
+    const binding = parseResolvedCatalogBindingV1Json(literalBindingBytes);
+    const seat = createAdminSeatDistributionV1({
+      binding,
+      signerIdentity: "signer:admin-seat-v1",
+      signatures: [{ keyid: "admin-key-1", sig: "YWRtaW4tc2ln" }],
+    });
+    expect(() =>
+      verifyAdminSeatDistributionV1({
+        distribution: seat,
+        expectedAdminSignerRootSha256: "5".repeat(64),
+        expectedHeadSignerRootSha256: "8".repeat(64),
+        expectedAdminSignerIdentity: "signer:other-admin-v1",
+        verifyCanonicalPae: () => true,
+      }),
+    ).toThrow();
   });
 });
