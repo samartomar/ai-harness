@@ -10,7 +10,7 @@ import {
 
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/, "must be a lowercase SHA-256 digest");
 const platform = z
-  .object({ os: z.enum(["linux", "darwin"]), architecture: z.enum(["amd64", "arm64"]) })
+  .object({ os: z.enum(["linux", "darwin", "windows"]), architecture: z.enum(["amd64", "arm64"]) })
   .strict();
 const ociImage = z
   .object({ reference: z.string(), sha256 })

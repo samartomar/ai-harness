@@ -156,7 +156,7 @@ export function parseStrictJsonObjectV1(text: string, label: string): Record<str
 }
 
 export function canonicalStrictJsonBytesV1(value: unknown): Buffer {
-  assertStrictJsonValueV1(value, "canonical JSON", false);
+  assertStrictJsonValueV1(value, "canonical JSON");
   return Buffer.from(canonicalJson(value), "utf8");
 }
 
