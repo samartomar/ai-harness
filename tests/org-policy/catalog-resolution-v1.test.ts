@@ -21,20 +21,20 @@ const literalSnapshotBytes = Buffer.from(
 );
 const literalSnapshotSha256 = "ecad3085f3e2526eea43deacab7e67faeb25060439fa30922cf8935020e41eb7";
 const literalHeadBytes = Buffer.from(
-  '{"catalogSha256":"7777777777777777777777777777777777777777777777777777777777777777","compatibleEffectVersions":["1"],"compatibleSchemaVersions":["1"],"previousCatalogHeadSha256":"9999999999999999999999999999999999999999999999999999999999999999","promotionDecisionSha256":"1111111111111111111111111111111111111111111111111111111111111111","protocol":"CatalogHeadV1","sequence":42,"signerIdentity":"signer:catalog-head-v1","validFrom":"2026-08-17T00:00:00Z","validUntil":"2026-08-18T00:00:00Z"}',
+  '{"catalogSha256":"ecad3085f3e2526eea43deacab7e67faeb25060439fa30922cf8935020e41eb7","compatibleEffectVersions":["1"],"compatibleSchemaVersions":["1"],"previousCatalogHeadSha256":"9999999999999999999999999999999999999999999999999999999999999999","promotionDecisionSha256":"1111111111111111111111111111111111111111111111111111111111111111","protocol":"CatalogHeadV1","sequence":42,"signerIdentity":"signer:catalog-head-v1","validFrom":"2026-08-17T00:00:00Z","validUntil":"2026-08-18T00:00:00Z"}',
   "utf8",
 );
-const literalHeadSha256 = "0459977e5e0c78656207b78c325b75bdf655819956bc94f5fd7486791e5ef2f9";
+const literalHeadSha256 = "22c42939543f69989545e2d93644de8e3d984311daf49c8dd5dd8240ca9591b0";
 const literalHeadPayloadBase64 =
-  "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJwcmVkaWNhdGUiOnsiZW52aXJvbm1lbnQiOiJjYXRhbG9nLXJlbGVhc2UiLCJpc3N1ZXIiOiJodHRwczovL3Rva2VuLmFjdGlvbnMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwicHJvdG9jb2wiOiJDYXRhbG9nSGVhZEVudmVsb3BlVjEiLCJyZWNvcmRUeXBlIjoiQ2F0YWxvZ0hlYWRWMSIsInJlcG9zaXRvcnkiOiJnaXRodWIuY29tL2FpaC9zdXBwb3J0ZWQtY2F0YWxvZyIsInNpZ25lcklkZW50aXR5Ijoic2lnbmVyOmNhdGFsb2ctaGVhZC12MSIsIndvcmtmbG93SWRlbnRpdHkiOiJ3b3JrZmxvdzpjYXRhbG9nLXJlbGVhc2UtdjEifSwicHJlZGljYXRlVHlwZSI6Imh0dHBzOi8vYWloLmRldi9DYXRhbG9nSGVhZFYxIiwic3ViamVjdCI6W3siZGlnZXN0Ijp7InNoYTI1NiI6IjA0NTk5NzdlNWUwYzc4NjU2MjA3Yjc4YzMyNWI3NWJkZjY1NTgxOTk1NmJjOTRmNWZkNzQ4Njc5MWU1ZWYyZjkifSwibmFtZSI6ImFpaC9DYXRhbG9nSGVhZFYxIn1dfQ==";
+  "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJwcmVkaWNhdGUiOnsiZW52aXJvbm1lbnQiOiJjYXRhbG9nLXJlbGVhc2UiLCJpc3N1ZXIiOiJodHRwczovL3Rva2VuLmFjdGlvbnMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwicHJvdG9jb2wiOiJDYXRhbG9nSGVhZEVudmVsb3BlVjEiLCJyZWNvcmRUeXBlIjoiQ2F0YWxvZ0hlYWRWMSIsInJlcG9zaXRvcnkiOiJnaXRodWIuY29tL2FpaC9zdXBwb3J0ZWQtY2F0YWxvZyIsInNpZ25lcklkZW50aXR5Ijoic2lnbmVyOmNhdGFsb2ctaGVhZC12MSIsIndvcmtmbG93SWRlbnRpdHkiOiJ3b3JrZmxvdzpjYXRhbG9nLXJlbGVhc2UtdjEifSwicHJlZGljYXRlVHlwZSI6Imh0dHBzOi8vYWloLmRldi9DYXRhbG9nSGVhZFYxIiwic3ViamVjdCI6W3siZGlnZXN0Ijp7InNoYTI1NiI6IjIyYzQyOTM5NTQzZjY5OTg5NTQ1ZTJkOTM2NDRkZThlM2Q5ODQzMTFkYWY0OWM4ZGQ1ZGQ4MjQwY2E5NTkxYjAifSwibmFtZSI6ImFpaC9DYXRhbG9nSGVhZFYxIn1dfQ==";
 const literalHeadPaeBase64 =
-  "RFNTRXYxIDI0IGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2pzb24gNTIzIHsiX3R5cGUiOiJodHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxIiwicHJlZGljYXRlIjp7ImVudmlyb25tZW50IjoiY2F0YWxvZy1yZWxlYXNlIiwiaXNzdWVyIjoiaHR0cHM6Ly90b2tlbi5hY3Rpb25zLmdpdGh1YnVzZXJjb250ZW50LmNvbSIsInByb3RvY29sIjoiQ2F0YWxvZ0hlYWRFbnZlbG9wZVYxIiwicmVjb3JkVHlwZSI6IkNhdGFsb2dIZWFkVjEiLCJyZXBvc2l0b3J5IjoiZ2l0aHViLmNvbS9haWgvc3VwcG9ydGVkLWNhdGFsb2ciLCJzaWduZXJJZGVudGl0eSI6InNpZ25lcjpjYXRhbG9nLWhlYWQtdjEiLCJ3b3JrZmxvd0lkZW50aXR5Ijoid29ya2Zsb3c6Y2F0YWxvZy1yZWxlYXNlLXYxIn0sInByZWRpY2F0ZVR5cGUiOiJodHRwczovL2FpaC5kZXYvQ2F0YWxvZ0hlYWRWMSIsInN1YmplY3QiOlt7ImRpZ2VzdCI6eyJzaGEyNTYiOiIwNDU5OTc3ZTVlMGM3ODY1NjIwN2I3OGMzMjViNzViZGY2NTU4MTk5NTZiYzk0ZjVmZDc0ODY3OTFlNWVmMmY5In0sIm5hbWUiOiJhaWgvQ2F0YWxvZ0hlYWRWMSJ9XX0=";
+  "RFNTRXYxIDI0IGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2pzb24gNTIzIHsiX3R5cGUiOiJodHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxIiwicHJlZGljYXRlIjp7ImVudmlyb25tZW50IjoiY2F0YWxvZy1yZWxlYXNlIiwiaXNzdWVyIjoiaHR0cHM6Ly90b2tlbi5hY3Rpb25zLmdpdGh1YnVzZXJjb250ZW50LmNvbSIsInByb3RvY29sIjoiQ2F0YWxvZ0hlYWRFbnZlbG9wZVYxIiwicmVjb3JkVHlwZSI6IkNhdGFsb2dIZWFkVjEiLCJyZXBvc2l0b3J5IjoiZ2l0aHViLmNvbS9haWgvc3VwcG9ydGVkLWNhdGFsb2ciLCJzaWduZXJJZGVudGl0eSI6InNpZ25lcjpjYXRhbG9nLWhlYWQtdjEiLCJ3b3JrZmxvd0lkZW50aXR5Ijoid29ya2Zsb3c6Y2F0YWxvZy1yZWxlYXNlLXYxIn0sInByZWRpY2F0ZVR5cGUiOiJodHRwczovL2FpaC5kZXYvQ2F0YWxvZ0hlYWRWMSIsInN1YmplY3QiOlt7ImRpZ2VzdCI6eyJzaGEyNTYiOiIyMmM0MjkzOTU0M2Y2OTk4OTU0NWUyZDkzNjQ0ZGU4ZTNkOTg0MzExZGFmNDljOGRkNWRkODI0MGNhOTU5MWIwIn0sIm5hbWUiOiJhaWgvQ2F0YWxvZ0hlYWRWMSJ9XX0=";
 const literalHeadEnvelopeBytes = Buffer.from(
-  '{"payload":"eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJwcmVkaWNhdGUiOnsiZW52aXJvbm1lbnQiOiJjYXRhbG9nLXJlbGVhc2UiLCJpc3N1ZXIiOiJodHRwczovL3Rva2VuLmFjdGlvbnMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwicHJvdG9jb2wiOiJDYXRhbG9nSGVhZEVudmVsb3BlVjEiLCJyZWNvcmRUeXBlIjoiQ2F0YWxvZ0hlYWRWMSIsInJlcG9zaXRvcnkiOiJnaXRodWIuY29tL2FpaC9zdXBwb3J0ZWQtY2F0YWxvZyIsInNpZ25lcklkZW50aXR5Ijoic2lnbmVyOmNhdGFsb2ctaGVhZC12MSIsIndvcmtmbG93SWRlbnRpdHkiOiJ3b3JrZmxvdzpjYXRhbG9nLXJlbGVhc2UtdjEifSwicHJlZGljYXRlVHlwZSI6Imh0dHBzOi8vYWloLmRldi9DYXRhbG9nSGVhZFYxIiwic3ViamVjdCI6W3siZGlnZXN0Ijp7InNoYTI1NiI6IjA0NTk5NzdlNWUwYzc4NjU2MjA3Yjc4YzMyNWI3NWJkZjY1NTgxOTk1NmJjOTRmNWZkNzQ4Njc5MWU1ZWYyZjkifSwibmFtZSI6ImFpaC9DYXRhbG9nSGVhZFYxIn1dfQ==","payloadType":"application/vnd.in-toto+json","signatures":[{"keyid":"head-key-1","sig":"aGVhZC1zaWc="}]}',
+  '{"payload":"eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJwcmVkaWNhdGUiOnsiZW52aXJvbm1lbnQiOiJjYXRhbG9nLXJlbGVhc2UiLCJpc3N1ZXIiOiJodHRwczovL3Rva2VuLmFjdGlvbnMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwicHJvdG9jb2wiOiJDYXRhbG9nSGVhZEVudmVsb3BlVjEiLCJyZWNvcmRUeXBlIjoiQ2F0YWxvZ0hlYWRWMSIsInJlcG9zaXRvcnkiOiJnaXRodWIuY29tL2FpaC9zdXBwb3J0ZWQtY2F0YWxvZyIsInNpZ25lcklkZW50aXR5Ijoic2lnbmVyOmNhdGFsb2ctaGVhZC12MSIsIndvcmtmbG93SWRlbnRpdHkiOiJ3b3JrZmxvdzpjYXRhbG9nLXJlbGVhc2UtdjEifSwicHJlZGljYXRlVHlwZSI6Imh0dHBzOi8vYWloLmRldi9DYXRhbG9nSGVhZFYxIiwic3ViamVjdCI6W3siZGlnZXN0Ijp7InNoYTI1NiI6IjIyYzQyOTM5NTQzZjY5OTg5NTQ1ZTJkOTM2NDRkZThlM2Q5ODQzMTFkYWY0OWM4ZGQ1ZGQ4MjQwY2E5NTkxYjAifSwibmFtZSI6ImFpaC9DYXRhbG9nSGVhZFYxIn1dfQ==","payloadType":"application/vnd.in-toto+json","signatures":[{"keyid":"head-key-1","sig":"aGVhZC1zaWc="}]}',
   "utf8",
 );
 const literalHeadEnvelopeSha256 =
-  "a0e5a94c231e85bae60c000d1ce20754135e81bf269ad679cebbf9cd96144a65";
+  "da7ae1e9bd58e139408190a0fe02d929c41afeef710a86f14f05131004c1309f";
 const head = {
   protocol: "CatalogHeadV1" as const,
   sequence: 7,
@@ -59,6 +59,8 @@ function envelopeInput(overrides: Record<string, unknown> = {}) {
 function cachedCatalogState(overrides: Record<string, unknown> = {}) {
   return {
     protocol: "CachedCatalogStateV1" as const,
+    catalogHeadBytes: literalHeadBytes,
+    catalogHeadSha256: literalHeadSha256,
     catalogHeadEnvelopeBytes: literalHeadEnvelopeBytes,
     catalogHeadEnvelopeSha256: literalHeadEnvelopeSha256,
     catalogSnapshotBytes: literalSnapshotBytes,
@@ -67,6 +69,49 @@ function cachedCatalogState(overrides: Record<string, unknown> = {}) {
     verifiedAt: "2026-08-17T11:00:00Z",
     ...overrides,
   };
+}
+
+function stateForHead(
+  nextHead: Record<string, unknown>,
+  nextSnapshotBytes: Buffer = literalSnapshotBytes,
+  overrides: Record<string, unknown> = {},
+) {
+  const catalogHeadBytes = Buffer.from(JSON.stringify(nextHead), "utf8");
+  const catalogHeadSha256 = sha(catalogHeadBytes.toString("utf8"));
+  const statementBytes = Buffer.from(
+    JSON.stringify({
+      _type: "https://in-toto.io/Statement/v1",
+      predicate: {
+        environment: resolutionContext.expectedEnvironment,
+        issuer: resolutionContext.expectedIssuer,
+        protocol: "CatalogHeadEnvelopeV1",
+        recordType: "CatalogHeadV1",
+        repository: resolutionContext.expectedRepository,
+        signerIdentity: "signer:catalog-head-v1",
+        workflowIdentity: resolutionContext.expectedWorkflowIdentity,
+      },
+      predicateType: "https://aih.dev/CatalogHeadV1",
+      subject: [{ digest: { sha256: catalogHeadSha256 }, name: "aih/CatalogHeadV1" }],
+    }),
+    "utf8",
+  );
+  const catalogHeadEnvelopeBytes = Buffer.from(
+    JSON.stringify({
+      payload: statementBytes.toString("base64"),
+      payloadType: "application/vnd.in-toto+json",
+      signatures: [{ keyid: "head-key-1", sig: "aGVhZC1zaWc=" }],
+    }),
+    "utf8",
+  );
+  return cachedCatalogState({
+    catalogHeadBytes,
+    catalogHeadEnvelopeBytes,
+    catalogHeadEnvelopeSha256: sha(catalogHeadEnvelopeBytes.toString("utf8")),
+    catalogHeadSha256,
+    catalogSnapshotBytes: nextSnapshotBytes,
+    catalogSnapshotSha256: sha(nextSnapshotBytes.toString("utf8")),
+    ...overrides,
+  });
 }
 
 function packagedCatalogState(overrides: Record<string, unknown> = {}) {
@@ -101,6 +146,14 @@ describe("signed catalog-head parsing and verification", () => {
     expect(sha(bytes.toString("utf8"))).toBe(literalHeadEnvelopeSha256);
     expect(sha(literalHeadBytes.toString("utf8"))).toBe(literalHeadSha256);
     expect(sha(literalSnapshotBytes.toString("utf8"))).toBe(literalSnapshotSha256);
+    expect(JSON.parse(literalHeadBytes.toString("utf8"))).toMatchObject({
+      catalogSha256: literalSnapshotSha256,
+    });
+    expect(
+      JSON.parse(Buffer.from(literalHeadPayloadBase64, "base64").toString("utf8")),
+    ).toMatchObject({
+      subject: [{ digest: { sha256: literalHeadSha256 } }],
+    });
     expect(parseCatalogHeadEnvelopeV1(bytes)).toEqual(envelope);
     expect(parseCatalogHeadEnvelopeV1(new Uint8Array(bytes))).toEqual(envelope);
     expect(envelope.envelope.payload).toBe(literalHeadPayloadBase64);
@@ -153,7 +206,6 @@ describe("signed catalog-head parsing and verification", () => {
       Buffer.from('{"value":"\ud800"}', "utf8"),
       new Uint8Array([0xc3, 0x28]),
       { ...envelopeInput(), signerRootSha256: adminRoot },
-      { ...envelopeInput(), head: { ...head, sequence: 6 } },
       { ...envelopeInput(), head: { ...head, validUntil: "2026-02-30T00:00:00Z" } },
       { ...envelopeInput(), signatures: [{ keyid: "head-key-1", sig: "" }] },
       {
@@ -246,14 +298,8 @@ describe("admin catalog resolution", () => {
   });
 
   it("reports compatibility-required without materializing and treats corrupt cache or invalid higher tiers as terminal", () => {
-    const incompatible = cachedCatalogState({
-      catalogHeadEnvelopeBytes: Buffer.from(
-        literalHeadEnvelopeBytes
-          .toString("utf8")
-          .replace('"compatibleSchemaVersions":["1"]', '"compatibleSchemaVersions":["2"]'),
-        "utf8",
-      ),
-    });
+    const literalHead = JSON.parse(literalHeadBytes.toString("utf8")) as Record<string, unknown>;
+    const incompatible = stateForHead({ ...literalHead, compatibleSchemaVersions: ["2"] });
     const cached = cachedCatalogState();
     expect(
       resolveAdminCatalogV1({
@@ -288,18 +334,20 @@ describe("admin catalog resolution", () => {
 
   it("treats same/lower continuity, wrong typed state material, and verifier throws as fatal while a valid higher catalog advances", () => {
     const lastGood = cachedCatalogState();
-    const higher = cachedCatalogState({
-      catalogHeadEnvelopeBytes: Buffer.from(
-        literalHeadEnvelopeBytes.toString("utf8").replace('"sequence":42', '"sequence":43'),
-        "utf8",
-      ),
-      catalogHeadEnvelopeSha256: sha("higher envelope"),
-      catalogSnapshotBytes: Buffer.from(
-        '{"members":[],"protocol":"CatalogSnapshotV1","revision":2}',
-        "utf8",
-      ),
-      catalogSnapshotSha256: sha('{"members":[],"protocol":"CatalogSnapshotV1","revision":2}'),
-    });
+    const literalHead = JSON.parse(literalHeadBytes.toString("utf8")) as Record<string, unknown>;
+    const higherSnapshot = Buffer.from(
+      literalSnapshotBytes.toString("utf8").replace("catalog-example", "catalog-other"),
+      "utf8",
+    );
+    const higher = stateForHead(
+      {
+        ...literalHead,
+        catalogSha256: sha(higherSnapshot.toString("utf8")),
+        previousCatalogHeadSha256: literalHeadSha256,
+        sequence: 43,
+      },
+      higherSnapshot,
+    );
     expect(
       resolveAdminCatalogV1({
         ...resolutionContext,
@@ -312,7 +360,9 @@ describe("admin catalog resolution", () => {
       }),
     ).toMatchObject({ kind: "resolved", tier: "fresh", headDigestSha256: expect.any(String) });
     for (const next of [
-      cachedCatalogState({ catalogSnapshotSha256: sha("same sequence different catalog") }),
+      stateForHead({ ...literalHead, validUntil: "2026-08-18T00:00:01Z" }),
+      stateForHead({ ...literalHead, sequence: 41 }),
+      stateForHead({ ...literalHead, previousCatalogHeadSha256: sha("wrong previous") }),
       cachedCatalogState({ catalogHeadEnvelopeSha256: sha("replayed head") }),
       cachedCatalogState({ catalogSnapshotBytes: Buffer.from("{}", "utf8") }),
       packagedCatalogState({ packageSha256: sha("wrong package") }),

@@ -17,18 +17,21 @@ const adminRoot = sha("admin signer root");
 // Independently precomputed canonical JSON and SHA-256 vector.  It is intentionally
 // literal: production constructors/canonicalizers must not generate its expectation.
 const literalBindingBytes = Buffer.from(
-  '{"adminSignerRootSha256":"5555555555555555555555555555555555555555555555555555555555555555","catalogHeadSha256":"6666666666666666666666666666666666666666666666666666666666666666","catalogSha256":"7777777777777777777777777777777777777777777777777777777777777777","compatibleEffectVersion":"1","compatibleSchemaVersion":"1","headSignerRootSha256":"8888888888888888888888888888888888888888888888888888888888888888","members":[{"candidateIdentitySha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","candidateSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","componentId":"skill:catalog-example","evidenceSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","gitCommitSha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","pinSha256":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","policyRevisionSha256":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","profileSha256":"0000000000000000000000000000000000000000000000000000000000000000","promotionDecisionSha256":"1111111111111111111111111111111111111111111111111111111111111111","qualificationBundleSha256":"2222222222222222222222222222222222222222222222222222222222222222","recipeSha256":"3333333333333333333333333333333333333333333333333333333333333333","repository":"github.com/example/catalog-example","sourceId":"catalog-example","sourceSha256":"4444444444444444444444444444444444444444444444444444444444444444"}],"protocol":"ResolvedCatalogBindingV1","resolvedAt":"2026-08-17T12:00:00Z","sequence":42,"tier":"fresh"}',
+  '{"adminSignerRootSha256":"5555555555555555555555555555555555555555555555555555555555555555","catalogHeadSha256":"22c42939543f69989545e2d93644de8e3d984311daf49c8dd5dd8240ca9591b0","catalogSha256":"ecad3085f3e2526eea43deacab7e67faeb25060439fa30922cf8935020e41eb7","compatibleEffectVersion":"1","compatibleSchemaVersion":"1","headSignerRootSha256":"8888888888888888888888888888888888888888888888888888888888888888","members":[{"candidateIdentitySha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","candidateSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","componentId":"skill:catalog-example","evidenceSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","gitCommitSha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","pinSha256":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","policyRevisionSha256":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","profileSha256":"0000000000000000000000000000000000000000000000000000000000000000","promotionDecisionSha256":"1111111111111111111111111111111111111111111111111111111111111111","qualificationBundleSha256":"2222222222222222222222222222222222222222222222222222222222222222","recipeSha256":"3333333333333333333333333333333333333333333333333333333333333333","repository":"github.com/example/catalog-example","sourceId":"catalog-example","sourceSha256":"4444444444444444444444444444444444444444444444444444444444444444"}],"protocol":"ResolvedCatalogBindingV1","resolvedAt":"2026-08-17T12:00:00Z","sequence":42,"tier":"fresh"}',
   "utf8",
 );
-const literalBindingSha256 = "39ea1988f64eadcf6c2b6a227bc58f2cbb3adb3efa578933c610402363eb7838";
+const literalBindingSha256 = "8b9044d9e510bfaa65800290b0b168fbdce2759976755e6d6b8cd25b003ad056";
+const literalCatalogHeadSha256 = "22c42939543f69989545e2d93644de8e3d984311daf49c8dd5dd8240ca9591b0";
+const literalCatalogSnapshotSha256 =
+  "ecad3085f3e2526eea43deacab7e67faeb25060439fa30922cf8935020e41eb7";
 const literalAdminEnvelopeBytes = Buffer.from(
-  '{"payload":"eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJwcmVkaWNhdGUiOnsicHJvdG9jb2wiOiJBZG1pblNlYXREaXN0cmlidXRpb25WMSIsInJlY29yZFR5cGUiOiJSZXNvbHZlZENhdGFsb2dCaW5kaW5nVjEiLCJzaWduZXJJZGVudGl0eSI6InNpZ25lcjphZG1pbi1zZWF0LXYxIn0sInByZWRpY2F0ZVR5cGUiOiJodHRwczovL2FpaC5kZXYvQWRtaW5TZWF0RGlzdHJpYnV0aW9uVjEiLCJzdWJqZWN0IjpbeyJkaWdlc3QiOnsic2hhMjU2IjoiMzllYTE5ODhmNjRlYWRjZjZjMmI2YTIyN2JjNThmMmNiYjNhZGIzZWZhNTc4OTMzYzYxMDQwMjM2M2ViNzgzOCJ9LCJuYW1lIjoiYWloL1Jlc29sdmVkQ2F0YWxvZ0JpbmRpbmdWMSJ9XX0=","payloadType":"application/vnd.in-toto+json","signatures":[{"keyid":"admin-key-1","sig":"YWRtaW4tc2ln"}]}',
+  '{"payload":"eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJwcmVkaWNhdGUiOnsicHJvdG9jb2wiOiJBZG1pblNlYXREaXN0cmlidXRpb25WMSIsInJlY29yZFR5cGUiOiJSZXNvbHZlZENhdGFsb2dCaW5kaW5nVjEiLCJzaWduZXJJZGVudGl0eSI6InNpZ25lcjphZG1pbi1zZWF0LXYxIn0sInByZWRpY2F0ZVR5cGUiOiJodHRwczovL2FpaC5kZXYvQWRtaW5TZWF0RGlzdHJpYnV0aW9uVjEiLCJzdWJqZWN0IjpbeyJkaWdlc3QiOnsic2hhMjU2IjoiOGI5MDQ0ZDllNTEwYmZhYTY1ODAwMjkwYjBiMTY4ZmJkY2UyNzU5OTc2NzU1ZTZkNmI4Y2QyNWIwMDNhZDA1NiJ9LCJuYW1lIjoiYWloL1Jlc29sdmVkQ2F0YWxvZ0JpbmRpbmdWMSJ9XX0=","payloadType":"application/vnd.in-toto+json","signatures":[{"keyid":"admin-key-1","sig":"YWRtaW4tc2ln"}]}',
   "utf8",
 );
 const literalAdminEnvelopeSha256 =
-  "2184852fc33a4116f04d7514d89054121ab692ab17a4343ddcf6b5543012fe30";
+  "ee0ca93ef592bf5b0f3cac0ed53345cfdcecdb27f2ea5554a78fa105f00365c8";
 const literalAdminPaeBase64 =
-  "RFNTRXYxIDI0IGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2pzb24gMzcxIHsiX3R5cGUiOiJodHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxIiwicHJlZGljYXRlIjp7InByb3RvY29sIjoiQWRtaW5TZWF0RGlzdHJpYnV0aW9uVjEiLCJyZWNvcmRUeXBlIjoiUmVzb2x2ZWRDYXRhbG9nQmluZGluZ1YxIiwic2lnbmVySWRlbnRpdHkiOiJzaWduZXI6YWRtaW4tc2VhdC12MSJ9LCJwcmVkaWNhdGVUeXBlIjoiaHR0cHM6Ly9haWguZGV2L0FkbWluU2VhdERpc3RyaWJ1dGlvblYxIiwic3ViamVjdCI6W3siZGlnZXN0Ijp7InNoYTI1NiI6IjM5ZWExOTg4ZjY0ZWFkY2Y2YzJiNmEyMjdiYzU4ZjJjYmIzYWRiM2VmYTU3ODkzM2M2MTA0MDIzNjNlYjc4MzgifSwibmFtZSI6ImFpaC9SZXNvbHZlZENhdGFsb2dCaW5kaW5nVjEifV19";
+  "RFNTRXYxIDI0IGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2pzb24gMzcxIHsiX3R5cGUiOiJodHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxIiwicHJlZGljYXRlIjp7InByb3RvY29sIjoiQWRtaW5TZWF0RGlzdHJpYnV0aW9uVjEiLCJyZWNvcmRUeXBlIjoiUmVzb2x2ZWRDYXRhbG9nQmluZGluZ1YxIiwic2lnbmVySWRlbnRpdHkiOiJzaWduZXI6YWRtaW4tc2VhdC12MSJ9LCJwcmVkaWNhdGVUeXBlIjoiaHR0cHM6Ly9haWguZGV2L0FkbWluU2VhdERpc3RyaWJ1dGlvblYxIiwic3ViamVjdCI6W3siZGlnZXN0Ijp7InNoYTI1NiI6IjhiOTA0NGQ5ZTUxMGJmYWE2NTgwMDI5MGIwYjE2OGZiZGNlMjc1OTk3Njc1NWU2ZDZiOGNkMjViMDAzYWQwNTYifSwibmFtZSI6ImFpaC9SZXNvbHZlZENhdGFsb2dCaW5kaW5nVjEifV19";
 
 const bindingInput = () => ({
   protocol: "ResolvedCatalogBindingV1" as const,
@@ -119,6 +122,8 @@ describe("ResolvedCatalogBindingV1", () => {
   it("has a literal independent canonical binding vector and rejects cross-bound security-field swaps", () => {
     expect(sha(literalBindingBytes.toString("utf8"))).toBe(literalBindingSha256);
     expect(parseResolvedCatalogBindingV1Json(literalBindingBytes)).toMatchObject({
+      catalogHeadSha256: literalCatalogHeadSha256,
+      catalogSha256: literalCatalogSnapshotSha256,
       protocol: "ResolvedCatalogBindingV1",
       resolvedCatalogBindingSha256: literalBindingSha256,
     });
