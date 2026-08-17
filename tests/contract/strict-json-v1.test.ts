@@ -44,6 +44,16 @@ describe("strict JSON v1", () => {
     const cycle: Record<string, unknown> = {};
     cycle.self = cycle;
     expect(() => assertStrictJsonValueV1(cycle, "fixture")).toThrow(/cycle/i);
+
+    const enumerableJsonData = { alpha: true } as Record<string, unknown>;
+    Object.defineProperty(enumerableJsonData, "not-json-data", {
+      enumerable: false,
+      value: "ignored by the JSON data boundary",
+    });
+    expect(assertStrictJsonValueV1(enumerableJsonData, "fixture")).toBe(enumerableJsonData);
+    expect(canonicalStrictJsonBytesV1(enumerableJsonData)).toEqual(
+      canonicalStrictJsonBytesV1({ alpha: true }),
+    );
   });
 
   it("deep-freezes validated values and exposes deterministic RFC 8785/JCS bytes and SHA-256", () => {
@@ -83,12 +93,18 @@ describe("strict JSON v1", () => {
       "../one",
       "one\\two",
       "one%2ftwo",
+      "one%2Ftwo",
+      "one%5ctwo",
+      "one%5Ctwo",
+      "one%2f..%2ftwo",
+      "one%5c..%5ctwo",
       "one?query",
       "one#fragment",
       "one:colon",
       "file://one",
       "one\u0000two",
       "one\u001ftwo",
+      "skills/re\u0300gle.md",
     ]) {
       expect(() => assertSafeRelativePosixPathV1(path, "path")).toThrow(/path|relative|POSIX/i);
     }

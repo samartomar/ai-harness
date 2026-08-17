@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   assessNativeObservationReuseV1,
@@ -73,6 +74,23 @@ function reuse(input: unknown, sourceRoot = root, selectedClosurePaths = ["selec
 function sourceText(rel: string): string {
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
   return readFileSync(join(repoRoot, ...rel.split("/")), "utf8");
+}
+
+function staticModuleSpecifiers(rel: string): string[] {
+  const source = ts.createSourceFile(rel, sourceText(rel), ts.ScriptTarget.ES2022, false);
+  const specifiers: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier !== undefined &&
+      ts.isStringLiteral(node.moduleSpecifier)
+    ) {
+      specifiers.push(node.moduleSpecifier.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return specifiers;
 }
 
 function expectExactKeys(value: object, keys: readonly string[]): void {
@@ -155,8 +173,12 @@ describe("NativeObservationV1", () => {
     ]);
     expectExactKeys(left.sourceSeal, ["protocol", "sourceTreeSha256", "selectedClosureSha256"]);
     expectExactKeys(left.platform, ["os", "architecture", "relevantFactsSha256"]);
-    expectExactKeys(firstFact, ["rawOccurrenceFingerprint", "multiplicity"]);
-    expectExactKeys(firstCoverage, ["coverageKind", "coverageSha256"]);
+    for (const fact of left.facts) {
+      expectExactKeys(fact, ["rawOccurrenceFingerprint", "multiplicity"]);
+    }
+    for (const coverage of left.coverage) {
+      expectExactKeys(coverage, ["coverageKind", "coverageSha256"]);
+    }
     expect(left.protocol).toBe("NativeObservationV1");
     expect(left.sourceSeal).toEqual(sourceSeal);
     expect(left.reuseScope).toBe("local-optimization-only");
@@ -292,6 +314,33 @@ describe("NativeObservationV1", () => {
         coverage: [{ ...input.coverage[0], coverageKind: "" }, input.coverage[1]],
       }),
     ).toThrow(/coverage|kind/i);
+    expect(() =>
+      createNativeObservationV1({
+        ...input,
+        facts: [input.facts[0], { ...input.facts[1], extra: true }],
+      }),
+    ).toThrow(/unknown|unexpected|unrecognized/i);
+    expect(() =>
+      createNativeObservationV1({
+        ...input,
+        coverage: [input.coverage[0], { ...input.coverage[1], extra: true }],
+      }),
+    ).toThrow(/unknown|unexpected|unrecognized/i);
+    expect(() =>
+      createNativeObservationV1({
+        ...input,
+        facts: [input.facts[0], { ...input.facts[0], multiplicity: 3 }],
+      }),
+    ).toThrow(/duplicate|collision/i);
+    expect(() =>
+      createNativeObservationV1({
+        ...input,
+        coverage: [
+          input.coverage[0],
+          { ...input.coverage[0], coverageSha256: sha256("different selected coverage") },
+        ],
+      }),
+    ).toThrow(/duplicate|collision/i);
   });
 
   it("defensively copies caller input before deeply freezing the validated observation", () => {
@@ -428,7 +477,7 @@ describe("NativeObservationV1", () => {
     ).not.toContain("pass");
   });
 
-  it("has no current runtime or evidence cutover import or public export", () => {
+  it("has no statically discoverable runtime import or public export", () => {
     for (const rel of [
       "src/trust/scan.ts",
       "src/trust/evidence.ts",
@@ -444,10 +493,12 @@ describe("NativeObservationV1", () => {
       "src/bundle/index.ts",
       "src/index.ts",
     ]) {
-      expect(sourceText(rel)).not.toMatch(
-        /(?:from|export)\s+["'][^"']*observation\/native-observation-v1(?:\.js)?["']/,
-      );
+      expect(staticModuleSpecifiers(rel)).not.toContain("../observation/native-observation-v1.js");
+      expect(staticModuleSpecifiers(rel)).not.toContain("./observation/native-observation-v1.js");
+      expect(staticModuleSpecifiers(rel)).not.toContain("./native-observation-v1.js");
     }
+    const packageJson = JSON.parse(sourceText("package.json")) as { exports?: unknown };
+    expect(JSON.stringify(packageJson.exports)).not.toContain("observation/native-observation-v1");
   });
 
   it("uses branded canonical bytes and SHA-256 only for validated observations", () => {
