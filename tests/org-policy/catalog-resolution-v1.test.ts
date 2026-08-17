@@ -299,7 +299,12 @@ describe("admin catalog resolution", () => {
 
   it("reports compatibility-required without materializing and treats corrupt cache or invalid higher tiers as terminal", () => {
     const literalHead = JSON.parse(literalHeadBytes.toString("utf8")) as Record<string, unknown>;
-    const incompatible = stateForHead({ ...literalHead, compatibleSchemaVersions: ["2"] });
+    const incompatible = stateForHead({
+      ...literalHead,
+      compatibleSchemaVersions: ["2"],
+      previousCatalogHeadSha256: literalHeadSha256,
+      sequence: 43,
+    });
     const cached = cachedCatalogState();
     expect(
       resolveAdminCatalogV1({
@@ -315,6 +320,20 @@ describe("admin catalog resolution", () => {
       headDigestSha256: expect.any(String),
       materializable: false,
     });
+    const equalSequenceIncompatible = stateForHead({
+      ...literalHead,
+      compatibleSchemaVersions: ["2"],
+    });
+    expect(
+      resolveAdminCatalogV1({
+        ...resolutionContext,
+        lastGood: cached,
+        fresh: equalSequenceIncompatible,
+        cachedVerified: { kind: "unavailable" },
+        packaged: { kind: "unavailable" },
+        verifyCanonicalPae: () => true,
+      }),
+    ).toEqual({ kind: "fatal", lastGood: cached });
     for (const corrupt of [
       { ...cached, verifiedAt: "2026-02-30T00:00:00Z" },
       { ...cached, catalogHeadEnvelopeSha256: sha("corrupt cache") },
