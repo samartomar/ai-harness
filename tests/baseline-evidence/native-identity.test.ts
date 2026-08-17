@@ -7,6 +7,7 @@ import {
   discoverNativeDetectorSourceFiles,
   NATIVE_DETECTOR_DIGEST,
   NATIVE_DETECTOR_DORMANT_SOURCE_EXCLUSIONS,
+  NATIVE_DETECTOR_GLOB_ROOTS,
   NATIVE_DETECTOR_SOURCES,
   nativeAnalyzerIdentity,
 } from "../../src/baseline-evidence/native-identity.js";
@@ -62,9 +63,10 @@ describe("discoverNativeDetectorSourceFiles", () => {
     expect(discoverNativeDetectorSourceFiles(root)).toContain("src/trust/new-detector.ts");
   });
 
-  it("excludes only dormant V1 contracts while retaining future trust runtime sources", () => {
+  it("excludes only dormant V1 contracts while retaining future trust and observation runtime sources", () => {
     const root = fixtureRoot();
     writeDeclaredFixture(root);
+    mkdirSync(join(root, "src", "observation"), { recursive: true });
     for (const path of NATIVE_DETECTOR_DORMANT_SOURCE_EXCLUSIONS) {
       writeFileSync(join(root, ...path.split("/")), "export const dormant = true;\n");
     }
@@ -72,8 +74,17 @@ describe("discoverNativeDetectorSourceFiles", () => {
       join(root, "src", "trust", "future-runtime-detector.ts"),
       "export const runtime = true;\n",
     );
+    writeFileSync(
+      join(root, "src", "observation", "future-runtime-observation.ts"),
+      "export const runtime = true;\n",
+    );
 
+    expect(NATIVE_DETECTOR_GLOB_ROOTS).toContain("src/observation");
     expect([...NATIVE_DETECTOR_DORMANT_SOURCE_EXCLUSIONS].sort()).toEqual([
+      "src/observation/native-observation-v1.ts",
+      "src/observation/observation-evidence-v1.ts",
+      "src/observation/scan-attestation-v1.ts",
+      "src/observation/scanner-manifest-v1.ts",
       "src/trust/normalization-v1-compatibility.ts",
       "src/trust/normalization-v1.ts",
     ]);
@@ -81,6 +92,7 @@ describe("discoverNativeDetectorSourceFiles", () => {
     expect(files).not.toContain("src/trust/normalization-v1-compatibility.ts");
     expect(files).not.toContain("src/trust/normalization-v1.ts");
     expect(files).toContain("src/trust/future-runtime-detector.ts");
+    expect(files).toContain("src/observation/future-runtime-observation.ts");
   });
 
   it("excludes a symlink from the closure even when it points at a declared .ts file", () => {
