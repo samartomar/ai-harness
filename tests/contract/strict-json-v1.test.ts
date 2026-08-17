@@ -64,17 +64,38 @@ describe("strict JSON v1", () => {
   });
 
   it("accepts only safe relative POSIX paths", () => {
-    expect(() => assertSafeRelativePosixPathV1("skills/reviewer/SKILL.md", "path")).not.toThrow();
+    expect(assertSafeRelativePosixPathV1("skills/😀/règle.md", "path")).toBe("skills/😀/règle.md");
     for (const path of [
       "",
       "/absolute",
+      "//host/share",
+      "///device/path",
       "C:/drive",
+      "C:relative",
+      "\\\\host\\share",
+      "\\\\?\\C:\\device",
       "./relative",
+      ".",
+      "one/./two",
       "one//two",
+      "one/",
       "one/../two",
+      "../one",
       "one\\two",
+      "one%2ftwo",
+      "one?query",
+      "one#fragment",
+      "one:colon",
+      "file://one",
+      "one\u0000two",
+      "one\u001ftwo",
     ]) {
       expect(() => assertSafeRelativePosixPathV1(path, "path")).toThrow(/path|relative|POSIX/i);
+    }
+    for (const hostileAlias of ["same/../same", "./same"]) {
+      expect(() => assertSafeRelativePosixPathV1(hostileAlias, "path")).toThrow(
+        /path|relative|POSIX/i,
+      );
     }
   });
 });
