@@ -81,6 +81,12 @@ function expectExactKeys(value: object, keys: readonly string[]): void {
   expect(Object.keys(value).sort()).toEqual([...keys].sort());
 }
 
+function mustGet<T>(values: readonly T[], index: number): T {
+  const value = values[index];
+  if (value === undefined) throw new Error(`expected test fixture entry ${String(index)}`);
+  return value;
+}
+
 function repoRoot(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 }
@@ -189,8 +195,13 @@ describe("ObservationKeyV1 and ObservationSetV1", () => {
     expect(Object.isFrozen(fact)).toBe(true);
     expect(Object.isFrozen(forward.coverage)).toBe(true);
     expect(Object.isFrozen(coverage)).toBe(true);
-    input.facts[0].multiplicity = 9;
-    expect(fact.multiplicity).toBe(2);
+    const originalFirstFact = mustGet(input.facts, 0);
+    const copiedFirstFact = forward.facts.find(
+      (entry) => entry.rawOccurrenceFingerprint === originalFirstFact.rawOccurrenceFingerprint,
+    );
+    if (copiedFirstFact === undefined) throw new Error("expected copied first fact");
+    originalFirstFact.multiplicity = 9;
+    expect(copiedFirstFact.multiplicity).toBe(2);
     expect(() => {
       (fact as { multiplicity: number }).multiplicity = 9;
     }).toThrow();

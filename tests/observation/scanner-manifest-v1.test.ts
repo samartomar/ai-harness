@@ -69,6 +69,12 @@ function expectExactKeys(value: object, keys: readonly string[]): void {
   expect(Object.keys(value).sort()).toEqual([...keys].sort());
 }
 
+function mustGet<T>(values: readonly T[], index: number): T {
+  const value = values[index];
+  if (value === undefined) throw new Error(`expected test fixture entry ${String(index)}`);
+  return value;
+}
+
 function repoRoot(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 }
@@ -132,6 +138,7 @@ function moduleSpecifiers(rel: string): string[] {
 describe("ScannerManifestV1", () => {
   it("binds immutable per-detector OCI, adapter, configuration, platform, SBOM, and provenance identities", () => {
     const input = manifestInput();
+    const firstInput = mustGet(input.detectors, 0);
     const forward = createScannerManifestV1(input);
     const reverse = createScannerManifestV1({
       ...input,
@@ -173,35 +180,37 @@ describe("ScannerManifestV1", () => {
     expect(() => {
       (detector.ociImage as { reference: string }).reference = "forged";
     }).toThrow();
-    input.detectors[0].adapter.identity = "adapter.aaaaaaaaaaaa";
+    firstInput.adapter.identity = "adapter.aaaaaaaaaaaa";
     expect(detector.adapter.identity).toBe("adapter.0123456789ab");
   });
 
   it("domain-separates each exact detector entry from aggregate manifest assembly", () => {
     const input = manifestInput();
+    const firstInput = mustGet(input.detectors, 0);
+    const secondInput = mustGet(input.detectors, 1);
     const base = createScannerManifestV1(input);
     const changedFirst = createScannerManifestV1({
       ...input,
       detectors: [
         {
-          ...input.detectors[0],
+          ...firstInput,
           ociImage: {
-            ...input.detectors[0].ociImage,
+            ...firstInput.ociImage,
             reference:
               "registry.example.invalid/aih/dependency-audit@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
             sha256: "c".repeat(64),
           },
         },
-        input.detectors[1],
+        secondInput,
       ],
     });
     const changedUnrelated = createScannerManifestV1({
       ...input,
       detectors: [
-        input.detectors[0],
+        firstInput,
         {
-          ...input.detectors[1],
-          adapter: { ...input.detectors[1].adapter, sha256: sha256("other adapter") },
+          ...secondInput,
+          adapter: { ...secondInput.adapter, sha256: sha256("other adapter") },
         },
       ],
     });
@@ -219,21 +228,21 @@ describe("ScannerManifestV1", () => {
     expect(changedUnrelated.scannerManifestSha256).not.toBe(base.scannerManifestSha256);
     for (const detector of [
       {
-        ...input.detectors[0],
-        adapter: { ...input.detectors[0].adapter, sha256: sha256("other adapter") },
+        ...firstInput,
+        adapter: { ...firstInput.adapter, sha256: sha256("other adapter") },
       },
-      { ...input.detectors[0], observationConfigurationSha256: sha256("other configuration") },
-      { ...input.detectors[0], executionProfileSha256: sha256("other execution profile") },
-      { ...input.detectors[0], supportedPlatforms: [{ os: "darwin", architecture: "arm64" }] },
-      { ...input.detectors[0], sbom: { ...input.detectors[0].sbom, sha256: sha256("other sbom") } },
+      { ...firstInput, observationConfigurationSha256: sha256("other configuration") },
+      { ...firstInput, executionProfileSha256: sha256("other execution profile") },
+      { ...firstInput, supportedPlatforms: [{ os: "darwin", architecture: "arm64" }] },
+      { ...firstInput, sbom: { ...firstInput.sbom, sha256: sha256("other sbom") } },
       {
-        ...input.detectors[0],
-        provenance: { ...input.detectors[0].provenance, sha256: sha256("other provenance") },
+        ...firstInput,
+        provenance: { ...firstInput.provenance, sha256: sha256("other provenance") },
       },
     ]) {
       const value = createScannerManifestV1({
         ...input,
-        detectors: [detector, input.detectors[1]],
+        detectors: [detector, secondInput],
       });
       const entry = value.detectors.find(
         (candidate) => candidate.detectorId === "detector.dependency-audit",
@@ -257,54 +266,56 @@ describe("ScannerManifestV1", () => {
 
   it("rejects strict JSON ambiguity, mutable OCI references, malformed identities, and duplicate detector/platform rows", () => {
     const input = manifestInput();
+    const firstInput = mustGet(input.detectors, 0);
+    const secondInput = mustGet(input.detectors, 1);
     for (const ociImage of [
       {
-        ...input.detectors[0].ociImage,
+        ...firstInput.ociImage,
         reference: "registry.example.invalid/aih/dependency-audit:latest",
       },
       {
-        ...input.detectors[0].ociImage,
+        ...firstInput.ociImage,
         reference: "registry.example.invalid/aih/dependency-audit@sha256:*",
       },
-      { ...input.detectors[0].ociImage, sha256: "A".repeat(64) },
+      { ...firstInput.ociImage, sha256: "A".repeat(64) },
       {
-        ...input.detectors[0].ociImage,
+        ...firstInput.ociImage,
         reference: "registry.example.invalid/aih/dependency-audit",
       },
     ]) {
       expect(() =>
         createScannerManifestV1({
           ...input,
-          detectors: [{ ...input.detectors[0], ociImage }, input.detectors[1]],
+          detectors: [{ ...firstInput, ociImage }, secondInput],
         }),
       ).toThrow(/oci|digest|immutable|reference/i);
     }
     for (const change of [
       { analyzerIdentity: "native.0123456789AB" },
-      { adapter: { ...input.detectors[0].adapter, identity: "adapter.generic" } },
+      { adapter: { ...firstInput.adapter, identity: "adapter.generic" } },
       { detectorId: "detector.*" },
       { observationConfigurationSha256: "bad" },
-      { sbom: { ...input.detectors[0].sbom, sha256: "A".repeat(64) } },
-      { provenance: { ...input.detectors[0].provenance, mediaType: "text/plain" } },
+      { sbom: { ...firstInput.sbom, sha256: "A".repeat(64) } },
+      { provenance: { ...firstInput.provenance, mediaType: "text/plain" } },
     ]) {
       expect(() =>
         createScannerManifestV1({
           ...input,
-          detectors: [{ ...input.detectors[0], ...change }, input.detectors[1]],
+          detectors: [{ ...firstInput, ...change }, secondInput],
         }),
       ).toThrow(/identity|detector|digest|descriptor|media|platform/i);
     }
     expect(() =>
-      createScannerManifestV1({ ...input, detectors: [input.detectors[0], input.detectors[0]] }),
+      createScannerManifestV1({ ...input, detectors: [firstInput, firstInput] }),
     ).toThrow(/duplicate|ambiguous/i);
     expect(() =>
       createScannerManifestV1({
         ...input,
         detectors: [
-          input.detectors[0],
+          firstInput,
           {
-            ...input.detectors[0],
-            adapter: { ...input.detectors[0].adapter, sha256: sha256("conflict") },
+            ...firstInput,
+            adapter: { ...firstInput.adapter, sha256: sha256("conflict") },
           },
         ],
       }),
@@ -314,29 +325,29 @@ describe("ScannerManifestV1", () => {
         ...input,
         detectors: [
           {
-            ...input.detectors[0],
+            ...firstInput,
             supportedPlatforms: [
-              input.detectors[0].supportedPlatforms[0],
-              input.detectors[0].supportedPlatforms[0],
+              mustGet(firstInput.supportedPlatforms, 0),
+              mustGet(firstInput.supportedPlatforms, 0),
             ],
           },
-          input.detectors[1],
+          secondInput,
         ],
       }),
     ).toThrow(/duplicate|ambiguous|platform/i);
     for (const detector of [
-      { ...input.detectors[0], extra: true },
-      { ...input.detectors[0], ociImage: { ...input.detectors[0].ociImage, extra: true } },
-      { ...input.detectors[0], adapter: { ...input.detectors[0].adapter, extra: true } },
+      { ...firstInput, extra: true },
+      { ...firstInput, ociImage: { ...firstInput.ociImage, extra: true } },
+      { ...firstInput, adapter: { ...firstInput.adapter, extra: true } },
       {
-        ...input.detectors[0],
-        supportedPlatforms: [{ ...input.detectors[0].supportedPlatforms[0], extra: true }],
+        ...firstInput,
+        supportedPlatforms: [{ ...mustGet(firstInput.supportedPlatforms, 0), extra: true }],
       },
-      { ...input.detectors[0], sbom: { ...input.detectors[0].sbom, extra: true } },
-      { ...input.detectors[0], provenance: { ...input.detectors[0].provenance, extra: true } },
+      { ...firstInput, sbom: { ...firstInput.sbom, extra: true } },
+      { ...firstInput, provenance: { ...firstInput.provenance, extra: true } },
     ]) {
       expect(() =>
-        createScannerManifestV1({ ...input, detectors: [detector, input.detectors[1]] }),
+        createScannerManifestV1({ ...input, detectors: [detector, secondInput] }),
       ).toThrow(/unknown|unexpected|unrecognized/i);
     }
     expect(() =>

@@ -216,7 +216,9 @@ describe("ScanAttestationV1", () => {
     noncanonical.envelope.payload = `${current.envelope.payload}=`;
     expect(() => parse(noncanonical)).toThrow(/base64|payload|canonical/i);
 
-    const wrongType = structuredClone(current);
+    const wrongType = structuredClone(current) as unknown as {
+      envelope: { payloadType: string };
+    };
     wrongType.envelope.payloadType = "application/json";
     expect(() => parse(wrongType)).toThrow(/payloadType|DSSE|in-toto/i);
 
