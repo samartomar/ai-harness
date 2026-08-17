@@ -14,6 +14,22 @@ const digest = /^[a-f0-9]{64}$/;
 const headRoot = sha("head signer root");
 const adminRoot = sha("admin signer root");
 
+// Independently precomputed canonical JSON and SHA-256 vector.  It is intentionally
+// literal: production constructors/canonicalizers must not generate its expectation.
+const literalBindingBytes = Buffer.from(
+  '{"adminSignerRootSha256":"5555555555555555555555555555555555555555555555555555555555555555","catalogHeadSha256":"6666666666666666666666666666666666666666666666666666666666666666","catalogSha256":"7777777777777777777777777777777777777777777777777777777777777777","compatibleEffectVersion":"1","compatibleSchemaVersion":"1","headSignerRootSha256":"8888888888888888888888888888888888888888888888888888888888888888","members":[{"candidateIdentitySha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","candidateSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","componentId":"skill:catalog-example","evidenceSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","gitCommitSha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","pinSha256":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","policyRevisionSha256":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","profileSha256":"0000000000000000000000000000000000000000000000000000000000000000","promotionDecisionSha256":"1111111111111111111111111111111111111111111111111111111111111111","qualificationBundleSha256":"2222222222222222222222222222222222222222222222222222222222222222","recipeSha256":"3333333333333333333333333333333333333333333333333333333333333333","repository":"github.com/example/catalog-example","sourceId":"catalog-example","sourceSha256":"4444444444444444444444444444444444444444444444444444444444444444"}],"protocol":"ResolvedCatalogBindingV1","resolvedAt":"2026-08-17T12:00:00Z","sequence":42,"tier":"fresh"}',
+  "utf8",
+);
+const literalBindingSha256 = "39ea1988f64eadcf6c2b6a227bc58f2cbb3adb3efa578933c610402363eb7838";
+const literalAdminEnvelopeBytes = Buffer.from(
+  '{"payload":"eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJwcmVkaWNhdGUiOnsicHJvdG9jb2wiOiJBZG1pblNlYXREaXN0cmlidXRpb25WMSIsInJlY29yZFR5cGUiOiJSZXNvbHZlZENhdGFsb2dCaW5kaW5nVjEiLCJzaWduZXJJZGVudGl0eSI6InNpZ25lcjphZG1pbi1zZWF0LXYxIn0sInByZWRpY2F0ZVR5cGUiOiJodHRwczovL2FpaC5kZXYvQWRtaW5TZWF0RGlzdHJpYnV0aW9uVjEiLCJzdWJqZWN0IjpbeyJkaWdlc3QiOnsic2hhMjU2IjoiMzllYTE5ODhmNjRlYWRjZjZjMmI2YTIyN2JjNThmMmNiYjNhZGIzZWZhNTc4OTMzYzYxMDQwMjM2M2ViNzgzOCJ9LCJuYW1lIjoiYWloL1Jlc29sdmVkQ2F0YWxvZ0JpbmRpbmdWMSJ9XX0=","payloadType":"application/vnd.in-toto+json","signatures":[{"keyid":"admin-key-1","sig":"YWRtaW4tc2ln"}]}',
+  "utf8",
+);
+const literalAdminEnvelopeSha256 =
+  "2184852fc33a4116f04d7514d89054121ab692ab17a4343ddcf6b5543012fe30";
+const literalAdminPaeBase64 =
+  "RFNTRXYxIDI0IGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2pzb24gMzcxIHsiX3R5cGUiOiJodHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxIiwicHJlZGljYXRlIjp7InByb3RvY29sIjoiQWRtaW5TZWF0RGlzdHJpYnV0aW9uVjEiLCJyZWNvcmRUeXBlIjoiUmVzb2x2ZWRDYXRhbG9nQmluZGluZ1YxIiwic2lnbmVySWRlbnRpdHkiOiJzaWduZXI6YWRtaW4tc2VhdC12MSJ9LCJwcmVkaWNhdGVUeXBlIjoiaHR0cHM6Ly9haWguZGV2L0FkbWluU2VhdERpc3RyaWJ1dGlvblYxIiwic3ViamVjdCI6W3siZGlnZXN0Ijp7InNoYTI1NiI6IjM5ZWExOTg4ZjY0ZWFkY2Y2YzJiNmEyMjdiYzU4ZjJjYmIzYWRiM2VmYTU3ODkzM2M2MTA0MDIzNjNlYjc4MzgifSwibmFtZSI6ImFpaC9SZXNvbHZlZENhdGFsb2dCaW5kaW5nVjEifV19";
+
 const bindingInput = () => ({
   protocol: "ResolvedCatalogBindingV1" as const,
   catalogHeadSha256: sha("catalog head"),
@@ -29,9 +45,11 @@ const bindingInput = () => ({
     {
       componentId: "skill:catalog-example",
       sourceId: "github/example/catalog-example",
+      repository: "github.com/example/catalog-example",
       sourceSha256: sha("source"),
       gitCommitSha256: sha("commit"),
       pinSha256: sha("pin"),
+      candidateIdentitySha256: sha("candidate identity"),
       candidateSha256: sha("candidate"),
       profileSha256: sha("profile"),
       recipeSha256: sha("recipe"),
@@ -83,7 +101,8 @@ describe("ResolvedCatalogBindingV1", () => {
     const bytes = canonicalResolvedCatalogBindingV1Bytes(binding);
     expect(bytes).toEqual(canonicalResolvedCatalogBindingV1Bytes(binding));
     expect(canonicalResolvedCatalogBindingV1Sha256(binding)).toBe(sha(bytes.toString("utf8")));
-    expect(parseResolvedCatalogBindingV1Json(bytes.toString("utf8"))).toEqual(binding);
+    expect(parseResolvedCatalogBindingV1Json(bytes)).toEqual(binding);
+    expect(parseResolvedCatalogBindingV1Json(new Uint8Array(bytes))).toEqual(binding);
     for (const text of [
       `${bytes.toString("utf8")} `,
       JSON.stringify(
@@ -93,14 +112,16 @@ describe("ResolvedCatalogBindingV1", () => {
         .toString("utf8")
         .replace("ResolvedCatalogBindingV1", "ResolvedCatalogBinding\\u0056\u0031"),
     ])
-      expect(() => parseResolvedCatalogBindingV1Json(text)).toThrow();
+      expect(() => parseResolvedCatalogBindingV1Json(Buffer.from(text, "utf8"))).toThrow();
+    expect(() => parseResolvedCatalogBindingV1Json(new Uint8Array([0xc3, 0x28]))).toThrow();
   });
 
   it("has a literal independent canonical binding vector and rejects cross-bound security-field swaps", () => {
-    const literal = Buffer.from('{"a":"\\ud83d\\ude00","z":1}', "utf8");
-    expect(sha(literal.toString("utf8"))).toBe(
-      "8df4222417819a8f429e398cd1a5b0d3606e0bcd28dd4b9f91083b9d428dbdd6",
-    );
+    expect(sha(literalBindingBytes.toString("utf8"))).toBe(literalBindingSha256);
+    expect(parseResolvedCatalogBindingV1Json(literalBindingBytes)).toMatchObject({
+      protocol: "ResolvedCatalogBindingV1",
+      resolvedCatalogBindingSha256: literalBindingSha256,
+    });
     const baseline = createResolvedCatalogBindingV1(bindingInput());
     for (const field of [
       "catalogHeadSha256",
@@ -111,11 +132,37 @@ describe("ResolvedCatalogBindingV1", () => {
       "compatibleEffectVersion",
       "tier",
       "resolvedAt",
+      "sequence",
     ] as const)
       expect(
         createResolvedCatalogBindingV1({
           ...bindingInput(),
           [field]: field.endsWith("Sha256") ? sha(`changed:${field}`) : `changed-${field}`,
+        }).resolvedCatalogBindingSha256,
+      ).not.toBe(baseline.resolvedCatalogBindingSha256);
+    for (const field of [
+      "sourceId",
+      "repository",
+      "pinSha256",
+      "sourceSha256",
+      "candidateIdentitySha256",
+      "candidateSha256",
+      "profileSha256",
+      "recipeSha256",
+      "policyRevisionSha256",
+      "promotionDecisionSha256",
+      "qualificationBundleSha256",
+      "evidenceSha256",
+    ] as const)
+      expect(
+        createResolvedCatalogBindingV1({
+          ...bindingInput(),
+          members: [
+            {
+              ...memberInput(),
+              [field]: field.endsWith("Sha256") ? sha(`changed:${field}`) : `changed-${field}`,
+            },
+          ],
         }).resolvedCatalogBindingSha256,
       ).not.toBe(baseline.resolvedCatalogBindingSha256);
     for (const changed of [
@@ -124,6 +171,10 @@ describe("ResolvedCatalogBindingV1", () => {
       {
         ...bindingInput(),
         members: [{ ...memberInput(), sourceSha256: memberInput().pinSha256 }],
+      },
+      {
+        ...bindingInput(),
+        members: [{ ...memberInput(), candidateIdentitySha256: memberInput().candidateSha256 }],
       },
       {
         ...bindingInput(),
@@ -156,6 +207,8 @@ describe("ResolvedCatalogBindingV1", () => {
       accessor,
       cycle,
       { ...bindingInput(), members: oversized },
+      { ...bindingInput(), resolvedAt: "x".repeat(4097) },
+      { ...bindingInput(), compatibleSchemaVersion: "x".repeat(257) },
       { ...bindingInput(), catalogSha256: `sha256:${sha("prefixed")}` },
       { ...bindingInput(), catalogSha256: sha("upper").toUpperCase() },
       {
@@ -188,17 +241,24 @@ describe("admin-signed seat distributions", () => {
     exactKeys(seat, ["binding", "envelope", "protocol"]);
     expect(seat.envelope.payloadType).toBe("application/vnd.in-toto+json");
     expect(seat.envelope.signatures).toHaveLength(1);
+    expect(sha(literalAdminEnvelopeBytes.toString("utf8"))).toBe(literalAdminEnvelopeSha256);
+    expect(Buffer.from(JSON.stringify(seat.envelope), "utf8")).toEqual(literalAdminEnvelopeBytes);
     expect(
       verifyAdminSeatDistributionV1({
         distribution: seat,
         expectedAdminSignerRootSha256: adminRoot,
         expectedHeadSignerRootSha256: headRoot,
-        verifyCanonicalPae: () => true,
+        verifyCanonicalPae: (request: { paeBytes: Buffer }) => {
+          expect(request.paeBytes).toEqual(Buffer.from(literalAdminPaeBase64, "base64"));
+          return true;
+        },
       }),
     ).toEqual(seat);
     for (const changed of [
       { ...seat, envelope: { ...seat.envelope, signatures: [] } },
+      { ...seat, envelope: { ...seat.envelope, signatures: [{ keyid: "admin-key-1", sig: "" }] } },
       { ...seat, binding: { ...binding } },
+      binding,
       { ...seat, acknowledgement: { accepted: true } },
       { ...bindingInput(), adminSignerRootSha256: headRoot },
     ])
