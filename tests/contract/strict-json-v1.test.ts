@@ -32,6 +32,19 @@ describe("strict JSON v1", () => {
     expect(assertStrictJsonValueV1({ value: "règle" }, "fixture")).toEqual({ value: "règle" });
   });
 
+  it("rejects non-NFC keys and values plus malformed surrogate pairs at the direct canonical boundary", () => {
+    for (const value of [
+      { key: "re\u0300gle" },
+      { "re\u0300gle": "value" },
+      { key: "\ud800" },
+      { key: "\udc00" },
+      { key: "\udc00\ud800" },
+    ]) {
+      expect(() => canonicalStrictJsonBytesV1(value)).toThrow(/NFC|Unicode|surrogate/i);
+      expect(() => canonicalStrictJsonSha256V1(value)).toThrow(/NFC|Unicode|surrogate/i);
+    }
+  });
+
   it("accepts only acyclic plain own-data JSON values", () => {
     const nullPrototype = Object.assign(Object.create(null), { alpha: true });
     expect(assertStrictJsonValueV1(nullPrototype, "fixture")).toBe(nullPrototype);

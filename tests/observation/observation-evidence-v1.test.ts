@@ -14,6 +14,7 @@ import {
   parseEvidenceAnnexV1Json,
   parseObservationKeyV1Json,
   parseObservationSetV1Json,
+  verifyEvidenceAnnexBytesV1,
 } from "../../src/observation/observation-evidence-v1.js";
 import { createScannerManifestV1 } from "../../src/observation/scanner-manifest-v1.js";
 
@@ -28,6 +29,7 @@ function keyInput() {
       protocol: "SourceSealV1" as const,
       sourceTreeSha256: sha256("source tree"),
       selectedClosureSha256: sha256("selected closure"),
+      sealedSnapshotSha256: sha256("sealed snapshot"),
     },
     nativeAnalyzerIdentity: "native.0123456789ab",
     observationConfigurationSha256: sha256("configuration"),
@@ -63,14 +65,14 @@ function annexInput() {
         descriptorId: "annex.native-log",
         mediaType: "application/json",
         sha256: sha256("native log"),
-        byteLength: 128,
+        byteLength: 10,
         uri: "annex/native-log.json",
       },
       {
         descriptorId: "annex.sbom",
         mediaType: "application/spdx+json",
         sha256: sha256("sbom"),
-        byteLength: 256,
+        byteLength: 4,
         uri: "annex/sbom.spdx.json",
       },
     ],
@@ -180,7 +182,12 @@ describe("ObservationKeyV1 and ObservationSetV1", () => {
       "coverage",
       "observationSetSha256",
     ]);
-    expectExactKeys(key.sourceSeal, ["protocol", "sourceTreeSha256", "selectedClosureSha256"]);
+    expectExactKeys(key.sourceSeal, [
+      "protocol",
+      "sourceTreeSha256",
+      "selectedClosureSha256",
+      "sealedSnapshotSha256",
+    ]);
     expectExactKeys(key.platform, ["os", "architecture", "relevantFactsSha256"]);
     expectExactKeys(fact, ["rawOccurrenceFingerprint", "multiplicity"]);
     expectExactKeys(coverage, ["coverageKind", "coverageSha256"]);
@@ -205,6 +212,29 @@ describe("ObservationKeyV1 and ObservationSetV1", () => {
     expect(() => {
       (fact as { multiplicity: number }).multiplicity = 9;
     }).toThrow();
+  });
+
+  it("permits zero findings with required coverage and gives the empty set its own deterministic identity", () => {
+    const input = setInput();
+    const empty = createObservationSetV1({ ...input, facts: [] });
+    const populated = createObservationSetV1(input);
+    expect(empty.facts).toEqual([]);
+    expect(empty.observationSetSha256).not.toBe(populated.observationSetSha256);
+    expect(() => createObservationSetV1({ ...input, facts: [], coverage: [] })).toThrow(
+      /coverage|required|length/i,
+    );
+  });
+
+  it("permits Windows as a structural ObservationKey platform and binds it into the key", () => {
+    const input = keyInput();
+    const linux = createObservationKeyV1(input);
+    const windows = createObservationKeyV1({
+      ...input,
+      platform: { ...input.platform, os: "windows" },
+    });
+    expect(windows.platform.os).toBe("windows");
+    expect(windows.observationKeySha256).not.toBe(linux.observationKeySha256);
+    expect(JSON.stringify(windows)).not.toContain("qualification");
   });
 
   it("changes the observation key for every execution-relevant identity field but has no policy or run-noise fields", () => {
@@ -403,6 +433,29 @@ describe("EvidenceAnnexV1", () => {
     expect(Object.isFrozen(first)).toBe(true);
     expect(Object.isFrozen(first.descriptors)).toBe(true);
     expect(Object.isFrozen(descriptor)).toBe(true);
+  });
+
+  it("verifies separately supplied promised annex bytes with a closed complete-or-required result", () => {
+    const annex = createEvidenceAnnexV1(annexInput());
+    const bytes = [
+      { descriptorId: "annex.native-log", bytes: Buffer.from("native log", "utf8") },
+      { descriptorId: "annex.sbom", bytes: Buffer.from("sbom", "utf8") },
+    ];
+    expect(verifyEvidenceAnnexBytesV1({ annex, descriptors: bytes })).toEqual({ kind: "complete" });
+    for (const descriptors of [
+      [bytes[0]],
+      [{ ...bytes[0], bytes: Buffer.from("tampered", "utf8") }, bytes[1]],
+      [{ ...bytes[0], bytes: Buffer.alloc(9) }, bytes[1]],
+      [...bytes, bytes[0]],
+      [...bytes, { descriptorId: "annex.unknown", bytes: Buffer.from("unknown", "utf8") }],
+    ]) {
+      expect(verifyEvidenceAnnexBytesV1({ annex, descriptors })).toMatchObject({
+        kind: "required",
+        code: "EVIDENCE_ANNEX_REQUIRED",
+      });
+    }
+    expect(JSON.stringify(annex)).not.toContain("native log");
+    expect(JSON.stringify(annex)).not.toContain('sbom"');
   });
 
   it("rejects inline, unbounded, absolute, hostile, or duplicate annex material", () => {

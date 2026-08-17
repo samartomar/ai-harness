@@ -9,7 +9,10 @@ import {
   assessNativeObservationReuseV1,
   canonicalNativeObservationBytesV1,
   canonicalNativeObservationSha256V1,
+  canonicalSealedSourceSnapshotBytesV1,
   createNativeObservationV1,
+  createSealedSourceSnapshotV1,
+  describeNativeObservationSourceV1,
   parseNativeObservationV1Json,
   type SourceSealV1,
   sealNativeObservationSourceV1,
@@ -153,6 +156,67 @@ afterEach(() => {
 });
 
 describe("SourceSealV1", () => {
+  it("seals an explicit data-only source snapshot without serializing a live root", () => {
+    const snapshot = describeNativeObservationSourceV1({
+      sourceRoot: root,
+      selectedClosurePaths: ["selected"],
+    });
+    const sourceFile = snapshot.sourceFiles[0];
+    const selectedFile = snapshot.selectedClosureFiles[0];
+    if (sourceFile === undefined || selectedFile === undefined)
+      throw new Error("expected snapshot inventories");
+    expectExactKeys(snapshot, [
+      "protocol",
+      "sourceTreeSha256",
+      "selectedClosureSha256",
+      "sourceFiles",
+      "selectedClosureFiles",
+      "sealedSnapshotSha256",
+    ]);
+    expectExactKeys(sourceFile, ["path", "bytes", "sha256"]);
+    expectExactKeys(selectedFile, ["path", "bytes", "sha256"]);
+    expect(snapshot.sourceFiles.map((file) => file.path)).toEqual(
+      [...snapshot.sourceFiles].map((file) => file.path).sort(),
+    );
+    expect(snapshot.selectedClosureFiles.map((file) => file.path)).toEqual(
+      [...snapshot.selectedClosureFiles].map((file) => file.path).sort(),
+    );
+    expect(JSON.stringify(snapshot)).not.toContain(root);
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.sourceFiles)).toBe(true);
+    expect(Object.isFrozen(sourceFile)).toBe(true);
+    expect(canonicalSealedSourceSnapshotBytesV1(structuredClone(snapshot) as never)).toThrow(
+      /validated|branded|forged/i,
+    );
+    expect(seal().sealedSnapshotSha256).toBe(snapshot.sealedSnapshotSha256);
+  });
+
+  it("rejects forged, ambiguous, unsafe, and internally inconsistent source snapshots", () => {
+    const current = describeNativeObservationSourceV1({
+      sourceRoot: root,
+      selectedClosurePaths: ["selected"],
+    });
+    const source = current.sourceFiles[0];
+    const selected = current.selectedClosureFiles[0];
+    if (source === undefined || selected === undefined)
+      throw new Error("expected snapshot inventory");
+    for (const value of [
+      { ...current, sourceFiles: [source, source] },
+      { ...current, sourceFiles: [{ ...source, path: "/absolute" }] },
+      { ...current, sourceFiles: [{ ...source, path: "selected/re\u0300gle.md" }] },
+      { ...current, sourceFiles: [{ ...source, bytes: -1 }] },
+      { ...current, sourceFiles: [{ ...source, sha256: "A".repeat(64) }] },
+      {
+        ...current,
+        selectedClosureFiles: [{ ...selected, sha256: sha256("conflicting selected file") }],
+      },
+    ]) {
+      expect(() => createSealedSourceSnapshotV1(value)).toThrow(
+        /duplicate|ambiguous|path|NFC|bytes|digest|selected|consistent/i,
+      );
+    }
+  });
+
   it("binds the full source tree and selected closure without retaining absolute paths", () => {
     const first = seal();
     expect(first).toEqual({
@@ -160,7 +224,12 @@ describe("SourceSealV1", () => {
       sourceTreeSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
       selectedClosureSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
-    expectExactKeys(first, ["protocol", "sourceTreeSha256", "selectedClosureSha256"]);
+    expectExactKeys(first, [
+      "protocol",
+      "sourceTreeSha256",
+      "selectedClosureSha256",
+      "sealedSnapshotSha256",
+    ]);
     expect(JSON.stringify(first)).not.toContain(root);
     expect(Object.isFrozen(first)).toBe(true);
 
@@ -216,7 +285,12 @@ describe("NativeObservationV1", () => {
       "observationKeySha256",
       "resultSha256",
     ]);
-    expectExactKeys(left.sourceSeal, ["protocol", "sourceTreeSha256", "selectedClosureSha256"]);
+    expectExactKeys(left.sourceSeal, [
+      "protocol",
+      "sourceTreeSha256",
+      "selectedClosureSha256",
+      "sealedSnapshotSha256",
+    ]);
     expectExactKeys(left.platform, ["os", "architecture", "relevantFactsSha256"]);
     for (const fact of left.facts) {
       expectExactKeys(fact, ["rawOccurrenceFingerprint", "multiplicity"]);
@@ -520,6 +594,95 @@ describe("NativeObservationV1", () => {
         invalidObservation,
       ]).toLowerCase(),
     ).not.toContain("pass");
+  });
+
+  it("requires a branded sealed snapshot, available rehash boundary, and exact factual key context for reuse", () => {
+    const sourceSeal = seal();
+    const current = observation(sourceSeal);
+    const snapshot = describeNativeObservationSourceV1({
+      sourceRoot: root,
+      selectedClosurePaths: ["selected"],
+    });
+    const input = nativeInput(sourceSeal);
+    const expectedKeyContext = {
+      protocol: input.protocol,
+      nativeAnalyzerIdentity: input.nativeAnalyzerIdentity,
+      observationConfigurationSha256: input.observationConfigurationSha256,
+      platform: input.platform,
+    };
+    const reusable = assessNativeObservationReuseV1({
+      observation: current,
+      sealedSnapshot: snapshot,
+      sourceRoot: root,
+      selectedClosurePaths: ["selected"],
+      expectedKeyContext,
+    });
+    expect(reusable).toEqual({ kind: "reusable-local" });
+    for (const changedContext of [
+      { ...expectedKeyContext, protocol: "NativeObservationV2" },
+      { ...expectedKeyContext, nativeAnalyzerIdentity: "native.fedcba987654" },
+      { ...expectedKeyContext, observationConfigurationSha256: sha256("other configuration") },
+      { ...expectedKeyContext, platform: { ...input.platform, os: "windows" } },
+      { ...expectedKeyContext, platform: { ...input.platform, architecture: "arm64" } },
+      {
+        ...expectedKeyContext,
+        platform: { ...input.platform, relevantFactsSha256: sha256("other platform facts") },
+      },
+    ]) {
+      const result = assessNativeObservationReuseV1({
+        observation: current,
+        sealedSnapshot: snapshot,
+        sourceRoot: root,
+        selectedClosurePaths: ["selected"],
+        expectedKeyContext: changedContext,
+      });
+      expectExactKeys(result, ["kind", "code", "reason"]);
+      expect(result).toMatchObject({ kind: "required", code: "NATIVE_OBSERVATION_REQUIRED" });
+    }
+    for (const sealedSnapshot of [
+      structuredClone(snapshot),
+      { ...snapshot, sourceTreeSha256: sha256("forged tree") },
+    ]) {
+      const result = assessNativeObservationReuseV1({
+        observation: current,
+        sealedSnapshot,
+        sourceRoot: root,
+        selectedClosurePaths: ["selected"],
+        expectedKeyContext,
+      });
+      expect(result).toMatchObject({ kind: "required", code: "NATIVE_OBSERVATION_REQUIRED" });
+    }
+    const unavailable = assessNativeObservationReuseV1({
+      observation: current,
+      sealedSnapshot: snapshot,
+      sourceRoot: join(root, "missing"),
+      selectedClosurePaths: ["selected"],
+      expectedKeyContext,
+    });
+    expect(unavailable).toMatchObject({ kind: "required", code: "NATIVE_OBSERVATION_REQUIRED" });
+  });
+
+  it("accepts zero factual findings while retaining required coverage and a distinct deterministic result", () => {
+    const input = nativeInput(seal());
+    const empty = createNativeObservationV1({ ...input, facts: [] });
+    const populated = createNativeObservationV1(input);
+    expect(empty.facts).toEqual([]);
+    expect(empty.resultSha256).not.toBe(populated.resultSha256);
+    expect(() => createNativeObservationV1({ ...input, facts: [], coverage: [] })).toThrow(
+      /coverage|required|length/i,
+    );
+  });
+
+  it("permits Windows as a factual platform tuple without claiming qualification", () => {
+    const input = nativeInput(seal());
+    const linux = createNativeObservationV1(input);
+    const windows = createNativeObservationV1({
+      ...input,
+      platform: { ...input.platform, os: "windows" },
+    });
+    expect(windows.platform.os).toBe("windows");
+    expect(windows.observationKeySha256).not.toBe(linux.observationKeySha256);
+    expect(JSON.stringify(windows)).not.toContain("qualification");
   });
 
   it("has no statically discoverable runtime import or public export", () => {

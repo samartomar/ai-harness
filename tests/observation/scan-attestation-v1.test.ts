@@ -33,7 +33,13 @@ function attestationInput() {
         observationSetSha256: sha256("secret set"),
       },
     ],
-    brokerIdentity: "broker.0123456789ab",
+    brokerEnforcement: {
+      protocol: "BrokerEnforcementBindingV1" as const,
+      brokerIdentity: "broker.0123456789ab",
+      policyDigestSha256: sha256("broker policy"),
+      appliedFactsSha256: sha256("broker applied facts"),
+      enforcementState: "unverified" as const,
+    },
     cleanup: { outcome: "completed" as const },
     annexDescriptors: [
       {
@@ -148,13 +154,20 @@ describe("ScanAttestationV1", () => {
       "protocol",
       "scannerManifestSha256",
       "observations",
-      "brokerIdentity",
+      "brokerEnforcement",
       "cleanup",
       "annexDescriptors",
     ]);
     expectExactKeys(row, ["detectorId", "observationKeySha256", "observationSetSha256"]);
     expectExactKeys(annex, ["descriptorId", "mediaType", "sha256", "byteLength", "uri"]);
     expectExactKeys(forward.statement.predicate.cleanup, ["outcome"]);
+    expectExactKeys(forward.statement.predicate.brokerEnforcement, [
+      "protocol",
+      "brokerIdentity",
+      "policyDigestSha256",
+      "appliedFactsSha256",
+      "enforcementState",
+    ]);
     expect(forward.validationState).toBe("cryptographically-unverified");
     expect(forward.envelope.payloadType).toBe("application/vnd.in-toto+json");
     expect(forward.envelope.signatures).toEqual([]);
@@ -206,7 +219,13 @@ describe("ScanAttestationV1", () => {
     different.envelope.payload = Buffer.from(
       JSON.stringify({
         ...current.statement,
-        predicate: { ...current.statement.predicate, brokerIdentity: "broker.fedcba987654" },
+        predicate: {
+          ...current.statement.predicate,
+          brokerEnforcement: {
+            ...current.statement.predicate.brokerEnforcement,
+            brokerIdentity: "broker.fedcba987654",
+          },
+        },
       }),
       "utf8",
     ).toString("base64");
@@ -250,7 +269,28 @@ describe("ScanAttestationV1", () => {
           input.observations[1],
         ],
       }),
-      createScanAttestationV1({ ...input, brokerIdentity: "broker.fedcba987654" }),
+      createScanAttestationV1({
+        ...input,
+        brokerEnforcement: { ...input.brokerEnforcement, brokerIdentity: "broker.fedcba987654" },
+      }),
+      createScanAttestationV1({
+        ...input,
+        brokerEnforcement: {
+          ...input.brokerEnforcement,
+          policyDigestSha256: sha256("other broker policy"),
+        },
+      }),
+      createScanAttestationV1({
+        ...input,
+        brokerEnforcement: {
+          ...input.brokerEnforcement,
+          appliedFactsSha256: sha256("other broker facts"),
+        },
+      }),
+      createScanAttestationV1({
+        ...input,
+        brokerEnforcement: { ...input.brokerEnforcement, enforcementState: "verified" },
+      }),
       createScanAttestationV1({ ...input, cleanup: { outcome: "failed" } }),
       createScanAttestationV1({
         ...input,
@@ -298,6 +338,19 @@ describe("ScanAttestationV1", () => {
     expect(() =>
       createScanAttestationV1({ ...input, scannerManifestSha256: "A".repeat(64) }),
     ).toThrow(/digest|sha256/i);
+    for (const brokerEnforcement of [
+      {},
+      { ...input.brokerEnforcement, protocol: "BrokerEnforcementBindingV2" },
+      { ...input.brokerEnforcement, brokerIdentity: "broker.generic" },
+      { ...input.brokerEnforcement, policyDigestSha256: "bad" },
+      { ...input.brokerEnforcement, appliedFactsSha256: "A".repeat(64) },
+      { ...input.brokerEnforcement, enforcementState: "verified" },
+      { ...input.brokerEnforcement, extra: true },
+    ]) {
+      expect(() => createScanAttestationV1({ ...input, brokerEnforcement })).toThrow(
+        /broker|enforcement|digest|unknown|unexpected|unrecognized/i,
+      );
+    }
     expect(() =>
       createScanAttestationV1({
         ...input,
@@ -314,6 +367,7 @@ describe("ScanAttestationV1", () => {
       "payloadType",
       "predicateType",
       "subject",
+      "brokerIdentity",
       "policy",
       "verdict",
       "waiver",
@@ -354,6 +408,10 @@ describe("ScanAttestationV1", () => {
       (value: Record<string, unknown>) => {
         const predicate = record(record(value.statement).predicate);
         record(predicate.cleanup).extra = true;
+      },
+      (value: Record<string, unknown>) => {
+        const predicate = record(record(value.statement).predicate);
+        record(predicate.brokerEnforcement).extra = true;
       },
       (value: Record<string, unknown>) => {
         const predicate = record(record(value.statement).predicate);
