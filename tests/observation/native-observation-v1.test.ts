@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -71,12 +71,30 @@ function reuse(input: unknown, sourceRoot = root, selectedClosurePaths = ["selec
   });
 }
 
-function sourceText(rel: string): string {
-  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-  return readFileSync(join(repoRoot, ...rel.split("/")), "utf8");
+function repoRoot(): string {
+  return resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 }
 
-function staticModuleSpecifiers(rel: string): string[] {
+function sourceText(rel: string): string {
+  return readFileSync(join(repoRoot(), ...rel.split("/")), "utf8");
+}
+
+function sourceFiles(rel = "src"): string[] {
+  const absolute = join(repoRoot(), ...rel.split("/"));
+  const files: string[] = [];
+  for (const entry of readdirSync(absolute, { withFileTypes: true })) {
+    const child = `${rel}/${entry.name}`;
+    if (entry.isSymbolicLink()) continue;
+    if (entry.isDirectory()) {
+      files.push(...sourceFiles(child));
+      continue;
+    }
+    if (entry.isFile() && child.endsWith(".ts")) files.push(child);
+  }
+  return files.sort((left, right) => left.localeCompare(right));
+}
+
+function moduleSpecifiers(rel: string): string[] {
   const source = ts.createSourceFile(rel, sourceText(rel), ts.ScriptTarget.ES2022, false);
   const specifiers: string[] = [];
   const visit = (node: ts.Node): void => {
@@ -86,6 +104,17 @@ function staticModuleSpecifiers(rel: string): string[] {
       ts.isStringLiteral(node.moduleSpecifier)
     ) {
       specifiers.push(node.moduleSpecifier.text);
+    }
+    if (ts.isCallExpression(node) && node.arguments.length > 0) {
+      const argument = node.arguments[0];
+      if (
+        argument !== undefined &&
+        ts.isStringLiteral(argument) &&
+        (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+          (ts.isIdentifier(node.expression) && node.expression.text === "require"))
+      ) {
+        specifiers.push(argument.text);
+      }
     }
     ts.forEachChild(node, visit);
   };
@@ -478,25 +507,19 @@ describe("NativeObservationV1", () => {
   });
 
   it("has no statically discoverable runtime import or public export", () => {
-    for (const rel of [
-      "src/trust/scan.ts",
-      "src/trust/evidence.ts",
-      "src/trust/fingerprint.ts",
-      "src/trust/acknowledge.ts",
-      "src/trust/detectors.ts",
-      "src/trust/grade.ts",
-      "src/baseline-evidence/vet.ts",
-      "src/baseline-evidence/verify.ts",
-      "src/baseline-evidence/reuse.ts",
-      "src/baseline-evidence/run.ts",
-      "src/baseline-evidence/analyzer-profile.ts",
-      "src/bundle/index.ts",
-      "src/index.ts",
-    ]) {
-      expect(staticModuleSpecifiers(rel)).not.toContain("../observation/native-observation-v1.js");
-      expect(staticModuleSpecifiers(rel)).not.toContain("./observation/native-observation-v1.js");
-      expect(staticModuleSpecifiers(rel)).not.toContain("./native-observation-v1.js");
+    const owner = "src/observation/native-observation-v1.ts";
+    const files = sourceFiles();
+    expect(files).toContain("src/index.ts");
+    for (const rel of files.filter((candidate) => candidate !== owner)) {
+      expect(
+        moduleSpecifiers(rel).filter((specifier) => specifier.includes("native-observation-v1")),
+      ).toEqual([]);
     }
+    expect(
+      moduleSpecifiers("src/index.ts").filter((specifier) =>
+        specifier.includes("native-observation-v1"),
+      ),
+    ).toEqual([]);
     const packageJson = JSON.parse(sourceText("package.json")) as { exports?: unknown };
     expect(JSON.stringify(packageJson.exports)).not.toContain("observation/native-observation-v1");
   });
