@@ -32,6 +32,20 @@ const PlatformSchema = z
     relevantFactsSha256: Sha256Schema,
   })
   .strict();
+const ExpectedKeyContextSchema = z
+  .object({
+    protocol: z.string(),
+    nativeAnalyzerIdentity: z.string(),
+    observationConfigurationSha256: z.string(),
+    platform: z
+      .object({
+        os: z.string(),
+        architecture: z.string(),
+        relevantFactsSha256: z.string(),
+      })
+      .strict(),
+  })
+  .strict();
 const FactSchema = z
   .object({
     rawOccurrenceFingerprint: RawOccurrenceFingerprintSchema,
@@ -131,6 +145,7 @@ export type NativeObservationReuseV1 =
         | "invalid-observation"
         | "sealed-snapshot-required"
         | "sealed-snapshot-mismatch"
+        | "expected-key-context-required"
         | "expected-key-context-mismatch";
     };
 
@@ -338,21 +353,24 @@ function required(
   return { kind: "required", code: "NATIVE_OBSERVATION_REQUIRED", reason };
 }
 
+type ExpectedKeyContextV1 = z.infer<typeof ExpectedKeyContextSchema>;
+
+function isExpectedKeyContextV1(value: unknown): value is ExpectedKeyContextV1 {
+  try {
+    assertStrictJsonValueV1(value, "expected native observation key context");
+    ExpectedKeyContextSchema.parse(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function assessNativeObservationReuseV1(input: {
   readonly observation: unknown;
   readonly sourceRoot: string;
   readonly selectedClosurePaths: readonly string[];
-  readonly sealedSnapshot?: unknown;
-  readonly expectedKeyContext?: {
-    readonly protocol: string;
-    readonly nativeAnalyzerIdentity: string;
-    readonly observationConfigurationSha256: string;
-    readonly platform: {
-      readonly os: string;
-      readonly architecture: string;
-      readonly relevantFactsSha256: string;
-    };
-  };
+  readonly sealedSnapshot: SealedSourceSnapshotV1;
+  readonly expectedKeyContext: ExpectedKeyContextV1;
 }): NativeObservationReuseV1 {
   if (
     typeof input.observation !== "object" ||
@@ -362,26 +380,26 @@ export function assessNativeObservationReuseV1(input: {
     return required("invalid-observation");
   }
   const observation = input.observation as NativeObservationV1;
-  if (input.expectedKeyContext !== undefined) {
-    const expected = input.expectedKeyContext;
-    if (
-      expected.protocol !== observation.protocol ||
-      expected.nativeAnalyzerIdentity !== observation.nativeAnalyzerIdentity ||
-      expected.observationConfigurationSha256 !== observation.observationConfigurationSha256 ||
-      expected.platform.os !== observation.platform.os ||
-      expected.platform.architecture !== observation.platform.architecture ||
-      expected.platform.relevantFactsSha256 !== observation.platform.relevantFactsSha256
-    )
-      return required("expected-key-context-mismatch");
-  }
   if (
-    input.sealedSnapshot !== undefined &&
-    (typeof input.sealedSnapshot !== "object" ||
-      input.sealedSnapshot === null ||
-      !snapshots.has(input.sealedSnapshot))
+    typeof input.sealedSnapshot !== "object" ||
+    input.sealedSnapshot === null ||
+    !snapshots.has(input.sealedSnapshot)
   ) {
     return required("sealed-snapshot-required");
   }
+  if (!isExpectedKeyContextV1(input.expectedKeyContext))
+    return required("expected-key-context-required");
+  const expected = input.expectedKeyContext;
+  if (
+    expected.protocol !== observation.protocol ||
+    expected.nativeAnalyzerIdentity !== observation.nativeAnalyzerIdentity ||
+    expected.observationConfigurationSha256 !== observation.observationConfigurationSha256 ||
+    expected.platform.os !== observation.platform.os ||
+    expected.platform.architecture !== observation.platform.architecture ||
+    expected.platform.relevantFactsSha256 !== observation.platform.relevantFactsSha256
+  )
+    return required("expected-key-context-mismatch");
+  const sealedSnapshot = input.sealedSnapshot;
   let actualSnapshot: SealedSourceSnapshotV1;
   try {
     actualSnapshot = describeNativeObservationSourceV1({
@@ -391,16 +409,15 @@ export function assessNativeObservationReuseV1(input: {
   } catch {
     return required("source-bytes-unavailable");
   }
-  if (input.sealedSnapshot !== undefined) {
-    const snapshot = input.sealedSnapshot as SealedSourceSnapshotV1;
-    if (snapshot.sealedSnapshotSha256 !== actualSnapshot.sealedSnapshotSha256)
-      return required("sealed-snapshot-mismatch");
-  }
+  if (sealedSnapshot.sealedSnapshotSha256 !== actualSnapshot.sealedSnapshotSha256)
+    return required("sealed-snapshot-mismatch");
   if (actualSnapshot.selectedClosureSha256 !== observation.sourceSeal.selectedClosureSha256) {
     return required("selected-closure-mismatch");
   }
   if (actualSnapshot.sourceTreeSha256 !== observation.sourceSeal.sourceTreeSha256) {
     return required("source-tree-mismatch");
   }
+  if (observation.sourceSeal.sealedSnapshotSha256 !== sealedSnapshot.sealedSnapshotSha256)
+    return required("sealed-snapshot-mismatch");
   return { kind: "reusable-local" };
 }
