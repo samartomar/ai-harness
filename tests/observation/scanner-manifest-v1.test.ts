@@ -264,6 +264,30 @@ describe("ScannerManifestV1", () => {
     );
   });
 
+  it("permits Windows structurally in detector platform rows and binds it into entry and aggregate digests", () => {
+    const input = manifestInput();
+    const firstInput = mustGet(input.detectors, 0);
+    const secondInput = mustGet(input.detectors, 1);
+    const linux = createScannerManifestV1(input);
+    const windows = createScannerManifestV1({
+      ...input,
+      detectors: [
+        { ...firstInput, supportedPlatforms: [{ os: "windows", architecture: "amd64" }] },
+        secondInput,
+      ],
+    });
+    const linuxEntry = linux.detectors.find((entry) => entry.detectorId === firstInput.detectorId);
+    const windowsEntry = windows.detectors.find(
+      (entry) => entry.detectorId === firstInput.detectorId,
+    );
+    if (linuxEntry === undefined || windowsEntry === undefined)
+      throw new Error("expected detector entry");
+    expect(windowsEntry.supportedPlatforms[0]?.os).toBe("windows");
+    expect(windowsEntry.scannerManifestEntrySha256).not.toBe(linuxEntry.scannerManifestEntrySha256);
+    expect(windows.scannerManifestSha256).not.toBe(linux.scannerManifestSha256);
+    expect(JSON.stringify(windows)).not.toContain("qualification");
+  });
+
   it("rejects strict JSON ambiguity, mutable OCI references, malformed identities, and duplicate detector/platform rows", () => {
     const input = manifestInput();
     const firstInput = mustGet(input.detectors, 0);
