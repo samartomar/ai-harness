@@ -106,8 +106,81 @@ function resolutionInput(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function expectedBinding(input: ReturnType<typeof resolutionInput>) {
+  const fresh = input.fresh as {
+    catalogHeadBytes: Buffer;
+    catalogSnapshotSha256: string;
+  };
+  const raw = {
+    adminSignerRootSha256: adminRoot,
+    catalogHeadSha256: sha(fresh.catalogHeadBytes),
+    catalogSha256: fresh.catalogSnapshotSha256,
+    compatibleEffectVersion: "1",
+    compatibleSchemaVersion: "1",
+    headSignerRootSha256: headRoot,
+    members: [snapshotMember()],
+    protocol: "ResolvedCatalogBindingV1",
+    resolvedAt: input.now,
+    sequence: 42,
+    tier: "fresh",
+  };
+  const bytes = canonicalStrictJsonBytesV1(raw);
+  return {
+    ...raw,
+    bytes,
+    resolvedCatalogBindingSha256: sha(bytes),
+  };
+}
+
+function expectedDistributionStatement(input: ReturnType<typeof resolutionInput>): Buffer {
+  const binding = expectedBinding(input);
+  return canonicalStrictJsonBytesV1({
+    _type: "https://in-toto.io/Statement/v1",
+    predicate: {
+      protocol: "AdminSeatDistributionV1",
+      recordType: "ResolvedCatalogBindingV1",
+      signerIdentity: input.expectedAdminSignerIdentity,
+    },
+    predicateType: "https://aih.dev/AdminSeatDistributionV1",
+    subject: [
+      {
+        digest: { sha256: binding.resolvedCatalogBindingSha256 },
+        name: "aih/ResolvedCatalogBindingV1",
+      },
+    ],
+  });
+}
+
+function expectedDistributionPae(input: ReturnType<typeof resolutionInput>): Buffer {
+  const statement = expectedDistributionStatement(input);
+  return Buffer.concat([
+    Buffer.from(
+      `DSSEv1 ${String(Buffer.byteLength("application/vnd.in-toto+json"))} application/vnd.in-toto+json ${String(statement.length)} `,
+      "utf8",
+    ),
+    statement,
+  ]);
+}
+
+function expectedDistributionBytes(input: ReturnType<typeof resolutionInput>): Buffer {
+  const binding = expectedBinding(input);
+  const { bytes: _bytes, ...serializedBinding } = binding;
+  return canonicalStrictJsonBytesV1({
+    binding: serializedBinding,
+    envelope: {
+      payload: expectedDistributionStatement(input).toString("base64"),
+      payloadType: "application/vnd.in-toto+json",
+      signatures: [{ keyid: "admin-key-1", sig: "YWRtaW4tc2ln" }],
+    },
+    protocol: "AdminSeatDistributionV1",
+  });
+}
+
 describe("internal admin-seat distribution composition", () => {
   it("derives every binding fact from verified selected head and snapshot material before signing", () => {
+    const input = resolutionInput();
+    const expected = expectedBinding(input);
+    const expectedPae = expectedDistributionPae(input);
     const signCanonicalPae = vi.fn((request: Record<string, unknown>) => {
       expect(Object.keys(request).sort()).toEqual([
         "bindingSha256",
@@ -119,7 +192,8 @@ describe("internal admin-seat distribution composition", () => {
       expect(request.protocol).toBe("AdminSeatDistributionV1");
       expect(request.expectedAdminSignerRootSha256).toBe(adminRoot);
       expect(request.expectedAdminSignerIdentity).toBe("signer:admin-seat-v1");
-      expect(Buffer.isBuffer(request.paeBytes)).toBe(true);
+      expect(request.bindingSha256).toBe(expected.resolvedCatalogBindingSha256);
+      expect(request.paeBytes).toEqual(expectedPae);
       return { keyid: "admin-key-1", sig: "YWRtaW4tc2ln" };
     });
     const verifyCanonicalPae = vi.fn((request: Record<string, unknown>) => {
@@ -129,32 +203,32 @@ describe("internal admin-seat distribution composition", () => {
       return true;
     });
 
-    const distribution = composeAdminSeatDistributionV1(
-      resolutionInput({ signCanonicalPae, verifyCanonicalPae }),
-    );
+    const distribution = composeAdminSeatDistributionV1({
+      ...input,
+      signCanonicalPae,
+      verifyCanonicalPae,
+    });
 
     expect(signCanonicalPae).toHaveBeenCalledOnce();
     expect(verifyCanonicalPae).toHaveBeenCalledOnce();
     expect(distribution.binding).toMatchObject({
       adminSignerRootSha256: adminRoot,
-      catalogSha256: sha(
-        canonicalStrictJsonBytesV1({
-          protocol: "CatalogSnapshotV1",
-          members: [snapshotMember()],
-        }),
-      ),
+      catalogHeadSha256: sha((input.fresh as { catalogHeadBytes: Buffer }).catalogHeadBytes),
+      catalogSha256: expected.catalogSha256,
       compatibleEffectVersion: "1",
       compatibleSchemaVersion: "1",
       headSignerRootSha256: headRoot,
       sequence: 42,
       tier: "fresh",
+      resolvedAt: input.now,
+      resolvedCatalogBindingSha256: expected.resolvedCatalogBindingSha256,
     });
     expect(distribution.binding.members).toEqual([snapshotMember()]);
     expect(Object.isFrozen(distribution)).toBe(true);
     expect(Object.isFrozen(distribution.binding.members)).toBe(true);
-    expect(
-      parseAdminSeatDistributionV1Json(canonicalAdminSeatDistributionV1Bytes(distribution)),
-    ).toEqual(distribution);
+    const bytes = canonicalAdminSeatDistributionV1Bytes(distribution);
+    expect(bytes).toEqual(expectedDistributionBytes(input));
+    expect(parseAdminSeatDistributionV1Json(bytes)).toEqual(distribution);
   });
 
   it("never accepts caller member or digest projections and signs only a fully verified material selection", () => {
@@ -163,6 +237,7 @@ describe("internal admin-seat distribution composition", () => {
     const input = resolutionInput({ signCanonicalPae: signer, verifyCanonicalPae: verifier });
     for (const changed of [
       { ...input, members: [snapshotMember({ pinSha256: sha("forged") })] },
+      { ...input, resolvedMaterial: { kind: "resolved", members: [snapshotMember()] } },
       { ...input, catalogSha256: sha("forged") },
       { ...input, fresh: { ...input.fresh, catalogSnapshotSha256: sha("forged") } },
       { ...input, expectedCatalogSha256: sha("wrong catalog") },
@@ -192,10 +267,33 @@ describe("internal admin-seat distribution composition", () => {
       { signCanonicalPae: () => ({ keyid: "admin-key-1", sig: "" }) },
       { signCanonicalPae: () => ({ keyid: "admin-key-1", sig: "not base64" }) },
       { verifyCanonicalPae: () => false },
-      { expectedAdminSignerIdentity: "signer:other-admin-v1" },
       { adminSignerRootSha256: headRoot },
     ])
       expect(() => composeAdminSeatDistributionV1(resolutionInput(changed))).toThrow();
+  });
+
+  it("passes a configured trusted admin identity through to independent verification without treating identity choice as invalid", () => {
+    const verifyCanonicalPae = vi.fn((request: Record<string, unknown>) => {
+      expect(request.expectedAdminSignerIdentity).toBe("signer:other-admin-v1");
+      return true;
+    });
+    expect(
+      composeAdminSeatDistributionV1(
+        resolutionInput({
+          expectedAdminSignerIdentity: "signer:other-admin-v1",
+          verifyCanonicalPae,
+        }),
+      ),
+    ).toMatchObject({ protocol: "AdminSeatDistributionV1" });
+    expect(verifyCanonicalPae).toHaveBeenCalledOnce();
+    expect(() =>
+      composeAdminSeatDistributionV1(
+        resolutionInput({
+          expectedAdminSignerIdentity: "signer:other-admin-v1",
+          verifyCanonicalPae: () => false,
+        }),
+      ),
+    ).toThrow();
   });
 
   it("remains an internal pure composer with no filesystem, Plan, CLI, Workbench, provider, process, or runtime route", () => {

@@ -367,6 +367,25 @@ describe("CatalogSnapshotV1 strict material boundary", () => {
         { ...first, componentId: "skill:a" },
       ],
     });
+    const missingMemberField = { ...first };
+    delete missingMemberField.evidenceSha256;
+    const oversizedMembers = Array.from({ length: 4097 }, (_, index) => ({
+      ...first,
+      componentId: `skill:catalog-${String(index)}`,
+    }));
+    const digestFields = [
+      "candidateIdentitySha256",
+      "candidateSha256",
+      "evidenceSha256",
+      "gitCommitSha256",
+      "pinSha256",
+      "policyRevisionSha256",
+      "profileSha256",
+      "promotionDecisionSha256",
+      "qualificationBundleSha256",
+      "recipeSha256",
+      "sourceSha256",
+    ] as const;
     for (const value of [
       Buffer.from(`${literalSnapshotBytes.toString("utf8")} `, "utf8"),
       Buffer.from('{"protocol":"CatalogSnapshotV1","members":[],"unknown":true}', "utf8"),
@@ -377,16 +396,74 @@ describe("CatalogSnapshotV1 strict material boundary", () => {
       new Uint8Array([0xc3, 0x28]),
       duplicate,
       reversed,
+      canonicalStrictJsonBytesV1({ protocol: "CatalogSnapshotV1", members: [] }),
+      canonicalStrictJsonBytesV1({
+        protocol: "CatalogSnapshotV1",
+        members: [missingMemberField],
+      }),
+      canonicalStrictJsonBytesV1({
+        protocol: "CatalogSnapshotV1",
+        members: [{ ...first, unknown: true }],
+      }),
+      canonicalStrictJsonBytesV1({ protocol: "CatalogSnapshotV1", members: oversizedMembers }),
+      canonicalStrictJsonBytesV1({
+        protocol: "CatalogSnapshotV1",
+        members: [{ ...first, sourceId: "x".repeat(257) }],
+      }),
       canonicalStrictJsonBytesV1({
         protocol: "CatalogSnapshotV1",
         members: [{ ...first, repository: "github.com/Example/catalog-example" }],
       }),
       canonicalStrictJsonBytesV1({
         protocol: "CatalogSnapshotV1",
+        members: [{ ...first, sourceId: "catalog/../example" }],
+      }),
+      canonicalStrictJsonBytesV1({
+        protocol: "CatalogSnapshotV1",
+        members: [{ ...first, sourceId: "https://example.invalid/catalog" }],
+      }),
+      Buffer.from(
+        JSON.stringify({
+          protocol: "CatalogSnapshotV1",
+          members: [{ ...first, sourceId: "catalog\u0301" }],
+        }),
+        "utf8",
+      ),
+      Buffer.from(
+        JSON.stringify({
+          protocol: "CatalogSnapshotV1",
+          members: [{ ...first, repository: "example/catalo\u0301g" }],
+        }),
+        "utf8",
+      ),
+      canonicalStrictJsonBytesV1({
+        protocol: "CatalogSnapshotV1",
         members: [{ ...first, componentId: "skill:Catalog-example" }],
       }),
+      Buffer.from(
+        JSON.stringify({
+          protocol: "CatalogSnapshotV1",
+          members: [{ ...first, componentId: "skill:catalog\u0301-example" }],
+        }),
+        "utf8",
+      ),
     ])
       expect(() => parseCatalogSnapshotV1Json(value)).toThrow();
+    for (const field of digestFields)
+      for (const invalid of [
+        `sha256:${String(first[field])}`,
+        String(first[field]).toUpperCase(),
+        "a".repeat(63),
+        "g".repeat(64),
+      ])
+        expect(() =>
+          parseCatalogSnapshotV1Json(
+            canonicalStrictJsonBytesV1({
+              protocol: "CatalogSnapshotV1",
+              members: [{ ...first, [field]: invalid }],
+            }),
+          ),
+        ).toThrow();
   });
 });
 
@@ -409,9 +486,14 @@ describe("hidden verified catalog material", () => {
       tier: "fresh",
     });
     expect(Object.isFrozen(material)).toBe(true);
-    expect(() =>
+    // A caller state is raw data: an equivalent closed copy is valid when its bytes,
+    // hashes, DSSE, trust context, and continuity still verify.
+    expect(
       resolveVerifiedCatalogMaterialV1({ ...request, fresh: { ...request.fresh } }),
-    ).toThrow();
+    ).toMatchObject({
+      kind: "resolved",
+      catalogHeadSha256: literalHeadSha256,
+    });
     for (const next of [
       {
         ...request,
