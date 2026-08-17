@@ -329,4 +329,22 @@ describe("ai-harness repo AI tooling", () => {
     );
     expect(pkg.scripts["check:canon-drift"]).toBeUndefined();
   });
+
+  it("writes generated projections and index markers without check-then-write races", () => {
+    const launcher = readFileSync(resolve(root, "tools/repo-ai-tools.mjs"), "utf8");
+    const projectionWriter = launcher.slice(
+      launcher.indexOf("function writeCodexProjection"),
+      launcher.indexOf("function configureEcc"),
+    );
+    const memoryInitializer = launcher.slice(
+      launcher.indexOf("function initializeCodebaseMemory"),
+      launcher.indexOf("function codebaseMemoryStatus"),
+    );
+
+    expect(launcher).toContain("function writeFileAtomically");
+    expect(launcher).toContain('openSync(path, "wx", 0o600)');
+    expect(launcher).toContain("renameSync(temporaryPath, path)");
+    expect(projectionWriter).not.toContain("existsSync(codexConfigPath)");
+    expect(memoryInitializer).not.toContain("existsSync(codebaseMemoryMarker)");
+  });
 });
