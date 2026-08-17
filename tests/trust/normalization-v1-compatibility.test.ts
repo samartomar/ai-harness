@@ -19,11 +19,13 @@ import {
 } from "../../src/trust/evidence.js";
 import { contentFindingFingerprint } from "../../src/trust/fingerprint.js";
 import {
+  type CanonicalFindingIdentityV1,
   canonicalSha256V1,
   createCanonicalFindingIdentityV1,
   createRawOccurrenceFingerprintV1,
   deriveNormalizationCompatibilityV1,
   parseNormalizationProfileV1,
+  type RawOccurrenceFingerprintV1,
   resolveNormalizationV1,
 } from "../../src/trust/normalization-v1.js";
 import {
@@ -52,6 +54,71 @@ const SC4_MESSAGE =
 const YR4_MESSAGE =
   "YARA rule 'agent_skill_mcp_tool_poisoning_metadata': MCP/tool metadata poisoning indicators in tool schemas or skill manifests [agent_skills]";
 const COREPACK_PACKAGE_MANAGER = `yarn@4.9.2+sha512.${"a".repeat(128)}`;
+
+type CompatibilityGroupingContract =
+  | "canonical-code+path+start-line+source-value"
+  | "one-retained-finding-per-raw-occurrence";
+
+interface V1SemanticOccurrence {
+  readonly rawOccurrence: RawOccurrenceFingerprintV1;
+  readonly finding: CanonicalFindingIdentityV1;
+  readonly startLine: number;
+  readonly sourceValue: string | null;
+  readonly currentDisposition: string;
+}
+
+function groupV1SemanticOccurrences(
+  grouping: CompatibilityGroupingContract,
+  occurrences: readonly V1SemanticOccurrence[],
+) {
+  const groups = new Map<string, V1SemanticOccurrence[]>();
+  for (const occurrence of occurrences) {
+    const key =
+      grouping === "canonical-code+path+start-line+source-value"
+        ? JSON.stringify([
+            occurrence.finding.canonicalCode,
+            occurrence.rawOccurrence.path,
+            occurrence.startLine,
+            occurrence.sourceValue,
+          ])
+        : occurrence.rawOccurrence.fingerprint;
+    const members = groups.get(key) ?? [];
+    members.push(occurrence);
+    groups.set(key, members);
+  }
+  return [...groups.values()].map((members) => ({
+    rawMembership: members
+      .map((member) => member.rawOccurrence.canonicalOrdinal)
+      .sort((left, right) => left - right),
+    finalCanonicalCodes: [...new Set(members.map((member) => member.finding.canonicalCode))],
+    contextualEvaluationOutcomes: [
+      ...new Set(members.map((member) => member.finding.contextualEvaluationOutcome)),
+    ],
+    currentDispositions: [...new Set(members.map((member) => member.currentDisposition))],
+  }));
+}
+
+function ordinalPartition(membershipCounts: readonly number[]): number[][] {
+  let nextOrdinal = 0;
+  return membershipCounts.map((count) =>
+    Array.from({ length: count }, () => {
+      const ordinal = nextOrdinal;
+      nextOrdinal += 1;
+      return ordinal;
+    }),
+  );
+}
+
+function assertCompatibilityGroupingContract(
+  value: string,
+): asserts value is CompatibilityGroupingContract {
+  if (
+    value !== "canonical-code+path+start-line+source-value" &&
+    value !== "one-retained-finding-per-raw-occurrence"
+  ) {
+    throw new Error(`unsupported compatibility grouping contract: ${value}`);
+  }
+}
 
 const EXPECTED_LEGACY_SEMANTICS = [
   {
@@ -510,7 +577,7 @@ describe("current suppressed native-rule compatibility corpus", () => {
         row,
       ]),
     );
-    for (const [index, expected] of EXPECTED_LEGACY_SEMANTICS.entries()) {
+    for (const expected of EXPECTED_LEGACY_SEMANTICS) {
       const key = selectorKey(expected.detectorClass, expected.nativeRuleId);
       const row = corpusBySelector.get(key);
       if (row === undefined) throw new Error(`missing compatibility row ${key}`);
@@ -560,36 +627,72 @@ describe("current suppressed native-rule compatibility corpus", () => {
           normalizationEntryDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
         }),
       );
-      const path = `compatibility/${String(index).padStart(2, "0")}.md`;
-      const sourceValue = `reviewed non-actionable occurrence ${String(index)}`;
-      const rawOccurrence = createRawOccurrenceFingerprintV1({
-        protocol: "RawOccurrenceFingerprintV1",
-        detectorClass: row.detectorClass,
-        nativeRuleId: row.nativeRuleId,
-        path,
-        fileSha256: sha256(sourceValue),
-        canonicalOrdinal: 0,
-        diagnostics: {
-          analyzerVersion: "current-corpus",
-          severity: "warning",
-          message: `${row.detectorClass}: ${row.nativeRuleId}`,
-          displayLine: index + 1,
-        },
-      });
-      const v1Finding = createCanonicalFindingIdentityV1({
-        rawOccurrence,
-        normalizationResolution: resolution,
-        contextualEvaluationOutcome: expected.contextualEvaluationOutcome,
-      });
-      expect(v1Finding).toEqual(
-        expect.objectContaining({
-          kind: "mapped",
-          canonicalCode: expected.finalCanonicalCode,
-          normalizationEntryDigest: resolution.normalizationEntryDigest,
-          contextualEvaluationOutcome: expected.contextualEvaluationOutcome,
-          acceptanceRequired: false,
+      const sourceValue = expected.fileContent.split(/\r?\n/u)[0] ?? null;
+      const rawOccurrences = [0, 1].map((canonicalOrdinal) =>
+        createRawOccurrenceFingerprintV1({
+          protocol: "RawOccurrenceFingerprintV1",
+          detectorClass: row.detectorClass,
+          nativeRuleId: row.nativeRuleId,
+          path: expected.path,
+          fileSha256: sha256(expected.fileContent),
+          canonicalOrdinal,
+          diagnostics: {
+            analyzerVersion: "current-corpus",
+            severity: expected.level,
+            message: expected.message,
+            displayLine: 1,
+          },
         }),
       );
+      const v1Findings = rawOccurrences.map((rawOccurrence) =>
+        createCanonicalFindingIdentityV1({
+          rawOccurrence,
+          normalizationResolution: resolution,
+          contextualEvaluationOutcome: expected.contextualEvaluationOutcome,
+        }),
+      );
+      expect(new Set(rawOccurrences.map((occurrence) => occurrence.fingerprint))).toHaveLength(2);
+      expect(new Set(v1Findings.map((finding) => finding.fingerprint))).toHaveLength(2);
+      for (const v1Finding of v1Findings) {
+        expect(v1Finding).toEqual(
+          expect.objectContaining({
+            kind: "mapped",
+            canonicalCode: expected.finalCanonicalCode,
+            normalizationEntryDigest: resolution.normalizationEntryDigest,
+            contextualEvaluationOutcome: expected.contextualEvaluationOutcome,
+            acceptanceRequired: false,
+          }),
+        );
+      }
+
+      const disposition = legacy.dispositions[0];
+      if (disposition === undefined) throw new Error(`missing legacy disposition for ${key}`);
+      assertCompatibilityGroupingContract(row.grouping);
+      const v1Groups = groupV1SemanticOccurrences(
+        row.grouping,
+        rawOccurrences.map((rawOccurrence) => {
+          const finding = v1Findings[rawOccurrence.canonicalOrdinal];
+          if (finding === undefined) throw new Error(`missing V1 finding for ${key}`);
+          return {
+            rawOccurrence,
+            finding,
+            startLine: 1,
+            sourceValue,
+            currentDisposition: disposition,
+          };
+        }),
+      );
+      const legacyPartition = ordinalPartition(legacy.rawMembership);
+      const legacySemanticGroups = legacyPartition.map((rawMembership, groupIndex) => ({
+        rawMembership,
+        // Advisory legacy rows have no textual canonical code. The reviewed V1 row makes
+        // that semantic class explicit without aliasing the two V1 occurrence identities.
+        finalCanonicalCodes: [expected.finalCanonicalCode],
+        contextualEvaluationOutcomes: [expected.contextualEvaluationOutcome],
+        currentDispositions: [legacy.dispositions[groupIndex]],
+      }));
+      expect(v1Groups).toHaveLength(legacy.normalizedGroupCount);
+      expect(v1Groups).toEqual(legacySemanticGroups);
     }
   });
 

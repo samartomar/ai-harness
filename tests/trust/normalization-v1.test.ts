@@ -701,6 +701,30 @@ describe("NormalizationProfileV1 exact resolution", () => {
       }),
     ).toEqual(expect.objectContaining({ kind: "unmapped" }));
   });
+
+  it("rejects compatibility borrowed from a different known rule in the same class", () => {
+    const parsed = parseNormalizationProfileV1(
+      profile([
+        mapping({ nativeRuleId: "rule-a", compatibility }),
+        mapping({ nativeRuleId: "rule-b", compatibility: alternateCompatibility }),
+      ]),
+    );
+
+    expect(() =>
+      resolveNormalizationV1(parsed, {
+        detectorClass: "skillspector",
+        nativeRuleId: "rule-a",
+        compatibility: alternateCompatibility,
+      }),
+    ).toThrow(/compatibility.*mismatch/i);
+    expect(
+      resolveNormalizationV1(parsed, {
+        detectorClass: "skillspector",
+        nativeRuleId: "rule-novel",
+        compatibility: alternateCompatibility,
+      }),
+    ).toEqual(expect.objectContaining({ kind: "unmapped" }));
+  });
 });
 
 describe("RawOccurrenceFingerprintV1 strict identity", () => {
