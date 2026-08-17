@@ -66,11 +66,24 @@ function observation(sourceSeal: SourceSealV1 = seal()) {
   return createNativeObservationV1(nativeInput(sourceSeal));
 }
 
-function reuse(input: unknown, sourceRoot = root, selectedClosurePaths = ["selected"]) {
+function reuse(
+  input: unknown,
+  sourceRoot = root,
+  selectedClosurePaths = ["selected"],
+  sealedSnapshot = describeNativeObservationSourceV1({ sourceRoot, selectedClosurePaths }),
+) {
+  const observed = input as ReturnType<typeof nativeInput>;
   return assessNativeObservationReuseV1({
     observation: input,
+    sealedSnapshot,
     sourceRoot,
     selectedClosurePaths,
+    expectedKeyContext: {
+      protocol: observed.protocol,
+      nativeAnalyzerIdentity: observed.nativeAnalyzerIdentity,
+      observationConfigurationSha256: observed.observationConfigurationSha256,
+      platform: observed.platform,
+    },
   });
 }
 
@@ -572,7 +585,12 @@ describe("NativeObservationV1", () => {
     });
     expectExactKeys(closureMismatch, ["kind", "code", "reason"]);
 
-    const missingBytes = reuse(closureCurrent, join(root, "missing"));
+    const missingBytes = reuse(
+      closureCurrent,
+      join(root, "missing"),
+      ["selected"],
+      describeNativeObservationSourceV1({ sourceRoot: root, selectedClosurePaths: ["selected"] }),
+    );
     expect(missingBytes).toEqual({
       kind: "required",
       code: "NATIVE_OBSERVATION_REQUIRED",
@@ -619,6 +637,28 @@ describe("NativeObservationV1", () => {
       expectedKeyContext,
     });
     expect(reusable).toEqual({ kind: "reusable-local" });
+    const missingSnapshot = assessNativeObservationReuseV1({
+      observation: current,
+      sourceRoot: root,
+      selectedClosurePaths: ["selected"],
+      expectedKeyContext,
+    } as unknown as Parameters<typeof assessNativeObservationReuseV1>[0]);
+    expect.soft(missingSnapshot).toEqual({
+      kind: "required",
+      code: "NATIVE_OBSERVATION_REQUIRED",
+      reason: "sealed-snapshot-required",
+    });
+    const missingExpectedContext = assessNativeObservationReuseV1({
+      observation: current,
+      sealedSnapshot: snapshot,
+      sourceRoot: root,
+      selectedClosurePaths: ["selected"],
+    } as unknown as Parameters<typeof assessNativeObservationReuseV1>[0]);
+    expect.soft(missingExpectedContext).toEqual({
+      kind: "required",
+      code: "NATIVE_OBSERVATION_REQUIRED",
+      reason: "expected-key-context-required",
+    });
     for (const changedContext of [
       { ...expectedKeyContext, protocol: "NativeObservationV2" },
       { ...expectedKeyContext, nativeAnalyzerIdentity: "native.fedcba987654" },
@@ -653,6 +693,29 @@ describe("NativeObservationV1", () => {
       });
       expect(result).toMatchObject({ kind: "required", code: "NATIVE_OBSERVATION_REQUIRED" });
     }
+    const differentSourceSeal = {
+      ...sourceSeal,
+      sealedSnapshotSha256: sha256("different valid sealed snapshot"),
+    };
+    const differentSnapshotObservation = observation(differentSourceSeal);
+    const differentSnapshotInput = nativeInput(differentSourceSeal);
+    const snapshotMismatch = assessNativeObservationReuseV1({
+      observation: differentSnapshotObservation,
+      sealedSnapshot: snapshot,
+      sourceRoot: root,
+      selectedClosurePaths: ["selected"],
+      expectedKeyContext: {
+        protocol: differentSnapshotInput.protocol,
+        nativeAnalyzerIdentity: differentSnapshotInput.nativeAnalyzerIdentity,
+        observationConfigurationSha256: differentSnapshotInput.observationConfigurationSha256,
+        platform: differentSnapshotInput.platform,
+      },
+    });
+    expect.soft(snapshotMismatch).toEqual({
+      kind: "required",
+      code: "NATIVE_OBSERVATION_REQUIRED",
+      reason: "sealed-snapshot-mismatch",
+    });
     const unavailable = assessNativeObservationReuseV1({
       observation: current,
       sealedSnapshot: snapshot,
