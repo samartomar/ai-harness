@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
-import {
-  type Node as JsonNode,
-  type ParseError,
-  parse as parseJson,
-  parseTree,
-  printParseErrorCode,
-} from "jsonc-parser";
 import { z } from "zod";
 import { canonicalJson, codeUnitCompare } from "../capability/package-graph/canonical.js";
+import {
+  assertStrictJsonValueV1,
+  assertWellFormedNfcV1,
+  canonicalStrictJsonBytesV1,
+  deepFreezeStrictJsonV1,
+  parseStrictJsonObjectV1,
+} from "../contract/strict-json-v1.js";
 
 export const NORMALIZATION_TARGET_CODES_V1 = Object.freeze([
   "trust.auto-exec-hook",
@@ -140,84 +140,9 @@ function isObject(value: unknown): value is object {
   return typeof value === "object" && value !== null;
 }
 
-function assertWellFormedNfc(value: string, label: string, requireNfc = true): void {
-  for (let index = 0; index < value.length; index += 1) {
-    const current = value.charCodeAt(index);
-    if (current >= 0xd800 && current <= 0xdbff) {
-      const next = value.charCodeAt(index + 1);
-      if (!(next >= 0xdc00 && next <= 0xdfff)) {
-        throw new TypeError(`${label} contains malformed Unicode (a lone high surrogate)`);
-      }
-      index += 1;
-      continue;
-    }
-    if (current >= 0xdc00 && current <= 0xdfff) {
-      throw new TypeError(`${label} contains malformed Unicode (a lone low surrogate)`);
-    }
-  }
-  if (requireNfc && value.normalize("NFC") !== value) {
-    throw new TypeError(`${label} must already be NFC; normalization is not performed`);
-  }
-}
-
-function assertUnicodeTree(
-  value: unknown,
-  label: string,
-  active = new WeakSet<object>(),
-  requireNfc = true,
-): void {
-  if (typeof value === "string") {
-    assertWellFormedNfc(value, label, requireNfc);
-    return;
-  }
-  if (!isObject(value)) return;
-  if (active.has(value)) throw new TypeError(`${label} must not contain a cycle`);
-  active.add(value);
-  if (Object.getOwnPropertySymbols(value).length > 0) {
-    throw new TypeError(`${label} must not contain symbol properties`);
-  }
-  if (Array.isArray(value)) {
-    if (Object.getPrototypeOf(value) !== Array.prototype) {
-      throw new TypeError(`${label} has an unsupported array prototype`);
-    }
-    for (let index = 0; index < value.length; index += 1) {
-      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-      if (descriptor === undefined || !("value" in descriptor)) {
-        throw new TypeError(`${label} arrays must contain only data properties and no holes`);
-      }
-      assertUnicodeTree(descriptor.value, `${label}[${String(index)}]`, active, requireNfc);
-    }
-    active.delete(value);
-    return;
-  }
-  const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) {
-    throw new TypeError(`${label} has an unsupported object prototype`);
-  }
-  for (const key of Object.keys(value)) {
-    assertWellFormedNfc(key, `${label} key`, requireNfc);
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (descriptor === undefined || !("value" in descriptor)) {
-      throw new TypeError(`${label}.${key} must be an own data property`);
-    }
-    assertUnicodeTree(descriptor.value, `${label}.${key}`, active, requireNfc);
-  }
-  active.delete(value);
-}
-
-function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
-  if (!isObject(value) || seen.has(value)) return value;
-  seen.add(value);
-  for (const key of Object.keys(value)) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (descriptor !== undefined && "value" in descriptor) deepFreeze(descriptor.value, seen);
-  }
-  return Object.freeze(value);
-}
-
 function addUnicodeIssue(value: string, label: string, context: z.RefinementCtx): void {
   try {
-    assertWellFormedNfc(value, label);
+    assertWellFormedNfcV1(value, label);
   } catch (error) {
     context.addIssue({
       code: "custom",
@@ -380,29 +305,8 @@ function compareMappings(left: NormalizationMappingV1, right: NormalizationMappi
   return 0;
 }
 
-function assertNoDuplicateKeys(node: JsonNode): void {
-  if (node.type === "object") {
-    const seen = new Set<string>();
-    for (const property of node.children ?? []) {
-      const keyNode = property.children?.[0];
-      const key = keyNode?.value;
-      if (typeof key === "string") {
-        if (seen.has(key)) throw new TypeError(`duplicate JSON object key: ${key}`);
-        seen.add(key);
-      }
-      const valueNode = property.children?.[1];
-      if (valueNode !== undefined) assertNoDuplicateKeys(valueNode);
-    }
-    return;
-  }
-  if (node.type === "array") {
-    for (const child of node.children ?? []) assertNoDuplicateKeys(child);
-  }
-}
-
 export function canonicalBytesV1(value: unknown): Buffer {
-  assertUnicodeTree(value, "canonical JSON", new WeakSet<object>(), false);
-  return Buffer.from(canonicalJson(value), "utf8");
+  return canonicalStrictJsonBytesV1(value);
 }
 
 export function canonicalSha256V1(value: unknown): string {
@@ -410,7 +314,7 @@ export function canonicalSha256V1(value: unknown): string {
 }
 
 export function parseNormalizationProfileV1(value: unknown): NormalizationProfileV1 {
-  assertUnicodeTree(value, "normalization profile");
+  assertStrictJsonValueV1(value, "normalization profile");
   const parsed = ProfileSchema.parse(value);
   const mappings = parsed.mappings.sort(compareMappings);
   const byKey = new Map<string, NormalizationTargetCodeV1>();
@@ -432,29 +336,11 @@ export function parseNormalizationProfileV1(value: unknown): NormalizationProfil
   }
   const result: NormalizationProfileV1 = { protocol: "NormalizationProfileV1", mappings };
   parsedProfiles.add(result);
-  return deepFreeze(result);
+  return deepFreezeStrictJsonV1(result);
 }
 
 export function parseNormalizationProfileV1Json(text: string): NormalizationProfileV1 {
-  assertWellFormedNfc(text, "normalization profile JSON text");
-  const options = { allowTrailingComma: false, disallowComments: true } as const;
-  const errors: ParseError[] = [];
-  const tree = parseTree(text, errors, options);
-  if (errors.length > 0 || tree === undefined) {
-    const detail = errors
-      .map((error) => `${printParseErrorCode(error.error)} at offset ${String(error.offset)}`)
-      .join("; ");
-    throw new TypeError(
-      `invalid JSON normalization profile${detail.length > 0 ? `: ${detail}` : ""}`,
-    );
-  }
-  if (tree.type !== "object")
-    throw new TypeError("normalization profile JSON root must be an object");
-  assertNoDuplicateKeys(tree);
-  const parseErrors: ParseError[] = [];
-  const value = parseJson(text, parseErrors, options);
-  if (parseErrors.length > 0) throw new TypeError("invalid JSON normalization profile");
-  return parseNormalizationProfileV1(value);
+  return parseNormalizationProfileV1(parseStrictJsonObjectV1(text, "normalization profile"));
 }
 
 export function normalizationEntryDigestV1(entry: NormalizationMappingV1): string {
@@ -509,7 +395,7 @@ export function resolveNormalizationV1(
   if (!isObject(profile) || !parsedProfiles.has(profile)) {
     throw new TypeError("resolver requires a parsed validated normalization profile");
   }
-  assertUnicodeTree(lookup, "normalization lookup");
+  assertStrictJsonValueV1(lookup, "normalization lookup");
   const parsedLookup = LookupSchema.parse(lookup);
   const classEntries = profile.mappings.filter(
     (mapping) => mapping.detectorClass === parsedLookup.detectorClass,
@@ -541,7 +427,7 @@ export function resolveNormalizationV1(
         detectorClass: parsedLookup.detectorClass,
         nativeRuleId: parsedLookup.nativeRuleId,
       });
-      return deepFreeze(result);
+      return deepFreezeStrictJsonV1(result);
     }
   }
   const result: NormalizationResolutionV1 = {
@@ -554,7 +440,7 @@ export function resolveNormalizationV1(
     detectorClass: parsedLookup.detectorClass,
     nativeRuleId: parsedLookup.nativeRuleId,
   });
-  return deepFreeze(result);
+  return deepFreezeStrictJsonV1(result);
 }
 
 function assertSafeRelativePosixPath(path: string): void {
@@ -575,7 +461,7 @@ function assertSafeRelativePosixPath(path: string): void {
 export function createRawOccurrenceFingerprintV1(
   input: RawOccurrenceFingerprintV1Input,
 ): RawOccurrenceFingerprintV1 {
-  assertUnicodeTree(input, "raw occurrence");
+  assertStrictJsonValueV1(input, "raw occurrence");
   const parsed = RawInputSchema.parse(input);
   assertSafeRelativePosixPath(parsed.path);
   const identity = {
@@ -590,7 +476,7 @@ export function createRawOccurrenceFingerprintV1(
   const fingerprint = `raw-occurrence-v1:${createHash("sha256").update(canonical, "utf8").digest("hex")}`;
   const result: RawOccurrenceFingerprintV1 = { ...parsed, fingerprint };
   rawStates.set(result, { canonicalJson: canonical });
-  return deepFreeze(result);
+  return deepFreezeStrictJsonV1(result);
 }
 
 export function rawOccurrenceCanonicalBytesV1(value: RawOccurrenceFingerprintV1): Buffer {
@@ -627,7 +513,7 @@ export function createCanonicalFindingIdentityV1(input: {
   readonly normalizationResolution: NormalizationResolutionV1;
   readonly contextualEvaluationOutcome: ContextualEvaluationOutcomeV1;
 }): CanonicalFindingIdentityV1 {
-  assertUnicodeTree(input, "canonical finding input");
+  assertStrictJsonValueV1(input, "canonical finding input");
   const parsed = FindingInputSchema.parse(input);
   const resolutionState = resolutionStates.get(parsed.normalizationResolution);
   if (resolutionState === undefined) {
@@ -671,7 +557,7 @@ export function createCanonicalFindingIdentityV1(input: {
     fingerprint,
   };
   findingStates.set(result, { canonicalJson: canonical });
-  return deepFreeze(result);
+  return deepFreezeStrictJsonV1(result);
 }
 
 export function canonicalFindingCanonicalBytesV1(value: CanonicalFindingIdentityV1): Buffer {
@@ -685,7 +571,7 @@ export function canonicalFindingCanonicalBytesV1(value: CanonicalFindingIdentity
 export function deriveNormalizationCompatibilityV1(
   descriptor: NormalizationCompatibilityDescriptorV1,
 ): NormalizationCompatibilityV1 {
-  assertUnicodeTree(descriptor, "normalization compatibility descriptor");
+  assertStrictJsonValueV1(descriptor, "normalization compatibility descriptor");
   const parsed = CompatibilityDescriptorSchema.parse(descriptor);
   if (
     parsed.scannerManifestIdentityDescriptor.detectorClass !== parsed.detectorClass ||
@@ -707,7 +593,7 @@ export function deriveNormalizationCompatibilityV1(
   ) {
     throw new TypeError("compatibility descriptor native rule IDs must be unique and sorted");
   }
-  return deepFreeze({
+  return deepFreezeStrictJsonV1({
     scannerManifestSha256: canonicalSha256V1({
       domain: "aih.normalization-profile-v1.compatibility.scanner-manifest",
       descriptor: parsed.scannerManifestIdentityDescriptor,
