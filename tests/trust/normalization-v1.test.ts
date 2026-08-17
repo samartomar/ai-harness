@@ -569,6 +569,98 @@ describe("NormalizationProfileV1 exact resolution", () => {
     expect(() => resolveNormalizationV1({ ...parsed }, selector)).toThrow(/parsed|validated/i);
   });
 
+  it("strictly rejects malformed resolver lookup requests instead of returning unmapped", () => {
+    const parsed = parseNormalizationProfileV1(profile());
+    const validLookup = {
+      detectorClass: "skillspector",
+      nativeRuleId: "skillspector.prompt-injection",
+      compatibility,
+    };
+
+    expect(() =>
+      resolveNormalizationV1(parsed, { ...validLookup, unexpected: true } as never),
+    ).toThrow(/lookup|unexpected|unrecognized/i);
+    expect(() =>
+      resolveNormalizationV1(parsed, {
+        nativeRuleId: validLookup.nativeRuleId,
+        compatibility,
+      } as never),
+    ).toThrow(/detector|lookup|selector/i);
+    expect(() =>
+      resolveNormalizationV1(parsed, {
+        detectorClass: validLookup.detectorClass,
+        compatibility,
+      } as never),
+    ).toThrow(/rule|lookup|selector/i);
+    expect(() =>
+      resolveNormalizationV1(parsed, {
+        detectorClass: validLookup.detectorClass,
+        nativeRuleId: validLookup.nativeRuleId,
+      } as never),
+    ).toThrow(/compatibility|lookup/i);
+
+    for (const detectorClass of [
+      "",
+      " ",
+      "*",
+      ".*",
+      "/skillspector/",
+      `d${"x".repeat(1_024)}`,
+      "se\u0301mgrep",
+      "x\ud800y",
+      "x\udfffy",
+    ]) {
+      expect(() => resolveNormalizationV1(parsed, { ...validLookup, detectorClass })).toThrow(
+        /detector|lookup|selector|NFC|Unicode|surrogate/i,
+      );
+    }
+    for (const nativeRuleId of [
+      "",
+      " ",
+      "*",
+      ".+",
+      "/prompt.*/",
+      `r${"x".repeat(4_096)}`,
+      "re\u0300gle",
+      "x\ud800y",
+      "x\udfffy",
+    ]) {
+      expect(() => resolveNormalizationV1(parsed, { ...validLookup, nativeRuleId })).toThrow(
+        /rule|lookup|selector|NFC|Unicode|surrogate/i,
+      );
+    }
+
+    expect(() =>
+      resolveNormalizationV1(parsed, {
+        ...validLookup,
+        compatibility: { ...compatibility, unexpected: true } as never,
+      }),
+    ).toThrow(/compatibility|unexpected|unrecognized/i);
+    for (const field of [
+      "scannerManifestSha256",
+      "analyzerIdentitySha256",
+      "normalizationConfigurationSha256",
+    ] as const) {
+      const missing = Object.fromEntries(
+        Object.entries(compatibility).filter(([key]) => key !== field),
+      );
+      expect(() =>
+        resolveNormalizationV1(parsed, {
+          ...validLookup,
+          compatibility: missing as never,
+        }),
+      ).toThrow(new RegExp(`compatibility|${field}|digest|sha256`, "i"));
+      for (const invalid of [42, "a".repeat(63), "a".repeat(65), "A".repeat(64), "g".repeat(64)]) {
+        expect(() =>
+          resolveNormalizationV1(parsed, {
+            ...validLookup,
+            compatibility: { ...compatibility, [field]: invalid } as never,
+          }),
+        ).toThrow(new RegExp(`compatibility|${field}|digest|sha256`, "i"));
+      }
+    }
+  });
+
   it("distinguishes a novel selector from each exact compatibility mismatch", () => {
     const parsed = parseNormalizationProfileV1(profile());
     const novelRule = "skillspector.synthetic-future-rule";
