@@ -174,6 +174,16 @@ function cacheRecordBytes(overrides: Record<string, unknown> = {}): Buffer {
   return canonicalStrictJsonBytesV1(cacheRecord(overrides));
 }
 
+function dssePae(payloadType: string, payload: Buffer): Buffer {
+  return Buffer.concat([
+    Buffer.from(
+      `DSSEv1 ${String(Buffer.byteLength(payloadType))} ${payloadType} ${String(payload.length)} `,
+      "utf8",
+    ),
+    payload,
+  ]);
+}
+
 function input(overrides: Record<string, unknown> = {}) {
   const bytes = artifactBytes();
   const attestationBytes = Buffer.from("canonical-test-attestation", "utf8");
@@ -416,6 +426,9 @@ describe("admin catalog fetch foundation V1", () => {
     const deliveredArtifact = artifactBytes();
     const deliveredAttestation = Buffer.from("canonical-test-attestation", "utf8");
     let attestationRequest: Record<string, unknown> | undefined;
+    let catalogHeadRequest: Record<string, unknown> | undefined;
+    let signerRequest: Record<string, unknown> | undefined;
+    let adminVerifyRequest: Record<string, unknown> | undefined;
     const values = input({
       fetchFresh: vi.fn(() => ({
         artifactBytes: deliveredArtifact,
@@ -429,8 +442,9 @@ describe("admin catalog fetch foundation V1", () => {
         expect(request.cacheRecordBytes).toEqual(cacheRecordBytes({ downloadedAt: now }));
         return true;
       }),
-      signCanonicalPae: vi.fn(() => {
+      signCanonicalPae: vi.fn((request: Record<string, unknown>) => {
         calls.push("sign");
+        signerRequest = request;
         return { keyid: "admin-key-1", sig: "YWRtaW4tc2ln" };
       }),
       verifyArtifactAttestation: vi.fn((request: Record<string, unknown>) => {
@@ -456,12 +470,14 @@ describe("admin catalog fetch foundation V1", () => {
         expect(request.channel).toBe(channel);
         return true;
       }),
-      verifyCatalogHeadPae: vi.fn(() => {
+      verifyCatalogHeadPae: vi.fn((request: Record<string, unknown>) => {
         calls.push("head");
+        catalogHeadRequest = request;
         return true;
       }),
-      verifyCanonicalPae: vi.fn(() => {
+      verifyCanonicalPae: vi.fn((request: Record<string, unknown>) => {
         calls.push("admin-verify");
+        adminVerifyRequest = request;
         return true;
       }),
     });
@@ -506,6 +522,46 @@ describe("admin catalog fetch foundation V1", () => {
     ]);
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(result.distribution)).toBe(true);
+    const persisted = persistedState();
+    const headEnvelope = JSON.parse(
+      Buffer.from(persisted.catalogHeadEnvelopeBytes, "base64").toString("utf8"),
+    ) as {
+      payload: string;
+      payloadType: string;
+      signatures: unknown;
+    };
+    const headPayload = Buffer.from(headEnvelope.payload, "base64");
+    expect(catalogHeadRequest).toEqual({
+      environment,
+      expectedCatalogSignerIdentity: catalogSignerIdentity,
+      expectedSignerRootSha256: headRoot,
+      issuer,
+      paeBytes: dssePae(headEnvelope.payloadType, headPayload),
+      ref,
+      repository,
+      signerRootSha256: headRoot,
+      signatures: headEnvelope.signatures,
+      workflowIdentity,
+    });
+    const distributionEnvelope = result.distribution.envelope as {
+      payload: string;
+      payloadType: string;
+      signatures: unknown;
+    };
+    const distributionPayload = Buffer.from(distributionEnvelope.payload, "base64");
+    expect(signerRequest).toEqual({
+      bindingSha256: result.distribution.binding.resolvedCatalogBindingSha256,
+      expectedAdminSignerIdentity: adminSignerIdentity,
+      expectedAdminSignerRootSha256: adminRoot,
+      paeBytes: dssePae(distributionEnvelope.payloadType, distributionPayload),
+      protocol: "AdminSeatDistributionV1",
+    });
+    expect(adminVerifyRequest).toEqual({
+      expectedAdminSignerIdentity: adminSignerIdentity,
+      expectedAdminSignerRootSha256: adminRoot,
+      paeBytes: dssePae(distributionEnvelope.payloadType, distributionPayload),
+      signatures: distributionEnvelope.signatures,
+    });
     deliveredArtifact.fill(0x61);
     deliveredAttestation.fill(0x61);
     expect(attestationRequest?.artifactSha256).toBe(sha(artifactBytes()));
@@ -539,6 +595,29 @@ describe("admin catalog fetch foundation V1", () => {
     expect(packaged.verifyArtifactAttestation).not.toHaveBeenCalled();
     expect(packaged.verifyCatalogHeadPae).toHaveBeenCalledOnce();
     expect(packaged.commitVerifiedCache).not.toHaveBeenCalled();
+  });
+
+  it("treats packaged package, catalog, and head-context pin mismatches as terminal without signing", async () => {
+    for (const changed of [
+      { expectedPackageSha256: sha("wrong package") },
+      { expectedPackageRootSha256: sha("wrong package root") },
+      { expectedCatalogSha256: sha("wrong catalog") },
+      { headSignerRootSha256: sha("wrong head root") },
+    ]) {
+      const values = input({
+        ...changed,
+        fetchFresh: vi.fn(() => ({ kind: "unavailable" })),
+        readVerifiedCache: vi.fn(() => ({ kind: "unavailable" })),
+      });
+      await expect(resolveAdminCatalogFetchV1(values)).rejects.toThrow();
+      expect(values.fetchFresh).toHaveBeenCalledOnce();
+      expect(values.readVerifiedCache).toHaveBeenCalledOnce();
+      expect(values.verifyArtifactAttestation).not.toHaveBeenCalled();
+      expect(values.verifyCatalogHeadPae).not.toHaveBeenCalled();
+      expect(values.commitVerifiedCache).not.toHaveBeenCalled();
+      expect(values.signCanonicalPae).not.toHaveBeenCalled();
+      expect(values.verifyCanonicalPae).not.toHaveBeenCalled();
+    }
   });
 
   it("accepts cache bytes only and rejects typed, oversized, accessor, proxy, and unavailable-like cache seam values", async () => {
