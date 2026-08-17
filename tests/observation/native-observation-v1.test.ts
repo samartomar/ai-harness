@@ -185,7 +185,7 @@ describe("SourceSealV1", () => {
     expect(Object.isFrozen(snapshot)).toBe(true);
     expect(Object.isFrozen(snapshot.sourceFiles)).toBe(true);
     expect(Object.isFrozen(sourceFile)).toBe(true);
-    expect(canonicalSealedSourceSnapshotBytesV1(structuredClone(snapshot) as never)).toThrow(
+    expect(() => canonicalSealedSourceSnapshotBytesV1(structuredClone(snapshot) as never)).toThrow(
       /validated|branded|forged/i,
     );
     expect(seal().sealedSnapshotSha256).toBe(snapshot.sealedSnapshotSha256);
@@ -223,6 +223,7 @@ describe("SourceSealV1", () => {
       protocol: "SourceSealV1",
       sourceTreeSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
       selectedClosureSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+      sealedSnapshotSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
     expectExactKeys(first, [
       "protocol",

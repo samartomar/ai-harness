@@ -4,7 +4,6 @@ import { canonicalJson, codeUnitCompare } from "../capability/package-graph/cano
 import {
   assertStrictJsonValueV1,
   assertWellFormedNfcV1,
-  canonicalStrictJsonBytesV1,
   deepFreezeStrictJsonV1,
   parseStrictJsonObjectV1,
 } from "../contract/strict-json-v1.js";
@@ -306,7 +305,8 @@ function compareMappings(left: NormalizationMappingV1, right: NormalizationMappi
 }
 
 export function canonicalBytesV1(value: unknown): Buffer {
-  return canonicalStrictJsonBytesV1(value);
+  assertStrictJsonValueV1(value, "canonical JSON", false);
+  return Buffer.from(canonicalJson(value), "utf8");
 }
 
 export function canonicalSha256V1(value: unknown): string {

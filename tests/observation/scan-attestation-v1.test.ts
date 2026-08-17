@@ -190,9 +190,11 @@ describe("ScanAttestationV1", () => {
       "trusted",
       "portable",
       "pass",
-      "policy",
+      "policylevel",
+      "finalpolicy",
       "verdict",
       "waiver",
+      "acceptance",
       "acknowledgement",
       "timestamp",
       "runid",
@@ -287,10 +289,6 @@ describe("ScanAttestationV1", () => {
           appliedFactsSha256: sha256("other broker facts"),
         },
       }),
-      createScanAttestationV1({
-        ...input,
-        brokerEnforcement: { ...input.brokerEnforcement, enforcementState: "verified" },
-      }),
       createScanAttestationV1({ ...input, cleanup: { outcome: "failed" } }),
       createScanAttestationV1({
         ...input,
@@ -299,6 +297,12 @@ describe("ScanAttestationV1", () => {
     ];
     for (const value of changed)
       expect(value.scanAttestationSha256).not.toBe(base.scanAttestationSha256);
+    expect(() =>
+      createScanAttestationV1({
+        ...input,
+        brokerEnforcement: { ...input.brokerEnforcement, enforcementState: "verified" },
+      }),
+    ).toThrow(/enforcementState|unverified/i);
     const bytes = canonicalScanAttestationBytesV1(base);
     expect(bytes.toString("utf8")).toContain('"protocol":"ScanAttestationV1"');
     expect(canonicalScanAttestationSha256V1(base)).toBe(

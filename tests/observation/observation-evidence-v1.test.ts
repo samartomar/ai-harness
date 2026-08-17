@@ -441,12 +441,14 @@ describe("EvidenceAnnexV1", () => {
       { descriptorId: "annex.native-log", bytes: Buffer.from("native log", "utf8") },
       { descriptorId: "annex.sbom", bytes: Buffer.from("sbom", "utf8") },
     ];
+    const nativeLog = mustGet(bytes, 0);
+    const sbom = mustGet(bytes, 1);
     expect(verifyEvidenceAnnexBytesV1({ annex, descriptors: bytes })).toEqual({ kind: "complete" });
     for (const descriptors of [
-      [bytes[0]],
-      [{ ...bytes[0], bytes: Buffer.from("tampered", "utf8") }, bytes[1]],
-      [{ ...bytes[0], bytes: Buffer.alloc(9) }, bytes[1]],
-      [...bytes, bytes[0]],
+      [nativeLog],
+      [{ ...nativeLog, bytes: Buffer.from("tampered", "utf8") }, sbom],
+      [{ ...nativeLog, bytes: Buffer.alloc(9) }, sbom],
+      [...bytes, nativeLog],
       [...bytes, { descriptorId: "annex.unknown", bytes: Buffer.from("unknown", "utf8") }],
     ]) {
       expect(verifyEvidenceAnnexBytesV1({ annex, descriptors })).toMatchObject({
@@ -455,7 +457,7 @@ describe("EvidenceAnnexV1", () => {
       });
     }
     expect(JSON.stringify(annex)).not.toContain("native log");
-    expect(JSON.stringify(annex)).not.toContain('sbom"');
+    expect(JSON.stringify(annex)).not.toContain(Buffer.from("sbom", "utf8").toString("base64"));
   });
 
   it("rejects inline, unbounded, absolute, hostile, or duplicate annex material", () => {

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { codeUnitCompare } from "../capability/package-graph/canonical.js";
 import {
@@ -15,11 +16,12 @@ const sourceSeal = z
     protocol: z.literal("SourceSealV1"),
     sourceTreeSha256: sha256,
     selectedClosureSha256: sha256,
+    sealedSnapshotSha256: sha256,
   })
   .strict();
 const platform = z
   .object({
-    os: z.enum(["linux", "darwin"]),
+    os: z.enum(["linux", "darwin", "windows"]),
     architecture: z.enum(["amd64", "arm64"]),
     relevantFactsSha256: sha256,
   })
@@ -47,7 +49,7 @@ const setInput = z
   .object({
     protocol: z.literal("ObservationSetV1"),
     observationKey: keyInput,
-    facts: z.array(fact).min(1).max(4096),
+    facts: z.array(fact).max(4096),
     coverage: z.array(coverage).min(1).max(16),
   })
   .strict();
@@ -86,6 +88,19 @@ export interface EvidenceAnnexV1 {
   readonly descriptors: readonly z.infer<typeof annexDescriptor>[];
   readonly evidenceAnnexSha256: string;
 }
+
+export type EvidenceAnnexBytesVerificationV1 =
+  | { readonly kind: "complete" }
+  | {
+      readonly kind: "required";
+      readonly code: "EVIDENCE_ANNEX_REQUIRED";
+      readonly reason:
+        | "missing-descriptor"
+        | "unknown-descriptor"
+        | "duplicate-descriptor"
+        | "length-mismatch"
+        | "digest-mismatch";
+    };
 
 const keys = new WeakMap<object, Buffer>();
 const sets = new WeakMap<object, Buffer>();
@@ -214,4 +229,33 @@ export function canonicalEvidenceAnnexBytesV1(value: EvidenceAnnexV1): Buffer {
   if (bytes === undefined)
     throw new TypeError("evidence annex canonical bytes require a validated branded annex");
   return Buffer.from(bytes);
+}
+
+export function verifyEvidenceAnnexBytesV1(input: {
+  readonly annex: EvidenceAnnexV1;
+  readonly descriptors: readonly { readonly descriptorId: string; readonly bytes: Uint8Array }[];
+}): EvidenceAnnexBytesVerificationV1 {
+  if (typeof input.annex !== "object" || input.annex === null || !annexes.has(input.annex)) {
+    throw new TypeError("annex byte verification requires a validated branded annex");
+  }
+  const expected = new Map(
+    input.annex.descriptors.map((descriptor) => [descriptor.descriptorId, descriptor]),
+  );
+  const supplied = new Set<string>();
+  for (const descriptor of input.descriptors) {
+    if (supplied.has(descriptor.descriptorId))
+      return { kind: "required", code: "EVIDENCE_ANNEX_REQUIRED", reason: "duplicate-descriptor" };
+    supplied.add(descriptor.descriptorId);
+    const promised = expected.get(descriptor.descriptorId);
+    if (promised === undefined)
+      return { kind: "required", code: "EVIDENCE_ANNEX_REQUIRED", reason: "unknown-descriptor" };
+    if (descriptor.bytes.byteLength !== promised.byteLength)
+      return { kind: "required", code: "EVIDENCE_ANNEX_REQUIRED", reason: "length-mismatch" };
+    const actualSha256 = createHash("sha256").update(descriptor.bytes).digest("hex");
+    if (actualSha256 !== promised.sha256)
+      return { kind: "required", code: "EVIDENCE_ANNEX_REQUIRED", reason: "digest-mismatch" };
+  }
+  if (supplied.size !== expected.size)
+    return { kind: "required", code: "EVIDENCE_ANNEX_REQUIRED", reason: "missing-descriptor" };
+  return { kind: "complete" };
 }

@@ -18,6 +18,15 @@ const observation = z
   })
   .strict();
 const cleanup = z.object({ outcome: z.enum(["completed", "failed"]) }).strict();
+const brokerEnforcement = z
+  .object({
+    protocol: z.literal("BrokerEnforcementBindingV1"),
+    brokerIdentity: z.string().regex(/^broker\.[0-9a-f]{12}$/),
+    policyDigestSha256: sha256,
+    appliedFactsSha256: sha256,
+    enforcementState: z.literal("unverified"),
+  })
+  .strict();
 const annexDescriptor = z
   .object({
     descriptorId: z.string().regex(/^annex\.[a-z0-9][a-z0-9.-]*$/),
@@ -37,7 +46,7 @@ const inputSchema = z
     sourceTarget: z.object({ name: z.literal("source-tree"), sha256 }).strict(),
     scannerManifestSha256: sha256,
     observations: z.array(observation).min(1).max(128),
-    brokerIdentity: z.string().regex(/^broker\.[0-9a-f]{12}$/),
+    brokerEnforcement,
     cleanup,
     annexDescriptors: z.array(annexDescriptor).max(128),
   })
@@ -51,7 +60,7 @@ const predicate = z
     protocol: z.literal("ScanAttestationV1"),
     scannerManifestSha256: sha256,
     observations: z.array(observation).min(1).max(128),
-    brokerIdentity: z.string().regex(/^broker\.[0-9a-f]{12}$/),
+    brokerEnforcement,
     cleanup,
     annexDescriptors: z.array(annexDescriptor).max(128),
   })
@@ -132,7 +141,7 @@ function create(parsed: z.infer<typeof inputSchema>): ScanAttestationV1 {
       protocol: parsed.protocol,
       scannerManifestSha256: parsed.scannerManifestSha256,
       observations,
-      brokerIdentity: parsed.brokerIdentity,
+      brokerEnforcement: parsed.brokerEnforcement,
       cleanup: parsed.cleanup,
       annexDescriptors,
     },
@@ -181,7 +190,7 @@ export function parseScanAttestationV1Json(text: string): ScanAttestationV1 {
     },
     scannerManifestSha256: parsed.statement.predicate.scannerManifestSha256,
     observations: parsed.statement.predicate.observations,
-    brokerIdentity: parsed.statement.predicate.brokerIdentity,
+    brokerEnforcement: parsed.statement.predicate.brokerEnforcement,
     cleanup: parsed.statement.predicate.cleanup,
     annexDescriptors: parsed.statement.predicate.annexDescriptors,
   });
