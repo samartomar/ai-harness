@@ -27,6 +27,11 @@ const catalogSignerIdentity = "signer:catalog-head-v1";
 const adminSignerIdentity = "signer:admin-seat-v1";
 const now = "2026-08-17T12:00:00Z";
 const downloadedAt = "2026-08-17T11:59:30Z";
+const MAX_ARTIFACT_BYTES = 64 * 1024;
+const MAX_ATTESTATION_BYTES = 16 * 1024;
+const MAX_CACHE_BYTES = 96 * 1024;
+const EXPECTED_AUTHORITY_CACHE_KEY =
+  "ef3a0c9a1dc785be98a0a1d559e373bd9f75a0775fca89d3ab837939643fd0db";
 
 function member(overrides: Record<string, unknown> = {}) {
   return {
@@ -48,7 +53,9 @@ function member(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function state(kind: "CachedCatalogStateV1" | "PackagedCatalogStateV1" = "CachedCatalogStateV1") {
+function persistedState(
+  kind: "CachedCatalogStateV1" | "PackagedCatalogStateV1" = "CachedCatalogStateV1",
+) {
   const snapshotBytes = canonicalStrictJsonBytesV1({
     members: [member()],
     protocol: "CatalogSnapshotV1",
@@ -86,8 +93,8 @@ function state(kind: "CachedCatalogStateV1" | "PackagedCatalogStateV1" = "Cached
     signatures: [{ keyid: "head-key-1", sig: "aGVhZC1zaWc=" }],
   });
   return {
-    catalogHeadBytes,
-    catalogHeadEnvelopeBytes,
+    catalogHeadBytes: catalogHeadBytes.toString("base64"),
+    catalogHeadEnvelopeBytes: catalogHeadEnvelopeBytes.toString("base64"),
     catalogHeadEnvelopeSha256: sha(catalogHeadEnvelopeBytes),
     catalogHeadSha256: sha(catalogHeadBytes),
     catalogSnapshotBytes: snapshotBytes,
@@ -99,28 +106,39 @@ function state(kind: "CachedCatalogStateV1" | "PackagedCatalogStateV1" = "Cached
   };
 }
 
-function authorityCacheKey(): string {
+function expectedCatalogSha256(): string {
+  return persistedState().catalogSnapshotSha256;
+}
+
+function authorityCacheKey(overrides: Record<string, unknown> = {}): string {
+  const value = {
+    catalogSignerIdentity,
+    channel,
+    expectedCatalogSha256: expectedCatalogSha256(),
+    expectedEffectVersion: "1",
+    expectedEnvironment: environment,
+    expectedIssuer: issuer,
+    expectedPackageRootSha256: packageRootSha256,
+    expectedPackageSha256: packageSha256,
+    expectedPromotionDecisionSha256: sha("promotion"),
+    expectedRef: ref,
+    expectedRepository: repository,
+    expectedSchemaVersion: "1",
+    expectedWorkflowIdentity: workflowIdentity,
+    headSignerRootSha256: headRoot,
+    sourceId,
+    ...overrides,
+  };
   return sha(
     canonicalStrictJsonBytesV1({
       domain: "aih.admin-catalog-fetch-cache-key-v1",
-      value: {
-        catalogSignerIdentity,
-        channel,
-        environment,
-        issuer,
-        packageRootSha256,
-        packageSha256,
-        ref,
-        repository,
-        sourceId,
-        workflowIdentity,
-      },
+      value,
     }),
   );
 }
 
 function artifact(overrides: Record<string, unknown> = {}) {
-  const catalogStateBytes = canonicalStrictJsonBytesV1(state());
+  const catalogStateBytes = canonicalStrictJsonBytesV1(persistedState());
   return {
     authorityCacheKeySha256: authorityCacheKey(),
     catalogStateBytes: catalogStateBytes.toString("base64"),
@@ -161,11 +179,9 @@ function input(overrides: Record<string, unknown> = {}) {
   const attestationBytes = Buffer.from("canonical-test-attestation", "utf8");
   return {
     adminSignerRootSha256: adminRoot,
-    authorityCacheKeySha256: authorityCacheKey(),
-    cachedVerified: { kind: "unavailable" },
     channel,
     expectedAdminSignerIdentity: adminSignerIdentity,
-    expectedCatalogSha256: state().catalogSnapshotSha256 as string,
+    expectedCatalogSha256: expectedCatalogSha256(),
     expectedCatalogSignerIdentity: catalogSignerIdentity,
     expectedEffectVersion: "1",
     expectedEnvironment: environment,
@@ -184,15 +200,12 @@ function input(overrides: Record<string, unknown> = {}) {
       kind: "available",
     })),
     headSignerRootSha256: headRoot,
-    lastGood: state(),
-    maxArtifactBytes: 64 * 1024,
-    maxAttestationBytes: 16 * 1024,
+    lastGoodCatalogStateBytes: canonicalStrictJsonBytesV1(persistedState()),
     now,
-    packaged: state("PackagedCatalogStateV1"),
+    packagedCatalogStateBytes: canonicalStrictJsonBytesV1(persistedState("PackagedCatalogStateV1")),
     readVerifiedCache: vi.fn(() => ({ kind: "unavailable" })),
     signCanonicalPae: vi.fn(() => ({ keyid: "admin-key-1", sig: "YWRtaW4tc2ln" })),
     sourceId,
-    timeoutMs: 5_000,
     verifyArtifactAttestation: vi.fn(() => true),
     verifyCatalogHeadPae: vi.fn(() => true),
     verifyCanonicalPae: vi.fn(() => true),
@@ -206,6 +219,36 @@ function reject(value: unknown): void {
 }
 
 describe("admin catalog fetch foundation V1", () => {
+  it("derives the catalog-side authority/cache key from every trusted catalog field, not admin identity", () => {
+    expect(authorityCacheKey()).toBe(EXPECTED_AUTHORITY_CACHE_KEY);
+    for (const changed of [
+      { sourceId: "changed-source" },
+      { channel: "preview" },
+      { expectedRepository: "github.com/aih/other-catalog" },
+      { expectedWorkflowIdentity: "workflow:other-v1" },
+      { expectedIssuer: "https://issuer.example" },
+      { expectedRef: "refs/heads/release" },
+      { expectedEnvironment: "other-environment" },
+      { catalogSignerIdentity: "signer:other-v1" },
+      { headSignerRootSha256: sha("other root") },
+      { expectedCatalogSha256: sha("other catalog") },
+      { expectedPromotionDecisionSha256: sha("other promotion") },
+      { expectedPackageSha256: sha("other package") },
+      { expectedPackageRootSha256: sha("other package root") },
+      { expectedSchemaVersion: "2" },
+      { expectedEffectVersion: "2" },
+    ])
+      expect(authorityCacheKey(changed)).not.toBe(EXPECTED_AUTHORITY_CACHE_KEY);
+
+    const changedAdmin = input({
+      adminSignerRootSha256: sha("other admin root"),
+      expectedAdminSignerIdentity: "signer:other-admin-v1",
+    });
+    expect(authorityCacheKey()).toBe(EXPECTED_AUTHORITY_CACHE_KEY);
+    expect(changedAdmin.adminSignerRootSha256).not.toBe(adminRoot);
+    expect(changedAdmin.expectedAdminSignerIdentity).not.toBe(adminSignerIdentity);
+  });
+
   it("accepts only canonical branded artifact and cache-record bytes", () => {
     const bytes = artifactBytes();
     const parsed = parseAdminCatalogArtifactV1Json(bytes);
@@ -214,11 +257,19 @@ describe("admin catalog fetch foundation V1", () => {
     expect(Object.isFrozen(parsed)).toBe(true);
     expect(() => canonicalAdminCatalogArtifactV1Bytes({ ...parsed })).toThrow();
 
+    const parsedSnapshot = Buffer.from(bytes);
+    parsedSnapshot.fill(0x61);
+    expect(canonicalAdminCatalogArtifactV1Bytes(parsed)).toEqual(bytes);
+
     const cacheBytes = cacheRecordBytes();
     const cache = parseAdminCatalogCacheRecordV1Json(cacheBytes);
     expect(canonicalAdminCatalogCacheRecordV1Bytes(cache)).toEqual(cacheBytes);
     expect(() => canonicalAdminCatalogCacheRecordV1Bytes({ ...cache })).toThrow();
     expect(Object.isFrozen(cache)).toBe(true);
+
+    const parsedCache = Buffer.from(cacheBytes);
+    parsedCache.fill(0x61);
+    expect(canonicalAdminCatalogCacheRecordV1Bytes(cache)).toEqual(cacheBytes);
 
     const changed = Buffer.from(bytes);
     const first = changed[0];
@@ -229,9 +280,8 @@ describe("admin catalog fetch foundation V1", () => {
 
   it("rejects noncanonical, hostile, oversized, and cross-bound artifact/cache records", () => {
     const bytes = artifactBytes();
-    const reordered = Buffer.from(
-      bytes.toString("utf8").replace('{"authority', '{"channel":"stable","authority'),
-    );
+    const { protocol, ...rest } = artifact();
+    const reordered = Buffer.from(JSON.stringify({ protocol, ...rest }), "utf8");
     const alternateEscape = Buffer.from(bytes.toString("utf8").replace("stable", "st\\u0061ble"));
     const badArtifacts: unknown[] = [
       reordered,
@@ -245,8 +295,9 @@ describe("admin catalog fetch foundation V1", () => {
       artifactBytes({ channel: "STABLE" }),
       artifactBytes({ sourceId: "source/../alias" }),
       artifactBytes({ packageSha256: `sha256:${packageSha256}` }),
+      artifactBytes({ catalogStateBytes: "YQ" }),
       artifactBytes({ unexpected: true }),
-      Buffer.alloc(64 * 1024 + 1, 0x61),
+      Buffer.alloc(MAX_ARTIFACT_BYTES + 1, 0x61),
     ];
     for (const bad of badArtifacts) reject(bad);
     for (const bad of [
@@ -268,7 +319,16 @@ describe("admin catalog fetch foundation V1", () => {
 
   it("recomputes the fetched digest, verifies exact authority/cache binding, commits before signing, and returns closed fresh provenance", async () => {
     const calls: string[] = [];
+    const deliveredArtifact = artifactBytes();
+    const deliveredAttestation = Buffer.from("canonical-test-attestation", "utf8");
+    let attestationRequest: Record<string, unknown> | undefined;
     const values = input({
+      fetchFresh: vi.fn(() => ({
+        artifactBytes: deliveredArtifact,
+        attestationBytes: deliveredAttestation,
+        claimedArtifactSha256: sha(deliveredArtifact),
+        kind: "available",
+      })),
       commitVerifiedCache: vi.fn((request: Record<string, unknown>) => {
         calls.push("commit");
         expect(request.authorityCacheKeySha256).toBe(authorityCacheKey());
@@ -281,10 +341,18 @@ describe("admin catalog fetch foundation V1", () => {
       }),
       verifyArtifactAttestation: vi.fn((request: Record<string, unknown>) => {
         calls.push("attest");
+        attestationRequest = request;
         expect(Object.keys(request).sort()).toEqual([
           "artifactSha256",
           "attestationBytes",
           "authorityCacheKeySha256",
+          "expectedCatalogSignerIdentity",
+          "expectedEnvironment",
+          "expectedIssuer",
+          "expectedRef",
+          "expectedRepository",
+          "expectedWorkflowIdentity",
+          "headSignerRootSha256",
           "channel",
           "sourceId",
         ]);
@@ -294,23 +362,31 @@ describe("admin catalog fetch foundation V1", () => {
         expect(request.channel).toBe(channel);
         return true;
       }),
+      verifyCatalogHeadPae: vi.fn(() => {
+        calls.push("head");
+        return true;
+      }),
+      verifyCanonicalPae: vi.fn(() => {
+        calls.push("admin-verify");
+        return true;
+      }),
     });
 
     const result = await resolveAdminCatalogFetchV1(values);
 
-    expect(calls).toEqual(["attest", "commit", "sign"]);
+    expect(calls).toEqual(["attest", "head", "commit", "sign", "admin-verify"]);
     expect(values.fetchFresh).toHaveBeenCalledOnce();
     expect(values.fetchFresh).toHaveBeenCalledWith({
       authorityCacheKeySha256: authorityCacheKey(),
-      maxArtifactBytes: 64 * 1024,
-      maxAttestationBytes: 16 * 1024,
+      maxArtifactBytes: MAX_ARTIFACT_BYTES,
+      maxAttestationBytes: MAX_ATTESTATION_BYTES,
       timeoutMs: 5_000,
     });
     expect(result).toMatchObject({
       ageSeconds: 30,
-      catalogSha256: state().catalogSnapshotSha256,
+      catalogSha256: persistedState().catalogSnapshotSha256,
       downloadedAt,
-      headDigestSha256: state().catalogHeadSha256,
+      headDigestSha256: persistedState().catalogHeadSha256,
       sequence: 42,
       tier: "fresh",
       verifiedAt: downloadedAt,
@@ -327,6 +403,12 @@ describe("admin catalog fetch foundation V1", () => {
     ]);
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(result.distribution)).toBe(true);
+    deliveredArtifact.fill(0x61);
+    deliveredAttestation.fill(0x61);
+    expect(attestationRequest?.artifactSha256).toBe(sha(artifactBytes()));
+    expect(attestationRequest?.attestationBytes).toEqual(
+      Buffer.from("canonical-test-attestation", "utf8"),
+    );
   });
 
   it("uses only literal unavailable for the verified-cache then packaged fallthrough", async () => {
@@ -338,6 +420,12 @@ describe("admin catalog fetch foundation V1", () => {
     const fromCache = await resolveAdminCatalogFetchV1(cached);
     expect(fromCache).toMatchObject({ tier: "cached-verified", downloadedAt, ageSeconds: 30 });
     expect(cached.commitVerifiedCache).not.toHaveBeenCalled();
+    expect(cached.readVerifiedCache).toHaveBeenCalledWith({
+      authorityCacheKeySha256: EXPECTED_AUTHORITY_CACHE_KEY,
+      maxCacheBytes: MAX_CACHE_BYTES,
+    });
+    expect(cached.verifyArtifactAttestation).toHaveBeenCalledOnce();
+    expect(cached.verifyCatalogHeadPae).toHaveBeenCalledOnce();
 
     const packaged = input({
       fetchFresh: vi.fn(() => ({ kind: "unavailable" })),
@@ -346,6 +434,66 @@ describe("admin catalog fetch foundation V1", () => {
     const fromPackage = await resolveAdminCatalogFetchV1(packaged);
     expect(fromPackage).toMatchObject({ tier: "packaged", downloadedAt: null, ageSeconds: null });
     expect(packaged.verifyArtifactAttestation).not.toHaveBeenCalled();
+    expect(packaged.verifyCatalogHeadPae).toHaveBeenCalledOnce();
+    expect(packaged.commitVerifiedCache).not.toHaveBeenCalled();
+  });
+
+  it("keeps catalog cache identity reusable across admin identities while changing the signed distribution binding", async () => {
+    const base = await resolveAdminCatalogFetchV1(input());
+    const changed = await resolveAdminCatalogFetchV1(
+      input({
+        adminSignerRootSha256: sha("separate admin root"),
+        expectedAdminSignerIdentity: "signer:separate-admin-v1",
+      }),
+    );
+    expect(authorityCacheKey()).toBe(EXPECTED_AUTHORITY_CACHE_KEY);
+    expect(changed.distribution.binding.adminSignerRootSha256).not.toBe(
+      base.distribution.binding.adminSignerRootSha256,
+    );
+    expect(changed.distribution.binding.resolvedCatalogBindingSha256).not.toBe(
+      base.distribution.binding.resolvedCatalogBindingSha256,
+    );
+  });
+
+  it("validates closed trusted input and expected catalog/promotion pins before any provider or cache callback", async () => {
+    for (const changed of [
+      { expectedCatalogSha256: "x" },
+      { expectedPromotionDecisionSha256: "x" },
+      { expectedCatalogSha256: undefined },
+      { authorityCacheKeySha256: authorityCacheKey() },
+      { cachedVerified: { kind: "unavailable" } },
+    ]) {
+      const values = input(changed);
+      await expect(resolveAdminCatalogFetchV1(values)).rejects.toThrow();
+      expect(values.fetchFresh).not.toHaveBeenCalled();
+      expect(values.readVerifiedCache).not.toHaveBeenCalled();
+    }
+  });
+
+  it("passes the full trusted catalog context to attestation and rejects every wrong context without lower-tier access", async () => {
+    const contexts = [
+      "expectedRepository",
+      "expectedWorkflowIdentity",
+      "expectedIssuer",
+      "expectedRef",
+      "expectedEnvironment",
+      "expectedCatalogSignerIdentity",
+      "headSignerRootSha256",
+    ] as const;
+    for (const field of contexts) {
+      let values: ReturnType<typeof input>;
+      values = input({
+        verifyArtifactAttestation: vi.fn((request: Record<string, unknown>) => {
+          expect(request[field]).toBe(values[field]);
+          return false;
+        }),
+      });
+      await expect(resolveAdminCatalogFetchV1(values)).rejects.toThrow(
+        "ADMIN_CATALOG_FETCH_V1: artifact attestation rejected",
+      );
+      expect(values.readVerifiedCache).not.toHaveBeenCalled();
+      expect(values.signCanonicalPae).not.toHaveBeenCalled();
+    }
   });
 
   it("fails terminally before lower tiers or signing for malformed, unavailable-like, expired, skewed, swapped, or uncommitted fresh data", async () => {
@@ -393,7 +541,6 @@ describe("admin catalog fetch foundation V1", () => {
     for (const changed of cases) {
       const values = input({
         ...changed,
-        cachedVerified: cacheRecordBytes(),
         readVerifiedCache: vi.fn(() => cacheRecordBytes()),
       });
       await expect(resolveAdminCatalogFetchV1(values)).rejects.toThrow();
@@ -431,12 +578,65 @@ describe("admin catalog fetch foundation V1", () => {
     expect(getterCalls).toBe(0);
   });
 
+  it("emits only fixed safe diagnostics when provider, cache, attestation, or commit seams throw hostile text", async () => {
+    const hostile = "Bearer secret-token?token=leak C:\\absolute\\private\u0000\n";
+    const cases = [
+      {
+        changed: {
+          fetchFresh: () => {
+            throw new Error(hostile);
+          },
+        },
+        message: "ADMIN_CATALOG_FETCH_V1: fresh acquisition failed",
+      },
+      {
+        changed: {
+          verifyArtifactAttestation: () => {
+            throw new Error(hostile);
+          },
+        },
+        message: "ADMIN_CATALOG_FETCH_V1: artifact attestation rejected",
+      },
+      {
+        changed: {
+          commitVerifiedCache: () => {
+            throw new Error(hostile);
+          },
+        },
+        message: "ADMIN_CATALOG_FETCH_V1: cache commit failed",
+      },
+      {
+        changed: {
+          fetchFresh: () => ({ kind: "unavailable" }),
+          readVerifiedCache: () => {
+            throw new Error(hostile);
+          },
+        },
+        message: "ADMIN_CATALOG_FETCH_V1: verified cache rejected",
+      },
+    ];
+    for (const fixture of cases) {
+      try {
+        await resolveAdminCatalogFetchV1(input(fixture.changed));
+        throw new Error("expected rejection");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        expect(message).toBe(fixture.message);
+        expect(message).not.toContain("secret-token");
+        expect(message).not.toContain("absolute");
+        expect([...message].some((character) => (character.codePointAt(0) ?? 0) < 0x20)).toBe(
+          false,
+        );
+      }
+    }
+  });
+
   it("remains an internal capability-free foundation with no transport locator or seat/runtime route", () => {
     const path = resolve("src/org-policy/admin-catalog-fetch-v1.ts");
     expect(existsSync(path)).toBe(true);
     const source = readFileSync(path, "utf8");
     expect(source).not.toMatch(
-      /from\s+["'][^"']*(?:index|commands|generate|studio-model|studio-template|admin-distribution|runtime|seat)[^"']*["']/i,
+      /from\s+["'][^"']*(?:index|commands|generate|studio-model|studio-template|runtime|seat)[^"']*["']/i,
     );
     expect(source).not.toMatch(
       /node:(?:fs|path|os|https|http|net|tls|child_process|dgram)|\b(?:fetch|spawn|exec|fork|process\.env|URL|writeFile|readFile)\b/i,
