@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { postureFromContext } from "../config/posture.js";
 import { AihError } from "../errors.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
 import { type Plan, type PlanContext, plan, structuredChecksProbe } from "../internals/plan.js";
@@ -116,11 +117,25 @@ export async function executeBaselineEvidencePipeline(
   if (input.componentIds.length === 0) {
     throw new AihError("baseline evidence pipeline requires at least one component", "AIH_CONFIG");
   }
-  const vendorLock = deps.vendorLock ?? readVendorBaselineLock();
-  const lockSha256 = deps.vendorLockSha256 ?? vendorBaselineLockSha256();
   const resolveOrgEvidence = deps.resolveOrgEvidence ?? resolveOrgBaselineEvidence;
 
   try {
+    const org = await resolveOrgEvidence({
+      root: ctx.root,
+      catalog: input.catalog,
+      policy: readOrgPolicy(ctx.root, ctx.env),
+      run: ctx.run,
+      posture: postureFromContext(ctx),
+    });
+    if (failed(org.checks)) {
+      return executePlan(
+        checksPlan(`${input.catalog.id}: validate org baseline evidence`, org.checks),
+        ctx,
+      );
+    }
+
+    const vendorLock = deps.vendorLock ?? readVendorBaselineLock();
+    const lockSha256 = deps.vendorLockSha256 ?? vendorBaselineLockSha256();
     let sourceRoot: string;
     if (input.source.kind === "github") {
       const acquisition = await executePlan(
@@ -143,19 +158,6 @@ export async function executeBaselineEvidencePipeline(
       sourceRoot = verifiedTree;
     } else {
       sourceRoot = assertTrustTreeSafe(input.source.root);
-    }
-
-    const org = await resolveOrgEvidence({
-      root: ctx.root,
-      catalog: input.catalog,
-      policy: readOrgPolicy(ctx.root, ctx.env),
-      run: ctx.run,
-    });
-    if (failed(org.checks)) {
-      return executePlan(
-        checksPlan(`${input.catalog.id}: validate org baseline evidence`, org.checks),
-        ctx,
-      );
     }
 
     let gate: ReturnType<typeof captureBaselineGate>;

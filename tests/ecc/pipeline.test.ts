@@ -456,9 +456,11 @@ describe("ECC baseline evidence pipeline", () => {
     expect(request.ledger.projects).toHaveLength(1);
   });
 
-  it("constructs install actions only after exact evidence clears", async () => {
+  it("constructs install actions after exact packaged vendor evidence clears at Vibe", async () => {
     const buildInstallPlan = vi.fn(() => plan("verified install", doc("install", "verified")));
-    const result = await executeEccEvidencePipeline(ctx(), request, {
+    const context = ctx();
+    context.posture = "vibe";
+    const result = await executeEccEvidencePipeline(context, request, {
       catalog: catalog(),
       source: resolveTrustSource(sourceRoot, { root }),
       vendorLock: vendorLock(),
@@ -471,7 +473,7 @@ describe("ECC baseline evidence pipeline", () => {
     expect(result.report?.exitCode()).toBe(0);
   });
 
-  it("installs an authorized subset and reports held components without failing", async () => {
+  it("uses packaged vendor evidence for an authorized Vibe subset and held components", async () => {
     const partialRequest: VerifiedEccRequest = {
       clis: ["claude" as const],
       profile: "core",
@@ -487,7 +489,9 @@ describe("ECC baseline evidence pipeline", () => {
       plan("verified partial install", doc("install", "partial")),
     );
 
-    const result = await executeEccEvidencePipeline(ctx(), partialRequest, {
+    const context = ctx();
+    context.posture = "vibe";
+    const result = await executeEccEvidencePipeline(context, partialRequest, {
       catalog: mixedCatalog(),
       source: resolveTrustSource(sourceRoot, { root }),
       vendorLock: mixedVendorLock(),
@@ -539,7 +543,9 @@ describe("ECC baseline evidence pipeline", () => {
 
   it("never constructs install actions when signed evidence blocks", async () => {
     const buildInstallPlan = vi.fn(() => plan("must not build"));
-    const result = await executeEccEvidencePipeline(ctx(), request, {
+    const context = ctx();
+    context.posture = "vibe";
+    const result = await executeEccEvidencePipeline(context, request, {
       catalog: catalog(),
       source: resolveTrustSource(sourceRoot, { root }),
       vendorLock: vendorLock("blocked"),
@@ -575,6 +581,149 @@ describe("ECC baseline evidence pipeline", () => {
 
     expect(buildInstallPlan).not.toHaveBeenCalled();
     expect(result.report?.exitCode()).toBe(1);
+  });
+
+  it("blocks Enterprise absence before reading vendor evidence or constructing a baseline gate", async () => {
+    const buildInstallPlan = vi.fn(() => plan("must not build"));
+    const calls: string[] = [];
+    const vendorLockRead = vi.fn(() => {
+      calls.push("vendor-lock");
+      return vendorLock();
+    });
+    const resolveOrgEvidence = vi.fn(async (input) => {
+      calls.push("resolve-org");
+      expect((input as unknown as { posture?: unknown }).posture).toBe("enterprise");
+      return {
+        checks: [
+          {
+            name: "org baseline evidence required",
+            verdict: "fail",
+            code: "baseline.org-evidence-required",
+            detail: [
+              "catalog: ecc",
+              "owner: affaan-m",
+              "repo: ECC",
+              `pinnedSha: ${"a".repeat(40)}`,
+              "bundle:",
+              "signingRepository:",
+              "reason:",
+              "reviewer:",
+              "approvedAt:",
+            ].join("\n"),
+          },
+        ],
+      } as never;
+    });
+    const deps = {
+      catalog: catalog(),
+      source: resolveTrustSource(sourceRoot, { root }),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+      resolveOrgEvidence,
+    };
+    Object.defineProperty(deps, "vendorLock", {
+      enumerable: true,
+      get: vendorLockRead,
+    });
+
+    const result = await executeEccEvidencePipeline(ctx(), request, deps);
+
+    expect(vendorLockRead).not.toHaveBeenCalled();
+    expect(resolveOrgEvidence).toHaveBeenCalledOnce();
+    expect(calls).toEqual(["resolve-org"]);
+    expect(buildInstallPlan).not.toHaveBeenCalled();
+    expect(result.report?.checks).toEqual([
+      expect.objectContaining({
+        verdict: "fail",
+        code: "baseline.org-evidence-required",
+        detail: [
+          "catalog: ecc",
+          "owner: affaan-m",
+          "repo: ECC",
+          `pinnedSha: ${"a".repeat(40)}`,
+          "bundle:",
+          "signingRepository:",
+          "reason:",
+          "reviewer:",
+          "approvedAt:",
+        ].join("\n"),
+      }),
+    ]);
+  });
+
+  it("uses AIH_ECC_REF as the live Enterprise pin before any vendor evidence work", async () => {
+    const livePin = "b".repeat(40);
+    const stalePin = "a".repeat(40);
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: ["kiro"] },
+        trust: {
+          baselineOverrides: [
+            {
+              catalog: "ecc",
+              owner: "affaan-m",
+              repo: "ecc",
+              pinnedSha: stalePin,
+              bundle: ".aih/org-evidence/ecc-stale",
+              signingRepository: "acme/ecc-evidence",
+              reason: "Stale packaged evidence",
+              reviewer: "evidence@example.com",
+              approvedAt: "2026-07-10T12:00:00.000Z",
+            },
+          ],
+        },
+      }),
+      "utf8",
+    );
+    const context = ctx();
+    context.env = { AIH_ECC_REF: livePin };
+    context.host = makeHostAdapter({ platform: "linux", run: context.run, env: context.env });
+    const buildInstallPlan = vi.fn(() => plan("must not build"));
+    const deps = {
+      source: resolveTrustSource(sourceRoot, { root }),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+    };
+    const vendorLockRead = vi.fn(() => {
+      throw new Error("live-pin drift must block before vendor evidence reads");
+    });
+    Object.defineProperty(deps, "vendorLock", { enumerable: true, get: vendorLockRead });
+
+    const result = await executeEccEvidencePipeline(context, request, deps);
+
+    expect(vendorLockRead).not.toHaveBeenCalled();
+    expect(buildInstallPlan).not.toHaveBeenCalled();
+    expect(result.report?.checks).toEqual([
+      expect.objectContaining({
+        verdict: "fail",
+        code: "baseline.org-evidence-required",
+        detail: expect.stringContaining(`pinnedSha: ${livePin}`),
+      }),
+    ]);
+    expect(result.report?.checks[0]?.detail).toContain(`declaredPinnedSha: ${stalePin}`);
+  });
+
+  it("keeps Vibe on the existing evidence fallback when no org override is configured", async () => {
+    const context = ctx();
+    context.posture = "vibe";
+    const buildInstallPlan = vi.fn(() =>
+      plan("verified Vibe fallback", doc("install", "fallback")),
+    );
+
+    const result = await executeEccEvidencePipeline(context, request, {
+      catalog: catalog(),
+      source: resolveTrustSource(sourceRoot, { root }),
+      vendorLock: vendorLock(),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+    });
+
+    expect(buildInstallPlan).toHaveBeenCalledOnce();
+    expect(result.report?.exitCode()).toBe(0);
   });
 
   it("previews an exact remote pin without fetching or constructing installs", async () => {
@@ -693,6 +842,7 @@ describe("ECC baseline evidence pipeline", () => {
       return { code: 0 };
     });
     const context = ctx();
+    context.posture = "vibe";
     context.run = run;
     context.host = makeHostAdapter({ platform: "linux", run, env: {} });
 

@@ -293,6 +293,33 @@ function vendorLock() {
   });
 }
 
+/**
+ * Governed lifecycle success paths are Enterprise paths. They receive an
+ * already-verified organization evidence record through the production
+ * injection seam, rather than accidentally falling back to the packaged
+ * vendor lock for this deliberately synthetic pin.
+ */
+function verifiedOrgEvidence(lock: ReturnType<typeof vendorLock>) {
+  return async (input: { posture: string; catalog: ReturnType<typeof catalog> }) => {
+    expect(input.posture).toBe("enterprise");
+    expect(input.catalog).toMatchObject({
+      id: "ecc",
+      owner: "affaan-m",
+      repo: "ECC",
+      pinnedSha: COMMIT,
+    });
+    return {
+      checks: [],
+      evidence: {
+        tier: "org" as const,
+        issuer: "github:acme/engineering-governance",
+        evidenceSha256: "e".repeat(64),
+        lock,
+      },
+    };
+  };
+}
+
 async function runLifecycle(
   lifecycle: string,
   apply: boolean,
@@ -303,8 +330,7 @@ async function runLifecycle(
     ctx(apply, { lifecycle, eccPath: sourceRoot, ...(cli === undefined ? {} : { cli }) }),
     {
       catalog: catalog(),
-      vendorLock: lock,
-      vendorLockSha256: "f".repeat(64),
+      resolveOrgEvidence: verifiedOrgEvidence(lock),
       executeProfileLifecycle: async () => {
         throw new Error("the governed install must not fall through to the profile lifecycle");
       },

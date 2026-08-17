@@ -717,6 +717,21 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Use the vendor-pinned baseline, or vet the newer component and activate its GitHub-attested org evidence bundle before installing at enterprise posture.",
   },
+  "baseline.org-evidence-required": {
+    audience: "security",
+    failSeverity: "blocking",
+    title: "enterprise baseline source has no current organization evidence",
+    affectedArea: "organization baseline evidence / security governance",
+    evidence:
+      "The enterprise baseline source has no exact organization-reviewed evidence for its current pinned source identity.",
+    action:
+      "Provide a reviewed organization baseline override naming catalog, owner, repo, pinnedSha, bundle, signingRepository, reason, reviewer, and approvedAt; re-vet and update it whenever the live pinnedSha changes.",
+    acceptance: [
+      "The reviewed override exactly matches the catalog, owner, repo, and pinned source SHA.",
+      "The referenced bundle and signing repository verify successfully.",
+      NO_CODE_CHANGES,
+    ],
+  },
   "baseline.evidence-mismatch": {
     audience: "developer",
     failSeverity: "blocking",

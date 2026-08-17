@@ -1,6 +1,7 @@
 import { lstatSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { verifyBundleChecksums, verifyGithubBundleAttestation } from "../bundle/index.js";
+import type { Posture } from "../config/posture.js";
 import { EvidenceBundleSchema } from "../evidence/manifest.js";
 import { readRegularFile } from "../internals/fsxn.js";
 import type { Runner } from "../internals/proc.js";
@@ -22,12 +23,15 @@ export interface ResolveOrgBaselineEvidenceInput {
   catalog: BaselineCatalog;
   policy: OrgPolicy | undefined;
   run: Runner;
+  posture: Posture;
 }
 
 export interface ResolveOrgBaselineEvidenceResult {
   checks: Check[];
   evidence?: OrgBaselineEvidence;
 }
+
+type BaselineOverride = NonNullable<NonNullable<OrgPolicy["trust"]>["baselineOverrides"]>[number];
 
 function failure(
   name: string,
@@ -66,17 +70,50 @@ function matchingSource(lock: BaselineEvidenceLock, catalog: BaselineCatalog): b
   );
 }
 
+function matchingOverrideSource(candidate: BaselineOverride, catalog: BaselineCatalog): boolean {
+  return (
+    candidate.catalog === catalog.id &&
+    candidate.owner === catalog.owner &&
+    candidate.repo === catalog.repo
+  );
+}
+
+function requiredEvidenceDetail(catalog: BaselineCatalog, declaredPinnedSha?: string): string {
+  const lines = [
+    `catalog: ${catalog.id}`,
+    `owner: ${catalog.owner}`,
+    `repo: ${catalog.repo}`,
+    `pinnedSha: ${catalog.pinnedSha}`,
+  ];
+  if (declaredPinnedSha !== undefined) {
+    lines.push(
+      `declaredPinnedSha: ${declaredPinnedSha}`,
+      "re-vet the declared source and update the override to the live pinnedSha.",
+    );
+  } else {
+    lines.push("bundle:", "signingRepository:", "reason:", "reviewer:", "approvedAt:");
+  }
+  return lines.join("\n");
+}
+
 export async function resolveOrgBaselineEvidence(
   input: ResolveOrgBaselineEvidenceInput,
 ): Promise<ResolveOrgBaselineEvidenceResult> {
-  const override = input.policy?.trust?.baselineOverrides?.find(
+  const overrides = input.policy?.trust?.baselineOverrides;
+  const override = overrides?.find(
     (candidate) =>
-      candidate.catalog === input.catalog.id &&
-      candidate.owner === input.catalog.owner &&
-      candidate.repo === input.catalog.repo &&
+      matchingOverrideSource(candidate, input.catalog) &&
       candidate.pinnedSha === input.catalog.pinnedSha,
   );
-  if (override === undefined) return { checks: [] };
+  if (override === undefined) {
+    if (input.posture === "vibe") return { checks: [] };
+    const stale = overrides?.find((candidate) => matchingOverrideSource(candidate, input.catalog));
+    return failure(
+      "org baseline evidence required",
+      requiredEvidenceDetail(input.catalog, stale?.pinnedSha),
+      "baseline.org-evidence-required",
+    );
+  }
 
   const bundleRoot = resolve(input.root, ...override.bundle.split("/"));
   const root = resolve(input.root);
