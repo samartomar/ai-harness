@@ -28,7 +28,7 @@ const literalHeadSha256 = "22c42939543f69989545e2d93644de8e3d984311daf49c8dd5dd8
 const literalHeadPayloadBase64 =
   "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJwcmVkaWNhdGUiOnsiZW52aXJvbm1lbnQiOiJjYXRhbG9nLXJlbGVhc2UiLCJpc3N1ZXIiOiJodHRwczovL3Rva2VuLmFjdGlvbnMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwicHJvdG9jb2wiOiJDYXRhbG9nSGVhZEVudmVsb3BlVjEiLCJyZWNvcmRUeXBlIjoiQ2F0YWxvZ0hlYWRWMSIsInJlcG9zaXRvcnkiOiJnaXRodWIuY29tL2FpaC9zdXBwb3J0ZWQtY2F0YWxvZyIsInNpZ25lcklkZW50aXR5Ijoic2lnbmVyOmNhdGFsb2ctaGVhZC12MSIsIndvcmtmbG93SWRlbnRpdHkiOiJ3b3JrZmxvdzpjYXRhbG9nLXJlbGVhc2UtdjEifSwicHJlZGljYXRlVHlwZSI6Imh0dHBzOi8vYWloLmRldi9DYXRhbG9nSGVhZFYxIiwic3ViamVjdCI6W3siZGlnZXN0Ijp7InNoYTI1NiI6IjIyYzQyOTM5NTQzZjY5OTg5NTQ1ZTJkOTM2NDRkZThlM2Q5ODQzMTFkYWY0OWM4ZGQ1ZGQ4MjQwY2E5NTkxYjAifSwibmFtZSI6ImFpaC9DYXRhbG9nSGVhZFYxIn1dfQ==";
 const literalHeadPaeBase64 =
-  "RFNTRXYxIDI0IGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2pzb24gNTIzIHsiX3R5cGUiOiJodHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxIiwicHJlZGljYXRlIjp7ImVudmlyb25tZW50IjoiY2F0YWxvZy1yZWxlYXNlIiwiaXNzdWVyIjoiaHR0cHM6Ly90b2tlbi5hY3Rpb25zLmdpdGh1YnVzZXJjb250ZW50LmNvbSIsInByb3RvY29sIjoiQ2F0YWxvZ0hlYWRFbnZlbG9wZVYxIiwicmVjb3JkVHlwZSI6IkNhdGFsb2dIZWFkVjEiLCJyZXBvc2l0b3J5IjoiZ2l0aHViLmNvbS9haWgvc3VwcG9ydGVkLWNhdGFsb2ciLCJzaWduZXJJZGVudGl0eSI6InNpZ25lcjpjYXRhbG9nLWhlYWQtdjEiLCJ3b3JrZmxvd0lkZW50aXR5Ijoid29ya2Zsb3c6Y2F0YWxvZy1yZWxlYXNlLXYxIn0sInByZWRpY2F0ZVR5cGUiOiJodHRwczovL2FpaC5kZXYvQ2F0YWxvZ0hlYWRWMSIsInN1YmplY3QiOlt7ImRpZ2VzdCI6eyJzaGEyNTYiOiIyMmM0MjkzOTU0M2Y2OTk4OTU0NWUyZDkzNjQ0ZGU4ZTNkOTg0MzExZGFmNDljOGRkNWRkODI0MGNhOTU5MWIwIn0sIm5hbWUiOiJhaWgvQ2F0YWxvZ0hlYWRWMSJ9XX0=";
+  "RFNTRXYxIDI4IGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2pzb24gNTIzIHsiX3R5cGUiOiJodHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxIiwicHJlZGljYXRlIjp7ImVudmlyb25tZW50IjoiY2F0YWxvZy1yZWxlYXNlIiwiaXNzdWVyIjoiaHR0cHM6Ly90b2tlbi5hY3Rpb25zLmdpdGh1YnVzZXJjb250ZW50LmNvbSIsInByb3RvY29sIjoiQ2F0YWxvZ0hlYWRFbnZlbG9wZVYxIiwicmVjb3JkVHlwZSI6IkNhdGFsb2dIZWFkVjEiLCJyZXBvc2l0b3J5IjoiZ2l0aHViLmNvbS9haWgvc3VwcG9ydGVkLWNhdGFsb2ciLCJzaWduZXJJZGVudGl0eSI6InNpZ25lcjpjYXRhbG9nLWhlYWQtdjEiLCJ3b3JrZmxvd0lkZW50aXR5Ijoid29ya2Zsb3c6Y2F0YWxvZy1yZWxlYXNlLXYxIn0sInByZWRpY2F0ZVR5cGUiOiJodHRwczovL2FpaC5kZXYvQ2F0YWxvZ0hlYWRWMSIsInN1YmplY3QiOlt7ImRpZ2VzdCI6eyJzaGEyNTYiOiIyMmM0MjkzOTU0M2Y2OTk4OTU0NWUyZDkzNjQ0ZGU4ZTNkOTg0MzExZGFmNDljOGRkNWRkODI0MGNhOTU5MWIwIn0sIm5hbWUiOiJhaWgvQ2F0YWxvZ0hlYWRWMSJ9XX0=";
 const literalHeadEnvelopeBytes = Buffer.from(
   '{"payload":"eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJwcmVkaWNhdGUiOnsiZW52aXJvbm1lbnQiOiJjYXRhbG9nLXJlbGVhc2UiLCJpc3N1ZXIiOiJodHRwczovL3Rva2VuLmFjdGlvbnMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwicHJvdG9jb2wiOiJDYXRhbG9nSGVhZEVudmVsb3BlVjEiLCJyZWNvcmRUeXBlIjoiQ2F0YWxvZ0hlYWRWMSIsInJlcG9zaXRvcnkiOiJnaXRodWIuY29tL2FpaC9zdXBwb3J0ZWQtY2F0YWxvZyIsInNpZ25lcklkZW50aXR5Ijoic2lnbmVyOmNhdGFsb2ctaGVhZC12MSIsIndvcmtmbG93SWRlbnRpdHkiOiJ3b3JrZmxvdzpjYXRhbG9nLXJlbGVhc2UtdjEifSwicHJlZGljYXRlVHlwZSI6Imh0dHBzOi8vYWloLmRldi9DYXRhbG9nSGVhZFYxIiwic3ViamVjdCI6W3siZGlnZXN0Ijp7InNoYTI1NiI6IjIyYzQyOTM5NTQzZjY5OTg5NTQ1ZTJkOTM2NDRkZThlM2Q5ODQzMTFkYWY0OWM4ZGQ1ZGQ4MjQwY2E5NTkxYjAifSwibmFtZSI6ImFpaC9DYXRhbG9nSGVhZFYxIn1dfQ==","payloadType":"application/vnd.in-toto+json","signatures":[{"keyid":"head-key-1","sig":"aGVhZC1zaWc="}]}',
   "utf8",
@@ -138,6 +138,32 @@ const resolutionContext = {
     "1111111111111111111111111111111111111111111111111111111111111111",
 };
 
+function standardEnvelopeForHead(nextHead: Record<string, unknown>) {
+  const headBytes = Buffer.from(JSON.stringify(nextHead), "utf8");
+  const statementBytes = Buffer.from(
+    JSON.stringify({
+      _type: "https://in-toto.io/Statement/v1",
+      predicate: {
+        environment: resolutionContext.expectedEnvironment,
+        issuer: resolutionContext.expectedIssuer,
+        protocol: "CatalogHeadEnvelopeV1",
+        recordType: "CatalogHeadV1",
+        repository: resolutionContext.expectedRepository,
+        signerIdentity: "signer:catalog-head-v1",
+        workflowIdentity: resolutionContext.expectedWorkflowIdentity,
+      },
+      predicateType: "https://aih.dev/CatalogHeadV1",
+      subject: [{ digest: { sha256: sha(headBytes.toString("utf8")) }, name: "aih/CatalogHeadV1" }],
+    }),
+    "utf8",
+  );
+  return {
+    payload: statementBytes.toString("base64"),
+    payloadType: "application/vnd.in-toto+json",
+    signatures: [{ keyid: "head-key-1", sig: "aGVhZC1zaWc=" }],
+  };
+}
+
 describe("signed catalog-head parsing and verification", () => {
   it("accepts bytes only through strict canonical DSSE/head/snapshot verification with literal vectors", () => {
     const envelope = parseCatalogHeadEnvelopeV1(literalHeadEnvelopeBytes);
@@ -158,7 +184,10 @@ describe("signed catalog-head parsing and verification", () => {
     expect(parseCatalogHeadEnvelopeV1(new Uint8Array(bytes))).toEqual(envelope);
     expect(envelope.envelope.payload).toBe(literalHeadPayloadBase64);
     expect(Buffer.from(envelope.envelope.payload, "base64")).toEqual(envelope.statementBytes);
-    const verifyCanonicalPae = vi.fn(() => true);
+    const verifyCanonicalPae = vi.fn(
+      (request: { expectedSignerRootSha256: string }) =>
+        request.expectedSignerRootSha256 === headRoot,
+    );
     expect(
       verifyCatalogHeadEnvelopeV1({
         envelope,
@@ -176,6 +205,7 @@ describe("signed catalog-head parsing and verification", () => {
         issuer: resolutionContext.expectedIssuer,
         ref: resolutionContext.expectedRef,
         environment: resolutionContext.expectedEnvironment,
+        expectedSignerRootSha256: headRoot,
         signerRootSha256: headRoot,
       }),
     );
@@ -193,7 +223,8 @@ describe("signed catalog-head parsing and verification", () => {
           ...resolutionContext,
           expectedSignerRootSha256: headRoot,
           ...mismatch,
-          verifyCanonicalPae: () => true,
+          verifyCanonicalPae: (request: { expectedSignerRootSha256: string }) =>
+            request.expectedSignerRootSha256 === headRoot,
         }),
       ).toThrow();
   });
@@ -221,12 +252,12 @@ describe("signed catalog-head parsing and verification", () => {
     // rather than parsing, returns compatibility-required/non-materializable.
     expect(() =>
       parseCatalogHeadEnvelopeV1(
-        envelopeInput({ head: { ...head, compatibleSchemaVersions: ["999"] } }),
+        standardEnvelopeForHead({ ...head, compatibleSchemaVersions: ["999"] }),
       ),
     ).not.toThrow();
     expect(() =>
       parseCatalogHeadEnvelopeV1(
-        envelopeInput({ head: { ...head, compatibleEffectVersions: ["999"] } }),
+        standardEnvelopeForHead({ ...head, compatibleEffectVersions: ["999"] }),
       ),
     ).not.toThrow();
     expect(() =>

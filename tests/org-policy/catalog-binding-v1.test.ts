@@ -31,7 +31,7 @@ const literalAdminEnvelopeBytes = Buffer.from(
 const literalAdminEnvelopeSha256 =
   "ee0ca93ef592bf5b0f3cac0ed53345cfdcecdb27f2ea5554a78fa105f00365c8";
 const literalAdminPaeBase64 =
-  "RFNTRXYxIDI0IGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2pzb24gMzcxIHsiX3R5cGUiOiJodHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxIiwicHJlZGljYXRlIjp7InByb3RvY29sIjoiQWRtaW5TZWF0RGlzdHJpYnV0aW9uVjEiLCJyZWNvcmRUeXBlIjoiUmVzb2x2ZWRDYXRhbG9nQmluZGluZ1YxIiwic2lnbmVySWRlbnRpdHkiOiJzaWduZXI6YWRtaW4tc2VhdC12MSJ9LCJwcmVkaWNhdGVUeXBlIjoiaHR0cHM6Ly9haWguZGV2L0FkbWluU2VhdERpc3RyaWJ1dGlvblYxIiwic3ViamVjdCI6W3siZGlnZXN0Ijp7InNoYTI1NiI6IjhiOTA0NGQ5ZTUxMGJmYWE2NTgwMDI5MGIwYjE2OGZiZGNlMjc1OTk3Njc1NWU2ZDZiOGNkMjViMDAzYWQwNTYifSwibmFtZSI6ImFpaC9SZXNvbHZlZENhdGFsb2dCaW5kaW5nVjEifV19";
+  "RFNTRXYxIDI4IGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2pzb24gMzcxIHsiX3R5cGUiOiJodHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxIiwicHJlZGljYXRlIjp7InByb3RvY29sIjoiQWRtaW5TZWF0RGlzdHJpYnV0aW9uVjEiLCJyZWNvcmRUeXBlIjoiUmVzb2x2ZWRDYXRhbG9nQmluZGluZ1YxIiwic2lnbmVySWRlbnRpdHkiOiJzaWduZXI6YWRtaW4tc2VhdC12MSJ9LCJwcmVkaWNhdGVUeXBlIjoiaHR0cHM6Ly9haWguZGV2L0FkbWluU2VhdERpc3RyaWJ1dGlvblYxIiwic3ViamVjdCI6W3siZGlnZXN0Ijp7InNoYTI1NiI6IjhiOTA0NGQ5ZTUxMGJmYWE2NTgwMDI5MGIwYjE2OGZiZGNlMjc1OTk3Njc1NWU2ZDZiOGNkMjViMDAzYWQwNTYifSwibmFtZSI6ImFpaC9SZXNvbHZlZENhdGFsb2dCaW5kaW5nVjEifV19";
 
 const bindingInput = () => ({
   protocol: "ResolvedCatalogBindingV1" as const,
@@ -142,7 +142,15 @@ describe("ResolvedCatalogBindingV1", () => {
       expect(
         createResolvedCatalogBindingV1({
           ...bindingInput(),
-          [field]: field.endsWith("Sha256") ? sha(`changed:${field}`) : `changed-${field}`,
+          [field]: field.endsWith("Sha256")
+            ? sha(`changed:${field}`)
+            : field === "tier"
+              ? "cached-verified"
+              : field === "sequence"
+                ? 43
+                : field === "resolvedAt"
+                  ? "2026-08-17T12:00:01Z"
+                  : "2",
         }).resolvedCatalogBindingSha256,
       ).not.toBe(baseline.resolvedCatalogBindingSha256);
     for (const field of [
@@ -165,14 +173,16 @@ describe("ResolvedCatalogBindingV1", () => {
           members: [
             {
               ...memberInput(),
-              [field]: field.endsWith("Sha256") ? sha(`changed:${field}`) : `changed-${field}`,
+              [field]: field.endsWith("Sha256")
+                ? sha(`changed:${field}`)
+                : field === "sourceId"
+                  ? "changed-source-id"
+                  : "github.com/changed/repository",
             },
           ],
         }).resolvedCatalogBindingSha256,
       ).not.toBe(baseline.resolvedCatalogBindingSha256);
     for (const changed of [
-      { ...bindingInput(), headSignerRootSha256: adminRoot },
-      { ...bindingInput(), adminSignerRootSha256: headRoot },
       {
         ...bindingInput(),
         members: [{ ...memberInput(), sourceSha256: memberInput().pinSha256 }],
@@ -237,7 +247,7 @@ describe("ResolvedCatalogBindingV1", () => {
 
 describe("admin-signed seat distributions", () => {
   it("requires a distinct admin-signed DSSE envelope and excludes acknowledgement authority", () => {
-    const binding = createResolvedCatalogBindingV1(bindingInput());
+    const binding = parseResolvedCatalogBindingV1Json(literalBindingBytes);
     const seat = createAdminSeatDistributionV1({
       binding,
       signerIdentity: "signer:admin-seat-v1",
@@ -251,14 +261,22 @@ describe("admin-signed seat distributions", () => {
     expect(
       verifyAdminSeatDistributionV1({
         distribution: seat,
-        expectedAdminSignerRootSha256: adminRoot,
-        expectedHeadSignerRootSha256: headRoot,
+        expectedAdminSignerRootSha256: "5".repeat(64),
+        expectedHeadSignerRootSha256: "8".repeat(64),
         verifyCanonicalPae: (request: { paeBytes: Buffer }) => {
           expect(request.paeBytes).toEqual(Buffer.from(literalAdminPaeBase64, "base64"));
           return true;
         },
       }),
     ).toEqual(seat);
+    expect(() =>
+      verifyAdminSeatDistributionV1({
+        distribution: seat,
+        expectedAdminSignerRootSha256: "8".repeat(64),
+        expectedHeadSignerRootSha256: "5".repeat(64),
+        verifyCanonicalPae: () => true,
+      }),
+    ).toThrow();
     for (const changed of [
       { ...seat, envelope: { ...seat.envelope, signatures: [] } },
       { ...seat, envelope: { ...seat.envelope, signatures: [{ keyid: "admin-key-1", sig: "" }] } },
