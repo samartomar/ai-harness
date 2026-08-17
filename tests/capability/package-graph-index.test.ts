@@ -415,6 +415,9 @@ describe("Package Graph v1 additive index", () => {
       '[null,true,false,0,1.5,"text"]',
     );
     expect(canonicalJson(nullPrototype)).toBe('{"a":2,"z":1}');
+    expect(canonicalJson({ "1": "integer-like", "\r": "control" })).toBe(
+      '{"\\r":"control","1":"integer-like"}',
+    );
   });
 
   it("ignores inherited object and array toJSON hooks for generic and index bytes", () => {

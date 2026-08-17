@@ -3,14 +3,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { baselineAnalyzerVersions } from "../../src/baseline-evidence/analyzer-profile.js";
+import { fakeRunner } from "../../src/internals/proc.js";
 import {
-  baselineAnalyzerVersions,
   CISCO_SKILL_SCANNER_ANALYZER,
+  runTrustDetectors,
   SEMGREP_ANALYZER,
   SNYK_AGENT_SCAN_ANALYZER,
-} from "../../src/baseline-evidence/analyzer-profile.js";
-import { fakeRunner } from "../../src/internals/proc.js";
-import { runTrustDetectors } from "../../src/trust/detectors.js";
+} from "../../src/trust/detectors.js";
 import {
   dispositionForTrustFinding,
   normalizeTrustFindings,
@@ -451,12 +451,11 @@ async function currentLegacySemantics(expected: (typeof EXPECTED_LEGACY_SEMANTIC
 
 describe("current suppressed native-rule compatibility corpus", () => {
   it("contains exactly Luna's twelve independently enumerated rows", () => {
-    const actual = CURRENT_SUPPRESSED_RULE_COMPATIBILITY_CORPUS_V1.map((row) => [
-      row.detectorClass,
-      row.nativeRuleId,
-    ]).sort((left, right) => selectorKey(...left).localeCompare(selectorKey(...right)));
+    const actual = CURRENT_SUPPRESSED_RULE_COMPATIBILITY_CORPUS_V1.map(
+      (row) => [row.detectorClass, row.nativeRuleId] as const,
+    ).sort((left, right) => selectorKey(...left).localeCompare(selectorKey(...right)));
     const expected = [...EXPECTED_SUPPRESSED_SELECTORS].sort((left, right) =>
-      selectorKey(...left).localeCompare(selectorKey(...right)),
+      selectorKey(left[0], left[1]).localeCompare(selectorKey(right[0], right[1])),
     );
     expect(actual).toEqual(expected);
     expect(new Set(actual.map((selector) => selectorKey(...selector))).size).toBe(12);
@@ -683,7 +682,10 @@ describe("current compatibility identities", () => {
   });
 
   it("uses each derived descriptor identity in every matching profile/corpus row", () => {
-    const descriptorByClass = new Map(
+    const descriptorByClass = new Map<
+      string,
+      ReturnType<typeof deriveNormalizationCompatibilityV1>
+    >(
       CURRENT_NORMALIZATION_COMPATIBILITY_DESCRIPTORS_V1.map((descriptor) => [
         descriptor.detectorClass,
         deriveNormalizationCompatibilityV1(descriptor),

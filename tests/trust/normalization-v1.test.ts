@@ -362,8 +362,8 @@ describe("NormalizationProfileV1 strict parsing and canonical identity", () => {
         entry.compatibility.scannerManifestSha256,
       ]),
     ).toEqual([
-      ["semgrep", "semgrep.malicious-code", compatibility.scannerManifestSha256],
       ["semgrep", "semgrep.malicious-code", alternateCompatibility.scannerManifestSha256],
+      ["semgrep", "semgrep.malicious-code", compatibility.scannerManifestSha256],
       ["semgrep", "semgrep.prompt-injection", compatibility.scannerManifestSha256],
       ["snyk-agent-scan", "W012", alternateCompatibility.scannerManifestSha256],
     ]);
@@ -407,7 +407,9 @@ describe("NormalizationProfileV1 strict parsing and canonical identity", () => {
   });
 
   it("deep-copies and deeply freezes parsed profiles, mappings, and compatibility objects", () => {
-    const callerInput = profile();
+    const callerCompatibility = { ...compatibility };
+    const expectedCompatibility = { ...callerCompatibility };
+    const callerInput = profile([mapping({ compatibility: callerCompatibility })]);
     const parsed = parseNormalizationProfileV1(callerInput);
     const firstParsedMapping = parsed.mappings[0];
     if (firstParsedMapping === undefined) throw new Error("expected parsed mapping");
@@ -418,7 +420,7 @@ describe("NormalizationProfileV1 strict parsing and canonical identity", () => {
       }
     ).analyzerIdentitySha256 = sha256("caller-mutated");
     expect(parsed.mappings[0]?.nativeRuleId).toBe("skillspector.prompt-injection");
-    expect(parsed.mappings[0]?.compatibility).toEqual(compatibility);
+    expect(parsed.mappings[0]?.compatibility).toEqual(expectedCompatibility);
     expect(Object.isFrozen(parsed)).toBe(true);
     expect(Object.isFrozen(parsed.mappings)).toBe(true);
     expect(Object.isFrozen(parsed.mappings[0])).toBe(true);
@@ -427,7 +429,9 @@ describe("NormalizationProfileV1 strict parsing and canonical identity", () => {
       (parsed.mappings[0] as { nativeRuleId: string }).nativeRuleId = "in-place mutation";
     }).toThrow();
     expect(() => {
-      (parsed.mappings as NormalizationProfileV1["mappings"]).push(firstParsedMapping);
+      (parsed.mappings as Array<NormalizationProfileV1["mappings"][number]>).push(
+        firstParsedMapping,
+      );
     }).toThrow();
   });
 
@@ -882,7 +886,7 @@ describe("RawOccurrenceFingerprintV1 strict identity", () => {
           diagnostics: {
             ...rawInput().diagnostics,
             absoluteMachinePath: "C:\\Users\\operator\\source\\SKILL.md",
-          },
+          } as never,
         }),
       ),
     ).toThrow(/absolute.*path|machine.*path/i);

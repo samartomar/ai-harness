@@ -28,6 +28,15 @@ export const NATIVE_DETECTOR_GLOB_ROOTS = [
   "src/config/posture.ts",
 ] as const;
 
+// Dormant normalization contracts/data are not imported by the current scan or
+// evidence runtime. Remove either exclusion only with the runtime cutover and a
+// real baseline re-vet; treating dormant code as a live analyzer change would
+// otherwise manufacture pin drift without changing today's detector behavior.
+export const NATIVE_DETECTOR_DORMANT_SOURCE_EXCLUSIONS: ReadonlySet<string> = new Set([
+  "src/trust/normalization-v1-compatibility.ts",
+  "src/trust/normalization-v1.ts",
+]);
+
 function repoRoot(): string {
   // This file lives at src/baseline-evidence/native-identity.ts.
   return resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -43,7 +52,9 @@ function collectTsFiles(absPath: string, relPath: string, out: string[]): void {
   }
   if (stat.isSymbolicLink()) return;
   if (stat.isFile()) {
-    if (relPath.endsWith(".ts")) out.push(relPath);
+    if (relPath.endsWith(".ts") && !NATIVE_DETECTOR_DORMANT_SOURCE_EXCLUSIONS.has(relPath)) {
+      out.push(relPath);
+    }
     return;
   }
   if (!stat.isDirectory()) return;

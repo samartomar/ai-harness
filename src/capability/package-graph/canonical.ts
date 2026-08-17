@@ -79,10 +79,35 @@ export function canonicalizeObjectKeys(value: unknown): unknown {
   return normalized;
 }
 
+function serializeCanonicalValue(value: unknown): string {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined) throw new TypeError("value is not JSON serializable");
+    return serialized;
+  }
+  if (typeof value === "number") {
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined) throw new TypeError("value is not JSON serializable");
+    return serialized;
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((child) => serializeCanonicalValue(child)).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort(codeUnitCompare)
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${serializeCanonicalValue(ownDataPropertyValue(record, key))}`,
+      )
+      .join(",")}}`;
+  }
+  throw new TypeError(`canonical JSON does not support ${typeof value}`);
+}
+
 export function canonicalJson(value: unknown): string {
-  const serialized = JSON.stringify(canonicalizeObjectKeys(value));
-  if (serialized === undefined) throw new TypeError("value is not JSON serializable");
-  return serialized;
+  return serializeCanonicalValue(canonicalizeObjectKeys(value));
 }
 
 export function canonicalSha256(value: unknown): string {
