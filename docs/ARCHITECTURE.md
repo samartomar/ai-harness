@@ -28,6 +28,11 @@ and the executor is the only layer that performs filesystem or process effects.
   normalization and fingerprint compatibility contracts exercised by regression
   tests. These dormant internal modules are not exported from the library or
   wired into current scan, evidence, runtime fingerprint, or disposition paths.
+  This unexported boundary also contains strict JSON, sealed-source/native-
+  observation, evidence-annex, per-detector/global-manifest, and explicitly
+  cryptographically-unverified attestation contracts for regression proof; none
+  is wired into the current native detector, runtime, evidence, verdict, or
+  acknowledgement paths.
 - **Policy and schemas** (`src/org-policy/`, `src/config/`, `schemas/`) validate
   committed org policy and bootstrap markers. The public Package Graph v1 grammar
   lives under `src/capability/package-graph/` and models only direct package-to-surface
