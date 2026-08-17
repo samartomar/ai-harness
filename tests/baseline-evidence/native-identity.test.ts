@@ -81,12 +81,12 @@ describe("discoverNativeDetectorSourceFiles", () => {
 
     expect(NATIVE_DETECTOR_GLOB_ROOTS).toContain("src/observation");
     expect([...NATIVE_DETECTOR_DORMANT_SOURCE_EXCLUSIONS].sort()).toEqual([
-      "src/trust/normalization-v1-compatibility.ts",
-      "src/trust/normalization-v1.ts",
       "src/observation/native-observation-v1.ts",
       "src/observation/observation-evidence-v1.ts",
       "src/observation/scan-attestation-v1.ts",
       "src/observation/scanner-manifest-v1.ts",
+      "src/trust/normalization-v1-compatibility.ts",
+      "src/trust/normalization-v1.ts",
     ]);
     const files = discoverNativeDetectorSourceFiles(root);
     expect(files).not.toContain("src/trust/normalization-v1-compatibility.ts");
