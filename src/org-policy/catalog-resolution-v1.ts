@@ -9,6 +9,8 @@ import {
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const envelopeBytes = new WeakMap<object, Buffer>();
+const snapshotBytes = new WeakMap<object, Buffer>();
+const verifiedMaterials = new WeakSet<object>();
 const VERIFICATION_FIELDS = [
   "envelope",
   "expectedCatalogSignerIdentity",
@@ -43,6 +45,36 @@ const RESOLUTION_FIELDS = [
 ] as const;
 
 type Json = Record<string, unknown>;
+type SnapshotMember = Readonly<{
+  candidateIdentitySha256: string;
+  candidateSha256: string;
+  componentId: string;
+  evidenceSha256: string;
+  gitCommitSha256: string;
+  pinSha256: string;
+  policyRevisionSha256: string;
+  profileSha256: string;
+  promotionDecisionSha256: string;
+  qualificationBundleSha256: string;
+  recipeSha256: string;
+  repository: string;
+  sourceId: string;
+  sourceSha256: string;
+}>;
+export type CatalogSnapshotV1 = Readonly<{
+  protocol: "CatalogSnapshotV1";
+  members: readonly SnapshotMember[];
+}>;
+export type VerifiedCatalogMaterialV1 = Readonly<{
+  kind: "resolved";
+  catalogHeadSha256: string;
+  catalogSha256: string;
+  compatibleEffectVersion: string;
+  compatibleSchemaVersion: string;
+  members: readonly SnapshotMember[];
+  sequence: number;
+  tier: "fresh" | "cached-verified" | "packaged";
+}>;
 type VerifiedEnvelope = Readonly<{
   envelope: Readonly<{
     payload: string;
@@ -172,6 +204,88 @@ function parseHead(bytes: Buffer): Json {
   if (from >= until) fail("validity");
   if (canonicalJsonBytes(raw, "catalog head").compare(bytes) !== 0) fail("noncanonical head bytes");
   return deepFreezeStrictJsonV1(structuredClone(raw));
+}
+
+const SNAPSHOT_MEMBER_FIELDS = [
+  "candidateIdentitySha256",
+  "candidateSha256",
+  "componentId",
+  "evidenceSha256",
+  "gitCommitSha256",
+  "pinSha256",
+  "policyRevisionSha256",
+  "profileSha256",
+  "promotionDecisionSha256",
+  "qualificationBundleSha256",
+  "recipeSha256",
+  "repository",
+  "sourceId",
+  "sourceSha256",
+] as const;
+
+function snapshotMember(value: unknown): SnapshotMember {
+  const item = record(value, "snapshot member");
+  exact(item, SNAPSHOT_MEMBER_FIELDS, "snapshot member fields");
+  const componentId = text(item.componentId, "component ID");
+  const sourceId = text(item.sourceId, "source ID");
+  const repository = text(item.repository, "repository");
+  if (!/^[a-z][a-z0-9-]*:[a-z0-9][a-z0-9.-]*$/.test(componentId)) fail("component ID");
+  if (!/^[a-z0-9][a-z0-9./-]*$/.test(sourceId) || /(^|\/)\.\.?($|\/)|:|https?/.test(sourceId))
+    fail("source ID");
+  if (!/^github\.com\/[a-z0-9][a-z0-9.-]*\/[a-z0-9][a-z0-9.-]*$/.test(repository))
+    fail("repository");
+  return {
+    candidateIdentitySha256: digest(item.candidateIdentitySha256, "candidate identity"),
+    candidateSha256: digest(item.candidateSha256, "candidate"),
+    componentId,
+    evidenceSha256: digest(item.evidenceSha256, "evidence"),
+    gitCommitSha256: digest(item.gitCommitSha256, "git commit"),
+    pinSha256: digest(item.pinSha256, "pin"),
+    policyRevisionSha256: digest(item.policyRevisionSha256, "policy"),
+    profileSha256: digest(item.profileSha256, "profile"),
+    promotionDecisionSha256: digest(item.promotionDecisionSha256, "promotion"),
+    qualificationBundleSha256: digest(item.qualificationBundleSha256, "qualification"),
+    recipeSha256: digest(item.recipeSha256, "recipe"),
+    repository,
+    sourceId,
+    sourceSha256: digest(item.sourceSha256, "source"),
+  };
+}
+
+function snapshotFromObject(value: unknown): CatalogSnapshotV1 {
+  const item = record(value, "catalog snapshot");
+  exact(item, ["members", "protocol"], "catalog snapshot fields");
+  if (item.protocol !== "CatalogSnapshotV1" || !Array.isArray(item.members))
+    fail("catalog snapshot");
+  const rawMembers = item.members;
+  if (rawMembers.length === 0 || rawMembers.length > 4096) fail("snapshot members");
+  const members = rawMembers
+    .map(snapshotMember)
+    .sort((left, right) => codeUnitCompare(left.componentId, right.componentId));
+  if (
+    members.some((member, index) => member.componentId !== (rawMembers[index] as Json).componentId)
+  )
+    fail("snapshot member order");
+  if (new Set(members.map((member) => member.componentId)).size !== members.length)
+    fail("snapshot members");
+  return deepFreezeStrictJsonV1({ members, protocol: "CatalogSnapshotV1" }) as CatalogSnapshotV1;
+}
+
+export function parseCatalogSnapshotV1Json(value: unknown): CatalogSnapshotV1 {
+  const bytes = Buffer.from(decode(value, "snapshot bytes"), "utf8");
+  const result = snapshotFromObject(
+    parseStrictJsonObjectV1(bytes.toString("utf8"), "catalog snapshot"),
+  );
+  const canonical = canonicalStrictJsonBytesV1(result);
+  if (canonical.compare(bytes) !== 0) fail("noncanonical snapshot bytes");
+  snapshotBytes.set(result, canonical);
+  return result;
+}
+
+export function canonicalCatalogSnapshotV1Bytes(value: CatalogSnapshotV1): Buffer {
+  const bytes = typeof value === "object" && value !== null ? snapshotBytes.get(value) : undefined;
+  if (bytes === undefined) fail("unbranded snapshot");
+  return Buffer.from(bytes);
 }
 
 function canonicalPae(payloadType: string, payload: Buffer): Buffer {
@@ -333,7 +447,7 @@ function state(
   kind: "CachedCatalogStateV1" | "PackagedCatalogStateV1",
   context: Json,
   verifyExpectedMaterial = true,
-): { head: Json; state: Json; envelope: VerifiedEnvelope } {
+): { head: Json; state: Json; envelope: VerifiedEnvelope; snapshot: CatalogSnapshotV1 } {
   const item = record(value, "catalog state");
   const fields = [
     "catalogHeadBytes",
@@ -377,6 +491,7 @@ function state(
       fail("package trust");
   }
   const head = parseHead(headBytes);
+  const snapshot = parseCatalogSnapshotV1Json(snapshotBytes);
   const resolutionNow = timestamp(context.now, "now");
   if (resolutionNow < (head.validFrom as string) || resolutionNow >= (head.validUntil as string))
     fail("head validity");
@@ -410,7 +525,7 @@ function state(
     expectedEnvironment: context.expectedEnvironment,
     verifyCanonicalPae: context.verifyCanonicalPae,
   });
-  return { envelope, head, state: item };
+  return { envelope, head, snapshot, state: item };
 }
 
 function unavailable(value: unknown): boolean {
@@ -489,4 +604,74 @@ export function resolveAdminCatalogV1(input: unknown): Json {
   } catch {
     return { kind: "fatal", lastGood: fallbackLastGood };
   }
+}
+
+export function resolveVerifiedCatalogMaterialV1(input: unknown): VerifiedCatalogMaterialV1 {
+  const value = record(input, "material resolution");
+  exact(value, RESOLUTION_FIELDS, "resolution fields");
+  const lastGood = value.lastGood as Json;
+  const base = { ...value };
+  const tiers: Array<
+    [
+      "fresh" | "cached-verified" | "packaged",
+      unknown,
+      "CachedCatalogStateV1" | "PackagedCatalogStateV1",
+    ]
+  > = [
+    ["fresh", value.fresh, "CachedCatalogStateV1"],
+    ["cached-verified", value.cachedVerified, "CachedCatalogStateV1"],
+    ["packaged", value.packaged, "PackagedCatalogStateV1"],
+  ];
+  for (const [tier, candidate, kind] of tiers) {
+    if (unavailable(candidate)) continue;
+    const next = state(candidate, kind, base);
+    const current = state(lastGood, "CachedCatalogStateV1", base, false);
+    if (
+      (next.head.sequence as number) < (current.head.sequence as number) ||
+      ((next.head.sequence as number) === (current.head.sequence as number) &&
+        next.state.catalogHeadSha256 !== current.state.catalogHeadSha256) ||
+      ((next.head.sequence as number) > (current.head.sequence as number) &&
+        next.head.previousCatalogHeadSha256 !== current.state.catalogHeadSha256)
+    )
+      fail("catalog continuity");
+    const schema = next.head.compatibleSchemaVersions as string[];
+    const effect = next.head.compatibleEffectVersions as string[];
+    if (!schema.includes("1") || !effect.includes("1")) fail("catalog compatibility");
+    const result = deepFreezeStrictJsonV1({
+      catalogHeadSha256: next.state.catalogHeadSha256,
+      catalogSha256: next.state.catalogSnapshotSha256,
+      compatibleEffectVersion: "1",
+      compatibleSchemaVersion: "1",
+      kind: "resolved" as const,
+      members: structuredClone(next.snapshot.members),
+      sequence: next.head.sequence as number,
+      tier,
+    }) as VerifiedCatalogMaterialV1;
+    verifiedMaterials.add(result);
+    return result;
+  }
+  fail("catalog unavailable");
+}
+
+export function bindingInputFromVerifiedCatalogMaterialV1(
+  value: VerifiedCatalogMaterialV1,
+  input: { adminSignerRootSha256: string; headSignerRootSha256: string; resolvedAt: string },
+): Json {
+  if (typeof value !== "object" || value === null || !verifiedMaterials.has(value))
+    fail("unbranded catalog material");
+  const item = record(input, "binding material context");
+  exact(item, ["adminSignerRootSha256", "headSignerRootSha256", "resolvedAt"], "binding context");
+  return {
+    adminSignerRootSha256: digest(item.adminSignerRootSha256, "admin signer root"),
+    catalogHeadSha256: value.catalogHeadSha256,
+    catalogSha256: value.catalogSha256,
+    compatibleEffectVersion: value.compatibleEffectVersion,
+    compatibleSchemaVersion: value.compatibleSchemaVersion,
+    headSignerRootSha256: digest(item.headSignerRootSha256, "head signer root"),
+    members: structuredClone(value.members),
+    protocol: "ResolvedCatalogBindingV1",
+    resolvedAt: timestamp(item.resolvedAt, "resolved at"),
+    sequence: value.sequence,
+    tier: value.tier,
+  };
 }

@@ -101,6 +101,7 @@ function resolutionInput(overrides: Record<string, unknown> = {}) {
     now: "2026-08-17T12:00:00Z",
     packaged: { kind: "unavailable" },
     signCanonicalPae: () => ({ keyid: "admin-key-1", sig: "YWRtaW4tc2ln" }),
+    verifyCatalogHeadPae: () => true,
     verifyCanonicalPae: () => true,
     ...overrides,
   };
@@ -181,6 +182,11 @@ describe("internal admin-seat distribution composition", () => {
     const input = resolutionInput();
     const expected = expectedBinding(input);
     const expectedPae = expectedDistributionPae(input);
+    const verifyCatalogHeadPae = vi.fn((request: Record<string, unknown>) => {
+      expect(request.expectedSignerRootSha256).toBe(headRoot);
+      expect(request.expectedCatalogSignerIdentity).toBe("signer:catalog-head-v1");
+      return true;
+    });
     const signCanonicalPae = vi.fn((request: Record<string, unknown>) => {
       expect(Object.keys(request).sort()).toEqual([
         "bindingSha256",
@@ -206,10 +212,12 @@ describe("internal admin-seat distribution composition", () => {
     const distribution = composeAdminSeatDistributionV1({
       ...input,
       signCanonicalPae,
+      verifyCatalogHeadPae,
       verifyCanonicalPae,
     });
 
     expect(signCanonicalPae).toHaveBeenCalledOnce();
+    expect(verifyCatalogHeadPae).toHaveBeenCalledOnce();
     expect(verifyCanonicalPae).toHaveBeenCalledOnce();
     expect(distribution.binding).toMatchObject({
       adminSignerRootSha256: adminRoot,
@@ -267,9 +275,17 @@ describe("internal admin-seat distribution composition", () => {
       { signCanonicalPae: () => ({ keyid: "admin-key-1", sig: "" }) },
       { signCanonicalPae: () => ({ keyid: "admin-key-1", sig: "not base64" }) },
       { verifyCanonicalPae: () => false },
+      { verifyCatalogHeadPae: () => false },
+      { verifyCatalogHeadPae: "not a verifier" },
       { adminSignerRootSha256: headRoot },
     ])
       expect(() => composeAdminSeatDistributionV1(resolutionInput(changed))).toThrow();
+    const missingHeadVerifier: Record<string, unknown> = { ...resolutionInput() };
+    delete missingHeadVerifier.verifyCatalogHeadPae;
+    expect(() => composeAdminSeatDistributionV1(missingHeadVerifier)).toThrow();
+    expect(() =>
+      composeAdminSeatDistributionV1({ ...resolutionInput(), unexpected: true }),
+    ).toThrow();
   });
 
   it("passes a configured trusted admin identity through to independent verification without treating identity choice as invalid", () => {

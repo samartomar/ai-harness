@@ -452,7 +452,7 @@ describe("CatalogSnapshotV1 strict material boundary", () => {
     for (const field of digestFields)
       for (const invalid of [
         `sha256:${String(first[field])}`,
-        String(first[field]).toUpperCase(),
+        "A".repeat(64),
         "a".repeat(63),
         "g".repeat(64),
       ])
