@@ -517,25 +517,25 @@ export function resolveNormalizationV1(
   if (classEntries.length > 0) {
     const firstClassEntry = classEntries[0];
     if (firstClassEntry === undefined) throw new TypeError("normalization class entry is missing");
-    const acceptedCompatibility = classEntries.find((mapping) =>
+    const selectorEntries = classEntries.filter(
+      (mapping) => mapping.nativeRuleId === parsedLookup.nativeRuleId,
+    );
+    const compatibilityEntries = selectorEntries.length > 0 ? selectorEntries : classEntries;
+    const compatibleEntry = compatibilityEntries.find((mapping) =>
       sameCompatibility(mapping.compatibility, parsedLookup.compatibility),
     );
-    if (acceptedCompatibility === undefined) {
+    if (compatibleEntry === undefined) {
+      const expectedEntry = compatibilityEntries[0] ?? firstClassEntry;
       throw new TypeError(
-        incompatibilityMessage(firstClassEntry.compatibility, parsedLookup.compatibility),
+        incompatibilityMessage(expectedEntry.compatibility, parsedLookup.compatibility),
       );
     }
-    const exact = classEntries.find(
-      (mapping) =>
-        mapping.nativeRuleId === parsedLookup.nativeRuleId &&
-        sameCompatibility(mapping.compatibility, parsedLookup.compatibility),
-    );
-    if (exact !== undefined) {
+    if (selectorEntries.length > 0) {
       const result: NormalizationResolutionV1 = {
         kind: "mapped",
-        canonicalCode: exact.canonicalCode,
+        canonicalCode: compatibleEntry.canonicalCode,
         acceptanceRequired: false,
-        normalizationEntryDigest: normalizationEntryDigestV1(exact),
+        normalizationEntryDigest: normalizationEntryDigestV1(compatibleEntry),
       };
       resolutionStates.set(result, {
         detectorClass: parsedLookup.detectorClass,
