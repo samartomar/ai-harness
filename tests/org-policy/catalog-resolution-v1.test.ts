@@ -141,6 +141,22 @@ const resolutionContext = {
   expectedPackageRootSha256: sha("supported catalog package root"),
 };
 
+function headVerificationInput(envelope: unknown, overrides: Record<string, unknown> = {}) {
+  return {
+    envelope,
+    expectedSignerRootSha256: headRoot,
+    expectedCatalogSignerIdentity: resolutionContext.expectedCatalogSignerIdentity,
+    now: resolutionContext.now,
+    expectedRepository: resolutionContext.expectedRepository,
+    expectedWorkflowIdentity: resolutionContext.expectedWorkflowIdentity,
+    expectedIssuer: resolutionContext.expectedIssuer,
+    expectedRef: resolutionContext.expectedRef,
+    expectedEnvironment: resolutionContext.expectedEnvironment,
+    verifyCanonicalPae: () => true,
+    ...overrides,
+  };
+}
+
 function standardEnvelopeForHead(nextHead: Record<string, unknown>) {
   const headBytes = Buffer.from(JSON.stringify(nextHead), "utf8");
   const statementBytes = Buffer.from(
@@ -195,12 +211,7 @@ describe("signed catalog-head parsing and verification", () => {
         request.expectedSignerRootSha256 === headRoot,
     );
     expect(
-      verifyCatalogHeadEnvelopeV1({
-        envelope,
-        ...resolutionContext,
-        expectedSignerRootSha256: headRoot,
-        verifyCanonicalPae,
-      }),
+      verifyCatalogHeadEnvelopeV1(headVerificationInput(envelope, { verifyCanonicalPae })),
     ).toEqual(envelope);
     expect(verifyCanonicalPae).toHaveBeenCalledOnce();
     expect(verifyCanonicalPae).toHaveBeenCalledWith(
@@ -226,14 +237,34 @@ describe("signed catalog-head parsing and verification", () => {
     ])
       expect(() =>
         verifyCatalogHeadEnvelopeV1({
-          envelope,
-          ...resolutionContext,
-          expectedSignerRootSha256: headRoot,
+          ...headVerificationInput(envelope),
           ...mismatch,
           verifyCanonicalPae: (request: { expectedSignerRootSha256: string }) =>
             request.expectedSignerRootSha256 === headRoot,
         }),
       ).toThrow();
+  });
+
+  it("closes direct authority-bearing verification requests without reading hostile extras", () => {
+    const envelope = parseCatalogHeadEnvelopeV1(literalHeadEnvelopeBytes);
+    expect(() =>
+      verifyCatalogHeadEnvelopeV1(headVerificationInput(envelope, { unexpected: true })),
+    ).toThrow();
+    let getterCalls = 0;
+    const accessor = Object.defineProperty(headVerificationInput(envelope), "unexpected", {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return true;
+      },
+    });
+    expect(() => verifyCatalogHeadEnvelopeV1(accessor)).toThrow();
+    const inherited = Object.assign(
+      Object.create({ unexpected: true }),
+      headVerificationInput(envelope),
+    );
+    expect(() => verifyCatalogHeadEnvelopeV1(inherited)).toThrow();
+    expect(getterCalls).toBe(0);
   });
 
   it("fails closed on hostile bytes, typed trust mismatches, replay, rollback, and incompatible versions", () => {
@@ -297,6 +328,34 @@ describe("catalog resolution internal boundary", () => {
 });
 
 describe("admin catalog resolution", () => {
+  it("closes authority-bearing resolution requests without falling through or reading hostile extras", () => {
+    const lastGood = cachedCatalogState();
+    const request = {
+      ...resolutionContext,
+      lastGood,
+      fresh: lastGood,
+      cachedVerified: { kind: "unavailable" },
+      packaged: { kind: "unavailable" },
+      verifyCanonicalPae: () => true,
+    };
+    expect(resolveAdminCatalogV1({ ...request, unexpected: true })).toEqual({
+      kind: "fatal",
+      lastGood,
+    });
+    let getterCalls = 0;
+    const accessor = Object.defineProperty({ ...request }, "unexpected", {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return true;
+      },
+    });
+    expect(resolveAdminCatalogV1(accessor)).toEqual({ kind: "fatal", lastGood });
+    const inherited = Object.assign(Object.create({ unexpected: true }), request);
+    expect(resolveAdminCatalogV1(inherited)).toEqual({ kind: "fatal", lastGood });
+    expect(getterCalls).toBe(0);
+  });
+
   it("requires an explicitly trusted catalog signer identity and context-bound catalog and promotion digests", () => {
     const cached = cachedCatalogState();
     const unavailable = { kind: "unavailable" };

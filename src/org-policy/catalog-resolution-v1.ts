@@ -9,6 +9,38 @@ import {
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const envelopeBytes = new WeakMap<object, Buffer>();
+const VERIFICATION_FIELDS = [
+  "envelope",
+  "expectedCatalogSignerIdentity",
+  "expectedEnvironment",
+  "expectedIssuer",
+  "expectedRef",
+  "expectedRepository",
+  "expectedSignerRootSha256",
+  "expectedWorkflowIdentity",
+  "now",
+  "verifyCanonicalPae",
+] as const;
+const RESOLUTION_FIELDS = [
+  "adminSignerRootSha256",
+  "cachedVerified",
+  "expectedCatalogSha256",
+  "expectedCatalogSignerIdentity",
+  "expectedEnvironment",
+  "expectedIssuer",
+  "expectedPackageRootSha256",
+  "expectedPackageSha256",
+  "expectedPromotionDecisionSha256",
+  "expectedRef",
+  "expectedRepository",
+  "expectedWorkflowIdentity",
+  "fresh",
+  "headSignerRootSha256",
+  "lastGood",
+  "now",
+  "packaged",
+  "verifyCanonicalPae",
+] as const;
 
 type Json = Record<string, unknown>;
 type VerifiedEnvelope = Readonly<{
@@ -249,6 +281,7 @@ export function canonicalCatalogHeadEnvelopeV1Bytes(value: VerifiedEnvelope): Bu
 
 export function verifyCatalogHeadEnvelopeV1(input: unknown): VerifiedEnvelope {
   const value = record(input, "verification");
+  exact(value, VERIFICATION_FIELDS, "verification fields");
   const envelope = value.envelope as VerifiedEnvelope;
   if (
     typeof envelope !== "object" ||
@@ -367,8 +400,15 @@ function state(
     fail("envelope head");
   verifyCatalogHeadEnvelopeV1({
     envelope,
-    ...context,
     expectedSignerRootSha256: context.headSignerRootSha256,
+    expectedCatalogSignerIdentity: context.expectedCatalogSignerIdentity,
+    now: context.now,
+    expectedRepository: context.expectedRepository,
+    expectedWorkflowIdentity: context.expectedWorkflowIdentity,
+    expectedIssuer: context.expectedIssuer,
+    expectedRef: context.expectedRef,
+    expectedEnvironment: context.expectedEnvironment,
+    verifyCanonicalPae: context.verifyCanonicalPae,
   });
   return { envelope, head, state: item };
 }
@@ -381,59 +421,72 @@ function unavailable(value: unknown): boolean {
   return true;
 }
 
-export function resolveAdminCatalogV1(input: unknown): Json {
-  const value = record(input, "resolution");
-  const lastGood = value.lastGood as Json;
+function lastGoodForFailure(value: unknown): unknown {
   try {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+    const descriptor = Object.getOwnPropertyDescriptor(value, "lastGood");
+    if (descriptor === undefined || !Object.hasOwn(descriptor, "value")) return undefined;
+    return descriptor.value;
+  } catch {
+    return undefined;
+  }
+}
+
+export function resolveAdminCatalogV1(input: unknown): Json {
+  const fallbackLastGood = lastGoodForFailure(input);
+  try {
+    const value = record(input, "resolution");
+    exact(value, RESOLUTION_FIELDS, "resolution fields");
+    const lastGood = value.lastGood as Json;
     digest(value.expectedPackageSha256, "expected package hash");
     digest(value.expectedPackageRootSha256, "expected package root");
-  } catch {
-    return { kind: "fatal", lastGood };
-  }
-  const base = { ...value };
-  const tiers: Array<
-    [
-      "fresh" | "cached-verified" | "packaged",
-      unknown,
-      "CachedCatalogStateV1" | "PackagedCatalogStateV1",
-    ]
-  > = [
-    ["fresh", value.fresh, "CachedCatalogStateV1"],
-    ["cached-verified", value.cachedVerified, "CachedCatalogStateV1"],
-    ["packaged", value.packaged, "PackagedCatalogStateV1"],
-  ];
-  for (const [tier, candidate, kind] of tiers) {
-    try {
-      if (unavailable(candidate)) continue;
-      const next = state(candidate, kind, base);
-      const current = state(lastGood, "CachedCatalogStateV1", base, false);
-      if (
-        (next.head.sequence as number) < (current.head.sequence as number) ||
-        ((next.head.sequence as number) === (current.head.sequence as number) &&
-          next.state.catalogHeadSha256 !== current.state.catalogHeadSha256) ||
-        ((next.head.sequence as number) > (current.head.sequence as number) &&
-          next.head.previousCatalogHeadSha256 !== current.state.catalogHeadSha256)
-      )
-        return { kind: "fatal", lastGood };
-      const candidateState = candidate as Json;
-      const schema = next.head.compatibleSchemaVersions as string[];
-      const effect = next.head.compatibleEffectVersions as string[];
-      if (!schema.includes("1") || !effect.includes("1")) {
+    const base = { ...value };
+    const tiers: Array<
+      [
+        "fresh" | "cached-verified" | "packaged",
+        unknown,
+        "CachedCatalogStateV1" | "PackagedCatalogStateV1",
+      ]
+    > = [
+      ["fresh", value.fresh, "CachedCatalogStateV1"],
+      ["cached-verified", value.cachedVerified, "CachedCatalogStateV1"],
+      ["packaged", value.packaged, "PackagedCatalogStateV1"],
+    ];
+    for (const [tier, candidate, kind] of tiers) {
+      try {
+        if (unavailable(candidate)) continue;
+        const next = state(candidate, kind, base);
+        const current = state(lastGood, "CachedCatalogStateV1", base, false);
+        if (
+          (next.head.sequence as number) < (current.head.sequence as number) ||
+          ((next.head.sequence as number) === (current.head.sequence as number) &&
+            next.state.catalogHeadSha256 !== current.state.catalogHeadSha256) ||
+          ((next.head.sequence as number) > (current.head.sequence as number) &&
+            next.head.previousCatalogHeadSha256 !== current.state.catalogHeadSha256)
+        )
+          return { kind: "fatal", lastGood };
+        const candidateState = candidate as Json;
+        const schema = next.head.compatibleSchemaVersions as string[];
+        const effect = next.head.compatibleEffectVersions as string[];
+        if (!schema.includes("1") || !effect.includes("1")) {
+          return {
+            kind: "compatibility-required",
+            headDigestSha256: candidateState.catalogHeadSha256,
+            materializable: false,
+          };
+        }
         return {
-          kind: "compatibility-required",
+          kind: "resolved",
+          tier,
           headDigestSha256: candidateState.catalogHeadSha256,
-          materializable: false,
+          verifiedAt: candidateState.verifiedAt,
         };
+      } catch {
+        return { kind: "fatal", lastGood };
       }
-      return {
-        kind: "resolved",
-        tier,
-        headDigestSha256: candidateState.catalogHeadSha256,
-        verifiedAt: candidateState.verifiedAt,
-      };
-    } catch {
-      return { kind: "fatal", lastGood };
     }
+    return { kind: "fatal", lastGood };
+  } catch {
+    return { kind: "fatal", lastGood: fallbackLastGood };
   }
-  return { kind: "fatal", lastGood };
 }
