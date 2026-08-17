@@ -122,6 +122,7 @@ export type CheckCode =
   | "baseline.registry-invalid"
   | "baseline.undeclared-surface"
   | "baseline.evidence-missing"
+  | "baseline.org-evidence-required"
   | "baseline.evidence-mismatch"
   | "baseline.evidence-blocked"
   // A signed baseline evidence lock this build cannot read — most often one

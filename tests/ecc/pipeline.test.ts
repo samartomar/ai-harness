@@ -456,9 +456,11 @@ describe("ECC baseline evidence pipeline", () => {
     expect(request.ledger.projects).toHaveLength(1);
   });
 
-  it("constructs install actions only after exact evidence clears", async () => {
+  it("constructs install actions after exact packaged vendor evidence clears at Vibe", async () => {
     const buildInstallPlan = vi.fn(() => plan("verified install", doc("install", "verified")));
-    const result = await executeEccEvidencePipeline(ctx(), request, {
+    const context = ctx();
+    context.posture = "vibe";
+    const result = await executeEccEvidencePipeline(context, request, {
       catalog: catalog(),
       source: resolveTrustSource(sourceRoot, { root }),
       vendorLock: vendorLock(),
@@ -471,7 +473,7 @@ describe("ECC baseline evidence pipeline", () => {
     expect(result.report?.exitCode()).toBe(0);
   });
 
-  it("installs an authorized subset and reports held components without failing", async () => {
+  it("uses packaged vendor evidence for an authorized Vibe subset and held components", async () => {
     const partialRequest: VerifiedEccRequest = {
       clis: ["claude" as const],
       profile: "core",
@@ -487,7 +489,9 @@ describe("ECC baseline evidence pipeline", () => {
       plan("verified partial install", doc("install", "partial")),
     );
 
-    const result = await executeEccEvidencePipeline(ctx(), partialRequest, {
+    const context = ctx();
+    context.posture = "vibe";
+    const result = await executeEccEvidencePipeline(context, partialRequest, {
       catalog: mixedCatalog(),
       source: resolveTrustSource(sourceRoot, { root }),
       vendorLock: mixedVendorLock(),
@@ -539,7 +543,9 @@ describe("ECC baseline evidence pipeline", () => {
 
   it("never constructs install actions when signed evidence blocks", async () => {
     const buildInstallPlan = vi.fn(() => plan("must not build"));
-    const result = await executeEccEvidencePipeline(ctx(), request, {
+    const context = ctx();
+    context.posture = "vibe";
+    const result = await executeEccEvidencePipeline(context, request, {
       catalog: catalog(),
       source: resolveTrustSource(sourceRoot, { root }),
       vendorLock: vendorLock("blocked"),
@@ -660,7 +666,7 @@ describe("ECC baseline evidence pipeline", () => {
             {
               catalog: "ecc",
               owner: "affaan-m",
-              repo: "ECC",
+              repo: "ecc",
               pinnedSha: stalePin,
               bundle: ".aih/org-evidence/ecc-stale",
               signingRepository: "acme/ecc-evidence",
@@ -836,6 +842,7 @@ describe("ECC baseline evidence pipeline", () => {
       return { code: 0 };
     });
     const context = ctx();
+    context.posture = "vibe";
     context.run = run;
     context.host = makeHostAdapter({ platform: "linux", run, env: {} });
 

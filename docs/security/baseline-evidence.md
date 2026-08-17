@@ -52,6 +52,22 @@ Org evidence is an extension, not a waiver. It cannot turn an exact vendor
 is useful signed evidence: it means “stop until the upstream bytes or pin change
 and vet cleanly.”
 
+### Enterprise org-evidence boundary
+
+At Enterprise posture, an exact organization override is required for the
+selected catalog, owner, repository, and live pinned SHA before packaged vendor
+evidence is read. Missing evidence, or an override for the same source at a
+different pin, returns the blocking `baseline.org-evidence-required` check. A
+same-source stale result identifies only the first declared stale override, its
+declared pin, and the live pin, then directs the operator to re-vet and update
+the override. Vibe leaves the existing packaged-evidence fallback available
+when no exact org override is configured.
+
+An exact override still follows the existing bundle checksum, attestation, and
+artifact validation path. To remediate an Enterprise absence, the override
+names `catalog`, `owner`, `repo`, `pinnedSha`, `bundle`, `signingRepository`,
+`reason`, `reviewer`, and `approvedAt`.
+
 ## Supported ECC catalog
 
 The v2.9 baseline is English-only. The pinned ECC module snapshot retains all 32
