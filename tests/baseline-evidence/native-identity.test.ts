@@ -6,6 +6,7 @@ import {
   computeNativeDetectorDigest,
   discoverNativeDetectorSourceFiles,
   NATIVE_DETECTOR_DIGEST,
+  NATIVE_DETECTOR_DORMANT_SOURCE_EXCLUSIONS,
   NATIVE_DETECTOR_SOURCES,
   nativeAnalyzerIdentity,
 } from "../../src/baseline-evidence/native-identity.js";
@@ -59,6 +60,27 @@ describe("discoverNativeDetectorSourceFiles", () => {
     writeDeclaredFixture(root);
     writeFileSync(join(root, "src", "trust", "new-detector.ts"), "export const n = 1;\n");
     expect(discoverNativeDetectorSourceFiles(root)).toContain("src/trust/new-detector.ts");
+  });
+
+  it("excludes only dormant V1 contracts while retaining future trust runtime sources", () => {
+    const root = fixtureRoot();
+    writeDeclaredFixture(root);
+    for (const path of NATIVE_DETECTOR_DORMANT_SOURCE_EXCLUSIONS) {
+      writeFileSync(join(root, ...path.split("/")), "export const dormant = true;\n");
+    }
+    writeFileSync(
+      join(root, "src", "trust", "future-runtime-detector.ts"),
+      "export const runtime = true;\n",
+    );
+
+    expect([...NATIVE_DETECTOR_DORMANT_SOURCE_EXCLUSIONS].sort()).toEqual([
+      "src/trust/normalization-v1-compatibility.ts",
+      "src/trust/normalization-v1.ts",
+    ]);
+    const files = discoverNativeDetectorSourceFiles(root);
+    expect(files).not.toContain("src/trust/normalization-v1-compatibility.ts");
+    expect(files).not.toContain("src/trust/normalization-v1.ts");
+    expect(files).toContain("src/trust/future-runtime-detector.ts");
   });
 
   it("excludes a symlink from the closure even when it points at a declared .ts file", () => {

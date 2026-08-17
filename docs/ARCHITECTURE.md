@@ -23,6 +23,11 @@ and the executor is the only layer that performs filesystem or process effects.
 - **Trust and skill governance** (`src/trust/`, `src/skill/`, `src/pack/`,
   `src/marketplace/`) vets external skill sources, pins commits, records
   approvals, and blocks unapproved installs at enterprise posture.
+- **Internal normalization compatibility** (`src/trust/normalization-v1.ts`,
+  `src/trust/normalization-v1-compatibility.ts`) defines strict declarative V1
+  normalization and fingerprint compatibility contracts exercised by regression
+  tests. These dormant internal modules are not exported from the library or
+  wired into current scan, evidence, runtime fingerprint, or disposition paths.
 - **Policy and schemas** (`src/org-policy/`, `src/config/`, `schemas/`) validate
   committed org policy and bootstrap markers. The public Package Graph v1 grammar
   lives under `src/capability/package-graph/` and models only direct package-to-surface
