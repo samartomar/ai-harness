@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   canonicalScanAttestationBytesV1,
   canonicalScanAttestationSha256V1,
+  canonicalScanAttestationStatementBytesV1,
   createScanAttestationV1,
   parseScanAttestationV1Json,
 } from "../../src/observation/scan-attestation-v1.js";
@@ -48,6 +49,13 @@ function attestationInput() {
 
 function expectExactKeys(value: object, keys: readonly string[]): void {
   expect(Object.keys(value).sort()).toEqual([...keys].sort());
+}
+
+function record(value: unknown): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("expected object test fixture");
+  }
+  return value as Record<string, unknown>;
 }
 
 function repoRoot(): string {
@@ -135,6 +143,7 @@ describe("ScanAttestationV1", () => {
     expectExactKeys(forward.envelope, ["payloadType", "payload", "signatures"]);
     expectExactKeys(forward.statement, ["_type", "subject", "predicateType", "predicate"]);
     expectExactKeys(forward.statement.subject[0] as object, ["name", "digest"]);
+    expectExactKeys((forward.statement.subject[0] as { digest: object }).digest, ["sha256"]);
     expectExactKeys(forward.statement.predicate, [
       "protocol",
       "scannerManifestSha256",
@@ -145,9 +154,16 @@ describe("ScanAttestationV1", () => {
     ]);
     expectExactKeys(row, ["detectorId", "observationKeySha256", "observationSetSha256"]);
     expectExactKeys(annex, ["descriptorId", "mediaType", "sha256", "byteLength", "uri"]);
+    expectExactKeys(forward.statement.predicate.cleanup, ["outcome"]);
     expect(forward.validationState).toBe("cryptographically-unverified");
     expect(forward.envelope.payloadType).toBe("application/vnd.in-toto+json");
     expect(forward.envelope.signatures).toEqual([]);
+    expect(Buffer.from(forward.envelope.payload, "base64")).toEqual(
+      canonicalScanAttestationStatementBytesV1(forward.statement),
+    );
+    expect(JSON.parse(Buffer.from(forward.envelope.payload, "base64").toString("utf8"))).toEqual(
+      forward.statement,
+    );
     expect(forward.statement._type).toBe("https://in-toto.io/Statement/v1");
     expect(forward.statement.predicateType).toBe("https://aih.dev/ScanAttestationV1");
     expect(forward.scanAttestationSha256).toBe(reverse.scanAttestationSha256);
@@ -177,6 +193,36 @@ describe("ScanAttestationV1", () => {
     expect(() => {
       (forward.statement.predicate.cleanup as { outcome: string }).outcome = "forged";
     }).toThrow();
+  });
+
+  it("rejects a DSSE payload that is arbitrary, noncanonical, mismatched, or typed for another statement", () => {
+    const current = createScanAttestationV1(attestationInput());
+    const parse = (value: unknown) => parseScanAttestationV1Json(JSON.stringify(value));
+    const arbitrary = structuredClone(current);
+    arbitrary.envelope.payload = Buffer.from('{"arbitrary":true}', "utf8").toString("base64");
+    expect(() => parse(arbitrary)).toThrow(/payload|statement|DSSE|canonical/i);
+
+    const different = structuredClone(current);
+    different.envelope.payload = Buffer.from(
+      JSON.stringify({
+        ...current.statement,
+        predicate: { ...current.statement.predicate, brokerIdentity: "broker.fedcba987654" },
+      }),
+      "utf8",
+    ).toString("base64");
+    expect(() => parse(different)).toThrow(/payload|statement|canonical|mismatch/i);
+
+    const noncanonical = structuredClone(current);
+    noncanonical.envelope.payload = `${current.envelope.payload}=`;
+    expect(() => parse(noncanonical)).toThrow(/base64|payload|canonical/i);
+
+    const wrongType = structuredClone(current);
+    wrongType.envelope.payloadType = "application/json";
+    expect(() => parse(wrongType)).toThrow(/payloadType|DSSE|in-toto/i);
+
+    const mutatedStatement = structuredClone(current);
+    mutatedStatement.statement.predicate.cleanup.outcome = "failed";
+    expect(() => parse(mutatedStatement)).toThrow(/payload|statement|canonical|mismatch/i);
   });
 
   it("binds source target, manifest, detector keys/sets, broker cleanup, and annex descriptors in JCS bytes", () => {
@@ -233,6 +279,15 @@ describe("ScanAttestationV1", () => {
       createScanAttestationV1({
         ...input,
         observations: [
+          input.observations[0],
+          { ...input.observations[0], observationKeySha256: sha256("conflicting key") },
+        ],
+      }),
+    ).toThrow(/duplicate|ambiguous|conflict/i);
+    expect(() =>
+      createScanAttestationV1({
+        ...input,
+        observations: [
           { ...input.observations[0], detectorId: "detector.*" },
           input.observations[1],
         ],
@@ -276,6 +331,43 @@ describe("ScanAttestationV1", () => {
     expect(() =>
       parseScanAttestationV1Json('{"protocol":"ScanAttestationV1","x":"e\\u0300"}'),
     ).toThrow(/NFC|Unicode/i);
+
+    const current = createScanAttestationV1(input);
+    for (const mutate of [
+      (value: Record<string, unknown>) => (record(value.envelope).extra = true),
+      (value: Record<string, unknown>) => (record(value.statement).extra = true),
+      (value: Record<string, unknown>) => {
+        const statement = record(value.statement);
+        record((statement.subject as unknown[])[0]).extra = true;
+      },
+      (value: Record<string, unknown>) => {
+        const statement = record(value.statement);
+        record(record((statement.subject as unknown[])[0]).digest).extra = true;
+      },
+      (value: Record<string, unknown>) => (record(record(value.statement).predicate).extra = true),
+      (value: Record<string, unknown>) => {
+        const predicate = record(record(value.statement).predicate);
+        record((predicate.observations as unknown[])[0]).extra = true;
+      },
+      (value: Record<string, unknown>) => {
+        const predicate = record(record(value.statement).predicate);
+        record(predicate.cleanup).extra = true;
+      },
+      (value: Record<string, unknown>) => {
+        const predicate = record(record(value.statement).predicate);
+        record((predicate.annexDescriptors as unknown[])[0]).extra = true;
+      },
+      (value: Record<string, unknown>) =>
+        (record(value.envelope).signatures as unknown[]).push({
+          extra: true,
+        }),
+    ]) {
+      const forged = JSON.parse(JSON.stringify(current)) as Record<string, unknown>;
+      mutate(forged);
+      expect(() => parseScanAttestationV1Json(JSON.stringify(forged))).toThrow(
+        /unknown|unexpected|unrecognized|signature/i,
+      );
+    }
   });
 
   it("remains an internal unverified contract with no static runtime consumer or public export", () => {

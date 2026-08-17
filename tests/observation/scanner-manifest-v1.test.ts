@@ -301,6 +301,18 @@ describe("ScannerManifestV1", () => {
       createScannerManifestV1({
         ...input,
         detectors: [
+          input.detectors[0],
+          {
+            ...input.detectors[0],
+            adapter: { ...input.detectors[0].adapter, sha256: sha256("conflict") },
+          },
+        ],
+      }),
+    ).toThrow(/duplicate|ambiguous|conflict/i);
+    expect(() =>
+      createScannerManifestV1({
+        ...input,
+        detectors: [
           {
             ...input.detectors[0],
             supportedPlatforms: [
@@ -312,6 +324,21 @@ describe("ScannerManifestV1", () => {
         ],
       }),
     ).toThrow(/duplicate|ambiguous|platform/i);
+    for (const detector of [
+      { ...input.detectors[0], extra: true },
+      { ...input.detectors[0], ociImage: { ...input.detectors[0].ociImage, extra: true } },
+      { ...input.detectors[0], adapter: { ...input.detectors[0].adapter, extra: true } },
+      {
+        ...input.detectors[0],
+        supportedPlatforms: [{ ...input.detectors[0].supportedPlatforms[0], extra: true }],
+      },
+      { ...input.detectors[0], sbom: { ...input.detectors[0].sbom, extra: true } },
+      { ...input.detectors[0], provenance: { ...input.detectors[0].provenance, extra: true } },
+    ]) {
+      expect(() =>
+        createScannerManifestV1({ ...input, detectors: [detector, input.detectors[1]] }),
+      ).toThrow(/unknown|unexpected|unrecognized/i);
+    }
     expect(() =>
       parseScannerManifestV1Json('{"protocol":"ScannerManifestV1","protocol":"ScannerManifestV1"}'),
     ).toThrow(/duplicate/i);
