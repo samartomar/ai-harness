@@ -577,6 +577,64 @@ describe("ECC baseline evidence pipeline", () => {
     expect(result.report?.exitCode()).toBe(1);
   });
 
+  it("blocks Enterprise absence before reading vendor evidence or constructing a baseline gate", async () => {
+    const buildInstallPlan = vi.fn(() => plan("must not build"));
+    const vendorLockRead = vi.fn(() => {
+      throw new Error("vendor lock must not be read without Enterprise org evidence");
+    });
+    const deps = {
+      catalog: catalog(),
+      source: resolveTrustSource(sourceRoot, { root }),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+    };
+    Object.defineProperty(deps, "vendorLock", {
+      enumerable: true,
+      get: vendorLockRead,
+    });
+
+    const result = await executeEccEvidencePipeline(ctx(), request, deps);
+
+    expect(vendorLockRead).not.toHaveBeenCalled();
+    expect(buildInstallPlan).not.toHaveBeenCalled();
+    expect(result.report?.checks).toEqual([
+      expect.objectContaining({
+        verdict: "fail",
+        code: "baseline.org-evidence-required",
+        detail: [
+          "catalog: ecc",
+          "owner: affaan-m",
+          "repo: ECC",
+          `pinnedSha: ${"a".repeat(40)}`,
+          "bundle:",
+          "signingRepository:",
+          "reason:",
+          "reviewer:",
+          "approvedAt:",
+        ].join("\n"),
+      }),
+    ]);
+  });
+
+  it("keeps Vibe on the existing evidence fallback when no org override is configured", async () => {
+    const context = ctx();
+    context.posture = "vibe";
+    const buildInstallPlan = vi.fn(() =>
+      plan("verified Vibe fallback", doc("install", "fallback")),
+    );
+
+    const result = await executeEccEvidencePipeline(context, request, {
+      catalog: catalog(),
+      source: resolveTrustSource(sourceRoot, { root }),
+      vendorLock: vendorLock(),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+    });
+
+    expect(buildInstallPlan).toHaveBeenCalledOnce();
+    expect(result.report?.exitCode()).toBe(0);
+  });
+
   it("previews an exact remote pin without fetching or constructing installs", async () => {
     const buildInstallPlan = vi.fn(() => plan("must not build"));
     const source = resolveTrustSource("affaan-m/ECC", {

@@ -48,6 +48,33 @@ function policy(signingRepository = "acme/engineering-governance") {
   });
 }
 
+function policyWithoutEvidence(
+  minimumPosture: "enterprise" | "vibe",
+  trust: Record<string, unknown> | undefined,
+) {
+  return parseOrgPolicy({
+    schemaVersion: 2,
+    minimumPosture,
+    references: { repoContract: "ai-coding/project.json" },
+    ...(minimumPosture === "enterprise" ? { governance: { supportedClis: ["kiro"] } } : {}),
+    ...(trust === undefined ? {} : { trust }),
+  });
+}
+
+function requiredEvidenceSkeleton(catalog = baselineCatalogById("ecc")): string {
+  return [
+    `catalog: ${catalog.id}`,
+    `owner: ${catalog.owner}`,
+    `repo: ${catalog.repo}`,
+    `pinnedSha: ${catalog.pinnedSha}`,
+    "bundle:",
+    "signingRepository:",
+    "reason:",
+    "reviewer:",
+    "approvedAt:",
+  ].join("\n");
+}
+
 function defaultLock(): unknown {
   const catalog = baselineCatalogById("ecc");
   return {
@@ -222,5 +249,186 @@ describe("resolveOrgBaselineEvidence", () => {
       }),
     });
     expect(result).toEqual({ checks: [] });
+  });
+
+  it.each([
+    ["no trust object", undefined],
+    ["an empty trust object", {}],
+    ["an empty baseline override list", { baselineOverrides: [] }],
+  ])("blocks Enterprise %s with only a paste-shaped evidence skeleton", async (_label, trust) => {
+    const catalog = baselineCatalogById("ecc");
+    const result = await resolveOrgBaselineEvidence({
+      root,
+      catalog,
+      policy: policyWithoutEvidence("enterprise", trust),
+      run: fakeRunner(() => {
+        throw new Error("absence must not invoke attestation verification");
+      }),
+    });
+
+    expect(result).toEqual({
+      checks: [
+        {
+          name: "org baseline evidence required",
+          verdict: "fail",
+          code: "baseline.org-evidence-required",
+          detail: requiredEvidenceSkeleton(catalog),
+        },
+      ],
+    });
+  });
+
+  it("keeps Vibe absence empty so the packaged fallback remains available", async () => {
+    const result = await resolveOrgBaselineEvidence({
+      root,
+      catalog: baselineCatalogById("ecc"),
+      policy: policyWithoutEvidence("vibe", undefined),
+      run: fakeRunner(() => {
+        throw new Error("Vibe absence must not invoke attestation verification");
+      }),
+    });
+
+    expect(result).toEqual({ checks: [] });
+  });
+
+  it("names only the first exact same-source stale override and never leaks unrelated entries", async () => {
+    const catalog = baselineCatalogById("ecc");
+    const firstStaleSha = "b".repeat(40);
+    const laterStaleSha = "c".repeat(40);
+    const result = await resolveOrgBaselineEvidence({
+      root,
+      catalog,
+      policy: parseOrgPolicy({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: ["kiro"] },
+        trust: {
+          baselineOverrides: [
+            {
+              catalog: "superpowers",
+              owner: catalog.owner,
+              repo: catalog.repo,
+              pinnedSha: catalog.pinnedSha,
+              bundle: ".aih/org-evidence/catalog-mismatch",
+              signingRepository: "acme/catalog-mismatch",
+              reason: "Catalog mismatch must not match",
+              reviewer: "security@example.com",
+              approvedAt: "2026-07-10T12:00:00.000Z",
+            },
+            {
+              catalog: "superpowers",
+              owner: "obra",
+              repo: "Superpowers",
+              pinnedSha: "d".repeat(40),
+              bundle: ".aih/org-evidence/superpowers",
+              signingRepository: "acme/unrelated",
+              reason: "Unrelated evidence",
+              reviewer: "security@example.com",
+              approvedAt: "2026-07-10T12:00:00.000Z",
+            },
+            {
+              catalog: catalog.id,
+              owner: catalog.owner,
+              repo: catalog.repo.toUpperCase(),
+              pinnedSha: catalog.pinnedSha,
+              bundle: ".aih/org-evidence/repo-case-alias",
+              signingRepository: "acme/repo-case-alias",
+              reason: "Repository case alias must not match",
+              reviewer: "security@example.com",
+              approvedAt: "2026-07-10T12:00:00.000Z",
+            },
+            {
+              catalog: catalog.id,
+              owner: catalog.owner,
+              repo: catalog.repo,
+              pinnedSha: firstStaleSha,
+              bundle: ".aih/org-evidence/ecc-old",
+              signingRepository: "acme/first-stale",
+              reason: "Stale ECC evidence",
+              reviewer: "security@example.com",
+              approvedAt: "2026-07-10T12:00:00.000Z",
+            },
+            {
+              catalog: catalog.id,
+              owner: catalog.owner,
+              repo: catalog.repo,
+              pinnedSha: laterStaleSha,
+              bundle: ".aih/org-evidence/ecc-later",
+              signingRepository: "acme/later-stale",
+              reason: "Later stale ECC evidence",
+              reviewer: "security@example.com",
+              approvedAt: "2026-07-10T12:00:00.000Z",
+            },
+            {
+              catalog: catalog.id,
+              owner: catalog.owner.toUpperCase(),
+              repo: catalog.repo,
+              pinnedSha: catalog.pinnedSha,
+              bundle: ".aih/org-evidence/ecc-case-alias",
+              signingRepository: "acme/case-alias",
+              reason: "Case alias must not match",
+              reviewer: "security@example.com",
+              approvedAt: "2026-07-10T12:00:00.000Z",
+            },
+          ],
+        },
+      }),
+      run: fakeRunner(() => {
+        throw new Error("stale evidence must not invoke attestation verification");
+      }),
+    });
+
+    const check = result.checks[0];
+    expect(check).toMatchObject({
+      name: "org baseline evidence required",
+      verdict: "fail",
+      code: "baseline.org-evidence-required",
+    });
+    expect(check?.detail).toContain(`declaredPinnedSha: ${firstStaleSha}`);
+    expect(check?.detail).toContain(`pinnedSha: ${catalog.pinnedSha}`);
+    expect(check?.detail).toContain("re-vet");
+    expect(check?.detail).toContain("update");
+    expect(check?.detail).not.toContain(laterStaleSha);
+    expect(check?.detail).not.toContain("acme/catalog-mismatch");
+    expect(check?.detail).not.toContain("acme/unrelated");
+    expect(check?.detail).not.toContain("acme/case-alias");
+    expect(check?.detail).not.toContain("acme/repo-case-alias");
+  });
+
+  it("uses the live requested pin when an old same-source override is stale", async () => {
+    const liveCatalog = baselineCatalogById("ecc", "e".repeat(40));
+    const result = await resolveOrgBaselineEvidence({
+      root,
+      catalog: liveCatalog,
+      policy: parseOrgPolicy({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: ["kiro"] },
+        trust: {
+          baselineOverrides: [
+            {
+              catalog: liveCatalog.id,
+              owner: liveCatalog.owner,
+              repo: liveCatalog.repo,
+              pinnedSha: "a".repeat(40),
+              bundle: ".aih/org-evidence/ecc-old",
+              signingRepository: "acme/engineering-governance",
+              reason: "Old exact source evidence",
+              reviewer: "security@example.com",
+              approvedAt: "2026-07-10T12:00:00.000Z",
+            },
+          ],
+        },
+      }),
+      run: fakeRunner(() => {
+        throw new Error("stale evidence must not invoke attestation verification");
+      }),
+    });
+
+    expect(result.checks[0]).toMatchObject({ code: "baseline.org-evidence-required" });
+    expect(result.checks[0]?.detail).toContain(`pinnedSha: ${liveCatalog.pinnedSha}`);
+    expect(result.checks[0]?.detail).toContain(`declaredPinnedSha: ${"a".repeat(40)}`);
   });
 });

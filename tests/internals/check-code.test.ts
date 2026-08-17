@@ -495,6 +495,7 @@ describe("Check.code — invariants", () => {
       "baseline.registry-invalid": true,
       "baseline.undeclared-surface": true,
       "baseline.evidence-missing": true,
+      "baseline.org-evidence-required": true,
       "baseline.evidence-mismatch": true,
       "baseline.evidence-blocked": true,
       "baseline.evidence-schema-unsupported": true,
