@@ -333,12 +333,15 @@ function state(
     digest(context.headSignerRootSha256, "expected root")
   )
     fail("state root");
-  const verifiedAt = timestamp(item.verifiedAt, "verified at");
-  const now = timestamp(context.now, "now");
-  if (Date.parse(now) - Date.parse(verifiedAt) > 60 * 60 * 1000) fail("verified at");
+  timestamp(item.verifiedAt, "verified at");
   if (kind === "PackagedCatalogStateV1") {
-    digest(item.packageSha256, "package hash");
-    digest(item.packageRootSha256, "package root");
+    if (
+      digest(item.packageSha256, "package hash") !==
+        digest(context.expectedPackageSha256, "expected package hash") ||
+      digest(item.packageRootSha256, "package root") !==
+        digest(context.expectedPackageRootSha256, "expected package root")
+    )
+      fail("package trust");
   }
   const head = parseHead(headBytes);
   const resolutionNow = timestamp(context.now, "now");
@@ -370,9 +373,23 @@ function state(
   return { envelope, head, state: item };
 }
 
+function unavailable(value: unknown): boolean {
+  const item = record(value, "tier");
+  if (!Object.hasOwn(item, "kind")) return false;
+  exact(item, ["kind"], "unavailable tier");
+  if (item.kind !== "unavailable") fail("unavailable tier");
+  return true;
+}
+
 export function resolveAdminCatalogV1(input: unknown): Json {
   const value = record(input, "resolution");
   const lastGood = value.lastGood as Json;
+  try {
+    digest(value.expectedPackageSha256, "expected package hash");
+    digest(value.expectedPackageRootSha256, "expected package root");
+  } catch {
+    return { kind: "fatal", lastGood };
+  }
   const base = { ...value };
   const tiers: Array<
     [
@@ -387,7 +404,7 @@ export function resolveAdminCatalogV1(input: unknown): Json {
   ];
   for (const [tier, candidate, kind] of tiers) {
     try {
-      if (record(candidate, "tier").kind === "unavailable") continue;
+      if (unavailable(candidate)) continue;
       const next = state(candidate, kind, base);
       const current = state(lastGood, "CachedCatalogStateV1", base, false);
       if (
@@ -408,7 +425,12 @@ export function resolveAdminCatalogV1(input: unknown): Json {
           materializable: false,
         };
       }
-      return { kind: "resolved", tier, headDigestSha256: candidateState.catalogHeadSha256 };
+      return {
+        kind: "resolved",
+        tier,
+        headDigestSha256: candidateState.catalogHeadSha256,
+        verifiedAt: candidateState.verifiedAt,
+      };
     } catch {
       return { kind: "fatal", lastGood };
     }

@@ -137,6 +137,8 @@ const resolutionContext = {
   expectedCatalogSha256: literalSnapshotSha256,
   expectedPromotionDecisionSha256:
     "1111111111111111111111111111111111111111111111111111111111111111",
+  expectedPackageSha256: sha("supported catalog package"),
+  expectedPackageRootSha256: sha("supported catalog package root"),
 };
 
 function standardEnvelopeForHead(nextHead: Record<string, unknown>) {
@@ -375,7 +377,18 @@ describe("admin catalog resolution", () => {
         },
       },
     );
-    for (const fresh of [null, undefined, 42, "unavailable", accessor, proxy])
+    for (const fresh of [
+      null,
+      undefined,
+      42,
+      "unavailable",
+      {},
+      { kind: "unavailable", extra: true },
+      { kind: "available" },
+      Object.create({ kind: "unavailable" }),
+      accessor,
+      proxy,
+    ])
       expect(
         resolveAdminCatalogV1({
           ...resolutionContext,
@@ -425,6 +438,55 @@ describe("admin catalog resolution", () => {
         verifyCanonicalPae: () => true,
       }),
     ).toMatchObject({ kind: "resolved", tier: "packaged" });
+  });
+
+  it("requires trusted package digest/root only for a packaged tier and leaves verifiedAt visible rather than authoritative", () => {
+    const lastGood = cachedCatalogState();
+    const unavailable = { kind: "unavailable" };
+    const packaged = packagedCatalogState();
+    expect(
+      resolveAdminCatalogV1({
+        ...resolutionContext,
+        lastGood,
+        fresh: unavailable,
+        cachedVerified: unavailable,
+        packaged,
+        verifyCanonicalPae: () => true,
+      }),
+    ).toMatchObject({ kind: "resolved", tier: "packaged" });
+    for (const context of [
+      { expectedPackageSha256: sha("wrong package") },
+      { expectedPackageRootSha256: sha("wrong package root") },
+      { expectedPackageSha256: "SHA256:bad" },
+      { expectedPackageRootSha256: undefined },
+    ])
+      expect(
+        resolveAdminCatalogV1({
+          ...resolutionContext,
+          ...context,
+          lastGood,
+          fresh: unavailable,
+          cachedVerified: unavailable,
+          packaged,
+          verifyCanonicalPae: () => true,
+        }),
+      ).toEqual({ kind: "fatal", lastGood });
+
+    const oldVerifiedAt = cachedCatalogState({ verifiedAt: "2020-01-01T00:00:00Z" });
+    expect(
+      resolveAdminCatalogV1({
+        ...resolutionContext,
+        lastGood,
+        fresh: oldVerifiedAt,
+        cachedVerified: unavailable,
+        packaged: unavailable,
+        verifyCanonicalPae: () => true,
+      }),
+    ).toMatchObject({
+      kind: "resolved",
+      tier: "fresh",
+      verifiedAt: "2020-01-01T00:00:00Z",
+    });
   });
 
   it("reports compatibility-required without materializing and treats corrupt cache or invalid higher tiers as terminal", () => {
@@ -514,9 +576,6 @@ describe("admin catalog resolution", () => {
       stateForHead({ ...literalHead, previousCatalogHeadSha256: sha("wrong previous") }),
       cachedCatalogState({ catalogHeadEnvelopeSha256: sha("replayed head") }),
       cachedCatalogState({ catalogSnapshotBytes: Buffer.from("{}", "utf8") }),
-      packagedCatalogState({ packageSha256: sha("wrong package") }),
-      packagedCatalogState({ packageRootSha256: sha("wrong package root") }),
-      cachedCatalogState({ verifiedAt: "2026-08-17T09:00:00Z" }),
       cachedCatalogState({ diagnostic: "x".repeat(4097) }),
     ])
       expect(
