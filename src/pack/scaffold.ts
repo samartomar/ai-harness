@@ -10,8 +10,8 @@ import {
   type Plan,
   type PlanContext,
   plan,
+  writeExactText,
   writeJson,
-  writeText,
 } from "../internals/plan.js";
 import { skillNameSchema } from "../skill/lockfile.js";
 import {
@@ -234,7 +234,7 @@ function packScaffoldPlan(ctx: PlanContext): Plan {
   const manifest = readPacksFileStrictForWrite(ctx.root);
   const next = mergeSeededPack(manifest, source);
   const fileActions = source.files.map((file) =>
-    writeText(
+    writeExactText(
       posix.join(FIRST_PARTY_PACKS_DIR, packName, file.rel),
       file.contents,
       `first-party pack ${packName}: ${file.rel}`,

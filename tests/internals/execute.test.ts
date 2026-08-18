@@ -27,6 +27,7 @@ import {
   remove,
   structuredChecksProbe,
   structuredProbe,
+  writeExactText,
   writeJson,
   writeText,
 } from "../../src/internals/plan.js";
@@ -157,6 +158,16 @@ describe("executePlan", () => {
   it("apply writes files with a trailing newline", async () => {
     await executePlan(plan("t", writeText("a.txt", "hi", "write a")), ctx({ apply: true }));
     expect(readFileSync(join(dir, "a.txt"), "utf8")).toBe("hi\n");
+  });
+
+  it("apply preserves exact trusted text only through the closed exact builder", async () => {
+    const p = plan("t", writeExactText("exact.txt", "canonical", "write exact"));
+    const preview = await executePlan(p, ctx());
+    expect(preview.applied).toBe(false);
+    await executePlan(p, ctx({ apply: true }));
+    expect(readFileSync(join(dir, "exact.txt"), "utf8")).toBe("canonical");
+    const repeat = await executePlan(p, ctx({ apply: true }));
+    expect(repeat.writes[0]?.effect).toBe("unchanged");
   });
 
   it("re-applying identical content is a no-op: unchanged effect, no backup", async () => {
