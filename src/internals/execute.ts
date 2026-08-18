@@ -1176,7 +1176,10 @@ export async function executePlan(
 }
 
 /** Human-readable summary of a plan result (used when --json is off). */
-export function summarizeResult(result: PlanResult): string {
+export function summarizeResult(
+  result: PlanResult,
+  options: { readonly readOnly?: boolean } = {},
+): string {
   // "Applied" must mean a mutation was committed. A plan whose only actions are
   // docs/digests/probes writes nothing even under --apply (e.g. an analytics-only
   // command, or an idempotent re-run with no diff), so claiming "Applied" would be
@@ -1193,7 +1196,9 @@ export function summarizeResult(result: PlanResult): string {
     ? mutated
       ? `Applied ${result.capability}`
       : `${result.capability}: nothing to apply — the plan produced no writes or execs`
-    : `Plan for ${result.capability} (dry-run — nothing written; pass --apply to execute)`;
+    : options.readOnly === true
+      ? `Plan for ${result.capability} (read-only — nothing written)`
+      : `Plan for ${result.capability} (dry-run — nothing written; pass --apply to execute)`;
   const out: string[] = [head];
   for (const w of result.writes) {
     out.push(`  [${w.effect}] ${w.path} — ${w.describe}`);

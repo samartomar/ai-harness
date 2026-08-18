@@ -1226,6 +1226,33 @@
       ]
     },
     {
+      "name": "governance-doctor",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        }
+      ],
+      "commands": []
+    },
+    {
       "name": "guardrails",
       "hasDescription": true,
       "arguments": [

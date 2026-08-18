@@ -180,11 +180,30 @@ describe("v1 contract — CLI command surface", () => {
 
   it("read-only top-level commands accept the posture flag without changing apply behavior", () => {
     const root = liveSurface();
-    for (const name of ["doctor", "docs-lint", "status", "verify-bundle", "verify-release"]) {
+    for (const name of [
+      "doctor",
+      "docs-lint",
+      "governance-doctor",
+      "status",
+      "verify-bundle",
+      "verify-release",
+    ]) {
       const cmd = root.commands.find((c) => c.name === name);
       expect(cmd?.options.map((o) => o.flags)).toContain("--posture <posture>");
       expect(cmd?.options.map((o) => o.flags)).toContain("--context-dir <dir>");
     }
+  });
+
+  it("keeps the zero-write governance-doctor route free of mutating and artifact flags", () => {
+    const node = liveSurface().commands.find((c) => c.name === "governance-doctor");
+    const flags = node?.options.map((o) => o.flags) ?? [];
+    expect(flags.sort()).toEqual([
+      "--context-dir <dir>",
+      "--json",
+      "--posture <posture>",
+      "--root <dir>",
+    ]);
+    expect(node?.commands).toEqual([]);
   });
 
   it("read-only nested commands do not expose ignored mutating flags", () => {

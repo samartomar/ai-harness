@@ -21,6 +21,7 @@ import { command as doctor } from "../doctor.js";
 import { command as ecc, eccMcpAddCommand, eccMcpRemoveCommand } from "../ecc/index.js";
 import { executeEccCommand } from "../ecc/pipeline.js";
 import { evidenceBuildCommand } from "../evidence/build.js";
+import { command as governanceDoctor } from "../governance-doctor/command-v1.js";
 import { command as guardrails } from "../guardrails/index.js";
 import { command as hardware } from "../hardware/index.js";
 import { command as heal } from "../heal/index.js";
@@ -142,6 +143,7 @@ export const CAPABILITIES: CommandSpec[] = [
 export const READONLY: CommandSpec[] = [
   doctor,
   docsLint,
+  governanceDoctor,
   status,
   verifyBundle,
   verifyReleaseCommand,

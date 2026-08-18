@@ -1177,6 +1177,60 @@ plumbing. When a child has no valid generated graph alias, a populated child-sco
 the preferred exact offline path. The full Package Graph schema remains the follow-on registry
 unification.
 
+## aih governance-doctor
+
+Read-only presentation of the Governance Doctor Audit and Guide. <!-- aih:claim CM-65 --> It is a
+top-level route rather than a mode of `aih doctor`, because the internal operational adapter it
+drives already plans and probes the Doctor command; a Doctor sub-route would re-enter Doctor.
+
+The command reads one artifact: the canonical profile shipped inside this package at
+`packs/governance-quality/governance-doctor-audit-guide/profile.json`. The loader takes no
+argument, so no flag, option, environment variable, or positional value can name a different
+profile, supply profile bytes, or point at another registry entry. Non-canonical bytes are
+rejected by the shared profile parser rather than re-canonicalized.
+
+The policy decision and the policy revision are derived in code from the org policy the shared
+schema validates and the posture the shared ladder resolved. The command accepts no allow/deny
+decision, callback, or opaque revision from a caller. The decision fails closed twice: an org
+policy that cannot be read or parsed denies the run, and a run whose resolved posture sits below
+the policy's declared `minimumPosture` floor denies the run. In the normal CLI path an explicitly
+configured but unreadable `AIH_ORG_POLICY` already fails posture resolution with `AIH_ORG_POLICY`
+before this command plans anything.
+
+Per invocation the internal adapter runs exactly once and dispatches only its two code-owned
+read-only diagnostics — `aih doctor` and `aih policy evaluate` — through their own command specs.
+The Guide's next action is reported by id and stays `executable: false`: this route executes no
+next action, no `aih status`, and no Repair. Governance Doctor Repair does not exist in this
+release.
+
+**Flags**
+
+Only the shared zero-write set: `--json`, `--posture <posture>`, `--root <dir>`, and
+`--context-dir <dir>`. There is no apply, force, verify, support-output, ledger, or SARIF flag on
+this route. `--posture` is validated and participates in its posture-scoped policy resolution;
+the shared organization floor can still raise the resolved posture.
+
+**Output and exit codes**
+
+Human rendering and the presentation report carried by `--json` derive from the same closed
+result. The JSON report has one fixed key set across every outcome; absent values are `null` or an
+empty list rather than a missing key. It carries closed, bounded fields only:
+`outcome`, `state`, the derived `policy` state, identity digests, dispatched diagnostic ids,
+per-diagnostic refusals, the surface/target ids, the repair posture, and the profile's roles,
+prerequisites, conflicts, guidance, and findings rendered as quoted, source-attributed prose with
+`authority: "none"`. It carries no raw diagnostic check text, argv, environment value, filesystem
+location, child-process output, support ticket, or run-ledger row.
+
+| `outcome` | `state` | Exit |
+| --- | --- | --- |
+| `completed` | `null` | 0 |
+| `evidence-gap` | `null` (per-diagnostic states in `refusals`) | 1 |
+| `refused` | `policy-denied` or `compatibility-required` | 1 |
+| `unavailable` | `profile-unavailable` or `adapter-unavailable` | 1 |
+
+The run is zero-write: it appends no `.aih/runs/` ledger row, writes no support tickets, and
+produces no repository or workstation file.
+
 ## aih status
 
 Read-only inventory of what the harness has configured. Accepts and validates `--posture <posture>`

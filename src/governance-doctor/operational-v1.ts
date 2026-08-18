@@ -284,6 +284,11 @@ function operationalContext(value: unknown): PlanContext {
   return context;
 }
 
+/** Returns only the descriptor-validated snapshot behind an opaque context brand. */
+export function governanceDoctorOperationalPlanContextV1(value: unknown): PlanContext {
+  return operationalContext(value);
+}
+
 /** Anti-forgery brand: a hand-built look-alike is not an operation record. */
 const operationBytes = new WeakMap<object, Buffer>();
 

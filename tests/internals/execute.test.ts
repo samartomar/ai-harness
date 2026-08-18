@@ -110,6 +110,23 @@ describe("executePlan", () => {
     expect(existsSync(join(dir, "a.txt"))).toBe(false);
   });
 
+  it("does not recommend --apply for an explicitly read-only dry run", async () => {
+    const result = await executePlan(
+      plan(
+        "read-only",
+        probe("check", () => ({
+          name: "check",
+          verdict: "pass" as const,
+        })),
+      ),
+      ctx(),
+    );
+    expect(summarizeResult(result, { readOnly: true })).toBe(
+      "Plan for read-only (read-only — nothing written)\n  [probe] check (run with --verify)",
+    );
+    expect(summarizeResult(result)).toContain("pass --apply to execute");
+  });
+
   it("redacts opt-in sensitive paths and argv at PlanResult collection", async () => {
     const bundlePath = join(dir, "home", "corporate-root-ca.pem");
     const profilePath = join(dir, "home", ".profile");

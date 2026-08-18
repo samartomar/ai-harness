@@ -240,6 +240,7 @@ for the vet/sign/policy flow. <!-- aih:claim CM-20 -->
 | --- | --- |
 | [`aih docs-lint`](docs/commands.md#aih-docs-lint) | Run the read-only BetterDoc prose check and claim-ledger gate over public Markdown; hard claim orphans fail closed, while prose guidance is advisory. <!-- aih:claim CM-12 --> |
 | [`aih doctor`](docs/commands.md#aih-doctor) | Verify the workstation/repo configuration fail-closed; workspace mode validates each child repo, and Enterprise posture attests declared capability surfaces. |
+| [`aih governance-doctor`](docs/commands.md#aih-governance-doctor) | Present the shipped Governance Doctor Audit and Guide read-only and zero-write; it runs bounded read-only diagnostics while the guided next action stays descriptive and no mutation is executed. <!-- aih:claim CM-65 --> |
 | [`aih status`](docs/commands.md#aih-status) | Show a read-only inventory of what the harness has configured. |
 
 Shared flags: `--apply`, `--force`, `--verify`, `--json`, `--posture <vibe|enterprise>`, `--support-out <dir>`, `--no-log`, `--context-dir <dir>`, `--root <dir>`, `--cli <list>`, `--all-tools`, `--detect`, `--yes` (read-only commands take the relevant subset).
