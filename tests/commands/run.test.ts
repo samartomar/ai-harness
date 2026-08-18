@@ -6,7 +6,14 @@ import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { flagKey, runCapability } from "../../src/commands/run.js";
 import { executePlan } from "../../src/internals/execute.js";
-import { type CommandSpec, digest, dynamicDigest, plan, probe } from "../../src/internals/plan.js";
+import {
+  type CommandSpec,
+  digest,
+  dynamicDigest,
+  plan,
+  probe,
+  writeText,
+} from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { policyValidateCommand } from "../../src/org-policy/validate.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
@@ -44,6 +51,13 @@ const plainSpec: CommandSpec = {
       "plain",
       probe("ok", () => ({ name: "ok", verdict: "pass" })),
     ),
+};
+
+const zeroWriteMutatingSpec: CommandSpec = {
+  name: "zero-write-mutating",
+  summary: "test zero-write mutation",
+  zeroWrite: true,
+  plan: () => plan("zero-write-mutating", writeText("generated.txt", "generated", "generate")),
 };
 
 /** Build a standalone commander Command for a spec, populated from `argv`. */
@@ -398,6 +412,13 @@ describe("runCapability — custom option extraction", () => {
     const { out } = await run(["--no-cache", "--root", dir], cacheSpec);
     expect(out).toContain("cache");
     expect(out).toContain("false");
+  });
+
+  it("keeps the apply remedy for a zero-write spec that can mutate under --apply", async () => {
+    const { code, out } = await run(["--root", dir], zeroWriteMutatingSpec);
+    expect(code).toBe(0);
+    expect(out).toContain("pass --apply to execute");
+    expect(out).not.toContain("read-only — nothing written");
   });
 });
 

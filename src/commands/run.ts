@@ -369,7 +369,7 @@ export async function runCapability(
           : result;
         write(`${JSON.stringify(payload, null, 2)}\n`);
       } else {
-        write(`${summarizeResult(result)}\n`);
+        write(`${summarizeResult(result, { readOnly: spec.readOnly === true })}\n`);
         if (support) write(supportSummary(support, savedSupport));
       }
     }
