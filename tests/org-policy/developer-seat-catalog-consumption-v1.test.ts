@@ -213,6 +213,14 @@ describe("developer-seat catalog consumption", () => {
     ).toThrow();
   });
 
+  it("rejects BOM-prefixed transport bytes rather than treating them as canonical distributions", () => {
+    const canonical = distributionBytes();
+    const withBom = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), canonical]);
+    expect(() =>
+      resolveDeveloperSeatCatalogConsumptionV1(consumptionInput({ current: withBom })),
+    ).toThrow();
+  });
+
   it("advances on a higher sequence, accepts idempotent equal-sequence replay, and rejects rollback or digest conflict", () => {
     const advancing = resolveDeveloperSeatCatalogConsumptionV1(
       consumptionInput({

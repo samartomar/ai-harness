@@ -58,6 +58,19 @@ function expectDelegatedFailure(run: () => unknown): void {
   expect(message ?? "").toMatch(DELEGATED_ERROR);
 }
 
+function expectAdapterFailure(run: () => unknown): void {
+  let message: string | undefined;
+  try {
+    run();
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  expect(message, "expected an adapter failure").toBeTypeOf("string");
+  expect(message ?? "").toMatch(ADAPTER_ERROR);
+  expect(message ?? "").not.toContain(workspace);
+  expect(message ?? "").not.toContain(seatRoot);
+}
+
 const sha = (value: string): string => createHash("sha256").update(value, "utf8").digest("hex");
 const headRoot = sha("developer-seat head signer root");
 const adminRoot = sha("developer-seat admin signer root");
@@ -268,6 +281,42 @@ describe("operational developer-seat catalog custody V1", () => {
     );
     expect(existsSync(lastGoodPath())).toBe(false);
     expect(rootEntries()).toEqual([CURRENT_SLOT]);
+  });
+
+  it("fails closed when verification races non-promoting last-good or compatibility results", () => {
+    const prior = seedLastGood(distributionBytes({ sequence: 41 }));
+    const replacement = distributionBytes({ sequence: 42 });
+    const replaceLastGood = (): boolean => {
+      writeFileSync(lastGoodPath(), replacement);
+      return true;
+    };
+
+    expectAdapterFailure(() =>
+      resolveOperationalDeveloperSeatCatalogV1(
+        operationalInput({ verifyCanonicalPae: replaceLastGood }),
+      ),
+    );
+    expect(existsSync(currentPath())).toBe(false);
+    expect(readFileSync(lastGoodPath()).equals(replacement)).toBe(true);
+    expect(readFileSync(lastGoodPath()).equals(prior)).toBe(false);
+    expect(rootEntries()).toEqual([LAST_GOOD_SLOT]);
+
+    rmSync(lastGoodPath(), { force: true });
+    seedCurrent(distributionBytes({ compatibleEffectVersion: "2" }));
+    const moved = join(workspace, "compatibility-race-root");
+    const replaceRoot = (): boolean => {
+      renameSync(seatRoot, moved);
+      mkdirSync(seatRoot, { recursive: true });
+      return true;
+    };
+
+    expectAdapterFailure(() =>
+      resolveOperationalDeveloperSeatCatalogV1(
+        operationalInput({ verifyCanonicalPae: replaceRoot }),
+      ),
+    );
+    expect(rootEntries()).toEqual([]);
+    expect(readdirSync(moved).sort()).toEqual([CURRENT_SLOT]);
   });
 
   it("calls Core with both slots explicitly unavailable when neither exists and surfaces Core's own failure", () => {
@@ -557,16 +606,12 @@ describe("operational developer-seat catalog custody V1", () => {
       expect(existsSync(lastGoodPath())).toBe(false);
     }
 
-    // A BOM is likewise neither stripped nor added by custody. Whether a leading
-    // BOM is tolerated is the shipped codec's decision, not the adapter's, and
-    // whatever the codec admits is promoted byte-for-byte, BOM included.
+    // A BOM is a different transport representation, not canonical bytes.
     const withBom = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), canonical]);
     writeFileSync(currentPath(), withBom);
-    expect(
-      (resolveOperationalDeveloperSeatCatalogV1(operationalInput()) as { kind: string }).kind,
-    ).toBe("resolved");
-    expect(readFileSync(lastGoodPath()).equals(withBom)).toBe(true);
+    expectDelegatedFailure(() => resolveOperationalDeveloperSeatCatalogV1(operationalInput()));
     expect(readFileSync(currentPath()).equals(withBom)).toBe(true);
+    expect(existsSync(lastGoodPath())).toBe(false);
     rmSync(lastGoodPath(), { force: true });
 
     // The byte-exact canonical form resolves and is promoted byte-for-byte.
@@ -586,13 +631,9 @@ describe("operational developer-seat catalog custody V1", () => {
       return true;
     };
 
-    const result = resolveOperationalDeveloperSeatCatalogV1(
-      operationalInput({ verifyCanonicalPae }),
-    ) as { kind: string; sequence: number };
-
-    // Core verified the snapshot it was given; custody refuses to overwrite newer state.
-    expect(result.kind).toBe("resolved");
-    expect(result.sequence).toBe(42);
+    expectAdapterFailure(() =>
+      resolveOperationalDeveloperSeatCatalogV1(operationalInput({ verifyCanonicalPae })),
+    );
     expect(readFileSync(currentPath()).equals(racer)).toBe(true);
     expect(readFileSync(currentPath()).equals(original)).toBe(false);
     expect(existsSync(lastGoodPath())).toBe(false);
@@ -606,11 +647,9 @@ describe("operational developer-seat catalog custody V1", () => {
       return true;
     };
 
-    const result = resolveOperationalDeveloperSeatCatalogV1(
-      operationalInput({ verifyCanonicalPae }),
-    ) as { kind: string };
-
-    expect(result.kind).toBe("resolved");
+    expectAdapterFailure(() =>
+      resolveOperationalDeveloperSeatCatalogV1(operationalInput({ verifyCanonicalPae })),
+    );
     expect(existsSync(lastGoodPath())).toBe(false);
     expect(rootEntries()).toEqual([]);
   });
@@ -625,10 +664,9 @@ describe("operational developer-seat catalog custody V1", () => {
       return true;
     };
 
-    const created = resolveOperationalDeveloperSeatCatalogV1(
-      operationalInput({ verifyCanonicalPae: appearing }),
-    ) as { kind: string };
-    expect(created.kind).toBe("resolved");
+    expectAdapterFailure(() =>
+      resolveOperationalDeveloperSeatCatalogV1(operationalInput({ verifyCanonicalPae: appearing })),
+    );
     expect(calls).toBe(1);
     // A last-good that appeared after the snapshot is newer state, not ours to clobber.
     expect(readFileSync(lastGoodPath()).equals(newer)).toBe(true);
@@ -640,10 +678,9 @@ describe("operational developer-seat catalog custody V1", () => {
       writeFileSync(lastGoodPath(), replacement);
       return true;
     };
-    const kept = resolveOperationalDeveloperSeatCatalogV1(
-      operationalInput({ verifyCanonicalPae: replacing }),
-    ) as { kind: string };
-    expect(kept.kind).toBe("resolved");
+    expectAdapterFailure(() =>
+      resolveOperationalDeveloperSeatCatalogV1(operationalInput({ verifyCanonicalPae: replacing })),
+    );
     expect(readFileSync(lastGoodPath()).equals(replacement)).toBe(true);
     expect(readFileSync(lastGoodPath()).equals(prior)).toBe(false);
     expect(rootEntries()).toEqual([CURRENT_SLOT, LAST_GOOD_SLOT]);
@@ -658,11 +695,9 @@ describe("operational developer-seat catalog custody V1", () => {
       return true;
     };
 
-    const result = resolveOperationalDeveloperSeatCatalogV1(
-      operationalInput({ verifyCanonicalPae }),
-    ) as { kind: string };
-
-    expect(result.kind).toBe("resolved");
+    expectAdapterFailure(() =>
+      resolveOperationalDeveloperSeatCatalogV1(operationalInput({ verifyCanonicalPae })),
+    );
     expect(rootEntries()).toEqual([]);
     expect(existsSync(lastGoodPath())).toBe(false);
     expect(readdirSync(moved).sort()).toEqual([CURRENT_SLOT]);
@@ -673,9 +708,7 @@ describe("operational developer-seat catalog custody V1", () => {
     writeFileSync(lockPath(), Buffer.from("held-by-another-writer", "utf8"), { flag: "wx" });
     const holder = readFileSync(lockPath());
 
-    const result = resolveOperationalDeveloperSeatCatalogV1(operationalInput()) as { kind: string };
-
-    expect(result.kind).toBe("resolved");
+    expectAdapterFailure(() => resolveOperationalDeveloperSeatCatalogV1(operationalInput()));
     expect(existsSync(lastGoodPath())).toBe(false);
     // The foreign lock survives byte-for-byte: a stale lock is never broken.
     expect(existsSync(lockPath())).toBe(true);
@@ -690,11 +723,11 @@ describe("operational developer-seat catalog custody V1", () => {
     expect(existsSync(lockPath())).toBe(false);
   });
 
-  it("leaves no scratch file or lock behind on any promotion outcome and never throws from a custody failure", () => {
+  it("leaves no scratch file or lock behind on successful promotion and fails closed on custody failure", () => {
     // Aborted by a held lock.
     seedCurrent();
     writeFileSync(lockPath(), Buffer.alloc(0), { flag: "wx" });
-    expect(() => resolveOperationalDeveloperSeatCatalogV1(operationalInput())).not.toThrow();
+    expectAdapterFailure(() => resolveOperationalDeveloperSeatCatalogV1(operationalInput()));
     expect(rootEntries().filter((entry) => entry.endsWith(".tmp"))).toEqual([]);
     rmSync(lockPath(), { force: true });
 
@@ -703,9 +736,9 @@ describe("operational developer-seat catalog custody V1", () => {
       writeFileSync(currentPath(), distributionBytes({ sequence: 43 }));
       return true;
     };
-    expect(() =>
+    expectAdapterFailure(() =>
       resolveOperationalDeveloperSeatCatalogV1(operationalInput({ verifyCanonicalPae: racing })),
-    ).not.toThrow();
+    );
     expect(rootEntries()).toEqual([CURRENT_SLOT]);
 
     // Completed promotion.
@@ -713,6 +746,36 @@ describe("operational developer-seat catalog custody V1", () => {
     resolveOperationalDeveloperSeatCatalogV1(operationalInput());
     expect(rootEntries()).toEqual([CURRENT_SLOT, LAST_GOOD_SLOT]);
     expect(readFileSync(lastGoodPath()).equals(bytes)).toBe(true);
+  });
+
+  it("fails closed when the verified current cannot be durably promoted", () => {
+    if (process.platform === "win32") return;
+    const current = seedCurrent();
+    let denied = false;
+    const verifyCanonicalPae = (): boolean => {
+      chmodSync(seatRoot, 0o500);
+      try {
+        writeFileSync(join(seatRoot, ".permission-probe"), Buffer.alloc(0), { flag: "wx" });
+      } catch {
+        denied = true;
+      }
+      return true;
+    };
+    try {
+      let message: string | undefined;
+      try {
+        resolveOperationalDeveloperSeatCatalogV1(operationalInput({ verifyCanonicalPae }));
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      if (!denied) return; // A privileged runner cannot exercise this POSIX permission boundary.
+      expect(message).toMatch(ADAPTER_ERROR);
+      expect(message ?? "").not.toContain(workspace);
+      expect(readFileSync(currentPath()).equals(current)).toBe(true);
+      expect(existsSync(lastGoodPath())).toBe(false);
+    } finally {
+      chmodSync(seatRoot, 0o700);
+    }
   });
 
   it("writes the promoted slot as an owner-only regular file, never a link or a shared-mode file", () => {

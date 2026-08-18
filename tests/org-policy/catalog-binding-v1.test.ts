@@ -334,6 +334,7 @@ describe("admin-signed seat distributions", () => {
       subject: [{ digest: { sha256: literalBindingSha256 }, name: "aih/ResolvedCatalogBindingV1" }],
     });
     for (const changed of [
+      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), bytes]),
       Buffer.from(`${bytes.toString("utf8")} `, "utf8"),
       Buffer.from(JSON.stringify({ ...parsed, unknown: true }), "utf8"),
       Buffer.from(
