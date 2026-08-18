@@ -586,7 +586,8 @@ describe("GovernanceDoctorAuditV1 canonical transport", () => {
   it("rejects noncanonical, BOM-prefixed, duplicate, malformed, and forged audit transport", () => {
     const bytes = canonicalGovernanceDoctorAuditV1Bytes(audited());
     const text = bytes.toString("utf8");
-    const duplicate = text.replace("{", '{"kind":"audited",');
+    expect(text.startsWith("{")).toBe(true);
+    const duplicate = `{"kind":"audited",${text.slice(1)}`;
     const forged = JSON.parse(text) as Record<string, unknown>;
     forged.auditSha256 = "0".repeat(64);
     for (const candidate of [
@@ -1103,7 +1104,8 @@ describe("GovernanceDoctorGuideV1 canonical transport", () => {
       renderGovernanceDoctorGuideV1({ audit: audited(), profile: profile() }),
     );
     const text = bytes.toString("utf8");
-    const duplicate = text.replace("{", '{"kind":"available",');
+    expect(text.startsWith("{")).toBe(true);
+    const duplicate = `{"kind":"available",${text.slice(1)}`;
     const forged = JSON.parse(text) as Record<string, unknown>;
     forged.guideSha256 = "0".repeat(64);
     for (const candidate of [
