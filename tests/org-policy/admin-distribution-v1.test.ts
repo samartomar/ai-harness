@@ -83,6 +83,7 @@ function resolutionInput(overrides: Record<string, unknown> = {}) {
   };
   return {
     adminSignerRootSha256: adminRoot,
+    bindingResolvedAt: "2026-08-17T12:00:00Z",
     cachedVerified: { kind: "unavailable" },
     expectedAdminSignerIdentity: "signer:admin-seat-v1",
     expectedCatalogSha256: sha(snapshotBytes),
@@ -121,7 +122,7 @@ function expectedBinding(input: ReturnType<typeof resolutionInput>) {
     headSignerRootSha256: headRoot,
     members: [snapshotMember()],
     protocol: "ResolvedCatalogBindingV1",
-    resolvedAt: input.now,
+    resolvedAt: input.bindingResolvedAt,
     sequence: 42,
     tier: "fresh",
   };
@@ -228,7 +229,7 @@ describe("internal admin-seat distribution composition", () => {
       headSignerRootSha256: headRoot,
       sequence: 42,
       tier: "fresh",
-      resolvedAt: input.now,
+      resolvedAt: input.bindingResolvedAt,
       resolvedCatalogBindingSha256: expected.resolvedCatalogBindingSha256,
     });
     expect(distribution.binding.members).toEqual([snapshotMember()]);
@@ -249,7 +250,7 @@ describe("internal admin-seat distribution composition", () => {
       { ...input, catalogSha256: sha("forged") },
       { ...input, fresh: { ...input.fresh, catalogSnapshotSha256: sha("forged") } },
       { ...input, expectedCatalogSha256: sha("wrong catalog") },
-      { ...input, now: "2026-08-18T00:00:00Z" },
+      { ...input, bindingResolvedAt: "not-a-timestamp" },
       {
         ...input,
         fresh: {
@@ -267,6 +268,18 @@ describe("internal admin-seat distribution composition", () => {
       expect(() => composeAdminSeatDistributionV1(changed)).toThrow();
     expect(signer).not.toHaveBeenCalled();
     expect(verifier).not.toHaveBeenCalled();
+  });
+
+  it("rejects impossible UTC-second calendar instants rather than normalizing them", () => {
+    for (const bindingResolvedAt of [
+      "2026-02-31T12:00:00Z",
+      "2026-13-01T00:00:00Z",
+      "2025-02-29T00:00:00Z",
+    ]) {
+      expect(() => composeAdminSeatDistributionV1(resolutionInput({ bindingResolvedAt }))).toThrow(
+        "binding resolved at",
+      );
+    }
   });
 
   it("fails closed when an injected signer or independent verifier returns malformed, mismatched, or rejected evidence", () => {

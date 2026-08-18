@@ -135,7 +135,12 @@ describe("CLI program", () => {
     expect(policy?.commands.length).toBeGreaterThan(0);
     for (const sub of policy?.commands ?? []) {
       if (sub.name() === "generate") {
-        expect(sub.registeredArguments).toEqual([]);
+        // Still rootless with respect to a governed TARGET repository: its only
+        // positional is the administrator root that opts into signed supported
+        // catalog consumption, never the conventional repo-scoped [root].
+        expect(
+          sub.registeredArguments.map((a) => ({ name: a.name(), required: a.required })),
+        ).toEqual([{ name: "admin-root", required: false }]);
         continue;
       }
       expect(

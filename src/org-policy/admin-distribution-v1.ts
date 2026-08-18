@@ -14,6 +14,7 @@ type Json = Record<string, unknown>;
 
 const FIELDS = [
   "adminSignerRootSha256",
+  "bindingResolvedAt",
   "cachedVerified",
   "expectedAdminSignerIdentity",
   "expectedCatalogSha256",
@@ -69,8 +70,16 @@ function pae(payloadType: string, payload: Buffer): Buffer {
   ]);
 }
 
+function utcSecond(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(value))
+    return false;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) && date.toISOString() === `${value.slice(0, -1)}.000Z`;
+}
+
 function resolutionInput(value: Json): Json {
   const {
+    bindingResolvedAt: _bindingResolvedAt,
     expectedAdminSignerIdentity: _expectedAdminSignerIdentity,
     signCanonicalPae: _signCanonicalPae,
     verifyCatalogHeadPae,
@@ -101,12 +110,13 @@ export function composeAdminSeatDistributionV1(input: unknown): AdminSeatDistrib
     signerIdentity.length > 256
   )
     fail("admin signer identity");
+  if (!utcSecond(value.bindingResolvedAt)) fail("binding resolved at");
   const material = resolveVerifiedCatalogMaterialV1(resolutionInput(value));
   const binding = createResolvedCatalogBindingV1(
     bindingInputFromVerifiedCatalogMaterialV1(material, {
       adminSignerRootSha256: value.adminSignerRootSha256 as string,
       headSignerRootSha256: value.headSignerRootSha256 as string,
-      resolvedAt: value.now as string,
+      resolvedAt: value.bindingResolvedAt,
     }),
   );
   const payloadType = "application/vnd.in-toto+json";

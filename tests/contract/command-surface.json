@@ -2330,7 +2330,12 @@
         {
           "name": "generate",
           "hasDescription": true,
-          "arguments": [],
+          "arguments": [
+            {
+              "name": "admin-root",
+              "required": false
+            }
+          ],
           "options": [
             {
               "flags": "--all-tools"
