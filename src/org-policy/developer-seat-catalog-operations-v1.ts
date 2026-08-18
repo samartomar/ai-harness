@@ -5,6 +5,7 @@ import {
   constants as fsConstants,
   fstatSync,
   fsyncSync,
+  linkSync,
   lstatSync,
   openSync,
   renameSync,
@@ -103,6 +104,11 @@ interface FileIdentity {
 }
 
 type DirectoryIdentity = FileIdentity;
+
+interface SlotRead {
+  readonly bytes: Buffer;
+  readonly identity: FileIdentity;
+}
 
 /**
  * Every custody diagnostic is one of these fixed labels. A filesystem path, root,
@@ -216,7 +222,7 @@ function openSlot(path: string, label: string): number {
  * re-checked against that same inode so a swap mid-call cannot slip through, and
  * a size or mtime that moves across the read is treated as a racy slot.
  */
-function readSlot(path: string, label: string): Buffer | undefined {
+function readSlot(path: string, label: string): SlotRead | undefined {
   const info = statSlot(path, label);
   if (info === undefined) return undefined;
   const expectedIdentity = identityOf(info);
@@ -258,7 +264,7 @@ function readSlot(path: string, label: string): Buffer | undefined {
       fail(label);
     closeSync(fd);
     closed = true;
-    return bytes;
+    return { bytes, identity: openedIdentity };
   } catch (error) {
     if (!closed)
       try {
@@ -273,25 +279,38 @@ function readSlot(path: string, label: string): Buffer | undefined {
 
 /** True only when the slot still holds exactly the bytes custody snapshotted. */
 function slotUnchanged(path: string, snapshot: Buffer | undefined): boolean {
-  let actual: Buffer | undefined;
+  let actual: SlotRead | undefined;
   try {
     actual = readSlot(path, "slot");
   } catch {
     return false; // present but no longer admissible is itself a concurrent change
   }
   if (snapshot === undefined) return actual === undefined;
-  return actual?.equals(snapshot) === true;
+  return actual?.bytes.equals(snapshot) === true;
 }
 
 /** Exclusive create, so a lock held by anyone else is never broken or stolen. */
-function acquireLock(path: string, markOwned: () => void): void {
+function acquireLock(path: string, markOwned: (identity: FileIdentity) => void): void {
   let fd: number;
   try {
     fd = openSync(path, EXCLUSIVE_CREATE, 0o600);
   } catch {
     fail("promotion");
   }
-  markOwned();
+  try {
+    const info = fstatSync(fd, { bigint: true });
+    const identity = identityOf(info);
+    if (!info.isFile() || info.nlink !== 1n || identity === undefined) fail("promotion");
+    markOwned(identity);
+  } catch (error) {
+    try {
+      closeSync(fd);
+    } catch {
+      // The owned lock is retired by the caller if it was recorded.
+    }
+    if (error instanceof AihError) throw error;
+    fail("promotion");
+  }
   try {
     closeSync(fd);
   } catch {
@@ -304,14 +323,68 @@ function acquireLock(path: string, markOwned: () => void): void {
   }
 }
 
-function discardInOriginalRoot(
+function hasExpectedFile(path: string, expected: FileIdentity, links = 1n): boolean {
+  try {
+    const info = lstatSync(path, { bigint: true });
+    const identity = identityOf(info);
+    return (
+      !info.isSymbolicLink() &&
+      info.isFile() &&
+      info.nlink === links &&
+      identity !== undefined &&
+      sameIdentity(identity, expected)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isAbsent(path: string): boolean {
+  try {
+    lstatSync(path, { bigint: true });
+    return false;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT";
+  }
+}
+
+/**
+ * Retire a known owned file through a random private name. If the source name
+ * was replaced, restore the displaced object only into an absent original name;
+ * never unlink or overwrite a foreign replacement.
+ */
+function discardOwnedFile(
   root: string,
   rootIdentity: DirectoryIdentity,
   path: string,
+  expected: FileIdentity,
+  links = 1n,
 ): boolean {
-  if (!sameDirectory(root, rootIdentity)) return true;
+  if (!sameDirectory(root, rootIdentity)) return false;
+  const tombstone = join(root, `.${randomBytes(16).toString("hex")}.retired`);
   try {
-    retryTransient(() => rmSync(path, { force: true }));
+    retryTransient(() => renameSync(path, tombstone));
+  } catch {
+    return false;
+  }
+  if (!hasExpectedFile(tombstone, expected, links)) {
+    let restored = false;
+    try {
+      linkSync(tombstone, path);
+      restored = true;
+    } catch {
+      // A concurrent replacement owns the original name; preserve both objects.
+    }
+    if (restored)
+      try {
+        retryTransient(() => rmSync(tombstone));
+      } catch {
+        // The foreign object remains preserved at the original path.
+      }
+    return false;
+  }
+  try {
+    retryTransient(() => rmSync(tombstone));
     return true;
   } catch {
     return false;
@@ -360,7 +433,7 @@ function writeDurableFile(path: string, bytes: Buffer): FileIdentity {
 }
 
 /** Re-open the scratch with no-follow and prove it is still our exact durable bytes. */
-function verifyScratch(path: string, expected: FileIdentity, bytes: Buffer): void {
+function verifyScratch(path: string, expected: FileIdentity, bytes: Buffer, links = 1n): void {
   let fd: number;
   try {
     fd = openSync(path, fsConstants.O_RDONLY | O_NOFOLLOW | O_NONBLOCK, 0o600);
@@ -373,7 +446,7 @@ function verifyScratch(path: string, expected: FileIdentity, bytes: Buffer): voi
     const identity = identityOf(before);
     if (
       !before.isFile() ||
-      before.nlink !== 1n ||
+      before.nlink !== links ||
       identity === undefined ||
       !sameIdentity(identity, expected) ||
       before.size !== BigInt(bytes.length)
@@ -388,13 +461,13 @@ function verifyScratch(path: string, expected: FileIdentity, bytes: Buffer): voi
       actual === undefined ||
       !actual.equals(bytes) ||
       !after.isFile() ||
-      after.nlink !== 1n ||
+      after.nlink !== links ||
       afterIdentity === undefined ||
       !sameIdentity(afterIdentity, expected) ||
       after.size !== before.size ||
       named.isSymbolicLink() ||
       !named.isFile() ||
-      named.nlink !== 1n ||
+      named.nlink !== links ||
       namedIdentity === undefined ||
       !sameIdentity(namedIdentity, expected) ||
       named.size !== before.size
@@ -468,6 +541,95 @@ function snapshotsUnchanged(
   return currentUnchanged && lastGoodUnchanged && sameDirectory(root, rootIdentity);
 }
 
+interface OwnedFile {
+  readonly identity: FileIdentity;
+  readonly path: string;
+  permittedLinks: readonly bigint[];
+  retired: boolean;
+}
+
+function ownedFile(
+  path: string,
+  identity: FileIdentity,
+  permittedLinks: readonly bigint[] = [1n],
+): OwnedFile {
+  return { identity, path, permittedLinks, retired: false };
+}
+
+function retireOwnedFile(root: string, rootIdentity: DirectoryIdentity, file: OwnedFile): boolean {
+  if (file.retired) return true;
+  for (const links of file.permittedLinks) {
+    if (discardOwnedFile(root, rootIdentity, file.path, file.identity, links)) {
+      file.retired = true;
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Link the verified scratch into the fixed target only while that target is
+ * absent. A concurrent target wins the name; it is never overwritten.
+ */
+function publishScratchNoClobber(
+  root: string,
+  rootIdentity: DirectoryIdentity,
+  scratch: OwnedFile,
+  current: Buffer,
+  lastGood: SlotRead | undefined,
+): FileIdentity {
+  const target = join(root, LAST_GOOD_SLOT);
+  let displaced: OwnedFile | undefined;
+  try {
+    if (lastGood !== undefined) {
+      const path = join(root, `.${randomBytes(16).toString("hex")}.displaced`);
+      try {
+        retryTransient(() => renameSync(target, path));
+      } catch {
+        fail("promotion");
+      }
+      displaced = ownedFile(path, lastGood.identity);
+      let displacedVerified = hasExpectedFile(path, lastGood.identity);
+      if (displacedVerified)
+        try {
+          verifyScratch(path, lastGood.identity, lastGood.bytes);
+        } catch {
+          displacedVerified = false;
+        }
+      if (!displacedVerified) {
+        try {
+          linkSync(path, target);
+          displaced.permittedLinks = [2n, 1n];
+          retryTransient(() => rmSync(path));
+          displaced.retired = true;
+        } catch {
+          // A concurrent replacement owns the target name or remains recoverable.
+        }
+        fail("promotion");
+      }
+    }
+    try {
+      linkSync(scratch.path, target);
+    } catch {
+      fail("promotion");
+    }
+    scratch.permittedLinks = [2n, 1n];
+    verifyScratch(target, scratch.identity, current, 2n);
+    if (!retireOwnedFile(root, rootIdentity, scratch)) fail("promotion");
+    if (displaced !== undefined && !retireOwnedFile(root, rootIdentity, displaced))
+      fail("promotion");
+    verifyScratch(target, scratch.identity, current);
+    return scratch.identity;
+  } catch (error) {
+    const scratchRetired = retireOwnedFile(root, rootIdentity, scratch);
+    const displacedRetired =
+      displaced === undefined || retireOwnedFile(root, rootIdentity, displaced);
+    if (!scratchRetired || !displacedRetired) fail("promotion");
+    if (error instanceof AihError) throw error;
+    fail("promotion");
+  }
+}
+
 /**
  * Copy the exact verified current bytes into the last-good slot. Reached only
  * after the foundation resolved CURRENT. The current slot is never modified;
@@ -477,37 +639,41 @@ function promoteVerifiedCurrent(
   root: string,
   rootIdentity: DirectoryIdentity,
   current: Buffer,
-  lastGood: Buffer | undefined,
+  lastGood: SlotRead | undefined,
 ): void {
-  const lock = join(root, LOCK_SLOT);
+  const lockPath = join(root, LOCK_SLOT);
   if (!sameDirectory(root, rootIdentity)) fail("promotion");
-  let temporary: string | undefined;
-  let lockHeld = false;
+  let temporary: OwnedFile | undefined;
+  let lock: OwnedFile | undefined;
   try {
-    acquireLock(lock, () => {
-      lockHeld = true;
+    acquireLock(lockPath, (identity) => {
+      lock = ownedFile(lockPath, identity);
     });
-    if (!snapshotsUnchanged(root, rootIdentity, current, lastGood)) fail("promotion");
+    if (!snapshotsUnchanged(root, rootIdentity, current, lastGood?.bytes)) fail("promotion");
     const scratch = join(root, `.${randomBytes(12).toString("hex")}.tmp`);
-    temporary = scratch;
-    const scratchIdentity = writeDurableFile(scratch, current);
-    if (!snapshotsUnchanged(root, rootIdentity, current, lastGood)) fail("promotion");
-    verifyScratch(scratch, scratchIdentity, current);
-    try {
-      retryTransient(() => renameSync(scratch, join(root, LAST_GOOD_SLOT)));
-    } catch {
-      fail("promotion");
-    }
+    temporary = ownedFile(scratch, writeDurableFile(scratch, current));
+    if (!snapshotsUnchanged(root, rootIdentity, current, lastGood?.bytes)) fail("promotion");
+    verifyScratch(temporary.path, temporary.identity, current);
+    const publishedIdentity = publishScratchNoClobber(
+      root,
+      rootIdentity,
+      temporary,
+      current,
+      lastGood,
+    );
     temporary = undefined;
     syncDirectory(root, rootIdentity);
-    if (!sameDirectory(root, rootIdentity)) fail("promotion");
-    if (!discardInOriginalRoot(root, rootIdentity, lock)) fail("promotion");
-    lockHeld = false;
-    if (!sameDirectory(root, rootIdentity)) fail("promotion");
+    if (!sameDirectory(root, rootIdentity) || !slotUnchanged(join(root, CURRENT_SLOT), current))
+      fail("promotion");
+    verifyScratch(join(root, LAST_GOOD_SLOT), publishedIdentity, current);
+    if (lock === undefined || !retireOwnedFile(root, rootIdentity, lock)) fail("promotion");
+    lock = undefined;
+    syncDirectory(root, rootIdentity);
+    if (!sameDirectory(root, rootIdentity) || !isAbsent(lockPath)) fail("promotion");
   } catch (error) {
     const scratchDiscarded =
-      temporary === undefined || discardInOriginalRoot(root, rootIdentity, temporary);
-    const lockDiscarded = lockHeld === false || discardInOriginalRoot(root, rootIdentity, lock);
+      temporary === undefined || retireOwnedFile(root, rootIdentity, temporary);
+    const lockDiscarded = lock === undefined || retireOwnedFile(root, rootIdentity, lock);
     if (!scratchDiscarded || !lockDiscarded) fail("promotion");
     if (error instanceof AihError) throw error;
     fail("promotion");
@@ -537,22 +703,22 @@ export function resolveOperationalDeveloperSeatCatalogV1(
   const lastGood = readSlot(join(root, LAST_GOOD_SLOT), "last-good slot");
 
   const result = resolveDeveloperSeatCatalogConsumptionV1({
-    current: current ?? UNAVAILABLE,
+    current: current?.bytes ?? UNAVAILABLE,
     expectedAdminSignerIdentity: input.expectedAdminSignerIdentity,
     expectedAdminSignerRootSha256: input.expectedAdminSignerRootSha256,
     expectedEffectVersion: input.expectedEffectVersion,
     expectedHeadSignerRootSha256: input.expectedHeadSignerRootSha256,
     expectedSchemaVersion: input.expectedSchemaVersion,
-    lastGood: lastGood ?? UNAVAILABLE,
+    lastGood: lastGood?.bytes ?? UNAVAILABLE,
     maxAgeSeconds: input.maxAgeSeconds,
     now: input.now,
     verifyCanonicalPae: input.verifyCanonicalPae,
   });
 
-  if (!snapshotsUnchanged(root, rootIdentity, current, lastGood)) fail("custody");
+  if (!snapshotsUnchanged(root, rootIdentity, current?.bytes, lastGood?.bytes)) fail("custody");
 
   if (result.kind === "resolved" && result.source === "current" && current !== undefined)
-    promoteVerifiedCurrent(root, rootIdentity, current, lastGood);
+    promoteVerifiedCurrent(root, rootIdentity, current.bytes, lastGood);
 
   return result;
 }

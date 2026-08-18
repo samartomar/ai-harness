@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   chmodSync,
   existsSync,
+  fstatSync,
   linkSync,
   lstatSync,
   mkdirSync,
@@ -18,6 +19,40 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const fsHooks = vi.hoisted(() => ({
+  afterFsync: undefined as undefined | ((fd: number) => void),
+  afterRename: undefined as undefined | ((from: string, to: string) => void),
+  afterRemove: undefined as undefined | ((path: string) => void),
+  beforeLink: undefined as undefined | ((from: string, to: string) => void),
+  beforeRename: undefined as undefined | ((from: string, to: string) => void),
+}));
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    fsyncSync: (...args: Parameters<typeof actual.fsyncSync>) => {
+      actual.fsyncSync(...args);
+      fsHooks.afterFsync?.(args[0]);
+    },
+    linkSync: (...args: Parameters<typeof actual.linkSync>) => {
+      fsHooks.beforeLink?.(String(args[0]), String(args[1]));
+      return actual.linkSync(...args);
+    },
+    renameSync: (...args: Parameters<typeof actual.renameSync>) => {
+      fsHooks.beforeRename?.(String(args[0]), String(args[1]));
+      const result = actual.renameSync(...args);
+      fsHooks.afterRename?.(String(args[0]), String(args[1]));
+      return result;
+    },
+    rmSync: (...args: Parameters<typeof actual.rmSync>) => {
+      actual.rmSync(...args);
+      fsHooks.afterRemove?.(String(args[0]));
+    },
+  };
+});
+
 import {
   canonicalAdminSeatDistributionV1Bytes,
   createAdminSeatDistributionV1,
@@ -160,13 +195,23 @@ function rootEntries(root: string = seatRoot): string[] {
   return readdirSync(root).sort();
 }
 
+function resetFsHooks(): void {
+  fsHooks.afterFsync = undefined;
+  fsHooks.afterRename = undefined;
+  fsHooks.afterRemove = undefined;
+  fsHooks.beforeLink = undefined;
+  fsHooks.beforeRename = undefined;
+}
+
 beforeEach(() => {
+  resetFsHooks();
   workspace = mkdtempSync(join(tmpdir(), "aih-seat-catalog-ops-"));
   seatRoot = join(workspace, "seat");
   mkdirSync(seatRoot, { recursive: true });
 });
 
 afterEach(() => {
+  resetFsHooks();
   rmSync(workspace, { force: true, recursive: true });
 });
 
@@ -721,6 +766,146 @@ describe("operational developer-seat catalog custody V1", () => {
     resolveOperationalDeveloperSeatCatalogV1(operationalInput());
     expect(readFileSync(lastGoodPath()).equals(bytes)).toBe(true);
     expect(existsSync(lockPath())).toBe(false);
+  });
+
+  it("preserves a concurrent last-good installation instead of clobbering it during publication", () => {
+    const current = seedCurrent();
+    const concurrent = distributionBytes({ sequence: 43 });
+    let installed = false;
+    fsHooks.beforeLink = (_from, to) => {
+      if (to !== lastGoodPath() || installed) return;
+      writeFileSync(lastGoodPath(), concurrent, { flag: "wx" });
+      installed = true;
+    };
+
+    try {
+      expectAdapterFailure(() => resolveOperationalDeveloperSeatCatalogV1(operationalInput()));
+    } finally {
+      resetFsHooks();
+    }
+
+    expect(installed).toBe(true);
+    expect(readFileSync(currentPath()).equals(current)).toBe(true);
+    expect(readFileSync(lastGoodPath()).equals(concurrent)).toBe(true);
+    expect(rootEntries()).toEqual([CURRENT_SLOT, LAST_GOOD_SLOT]);
+  });
+
+  it("preserves a concurrent replacement of an existing last-good and retires the displaced prior", () => {
+    const current = seedCurrent();
+    const prior = seedLastGood(distributionBytes({ sequence: 41 }));
+    const concurrent = distributionBytes({ sequence: 43 });
+    let replaced = false;
+    fsHooks.afterRename = (from) => {
+      if (from !== lastGoodPath() || replaced) return;
+      writeFileSync(lastGoodPath(), concurrent, { flag: "wx" });
+      replaced = true;
+    };
+
+    try {
+      expectAdapterFailure(() => resolveOperationalDeveloperSeatCatalogV1(operationalInput()));
+    } finally {
+      resetFsHooks();
+    }
+
+    expect(replaced).toBe(true);
+    expect(readFileSync(currentPath()).equals(current)).toBe(true);
+    expect(readFileSync(lastGoodPath()).equals(concurrent)).toBe(true);
+    expect(readFileSync(lastGoodPath()).equals(prior)).toBe(false);
+    expect(rootEntries()).toEqual([CURRENT_SLOT, LAST_GOOD_SLOT]);
+  });
+
+  it("restores a fixed target replaced before target-to-displaced retirement", () => {
+    const current = seedCurrent();
+    seedLastGood(distributionBytes({ sequence: 41 }));
+    const foreign = distributionBytes({ sequence: 43 });
+    const outside = join(workspace, "pre-rename-last-good.json");
+    writeFileSync(outside, foreign);
+    let replaced = false;
+    fsHooks.beforeRename = (from) => {
+      if (from !== lastGoodPath() || replaced) return;
+      renameSync(outside, lastGoodPath());
+      replaced = true;
+    };
+
+    try {
+      expectAdapterFailure(() => resolveOperationalDeveloperSeatCatalogV1(operationalInput()));
+    } finally {
+      resetFsHooks();
+    }
+
+    expect(replaced).toBe(true);
+    expect(readFileSync(currentPath()).equals(current)).toBe(true);
+    expect(readFileSync(lastGoodPath()).equals(foreign)).toBe(true);
+    expect(rootEntries()).toEqual([CURRENT_SLOT, LAST_GOOD_SLOT]);
+  });
+
+  it("never deletes a replacement lock and durably records owned-lock removal before success", () => {
+    const current = seedCurrent();
+    const foreignLock = Buffer.from("foreign replacement lock", "utf8");
+    let replacementInstalled = false;
+    fsHooks.afterRename = (from) => {
+      if (from !== lockPath() || replacementInstalled) return;
+      writeFileSync(lockPath(), foreignLock, { flag: "wx" });
+      replacementInstalled = true;
+    };
+
+    try {
+      expectAdapterFailure(() => resolveOperationalDeveloperSeatCatalogV1(operationalInput()));
+    } finally {
+      resetFsHooks();
+    }
+
+    expect(replacementInstalled).toBe(true);
+    expect(readFileSync(currentPath()).equals(current)).toBe(true);
+    expect(readFileSync(lockPath()).equals(foreignLock)).toBe(true);
+    expect(existsSync(lastGoodPath())).toBe(true);
+
+    rmSync(lockPath(), { force: true });
+    let retiredLockPath: string | undefined;
+    let ownedLockRemoved = false;
+    let directoryFsyncAfterRemoval = 0;
+    fsHooks.afterRename = (from, to) => {
+      if (from === lockPath()) retiredLockPath = to;
+    };
+    fsHooks.afterRemove = (path) => {
+      if (path === retiredLockPath) ownedLockRemoved = true;
+    };
+    fsHooks.afterFsync = (fd) => {
+      if (ownedLockRemoved && fstatSync(fd).isDirectory()) directoryFsyncAfterRemoval += 1;
+    };
+    try {
+      const result = resolveOperationalDeveloperSeatCatalogV1(operationalInput());
+      expect(result.kind).toBe("resolved");
+    } finally {
+      resetFsHooks();
+    }
+    expect(ownedLockRemoved).toBe(true);
+    if (process.platform !== "win32") expect(directoryFsyncAfterRemoval).toBeGreaterThan(0);
+  });
+
+  it("restores a fixed lock replaced before lock-to-tombstone retirement", () => {
+    const current = seedCurrent();
+    const foreignLock = Buffer.from("foreign pre-rename lock", "utf8");
+    const outside = join(workspace, "pre-rename-lock");
+    writeFileSync(outside, foreignLock);
+    let replaced = false;
+    fsHooks.beforeRename = (from) => {
+      if (from !== lockPath() || replaced) return;
+      renameSync(outside, lockPath());
+      replaced = true;
+    };
+
+    try {
+      expectAdapterFailure(() => resolveOperationalDeveloperSeatCatalogV1(operationalInput()));
+    } finally {
+      resetFsHooks();
+    }
+
+    expect(replaced).toBe(true);
+    expect(readFileSync(currentPath()).equals(current)).toBe(true);
+    expect(readFileSync(lockPath()).equals(foreignLock)).toBe(true);
+    expect(existsSync(lastGoodPath())).toBe(true);
+    expect(rootEntries()).toEqual([CURRENT_SLOT, LAST_GOOD_SLOT, LOCK_SLOT].sort());
   });
 
   it("leaves no scratch file or lock behind on successful promotion and fails closed on custody failure", () => {
