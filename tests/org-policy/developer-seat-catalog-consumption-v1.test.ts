@@ -164,7 +164,7 @@ describe("developer-seat catalog consumption", () => {
     const verifyCanonicalPae = vi.fn(() => true);
     const result = resolveDeveloperSeatCatalogConsumptionV1(
       consumptionInput({ verifyCanonicalPae }),
-    ) as Record<string, unknown>;
+    ) as unknown as Record<string, unknown>;
 
     expect(Object.keys(result).sort()).toEqual(
       [
@@ -198,10 +198,9 @@ describe("developer-seat catalog consumption", () => {
   });
 
   it("does not project a VerifiedCatalogMaterialV1-style shape or expose a caller-controlled projection", () => {
-    const result = resolveDeveloperSeatCatalogConsumptionV1(consumptionInput()) as Record<
-      string,
-      unknown
-    >;
+    const result = resolveDeveloperSeatCatalogConsumptionV1(
+      consumptionInput(),
+    ) as unknown as Record<string, unknown>;
     expect(result).not.toHaveProperty("members");
     expect(result).not.toHaveProperty("catalogSha256");
     expect(result).not.toHaveProperty("catalogHeadSha256");
@@ -351,7 +350,7 @@ describe("developer-seat catalog consumption", () => {
     );
     const result = resolveDeveloperSeatCatalogConsumptionV1(
       consumptionInput({ current, lastGood: compatiblePrior }),
-    ) as Record<string, unknown>;
+    ) as unknown as Record<string, unknown>;
     expect(Object.keys(result).sort()).toEqual(
       ["kind", "materializable", "protocol", "resolvedCatalogBindingSha256"].sort(),
     );
@@ -370,7 +369,7 @@ describe("developer-seat catalog consumption", () => {
         current: { kind: "unavailable" },
         lastGood: distributionBytes({ compatibleEffectVersion: "2" }, "prior-key-6"),
       }),
-    ) as Record<string, unknown>;
+    ) as unknown as Record<string, unknown>;
     expect(effectMismatch.kind).toBe("compatibility-required");
   });
 
@@ -632,7 +631,7 @@ describe("developer-seat catalog consumption", () => {
         lastGood: incompatiblePriorBytes,
         verifyCanonicalPae,
       }),
-    ) as Record<string, unknown>;
+    ) as unknown as Record<string, unknown>;
     expect(result.kind).toBe("compatibility-required");
     expect(verifyCanonicalPae).toHaveBeenCalledOnce();
 
@@ -680,6 +679,76 @@ describe("developer-seat catalog consumption", () => {
     ).toThrow();
   });
 
+  it("rejects transparent proxies at every hostile-input boundary before their observable traps can run", () => {
+    const transparentInput = new Proxy(consumptionInput(), {});
+    const transparentCurrent = new Proxy(new Uint8Array(distributionBytes()), {});
+    const transparentLastGood = new Proxy({ kind: "unavailable" as const }, {});
+    const transparentVerifier = new Proxy(() => true, {});
+
+    for (const value of [
+      transparentInput,
+      consumptionInput({ current: transparentCurrent }),
+      consumptionInput({ lastGood: transparentLastGood }),
+      consumptionInput({ verifyCanonicalPae: transparentVerifier }),
+    ])
+      expect(() => resolveDeveloperSeatCatalogConsumptionV1(value)).toThrow(
+        "DEVELOPER_SEAT_CATALOG_CONSUMPTION_V1",
+      );
+
+    const hostileProxy = <T extends object>(
+      target: T,
+    ): { readonly proxy: T; traps: () => number } => {
+      let trapCalls = 0;
+      const proxy = new Proxy(target, {
+        apply() {
+          trapCalls += 1;
+          throw new Error("unexpected apply trap");
+        },
+        get() {
+          trapCalls += 1;
+          throw new Error("unexpected get trap");
+        },
+        getPrototypeOf() {
+          trapCalls += 1;
+          throw new Error("unexpected prototype trap");
+        },
+        ownKeys() {
+          trapCalls += 1;
+          throw new Error("unexpected ownKeys trap");
+        },
+      });
+      return { proxy, traps: () => trapCalls };
+    };
+
+    const hostileInput = hostileProxy(consumptionInput());
+    expect(() => resolveDeveloperSeatCatalogConsumptionV1(hostileInput.proxy)).toThrow(
+      "DEVELOPER_SEAT_CATALOG_CONSUMPTION_V1",
+    );
+    expect(hostileInput.traps()).toBe(0);
+
+    const hostileCurrent = hostileProxy(new Uint8Array(distributionBytes()));
+    expect(() =>
+      resolveDeveloperSeatCatalogConsumptionV1(consumptionInput({ current: hostileCurrent.proxy })),
+    ).toThrow("DEVELOPER_SEAT_CATALOG_CONSUMPTION_V1");
+    expect(hostileCurrent.traps()).toBe(0);
+
+    const hostileLastGood = hostileProxy({ kind: "unavailable" as const });
+    expect(() =>
+      resolveDeveloperSeatCatalogConsumptionV1(
+        consumptionInput({ lastGood: hostileLastGood.proxy }),
+      ),
+    ).toThrow("DEVELOPER_SEAT_CATALOG_CONSUMPTION_V1");
+    expect(hostileLastGood.traps()).toBe(0);
+
+    const hostileVerifier = hostileProxy(() => true);
+    expect(() =>
+      resolveDeveloperSeatCatalogConsumptionV1(
+        consumptionInput({ verifyCanonicalPae: hostileVerifier.proxy }),
+      ),
+    ).toThrow("DEVELOPER_SEAT_CATALOG_CONSUMPTION_V1");
+    expect(hostileVerifier.traps()).toBe(0);
+  });
+
   it("rejects a broad negative matrix of malformed trust roots, signer identity, and schema/effect version IDs, plus a nonfunction verifier, and a top-level hostile input calls no getter", () => {
     const malformedDigest = "not-a-digest";
     for (const expectedAdminSignerRootSha256 of [
@@ -716,6 +785,9 @@ describe("developer-seat catalog consumption", () => {
       "a".repeat(257),
       nonNfc,
       loneSurrogate,
+      "signer\u0000identity",
+      "signer\nidentity",
+      "signer\u007fidentity",
       42,
       null,
       undefined,
@@ -733,6 +805,9 @@ describe("developer-seat catalog consumption", () => {
         "a".repeat(65),
         nonNfc,
         loneSurrogate,
+        "v\u0000one",
+        "v\none",
+        "v\u007fone",
         1,
         null,
         undefined,
@@ -856,7 +931,7 @@ describe("developer-seat catalog consumption", () => {
     );
     const result = resolveDeveloperSeatCatalogConsumptionV1(
       consumptionInput({ current }),
-    ) as Record<string, unknown>;
+    ) as unknown as Record<string, unknown>;
     expect(result.kind).toBe("compatibility-required");
     expect(Object.isFrozen(result)).toBe(true);
     expect(
