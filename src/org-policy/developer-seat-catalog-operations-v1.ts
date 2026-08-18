@@ -548,6 +548,17 @@ interface OwnedFile {
   retired: boolean;
 }
 
+interface PublishedPrior {
+  readonly bytes: Buffer;
+  readonly file: OwnedFile;
+}
+
+interface Publication {
+  readonly prior: PublishedPrior | undefined;
+  readonly target: OwnedFile;
+  settled: boolean;
+}
+
 function ownedFile(
   path: string,
   identity: FileIdentity,
@@ -577,9 +588,9 @@ function publishScratchNoClobber(
   scratch: OwnedFile,
   current: Buffer,
   lastGood: SlotRead | undefined,
-): FileIdentity {
+): Publication {
   const target = join(root, LAST_GOOD_SLOT);
-  let displaced: OwnedFile | undefined;
+  let displaced: PublishedPrior | undefined;
   try {
     if (lastGood !== undefined) {
       const path = join(root, `.${randomBytes(16).toString("hex")}.displaced`);
@@ -588,7 +599,7 @@ function publishScratchNoClobber(
       } catch {
         fail("promotion");
       }
-      displaced = ownedFile(path, lastGood.identity);
+      displaced = { bytes: lastGood.bytes, file: ownedFile(path, lastGood.identity) };
       let displacedVerified = hasExpectedFile(path, lastGood.identity);
       if (displacedVerified)
         try {
@@ -599,9 +610,9 @@ function publishScratchNoClobber(
       if (!displacedVerified) {
         try {
           linkSync(path, target);
-          displaced.permittedLinks = [2n, 1n];
+          displaced.file.permittedLinks = [2n, 1n];
           retryTransient(() => rmSync(path));
-          displaced.retired = true;
+          displaced.file.retired = true;
         } catch {
           // A concurrent replacement owns the target name or remains recoverable.
         }
@@ -616,17 +627,97 @@ function publishScratchNoClobber(
     scratch.permittedLinks = [2n, 1n];
     verifyScratch(target, scratch.identity, current, 2n);
     if (!retireOwnedFile(root, rootIdentity, scratch)) fail("promotion");
-    if (displaced !== undefined && !retireOwnedFile(root, rootIdentity, displaced))
-      fail("promotion");
     verifyScratch(target, scratch.identity, current);
-    return scratch.identity;
+    return { prior: displaced, settled: false, target: ownedFile(target, scratch.identity) };
   } catch (error) {
     const scratchRetired = retireOwnedFile(root, rootIdentity, scratch);
     const displacedRetired =
-      displaced === undefined || retireOwnedFile(root, rootIdentity, displaced);
+      displaced === undefined || retireOwnedFile(root, rootIdentity, displaced.file);
     if (!scratchRetired || !displacedRetired) fail("promotion");
     if (error instanceof AihError) throw error;
     fail("promotion");
+  }
+}
+
+function publicationStable(
+  root: string,
+  rootIdentity: DirectoryIdentity,
+  publication: Publication,
+  current: Buffer,
+): boolean {
+  if (!sameDirectory(root, rootIdentity)) return false;
+  if (!slotUnchanged(join(root, CURRENT_SLOT), current)) return false;
+  try {
+    verifyScratch(join(root, LAST_GOOD_SLOT), publication.target.identity, current);
+  } catch {
+    return false;
+  }
+  return sameDirectory(root, rootIdentity);
+}
+
+/** Restore the prior only into an absent fixed target; an existing foreign target wins. */
+function rollbackPublication(
+  root: string,
+  rootIdentity: DirectoryIdentity,
+  publication: Publication,
+): boolean {
+  if (publication.settled || !sameDirectory(root, rootIdentity)) return false;
+  const target = publication.target.path;
+  if (hasExpectedFile(target, publication.target.identity)) {
+    if (!retireOwnedFile(root, rootIdentity, publication.target)) return false;
+  }
+  const prior = publication.prior;
+  if (prior !== undefined) {
+    let restoredPrior = false;
+    if (isAbsent(target)) {
+      try {
+        linkSync(prior.file.path, target);
+      } catch {
+        return false;
+      }
+      prior.file.permittedLinks = [2n, 1n];
+      try {
+        verifyScratch(target, prior.file.identity, prior.bytes, 2n);
+      } catch {
+        return false;
+      }
+      restoredPrior = true;
+    }
+    if (!retireOwnedFile(root, rootIdentity, prior.file)) return false;
+    if (restoredPrior)
+      try {
+        verifyScratch(target, prior.file.identity, prior.bytes);
+      } catch {
+        return false;
+      }
+  }
+  try {
+    syncDirectory(root, rootIdentity);
+  } catch {
+    return false;
+  }
+  publication.settled = true;
+  return true;
+}
+
+function finalizePublication(
+  root: string,
+  rootIdentity: DirectoryIdentity,
+  publication: Publication,
+  current: Buffer,
+): boolean {
+  publication.settled = true;
+  if (
+    publication.prior !== undefined &&
+    !retireOwnedFile(root, rootIdentity, publication.prior.file)
+  )
+    return false;
+  try {
+    syncDirectory(root, rootIdentity);
+    verifyScratch(publication.target.path, publication.target.identity, current);
+    return sameDirectory(root, rootIdentity);
+  } catch {
+    return false;
   }
 }
 
@@ -645,6 +736,7 @@ function promoteVerifiedCurrent(
   if (!sameDirectory(root, rootIdentity)) fail("promotion");
   let temporary: OwnedFile | undefined;
   let lock: OwnedFile | undefined;
+  let publication: Publication | undefined;
   try {
     acquireLock(lockPath, (identity) => {
       lock = ownedFile(lockPath, identity);
@@ -654,27 +746,37 @@ function promoteVerifiedCurrent(
     temporary = ownedFile(scratch, writeDurableFile(scratch, current));
     if (!snapshotsUnchanged(root, rootIdentity, current, lastGood?.bytes)) fail("promotion");
     verifyScratch(temporary.path, temporary.identity, current);
-    const publishedIdentity = publishScratchNoClobber(
-      root,
-      rootIdentity,
-      temporary,
-      current,
-      lastGood,
-    );
+    publication = publishScratchNoClobber(root, rootIdentity, temporary, current, lastGood);
     temporary = undefined;
     syncDirectory(root, rootIdentity);
-    if (!sameDirectory(root, rootIdentity) || !slotUnchanged(join(root, CURRENT_SLOT), current))
+    if (!publicationStable(root, rootIdentity, publication, current)) {
+      if (!rollbackPublication(root, rootIdentity, publication)) fail("promotion");
       fail("promotion");
-    verifyScratch(join(root, LAST_GOOD_SLOT), publishedIdentity, current);
+    }
+    if (!finalizePublication(root, rootIdentity, publication, current)) fail("promotion");
+    verifyScratch(join(root, LAST_GOOD_SLOT), publication.target.identity, current);
     if (lock === undefined || !retireOwnedFile(root, rootIdentity, lock)) fail("promotion");
     lock = undefined;
     syncDirectory(root, rootIdentity);
     if (!sameDirectory(root, rootIdentity) || !isAbsent(lockPath)) fail("promotion");
   } catch (error) {
+    const publicationRolledBack =
+      publication === undefined ||
+      publication.settled ||
+      rollbackPublication(root, rootIdentity, publication);
     const scratchDiscarded =
       temporary === undefined || retireOwnedFile(root, rootIdentity, temporary);
+    const ownedLock = lock !== undefined;
     const lockDiscarded = lock === undefined || retireOwnedFile(root, rootIdentity, lock);
-    if (!scratchDiscarded || !lockDiscarded) fail("promotion");
+    let lockDurable = true;
+    if (ownedLock && lockDiscarded)
+      try {
+        syncDirectory(root, rootIdentity);
+      } catch {
+        lockDurable = false;
+      }
+    if (!scratchDiscarded || !lockDiscarded || !publicationRolledBack || !lockDurable)
+      fail("promotion");
     if (error instanceof AihError) throw error;
     fail("promotion");
   }

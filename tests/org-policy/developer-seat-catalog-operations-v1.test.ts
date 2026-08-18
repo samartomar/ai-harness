@@ -203,6 +203,33 @@ function resetFsHooks(): void {
   fsHooks.beforeRename = undefined;
 }
 
+/** Race exactly after the published scratch is durable on this platform. */
+function replaceCurrentAfterPublishedDurability(
+  foreignCurrent: Buffer,
+  beforeLockRetirement?: () => void,
+): () => boolean {
+  let replaced = false;
+  let retiredScratch: string | undefined;
+  const replace = (): void => {
+    if (replaced) return;
+    writeFileSync(currentPath(), foreignCurrent);
+    replaced = true;
+  };
+  fsHooks.beforeRename = (from) => {
+    if (from === lockPath()) beforeLockRetirement?.();
+  };
+  fsHooks.afterRename = (from, to) => {
+    if (from.endsWith(".tmp")) retiredScratch = to;
+  };
+  fsHooks.afterRemove = (path) => {
+    if (process.platform === "win32" && path === retiredScratch) replace();
+  };
+  fsHooks.afterFsync = (fd) => {
+    if (process.platform !== "win32" && fstatSync(fd).isDirectory()) replace();
+  };
+  return () => replaced;
+}
+
 beforeEach(() => {
   resetFsHooks();
   workspace = mkdtempSync(join(tmpdir(), "aih-seat-catalog-ops-"));
@@ -906,6 +933,50 @@ describe("operational developer-seat catalog custody V1", () => {
     expect(readFileSync(lockPath()).equals(foreignLock)).toBe(true);
     expect(existsSync(lastGoodPath())).toBe(true);
     expect(rootEntries()).toEqual([CURRENT_SLOT, LAST_GOOD_SLOT, LOCK_SLOT].sort());
+  });
+
+  it("rolls back a published target when current changes after durability and no prior exists", () => {
+    const verifiedCurrent = seedCurrent();
+    const foreignCurrent = distributionBytes({ sequence: 43 });
+    let rollbackPrecedesLockRetirement = false;
+    const wasReplaced = replaceCurrentAfterPublishedDurability(foreignCurrent, () => {
+      rollbackPrecedesLockRetirement =
+        existsSync(currentPath()) &&
+        !existsSync(lastGoodPath()) &&
+        rootEntries().join(",") === [CURRENT_SLOT, LOCK_SLOT].sort().join(",");
+    });
+
+    try {
+      expectAdapterFailure(() => resolveOperationalDeveloperSeatCatalogV1(operationalInput()));
+    } finally {
+      resetFsHooks();
+    }
+
+    expect(wasReplaced()).toBe(true);
+    expect(rollbackPrecedesLockRetirement).toBe(true);
+    expect(readFileSync(currentPath()).equals(foreignCurrent)).toBe(true);
+    expect(readFileSync(currentPath()).equals(verifiedCurrent)).toBe(false);
+    expect(existsSync(lastGoodPath())).toBe(false);
+    expect(rootEntries()).toEqual([CURRENT_SLOT]);
+  });
+
+  it("rolls back a published target to the prior when current changes after durability", () => {
+    const verifiedCurrent = seedCurrent();
+    const prior = seedLastGood(distributionBytes({ sequence: 41 }));
+    const foreignCurrent = distributionBytes({ sequence: 43 });
+    const wasReplaced = replaceCurrentAfterPublishedDurability(foreignCurrent);
+
+    try {
+      expectAdapterFailure(() => resolveOperationalDeveloperSeatCatalogV1(operationalInput()));
+    } finally {
+      resetFsHooks();
+    }
+
+    expect(wasReplaced()).toBe(true);
+    expect(readFileSync(currentPath()).equals(foreignCurrent)).toBe(true);
+    expect(readFileSync(currentPath()).equals(verifiedCurrent)).toBe(false);
+    expect(readFileSync(lastGoodPath()).equals(prior)).toBe(true);
+    expect(rootEntries()).toEqual([CURRENT_SLOT, LAST_GOOD_SLOT]);
   });
 
   it("leaves no scratch file or lock behind on successful promotion and fails closed on custody failure", () => {
