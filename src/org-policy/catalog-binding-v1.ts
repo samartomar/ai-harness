@@ -218,7 +218,7 @@ export function createResolvedCatalogBindingV1(input: unknown): ResolvedCatalogB
 function decode(value: unknown, label: string): string {
   if (typeof value === "string") return value;
   if (Buffer.isBuffer(value) || value instanceof Uint8Array)
-    return new TextDecoder("utf-8", { fatal: true }).decode(value);
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(value);
   fail(label);
 }
 
