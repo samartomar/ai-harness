@@ -13,6 +13,17 @@
       ]
     },
     {
+      "name": "governance-quality",
+      "description": "First-party declarative Governance Doctor Audit and Guide source material for destination lifecycle review.",
+      "skills": [
+        {
+          "name": "governance-doctor-audit-guide",
+          "source": "packs/governance-quality/governance-doctor-audit-guide",
+          "commit": "local"
+        }
+      ]
+    },
+    {
       "name": "review-quality",
       "description": "First-party review-quality skills for high-coverage BUGBOUNTY, generated-agent, skill, MCP, workflow, and evidence review.",
       "skills": [

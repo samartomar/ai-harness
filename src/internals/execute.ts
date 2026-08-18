@@ -707,7 +707,9 @@ export function resolveContents(action: WriteAction, absPath: string): string {
     const edited = source === undefined ? undefined : editedJsonText(source, base, value);
     return edited ?? jsonFile(value);
   }
-  return ensureTrailingNewline(action.contents ?? "");
+  return action.exactContents === true
+    ? (action.contents ?? "")
+    : ensureTrailingNewline(action.contents ?? "");
 }
 
 /**

@@ -54,6 +54,8 @@ export interface WriteAction {
   sensitive?: ActionSensitivity;
   /** Raw file contents (for text files). */
   contents?: string;
+  /** Closed opt-in for trusted source assets whose exact bytes are contractual. */
+  exactContents?: true;
   /** Structured value (for JSON files); enables `merge`. */
   json?: unknown;
   /** Deep-merge `json` onto an existing file instead of overwriting. */
@@ -443,6 +445,11 @@ export function writeText(
     requiresPriorExecSuccess: opts.requiresPriorExecSuccess,
     ...(opts.sensitive === undefined ? {} : { sensitive: opts.sensitive }),
   };
+}
+
+/** Write trusted text without the default trailing-newline rendering rule. */
+export function writeExactText(path: string, contents: string, describe: string): WriteAction {
+  return { kind: "write", path, contents, describe, exactContents: true };
 }
 
 export function writeJson(

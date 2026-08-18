@@ -8,6 +8,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Governance Doctor Audit/Guide foundation and source pack.** Internal, capability-free Audit and Guide records now use bounded canonical Profile/Audit/Guide bytes and domain-separated identities over precomputed read-only diagnostic data. The source-only `governance-quality` pack scaffolds its canonical profile and skill assets without creating destination lifecycle approvals.
+
 - **Administrator catalog generation is an explicit apply-only route.** `aih policy generate <admin-root> --apply`
   can resolve separately attested, signed supported-catalog material before rendering the local Policy Workbench;
   omitting `<admin-root>` retains the portable rootless artifact with no catalog acquisition.

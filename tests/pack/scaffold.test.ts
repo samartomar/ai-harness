@@ -1,8 +1,12 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AihError } from "../../src/errors.js";
+import {
+  canonicalGovernanceDoctorProfileV1Bytes,
+  parseGovernanceDoctorProfileV1Json,
+} from "../../src/governance-doctor/profile-v1.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -12,6 +16,7 @@ import { makeHostAdapter } from "../../src/platform/detect.js";
 
 let workspace: string;
 let home: string;
+const repositoryRoot = resolve(__dirname, "..", "..");
 
 beforeEach(() => {
   workspace = mkdtempSync(join(tmpdir(), "aih-pack-scaffold-"));
@@ -66,6 +71,74 @@ function expectRefusal(fn: () => unknown, pattern: RegExp): void {
 }
 
 describe("pack scaffold", () => {
+  it("ships the governance Audit/Guide source and profile without inventing lifecycle evidence", async () => {
+    const sourceProfile = readFileSync(
+      resolve(
+        repositoryRoot,
+        "packs/governance-quality/governance-doctor-audit-guide/profile.json",
+      ),
+    );
+    const sourceSkill = readFileSync(
+      resolve(repositoryRoot, "packs/governance-quality/governance-doctor-audit-guide/SKILL.md"),
+      "utf8",
+    );
+    const sourceLicense = readFileSync(
+      resolve(repositoryRoot, "packs/governance-quality/governance-doctor-audit-guide/LICENSE"),
+    );
+    expect(sourceSkill).toContain("license: Apache-2.0");
+    expect(sourceSkill).not.toMatch(
+      /allowed-tools:|\b(?:shell|mcp|network|process|scan|signing)\b/i,
+    );
+    expect(sourceSkill).not.toMatch(/`[^`]*`|\baih\s+(?:doctor|status|policy|pack|skill)\b/i);
+    const parsed = parseGovernanceDoctorProfileV1Json(sourceProfile);
+    expect(parsed.governanceDoctorProfileSha256).toBe(
+      "a9bcdad3ab14d82a08b01e42ec78d154b57f9e987c5d4c0824002ad3f0e8b632",
+    );
+    expect(canonicalGovernanceDoctorProfileV1Bytes(parsed).equals(sourceProfile)).toBe(true);
+
+    const preview = await executePlan(
+      await packScaffoldCommand.plan(ctx({ options: { pack: "governance-quality" } })),
+      ctx({ options: { pack: "governance-quality" } }),
+    );
+    expect(preview.applied).toBe(false);
+    expect(
+      existsSync(
+        join(workspace, "packs/governance-quality/governance-doctor-audit-guide/SKILL.md"),
+      ),
+    ).toBe(false);
+
+    const applyContext = ctx({ apply: true, options: { pack: "governance-quality" } });
+    await executePlan(await packScaffoldCommand.plan(applyContext), applyContext);
+    expect(
+      existsSync(
+        join(workspace, "packs/governance-quality/governance-doctor-audit-guide/SKILL.md"),
+      ),
+    ).toBe(true);
+    expect(
+      readFileSync(
+        join(workspace, "packs/governance-quality/governance-doctor-audit-guide/SKILL.md"),
+      ).equals(Buffer.from(sourceSkill, "utf8")),
+    ).toBe(true);
+    expect(
+      readFileSync(
+        join(workspace, "packs/governance-quality/governance-doctor-audit-guide/profile.json"),
+      ).equals(sourceProfile),
+    ).toBe(true);
+    expect(
+      readFileSync(
+        join(workspace, "packs/governance-quality/governance-doctor-audit-guide/LICENSE"),
+      ).equals(sourceLicense),
+    ).toBe(true);
+    expect(existsSync(join(workspace, "aih-skills.lock.json"))).toBe(false);
+    expect(existsSync(join(workspace, ".aih/skill-reports"))).toBe(false);
+    expect(
+      existsSync(join(workspace, "ai-coding/skill-cards/governance-doctor-audit-guide.md")),
+    ).toBe(false);
+    expect(manifestOnDisk().packs.find((pack) => pack.name === "governance-quality")).toEqual(
+      expect.objectContaining({ name: "governance-quality" }),
+    );
+  });
+
   it("previews first-party pack files and manifest curation without writing", async () => {
     const c = ctx({ options: { pack: "docs-quality" } });
     const result = await executePlan(await packScaffoldCommand.plan(c), c);
