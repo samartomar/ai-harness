@@ -8,6 +8,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Governance Doctor Audit/Guide operational adapter.** An internal, AIH-owned adapter now invokes the hard-pinned read-only `aih doctor` and `aih policy evaluate` commands through validated probe actions, converts fixed safe outcomes into the existing precomputed registry, and leaves other frozen diagnostic IDs as `missing-adapter`. It settles policy denial and profile incompatibility before planning or running a diagnostic, and binds every record to the exact profile, root, target, safe evaluation-context digest, and committed read-only surface revision. It adds no Repair, apply, or escalation route and no CLI, Workbench, or public export.
+
 - **Governance Doctor Audit/Guide foundation and source pack.** Internal, capability-free Audit and Guide records now use bounded canonical Profile/Audit/Guide bytes and domain-separated identities over precomputed read-only diagnostic data. The source-only `governance-quality` pack scaffolds its canonical profile and skill assets without creating destination lifecycle approvals.
 
 - **Administrator catalog generation is an explicit apply-only route.** `aih policy generate <admin-root> --apply`

@@ -307,7 +307,8 @@ function refuse(
   return refused;
 }
 
-function isCompatible(profile: GovernanceDoctorProfileV1): boolean {
+/** The one V1 compatibility predicate shared by precondition gates and Audit. */
+export function isGovernanceDoctorProfileCompatibleV1(profile: GovernanceDoctorProfileV1): boolean {
   return (
     profile.schemaVersion === SUPPORTED_SCHEMA_VERSION &&
     profile.effectVersion === SUPPORTED_EFFECT_VERSION &&
@@ -331,7 +332,7 @@ export function runGovernanceDoctorAuditV1(input: unknown): GovernanceDoctorAudi
   const policyRevisionSha256 = assertSha256V1(policy.revisionSha256, "policy revision");
 
   if (decision === "denied") return refuse(profileSha256, policyRevisionSha256, "policy-denied");
-  if (!isCompatible(profile))
+  if (!isGovernanceDoctorProfileCompatibleV1(profile))
     return refuse(profileSha256, policyRevisionSha256, "compatibility-required");
   const diagnostics = brandedDiagnostics(record.registry);
 
