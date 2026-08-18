@@ -1,4 +1,4 @@
-import { canonicalStrictJsonBytesV1, deepFreezeStrictJsonV1 } from "../contract/strict-json-v1.js";
+import { canonicalStrictJsonBytesV1 } from "../contract/strict-json-v1.js";
 import { command as doctorCommand } from "../doctor.js";
 import type { CommandSpec, PlanContext, ProbeAction } from "../internals/plan.js";
 import { policyEvaluateCommand } from "../org-policy/validate.js";
@@ -24,7 +24,18 @@ import {
   GOVERNANCE_DOCTOR_READ_ONLY_DIAGNOSTIC_SURFACES,
   governanceDoctorSha256V1,
 } from "./capability-v1.js";
+import {
+  createGovernanceDoctorOperationV1Record,
+  type GovernanceDoctorOperationRecordV1,
+} from "./operation-record-v1.js";
 import { type GovernanceDoctorProfileV1, governanceDoctorProfileV1Sha256 } from "./profile-v1.js";
+
+export {
+  canonicalGovernanceDoctorOperationV1Bytes,
+  type GovernanceDoctorOperationCompletedV1,
+  type GovernanceDoctorOperationRecordV1,
+  type GovernanceDoctorOperationRefusedV1,
+} from "./operation-record-v1.js";
 
 /**
  * The AIH-owned outer operational adapter for the Governance Doctor Audit and
@@ -55,41 +66,6 @@ import { type GovernanceDoctorProfileV1, governanceDoctorProfileV1Sha256 } from 
  * The record it mints is a binding, not a permission. It names no action, and the
  * Guide it accompanies still marks its next action non-runnable.
  */
-export interface GovernanceDoctorOperationCompletedV1 {
-  readonly auditSha256: string;
-  readonly contextSha256: string;
-  readonly dispatchedDiagnosticIds: readonly string[];
-  readonly guideSha256: string;
-  readonly kind: "completed";
-  readonly operationSha256: string;
-  readonly policyRevisionSha256: string;
-  readonly profileSha256: string;
-  readonly protocol: "GovernanceDoctorOperationV1";
-  readonly rootSha256: string;
-  readonly surfaceRevisionSha256: string;
-  readonly targetId: string;
-}
-
-export interface GovernanceDoctorOperationRefusedV1 {
-  readonly actionable: false;
-  readonly auditSha256: string;
-  readonly contextSha256: string;
-  readonly guideSha256: string;
-  readonly kind: "refused";
-  readonly operationSha256: string;
-  readonly policyRevisionSha256: string;
-  readonly profileSha256: string;
-  readonly protocol: "GovernanceDoctorOperationV1";
-  readonly rootSha256: string;
-  readonly state: GovernanceDoctorAuditRefusalStateV1;
-  readonly surfaceRevisionSha256: string;
-  readonly targetId: string;
-}
-
-export type GovernanceDoctorOperationRecordV1 =
-  | GovernanceDoctorOperationCompletedV1
-  | GovernanceDoctorOperationRefusedV1;
-
 export interface GovernanceDoctorOperationV1 {
   readonly audit: GovernanceDoctorAuditV1Result;
   readonly guide: GovernanceDoctorGuideV1;
@@ -106,7 +82,6 @@ interface ExecutableDiagnosticAdapterV1 {
   readonly diagnosticId: string;
 }
 
-const OPERATION_DOMAIN = "aih.governance-doctor-operation-v1";
 const CONTEXT_DOMAIN = "aih.governance-doctor-operational-context-v1";
 const SURFACE_DOMAIN = "aih.governance-doctor-read-only-surface-v1";
 const PROTOCOL = "GovernanceDoctorOperationV1";
@@ -290,7 +265,6 @@ export function governanceDoctorOperationalPlanContextV1(value: unknown): PlanCo
 }
 
 /** Anti-forgery brand: a hand-built look-alike is not an operation record. */
-const operationBytes = new WeakMap<object, Buffer>();
 
 /**
  * The single dispatch gate. A name absent from the frozen table -- including
@@ -613,15 +587,6 @@ function precondition(
   return undefined;
 }
 
-function mint(body: Json): GovernanceDoctorOperationRecordV1 {
-  const record = deepFreezeStrictJsonV1({
-    ...body,
-    operationSha256: governanceDoctorSha256V1(OPERATION_DOMAIN, body),
-  }) as GovernanceDoctorOperationRecordV1;
-  operationBytes.set(record, canonicalStrictJsonBytesV1(record));
-  return record;
-}
-
 /**
  * Runs one Governance Doctor operation: gate the policy and the profile, dispatch
  * only a code-owned bounded subset of frozen read-only diagnostics, convert their
@@ -675,22 +640,13 @@ export async function runGovernanceDoctorOperationV1(
     surfaceRevisionSha256: binding.surfaceRevisionSha256,
     targetId: binding.targetId,
   };
-  const record = mint(
-    audit.kind === "refused"
-      ? { ...identities, actionable: false, kind: "refused", state: audit.state }
-      : { ...identities, dispatchedDiagnosticIds, kind: "completed" },
-  );
+  const record = createGovernanceDoctorOperationV1Record({
+    audit,
+    guide,
+    record:
+      audit.kind === "refused"
+        ? { ...identities, actionable: false, kind: "refused", state: audit.state }
+        : { ...identities, dispatchedDiagnosticIds, kind: "completed" },
+  });
   return Object.freeze({ audit, guide, record });
-}
-
-/**
- * Exact canonical JCS bytes for a minted in-process operation record, as a
- * defensive copy. This internal binding has no transport boundary or parser:
- * callers cannot rehydrate bytes into authority, and no public export exposes it.
- */
-export function canonicalGovernanceDoctorOperationV1Bytes(value: unknown): Buffer {
-  const bytes = typeof value === "object" && value !== null ? operationBytes.get(value) : undefined;
-  if (bytes === undefined)
-    failGovernanceDoctorV1("governance doctor operation requires a validated brand");
-  return Buffer.from(bytes);
 }
