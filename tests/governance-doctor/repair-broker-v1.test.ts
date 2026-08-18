@@ -181,7 +181,12 @@ describe("GovernanceDoctor Repair V1 capability boundary (static)", () => {
   it("keeps its importer set closed to the foundation and its internal executor", () => {
     const importers = sourceFilesUnder(resolve(root, "src"))
       .filter((file) =>
-        /repair-(?:broker|capability|consent|outcome|plan)-v1\.js/.test(readFileSync(file, "utf8")),
+        // Every repair module is named here, the internal executor and verifier
+        // included: a consumer that skipped the foundation and imported only the
+        // operational modules would otherwise evade this reverse enumeration.
+        /repair-(?:broker|capability|claim|claim-store|consent|content|custody|executor|outcome|plan|verifier)-v1\.js/.test(
+          readFileSync(file, "utf8"),
+        ),
       )
       .map((file) => file.replace(/\\/g, "/").split("/src/")[1] ?? "")
       .sort();

@@ -766,7 +766,15 @@ export function governanceDoctorRepairCreateDirectoryV1(grant: unknown): void {
   }
   if (walk(body, path).state !== "directory")
     failGovernanceDoctorRepairV1("repair managed directory was not created");
-  syncPublishedDirectory(parent, parentIdentity);
+  try {
+    syncPublishedDirectory(parent, parentIdentity);
+  } catch {
+    // The flush can surface a raw OS error, and a refusal is never an output
+    // channel: it collapses into the closed label here exactly as it does on
+    // the write path. An entry whose durability cannot be proved is not a
+    // created directory.
+    failGovernanceDoctorRepairV1("repair managed directory was not created");
+  }
 }
 
 /**
@@ -774,12 +782,18 @@ export function governanceDoctorRepairCreateDirectoryV1(grant: unknown): void {
  * object this transaction did not create.
  *
  * The order is fixed. Write the whole body to an exclusively created scratch and
- * flush it. Free the managed name by capturing whatever holds it under a private
- * name -- atomically, so nothing can be substituted between the last check and the
+ * flush it, then re-prove the bound parent the moment the scratch exists --
+ * every syscall here is path-based, so a proof can never be welded to a use, and
+ * the answer is to re-prove at each irreversible boundary instead. Free the
+ * managed name by capturing whatever holds it under a private name --
+ * atomically, so nothing can be substituted between the last check and the
  * moment the name frees -- and only then prove what the capture actually took.
- * Publish by hard link, which refuses rather than replaces. Retire the scratch,
- * re-prove the published object, let the caller confirm the managed reading, and
- * flush the directory entry.
+ * Re-prove the reading and the parent once more, publish by hard link, which
+ * refuses rather than replaces, retire the scratch, re-prove the published
+ * object, let the caller confirm the managed reading, and flush the directory
+ * entry. A parent that fails any of those re-proofs costs at most a stray
+ * private scratch inside the substituted tree; it can never receive a
+ * publication.
  *
  * Every recovery works from the same two rules. An object is removed only while
  * the name still holds exactly the object recorded for it -- identity, link count,
@@ -797,7 +811,7 @@ interface ManagedPublicationV1 {
   readonly bytes: Buffer;
   /** Re-reads the managed path and refuses unless it now reads as the new bytes. */
   readonly confirmCommitted: () => void;
-  /** Re-proves the pre-write reading, as late as a check can be taken. */
+  /** Re-proves the pre-write reading and its bound directory chain, as late as a check can be taken. */
   readonly confirmUnchanged: () => void;
   readonly mode: number;
   readonly parent: string;
@@ -851,13 +865,28 @@ function publishManagedFileV1(publication: ManagedPublicationV1): void {
     if (scratchOwned === undefined)
       failGovernanceDoctorRepairV1("repair managed write did not commit");
     const scratchIdentity = scratchOwned.identity;
+    // The scratch was reached by path, so the parent is re-proved the moment the
+    // scratch exists, and the scratch must sit on the proved parent's own
+    // device. A directory swapped in behind the path -- a fresh directory or a
+    // link out of the root -- captures at most a stray private scratch and never
+    // a publication.
+    assertBoundDirectory(parent, parentIdentity);
+    if (scratchIdentity.dev !== parentIdentity.dev)
+      failGovernanceDoctorRepairV1("repair managed write did not commit");
     if (priorOwned !== undefined) {
       publication.confirmUnchanged();
       retryTransient(() => renameSync(target, captured));
       capturedKind = isOwnedObject(captured, priorOwned) ? "prior" : "foreign";
       if (capturedKind === "foreign")
         failGovernanceDoctorRepairV1("repair managed destination changed before commit");
+    } else {
+      // No capture step runs on an absent destination, so this branch takes the
+      // same late re-proof of the reading and the bound directory chain.
+      publication.confirmUnchanged();
     }
+    // As late as a path-based check can be taken: the parent is proved once more
+    // immediately before the one call that gives the new bytes a reachable name.
+    assertBoundDirectory(parent, parentIdentity);
     // Atomic and non-replacing: anything now at the name refuses the publish
     // rather than being written over.
     retryTransient(() => linkSync(scratch, target));
@@ -940,21 +969,29 @@ export function governanceDoctorRepairWriteFileV1(
   if (observed === undefined || observed.body !== body || observed.path !== path)
     failGovernanceDoctorRepairV1("repair managed destination is not writable");
 
-  if (
-    !rootIsIntact(body) ||
-    observed.identities.some((identity, index) => {
-      const prefix =
-        index === 0 ? body.realRoot : join(body.realRoot, ...path.split("/").slice(0, index));
-      const actual = lstatSafe(prefix);
-      const actualIdentity =
-        actual === "absent" || actual === "unsafe" ? undefined : identityOf(actual);
-      return actualIdentity === undefined || !sameIdentity(actualIdentity, identity);
-    })
-  )
-    failGovernanceDoctorRepairV1("repair managed destination changed before commit");
+  const assertChainBound = (): void => {
+    if (
+      !rootIsIntact(body) ||
+      observed.identities.some((identity, index) => {
+        const prefix =
+          index === 0 ? body.realRoot : join(body.realRoot, ...path.split("/").slice(0, index));
+        const actual = lstatSafe(prefix);
+        const actualIdentity =
+          actual === "absent" || actual === "unsafe" ? undefined : identityOf(actual);
+        return actualIdentity === undefined || !sameIdentity(actualIdentity, identity);
+      })
+    )
+      failGovernanceDoctorRepairV1("repair managed destination changed before commit");
+  };
+  assertChainBound();
 
   // Every comparison below reads custody's private record, never the caller's copy.
+  // The reading and the whole bound directory chain are re-proved together: a
+  // walk alone accepts any real directory at each segment, so without the
+  // identity comparison a substituted parent holding an identical-bytes file
+  // would still read as unchanged.
   const assertUnchanged = (): void => {
+    assertChainBound();
     const current = walk(body, path);
     if (
       current.state !== observed.state ||

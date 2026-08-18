@@ -267,7 +267,16 @@ function assertEffectWithinScope(effect: EffectBody, scopePaths: readonly string
       failGovernanceDoctorRepairV1("repair effect names a location outside its declared scope");
 }
 
-/** No effect identity and no exact mechanical effect may appear twice in one plan. */
+/**
+ * No effect identity, no exact mechanical effect, and no managed path may appear
+ * twice in one plan.
+ *
+ * Path distinctness is a verification constraint, not a style rule: the verifier
+ * attributes each effect's goal to per-effect attempt evidence, so a second
+ * effect on the same path makes every earlier same-path goal stale by
+ * construction, and the plan would condemn its own correct application. A shape
+ * with no verifiable reading is refused when the plan is built.
+ */
 function assertDistinctEffects(built: readonly GovernanceDoctorRepairEffectV1[]): void {
   assertUniqueV1(
     built.map((effect) => effect.effectId),
@@ -277,6 +286,14 @@ function assertDistinctEffects(built: readonly GovernanceDoctorRepairEffectV1[])
     built.map(
       (effect) =>
         `${effect.effectKind}\u0000${canonicalStrictJsonBytesV1(effect.arguments).toString("utf8")}`,
+    ),
+    "repair effects",
+  );
+  assertUniqueV1(
+    built.flatMap((effect) =>
+      GOVERNANCE_DOCTOR_REPAIR_EFFECT_ARGUMENT_SCHEMAS_V1[effect.effectKind]
+        .filter((argument) => argument.type === "managed-relative-path")
+        .map((argument) => effect.arguments[argument.name] ?? ""),
     ),
     "repair effects",
   );

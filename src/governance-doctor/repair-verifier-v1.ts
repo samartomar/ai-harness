@@ -3,6 +3,9 @@ import { failGovernanceDoctorRepairV1 } from "./repair-capability-v1.js";
 import {
   assertGovernanceDoctorRepairContentClosureV1,
   governanceDoctorRepairAttemptExpectedV1,
+  governanceDoctorRepairContentBytesV1,
+  governanceDoctorRepairMarkerBlockBodyV1,
+  normalizeGovernanceDoctorRepairLineEndingsV1,
 } from "./repair-content-v1.js";
 import {
   governanceDoctorRepairCustodyPlanSha256V1,
@@ -57,11 +60,55 @@ function effectArgument(effect: GovernanceDoctorRepairEffectV1, name: string): s
 }
 
 /**
- * Re-reads one effect's goal state from the live tree. Nothing about the attempt is
- * consulted: the same predicate would hold for a tree nobody ever repaired.
+ * Whether the live bytes satisfy the one goal the plan itself declares for this
+ * effect. Nothing about the attempt is consulted: the same predicate would hold
+ * for a tree nobody ever repaired.
+ *
+ * This is the independence half of a two-part verdict. Attempt evidence
+ * attributes a state to the attempt, but evidence is executor-recorded, so on
+ * its own it could only ever echo the executor -- a receipt minted without
+ * executing anything, carrying the unrepaired tree's own bytes, would read as
+ * verified. Each kind's goal is therefore re-derived here from the plan's
+ * arguments and the digest-bound content input, and both halves must hold.
+ */
+function planGoalHoldsV1(
+  content: unknown,
+  effect: GovernanceDoctorRepairEffectV1,
+  live: Buffer,
+): boolean {
+  if (effect.effectKind === "restore-managed-file-content")
+    return live.equals(
+      governanceDoctorRepairContentBytesV1(content, effectArgument(effect, "contentSha256")),
+    );
+  if (effect.effectKind === "rewrite-managed-marker-block") {
+    const body = governanceDoctorRepairMarkerBlockBodyV1(live, effectArgument(effect, "blockId"));
+    return (
+      body?.equals(
+        governanceDoctorRepairContentBytesV1(content, effectArgument(effect, "contentSha256")),
+      ) ?? false
+    );
+  }
+  if (effect.effectKind === "normalize-managed-line-endings") {
+    const normalized = normalizeGovernanceDoctorRepairLineEndingsV1(live);
+    return normalized?.equals(live) ?? false;
+  }
+  // The closed kind list is enforced at the plan boundary; anything else is not
+  // a file goal this verifier can affirm.
+  return false;
+}
+
+/**
+ * Re-reads one effect's goal state from the live tree.
+ *
+ * `holds` requires two independent facts at once: the live bytes are exactly the
+ * ones the attempt's own evidence recorded -- so an unrelated file that merely
+ * satisfies the goal is never proof of this attempt -- and the plan-declared
+ * goal for the effect kind holds over those live bytes, so evidence that merely
+ * echoes an unrepaired tree can never manufacture a verdict.
  */
 function goalStateV1(
   custody: unknown,
+  content: unknown,
   receipt: unknown,
   effect: GovernanceDoctorRepairEffectV1,
 ): GoalStateV1 {
@@ -71,7 +118,11 @@ function goalStateV1(
     const live = governanceDoctorRepairReadV1(custody, effectArgument(effect, "path"));
     if (live.state === "unsafe") return "unavailable";
     if (expected.state === "directory") return live.state === "directory" ? "holds" : "absent";
-    return live.state === "file" && live.bytes.equals(expected.bytes) ? "holds" : "absent";
+    return live.state === "file" &&
+      live.bytes.equals(expected.bytes) &&
+      planGoalHoldsV1(content, effect, live.bytes)
+      ? "holds"
+      : "absent";
   } catch {
     return "unavailable";
   }
@@ -126,7 +177,7 @@ export function verifyGovernanceDoctorRepairV1(
     checks: plan.effects.map((effect, index) => ({
       effectId: effect.effectId,
       outcome: checkOutcomeV1(
-        goalStateV1(request.custody, receipt, effect),
+        goalStateV1(request.custody, request.content, receipt, effect),
         receipt.effects[index]?.result ?? "failed",
       ),
     })),

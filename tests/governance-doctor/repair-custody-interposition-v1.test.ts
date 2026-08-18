@@ -7,6 +7,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createGovernanceDoctorRepairCustodyV1,
   createGovernanceDoctorRepairMutationGrantV1,
+  governanceDoctorRepairCreateDirectoryV1,
   governanceDoctorRepairReadV1,
   governanceDoctorRepairWriteFileV1,
 } from "../../src/governance-doctor/repair-custody-v1.js";
@@ -48,7 +50,7 @@ import {
  */
 interface InterposedHook {
   readonly nth: number;
-  readonly op: "link" | "rename";
+  readonly op: "link" | "open-exclusive" | "rename";
   readonly run: () => void;
   readonly when: "after" | "before";
 }
@@ -63,7 +65,10 @@ const STALLED_WRITE_CEILING = 64;
 const interposition = vi.hoisted(() => ({
   failDirectorySync: false,
   hooks: [] as InterposedHook[],
-  seen: { link: 0, rename: 0 } as Record<"link" | "rename", number>,
+  seen: { link: 0, "open-exclusive": 0, rename: 0 } as Record<
+    "link" | "open-exclusive" | "rename",
+    number
+  >,
   /** Every publication syscall in issue order, so a flush can be placed after a recovery. */
   trace: [] as ("directory-sync" | "link" | "rename")[],
   /**
@@ -96,8 +101,26 @@ vi.mock("node:fs", async (importOriginal) => {
       operation(...args);
       fire("after");
     };
+  const exclusiveCreate = actual.constants.O_CREAT | actual.constants.O_EXCL;
   const patched = {
     ...actual,
+    // The scratch is born at an exclusive create, so the window between the
+    // parent's identity proof and the first byte on disk is observable only
+    // here. Read-only opens pass through untouched.
+    openSync: ((path: string, flags: number | string, mode?: number): number => {
+      if (typeof flags !== "number" || (flags & exclusiveCreate) !== exclusiveCreate)
+        return actual.openSync(path, flags as number, mode);
+      interposition.seen["open-exclusive"] += 1;
+      const nth = interposition.seen["open-exclusive"];
+      const fire = (when: "after" | "before"): void => {
+        for (const hook of interposition.hooks)
+          if (hook.op === "open-exclusive" && hook.nth === nth && hook.when === when) hook.run();
+      };
+      fire("before");
+      const fd = actual.openSync(path, flags, mode);
+      fire("after");
+      return fd;
+    }) as typeof actual.openSync,
     // A directory handle is the only thing this may refuse: the scratch flush
     // that precedes publication must still be real.
     fsyncSync: (fd: number): void => {
@@ -156,7 +179,7 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "aih-repair-interpose-"));
   interposition.failDirectorySync = false;
   interposition.hooks = [];
-  interposition.seen = { link: 0, rename: 0 };
+  interposition.seen = { link: 0, "open-exclusive": 0, rename: 0 };
   interposition.trace = [];
   interposition.writeProgress = null;
   interposition.writes = 0;
@@ -171,7 +194,7 @@ afterEach(() => {
 });
 
 function interpose(...hooks: readonly InterposedHook[]): void {
-  interposition.seen = { link: 0, rename: 0 };
+  interposition.seen = { link: 0, "open-exclusive": 0, rename: 0 };
   interposition.trace = [];
   interposition.hooks = [...hooks];
 }
@@ -535,4 +558,111 @@ describe("governanceDoctorRepairWriteFileV1 under filesystem interposition", () 
     expect(readFileSync(join(root, "loose.md"), "utf8")).toBe(NEW_BODY);
     expect(strayNames(root)).toEqual([]);
   });
+
+  /**
+   * The window between the parent's identity proof and the scratch's exclusive
+   * create is the earliest point a swapped directory can capture the
+   * transaction. Whatever the swap is made of, nothing may ever be *published* --
+   * a managed name coming into existence in a tree the proof did not bind is the
+   * one outcome these two tests exist to refuse. A stray private scratch in the
+   * substituted tree is tolerated, exactly as strays are tolerated everywhere
+   * else in this suite; a published managed name is not.
+   */
+  it("publishes nothing through a parent replaced with a fresh directory before the scratch exists", async () => {
+    mkdirSync(join(root, "canon"));
+    const { read, write } = await bind();
+    const live = read("canon/router.md");
+    expect(live.state).toBe("absent");
+
+    const stolen = join(root, ".stolen");
+    interpose({
+      nth: 1,
+      op: "open-exclusive",
+      run: () => {
+        renameSync(join(root, "canon"), stolen);
+        mkdirSync(join(root, "canon"));
+      },
+      when: "before",
+    });
+    expect(() => write("restore-router", live)).toThrow(NOT_COMMITTED);
+
+    expect(existsSync(join(root, "canon", "router.md"))).toBe(false);
+    expect(existsSync(join(stolen, "router.md"))).toBe(false);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "publishes nothing outside the root through a parent swapped to a symlink",
+    async () => {
+      mkdirSync(join(root, "canon"));
+      const victim = mkdtempSync(join(tmpdir(), "aih-repair-victim-"));
+      try {
+        const { read, write } = await bind();
+        const live = read("canon/router.md");
+        expect(live.state).toBe("absent");
+
+        interpose({
+          nth: 1,
+          op: "open-exclusive",
+          run: () => {
+            renameSync(join(root, "canon"), join(root, ".stolen"));
+            symlinkSync(victim, join(root, "canon"), "dir");
+          },
+          when: "before",
+        });
+        expect(() => write("restore-router", live)).toThrow(NOT_COMMITTED);
+
+        // The canonical root's boundary holds: no managed name was published
+        // into the tree the symlink pointed at.
+        expect(existsSync(join(victim, "router.md"))).toBe(false);
+      } finally {
+        rmSync(victim, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "collapses a directory-flush failure during a managed create into the closed label",
+    async () => {
+      const built = await repairFixturePlan({
+        effects: [
+          {
+            arguments: { path: "canon" },
+            effectId: "ensure-canon",
+            templateId: "ensure-canon-directory",
+          },
+        ],
+        root,
+        scopePaths: ["canon"],
+      });
+      const bound = createGovernanceDoctorRepairCustodyV1({
+        contextDir: REPAIR_FIXTURE_CONTEXT_DIR,
+        plan: built,
+        root,
+      });
+      const consent = repairFixtureConsent(built);
+      const receipt = createGovernanceDoctorRepairReceiptV1({
+        attemptedAtEpochMs: REPAIR_FIXTURE_ATTEMPTED_AT,
+        consent,
+        context: repairFixtureExecutionContext(built),
+        effects: [{ effectId: "ensure-canon", result: "skipped" }],
+        plan: built,
+      });
+      const live = governanceDoctorRepairReadV1(bound, "canon");
+      expect(live.state).toBe("absent");
+
+      interposition.failDirectorySync = true;
+      // The flush failure is an OS error; the refusal must still be the module's
+      // own closed label, never the raw error the hostile tree could speak through.
+      expect(() =>
+        governanceDoctorRepairCreateDirectoryV1(
+          createGovernanceDoctorRepairMutationGrantV1({
+            consent,
+            custody: bound,
+            effectId: "ensure-canon",
+            receipt,
+          }),
+        ),
+      ).toThrow(/^GOVERNANCE_DOCTOR_REPAIR_V1: repair managed directory was not created$/);
+    },
+  );
 });

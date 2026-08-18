@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -15,6 +16,7 @@ import {
   createGovernanceDoctorRepairContentV1,
   governanceDoctorRepairMarkerBeginLineV1,
   governanceDoctorRepairMarkerEndLineV1,
+  recordGovernanceDoctorRepairAttemptEvidenceV1,
 } from "../../src/governance-doctor/repair-content-v1.js";
 import { createGovernanceDoctorRepairCustodyV1 } from "../../src/governance-doctor/repair-custody-v1.js";
 import { executeGovernanceDoctorRepairV1 } from "../../src/governance-doctor/repair-executor-v1.js";
@@ -351,6 +353,44 @@ describe("verifyGovernanceDoctorRepairV1", () => {
         .filter((_check, index) => receipt.effects[index]?.result !== "applied")
         .every((check) => check.outcome !== "verified"),
     ).toBe(true);
+  });
+
+  /**
+   * The independence half of the contract: locally recorded evidence attributes a
+   * live state to an attempt, but it must never be able to *manufacture* one. A
+   * receipt minted without executing anything, carrying evidence that merely
+   * echoes the unrepaired tree, satisfies provenance by construction -- so the
+   * verdict must also require the plan's own goal for each effect to hold.
+   */
+  it("never verifies fabricated evidence that echoes an unrepaired tree", async () => {
+    mkdirSync(join(root, "canon"));
+    writeFileSync(join(root, "canon", "router.md"), "unrepaired\n");
+    const built = await repairFixturePlan({ effects: EFFECTS, root, scopePaths: SCOPE });
+    const fabricated = createGovernanceDoctorRepairReceiptV1({
+      attemptedAtEpochMs: REPAIR_FIXTURE_ATTEMPTED_AT,
+      consent: repairFixtureConsent(built),
+      context: repairFixtureExecutionContext(built),
+      effects: built.effects.map((effect) => ({ effectId: effect.effectId, result: "applied" })),
+      plan: built,
+    });
+    recordGovernanceDoctorRepairAttemptEvidenceV1(
+      fabricated,
+      built.effects.map((effect) =>
+        effect.effectKind === "create-managed-directory"
+          ? { effectSha256: effect.effectSha256, state: "directory" }
+          : {
+              bytes: readFileSync(join(root, effect.arguments.path ?? "")),
+              effectSha256: effect.effectSha256,
+              state: "file",
+            },
+      ),
+    );
+
+    // The directory genuinely exists, so its goal holds; every file effect's goal
+    // does not, and echoed evidence must not stand in for it.
+    const verification = verify(built, fabricated);
+    expect(outcomes(verification)).toEqual(["verified", "failed", "failed", "failed"]);
+    expect(verification.outcome).toBe("failed");
   });
 
   it("refuses a foreign receipt, foreign custody, an unclosed content input, and extra fields", async () => {

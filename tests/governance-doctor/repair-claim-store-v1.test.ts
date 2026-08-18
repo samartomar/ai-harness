@@ -307,6 +307,9 @@ describe("acquireGovernanceDoctorRepairClaimV1", () => {
     }
   });
 
+  // Seeding 4096 records synchronously takes ~5s of pure test setup on a
+  // Windows filesystem, so the budget is explicit; the module's own bounded
+  // enumeration remains milliseconds.
   it("refuses an unbounded store rather than making room by deleting evidence", async () => {
     const built = await plan();
     const ceiling = GOVERNANCE_DOCTOR_REPAIR_CLAIM_STORE_V1_LIMITS.maxStoreRecords;
@@ -319,7 +322,7 @@ describe("acquireGovernanceDoctorRepairClaimV1", () => {
     );
     // No reaper: every record that was there is still there.
     expect(readdirSync(store())).toHaveLength(ceiling);
-  });
+  }, 60_000);
 
   it("binds the claim to one canonical root, so another checkout is a separate scope", async () => {
     const built = await plan();
