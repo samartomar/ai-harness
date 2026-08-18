@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AdminCatalogProvenanceV1 } from "./admin-catalog-operations-v1.js";
 import { policyAuthoringCatalog } from "./catalog.js";
 import {
   DISPOSITIONABLE_POLICY_FINDING_CODES,
@@ -52,6 +53,15 @@ export function exportStudioPolicy(policy: unknown): string {
 export interface PolicyStudioModel {
   initialPolicy: OrgPolicy;
   catalog: ReturnType<typeof policyAuthoringCatalog>;
+  /**
+   * Verified supported-catalog provenance when the administrator route resolved
+   * one, else absent. The visible provenance line renders tier, source,
+   * channel, resolved time, age, and bootstrap provenance; this closed embedded
+   * model also carries its safe sequence, digests, posture, member count, and
+   * verification time — never a locator, path, token, signature, raw
+   * attestation, signer identity, root digest, or machine detail.
+   */
+  catalogProvenance?: AdminCatalogProvenanceV1;
   schema: Record<string, unknown>;
   unwaivable: readonly string[];
   /**
@@ -70,10 +80,11 @@ export interface PolicyStudioModel {
 }
 
 /** Serializable payload embedded in every portable workbench artifact. */
-export function policyStudioModel(): PolicyStudioModel {
+export function policyStudioModel(catalogProvenance?: AdminCatalogProvenanceV1): PolicyStudioModel {
   return {
     initialPolicy: defaultStudioPolicy(),
     catalog: policyAuthoringCatalog(),
+    ...(catalogProvenance === undefined ? {} : { catalogProvenance }),
     schema: z.toJSONSchema(OrgPolicySchema, { io: "input" }) as Record<string, unknown>,
     unwaivable: UNWAIVABLE_POLICY_DANGER_CODES,
     findings: {

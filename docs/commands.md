@@ -676,9 +676,11 @@ build); `validate --require-signature` then
 ## aih policy
 
 Starter seeding, portable authoring, effective-resolution, schema, projection, and trusted-channel gates for the org policy.
-`aih policy generate` is deliberately rootless: it writes a self-contained Policy Workbench and does not inspect a target
-repository, resolve repository state, or append a repository run ledger. Its parsed `--root` and `AIH_ROOT` compatibility
-inputs are ignored; the current directory is used only to contain a relative `--out` path. The remaining `policy`
+`aih policy generate` is deliberately rootless with respect to a governed target repository: it writes a self-contained
+Policy Workbench and does not inspect a target repository, resolve repository state, or append a repository run ledger. Its
+parsed `--root` and `AIH_ROOT` compatibility inputs are ignored; the current directory is used only to contain a relative
+`--out` path. Its one optional positional is an administrator root rather than a target repository — see
+"Administrator catalog consumption" below. The remaining `policy`
 subcommands are repo-scoped and accept the conventional optional `[root]` positional — `aih policy validate .` works exactly
 like `aih init .` (`--root` and `AIH_ROOT` still apply).
 
@@ -699,6 +701,35 @@ approval effective. Target-repository `evaluate` remains the source of effective
 hard-blocked candidates with no activation affordance until supported scanning, evidence, and projection exist.
 
 The left rail is the sole selection surface for ECC languages, frameworks, capabilities, and modules; those controls are not repeated in the main inventory, preset toolbar, or inspector. The flat Ledger paper-and-ink presentation reserves colour for evidence state, supports a neutral dark theme, and keeps that canonical rail available on compact screens. The inspector contains no policy mutation controls: it narrates the selected-to-materialized journey and routes one next action to the canonical selection or a separate authoring sidebar. A separate Add MCP sidebar authors approved/revoked `governance.eccMcpApprovals` records at the pinned catalog digest. It lists all 31 external ECC entries and records declarative permission. Only entries labeled HTTPS-configurable can use the later `aih ecc mcp add <id> --cli <client>` path; manual entries remain approval-only. The browser does not install, contact, scan, attest, or observe the endpoint.
+
+### Administrator catalog consumption
+
+`aih policy generate <admin-root>` opts a single administrator workstation into signed supported-catalog consumption before
+the Workbench is rendered, and requires `--apply`: a non-applying invocation fails before acquisition, subprocess, cache,
+or output effects. Omit the positional and nothing changes: the portable artifact is written with no acquisition, no
+subprocess, and no cache work. Developer seats never take this route.
+
+The route starts from one canonical `admin-catalog-bootstrap.json`. At Enterprise posture — selected only by an explicit
+`--posture enterprise`, never by an environment variable — it is read from a fixed OS/admin-managed location
+(`C:\ProgramData\aih\admin-catalog` on Windows, `/Library/Application Support/aih/admin-catalog` on macOS,
+`/etc/aih/admin-catalog` elsewhere) and there is no fallback to the copy under `<admin-root>`. At Vibe posture it is read
+from `<admin-root>/.aih/admin-catalog` and reported as the visibly weaker `local-admin-file` provenance, which is never
+Enterprise-eligible. The bootstrap pins the HTTPS locators, the catalog/promotion/package digests, both signer identities and
+their distinct root digests, separate catalog and administrator workflow/bundle identities, the schema and effect versions,
+the source and channel, and a bounded cache policy. Its authority-controlled catalog path segment must be real directories
+rather than symlinks or junctions before the bootstrap file is read.
+
+Resolution degrades fresh → revalidated verified cache → packaged, and only a literal acquisition failure permits the
+fall-through: every trust, pin, cache, or attestation failure is fatal before rendering. Fetched and cached artifacts and the
+administrator distribution are independently verified with their respective pinned workflow and bundle by `gh attestation
+verify`, bound to the pinned repository, issuer, ref, and predicate; that verification completes before any material is
+admitted. The inner catalog-head DSSE PAE and
+signatures must exactly match bootstrap-carried state, so outer artifact provenance cannot authorize a replacement head
+signature. AIH never signs on the workstation and holds no key material — the administrator distribution is pre-signed by an
+external organization-admin OIDC workflow, and the locally composed binding must reproduce those exact canonical bytes. The
+visible Workbench provenance line then shows verified tier, source, channel, resolved time, download age, and bootstrap
+provenance. The embedded safe model also carries sequence, digests, posture, and verification time; neither surface carries
+locators, filesystem paths, tokens, signatures, raw attestations, signer identities, root digests, or machine detail.
 
 The Workbench's ECC hook-controls panel is bound to the pinned runtime inventory: 40 individually gated hook IDs plus one non-disableable Bash wrapper. It authors a required Minimal, Standard, or Strict profile and an optional canonical disabled-ID list, prunes disables that are ineligible after a profile change, and offers a clear inverse back to the policy baseline. AIH configures supported Claude environment intent; ECC executes and enforces it after process spawn.
 

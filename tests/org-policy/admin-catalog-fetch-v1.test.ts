@@ -189,6 +189,7 @@ function input(overrides: Record<string, unknown> = {}) {
   const attestationBytes = Buffer.from("canonical-test-attestation", "utf8");
   return {
     adminSignerRootSha256: adminRoot,
+    bindingResolvedAt: now,
     channel,
     expectedAdminSignerIdentity: adminSignerIdentity,
     expectedCatalogSha256: expectedCatalogSha256(),

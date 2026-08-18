@@ -24,8 +24,33 @@ function safeHtmlAttribute(value: string): string {
   });
 }
 
+/**
+ * The one catalog line the workbench shows: verified tier, source, and age.
+ * Absent entirely when no administrator catalog was resolved, so the portable
+ * authoring artifact is unchanged. Locators, paths, tokens, signatures, raw
+ * attestations, signer identities, and roots are not representable here — the
+ * model carries none of them.
+ */
+function catalogProvenanceLine(model: PolicyStudioModel): string {
+  const provenance = model.catalogProvenance;
+  if (provenance === undefined) return "";
+  const age =
+    provenance.ageSeconds === null
+      ? "packaged fallback (no download age)"
+      : `${String(provenance.ageSeconds)}s since download`;
+  const detail = [
+    `Supported catalog — verified ${provenance.tier}`,
+    `source ${provenance.sourceId} (${provenance.channel})`,
+    `resolved ${provenance.resolvedAt}`,
+    age,
+    `bootstrap ${provenance.bootstrapProvenance}`,
+  ].join(" · ");
+  return `\n  <p class="help" id="catalog-provenance">${safeHtmlAttribute(detail)}</p>`;
+}
+
 /** Portable, dependency-free policy authoring surface. */
 export function policyStudioHtml(model: PolicyStudioModel): string {
+  const catalogProvenance = catalogProvenanceLine(model);
   const hookRegistryOwners = safeHtmlAttribute(
     [...new Set(model.catalog.hookRegistry.entries.map((entry) => entry.ownerLabel))].join(" "),
   );
@@ -428,7 +453,7 @@ body{font:400 var(--type-body)/1.55 var(--sans);color:var(--ink);background:var(
     <input class="hidden" id="evidence-file" type="file" accept="application/json">
   </header>
 
-  <p id="announcement" class="announce" aria-live="polite"></p>
+  <p id="announcement" class="announce" aria-live="polite"></p>${catalogProvenance}
 
   <nav class="ticker" id="owner-ticker" aria-label="Focus one surface"></nav>
 

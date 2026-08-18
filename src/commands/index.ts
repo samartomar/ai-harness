@@ -839,14 +839,26 @@ export function registerCommands(
     .description(
       "Generate, seed, evaluate, project, validate + verify the org policy and its generated settings",
     );
+  // The optional `[admin-root]` positional is the ONLY switch that turns on
+  // administrator catalog consumption; omitting it keeps the rootless portable
+  // artifact, which performs no acquisition, process, or cache work.
   const policyGenerate = policy
     .command(policyGenerateCommand.name)
-    .description(policyGenerateCommand.summary);
+    .description(policyGenerateCommand.summary)
+    .argument(
+      "[admin-root]",
+      "administrator root that consumes the signed supported catalog (omit for the portable artifact)",
+    );
   addFlagsForSpec(policyGenerate, policyGenerateCommand);
   addOptionsForSpec(policyGenerate, policyGenerateCommand);
-  policyGenerate.action(async (_options: Record<string, unknown>, command: Command) => {
-    process.exitCode = await runPolicyGenerate(command);
-  });
+  policyGenerate.action(
+    async (adminRoot: string | undefined, _options: Record<string, unknown>, command: Command) => {
+      process.exitCode = await runPolicyGenerate(
+        command,
+        adminRoot === undefined ? {} : { adminRoot },
+      );
+    },
+  );
   for (const spec of [
     policyInitCommand,
     policyEvaluateCommand,

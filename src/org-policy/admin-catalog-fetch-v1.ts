@@ -63,6 +63,7 @@ export type AdminCatalogFetchResultV1 = Readonly<{
 
 const INPUT_FIELDS = [
   "adminSignerRootSha256",
+  "bindingResolvedAt",
   "channel",
   "commitVerifiedCache",
   "expectedAdminSignerIdentity",
@@ -452,10 +453,12 @@ function trustedInput(value: unknown): Json {
     "expectedSchemaVersion",
     "expectedWorkflowIdentity",
     "sourceId",
+    "bindingResolvedAt",
     "now",
   ])
     text(input[field], field);
   timestamp(input.now, "now");
+  timestamp(input.bindingResolvedAt, "binding resolved at");
   if (!/^[a-z0-9][a-z0-9.-]*$/.test(input.channel as string)) fail("channel");
   if (
     !/^[a-z0-9][a-z0-9./-]*$/.test(input.sourceId as string) ||
@@ -627,6 +630,7 @@ function result(
   try {
     distribution = composeAdminSeatDistributionV1({
       ...resolveInput(input, fresh, cachedVerified, packaged, verifyHead),
+      bindingResolvedAt: input.bindingResolvedAt,
       expectedAdminSignerIdentity: input.expectedAdminSignerIdentity,
       signCanonicalPae: input.signCanonicalPae,
       verifyCatalogHeadPae: verifyHead,

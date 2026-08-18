@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Administrator catalog generation is an explicit apply-only route.** `aih policy generate <admin-root> --apply`
+  can resolve separately attested, signed supported-catalog material before rendering the local Policy Workbench;
+  omitting `<admin-root>` retains the portable rootless artifact with no catalog acquisition.
+
 ### Fixed
 
 - **MCP pin attestation no longer tells an operator to pre-warm a cache that is already warm.** A
