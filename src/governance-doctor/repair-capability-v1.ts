@@ -78,6 +78,9 @@ export const GOVERNANCE_DOCTOR_PROHIBITED_REPAIR_AUTHORITIES_V1: readonly string
 export const GOVERNANCE_DOCTOR_REPAIR_DOMAIN_V1 = Object.freeze({
   authority: "aih.governance-doctor-repair-authority-v1",
   brokerRegistry: "aih.governance-doctor-repair-broker-registry-v1",
+  claim: "aih.governance-doctor-repair-claim-v1",
+  claimRecord: "aih.governance-doctor-repair-claim-record-v1",
+  claimScope: "aih.governance-doctor-repair-claim-scope-v1",
   consent: "aih.governance-doctor-repair-consent-v1",
   effect: "aih.governance-doctor-repair-effect-v1",
   effectSummary: "aih.governance-doctor-repair-effect-summary-v1",
