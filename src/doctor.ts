@@ -31,7 +31,7 @@ import {
   probeMany,
   structuredChecksProbe,
 } from "./internals/plan.js";
-import { canonLintCheck } from "./lint/run.js";
+import { canonContextDirCheck, canonLintCheck } from "./lint/run.js";
 import { mcpManagedAllowlistCheck } from "./mcp/allowlist.js";
 import { mcpUvxPinAttestationProbe } from "./mcp/attest.js";
 import { mcpPinCurrencyProbe } from "./mcp/currency.js";
@@ -164,17 +164,7 @@ export const command: CommandSpec = {
           ? `${ctx.host.platform} (verified)`
           : `${ctx.host.platform} (unverified path) — proceeding on the generic path; file an issue if a step misbehaves`,
       })),
-      probe("canonical context dir", () => {
-        const dir = join(ctx.root, contextDir);
-        return existsSync(dir)
-          ? { name: "context-dir", verdict: "pass", detail: `${contextDir} present` }
-          : {
-              name: "context-dir",
-              verdict: "skip",
-              detail: `${contextDir} not scaffolded — run: aih scaffold --apply`,
-              code: "canon.context-dir-missing",
-            };
-      }),
+      probe("canonical context dir", () => canonContextDirCheck(ctx.root, contextDir)),
       probe("bootstrap config marker", () => {
         if (marker.invalid) {
           return {
