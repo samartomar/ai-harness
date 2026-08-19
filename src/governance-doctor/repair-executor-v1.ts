@@ -7,6 +7,7 @@ import { failGovernanceDoctorRepairV1 } from "./repair-capability-v1.js";
 import { acquireGovernanceDoctorRepairClaimV1 } from "./repair-claim-store-v1.js";
 import {
   assertGovernanceDoctorRepairContentClosureV1,
+  GOVERNANCE_DOCTOR_REPAIR_CONTENT_V1_LIMITS,
   governanceDoctorRepairContentBytesV1,
   normalizeGovernanceDoctorRepairLineEndingsV1,
   recordGovernanceDoctorRepairAttemptEvidenceV1,
@@ -14,6 +15,7 @@ import {
 } from "./repair-content-v1.js";
 import {
   createGovernanceDoctorRepairMutationGrantV1,
+  GOVERNANCE_DOCTOR_REPAIR_CUSTODY_V1_LIMITS,
   governanceDoctorRepairCreateDirectoryV1,
   governanceDoctorRepairCustodyPlanSha256V1,
   governanceDoctorRepairCustodyRootRealPathV1,
@@ -90,6 +92,18 @@ export const GOVERNANCE_DOCTOR_REPAIR_EXECUTABLE_EFFECT_KINDS_V1: readonly Gover
 for (const kind of GOVERNANCE_DOCTOR_REPAIR_EXECUTABLE_EFFECT_KINDS_V1)
   if (!GOVERNANCE_DOCTOR_REPAIR_EFFECT_KINDS_V1.includes(kind))
     failGovernanceDoctorRepairV1("repair executor names an unregistered effect kind");
+
+// Load-time guard on a cross-module coupling this file depends on but does not
+// own: every byte custody will accept for a managed file must still be a byte the
+// content module can hold as attempt evidence. Were custody's ceiling raised
+// alone, a large effect would apply and then throw while its evidence was being
+// recorded -- discarding the receipt for work that already landed, the worst
+// reporting state this authority can reach.
+if (
+  GOVERNANCE_DOCTOR_REPAIR_CONTENT_V1_LIMITS.maxContentBytes <
+  GOVERNANCE_DOCTOR_REPAIR_CUSTODY_V1_LIMITS.maxManagedFileBytes
+)
+  failGovernanceDoctorRepairV1("repair executor cannot record evidence for every managed write");
 
 const EXECUTION_FIELDS = ["consent", "content", "context", "custody", "plan"] as const;
 

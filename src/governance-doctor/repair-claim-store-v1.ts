@@ -176,17 +176,23 @@ import {
  *
  * ## The Windows open-time reparse limitation
  *
- * Every descriptor this module opens asks for `O_NOFOLLOW`, which on POSIX makes
- * the open itself refuse a symlink. Windows does not define that flag, so there
- * the constant is zero and the open follows a junction or any other reparse point
- * exactly as it would a real name. The bound on Windows is therefore not the
- * open: it is the `lstat` before it and the `fstat` on the descriptor after it,
- * which together require a real, single-linked regular file whose identity is the
- * one that was proved. What is not closed there is the interval between those two
- * calls -- a reparse point substituted inside it is followed, and its target is
- * read as if it were the record. That is a recorded platform limitation of this
- * store, not a claim about Windows, and it is the same bounded-not-atomic shape
- * as every other path lookup here.
+ * Every descriptor this module opens for a *record* asks for `O_NOFOLLOW`, which
+ * on POSIX makes the open itself refuse a symlink. The one exception is the
+ * bounded-count directory handle, which `opendirSync` exposes no flags for; it
+ * reads no record and creates nothing, so the worst a substitution there can do
+ * is mis-count the ceiling, and the store's own identity is re-proved before the
+ * exclusive create regardless.
+ *
+ * Windows does not define that flag, so there the constant is zero and the open
+ * follows a junction or any other reparse point exactly as it would a real name.
+ * The bound on Windows is therefore not the open: it is the `lstat` before it and
+ * the `fstat` on the descriptor after it, which together require a real,
+ * single-linked regular file whose identity is the one that was proved. What is
+ * not closed there is the interval between those two calls -- a reparse point
+ * substituted inside it is followed, and only the identity comparison after the
+ * open refuses its target. That is a recorded platform limitation of this store,
+ * not a claim about Windows, and it is the same bounded-not-atomic shape as every
+ * other path lookup here.
  *
  * Every refusal is a fixed label. No path, no OS diagnostic, and no record content
  * is ever interpolated, so neither the filesystem nor a hostile record can use an
@@ -205,6 +211,18 @@ export const GOVERNANCE_DOCTOR_REPAIR_CLAIM_STORE_V1_LIMITS = Object.freeze({
   maxHomeAncestorDepth: 64,
   /** The same bound expressed on the reported home itself, checked before any walk. */
   maxHomePathLength: 4096,
+  /**
+   * The ceiling this store enumerates against. A record is admitted only while
+   * strictly fewer than this many directory entries exist.
+   *
+   * It is a preflight bound, not a lock and not a hard maximum: two acquisitions
+   * for different Plans can each pass the count before either creates its own
+   * digest-named record, so a store at the ceiling can still gain entries from
+   * runs already in flight. What the bound guarantees is the property it exists
+   * for -- the enumeration is finite and a store past the ceiling fails closed
+   * rather than making room by deleting evidence. It counts *entries*, not
+   * records, so anything else occupying the directory consumes the same budget.
+   */
   maxStoreRecords: 4096,
   storeDirectoryMode: 0o700,
 });
@@ -212,6 +230,16 @@ export const GOVERNANCE_DOCTOR_REPAIR_CLAIM_STORE_V1_LIMITS = Object.freeze({
 /**
  * The authority-controlled segments, in order, below the resolved home. This list
  * is the entire location this module owns; widening it is a reviewed edit here.
+ *
+ * The first segment is shared. `~/.aih` is AIH's own per-account home and other
+ * product surfaces create it too, so this module may find it already present and
+ * created under whatever `umask` the creating process carried. The privacy rule
+ * below admits no group- or other-write bit on any controlled segment, so on a
+ * host whose interactive `umask` is `002` a pre-existing `~/.aih` at `0775` makes
+ * this store permanently unavailable behind a fixed label. That is deliberate --
+ * a directory another account may write into is one it may remove a spent record
+ * from -- and the remedy is an operator-side `chmod g-w ~/.aih`, recorded here
+ * because the closed refusal cannot say it.
  */
 export const GOVERNANCE_DOCTOR_REPAIR_CLAIM_STORE_V1_SEGMENTS: readonly string[] = Object.freeze([
   ".aih",
@@ -488,6 +516,18 @@ function provenHomeAncestryV1(
   homePath: string,
   label: string = UNAVAILABLE,
 ): readonly ControlledDirectoryV1[] | undefined {
+  // Windows asserts no POSIX ownership or mode rule over the ancestry, so no
+  // proof is built there at all -- and because the home is carried inside that
+  // proof, `reprovedAncestry` performs no home-identity comparison there either.
+  //
+  // The store's own identity is re-proved on both platform families, and that
+  // catches the shape where a replacement home is built fresh: its store is a
+  // new inode. It does NOT catch the shape this module's own header describes --
+  // a substitution that relocates the whole subtree, moving the existing `.aih`
+  // into the replacement, which preserves the store inode while the home inode
+  // changes. POSIX refuses that through the ancestry; Windows does not. The two
+  // proofs are therefore separable, and this is the wider half of the recorded
+  // Windows gap rather than a restatement of the ownership rule.
   if (process.platform === "win32") return undefined;
   const limits = GOVERNANCE_DOCTOR_REPAIR_CLAIM_STORE_V1_LIMITS;
   if (homePath.length > limits.maxHomePathLength) failGovernanceDoctorRepairV1(label);
@@ -565,6 +605,17 @@ function reprovedAncestry(ancestry: ProvenAncestryV1 | undefined, label: string)
  * filesystem's own. That is a recorded platform limitation of this store rather
  * than something papered over: the identity re-proof around it still runs on both
  * platform families, only the flush does not.
+ *
+ * The carve-out is stated twice on purpose, because the condition is wider than
+ * the platform name suggests. `O_DIRECTORY === 0` means the running Node exposes
+ * no directory-open flag at all, and this early return then reports success
+ * without a flush on *any* such host, not only Windows. Every POSIX target Node
+ * supports defines that constant, so in practice the two conditions coincide;
+ * were a host to appear that does not, its entry durability would be the
+ * filesystem's own exactly as it is on Windows. Refusing there instead was
+ * considered and rejected: it would fire only where the constant is already
+ * absent -- never on a real POSIX host -- while breaking the platform simulation
+ * this module's own POSIX rules are tested through.
  */
 function syncDirectoryEntry(directory: ControlledDirectoryV1): boolean {
   if (process.platform === "win32" || O_DIRECTORY === 0) return true;
@@ -714,6 +765,12 @@ function resolveClaimStoreDirectory(): ControlledDirectoryV1 {
   const ancestors = provenHomeAncestryV1(home.path);
   let current: ControlledDirectoryV1 =
     ancestors === undefined ? home : { ...home, ancestry: Object.freeze({ ancestors, home }) };
+  // On POSIX the home carries its ancestry, so the home identity is re-proved at
+  // each controlled segment, before the exclusive create, and after the
+  // read-back. On Windows no ancestry is attached and that comparison does not
+  // run: a replacement home built fresh is still refused by the store's own
+  // identity proof, but one that relocates the existing subtree into itself
+  // preserves the store inode and is not. See `provenHomeAncestryV1`.
   for (const segment of GOVERNANCE_DOCTOR_REPAIR_CLAIM_STORE_V1_SEGMENTS)
     current = controlledDirectory(current, segment);
   return current;
@@ -762,15 +819,25 @@ function assertBoundedStore(directory: string): void {
  * this authority is willing to read. `undefined` means "unreadable", never
  * "absent": absence is settled by the caller before this is ever reached.
  */
-function readClaimBytes(path: string): Buffer | undefined {
+function readClaimBytes(path: string, proved: FileIdentity | undefined): Buffer | undefined {
   let fd: number | undefined;
   let bytes: Buffer | undefined;
   try {
     fd = openSync(path, fsConstants.O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
     const stats = fstatSync(fd, { bigint: true });
-    // A single-linked regular file, and nothing else. A second name for a claim
-    // record is a substitution route, so an unexpected link count is a refusal.
-    if (stats.isFile() && stats.nlink === 1n)
+    const opened = identityOf(stats);
+    // A single-linked regular file whose identity is the one the caller's own
+    // `lstat` proved, and nothing else. A second name for a claim record is a
+    // substitution route, so an unexpected link count is a refusal -- and where
+    // the platform defines no `O_NOFOLLOW`, this comparison is the only thing
+    // standing between the open and a reparse point swapped in behind the name.
+    if (
+      stats.isFile() &&
+      stats.nlink === 1n &&
+      opened !== undefined &&
+      proved !== undefined &&
+      sameIdentity(opened, proved)
+    )
       bytes = readBoundedFileDescriptor(fd, GOVERNANCE_DOCTOR_REPAIR_CLAIM_V1_LIMITS.maxClaimBytes);
   } catch {
     // The fixed refusal at the call site is the whole diagnostic.
@@ -795,7 +862,7 @@ function assertUnclaimed(path: string, claimSha256: string): void {
   if (stats === "absent") return;
   if (stats === "unsafe" || stats.isSymbolicLink() || !stats.isFile() || stats.nlink !== 1n)
     failGovernanceDoctorRepairV1(UNREADABLE);
-  const bytes = readClaimBytes(path);
+  const bytes = readClaimBytes(path, identityOf(stats));
   if (bytes === undefined) failGovernanceDoctorRepairV1(UNREADABLE);
   // The parser's own diagnostics name JSON offsets. They are closed labels for a
   // record the caller supplied, but not for one a hostile home left here, so the
