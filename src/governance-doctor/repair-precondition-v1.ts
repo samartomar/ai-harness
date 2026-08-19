@@ -41,6 +41,14 @@ import {
  * requirement that the complete non-pass set equal the pair, which is why a
  * future slice must not lift either tuple out of this bundle and use it alone.
  *
+ * That argument is about one reading, and says nothing across two. The bundle is
+ * two filesystem observations: a directory created between them would yield
+ * tuple 1 from the first and tuple 2 from the second, reproducing the pair over
+ * a state the tree was never in. So a reading that would qualify is confirmed by
+ * a second one before `eligible` is reported, and the confirming reading is what
+ * the record carries. That bounds the window rather than closing it -- see the
+ * note at the observation itself.
+ *
  * ## What it will not accept
  *
  * A branded scope, and nothing else. A resolved absolute path is a format, not
@@ -140,6 +148,30 @@ function projection(value: unknown): { code: string | null; name: string; verdic
   };
 }
 
+/** One complete non-pass projection of the bundle's checks over the live tree. */
+function reading(root: string): GovernanceDoctorRepairPreconditionObservationV1[] {
+  return BUNDLE_V1.map((member) =>
+    projection(member.check(root, GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1)),
+  ).filter((check) => check.verdict !== "pass");
+}
+
+/**
+ * Exact set equality, in order and cardinality: an extra observation, a missing
+ * one, or one whose code differs -- including a code where the bundle records
+ * none -- is not this bundle.
+ */
+function isBundle(observed: readonly GovernanceDoctorRepairPreconditionObservationV1[]): boolean {
+  return (
+    observed.length === BUNDLE_V1.length &&
+    BUNDLE_V1.every(
+      (expected, index) =>
+        observed[index]?.name === expected.name &&
+        observed[index]?.verdict === expected.verdict &&
+        observed[index]?.code === expected.code,
+    )
+  );
+}
+
 /**
  * Observes the two shipped checks against one resolved root and reports whether
  * their complete non-pass projection is exactly the frozen bundle.
@@ -154,20 +186,24 @@ export function observeGovernanceDoctorRepairPreconditionV1(
   // Before any filesystem call: an unbranded scope buys no observation at all.
   const bound = assertGovernanceDoctorRepairPreconditionScopeV1(scope);
   const root = bound.rootRealPath;
-  const observed = BUNDLE_V1.map((member) =>
-    projection(member.check(root, GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1)),
-  ).filter((check) => check.verdict !== "pass");
-  // Exact set equality, in order and cardinality: an extra observation, a
-  // missing one, or one whose code differs -- including a code where the bundle
-  // records none -- is not this bundle.
-  const eligible =
-    observed.length === BUNDLE_V1.length &&
-    BUNDLE_V1.every(
-      (expected, index) =>
-        observed[index]?.name === expected.name &&
-        observed[index]?.verdict === expected.verdict &&
-        observed[index]?.code === expected.code,
-    );
+  const first = reading(root);
+  // A reading is two filesystem observations, and a live tree can change
+  // between them. That matters here specifically: a directory created after the
+  // context-dir check and before the lint check yields tuple 1 from the first
+  // observation and tuple 2 from the second, reproducing the bundle over a
+  // state the tree was never in. Confirm a reading that would qualify, and let
+  // the confirming one decide -- so the record reports a reading that stood,
+  // not a composite. It runs only on the qualifying path, where the directory
+  // was absent, so the ordinary cost is one more `existsSync` and the lint's
+  // own early return.
+  //
+  // This bounds the window; it does not make the observation atomic, and no
+  // arrangement of these APIs would. A change that lands and reverts entirely
+  // between the two readings is not observable -- and in that case the tree
+  // ends in the state the record reports, which is the state a consumer that
+  // acts will revalidate against anyway.
+  const observed = isBundle(first) ? reading(root) : first;
+  const eligible = isBundle(observed);
   const record = Object.freeze({
     diagnosticId: GOVERNANCE_DOCTOR_REPAIR_PRECONDITION_DIAGNOSTIC_ID_V1,
     eligible,
