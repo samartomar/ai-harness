@@ -249,10 +249,8 @@ describe("executeGovernanceDoctorRepairV1", () => {
    * the whole run would never exercise that, which is why this advances it
    * mid-run.
    *
-   * The bound is the grant, not the effect: an effect whose goal already holds
-   * returns applied without taking one and therefore without reading the clock,
-   * so a plan expiring with only satisfied effects left still completes. Nothing
-   * is mutated in that case, and every effect below genuinely needs a grant.
+   * Every effect below genuinely needs a grant. The effect whose goal already
+   * holds -- which takes no grant -- has its own test immediately after this one.
    */
   it("halts when the authority window closes before the next mutation", async () => {
     const built = await plan();
@@ -275,6 +273,116 @@ describe("executeGovernanceDoctorRepairV1", () => {
     } finally {
       clock.mockRestore();
     }
+  });
+
+  /**
+   * The window bounds the attempt, not only its writes.
+   *
+   * An effect whose goal already holds takes no mutation grant, so it used to
+   * read no clock and report `applied` on a plan whose authority had already
+   * closed. It mutated nothing, which is why this was a reporting defect rather
+   * than an unauthorized write -- but the Receipt is the audit trail an
+   * executable Repair rests on, and "applied under expired authority" is not a
+   * thing it may say.
+   *
+   * The second effect's directory exists before the run, so it needs no grant.
+   * The clock closes the window the moment the first effect lands, exactly as in
+   * the test above, so the second effect is reached with the authority gone.
+   */
+  it("halts on an already-satisfied effect once the authority window has closed", async () => {
+    mkdirSync(join(root, "already"));
+    const built = await repairFixturePlan({
+      effects: [
+        {
+          arguments: { path: "canon" },
+          effectId: "ensure-canon",
+          templateId: "ensure-canon-directory",
+        },
+        {
+          arguments: { path: "already" },
+          effectId: "ensure-already",
+          templateId: "ensure-canon-directory",
+        },
+      ],
+      root,
+      scopePaths: ["already", "canon"],
+    });
+    const clock = vi
+      .spyOn(Date, "now")
+      .mockImplementation(() =>
+        existsSync(join(root, "canon")) ? built.expiresAtEpochMs + 1 : REPAIR_FIXTURE_ATTEMPTED_AT,
+      );
+    try {
+      const receipt = executeOnly(built);
+      const outcome = results(receipt);
+      expect(outcome[0]).toBe("applied");
+      expect(outcome[1]).not.toBe("applied");
+      expect(receipt.state).toBe("failed");
+      // Nothing was touched to establish that, and nothing was taken away.
+      expect(existsSync(join(root, "already"))).toBe(true);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  /**
+   * The claim is the one step that cannot be taken back. It is spent before the
+   * first effect precisely so an interrupted run leaves it spent -- which makes
+   * the instant before the spend the last place a refusal is still free.
+   *
+   * Every join above the spend is pure or in-memory, so re-taking them costs
+   * nothing; the one that can have changed is the clock. Here the attempt's own
+   * timestamp is taken inside the window and every read after it is outside, so
+   * the plan's authority closes in the gap between the preflight and the spend.
+   * Refusing there leaves a plan that can be consented and run again; spending
+   * first and failing on the first effect would leave one that is finished.
+   */
+  it("refuses without spending the claim when authority closes before the spend", async () => {
+    const built = await plan();
+    let reads = 0;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => {
+      reads += 1;
+      return reads === 1 ? REPAIR_FIXTURE_ATTEMPTED_AT : built.expiresAtEpochMs + 1;
+    });
+    try {
+      expect(() => execute(built)).toThrow(/repair authority window is not open/);
+    } finally {
+      clock.mockRestore();
+    }
+    expect(existsSync(claimStore()) ? readdirSync(claimStore()) : []).toEqual([]);
+    expect(existsSync(join(root, "canon"))).toBe(false);
+  });
+
+  /**
+   * Review finding, and the reason the check above is not sufficient on its own.
+   *
+   * Acquiring a claim is not one instruction: it resolves the account home,
+   * proves the whole naming ancestry, enumerates the store against its ceiling,
+   * and only then takes the name. A window that closes during that work has
+   * already passed the executor's pre-spend check, so the plan was durably spent
+   * under authority that had expired -- no effect applied, and no second attempt
+   * possible either. The store therefore re-reads the window itself, in the same
+   * breath as its own last store-identity proof, immediately before the create.
+   *
+   * The clock is valid for the attempt's timestamp and the executor's pre-spend
+   * check, and expired for every read after them -- which is to say, from inside
+   * the acquisition onward.
+   */
+  it("refuses inside claim acquisition when the window closes during it", async () => {
+    const built = await plan();
+    let reads = 0;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => {
+      reads += 1;
+      return reads <= 2 ? REPAIR_FIXTURE_ATTEMPTED_AT : built.expiresAtEpochMs + 1;
+    });
+    try {
+      expect(() => execute(built)).toThrow(/repair claim authority window is not open/);
+    } finally {
+      clock.mockRestore();
+    }
+    // The name was never taken, so this plan is stopped rather than finished.
+    expect(existsSync(claimStore()) ? readdirSync(claimStore()) : []).toEqual([]);
+    expect(existsSync(join(root, "canon"))).toBe(false);
   });
 
   it("preserves every unrelated byte and deletes nothing", async () => {

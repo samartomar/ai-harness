@@ -1080,6 +1080,25 @@ export function acquireGovernanceDoctorRepairClaimV1(
   // the directory this run proved before a record is created in it. Nothing has
   // been created yet, so this is still an "unavailable" refusal.
   assertStoreIdentity(store, UNAVAILABLE);
+  // And the same last look at the authority itself. A caller checks its window
+  // before calling here, but acquiring a claim is not one instruction: resolving
+  // the account home, proving the naming ancestry, and enumerating the store
+  // against its ceiling all take real time. A window closing during that work
+  // would otherwise be discovered only after the name was taken -- a plan
+  // durably spent under authority it no longer had, with no effect applied and
+  // no second attempt possible. The bounds are the plan's own, joined to the
+  // consent instant exactly as custody joins them, so this is the same rule the
+  // caller applied rather than a second opinion about it.
+  //
+  // Bounded, not atomic, like every other proof here: a window that closes
+  // between this check and the create returning is not observable through these
+  // APIs. What it removes is the whole-acquisition gap, leaving one syscall.
+  const now = Date.now();
+  if (
+    now < Math.max(plan.createdAtEpochMs, consent.consentedAtEpochMs) ||
+    now >= plan.expiresAtEpochMs
+  )
+    failGovernanceDoctorRepairV1("repair claim authority window is not open");
   const identity = createClaimExclusively(path, bytes);
   // From here the record exists and the Plan is spent, so every remaining refusal
   // is "did not commit" rather than "unavailable".
