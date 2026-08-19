@@ -119,6 +119,25 @@ function markdownUnder(root: string, absDir: string, out: string[]): void {
 }
 
 /**
+ * Whether the canonical context directory has been scaffolded.
+ *
+ * Extracted so it has exactly one implementation. The Doctor probe and the
+ * repair-precondition probe both call this, which is what lets the precondition
+ * observe the real check rather than a copy of it that could drift; a test pins
+ * that the two produce identical `Check` values.
+ */
+export function canonContextDirCheck(root: string, contextDir: string): Check {
+  return existsSync(join(root, contextDir))
+    ? { name: "context-dir", verdict: "pass", detail: `${contextDir} present` }
+    : {
+        name: "context-dir",
+        verdict: "skip",
+        detail: `${contextDir} not scaffolded — run: aih scaffold --apply`,
+        code: "canon.context-dir-missing",
+      };
+}
+
+/**
  * Read-only lint of the canon already written under `contextDir`, aggregated into
  * one {@link Check} for `aih doctor`. Lints only the harness-authored context dir
  * tree (never the root bootloaders, which carry user prose outside the managed
