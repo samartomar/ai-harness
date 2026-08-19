@@ -663,6 +663,10 @@ describe("governanceDoctorRepairWriteFileV1 under filesystem interposition", () 
           }),
         ),
       ).toThrow(/^GOVERNANCE_DOCTOR_REPAIR_V1: repair managed directory was not created$/);
+      // A refusal must not leave the tree mutated under a spent plan: the one
+      // directory this call itself created is taken back while it is still
+      // empty, so a failed receipt and the live tree agree.
+      expect(existsSync(join(root, "canon"))).toBe(false);
     },
   );
 });

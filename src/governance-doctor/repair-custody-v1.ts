@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   type BigIntStats,
   closeSync,
+  fchmodSync,
   constants as fsConstants,
   fstatSync,
   fsyncSync,
@@ -11,6 +12,7 @@ import {
   openSync,
   realpathSync,
   renameSync,
+  rmdirSync,
   unlinkSync,
   writeSync,
 } from "node:fs";
@@ -286,6 +288,11 @@ function writeScratchDurably(
   let fd: number | undefined;
   try {
     fd = openSync(scratch, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL, mode);
+    // The kernel filters a create mode through the process umask, and the mode
+    // here is the one custody's own read observed -- so it is restated on the
+    // descriptor, or a repair under a restrictive umask would silently strip
+    // group and other access from the file it restored.
+    fchmodSync(fd, mode);
     // Recorded before a single byte is written, so a write that fails part way
     // still leaves the recovery below able to name what it has to clean up.
     const created = fstatSync(fd, { bigint: true });
@@ -754,13 +761,16 @@ export function governanceDoctorRepairCreateDirectoryV1(grant: unknown): void {
   const parent = join(body.realRoot, ...segments.slice(0, -1));
   const parentIdentity = observed.identities[segments.length - 1] as FileIdentity;
   assertBoundDirectory(parent, parentIdentity);
+  const leaf = join(parent, segments[segments.length - 1] as string);
+  let created = false;
   try {
     retryTransient(() =>
-      mkdirSync(join(parent, segments[segments.length - 1] as string), {
+      mkdirSync(leaf, {
         recursive: false,
         mode: GOVERNANCE_DOCTOR_REPAIR_CUSTODY_V1_LIMITS.createdDirectoryMode,
       }),
     );
+    created = true;
   } catch {
     // A concurrent creator is not an error; the re-walk below is the only verdict.
   }
@@ -772,7 +782,19 @@ export function governanceDoctorRepairCreateDirectoryV1(grant: unknown): void {
     // The flush can surface a raw OS error, and a refusal is never an output
     // channel: it collapses into the closed label here exactly as it does on
     // the write path. An entry whose durability cannot be proved is not a
-    // created directory.
+    // created directory -- and a refusal must not leave the tree mutated under
+    // a plan that is already durably spent, so the one directory this call
+    // itself created is taken back where that is still safely possible: only
+    // when this call's own mkdir succeeded, and only while the directory is
+    // empty, so nothing anyone else raced into it can ever be destroyed.
+    if (created) {
+      try {
+        retryTransient(() => rmdirSync(leaf));
+      } catch {
+        // Occupied or raced away: the stray stays, exactly like every other
+        // recovery in this module that cannot prove its target.
+      }
+    }
     failGovernanceDoctorRepairV1("repair managed directory was not created");
   }
 }

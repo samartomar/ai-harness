@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   linkSync,
   mkdirSync,
@@ -370,6 +371,33 @@ describe("createGovernanceDoctorRepairMutationGrantV1", () => {
     expect(governanceDoctorRepairReadV1(bound, "canon")).toEqual({ state: "absent" });
     expect(governanceDoctorRepairReadV1(bound, "loose.md")).toEqual({ state: "absent" });
   });
+
+  /**
+   * The mode custody republishes is the one its own read observed, not that mode
+   * filtered through whatever umask the process happens to carry: a repair must
+   * not silently strip group or other access from a file it restored.
+   */
+  it.skipIf(process.platform === "win32")(
+    "republishes the observed mode exactly, unfiltered by the process umask",
+    async () => {
+      writeFileSync(join(root, "loose.md"), "stale\n");
+      chmodSync(join(root, "loose.md"), 0o755);
+      const { bound, grant } = await bind();
+      const live = governanceDoctorRepairReadV1(bound, "loose.md");
+      const previous = process.umask(0o077);
+      try {
+        governanceDoctorRepairWriteFileV1(
+          grant("restore-loose"),
+          Buffer.from(LOOSE_BODY, "utf8"),
+          live,
+        );
+      } finally {
+        process.umask(previous);
+      }
+      expect(readFileSync(join(root, "loose.md"), "utf8")).toBe(LOOSE_BODY);
+      expect(statSync(join(root, "loose.md")).mode & 0o777).toBe(0o755);
+    },
+  );
 
   it("is one-shot: a spent grant is refused on reuse after success and after failure", async () => {
     const { bound, grant } = await bind();
