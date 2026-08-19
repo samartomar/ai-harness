@@ -7,6 +7,7 @@ import { readRegularFile } from "../internals/fsxn.js";
 import { type CommandSpec, digest, type PlanContext, plan, probe } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { governanceOwnsAihSurfaces, type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
+import { deriveGovernanceDoctorAuditCompletenessV1 } from "./audit-completeness-v1.js";
 import {
   canonicalGovernanceDoctorAuditV1Bytes,
   canonicalGovernanceDoctorGuideV1Bytes,
@@ -81,10 +82,17 @@ export interface GovernanceDoctorPolicyStateV1 {
 
 const policyStateBrands = new WeakSet<object>();
 
-/** Completed and refused outcomes stay distinct rather than collapsing into one verdict. */
+/**
+ * Completed, partial, and refused outcomes stay distinct rather than collapsing
+ * into one verdict. `partial` is the run that found real problems *and* could
+ * not see part of the workstation; it is neither a completed audit nor an
+ * absence of evidence, and it is derived once, from the branded Audit, by
+ * `deriveGovernanceDoctorAuditCompletenessV1`. Only `completed` passes.
+ */
 export type GovernanceDoctorPresentationOutcomeV1 =
   | "completed"
   | "evidence-gap"
+  | "partial"
   | "refused"
   | "unavailable";
 
@@ -356,6 +364,13 @@ function renderText(report: GovernanceDoctorAuditReportV1): string {
     );
   for (const refusal of report.refusals)
     lines.push(`  refusal ${refusal.diagnosticId}: ${refusal.state}`);
+  // Said in words, because the findings above are the part a reader acts on and
+  // an unresolved diagnostic is easy to scroll past. A partial run must not read
+  // as a clean bill of health for the parts nothing looked at.
+  if (report.outcome === "partial")
+    lines.push(
+      `  This is a partial audit, not a completed one: ${report.findings.length} finding(s) were recorded while ${report.refusals.length} diagnostic(s) did not resolve. Nothing is known about what those diagnostics cover.`,
+    );
   lines.push(
     "  Read-only presentation: no next action, Status, or Repair is executed, and nothing is written.",
   );
@@ -471,7 +486,10 @@ export function presentGovernanceDoctorOperationV1(
       owner: guide.nextAction.owner,
       unavailable: false,
     },
-    outcome: guide.refusals.length === 0 ? "completed" : "evidence-gap",
+    // Classified once, from the audit rather than from its own presentation, so
+    // a run that found problems and could not see part of the workstation
+    // cannot be reported as either complete or evidence-free.
+    outcome: deriveGovernanceDoctorAuditCompletenessV1(audit).state,
     policy: policyValue,
     prerequisites: guide.prerequisites.map((prerequisite) => ({
       note: prerequisite.note,

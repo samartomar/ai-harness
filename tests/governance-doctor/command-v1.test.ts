@@ -437,6 +437,7 @@ describe("aih governance-doctor — completed presentation", () => {
     const previewed = payload.digests?.[1]?.data;
     if (previewed === undefined) throw new Error("expected a repair plan preview digest");
     expect(Object.keys(previewed).sort()).toEqual([
+      "auditCompleteness",
       "effects",
       "executable",
       "expiresAtEpochMs",
@@ -587,7 +588,11 @@ describe("aih governance-doctor — refused, incompatible, and evidence-gap outc
       localProfile({ diagnosticIds: [DOCTOR, STATUS] }),
     );
     const presentation = presentGovernanceDoctorOperationV1(operation, policy);
-    expect(presentation.report.outcome).toBe("evidence-gap");
+    // Doctor resolved into findings while Status had no adapter at all, so the
+    // run is partial: it saw something real and also failed to look somewhere.
+    // It is not a completed audit, and it is not an absence of evidence either.
+    expect(presentation.report.outcome).toBe("partial");
+    expect(presentation.report.findings.length).toBeGreaterThan(0);
     expect(presentation.report.refusals).toEqual([
       { diagnosticId: STATUS, state: "missing-adapter" },
     ]);
@@ -609,9 +614,15 @@ describe("aih governance-doctor — refused, incompatible, and evidence-gap outc
       passingProbePlan("policy evaluate", "policy"),
     );
     const { code, out } = await runCommand([dir, "--json"]);
+    // The exit code is unchanged by the partial classification: only a
+    // completed audit ever passed, and this run never did.
     expect(code).toBe(1);
     const data = report(out);
-    expect(data.outcome).toBe("evidence-gap");
+    // Policy resolved into findings while Doctor reported a gap, so the run is
+    // partial rather than evidence-free -- the findings are real and the gap is
+    // real, and the outcome now says both.
+    expect(data.outcome).toBe("partial");
+    expect((data.findings as unknown[]).length).toBeGreaterThan(0);
     expect(data.refusals).toEqual([{ diagnosticId: DOCTOR, state: "evidence-gap" }]);
   });
 
@@ -1015,8 +1026,12 @@ describe("governance-doctor mechanical mapping against the real doctor planner",
     expect(data.findings?.map((finding) => finding.code)).not.toContain(
       "AIH_CANON_CONTEXT_DIR_MISSING",
     );
-    expect(data.outcome).toBe("evidence-gap");
+    // Real findings coexist with the gap, so this run is partial.
+    expect(data.outcome).toBe("partial");
     expect(code).toBe(1);
     expect(payload.digests?.[1]?.data?.outcome).toBe("no-mechanical-repair");
+    // And the preview says so too, so "a plan was considered" can never be read
+    // as "the audit was complete".
+    expect(payload.digests?.[1]?.data?.auditCompleteness).toBe("partial");
   }, 30_000);
 });
