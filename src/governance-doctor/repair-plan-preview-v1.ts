@@ -5,11 +5,20 @@ import {
   type GovernanceDoctorAuditV1Result,
 } from "./audit-guide-v1.js";
 import { assertEnumV1, assertExactKeysV1, assertRecordV1 } from "./capability-v1.js";
+// The operation record's own module, not the adapter that also re-exports it:
+// the adapter loads the Doctor and policy command specs, and loading it here to
+// reach one pure canonicalizer would give this module their filesystem reach by
+// transitivity. The remaining edge to the adapter is types only, and erases.
 import {
   canonicalGovernanceDoctorOperationV1Bytes,
-  type GovernanceDoctorOperationV1,
-} from "./operational-v1.js";
+  type GovernanceDoctorOperationRecordV1,
+} from "./operation-record-v1.js";
+import type { GovernanceDoctorOperationV1 } from "./operational-v1.js";
 import { createGovernanceDoctorRepairBrokerRegistryV1 } from "./repair-broker-v1.js";
+import {
+  assertGovernanceDoctorRepairEligibilityV1,
+  GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1,
+} from "./repair-eligibility-v1.js";
 import {
   createGovernanceDoctorRepairPlanV1,
   type GovernanceDoctorRepairEffectSummaryV1,
@@ -21,20 +30,27 @@ import {
  * --repair-plan` reaches.
  *
  * This module may only mint and present. Its inputs are the branded operation
- * the command's own single adapter run produced, the shipped profile, and the
- * single code-owned broker mapping below; no caller can supply a broker, a
- * recipe, an effect, a path, content, or any other authority through it. Its
- * output is a closed, bounded record whose `executable` field is permanently
- * `false`: no consent is captured, no claim is spent, no executor, custody, or
- * verifier module is imported, and nothing is written anywhere.
+ * the command's own single adapter run produced, the shipped profile, the
+ * branded eligibility record the trusted command boundary minted for that same
+ * run, and the single code-owned broker mapping below; no caller can supply a
+ * broker, a recipe, an effect, a path, content, or any other authority through
+ * it. Its output is a closed, bounded record whose `executable` field is
+ * permanently `false`: no consent is captured, no claim is spent, no executor,
+ * custody, or verifier module is imported, and nothing is written anywhere.
  *
- * The findings-to-effects mapping is deliberately a code-owned table. Today the
- * only finding code any shipped diagnostic reports is a success code, so no
- * mechanical effect is derivable from a real audit and every live preview
- * reports `no-mechanical-repair`; the minting path below is exercised by tests
- * against synthetic branded audits and becomes live only when a diagnostic
- * gains a mechanically mappable finding code -- a separately reviewed change to
- * this table.
+ * The module is deliberately capability-free. It reads no file, no setting, no
+ * marker, and no environment value, and it holds no callback that could read one
+ * on its behalf, so every fact about the repository it relies on has to arrive
+ * as an already-validated, already-branded record. That is what the eligibility
+ * record is: a conclusion the command boundary reached, not a question this
+ * module asks.
+ *
+ * The findings-to-effects mapping is a code-owned table with exactly one entry.
+ * Today's shipped audit can report two finding codes: a success code, which maps
+ * to nothing, and the missing canonical context directory, which maps to a
+ * single `create-managed-directory` effect at the module's own constant path.
+ * Nothing else derives an effect, and widening the table is a separately
+ * reviewed change to this module.
  */
 export const GOVERNANCE_DOCTOR_REPAIR_PREVIEW_BROKER_ID_V1 = "aih:governance-doctor.mechanical";
 
@@ -141,26 +157,56 @@ export interface GovernanceDoctorRepairDerivedEffectsV1 {
 }
 
 /**
- * The code-owned findings-to-effects table. A finding code absent from this
- * table -- including today's only real code, `AIH_READ_ONLY_PROBES_COMPLETED`,
- * which reports success -- derives nothing. Widening this table is a reviewed
- * edit to this module, never a caller input.
+ * The code-owned findings-to-effects table. A finding code absent from it --
+ * including `AIH_READ_ONLY_PROBES_COMPLETED`, which reports success -- derives
+ * nothing. Widening it is a reviewed edit to this module, never a caller input.
+ *
+ * Each entry pairs an AIH-owned finding code with an AIH-owned effect. The path
+ * is a module constant, not a field: nothing a marker, a command option, an
+ * environment variable, or a diagnostic's own detail or location carries can
+ * move an effect off the canonical directory, because there is no expression in
+ * this table that reads any of them.
+ *
+ * Widening this table is also what keeps the mint path's own preconditions under
+ * review: the plan module requires at least one evidence citation and caps
+ * findings at 16 and refusals at 8, and `createdAtEpochMs` must sit inside the
+ * module's accepted clock era. Today an audit can carry at most two of each, so
+ * forwarding the audit's evidence verbatim is exact; past those caps, minting
+ * collapses into the fixed `unavailable` outcome rather than truncating
+ * evidence silently.
  */
+const MECHANICAL_EFFECTS_V1 = Object.freeze([
+  Object.freeze({
+    code: "AIH_CANON_CONTEXT_DIR_MISSING",
+    diagnosticId: "aih.doctor.root",
+    effectId: "ensure-canonical-context-dir",
+    templateId: "ensure-managed-directory",
+  }),
+] as const);
+
 function deriveMechanicalEffects(
   audit: GovernanceDoctorAuditV1Result,
 ): GovernanceDoctorRepairDerivedEffectsV1 {
   if (audit.kind !== "audited") return { effects: [], scopePaths: [] };
-  // No shipped finding code maps to a mechanical effect yet: every current code
-  // either reports success or reports a state no frozen effect kind can change.
-  //
-  // Widening this table is what makes the mint path below live, so that review
-  // owns the mint path's own preconditions too: the plan module requires at
-  // least one evidence citation and caps findings at 16 and refusals at 8, and
-  // `createdAtEpochMs` must sit inside the module's accepted clock era. Today
-  // an audit can carry at most two of each, so forwarding the audit's evidence
-  // verbatim is exact; past those caps, minting would collapse into the fixed
-  // `unavailable` outcome rather than truncating evidence silently.
-  return { effects: [], scopePaths: [] };
+  const effects = new Map<string, GovernanceDoctorRepairDerivedEffectsV1["effects"][number]>();
+  for (const finding of audit.findings) {
+    const entry = MECHANICAL_EFFECTS_V1.find(
+      (candidate) =>
+        candidate.code === finding.code && candidate.diagnosticId === finding.diagnosticId,
+    );
+    if (entry === undefined) continue;
+    effects.set(entry.effectId, {
+      arguments: { path: GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1 },
+      effectId: entry.effectId,
+      templateId: entry.templateId,
+    });
+  }
+  return effects.size === 0
+    ? { effects: [], scopePaths: [] }
+    : {
+        effects: [...effects.values()],
+        scopePaths: [GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1],
+      };
 }
 
 function preview(
@@ -253,7 +299,11 @@ export function presentGovernanceDoctorRepairPlanPreviewV1(
 ): GovernanceDoctorRepairPlanPreviewV1 {
   try {
     const request = assertRecordV1(value, "repair plan preview request");
-    assertExactKeysV1(request, ["operation", "profile"], "repair plan preview request");
+    assertExactKeysV1(
+      request,
+      ["eligibility", "operation", "profile"],
+      "repair plan preview request",
+    );
     const operation = assertRecordV1(request.operation, "repair plan preview operation");
     assertExactKeysV1(operation, ["audit", "guide", "record"], "repair plan preview operation");
     // Brand checks before any classification: a structurally shaped parse of a
@@ -276,6 +326,19 @@ export function presentGovernanceDoctorRepairPlanPreviewV1(
     if (posture !== "guided-only") return preview("posture-unavailable");
     const derived = deriveMechanicalEffects(operation.audit as GovernanceDoctorAuditV1Result);
     if (derived.effects.length === 0) return preview("no-mechanical-repair");
+    // Eligibility is consulted only once an effect is already derivable, so a
+    // healthy audit reports no-mechanical-repair whether or not this repository
+    // is eligible -- eligibility gates minting, it does not describe the audit.
+    // An absent or hostile record throws into the closed collapse below.
+    //
+    // The root comparison is defense in depth, not an active guard: the one
+    // shipped caller mints the record from this same operation's own root
+    // digest, so it cannot disagree today. It is kept so that a second caller,
+    // or a record held across runs, cannot present eligibility earned for one
+    // repository beside another repository's audit.
+    const eligibility = assertGovernanceDoctorRepairEligibilityV1(request.eligibility);
+    const record = operation.record as GovernanceDoctorOperationRecordV1;
+    if (eligibility.rootSha256 !== record.rootSha256) return preview("unavailable");
     return mintGovernanceDoctorRepairPlanPreviewV1(
       request.operation as GovernanceDoctorOperationV1,
       request.profile,

@@ -1203,6 +1203,21 @@ The Guide's next action is reported by id and stays `executable: false`: this ro
 next action, no `aih status`, and no Repair. The internal Repair modules have no execution,
 consent, or application route from this or any other command.
 
+One `aih doctor` outcome is now mapped to a finding rather than collapsing its diagnostic into an
+evidence gap: the code-owned tuple of check `context-dir`, verdict `skip`, and code
+`canon.context-dir-missing`, which becomes the low-severity `AIH_CANON_CONTEXT_DIR_MISSING`. The
+diagnostic's own code and detail text are compared against a code-owned table and then discarded —
+neither appears in the report.
+
+**This does not change any real run, and cannot as things stand.** The mapping is all-or-nothing
+per diagnostic: if any other Doctor check also skips or fails, the whole diagnostic still collapses
+into `evidence-gap` exactly as before. Doctor's canon markdown lint check skips on *exactly* the
+same condition as this one — both test whether the context directory exists — so the mapped tuple
+never occurs alone, and the finding is never emitted. In a fresh fixture root the shipped planner
+in fact reports 24 non-pass checks. The mapping and the preview derivation below are therefore
+proved by tests and inert on real output. Making them reachable is a separate, larger change to how
+a diagnostic reports partial understanding, and is not attempted here.
+
 **Flags**
 
 The shared zero-write set — `--json`, `--posture <posture>`, `--root <dir>`, and
@@ -1219,10 +1234,19 @@ the shipped profile, and one code-owned broker mapping — no flag, option, or p
 supply a broker, recipe, effect, path, or content. Its closed JSON shape reports a fixed outcome
 (`no-mechanical-repair`, `plan`, `posture-unavailable`, or `unavailable`), plan and summary
 digests when a plan was derivable, bounded effect summaries over managed-relative paths, and
-`executable: false` always. No shipped diagnostic currently reports a mechanically mappable
-finding, so a real audit previews `no-mechanical-repair` today; when a plan is derivable it is
-presented and discarded. Nothing becomes executable: the preview captures no consent, spends no
-claim, runs no executor or verifier, and writes nothing.
+`executable: false` always. Exactly one finding is mechanically mappable, and it is not reachable
+from a real run today (see above), so a real audit still previews `no-mechanical-repair`. When a
+plan is derivable it is presented and discarded. Nothing becomes executable: the preview captures
+no consent, spends no claim, runs no executor or verifier, and writes nothing.
+
+The one mappable finding is `AIH_CANON_CONTEXT_DIR_MISSING`, and it derives one
+`create-managed-directory` effect at the fixed path `ai-coding`. That path is a constant in the
+code: it is never taken from the committed marker, from `--context-dir`, from the environment, or
+from the diagnostic's own text. Those inputs are only ever *gates*. A plan is previewed only when
+this repository's committed `.aih-config.json` is present and valid, its context directory is
+exactly `ai-coding`, and the run's resolved context directory is exactly `ai-coding` too — so a
+`--context-dir` override that disagrees with the committed marker previews `unavailable` rather
+than a plan for either directory.
 
 **Output and exit codes**
 
