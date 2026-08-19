@@ -25,6 +25,7 @@ import {
   governanceDoctorRepairClaimFileNameV1,
   governanceDoctorRepairClaimScopeSha256V1,
   governanceDoctorRepairClaimSha256V1,
+  markGovernanceDoctorRepairClaimSpentV1,
   parseGovernanceDoctorRepairClaimV1,
 } from "./repair-claim-v1.js";
 import {
@@ -1085,5 +1086,9 @@ export function acquireGovernanceDoctorRepairClaimV1(
   if (!syncDirectoryEntry(store)) failGovernanceDoctorRepairV1(NOT_COMMITTED);
   confirmPublishedClaim(path, identity, bytes);
   assertStoreIdentity(store, NOT_COMMITTED);
-  return claim;
+  // Only now, with the record durably committed and re-confirmed, does this
+  // claim become the capability that lets an executor record attempt evidence.
+  // Marking earlier would hand out the authority on a spend that might not have
+  // survived; this is the single place in the product that may mark.
+  return markGovernanceDoctorRepairClaimSpentV1(claim);
 }

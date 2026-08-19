@@ -16,6 +16,7 @@ import {
   failGovernanceDoctorRepairV1,
   GOVERNANCE_DOCTOR_REPAIR_V1_LIMITS,
 } from "./repair-capability-v1.js";
+import { assertGovernanceDoctorRepairClaimSpentV1 } from "./repair-claim-v1.js";
 import { canonicalGovernanceDoctorRepairReceiptV1Bytes } from "./repair-outcome-v1.js";
 
 /**
@@ -176,11 +177,45 @@ function attemptEvidenceReceiptV1(value: unknown): ReadonlySet<string> {
   return applied;
 }
 
+/**
+ * Records what one executor observed after applying a Receipt's effects.
+ *
+ * The third argument is a capability, not a parameter to validate: only the
+ * durable claim store mints a spent claim, and only after the exclusive create
+ * that commits the record. Requiring one here means local evidence -- the fact
+ * an independent verifier later reads -- can exist only for a plan this process
+ * actually spent. Without it any in-package caller could record evidence for a
+ * Receipt it built itself; the two-part verifier verdict would still refuse
+ * evidence that echoes an unrepaired tree, so this was never a route to a
+ * fabricated repair, but it did allow a Verification with no durable claim
+ * behind it, which is precisely the audit trail an executable Repair rests on.
+ *
+ * The claim is also joined to the Receipt rather than merely presented: a claim
+ * spent for one plan and consent cannot license evidence for another.
+ *
+ * That join is at plan-and-consent granularity, and deliberately says nothing
+ * about the resolved root. A claim's `scopeSha256` digests the checkout's
+ * canonical real path, which the store resolves on disk; a plan's `rootSha256`
+ * digests the declared root and context-dir strings before anything is
+ * resolved. Two durable spends of the same plan and consent against roots that
+ * resolve differently therefore produce claims this check cannot tell apart,
+ * and this module -- which reaches no filesystem -- has no way to learn which
+ * one a Receipt's effects actually landed in. The single production caller
+ * always passes the claim it just acquired for the Receipt it just built, so
+ * nothing today can present a mismatched pair; a second caller would need the
+ * scope bound too, which means threading the resolved root here and is left to
+ * the change that introduces one.
+ */
 export function recordGovernanceDoctorRepairAttemptEvidenceV1(
   receipt: unknown,
   expected: unknown,
+  spentClaim: unknown,
 ): void {
   const appliedEffectSha256 = attemptEvidenceReceiptV1(receipt);
+  const claim = assertGovernanceDoctorRepairClaimSpentV1(spentClaim);
+  const bound = receipt as { readonly consentSha256: string; readonly planSha256: string };
+  if (claim.planSha256 !== bound.planSha256 || claim.consentSha256 !== bound.consentSha256)
+    failGovernanceDoctorRepairV1("repair attempt evidence claim does not bind this receipt");
   const target = receipt as object;
   // One-shot per Receipt. Evidence is a factual record of what one executor
   // observed, so a second recording could only replace an attempt's own truth

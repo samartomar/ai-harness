@@ -12,6 +12,10 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  createGovernanceDoctorRepairClaimV1,
+  markGovernanceDoctorRepairClaimSpentV1,
+} from "../../src/governance-doctor/repair-claim-v1.js";
+import {
   createGovernanceDoctorRepairContentV1,
   governanceDoctorRepairMarkerBeginLineV1,
   governanceDoctorRepairMarkerEndLineV1,
@@ -385,6 +389,15 @@ describe("verifyGovernanceDoctorRepairV1", () => {
               effectSha256: effect.effectSha256,
               state: "file",
             },
+      ),
+      markGovernanceDoctorRepairClaimSpentV1(
+        createGovernanceDoctorRepairClaimV1({
+          claimedAtEpochMs: REPAIR_FIXTURE_ATTEMPTED_AT,
+          consentSha256: fabricated.consentSha256,
+          planSha256: fabricated.planSha256,
+          scopeSha256: "c".repeat(64),
+          state: "claimed",
+        }),
       ),
     );
 

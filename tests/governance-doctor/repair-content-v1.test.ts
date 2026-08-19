@@ -1,6 +1,12 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  canonicalGovernanceDoctorRepairClaimV1Bytes,
+  createGovernanceDoctorRepairClaimV1,
+  markGovernanceDoctorRepairClaimSpentV1,
+  parseGovernanceDoctorRepairClaimV1,
+} from "../../src/governance-doctor/repair-claim-v1.js";
+import {
   createGovernanceDoctorRepairContentV1,
   GOVERNANCE_DOCTOR_REPAIR_CONTENT_V1_LIMITS,
   governanceDoctorRepairAttemptExpectedV1,
@@ -57,6 +63,23 @@ function content(...bodies: readonly (Buffer | string)[]) {
 
 const BEGIN = governanceDoctorRepairMarkerBeginLineV1("canon-block");
 const END = governanceDoctorRepairMarkerEndLineV1("canon-block");
+
+/**
+ * The capability the durable store hands an executor after it commits a claim
+ * record. Recording attempt evidence requires one, so these tests mint the same
+ * shape the store would and mark it spent.
+ */
+function spentClaimFor(receipt: { consentSha256: string; planSha256: string }) {
+  return markGovernanceDoctorRepairClaimSpentV1(
+    createGovernanceDoctorRepairClaimV1({
+      claimedAtEpochMs: REPAIR_FIXTURE_ATTEMPTED_AT,
+      consentSha256: receipt.consentSha256,
+      planSha256: receipt.planSha256,
+      scopeSha256: "c".repeat(64),
+      state: "claimed",
+    }),
+  );
+}
 
 describe("createGovernanceDoctorRepairContentV1", () => {
   it("admits only bytes that independently hash to their declared digest", () => {
@@ -401,10 +424,14 @@ describe("governance doctor repair attempt evidence", () => {
   it("hands back only what an executor recorded, as a defensive copy", async () => {
     const { directory, file, receipt } = await minted();
     const bytes = utf8("post state\n");
-    recordGovernanceDoctorRepairAttemptEvidenceV1(receipt, [
-      { bytes, effectSha256: file, state: "file" },
-      { effectSha256: directory, state: "directory" },
-    ]);
+    recordGovernanceDoctorRepairAttemptEvidenceV1(
+      receipt,
+      [
+        { bytes, effectSha256: file, state: "file" },
+        { effectSha256: directory, state: "directory" },
+      ],
+      spentClaimFor(receipt),
+    );
 
     const held = governanceDoctorRepairAttemptExpectedV1(receipt, file);
     expect(held?.state).toBe("file");
@@ -423,14 +450,18 @@ describe("governance doctor repair attempt evidence", () => {
   it("is one-shot: recorded attempt evidence can never be replaced", async () => {
     const { file, receipt } = await minted();
     const applied = utf8("what the executor actually wrote\n");
-    recordGovernanceDoctorRepairAttemptEvidenceV1(receipt, [
-      { bytes: applied, effectSha256: file, state: "file" },
-    ]);
+    recordGovernanceDoctorRepairAttemptEvidenceV1(
+      receipt,
+      [{ bytes: applied, effectSha256: file, state: "file" }],
+      spentClaimFor(receipt),
+    );
 
     expect(() =>
-      recordGovernanceDoctorRepairAttemptEvidenceV1(receipt, [
-        { bytes: utf8("whatever happens to be on disk\n"), effectSha256: file, state: "file" },
-      ]),
+      recordGovernanceDoctorRepairAttemptEvidenceV1(
+        receipt,
+        [{ bytes: utf8("whatever happens to be on disk\n"), effectSha256: file, state: "file" }],
+        spentClaimFor(receipt),
+      ),
     ).toThrow(/^GOVERNANCE_DOCTOR(?:_REPAIR)?_V1: /);
     expect(
       governanceDoctorRepairAttemptExpectedV1(receipt, file) as { bytes: Buffer },
@@ -440,10 +471,14 @@ describe("governance doctor repair attempt evidence", () => {
   it("refuses evidence that names one effect identity twice", async () => {
     const { directory, receipt } = await minted();
     expect(() =>
-      recordGovernanceDoctorRepairAttemptEvidenceV1(receipt, [
-        { effectSha256: directory, state: "directory" },
-        { effectSha256: directory, state: "directory" },
-      ]),
+      recordGovernanceDoctorRepairAttemptEvidenceV1(
+        receipt,
+        [
+          { effectSha256: directory, state: "directory" },
+          { effectSha256: directory, state: "directory" },
+        ],
+        spentClaimFor(receipt),
+      ),
     ).toThrow(/^GOVERNANCE_DOCTOR(?:_REPAIR)?_V1: /);
   });
 
@@ -464,12 +499,14 @@ describe("governance doctor repair attempt evidence", () => {
     ];
 
     for (const forged of forgeries)
-      expect(() => recordGovernanceDoctorRepairAttemptEvidenceV1(forged, evidence)).toThrow(
-        /^GOVERNANCE_DOCTOR(?:_REPAIR)?_V1: /,
-      );
+      expect(() =>
+        recordGovernanceDoctorRepairAttemptEvidenceV1(forged, evidence, spentClaimFor(receipt)),
+      ).toThrow(/^GOVERNANCE_DOCTOR(?:_REPAIR)?_V1: /);
 
     // The real one still records, so the refusals above are about authenticity.
-    expect(() => recordGovernanceDoctorRepairAttemptEvidenceV1(receipt, evidence)).not.toThrow();
+    expect(() =>
+      recordGovernanceDoctorRepairAttemptEvidenceV1(receipt, evidence, spentClaimFor(receipt)),
+    ).not.toThrow();
   });
 
   it("refuses evidence for an effect the receipt never carries or never applied", async () => {
@@ -478,21 +515,27 @@ describe("governance doctor repair attempt evidence", () => {
 
     // An identity from no attempt at all cannot be introduced.
     expect(() =>
-      recordGovernanceDoctorRepairAttemptEvidenceV1(receipt, [
-        { effectSha256: sha256("some other effect"), state: "directory" },
-      ]),
+      recordGovernanceDoctorRepairAttemptEvidenceV1(
+        receipt,
+        [{ effectSha256: sha256("some other effect"), state: "directory" }],
+        spentClaimFor(receipt),
+      ),
     ).toThrow(/^GOVERNANCE_DOCTOR(?:_REPAIR)?_V1: /);
     // Nor can a real identity this receipt records as failed rather than applied.
     expect(() =>
-      recordGovernanceDoctorRepairAttemptEvidenceV1(receipt, [
-        { bytes: utf8("never written\n"), effectSha256: file, state: "file" },
-      ]),
+      recordGovernanceDoctorRepairAttemptEvidenceV1(
+        receipt,
+        [{ bytes: utf8("never written\n"), effectSha256: file, state: "file" }],
+        spentClaimFor(receipt),
+      ),
     ).toThrow(/^GOVERNANCE_DOCTOR(?:_REPAIR)?_V1: /);
     // The same identity under a receipt that did apply it is accepted.
     expect(() =>
-      recordGovernanceDoctorRepairAttemptEvidenceV1(other.receipt, [
-        { bytes: utf8("written\n"), effectSha256: other.file, state: "file" },
-      ]),
+      recordGovernanceDoctorRepairAttemptEvidenceV1(
+        other.receipt,
+        [{ bytes: utf8("written\n"), effectSha256: other.file, state: "file" }],
+        spentClaimFor(other.receipt),
+      ),
     ).not.toThrow();
   });
 
@@ -525,23 +568,144 @@ describe("governance doctor repair attempt evidence", () => {
     ];
 
     for (const entry of hostile)
-      expect(() => recordGovernanceDoctorRepairAttemptEvidenceV1(receipt, [entry])).toThrow(
-        /^GOVERNANCE_DOCTOR(?:_REPAIR)?_V1: /,
-      );
+      expect(() =>
+        recordGovernanceDoctorRepairAttemptEvidenceV1(receipt, [entry], spentClaimFor(receipt)),
+      ).toThrow(/^GOVERNANCE_DOCTOR(?:_REPAIR)?_V1: /);
     expect(observed).toBe(0);
 
     // An array-like and a proxied evidence set are refused as the set itself.
     expect(() =>
-      recordGovernanceDoctorRepairAttemptEvidenceV1(receipt, {
-        0: { effectSha256: directory, state: "directory" },
-        length: 1,
-      }),
+      recordGovernanceDoctorRepairAttemptEvidenceV1(
+        receipt,
+        {
+          0: { effectSha256: directory, state: "directory" },
+          length: 1,
+        },
+        spentClaimFor(receipt),
+      ),
     ).toThrow(/^GOVERNANCE_DOCTOR(?:_REPAIR)?_V1: /);
     expect(() =>
       recordGovernanceDoctorRepairAttemptEvidenceV1(
         receipt,
         new Proxy([{ effectSha256: directory, state: "directory" }], {}),
+        spentClaimFor(receipt),
       ),
     ).toThrow(/^GOVERNANCE_DOCTOR(?:_REPAIR)?_V1: /);
+  });
+});
+
+describe("attempt evidence requires a spent claim", () => {
+  async function minted() {
+    const built = await repairFixturePlan({
+      effects: EVIDENCE_EFFECTS,
+      root: EVIDENCE_ROOT,
+      scopePaths: EVIDENCE_SCOPE,
+    });
+    const receipt = createGovernanceDoctorRepairReceiptV1({
+      attemptedAtEpochMs: REPAIR_FIXTURE_ATTEMPTED_AT,
+      consent: repairFixtureConsent(built),
+      context: repairFixtureExecutionContext(built),
+      effects: built.effects.map((effect) => ({ effectId: effect.effectId, result: "applied" })),
+      plan: built,
+    });
+    return { built, directory: built.effects[0]?.effectSha256 as string, receipt };
+  }
+
+  it("refuses a claim this process never durably spent", async () => {
+    const { directory, receipt } = await minted();
+    const evidence = [{ effectSha256: directory, state: "directory" as const }];
+    const unspent = createGovernanceDoctorRepairClaimV1({
+      claimedAtEpochMs: REPAIR_FIXTURE_ATTEMPTED_AT,
+      consentSha256: receipt.consentSha256,
+      planSha256: receipt.planSha256,
+      scopeSha256: "c".repeat(64),
+      state: "claimed",
+    });
+    // A claim that is merely well formed is not a spend: only the durable store
+    // marks one, and only after the exclusive create commits its record.
+    for (const [label, claim] of [
+      ["unspent claim", unspent],
+      [
+        "round-trip of its own canonical bytes",
+        parseGovernanceDoctorRepairClaimV1(canonicalGovernanceDoctorRepairClaimV1Bytes(unspent)),
+      ],
+      ["plain object", { ...unspent }],
+      ["proxy", new Proxy(unspent, {})],
+      ["undefined", undefined],
+      ["null", null],
+      ["true", true],
+    ] as const)
+      expect(
+        () => recordGovernanceDoctorRepairAttemptEvidenceV1(receipt, evidence, claim),
+        label,
+      ).toThrow(/^GOVERNANCE_DOCTOR(?:_REPAIR)?_V1: /);
+  });
+
+  it("refuses a spent claim taken for a different plan or consent", async () => {
+    const { directory, receipt } = await minted();
+    const evidence = [{ effectSha256: directory, state: "directory" as const }];
+    for (const [label, overrides] of [
+      ["other plan", { planSha256: "d".repeat(64) }],
+      ["other consent", { consentSha256: "e".repeat(64) }],
+    ] as const)
+      expect(
+        () =>
+          recordGovernanceDoctorRepairAttemptEvidenceV1(
+            receipt,
+            evidence,
+            markGovernanceDoctorRepairClaimSpentV1(
+              createGovernanceDoctorRepairClaimV1({
+                claimedAtEpochMs: REPAIR_FIXTURE_ATTEMPTED_AT,
+                consentSha256: receipt.consentSha256,
+                planSha256: receipt.planSha256,
+                scopeSha256: "c".repeat(64),
+                state: "claimed",
+                ...overrides,
+              }),
+            ),
+          ),
+        label,
+      ).toThrow(/^GOVERNANCE_DOCTOR(?:_REPAIR)?_V1: /);
+  });
+
+  /**
+   * Characterization, not endorsement. The join is plan-and-consent only: a
+   * claim's scope digests the resolved canonical checkout path, which this pure
+   * module cannot observe, so a claim spent against a differently-resolved root
+   * is accepted today. The single production caller pairs the claim and receipt
+   * it just produced, so no mismatched pair is reachable; this test exists so
+   * that binding the scope is a deliberate change with a visible diff rather
+   * than an unnoticed gap.
+   */
+  it("does not yet distinguish a claim spent for a different resolved root", async () => {
+    const { directory, receipt } = await minted();
+    expect(() =>
+      recordGovernanceDoctorRepairAttemptEvidenceV1(
+        receipt,
+        [{ effectSha256: directory, state: "directory" }],
+        markGovernanceDoctorRepairClaimSpentV1(
+          createGovernanceDoctorRepairClaimV1({
+            claimedAtEpochMs: REPAIR_FIXTURE_ATTEMPTED_AT,
+            consentSha256: receipt.consentSha256,
+            planSha256: receipt.planSha256,
+            // A scope this receipt's effects never touched.
+            scopeSha256: "f".repeat(64),
+            state: "claimed",
+          }),
+        ),
+      ),
+    ).not.toThrow();
+  });
+
+  it("records evidence when the spent claim binds this receipt", async () => {
+    const { directory, receipt } = await minted();
+    expect(() =>
+      recordGovernanceDoctorRepairAttemptEvidenceV1(
+        receipt,
+        [{ effectSha256: directory, state: "directory" }],
+        spentClaimFor(receipt),
+      ),
+    ).not.toThrow();
+    expect(governanceDoctorRepairAttemptExpectedV1(receipt, directory)?.state).toBe("directory");
   });
 });

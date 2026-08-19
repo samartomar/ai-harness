@@ -516,6 +516,25 @@ describe("governance doctor repair execution capability boundary", () => {
     expect(importers.get(CUSTODY_MUTATION_IMPORTER)).toEqual(CUSTODY_RESTRICTED_SURFACE);
   });
 
+  /**
+   * Marking a claim spent is the capability that lets attempt evidence be
+   * recorded at all, so the set of modules that may mark has to be one, and has
+   * to be the module that actually commits the durable record.
+   */
+  it("lets exactly one module mark a claim spent", () => {
+    const markers: string[] = [];
+    for (const absolute of sourceFiles(resolve(repoRoot, "src"))) {
+      if (readFileSync(absolute, "utf8").includes("markGovernanceDoctorRepairClaimSpentV1"))
+        markers.push(repoRelative(absolute));
+    }
+    expect(markers.sort()).toEqual(
+      [
+        "src/governance-doctor/repair-claim-store-v1.ts",
+        "src/governance-doctor/repair-claim-v1.ts",
+      ].sort(),
+    );
+  });
+
   it("lets exactly one module reach the durable claim store", () => {
     const importers = new Map<string, readonly string[]>();
     for (const absolute of sourceFiles(resolve(repoRoot, "src"))) {

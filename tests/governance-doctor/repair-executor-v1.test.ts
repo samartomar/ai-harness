@@ -242,6 +242,41 @@ describe("executeGovernanceDoctorRepairV1", () => {
     );
   });
 
+  /**
+   * The authority window is re-read whenever an effect takes a mutation grant,
+   * so a plan that expires between effects must stop rather than finish on the
+   * strength of a check it passed before the first write. Freezing the clock for
+   * the whole run would never exercise that, which is why this advances it
+   * mid-run.
+   *
+   * The bound is the grant, not the effect: an effect whose goal already holds
+   * returns applied without taking one and therefore without reading the clock,
+   * so a plan expiring with only satisfied effects left still completes. Nothing
+   * is mutated in that case, and every effect below genuinely needs a grant.
+   */
+  it("halts when the authority window closes before the next mutation", async () => {
+    const built = await plan();
+    // The window closes the moment the first effect has landed on disk, which is
+    // a fact about the run rather than a guess at how many times the clock is
+    // read. Effect zero creates `canon`.
+    const clock = vi
+      .spyOn(Date, "now")
+      .mockImplementation(() =>
+        existsSync(join(root, "canon")) ? built.expiresAtEpochMs + 1 : REPAIR_FIXTURE_ATTEMPTED_AT,
+      );
+    try {
+      const receipt = execute(built);
+      const outcome = results(receipt);
+      expect(outcome[0]).toBe("applied");
+      expect(outcome.slice(1).every((result) => result !== "applied")).toBe(true);
+      expect(receipt.state).toBe("failed");
+      // The effects that never ran left nothing behind.
+      expect(existsSync(join(root, "canon", "router.md"))).toBe(false);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("preserves every unrelated byte and deletes nothing", async () => {
     execute(await plan());
     expect(readFileSync(join(root, "bystander.md"), "utf8")).toBe("bystander\r\n");
