@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -288,8 +289,12 @@ describe("governanceDoctorRepairReadV1", () => {
 
   it("refuses a different real directory installed at the same bound root path", async () => {
     const bound = await custody();
+    // The replacement is created while the original root still exists, so its
+    // identity can never be an inode-number reuse of the root it replaces --
+    // ext4 hands a removed directory's inode straight back to the next mkdir.
+    const replacement = mkdtempSync(join(tmpdir(), "aih-repair-root-replacement-"));
     rmSync(root, { recursive: true, force: true });
-    mkdirSync(root);
+    renameSync(replacement, root);
 
     expect(governanceDoctorRepairReadV1(bound, "canon")).toEqual({ state: "unsafe" });
   });

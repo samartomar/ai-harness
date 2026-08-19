@@ -5,7 +5,6 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
-  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -118,9 +117,12 @@ function treeDigest(directory: string): string {
       } else if (entry.isSymbolicLink()) {
         hash.update("l");
       } else {
+        // One read supplies both the length and the bytes, so there is no
+        // stat-then-read window for the digest to observe two states through.
+        const bytes = readFileSync(absolute);
         hash.update("f");
-        hash.update(String(statSync(absolute).size));
-        hash.update(readFileSync(absolute));
+        hash.update(String(bytes.length));
+        hash.update(bytes);
       }
     }
   };

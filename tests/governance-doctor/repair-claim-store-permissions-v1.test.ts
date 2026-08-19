@@ -85,7 +85,12 @@ const posix = vi.hoisted(() => ({
   enabled: false,
   /** Owning uid reported for one exact path; every other path reports `uid`. */
   owners: new Map<string, number>(),
-  /** Permission bits reported for one exact path; every other path reports 0o700. */
+  /**
+   * Permission bits reported for one exact path, special bits included; every
+   * other path reports a plain 0o700. Cases that need setuid, setgid, or sticky
+   * state it explicitly (0o1777), so a host directory's own special bits -- a
+   * real `/tmp`'s sticky bit above all -- can never leak into a simulated shape.
+   */
   permissions: new Map<string, number>(),
   uid: 4242,
 }));
@@ -100,10 +105,12 @@ vi.mock("node:fs", async (importOriginal) => {
     // A proxy rather than a copy: how a `Stats` instance holds its own fields is
     // not this seam's business, and only two of them are being restated. The
     // file-type bits are untouched, so `isDirectory` and its siblings stay exactly
-    // as truthful as the real syscall was.
+    // as truthful as the real syscall was. The whole 0o7777 permission field is
+    // governed by the override -- special bits included -- so the simulated shape
+    // is identical on every host.
     return new Proxy(raw, {
       get: (target, property) => {
-        if (property === "mode") return (target.mode & ~0o777n) | permission;
+        if (property === "mode") return (target.mode & ~0o7777n) | permission;
         if (property === "uid") return owner;
         const value = Reflect.get(target, property, target) as unknown;
         return typeof value === "function" ? value.bind(target) : value;
@@ -123,6 +130,7 @@ const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
 const getuidDescriptor = Object.getOwnPropertyDescriptor(process, "getuid");
 
 let home: RepairFixtureHome;
+let homePath: string;
 let root: string;
 
 const UNAVAILABLE = /^GOVERNANCE_DOCTOR_REPAIR_V1: repair claim store is not available$/;
@@ -135,6 +143,14 @@ const EFFECTS: readonly RepairFixtureEffect[] = [
 beforeEach(() => {
   vi.spyOn(Date, "now").mockReturnValue(REPAIR_FIXTURE_ATTEMPTED_AT);
   home = repairFixtureIsolatedHome();
+  // The naming-ancestry cases prove depths 0..2 below the home, but a host whose
+  // temp directory sits directly under the filesystem root (`/tmp/...`) leaves
+  // only two real ancestors. The account home is therefore re-pinned two
+  // suite-owned layers deeper, so every proved depth exists on every host and
+  // the nearest ancestors are directories this suite created.
+  homePath = join(home.path, "layer-one", "layer-two");
+  mkdirSync(homePath, { recursive: true });
+  setRepairFixtureAccountHomeV1(homePath);
   root = mkdtempSync(join(realpathSync.native(tmpdir()), "aih-repair-permissions-"));
 });
 
@@ -179,7 +195,7 @@ function acquire(built: GovernanceDoctorRepairPlanV1) {
 }
 
 function store(): string {
-  return repairFixtureClaimStoreDirectory(home.path);
+  return repairFixtureClaimStoreDirectory(homePath);
 }
 
 /** Every lexical naming ancestor of one path, nearest first, up to the root. */
@@ -195,7 +211,7 @@ function ancestors(path: string): readonly string[] {
 
 /** One authority-controlled segment, by its depth below the resolved home. */
 function segment(depth: number): string {
-  return join(home.path, ...GOVERNANCE_DOCTOR_REPAIR_CLAIM_STORE_V1_SEGMENTS.slice(0, depth + 1));
+  return join(homePath, ...GOVERNANCE_DOCTOR_REPAIR_CLAIM_STORE_V1_SEGMENTS.slice(0, depth + 1));
 }
 
 /** A store that already exists and already holds something this run must not touch. */
@@ -278,19 +294,19 @@ describe("durable claim store authority permissions", () => {
     it(`refuses a ${sharing} resolved account home before it touches .aih`, async () => {
       const built = await plan();
       simulatePosix();
-      posix.permissions.set(home.path, permission);
+      posix.permissions.set(homePath, permission);
 
       expect(() => acquire(built)).toThrow(UNAVAILABLE);
       // The refusal lands before the first controlled segment is created, so a
       // home this authority cannot trust is never written into at all.
-      expect(readdirSync(home.path)).toEqual([]);
+      expect(readdirSync(homePath)).toEqual([]);
     });
 
   it("refuses a resolved account home owned by another local account", async () => {
     const built = await plan();
     seededStore();
     simulatePosix();
-    posix.owners.set(home.path, posix.uid + 1);
+    posix.owners.set(homePath, posix.uid + 1);
 
     expect(() => acquire(built)).toThrow(UNAVAILABLE);
     // An existing store under a home this authority cannot trust is left exactly
@@ -324,7 +340,7 @@ describe("durable claim store authority permissions", () => {
       it(`refuses a ${shape} naming ancestor at depth ${depth}`, async () => {
         const built = await plan();
         seededStore();
-        const chain = ancestors(home.path);
+        const chain = ancestors(homePath);
         expect(chain.length).toBeGreaterThan(depth);
         simulatePosix();
         if (permission !== undefined) posix.permissions.set(chain[depth] as string, permission);
@@ -341,7 +357,7 @@ describe("durable claim store authority permissions", () => {
   it("refuses a root-owned world-writable ancestor that is not sticky", async () => {
     const built = await plan();
     seededStore();
-    const chain = ancestors(home.path);
+    const chain = ancestors(homePath);
     simulatePosix();
     posix.owners.set(chain[0] as string, 0);
     posix.permissions.set(chain[0] as string, 0o777);
@@ -355,7 +371,7 @@ describe("durable claim store authority permissions", () => {
     const built = await plan();
     mkdirSync(store(), { recursive: true });
     simulatePosix();
-    for (const ancestor of ancestors(home.path)) {
+    for (const ancestor of ancestors(homePath)) {
       posix.owners.set(ancestor, 0);
       posix.permissions.set(ancestor, 0o755);
     }
@@ -375,7 +391,7 @@ describe("durable claim store authority permissions", () => {
     const built = await plan();
     mkdirSync(store(), { recursive: true });
     simulatePosix();
-    const chain = ancestors(home.path);
+    const chain = ancestors(homePath);
     posix.owners.set(chain[0] as string, 0);
     posix.permissions.set(chain[0] as string, 0o1777);
     for (const ancestor of chain.slice(1)) {
@@ -396,7 +412,7 @@ describe("durable claim store authority permissions", () => {
     const built = await plan();
     const ceiling = GOVERNANCE_DOCTOR_REPAIR_CLAIM_STORE_V1_LIMITS.maxHomeAncestorDepth;
     const deep = join(
-      home.path,
+      homePath,
       ...Array.from({ length: ceiling + 1 }, (_entry, index) => `d${index}`),
     );
     mkdirSync(deep, { recursive: true });
@@ -443,7 +459,7 @@ describe("durable claim store authority permissions", () => {
           reported = undefined;
         }
       if (reported !== undefined && Number.isInteger(reported))
-        for (const path of [home.path, segment(0), segment(1), segment(2)])
+        for (const path of [homePath, segment(0), segment(1), segment(2)])
           posix.owners.set(path, reported);
 
       expect(() => acquire(built)).toThrow(UNAVAILABLE);
