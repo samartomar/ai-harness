@@ -68,6 +68,7 @@ const interposition = vi.hoisted(() => ({
   afterClaimReadback: null as null | (() => void),
   afterStoreEnumeration: null as null | (() => void),
   beforeExclusiveCreate: null as null | (() => void),
+  beforeRecordRead: null as null | (() => void),
   directoryClosed: false,
   directoryReads: 0,
   failDirectorySyncFor: null as null | string,
@@ -152,6 +153,14 @@ vi.mock("node:fs", async (importOriginal) => {
       if (exclusive) {
         const hook = interposition.beforeExclusiveCreate;
         interposition.beforeExclusiveCreate = null;
+        if (hook !== null) hook();
+      }
+      // The window the record read path has to survive: the caller's `lstat`
+      // has already proved one object, and this is the open that must still be
+      // reading that same object.
+      if (!exclusive && path.endsWith(".json")) {
+        const hook = interposition.beforeRecordRead;
+        interposition.beforeRecordRead = null;
         if (hook !== null) hook();
       }
       const fd = actual.openSync(path, flags, mode);
@@ -465,6 +474,95 @@ describe("durable claim commit under filesystem interposition", () => {
     expect(readFileSync(join(store(), "foreign.txt"), "utf8")).toBe("not this authority");
     expect(readdirSync(aside())).toEqual([]);
   });
+
+  /**
+   * The record read path proves the object it opened is the object the caller's
+   * own `lstat` proved, and refuses a different inode swapped in behind the name
+   * even when that inode holds a byte-identical, correctly-digested record.
+   *
+   * This is the whole bound where the platform defines no `O_NOFOLLOW`: without
+   * the identity comparison the substituted target reads as a valid claim, and
+   * the run reports `already claimed` about a record it never wrote. The refusal
+   * has to be `unreadable` -- the one label that says the store holds something
+   * this authority will not vouch for.
+   */
+  it("refuses a record whose inode changed between the proof and the open", async () => {
+    const built = await plan();
+    acquire(built);
+    const name = readdirSync(store())[0] as string;
+    const record = join(store(), name);
+    const authentic = readFileSync(record);
+
+    interposition.beforeRecordRead = () => {
+      // Byte-identical content, different inode: only the identity comparison
+      // can tell these apart.
+      rmSync(record);
+      writeFileSync(record, authentic);
+    };
+    expect(() => acquire(built)).toThrow(UNREADABLE);
+    // The substituted bytes are left exactly as they were found.
+    expect(readFileSync(record).equals(authentic)).toBe(true);
+  });
+
+  /**
+   * A home carried away and rebuilt *fresh* mid-run is refused on both platform
+   * families -- a regression guard, not a new rule.
+   *
+   * This is the shape the store's own identity proof catches on every host: the
+   * replacement is built empty, so its store is a new inode. It is deliberately
+   * NOT the harder shape the module header describes, where a substitution
+   * relocates the existing `.aih` subtree into the replacement and preserves the
+   * store inode; POSIX refuses that through the home's ancestry and Windows
+   * records it as a gap. Any future change that weakens the store-identity proof
+   * has to keep this outcome.
+   */
+  it("refuses a home replaced by a different real directory after it was proved", async () => {
+    const built = await plan();
+    mkdirSync(store(), { recursive: true });
+    // Own the destination the same way every other path in this suite does:
+    // realpath'd and uniquely created, never a predictable shared-temp name the
+    // cleanup below could then remove out from under someone else.
+    const movedParent = mkdtempSync(join(realpathSync.native(tmpdir()), "aih-repair-moved-"));
+    const moved = join(movedParent, "home");
+    interposition.afterStoreEnumeration = () => {
+      // The home is carried away whole and a fresh one is built at the same
+      // path: every name below it resolves again, and every inode is new.
+      renameSync(home.path, moved);
+      mkdirSync(store(), { recursive: true });
+    };
+
+    try {
+      expect(() => acquire(built)).toThrow(UNAVAILABLE);
+      // Nothing was created in the substituted tree.
+      expect(readdirSync(store())).toEqual([]);
+    } finally {
+      rmSync(movedParent, { force: true, recursive: true });
+    }
+  });
+
+  /**
+   * The record's own name is a lookup like any other. A link planted at
+   * `<digest>.json` must read as unreadable rather than being followed to
+   * whatever it names -- and unreadable, never absent, because "I cannot read
+   * this" and "there is nothing here" collapsing into one answer is exactly how
+   * a spent Plan would be handed back.
+   */
+  it.skipIf(process.platform === "win32")(
+    "refuses a link planted at the record's own name rather than following it",
+    async () => {
+      const built = await plan();
+      acquire(built);
+      const name = readdirSync(store())[0] as string;
+      const decoy = join(home.path, "decoy.json");
+      writeFileSync(decoy, "not a claim this authority wrote");
+      rmSync(join(store(), name));
+      symlinkSync(decoy, join(store(), name));
+
+      expect(() => acquire(built)).toThrow(UNREADABLE);
+      // Nothing was read through the link and nothing was written over it.
+      expect(readFileSync(decoy, "utf8")).toBe("not a claim this authority wrote");
+    },
+  );
 
   it.skipIf(process.platform === "win32")(
     "refuses a store replaced by a symlink after it was proved",
