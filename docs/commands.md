@@ -1200,15 +1200,29 @@ before this command plans anything.
 Per invocation the internal adapter runs exactly once and dispatches only its two code-owned
 read-only diagnostics — `aih doctor` and `aih policy evaluate` — through their own command specs.
 The Guide's next action is reported by id and stays `executable: false`: this route executes no
-next action, no `aih status`, and no Repair. Governance Doctor Repair does not exist in this
-release.
+next action, no `aih status`, and no Repair. The internal Repair modules have no execution,
+consent, or application route from this or any other command.
 
 **Flags**
 
-Only the shared zero-write set: `--json`, `--posture <posture>`, `--root <dir>`, and
-`--context-dir <dir>`. There is no apply, force, verify, support-output, ledger, or SARIF flag on
-this route. `--posture` is validated and participates in its posture-scoped policy resolution;
-the shared organization floor can still raise the resolved posture.
+The shared zero-write set — `--json`, `--posture <posture>`, `--root <dir>`, and
+`--context-dir <dir>` — plus the preview-only `--repair-plan`. There is no apply, force, verify,
+support-output, ledger, or SARIF flag on this route. `--posture` is validated and participates in
+its posture-scoped policy resolution; the shared organization floor can still raise the resolved
+posture.
+
+**`--repair-plan` (preview only)**
+
+Appends a mechanical Repair plan preview to the standard presentation; without the flag the output
+is unchanged. The preview derives exclusively from the same single adapter run's branded Audit,
+the shipped profile, and one code-owned broker mapping — no flag, option, or positional value can
+supply a broker, recipe, effect, path, or content. Its closed JSON shape reports a fixed outcome
+(`no-mechanical-repair`, `plan`, `posture-unavailable`, or `unavailable`), plan and summary
+digests when a plan was derivable, bounded effect summaries over managed-relative paths, and
+`executable: false` always. No shipped diagnostic currently reports a mechanically mappable
+finding, so a real audit previews `no-mechanical-repair` today; when a plan is derivable it is
+presented and discarded. Nothing becomes executable: the preview captures no consent, spends no
+claim, runs no executor or verifier, and writes nothing.
 
 **Output and exit codes**
 

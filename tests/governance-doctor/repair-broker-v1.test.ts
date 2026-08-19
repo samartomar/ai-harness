@@ -164,7 +164,16 @@ describe("GovernanceDoctor Repair V1 capability boundary (static)", () => {
     expect(governanceDoctorCommand.name).toBe("governance-doctor");
     expect(governanceDoctorCommand.readOnly).toBe(true);
     expect(governanceDoctorCommand.zeroWrite).toBe(true);
-    expect(governanceDoctorCommand.options).toEqual([]);
+    // The one flag the preview slice added: it presents a plan derivation and
+    // makes nothing executable. Any second option -- or any new shape on this
+    // one -- is a reviewed decision.
+    expect(governanceDoctorCommand.options ?? []).toEqual([
+      {
+        description:
+          "Additionally present the preview-only mechanical Repair plan derivation (mints no authority; nothing becomes executable)",
+        flags: "--repair-plan",
+      },
+    ]);
 
     const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as {
       exports?: unknown;
@@ -173,24 +182,28 @@ describe("GovernanceDoctor Repair V1 capability boundary (static)", () => {
     expect(JSON.stringify(packageJson.exports ?? packageJson.main ?? "")).not.toMatch(/repair/i);
   });
 
-  // The foundation is no longer dormant: #775 adds the internal AIH Core local
+  // The foundation is no longer dormant: #775 added the internal AIH Core local
   // mechanical executor, its independent verifier, and the durable single-use claim
-  // the executor takes before any effect. The assertion keeps its original force --
-  // an exact, enumerated importer set with no CLI, command, Workbench, or
-  // public-export route -- and now names those internal modules too.
+  // the executor takes before any effect; the preview slice then let the command
+  // route mint and present a plan. The assertion keeps its original force -- an
+  // exact, enumerated importer set -- and the only command-reachable modules are
+  // the preview and, through it, the broker and plan foundation: the executor,
+  // verifier, claim, claim store, content, and custody keep no route at all.
   it("keeps its importer set closed to the foundation and its internal executor", () => {
     const importers = sourceFilesUnder(resolve(root, "src"))
       .filter((file) =>
-        // Every repair module is named here, the internal executor and verifier
-        // included: a consumer that skipped the foundation and imported only the
-        // operational modules would otherwise evade this reverse enumeration.
-        /repair-(?:broker|capability|claim|claim-store|consent|content|custody|executor|outcome|plan|verifier)-v1\.js/.test(
+        // Every repair module is named here, the internal executor, verifier,
+        // and the plan preview included: a consumer that skipped the foundation
+        // and imported only the operational modules would otherwise evade this
+        // reverse enumeration.
+        /repair-(?:broker|capability|claim|claim-store|consent|content|custody|executor|outcome|plan|plan-preview|verifier)-v1\.js/.test(
           readFileSync(file, "utf8"),
         ),
       )
       .map((file) => file.replace(/\\/g, "/").split("/src/")[1] ?? "")
       .sort();
     expect(importers).toEqual([
+      "governance-doctor/command-v1.ts",
       "governance-doctor/repair-broker-v1.ts",
       "governance-doctor/repair-claim-store-v1.ts",
       "governance-doctor/repair-claim-v1.ts",
@@ -199,6 +212,7 @@ describe("GovernanceDoctor Repair V1 capability boundary (static)", () => {
       "governance-doctor/repair-custody-v1.ts",
       "governance-doctor/repair-executor-v1.ts",
       "governance-doctor/repair-outcome-v1.ts",
+      "governance-doctor/repair-plan-preview-v1.ts",
       "governance-doctor/repair-plan-v1.ts",
       "governance-doctor/repair-verifier-v1.ts",
     ]);
