@@ -353,6 +353,38 @@ describe("executeGovernanceDoctorRepairV1", () => {
     expect(existsSync(join(root, "canon"))).toBe(false);
   });
 
+  /**
+   * Review finding, and the reason the check above is not sufficient on its own.
+   *
+   * Acquiring a claim is not one instruction: it resolves the account home,
+   * proves the whole naming ancestry, enumerates the store against its ceiling,
+   * and only then takes the name. A window that closes during that work has
+   * already passed the executor's pre-spend check, so the plan was durably spent
+   * under authority that had expired -- no effect applied, and no second attempt
+   * possible either. The store therefore re-reads the window itself, in the same
+   * breath as its own last store-identity proof, immediately before the create.
+   *
+   * The clock is valid for the attempt's timestamp and the executor's pre-spend
+   * check, and expired for every read after them -- which is to say, from inside
+   * the acquisition onward.
+   */
+  it("refuses inside claim acquisition when the window closes during it", async () => {
+    const built = await plan();
+    let reads = 0;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => {
+      reads += 1;
+      return reads <= 2 ? REPAIR_FIXTURE_ATTEMPTED_AT : built.expiresAtEpochMs + 1;
+    });
+    try {
+      expect(() => execute(built)).toThrow(/repair claim authority window is not open/);
+    } finally {
+      clock.mockRestore();
+    }
+    // The name was never taken, so this plan is stopped rather than finished.
+    expect(existsSync(claimStore()) ? readdirSync(claimStore()) : []).toEqual([]);
+    expect(existsSync(join(root, "canon"))).toBe(false);
+  });
+
   it("preserves every unrelated byte and deletes nothing", async () => {
     execute(await plan());
     expect(readFileSync(join(root, "bystander.md"), "utf8")).toBe("bystander\r\n");
