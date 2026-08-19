@@ -164,6 +164,17 @@ describe("presentGovernanceDoctorRepairPlanPreviewV1", () => {
       });
   });
 
+  it("collapses a structurally shaped but unbranded operation into unavailable", async () => {
+    const built = await operation();
+    // A parse of the operation's own facts is byte-identical but carries no
+    // module brand: it must never earn even the no-repair label, because a
+    // label implies the audit it summarizes was a real one.
+    const forged = JSON.parse(JSON.stringify(built)) as Record<string, unknown>;
+    expect(
+      presentGovernanceDoctorRepairPlanPreviewV1({ operation: forged, profile: profile() }),
+    ).toEqual({ ...NULL_PLAN_FIELDS, outcome: "unavailable" });
+  });
+
   it("never leaks the fixture root, evidence prose, or OS text in any outcome", async () => {
     const rendered = JSON.stringify(
       presentGovernanceDoctorRepairPlanPreviewV1({

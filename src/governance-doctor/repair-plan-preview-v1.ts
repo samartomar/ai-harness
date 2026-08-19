@@ -1,7 +1,14 @@
 import { randomBytes } from "node:crypto";
-import type { GovernanceDoctorAuditV1Result } from "./audit-guide-v1.js";
+import {
+  canonicalGovernanceDoctorAuditV1Bytes,
+  canonicalGovernanceDoctorGuideV1Bytes,
+  type GovernanceDoctorAuditV1Result,
+} from "./audit-guide-v1.js";
 import { assertEnumV1, assertExactKeysV1, assertRecordV1 } from "./capability-v1.js";
-import type { GovernanceDoctorOperationV1 } from "./operational-v1.js";
+import {
+  canonicalGovernanceDoctorOperationV1Bytes,
+  type GovernanceDoctorOperationV1,
+} from "./operational-v1.js";
 import { createGovernanceDoctorRepairBrokerRegistryV1 } from "./repair-broker-v1.js";
 import {
   createGovernanceDoctorRepairPlanV1,
@@ -249,6 +256,12 @@ export function presentGovernanceDoctorRepairPlanPreviewV1(
     assertExactKeysV1(request, ["operation", "profile"], "repair plan preview request");
     const operation = assertRecordV1(request.operation, "repair plan preview operation");
     assertExactKeysV1(operation, ["audit", "guide", "record"], "repair plan preview operation");
+    // Brand checks before any classification: a structurally shaped parse of a
+    // real operation's own facts must never earn even the no-repair label,
+    // because a label implies the audit it summarizes was a real one.
+    canonicalGovernanceDoctorOperationV1Bytes(operation.record);
+    canonicalGovernanceDoctorAuditV1Bytes(operation.audit);
+    canonicalGovernanceDoctorGuideV1Bytes(operation.guide);
     const audit = assertRecordV1(operation.audit, "repair plan preview audit");
     if (audit.kind !== "audited") return preview("unavailable");
     // The posture is read from the Guide, whose repair posture is digest-bound
