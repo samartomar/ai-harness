@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
@@ -9,6 +9,10 @@ import {
   runGovernanceDoctorOperationV1,
 } from "../../src/governance-doctor/operational-v1.js";
 import { createGovernanceDoctorProfileV1 } from "../../src/governance-doctor/profile-v1.js";
+import {
+  GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1,
+  mintGovernanceDoctorRepairEligibilityV1,
+} from "../../src/governance-doctor/repair-eligibility-v1.js";
 import {
   GOVERNANCE_DOCTOR_REPAIR_PLAN_PREVIEW_V1_LIMITS,
   GOVERNANCE_DOCTOR_REPAIR_PREVIEW_NOTICE_V1,
@@ -68,27 +72,37 @@ function planContext(): PlanContext {
   };
 }
 
-function stubbedProbe(verdict: "pass" | "fail") {
+function stubbedProbe(output: Record<string, unknown>) {
   return {
     actions: [
       {
         describe: "diagnostic",
         kind: "probe" as const,
-        run: async () => ({ name: "diagnostic", verdict }),
+        run: async () => output as never,
       },
     ],
   };
 }
 
+const HEALTHY = { name: "diagnostic", verdict: "pass" };
+/** The exact tuple `aih doctor` reports when the canonical context dir is absent. */
+const CONTEXT_DIR_MISSING = {
+  code: "canon.context-dir-missing",
+  detail: "ai-coding not scaffolded - run: aih scaffold --apply",
+  name: "context-dir",
+  verdict: "skip",
+};
+
 /** Both code-owned planners are stubbed, so no diagnostic ever inspects this checkout. */
 async function operation(
   overrides: Record<string, unknown> = {},
+  doctorCheck: Record<string, unknown> = HEALTHY,
 ): Promise<GovernanceDoctorOperationV1> {
   const doctorPlan = vi
     .spyOn(doctorCommand, "plan")
-    .mockReturnValue({ ...stubbedProbe("pass"), capability: "doctor" });
+    .mockReturnValue({ ...stubbedProbe(doctorCheck), capability: "doctor" });
   const policyPlan = vi.spyOn(policyEvaluateCommand, "plan").mockReturnValue({
-    ...stubbedProbe("pass"),
+    ...stubbedProbe(HEALTHY),
     capability: "policy evaluate",
   });
   try {
@@ -115,10 +129,20 @@ const NULL_PLAN_FIELDS = {
   summarySha256: null,
 };
 
+/** The record the trusted command boundary mints for this run's own root. */
+function eligibilityFor(built: GovernanceDoctorOperationV1) {
+  return mintGovernanceDoctorRepairEligibilityV1(
+    GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1,
+    GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1,
+    built.record.rootSha256,
+  );
+}
+
 describe("presentGovernanceDoctorRepairPlanPreviewV1", () => {
   it("reports no-mechanical-repair for a completed healthy audit, minting nothing", async () => {
     const built = await operation();
     const previewed = presentGovernanceDoctorRepairPlanPreviewV1({
+      eligibility: eligibilityFor(built),
       operation: built,
       profile: profile(),
     });
@@ -132,11 +156,19 @@ describe("presentGovernanceDoctorRepairPlanPreviewV1", () => {
       policy: { decision: "denied", revisionSha256: policyRevisionSha256 },
     });
     expect(
-      presentGovernanceDoctorRepairPlanPreviewV1({ operation: denied, profile: profile() }),
+      presentGovernanceDoctorRepairPlanPreviewV1({
+        eligibility: eligibilityFor(denied),
+        operation: denied,
+        profile: profile(),
+      }),
     ).toEqual({ ...NULL_PLAN_FIELDS, outcome: "unavailable" });
 
     expect(
-      presentGovernanceDoctorRepairPlanPreviewV1({ operation: undefined, profile: undefined }),
+      presentGovernanceDoctorRepairPlanPreviewV1({
+        eligibility: undefined,
+        operation: undefined,
+        profile: undefined,
+      }),
     ).toEqual({ ...NULL_PLAN_FIELDS, outcome: "unavailable" });
   });
 
@@ -144,19 +176,22 @@ describe("presentGovernanceDoctorRepairPlanPreviewV1", () => {
     const built = await operation({ profile: profile({ repairPosture: "unavailable" }) });
     expect(
       presentGovernanceDoctorRepairPlanPreviewV1({
+        eligibility: eligibilityFor(built),
         operation: built,
         profile: profile({ repairPosture: "unavailable" }),
       }),
     ).toEqual({ ...NULL_PLAN_FIELDS, outcome: "posture-unavailable" });
   });
 
-  it("collapses malformed and extra-field input into unavailable, throwing nothing", async () => {
+  it("collapses malformed, missing-key, and extra-field input into unavailable, throwing nothing", async () => {
+    const built = await operation();
     for (const value of [
       null,
       1,
       {},
-      { operation: {}, profile: profile() },
-      { extra: 1, operation: await operation(), profile: profile() },
+      { operation: built, profile: profile() },
+      { eligibility: eligibilityFor(built), operation: {}, profile: profile() },
+      { eligibility: eligibilityFor(built), extra: 1, operation: built, profile: profile() },
     ])
       expect(presentGovernanceDoctorRepairPlanPreviewV1(value)).toEqual({
         ...NULL_PLAN_FIELDS,
@@ -171,19 +206,113 @@ describe("presentGovernanceDoctorRepairPlanPreviewV1", () => {
     // label implies the audit it summarizes was a real one.
     const forged = JSON.parse(JSON.stringify(built)) as Record<string, unknown>;
     expect(
-      presentGovernanceDoctorRepairPlanPreviewV1({ operation: forged, profile: profile() }),
+      presentGovernanceDoctorRepairPlanPreviewV1({
+        eligibility: eligibilityFor(built),
+        operation: forged,
+        profile: profile(),
+      }),
     ).toEqual({ ...NULL_PLAN_FIELDS, outcome: "unavailable" });
   });
 
   it("never leaks the fixture root, evidence prose, or OS text in any outcome", async () => {
+    const built = await operation();
     const rendered = JSON.stringify(
       presentGovernanceDoctorRepairPlanPreviewV1({
-        operation: await operation(),
+        eligibility: eligibilityFor(built),
+        operation: built,
         profile: profile(),
       }),
     );
     expect(rendered).not.toContain(FIXTURE_ROOT);
     expect(rendered).not.toContain("Read the bounded result.");
+  });
+});
+
+/**
+ * The one mechanically mappable finding. Its effect path is the module's own
+ * code-owned constant; eligibility is a gate on minting, never the source of a
+ * path, so no eligible run can produce an effect anywhere but `ai-coding`.
+ */
+describe("mechanical context-directory preview", () => {
+  const CANONICAL = GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1;
+
+  async function eligiblePreview(eligibilityOverride?: unknown) {
+    const built = await operation({}, CONTEXT_DIR_MISSING);
+    return {
+      built,
+      previewed: presentGovernanceDoctorRepairPlanPreviewV1({
+        eligibility:
+          eligibilityOverride === undefined ? eligibilityFor(built) : eligibilityOverride,
+        operation: built,
+        profile: profile(),
+      }),
+    };
+  }
+
+  it("mints one create-managed-directory effect at the code-owned canonical path", async () => {
+    const { previewed } = await eligiblePreview();
+    expect(previewed.outcome).toBe("plan");
+    expect(previewed.executable).toBe(false);
+    expect(previewed.effects).toEqual([
+      {
+        arguments: { path: CANONICAL },
+        effectId: "ensure-canonical-context-dir",
+        effectKind: "create-managed-directory",
+      },
+    ]);
+    expect(previewed.planSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(previewed.recipeId).toBe(GOVERNANCE_DOCTOR_REPAIR_PREVIEW_RECIPE_ID_V1);
+    expect(JSON.stringify(previewed)).not.toContain(FIXTURE_ROOT);
+  });
+
+  it("creates no plan when the eligibility record was not minted", async () => {
+    const { previewed } = await eligiblePreview(null);
+    expect(previewed).toEqual({ ...NULL_PLAN_FIELDS, outcome: "unavailable" });
+  });
+
+  it("creates no plan for any hostile substitute for eligibility", async () => {
+    const built = await operation({}, CONTEXT_DIR_MISSING);
+    const real = eligibilityFor(built);
+    if (real === undefined) throw new Error("expected a minted eligibility record");
+    const spread = { ...real };
+    const accessor: Record<string, unknown> = { ...spread };
+    Object.defineProperty(accessor, "markerContextDir", { enumerable: true, get: () => CANONICAL });
+    const mismatchedRoot = mintGovernanceDoctorRepairEligibilityV1(
+      CANONICAL,
+      CANONICAL,
+      "b".repeat(64),
+    );
+    for (const [label, eligibility] of [
+      ["plain object", { ...spread }],
+      ["spread copy", spread],
+      ["proxy", new Proxy(real, {})],
+      ["accessor", accessor],
+      ["altered brand", { ...spread, protocol: "GovernanceDoctorRepairEligibilityV2" }],
+      ["alternate path", { ...spread, markerContextDir: "ai-coding-2" }],
+      ["true", true],
+      ["raw path", CANONICAL],
+      ["callback", () => real],
+      ["mismatched root", mismatchedRoot],
+    ] as const)
+      expect(
+        presentGovernanceDoctorRepairPlanPreviewV1({
+          eligibility,
+          operation: built,
+          profile: profile(),
+        }),
+        label,
+      ).toEqual({ ...NULL_PLAN_FIELDS, outcome: "unavailable" });
+  });
+
+  it("keeps no-mechanical-repair for a healthy audit even when eligibility holds", async () => {
+    const built = await operation();
+    expect(
+      presentGovernanceDoctorRepairPlanPreviewV1({
+        eligibility: eligibilityFor(built),
+        operation: built,
+        profile: profile(),
+      }).outcome,
+    ).toBe("no-mechanical-repair");
   });
 });
 
@@ -193,20 +322,35 @@ describe("repair plan preview static boundary", () => {
     "../../src/governance-doctor",
   );
 
-  /** Transitive local import closure, same specifier grammar as the module graph. */
-  function importClosure(entry: string, visited = new Set<string>()): readonly string[] {
-    const source = resolve(sourceRoot, entry);
-    if (visited.has(source)) return [];
-    visited.add(source);
-    const text = readFileSync(source, "utf8");
-    const imports = [...text.matchAll(/from\s+["']([^"']+)["']/g)].map((match) => match[1] ?? "");
+  /**
+   * The transitive closure of modules a file actually *loads*.
+   *
+   * Two properties matter and both were once wrong here. Relative specifiers are
+   * resolved against the importing file's own directory and followed whichever
+   * direction they point, so a `../` edge out of this package cannot hide a
+   * capability the closure is supposed to expose. And `import type` statements
+   * are skipped, because they erase at compile time and load nothing -- counting
+   * them would report capability the runtime never acquires.
+   */
+  function loadClosure(file: string, visited = new Set<string>()): readonly string[] {
+    if (visited.has(file) || !existsSync(file)) return [];
+    visited.add(file);
+    const text = readFileSync(file, "utf8");
+    const loaded = [...text.matchAll(/import\s+(type\s+)?[^;]*?from\s+["']([^"']+)["']/g)].filter(
+      (match) => match[1] === undefined,
+    );
     return [
-      source,
-      ...imports.flatMap((specifier) => {
-        if (!specifier.startsWith("./")) return [];
-        return importClosure(specifier.replace(/^\.\//, "").replace(/\.js$/, ".ts"), visited);
+      file,
+      ...loaded.flatMap((match) => {
+        const specifier = match[2] ?? "";
+        if (!specifier.startsWith(".")) return [];
+        return loadClosure(resolve(dirname(file), specifier.replace(/\.js$/, ".ts")), visited);
       }),
     ];
+  }
+
+  function importClosure(entry: string): readonly string[] {
+    return loadClosure(resolve(sourceRoot, entry));
   }
 
   /**
@@ -233,8 +377,22 @@ describe("repair plan preview static boundary", () => {
       "globalThis",
       "PlanContext",
       "CommandSpec",
+      // The eligibility record is a gate, never a source of a path: the effect
+      // path must come from this module's own constant, so the module never
+      // names the record's path fields at all.
+      "markerContextDir",
+      "resolvedContextDir",
     ])
       expect(source, token).not.toContain(token);
+  });
+
+  /** The one value the preview accepts from the command boundary stays pure too. */
+  it("keeps its whole import closure free of platform capability", () => {
+    for (const file of importClosure("repair-plan-preview-v1.ts")) {
+      const text = readFileSync(file, "utf8");
+      for (const token of ["node:fs", "node:child_process", "node:os", "node:process"])
+        expect(text, `${file} ${token}`).not.toContain(token);
+    }
   });
 
   /**

@@ -570,3 +570,114 @@ describe("GovernanceDoctor operational read-only adapter", () => {
     expect(source).not.toMatch(/\b(?:execFile|spawn)\s*\(/);
   });
 });
+
+/**
+ * The one code-owned diagnostic tuple whose non-pass verdict survives as a
+ * finding. Everything else -- a different code, a different check, a different
+ * diagnostic, an accompanying unmapped verdict -- keeps the pre-existing
+ * `evidence-gap` refusal.
+ */
+describe("GovernanceDoctor mechanical diagnostic findings", () => {
+  const CONTEXT_DIR_MISSING = {
+    code: "canon.context-dir-missing",
+    detail: "ai-coding not scaffolded - run: aih scaffold --apply",
+    name: "context-dir",
+    verdict: "skip" as const,
+  };
+  const MAPPED_FINDING_CODE = "AIH_CANON_CONTEXT_DIR_MISSING";
+
+  function stubDoctor(...outputs: readonly Record<string, unknown>[]) {
+    return vi.spyOn(doctorCommand, "plan").mockReturnValue({
+      actions: outputs.map((output, index) => ({
+        describe: `check-${index}`,
+        kind: "probe" as const,
+        run: async () => output as never,
+      })),
+      capability: "doctor",
+    });
+  }
+
+  async function auditFor(...outputs: readonly Record<string, unknown>[]) {
+    const plan = stubDoctor(...outputs);
+    try {
+      const result = await operation({ profile: profile({ diagnosticIds: [DOCTOR] }) });
+      if (result.audit.kind !== "audited") throw new Error("expected audited result");
+      return result.audit;
+    } finally {
+      plan.mockRestore();
+    }
+  }
+
+  it("maps the exact doctor tuple to one fixed low finding and forwards no diagnostic code", async () => {
+    const audit = await auditFor(CONTEXT_DIR_MISSING);
+    expect(audit.refusals).toEqual([]);
+    expect(audit.findings).toEqual([
+      expect.objectContaining({
+        code: MAPPED_FINDING_CODE,
+        diagnosticId: DOCTOR,
+        severity: "low",
+      }),
+    ]);
+    // The diagnostic's own code is compared, never carried: nothing a probe
+    // authors reaches the audit as data.
+    expect(JSON.stringify(audit)).not.toContain("canon.context-dir-missing");
+    expect(JSON.stringify(audit)).not.toContain("aih scaffold");
+  });
+
+  it("keeps evidence-gap for the same check under a different code, verdict, or name", async () => {
+    for (const output of [
+      { ...CONTEXT_DIR_MISSING, code: "canon.context-dir-other" },
+      { ...CONTEXT_DIR_MISSING, code: undefined },
+      { ...CONTEXT_DIR_MISSING, verdict: "fail" as const },
+      { ...CONTEXT_DIR_MISSING, name: "context-directory" },
+    ]) {
+      const audit = await auditFor(output);
+      expect(audit.refusals, JSON.stringify(output)).toEqual([
+        { diagnosticId: DOCTOR, state: "evidence-gap" },
+      ]);
+      expect(audit.findings).toEqual([]);
+    }
+  });
+
+  it("keeps evidence-gap when an unmapped non-pass verdict accompanies the mapped one", async () => {
+    const audit = await auditFor(CONTEXT_DIR_MISSING, {
+      code: "env.git-missing",
+      name: "git",
+      verdict: "skip",
+    });
+    expect(audit.refusals).toEqual([{ diagnosticId: DOCTOR, state: "evidence-gap" }]);
+    expect(audit.findings).toEqual([]);
+  });
+
+  it("still reports the completion finding when every verdict passes", async () => {
+    const audit = await auditFor({ name: "context-dir", verdict: "pass" });
+    expect(audit.findings).toEqual([
+      expect.objectContaining({ code: "AIH_READ_ONLY_PROBES_COMPLETED", diagnosticId: DOCTOR }),
+    ]);
+  });
+
+  it("refuses the same tuple reported by a different diagnostic", async () => {
+    const doctorPlan = stubDoctor({ name: "doctor", verdict: "pass" });
+    const policyPlan = vi.spyOn(policyEvaluateCommand, "plan").mockReturnValue({
+      actions: [
+        {
+          describe: "policy",
+          kind: "probe",
+          run: async () => CONTEXT_DIR_MISSING as never,
+        },
+      ],
+      capability: "policy evaluate",
+    });
+    try {
+      const result = await operation();
+      if (result.audit.kind !== "audited") throw new Error("expected audited result");
+      expect(result.audit.refusals).toEqual([{ diagnosticId: POLICY, state: "evidence-gap" }]);
+      expect(result.audit.findings.map((finding) => finding.code)).not.toContain(
+        MAPPED_FINDING_CODE,
+      );
+    } finally {
+      doctorPlan.mockRestore();
+      policyPlan.mockRestore();
+    }
+  });
+});

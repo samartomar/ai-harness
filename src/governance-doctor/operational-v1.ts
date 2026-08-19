@@ -85,6 +85,8 @@ interface ExecutableDiagnosticAdapterV1 {
 const CONTEXT_DOMAIN = "aih.governance-doctor-operational-context-v1";
 const SURFACE_DOMAIN = "aih.governance-doctor-read-only-surface-v1";
 const PROTOCOL = "GovernanceDoctorOperationV1";
+/** Every finding this adapter emits is attributed to the adapter, never to a probe. */
+const OPERATIONAL_ATTRIBUTION = "aih:governance-doctor-operational";
 
 const POLICY_DECISIONS = ["allowed", "denied"] as const;
 const MAX_DIAGNOSTIC_CHECKS = 96;
@@ -331,7 +333,18 @@ function boundedCanonical(value: unknown, label: string): void {
     failGovernanceDoctorV1(`${label} exceeds its canonical byte bound`);
 }
 
-function probeVerdict(value: unknown): "pass" | "fail" | "skip" {
+/**
+ * What one validated read-only check reported. The verdict drives the audit; the
+ * name and code are retained only to be compared against the code-owned table
+ * below, and neither is ever carried into an audit, a guide, or a plan.
+ */
+interface ProbeOutcomeV1 {
+  readonly code: string | undefined;
+  readonly name: string;
+  readonly verdict: "pass" | "fail" | "skip";
+}
+
+function probeVerdict(value: unknown): ProbeOutcomeV1 {
   const check = assertRecordV1(value, "read-only diagnostic output");
   const allowed = new Set(["code", "detail", "fingerprint", "location", "name", "verdict"]);
   if (Object.keys(check).some((key) => !allowed.has(key)))
@@ -374,10 +387,14 @@ function probeVerdict(value: unknown): "pass" | "fail" | "skip" {
     },
     "read-only diagnostic output",
   );
-  return verdict;
+  return {
+    code: typeof check.code === "string" ? check.code : undefined,
+    name: check.name,
+    verdict,
+  };
 }
 
-function probeVerdicts(value: unknown, label: string): ("pass" | "fail" | "skip")[] {
+function probeVerdicts(value: unknown, label: string): ProbeOutcomeV1[] {
   const checks = assertArrayV1(value, 1, MAX_DIAGNOSTIC_CHECKS, label);
   return checks.map(probeVerdict);
 }
@@ -414,10 +431,7 @@ function structuredOptions(
   return { name: options.name ?? describe, ...options };
 }
 
-async function actionVerdicts(
-  value: unknown,
-  context: PlanContext,
-): Promise<("pass" | "fail" | "skip")[]> {
+async function actionVerdicts(value: unknown, context: PlanContext): Promise<ProbeOutcomeV1[]> {
   const action = assertRecordV1(value, "read-only diagnostic action");
   if (
     action.kind !== "probe" ||
@@ -491,6 +505,65 @@ async function actionVerdicts(
 }
 
 /**
+ * The code-owned table of diagnostic outcomes that survive as findings instead
+ * of collapsing the whole diagnostic into an evidence gap.
+ *
+ * Every entry names an exact four-part tuple: which code-owned diagnostic, which
+ * check within it, which verdict, and which code that diagnostic emits. A
+ * diagnostic's own code is *compared* here and then discarded -- the finding
+ * this adapter emits carries an AIH-owned code and AIH-authored prose, so no
+ * string a probe authors ever reaches an audit, a guide, or a plan as data.
+ *
+ * This is deliberately not a passthrough and not configurable. There is no entry
+ * a caller, a profile, an option, or an environment value can add: widening the
+ * table is a reviewed edit to this list, and each new entry has to be justified
+ * against what a consumer may then mechanically derive from it.
+ *
+ * The mapping is also all-or-nothing per diagnostic. A run whose non-pass
+ * verdicts are not *entirely* covered by this table keeps the pre-existing
+ * `evidence-gap` refusal, because a partially understood diagnostic is exactly
+ * the state that must not be reported as a completed observation.
+ */
+const MECHANICAL_DIAGNOSTIC_FINDINGS_V1 = Object.freeze([
+  Object.freeze({
+    check: "context-dir",
+    code: "canon.context-dir-missing",
+    diagnosticId: "aih.doctor.root",
+    findingCode: "AIH_CANON_CONTEXT_DIR_MISSING",
+    severity: "low",
+    text: "The canonical AIH context directory is not present in this repository.",
+    verdict: "skip",
+  }),
+] as const);
+
+/**
+ * Maps this diagnostic's non-pass outcomes to AIH-owned findings, or reports
+ * nothing when even one of them is absent from the table above.
+ */
+function mechanicalFindings(
+  diagnosticId: string,
+  unresolved: readonly ProbeOutcomeV1[],
+): Json[] | undefined {
+  const findings = new Map<string, Json>();
+  for (const outcome of unresolved) {
+    const entry = MECHANICAL_DIAGNOSTIC_FINDINGS_V1.find(
+      (candidate) =>
+        candidate.diagnosticId === diagnosticId &&
+        candidate.check === outcome.name &&
+        candidate.verdict === outcome.verdict &&
+        candidate.code === outcome.code,
+    );
+    if (entry === undefined) return undefined;
+    findings.set(entry.findingCode, {
+      code: entry.findingCode,
+      severity: entry.severity,
+      summary: { attribution: OPERATIONAL_ATTRIBUTION, text: entry.text },
+    });
+  }
+  return [...findings.values()];
+}
+
+/**
  * Executes one code-owned diagnostic adapter. It accepts only ordinary,
  * `runMany`, structured-legacy, and structured probe actions under a sanitized
  * read-only context; planning, command identity, and every probe invocation are
@@ -519,14 +592,19 @@ async function diagnosticObservation(
     if (planRecord.capability !== capability)
       failGovernanceDoctorV1("read-only diagnostic plan has an unexpected capability");
     const actions = assertArrayV1(planRecord.actions, 1, 64, "read-only diagnostic actions");
-    const verdicts: ("pass" | "fail" | "skip")[] = [];
+    const outcomes: ProbeOutcomeV1[] = [];
     for (const value of actions) {
-      verdicts.push(...(await actionVerdicts(value, context)));
-      if (verdicts.length > MAX_DIAGNOSTIC_CHECKS)
+      outcomes.push(...(await actionVerdicts(value, context)));
+      if (outcomes.length > MAX_DIAGNOSTIC_CHECKS)
         failGovernanceDoctorV1("read-only diagnostic checks exceed their bounded cardinality");
     }
-    if (verdicts.some((verdict) => verdict !== "pass"))
-      return { diagnosticId, outcome: { kind: "refusal", state: "evidence-gap" } };
+    const unresolved = outcomes.filter((outcome) => outcome.verdict !== "pass");
+    if (unresolved.length > 0) {
+      const findings = mechanicalFindings(diagnosticId, unresolved);
+      return findings === undefined
+        ? { diagnosticId, outcome: { kind: "refusal", state: "evidence-gap" } }
+        : { diagnosticId, outcome: { findings, kind: "findings" } };
+    }
   } catch {
     return undefined;
   }
@@ -538,7 +616,7 @@ async function diagnosticObservation(
           code: "AIH_READ_ONLY_PROBES_COMPLETED",
           severity: "info",
           summary: {
-            attribution: "aih:governance-doctor-operational",
+            attribution: OPERATIONAL_ATTRIBUTION,
             text: "AIH read-only diagnostic probes completed.",
           },
         },

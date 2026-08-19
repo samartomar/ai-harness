@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readAihConfig } from "../config/marker.js";
 import { deepFreezeStrictJsonV1 } from "../contract/strict-json-v1.js";
 import { readRegularFile } from "../internals/fsxn.js";
 import { type CommandSpec, digest, type PlanContext, plan, probe } from "../internals/plan.js";
@@ -34,6 +35,10 @@ import {
   type GovernanceDoctorProfileV1,
   parseGovernanceDoctorProfileV1Json,
 } from "./profile-v1.js";
+import {
+  type GovernanceDoctorRepairEligibilityV1,
+  mintGovernanceDoctorRepairEligibilityV1,
+} from "./repair-eligibility-v1.js";
 import {
   type GovernanceDoctorRepairPlanPreviewV1,
   presentGovernanceDoctorRepairPlanPreviewV1,
@@ -522,6 +527,7 @@ export function presentGovernanceDoctorUnavailableV1(
 
 /** One run's presentation plus the exact records a preview may be minted from. */
 interface GovernanceDoctorRunV1 {
+  readonly context: Readonly<{ readonly protocol: "GovernanceDoctorOperationalContextV1" }>;
   readonly operation: GovernanceDoctorOperationV1 | undefined;
   readonly presented: GovernanceDoctorPresentationV1;
   readonly profile: GovernanceDoctorProfileV1 | undefined;
@@ -536,6 +542,7 @@ async function runPresentation(ctx: PlanContext): Promise<GovernanceDoctorRunV1>
     profile = loadShippedGovernanceDoctorProfileV1();
   } catch {
     return {
+      context,
       operation: undefined,
       presented: presentGovernanceDoctorUnavailableV1("profile-unavailable", policy),
       profile: undefined,
@@ -547,13 +554,61 @@ async function runPresentation(ctx: PlanContext): Promise<GovernanceDoctorRunV1>
       policy: { decision: policy.decision, revisionSha256: policy.revisionSha256 },
       profile,
     });
-    return { operation, presented: presentGovernanceDoctorOperationV1(operation, policy), profile };
+    return {
+      context,
+      operation,
+      presented: presentGovernanceDoctorOperationV1(operation, policy),
+      profile,
+    };
   } catch {
     return {
+      context,
       operation: undefined,
       presented: presentGovernanceDoctorUnavailableV1("adapter-unavailable", policy),
       profile,
     };
+  }
+}
+
+/**
+ * Resolves this run's Repair eligibility. This is the trusted configuration
+ * boundary: the preview module holds no filesystem, settings, or environment
+ * capability, so the committed marker is read, validated, and reduced to a
+ * branded record here, and only the record crosses over.
+ *
+ * Every input is AIH-owned. The root comes from the sanitized operational
+ * context, not from an option or a caller argument; the marker is read through
+ * the shared reader, which returns nothing for an absent or invalid marker and
+ * raises for a governance-controlled field it must not ignore; and the run's
+ * resolved execution context directory is the one the same context already
+ * bound. An override that disagrees with the committed marker, a marker naming
+ * any other directory, and a marker that could not be read at all all resolve to
+ * nothing, because the mint refuses everything but the canonical constant.
+ *
+ * The digest binds the record to this operation's root, so an eligibility record
+ * cannot be presented beside a different repository's audit.
+ *
+ * Two limits are recorded rather than claimed away. The shared marker reader
+ * opens the committed file through the ordinary read-if-exists path, which
+ * follows a symlink and asserts nothing about the entry being regular; a
+ * substituted marker can therefore make a run ineligible or eligible according
+ * to whatever it names. And the marker is read after the audit's own diagnostics
+ * ran, so the two filesystem observations are not one atomic view. Neither is
+ * load-bearing while the preview is unexecutable and mutates nothing, and both
+ * would have to be closed before any of this became authority to write.
+ */
+function resolveGovernanceDoctorRepairEligibilityV1(
+  context: unknown,
+  rootSha256: string,
+): GovernanceDoctorRepairEligibilityV1 | undefined {
+  try {
+    const ctx = governanceDoctorOperationalPlanContextV1(context);
+    const marker = readAihConfig(ctx.root);
+    if (marker === undefined) return undefined;
+    return mintGovernanceDoctorRepairEligibilityV1(marker.contextDir, ctx.contextDir, rootSha256);
+  } catch {
+    // A marker this run cannot read or validate is not authority to repair.
+    return undefined;
   }
 }
 
@@ -606,8 +661,17 @@ export const command: CommandSpec = {
     ];
     if (ctx.options.repairPlan === true) {
       // The preview consumes only this run's own records; an unavailable run
-      // collapses inside the preview module to its fixed no-plan outcome.
+      // collapses inside the preview module to its fixed no-plan outcome. The
+      // marker is read only on this subroute, so the default read-only
+      // presentation reaches no configuration it did not already need.
       const previewed = presentGovernanceDoctorRepairPlanPreviewV1({
+        eligibility:
+          run.operation === undefined
+            ? undefined
+            : resolveGovernanceDoctorRepairEligibilityV1(
+                run.context,
+                run.operation.record.rootSha256,
+              ),
         operation: run.operation,
         profile: run.profile,
       });

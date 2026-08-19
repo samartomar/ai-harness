@@ -871,3 +871,115 @@ describe("aih governance-doctor — non-recursive dispatch and bound identities"
     );
   });
 });
+
+/**
+ * The one mechanically mappable finding, end to end through the real command
+ * route. Eligibility is resolved here from the committed marker and the run's
+ * own resolved context directory; the preview module never sees either.
+ */
+describe("governance-doctor --repair-plan mechanical context directory", () => {
+  const CONTEXT_DIR_MISSING = {
+    code: "canon.context-dir-missing",
+    detail: "ai-coding not scaffolded - run: aih scaffold --apply",
+    name: "context-dir",
+    verdict: "skip" as const,
+  };
+
+  function stubMissingContextDir(): void {
+    vi.spyOn(doctorCommand, "plan").mockImplementation(() => ({
+      actions: [
+        {
+          describe: "doctor",
+          kind: "probe" as const,
+          run: async () => CONTEXT_DIR_MISSING as never,
+        },
+      ],
+      capability: "doctor",
+    }));
+    vi.spyOn(policyEvaluateCommand, "plan").mockImplementation(() =>
+      passingProbePlan("policy evaluate", "policy"),
+    );
+  }
+
+  function writeMarker(contextDir: unknown): void {
+    writeFileSync(
+      join(dir, ".aih-config.json"),
+      `${JSON.stringify({ contextDir, schemaVersion: 1, targets: [] })}\n`,
+      "utf8",
+    );
+  }
+
+  async function previewOf(argv: readonly string[]): Promise<Record<string, unknown>> {
+    const { out } = await runCommand(argv);
+    const payload = jsonPayload(out) as { digests?: Array<{ data?: Record<string, unknown> }> };
+    const previewed = payload.digests?.[1]?.data;
+    if (previewed === undefined) throw new Error("expected a repair plan preview digest");
+    return previewed;
+  }
+
+  it("previews one create-managed-directory effect at the canonical path when the marker agrees", async () => {
+    stubMissingContextDir();
+    writeMarker("ai-coding");
+    const previewed = await previewOf([dir, "--json", "--repair-plan"]);
+    expect(previewed.outcome).toBe("plan");
+    expect(previewed.executable).toBe(false);
+    expect(previewed.effects).toEqual([
+      {
+        arguments: { path: "ai-coding" },
+        effectId: "ensure-canonical-context-dir",
+        effectKind: "create-managed-directory",
+      },
+    ]);
+    expect(JSON.stringify(previewed)).not.toContain(dir);
+  });
+
+  it("reports the one low finding in the default read-only audit", async () => {
+    stubMissingContextDir();
+    const { code, out } = await runCommand([dir, "--json"]);
+    expect(code).toBe(0);
+    const data = report(out) as { findings?: Array<Record<string, unknown>> };
+    // The doctor diagnostic contributes exactly this one finding; the passing
+    // policy diagnostic still contributes its own completion finding.
+    expect(data.findings?.filter((finding) => finding.diagnosticId === "aih.doctor.root")).toEqual([
+      expect.objectContaining({
+        code: "AIH_CANON_CONTEXT_DIR_MISSING",
+        diagnosticId: "aih.doctor.root",
+        severity: "low",
+      }),
+    ]);
+    expect(out).not.toContain("canon.context-dir-missing");
+    expect(out).not.toContain("aih scaffold");
+  });
+
+  it("mints no plan without a committed marker, or from a marker naming another directory", async () => {
+    stubMissingContextDir();
+    expect((await previewOf([dir, "--json", "--repair-plan"])).outcome).toBe("unavailable");
+    for (const contextDir of ["ai-coding-2", "docs/ai-coding", "/ai-coding", "../ai-coding", 7]) {
+      writeMarker(contextDir);
+      expect((await previewOf([dir, "--json", "--repair-plan"])).outcome, String(contextDir)).toBe(
+        "unavailable",
+      );
+    }
+  });
+
+  it("mints no plan when a context-dir override disagrees with the committed marker", async () => {
+    stubMissingContextDir();
+    writeMarker("ai-coding");
+    const previewed = await previewOf([
+      dir,
+      "--json",
+      "--repair-plan",
+      "--context-dir",
+      "ai-coding-2",
+    ]);
+    expect(previewed.outcome).toBe("unavailable");
+    expect(previewed.effects).toEqual([]);
+    expect(previewed.planSha256).toBeNull();
+  });
+
+  it("mints no plan from an unparseable marker", async () => {
+    stubMissingContextDir();
+    writeFileSync(join(dir, ".aih-config.json"), "{ not json", "utf8");
+    expect((await previewOf([dir, "--json", "--repair-plan"])).outcome).toBe("unavailable");
+  });
+});
