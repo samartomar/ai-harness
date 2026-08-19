@@ -380,7 +380,14 @@ describe("createGovernanceDoctorRepairPlanV1", () => {
       { scope: { paths: [RULES_PATH, ROUTER_PATH, "ai-coding/adapters"] } },
       { effects: [{ ...effects()[0], effectId: "ensure-other-directory" }, effects()[1]] },
       { effects: [...effects()].reverse() },
-      { effects: [{ ...effects()[0], arguments: { path: ROUTER_PATH } }, effects()[1]] },
+      // An argument value alone must move the identity; the path stays put
+      // because one managed path may never be declared twice in a plan.
+      {
+        effects: [
+          effects()[0],
+          { ...effects()[1], arguments: { contentSha256: "e".repeat(64), path: ROUTER_PATH } },
+        ],
+      },
       {
         evidence: {
           findings: [
@@ -772,6 +779,39 @@ describe("createGovernanceDoctorRepairPlanV1 effect, scope, and window bounds", 
       createGovernanceDoctorRepairPlanV1({
         ...scaffold,
         effects: [effects()[0], { ...effects()[0], effectId: "duplicate-effect" }],
+      }),
+    ).toThrow(TypeError);
+  });
+
+  it("refuses two effects that declare the same managed path", async () => {
+    const scaffold = planScaffold(await operation());
+    // Distinct kinds on one path: the verifier's per-effect provenance evidence
+    // makes every earlier same-path goal stale by construction, so the shape has
+    // no verifiable reading and is refused when the plan is built.
+    expect(() =>
+      createGovernanceDoctorRepairPlanV1({
+        ...scaffold,
+        effects: [
+          effects()[0],
+          {
+            ...effects()[1],
+            arguments: { contentSha256: CONTENT_SHA256, path: RULES_PATH },
+          },
+        ],
+      }),
+    ).toThrow(TypeError);
+    // Distinct content digests on one path: same refusal, same reason.
+    expect(() =>
+      createGovernanceDoctorRepairPlanV1({
+        ...scaffold,
+        effects: [
+          effects()[1],
+          {
+            ...effects()[1],
+            arguments: { contentSha256: "d".repeat(64), path: ROUTER_PATH },
+            effectId: "restore-router-again",
+          },
+        ],
       }),
     ).toThrow(TypeError);
   });

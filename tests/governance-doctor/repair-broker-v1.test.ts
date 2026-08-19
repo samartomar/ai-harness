@@ -173,18 +173,34 @@ describe("GovernanceDoctor Repair V1 capability boundary (static)", () => {
     expect(JSON.stringify(packageJson.exports ?? packageJson.main ?? "")).not.toMatch(/repair/i);
   });
 
-  it("stays dormant: nothing outside the Repair foundation imports it", () => {
+  // The foundation is no longer dormant: #775 adds the internal AIH Core local
+  // mechanical executor, its independent verifier, and the durable single-use claim
+  // the executor takes before any effect. The assertion keeps its original force --
+  // an exact, enumerated importer set with no CLI, command, Workbench, or
+  // public-export route -- and now names those internal modules too.
+  it("keeps its importer set closed to the foundation and its internal executor", () => {
     const importers = sourceFilesUnder(resolve(root, "src"))
       .filter((file) =>
-        /repair-(?:broker|capability|consent|outcome|plan)-v1\.js/.test(readFileSync(file, "utf8")),
+        // Every repair module is named here, the internal executor and verifier
+        // included: a consumer that skipped the foundation and imported only the
+        // operational modules would otherwise evade this reverse enumeration.
+        /repair-(?:broker|capability|claim|claim-store|consent|content|custody|executor|outcome|plan|verifier)-v1\.js/.test(
+          readFileSync(file, "utf8"),
+        ),
       )
       .map((file) => file.replace(/\\/g, "/").split("/src/")[1] ?? "")
       .sort();
     expect(importers).toEqual([
       "governance-doctor/repair-broker-v1.ts",
+      "governance-doctor/repair-claim-store-v1.ts",
+      "governance-doctor/repair-claim-v1.ts",
       "governance-doctor/repair-consent-v1.ts",
+      "governance-doctor/repair-content-v1.ts",
+      "governance-doctor/repair-custody-v1.ts",
+      "governance-doctor/repair-executor-v1.ts",
       "governance-doctor/repair-outcome-v1.ts",
       "governance-doctor/repair-plan-v1.ts",
+      "governance-doctor/repair-verifier-v1.ts",
     ]);
   });
 
