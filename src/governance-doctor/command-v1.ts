@@ -34,6 +34,10 @@ import {
   type GovernanceDoctorProfileV1,
   parseGovernanceDoctorProfileV1Json,
 } from "./profile-v1.js";
+import {
+  type GovernanceDoctorRepairPlanPreviewV1,
+  presentGovernanceDoctorRepairPlanPreviewV1,
+} from "./repair-plan-preview-v1.js";
 
 /**
  * `aih governance-doctor` -- the operator-facing, zero-write presentation of the
@@ -516,15 +520,26 @@ export function presentGovernanceDoctorUnavailableV1(
   });
 }
 
+/** One run's presentation plus the exact records a preview may be minted from. */
+interface GovernanceDoctorRunV1 {
+  readonly operation: GovernanceDoctorOperationV1 | undefined;
+  readonly presented: GovernanceDoctorPresentationV1;
+  readonly profile: GovernanceDoctorProfileV1 | undefined;
+}
+
 /** One adapter invocation per command run; every failure becomes a bounded outcome. */
-async function runPresentation(ctx: PlanContext): Promise<GovernanceDoctorPresentationV1> {
+async function runPresentation(ctx: PlanContext): Promise<GovernanceDoctorRunV1> {
   const context = createGovernanceDoctorOperationalContextV1(ctx);
   const policy = resolveGovernanceDoctorPolicyStateV1(context);
   let profile: GovernanceDoctorProfileV1;
   try {
     profile = loadShippedGovernanceDoctorProfileV1();
   } catch {
-    return presentGovernanceDoctorUnavailableV1("profile-unavailable", policy);
+    return {
+      operation: undefined,
+      presented: presentGovernanceDoctorUnavailableV1("profile-unavailable", policy),
+      profile: undefined,
+    };
   }
   try {
     const operation: GovernanceDoctorOperationV1 = await runGovernanceDoctorOperationV1({
@@ -532,10 +547,41 @@ async function runPresentation(ctx: PlanContext): Promise<GovernanceDoctorPresen
       policy: { decision: policy.decision, revisionSha256: policy.revisionSha256 },
       profile,
     });
-    return presentGovernanceDoctorOperationV1(operation, policy);
+    return { operation, presented: presentGovernanceDoctorOperationV1(operation, policy), profile };
   } catch {
-    return presentGovernanceDoctorUnavailableV1("adapter-unavailable", policy);
+    return {
+      operation: undefined,
+      presented: presentGovernanceDoctorUnavailableV1("adapter-unavailable", policy),
+      profile,
+    };
   }
+}
+
+/**
+ * Renders the preview as bounded operator prose. Every populated value is a
+ * digest, a recipe name, or a summary field whose arguments are already
+ * validated managed tokens, digests, and managed-relative paths.
+ */
+function renderRepairPlanPreviewText(previewed: GovernanceDoctorRepairPlanPreviewV1): string {
+  const lines = [
+    "Governance Doctor repair plan preview",
+    `  outcome: ${previewed.outcome}`,
+    "  executable: false",
+  ];
+  if (previewed.planSha256 !== null) {
+    lines.push(`  plan: ${previewed.planSha256}`);
+    lines.push(`  recipe: ${previewed.recipeId ?? "none"}`);
+    lines.push(`  summary: ${previewed.summarySha256 ?? "none"}`);
+    lines.push(`  expires at epoch ms: ${previewed.expiresAtEpochMs ?? "none"}`);
+  }
+  for (const effect of previewed.effects)
+    lines.push(
+      `  effect ${effect.effectId} (${effect.effectKind}): ${Object.entries(effect.arguments)
+        .map(([name, value]) => `${name}=${value}`)
+        .join(", ")}`,
+    );
+  lines.push(`  ${previewed.notice}`);
+  return `${lines.join("\n")}\n`;
 }
 
 export const command: CommandSpec = {
@@ -545,13 +591,34 @@ export const command: CommandSpec = {
   readOnly: true,
   honorReadOnlyPostureFlag: true,
   zeroWrite: true,
-  options: [],
+  options: [
+    {
+      flags: "--repair-plan",
+      description:
+        "Additionally present the preview-only mechanical Repair plan derivation (mints no authority; nothing becomes executable)",
+    },
+  ],
   plan: async (ctx) => {
-    const presented = await runPresentation(ctx);
-    return plan(
-      "governance-doctor",
-      probe("governance doctor audit and guide", () => presented.check),
-      digest("governance doctor audit and guide", presented.text, presented.report),
-    );
+    const run = await runPresentation(ctx);
+    const actions = [
+      probe("governance doctor audit and guide", () => run.presented.check),
+      digest("governance doctor audit and guide", run.presented.text, run.presented.report),
+    ];
+    if (ctx.options.repairPlan === true) {
+      // The preview consumes only this run's own records; an unavailable run
+      // collapses inside the preview module to its fixed no-plan outcome.
+      const previewed = presentGovernanceDoctorRepairPlanPreviewV1({
+        operation: run.operation,
+        profile: run.profile,
+      });
+      actions.push(
+        digest(
+          "governance doctor repair plan preview",
+          renderRepairPlanPreviewText(previewed),
+          previewed,
+        ),
+      );
+    }
+    return plan("governance-doctor", ...actions);
   },
 };

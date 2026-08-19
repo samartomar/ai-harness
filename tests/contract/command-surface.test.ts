@@ -197,10 +197,14 @@ describe("v1 contract — CLI command surface", () => {
   it("keeps the zero-write governance-doctor route free of mutating and artifact flags", () => {
     const node = liveSurface().commands.find((c) => c.name === "governance-doctor");
     const flags = node?.options.map((o) => o.flags) ?? [];
+    // `--repair-plan` is the preview-only presentation flag: it mints no
+    // authority and makes nothing executable. Mutating and artifact flags stay
+    // absent.
     expect(flags.sort()).toEqual([
       "--context-dir <dir>",
       "--json",
       "--posture <posture>",
+      "--repair-plan",
       "--root <dir>",
     ]);
     expect(node?.commands).toEqual([]);

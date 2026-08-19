@@ -58,6 +58,7 @@ function zeroWriteCommand(argv: readonly string[]): Command {
   cmd
     .option("--json")
     .option("--posture <posture>", "", "vibe")
+    .option("--repair-plan")
     .option("--root <dir>")
     .option("--context-dir <dir>", "", "ai-coding");
   cmd.parse([...argv], { from: "user" });
@@ -187,7 +188,13 @@ describe("aih governance-doctor — command registration", () => {
     expect(governanceDoctorCommand.readOnly).toBe(true);
     expect(governanceDoctorCommand.zeroWrite).toBe(true);
     expect(governanceDoctorCommand.honorReadOnlyPostureFlag).toBe(true);
-    expect(governanceDoctorCommand.options ?? []).toEqual([]);
+    expect(governanceDoctorCommand.options ?? []).toEqual([
+      {
+        description:
+          "Additionally present the preview-only mechanical Repair plan derivation (mints no authority; nothing becomes executable)",
+        flags: "--repair-plan",
+      },
+    ]);
     expect(governanceDoctorCommand.aliases).toBeUndefined();
     expect(governanceDoctorCommand.deprecatedAliases).toBeUndefined();
     expect(READONLY.map((spec) => spec.name)).toContain("governance-doctor");
@@ -202,6 +209,7 @@ describe("aih governance-doctor — command registration", () => {
       "--context-dir <dir>",
       "--json",
       "--posture <posture>",
+      "--repair-plan",
       "--root <dir>",
     ]);
     const doctor = program.commands.find((command) => command.name() === "doctor");
@@ -396,6 +404,77 @@ describe("aih governance-doctor — completed presentation", () => {
     );
     expect(out).toContain('authority none]: "');
     expect(out).not.toContain("pass --apply");
+  });
+
+  it("presents no repair plan preview unless the flag asks for one", async () => {
+    stubPassingDiagnostics();
+    const { code, out } = await runCommand([dir, "--json"]);
+    expect(code).toBe(0);
+    const payload = jsonPayload(out) as { digests?: unknown[] };
+    expect(payload.digests).toHaveLength(1);
+    expect(out).not.toContain("repair plan preview");
+  });
+
+  it("appends the preview-only repair plan section under --repair-plan", async () => {
+    stubPassingDiagnostics();
+    const { code, out } = await runCommand([dir, "--repair-plan"]);
+    expect(code).toBe(0);
+    expect(out).toContain("Governance Doctor audit and guide");
+    expect(out).toContain("Governance Doctor repair plan preview");
+    expect(out).toContain("outcome: no-mechanical-repair");
+    expect(out).toContain("executable: false");
+    expect(out).toContain(
+      "Preview only: no consent is captured, no claim is spent, and no repair is executed or executable.",
+    );
+  });
+
+  it("emits the closed preview JSON shape under --repair-plan and carries no root path", async () => {
+    stubPassingDiagnostics();
+    const { code, out } = await runCommand([dir, "--json", "--repair-plan"]);
+    expect(code).toBe(0);
+    const payload = jsonPayload(out) as { digests?: Array<{ data?: Record<string, unknown> }> };
+    expect(payload.digests).toHaveLength(2);
+    const previewed = payload.digests?.[1]?.data;
+    if (previewed === undefined) throw new Error("expected a repair plan preview digest");
+    expect(Object.keys(previewed).sort()).toEqual([
+      "effects",
+      "executable",
+      "expiresAtEpochMs",
+      "notice",
+      "outcome",
+      "planSha256",
+      "protocol",
+      "recipeId",
+      "summarySha256",
+    ]);
+    expect(previewed.protocol).toBe("GovernanceDoctorRepairPlanPreviewV1");
+    expect(previewed.outcome).toBe("no-mechanical-repair");
+    expect(previewed.executable).toBe(false);
+    expect(previewed.planSha256).toBeNull();
+    expect(previewed.effects).toEqual([]);
+    expect(JSON.stringify(payload.digests?.[1])).not.toContain(dir);
+  });
+
+  it("keeps the preview a no-plan outcome when a diagnostic yields an evidence gap", async () => {
+    vi.spyOn(doctorCommand, "plan").mockImplementation(() => ({
+      actions: [
+        {
+          describe: "doctor",
+          kind: "probe" as const,
+          run: async () => ({ name: "doctor", verdict: "fail" as const }),
+        },
+      ],
+      capability: "doctor",
+    }));
+    vi.spyOn(policyEvaluateCommand, "plan").mockImplementation(() =>
+      passingProbePlan("policy evaluate", "policy"),
+    );
+    const { code, out } = await runCommand([dir, "--json", "--repair-plan"]);
+    expect(code).toBe(1);
+    const payload = jsonPayload(out) as { digests?: Array<{ data?: Record<string, unknown> }> };
+    expect(payload.digests?.[1]?.data?.outcome).toBe("no-mechanical-repair");
+    expect(payload.digests?.[1]?.data?.planSha256).toBeNull();
+    expect(payload.digests?.[1]?.data?.executable).toBe(false);
   });
 
   it("emits a closed, stable JSON report and exits zero when the audit completes", async () => {
