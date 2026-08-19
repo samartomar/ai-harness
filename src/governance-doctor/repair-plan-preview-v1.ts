@@ -1,5 +1,9 @@
 import { randomBytes } from "node:crypto";
 import {
+  deriveGovernanceDoctorAuditCompletenessV1,
+  type GovernanceDoctorAuditCompletenessStateV1,
+} from "./audit-completeness-v1.js";
+import {
   canonicalGovernanceDoctorAuditV1Bytes,
   canonicalGovernanceDoctorGuideV1Bytes,
   type GovernanceDoctorAuditV1Result,
@@ -82,6 +86,15 @@ export type GovernanceDoctorRepairPlanPreviewOutcomeV1 =
  * no field to occupy.
  */
 export interface GovernanceDoctorRepairPlanPreviewV1 {
+  /**
+   * How much of the workstation the audit this plan was derived from actually
+   * saw. A plan may be derived from a `partial` audit -- the finding it repairs
+   * is real either way -- but a reader must never take "a repair was planned"
+   * as "the audit was complete", so the classification travels with the plan
+   * rather than being inferred from its presence. `null` only where there is no
+   * audited result to classify.
+   */
+  readonly auditCompleteness: GovernanceDoctorAuditCompletenessStateV1 | null;
   readonly effects: readonly {
     readonly arguments: Readonly<Record<string, string>>;
     readonly effectId: string;
@@ -211,12 +224,14 @@ function deriveMechanicalEffects(
 
 function preview(
   outcome: GovernanceDoctorRepairPlanPreviewOutcomeV1,
+  auditCompleteness: GovernanceDoctorAuditCompletenessStateV1 | null,
   populated?: Pick<
     GovernanceDoctorRepairPlanPreviewV1,
     "effects" | "expiresAtEpochMs" | "planSha256" | "recipeId" | "summarySha256"
   >,
 ): GovernanceDoctorRepairPlanPreviewV1 {
   return Object.freeze({
+    auditCompleteness,
     effects: Object.freeze(
       (populated?.effects ?? []).map((effect) =>
         Object.freeze({
@@ -249,7 +264,8 @@ export function mintGovernanceDoctorRepairPlanPreviewV1(
   derived: GovernanceDoctorRepairDerivedEffectsV1,
 ): GovernanceDoctorRepairPlanPreviewV1 {
   const audit = operation.audit;
-  if (audit.kind !== "audited") return preview("unavailable");
+  if (audit.kind !== "audited") return preview("unavailable", null);
+  const completeness = deriveGovernanceDoctorAuditCompletenessV1(audit).state;
   const createdAtEpochMs = Date.now();
   const built = createGovernanceDoctorRepairPlanV1({
     createdAtEpochMs,
@@ -279,7 +295,7 @@ export function mintGovernanceDoctorRepairPlanPreviewV1(
   });
   const summary: GovernanceDoctorRepairEffectSummaryV1 =
     governanceDoctorRepairEffectSummaryV1(built);
-  return preview("plan", {
+  return preview("plan", completeness, {
     effects: summary.effects,
     expiresAtEpochMs: built.expiresAtEpochMs,
     planSha256: built.planSha256,
@@ -297,6 +313,11 @@ export function mintGovernanceDoctorRepairPlanPreviewV1(
 export function presentGovernanceDoctorRepairPlanPreviewV1(
   value: unknown,
 ): GovernanceDoctorRepairPlanPreviewV1 {
+  // Held outside the try so the collapse below can still report how much the
+  // audit saw when the failure came *after* the audit was classified -- an
+  // unusable eligibility record says nothing about the audit, and `null` is
+  // reserved for having no audited result at all.
+  let completeness: GovernanceDoctorAuditCompletenessStateV1 | null = null;
   try {
     const request = assertRecordV1(value, "repair plan preview request");
     assertExactKeysV1(
@@ -313,7 +334,10 @@ export function presentGovernanceDoctorRepairPlanPreviewV1(
     canonicalGovernanceDoctorAuditV1Bytes(operation.audit);
     canonicalGovernanceDoctorGuideV1Bytes(operation.guide);
     const audit = assertRecordV1(operation.audit, "repair plan preview audit");
-    if (audit.kind !== "audited") return preview("unavailable");
+    if (audit.kind !== "audited") return preview("unavailable", null);
+    // Classified here, once, so every outcome below reports how much the audit
+    // saw -- including the ones that derive no plan at all, and the collapse.
+    completeness = deriveGovernanceDoctorAuditCompletenessV1(operation.audit).state;
     // The posture is read from the Guide, whose repair posture is digest-bound
     // into the operation record -- never from the looser profile record also
     // present in the request.
@@ -323,9 +347,9 @@ export function presentGovernanceDoctorRepairPlanPreviewV1(
       ["guided-only", "unavailable"] as const,
       "repair plan preview posture",
     );
-    if (posture !== "guided-only") return preview("posture-unavailable");
+    if (posture !== "guided-only") return preview("posture-unavailable", completeness);
     const derived = deriveMechanicalEffects(operation.audit as GovernanceDoctorAuditV1Result);
-    if (derived.effects.length === 0) return preview("no-mechanical-repair");
+    if (derived.effects.length === 0) return preview("no-mechanical-repair", completeness);
     // Eligibility is consulted only once an effect is already derivable, so a
     // healthy audit reports no-mechanical-repair whether or not this repository
     // is eligible -- eligibility gates minting, it does not describe the audit.
@@ -338,7 +362,7 @@ export function presentGovernanceDoctorRepairPlanPreviewV1(
     // repository beside another repository's audit.
     const eligibility = assertGovernanceDoctorRepairEligibilityV1(request.eligibility);
     const record = operation.record as GovernanceDoctorOperationRecordV1;
-    if (eligibility.rootSha256 !== record.rootSha256) return preview("unavailable");
+    if (eligibility.rootSha256 !== record.rootSha256) return preview("unavailable", completeness);
     return mintGovernanceDoctorRepairPlanPreviewV1(
       request.operation as GovernanceDoctorOperationV1,
       request.profile,
@@ -346,7 +370,9 @@ export function presentGovernanceDoctorRepairPlanPreviewV1(
     );
   } catch {
     // Closed collapse: a refusal is never an output channel for the input that
-    // caused it.
-    return preview("unavailable");
+    // caused it. The completeness is not such a channel -- it is derived from
+    // the operation's own already-branded audit, and stays `null` whenever the
+    // failure happened before that audit was classified.
+    return preview("unavailable", completeness);
   }
 }

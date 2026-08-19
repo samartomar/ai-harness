@@ -1233,8 +1233,12 @@ is unchanged. The preview derives exclusively from the same single adapter run's
 the shipped profile, and one code-owned broker mapping — no flag, option, or positional value can
 supply a broker, recipe, effect, path, or content. Its closed JSON shape reports a fixed outcome
 (`no-mechanical-repair`, `plan`, `posture-unavailable`, or `unavailable`), plan and summary
-digests when a plan was derivable, bounded effect summaries over managed-relative paths, and
-`executable: false` always. Exactly one finding is mechanically mappable, and it is not reachable
+digests when a plan was derivable, bounded effect summaries over managed-relative paths,
+`auditCompleteness` — the same `completed` / `partial` / `evidence-gap` classification the
+presentation reports, or `null` where there is no audited result behind the preview at all —
+and `executable: false` always. A plan may be derived from a `partial` audit: the finding it
+repairs is real either way, and the classification travels with the plan precisely so that
+"a repair was planned" can never be read as "the audit was complete". Exactly one finding is mechanically mappable, and it is not reachable
 from a real run today (see above), so a real audit still previews `no-mechanical-repair`. When a
 plan is derivable it is presented and discarded. Nothing becomes executable: the preview captures
 no consent, spends no claim, runs no executor or verifier, and writes nothing.
@@ -1262,9 +1266,19 @@ location, child-process output, support ticket, or run-ledger row.
 | `outcome` | `state` | Exit |
 | --- | --- | --- |
 | `completed` | `null` | 0 |
+| `partial` | `null` (per-diagnostic states in `refusals`) | 1 |
 | `evidence-gap` | `null` (per-diagnostic states in `refusals`) | 1 |
 | `refused` | `policy-denied` or `compatibility-required` | 1 |
 | `unavailable` | `profile-unavailable` or `adapter-unavailable` | 1 |
+
+`completed` means every declared diagnostic resolved — findings may be present or absent.
+`partial` means some diagnostics produced findings and some did not resolve: the run found
+real problems *and* could not see part of the workstation, so it is neither a completed
+audit nor an absence of evidence. `evidence-gap` means nothing resolved into a finding and
+at least one diagnostic did not resolve. Only `completed` exits zero, so a `partial` run
+exits the same way it always did. A diagnostic fails to resolve in five distinct ways —
+`missing-adapter`, `evidence-gap`, `missing-credential`, `unsupported-host`, and
+`unmanaged-drift` — and each appears in `refusals` with its own state.
 
 The run is zero-write: it appends no `.aih/runs/` ledger row, writes no support tickets, and
 produces no repository or workstation file.

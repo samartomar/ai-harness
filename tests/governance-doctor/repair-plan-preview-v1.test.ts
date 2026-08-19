@@ -97,13 +97,17 @@ const CONTEXT_DIR_MISSING = {
 async function operation(
   overrides: Record<string, unknown> = {},
   doctorCheck: Record<string, unknown> = HEALTHY,
+  // Makes the policy planner fail, which the adapter turns into that
+  // diagnostic's evidence gap. The Doctor diagnostic is unaffected, because the
+  // finding mapping is all-or-nothing per diagnostic.
+  policyUnavailable = false,
 ): Promise<GovernanceDoctorOperationV1> {
   const doctorPlan = vi
     .spyOn(doctorCommand, "plan")
     .mockReturnValue({ ...stubbedProbe(doctorCheck), capability: "doctor" });
-  const policyPlan = vi.spyOn(policyEvaluateCommand, "plan").mockReturnValue({
-    ...stubbedProbe(HEALTHY),
-    capability: "policy evaluate",
+  const policyPlan = vi.spyOn(policyEvaluateCommand, "plan").mockImplementation(() => {
+    if (policyUnavailable) throw new Error("policy planner unavailable");
+    return { ...stubbedProbe(HEALTHY), capability: "policy evaluate" };
   });
   try {
     return await runGovernanceDoctorOperationV1({
@@ -119,6 +123,8 @@ async function operation(
 }
 
 const NULL_PLAN_FIELDS = {
+  // Default for the outcomes that never reach an audited result at all.
+  auditCompleteness: null,
   effects: [],
   executable: false,
   expiresAtEpochMs: null,
@@ -147,7 +153,13 @@ describe("presentGovernanceDoctorRepairPlanPreviewV1", () => {
       profile: profile(),
     });
 
-    expect(previewed).toEqual({ ...NULL_PLAN_FIELDS, outcome: "no-mechanical-repair" });
+    // No repair to plan, and the audit saw everything -- the two facts are
+    // reported separately so neither implies the other.
+    expect(previewed).toEqual({
+      ...NULL_PLAN_FIELDS,
+      auditCompleteness: "completed",
+      outcome: "no-mechanical-repair",
+    });
     expect(Object.isFrozen(previewed)).toBe(true);
   });
 
@@ -180,7 +192,11 @@ describe("presentGovernanceDoctorRepairPlanPreviewV1", () => {
         operation: built,
         profile: profile({ repairPosture: "unavailable" }),
       }),
-    ).toEqual({ ...NULL_PLAN_FIELDS, outcome: "posture-unavailable" });
+    ).toEqual({
+      ...NULL_PLAN_FIELDS,
+      auditCompleteness: "completed",
+      outcome: "posture-unavailable",
+    });
   });
 
   it("collapses malformed, missing-key, and extra-field input into unavailable, throwing nothing", async () => {
@@ -263,11 +279,40 @@ describe("mechanical context-directory preview", () => {
     expect(previewed.planSha256).toMatch(/^[a-f0-9]{64}$/);
     expect(previewed.recipeId).toBe(GOVERNANCE_DOCTOR_REPAIR_PREVIEW_RECIPE_ID_V1);
     expect(JSON.stringify(previewed)).not.toContain(FIXTURE_ROOT);
+    // A derived plan says nothing about how much the audit saw, so the preview
+    // has to say it separately. Whatever this fixture's audit managed to
+    // resolve, the plan must never be the thing that implies completeness.
+    expect(previewed.auditCompleteness).toBe("completed");
+  });
+
+  /**
+   * The combination the execution slice has to keep straight: a real repair is
+   * planned, and the audit behind it still did not see the whole workstation.
+   * Neither fact cancels the other, and the preview reports both, so nothing
+   * downstream can read "a plan exists" as "the workstation is understood".
+   */
+  it("still reports partial when a plan is derived from a partial audit", async () => {
+    const built = await operation({}, CONTEXT_DIR_MISSING, true);
+    const previewed = presentGovernanceDoctorRepairPlanPreviewV1({
+      eligibility: eligibilityFor(built),
+      operation: built,
+      profile: profile(),
+    });
+    expect(previewed.outcome).toBe("plan");
+    expect(previewed.planSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(previewed.auditCompleteness).toBe("partial");
   });
 
   it("creates no plan when the eligibility record was not minted", async () => {
     const { previewed } = await eligiblePreview(null);
-    expect(previewed).toEqual({ ...NULL_PLAN_FIELDS, outcome: "unavailable" });
+    // No plan, but the audit itself was real and complete. A missing
+    // eligibility record is a fact about this repository's marker, not about
+    // how much the audit managed to see, so it must not blank the state.
+    expect(previewed).toEqual({
+      ...NULL_PLAN_FIELDS,
+      auditCompleteness: "completed",
+      outcome: "unavailable",
+    });
   });
 
   it("creates no plan for any hostile substitute for eligibility", async () => {
@@ -301,7 +346,16 @@ describe("mechanical context-directory preview", () => {
           profile: profile(),
         }),
         label,
-      ).toEqual({ ...NULL_PLAN_FIELDS, outcome: "unavailable" });
+      ).toEqual({
+        ...NULL_PLAN_FIELDS,
+        // Every substitute here fails at the eligibility check, which runs
+        // *after* the audit has been branded and classified. An unusable
+        // eligibility record says nothing about how much the audit saw, so the
+        // state survives the collapse. `null` is reserved for a preview with no
+        // audited result behind it at all.
+        auditCompleteness: "completed",
+        outcome: "unavailable",
+      });
   });
 
   it("keeps no-mechanical-repair for a healthy audit even when eligibility holds", async () => {
