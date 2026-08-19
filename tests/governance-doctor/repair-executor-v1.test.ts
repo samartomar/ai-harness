@@ -243,12 +243,18 @@ describe("executeGovernanceDoctorRepairV1", () => {
   });
 
   /**
-   * The authority window is re-read per effect, so a plan that expires between
-   * effects must stop rather than finish on the strength of a check it passed
-   * before the first write. Freezing the clock for the whole run would never
-   * exercise that, which is why this advances it mid-run.
+   * The authority window is re-read whenever an effect takes a mutation grant,
+   * so a plan that expires between effects must stop rather than finish on the
+   * strength of a check it passed before the first write. Freezing the clock for
+   * the whole run would never exercise that, which is why this advances it
+   * mid-run.
+   *
+   * The bound is the grant, not the effect: an effect whose goal already holds
+   * returns applied without taking one and therefore without reading the clock,
+   * so a plan expiring with only satisfied effects left still completes. Nothing
+   * is mutated in that case, and every effect below genuinely needs a grant.
    */
-  it("halts when the authority window closes between effects", async () => {
+  it("halts when the authority window closes before the next mutation", async () => {
     const built = await plan();
     // The window closes the moment the first effect has landed on disk, which is
     // a fact about the run rather than a guess at how many times the clock is
