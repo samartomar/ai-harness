@@ -313,6 +313,11 @@ export function mintGovernanceDoctorRepairPlanPreviewV1(
 export function presentGovernanceDoctorRepairPlanPreviewV1(
   value: unknown,
 ): GovernanceDoctorRepairPlanPreviewV1 {
+  // Held outside the try so the collapse below can still report how much the
+  // audit saw when the failure came *after* the audit was classified -- an
+  // unusable eligibility record says nothing about the audit, and `null` is
+  // reserved for having no audited result at all.
+  let completeness: GovernanceDoctorAuditCompletenessStateV1 | null = null;
   try {
     const request = assertRecordV1(value, "repair plan preview request");
     assertExactKeysV1(
@@ -331,8 +336,8 @@ export function presentGovernanceDoctorRepairPlanPreviewV1(
     const audit = assertRecordV1(operation.audit, "repair plan preview audit");
     if (audit.kind !== "audited") return preview("unavailable", null);
     // Classified here, once, so every outcome below reports how much the audit
-    // saw -- including the ones that derive no plan at all.
-    const completeness = deriveGovernanceDoctorAuditCompletenessV1(operation.audit).state;
+    // saw -- including the ones that derive no plan at all, and the collapse.
+    completeness = deriveGovernanceDoctorAuditCompletenessV1(operation.audit).state;
     // The posture is read from the Guide, whose repair posture is digest-bound
     // into the operation record -- never from the looser profile record also
     // present in the request.
@@ -365,7 +370,9 @@ export function presentGovernanceDoctorRepairPlanPreviewV1(
     );
   } catch {
     // Closed collapse: a refusal is never an output channel for the input that
-    // caused it.
-    return preview("unavailable", null);
+    // caused it. The completeness is not such a channel -- it is derived from
+    // the operation's own already-branded audit, and stays `null` whenever the
+    // failure happened before that audit was classified.
+    return preview("unavailable", completeness);
   }
 }

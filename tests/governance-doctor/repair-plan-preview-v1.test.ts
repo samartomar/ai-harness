@@ -305,7 +305,14 @@ describe("mechanical context-directory preview", () => {
 
   it("creates no plan when the eligibility record was not minted", async () => {
     const { previewed } = await eligiblePreview(null);
-    expect(previewed).toEqual({ ...NULL_PLAN_FIELDS, outcome: "unavailable" });
+    // No plan, but the audit itself was real and complete. A missing
+    // eligibility record is a fact about this repository's marker, not about
+    // how much the audit managed to see, so it must not blank the state.
+    expect(previewed).toEqual({
+      ...NULL_PLAN_FIELDS,
+      auditCompleteness: "completed",
+      outcome: "unavailable",
+    });
   });
 
   it("creates no plan for any hostile substitute for eligibility", async () => {
@@ -341,11 +348,12 @@ describe("mechanical context-directory preview", () => {
         label,
       ).toEqual({
         ...NULL_PLAN_FIELDS,
-        // A record that is merely wrong for this root leaves the audit itself
-        // intact and classified, so the preview still reports what the audit
-        // saw. Everything else here is refused before the audit is read, or
-        // throws into the closed collapse, and has nothing to classify.
-        auditCompleteness: label === "mismatched root" ? "completed" : null,
+        // Every substitute here fails at the eligibility check, which runs
+        // *after* the audit has been branded and classified. An unusable
+        // eligibility record says nothing about how much the audit saw, so the
+        // state survives the collapse. `null` is reserved for a preview with no
+        // audited result behind it at all.
+        auditCompleteness: "completed",
         outcome: "unavailable",
       });
   });
