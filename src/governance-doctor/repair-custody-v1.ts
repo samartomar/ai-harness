@@ -555,6 +555,35 @@ function assertAuthorityWindowV1(authorized: MutationGrantBodyV1): void {
 }
 
 /**
+ * The live authority window for one custody and its granted consent, checked
+ * without minting anything.
+ *
+ * The grant below is the bound on a *write*, and for a long time it was the only
+ * bound there was. An effect whose goal already holds takes no grant, so it read
+ * no clock: it applied nothing, but it still reported `applied` on a plan whose
+ * authority had already closed, and a Receipt saying work was done under expired
+ * authority is a false audit trail even when the work was zero. The window bounds
+ * the attempt, so it is checked before every effect and the grant checks it again
+ * before every write -- the same rule read twice, because the second read is the
+ * one that happens after the branches between them have run.
+ */
+export function assertGovernanceDoctorRepairAuthorityWindowV1(input: unknown): void {
+  const request = assertRecordV1(input, "repair authority window request");
+  assertExactKeysV1(request, ["consent", "custody"], "repair authority window request");
+  const body = brandedRepairValueV1(custodyBodies, request.custody, "repair custody");
+  canonicalGovernanceDoctorRepairConsentV1Bytes(request.consent);
+  const consent = request.consent as GovernanceDoctorRepairConsentV1;
+  if (
+    consent.decision !== "granted" ||
+    !withinAuthorityWindow(
+      Math.max(body.createdAtEpochMs, consent.consentedAtEpochMs),
+      body.expiresAtEpochMs,
+    )
+  )
+    failGovernanceDoctorRepairV1("repair authority window is not open");
+}
+
+/**
  * Creates the narrow capability required to apply one declared effect. A plain
  * Plan/root custody cannot mint this: the exact branded granted consent and its
  * branded preflight receipt must agree with the custody, and the wall clock is

@@ -14,6 +14,7 @@ import {
   rewriteGovernanceDoctorRepairMarkerBlockV1,
 } from "./repair-content-v1.js";
 import {
+  assertGovernanceDoctorRepairAuthorityWindowV1,
   createGovernanceDoctorRepairMutationGrantV1,
   GOVERNANCE_DOCTOR_REPAIR_CUSTODY_V1_LIMITS,
   governanceDoctorRepairCreateDirectoryV1,
@@ -165,6 +166,10 @@ function applyEffectV1(
   receipt: GovernanceDoctorRepairReceiptV1,
 ): AppliedEffectV1 {
   try {
+    // Before every effect, including the ones that will turn out to need no
+    // grant. A closed window makes this effect fail exactly as a closed window
+    // at grant time already did, which halts the run before the next one.
+    assertGovernanceDoctorRepairAuthorityWindowV1({ consent, custody });
     const path = effectArgument(effect, "path");
     const kind = effect.effectKind;
 
@@ -228,6 +233,26 @@ function applyEffectV1(
 }
 
 /**
+ * Every join this run's authority rests on, gathered so it can be taken twice.
+ *
+ * Once is the ordinary preflight. The second time is the last instant before the
+ * claim is spent, which is the last instant a refusal is still free: the claim is
+ * irreversible by design, so a plan refused after it is spent is finished rather
+ * than merely stopped. Re-taking these costs nothing -- every one is pure or
+ * in-memory over frozen branded records -- and re-taking them together with the
+ * live authority window is what makes "these facts held" and "the claim was spent
+ * on the strength of them" the same moment rather than two.
+ */
+function assertTrustedJoinV1(request: Record<string, unknown>, plan: GovernanceDoctorRepairPlanV1) {
+  if (governanceDoctorRepairCustodyPlanSha256V1(request.custody) !== plan.planSha256)
+    failGovernanceDoctorRepairV1("repair custody was not minted for this plan");
+  for (const effect of plan.effects)
+    if (!GOVERNANCE_DOCTOR_REPAIR_EXECUTABLE_EFFECT_KINDS_V1.includes(effect.effectKind))
+      failGovernanceDoctorRepairV1("repair plan names an effect this executor cannot apply");
+  assertGovernanceDoctorRepairContentClosureV1(request.content, plan.effects);
+}
+
+/**
  * Applies one consented Repair Plan under its own root and returns the bound
  * Receipt. Every identity is joined before any mutation, and the Receipt records
  * every effect result without asserting that any of them were verified.
@@ -238,12 +263,7 @@ export function executeGovernanceDoctorRepairV1(input: unknown): GovernanceDocto
   canonicalGovernanceDoctorRepairPlanV1Bytes(request.plan);
   const plan = request.plan as GovernanceDoctorRepairPlanV1;
 
-  if (governanceDoctorRepairCustodyPlanSha256V1(request.custody) !== plan.planSha256)
-    failGovernanceDoctorRepairV1("repair custody was not minted for this plan");
-  for (const effect of plan.effects)
-    if (!GOVERNANCE_DOCTOR_REPAIR_EXECUTABLE_EFFECT_KINDS_V1.includes(effect.effectKind))
-      failGovernanceDoctorRepairV1("repair plan names an effect this executor cannot apply");
-  assertGovernanceDoctorRepairContentClosureV1(request.content, plan.effects);
+  assertTrustedJoinV1(request, plan);
 
   // Authority preflight: the foundation's own Receipt constructor validates the
   // plan, granted consent, execution context, and attempt window. Minting a
@@ -265,10 +285,20 @@ export function executeGovernanceDoctorRepairV1(input: unknown): GovernanceDocto
   // process. Every join above is pure or in-memory, so a Plan refused up there has
   // spent nothing; from here on the Plan is spent whatever happens next, including
   // a crash, because a claim that survives is never a licence to try again.
+  // Re-taken here, against the clock as it is now rather than as it was when the
+  // preflight's own timestamp was captured. A plan whose authority closed in
+  // that interval refuses with nothing spent and nothing written.
+  assertTrustedJoinV1(request, plan);
+  assertGovernanceDoctorRepairAuthorityWindowV1({
+    consent: request.consent,
+    custody: request.custody,
+  });
+
+  const rootRealPath = governanceDoctorRepairCustodyRootRealPathV1(request.custody);
   const spentClaim = acquireGovernanceDoctorRepairClaimV1({
     consent: request.consent,
     plan,
-    rootRealPath: governanceDoctorRepairCustodyRootRealPathV1(request.custody),
+    rootRealPath,
   });
 
   const results: AppliedEffectV1[] = [];
@@ -312,6 +342,10 @@ export function executeGovernanceDoctorRepairV1(input: unknown): GovernanceDocto
     // The claim this run spent before the first effect, carried here as the
     // authority to record what that run observed.
     spentClaim,
+    // And the checkout it observed them in. Custody resolved this path before
+    // any effect ran, and the claim store digested the same one when it minted
+    // the claim, so the recorder can refuse a claim spent for another checkout.
+    rootRealPath,
   );
   return receipt;
 }

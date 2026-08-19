@@ -13,6 +13,7 @@ import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createGovernanceDoctorRepairClaimV1,
+  governanceDoctorRepairClaimScopeSha256V1,
   markGovernanceDoctorRepairClaimSpentV1,
 } from "../../src/governance-doctor/repair-claim-v1.js";
 import {
@@ -395,10 +396,11 @@ describe("verifyGovernanceDoctorRepairV1", () => {
           claimedAtEpochMs: REPAIR_FIXTURE_ATTEMPTED_AT,
           consentSha256: fabricated.consentSha256,
           planSha256: fabricated.planSha256,
-          scopeSha256: "c".repeat(64),
+          scopeSha256: governanceDoctorRepairClaimScopeSha256V1({ realPath: root }),
           state: "claimed",
         }),
       ),
+      root,
     );
 
     // The directory genuinely exists, so its goal holds; every file effect's goal

@@ -16,7 +16,10 @@ import {
   failGovernanceDoctorRepairV1,
   GOVERNANCE_DOCTOR_REPAIR_V1_LIMITS,
 } from "./repair-capability-v1.js";
-import { assertGovernanceDoctorRepairClaimSpentV1 } from "./repair-claim-v1.js";
+import {
+  assertGovernanceDoctorRepairClaimSpentV1,
+  governanceDoctorRepairClaimScopeSha256V1,
+} from "./repair-claim-v1.js";
 import { canonicalGovernanceDoctorRepairReceiptV1Bytes } from "./repair-outcome-v1.js";
 
 /**
@@ -190,32 +193,42 @@ function attemptEvidenceReceiptV1(value: unknown): ReadonlySet<string> {
  * fabricated repair, but it did allow a Verification with no durable claim
  * behind it, which is precisely the audit trail an executable Repair rests on.
  *
- * The claim is also joined to the Receipt rather than merely presented: a claim
- * spent for one plan and consent cannot license evidence for another.
+ * The claim is joined to the Receipt on all three of its bindings rather than
+ * merely presented: a claim spent for one plan, one consent, or one checkout
+ * cannot license evidence for another.
  *
- * That join is at plan-and-consent granularity, and deliberately says nothing
- * about the resolved root. A claim's `scopeSha256` digests the checkout's
- * canonical real path, which the store resolves on disk; a plan's `rootSha256`
- * digests the declared root and context-dir strings before anything is
- * resolved. Two durable spends of the same plan and consent against roots that
- * resolve differently therefore produce claims this check cannot tell apart,
- * and this module -- which reaches no filesystem -- has no way to learn which
- * one a Receipt's effects actually landed in. The single production caller
- * always passes the claim it just acquired for the Receipt it just built, so
- * nothing today can present a mismatched pair; a second caller would need the
- * scope bound too, which means threading the resolved root here and is left to
- * the change that introduces one.
+ * The third of those needs the fourth argument, because plan and consent alone
+ * cannot supply it. A claim's `scopeSha256` digests the checkout's canonical
+ * real path, which the store resolves on disk; a plan's `rootSha256` digests the
+ * declared root and context-dir strings before anything is resolved. They are
+ * digests of different things, so no comparison between them exists, and two
+ * durable spends of the same plan and consent against roots that resolve
+ * differently produce claims a plan-and-consent join cannot tell apart. This
+ * module reaches no filesystem and cannot learn where a Receipt's effects
+ * landed, so the caller states it: the resolved canonical root it applied them
+ * in. That path is digested here through the claim module's own pure scope rule
+ * -- the same rule the store used to mint the claim -- and a claim spent for any
+ * other checkout is refused.
+ *
+ * The path is not trusted as a fact about the filesystem, and nothing here
+ * checks that it exists. It is trusted only as the caller's statement of which
+ * checkout it acted in, and the digest comparison is what makes a false
+ * statement useless rather than merely unverified: a caller that misstates its
+ * own root can only refuse itself.
  */
 export function recordGovernanceDoctorRepairAttemptEvidenceV1(
   receipt: unknown,
   expected: unknown,
   spentClaim: unknown,
+  rootRealPath: unknown,
 ): void {
   const appliedEffectSha256 = attemptEvidenceReceiptV1(receipt);
   const claim = assertGovernanceDoctorRepairClaimSpentV1(spentClaim);
   const bound = receipt as { readonly consentSha256: string; readonly planSha256: string };
   if (claim.planSha256 !== bound.planSha256 || claim.consentSha256 !== bound.consentSha256)
     failGovernanceDoctorRepairV1("repair attempt evidence claim does not bind this receipt");
+  if (claim.scopeSha256 !== governanceDoctorRepairClaimScopeSha256V1({ realPath: rootRealPath }))
+    failGovernanceDoctorRepairV1("repair attempt evidence claim was not spent for this checkout");
   const target = receipt as object;
   // One-shot per Receipt. Evidence is a factual record of what one executor
   // observed, so a second recording could only replace an attempt's own truth
