@@ -253,3 +253,57 @@ export function parseGovernanceDoctorRepairClaimV1(input: unknown): GovernanceDo
 export function governanceDoctorRepairClaimFileNameV1(claimSha256: unknown): string {
   return `${assertSha256V1(claimSha256, "repair claim identity")}.json`;
 }
+
+/**
+ * Proof that one claim's record was durably committed to the machine-local
+ * store, expressed as possession rather than as a boolean.
+ *
+ * The attempt-evidence recorder is what turns an executor's observation of a
+ * mutated tree into the local fact an independent verifier reads. Before this
+ * binding it required only a well-formed Receipt, so any in-package caller
+ * could record evidence for a Receipt it had built itself, without a plan ever
+ * having been spent. The two-part verifier verdict already refused evidence
+ * that echoes an unrepaired tree, so the exposure was never a fabricated
+ * *repair*; what it allowed was a Verification that no durable claim stood
+ * behind -- exactly the audit trail an executable Repair depends on.
+ *
+ * A spent claim is therefore a capability. It is minted only by the durable
+ * store, and only after the exclusive create that commits the record. The brand
+ * is a module-private `WeakSet`, so a parse, a copy, a proxy, or a hand-built
+ * look-alike is not one; and because marking is a distinct named export, the
+ * set of modules that may mark is a checkable fact rather than a convention.
+ *
+ * What holding one proves is bounded, and worth stating exactly: that a record
+ * for some claim was durably committed. It does not identify a run, a process,
+ * or a resolved checkout -- the consumer joins it to a Receipt itself, and the
+ * granularity of that join is the consumer's to document.
+ */
+const spentClaims = new WeakSet<object>();
+
+/**
+ * Marks a claim as durably spent. The store is the only module that may call
+ * this, and a boundary test pins that; it exists as a separate export precisely
+ * so the rule is enforceable by enumeration rather than by comment.
+ */
+export function markGovernanceDoctorRepairClaimSpentV1(
+  claim: GovernanceDoctorRepairClaimV1,
+): GovernanceDoctorRepairClaimV1 {
+  canonicalGovernanceDoctorRepairClaimV1Bytes(claim);
+  spentClaims.add(claim);
+  return claim;
+}
+
+/**
+ * Accepts only a claim this process durably spent. A claim that is merely
+ * well-formed -- parsed from transport, reconstructed from its own canonical
+ * bytes, or minted in memory -- is refused, because none of those establishes
+ * that a record was ever committed.
+ */
+export function assertGovernanceDoctorRepairClaimSpentV1(
+  value: unknown,
+): GovernanceDoctorRepairClaimV1 {
+  canonicalGovernanceDoctorRepairClaimV1Bytes(value);
+  if (!spentClaims.has(value as object))
+    failGovernanceDoctorRepairV1("repair claim was not spent by this process");
+  return value as GovernanceDoctorRepairClaimV1;
+}

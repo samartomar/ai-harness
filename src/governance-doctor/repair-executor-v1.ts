@@ -126,6 +126,37 @@ function effectArgument(effect: GovernanceDoctorRepairEffectV1, name: string): s
  * custody refusal is already a closed label; here it collapses into one closed
  * per-effect result, so no filesystem detail can reach the Receipt.
  */
+/** The one mutation grant shape every effect branch needs. */
+function grantFor(
+  consent: unknown,
+  custody: unknown,
+  effect: GovernanceDoctorRepairEffectV1,
+  receipt: GovernanceDoctorRepairReceiptV1,
+): unknown {
+  return createGovernanceDoctorRepairMutationGrantV1({
+    consent,
+    custody,
+    effectId: effect.effectId,
+    receipt,
+  });
+}
+
+/**
+ * The two applied results. Each branch reaches one of them twice -- once when
+ * the tree already satisfies the effect and once after it was made to -- and the
+ * post-state evidence must be identical in both, so it is written once.
+ */
+function appliedDirectory(effect: GovernanceDoctorRepairEffectV1): AppliedEffectV1 {
+  return { expected: { effectSha256: effect.effectSha256, state: "directory" }, result: "applied" };
+}
+
+function appliedFile(effect: GovernanceDoctorRepairEffectV1, bytes: Buffer): AppliedEffectV1 {
+  return {
+    expected: { bytes, effectSha256: effect.effectSha256, state: "file" },
+    result: "applied",
+  };
+}
+
 function applyEffectV1(
   custody: unknown,
   consent: unknown,
@@ -139,24 +170,10 @@ function applyEffectV1(
 
     if (kind === "create-managed-directory") {
       const live = governanceDoctorRepairReadV1(custody, path);
-      if (live.state === "directory")
-        return {
-          expected: { effectSha256: effect.effectSha256, state: "directory" },
-          result: "applied",
-        };
+      if (live.state === "directory") return appliedDirectory(effect);
       if (live.state !== "absent") return { result: "failed" };
-      governanceDoctorRepairCreateDirectoryV1(
-        createGovernanceDoctorRepairMutationGrantV1({
-          consent,
-          custody,
-          effectId: effect.effectId,
-          receipt,
-        }),
-      );
-      return {
-        expected: { effectSha256: effect.effectSha256, state: "directory" },
-        result: "applied",
-      };
+      governanceDoctorRepairCreateDirectoryV1(grantFor(consent, custody, effect, receipt));
+      return appliedDirectory(effect);
     }
 
     if (kind === "normalize-managed-line-endings") {
@@ -164,25 +181,13 @@ function applyEffectV1(
       if (live.state !== "file") return { result: "failed" };
       const normalized = normalizeGovernanceDoctorRepairLineEndingsV1(live.bytes);
       if (normalized === null) return { result: "failed" };
-      if (normalized.equals(live.bytes))
-        return {
-          expected: { bytes: normalized, effectSha256: effect.effectSha256, state: "file" },
-          result: "applied",
-        };
+      if (normalized.equals(live.bytes)) return appliedFile(effect, normalized);
       governanceDoctorRepairWriteFileV1(
-        createGovernanceDoctorRepairMutationGrantV1({
-          consent,
-          custody,
-          effectId: effect.effectId,
-          receipt,
-        }),
+        grantFor(consent, custody, effect, receipt),
         normalized,
         live,
       );
-      return {
-        expected: { bytes: normalized, effectSha256: effect.effectSha256, state: "file" },
-        result: "applied",
-      };
+      return appliedFile(effect, normalized);
     }
 
     if (kind === "restore-managed-file-content") {
@@ -191,26 +196,10 @@ function applyEffectV1(
         effectArgument(effect, "contentSha256"),
       );
       const live = governanceDoctorRepairReadV1(custody, path);
-      if (live.state === "file" && live.bytes.equals(desired))
-        return {
-          expected: { bytes: desired, effectSha256: effect.effectSha256, state: "file" },
-          result: "applied",
-        };
+      if (live.state === "file" && live.bytes.equals(desired)) return appliedFile(effect, desired);
       if (live.state !== "file" && live.state !== "absent") return { result: "failed" };
-      governanceDoctorRepairWriteFileV1(
-        createGovernanceDoctorRepairMutationGrantV1({
-          consent,
-          custody,
-          effectId: effect.effectId,
-          receipt,
-        }),
-        desired,
-        live,
-      );
-      return {
-        expected: { bytes: desired, effectSha256: effect.effectSha256, state: "file" },
-        result: "applied",
-      };
+      governanceDoctorRepairWriteFileV1(grantFor(consent, custody, effect, receipt), desired, live);
+      return appliedFile(effect, desired);
     }
 
     if (kind === "rewrite-managed-marker-block") {
@@ -226,25 +215,9 @@ function applyEffectV1(
         body,
       );
       if (next === null) return { result: "failed" };
-      if (next.equals(live.bytes))
-        return {
-          expected: { bytes: next, effectSha256: effect.effectSha256, state: "file" },
-          result: "applied",
-        };
-      governanceDoctorRepairWriteFileV1(
-        createGovernanceDoctorRepairMutationGrantV1({
-          consent,
-          custody,
-          effectId: effect.effectId,
-          receipt,
-        }),
-        next,
-        live,
-      );
-      return {
-        expected: { bytes: next, effectSha256: effect.effectSha256, state: "file" },
-        result: "applied",
-      };
+      if (next.equals(live.bytes)) return appliedFile(effect, next);
+      governanceDoctorRepairWriteFileV1(grantFor(consent, custody, effect, receipt), next, live);
+      return appliedFile(effect, next);
     }
 
     // Closed default: an effect kind outside the frozen allowlist is never applied.
@@ -292,7 +265,7 @@ export function executeGovernanceDoctorRepairV1(input: unknown): GovernanceDocto
   // process. Every join above is pure or in-memory, so a Plan refused up there has
   // spent nothing; from here on the Plan is spent whatever happens next, including
   // a crash, because a claim that survives is never a licence to try again.
-  acquireGovernanceDoctorRepairClaimV1({
+  const spentClaim = acquireGovernanceDoctorRepairClaimV1({
     consent: request.consent,
     plan,
     rootRealPath: governanceDoctorRepairCustodyRootRealPathV1(request.custody),
@@ -336,6 +309,9 @@ export function executeGovernanceDoctorRepairV1(input: unknown): GovernanceDocto
         ? [result.expected]
         : [],
     ),
+    // The claim this run spent before the first effect, carried here as the
+    // authority to record what that run observed.
+    spentClaim,
   );
   return receipt;
 }
