@@ -933,7 +933,7 @@ describe("governance-doctor --repair-plan mechanical context directory", () => {
     expect(JSON.stringify(previewed)).not.toContain(dir);
   });
 
-  it("reports the one low finding in the default read-only audit", async () => {
+  it("maps the tuple into the audit when it is the only non-pass verdict", async () => {
     stubMissingContextDir();
     const { code, out } = await runCommand([dir, "--json"]);
     expect(code).toBe(0);
@@ -982,4 +982,41 @@ describe("governance-doctor --repair-plan mechanical context directory", () => {
     writeFileSync(join(dir, ".aih-config.json"), "{ not json", "utf8");
     expect((await previewOf([dir, "--json", "--repair-plan"])).outcome).toBe("unavailable");
   });
+});
+
+/**
+ * What the mapping actually does to a real run today. This is deliberately not
+ * a stubbed Doctor: it is the shipped planner against a fresh fixture root.
+ */
+describe("governance-doctor mechanical mapping against the real doctor planner", () => {
+  it("still reports an evidence gap, because a fresh repository skips far more than the context dir", async () => {
+    // Only the policy diagnostic is stubbed; Doctor plans and probes for real,
+    // against a temporary fixture root and never this checkout.
+    vi.spyOn(policyEvaluateCommand, "plan").mockImplementation(() =>
+      passingProbePlan("policy evaluate", "policy"),
+    );
+    writeFileSync(
+      join(dir, ".aih-config.json"),
+      `${JSON.stringify({ contextDir: "ai-coding", schemaVersion: 1, targets: [] })}\n`,
+      "utf8",
+    );
+    const { code, out } = await runCommand([dir, "--json", "--repair-plan"]);
+    const payload = jsonPayload(out) as { digests?: Array<{ data?: Record<string, unknown> }> };
+    const data = payload.digests?.[0]?.data as {
+      findings?: Array<Record<string, unknown>>;
+      outcome?: string;
+      refusals?: Array<Record<string, unknown>>;
+    };
+    // A repository without the canonical directory also skips the canon lint,
+    // CLI detection, MCP, org-policy, binding, and usage checks, and the mapping
+    // is all-or-nothing per diagnostic, so the Doctor diagnostic keeps its
+    // evidence gap and the finding is not emitted.
+    expect(data.refusals).toContainEqual({ diagnosticId: DOCTOR, state: "evidence-gap" });
+    expect(data.findings?.map((finding) => finding.code)).not.toContain(
+      "AIH_CANON_CONTEXT_DIR_MISSING",
+    );
+    expect(data.outcome).toBe("evidence-gap");
+    expect(code).toBe(1);
+    expect(payload.digests?.[1]?.data?.outcome).toBe("no-mechanical-repair");
+  }, 30_000);
 });

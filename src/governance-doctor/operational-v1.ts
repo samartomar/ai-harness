@@ -531,7 +531,12 @@ const MECHANICAL_DIAGNOSTIC_FINDINGS_V1 = Object.freeze([
     diagnosticId: "aih.doctor.root",
     findingCode: "AIH_CANON_CONTEXT_DIR_MISSING",
     severity: "low",
-    text: "The canonical AIH context directory is not present in this repository.",
+    // "The configured directory", not "the canonical directory": this tuple is
+    // what Doctor reports for whichever context directory the run resolved, so a
+    // marker naming a custom directory produces the identical check. Only the
+    // preview's separate eligibility gate distinguishes the canonical one, and
+    // this finding must not assert a distinction the diagnostic never made.
+    text: "The configured AIH context directory is not present in this repository.",
     verdict: "skip",
   }),
 ] as const);
