@@ -495,9 +495,14 @@ describe("durable claim commit under filesystem interposition", () => {
 
     interposition.beforeRecordRead = () => {
       // Byte-identical content, different inode: only the identity comparison
-      // can tell these apart.
-      rmSync(record);
-      writeFileSync(record, authentic);
+      // can tell these apart. The replacement is built while the original still
+      // occupies its name and then renamed over it, so the new file can never
+      // be handed the freed inode -- removing first and rewriting lets a
+      // filesystem that recycles inodes reproduce the original identity and
+      // quietly turn this into a no-op.
+      const replacement = `${record}.replacement`;
+      writeFileSync(replacement, authentic);
+      renameSync(replacement, record);
     };
     expect(() => acquire(built)).toThrow(UNREADABLE);
     // The substituted bytes are left exactly as they were found.

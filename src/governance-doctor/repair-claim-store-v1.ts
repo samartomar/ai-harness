@@ -212,11 +212,16 @@ export const GOVERNANCE_DOCTOR_REPAIR_CLAIM_STORE_V1_LIMITS = Object.freeze({
   /** The same bound expressed on the reported home itself, checked before any walk. */
   maxHomePathLength: 4096,
   /**
-   * The ceiling on entries the store may hold. A record is admitted only while
-   * strictly fewer than this many directory entries exist, so the store never
-   * grows beyond it. The bound counts *entries*, not records: anything else
-   * occupying the directory consumes the same budget, which is deliberate --
-   * the bound exists to keep the enumeration finite, not to audit membership.
+   * The ceiling this store enumerates against. A record is admitted only while
+   * strictly fewer than this many directory entries exist.
+   *
+   * It is a preflight bound, not a lock and not a hard maximum: two acquisitions
+   * for different Plans can each pass the count before either creates its own
+   * digest-named record, so a store at the ceiling can still gain entries from
+   * runs already in flight. What the bound guarantees is the property it exists
+   * for -- the enumeration is finite and a store past the ceiling fails closed
+   * rather than making room by deleting evidence. It counts *entries*, not
+   * records, so anything else occupying the directory consumes the same budget.
    */
   maxStoreRecords: 4096,
   storeDirectoryMode: 0o700,
