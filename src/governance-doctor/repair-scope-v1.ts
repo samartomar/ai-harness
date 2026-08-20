@@ -82,6 +82,23 @@ export interface GovernanceDoctorRepairPreconditionScopeV1 {
 const brands = new WeakSet<object>();
 
 /**
+ * The root digest one resolved checkout produces under this scope's domain.
+ *
+ * Exported so a consumer holding the resolved path can prove that a precondition
+ * record describes *this* checkout rather than merely carrying a well-formed
+ * digest. It is the mint's own derivation, called by the mint below, so there is
+ * one rule and a recomputation cannot drift from what was minted.
+ */
+export function governanceDoctorRepairPreconditionRootSha256V1(realPath: unknown): string {
+  if (typeof realPath !== "string" || realPath.length === 0)
+    failGovernanceDoctorV1("repair precondition root digest requires a resolved path");
+  return governanceDoctorSha256V1(SCOPE_DOMAIN, {
+    contextDir: GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1,
+    root: realPath,
+  });
+}
+
+/**
  * Mints the scope from the operational context this run already branded. It
  * accepts no root, no target, and no recipe: all three are code-owned, and the
  * first is read from the context rather than from a caller.
@@ -122,10 +139,7 @@ export function mintGovernanceDoctorRepairPreconditionScopeV1(
     recipeId: GOVERNANCE_DOCTOR_REPAIR_CANON_CONTEXT_RECIPE_V1,
     rootIdentity: identity,
     rootRealPath: canonical,
-    rootSha256: governanceDoctorSha256V1(SCOPE_DOMAIN, {
-      contextDir: GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1,
-      root: canonical,
-    }),
+    rootSha256: governanceDoctorRepairPreconditionRootSha256V1(canonical),
     targetPath: GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1,
   }) as GovernanceDoctorRepairPreconditionScopeV1;
   brands.add(record);
