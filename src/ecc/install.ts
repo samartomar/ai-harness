@@ -5,6 +5,7 @@ import { lines } from "../internals/render.js";
 import type { Platform } from "../platform/base.js";
 import { execArgv } from "../tools/install.js";
 import type { EccInstallMechanism } from "./install-manifest.js";
+import { ECC_INSTALL_TARGETS as ECC_INSTALL_TARGET_TUPLE } from "./install-targets.js";
 import type { EccLanguagePack } from "./select.js";
 
 /**
@@ -26,15 +27,7 @@ import type { EccLanguagePack } from "./select.js";
  * copilot / windsurf / kimi are NOT ECC targets — they route through the `consult`
  * advisor rather than fabricating a `--target` ECC's installer would reject.
  */
-export const ECC_INSTALL_TARGETS: readonly Cli[] = [
-  "claude",
-  "codex",
-  "cursor",
-  "antigravity",
-  "gemini",
-  "opencode",
-  "zed",
-];
+export const ECC_INSTALL_TARGETS: readonly Cli[] = ECC_INSTALL_TARGET_TUPLE;
 
 export const AIH_DIRECT_ECC_INSTALL_TARGETS: readonly Cli[] = ECC_INSTALL_TARGETS.filter(
   (cli) => cli !== "codex",

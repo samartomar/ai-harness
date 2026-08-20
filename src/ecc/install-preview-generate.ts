@@ -1,24 +1,15 @@
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { entry } from "../internals/cli-registry.js";
-import type { Cli } from "../internals/clis.js";
 import type { EccComponentId } from "./components.js";
 import {
   type ContingentEccInstallOperation,
   type EccInstallPreviewArtifact,
   parseEccInstallPreview,
 } from "./install-preview.js";
+import { ECC_INSTALL_TARGETS } from "./install-targets.js";
 import { eccMaterializationSpec, filterEccManifestPlan } from "./materialize.js";
 
-const PREVIEW_TARGETS = [
-  "claude",
-  "codex",
-  "cursor",
-  "antigravity",
-  "gemini",
-  "opencode",
-  "zed",
-] as const satisfies readonly Cli[];
 const HOME_FIXTURE = "/home/aih";
 const PROJECT_FIXTURE = "/workspace/project";
 const CODEX_SHARED_SOURCES = new Set(["AGENTS.md", ".codex/AGENTS.md", ".codex/config.toml"]);
@@ -89,7 +80,7 @@ function componentOperations(
   installer: UpstreamInstaller,
   eccRoot: string,
   componentId: EccComponentId,
-  target: (typeof PREVIEW_TARGETS)[number],
+  target: (typeof ECC_INSTALL_TARGETS)[number],
 ): ContingentEccInstallOperation[] {
   const selection = {
     scope: "scoped" as const,
@@ -152,11 +143,11 @@ export function generateEccInstallPreviewArtifact(
   ) as UpstreamTargetRegistry;
   const operations: ContingentEccInstallOperation[] = [];
   for (const { id } of manifests.listInstallComponents()) {
-    for (const target of PREVIEW_TARGETS) {
+    for (const target of ECC_INSTALL_TARGETS) {
       operations.push(...componentOperations(installer, eccRoot, id as EccComponentId, target));
     }
   }
-  for (const target of PREVIEW_TARGETS) {
+  for (const target of ECC_INSTALL_TARGETS) {
     const targetRoot = targetRegistry.getInstallTargetAdapter(target).resolveRoot({
       repoRoot: eccRoot,
       projectRoot: PROJECT_FIXTURE,

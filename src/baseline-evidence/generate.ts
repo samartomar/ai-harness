@@ -1,7 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { containedPath } from "../internals/contained-path.js";
+import { readRegularFile } from "../internals/fsxn.js";
 import { hermeticGitEnv } from "../internals/git-env.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { Platform } from "../platform/base.js";
@@ -12,9 +14,19 @@ import {
 } from "./analyzer-profile.js";
 import type { BaselineCatalog } from "./catalog.js";
 import { baselineCatalogById } from "./catalogs.js";
+import {
+  assertEccPreflightReceipt,
+  buildEccPreflightReceipt,
+  type EccPreflightReceipt,
+  parseEccPreflightReceipt,
+} from "./ecc-preflight-receipt.js";
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
 import { findPriorSource, formatTotalReuseSummary, tallyReuse } from "./reuse.js";
-import { type BaselineEvidenceLock, parseBaselineEvidenceLock } from "./schema.js";
+import {
+  type BaselineEvidenceLock,
+  type BaselineSourceEvidence,
+  parseBaselineEvidenceLock,
+} from "./schema.js";
 import {
   formatShardCoverage,
   mergeReceiptBundles,
@@ -25,11 +37,16 @@ import {
 } from "./shard.js";
 import { vetBaselineCatalog } from "./vet.js";
 
-interface GenerateOptions extends GenerateBaselineOptions {
+export interface GenerateOptions extends Omit<GenerateBaselineOptions, "superpowersRoot"> {
+  superpowersRoot?: string;
   out: string;
   check: boolean;
   previewOut: string;
   full: boolean;
+  /** Static-only dispatcher preflight; it writes no baseline evidence. */
+  preflightOnly: boolean;
+  preflightReceiptOut?: string;
+  preflightReceiptPath?: string;
   /** Fan-out: vet only this shard of each catalog and write receipts, no lock. */
   shard?: ShardSelector;
   receiptsOut?: string;
@@ -55,6 +72,8 @@ export interface GenerateBaselineDependencies {
     platform: Platform;
     env: NodeJS.ProcessEnv;
   }) => Promise<void>;
+  /** Verified static preflight evidence required only for shard fan-in. */
+  eccPreflightReceipt?: EccPreflightReceipt;
   /** Prior lock enabling incremental reuse (Decision 1); omit for a full vet. */
   reuseFrom?: BaselineEvidenceLock;
   /** Disable reuse outright — the release/periodic ground-truth escape hatch and
@@ -64,39 +83,91 @@ export interface GenerateBaselineDependencies {
 
 function optionValue(argv: readonly string[], flag: string): string | undefined {
   const index = argv.indexOf(flag);
-  return index >= 0 ? argv[index + 1] : undefined;
+  if (index < 0) return undefined;
+  const value = argv[index + 1];
+  if (value === undefined || value.startsWith("--")) {
+    throw new Error(`${flag} requires a value`);
+  }
+  return value;
 }
 
-function options(argv: readonly string[]): GenerateOptions {
+export function parseGenerateOptions(argv: readonly string[]): GenerateOptions {
   const eccRoot = optionValue(argv, "--ecc-root");
   const superpowersRoot = optionValue(argv, "--superpowers-root");
-  if (!eccRoot || !superpowersRoot) {
+  const preflightOnly = argv.includes("--preflight-only");
+  if (!eccRoot || (!superpowersRoot && !preflightOnly)) {
     throw new Error(
-      "usage: baseline generate --ecc-root <dir> --superpowers-root <dir> [--out <file>] [--check] [--full]",
+      "usage: baseline generate --ecc-root <dir> [--superpowers-root <dir>] [--preflight-only --preflight-receipt-out <file>] [--out <file>] [--check] [--full]",
     );
   }
   const here = dirname(fileURLToPath(import.meta.url));
   const shardValue = optionValue(argv, "--shard");
   const receiptsOut = optionValue(argv, "--receipts-out");
+  const preflightReceiptOut = optionValue(argv, "--preflight-receipt-out");
+  const preflightReceipt = optionValue(argv, "--preflight-receipt");
+  const preflightOnlyConflicts = [
+    "--superpowers-root",
+    "--shard",
+    "--reuse-from",
+    "--check",
+    "--full",
+    "--out",
+    "--preview-out",
+    "--receipts-out",
+    "--preflight-receipt",
+  ].filter((flag) => argv.includes(flag));
+  if (preflightOnly && preflightOnlyConflicts.length > 0) {
+    throw new Error(
+      `--preflight-only cannot be combined with ${preflightOnlyConflicts.join(", ")}`,
+    );
+  }
+  if (preflightOnly && preflightReceiptOut === undefined) {
+    throw new Error("--preflight-only requires --preflight-receipt-out <file>");
+  }
+  if (!preflightOnly && preflightReceiptOut !== undefined) {
+    throw new Error("--preflight-receipt-out requires --preflight-only");
+  }
   if (shardValue !== undefined && receiptsOut === undefined) {
     throw new Error("--shard requires --receipts-out <file>");
+  }
+  if (shardValue !== undefined && preflightReceipt === undefined) {
+    throw new Error("--shard requires --preflight-receipt <file>");
   }
   const reuseFromPaths = (optionValue(argv, "--reuse-from") ?? "")
     .split(",")
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0)
     .map((entry) => resolve(entry));
+  if (reuseFromPaths.length > 0 && preflightReceipt === undefined) {
+    throw new Error("--reuse-from requires --preflight-receipt <file>");
+  }
+  if (shardValue !== undefined && reuseFromPaths.length > 0) {
+    throw new Error("--shard cannot be combined with --reuse-from");
+  }
+  if (
+    !preflightOnly &&
+    preflightReceipt !== undefined &&
+    shardValue === undefined &&
+    reuseFromPaths.length === 0
+  ) {
+    throw new Error("--preflight-receipt requires --shard or --reuse-from");
+  }
   return {
     eccRoot: resolve(eccRoot),
-    superpowersRoot: resolve(superpowersRoot),
+    ...(superpowersRoot !== undefined ? { superpowersRoot: resolve(superpowersRoot) } : {}),
     out: resolve(optionValue(argv, "--out") ?? resolve(here, "vendor-lock.json")),
     previewOut: resolve(
       optionValue(argv, "--preview-out") ?? resolve(here, "ecc-install-preview.json"),
     ),
     check: argv.includes("--check"),
     full: argv.includes("--full"),
+    preflightOnly,
     ...(shardValue !== undefined ? { shard: parseShardSelector(shardValue) } : {}),
     ...(receiptsOut !== undefined ? { receiptsOut: resolve(receiptsOut) } : {}),
+    ...(preflightReceiptOut !== undefined
+      ? { preflightReceiptOut: resolve(preflightReceiptOut) }
+      : {}),
+    ...(preflightReceipt !== undefined ? { preflightReceiptPath: resolve(preflightReceipt) } : {}),
     reuseFromPaths,
   };
 }
@@ -155,6 +226,68 @@ function assertCheckoutPin(
   }
 }
 
+export function readVerifiedEccPreflightReceipt(
+  path: string,
+  eccRoot: string,
+  catalog: BaselineCatalog,
+): ReturnType<typeof parseEccPreflightReceipt> {
+  const receiptBytes = readRegularFile(path, { maxBytes: 65_536 });
+  if (receiptBytes === undefined) throw new Error("unusable ECC preflight receipt");
+  let value: unknown;
+  try {
+    value = JSON.parse(receiptBytes.toString("utf8"));
+  } catch {
+    throw new Error("unusable ECC preflight receipt");
+  }
+  const receipt = parseEccPreflightReceipt(value);
+  return assertEccPreflightReceipt({ eccRoot, catalog, receipt });
+}
+
+export function assertEccPreflightReceiptPathOutsideSource(
+  eccRoot: string,
+  receiptPath: string,
+): void {
+  let rootReal: string;
+  try {
+    rootReal = realpathSync.native(eccRoot);
+  } catch {
+    throw new Error("ECC preflight receipt path cannot be checked against the source root");
+  }
+  const absoluteReceipt = resolve(receiptPath);
+  if (containedPath(rootReal, absoluteReceipt)) {
+    throw new Error("ECC preflight receipt path must be outside the ECC source root");
+  }
+  let cursor = absoluteReceipt;
+  for (let depth = 0; depth < 128; depth += 1) {
+    try {
+      if (containedPath(rootReal, realpathSync.native(cursor))) {
+        throw new Error("ECC preflight receipt path must be outside the ECC source root");
+      }
+      return;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "ECC preflight receipt path must be outside the ECC source root"
+      ) {
+        throw error;
+      }
+      const parent = dirname(cursor);
+      if (parent === cursor) break;
+      cursor = parent;
+    }
+  }
+  throw new Error("ECC preflight receipt path cannot be checked against the source root");
+}
+
+function assertPreflightCoversCompletedEvidence(
+  receipt: EccPreflightReceipt,
+  evidence: BaselineSourceEvidence,
+): void {
+  if (evidence.sourceTreeSha256 !== receipt.source.sourceTreeSha256) {
+    throw new Error("ECC preflight receipt does not cover the completed baseline evidence");
+  }
+}
+
 export async function generateBaselineArtifacts(
   opts: GenerateBaselineOptions,
   deps: GenerateBaselineDependencies = {},
@@ -169,6 +302,14 @@ export async function generateBaselineArtifacts(
   const platform = deps.platform ?? resolvePlatform(env);
   const progress = deps.progress ?? ((message: string) => process.stderr.write(`${message}\n`));
   const vet = deps.vetCatalog ?? vetBaselineCatalog;
+  const preflightReceipt =
+    deps.eccPreflightReceipt === undefined
+      ? undefined
+      : assertEccPreflightReceipt({
+          eccRoot: opts.eccRoot,
+          catalog: ecc,
+          receipt: deps.eccPreflightReceipt,
+        });
   const full = deps.full === true;
   const vetOptions = {
     ...requiredBaselineVetOptions({ run, platform, env, progress }),
@@ -181,13 +322,16 @@ export async function generateBaselineArtifacts(
   const preflight = deps.preflight ?? preflightRequiredBaselineAnalyzers;
   await preflight({ run, platform, env });
   const eccEvidence = await vet(opts.eccRoot, ecc, vetOptions);
+  if (preflightReceipt !== undefined) {
+    assertPreflightCoversCompletedEvidence(preflightReceipt, eccEvidence);
+  }
+  const superpowersEvidence = await vet(opts.superpowersRoot, superpowers, vetOptions);
   const generatePreview = deps.generatePreview ?? generateAuthorizedEccInstallPreview;
   const preview = generatePreview({
     eccRoot: opts.eccRoot,
     catalog: ecc,
     evidence: eccEvidence,
   });
-  const superpowersEvidence = await vet(opts.superpowersRoot, superpowers, vetOptions);
   progress(
     formatTotalReuseSummary(
       [
@@ -216,10 +360,16 @@ export async function generateBaselineArtifacts(
  * receipts for the assembly run to verify.
  */
 export async function generateShardReceipts(
-  opts: GenerateBaselineOptions & { shard: ShardSelector },
+  opts: GenerateBaselineOptions & { shard: ShardSelector; preflightReceipt: unknown },
   deps: Omit<GenerateBaselineDependencies, "reuseFrom" | "full"> = {},
 ): Promise<string> {
-  const ecc = shardCatalog(baselineCatalogById("ecc"), opts.shard);
+  const fullEcc = baselineCatalogById("ecc");
+  assertEccPreflightReceipt({
+    eccRoot: opts.eccRoot,
+    catalog: fullEcc,
+    receipt: opts.preflightReceipt,
+  });
+  const ecc = shardCatalog(fullEcc, opts.shard);
   const superpowers = shardCatalog(baselineCatalogById("superpowers"), opts.shard);
   const readHead = deps.checkoutHead ?? ((root: string) => checkoutHead(root));
   assertCheckoutPin(opts.eccRoot, ecc, "ECC", readHead);
@@ -239,22 +389,58 @@ export async function generateShardReceipts(
     `baseline shard ${opts.shard.index}/${opts.shard.total}: ` +
       `ecc ${ecc.components.length} + superpowers ${superpowers.components.length} components`,
   );
-  const sources = [
-    await vet(opts.eccRoot, ecc, vetOptions),
-    await vet(opts.superpowersRoot, superpowers, vetOptions),
-  ];
+  const eccEvidence = await vet(opts.eccRoot, ecc, vetOptions);
+  assertPreflightCoversCompletedEvidence(
+    assertEccPreflightReceipt({
+      eccRoot: opts.eccRoot,
+      catalog: fullEcc,
+      receipt: opts.preflightReceipt,
+    }),
+    eccEvidence,
+  );
+  const sources = [eccEvidence, await vet(opts.superpowersRoot, superpowers, vetOptions)];
   const bundle = parseBaselineEvidenceLock({ schemaVersion: 1, sources });
   return `${JSON.stringify(bundle, null, 2)}\n`;
 }
 
 async function main(): Promise<void> {
-  const opts = options(process.argv.slice(2));
+  const opts = parseGenerateOptions(process.argv.slice(2));
   const { shard, receiptsOut } = opts;
+  const ecc = baselineCatalogById("ecc");
+  if (opts.preflightOnly) {
+    const receiptOut = opts.preflightReceiptOut;
+    if (receiptOut === undefined)
+      throw new Error("--preflight-only requires --preflight-receipt-out");
+    assertEccPreflightReceiptPathOutsideSource(opts.eccRoot, receiptOut);
+    assertCheckoutPin(opts.eccRoot, ecc, "ECC", checkoutHead);
+    const receipt = buildEccPreflightReceipt({ eccRoot: opts.eccRoot, catalog: ecc });
+    writeFileSync(receiptOut, `${JSON.stringify(receipt, null, 2)}\n`, "utf8");
+    process.stdout.write(`wrote ECC static preflight receipt: ${receiptOut}\n`);
+    return;
+  }
+  const superpowersRoot = opts.superpowersRoot;
+  if (superpowersRoot === undefined) throw new Error("--superpowers-root is required");
+  let eccPreflightReceipt: EccPreflightReceipt | undefined;
   if (shard !== undefined && receiptsOut !== undefined) {
-    const receipts = await generateShardReceipts({ ...opts, shard });
+    const receiptPath = opts.preflightReceiptPath;
+    if (receiptPath === undefined) throw new Error("--shard requires --preflight-receipt");
+    assertEccPreflightReceiptPathOutsideSource(opts.eccRoot, receiptPath);
+    const preflightReceipt = readVerifiedEccPreflightReceipt(receiptPath, opts.eccRoot, ecc);
+    const receipts = await generateShardReceipts({
+      eccRoot: opts.eccRoot,
+      superpowersRoot,
+      shard,
+      preflightReceipt,
+    });
     writeFileSync(receiptsOut, receipts, "utf8");
     process.stdout.write(`wrote shard ${shard.index}/${shard.total} receipts: ${receiptsOut}\n`);
     return;
+  }
+  if (opts.reuseFromPaths.length > 0) {
+    const receiptPath = opts.preflightReceiptPath;
+    if (receiptPath === undefined) throw new Error("--reuse-from requires --preflight-receipt");
+    assertEccPreflightReceiptPathOutsideSource(opts.eccRoot, receiptPath);
+    eccPreflightReceipt = readVerifiedEccPreflightReceipt(receiptPath, opts.eccRoot, ecc);
   }
   const merged = mergeShardReceipts(opts.reuseFromPaths);
   const reuseFrom = opts.full ? undefined : (merged ?? readPriorLockBestEffort(opts.out));
@@ -264,7 +450,14 @@ async function main(): Promise<void> {
       process.stderr.write(`${line}\n`);
     }
   }
-  const contents = await generateBaselineArtifacts(opts, { reuseFrom, full: opts.full });
+  const contents = await generateBaselineArtifacts(
+    { eccRoot: opts.eccRoot, superpowersRoot },
+    {
+      reuseFrom,
+      full: opts.full,
+      ...(eccPreflightReceipt !== undefined ? { eccPreflightReceipt } : {}),
+    },
+  );
   if (opts.check) {
     const existing = readFileSync(opts.out, "utf8");
     if (existing !== contents.lock) throw new Error(`vendor baseline lock drifted: ${opts.out}`);

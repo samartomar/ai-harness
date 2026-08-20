@@ -254,7 +254,16 @@ describe("ECC install preview execution boundary", () => {
       `${expression}; module.exports = {};\n`,
     );
 
-    expect(() => assertPreviewGeneratorDependenciesCovered(root, RUNTIME_PATHS)).toThrow(message);
+    let diagnostic = "";
+    try {
+      assertPreviewGeneratorDependenciesCovered(root, RUNTIME_PATHS);
+    } catch (error) {
+      diagnostic = error instanceof Error ? error.message : String(error);
+    }
+    expect(diagnostic).toContain(message);
+    expect(diagnostic).not.toContain(root);
+    expect(diagnostic).not.toContain(expression);
+    expect(diagnostic).not.toMatch(/unvetted-package|process\.env\.MODULE/);
   });
 
   it("rejects a relative dependency outside the vetted runtime paths", () => {
@@ -269,15 +278,65 @@ describe("ECC install preview execution boundary", () => {
     );
   });
 
+  it("bounds outside-closure diagnostics and honors the runtime path whitelist", () => {
+    const secret = "fixture source must not appear in diagnostics";
+    writeFileSync(resolve(root, "outside.js"), `module.exports = ${JSON.stringify(secret)};\n`);
+    writeFileSync(
+      resolve(root, "scripts/lib/install-executor.js"),
+      'module.exports = require("../../outside.js");\n',
+    );
+
+    let message = "";
+    try {
+      assertPreviewGeneratorDependenciesCovered(root, RUNTIME_PATHS);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toMatch(/^preview generator dependency is outside runtime:ecc-installer: /);
+    expect(message).toMatch(/: outside\.js$/);
+    expect(message).not.toContain(root);
+    expect(message).not.toContain(secret);
+
+    writeFileSync(resolve(root, "scripts/lib/approved-helper.js"), "module.exports = {};\n");
+    writeFileSync(
+      resolve(root, "scripts/lib/install-executor.js"),
+      'module.exports = require("./approved-helper.js");\n',
+    );
+    expect(() => assertPreviewGeneratorDependenciesCovered(root, RUNTIME_PATHS)).not.toThrow();
+  });
+
+  it("keeps the authorized preview boundary check independent of any preflight receipt", () => {
+    writeFileSync(resolve(root, "outside.js"), "module.exports = {};\n");
+    writeFileSync(
+      resolve(root, "scripts/lib/install-executor.js"),
+      'module.exports = require("../../outside.js");\n',
+    );
+    const generate = vi.fn(() => artifact());
+
+    expect(() =>
+      generateAuthorizedEccInstallPreview(
+        { eccRoot: root, catalog: catalog(), evidence: evidence(root) },
+        { generate },
+      ),
+    ).toThrow("outside runtime:ecc-installer");
+    expect(generate).not.toHaveBeenCalled();
+  });
+
   it("rejects a missing relative dependency", () => {
     writeFileSync(
       resolve(root, "scripts/lib/install-executor.js"),
       'module.exports = require("./missing.js");\n',
     );
 
-    expect(() => assertPreviewGeneratorDependenciesCovered(root, RUNTIME_PATHS)).toThrow(
-      "could not resolve preview generator dependency",
-    );
+    let diagnostic = "";
+    try {
+      assertPreviewGeneratorDependenciesCovered(root, RUNTIME_PATHS);
+    } catch (error) {
+      diagnostic = error instanceof Error ? error.message : String(error);
+    }
+    expect(diagnostic).toContain("could not resolve preview generator dependency");
+    expect(diagnostic).not.toContain(root);
+    expect(diagnostic).not.toContain("missing.js");
   });
 
   it("accepts literal import and export dependencies within the vetted runtime paths", () => {

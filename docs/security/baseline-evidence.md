@@ -422,3 +422,54 @@ resulting receipt bundles for a single assembly run that re-hashes every
 component tree and re-checks every analyzer identity before splicing. Sharding
 distributes the cost of producing a receipt and never the authority to assert
 one.
+
+Before asking an external dispatcher to fan out those shards, create one static
+ECC preflight receipt and carry that file to every shard host and to the fan-in
+host:
+
+```bash
+npm run baseline:vet -- \
+  --ecc-root /path/to/exact/ECC \
+  --preflight-only \
+  --preflight-receipt-out /path/to/ecc-preflight.json
+
+npm run baseline:vet -- \
+  --ecc-root /path/to/exact/ECC \
+  --superpowers-root /path/to/exact/Superpowers \
+  --shard 1/4 \
+  --receipts-out /path/to/shard-1.json \
+  --preflight-receipt /path/to/ecc-preflight.json
+
+npm run baseline:vet -- \
+  --ecc-root /path/to/exact/ECC \
+  --superpowers-root /path/to/exact/Superpowers \
+  --reuse-from /path/to/shard-1.json,/path/to/shard-2.json,/path/to/shard-3.json,/path/to/shard-4.json \
+  --preflight-receipt /path/to/ecc-preflight.json
+```
+
+The static receipt binds the exact ECC checkout and pinned source identity; it
+does not run analyzers, vet Superpowers, or authorize an install. Every shard
+must provide `--preflight-receipt` with `--shard` and `--receipts-out`, and the
+fan-in must provide it with `--reuse-from`. The final assembly boundary
+re-validates that receipt before work starts, requires the completed ECC evidence
+to carry the same whole-source digest, and re-checks each component hash and
+analyzer identity before reusing its evidence. Missing, stale, or mismatched
+receipts fail closed.
+
+Both the receipt output and every later receipt input must live outside the ECC
+source root. Writing the receipt into the tree would change the bytes it just
+attested and make it unusable; resolving through a linked parent into that tree
+is refused for the same reason.
+
+The receipt proves the non-executing lexical dependency closure only. Dynamic
+adapter compatibility remains behind analyzer evidence: final preview assembly
+loads the upstream generator there, repeats the closure check independently,
+and validates the generated operations against the code-owned target contract.
+
+This static preflight receipt is distinct from the analyzer-availability
+preflight that runs before an ordinary vet; the latter still checks that all
+required runtimes are provisioned and fails closed when they are not. Ordinary
+non-sharded `baseline:vet` and `baseline:check` invocations remain unchanged
+and do not require a receipt. This repository commits no dispatcher, scheduler,
+transport, or receipt-collection service: external orchestration owns host
+fan-out, file handoff, and invocation of the fan-in command.
