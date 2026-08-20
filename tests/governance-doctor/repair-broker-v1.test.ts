@@ -207,6 +207,10 @@ describe("GovernanceDoctor Repair V1 capability boundary (static)", () => {
       "governance-doctor/repair-broker-v1.ts",
       "governance-doctor/repair-claim-store-v1.ts",
       "governance-doctor/repair-claim-v1.ts",
+      // Reads a spent claim, a receipt, and a verification to derive one closed
+      // completion record. It holds no capability of its own and no command
+      // reaches it; enumerating it here keeps that a checked fact.
+      "governance-doctor/repair-completion-v1.ts",
       "governance-doctor/repair-consent-v1.ts",
       "governance-doctor/repair-content-v1.ts",
       "governance-doctor/repair-custody-v1.ts",

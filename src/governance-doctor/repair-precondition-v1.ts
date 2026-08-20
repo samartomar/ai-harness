@@ -1,5 +1,9 @@
 import { canonContextDirCheck, canonLintCheck } from "../lint/run.js";
-import { assertRecordV1, failGovernanceDoctorV1 } from "./capability-v1.js";
+import {
+  assertRecordV1,
+  failGovernanceDoctorV1,
+  governanceDoctorSha256V1,
+} from "./capability-v1.js";
 import { GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1 } from "./repair-eligibility-v1.js";
 import {
   assertGovernanceDoctorRepairPreconditionScopeV1,
@@ -229,6 +233,32 @@ export function observeGovernanceDoctorRepairPreconditionV1(
   }) as GovernanceDoctorRepairPreconditionV1;
   brands.add(record);
   return record;
+}
+
+/**
+ * The evidence digest of one precondition record.
+ *
+ * A consumer that records why a repair was licensed needs to name the evidence,
+ * not restate it: a digest binds the exact eligibility, the exact observed
+ * tuples, the occupancy verdict, and the checkout, in one value that cannot be
+ * edited into agreement afterwards. The record is asserted first, so only an
+ * observation this module produced can be digested at all.
+ */
+export function governanceDoctorRepairPreconditionSha256V1(value: unknown): string {
+  const record = assertGovernanceDoctorRepairPreconditionV1(value);
+  return governanceDoctorSha256V1("aih.governance-doctor-repair-precondition-v1", {
+    diagnosticId: record.diagnosticId,
+    eligible: record.eligible,
+    observations: record.observations.map((observation) => ({
+      code: observation.code,
+      name: observation.name,
+      verdict: observation.verdict,
+    })),
+    recipeId: record.recipeId,
+    rootSha256: record.rootSha256,
+    targetOccupancy: record.targetOccupancy,
+    targetPath: record.targetPath,
+  });
 }
 
 /**
