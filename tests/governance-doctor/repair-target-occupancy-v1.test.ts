@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -97,6 +105,29 @@ describe("repair target occupancy", () => {
       expect(observeGovernanceDoctorRepairTargetOccupancyV1(scope).state).toBe("indeterminate");
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * Review finding. A canonical path is not an identity: rename the scoped
+   * directory away and put a fresh one at the same path, and both the `lstat`
+   * and the canonical-form check still pass. The probe would then describe a
+   * directory the scope was never minted against -- and report an absent
+   * `ai-coding` inside it as free.
+   */
+  it("reports indeterminate when the root path holds a different directory than the scope", () => {
+    const root = freshRoot();
+    const moved = `${root}-moved`;
+    const scope = scopeFor(root);
+    try {
+      expect(observeGovernanceDoctorRepairTargetOccupancyV1(scope).state).toBe("unoccupied");
+      renameSync(root, moved);
+      // A fresh directory, canonical and real, at exactly the bound path.
+      mkdirSync(root);
+      expect(observeGovernanceDoctorRepairTargetOccupancyV1(scope).state).toBe("indeterminate");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(moved, { recursive: true, force: true });
     }
   });
 

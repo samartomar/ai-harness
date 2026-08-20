@@ -1,4 +1,4 @@
-import { realpathSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { failGovernanceDoctorV1, governanceDoctorSha256V1 } from "./capability-v1.js";
 import { governanceDoctorOperationalPlanContextV1 } from "./operational-v1.js";
@@ -64,6 +64,16 @@ const SCOPE_DOMAIN = "aih.governance-doctor-repair-precondition-scope-v1";
 export interface GovernanceDoctorRepairPreconditionScopeV1 {
   readonly protocol: "GovernanceDoctorRepairPreconditionScopeV1";
   readonly recipeId: "aih.repair.recipe.canon-context-dir-v1";
+  /**
+   * The filesystem identity of the root at mint time, as `dev:ino`. A canonical
+   * path is not an identity: rename the directory away and create a fresh one at
+   * the same path, and every path-shaped check still passes while the object
+   * underneath is a different one. Consumers that re-observe the tree compare
+   * this, so a run cannot silently continue against a replacement.
+   *
+   * The rule is custody's, including its refusal of an unusable inode.
+   */
+  readonly rootIdentity: string;
   readonly rootRealPath: string;
   readonly rootSha256: string;
   readonly targetPath: "ai-coding";
@@ -95,9 +105,22 @@ export function mintGovernanceDoctorRepairPreconditionScopeV1(
   }
   if (canonical !== root)
     failGovernanceDoctorV1("repair precondition scope root is not its own canonical form");
+  let identity: string;
+  try {
+    const stats = lstatSync(canonical, { bigint: true });
+    // A link or a non-directory is not a checkout root, and an inode of zero is
+    // not an identity -- the platform is telling us it cannot distinguish this
+    // object from another. Both refuse rather than bind to something unprovable.
+    if (stats.isSymbolicLink() || !stats.isDirectory() || stats.ino === 0n)
+      return failGovernanceDoctorV1("repair precondition scope root has no usable identity");
+    identity = `${stats.dev}:${stats.ino}`;
+  } catch {
+    return failGovernanceDoctorV1("repair precondition scope root has no usable identity");
+  }
   const record = Object.freeze({
     protocol: PROTOCOL,
     recipeId: GOVERNANCE_DOCTOR_REPAIR_CANON_CONTEXT_RECIPE_V1,
+    rootIdentity: identity,
     rootRealPath: canonical,
     rootSha256: governanceDoctorSha256V1(SCOPE_DOMAIN, {
       contextDir: GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1,

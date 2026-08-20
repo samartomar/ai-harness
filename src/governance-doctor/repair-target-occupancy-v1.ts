@@ -101,18 +101,21 @@ function entryAt(path: string): EntryV1 {
   }
 }
 
-function inspect(root: string): GovernanceDoctorRepairTargetOccupancyStateV1 {
+function inspect(root: string, rootIdentity: string): GovernanceDoctorRepairTargetOccupancyStateV1 {
   // The root has to be a real directory before `ENOENT` on a child below it
   // carries any meaning: under a file, a link, or an unreadable parent, the
   // child's lookup fails for a reason that is not absence.
   const parent = entryAt(root);
   if (parent === "absent" || parent === "unreadable") return "indeterminate";
   if (parent.isSymbolicLink() || !parent.isDirectory()) return "indeterminate";
-  // And it has to still be the root the scope was minted against. A root that no
-  // longer resolves to itself has been moved or replaced under the run, and
-  // nothing observed beneath it would describe the checkout that was bound.
+  // And it has to still be the root the scope was minted against -- the same
+  // object, not merely the same name. A canonical path proves the spelling; a
+  // directory renamed away and replaced at that path passes every path-shaped
+  // check while being something else entirely, so the identity is compared too.
   try {
     if (realpathSync.native(root) !== root) return "indeterminate";
+    const stats = lstatSync(root, { bigint: true });
+    if (stats.ino === 0n || `${stats.dev}:${stats.ino}` !== rootIdentity) return "indeterminate";
   } catch {
     return "indeterminate";
   }
@@ -134,7 +137,7 @@ export function observeGovernanceDoctorRepairTargetOccupancyV1(
     protocol: PROTOCOL,
     recipeId: GOVERNANCE_DOCTOR_REPAIR_CANON_CONTEXT_RECIPE_V1,
     rootSha256: bound.rootSha256,
-    state: inspect(bound.rootRealPath),
+    state: inspect(bound.rootRealPath, bound.rootIdentity),
     targetPath: bound.targetPath,
   }) as GovernanceDoctorRepairTargetOccupancyV1;
   brands.add(record);
