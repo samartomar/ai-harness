@@ -367,6 +367,14 @@ export interface CommandSpec {
   /** Read-only commands (doctor/status) skip the apply path entirely. */
   readOnly?: boolean;
   /**
+   * Restrict mutation to a literal Commander `--apply` invocation. When set,
+   * ambient `AIH_APPLY`, commander defaults/injected option values, and
+   * spec-owned live options leave the run in dry-run mode. This only narrows
+   * the shared runner's existing authority, so a plugin may restrict itself
+   * with it but can never use it to gain an apply path or evade other gates.
+   */
+  requireExplicitApply?: boolean;
+  /**
    * Suppress cross-cutting file outputs as well as capability actions. These
    * commands do not expose artifact-writing flags and never append the run
    * ledger, so a read/preview invocation leaves the repository byte-identical.

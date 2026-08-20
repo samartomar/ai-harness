@@ -136,6 +136,52 @@ const CLAIM_STORE_SPECIFIER_SUFFIX = "repair-claim-store-v1.js";
 const CLAIM_STORE_ACQUIRE_SURFACE = ["acquireGovernanceDoctorRepairClaimV1"] as const;
 const CLAIM_STORE_IMPORTER = "src/governance-doctor/repair-executor-v1.ts";
 
+/** The one high-level module allowed to orchestrate the executor's safe phases. */
+const ATTEMPT_MODULE = "src/governance-doctor/repair-attempt-v1.ts";
+const EXECUTOR_MODULE = "src/governance-doctor/repair-executor-v1.ts";
+const EXECUTOR_SPECIFIER_SUFFIX = "repair-executor-v1.js";
+const STAGED_EXECUTOR_SURFACE = [
+  "applyGovernanceDoctorRepairExecutionOutcomeV1",
+  "claimGovernanceDoctorRepairExecutionV1",
+  "governanceDoctorRepairExecutionScopeMatchesV1",
+  "prepareGovernanceDoctorRepairExecutionV1",
+] as const;
+const ATTEMPT_DIRECT_IMPORTS = [
+  "./capability-v1.js",
+  "./repair-completion-v1.js",
+  "./repair-executor-v1.js",
+  "./repair-outcome-v1.js",
+  "./repair-precondition-v1.js",
+  "./repair-scope-v1.js",
+] as const;
+const ATTEMPT_AMBIENT_SEAMS: readonly { readonly label: string; readonly pattern: RegExp }[] = [
+  { label: "process ambient global", pattern: /\bprocess\s*\./ },
+  { label: "fetch", pattern: /\bfetch\s*\(/ },
+  { label: "WebSocket", pattern: /\bWebSocket\b/ },
+  { label: "XMLHttpRequest", pattern: /\bXMLHttpRequest\b/ },
+  {
+    label: "process execution",
+    pattern: /\b(?:exec|execSync|execFile|execFileSync|spawn|spawnSync)\s*\(/,
+  },
+];
+
+/**
+ * This is deliberately narrower than the broader execution closure above. The
+ * live attempt layer reaches precondition and scope authority, but the executor
+ * must not inherit either of those observer/operational routes in return.
+ */
+const LOW_LEVEL_EXECUTOR_PROHIBITED_AREAS = [
+  "src/governance-doctor/operational-v1.ts",
+  "src/governance-doctor/repair-precondition-v1.ts",
+  "src/governance-doctor/repair-scope-v1.ts",
+  "src/governance-doctor/repair-target-occupancy-v1.ts",
+  "src/internals/execute.ts",
+  "src/internals/proc.ts",
+  "src/lint",
+  "src/process",
+  "src/run",
+] as const;
+
 interface Closure {
   readonly files: readonly string[];
   readonly externals: readonly string[];
@@ -180,6 +226,7 @@ function importClosure(entryPoints: readonly string[]): Closure {
 }
 
 const closure = importClosure(ENTRY_POINTS);
+const executorClosure = importClosure([EXECUTOR_MODULE]);
 
 /** Every TypeScript source file in the repository's own `src` tree. */
 function sourceFiles(directory: string): readonly string[] {
@@ -445,6 +492,10 @@ function claimStoreImports(text: string): readonly string[] | undefined {
   );
 }
 
+function executorImports(text: string): readonly string[] | undefined {
+  return namesReached(text, EXECUTOR_SPECIFIER_SUFFIX, () => exportedSurface(EXECUTOR_MODULE));
+}
+
 describe("governance doctor repair execution capability boundary", () => {
   it("recognizes side-effect-only static imports while building the closure", () => {
     expect(importSpecifiers('import "node:child_process";')).toEqual(["node:child_process"]);
@@ -468,6 +519,61 @@ describe("governance doctor repair execution capability boundary", () => {
     for (const file of closure.files)
       for (const area of PROHIBITED_AREAS)
         expect(file.startsWith(area), `${file} reaches ${area}`).toBe(false);
+  });
+
+  it("delegates the executor's staged authority only to the live attempt layer", () => {
+    const importers = new Map<string, readonly string[]>();
+    for (const absolute of sourceFiles(resolve(repoRoot, "src"))) {
+      const named = executorImports(readFileSync(absolute, "utf8"));
+      if (named !== undefined && named.length > 0) importers.set(repoRelative(absolute), named);
+    }
+
+    // `namesReached` reduces aliases and re-exports to the executor's canonical
+    // names, while a namespace import reaches its entire export surface. Thus a
+    // second importer, an alias, or a broad import cannot hide a new phase route.
+    expect([...importers.keys()]).toEqual([ATTEMPT_MODULE]);
+    expect(importers.get(ATTEMPT_MODULE)).toEqual([...STAGED_EXECUTOR_SURFACE]);
+
+    const attempt = readFileSync(resolve(repoRoot, ATTEMPT_MODULE), "utf8");
+    expect(custodyImports(attempt)).toBeUndefined();
+    expect(claimStoreImports(attempt)).toBeUndefined();
+  });
+
+  it("keeps the high-level attempt module's direct boundary closed", () => {
+    const source = readFileSync(resolve(repoRoot, ATTEMPT_MODULE), "utf8");
+    const imports = [...importSpecifiers(source)].sort();
+
+    // This checks the attempt source itself, rather than adding its intentionally
+    // broader observation closure to the low-level executor entry points.
+    expect(imports).toEqual([...ATTEMPT_DIRECT_IMPORTS].sort());
+    expect(imports.every((specifier) => specifier.startsWith("."))).toBe(true);
+    for (const { label, pattern } of DYNAMIC_SEAMS)
+      expect(pattern.test(source), `${ATTEMPT_MODULE} reaches ${label}`).toBe(false);
+    for (const { label, pattern } of ATTEMPT_AMBIENT_SEAMS)
+      expect(pattern.test(source), `${ATTEMPT_MODULE} reaches ${label}`).toBe(false);
+
+    // The request is a closed data record. It can be read but cannot offer a
+    // caller-provided function or a request-method/callback dispatch seam.
+    expect(source).not.toMatch(/===\s*"function"/);
+    expect(source).not.toMatch(/\brequest\s*\.\s*[A-Za-z_$][A-Za-z0-9_$]*\s*\(/);
+  });
+
+  it("recognizes the attempt ambient seams it excludes without matching identifiers", () => {
+    const seam = (label: string): RegExp =>
+      (ATTEMPT_AMBIENT_SEAMS.find((entry) => entry.label === label) as { pattern: RegExp }).pattern;
+    expect(seam("process ambient global").test("process.env")).toBe(true);
+    expect(seam("fetch").test("fetch(url)")).toBe(true);
+    expect(seam("WebSocket").test("new WebSocket(url)")).toBe(true);
+    expect(seam("XMLHttpRequest").test("new XMLHttpRequest()")).toBe(true);
+    expect(seam("process execution").test("spawn(command)")).toBe(true);
+    expect(seam("process execution").test("executor")).toBe(false);
+  });
+
+  it("keeps the low-level executor closure separate from observer and run authority", () => {
+    for (const file of executorClosure.files)
+      for (const area of LOW_LEVEL_EXECUTOR_PROHIBITED_AREAS)
+        expect(file.startsWith(area), `${file} reaches ${area}`).toBe(false);
+    expect(executorClosure.externals).not.toContain("node:child_process");
   });
 
   it("recognizes every dynamic seam it claims to exclude", () => {

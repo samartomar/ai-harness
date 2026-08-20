@@ -2770,6 +2770,36 @@
       "commands": []
     },
     {
+      "name": "repair",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        }
+      ],
+      "commands": []
+    },
+    {
       "name": "report",
       "hasDescription": true,
       "arguments": [

@@ -257,6 +257,12 @@ const UNREADABLE = "repair claim store holds a record this authority cannot read
 const ALREADY_CLAIMED = "repair plan was already claimed";
 const NOT_COMMITTED = "repair claim did not commit";
 
+// This is intentionally identity-only, rather than a public error shape or a
+// message convention. The executor may ask the acquisition function whether an
+// error came from after its exclusive create, but no caller can manufacture that
+// answer for a different error.
+const postExclusiveCreateRefusals = new WeakSet<object>();
+
 const nativeRealpath = (realpathSync as unknown as { native?: (path: string) => string }).native;
 
 const O_NOFOLLOW = (fsConstants as Record<string, number | undefined>).O_NOFOLLOW ?? 0;
@@ -303,6 +309,17 @@ function closeQuietly(fd: number | undefined): void {
   } catch {
     // A descriptor that cannot be closed changes no verdict already reached.
   }
+}
+
+/** Refuses after the record name was exclusively created, so the Plan is spent. */
+function refuseAfterExclusiveCreate(): never {
+  const refusal = new TypeError(`GOVERNANCE_DOCTOR_REPAIR_V1: ${NOT_COMMITTED}`);
+  postExclusiveCreateRefusals.add(refusal);
+  throw refusal;
+}
+
+function isPostExclusiveCreateRefusal(value: unknown): boolean {
+  return typeof value === "object" && value !== null && postExclusiveCreateRefusals.has(value);
 }
 
 /**
@@ -960,7 +977,7 @@ function createClaimExclusively(path: string, bytes: Buffer): FileIdentity {
   } finally {
     closeQuietly(fd);
   }
-  if (created === undefined) failGovernanceDoctorRepairV1(NOT_COMMITTED);
+  if (created === undefined) refuseAfterExclusiveCreate();
   return created;
 }
 
@@ -1102,12 +1119,27 @@ export function acquireGovernanceDoctorRepairClaimV1(
   const identity = createClaimExclusively(path, bytes);
   // From here the record exists and the Plan is spent, so every remaining refusal
   // is "did not commit" rather than "unavailable".
-  if (!syncDirectoryEntry(store)) failGovernanceDoctorRepairV1(NOT_COMMITTED);
-  confirmPublishedClaim(path, identity, bytes);
-  assertStoreIdentity(store, NOT_COMMITTED);
-  // Only now, with the record durably committed and re-confirmed, does this
-  // claim become the capability that lets an executor record attempt evidence.
-  // Marking earlier would hand out the authority on a spend that might not have
-  // survived; this is the single place in the product that may mark.
-  return markGovernanceDoctorRepairClaimSpentV1(claim);
+  try {
+    if (!syncDirectoryEntry(store)) failGovernanceDoctorRepairV1(NOT_COMMITTED);
+    confirmPublishedClaim(path, identity, bytes);
+    assertStoreIdentity(store, NOT_COMMITTED);
+    // Only now, with the record durably committed and re-confirmed, does this
+    // claim become the capability that lets an executor record attempt evidence.
+    // Marking earlier would hand out the authority on a spend that might not have
+    // survived; this is the single place in the product that may mark.
+    return markGovernanceDoctorRepairClaimSpentV1(claim);
+  } catch {
+    refuseAfterExclusiveCreate();
+  }
 }
+
+// The static capability boundary allows the executor to import only the one
+// acquisition operation. Keep the post-create signal attached to that existing
+// operation: it is non-enumerable, immutable, and backed by the private WeakSet
+// above, so it creates neither a second claim-store surface nor a forgeable shape.
+Object.defineProperty(acquireGovernanceDoctorRepairClaimV1, "isPostExclusiveCreateRefusalV1", {
+  configurable: false,
+  enumerable: false,
+  value: isPostExclusiveCreateRefusal,
+  writable: false,
+});

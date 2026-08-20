@@ -23,9 +23,22 @@ describe("CLI program", () => {
     }
   });
 
-  it("declares 29 top-level capabilities and 9 read-only commands", () => {
-    expect(CAPABILITIES).toHaveLength(29);
+  it("declares 30 top-level capabilities and 9 read-only commands", () => {
+    expect(CAPABILITIES).toHaveLength(30);
     expect(READONLY).toHaveLength(9);
+  });
+
+  it("registers repair with its isolated apply surface", () => {
+    const repair = buildProgram().commands.find((command) => command.name() === "repair");
+    expect(repair).toBeDefined();
+    expect(repair?.options.map((option) => option.flags).sort()).toEqual([
+      "--apply",
+      "--context-dir <dir>",
+      "--json",
+      "--posture <posture>",
+      "--root <dir>",
+    ]);
+    expect(repair?.options.map((option) => option.long)).not.toContain("--yes");
   });
 
   it("registers workspace acquisition, graph, snapshot, and plan subcommands", () => {
@@ -256,4 +269,43 @@ describe("CLI program", () => {
     program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
     await expect(program.parseAsync(["node", "aih", "certs", "--json"])).resolves.toBeDefined();
   }, 20000); // full-program cold start + certs dry-run can edge past the 5s default on slow Windows CI
+
+  it("dispatches registered repair as a dry-run command without applying the effect", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "aih-cli-repair-"));
+    const priorExitCode = process.exitCode;
+    const writes: string[] = [];
+    const spy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation((chunk: string | Uint8Array) => {
+        writes.push(String(chunk));
+        return true;
+      });
+    try {
+      writeFileSync(
+        join(dir, ".aih-config.json"),
+        JSON.stringify({ contextDir: "ai-coding", schemaVersion: 1, targets: [] }),
+      );
+      const program = buildProgram();
+      program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+
+      await expect(
+        program.parseAsync(["node", "aih", "repair", "--json", "--root", dir]),
+      ).resolves.toBeDefined();
+
+      expect(process.exitCode).toBe(0);
+      const report = JSON.parse(writes.join("")) as {
+        capability?: string;
+        digests?: readonly { data?: { outcome?: unknown } }[];
+      };
+      expect(report.capability).toBe("repair");
+      expect(report.digests?.map((digest) => digest.data?.outcome)).toEqual([
+        "no-mechanical-repair",
+      ]);
+      expect(existsSync(join(dir, "ai-coding"))).toBe(false);
+    } finally {
+      spy.mockRestore();
+      process.exitCode = priorExitCode;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 20000);
 });

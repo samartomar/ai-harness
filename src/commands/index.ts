@@ -22,6 +22,10 @@ import { command as ecc, eccMcpAddCommand, eccMcpRemoveCommand } from "../ecc/in
 import { executeEccCommand } from "../ecc/pipeline.js";
 import { evidenceBuildCommand } from "../evidence/build.js";
 import { command as governanceDoctor } from "../governance-doctor/command-v1.js";
+import {
+  executeGovernanceDoctorRepairCommandV1,
+  governanceDoctorRepairCommand,
+} from "../governance-doctor/repair-command-v1.js";
 import { command as guardrails } from "../guardrails/index.js";
 import { command as hardware } from "../hardware/index.js";
 import { command as heal } from "../heal/index.js";
@@ -132,6 +136,7 @@ export const CAPABILITIES: CommandSpec[] = [
   workspace,
   adopt,
   prune,
+  governanceDoctorRepairCommand,
   uninstall,
   init,
 ];
@@ -435,6 +440,8 @@ function registerSpec(program: Command, spec: CommandSpec): void {
       }
       if (spec === cleanup) deps.execute = executeClaudeCleanupCommand;
       if (spec === ecc) deps.execute = executeEccCommand;
+      if (spec === governanceDoctorRepairCommand)
+        deps.execute = executeGovernanceDoctorRepairCommandV1;
       if (spec === superpowers) deps.execute = executeSuperpowersCommand;
       process.exitCode = await runCapability(spec, command, deps);
     },

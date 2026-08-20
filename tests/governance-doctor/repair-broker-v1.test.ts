@@ -154,13 +154,17 @@ describe("GovernanceDoctor Repair V1 capability boundary (static)", () => {
     }
   });
 
-  it("leaves index, command registration, Workbench, and public exports unchanged", () => {
+  it("keeps only the reviewed command registration, Workbench, and public exports", () => {
     const index = readFileSync(resolve(root, "src/index.ts"), "utf8");
     expect(index).not.toMatch(/governance-doctor|GovernanceDoctor|repair-/);
 
     const commands = readFileSync(resolve(root, "src/commands/index.ts"), "utf8");
-    expect(commands.match(/governance-doctor/g)).toEqual(["governance-doctor"]);
-    expect(commands).not.toMatch(/repair-/);
+    expect(commands.match(/governance-doctor/g)).toEqual([
+      "governance-doctor",
+      "governance-doctor",
+    ]);
+    expect(commands).toContain("governanceDoctorRepairCommand");
+    expect(commands).toContain("executeGovernanceDoctorRepairCommandV1");
     expect(governanceDoctorCommand.name).toBe("governance-doctor");
     expect(governanceDoctorCommand.readOnly).toBe(true);
     expect(governanceDoctorCommand.zeroWrite).toBe(true);
@@ -196,21 +200,30 @@ describe("GovernanceDoctor Repair V1 capability boundary (static)", () => {
         // and the plan preview included: a consumer that skipped the foundation
         // and imported only the operational modules would otherwise evade this
         // reverse enumeration.
-        /repair-(?:broker|capability|claim|claim-store|consent|content|custody|executor|outcome|plan|plan-preview|verifier)-v1\.js/.test(
+        /repair-(?:attempt|broker|canon-plan|capability|claim|claim-store|command|completion|confirmation|consent|content|custody|executor|outcome|plan|plan-preview|verifier)-v1\.js/.test(
           readFileSync(file, "utf8"),
         ),
       )
       .map((file) => file.replace(/\\/g, "/").split("/src/")[1] ?? "")
       .sort();
     expect(importers).toEqual([
+      "commands/index.ts",
       "governance-doctor/command-v1.ts",
+      // The live precondition orchestrator reaches only safe staged executor
+      // operations; it cannot import custody's root/mutation surfaces or the
+      // durable claim store.
+      "governance-doctor/repair-attempt-v1.ts",
       "governance-doctor/repair-broker-v1.ts",
+      // The capability-free common factor is the only owner of the broker,
+      // mapping, nonce, and canonical plan construction.
+      "governance-doctor/repair-canon-plan-v1.ts",
       "governance-doctor/repair-claim-store-v1.ts",
       "governance-doctor/repair-claim-v1.ts",
-      // Reads a spent claim, a receipt, and a verification to derive one closed
-      // completion record. It holds no capability of its own and no command
-      // reaches it; enumerating it here keeps that a checked fact.
+      "governance-doctor/repair-command-v1.ts",
+      // The command reaches completion only through the live attempt boundary;
+      // this module itself holds no capability or claim/root provenance.
       "governance-doctor/repair-completion-v1.ts",
+      "governance-doctor/repair-confirmation-v1.ts",
       "governance-doctor/repair-consent-v1.ts",
       "governance-doctor/repair-content-v1.ts",
       "governance-doctor/repair-custody-v1.ts",

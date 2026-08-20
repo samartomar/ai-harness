@@ -7,6 +7,7 @@ import {
   createGovernanceDoctorDiagnosticRegistryV1,
   runGovernanceDoctorAuditV1,
 } from "../../src/governance-doctor/audit-guide-v1.js";
+import { GOVERNANCE_DOCTOR_READ_ONLY_PROBES_COMPLETED_V1 } from "../../src/governance-doctor/capability-v1.js";
 import { createGovernanceDoctorOperationalContextV1 } from "../../src/governance-doctor/operational-v1.js";
 import { createGovernanceDoctorProfileV1 } from "../../src/governance-doctor/profile-v1.js";
 import {
@@ -122,8 +123,8 @@ function audit(doctor: unknown, policy: unknown, decision: "allowed" | "denied" 
 }
 
 const clean = () => ({ findings: [], kind: "findings" as const });
-const finding = (code: string) => ({
-  findings: [{ code, severity: "low" as const, summary: prose() }],
+const finding = (code: string, severity: "info" | "low" = "low") => ({
+  findings: [{ code, severity, summary: prose() }],
   kind: "findings" as const,
 });
 const refused = (state: string) => ({ kind: "refusal" as const, state });
@@ -262,6 +263,29 @@ describe("repair completion", () => {
       { code: "evidence-gap", count: 1 },
     ]);
     expect(JSON.stringify(report)).not.toContain(root);
+  });
+
+  it("ignores only the exact info read-only completion sentinel", async () => {
+    const made = await attempt();
+    const sentinel = completionFrom(made, {
+      postAudit: audit(finding(GOVERNANCE_DOCTOR_READ_ONLY_PROBES_COMPLETED_V1, "info"), clean()),
+    });
+    expect(sentinel.postAuditState).toBe("healthy");
+    expect(sentinel.residual).toEqual([]);
+
+    const lowSeveritySentinel = completionFrom(made, {
+      postAudit: audit(finding(GOVERNANCE_DOCTOR_READ_ONLY_PROBES_COMPLETED_V1, "low"), clean()),
+    });
+    expect(lowSeveritySentinel.postAuditState).toBe("partial");
+    expect(lowSeveritySentinel.residual).toEqual([
+      { code: GOVERNANCE_DOCTOR_READ_ONLY_PROBES_COMPLETED_V1, count: 1 },
+    ]);
+
+    const ordinaryInfo = completionFrom(made, {
+      postAudit: audit(finding("AIH_INFORMATIONAL_REMAINING", "info"), clean()),
+    });
+    expect(ordinaryInfo.postAuditState).toBe("partial");
+    expect(ordinaryInfo.residual).toEqual([{ code: "AIH_INFORMATIONAL_REMAINING", count: 1 }]);
   });
 
   it("is failed when no valid post-execution audit was produced", async () => {
