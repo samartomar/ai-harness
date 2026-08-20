@@ -71,14 +71,20 @@ import {
  *
  * ## The exact question it answers
  *
- * "Is the canonical context directory absent?", as the shipped checks define
- * absent -- which is `existsSync`, and therefore *unreachable* rather than
- * *unoccupied*. A dangling symlink at `ai-coding` reads as absent and this probe
- * reports eligible, correctly: the canon is not there. It is not a claim that
- * the path is free. A consumer that acts on this must establish that separately
- * and refuse an occupied path with its own label, because letting the create
- * fail on its own surfaces an `ENOENT`/`EEXIST` that names neither the recipe
- * nor the reason.
+ * Two questions, and eligibility needs both. The shipped checks answer "is the
+ * canonical context directory reachable?", with `existsSync` -- which is the
+ * right question for a diagnostic and not enough for a repair, because a
+ * dangling link reads as absent while holding the name, and a failed lookup
+ * reads as absent while proving nothing. So eligibility also requires a
+ * no-follow verdict that the literal name is genuinely free, taken by
+ * {@link observeGovernanceDoctorRepairTargetOccupancyV1} and reported here as
+ * `targetOccupancy`. Only `unoccupied` qualifies; `occupied` and
+ * `indeterminate` both refuse.
+ *
+ * Neither verdict is atomic, and neither pretends to be. Both describe the
+ * instant they were taken, which is why a consumer re-observes immediately
+ * before spending a claim and again at the effect boundary, where custody
+ * re-proves the same facts under the mutation grant.
  */
 export const GOVERNANCE_DOCTOR_REPAIR_PRECONDITION_DIAGNOSTIC_ID_V1 =
   "aih.repair.precondition.canon-context-v1";
