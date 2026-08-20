@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -106,6 +106,29 @@ describe("repair precondition probe", () => {
     // tuples, and the first one is gone.
     writeFileSync(join(root, CANON, "RULE_ROUTER.md"), "# Router\n");
     expect(observe().eligible).toBe(false);
+  });
+
+  /**
+   * The shipped checks answer "is the canon reachable", through `existsSync`.
+   * That is not the same question as "is this path free to create", and the two
+   * disagree on exactly the states that matter: a dangling link reports absent
+   * while occupying the name, and an unreadable or malformed parent reports
+   * absent while nothing was actually learned. Eligibility means a repair may
+   * proceed, so it has to rest on the second question too.
+   */
+  it("is not eligible when a dangling link occupies the target", () => {
+    expect(observe().eligible).toBe(true);
+    symlinkSync(join(root, "nowhere"), join(root, CANON), "dir");
+    const observed = observe();
+    // The shipped checks still read the canon as missing -- that is what they
+    // are for -- so the bundle is unchanged and the refusal comes from the
+    // occupancy of the name itself.
+    expect(observed.observations).toEqual([
+      { code: "canon.context-dir-missing", name: "context-dir", verdict: "skip" },
+      { code: null, name: "canon markdown lint", verdict: "skip" },
+    ]);
+    expect(observed.targetOccupancy).toBe("occupied");
+    expect(observed.eligible).toBe(false);
   });
 
   it("observes the same context-dir check the Doctor probe runs", () => {
