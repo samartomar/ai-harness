@@ -30,9 +30,11 @@ import {
  * The single shipped mechanical broker and recipe. This module is deliberately
  * capability-free: it receives already-branded operational facts, performs
  * only closed joins and canonical construction, and neither reads the marker
- * nor observes the filesystem. Preview projects its result; the command uses
- * the same result before consent. Neither caller may supply a broker, recipe,
- * path, template, nonce, or expiry window.
+ * nor observes the filesystem. The shared read-only preview projects this
+ * Audit-derived result. The live command has a separate precondition-derived
+ * intake in `repair-live-canon-plan-v1.ts`, so it cannot widen this preview or
+ * the operational mapping by sharing an extra input field. Neither caller may
+ * supply a broker, recipe, path, template, nonce, or expiry window.
  */
 export const GOVERNANCE_DOCTOR_REPAIR_PREVIEW_BROKER_ID_V1 = "aih:governance-doctor.mechanical";
 export const GOVERNANCE_DOCTOR_REPAIR_PREVIEW_RECIPE_ID_V1 = "governance-doctor-mechanical";
@@ -99,6 +101,31 @@ export interface GovernanceDoctorRepairDerivedEffectsV1 {
 }
 
 /**
+ * The one literal effect every shipped path may derive.  It lives beside the
+ * broker templates so audit-derived preview and live-precondition derivation
+ * cannot drift in ID, template, or target.
+ */
+export const GOVERNANCE_DOCTOR_REPAIR_CANON_CONTEXT_EFFECT_V1 = Object.freeze({
+  arguments: Object.freeze({ path: GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1 }),
+  effectId: "ensure-canonical-context-dir",
+  templateId: "ensure-managed-directory",
+});
+
+/** Returns fresh derived-effect data from the one frozen literal descriptor. */
+export function governanceDoctorRepairCanonContextDerivedEffectsV1(): GovernanceDoctorRepairDerivedEffectsV1 {
+  return {
+    effects: [
+      {
+        arguments: { ...GOVERNANCE_DOCTOR_REPAIR_CANON_CONTEXT_EFFECT_V1.arguments },
+        effectId: GOVERNANCE_DOCTOR_REPAIR_CANON_CONTEXT_EFFECT_V1.effectId,
+        templateId: GOVERNANCE_DOCTOR_REPAIR_CANON_CONTEXT_EFFECT_V1.templateId,
+      },
+    ],
+    scopePaths: [GOVERNANCE_DOCTOR_REPAIR_CANON_CONTEXT_EFFECT_V1.arguments.path],
+  };
+}
+
+/**
  * The only finding-to-effect mapping. Its literal create-managed-directory
  * target is intentionally not derived from a marker, option, or diagnostic.
  * The table has exactly one entry; success and every unknown finding derive no
@@ -111,8 +138,7 @@ const MECHANICAL_EFFECTS_V1 = Object.freeze([
   Object.freeze({
     code: "AIH_CANON_CONTEXT_DIR_MISSING",
     diagnosticId: "aih.doctor.root",
-    effectId: "ensure-canonical-context-dir",
-    templateId: "ensure-managed-directory",
+    effect: GOVERNANCE_DOCTOR_REPAIR_CANON_CONTEXT_EFFECT_V1,
   }),
 ] as const);
 
@@ -127,15 +153,18 @@ export function deriveGovernanceDoctorRepairMechanicalEffectsV1(
         candidate.code === finding.code && candidate.diagnosticId === finding.diagnosticId,
     );
     if (entry === undefined) continue;
-    effects.set(entry.effectId, {
-      arguments: { path: GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1 },
-      effectId: entry.effectId,
-      templateId: entry.templateId,
+    effects.set(entry.effect.effectId, {
+      arguments: { ...entry.effect.arguments },
+      effectId: entry.effect.effectId,
+      templateId: entry.effect.templateId,
     });
   }
   return effects.size === 0
     ? { effects: [], scopePaths: [] }
-    : { effects: [...effects.values()], scopePaths: [GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1] };
+    : {
+        effects: [...effects.values()],
+        scopePaths: [GOVERNANCE_DOCTOR_REPAIR_CANON_CONTEXT_EFFECT_V1.arguments.path],
+      };
 }
 
 export type GovernanceDoctorRepairCanonicalPlanResultV1 =

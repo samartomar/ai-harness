@@ -49,16 +49,18 @@ import {
  * `GovernanceDoctorRepairPlanV1` -- one exact, single-use, content-addressed
  * proposal to apply a bounded set of AIH-owned mechanical effects.
  *
- * A plan is buildable only from a completed Governance Doctor run. Its Audit,
- * Guide, and operation record must all be branded by their own modules and must
+ * A plan is buildable only from a completed Governance Doctor operation. Its
+ * Audit, Guide, and operation record must all be branded by their own modules and must
  * join each other exactly, and the profile handed in must be the one that run
- * actually audited. That is what stops a plan from being assembled out of
- * fragments taken from different runs, roots, evaluation contexts, or policy
- * revisions.
+ * actually audited. This binds the Plan's bounded audit context; it is not an
+ * execution license. The separate live Repair derivation may select the one
+ * code-owned effect from branded live-precondition evidence while preserving
+ * that same completed operation as context, even when the Audit is partial.
  *
  * The plan cites its evidence rather than asserting it. Every finding and every
- * refusal it names has to appear in that exact Audit, so a plan can never be
- * justified by a diagnostic result nobody produced.
+ * refusal it names has to appear in that exact Audit. Those citations prove
+ * only the contextual diagnostic facts the Plan carries; a caller must not read
+ * them as the reason execution is licensed.
  *
  * Its authority is narrow and explicit: granted to AIH, bound to one policy
  * revision and one read-only surface revision, and always requiring explicit

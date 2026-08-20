@@ -1,7 +1,8 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createGovernanceDoctorOperationalContextV1 } from "../../src/governance-doctor/operational-v1.js";
 import {
   GOVERNANCE_DOCTOR_REPAIR_CONFIRMATION_TIMEOUT_MS_V1,
   promptGovernanceDoctorRepairConfirmationV1,
@@ -10,6 +11,14 @@ import {
   canonicalGovernanceDoctorRepairEffectSummaryV1Bytes,
   governanceDoctorRepairEffectSummaryV1,
 } from "../../src/governance-doctor/repair-plan-v1.js";
+import {
+  governanceDoctorRepairPreconditionSha256V1,
+  observeGovernanceDoctorRepairPreconditionV1,
+} from "../../src/governance-doctor/repair-precondition-v1.js";
+import { mintGovernanceDoctorRepairPreconditionScopeV1 } from "../../src/governance-doctor/repair-scope-v1.js";
+import type { PlanContext } from "../../src/internals/plan.js";
+import { fakeRunner } from "../../src/internals/proc.js";
+import { makeHostAdapter } from "../../src/platform/detect.js";
 import { repairFixturePlan } from "./repair-execution-fixture-v1.js";
 
 const runtime = vi.hoisted(() => ({
@@ -47,7 +56,7 @@ vi.mock("node:readline", () => ({ createInterface: readline.createInterface }));
 let root: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "aih-repair-confirmation-"));
+  root = realpathSync.native(mkdtempSync(join(tmpdir(), "aih-repair-confirmation-")));
   runtime.env = {};
   runtime.stdin.isTTY = true;
   runtime.stdout.isTTY = true;
@@ -63,6 +72,22 @@ afterEach(() => {
 });
 
 async function request(planNonce = "7f".repeat(32), targetPath = "ai-coding") {
+  const run = fakeRunner(() => undefined);
+  const precondition = observeGovernanceDoctorRepairPreconditionV1(
+    mintGovernanceDoctorRepairPreconditionScopeV1(
+      createGovernanceDoctorOperationalContextV1({
+        apply: false,
+        contextDir: "ai-coding",
+        env: {},
+        host: makeHostAdapter({ env: {}, platform: "linux", run }),
+        json: true,
+        options: {},
+        root,
+        run,
+        verify: true,
+      } as unknown as PlanContext),
+    ),
+  );
   const plan = await repairFixturePlan({
     effects: [
       {
@@ -75,7 +100,12 @@ async function request(planNonce = "7f".repeat(32), targetPath = "ai-coding") {
     root,
     scopePaths: [targetPath],
   });
-  return { plan, summary: governanceDoctorRepairEffectSummaryV1(plan) };
+  return {
+    auditCompleteness: "completed" as const,
+    plan,
+    precondition,
+    summary: governanceDoctorRepairEffectSummaryV1(plan),
+  };
 }
 
 describe("Governance Doctor Repair TTY confirmation V1", () => {
@@ -113,12 +143,16 @@ describe("Governance Doctor Repair TTY confirmation V1", () => {
       | undefined;
     expect(question).toContain("ai-coding");
     expect(question).toContain(repair.plan.planSha256);
+    expect(question).toContain(governanceDoctorRepairPreconditionSha256V1(repair.precondition));
     expect(question).toContain(repair.summary.summarySha256);
     const displayed = runtime.stdout.write.mock.calls.map(([value]) => String(value)).join("");
     expect(displayed).toContain(
       canonicalGovernanceDoctorRepairEffectSummaryV1Bytes(repair.summary).toString("utf8"),
     );
     expect(displayed).toContain("create-managed-directory");
+    expect(displayed).toContain(governanceDoctorRepairPreconditionSha256V1(repair.precondition));
+    expect(displayed).toContain("Target occupancy: unoccupied");
+    expect(displayed).toContain("Audit completeness: completed");
     answer?.(`${repair.plan.planSha256} trailing-token`);
 
     await expect(pending).resolves.toEqual({
@@ -132,7 +166,7 @@ describe("Governance Doctor Repair TTY confirmation V1", () => {
     const repair = await request("7f".repeat(32), "custom-context");
 
     await expect(promptGovernanceDoctorRepairConfirmationV1(repair)).rejects.toThrow(
-      /requires exactly one canonical effect/,
+      /requires exactly one eligible canonical effect/,
     );
     expect(readline.createInterface).not.toHaveBeenCalled();
   });
@@ -157,10 +191,12 @@ describe("Governance Doctor Repair TTY confirmation V1", () => {
 
     await expect(
       promptGovernanceDoctorRepairConfirmationV1({
+        auditCompleteness: "completed",
         plan,
+        precondition: (await request()).precondition,
         summary: governanceDoctorRepairEffectSummaryV1(plan),
       }),
-    ).rejects.toThrow(/requires exactly one canonical effect/);
+    ).rejects.toThrow(/requires exactly one eligible canonical effect/);
     expect(readline.createInterface).not.toHaveBeenCalled();
   });
 
@@ -190,16 +226,28 @@ describe("Governance Doctor Repair TTY confirmation V1", () => {
     const otherRepair = await request("6e".repeat(32));
     await expect(
       promptGovernanceDoctorRepairConfirmationV1({
+        auditCompleteness: "completed",
         plan: repair.plan,
+        precondition: repair.precondition,
         summary: { ...repair.summary },
       }),
     ).rejects.toThrow(/repair effect summary|validated brand/i);
     await expect(
       promptGovernanceDoctorRepairConfirmationV1({
+        auditCompleteness: "completed",
         plan: repair.plan,
+        precondition: repair.precondition,
         summary: otherRepair.summary,
       }),
     ).rejects.toThrow(/repair effect summary|summary.*plan|plan.*summary/i);
+    await expect(
+      promptGovernanceDoctorRepairConfirmationV1({
+        auditCompleteness: "completed",
+        plan: repair.plan,
+        precondition: { ...repair.precondition },
+        summary: repair.summary,
+      }),
+    ).rejects.toThrow(/repair precondition/i);
     expect(readline.createInterface).not.toHaveBeenCalled();
 
     const source = readFileSync(

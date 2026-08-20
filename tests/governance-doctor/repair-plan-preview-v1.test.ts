@@ -435,7 +435,11 @@ describe("repair plan preview static boundary", () => {
    * surface, or filesystem reach may ever appear in it.
    */
   it("keeps preview and canonical-plan capability-free beyond their nonce source", () => {
-    for (const entry of ["repair-plan-preview-v1.ts", "repair-canon-plan-v1.ts"]) {
+    for (const entry of [
+      "repair-plan-preview-v1.ts",
+      "repair-canon-plan-v1.ts",
+      "repair-live-canon-plan-v1.ts",
+    ]) {
       const source = readFileSync(resolve(sourceRoot, entry), "utf8");
       for (const token of [
         "node:fs",
@@ -499,13 +503,15 @@ describe("repair plan preview static boundary", () => {
 
   it("keeps the literal mapping and mint authority in the shared factor alone", () => {
     const canon = readFileSync(resolve(sourceRoot, "repair-canon-plan-v1.ts"), "utf8");
+    const live = readFileSync(resolve(sourceRoot, "repair-live-canon-plan-v1.ts"), "utf8");
     const preview = readFileSync(resolve(sourceRoot, "repair-plan-preview-v1.ts"), "utf8");
     const command = readFileSync(resolve(sourceRoot, "repair-command-v1.ts"), "utf8");
     expect(canon.match(/AIH_CANON_CONTEXT_DIR_MISSING/g)).toHaveLength(1);
     expect(canon.match(/ensure-canonical-context-dir/g)).toHaveLength(1);
     expect(canon).toContain('effectKind: "create-managed-directory"');
+    expect(live).toContain("governanceDoctorRepairCanonContextDerivedEffectsV1");
     expect(preview).toContain("deriveGovernanceDoctorRepairCanonicalPlanV1");
-    expect(command).toContain("deriveGovernanceDoctorRepairCanonicalPlanV1");
+    expect(command).toContain("deriveGovernanceDoctorRepairLiveCanonicalPlanV1");
     for (const forbidden of [
       "AIH_CANON_CONTEXT_DIR_MISSING",
       "aih.doctor.root",
@@ -517,6 +523,12 @@ describe("repair plan preview static boundary", () => {
       "PLAN_WINDOW_MS",
     ])
       expect(command, forbidden).not.toContain(forbidden);
+    for (const forbidden of [
+      "ensure-canonical-context-dir",
+      "ensure-managed-directory",
+      "arguments: { path:",
+    ])
+      expect(live, forbidden).not.toContain(forbidden);
   });
 });
 
