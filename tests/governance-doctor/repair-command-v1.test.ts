@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -11,11 +12,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { command as doctorCommand } from "../../src/doctor.js";
-import type { GovernanceDoctorRepairCanonicalPlanResultV1 } from "../../src/governance-doctor/repair-canon-plan-v1.js";
 import {
   executeGovernanceDoctorRepairCommandV1,
   governanceDoctorRepairCommand,
 } from "../../src/governance-doctor/repair-command-v1.js";
+import type { GovernanceDoctorRepairLiveCanonicalPlanResultV1 } from "../../src/governance-doctor/repair-live-canon-plan-v1.js";
 import { governanceDoctorRepairEffectSummaryV1 } from "../../src/governance-doctor/repair-plan-v1.js";
 import { type PlanResult, summarizeResult } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
@@ -35,7 +36,7 @@ const confirmation = vi.hoisted(() => ({
 
 const repairInterposition = vi.hoisted(() => ({
   afterClaim: undefined as undefined | (() => void),
-  canonicalPlan: undefined as undefined | GovernanceDoctorRepairCanonicalPlanResultV1,
+  canonicalPlan: undefined as undefined | GovernanceDoctorRepairLiveCanonicalPlanResultV1,
   effectChangeThrows: false,
   claimWriteStalls: false,
   executorThrows: false,
@@ -61,14 +62,16 @@ vi.mock("../../src/governance-doctor/repair-confirmation-v1.js", () => ({
   promptGovernanceDoctorRepairConfirmationV1: confirmation.prompt,
 }));
 
-vi.mock("../../src/governance-doctor/repair-canon-plan-v1.js", async (importOriginal) => {
+vi.mock("../../src/governance-doctor/repair-live-canon-plan-v1.js", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("../../src/governance-doctor/repair-canon-plan-v1.js")>();
+    await importOriginal<
+      typeof import("../../src/governance-doctor/repair-live-canon-plan-v1.js")
+    >();
   return {
     ...actual,
-    deriveGovernanceDoctorRepairCanonicalPlanV1: (input: unknown) =>
+    deriveGovernanceDoctorRepairLiveCanonicalPlanV1: (input: unknown) =>
       repairInterposition.canonicalPlan ??
-      actual.deriveGovernanceDoctorRepairCanonicalPlanV1(input),
+      actual.deriveGovernanceDoctorRepairLiveCanonicalPlanV1(input),
   };
 });
 
@@ -151,7 +154,7 @@ let root: string;
 
 beforeEach(() => {
   home = repairFixtureIsolatedHome();
-  root = mkdtempSync(join(tmpdir(), "aih-repair-command-"));
+  root = realpathSync.native(mkdtempSync(join(tmpdir(), "aih-repair-command-")));
   repairInterposition.afterClaim = undefined;
   repairInterposition.canonicalPlan = undefined;
   repairInterposition.effectChangeThrows = false;
@@ -250,7 +253,13 @@ describe("aih repair command V1", () => {
     const output = rendered(result);
     const text = digestText(result);
     const data = result.digests[0]?.data as
-      | { readonly planSha256?: string; readonly summarySha256?: string }
+      | {
+          readonly planSha256?: string;
+          readonly summarySha256?: string;
+          readonly preconditionSha256?: string;
+          readonly targetOccupancy?: string;
+          readonly auditCompleteness?: string;
+        }
       | undefined;
 
     assertUnaffectedFixture(result);
@@ -258,13 +267,50 @@ describe("aih repair command V1", () => {
     expect(output).toMatch(/"planSha256":"[a-f0-9]{64}"/);
     expect(output).toMatch(/"summarySha256":"[a-f0-9]{64}"/);
     expect(output).toContain('"targetPath":"ai-coding"');
+    expect(output).toMatch(/"preconditionSha256":"[a-f0-9]{64}"/);
+    expect(output).toContain('"targetOccupancy":"unoccupied"');
+    expect(output).toContain('"auditCompleteness":"completed"');
     expect(output).not.toMatch(/consent|claim|receipt|effectVerification|postAudit/i);
     expect(data?.planSha256).toMatch(/^[a-f0-9]{64}$/);
     expect(data?.summarySha256).toMatch(/^[a-f0-9]{64}$/);
     expect(text).toContain(data?.planSha256 ?? "");
     expect(text).toContain(data?.summarySha256 ?? "");
     expect(text).toContain("ai-coding");
+    expect(text).toContain(data?.preconditionSha256 ?? "");
+    expect(text).toContain("Target occupancy: unoccupied");
+    expect(text).toContain("Audit completeness: completed");
     expect(text).not.toMatch(/consent|claim|receipt|effectVerification|postAudit/i);
+  });
+
+  it("derives one live canonical plan on a temporary root despite an unrelated diagnostic refusal", async () => {
+    vi.spyOn(policyEvaluateCommand, "plan").mockReturnValue({
+      actions: [
+        {
+          describe: "unrelated policy diagnostic",
+          kind: "probe" as const,
+          run: async () => ({
+            code: "org-policy.invalid",
+            name: "unrelated-policy-check",
+            verdict: "skip" as const,
+          }),
+        },
+      ],
+      capability: "policy evaluate",
+    });
+
+    const result = await executeGovernanceDoctorRepairCommandV1(context());
+    const data = result.digests[0]?.data as Record<string, unknown> | undefined;
+
+    expect(result.report?.exitCode()).toBe(0);
+    expect(data).toMatchObject({
+      auditCompleteness: "partial",
+      targetPath: CANONICAL_CONTEXT_DIR,
+      targetOccupancy: "unoccupied",
+    });
+    expect(data?.preconditionSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(data?.planSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(data?.summarySha256).toMatch(/^[a-f0-9]{64}$/);
+    assertUnaffectedFixture(result);
   });
 
   it("refuses a hostile multi-effect canonical result before preview, prompt, claim, or effect", async () => {
@@ -288,7 +334,9 @@ describe("aih repair command V1", () => {
       auditCompleteness: "completed",
       kind: "plan",
       plan: hostilePlan,
+      preconditionSha256: "a".repeat(64),
       summary: governanceDoctorRepairEffectSummaryV1(hostilePlan),
+      targetOccupancy: "unoccupied",
     };
 
     const result = await executeGovernanceDoctorRepairCommandV1(context({ apply: true }));
@@ -337,8 +385,41 @@ describe("aih repair command V1", () => {
     expect(text).toMatch(/repairState\s*[:=]\s*["']?complete\b/i);
   });
 
+  it("reports a verified effect with an unrelated partial post-audit as qualified success", async () => {
+    vi.spyOn(policyEvaluateCommand, "plan").mockReturnValue({
+      actions: [
+        {
+          describe: "unrelated policy diagnostic",
+          kind: "probe" as const,
+          run: async () => ({
+            code: "org-policy.invalid",
+            name: "unrelated-policy-check",
+            verdict: "skip" as const,
+          }),
+        },
+      ],
+      capability: "policy evaluate",
+    });
+
+    const result = await executeGovernanceDoctorRepairCommandV1(context({ apply: true }));
+    const data = result.digests[0]?.data as Record<string, unknown> | undefined;
+
+    expect(result.report?.exitCode()).toBe(0);
+    expect(result.applied).toBe(true);
+    expect(data).toMatchObject({
+      effectVerification: "verified",
+      postAuditState: "partial",
+      repairState: "partial",
+      targetPath: CANONICAL_CONTEXT_DIR,
+    });
+    expect(digestText(result)).toContain("repairState: partial");
+    expect(claimFiles()).toHaveLength(1);
+    expect(existsSync(join(root, CANONICAL_CONTEXT_DIR))).toBe(true);
+  });
+
   it("keeps a healthy bare run as a clean no-mechanical-repair preview", async () => {
     confirmation.prompt.mockClear();
+    mkdirSync(join(root, CANONICAL_CONTEXT_DIR), { recursive: true });
     vi.spyOn(doctorCommand, "plan").mockImplementation(() => ({
       actions: [
         {
@@ -355,15 +436,17 @@ describe("aih repair command V1", () => {
     expect(result.report?.exitCode()).toBe(0);
     expect(result.digests[0]?.data).toMatchObject({
       outcome: "no-mechanical-repair",
+      targetOccupancy: "occupied",
     });
     expect(confirmation.prompt).not.toHaveBeenCalled();
     expect(claimFiles()).toEqual([]);
-    expect(existsSync(join(root, CANONICAL_CONTEXT_DIR))).toBe(false);
+    expect(existsSync(join(root, CANONICAL_CONTEXT_DIR))).toBe(true);
     expect(result.applied).toBe(false);
   });
 
   it("refuses apply before prompt, claim, or effect when no mechanical finding exists", async () => {
     confirmation.prompt.mockClear();
+    mkdirSync(join(root, CANONICAL_CONTEXT_DIR), { recursive: true });
     vi.spyOn(doctorCommand, "plan").mockImplementation(() => ({
       actions: [
         {
@@ -381,7 +464,54 @@ describe("aih repair command V1", () => {
     expect(result.digests[0]?.data).toMatchObject({ outcome: "refused" });
     expect(confirmation.prompt).not.toHaveBeenCalled();
     expect(claimFiles()).toEqual([]);
-    expect(existsSync(join(root, CANONICAL_CONTEXT_DIR))).toBe(false);
+    expect(existsSync(join(root, CANONICAL_CONTEXT_DIR))).toBe(true);
+    expect(result.applied).toBe(false);
+  });
+
+  it("qualifies indeterminate target occupancy in dry-run and refuses apply before prompt or claim", async () => {
+    repairInterposition.canonicalPlan = {
+      auditCompleteness: "evidence-gap",
+      kind: "target-occupancy-indeterminate",
+      preconditionSha256: "d".repeat(64),
+      targetOccupancy: "indeterminate",
+    };
+
+    const dryRun = await executeGovernanceDoctorRepairCommandV1(context());
+    expect(dryRun.report?.exitCode()).toBe(1);
+    expect(dryRun.digests[0]?.data).toMatchObject({
+      auditCompleteness: "evidence-gap",
+      outcome: "target-occupancy-indeterminate",
+      preconditionSha256: "d".repeat(64),
+      targetOccupancy: "indeterminate",
+    });
+    expect(digestText(dryRun)).toContain(`Precondition SHA-256: ${"d".repeat(64)}`);
+    expect(digestText(dryRun)).toContain("Target occupancy: indeterminate");
+    expect(digestText(dryRun)).toContain("Audit completeness: evidence-gap");
+    assertUnaffectedFixture(dryRun);
+
+    const apply = await executeGovernanceDoctorRepairCommandV1(context({ apply: true }));
+    expect(apply.report?.exitCode()).toBe(1);
+    expect(apply.digests[0]?.data).toMatchObject({
+      outcome: "refused",
+      reason: "repair-target-occupancy-indeterminate",
+    });
+    expect(confirmation.prompt).not.toHaveBeenCalled();
+    assertUnaffectedFixture(apply);
+  });
+
+  it("refuses an occupied canonical target before prompt, claim, or effect", async () => {
+    writeFileSync(join(root, CANONICAL_CONTEXT_DIR), "operator-owned");
+
+    const result = await executeGovernanceDoctorRepairCommandV1(context({ apply: true }));
+
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.digests[0]?.data).toMatchObject({
+      outcome: "refused",
+      reason: "repair-no-mechanical-repair",
+    });
+    expect(confirmation.prompt).not.toHaveBeenCalled();
+    expect(claimFiles()).toEqual([]);
+    expect(readFileSync(join(root, CANONICAL_CONTEXT_DIR), "utf8")).toBe("operator-owned");
     expect(result.applied).toBe(false);
   });
 
@@ -394,6 +524,11 @@ describe("aih repair command V1", () => {
       {
         label: "AIH_NO_PROMPT",
         ctx: () => context({ apply: true, env: { AIH_NO_PROMPT: "1" } }),
+      },
+      {
+        label: "stdin or stdout is not a TTY",
+        ctx: () => context({ apply: true }),
+        confirmation: () => ({ kind: "non-interactive" }),
       },
       {
         label: "environment confirmation token",

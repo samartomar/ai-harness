@@ -1209,14 +1209,13 @@ evidence gap: the code-owned tuple of check `context-dir`, verdict `skip`, and c
 diagnostic's own code and detail text are compared against a code-owned table and then discarded —
 neither appears in the report.
 
-**This does not change any real run, and cannot as things stand.** The mapping is all-or-nothing
-per diagnostic: if any other Doctor check also skips or fails, the whole diagnostic still collapses
-into `evidence-gap` exactly as before. Doctor's canon markdown lint check skips on *exactly* the
-same condition as this one — both test whether the context directory exists — so the mapped tuple
-never occurs alone, and the finding is never emitted. In a fresh fixture root the shipped planner
-in fact reports 24 non-pass checks. The mapping and the preview derivation below are therefore
-proved by tests and inert on real output. Making them reachable is a separate, larger change to how
-a diagnostic reports partial understanding, and is not attempted here.
+**This does not widen the general Audit mapping.** The mapping is all-or-nothing per diagnostic: if
+any other Doctor check also skips or fails, the whole diagnostic still collapses into `evidence-gap`
+exactly as before. Doctor's canon markdown lint check skips on *exactly* the same condition as this
+one — both test whether the context directory exists — so the mapped tuple is still subject to the
+same closed Audit rule. The separate `aih repair` route does not use that mapping as its execution
+license; it uses the branded live precondition documented below, while this command remains a
+read-only Audit/Guide presentation.
 
 **Flags**
 
@@ -1238,10 +1237,10 @@ digests when a plan was derivable, bounded effect summaries over managed-relativ
 presentation reports, or `null` where there is no audited result behind the preview at all —
 and `executable: false` always. A plan may be derived from a `partial` audit: the finding it
 repairs is real either way, and the classification travels with the plan precisely so that
-"a repair was planned" can never be read as "the audit was complete". Exactly one finding is mechanically mappable, and it is not reachable
-from a real run today (see above), so a real audit still previews `no-mechanical-repair`. When a
-plan is derivable it is presented and discarded. Nothing becomes executable: the preview captures
-no consent, spends no claim, runs no executor or verifier, and writes nothing.
+"a repair was planned" can never be read as "the audit was complete". This preview is not the
+live-precondition plan used by `aih repair`; it remains an Audit projection, is presented and
+discarded, and never becomes executable. Nothing becomes executable: the preview captures no
+consent, spends no claim, runs no executor or verifier, and writes nothing.
 
 The one mappable finding is `AIH_CANON_CONTEXT_DIR_MISSING`, and it derives one
 `create-managed-directory` effect at the fixed path `ai-coding`. That path is a constant in the
@@ -1294,16 +1293,24 @@ The invocation accepts an optional `[root]` positional (`aih repair [root]`) for
 repository/workstation root. When supplied it takes precedence; otherwise the normal target-root
 precedence is `--root`, `AIH_ROOT`, then the current working directory.
 
-The shipped real diagnostic mapping remains intentionally all-or-nothing and inert: the real
-adapter currently yields no mechanical repair plan. This checkpoint adds the closed route and its
-boundaries without widening diagnostics merely to make the route reachable, so current real runs
-report `no-mechanical-repair` and refuse `--apply` before prompt, claim, or effect.
+The live repair route is licensed by the narrow, branded canonical precondition rather than by the
+Audit's finding projection. This keeps the general diagnostic mapping all-or-nothing while making
+the one safe repository-local repair reachable on a realistic temporary root: the committed marker
+must name `ai-coding`, the live precondition must prove that the target is unoccupied, and the
+operation and precondition must bind the same resolved root. An unrelated diagnostic refusal does
+not become a reason to create the directory, but it also cannot make this one local precondition
+unreachable. If target occupancy is indeterminate, Repair reports an indeterminate-precondition
+refusal distinct from an occupied target/no-mechanical-repair result, before consent, claim, or
+effect. `aih governance-doctor --repair-plan` remains the Audit projection and remains
+preview-only with `executable: false`.
 
-Dry-run is the default. Preview runs the same code-owned diagnostic/policy adapter and shared
-canonical plan derivation. When a plan is derivable, it prints only the target `ai-coding`, the full
-lowercase Plan SHA-256, and the full lowercase Summary SHA-256; current real runs instead report
-`no-mechanical-repair`. Preview captures no consent, spends no claim, runs no executor or verifier,
-and writes no file.
+Dry-run is the default. Preview runs the code-owned diagnostic/policy adapter and the live branded
+precondition. When a plan is derivable, it discloses the target `ai-coding`, the full lowercase
+Plan SHA-256, the full lowercase Summary SHA-256, the precondition SHA-256, target occupancy, and
+Audit completeness. The disclosure is evidence for the operator, not authority supplied by the
+operator; the branded precondition is code-observed and re-observed by the live attempt, and is
+never taken from a caller object. Preview
+captures no consent, spends no claim, runs no executor or verifier, and writes no file.
 
 Apply requires all of these gates:
 
@@ -1336,9 +1343,13 @@ raced pre-existing directory leaves it as-is. A race detected after the claim bu
 reports the claim as spent and no applied effect, rather than fabricating a `create`. The result
 still reports three separate facts: `effectVerification`, `postAuditState`, and `repairState`.
 `complete` requires the `ai-coding` effect to verify, a fresh post-execution audit to be healthy,
-every trusted join to hold, and the receipt itself to verify. A verified effect with remaining audit
-findings reports `partial`, and an unavailable post-audit, unverified effect, or broken join reports
-`failed`. These fields are never collapsed into one success bit.
+every trusted join to hold, and the receipt itself to verify. A verified effect with a fresh partial
+Audit reports `repairState: partial` and is qualified by the partial post-audit state, then exits
+zero: the requested local effect succeeded even though the workstation is not healthy. The bounded
+residual entries remain structured in the result data for machine consumers; they are not expanded
+into the human summary. An unavailable post-audit, unverified effect, or broken join reports
+`failed` and exits non-zero. These fields are never collapsed into one success bit. A partial result
+is not an Audit `completed` result and does not make the read-only `--repair-plan` executable.
 
 ## aih status
 

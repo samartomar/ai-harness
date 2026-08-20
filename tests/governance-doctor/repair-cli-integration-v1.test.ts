@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -109,7 +109,7 @@ async function runRegistered(
 
 beforeEach(() => {
   home = repairFixtureIsolatedHome();
-  root = mkdtempSync(join(tmpdir(), "aih-repair-cli-"));
+  root = realpathSync.native(mkdtempSync(join(tmpdir(), "aih-repair-cli-")));
   priorApply = process.env.AIH_APPLY;
   priorExitCode = process.exitCode;
   stdout = [];
@@ -160,6 +160,9 @@ describe("aih repair registered CLI integration V1", () => {
 
     expect(result.code).toBe(0);
     expect(result.out).toContain("Governance Doctor repair preview");
+    expect(result.out).toMatch(/Precondition SHA-256: [a-f0-9]{64}/);
+    expect(result.out).toContain("Target occupancy: unoccupied");
+    expect(result.out).toContain("Audit completeness: completed");
     expect(repairExecutor.execute).toHaveBeenCalledOnce();
     expect(confirmation.prompt).not.toHaveBeenCalled();
     expect(claimFiles()).toEqual([]);
@@ -212,6 +215,20 @@ describe("aih repair registered CLI integration V1", () => {
     expect(readdirSync(join(root, CANONICAL_CONTEXT_DIR))).toEqual([]);
     expect(result.out).toContain("repairState: complete");
     expect(result.out).toContain("create canonical managed directory");
+  });
+
+  it("refuses the registered apply route when local terminal confirmation is non-interactive", async () => {
+    confirmation.prompt.mockResolvedValueOnce({ kind: "non-interactive" });
+
+    const result = await runRegistered(["--apply", "--root", root]);
+
+    expect(result.code).toBe(1);
+    expect(repairExecutor.execute).toHaveBeenCalledOnce();
+    expect(confirmation.prompt).toHaveBeenCalledOnce();
+    expect(claimFiles()).toEqual([]);
+    expect(existsSync(join(root, CANONICAL_CONTEXT_DIR))).toBe(false);
+    expect(rootEntries()).toEqual([".aih-config.json"]);
+    expect(result.out).toContain("confirmation-refused");
   });
 
   it("keeps the applied effect and mutation summaries honest when post-effect verification fails", async () => {

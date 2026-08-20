@@ -303,6 +303,18 @@ interface OperationBindingV1 {
   readonly targetId: string;
 }
 
+/** The operation-record root digest for one resolved root/context pair. */
+export function governanceDoctorOperationalRootSha256V1(input: unknown): string {
+  const request = assertRecordV1(input, "operational root digest request");
+  assertExactKeysV1(request, ["contextDir", "root"], "operational root digest request");
+  if (typeof request.contextDir !== "string" || typeof request.root !== "string")
+    failGovernanceDoctorV1("operational root digest request is malformed");
+  return governanceDoctorSha256V1("aih.governance-doctor-operational-root-v1", {
+    contextDir: request.contextDir,
+    root: request.root,
+  });
+}
+
 /**
  * Binds one run to one root, one evaluation context, and one surface revision.
  * The root arrives already reduced to a digest, so this adapter holds no location
@@ -320,7 +332,7 @@ function operationBinding(
       postureSource: context.postureSource ?? null,
       verified: context.host.verified,
     }),
-    rootSha256: governanceDoctorSha256V1("aih.governance-doctor-operational-root-v1", {
+    rootSha256: governanceDoctorOperationalRootSha256V1({
       contextDir: context.contextDir,
       root: context.root,
     }),

@@ -20,7 +20,6 @@ import {
   isGovernanceDoctorRepairPostClaimRefusalV1,
   isGovernanceDoctorRepairPreClaimRefusalV1,
 } from "./repair-attempt-v1.js";
-import { deriveGovernanceDoctorRepairCanonicalPlanV1 } from "./repair-canon-plan-v1.js";
 import { promptGovernanceDoctorRepairConfirmationV1 } from "./repair-confirmation-v1.js";
 import {
   createGovernanceDoctorRepairConsentContextV1,
@@ -32,10 +31,12 @@ import {
   GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1,
   mintGovernanceDoctorRepairEligibilityV1,
 } from "./repair-eligibility-v1.js";
+import { deriveGovernanceDoctorRepairLiveCanonicalPlanV1 } from "./repair-live-canon-plan-v1.js";
 import {
   createGovernanceDoctorRepairExecutionContextV1,
   createGovernanceDoctorRepairVerificationContextV1,
 } from "./repair-outcome-v1.js";
+import { observeGovernanceDoctorRepairPreconditionV1 } from "./repair-precondition-v1.js";
 import { mintGovernanceDoctorRepairPreconditionScopeV1 } from "./repair-scope-v1.js";
 import { verifyGovernanceDoctorRepairV1 } from "./repair-verifier-v1.js";
 
@@ -195,7 +196,12 @@ function isInteractiveApply(ctx: PlanContext): boolean {
 
 function reportResult(
   ctx: PlanContext,
-  detail: "no mechanical repair" | "preview available" | "repair complete" | "repair incomplete",
+  detail:
+    | "no mechanical repair"
+    | "preview available"
+    | "repair complete"
+    | "repair incomplete"
+    | "repair partial",
   text: string,
   data: Record<string, unknown>,
   passed: boolean,
@@ -219,12 +225,38 @@ function reportResult(
  * and summary records have already established these bounded identities and
  * target; arbitrary result data never becomes terminal text.
  */
-function dryRunDigestText(planSha256: string, summarySha256: string, targetPath: string): string {
+function dryRunDigestText(
+  auditCompleteness: string,
+  planSha256: string,
+  preconditionSha256: string,
+  summarySha256: string,
+  targetOccupancy: string,
+  targetPath: string,
+): string {
   return [
     "Governance Doctor repair preview",
     `Target: ${targetPath}`,
     `Plan SHA-256: ${planSha256}`,
+    `Precondition SHA-256: ${preconditionSha256}`,
     `Summary SHA-256: ${summarySha256}`,
+    `Target occupancy: ${targetOccupancy}`,
+    `Audit completeness: ${auditCompleteness}`,
+    "",
+  ].join("\n");
+}
+
+function nonPlanDryRunDigestText(
+  auditCompleteness: string | null,
+  outcome: string,
+  preconditionSha256: string | null,
+  targetOccupancy: string | null,
+): string {
+  return [
+    "Governance Doctor repair preview",
+    `Outcome: ${outcome}`,
+    `Precondition SHA-256: ${preconditionSha256 ?? "unavailable"}`,
+    `Target occupancy: ${targetOccupancy ?? "unavailable"}`,
+    `Audit completeness: ${auditCompleteness ?? "unavailable"}`,
     "",
   ].join("\n");
 }
@@ -277,6 +309,8 @@ export async function executeGovernanceDoctorRepairCommandV1(
   }
   let operation: Awaited<ReturnType<typeof runGovernanceDoctorOperationV1>>;
   let eligibility: ReturnType<typeof mintGovernanceDoctorRepairEligibilityV1> | undefined;
+  let scope: ReturnType<typeof mintGovernanceDoctorRepairPreconditionScopeV1> | undefined;
+  let precondition: ReturnType<typeof observeGovernanceDoctorRepairPreconditionV1> | undefined;
   try {
     operation = await runGovernanceDoctorOperationV1({
       context: readOnlyContext,
@@ -292,22 +326,37 @@ export async function executeGovernanceDoctorRepairCommandV1(
             ctx.contextDir,
             operation.record.rootSha256,
           );
+    scope = mintGovernanceDoctorRepairPreconditionScopeV1(readOnlyContext);
+    precondition = observeGovernanceDoctorRepairPreconditionV1(scope);
   } catch {
     return rejection(ctx, "repair-unavailable");
   }
-  const canonical = deriveGovernanceDoctorRepairCanonicalPlanV1({
+  const canonical = deriveGovernanceDoctorRepairLiveCanonicalPlanV1({
     eligibility,
     operation,
+    precondition,
     profile,
+    scope,
   });
   if (canonical.kind !== "plan") {
     if (ctx.apply === true) return rejection(ctx, `repair-${canonical.kind}`);
+    const noMechanicalRepair = canonical.kind === "no-mechanical-repair";
     return reportResult(
       { ...ctx, apply: false },
-      canonical.kind === "no-mechanical-repair" ? "no mechanical repair" : "repair incomplete",
-      `Governance Doctor repair preview\nOutcome: ${canonical.kind}\n`,
-      { auditCompleteness: canonical.auditCompleteness, outcome: canonical.kind },
-      canonical.kind === "no-mechanical-repair",
+      noMechanicalRepair ? "no mechanical repair" : "repair incomplete",
+      nonPlanDryRunDigestText(
+        canonical.auditCompleteness,
+        canonical.kind,
+        canonical.preconditionSha256,
+        canonical.targetOccupancy,
+      ),
+      {
+        auditCompleteness: canonical.auditCompleteness,
+        outcome: canonical.kind,
+        preconditionSha256: canonical.preconditionSha256,
+        targetOccupancy: canonical.targetOccupancy,
+      },
+      noMechanicalRepair,
     );
   }
   const repairPlan = canonical.plan;
@@ -321,17 +370,27 @@ export async function executeGovernanceDoctorRepairCommandV1(
   )
     return rejection(ctx, "repair-plan-unavailable");
   const targetPath = targetEffect.arguments.path;
-  if (typeof targetPath !== "string") return rejection(ctx, "repair-plan-unavailable");
   const dryData = {
+    auditCompleteness: canonical.auditCompleteness,
+    outcome: "plan",
     planSha256: repairPlan.planSha256,
+    preconditionSha256: canonical.preconditionSha256,
     summarySha256: summary.summarySha256,
+    targetOccupancy: canonical.targetOccupancy,
     targetPath,
   };
   if (ctx.apply !== true)
     return reportResult(
       { ...ctx, apply: false },
       "preview available",
-      dryRunDigestText(repairPlan.planSha256, summary.summarySha256, targetPath),
+      dryRunDigestText(
+        canonical.auditCompleteness,
+        repairPlan.planSha256,
+        canonical.preconditionSha256,
+        summary.summarySha256,
+        canonical.targetOccupancy,
+        targetPath,
+      ),
       dryData,
       true,
     );
@@ -339,7 +398,9 @@ export async function executeGovernanceDoctorRepairCommandV1(
   let confirmation: Awaited<ReturnType<typeof promptGovernanceDoctorRepairConfirmationV1>>;
   try {
     confirmation = await promptGovernanceDoctorRepairConfirmationV1({
+      auditCompleteness: canonical.auditCompleteness,
       plan: repairPlan,
+      precondition,
       summary,
     });
   } catch {
@@ -352,7 +413,6 @@ export async function executeGovernanceDoctorRepairCommandV1(
   let custody: ReturnType<typeof createGovernanceDoctorRepairCustodyV1>;
   let content: ReturnType<typeof createGovernanceDoctorRepairContentV1>;
   let executionContext: ReturnType<typeof createGovernanceDoctorRepairExecutionContextV1>;
-  let scope: ReturnType<typeof mintGovernanceDoctorRepairPreconditionScopeV1>;
   try {
     const consentContext = createGovernanceDoctorRepairConsentContextV1({
       channel: "out-of-band",
@@ -382,7 +442,7 @@ export async function executeGovernanceDoctorRepairCommandV1(
       registrySha256: repairPlan.registrySha256,
       rootSha256: repairPlan.rootSha256,
     });
-    scope = mintGovernanceDoctorRepairPreconditionScopeV1(readOnlyContext);
+    if (scope === undefined) return rejection(ctx, "repair-preflight-unavailable");
   } catch {
     return rejection(ctx, "repair-preflight-unavailable");
   }
@@ -459,7 +519,11 @@ export async function executeGovernanceDoctorRepairCommandV1(
     });
     const result = await reportResult(
       ctx,
-      completion.repairState === "complete" ? "repair complete" : "repair incomplete",
+      completion.repairState === "complete"
+        ? "repair complete"
+        : completion.repairState === "partial"
+          ? "repair partial"
+          : "repair incomplete",
       completionDigestText(
         completion.effectVerification,
         completion.postAuditState,
@@ -473,10 +537,11 @@ export async function executeGovernanceDoctorRepairCommandV1(
         planSha256: repairPlan.planSha256,
         postAuditState: completion.postAuditState,
         repairState: completion.repairState,
+        residual: completion.residual,
         summarySha256: summary.summarySha256,
         targetPath: completion.targetPath,
       },
-      completion.repairState === "complete",
+      completion.repairState === "complete" || completion.repairState === "partial",
     );
     return withRepairMutationSummaries(result, {
       applied: effectApplied,

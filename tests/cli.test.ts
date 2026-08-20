@@ -295,12 +295,24 @@ describe("CLI program", () => {
       expect(process.exitCode).toBe(0);
       const report = JSON.parse(writes.join("")) as {
         capability?: string;
-        digests?: readonly { data?: { outcome?: unknown } }[];
+        digests?: readonly {
+          data?: {
+            auditCompleteness?: unknown;
+            outcome?: unknown;
+            preconditionSha256?: unknown;
+            targetOccupancy?: unknown;
+            targetPath?: unknown;
+          };
+        }[];
       };
       expect(report.capability).toBe("repair");
-      expect(report.digests?.map((digest) => digest.data?.outcome)).toEqual([
-        "no-mechanical-repair",
-      ]);
+      expect(report.digests?.map((digest) => digest.data?.outcome)).toEqual(["plan"]);
+      expect(report.digests?.[0]?.data).toMatchObject({
+        auditCompleteness: "evidence-gap",
+        targetOccupancy: "unoccupied",
+        targetPath: "ai-coding",
+      });
+      expect(report.digests?.[0]?.data?.preconditionSha256).toMatch(/^[a-f0-9]{64}$/);
       expect(existsSync(join(dir, "ai-coding"))).toBe(false);
     } finally {
       spy.mockRestore();

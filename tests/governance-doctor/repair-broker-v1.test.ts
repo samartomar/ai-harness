@@ -200,7 +200,7 @@ describe("GovernanceDoctor Repair V1 capability boundary (static)", () => {
         // and the plan preview included: a consumer that skipped the foundation
         // and imported only the operational modules would otherwise evade this
         // reverse enumeration.
-        /repair-(?:attempt|broker|canon-plan|capability|claim|claim-store|command|completion|confirmation|consent|content|custody|executor|outcome|plan|plan-preview|verifier)-v1\.js/.test(
+        /repair-(?:attempt|broker|canon-plan|capability|claim|claim-store|command|completion|confirmation|consent|content|custody|executor|live-canon-plan|outcome|plan|plan-preview|verifier)-v1\.js/.test(
           readFileSync(file, "utf8"),
         ),
       )
@@ -228,6 +228,10 @@ describe("GovernanceDoctor Repair V1 capability boundary (static)", () => {
       "governance-doctor/repair-content-v1.ts",
       "governance-doctor/repair-custody-v1.ts",
       "governance-doctor/repair-executor-v1.ts",
+      // Command-only live derivation consumes the branded precondition and then
+      // delegates canonical construction to the common factor; it is not used by
+      // the read-only Governance Doctor preview.
+      "governance-doctor/repair-live-canon-plan-v1.ts",
       "governance-doctor/repair-outcome-v1.ts",
       "governance-doctor/repair-plan-preview-v1.ts",
       "governance-doctor/repair-plan-v1.ts",

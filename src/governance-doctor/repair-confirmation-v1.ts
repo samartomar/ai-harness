@@ -1,6 +1,6 @@
 import process from "node:process";
 import { createInterface } from "node:readline";
-import { assertExactKeysV1, assertRecordV1 } from "./capability-v1.js";
+import { assertEnumV1, assertExactKeysV1, assertRecordV1 } from "./capability-v1.js";
 import { GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1 } from "./repair-eligibility-v1.js";
 import {
   canonicalGovernanceDoctorRepairEffectSummaryV1Bytes,
@@ -8,6 +8,10 @@ import {
   type GovernanceDoctorRepairEffectSummaryV1,
   type GovernanceDoctorRepairPlanV1,
 } from "./repair-plan-v1.js";
+import {
+  type GovernanceDoctorRepairPreconditionV1,
+  governanceDoctorRepairPreconditionSha256V1,
+} from "./repair-precondition-v1.js";
 
 export const GOVERNANCE_DOCTOR_REPAIR_CONFIRMATION_TIMEOUT_MS_V1 = 60_000;
 
@@ -24,13 +28,27 @@ export function promptGovernanceDoctorRepairConfirmationV1(
   input: unknown,
 ): Promise<GovernanceDoctorRepairConfirmationV1> {
   let plan: GovernanceDoctorRepairPlanV1;
+  let auditCompleteness: "completed" | "evidence-gap" | "partial";
+  let precondition: GovernanceDoctorRepairPreconditionV1;
+  let preconditionSha256: string;
   let summary: GovernanceDoctorRepairEffectSummaryV1;
   try {
     const request = assertRecordV1(input, "repair confirmation request");
-    assertExactKeysV1(request, ["plan", "summary"], "repair confirmation request");
+    assertExactKeysV1(
+      request,
+      ["auditCompleteness", "plan", "precondition", "summary"],
+      "repair confirmation request",
+    );
     canonicalGovernanceDoctorRepairPlanV1Bytes(request.plan);
     canonicalGovernanceDoctorRepairEffectSummaryV1Bytes(request.summary);
+    preconditionSha256 = governanceDoctorRepairPreconditionSha256V1(request.precondition);
+    auditCompleteness = assertEnumV1(
+      request.auditCompleteness,
+      ["completed", "evidence-gap", "partial"] as const,
+      "repair confirmation audit completeness",
+    );
     plan = request.plan as GovernanceDoctorRepairPlanV1;
+    precondition = request.precondition as GovernanceDoctorRepairPreconditionV1;
     summary = request.summary as GovernanceDoctorRepairEffectSummaryV1;
     if (summary.planSha256 !== plan.planSha256)
       throw new TypeError(
@@ -51,10 +69,13 @@ export function promptGovernanceDoctorRepairConfirmationV1(
       Object.keys(summaryEffect.arguments).length !== Object.keys(planEffect.arguments).length ||
       !Object.keys(planEffect.arguments).every(
         (key) => summaryEffect.arguments[key] === planEffect.arguments[key],
-      )
+      ) ||
+      precondition.eligible !== true ||
+      precondition.targetPath !== GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1 ||
+      precondition.targetOccupancy !== "unoccupied"
     )
       throw new TypeError(
-        "GOVERNANCE_DOCTOR_REPAIR_V1: repair confirmation requires exactly one canonical effect",
+        "GOVERNANCE_DOCTOR_REPAIR_V1: repair confirmation requires exactly one eligible canonical effect",
       );
   } catch (error) {
     return Promise.reject(error);
@@ -90,10 +111,10 @@ export function promptGovernanceDoctorRepairConfirmationV1(
     line.once("SIGINT", () => finish({ kind: "cancelled" }));
     line.once("close", () => finish({ kind: "eof" }));
     process.stdout.write(
-      `Governance Doctor Repair\nTarget: ${targetPath}\nPlan: ${plan.planSha256}\nSummary: ${summary.summarySha256}\nCanonical summary: ${canonicalSummary}\n`,
+      `Governance Doctor Repair\nTarget: ${targetPath}\nPlan: ${plan.planSha256}\nPrecondition: ${preconditionSha256}\nSummary: ${summary.summarySha256}\nTarget occupancy: ${precondition.targetOccupancy}\nAudit completeness: ${auditCompleteness}\nCanonical summary: ${canonicalSummary}\n`,
     );
     line.question(
-      `Target ${targetPath}; plan ${plan.planSha256}; summary ${summary.summarySha256}. Type full plan digest: `,
+      `Target ${targetPath}; plan ${plan.planSha256}; precondition ${preconditionSha256}; summary ${summary.summarySha256}; audit ${auditCompleteness}. Type full plan digest: `,
       (answer) => finish({ answer, kind: "answered" }),
     );
   });
