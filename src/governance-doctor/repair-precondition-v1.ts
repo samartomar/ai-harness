@@ -5,6 +5,10 @@ import {
   assertGovernanceDoctorRepairPreconditionScopeV1,
   GOVERNANCE_DOCTOR_REPAIR_CANON_CONTEXT_RECIPE_V1,
 } from "./repair-scope-v1.js";
+import {
+  type GovernanceDoctorRepairTargetOccupancyStateV1,
+  observeGovernanceDoctorRepairTargetOccupancyV1,
+} from "./repair-target-occupancy-v1.js";
 
 /**
  * The precondition for one recipe: `create-managed-directory("ai-coding")`.
@@ -127,6 +131,7 @@ export interface GovernanceDoctorRepairPreconditionV1 {
   readonly protocol: "GovernanceDoctorRepairPreconditionV1";
   readonly recipeId: "aih.repair.recipe.canon-context-dir-v1";
   readonly rootSha256: string;
+  readonly targetOccupancy: GovernanceDoctorRepairTargetOccupancyStateV1;
   readonly targetPath: "ai-coding";
 }
 
@@ -203,7 +208,13 @@ export function observeGovernanceDoctorRepairPreconditionV1(
   // ends in the state the record reports, which is the state a consumer that
   // acts will revalidate against anyway.
   const observed = isBundle(first) ? reading(root) : first;
-  const eligible = isBundle(observed);
+  // The bundle says the canon is unreachable, which the shipped checks answer
+  // with `existsSync`. Eligibility also needs the name to be genuinely free, and
+  // those are different questions: a dangling link reads as absent while
+  // occupying the name, and a lookup that failed reads as absent while proving
+  // nothing. Both must hold, and only `unoccupied` satisfies the second.
+  const targetOccupancy = observeGovernanceDoctorRepairTargetOccupancyV1(bound).state;
+  const eligible = isBundle(observed) && targetOccupancy === "unoccupied";
   const record = Object.freeze({
     diagnosticId: GOVERNANCE_DOCTOR_REPAIR_PRECONDITION_DIAGNOSTIC_ID_V1,
     eligible,
@@ -213,6 +224,7 @@ export function observeGovernanceDoctorRepairPreconditionV1(
     protocol: PROTOCOL,
     recipeId: GOVERNANCE_DOCTOR_REPAIR_CANON_CONTEXT_RECIPE_V1,
     rootSha256: bound.rootSha256,
+    targetOccupancy,
     targetPath: bound.targetPath,
   }) as GovernanceDoctorRepairPreconditionV1;
   brands.add(record);
@@ -235,6 +247,7 @@ export function assertGovernanceDoctorRepairPreconditionV1(
     record.recipeId !== GOVERNANCE_DOCTOR_REPAIR_CANON_CONTEXT_RECIPE_V1 ||
     record.targetPath !== GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1 ||
     typeof record.rootSha256 !== "string" ||
+    typeof record.targetOccupancy !== "string" ||
     !Array.isArray(record.observations) ||
     typeof record.eligible !== "boolean"
   )
