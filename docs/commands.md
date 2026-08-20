@@ -1283,6 +1283,63 @@ exits the same way it always did. A diagnostic fails to resolve in five distinct
 The run is zero-write: it appends no `.aih/runs/` ledger row, writes no support tickets, and
 produces no repository or workstation file.
 
+## aih repair
+
+Preview and, when explicitly confirmed, apply the single local Governance Doctor mechanical repair.
+<!-- aih:claim CM-74 --> This is a separate mutating command, not an apply mode of
+`aih governance-doctor`; the Governance Doctor presentation remains read-only and its
+`--repair-plan` payload remains `executable: false`.
+
+The invocation accepts an optional `[root]` positional (`aih repair [root]`) for the target
+repository/workstation root. When supplied it takes precedence; otherwise the normal target-root
+precedence is `--root`, `AIH_ROOT`, then the current working directory.
+
+The shipped real diagnostic mapping remains intentionally all-or-nothing and inert: the real
+adapter currently yields no mechanical repair plan. This checkpoint adds the closed route and its
+boundaries without widening diagnostics merely to make the route reachable, so current real runs
+report `no-mechanical-repair` and refuse `--apply` before prompt, claim, or effect.
+
+Dry-run is the default. Preview runs the same code-owned diagnostic/policy adapter and shared
+canonical plan derivation. When a plan is derivable, it prints only the target `ai-coding`, the full
+lowercase Plan SHA-256, and the full lowercase Summary SHA-256; current real runs instead report
+`no-mechanical-repair`. Preview captures no consent, spends no claim, runs no executor or verifier,
+and writes no file.
+
+Apply requires all of these gates:
+
+- a literal CLI `--apply`; ambient `AIH_APPLY`, injected Commander option values, `--open`, and
+  other shared live options do not authorize this command
+- human output mode, not `--json`
+- no `AIH_NO_PROMPT`, no environment confirmation token, no file token, no callback, and no `--yes`
+- both stdin and stdout attached to a TTY
+- an exact raw answer equal to the full lowercase Plan SHA-256; `y`, `yes`, uppercase digests, the
+  Summary digest, blank input, EOF, Ctrl-C, timeout, and trailing text all refuse
+
+Only after that local terminal confirmation, when an eligible plan is available, does the command
+mint out-of-band consent, take the durable per-machine claim, re-observe the live precondition
+before the claim and again at the effect boundary, and apply exactly one literal effect:
+
+```sh
+create-managed-directory("ai-coding")
+```
+
+The effect path is code-owned. It is never read from `.aih-config.json`, `--context-dir`, an
+environment variable, diagnostic text, or a plan-like caller object; those inputs only gate whether
+the one canonical repair is available. The command exposes the isolated zero-write flag set:
+`--apply`, `--json`, `--posture <posture>`, `--root <dir>`, and `--context-dir <dir>`. It has no
+`--force`, `--support-out`, `--no-log`, `--detect`, `--all-tools`, `--cli`, or `--yes`.
+
+When an eligible apply reaches execution, its write summary keeps durable authority and the target
+effect separate: a committed durable claim is reported as `create` in the local claim store; the
+target effect is `create` only when the directory changes, and `unchanged` when an idempotent or
+raced pre-existing directory leaves it as-is. A race detected after the claim but before the effect
+reports the claim as spent and no applied effect, rather than fabricating a `create`. The result
+still reports three separate facts: `effectVerification`, `postAuditState`, and `repairState`.
+`complete` requires the `ai-coding` effect to verify, a fresh post-execution audit to be healthy,
+every trusted join to hold, and the receipt itself to verify. A verified effect with remaining audit
+findings reports `partial`, and an unavailable post-audit, unverified effect, or broken join reports
+`failed`. These fields are never collapsed into one success bit.
+
 ## aih status
 
 Read-only inventory of what the harness has configured. Accepts and validates `--posture <posture>`

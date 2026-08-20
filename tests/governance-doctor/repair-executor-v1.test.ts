@@ -27,8 +27,12 @@ import {
 } from "../../src/governance-doctor/repair-content-v1.js";
 import { createGovernanceDoctorRepairCustodyV1 } from "../../src/governance-doctor/repair-custody-v1.js";
 import {
+  applyGovernanceDoctorRepairExecutionV1,
+  claimGovernanceDoctorRepairExecutionV1,
   executeGovernanceDoctorRepairV1,
   GOVERNANCE_DOCTOR_REPAIR_EXECUTABLE_EFFECT_KINDS_V1,
+  governanceDoctorRepairExecutionScopeMatchesV1,
+  prepareGovernanceDoctorRepairExecutionV1,
 } from "../../src/governance-doctor/repair-executor-v1.js";
 import type { GovernanceDoctorRepairPlanV1 } from "../../src/governance-doctor/repair-plan-v1.js";
 import {
@@ -45,6 +49,22 @@ import {
   repairFixturePlan,
   repairFixtureSha256,
 } from "./repair-execution-fixture-v1.js";
+
+const evidenceInterposition = vi.hoisted(() => ({ throws: false }));
+
+vi.mock("../../src/governance-doctor/repair-content-v1.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../src/governance-doctor/repair-content-v1.js")>();
+  return {
+    ...actual,
+    recordGovernanceDoctorRepairAttemptEvidenceV1: (
+      ...input: Parameters<typeof actual.recordGovernanceDoctorRepairAttemptEvidenceV1>
+    ) => {
+      if (evidenceInterposition.throws) throw new Error("evidence recorder unavailable");
+      return actual.recordGovernanceDoctorRepairAttemptEvidenceV1(...input);
+    },
+  };
+});
 
 /**
  * The claim store resolves its own location from the OS account, never from
@@ -91,6 +111,7 @@ const EFFECTS: readonly RepairFixtureEffect[] = [
 ];
 
 beforeEach(() => {
+  evidenceInterposition.throws = false;
   vi.spyOn(Date, "now").mockReturnValue(REPAIR_FIXTURE_ATTEMPTED_AT);
   // Every execution below now takes a durable claim. Without this the suite would
   // write claim records into the real user's home.
@@ -159,6 +180,16 @@ function executeOnly(built: GovernanceDoctorRepairPlanV1, ...bodies: readonly st
   });
 }
 
+function prepareExecution(built: GovernanceDoctorRepairPlanV1) {
+  return prepareGovernanceDoctorRepairExecutionV1({
+    consent: repairFixtureConsent(built),
+    content: trustedContent(ROUTER_BODY, BLOCK_BODY),
+    context: repairFixtureExecutionContext(built),
+    custody: custody(built),
+    plan: built,
+  });
+}
+
 /** The refusal message a closed failure produced, or an empty string if none did. */
 function refusalMessage(run: () => unknown): string {
   try {
@@ -216,6 +247,57 @@ const results = (receipt: { effects: readonly { result: string }[] }) =>
   receipt.effects.map((effect) => effect.result);
 
 describe("executeGovernanceDoctorRepairV1", () => {
+  it("keeps a real receipt and durable claim when attempt-evidence recording fails after effects", async () => {
+    evidenceInterposition.throws = true;
+    const built = await plan([
+      {
+        arguments: { path: "canon" },
+        effectId: "ensure-canon",
+        templateId: "ensure-canon-directory",
+      },
+    ]);
+
+    const receipt = executeOnly(built);
+
+    expect(receipt.state).toBe("applied-unverified");
+    expect(results(receipt)).toEqual(["applied"]);
+    expect(existsSync(join(root, "canon"))).toBe(true);
+    expect(readdirSync(claimStore())).toHaveLength(1);
+  });
+
+  it("keeps staged execution phases branded, ordered, root-bound, and one-shot", async () => {
+    const built = await plan();
+    const forgedPrepared = { protocol: "GovernanceDoctorRepairPreparedExecutionV1" };
+    const forgedClaimed = { protocol: "GovernanceDoctorRepairClaimedExecutionV1" };
+
+    expect(() => claimGovernanceDoctorRepairExecutionV1(forgedPrepared)).toThrow(
+      /repair prepared execution requires a validated brand/,
+    );
+    expect(() => applyGovernanceDoctorRepairExecutionV1(forgedClaimed)).toThrow(
+      /repair claimed execution requires a validated brand/,
+    );
+
+    const prepared = prepareExecution(built);
+    expect(governanceDoctorRepairExecutionScopeMatchesV1(prepared, realpathSync.native(root))).toBe(
+      true,
+    );
+    expect(governanceDoctorRepairExecutionScopeMatchesV1(prepared, `${root}-other`)).toBe(false);
+    // A prepared token cannot jump straight to effects.
+    expect(() => applyGovernanceDoctorRepairExecutionV1(prepared)).toThrow(
+      /repair claimed execution requires a validated brand/,
+    );
+
+    const claimed = claimGovernanceDoctorRepairExecutionV1(prepared);
+    // Claiming consumed the preparation, and applying consumes the claim.
+    expect(() => claimGovernanceDoctorRepairExecutionV1(prepared)).toThrow(
+      /repair prepared execution requires a validated brand/,
+    );
+    expect(applyGovernanceDoctorRepairExecutionV1(claimed).state).toBe("applied-unverified");
+    expect(() => applyGovernanceDoctorRepairExecutionV1(claimed)).toThrow(
+      /repair claimed execution requires a validated brand/,
+    );
+  });
+
   it("never widens the frozen V1 effect allowlist", () => {
     expect([...GOVERNANCE_DOCTOR_REPAIR_EXECUTABLE_EFFECT_KINDS_V1]).toEqual([
       ...GOVERNANCE_DOCTOR_REPAIR_EFFECT_KINDS_V1,

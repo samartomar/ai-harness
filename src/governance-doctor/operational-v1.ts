@@ -22,6 +22,7 @@ import {
   assertSha256V1,
   failGovernanceDoctorV1,
   GOVERNANCE_DOCTOR_READ_ONLY_DIAGNOSTIC_SURFACES,
+  GOVERNANCE_DOCTOR_READ_ONLY_PROBES_COMPLETED_V1,
   governanceDoctorSha256V1,
 } from "./capability-v1.js";
 import {
@@ -618,7 +619,7 @@ async function diagnosticObservation(
     outcome: {
       findings: [
         {
-          code: "AIH_READ_ONLY_PROBES_COMPLETED",
+          code: GOVERNANCE_DOCTOR_READ_ONLY_PROBES_COMPLETED_V1,
           severity: "info",
           summary: {
             attribution: OPERATIONAL_ATTRIBUTION,

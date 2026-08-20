@@ -9,6 +9,7 @@ import {
   runGovernanceDoctorOperationV1,
 } from "../../src/governance-doctor/operational-v1.js";
 import { createGovernanceDoctorProfileV1 } from "../../src/governance-doctor/profile-v1.js";
+import { deriveGovernanceDoctorRepairCanonicalPlanV1 } from "../../src/governance-doctor/repair-canon-plan-v1.js";
 import {
   GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1,
   mintGovernanceDoctorRepairEligibilityV1,
@@ -244,6 +245,26 @@ describe("presentGovernanceDoctorRepairPlanPreviewV1", () => {
   });
 });
 
+describe("repair canonical plan factor", () => {
+  it("collapses hostile and unbranded requests before they can become a plan", async () => {
+    const built = await operation({}, CONTEXT_DIR_MISSING);
+    for (const value of [
+      null,
+      {},
+      {
+        eligibility: eligibilityFor(built),
+        operation: { ...built, record: { ...built.record } },
+        profile: profile(),
+      },
+      { eligibility: { ...eligibilityFor(built) }, operation: built, profile: profile() },
+    ]) {
+      const result = deriveGovernanceDoctorRepairCanonicalPlanV1(value);
+      expect(result.kind).toBe("unavailable");
+      expect("plan" in result).toBe(false);
+    }
+  });
+});
+
 /**
  * The one mechanically mappable finding. Its effect path is the module's own
  * code-owned constant; eligibility is a gate on minting, never the source of a
@@ -413,31 +434,33 @@ describe("repair plan preview static boundary", () => {
    * may load is `node:crypto` (the plan nonce), and no dynamic seam, process
    * surface, or filesystem reach may ever appear in it.
    */
-  it("loads no platform capability beyond node:crypto and opens no dynamic seam", () => {
-    const source = readFileSync(resolve(sourceRoot, "repair-plan-preview-v1.ts"), "utf8");
-    for (const token of [
-      "node:fs",
-      "node:child_process",
-      "node:net",
-      "node:http",
-      "node:os",
-      "node:process",
-      "process.env",
-      "process.argv",
-      "require(",
-      "import(",
-      "eval",
-      "new Function",
-      "globalThis",
-      "PlanContext",
-      "CommandSpec",
-      // The eligibility record is a gate, never a source of a path: the effect
-      // path must come from this module's own constant, so the module never
-      // names the record's path fields at all.
-      "markerContextDir",
-      "resolvedContextDir",
-    ])
-      expect(source, token).not.toContain(token);
+  it("keeps preview and canonical-plan capability-free beyond their nonce source", () => {
+    for (const entry of ["repair-plan-preview-v1.ts", "repair-canon-plan-v1.ts"]) {
+      const source = readFileSync(resolve(sourceRoot, entry), "utf8");
+      for (const token of [
+        "node:fs",
+        "node:child_process",
+        "node:net",
+        "node:http",
+        "node:os",
+        "node:process",
+        "process.env",
+        "process.argv",
+        "require(",
+        "import(",
+        "eval",
+        "new Function",
+        "globalThis",
+        "PlanContext",
+        "CommandSpec",
+        // The eligibility record is a gate, never a source of a path: the effect
+        // path must come from this module's own constant, so the module never
+        // names the record's path fields at all.
+        "markerContextDir",
+        "resolvedContextDir",
+      ])
+        expect(source, `${entry} ${token}`).not.toContain(token);
+    }
   });
 
   /** The one value the preview accepts from the command boundary stays pure too. */
@@ -472,6 +495,28 @@ describe("repair plan preview static boundary", () => {
       ).toBe(false);
     expect(closure.some((file) => file.endsWith("repair-plan-preview-v1.ts"))).toBe(true);
     expect(closure.some((file) => file.endsWith("repair-plan-v1.ts"))).toBe(true);
+  });
+
+  it("keeps the literal mapping and mint authority in the shared factor alone", () => {
+    const canon = readFileSync(resolve(sourceRoot, "repair-canon-plan-v1.ts"), "utf8");
+    const preview = readFileSync(resolve(sourceRoot, "repair-plan-preview-v1.ts"), "utf8");
+    const command = readFileSync(resolve(sourceRoot, "repair-command-v1.ts"), "utf8");
+    expect(canon.match(/AIH_CANON_CONTEXT_DIR_MISSING/g)).toHaveLength(1);
+    expect(canon.match(/ensure-canonical-context-dir/g)).toHaveLength(1);
+    expect(canon).toContain('effectKind: "create-managed-directory"');
+    expect(preview).toContain("deriveGovernanceDoctorRepairCanonicalPlanV1");
+    expect(command).toContain("deriveGovernanceDoctorRepairCanonicalPlanV1");
+    for (const forbidden of [
+      "AIH_CANON_CONTEXT_DIR_MISSING",
+      "aih.doctor.root",
+      "ensure-canonical-context-dir",
+      "createGovernanceDoctorRepairPlanV1",
+      "governanceDoctorRepairEffectSummaryV1",
+      "shippedGovernanceDoctorRepairBrokerRegistryV1",
+      "GOVERNANCE_DOCTOR_REPAIR_PREVIEW_RECIPE_ID_V1",
+      "PLAN_WINDOW_MS",
+    ])
+      expect(command, forbidden).not.toContain(forbidden);
   });
 });
 

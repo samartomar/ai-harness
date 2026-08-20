@@ -772,7 +772,7 @@ export function governanceDoctorRepairReadV1(
  * a second call. The new entry is then made durable where the platform exposes a
  * directory handle.
  */
-export function governanceDoctorRepairCreateDirectoryV1(grant: unknown): void {
+export function governanceDoctorRepairCreateDirectoryV1(grant: unknown): boolean {
   const authorized = consumeMutationGrant(grant);
   assertAuthorityWindowV1(authorized);
   const { body, effect } = authorized;
@@ -782,7 +782,7 @@ export function governanceDoctorRepairCreateDirectoryV1(grant: unknown): void {
   if (path === undefined || !body.scopePaths.has(path))
     failGovernanceDoctorRepairV1("repair managed path is not plan-declared");
   const live = walk(body, path);
-  if (live.state === "directory") return;
+  if (live.state === "directory") return false;
   const observed = readSnapshots.get(live);
   if (live.state !== "absent" || observed === undefined)
     failGovernanceDoctorRepairV1("repair managed directory destination is not available");
@@ -826,6 +826,10 @@ export function governanceDoctorRepairCreateDirectoryV1(grant: unknown): void {
     }
     failGovernanceDoctorRepairV1("repair managed directory was not created");
   }
+  // `created` is a fact about this exact mkdir call. A concurrent creator that
+  // won the race produces a valid directory but not a mutation attributable to
+  // this Repair attempt.
+  return created;
 }
 
 /**

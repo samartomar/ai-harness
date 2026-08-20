@@ -57,6 +57,9 @@ describe("README docs currency", () => {
     const overview = read("docs/assets/aih-overview.svg");
     const enterprisePacks = read("docs/assets/aih-enterprise-packs.svg");
     const pkg = JSON.parse(read("package.json")) as { files?: string[]; version: string };
+    const surface = JSON.parse(read("tests/contract/command-surface.json")) as {
+      commands: readonly unknown[];
+    };
     const normalizedOverview = overview.replace(/\s+/g, " ");
     const publishedAssets = [
       "docs/assets/aih-overview.svg",
@@ -70,7 +73,7 @@ describe("README docs currency", () => {
     }
     expect(overview).toContain(`v${pkg.version} overview`);
     expect(overview).toContain("Five governed-readiness pillars");
-    expect(overview).toContain("45 commands");
+    expect(overview).toContain(`${surface.commands.length} commands`);
     expect(normalizedOverview).toContain("aih truth pack · verify · docs-lint claim gate");
     expect(overview).toContain("Claim-ledger entries &amp; project-truth assertions");
     expect(overview).toContain("SHA-bound sidecar · staged pack · drift gate");

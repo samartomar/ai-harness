@@ -6,6 +6,7 @@ import {
   assertRecordV1,
   assertSha256V1,
   GOVERNANCE_DOCTOR_READ_ONLY_DIAGNOSTIC_IDS,
+  GOVERNANCE_DOCTOR_READ_ONLY_PROBES_COMPLETED_V1,
   GOVERNANCE_DOCTOR_V1_LIMITS,
   governanceDoctorSha256V1,
   sortByCodeUnitsV1,
@@ -226,11 +227,17 @@ function readPostAudit(value: unknown): {
   }
   const audited = value as {
     readonly auditSha256: string;
-    readonly findings: readonly { readonly code: string }[];
+    readonly findings: readonly { readonly code: string; readonly severity: string }[];
   };
   const counts = new Map<string, number>();
-  for (const finding of audited.findings)
+  for (const finding of audited.findings) {
+    if (
+      finding.code === GOVERNANCE_DOCTOR_READ_ONLY_PROBES_COMPLETED_V1 &&
+      finding.severity === "info"
+    )
+      continue;
     counts.set(finding.code, (counts.get(finding.code) ?? 0) + 1);
+  }
   for (const unresolved of completeness.unresolved)
     counts.set(unresolved.state, (counts.get(unresolved.state) ?? 0) + 1);
   const residual = sortByCodeUnitsV1(

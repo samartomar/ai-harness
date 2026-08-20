@@ -244,6 +244,11 @@ export async function runCapability(
       root: resolvedRoot,
       caPattern: caPatternFromFlag,
     });
+    // A CommandSpec may narrow its own mutation boundary to the literal CLI
+    // spelling. Settings still resolve normally for compatibility and errors,
+    // but their apply value (and spec-owned live options below) has no authority
+    // for an explicit-apply-only command.
+    const explicitApply = optionSource(command, "apply") === "cli" && opts.apply === true;
     json = settings.json;
     const host = makeHostAdapter({ run, env });
     // Wire an interactive prompter when the user opted into `--detect`, OR the command
@@ -277,7 +282,11 @@ export async function runCapability(
       posture: resolvedPosture.posture,
       postureSource: resolvedPosture.postureSource,
       // `--open`/`--refresh` (report) imply --apply so one command builds AND opens.
-      apply: spec.readOnly ? false : settings.apply || liveOpen,
+      apply: spec.readOnly
+        ? false
+        : spec.requireExplicitApply === true
+          ? explicitApply
+          : settings.apply || liveOpen,
       // readOnly (doctor/status) always verifies; a capability can also opt into
       // always-verify (heal) so it diagnoses by default while still applying fixes.
       // `--sarif` implies --verify: asking for the report means you want the probes

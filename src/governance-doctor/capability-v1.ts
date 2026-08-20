@@ -43,6 +43,9 @@ export const GOVERNANCE_DOCTOR_READ_ONLY_DIAGNOSTIC_IDS: readonly string[] = Obj
   GOVERNANCE_DOCTOR_READ_ONLY_DIAGNOSTIC_SURFACES.map((surface) => surface.diagnosticId),
 );
 
+/** A completed read-only probe is evidence of coverage, never a residual fault. */
+export const GOVERNANCE_DOCTOR_READ_ONLY_PROBES_COMPLETED_V1 = "AIH_READ_ONLY_PROBES_COMPLETED";
+
 /** Hard, non-negotiable ceilings. Every bound is a raw count, code unit, or byte. */
 export const GOVERNANCE_DOCTOR_V1_LIMITS = Object.freeze({
   maxAttributionCodeUnits: 128,

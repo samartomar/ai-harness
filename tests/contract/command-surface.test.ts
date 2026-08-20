@@ -210,6 +210,20 @@ describe("v1 contract — CLI command surface", () => {
     expect(node?.commands).toEqual([]);
   });
 
+  it("exposes repair as an isolated explicit-apply route without shared bypass flags", () => {
+    const node = liveSurface().commands.find((c) => c.name === "repair");
+    const flags = node?.options.map((o) => o.flags) ?? [];
+    expect(flags.sort()).toEqual([
+      "--apply",
+      "--context-dir <dir>",
+      "--json",
+      "--posture <posture>",
+      "--root <dir>",
+    ]);
+    expect(node?.arguments).toEqual([{ name: "root", required: false }]);
+    expect(node?.commands).toEqual([]);
+  });
+
   it("read-only nested commands do not expose ignored mutating flags", () => {
     const root = liveSurface();
     for (const [parentName, childName] of [

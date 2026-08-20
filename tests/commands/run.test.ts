@@ -60,6 +60,14 @@ const zeroWriteMutatingSpec: CommandSpec = {
   plan: () => plan("zero-write-mutating", writeText("generated.txt", "generated", "generate")),
 };
 
+const explicitApplyOnlySpec: CommandSpec = {
+  name: "explicit-apply-only",
+  summary: "test literal --apply mutation boundary",
+  requireExplicitApply: true,
+  zeroWrite: true,
+  plan: () => plan("explicit-apply-only", writeText("explicit.txt", "explicit", "generate")),
+};
+
 /** Build a standalone commander Command for a spec, populated from `argv`. */
 function command(argv: string[]): Command {
   const cmd = new Command("gate");
@@ -90,11 +98,12 @@ function command(argv: string[]): Command {
 async function run(
   argv: string[],
   spec: CommandSpec = gateSpec,
+  env: NodeJS.ProcessEnv = {},
 ): Promise<{ code: number; out: string }> {
   let out = "";
   const code = await runCapability(spec, command(argv), {
     run: fakeRunner(() => undefined),
-    env: {},
+    env,
     write: (t) => {
       out += t;
     },
@@ -419,6 +428,51 @@ describe("runCapability — custom option extraction", () => {
     expect(code).toBe(0);
     expect(out).toContain("pass --apply to execute");
     expect(out).not.toContain("read-only — nothing written");
+  });
+});
+
+describe("runCapability — explicit apply-only mutation boundary", () => {
+  it("keeps ordinary capabilities compatible with ambient AIH_APPLY", async () => {
+    await run(["--root", dir], zeroWriteMutatingSpec, { AIH_APPLY: "1" });
+    expect(readFileSync(join(dir, "generated.txt"), "utf8")).toBe("generated\n");
+  });
+
+  it("keeps an explicit-apply-only capability dry-run under AIH_APPLY alone", async () => {
+    const { out } = await run(["--root", dir], explicitApplyOnlySpec, { AIH_APPLY: "1" });
+    expect(existsSync(join(dir, "explicit.txt"))).toBe(false);
+    expect(out).toContain("pass --apply to execute");
+  });
+
+  it("applies an explicit-apply-only capability under literal --apply", async () => {
+    await run(["--apply", "--root", dir], explicitApplyOnlySpec, { AIH_APPLY: "0" });
+    expect(readFileSync(join(dir, "explicit.txt"), "utf8")).toBe("explicit\n");
+  });
+
+  it("does not treat an injected Commander apply value as a literal CLI --apply", async () => {
+    const injected = command(["--root", dir]);
+    injected.setOptionValueWithSource("apply", true, "default");
+    await runCapability(explicitApplyOnlySpec, injected, {
+      env: {},
+      run: fakeRunner(() => undefined),
+      write: () => {},
+    });
+    expect(existsSync(join(dir, "explicit.txt"))).toBe(false);
+  });
+
+  it("does not let spec-owned live options imply apply", async () => {
+    const explicitLiveSpec: CommandSpec = { ...liveSpec, requireExplicitApply: true };
+    const { out } = await run(["--open", "--root", dir], explicitLiveSpec, { AIH_APPLY: "1" });
+    expect(out).toContain("false");
+  });
+
+  it("never applies a read-only spec even when literal --apply is present", async () => {
+    const readOnlyExplicitSpec: CommandSpec = {
+      ...liveSpec,
+      readOnly: true,
+      requireExplicitApply: true,
+    };
+    const { out } = await run(["--apply", "--root", dir], readOnlyExplicitSpec);
+    expect(out).toContain("false");
   });
 });
 
