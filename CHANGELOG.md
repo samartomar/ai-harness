@@ -8,6 +8,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Sharded ECC baseline vetting now requires a source-bound static preflight receipt.** A
+  dispatcher can run the preview generator's lexical dependency-closure check once before
+  launching scanner shards, then carry the strict receipt to every shard and the final fan-in.
+  The receipt binds the exact ECC catalog identity, ordered installer runtime paths, static-check
+  contract versions, and whole-source tree hash; stale, forged, sharded, oversized, linked, or
+  mismatched inputs fail closed. This moves cheap structural rejection ahead of expensive scanner
+  fan-out without executing upstream code early or replacing the authorized preview boundary's
+  independent post-evidence check. Receipt files must remain outside the attested ECC tree, and
+  ordinary single-host vet and check flows remain unchanged.
+
 - **Repair V1 is reachable through its live precondition without widening Audit.** `aih repair`
   now derives the one code-owned `create-managed-directory("ai-coding")` plan from the branded
   canonical precondition, not from the general Audit finding projection. A valid temporary root

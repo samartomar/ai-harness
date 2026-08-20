@@ -6,17 +6,9 @@ import type {
   ContingentEccInstallOperation,
   EccInstallPreviewArtifact,
 } from "./install-preview.js";
+import { ECC_INSTALL_TARGETS } from "./install-targets.js";
 
 const HARNESS_GENERATED_SOURCE = "aih ledger-last writer";
-const INSTALL_TARGETS = [
-  "claude",
-  "codex",
-  "cursor",
-  "antigravity",
-  "gemini",
-  "opencode",
-  "zed",
-] as const;
 
 function operationKey(operation: ContingentEccInstallOperation): string {
   return [
@@ -64,7 +56,7 @@ export function validateEccInstallPreviewArtifact(
     prior = key;
     assertSourceFile(eccRoot, operation.source);
   }
-  for (const target of INSTALL_TARGETS) {
+  for (const target of ECC_INSTALL_TARGETS) {
     if (
       !artifact.operations.some(
         (operation) =>

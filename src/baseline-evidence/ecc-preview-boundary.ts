@@ -10,7 +10,12 @@ import { hashComponentTree } from "./hash.js";
 import { componentIdentityPaths } from "./license.js";
 import type { BaselineSourceEvidence } from "./schema.js";
 
-const GENERATOR_ENTRY_PATHS = [
+/**
+ * Static entry shapes inspected before the authorized preview generator is ever
+ * loaded. Receipt versions bind this ordered list, so extending the generator
+ * surface invalidates preflight receipts made under the old contract.
+ */
+export const GENERATOR_ENTRY_PATHS = [
   "package.json",
   "scripts/lib/install-executor.js",
   "scripts/lib/install-manifests.js",
@@ -37,8 +42,7 @@ function resolveRelativeModule(from: string, specifier: string): string {
     const stats = lstatSync(candidate);
     return stats.isFile() || stats.isSymbolicLink();
   });
-  if (found === undefined)
-    throw new Error(`could not resolve preview generator dependency ${specifier}`);
+  if (found === undefined) throw new Error("could not resolve preview generator dependency");
   return found;
 }
 
@@ -54,9 +58,7 @@ function checkedModuleSpecifier(path: string, form: string, argument: unknown): 
   }
   if (specifier.startsWith(".")) return specifier;
   if (NODE_BUILTINS.has(specifier)) return undefined;
-  throw new Error(
-    `unvetted package import ${JSON.stringify(specifier)} is forbidden in preview generator dependency ${path}`,
-  );
+  throw new Error(`unvetted package import is forbidden in preview generator dependency ${path}`);
 }
 
 type AstNode = Record<string, unknown> & { type: string };
@@ -83,7 +85,7 @@ function requireResolveCall(callee: AstNode): boolean {
   );
 }
 
-function literalDependencies(path: string): string[] {
+function literalDependencies(path: string, sourceRelativePath: string): string[] {
   const source = readFileSync(path, "utf8");
   const ast = parse(source, { ecmaVersion: "latest", sourceType: "module", allowHashBang: true });
   const dependencies: string[] = [];
@@ -94,11 +96,11 @@ function literalDependencies(path: string): string[] {
       value.type === "ExportAllDeclaration" ||
       (value.type === "ExportNamedDeclaration" && value.source !== null)
     ) {
-      const dependency = checkedModuleSpecifier(path, "import", value.source);
+      const dependency = checkedModuleSpecifier(sourceRelativePath, "import", value.source);
       if (dependency !== undefined) dependencies.push(dependency);
     }
     if (value.type === "ImportExpression") {
-      const dependency = checkedModuleSpecifier(path, "import()", value.source);
+      const dependency = checkedModuleSpecifier(sourceRelativePath, "import()", value.source);
       if (dependency !== undefined) dependencies.push(dependency);
     }
     if (value.type === "CallExpression") {
@@ -110,7 +112,7 @@ function literalDependencies(path: string): string[] {
       }
       if (form !== undefined) {
         const args = Array.isArray(value.arguments) ? value.arguments : [];
-        const dependency = checkedModuleSpecifier(path, form, args[0]);
+        const dependency = checkedModuleSpecifier(sourceRelativePath, form, args[0]);
         if (dependency !== undefined) dependencies.push(dependency);
       }
     }
@@ -146,7 +148,7 @@ export function assertPreviewGeneratorDependenciesCovered(
       throw new Error(`preview generator dependency is not a regular file: ${fromRoot}`);
     }
     if (!absolute.endsWith(".js")) continue;
-    for (const dependency of literalDependencies(absolute)) {
+    for (const dependency of literalDependencies(absolute, fromRoot)) {
       pending.push(resolveRelativeModule(absolute, dependency));
     }
   }
