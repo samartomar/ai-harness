@@ -23,6 +23,10 @@ import {
   type GovernanceDoctorRepairVerificationV1,
 } from "./repair-outcome-v1.js";
 import {
+  canonicalGovernanceDoctorRepairPlanV1Bytes,
+  type GovernanceDoctorRepairPlanV1,
+} from "./repair-plan-v1.js";
+import {
   type GovernanceDoctorRepairPreconditionV1,
   governanceDoctorRepairPreconditionSha256V1,
 } from "./repair-precondition-v1.js";
@@ -88,6 +92,20 @@ import {
  * receipt, a precondition from another checkout -- mints a record whose state is
  * `failed`. The first is "this did not happen"; the second is "this happened and
  * did not hold together", and only the second belongs in an audit trail.
+ *
+ * ## One residual the joins cannot close
+ *
+ * A Receipt and a Verification bind the Plan's *declared* root -- the strings the
+ * plan was built from -- while a claim and a precondition bind the *resolved*
+ * checkout. Those are digests of different things, the same structural gap the
+ * evidence recorder documents, so two runs of one Plan against roots that
+ * resolve differently produce receipts these joins cannot tell apart. Every
+ * record here binds the Plan, and the Plan binds the declared root, so a receipt
+ * from an unrelated plan is refused; pairing a receipt from one resolved
+ * checkout with a claim from another needs an in-package caller deliberately
+ * combining records from two runs, which the single production path does not do.
+ * Closing it needs the resolved root inside the Receipt, which is a change to
+ * the outcome contract rather than to this one.
  */
 export type GovernanceDoctorRepairEffectVerificationV1 = "unverified" | "verified";
 
@@ -150,6 +168,7 @@ const COMPLETION_STATES = ["complete", "failed", "partial"] as const;
 const REQUEST_FIELDS = [
   "claim",
   "effectSha256",
+  "plan",
   "postAudit",
   "precondition",
   "receipt",
@@ -175,8 +194,14 @@ function classify(
   effectVerification: GovernanceDoctorRepairEffectVerificationV1,
   postAuditState: GovernanceDoctorRepairPostAuditStateV1,
   joinsHold: boolean,
+  attemptSucceeded: boolean,
 ): GovernanceDoctorRepairCompletionStateV1 {
-  if (!joinsHold || effectVerification !== "verified" || postAuditState === "unavailable")
+  if (
+    !joinsHold ||
+    !attemptSucceeded ||
+    effectVerification !== "verified" ||
+    postAuditState === "unavailable"
+  )
     return "failed";
   return postAuditState === "healthy" ? "complete" : "partial";
 }
@@ -231,14 +256,29 @@ export function deriveGovernanceDoctorRepairCompletionV1(
 ): GovernanceDoctorRepairCompletionV1 {
   const request = assertRecordV1(input, "repair completion request");
   assertExactKeysV1(request, REQUEST_FIELDS, "repair completion request");
+  canonicalGovernanceDoctorRepairPlanV1Bytes(request.plan);
   canonicalGovernanceDoctorRepairReceiptV1Bytes(request.receipt);
   canonicalGovernanceDoctorRepairVerificationV1Bytes(request.verification);
   const claim = assertGovernanceDoctorRepairClaimSpentV1(request.claim);
   const preconditionSha256 = governanceDoctorRepairPreconditionSha256V1(request.precondition);
   const precondition = request.precondition as GovernanceDoctorRepairPreconditionV1;
+  const plan = request.plan as GovernanceDoctorRepairPlanV1;
   const receipt = request.receipt as GovernanceDoctorRepairReceiptV1;
   const verification = request.verification as GovernanceDoctorRepairVerificationV1;
   const effectSha256 = assertSha256V1(request.effectSha256, "repair completion effect identity");
+  // The named effect must be this recipe's own, read from the branded Plan
+  // rather than taken on the caller's word. Without the Plan, `effectSha256`
+  // could name any applied effect in any receipt -- a line-ending normalization
+  // on some other managed path -- and the record would still stamp it with this
+  // recipe and the `ai-coding` target. Being asked to describe a different
+  // effect is a category error, not an outcome, so it refuses.
+  const declared = plan.effects.find((effect) => effect.effectSha256 === effectSha256);
+  if (
+    declared === undefined ||
+    declared.effectKind !== "create-managed-directory" ||
+    declared.arguments.path !== GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1
+  )
+    failGovernanceDoctorRepairV1("repair completion effect is not this recipe's managed directory");
   const rootRealPath = request.rootRealPath;
   if (typeof rootRealPath !== "string" || rootRealPath.length === 0)
     failGovernanceDoctorRepairV1("repair completion requires the resolved checkout path");
@@ -248,6 +288,9 @@ export function deriveGovernanceDoctorRepairCompletionV1(
   // independently, so agreement is evidence and disagreement is a recorded
   // failure rather than a refusal.
   const joinsHold =
+    receipt.planSha256 === plan.planSha256 &&
+    receipt.rootSha256 === plan.rootSha256 &&
+    verification.rootSha256 === plan.rootSha256 &&
     claim.planSha256 === receipt.planSha256 &&
     claim.consentSha256 === receipt.consentSha256 &&
     claim.scopeSha256 === scopeSha256 &&
@@ -267,6 +310,13 @@ export function deriveGovernanceDoctorRepairCompletionV1(
     applied && checked.length === 1 && checked[0]?.outcome === "verified"
       ? "verified"
       : "unverified";
+  // One effect verifying does not make the attempt a success. A Plan may declare
+  // several, and a Receipt reads `applied-unverified` only when every one of
+  // them applied; the verifier's own overall outcome covers them all the same
+  // way. Without this, a multi-effect Plan whose canon directory landed and
+  // whose other effect failed would report the whole Repair complete.
+  const attemptSucceeded =
+    receipt.state === "applied-unverified" && verification.outcome === "verified";
 
   const post = readPostAudit(request.postAudit);
   const body = {
@@ -281,7 +331,7 @@ export function deriveGovernanceDoctorRepairCompletionV1(
     protocol: PROTOCOL,
     receiptSha256: receipt.receiptSha256,
     recipeId: GOVERNANCE_DOCTOR_REPAIR_CANON_CONTEXT_RECIPE_V1,
-    repairState: classify(effectVerification, post.state, joinsHold),
+    repairState: classify(effectVerification, post.state, joinsHold, attemptSucceeded),
     residual: post.residual,
     scopeSha256,
     targetPath: GOVERNANCE_DOCTOR_CANONICAL_CONTEXT_DIR_V1,
@@ -378,8 +428,9 @@ export function assertGovernanceDoctorRepairCompletionV1(
   if (residual.length > 0 !== (postAuditState === "partial"))
     failGovernanceDoctorRepairV1("repair completion residual does not match its post-audit state");
   // The repair state may never be better than its own parts allow. `failed`
-  // stays reachable from a join this record does not carry, so only the two
-  // optimistic states are pinned here.
+  // stays reachable from facts this record does not carry -- a join that did not
+  // hold, a sibling effect that failed -- so only the two optimistic states are
+  // pinned here.
   if (repairState !== "failed" && effectVerification !== "verified")
     failGovernanceDoctorRepairV1("repair completion claims more than its effect verification");
   if (repairState === "complete" && postAuditState !== "healthy")

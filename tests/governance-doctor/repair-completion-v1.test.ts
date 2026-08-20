@@ -185,6 +185,7 @@ async function attempt() {
   });
   return {
     effectSha256: plan.effects[0]?.effectSha256 as string,
+    plan,
     precondition,
     receipt,
     verification,
@@ -217,6 +218,7 @@ function completionFrom(made: Attempt, overrides: Record<string, unknown> = {}) 
   return deriveGovernanceDoctorRepairCompletionV1({
     claim: spentClaim(made.receipt),
     effectSha256: made.effectSha256,
+    plan: made.plan,
     postAudit: healthyAudit(),
     precondition: made.precondition,
     receipt: made.receipt,
@@ -282,6 +284,7 @@ describe("repair completion", () => {
     const report = deriveGovernanceDoctorRepairCompletionV1({
       claim: spentClaim(made.receipt, `${root}-elsewhere`),
       effectSha256: made.effectSha256,
+      plan: made.plan,
       postAudit: healthyAudit(),
       precondition: made.precondition,
       receipt: made.receipt,
@@ -295,9 +298,81 @@ describe("repair completion", () => {
     expect(report.repairState).toBe("failed");
   });
 
-  it("is failed when the named effect is not the one that verified", async () => {
-    const report = await completion({ effectSha256: "a".repeat(64) });
-    expect(report.effectVerification).toBe("unverified");
+  /**
+   * Review finding. Without the branded Plan, `effectSha256` could name any
+   * applied effect in any receipt -- a line-ending normalization on some other
+   * managed path -- and the record would still stamp it with this recipe and the
+   * `ai-coding` target. Being asked to describe a different effect is a category
+   * error rather than an outcome, so it refuses instead of recording one.
+   */
+  it("refuses an effect identity that is not this recipe's managed directory", async () => {
+    const made = await attempt();
+    for (const [label, effectSha256] of [
+      ["unknown identity", "a".repeat(64)],
+      ["another plan's effect", "b".repeat(64)],
+    ] as const)
+      expect(() => completionFrom(made, { effectSha256 }), label).toThrow(
+        /repair completion effect is not this recipe's managed directory/,
+      );
+  });
+
+  /**
+   * Review finding. A Plan may declare several effects, and one of them landing
+   * is not the attempt succeeding: the Receipt reads `applied-unverified` only
+   * when every effect applied, and the verifier's overall outcome covers them
+   * all. Here the canon directory lands and a sibling effect cannot, so the
+   * Repair is failed even though its own effect verified.
+   */
+  it("is failed when a sibling effect in the same plan did not apply", async () => {
+    const precondition = observeGovernanceDoctorRepairPreconditionV1(scope());
+    const plan = await repairFixturePlan({
+      effects: [
+        {
+          arguments: { path: CANON },
+          effectId: "ensure-canon",
+          templateId: "ensure-canon-directory",
+        },
+        // A directory whose parent does not exist: custody never creates a
+        // parent, so this effect cannot apply.
+        {
+          arguments: { path: "absent-parent/leaf" },
+          effectId: "ensure-orphan",
+          templateId: "ensure-canon-directory",
+        },
+      ],
+      root,
+      scopePaths: [CANON, "absent-parent/leaf"],
+    });
+    const content = createGovernanceDoctorRepairContentV1({ entries: [] });
+    const custody = () =>
+      createGovernanceDoctorRepairCustodyV1({ contextDir: REPAIR_FIXTURE_CONTEXT_DIR, plan, root });
+    const receipt = executeGovernanceDoctorRepairV1({
+      consent: repairFixtureConsent(plan),
+      content,
+      context: repairFixtureExecutionContext(plan),
+      custody: custody(),
+      plan,
+    });
+    const verification = verifyGovernanceDoctorRepairV1({
+      content,
+      context: repairFixtureVerificationContext(plan),
+      custody: custody(),
+      plan,
+      receipt,
+    });
+    const report = deriveGovernanceDoctorRepairCompletionV1({
+      claim: spentClaim(receipt),
+      effectSha256: plan.effects[0]?.effectSha256 as string,
+      plan,
+      postAudit: healthyAudit(),
+      precondition,
+      receipt,
+      rootRealPath: root,
+      verification,
+    });
+    expect(receipt.state).toBe("failed");
+    expect(report.effectVerification).toBe("verified");
+    expect(report.postAuditState).toBe("healthy");
     expect(report.repairState).toBe("failed");
   });
 
@@ -322,6 +397,7 @@ describe("repair completion", () => {
     const base = {
       claim: spentClaim(made.receipt),
       effectSha256: made.effectSha256,
+      plan: made.plan,
       postAudit: healthyAudit(),
       precondition: made.precondition,
       receipt: made.receipt,
@@ -329,6 +405,7 @@ describe("repair completion", () => {
       verification: made.verification,
     };
     for (const [label, override] of [
+      ["unbranded plan", { plan: { ...made.plan } }],
       ["unbranded receipt", { receipt: { ...made.receipt } }],
       ["unbranded verification", { verification: { ...made.verification } }],
       ["unbranded precondition", { precondition: { ...made.precondition } }],
