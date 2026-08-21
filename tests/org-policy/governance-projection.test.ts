@@ -2217,6 +2217,7 @@ describe("governed candidate projection", () => {
     "retains exact %s decision-bound MCP residue for %j until disabled rollback",
     async (mode, targets) => {
       const initiallyValidAt = new Date("2026-08-01T00:00:00.000Z");
+      const targetSet = new Set<string>(targets);
       vi.useFakeTimers();
       vi.setSystemTime(initiallyValidAt);
       const policy = reviewedMcpPolicy({
@@ -2241,14 +2242,14 @@ describe("governed candidate projection", () => {
       }
       writeDecisionAuthorityReceipt([decision], [], [...targets]);
       const applied = ctx({ apply: true, targets: [...targets] });
-      if (targets.includes("claude")) {
+      if (targetSet.has("claude")) {
         mkdirSync(join(dir, ".claude"), { recursive: true });
         writeFileSync(
           join(dir, ".claude", "managed-settings.json"),
           JSON.stringify({ operatorManagedSibling: { preserve: true } }),
         );
       }
-      if (targets.includes("kiro")) {
+      if (targetSet.has("kiro")) {
         mkdirSync(join(dir, ".kiro", "settings"), { recursive: true });
         writeFileSync(
           join(dir, ".kiro", "settings", "mcp.json"),
@@ -2266,8 +2267,8 @@ describe("governed candidate projection", () => {
       );
       const projectedFiles = [
         ".aih-config.json",
-        ...(targets.includes("claude") ? [".claude/managed-settings.json"] : []),
-        ...(targets.includes("kiro") ? [".kiro/settings/mcp.json"] : []),
+        ...(targetSet.has("claude") ? [".claude/managed-settings.json"] : []),
+        ...(targetSet.has("kiro") ? [".kiro/settings/mcp.json"] : []),
       ];
       const projectedBytes = Object.fromEntries(
         projectedFiles.map((path) => [path, readFileSync(join(dir, path), "utf8")]),
@@ -2310,7 +2311,7 @@ describe("governed candidate projection", () => {
       const activation = disabled.governance.activations[0];
       if (activation === undefined) throw new Error("expected activation fixture");
       activation.state = "disabled";
-      if (targets.includes("claude")) {
+      if (targetSet.has("claude")) {
         await executePlan(
           plan(
             "retain restrictive empty Claude allowlist",
@@ -2332,7 +2333,7 @@ describe("governed candidate projection", () => {
         plan("disabled residue", ...(await verifiedOrgPolicyProjectionActions(applied, disabled))),
         applied,
       );
-      if (targets.includes("claude")) {
+      if (targetSet.has("claude")) {
         const settings = JSON.parse(
           readFileSync(join(dir, ".claude", "managed-settings.json"), "utf8"),
         );
@@ -2340,7 +2341,7 @@ describe("governed candidate projection", () => {
         expect(settings.allowedMcpServers).toBeUndefined();
         expect(settings.operatorManagedSibling).toEqual({ preserve: true });
       }
-      if (targets.includes("kiro")) {
+      if (targetSet.has("kiro")) {
         const settings = JSON.parse(
           readFileSync(join(dir, ".kiro", "settings", "mcp.json"), "utf8"),
         );
