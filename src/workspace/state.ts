@@ -17,7 +17,7 @@ export interface WorkspaceRepoState {
   remote?: string;
   branch?: string;
   sha?: string;
-  dirty: boolean;
+  dirty?: boolean;
   git: boolean;
   ahead?: number;
   behind?: number;
@@ -79,7 +79,7 @@ function incompleteWorkspaceRepoState(
   repo: WorkspaceRepo,
   observation: "diverged" | "unavailable",
 ): WorkspaceRepoState {
-  return { id: repo.id, path: repo.path, dirty: false, git: true, observation };
+  return { id: repo.id, path: repo.path, git: true, observation };
 }
 
 function safeObservedRemote(raw: string | undefined): string | undefined {

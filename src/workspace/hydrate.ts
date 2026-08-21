@@ -86,9 +86,22 @@ function parseWorkspaceSnapshotRepo(raw: unknown, label: string): WorkspaceRepoS
   if (typeof raw.id !== "string" || typeof raw.path !== "string") {
     throw new AihError(`workspace hydrate requires repo id and path in ${label}`, "AIH_WORKSPACE");
   }
-  if (typeof raw.dirty !== "boolean" || typeof raw.git !== "boolean") {
+  if (typeof raw.git !== "boolean") {
+    throw new AihError(`workspace hydrate requires repo git state in ${label}`, "AIH_WORKSPACE");
+  }
+  const observation = raw.observation;
+  if (observation !== undefined && observation !== "diverged" && observation !== "unavailable") {
     throw new AihError(
-      `workspace hydrate requires repo dirty/git state in ${label}`,
+      `workspace hydrate requires a valid repo observation in ${label}`,
+      "AIH_WORKSPACE",
+    );
+  }
+  if (
+    (observation === undefined && typeof raw.dirty !== "boolean") ||
+    (observation !== undefined && raw.dirty !== undefined)
+  ) {
+    throw new AihError(
+      `workspace hydrate requires coherent repo dirty state in ${label}`,
       "AIH_WORKSPACE",
     );
   }
@@ -103,8 +116,9 @@ function parseWorkspaceSnapshotRepo(raw: unknown, label: string): WorkspaceRepoS
     ...(remote ? { remote } : {}),
     ...(branch ? { branch } : {}),
     ...(sha ? { sha } : {}),
-    dirty: raw.dirty,
+    ...(typeof raw.dirty === "boolean" ? { dirty: raw.dirty } : {}),
     git: raw.git,
+    ...(observation ? { observation } : {}),
     ...(ahead !== undefined ? { ahead } : {}),
     ...(behind !== undefined ? { behind } : {}),
   };

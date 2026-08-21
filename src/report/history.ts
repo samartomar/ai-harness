@@ -63,8 +63,11 @@ async function locDelta(ctx: PlanContext): Promise<Snapshot["loc"] | undefined> 
     if (addedCount === undefined || removedCount === undefined) return undefined;
     added += addedCount;
     removed += removedCount;
+    if (!Number.isSafeInteger(added) || !Number.isSafeInteger(removed)) return undefined;
   }
-  return { added, removed, net: added - removed };
+  const net = added - removed;
+  if (!Number.isSafeInteger(net)) return undefined;
+  return { added, removed, net };
 }
 
 /** Count bootloaders whose shared managed block has drifted from canon (0 off-canon). */

@@ -51,6 +51,26 @@ function execs(actions: Awaited<ReturnType<typeof workspaceHydrateCommand.plan>>
 }
 
 describe("workspace hydrate", () => {
+  it("accepts an incomplete observed lock row only when it omits dirty state", async () => {
+    mkdirSync(join(parent, "ai-coding"), { recursive: true });
+    writeManifest(["ui"]);
+    writeFileSync(
+      join(parent, "ai-coding", "workspace-lock.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        createdAt: "2026-07-04T00:00:00.000Z",
+        repos: [{ id: "ui", path: "ui", git: true, observation: "diverged" }],
+      }),
+    );
+
+    const planned = await workspaceHydrateCommand.plan(ctx());
+
+    expect(execs(planned.actions)).toEqual([]);
+    expect(planned.actions).toContainEqual(
+      expect.objectContaining({ kind: "doc", describe: "workspace hydrate skipped" }),
+    );
+  });
+
   it("plans clone and checkout actions for missing manifest children with recorded remote and ref", async () => {
     writeManifest([
       {

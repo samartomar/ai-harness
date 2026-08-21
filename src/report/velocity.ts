@@ -39,8 +39,11 @@ async function locWindow(
     if (addedCount === undefined || removedCount === undefined) return undefined;
     added += addedCount;
     removed += removedCount;
+    if (!Number.isSafeInteger(added) || !Number.isSafeInteger(removed)) return undefined;
   }
-  return { added, removed, net: added - removed };
+  const net = added - removed;
+  if (!Number.isSafeInteger(net)) return undefined;
+  return { added, removed, net };
 }
 
 /** "YYYY-MM-DD" → the next calendar day (string in/out; seeded by data, not the clock). */
