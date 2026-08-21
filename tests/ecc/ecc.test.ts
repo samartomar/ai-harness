@@ -1022,7 +1022,7 @@ describe("Codex managed destination safety", () => {
       const legacy = [
         '[mcp_servers."chrome-devtools"]',
         'command = "npx"',
-        'args = ["-y", "chrome-devtools-mcp@latest"]',
+        'args = ["chrome-devtools-mcp@latest"]',
         "startup_timeout_sec = 30",
       ];
       const fence = [
@@ -1192,7 +1192,7 @@ describe("Codex managed destination safety", () => {
         "",
         "[mcp_servers.chrome-devtools]",
         'command = "npx"',
-        'args = ["-y", "chrome-devtools-mcp@latest"]',
+        'args = ["chrome-devtools-mcp@latest"]',
         "startup_timeout_sec = 30",
         "",
       ].join("\n"),
