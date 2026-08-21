@@ -223,14 +223,14 @@ async function checkoutIdentity(checkoutPath: string, runner: Runner): Promise<C
   }
 
   const inside = gitResult(
-    await runner(["git", "-C", root, "rev-parse", "--is-inside-work-tree"]),
+    await runner(["git", "--no-replace-objects", "-C", root, "rev-parse", "--is-inside-work-tree"]),
     "repository status",
   );
   if (inside.code !== 0 || inside.stdout.trim() !== "true") {
     fail("vendor checkout is not a Git work tree");
   }
   const topLevel = gitResult(
-    await runner(["git", "-C", root, "rev-parse", "--show-toplevel"]),
+    await runner(["git", "--no-replace-objects", "-C", root, "rev-parse", "--show-toplevel"]),
     "repository top-level",
   );
   if (topLevel.code !== 0) fail("vendor checkout must be the Git work-tree top-level");
@@ -239,20 +239,23 @@ async function checkoutIdentity(checkoutPath: string, runner: Runner): Promise<C
     fail("vendor checkout must be the Git work-tree top-level");
   }
   const remote = gitResult(
-    await runner(["git", "-C", root, "remote", "get-url", "origin"]),
+    await runner(["git", "--no-replace-objects", "-C", root, "remote", "get-url", "origin"]),
     "origin remote",
   );
   if (remote.code !== 0 || !isAllowedSuperpowersRemote(remote.stdout)) {
     fail("vendor checkout origin is not obra/superpowers");
   }
   const branch = gitResult(
-    await runner(["git", "-C", root, "symbolic-ref", "-q", "HEAD"]),
+    await runner(["git", "--no-replace-objects", "-C", root, "symbolic-ref", "-q", "HEAD"]),
     "detached HEAD",
   );
   if (branch.code !== 1 || branch.stdout.trim().length !== 0) {
     fail("vendor checkout must have a detached HEAD");
   }
-  const head = gitResult(await runner(["git", "-C", root, "rev-parse", "HEAD"]), "HEAD revision");
+  const head = gitResult(
+    await runner(["git", "--no-replace-objects", "-C", root, "rev-parse", "HEAD"]),
+    "HEAD revision",
+  );
   const commitSha = head.stdout.trim();
   if (head.code !== 0 || !SHA40.test(commitSha) || commitSha !== SUPERPOWERS_ACCEPTANCE_COMMIT) {
     fail(`vendor checkout must be detached at ${SUPERPOWERS_ACCEPTANCE_COMMIT}`);
@@ -260,6 +263,7 @@ async function checkoutIdentity(checkoutPath: string, runner: Runner): Promise<C
   const status = gitResult(
     await runner([
       "git",
+      "--no-replace-objects",
       "-C",
       root,
       "status",
@@ -273,7 +277,7 @@ async function checkoutIdentity(checkoutPath: string, runner: Runner): Promise<C
     fail("vendor checkout must be clean and immutable");
   }
   const index = gitResult(
-    await runner(["git", "-C", root, "ls-files", "-v", "-z"]),
+    await runner(["git", "--no-replace-objects", "-C", root, "ls-files", "-v", "-z"]),
     "tracked index state",
   );
   if (index.code !== 0) fail("vendor checkout index is unavailable");
