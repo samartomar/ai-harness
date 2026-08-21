@@ -1609,6 +1609,65 @@ describe("Codex managed destination safety", () => {
     },
   );
 
+  it.each([
+    ["descendant", '[mcp_servers."chrome-devtools".env]\ntoken = "operator"\n'],
+    ["encoded descendant", '[mcp_servers."chrome\\u002ddevtools".env]\ntoken = "operator"\n'],
+    ["dotted assignment", 'mcp_servers.chrome-devtools.command = "operator-devtools"\n'],
+    ["inline table", 'mcp_servers = { chrome-devtools = { command = "operator-devtools" } }\n'],
+    ["mcp_servers table key", '[mcp_servers]\nchrome-devtools.command = "operator-devtools"\n'],
+  ])("refuses direct apply for an unowned non-root Chrome representation: %s", (_kind, config) => {
+    const home = join(tmp, `non-root-${_kind.replace(/\W+/g, "-")}-home`);
+    const repo = join(tmp, "ecc");
+    const configPath = join(home, ".codex", "config.toml");
+    const statePath = join(home, ".codex", "ecc-aih-install-state.json");
+    const mergeSentinel = join(repo, "merge-ran");
+    const managedSentinel = join(repo, "managed-ran");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    prepareCodexRepo(home);
+    writeFileSync(
+      join(repo, "scripts", "codex", "merge-codex-config.js"),
+      `require("node:fs").writeFileSync(${JSON.stringify(mergeSentinel)}, "ran");`,
+    );
+    writeFileSync(
+      join(repo, "scripts", "lib", "install-executor.js"),
+      `require("node:fs").writeFileSync(${JSON.stringify(managedSentinel)}, "ran"); exports.createManifestInstallPlan = () => ({ operations: [], statePreview: { operations: [] }, installStatePath: ${JSON.stringify(join(home, ".codex", "ecc-install-state.json"))} });`,
+    );
+    writeFileSync(configPath, config);
+    writeFileSync(
+      statePath,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        managedBy: "aih",
+        codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: [] },
+        agentsBlock: true,
+      })}\n`,
+    );
+    const beforeConfig = readFileSync(configPath, "utf8");
+    const beforeState = readFileSync(statePath, "utf8");
+    const base = makeCtx({ cli: "codex" });
+    const action = codexEccActions(
+      { ...base, env: { ...base.env, HOME: home, USERPROFILE: home } },
+      { dir: repo, posix: repo.replace(/\\/g, "/"), explicit: true, hasCache: false },
+      "minimal",
+    ).find(
+      (candidate): candidate is ExecAction =>
+        candidate.kind === "exec" && candidate.describe.startsWith("Install ECC for Codex"),
+    );
+    if (action === undefined) throw new Error("missing non-root Codex merge action");
+
+    const result = spawnSync(process.execPath, action.argv.slice(1), {
+      cwd: repo,
+      encoding: "utf8",
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(readFileSync(configPath, "utf8")).toBe(beforeConfig);
+    expect(readFileSync(statePath, "utf8")).toBe(beforeState);
+    expect(existsSync(mergeSentinel)).toBe(false);
+    expect(existsSync(managedSentinel)).toBe(false);
+    expect(existsSync(join(home, ".codex", "AGENTS.md"))).toBe(false);
+  });
+
   it("keeps the default scoped candidate config and state unchanged when managed files fail", () => {
     const home = join(tmp, "direct-candidate-home");
     const repo = join(tmp, "ecc");
@@ -1806,6 +1865,48 @@ describe("Codex managed destination safety", () => {
     expect(existsSync(statePath)).toBe(true);
   });
 
+  it("keeps AIH state when a claimed non-root Chrome representation appears after cleanup planning", () => {
+    const home = join(tmp, "non-root-cleanup-race-home");
+    const configPath = join(home, ".codex", "config.toml");
+    const statePath = join(home, ".codex", "ecc-aih-install-state.json");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      configPath,
+      [
+        "# >>> aih managed (mcp) >>>",
+        '[mcp_servers."chrome-devtools"]',
+        'command = "npx"',
+        'args = ["-y", "chrome-devtools-mcp@1.7.0"]',
+        "# <<< aih managed (mcp) <<<",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        managedBy: "aih",
+        codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: ["chrome-devtools"] },
+        agentsBlock: true,
+      }),
+    );
+    const base = makeCtx({ cli: "codex" });
+    const action = codexInstallStateCleanupAction({
+      ...base,
+      env: { ...base.env, HOME: home, USERPROFILE: home },
+    });
+    if (action?.kind !== "exec") throw new Error("missing non-root race Codex cleanup action");
+    writeFileSync(configPath, '[mcp_servers."chrome-devtools".env]\ntoken = "operator"\n');
+    const executable = action.argv[0];
+    if (executable === undefined) throw new Error("missing non-root race Codex cleanup executable");
+
+    const result = spawnSync(executable, action.argv.slice(1), { encoding: "utf8" });
+
+    expect(result.status).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toContain("refusing AIH state cleanup");
+    expect(existsSync(statePath)).toBe(true);
+  });
+
   it("reobserves the live Codex config before a planned state cleanup", () => {
     const home = join(tmp, "prune-reobserve-home");
     mkdirSync(join(home, ".codex"), { recursive: true });
@@ -1890,6 +1991,46 @@ describe("Codex managed destination safety", () => {
     expect(`${result.stdout}${result.stderr}`).toContain("refusing AIH state cleanup");
     expect(existsSync(statePath)).toBe(true);
   });
+
+  it.each([
+    ["descendant", '[mcp_servers."chrome-devtools".env]\ntoken = "operator"\n'],
+    ["encoded descendant", '[mcp_servers."chrome\\u002ddevtools".env]\ntoken = "operator"\n'],
+    ["dotted assignment", 'mcp_servers.chrome-devtools.command = "operator-devtools"\n'],
+    ["inline table", 'mcp_servers = { chrome-devtools = { command = "operator-devtools" } }\n'],
+    ["mcp_servers table key", '[mcp_servers]\nchrome-devtools.command = "operator-devtools"\n'],
+  ])(
+    "keeps AIH state for a claimed non-root Chrome representation during cleanup: %s",
+    (_kind, config) => {
+      const home = join(tmp, `non-root-cleanup-${_kind.replace(/\W+/g, "-")}-home`);
+      const statePath = join(home, ".codex", "ecc-aih-install-state.json");
+      mkdirSync(join(home, ".codex"), { recursive: true });
+      writeFileSync(join(home, ".codex", "config.toml"), config);
+      writeFileSync(
+        statePath,
+        JSON.stringify({
+          schemaVersion: 1,
+          managedBy: "aih",
+          codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: ["chrome-devtools"] },
+          agentsBlock: true,
+        }),
+      );
+      const base = makeCtx({ cli: "codex" });
+      const action = codexInstallStateCleanupAction({
+        ...base,
+        env: { ...base.env, HOME: home, USERPROFILE: home },
+      });
+      expect(action?.kind).toBe("exec");
+      if (action?.kind !== "exec") throw new Error("missing non-root Codex cleanup action");
+      const executable = action.argv[0];
+      if (executable === undefined) throw new Error("missing non-root Codex cleanup executable");
+
+      const result = spawnSync(executable, action.argv.slice(1), { encoding: "utf8" });
+
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toContain("refusing AIH state cleanup");
+      expect(existsSync(statePath)).toBe(true);
+    },
+  );
 
   it.skipIf(!symlinksAvailable).each(["existing", "dangling"] as const)(
     "rejects an %s destination symlink before following it",
