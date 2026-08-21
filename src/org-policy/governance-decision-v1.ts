@@ -3,7 +3,8 @@ import { z } from "zod";
 
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
-const OFFSET_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
+const OFFSET_TIMESTAMP =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(Z|[+-](\d{2}):(\d{2}))$/;
 const MAX_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 
 const stableId = z.string().regex(ID, "must be a bounded stable identifier");
@@ -16,7 +17,40 @@ const text = z
   .refine((value) => value === value.trim() && !/[\p{C}]/u.test(value), "must be visible text");
 
 function timestamp(value: string): boolean {
-  return OFFSET_TIMESTAMP.test(value) && Number.isFinite(Date.parse(value));
+  const match = OFFSET_TIMESTAMP.exec(value);
+  if (match === null) return false;
+  const [
+    ,
+    yearText,
+    monthText,
+    dayText,
+    hourText,
+    minuteText,
+    secondText,
+    ,
+    offsetHourText,
+    offsetMinuteText,
+  ] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const offsetHour = offsetHourText === undefined ? 0 : Number(offsetHourText);
+  const offsetMinute = offsetMinuteText === undefined ? 0 : Number(offsetMinuteText);
+  return (
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= new Date(Date.UTC(year, month, 0)).getUTCDate() &&
+    hour <= 23 &&
+    minute <= 59 &&
+    second <= 59 &&
+    offsetHour <= 23 &&
+    offsetMinute <= 59 &&
+    Number.isFinite(Date.parse(value))
+  );
 }
 
 const timestampSchema = z

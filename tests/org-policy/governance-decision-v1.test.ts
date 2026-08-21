@@ -49,6 +49,7 @@ describe("GovernanceDecisionV1", () => {
     ["inline revoked state", { disposition: "revoked" }],
     ["approval id", { id: "approval-managed-mcp" }],
     ["unqualified timestamp", { issuedAt: "2026-08-01T00:00:00" }],
+    ["invalid calendar timestamp", { issuedAt: "2026-02-30T00:00:00+00:00" }],
     ["overlong validity", { expiresAt: "2026-11-01T00:00:00+00:00" }],
     ["unsorted coverage", { acceptedFindings: ["secrets", "prompt-injection"] }],
     ["duplicate coverage", { acceptedFindings: ["prompt-injection", "prompt-injection"] }],
