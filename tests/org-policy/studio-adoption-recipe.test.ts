@@ -125,7 +125,9 @@ describe("policy studio adoption recipe", () => {
     serenaOverlap.serenaAllowedTools = serenaOverlap.serenaAllowedTools.filter(
       (tool) => tool !== "find_symbol",
     );
-    expect(() => buildAdoptionRecipe(serenaOverlap)).toThrow(/serena tool find_symbol/i);
+    expect(() => buildAdoptionRecipe(serenaOverlap)).toThrow(
+      /reviewed Serena tool set changed/i,
+    );
 
     const optimizerWrongRoute = sources();
     const optimizer = optimizerWrongRoute.eccMcpCatalog.find(
@@ -139,20 +141,31 @@ describe("policy studio adoption recipe", () => {
   });
 
   it.each([
-    ["read_file", "file"],
-    ["create_text_file", "file"],
-    ["find_file", "file"],
-    ["replace_content", "file"],
-    ["replace_in_files", "file"],
-    ["run_shell_command", "shell"],
-    ["search_memory", "memory"],
-    ["switch_project", "project"],
-    ["activate_project", "project"],
-    ["set_mode", "mode"],
-  ])("fails closed when Serena gains a reviewed-overlap %s tool", (tool, toolClass) => {
+    "delete_lines",
+    "insert_at_line",
+    "replace_lines",
+    "search_for_pattern",
+    "remove_project",
+    "query_project",
+    "list_queryable_projects",
+    "find_symbol_implementation",
+  ])("fails closed when Serena gains an unreviewed %s tool", (tool) => {
     const drifted = sources();
     drifted.serenaAllowedTools.push(tool);
-    expect(() => buildAdoptionRecipe(drifted)).toThrow(new RegExp(`Serena.*${toolClass}`, "i"));
+    expect(() => buildAdoptionRecipe(drifted)).toThrow(/reviewed Serena tool set changed/i);
+  });
+
+  it("fails closed when the reviewed Serena tool sequence is duplicated or reordered", () => {
+    const duplicate = sources();
+    duplicate.serenaAllowedTools.push("find_symbol");
+    expect(() => buildAdoptionRecipe(duplicate)).toThrow(/reviewed Serena tool set changed/i);
+
+    const reordered = sources();
+    [reordered.serenaAllowedTools[3], reordered.serenaAllowedTools[4]] = [
+      reordered.serenaAllowedTools[4] ?? "",
+      reordered.serenaAllowedTools[3] ?? "",
+    ];
+    expect(() => buildAdoptionRecipe(reordered)).toThrow(/reviewed Serena tool set changed/i);
   });
 
   it("fails closed when routed profile identities overlap selected and disabled sources", () => {
