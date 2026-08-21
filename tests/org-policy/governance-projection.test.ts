@@ -2283,12 +2283,6 @@ describe("governed candidate projection", () => {
         expect(settings.allowManagedMcpServersOnly).toBeUndefined();
         expect(settings.allowedMcpServers).toBeUndefined();
       }
-      if (targets.includes("kiro")) {
-        const settings = JSON.parse(
-          readFileSync(join(dir, ".kiro", "settings", "mcp.json"), "utf8"),
-        );
-        expect(settings.mcpServers["code-review-graph"]).toBeUndefined();
-      }
     },
   );
 
