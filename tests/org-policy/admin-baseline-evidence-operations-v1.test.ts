@@ -69,6 +69,15 @@ const verify = async ({
   subjectSha256: string;
 }) => ({ ...policy, subjectSha256, verified: true as const });
 
+function malformedUnavailable(kind: "extra" | "nonplain" | "accessor"): unknown {
+  if (kind === "extra") return { extra: true, kind: "unavailable" };
+  if (kind === "nonplain") return Object.assign(Object.create(null), { kind: "unavailable" });
+  return Object.defineProperty({}, "kind", {
+    enumerable: true,
+    get: () => "unavailable",
+  });
+}
+
 describe("admin baseline evidence resolution v1", () => {
   it("stages an offline bundle under custody and pins the gh verifier argv", async () => {
     const root = mkdtempSync(join(tmpdir(), "aih-baseline-gh-"));
@@ -346,6 +355,27 @@ describe("admin baseline evidence resolution v1", () => {
     });
   });
 
+  it.each(["extra", "nonplain", "accessor"] as const)(
+    "rejects %s unavailable fresh results before cache or packaged authority",
+    async (kind) => {
+      let cacheReads = 0;
+      await expect(
+        resolveAdminBaselineEvidenceV1({
+          bootstrap,
+          now: "2026-08-21T00:00:00Z",
+          fetchFresh: async () => malformedUnavailable(kind) as never,
+          readLastDownloaded: () => {
+            cacheReads += 1;
+            return undefined;
+          },
+          commitLastDownloaded: () => true,
+          verifyGithubAttestation: verify,
+        }),
+      ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+      expect(cacheReads).toBe(0);
+    },
+  );
+
   it("treats a partially available fresh artifact as terminal instead of falling through", async () => {
     let calls = 0;
     await expect(
@@ -361,6 +391,41 @@ describe("admin baseline evidence resolution v1", () => {
       }),
     ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
   });
+
+  it.each(["extra", "nonplain", "accessor"] as const)(
+    "rejects %s unavailable first-file acquisition results",
+    async (kind) => {
+      await expect(
+        fetchAdminBaselineEvidenceArtifactV1({
+          artifactUrl: "https://evidence.example.test/artifact/",
+          attestationUrl: bootstrap.attestationUrl,
+          fetchHttps: async () => malformedUnavailable(kind) as never,
+        }),
+      ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+    },
+  );
+
+  it.each(["extra", "nonplain", "accessor"] as const)(
+    "rejects %s unavailable attestation acquisition results",
+    async (kind) => {
+      await expect(
+        fetchAdminBaselineEvidenceArtifactV1({
+          artifactUrl: "https://evidence.example.test/artifact/",
+          attestationUrl: bootstrap.attestationUrl,
+          fetchHttps: async ({ url }) => {
+            const path = ADMIN_BASELINE_EVIDENCE_ARTIFACT_FILES_V1.find((candidate) =>
+              url.endsWith(`/${candidate}`),
+            );
+            if (path === undefined) return malformedUnavailable(kind) as never;
+            return {
+              kind: "available" as const,
+              bytes: artifact.files.find((file) => file.path === path)?.bytes ?? Buffer.from("missing"),
+            };
+          },
+        }),
+      ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+    },
+  );
 
   it("composes bootstrap, five raw files, live gh verification, and reverified custody cache", async () => {
     const root = mkdtempSync(join(tmpdir(), "aih-baseline-operational-"));
