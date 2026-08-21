@@ -737,7 +737,7 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   '  if (parsed.fence && parsed.fence.sections.some((section) => !claimed.has(section.name))) throw new Error("managed Codex MCP fence contains an unclaimed server");',
   "  const beforeFence = parsed.fence ? parsed.lines.slice(0, parsed.fence.begin) : parsed.lines.slice(); const afterFence = parsed.fence ? parsed.lines.slice(parsed.fence.end + 1) : [];",
   '  const legacyBefore = serverTables(beforeFence, "chrome-devtools"); const legacyAfter = serverTables(afterFence, "chrome-devtools"); const chrome = [...legacyBefore, ...legacyAfter]; const claimsChrome = claimed.has("chrome-devtools");',
-  '  const legacyDescendant = [...beforeFence, ...afterFence].some((line) => /^[ \\t]*\\[mcp_servers\\.(?:"chrome-devtools"|chrome-devtools)\\.[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*\\]\\s*(?:#.*)?$/.test(line));',
+  "  const legacyDescendant = [...beforeFence, ...afterFence].some((line) => /^[ \\t]*\\[mcp_servers\\.(?:\"chrome-devtools\"|'chrome-devtools'|chrome-devtools)\\.[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*\\]\\s*(?:#.*)?$/.test(line));",
   '  if (claimsChrome && legacyDescendant) throw new Error("live claimed Chrome DevTools table has an unsupported legacy descendant");',
   '  if (claimsChrome && chrome.length > 0 && (chrome.length !== 1 || !exactLegacyChrome(chrome[0]))) throw new Error("live claimed Chrome DevTools table is not the exact legacy AIH rendering");',
   '  const retained = parsed.fence ? parsed.fence.sections : []; const expectedClaims = new Set([...retained.map((section) => section.name), ...(claimsChrome && chrome.length === 1 ? ["chrome-devtools"] : [])]);',
