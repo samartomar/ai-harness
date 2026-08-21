@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { vendorBaselineLockBytes } from "../../src/baseline-evidence/vendor.js";
 import { buildVendorBaselineEvidenceArtifactV1 } from "../../src/baseline-evidence/vendor-artifact-v1.js";
 import type { AdminBaselineEvidenceBootstrapV1 } from "../../src/org-policy/admin-baseline-evidence-bootstrap-v1.js";
-import { resolveAdminBaselineEvidenceV1 } from "../../src/org-policy/admin-baseline-evidence-operations-v1.js";
+import { parseGithubBaselineEvidenceAttestationV1, resolveAdminBaselineEvidenceV1 } from "../../src/org-policy/admin-baseline-evidence-operations-v1.js";
 
 const sources = [
   {
@@ -55,6 +55,11 @@ const verify = ({
 }) => ({ ...policy, subjectSha256, verified: true as const });
 
 describe("admin baseline evidence resolution v1", () => {
+  it("accepts only a closed gh JSON SLSA claim, never an echoed policy", () => {
+    const subjectSha256 = "a".repeat(64);
+    expect(parseGithubBaselineEvidenceAttestationV1(Buffer.from(JSON.stringify({ subjectSha256, repository: bootstrap.expectedRepository, workflow: bootstrap.expectedWorkflow, issuer: bootstrap.expectedIssuer, ref: bootstrap.expectedRef, signedAt: "2026-08-20T23:59:00Z", predicateType: "https://slsa.dev/provenance/v1" })), { ...bootstrap, subjectSha256, now: "2026-08-21T00:00:00Z" })).toMatchObject({ verified: true, signedAt: "2026-08-20T23:59:00Z" });
+    expect(() => parseGithubBaselineEvidenceAttestationV1(Buffer.from(JSON.stringify({ subjectSha256, repository: bootstrap.expectedRepository, workflow: bootstrap.expectedWorkflow, issuer: bootstrap.expectedIssuer, ref: bootstrap.expectedRef, signedAt: "2026-08-21T00:00:01Z", predicateType: "https://slsa.dev/provenance/v1" })), { ...bootstrap, subjectSha256, now: "2026-08-21T00:00:00Z" })).toThrow(/admin baseline evidence/);
+  });
   it("uses fresh evidence before cache and only falls through on literal unavailable", async () => {
     const calls: string[] = [];
     const result = await resolveAdminBaselineEvidenceV1({
