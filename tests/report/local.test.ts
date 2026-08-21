@@ -1,10 +1,11 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { orgPolicyEffectiveDigest } from "../../src/org-policy/evaluate.js";
+import * as policyEvaluate from "../../src/org-policy/evaluate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/report/index.js";
 import {
@@ -334,6 +335,14 @@ describe("report local scope — composed panels", () => {
     expect(prefixes.some((s) => s.startsWith("Governance roll-up"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("Governance review"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("Org policy integrity"))).toBe(true);
+  });
+
+  it("resolves the effective policy at most once before composing the governance review", async () => {
+    const resolved = vi.spyOn(policyEvaluate, "orgPolicyEffectiveResolution");
+
+    await localPanels(ctx());
+
+    expect(resolved).toHaveBeenCalledTimes(1);
   });
 
   it("mcpGovernanceDigest denies context7 (third-party egress) under the enterprise posture", () => {

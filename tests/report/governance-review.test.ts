@@ -86,6 +86,35 @@ function effective(ids: string[]): EffectiveOrgPolicy {
   };
 }
 
+function usageMeteringCandidate(
+  receipt: "pending-projection" | "unavailable" = "pending-projection",
+): EffectiveOrgPolicy["candidates"][number] {
+  return {
+    id: "usage-metering",
+    origin: "reviewed",
+    kind: "hook",
+    requested: true,
+    effective: true,
+    sourceDigest: `sha256:${"c".repeat(64)}`,
+    source: { type: "hook", handler: "usage-metering", scriptDigest: `sha256:${"d".repeat(64)}` },
+    evidence: "verified",
+    dangerCodes: [],
+    blockingCodes: [],
+    decisionBlockers: [],
+    resolutionReasons: [],
+    lifecycle: "supported",
+    projection: {
+      projector: "usage-hook",
+      requestedTargets: ["claude"],
+      supportedTargets: ["claude"],
+      availableTargets: ["claude"],
+      coverage: "complete",
+      ownership: "usage-hook-receipt",
+      receipt,
+    },
+  };
+}
+
 const RECEIPTS = {
   hook: { state: "absent", detail: "redacted" },
   mcp: { state: "missing", detail: "redacted" },
@@ -104,7 +133,7 @@ describe("governanceReviewView", () => {
     ];
     writeUsage(
       { tool: "codex", kind: "mcp", server: "subject-1", name: "subject-2/check" },
-      { tool: "codex", kind: "mcp", name: "subject-2/check" },
+      { tool: "codex", kind: "skill", name: "subject-2/check", source: "ecc" },
       { tool: "codex", kind: "mcp", name: "ghp_private-token-never-render" },
       { tool: "codex", kind: "unknown-kind" },
     );
@@ -112,7 +141,6 @@ describe("governanceReviewView", () => {
     const view = governanceReviewView({
       effective: before,
       receipts: RECEIPTS,
-      captureInstalled: true,
       usage: readUsageStrict(ctx()),
     });
     const data = view.data as {
@@ -154,32 +182,40 @@ describe("governanceReviewView", () => {
     expect(before).toEqual(effective(ids));
   });
 
-  it("distinguishes no capture from installed capture with zero observed events and keeps receipt failures explicit", () => {
+  it("derives capture ownership only from an effective usage-metering subject and an active strict receipt", () => {
+    const noReceipt = effective(["context7"]);
+    noReceipt.candidates.push(usageMeteringCandidate());
+    mkdirSync(join(root, ".aih"), { recursive: true });
+    mkdirSync(join(root, ".git", "hooks"), { recursive: true });
+    writeFileSync(join(root, ".aih", "usage-record.mjs"), "recorder");
+    writeFileSync(join(root, ".git", "hooks", "post-commit"), "usage-record.mjs");
     const noCapture = governanceReviewView({
-      effective: effective(["context7"]),
+      effective: noReceipt,
       receipts: RECEIPTS,
-      captureInstalled: false,
       usage: { events: [], malformed: 0, unknownKind: 0 },
     });
-    const installedZero = governanceReviewView({
-      effective: effective(["context7"]),
-      receipts: RECEIPTS,
-      captureInstalled: true,
+    const activeReceipt = governanceReviewView({
+      effective: noReceipt,
+      receipts: { ...RECEIPTS, hook: { state: "active" } },
       usage: { events: [], malformed: 0, unknownKind: 0 },
     });
 
-    expect(noCapture.data).toMatchObject({ usage: { state: "no-capture" } });
-    expect(installedZero.data).toMatchObject({
+    expect(noCapture.data).toMatchObject({
+      usage: { state: "no-capture" },
+      subjects: [{ id: "context7", usage: { signal: "unknown-no-capture", count: 0 } }],
+    });
+    expect(activeReceipt.data).toMatchObject({
       usage: { state: "installed-zero-observed" },
       subjects: [
         {
+          id: "context7",
           materialization: { state: "missing" },
-          registrar: { state: "invalid" },
+          usage: { signal: "not-observed-with-installed-capture", count: 0 },
         },
       ],
     });
-    expect(installedZero.text).toContain("installed-zero-observed");
-    expect(installedZero.text).toContain("receipt=missing");
+    expect(activeReceipt.text).toContain("installed-zero-observed");
+    expect(activeReceipt.text).toContain("receipt=missing");
   });
 
   it("keeps each selected MCP target's strict receipt verdict", () => {
@@ -193,7 +229,6 @@ describe("governanceReviewView", () => {
     const digest = governanceReviewView({
       effective: multiTarget,
       receipts: RECEIPTS,
-      captureInstalled: true,
       usage: { events: [], malformed: 0, unknownKind: 0 },
     });
 
@@ -209,10 +244,33 @@ describe("governanceReviewView", () => {
     });
     expect(digest.text).toContain("receipt=multiple (claude:missing,kiro:not-requested)");
   });
+
+  it("keeps observed and not-observed subjects distinct without inferring action", () => {
+    const installed = effective(["context7", "github"]);
+    installed.candidates.push(usageMeteringCandidate());
+    const digest = governanceReviewView({
+      effective: installed,
+      receipts: { ...RECEIPTS, hook: { state: "active" } },
+      usage: {
+        events: [{ tool: "codex", kind: "mcp", server: "context7" }],
+        malformed: 0,
+        unknownKind: 0,
+      },
+    });
+
+    expect(digest.data).toMatchObject({
+      subjects: [
+        { id: "context7", usage: { count: 1, signal: "observed" } },
+        { id: "github", usage: { count: 0, signal: "not-observed-with-installed-capture" } },
+      ],
+    });
+    expect(digest.text).not.toMatch(/unused|trim|retire|revoke|uninstall|value/i);
+  });
 });
 
 describe("governanceReviewDigest", () => {
   it("fails closed with an explicit, redacted absent-policy view", async () => {
+    writeUsage({ tool: "codex", kind: "mcp", name: "unattributable" });
     const digest = await governanceReviewDigest(ctx());
 
     expect(digest.describe).toBe("Governance review — policy absent");
@@ -222,13 +280,35 @@ describe("governanceReviewDigest", () => {
       subjects: [],
       usage: {
         state: "no-capture",
-        validEvents: 0,
+        validEvents: 1,
         malformedExcluded: 0,
         unknownKindExcluded: 0,
-        unmatched: 0,
+        unmatched: 1,
       },
     });
     expect(digest.text).not.toContain(root);
+  });
+
+  it("makes valid events aggregate-only when a policy is present but not governing", async () => {
+    writeUsage({ tool: "codex", kind: "mcp", name: "unattributable" });
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "vibe",
+        references: { repoContract: "ai-coding/project.json" },
+      }),
+    );
+
+    const digest = await governanceReviewDigest(ctx());
+
+    expect(digest.describe).toBe("Governance review — policy not-governing");
+    expect(digest.data).toMatchObject({
+      policy: { state: "not-governing" },
+      subjects: [],
+      usage: { validEvents: 1, unmatched: 1 },
+    });
+    expect(digest.text).not.toContain("unattributable");
   });
 
   it("fails closed with an explicit, redacted invalid-policy view", async () => {
