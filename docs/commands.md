@@ -697,7 +697,12 @@ no-content-scan marker; the workbench never contacts or scans that endpoint.
 Imported legacy digest/verdict records remain exact and read-only until removed
 and recreated under the administrative-status model. The workbench can preflight JSON and preserve an
 imported authority receipt's subjects in `governance.authority.approvals`, but it does not verify a receipt or make any
-approval effective. Target-repository `evaluate` remains the source of effective state. Both custom-MCP forms remain pending,
+approval effective. It can separately import one strict standalone `GovernanceDecisionV1`, render its
+untrusted fields as text, and download the same deterministic canonical bytes as the headless parser.
+The record stays outside the policy and receipt state and is always labeled unverified and not effective;
+the browser cannot edit, verify, sign, fetch, resolve, project, or materialize it. Invalid and out-of-order
+replacement reads fail closed without changing the decision displayed when the latest import began.
+Target-repository `evaluate` remains the source of effective state. Both custom-MCP forms remain pending,
 hard-blocked candidates with no activation affordance until supported scanning, evidence, and projection exist.
 
 The left rail is the sole selection surface for ECC languages, frameworks, capabilities, and modules; those controls are not repeated in the main inventory, preset toolbar, or inspector. The flat Ledger paper-and-ink presentation reserves colour for evidence state, supports a neutral dark theme, and keeps that canonical rail available on compact screens. The inspector contains no policy mutation controls: it narrates the selected-to-materialized journey and routes one next action to the canonical selection or a separate authoring sidebar. A separate Add MCP sidebar authors approved/revoked `governance.eccMcpApprovals` records at the pinned catalog digest. It lists all 31 external ECC entries and records declarative permission. Only entries labeled HTTPS-configurable can use the later `aih ecc mcp add <id> --cli <client>` path; manual entries remain approval-only. The browser does not install, contact, scan, attest, or observe the endpoint.
@@ -853,9 +858,9 @@ Use
 Authority receipt V1 remains the legacy approval transport. Decision-bearing policy requires receipt
 V2, whose decision and revocation arrays are strict, bounded, sorted, namespace-disjoint from legacy
 approvals, issuer-checked, target-bounded, and time-bounded. A V1 receipt can never satisfy a decision
-reference, and a decision present only in policy JSON has no authority. The portable Workbench does
-not yet import or author these decision records; that browser-only, still-unverified round-trip is a
-separate phase.
+reference, and a decision present only in policy JSON has no authority. The portable Workbench's
+standalone decision import is likewise an unverified inspection and canonical-transport view only: it
+is not copied into the policy or receipt, cannot create authority, and cannot decide effective state.
 
 Approvals cover only a missing or failed **waivable** evidence record, require a non-empty signed reason,
 and last at most 90 days. Mandatory detector failures and every unwaivable danger code remain blocked even
