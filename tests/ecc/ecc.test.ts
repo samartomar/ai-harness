@@ -1021,6 +1021,7 @@ describe("Codex managed destination safety", () => {
     ["before", "pnpm", '["dlx", "chrome-devtools-mcp@latest"]'],
     ["before", "yarn", '["dlx", "chrome-devtools-mcp@latest"]'],
     ["descendant", "npx", '["chrome-devtools-mcp@latest"]'],
+    ["single-quoted-descendant", "npx", '["chrome-devtools-mcp@latest"]'],
     ["managed-failure", "npx", '["chrome-devtools-mcp@latest"]'],
     ["live-relinquished", "npx", '["chrome-devtools-mcp@latest"]'],
     ["agents-failure", "npx", '["chrome-devtools-mcp@latest"]'],
@@ -1121,8 +1122,15 @@ describe("Codex managed destination safety", () => {
       ];
       writeFileSync(
         join(home, ".codex", "config.toml"),
-        (legacyPosition === "descendant"
-          ? [...legacy, '  [mcp_servers."chrome-devtools".env]', 'token = "operator"', ""]
+        (legacyPosition === "descendant" || legacyPosition === "single-quoted-descendant"
+          ? [
+              ...legacy,
+              legacyPosition === "descendant"
+                ? '  [mcp_servers."chrome-devtools".env]'
+                : "[mcp_servers.'chrome-devtools'.env]",
+              'token = "operator"',
+              "",
+            ]
           : legacyPosition === "managed-failure" ||
               legacyPosition === "live-relinquished" ||
               legacyPosition === "agents-failure" ||
@@ -1162,6 +1170,7 @@ describe("Codex managed destination safety", () => {
                 legacyPosition === "vanished"
                   ? ["sequential-thinking"]
                   : legacyPosition === "descendant" ||
+                      legacyPosition === "single-quoted-descendant" ||
                       legacyPosition === "managed-failure" ||
                       legacyPosition === "live-relinquished" ||
                       legacyPosition === "agents-failure" ||
@@ -1203,6 +1212,7 @@ describe("Codex managed destination safety", () => {
           legacyPosition === "vanished"
             ? ["sequential-thinking"]
             : legacyPosition === "descendant" ||
+                legacyPosition === "single-quoted-descendant" ||
                 legacyPosition === "managed-failure" ||
                 legacyPosition === "live-relinquished" ||
                 legacyPosition === "agents-failure" ||
@@ -1242,12 +1252,16 @@ describe("Codex managed destination safety", () => {
       }
 
       const configBeforeApply =
+        legacyPosition === "descendant" ||
+        legacyPosition === "single-quoted-descendant" ||
         legacyPosition === "managed-failure" ||
         legacyPosition === "agents-failure" ||
         legacyPosition === "live-state-race"
           ? readFileSync(join(home, ".codex", "config.toml"), "utf8")
           : undefined;
       const stateBeforeApply =
+        legacyPosition === "descendant" ||
+        legacyPosition === "single-quoted-descendant" ||
         legacyPosition === "managed-failure" ||
         legacyPosition === "agents-failure" ||
         legacyPosition === "live-config-race"
@@ -1259,10 +1273,14 @@ describe("Codex managed destination safety", () => {
         encoding: "utf8",
       });
 
-      if (legacyPosition === "descendant") {
+      if (legacyPosition === "descendant" || legacyPosition === "single-quoted-descendant") {
         expect(result.status).not.toBe(0);
+        expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toBe(configBeforeApply);
+        expect(readFileSync(aihStatePath, "utf8")).toBe(stateBeforeApply);
         expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toContain(
-          '  [mcp_servers."chrome-devtools".env]',
+          legacyPosition === "descendant"
+            ? '  [mcp_servers."chrome-devtools".env]'
+            : "[mcp_servers.'chrome-devtools'.env]",
         );
         expect(existsSync(join(home, ".codex", "AGENTS.md"))).toBe(false);
         return;
