@@ -1,4 +1,7 @@
+import { lstatSync, readFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { codeUnitCompare } from "../capability/package-graph/canonical.js";
+import type { Posture } from "../config/posture.js";
 import {
   canonicalStrictJsonBytesV1,
   deepFreezeStrictJsonV1,
@@ -39,6 +42,8 @@ const REQUIRED_SOURCES = [
     repo: "Superpowers",
   },
 ] as const;
+export const ADMIN_BASELINE_EVIDENCE_BOOTSTRAP_FILE_V1 = "bootstrap.json";
+export const ADMIN_BASELINE_EVIDENCE_CACHE_DIR_V1 = "cache";
 
 export interface AdminBaselineEvidenceBootstrapV1 {
   readonly artifactUrl: string;
@@ -58,6 +63,11 @@ export interface AdminBaselineEvidenceBootstrapV1 {
     pinnedSha: string;
     repo: string;
   }>[];
+}
+export interface ResolvedAdminBaselineEvidenceBootstrapV1 {
+  readonly bootstrap: AdminBaselineEvidenceBootstrapV1;
+  readonly root: string;
+  readonly provenance: "os-admin-managed" | "local-admin-file";
 }
 
 function fail(label: string): never {
@@ -94,7 +104,7 @@ function locator(value: unknown, label: string): string {
     parsed.hash !== "" ||
     !parsed.hostname.includes(".") ||
     !parsed.pathname.startsWith("/") ||
-    parsed.pathname.endsWith("/") ||
+    (label !== "artifact locator" && parsed.pathname.endsWith("/")) ||
     parsed.pathname.split("/").some((part) => part === "." || part === "..")
   )
     fail(label);
@@ -186,4 +196,73 @@ export function parseAdminBaselineEvidenceBootstrapV1Json(
   if (JSON.stringify(result.sources) !== JSON.stringify(REQUIRED_SOURCES)) fail("source");
   if (canonicalStrictJsonBytesV1(result).compare(bytes) !== 0) fail("noncanonical bytes");
   return deepFreezeStrictJsonV1(structuredClone(result)) as AdminBaselineEvidenceBootstrapV1;
+}
+
+function absoluteRoot(value: string, label: string): string {
+  if (typeof value !== "string" || value.length === 0 || value.includes("\0") || !isAbsolute(value))
+    fail(label);
+  return resolve(value);
+}
+function contained(root: string, target: string): string {
+  const rel = relative(root, target);
+  if (rel.length === 0 || rel.startsWith("..") || isAbsolute(rel) || rel.split(sep).includes(".."))
+    fail("path containment");
+  return target;
+}
+function hasLinkedAuthorityPath(boundary: string, target: string): boolean {
+  const root = absoluteRoot(boundary, "authority boundary");
+  const targetPath = resolve(target);
+  const rel = relative(root, targetPath);
+  if (
+    rel.length !== 0 &&
+    (rel.startsWith("..") || isAbsolute(rel) || rel.split(sep).includes(".."))
+  )
+    return true;
+  for (let current = targetPath; ; current = dirname(current)) {
+    try {
+      if (lstatSync(current).isSymbolicLink()) return true;
+    } catch {
+      /* absence fails at bootstrap read */
+    }
+    if (current === root) return false;
+  }
+}
+export function enterpriseAdminBaselineEvidenceRootV1(platform: NodeJS.Platform): string {
+  if (platform === "win32") return "C:\\ProgramData\\aih\\admin-baseline-evidence";
+  if (platform === "darwin") return "/Library/Application Support/aih/admin-baseline-evidence";
+  return "/etc/aih/admin-baseline-evidence";
+}
+export function vibeAdminBaselineEvidenceRootV1(adminRoot: string): string {
+  return join(absoluteRoot(adminRoot, "admin root"), ".aih", "admin-baseline-evidence");
+}
+export function adminBaselineEvidenceBootstrapPathV1(root: string): string {
+  const checked = absoluteRoot(root, "baseline root");
+  return contained(checked, join(checked, ADMIN_BASELINE_EVIDENCE_BOOTSTRAP_FILE_V1));
+}
+export function resolveAdminBaselineEvidenceBootstrapV1(input: {
+  readonly adminRoot: string;
+  readonly platformAdminRoot: string;
+  readonly posture: Posture;
+}): ResolvedAdminBaselineEvidenceBootstrapV1 {
+  const enterprise = input.posture === "enterprise";
+  const root = enterprise
+    ? absoluteRoot(input.platformAdminRoot, "platform admin root")
+    : vibeAdminBaselineEvidenceRootV1(input.adminRoot);
+  const boundary = enterprise ? root : absoluteRoot(input.adminRoot, "admin root");
+  if (hasLinkedAuthorityPath(boundary, root)) fail("baseline root links");
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(adminBaselineEvidenceBootstrapPathV1(root));
+  } catch {
+    fail(
+      enterprise
+        ? "enterprise posture requires the OS/admin-managed canonical bootstrap file"
+        : "vibe posture requires the canonical bootstrap file under the admin root",
+    );
+  }
+  return {
+    bootstrap: parseAdminBaselineEvidenceBootstrapV1Json(bytes),
+    root,
+    provenance: enterprise ? "os-admin-managed" : "local-admin-file",
+  };
 }

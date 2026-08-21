@@ -6,7 +6,7 @@ import {
 } from "../../src/org-policy/admin-baseline-evidence-bootstrap-v1.js";
 
 const record: AdminBaselineEvidenceBootstrapV1 = {
-  artifactUrl: "https://artifacts.example.test/vendor-evidence/SHA256SUMS",
+  artifactUrl: "https://artifacts.example.test/vendor-evidence/",
   attestationUrl: "https://artifacts.example.test/vendor-evidence/attestation.json",
   cacheMaxAgeSeconds: 3600,
   expectedEnvironment: "baseline-evidence-publish",

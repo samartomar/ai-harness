@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import { parseBaselineEvidenceLock } from "../baseline-evidence/schema.js";
 import { vendorBaselineLockBytes } from "../baseline-evidence/vendor.js";
 import {
+  BASELINE_EVIDENCE_ARTIFACT_FILE_V1,
+  BASELINE_EVIDENCE_ARTIFACT_LOCK_PATH_V1,
+  BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1,
   type VendorBaselineEvidenceArtifactV1,
   type VerifiedBaselineEvidenceArtifactAttestationV1,
   verifyVendorBaselineEvidenceArtifactV1,
@@ -10,6 +13,22 @@ import { AihError } from "../errors.js";
 import type { AdminBaselineEvidenceBootstrapV1 } from "./admin-baseline-evidence-bootstrap-v1.js";
 
 const ATTESTATION_LIMIT = 256 * 1024;
+const ARTIFACT_FILE_LIMIT = 1024 * 1024;
+const TOTAL_ARTIFACT_LIMIT = 1280 * 1024;
+export const ADMIN_BASELINE_EVIDENCE_ARTIFACT_FILES_V1 = [
+  BASELINE_EVIDENCE_ARTIFACT_FILE_V1,
+  "evidence.json",
+  `files/${BASELINE_EVIDENCE_ARTIFACT_LOCK_PATH_V1}`,
+  "manifest.json",
+  BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1,
+] as const;
+export type AdminBaselineEvidenceHttpsFetchV1 = (request: {
+  readonly url: string;
+  readonly maxBytes: number;
+  readonly timeoutMs: number;
+}) => Promise<
+  { readonly kind: "available"; readonly bytes: Buffer } | { readonly kind: "unavailable" }
+>;
 
 export interface AdminBaselineEvidenceProvenanceV1 {
   readonly ageSeconds: number | null;
@@ -56,6 +75,138 @@ export interface ResolveAdminBaselineEvidenceV1Input {
 
 export interface ResolvedAdminBaselineEvidenceV1 {
   readonly provenance: AdminBaselineEvidenceProvenanceV1;
+}
+
+/**
+ * Closed projection of `gh attestation verify --format json` after the exact
+ * command has pinned repo, workflow, issuer, ref and SLSA predicate. The JSON
+ * is still treated as hostile: it proves the claim rather than reflecting the
+ * caller's policy back to it.
+ */
+export function parseGithubBaselineEvidenceAttestationV1(
+  bytes: Buffer,
+  expected: AdminBaselineEvidenceBootstrapV1 & {
+    readonly now: string;
+    readonly subjectSha256: string;
+  },
+): VerifiedBaselineEvidenceArtifactAttestationV1 & { readonly signedAt: string } {
+  if (!Buffer.isBuffer(bytes) || bytes.length === 0 || bytes.length > ATTESTATION_LIMIT)
+    fail("attestation");
+  let claim: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed) ||
+      Object.getPrototypeOf(parsed) !== Object.prototype
+    )
+      fail("attestation claim");
+    claim = parsed as Record<string, unknown>;
+  } catch {
+    fail("attestation claim");
+  }
+  const fields = [
+    "issuer",
+    "predicateType",
+    "ref",
+    "repository",
+    "signedAt",
+    "subjectSha256",
+    "workflow",
+  ];
+  if (Object.keys(claim).sort().join("\0") !== fields.sort().join("\0")) fail("attestation claim");
+  const signedAt = typeof claim.signedAt === "string" ? claim.signedAt : "";
+  const signed = epoch(signedAt, "attestation timestamp");
+  const now = epoch(expected.now, "clock");
+  if (signed > now || (now - signed) / 1000 > expected.cacheMaxAgeSeconds)
+    fail("attestation timestamp");
+  if (
+    claim.predicateType !== "https://slsa.dev/provenance/v1" ||
+    claim.subjectSha256 !== expected.subjectSha256 ||
+    claim.repository !== expected.expectedRepository ||
+    claim.workflow !== expected.expectedWorkflow ||
+    claim.issuer !== expected.expectedIssuer ||
+    claim.ref !== expected.expectedRef
+  )
+    fail("attestation claim");
+  return {
+    environment: expected.expectedEnvironment,
+    issuer: expected.expectedIssuer,
+    ref: expected.expectedRef,
+    repository: expected.expectedRepository,
+    workflow: expected.expectedWorkflow,
+    subjectSha256: expected.subjectSha256,
+    verified: true,
+    signedAt,
+  };
+}
+
+/** Acquires precisely the #815 subject layout; a mirror base never supplies a path authority. */
+export async function fetchAdminBaselineEvidenceArtifactV1(input: {
+  readonly artifactUrl: string;
+  readonly attestationUrl: string;
+  readonly fetchHttps: AdminBaselineEvidenceHttpsFetchV1;
+}): Promise<
+  | { readonly kind: "unavailable" }
+  | {
+      readonly kind: "available";
+      readonly artifact: VendorBaselineEvidenceArtifactV1;
+      readonly attestationBytes: Buffer;
+    }
+> {
+  let base: URL;
+  try {
+    base = new URL(input.artifactUrl);
+  } catch {
+    return { kind: "unavailable" };
+  }
+  if (base.protocol !== "https:" || !base.pathname.endsWith("/")) return { kind: "unavailable" };
+  const files: { path: string; bytes: Buffer }[] = [];
+  let total = 0;
+  for (const path of ADMIN_BASELINE_EVIDENCE_ARTIFACT_FILES_V1) {
+    const response = await input.fetchHttps({
+      url: new URL(path, base).href,
+      maxBytes: ARTIFACT_FILE_LIMIT,
+      timeoutMs: 10_000,
+    });
+    if (
+      response.kind !== "available" ||
+      !Buffer.isBuffer(response.bytes) ||
+      response.bytes.length === 0 ||
+      response.bytes.length > ARTIFACT_FILE_LIMIT
+    )
+      return { kind: "unavailable" };
+    total += response.bytes.length;
+    if (total > TOTAL_ARTIFACT_LIMIT) return { kind: "unavailable" };
+    files.push({ path, bytes: Buffer.from(response.bytes) });
+  }
+  const attestation = await input.fetchHttps({
+    url: input.attestationUrl,
+    maxBytes: ATTESTATION_LIMIT,
+    timeoutMs: 10_000,
+  });
+  if (
+    attestation.kind !== "available" ||
+    !Buffer.isBuffer(attestation.bytes) ||
+    attestation.bytes.length === 0 ||
+    attestation.bytes.length > ATTESTATION_LIMIT
+  )
+    return { kind: "unavailable" };
+  const subject = files.find((file) => file.path === BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1);
+  if (subject === undefined) return { kind: "unavailable" };
+  return {
+    kind: "available",
+    artifact: {
+      files,
+      subject: {
+        bytes: Buffer.from(subject.bytes),
+        path: BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1,
+        sha256: sha256(subject.bytes),
+      },
+    },
+    attestationBytes: Buffer.from(attestation.bytes),
+  };
 }
 
 function fail(label: string): never {
