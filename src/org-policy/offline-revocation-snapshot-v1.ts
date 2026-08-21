@@ -50,6 +50,18 @@ export type OfflineRevocationAuthorityV1Result =
   | Readonly<{ effective: false; kind: "stale-authority"; materializable: false; revoked: false }>
   | Readonly<{ effective: true; kind: "current"; materializable: false; revoked: boolean }>;
 
+type OfflineRevocationStateTransitionV1 =
+  | Readonly<{ kind: "advance"; state: OfflineRevocationStateV1 }>
+  | Readonly<{ kind: "conflict" | "rollback" | "unchanged"; state: OfflineRevocationStateV1 }>
+  | Readonly<{ kind: "invalid-authority" }>;
+
+interface Trust {
+  readonly expectedAdminSignerIdentity: string;
+  readonly expectedAdminSignerRootSha256: string;
+  readonly expectedIssuer: string;
+  readonly verifyCanonicalPae: (request: unknown) => unknown;
+}
+
 function fail(label: string): never {
   throw new TypeError(`OFFLINE_REVOCATION_SNAPSHOT_V1: ${label}`);
 }
@@ -343,6 +355,57 @@ function stale(): OfflineRevocationAuthorityV1Result {
   });
 }
 
+function invalidTransition(): OfflineRevocationStateTransitionV1 {
+  return deepFreezeStrictJsonV1({ kind: "invalid-authority" as const });
+}
+
+function trust(value: Json): Trust {
+  const verifier = value.verifyCanonicalPae;
+  if (isProxy(verifier) || typeof verifier !== "function") fail("verifier");
+  return {
+    expectedAdminSignerIdentity: text(
+      value.expectedAdminSignerIdentity,
+      "expected signer identity",
+      256,
+    ),
+    expectedAdminSignerRootSha256: digest(
+      value.expectedAdminSignerRootSha256,
+      "expected signer root",
+    ),
+    expectedIssuer: stableId(value.expectedIssuer, "expected issuer"),
+    verifyCanonicalPae: verifier as (request: unknown) => unknown,
+  };
+}
+
+/** Reverify the exact DSSE bytes every time; brands only prove local parsing. */
+function reverify(value: unknown, expected: Trust): SignedOfflineRevocationSnapshotV1 | undefined {
+  if (typeof value !== "object" || value === null || !signedSnapshots.has(value)) return undefined;
+  const signed = value as SignedOfflineRevocationSnapshotV1;
+  try {
+    const envelope = signed.envelope as Json;
+    const payload = Buffer.from(envelope.payload as string, "base64");
+    const statement = parseStrictJsonObjectV1(
+      new TextDecoder("utf-8", { fatal: true }).decode(payload),
+      "offline revocation statement",
+    );
+    const predicate = record(statement.predicate, "statement predicate");
+    if (
+      signed.snapshot.issuer !== expected.expectedIssuer ||
+      predicate.signerIdentity !== expected.expectedAdminSignerIdentity ||
+      expected.verifyCanonicalPae({
+        expectedAdminSignerIdentity: expected.expectedAdminSignerIdentity,
+        expectedAdminSignerRootSha256: expected.expectedAdminSignerRootSha256,
+        paeBytes: pae(envelope.payloadType as string, payload),
+        signatures: envelope.signatures,
+      }) !== true
+    )
+      return undefined;
+  } catch {
+    return undefined;
+  }
+  return signed;
+}
+
 function decision(value: unknown): {
   id: string;
   issuedAt: string;
@@ -379,6 +442,7 @@ export function resolveOfflineRevocationAuthorityV1(
     item,
     [
       "decision",
+      "durableState",
       "expectedAdminSignerIdentity",
       "expectedAdminSignerRootSha256",
       "expectedIssuer",
@@ -389,47 +453,14 @@ export function resolveOfflineRevocationAuthorityV1(
     ],
     "authority resolution fields",
   );
-  const signed = item.signedSnapshot;
-  if (typeof signed !== "object" || signed === null || !signedSnapshots.has(signed))
-    fail("signed snapshot brand");
-  const expectedIssuer = stableId(item.expectedIssuer, "expected issuer");
-  const expectedAdminSignerIdentity = text(
-    item.expectedAdminSignerIdentity,
-    "expected signer identity",
-    256,
-  );
-  const expectedAdminSignerRootSha256 = digest(
-    item.expectedAdminSignerRootSha256,
-    "expected signer root",
-  );
+  const expected = trust(item);
   const now = timestamp(item.now, "now");
   const receiptExpiresAt = timestamp(item.receiptExpiresAt, "receipt expires at");
   const resolvedDecision = decision(item.decision);
-  const verifier = item.verifyCanonicalPae;
-  if (isProxy(verifier) || typeof verifier !== "function") fail("verifier");
-  const snapshot = (signed as SignedOfflineRevocationSnapshotV1).snapshot;
-  const envelope = (signed as SignedOfflineRevocationSnapshotV1).envelope as Json;
-  let verified = false;
-  try {
-    const payload = Buffer.from(envelope.payload as string, "base64");
-    const statement = parseStrictJsonObjectV1(
-      new TextDecoder("utf-8", { fatal: true }).decode(payload),
-      "offline revocation statement",
-    );
-    const predicate = record(statement.predicate, "statement predicate");
-    verified =
-      snapshot.issuer === expectedIssuer &&
-      predicate.signerIdentity === expectedAdminSignerIdentity &&
-      verifier({
-        expectedAdminSignerIdentity,
-        expectedAdminSignerRootSha256,
-        paeBytes: pae(envelope.payloadType as string, payload),
-        signatures: envelope.signatures,
-      }) === true;
-  } catch {
-    return invalid();
-  }
-  if (!verified || Date.parse(snapshot.issuedAt) > Date.parse(now)) return invalid();
+  const signed = reverify(item.signedSnapshot, expected);
+  if (signed === undefined) return invalid();
+  const snapshot = signed.snapshot;
+  if (Date.parse(snapshot.issuedAt) > Date.parse(now)) return invalid();
   if (
     Date.parse(snapshot.validUntil) <= Date.parse(now) ||
     Date.parse(snapshot.issuedAt) < Date.parse(resolvedDecision.issuedAt) ||
@@ -442,6 +473,18 @@ export function resolveOfflineRevocationAuthorityV1(
     Date.parse(snapshot.validUntil) > Date.parse(receiptExpiresAt)
   )
     return invalid();
+  if (item.durableState === undefined) return stale();
+  let durable: OfflineRevocationStateV1;
+  try {
+    durable = state(item.durableState);
+  } catch {
+    return invalid();
+  }
+  const snapshotState = snapshotStateFor(signed);
+  if (durable.issuer !== snapshotState.issuer) return invalid();
+  if (snapshotState.sequence < durable.sequence) return stale();
+  if (snapshotState.sequence > durable.sequence) return stale();
+  if (snapshotState.digestSha256 !== durable.digestSha256) return invalid();
   return deepFreezeStrictJsonV1({
     effective: true,
     kind: "current" as const,
@@ -462,24 +505,33 @@ function state(value: unknown): OfflineRevocationStateV1 {
   });
 }
 
+function snapshotStateFor(value: SignedOfflineRevocationSnapshotV1): OfflineRevocationStateV1 {
+  return deepFreezeStrictJsonV1({
+    digestSha256: sha256(canonicalOfflineRevocationSnapshotV1Bytes(value)),
+    issuer: value.snapshot.issuer,
+    sequence: value.snapshot.sequence,
+  });
+}
+
 export function transitionOfflineRevocationStateV1(
   value: unknown,
-):
-  | Readonly<{ kind: "advance"; state: OfflineRevocationStateV1 }>
-  | Readonly<{ kind: "conflict" | "rollback" | "unchanged"; state: OfflineRevocationStateV1 }> {
+): OfflineRevocationStateTransitionV1 {
   const item = record(value, "offline revocation state transition");
-  exact(item, ["current", "next"], "offline revocation state transition fields");
-  const next = item.next;
-  if (typeof next !== "object" || next === null || !signedSnapshots.has(next))
-    fail("signed snapshot brand");
-  const nextSnapshot = (next as SignedOfflineRevocationSnapshotV1).snapshot;
-  const nextState = deepFreezeStrictJsonV1({
-    digestSha256: sha256(
-      canonicalOfflineRevocationSnapshotV1Bytes(next as SignedOfflineRevocationSnapshotV1),
-    ),
-    issuer: nextSnapshot.issuer,
-    sequence: nextSnapshot.sequence,
-  });
+  exact(
+    item,
+    [
+      "current",
+      "expectedAdminSignerIdentity",
+      "expectedAdminSignerRootSha256",
+      "expectedIssuer",
+      "next",
+      "verifyCanonicalPae",
+    ],
+    "offline revocation state transition fields",
+  );
+  const next = reverify(item.next, trust(item));
+  if (next === undefined) return invalidTransition();
+  const nextState = snapshotStateFor(next);
   if (item.current === undefined)
     return deepFreezeStrictJsonV1({ kind: "advance" as const, state: nextState });
   const current = state(item.current);
@@ -499,18 +551,35 @@ export function transitionOfflineRevocationStateV1(
 
 /**
  * A narrow durable per-issuer compare-and-swap seam. The caller owns the
- * storage implementation, while this contract requires a live observation
- * before the claim and another after it; neither a race nor a crash can be
- * reported as an accepted transition.
+ * storage implementation, partitioned by the exact `expectedIssuer`. Both
+ * callbacks are synchronous: `observe(expectedIssuer)` supplies the live
+ * state and `claim(expectedIssuer, expected, replacement)` must return the
+ * literal boolean `true` only for an atomic compare-and-swap. A live observation
+ * happens before the claim and another after it; neither a race nor a crash can
+ * be reported as an accepted transition.
  */
 export function claimOfflineRevocationStateV1(
   value: unknown,
 ):
   | Readonly<{ kind: "advanced"; state: OfflineRevocationStateV1 }>
   | Readonly<{ kind: "conflict" | "rollback" | "unchanged"; state: OfflineRevocationStateV1 }>
+  | Readonly<{ kind: "invalid-authority" }>
   | Readonly<{ kind: "contended" }> {
   const item = record(value, "offline revocation state claim");
-  exact(item, ["claim", "next", "observe"], "offline revocation state claim fields");
+  exact(
+    item,
+    [
+      "claim",
+      "expectedAdminSignerIdentity",
+      "expectedAdminSignerRootSha256",
+      "expectedIssuer",
+      "next",
+      "observe",
+      "verifyCanonicalPae",
+    ],
+    "offline revocation state claim fields",
+  );
+  const expected = trust(item);
   const observe = item.observe;
   const claim = item.claim;
   if (
@@ -522,17 +591,31 @@ export function claimOfflineRevocationStateV1(
     fail("offline revocation state custody");
   let current: unknown;
   try {
-    current = observe();
+    current = observe(expected.expectedIssuer);
+    if (isAsyncCallbackResult(current))
+      return deepFreezeStrictJsonV1({ kind: "contended" as const });
   } catch {
     fail("offline revocation state custody");
   }
-  const transition = transitionOfflineRevocationStateV1({ current, next: item.next });
+  const transition = transitionOfflineRevocationStateV1({
+    current,
+    expectedAdminSignerIdentity: expected.expectedAdminSignerIdentity,
+    expectedAdminSignerRootSha256: expected.expectedAdminSignerRootSha256,
+    expectedIssuer: expected.expectedIssuer,
+    next: item.next,
+    verifyCanonicalPae: expected.verifyCanonicalPae,
+  });
+  if (transition.kind === "invalid-authority") return transition;
   if (transition.kind !== "advance")
     return deepFreezeStrictJsonV1({ kind: transition.kind, state: transition.state });
   try {
-    if (claim(current, transition.state) !== true)
+    const claimed = claim(expected.expectedIssuer, current, transition.state);
+    if (isAsyncCallbackResult(claimed) || claimed !== true)
       return deepFreezeStrictJsonV1({ kind: "contended" as const });
-    const reobserved = state(observe());
+    const observedAfterClaim = observe(expected.expectedIssuer);
+    if (isAsyncCallbackResult(observedAfterClaim))
+      return deepFreezeStrictJsonV1({ kind: "contended" as const });
+    const reobserved = state(observedAfterClaim);
     if (
       reobserved.issuer !== transition.state.issuer ||
       reobserved.sequence !== transition.state.sequence ||
@@ -543,4 +626,16 @@ export function claimOfflineRevocationStateV1(
     return deepFreezeStrictJsonV1({ kind: "contended" as const });
   }
   return deepFreezeStrictJsonV1({ kind: "advanced" as const, state: transition.state });
+}
+
+/** Callbacks are synchronous by contract; promises are never awaited or adopted. */
+function isAsyncCallbackResult(value: unknown): boolean {
+  if (value instanceof Promise) return true;
+  if (typeof value !== "object" || value === null || isProxy(value)) return false;
+  const descriptor = Object.getOwnPropertyDescriptor(value, "then");
+  return (
+    descriptor !== undefined &&
+    Object.hasOwn(descriptor, "value") &&
+    typeof descriptor.value === "function"
+  );
 }
