@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { chmodSync, lstatSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { parseBaselineEvidenceLock } from "../baseline-evidence/schema.js";
 import { vendorBaselineLockBytes } from "../baseline-evidence/vendor.js";
 import {
@@ -10,6 +12,7 @@ import {
   verifyVendorBaselineEvidenceArtifactV1,
 } from "../baseline-evidence/vendor-artifact-v1.js";
 import { AihError } from "../errors.js";
+import type { Runner } from "../internals/proc.js";
 import type { AdminBaselineEvidenceBootstrapV1 } from "./admin-baseline-evidence-bootstrap-v1.js";
 
 const ATTESTATION_LIMIT = 256 * 1024;
@@ -187,6 +190,90 @@ export function parseGithubBaselineEvidenceAttestationV1(
     verified: true,
     signedAt,
   };
+}
+
+export async function verifyGithubBaselineEvidenceAttestationLiveV1(input: {
+  readonly bootstrap: AdminBaselineEvidenceBootstrapV1;
+  readonly subjectBytes: Buffer;
+  readonly subjectSha256: string;
+  readonly attestationBytes: Buffer;
+  readonly gh: string;
+  readonly tempRoot: string;
+  readonly run: Runner;
+  readonly now: string;
+}): Promise<VerifiedBaselineEvidenceArtifactAttestationV1 & { readonly signedAt: string }> {
+  if (
+    !Buffer.isBuffer(input.subjectBytes) ||
+    input.subjectBytes.length === 0 ||
+    !Buffer.isBuffer(input.attestationBytes) ||
+    input.attestationBytes.length === 0 ||
+    input.attestationBytes.length > ATTESTATION_LIMIT
+  )
+    fail("attestation");
+  let staging: string | undefined;
+  try {
+    const root = lstatSync(input.tempRoot);
+    if (root.isSymbolicLink() || !root.isDirectory()) fail("attestation custody");
+    staging = mkdtempSync(join(input.tempRoot, "aih-baseline-evidence-"));
+    if (lstatSync(staging).isSymbolicLink() || !lstatSync(staging).isDirectory())
+      fail("attestation custody");
+    const subject = join(staging, "SHA256SUMS");
+    const bundle = join(staging, "attestation.jsonl");
+    writeFileSync(subject, input.subjectBytes, { flag: "wx", mode: 0o600 });
+    writeFileSync(bundle, input.attestationBytes, { flag: "wx", mode: 0o600 });
+    chmodSync(subject, 0o600);
+    chmodSync(bundle, 0o600);
+    const san = `https://github.com/${input.bootstrap.expectedWorkflow}@${input.bootstrap.expectedRef}`;
+    const result = await input.run(
+      [
+        input.gh,
+        "attestation",
+        "verify",
+        subject,
+        "--bundle",
+        bundle,
+        "--format",
+        "json",
+        "--repo",
+        input.bootstrap.expectedRepository,
+        "--predicate-type",
+        "https://slsa.dev/provenance/v1",
+        "--cert-identity",
+        san,
+        "--cert-oidc-issuer",
+        input.bootstrap.expectedIssuer,
+        "--source-ref",
+        input.bootstrap.expectedRef,
+        "--deny-self-hosted-runners",
+      ],
+      { cwd: staging, maxBufferBytes: ATTESTATION_LIMIT, timeoutMs: 30_000 },
+    );
+    if (
+      result.code !== 0 ||
+      result.spawnError === true ||
+      result.truncated === true ||
+      typeof result.stdout !== "string" ||
+      Buffer.byteLength(result.stdout) > ATTESTATION_LIMIT
+    )
+      fail("attestation rejected");
+    return parseGithubBaselineEvidenceAttestationV1(Buffer.from(result.stdout, "utf8"), {
+      ...input.bootstrap,
+      now: input.now,
+      subjectSha256: input.subjectSha256,
+    });
+  } catch (error) {
+    if (error instanceof AihError) throw error;
+    fail("attestation rejected");
+  } finally {
+    if (staging !== undefined) {
+      try {
+        rmSync(staging, { recursive: true, force: true });
+      } catch {
+        fail("attestation custody");
+      }
+    }
+  }
+  fail("attestation rejected");
 }
 
 /** Acquires precisely the #815 subject layout; a mirror base never supplies a path authority. */

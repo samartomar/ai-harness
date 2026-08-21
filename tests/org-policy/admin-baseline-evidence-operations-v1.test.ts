@@ -66,9 +66,44 @@ describe("admin baseline evidence resolution v1", () => {
     const root = mkdtempSync(join(tmpdir(), "aih-baseline-gh-"));
     const argv: string[][] = [];
     try {
-      await expect(verifyGithubBaselineEvidenceAttestationLiveV1({ bootstrap, subjectBytes: Buffer.from("sum"), subjectSha256: createHash("sha256").update("sum").digest("hex"), attestationBytes: Buffer.from("bundle"), gh: "/tools/gh", tempRoot: root, run: async (args) => { argv.push(args); return { code: 1, stdout: "", stderr: "" }; }, now: "2026-08-21T00:00:00Z" })).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
-      expect(argv[0]).toEqual(expect.arrayContaining(["attestation", "verify", "--bundle", "--format", "json", "--repo", bootstrap.expectedRepository, "--predicate-type", "https://slsa.dev/provenance/v1", "--cert-identity", `https://github.com/${bootstrap.expectedWorkflow}@${bootstrap.expectedRef}`, "--cert-oidc-issuer", bootstrap.expectedIssuer, "--source-ref", bootstrap.expectedRef, "--deny-self-hosted-runners"]));
-    } finally { rmSync(root, { recursive: true, force: true }); }
+      await expect(
+        verifyGithubBaselineEvidenceAttestationLiveV1({
+          bootstrap,
+          subjectBytes: Buffer.from("sum"),
+          subjectSha256: createHash("sha256").update("sum").digest("hex"),
+          attestationBytes: Buffer.from("bundle"),
+          gh: "/tools/gh",
+          tempRoot: root,
+          run: async (args) => {
+            argv.push(args);
+            return { code: 1, stdout: "", stderr: "" };
+          },
+          now: "2026-08-21T00:00:00Z",
+        }),
+      ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+      expect(argv[0]).toEqual(
+        expect.arrayContaining([
+          "attestation",
+          "verify",
+          "--bundle",
+          "--format",
+          "json",
+          "--repo",
+          bootstrap.expectedRepository,
+          "--predicate-type",
+          "https://slsa.dev/provenance/v1",
+          "--cert-identity",
+          `https://github.com/${bootstrap.expectedWorkflow}@${bootstrap.expectedRef}`,
+          "--cert-oidc-issuer",
+          bootstrap.expectedIssuer,
+          "--source-ref",
+          bootstrap.expectedRef,
+          "--deny-self-hosted-runners",
+        ]),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
   it("accepts only one real nested gh JSON SLSA result, never an echoed policy", () => {
     const subjectSha256 = "a".repeat(64);
