@@ -164,6 +164,8 @@ describe("OfflineRevocationSnapshotV1", () => {
       { validUntil: "2026-11-08T12:00:02Z" },
     ])
       expect(() => signed({ snapshot: snapshot(override) })).toThrow();
+    for (const signerIdentity of ["e\u0301", "signer\u0000admin"])
+      expect(() => signed({ signerIdentity })).toThrow();
     expect(
       resolve({
         signedSnapshot: signed({ snapshot: snapshot({ issuedAt: "2026-08-10T12:00:02Z" }) }),
@@ -231,6 +233,41 @@ describe("OfflineRevocationSnapshotV1", () => {
         },
         next,
         observe: (_issuer: string) => durable,
+        ...trust(),
+      }),
+    ).toEqual({ kind: "contended" });
+
+    expect(() =>
+      claimOfflineRevocationStateV1({
+        claim: (_issuer: string, _expected: unknown, _replacement: unknown) => true,
+        next,
+        observe: (_issuer: string) => {
+          throw new Error("hostile storage error");
+        },
+        ...trust(),
+      }),
+    ).toThrow("offline revocation state custody");
+
+    let asyncObservations = 0;
+    expect(
+      claimOfflineRevocationStateV1({
+        claim: (_issuer: string, _expected: unknown, _replacement: unknown) => true,
+        next,
+        observe: (_issuer: string) => {
+          asyncObservations += 1;
+          return asyncObservations === 1 ? undefined : Promise.resolve(undefined);
+        },
+        ...trust(),
+      }),
+    ).toEqual({ kind: "contended" });
+
+    expect(
+      claimOfflineRevocationStateV1({
+        claim: (_issuer: string, _expected: unknown, _replacement: unknown) => {
+          throw new Error("hostile claim error");
+        },
+        next,
+        observe: (_issuer: string) => undefined,
         ...trust(),
       }),
     ).toEqual({ kind: "contended" });
@@ -308,6 +345,10 @@ describe("OfflineRevocationSnapshotV1", () => {
         signedSnapshot: next,
       }),
     ).toMatchObject({ kind: "invalid-authority" });
+    expect(
+      resolve({ durableState: { ...stateFor(next), sequence: 0 }, signedSnapshot: next }),
+    ).toMatchObject({ kind: "invalid-authority" });
+    expect(() => resolve({ now: "2026-13-10T12:00:01Z", signedSnapshot: next })).toThrow();
     for (const verifyCanonicalPae of [
       () => false,
       () => {
@@ -330,6 +371,23 @@ describe("OfflineRevocationSnapshotV1", () => {
       2,
     );
     expect(() => parseOfflineRevocationSnapshotV1Json(noncanonical)).toThrow();
+    const wrongEnvelopeType = JSON.parse(
+      canonicalOfflineRevocationSnapshotV1Bytes(next).toString("utf8"),
+    );
+    wrongEnvelopeType.envelope.payloadType = "application/not-in-toto";
+    expect(() => parseOfflineRevocationSnapshotV1Json(JSON.stringify(wrongEnvelopeType))).toThrow();
+    expect(() =>
+      resolve({
+        decision: {
+          expiresAt: "2026-08-10T11:59:58Z",
+          id: "decision-live",
+          issuedAt: "2026-08-10T11:59:59Z",
+          notBefore: "2026-08-10T11:59:59Z",
+          reviewBy: "2026-08-10T11:59:58Z",
+        },
+        signedSnapshot: next,
+      }),
+    ).toThrow("decision bounds");
     expect(
       claimOfflineRevocationStateV1({
         claim: (_issuer: string, _expected: unknown, _replacement: unknown) =>
@@ -347,6 +405,14 @@ describe("OfflineRevocationSnapshotV1", () => {
         ...trust(),
       }),
     ).toEqual({ kind: "contended" });
+    expect(() =>
+      claimOfflineRevocationStateV1({
+        claim: null,
+        next,
+        observe: (_issuer: string) => undefined,
+        ...trust(),
+      }),
+    ).toThrow("offline revocation state custody");
   });
 
   it("has no filesystem, network, process, mutation, or materialization route", () => {
