@@ -16,7 +16,7 @@ vi.mock("../../src/internals/fsxn.js", async (importOriginal) => {
       const opened = actual.readRegularFileWithStats(path, options);
       if (opened !== undefined && path === interposition.armedPath) {
         interposition.armedPath = "";
-        fs.writeFileSync(path, "after\n", "utf8");
+        fs.writeFileSync(path, "after-change\n", "utf8");
         const later = new Date(Date.now() + 60_000);
         fs.utimesSync(path, later, later);
       }
@@ -85,5 +85,6 @@ describe("readContainedRegularFile", () => {
     const after = lstatSync(target);
     expect(after.dev).toBe(before.dev);
     expect(after.ino).toBe(before.ino);
+    expect(after.size).not.toBe(before.size);
   });
 });
