@@ -76,26 +76,25 @@ export interface AdoptionRecipe {
 }
 
 const STABLE_ID = /^[a-z][a-z0-9-]{0,63}$/;
-const SERENA_MINIMUM_TOOLS = [
+const REVIEWED_SERENA_ALLOWED_TOOLS = [
+  "initial_instructions",
+  "get_current_config",
+  "restart_language_server",
   "get_symbols_overview",
   "find_symbol",
   "find_referencing_symbols",
   "find_implementations",
+  "find_declaration",
+  "get_diagnostics_for_file",
+  "get_diagnostics_for_symbol",
   "replace_symbol_body",
+  "insert_after_symbol",
+  "insert_before_symbol",
   "rename_symbol",
+  "safe_delete_symbol",
 ] as const;
 const CORE_ROLE_IDS = ["code-review-graph", "codebase-memory-mcp"] as const;
-const SERENA_FORBIDDEN_OVERLAP_CLASSES = [
-  {
-    name: "file",
-    pattern:
-      /^(?:(?:read|write|edit|create|delete|list|find)_(?:file|files|directory|dir)|create_text_file|replace_content|replace_in_files)$/,
-  },
-  { name: "shell", pattern: /(?:^|_)(?:shell|terminal|command|exec)(?:_|$)/ },
-  { name: "memory", pattern: /(?:^|_)(?:memory|memories|recall)(?:_|$)/ },
-  { name: "project", pattern: /^(?:activate|switch|set|open|close)_project(?:_|$)/ },
-  { name: "mode", pattern: /^(?:switch|set|open|close)_mode(?:_|$)/ },
-] as const;
+const SERENA_TOOL_SET_DRIFT = "adoption recipe source drift: reviewed Serena tool set changed";
 
 function ordinal(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -131,6 +130,12 @@ function requireTools(values: readonly string[]): string[] {
   return [...values];
 }
 
+function hasExactSequence(actual: readonly string[], expected: readonly string[]): boolean {
+  return (
+    actual.length === expected.length && actual.every((value, index) => value === expected[index])
+  );
+}
+
 function recipeSources(): AdoptionRecipeSources {
   return {
     eccMcpSelected: [...ECC_MCP_SELECTED],
@@ -156,6 +161,9 @@ export function buildAdoptionRecipe(
 ): AdoptionRecipe {
   const eccMcpSelected = requireStableIds(input.eccMcpSelected, "ECC_MCP_SELECTED");
   const eccMcpDisabled = requireStableIds(input.eccMcpDisabled, "ECC_MCP_DISABLED");
+  if (!hasExactSequence(input.serenaAllowedTools, REVIEWED_SERENA_ALLOWED_TOOLS)) {
+    throw new Error(SERENA_TOOL_SET_DRIFT);
+  }
   const serenaAllowedTools = requireTools(input.serenaAllowedTools);
   const eccMcpCatalogIds = requireStableIds(input.eccMcpCatalogIds, "ECC_MCP_CATALOG_IDS");
   const coreMcpIds = requireStableIds(input.coreMcpIds, "Core MCP catalog", true);
@@ -181,19 +189,6 @@ export function buildAdoptionRecipe(
   }
   if (!eccMcpDisabled.includes("token-savior")) {
     throw new Error("adoption recipe source drift: Token Savior is not disabled by ECC");
-  }
-  for (const tool of SERENA_MINIMUM_TOOLS) {
-    if (!serenaAllowedTools.includes(tool)) {
-      throw new Error(`adoption recipe source drift: Serena tool ${tool} is unavailable`);
-    }
-  }
-  for (const { name, pattern } of SERENA_FORBIDDEN_OVERLAP_CLASSES) {
-    const overlap = serenaAllowedTools.find((tool) => pattern.test(tool));
-    if (overlap !== undefined) {
-      throw new Error(
-        `adoption recipe source drift: Serena forbidden ${name} overlap tool ${overlap}`,
-      );
-    }
   }
   for (const id of ["token-savior", "serena", ...CORE_ROLE_IDS]) {
     if (eccMcpSelected.includes(id) && eccMcpDisabled.includes(id)) {

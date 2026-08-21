@@ -125,9 +125,7 @@ describe("policy studio adoption recipe", () => {
     serenaOverlap.serenaAllowedTools = serenaOverlap.serenaAllowedTools.filter(
       (tool) => tool !== "find_symbol",
     );
-    expect(() => buildAdoptionRecipe(serenaOverlap)).toThrow(
-      /reviewed Serena tool set changed/i,
-    );
+    expect(() => buildAdoptionRecipe(serenaOverlap)).toThrow(/reviewed Serena tool set changed/i);
 
     const optimizerWrongRoute = sources();
     const optimizer = optimizerWrongRoute.eccMcpCatalog.find(
