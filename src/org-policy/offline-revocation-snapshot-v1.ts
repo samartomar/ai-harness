@@ -591,7 +591,8 @@ export function claimOfflineRevocationStateV1(
     fail("offline revocation state custody");
   // Do not even consult custody for unauthenticated material. The transition
   // below deliberately re-verifies again against the same live caller trust.
-  if (reverify(item.next, expected) === undefined) return invalidTransition();
+  if (reverify(item.next, expected) === undefined)
+    return deepFreezeStrictJsonV1({ kind: "invalid-authority" as const });
   let current: unknown;
   try {
     current = observe(expected.expectedIssuer);
