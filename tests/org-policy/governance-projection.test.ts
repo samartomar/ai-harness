@@ -640,6 +640,12 @@ describe("governed candidate projection", () => {
     expect(evaluated.blocking).toBe(false);
     expect(hasKeyRecursively(settingsCandidate, "conditions")).toBe(false);
     expect(hasKeyRecursively(evaluated, "conditions")).toBe(false);
+    const acceptedCheck = await orgPolicyEffectiveCheck(ctx());
+    expect(acceptedCheck).toMatchObject({ verdict: "pass" });
+    expect(acceptedCheck.detail).toContain(
+      "requested candidates: code-review-graph{decision=decision-parity; observedFindings=prompt-injection; observedGaps=none; acceptedFindings=prompt-injection; acceptedGaps=none; risk=accepted; danger=prompt-injection; blocking=none; decisionBlockers=none}",
+    );
+    expect(acceptedCheck.detail).not.toContain("Review the finding before the decision expires.");
 
     const blocked = reviewedMcpPolicy();
     if (blocked.governance === undefined) throw new Error("expected governance fixture");
@@ -673,6 +679,12 @@ describe("governed candidate projection", () => {
     });
     expect((blockedOutput.decision as Record<string, unknown>).riskState).toBeUndefined();
     expect(hasKeyRecursively(blockedEvaluation, "conditions")).toBe(false);
+    const blockedCheck = await orgPolicyEffectiveCheck(ctx());
+    expect(blockedCheck).toMatchObject({ verdict: "fail", code: "org-policy.effective-blocked" });
+    expect(blockedCheck.detail).toContain(
+      "requested candidates: code-review-graph{decision=decision-blocked-parity; observedFindings=prompt-injection; observedGaps=none; acceptedFindings=hidden-unicode; acceptedGaps=none; risk=blocked; danger=prompt-injection; blocking=none; decisionBlockers=decision-coverage-mismatch}",
+    );
+    expect(blockedCheck.detail).not.toContain("Review the finding before the decision expires.");
   });
 
   it("unlocks a clean reviewed control only with an exact approved decision", async () => {
