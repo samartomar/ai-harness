@@ -57,16 +57,16 @@ describe("GovernanceDecisionV1", () => {
   });
 
   it("allows approved only with empty coverage and no conditions", () => {
+    const clean = accepted();
+    delete (clean as Record<string, unknown>).reviewBy;
     expect(() =>
-      parseGovernanceDecisionV1(
-        accepted({
-          disposition: "approved",
-          acceptedFindings: [],
-          acceptedGaps: [],
-          conditions: [],
-          reviewBy: undefined,
-        }),
-      ),
+      parseGovernanceDecisionV1({
+        ...clean,
+        disposition: "approved",
+        acceptedFindings: [],
+        acceptedGaps: [],
+        conditions: [],
+      }),
     ).not.toThrow();
     expect(() => parseGovernanceDecisionV1(accepted({ disposition: "approved" }))).toThrow();
   });
