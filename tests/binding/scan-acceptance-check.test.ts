@@ -1,29 +1,27 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   checkSuperpowersScanAcceptance,
+  runScanAcceptanceCli,
+  type ScanAcceptanceArtifact,
+  type ScanAcceptanceCheckDeps,
   ScanAcceptanceCheckError,
-  type ScanAcceptanceObservation,
 } from "../../src/binding/scan-acceptance-check.js";
+import { type DimensionReport, inspectTree } from "../../src/binding/scan-gate.js";
 import { defaultRunner, type Runner } from "../../src/internals/proc.js";
 import { hermeticGitEnv } from "../git-fixture-env.js";
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
 const SUPERPOWERS_COMMIT = "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9";
+const ZWSP = String.fromCharCode(0x200b);
 
 let tempRoot: string;
 let checkout: string;
-
-interface FixtureAcceptance {
-  code: string;
-  path: string;
-  fileSha256: string;
-}
 
 function git(dir: string, args: string[]): void {
   execFileSync("git", args, { cwd: dir, stdio: "pipe", env: hermeticGitEnv() });
@@ -46,24 +44,14 @@ function initVendorCheckout(files: Record<string, string>): void {
   git(checkout, ["checkout", "--detach", "HEAD"]);
 }
 
-function artifact(entries: readonly FixtureAcceptance[]) {
+function artifact(
+  entries: readonly { code: string; path: string; fileSha256: string }[],
+): ScanAcceptanceArtifact {
   return {
     schemaVersion: 2,
     reason: "fixture",
     accepted: entries.map((entry) => ({ repository: "obra/superpowers", ...entry })),
   };
-}
-
-function observation(
-  path: string,
-  code = "trust.hidden-unicode",
-  severity: ScanAcceptanceObservation["severity"] = "high",
-): ScanAcceptanceObservation {
-  return { code, severity, path };
-}
-
-function sha256(text: string): string {
-  return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
 const pinnedCheckoutRunner: Runner = async (argv, options) => {
@@ -73,18 +61,16 @@ const pinnedCheckoutRunner: Runner = async (argv, options) => {
     : result;
 };
 
-function check(
-  accepted: readonly FixtureAcceptance[],
-  observations: readonly ScanAcceptanceObservation[],
-  outputPath?: string,
-) {
-  return checkSuperpowersScanAcceptance({
-    checkoutPath: checkout,
-    acceptance: artifact(accepted),
-    observations,
-    runner: pinnedCheckoutRunner,
-    ...(outputPath === undefined ? {} : { outputPath }),
-  });
+function fixtureDeps(acceptanceArtifact: unknown, inspect = inspectTree): ScanAcceptanceCheckDeps {
+  return { acceptanceArtifact, inspectTree: inspect, runner: pinnedCheckoutRunner };
+}
+
+function pinnedContentFindings(reports: readonly DimensionReport[]) {
+  return reports.flatMap((report) =>
+    report.findings.flatMap((finding) =>
+      finding.path !== undefined && finding.contentSha256 !== undefined ? [finding] : [],
+    ),
+  );
 }
 
 beforeEach(() => {
@@ -97,135 +83,161 @@ afterEach(() => {
 });
 
 describe("checkSuperpowersScanAcceptance", () => {
-  it("normalizes CRLF to LF before hashing and produces repeatable sorted observations", async () => {
-    initVendorCheckout({ "z.md": "z\r\n", "a.md": "a\r\n" });
-    const accepted = [
+  it("uses real inspector pins with CRLF compatibility and repeatable byte-identical JSON", async () => {
+    initVendorCheckout({ "a.md": `a${ZWSP}\r\n`, "z.md": `z${ZWSP}\r\n` });
+    const inspected = pinnedContentFindings(inspectTree(checkout));
+    const accepted = artifact(
+      inspected.map((finding) => ({
+        code: finding.code,
+        path: finding.path as string,
+        fileSha256: finding.contentSha256 as string,
+      })),
+    );
+    const expectedCrLfHash = createHash("sha256").update(`a${ZWSP}\n`, "utf8").digest("hex");
+    expect(inspected.find((finding) => finding.path === "a.md")?.contentSha256).toBe(
+      expectedCrLfHash,
+    );
+
+    const first = await checkSuperpowersScanAcceptance(
+      { checkoutPath: checkout },
+      fixtureDeps(accepted),
+    );
+    const second = await checkSuperpowersScanAcceptance(
+      { checkoutPath: checkout },
+      fixtureDeps(accepted),
+    );
+
+    expect(JSON.stringify(first)).toBe(JSON.stringify(second));
+    expect(first.new).toEqual([]);
+    expect(first.authorizes).toBe(false);
+    expect(gitStatus(checkout)).toBe("");
+  });
+
+  it("reports stale, missing, new, and critical scanner findings without caller observations", async () => {
+    initVendorCheckout({ "SKILL.md": `unsafe${ZWSP}\n` });
+    const finding = pinnedContentFindings(inspectTree(checkout))[0];
+    if (finding?.path === undefined || finding.contentSha256 === undefined)
+      throw new Error("fixture finding missing");
+    const criticalReports: DimensionReport[] = [
       {
-        code: "trust.prompt-injection",
-        path: "a.md",
-        fileSha256: sha256("a\n"),
-      },
-      {
-        code: "trust.hidden-unicode",
-        path: "z.md",
-        fileSha256: sha256("z\n"),
+        dimension: "critical",
+        status: "produced",
+        findings: [
+          {
+            code: "trust.malicious-code",
+            severity: "critical",
+            detail: "fixture",
+            coverage: "complete",
+            path: "SKILL.md",
+            contentSha256: finding.contentSha256,
+          },
+        ],
       },
     ];
-
-    const first = await check(accepted, [
-      observation("z.md"),
-      observation("a.md", "trust.prompt-injection"),
-    ]);
-    const second = await check(accepted, [
-      observation("a.md", "trust.prompt-injection"),
-      observation("z.md"),
-    ]);
-
-    expect(first).toEqual(second);
-    expect(first.observations.map((entry) => [entry.code, entry.path])).toEqual([
-      ["trust.hidden-unicode", "z.md"],
-      ["trust.prompt-injection", "a.md"],
-    ]);
-    expect(first.new).toEqual([]);
-  });
-
-  it("reports a stale accepted tuple and a newly observed unaccepted high without authorizing either", async () => {
-    initVendorCheckout({ "SKILL.md": "current\n" });
-    const result = await check(
-      [
-        {
-          code: "trust.hidden-unicode",
-          path: "SKILL.md",
-          fileSha256: "a".repeat(64),
-        },
-      ],
-      [observation("SKILL.md")],
+    const report = await checkSuperpowersScanAcceptance(
+      { checkoutPath: checkout },
+      fixtureDeps(
+        artifact([
+          { code: finding.code, path: finding.path, fileSha256: "a".repeat(64) },
+          { code: "trust.hidden-unicode", path: "missing.md", fileSha256: "b".repeat(64) },
+          { code: "trust.malicious-code", path: "SKILL.md", fileSha256: finding.contentSha256 },
+        ]),
+        () => criticalReports,
+      ),
     );
 
-    expect(result.stale).toHaveLength(1);
-    expect(result.new).toHaveLength(1);
-    expect(result.accepted).toEqual([]);
-    expect(result.authorizes).toBe(false);
+    expect(report.stale).toHaveLength(1);
+    expect(report.missing).toHaveLength(1);
+    expect(report.new).toHaveLength(1);
+    expect(report.critical).toHaveLength(1);
+    expect(report.accepted).toEqual([]);
+    expect(report.authorizes).toBe(false);
   });
 
-  it("reports an accepted file whose corresponding finding is missing", async () => {
-    initVendorCheckout({ "SKILL.md": "content\n" });
-    const fileSha256 = sha256("content\n");
-    const result = await check(
-      [{ code: "trust.hidden-unicode", path: "SKILL.md", fileSha256 }],
-      [],
-    );
-
-    expect(result.missing).toEqual([
-      { code: "trust.hidden-unicode", path: "SKILL.md", fileSha256 },
-    ]);
-    expect(result.authorizes).toBe(false);
-  });
-
-  it("never accepts a critical observation even when its exact tuple is listed", async () => {
-    initVendorCheckout({ "SKILL.md": "content\n" });
-    const fileSha256 = sha256("content\n");
-    const result = await check(
-      [{ code: "trust.malicious-code", path: "SKILL.md", fileSha256 }],
-      [observation("SKILL.md", "trust.malicious-code", "critical")],
-    );
-
-    expect(result.accepted).toEqual([]);
-    expect(result.new).toHaveLength(1);
-    expect(result.critical).toHaveLength(1);
-    expect(result.authorizes).toBe(false);
-  });
-
-  it.each([
-    [[{ code: "trust.hidden-unicode", path: "../SKILL.md", fileSha256: "a".repeat(64) }]],
-    [[{ code: "trust.hidden-unicode", path: "/SKILL.md", fileSha256: "a".repeat(64) }]],
-    [[{ code: "trust.hidden-unicode", path: "SKILL.md", fileSha256: "invalid" }]],
-    [
+  it("rejects malformed, duplicate, absolute, and traversal acceptance entries", async () => {
+    initVendorCheckout({ "SKILL.md": "safe\n" });
+    for (const accepted of [
+      [{ code: "trust.hidden-unicode", path: "../SKILL.md", fileSha256: "a".repeat(64) }],
+      [{ code: "trust.hidden-unicode", path: "/SKILL.md", fileSha256: "a".repeat(64) }],
+      [{ code: "trust.hidden-unicode", path: "SKILL.md", fileSha256: "invalid" }],
       [
         { code: "trust.hidden-unicode", path: "SKILL.md", fileSha256: "a".repeat(64) },
         { code: "trust.hidden-unicode", path: "SKILL.md", fileSha256: "b".repeat(64) },
       ],
-    ],
-  ])(
-    "rejects malformed, duplicate, absolute, and traversal acceptance entries",
-    async (accepted) => {
-      initVendorCheckout({ "SKILL.md": "content\n" });
-      await expect(check(accepted, [])).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
-    },
-  );
+    ]) {
+      await expect(
+        checkSuperpowersScanAcceptance({ checkoutPath: checkout }, fixtureDeps(artifact(accepted))),
+      ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    }
+  });
 
-  it("fails closed for a wrong, mutable, or unreadable vendor checkout", async () => {
-    initVendorCheckout({ "SKILL.md": "content\n", "unreadable/child": "not a file" });
+  it("fails closed for wrong, mutable, unreadable, and mutation-during-inspection checkouts", async () => {
+    initVendorCheckout({ "SKILL.md": "safe\n", "unreadable/child": "not a file" });
     await expect(
-      checkSuperpowersScanAcceptance({
-        checkoutPath: checkout,
-        acceptance: artifact([]),
-        observations: [],
-      }),
+      checkSuperpowersScanAcceptance(
+        { checkoutPath: checkout },
+        { acceptanceArtifact: artifact([]) },
+      ),
     ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
 
     git(checkout, ["checkout", "main"]);
-    await expect(check([], [])).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    await expect(
+      checkSuperpowersScanAcceptance({ checkoutPath: checkout }, fixtureDeps(artifact([]))),
+    ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
 
     git(checkout, ["checkout", "--detach", "HEAD"]);
-    await expect(check([], [observation("unreadable")])).rejects.toBeInstanceOf(
-      ScanAcceptanceCheckError,
-    );
+    await expect(
+      checkSuperpowersScanAcceptance(
+        { checkoutPath: checkout },
+        fixtureDeps(artifact([]), (root) => {
+          writeFileSync(join(root, "SKILL.md"), "mutated\n", "utf8");
+          return [];
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
   });
 
-  it("rejects the AI-Harness checkout as the vendor target", async () => {
+  it("rejects the AI-Harness checkout and writes no report file", async () => {
     initVendorCheckout({ "package.json": '{"name":"@aihq/harness"}\n' });
-    await expect(check([], [])).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
-  });
-
-  it("writes only to an explicit destination outside the scanned checkout", async () => {
-    initVendorCheckout({ "SKILL.md": "content\n" });
-    await expect(check([], [], join(checkout, "report.json"))).rejects.toBeInstanceOf(
-      ScanAcceptanceCheckError,
-    );
-
-    const outputPath = join(tempRoot, "report.json");
-    const result = await check([], [], outputPath);
-    expect(JSON.parse(readFileSync(outputPath, "utf8"))).toEqual(result);
+    const before = readdirSync(tempRoot).sort();
+    await expect(
+      checkSuperpowersScanAcceptance({ checkoutPath: checkout }, fixtureDeps(artifact([]))),
+    ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    expect(readdirSync(tempRoot).sort()).toEqual(before);
   });
 });
+
+describe("runScanAcceptanceCli", () => {
+  it("accepts only an explicit absolute checkout argument and emits deterministic JSON", async () => {
+    const report = {
+      checkout: { repository: "obra/superpowers", commitSha: SUPERPOWERS_COMMIT },
+      observations: [],
+      accepted: [],
+      stale: [],
+      missing: [],
+      new: [],
+      critical: [],
+      authorizes: false as const,
+    };
+    const deps = { check: async () => report };
+    await expect(runScanAcceptanceCli([], deps)).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    await expect(runScanAcceptanceCli(["--checkout", "relative"], deps)).rejects.toBeInstanceOf(
+      ScanAcceptanceCheckError,
+    );
+    await expect(
+      runScanAcceptanceCli(["--checkout", checkout, "--apply"], deps),
+    ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    await expect(runScanAcceptanceCli(["--checkout", checkout], deps)).resolves.toBe(
+      `${JSON.stringify(report)}\n`,
+    );
+  });
+});
+
+function gitStatus(dir: string): string {
+  return execFileSync("git", ["status", "--porcelain=v1", "--untracked-files=all"], {
+    cwd: dir,
+    env: hermeticGitEnv(),
+  })
+    .toString("utf8")
+    .trim();
+}
