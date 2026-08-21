@@ -916,6 +916,43 @@ describe("governed candidate projection", () => {
     expect(runtime.effective.candidates[0]?.effective).toBe(false);
   });
 
+  it.each([
+    {
+      name: "missing receipt decision",
+      decision: "decision-missing",
+      receipt: [] as Record<string, unknown>[],
+      code: "decision-reference-missing:decision-missing",
+    },
+    {
+      name: "receipt decision for a non-catalog candidate",
+      decision: "decision-unresolved",
+      receipt: undefined,
+      code: "decision-reference-unresolved:decision-unresolved",
+    },
+  ])(
+    "reports policy-scope decision blockers in effective checks and projection refusal for $name",
+    async ({ decision, receipt, code }) => {
+      const policy = reviewedMcpPolicy();
+      if (policy.governance === undefined) throw new Error("expected governance fixture");
+      policy.governance.authority.decisions = [decision];
+      const decisions =
+        receipt ?? [currentReviewedDecision(policy, { id: decision, candidate: "not-catalog" })];
+      writeDecisionAuthorityReceipt(decisions);
+      writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(policy));
+
+      const effective = (await resolveRuntimeOrgPolicy(ctx(), policy)).effective;
+      expect(effective.decisionBlockers).toEqual([
+        expect.objectContaining({ scope: "policy", code: code.split(":")[0], decision }),
+      ]);
+      const check = await orgPolicyEffectiveCheck(ctx());
+      expect(check).toMatchObject({ verdict: "fail", code: "org-policy.effective-blocked" });
+      expect(check.detail).toContain(`policyDecisionBlockers=${code}`);
+      await expect(verifiedOrgPolicyProjectionActions(ctx(), policy)).rejects.toThrow(
+        new RegExp(`policy decision blockers: ${code}`),
+      );
+    },
+  );
+
   it("keeps unrelated candidates on the legacy path while unreferenced rejection remains negative authority", async () => {
     const first = reviewedMcpPolicy({ allowedServers: [], disabledServers: [] });
     const second = reviewedMcpPolicy({
@@ -2117,6 +2154,51 @@ describe("governed candidate projection", () => {
       expect(ownership).toMatchObject({ schemaVersion: 2, decisions: [] });
     },
   );
+
+  it("refreshes legacy Claude ownership and managed settings when a new decision summary changes full settings", async () => {
+    const initial = reviewedMcpPolicy({ allowedServers: [], disabledServers: [] });
+    const applied = ctx({ apply: true });
+    await executePlan(
+      plan("project legacy Claude managed settings", ...(await verifiedOrgPolicyProjectionActions(applied, initial))),
+      applied,
+    );
+    const markerPath = join(dir, ".aih-config.json");
+    const settingsPath = join(dir, ".claude", "managed-settings.json");
+    const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
+    const ownership = marker.managedMcpProjection as {
+      expected: Parameters<typeof managedMcpProjectionOwnership>[0];
+    };
+    marker.managedMcpProjection = managedMcpProjectionOwnership(ownership.expected);
+    writeFileSync(markerPath, JSON.stringify(marker));
+    const settingsBefore = readFileSync(settingsPath, "utf8");
+
+    const renewed = reviewedMcpPolicy({ allowedServers: [], disabledServers: [] });
+    if (renewed.governance === undefined) throw new Error("expected governance fixture");
+    const candidate = renewed.governance.catalog.reviewed[0];
+    if (candidate === undefined) throw new Error("expected reviewed MCP fixture");
+    candidate.findings.push("prompt-injection");
+    renewed.governance.authority.decisions = ["decision-reviewed-risk"];
+    writeDecisionAuthorityReceipt([currentReviewedDecision(renewed)]);
+
+    const refresh = await verifiedOrgPolicyProjectionActions(applied, renewed);
+    const settingsRefresh = refresh.find(
+      (action): action is WriteAction =>
+        action.kind === "write" && action.path === ".claude/managed-settings.json",
+    );
+    expect(settingsRefresh).toMatchObject({
+      expect: { sha256: createHash("sha256").update(settingsBefore, "utf8").digest("hex") },
+    });
+    await executePlan(plan("refresh decision-aware managed settings", ...refresh), applied);
+    expect(readFileSync(settingsPath, "utf8")).not.toBe(settingsBefore);
+    const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
+      organizationPolicy: { effectiveCandidates: Array<{ decision?: { id?: string } }> };
+    };
+    expect(settings.organizationPolicy.effectiveCandidates[0]?.decision?.id).toBe(
+      "decision-reviewed-risk",
+    );
+    const refreshed = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
+    expect(refreshed.managedMcpProjection).toMatchObject({ schemaVersion: 2 });
+  });
 
   it.each(["claude", "kiro"] as const)(
     "keeps disabled strict v2 decision ownership retained for %s until conservative rollback",
