@@ -89,8 +89,12 @@ function ordinalCompare(left: string, right: string): number {
 const DecisionBindingSchema = z
   .object({
     candidate: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
-    id: z.string().regex(/^decision-[a-z][a-z0-9-]{0,54}$/),
+    id: z
+      .string()
+      .regex(/^[a-z][a-z0-9-]{0,63}$/)
+      .regex(/^decision-/),
     issuer: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
+    /** SHA-256 digest of the canonical GovernanceDecisionV1 artifact. */
     digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
     expiresAt: z
       .string()

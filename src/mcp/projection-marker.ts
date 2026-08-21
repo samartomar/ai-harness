@@ -47,10 +47,9 @@ export function coalesceMcpProjectionMarkerActions(actions: readonly Action[]): 
         throw new Error(`conflicting MCP ownership replacement for ${key}`);
       }
     }
-    const replaces = selected.some((action) => action.replaceJsonKeys?.includes(key));
     const removes = selected.some((action) => action.removeJsonTopLevelKeys?.includes(key));
-    if (replaces && removes)
-      throw new Error(`MCP ownership action both replaces and removes ${key}`);
+    if (writes.length > 0 && removes)
+      throw new Error(`MCP ownership action both writes and removes ${key}`);
   }
   const json = Object.assign({}, ...selected.map((action) => action.json));
   const replaceJsonKeys = [...new Set(selected.flatMap((action) => action.replaceJsonKeys ?? []))];
