@@ -1013,6 +1013,41 @@ describe("Codex managed destination safety", () => {
     );
     const base = makeCtx({ cli: "codex" });
     const ctx = { ...base, env: { ...base.env, HOME: home, USERPROFILE: home } };
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      [
+        '[mcp_servers."chrome-devtools"]',
+        'command = "npx"',
+        'args = ["-y", "chrome-devtools-mcp@latest"]',
+        "startup_timeout_sec = 30",
+        "",
+        "# >>> aih managed (mcp) >>>",
+        '[mcp_servers."sequential-thinking"]',
+        'command = "npx"',
+        "# <<< aih managed (mcp) <<<",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    writeFileSync(
+      join(home, ".codex", "ecc-aih-install-state.json"),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          managedBy: "aih",
+          codexToml: {
+            rootKeys: [],
+            tables: [],
+            tableKeys: {},
+            mcpServers: ["chrome-devtools", "sequential-thinking"],
+          },
+          agentsBlock: true,
+        },
+        null,
+        2,
+      ) + "\n",
+      "utf8",
+    );
     const action = codexEccActions(
       ctx,
       { dir: repo, posix: repo.replace(/\\/g, "/"), explicit: true, hasCache: false },
@@ -1035,6 +1070,8 @@ describe("Codex managed destination safety", () => {
     expect(config).toContain("chrome-devtools-mcp@1.7.0");
     expect(config).toContain("startup_timeout_sec = 30");
     expect(config).not.toContain("@latest");
+    expect(config).toContain('[mcp_servers."sequential-thinking"]');
+    expect(config.match(/# >>> aih managed \(mcp\) >>>/g)).toHaveLength(1);
     expect(readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")).toContain(
       '"chrome-devtools"',
     );
