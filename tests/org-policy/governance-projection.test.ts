@@ -2560,8 +2560,18 @@ describe("governed candidate projection", () => {
     }
   });
 
-  it.each([42, null, [], {}] as const)(
-    "rejects a non-string present policyVersion in legacy v2 and recomputed v3 receipts: %j",
+  it.each([
+    42,
+    null,
+    [],
+    {},
+    "",
+    "  ",
+    "2026.08.0\n",
+    "2026.08.0\u0000",
+    "2026.08.0\u200B",
+  ] as const)(
+    "rejects an invalid present policyVersion in legacy v2 and recomputed v3 receipts: %j",
     async (policyVersion) => {
       const applied = ctx({ apply: true });
       const policy = usageHookPolicy("active");

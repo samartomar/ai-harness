@@ -446,6 +446,18 @@ function expectedHostHook(
   return { path: action.path, postToolUse };
 }
 
+/** Persisted receipt metadata must retain the policy's authored text boundary. */
+function isSafePolicyVersion(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length >= 1 &&
+    value.length <= 500 &&
+    value === value.trim() &&
+    /\S/u.test(value) &&
+    !/\p{C}/u.test(value)
+  );
+}
+
 function parseHookReceipt(ctx: PlanContext): { receipt?: PolicyHookReceipt; raw?: string } {
   const raw = ownedText(ctx, ORG_POLICY_HOOK_RECEIPT_PATH);
   if (raw === undefined) return {};
@@ -570,7 +582,10 @@ function parseHookReceipt(ctx: PlanContext): { receipt?: PolicyHookReceipt; raw?
       `${ORG_POLICY_HOOK_RECEIPT_PATH} does not prove exactly one host entry per selected target`,
     );
   }
-  const policyVersion = typeof value.policyVersion === "string" ? value.policyVersion : undefined;
+  if (Object.hasOwn(value, "policyVersion") && !isSafePolicyVersion(value.policyVersion)) {
+    throw new OrgPolicyError(`${ORG_POLICY_HOOK_RECEIPT_PATH} has an invalid policyVersion`);
+  }
+  const policyVersion = value.policyVersion as string | undefined;
   if (value.version === 2) {
     return {
       raw,
