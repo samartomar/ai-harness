@@ -188,6 +188,51 @@ function writeAuthorityReceipt({
   );
 }
 
+function governanceDecision(overrides: Record<string, unknown> = {}) {
+  return {
+    format: "aih-governance-decision",
+    version: 1,
+    id: "decision-2026-q3",
+    disposition: "approved",
+    candidate: "custom-mcp",
+    kind: "mcp",
+    targets: ["claude"],
+    effects: ["managed-settings"],
+    policyVersion: "2026.08.0",
+    sourceDigest: DIGEST,
+    evidenceDigest: DIGEST,
+    reviewedControlDigest: DIGEST,
+    issuer: "platform-security",
+    actor: "security-admin",
+    reason: "The reviewed control is clean.",
+    issuedAt: "2026-08-01T00:00:00+00:00",
+    notBefore: "2026-08-01T00:00:00+00:00",
+    expiresAt: "2026-08-10T00:00:00+00:00",
+    acceptedFindings: [],
+    acceptedGaps: [],
+    conditions: [],
+    ...overrides,
+  };
+}
+
+function authorityReceiptV2(overrides: Record<string, unknown> = {}) {
+  return {
+    format: "aih-policy-authority-receipt",
+    version: 2,
+    issuerRepository: "acme/governance",
+    issuedAt: "2026-08-03T00:00:00+00:00",
+    expiresAt: "2026-08-20T00:00:00+00:00",
+    targets: ["claude"],
+    trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+    evidence: [],
+    approvals: [],
+    revocations: [],
+    decisions: [],
+    decisionRevocations: [],
+    ...overrides,
+  };
+}
+
 function waivableApproval(overrides: Record<string, unknown> = {}) {
   const source = customSource();
   const now = Date.now();
@@ -317,6 +362,99 @@ function reviewedMcpPolicy({
 }
 
 describe("governed candidate projection", () => {
+  it("accepts only exact decision-bearing v2 authority receipts", () => {
+    const v2 = authorityReceiptV2({ decisions: [governanceDecision()] });
+    expect(PolicyAuthorityReceiptSchema.safeParse(v2).success).toBe(true);
+
+    const v1 = { ...v2, version: 1 };
+    delete (v1 as Record<string, unknown>).decisions;
+    delete (v1 as Record<string, unknown>).decisionRevocations;
+    expect(
+      PolicyAuthorityReceiptSchema.safeParse({
+        ...v1,
+        issuedAt: "2026-08-03T00:00:00",
+        expiresAt: "2026-08-20T00:00:00",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects malformed or non-authoritative v2 decision receipt relationships", () => {
+    const decision = governanceDecision();
+    const revocation = {
+      format: "aih-governance-decision-revocation",
+      version: 1,
+      decision: decision.id,
+      issuer: decision.issuer,
+      revokedAt: "2026-08-02T00:00:00+00:00",
+      reason: "The reviewed control was withdrawn.",
+    };
+    const approval = waivableApproval({
+      candidate: "other-candidate",
+      notBefore: "2026-08-01T00:00:00+00:00",
+      expiresAt: "2026-08-10T00:00:00+00:00",
+    });
+    const base = authorityReceiptV2({
+      decisions: [decision],
+      decisionRevocations: [revocation],
+      approvals: [approval],
+      revocations: [
+        {
+          approval: approval.id,
+          issuer: approval.issuer,
+          revokedAt: "2026-08-02T00:00:00+00:00",
+          reason: "The legacy approval was withdrawn.",
+        },
+      ],
+    });
+    const hostAmbiguous = [
+      ["issuedAt", { ...base, issuedAt: "2026-08-03T00:00:00" }],
+      ["expiresAt", { ...base, expiresAt: "2026-08-20T00:00:00" }],
+      [
+        "approval notBefore",
+        { ...base, approvals: [{ ...approval, notBefore: "2026-08-01T00:00:00" }] },
+      ],
+      [
+        "approval expiresAt",
+        { ...base, approvals: [{ ...approval, expiresAt: "2026-08-10T00:00:00" }] },
+      ],
+      [
+        "legacy revocation revokedAt",
+        {
+          ...base,
+          revocations: [{ ...base.revocations[0], revokedAt: "2026-08-02T00:00:00" }],
+        },
+      ],
+    ] as const;
+    for (const [_label, receipt] of hostAmbiguous) {
+      expect(PolicyAuthorityReceiptSchema.safeParse(receipt).success).toBe(false);
+    }
+    const cases = [
+      { ...base, decisions: undefined },
+      { ...base, decisionRevocations: undefined },
+      { ...base, decisions: [governanceDecision({ id: "decision-z" }), governanceDecision({ id: "decision-a" })] },
+      {
+        ...base,
+        decisionRevocations: [
+          { ...revocation, decision: "decision-z" },
+          { ...revocation, decision: "decision-a" },
+        ],
+      },
+      { ...base, decisionRevocations: [{ ...revocation, decision: "decision-missing" }] },
+      { ...base, decisionRevocations: [{ ...revocation, issuer: "other-issuer" }] },
+      { ...base, decisions: [governanceDecision({ issuedAt: "2026-08-04T00:00:00+00:00", notBefore: "2026-08-04T00:00:00+00:00", expiresAt: "2026-08-10T00:00:00+00:00" })], decisionRevocations: [] },
+      { ...base, decisionRevocations: [{ ...revocation, revokedAt: "2026-07-31T00:00:00+00:00" }] },
+      { ...base, decisionRevocations: [{ ...revocation, revokedAt: "2026-08-04T00:00:00+00:00" }] },
+      { ...base, decisions: [governanceDecision({ targets: ["codex"] })], decisionRevocations: [] },
+      { ...base, decisions: [governanceDecision({ issuer: "other-issuer" })], decisionRevocations: [] },
+      { ...base, approvals: [{ ...approval, candidate: decision.candidate }] },
+      { ...base, approvals: [{ ...approval, id: "decision-legacy" }] },
+      { ...base, revocations: [{ ...base.revocations[0], approval: "decision-legacy" }] },
+    ];
+    for (const receipt of cases) {
+      expect(PolicyAuthorityReceiptSchema.safeParse(receipt).success).toBe(false);
+    }
+  });
+
   it("rejects invalid external authority receipt lifetimes, duplicate identities, and workflow controls", async () => {
     writeAuthorityReceipt({
       trustedIssuers: [
