@@ -75,9 +75,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **MCP catalog secret references now use one strict, fail-closed grammar.** Stdio environment
   values and generic HTTP headers must contain exactly one `${VAR}` reference, while an
   `Authorization` header must contain exactly `Bearer ${VAR}`. Literal, interpolated, alternate,
-  malformed, or whitespace-padded forms are rejected before projection; diagnostics identify only
-  the server and field key, never the rejected value. Catalog construction, placeholder discovery,
-  and hygiene checks share the same validator and deterministic variable ordering.
+  malformed, whitespace-padded, or duplicate case-variant authorization forms are rejected before
+  projection; diagnostics identify only the server and field key, never the rejected value. Catalog
+  construction, placeholder discovery, and hygiene checks share the same validator and deterministic
+  variable ordering.
 
 - **Contained reads now reject same-file mutations observed after the descriptor read.** The
   shared reader for trust evidence, workspace locks and snapshots, reports, and MCP configuration
