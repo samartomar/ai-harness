@@ -47,7 +47,7 @@ const artifact = buildVendorBaselineEvidenceArtifactV1({
     repository: bootstrap.expectedRepository,
   },
 });
-const verify = ({
+const verify = async ({
   policy,
   subjectSha256,
 }: {
@@ -175,6 +175,37 @@ describe("admin baseline evidence resolution v1", () => {
     });
     expect(result.provenance.tier).toBe("fresh");
     expect(calls).toEqual(["fresh", "commit"]);
+  });
+
+  it("awaits the live attestation before the synchronous artifact claim and cache custody", async () => {
+    const calls: string[] = [];
+    const result = await resolveAdminBaselineEvidenceV1({
+      bootstrap,
+      now: "2026-08-21T00:00:00Z",
+      fetchFresh: async () => {
+        calls.push("fresh");
+        return {
+          kind: "available" as const,
+          artifact,
+          attestationBytes: Buffer.from("attestation"),
+        };
+      },
+      readLastDownloaded: () => {
+        calls.push("cache");
+        return undefined;
+      },
+      commitLastDownloaded: () => {
+        calls.push("commit");
+        return true;
+      },
+      verifyGithubAttestation: async (request) => {
+        calls.push("verify");
+        await Promise.resolve();
+        return { ...request.policy, subjectSha256: request.subjectSha256, verified: true as const };
+      },
+    });
+    expect(result.provenance.tier).toBe("fresh");
+    expect(calls).toEqual(["fresh", "verify", "commit"]);
   });
 
   it.each([false, undefined])("treats cache commit %j as terminal", async (commit) => {
