@@ -680,6 +680,52 @@ describe("ECC supply-chain pinning (AIH-SUPPLY-001 round 2)", () => {
 });
 
 describe("ecc.plan — Codex MCP collision preflight", () => {
+  async function chromeDevtoolsCollisionChecks(
+    projectConfig: string | undefined,
+    globalConfig: string | undefined,
+  ): Promise<
+    ReturnType<typeof command.plan> extends Promise<infer Plan> ? Plan["actions"] : never
+  > {
+    const home = join(tmp, "home");
+    const root = join(tmp, "repo");
+    mkdirSync(join(root, ".codex"), { recursive: true });
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    if (projectConfig !== undefined) {
+      writeFileSync(join(root, ".codex", "config.toml"), projectConfig);
+    }
+    if (globalConfig !== undefined) {
+      writeFileSync(join(home, ".codex", "config.toml"), globalConfig);
+    }
+    const base = makeCtx({ cli: "codex" });
+    const ctx = { ...base, root, env: { ...base.env, HOME: home, USERPROFILE: home } };
+    return (await command.plan(ctx)).actions;
+  }
+
+  async function expectChromeDevtoolsPreflightRefusal(
+    projectConfig: string | undefined,
+    globalConfig: string | undefined,
+    transport: "unknown" | "mixed",
+  ): Promise<void> {
+    const actions = await chromeDevtoolsCollisionChecks(projectConfig, globalConfig);
+    expect(
+      execs(actions).some((action) => action.describe.startsWith("Install ECC for Codex")),
+    ).toBe(false);
+    const checks = await Promise.all(
+      actions
+        .filter((action): action is ProbeAction => action.kind === "probe")
+        .map((action) => action.run(makeCtx())),
+    );
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "mcp.config-invalid",
+          detail: expect.stringMatching(new RegExp(`chrome-devtools.*${transport}`, "i")),
+        }),
+      ]),
+    );
+  }
+
   it("allows an existing global Context7 HTTP server that ECC no longer plans to add", async () => {
     const home = join(tmp, "home");
     const root = join(tmp, "repo");
@@ -780,6 +826,22 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
         }),
       ]),
     );
+  });
+
+  it.each([
+    ["project", "[mcp_servers.chrome-devtools]\nenabled = true\n", undefined],
+    ["global", undefined, "[mcp_servers.chrome-devtools]\nenabled = true\n"],
+  ])(
+    "fails closed for an %s Chrome DevTools transport it cannot classify",
+    async (_scope, project, global) => {
+      await expectChromeDevtoolsPreflightRefusal(project, global, "unknown");
+    },
+  );
+
+  it("fails closed when project and global Chrome DevTools definitions are both mixed", async () => {
+    const mixed =
+      '[mcp_servers.chrome-devtools]\ncommand = "npx"\nurl = "https://example.invalid/mcp"\n';
+    await expectChromeDevtoolsPreflightRefusal(mixed, mixed, "mixed");
   });
 });
 
