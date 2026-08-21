@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AdminBaselineEvidenceProvenanceV1 } from "./admin-baseline-evidence-operations-v1.js";
 import type { AdminCatalogProvenanceV1 } from "./admin-catalog-operations-v1.js";
 import { type AdoptionRecipe, buildAdoptionRecipe } from "./adoption-recipe.js";
 import { policyAuthoringCatalog } from "./catalog.js";
@@ -87,6 +88,7 @@ export interface PolicyStudioModel {
    * attestation, signer identity, root digest, or machine detail.
    */
   catalogProvenance?: AdminCatalogProvenanceV1;
+  baselineEvidenceProvenance?: AdminBaselineEvidenceProvenanceV1;
   schema: Record<string, unknown>;
   decisionSchema: Record<string, unknown>;
   unwaivable: readonly string[];
@@ -106,12 +108,16 @@ export interface PolicyStudioModel {
 }
 
 /** Serializable payload embedded in every portable workbench artifact. */
-export function policyStudioModel(catalogProvenance?: AdminCatalogProvenanceV1): PolicyStudioModel {
+export function policyStudioModel(
+  catalogProvenance?: AdminCatalogProvenanceV1,
+  baselineEvidenceProvenance?: AdminBaselineEvidenceProvenanceV1,
+): PolicyStudioModel {
   return {
     initialPolicy: defaultStudioPolicy(),
     catalog: policyAuthoringCatalog(),
     adoptionRecipe: buildAdoptionRecipe(),
     ...(catalogProvenance === undefined ? {} : { catalogProvenance }),
+    ...(baselineEvidenceProvenance === undefined ? {} : { baselineEvidenceProvenance }),
     schema: z.toJSONSchema(OrgPolicySchema, { io: "input" }) as Record<string, unknown>,
     decisionSchema: z.toJSONSchema(GovernanceDecisionV1Schema, { io: "input" }) as Record<
       string,

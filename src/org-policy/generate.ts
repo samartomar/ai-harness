@@ -6,6 +6,7 @@ import { executePlan, summarizeResult } from "../internals/execute.js";
 import { type CommandSpec, digest, type PlanContext, plan, writeText } from "../internals/plan.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import { makeHostAdapter } from "../platform/detect.js";
+import type { AdminBaselineEvidenceProvenanceV1 } from "./admin-baseline-evidence-operations-v1.js";
 import {
   type AdminCatalogProvenanceV1,
   type ResolveOperationalAdminCatalogV1Input,
@@ -33,9 +34,13 @@ function outputPath(ctx: PlanContext): string {
  * after that route has fully resolved and verified the supported catalog — so
  * no rendering can precede resolution.
  */
-function policyGeneratePlan(ctx: PlanContext, catalogProvenance?: AdminCatalogProvenanceV1) {
+function policyGeneratePlan(
+  ctx: PlanContext,
+  catalogProvenance?: AdminCatalogProvenanceV1,
+  baselineEvidenceProvenance?: AdminBaselineEvidenceProvenanceV1,
+) {
   const path = outputPath(ctx);
-  const model = policyStudioModel(catalogProvenance);
+  const model = policyStudioModel(catalogProvenance, baselineEvidenceProvenance);
   return plan(
     "policy generate",
     writeText(
@@ -98,6 +103,8 @@ export interface PolicyGenerateRunDeps {
       "fetchHttps" | "now" | "platformAdminRoot" | "tempRoot"
     >
   >;
+  /** Administrator-only verified baseline stage; never constructed for portable/dry routes. */
+  baseline?: () => Promise<AdminBaselineEvidenceProvenanceV1>;
 }
 
 /** UTC second precision — the only clock granularity the contracts accept. */
@@ -166,6 +173,8 @@ export async function runPolicyGenerate(
     }
     // Resolution happens BEFORE any plan is built, so a fatal catalog outcome
     // can never leave a rendered workbench behind.
+    const baselineEvidenceProvenance =
+      deps.adminRoot === undefined ? undefined : await deps.baseline?.();
     const catalogProvenance =
       deps.adminRoot === undefined
         ? undefined
@@ -179,9 +188,13 @@ export async function runPolicyGenerate(
             run,
             tempRoot: deps.catalog?.tempRoot,
           });
-    const result = await executePlan(policyGeneratePlan(ctx, catalogProvenance), ctx, {
-      skipWorktreeGate: true,
-    });
+    const result = await executePlan(
+      policyGeneratePlan(ctx, catalogProvenance, baselineEvidenceProvenance),
+      ctx,
+      {
+        skipWorktreeGate: true,
+      },
+    );
     if (json) write(`${JSON.stringify(result, null, 2)}\n`);
     else write(`${summarizeResult(result)}\n`);
     return 0;
