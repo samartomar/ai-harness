@@ -17,11 +17,14 @@ import { join } from "node:path";
 import { inflateRawSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  codexAgentsBlockRemovalAction,
+  codexConfigRemovalAction,
   codexInstallStateCleanupAction,
   coreOwnedEccCodexMcpServers,
   stripCodexTomlFootprint,
 } from "../../src/ecc/codex.js";
 import { codexEccActions, command } from "../../src/ecc/index.js";
+import { executePlan } from "../../src/internals/execute.js";
 import {
   AIH_DIRECT_ECC_INSTALL_TARGETS,
   ECC_INSTALL_MECHANISM_LABELS,
@@ -1163,6 +1166,75 @@ describe("Codex managed destination safety", () => {
       ].join("\n"),
     );
   }
+
+  it("refuses a stale Codex config removal instead of overwriting a concurrent operator edit", async () => {
+    const home = join(tmp, "stale-codex-config-removal-home");
+    const codexDir = join(home, ".codex");
+    const configPath = join(codexDir, "config.toml");
+    mkdirSync(codexDir, { recursive: true });
+    writeFileSync(configPath, 'approval_policy = "on-request"\n', "utf8");
+    writeFileSync(
+      join(codexDir, "ecc-aih-install-state.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        managedBy: "aih",
+        codexToml: { rootKeys: ["approval_policy"], tables: [], tableKeys: {}, mcpServers: [] },
+        agentsBlock: false,
+      })}\n`,
+      "utf8",
+    );
+    const base = makeCtx({ cli: "codex" });
+    const ctx = { ...base, apply: true, env: { ...base.env, HOME: home, USERPROFILE: home } };
+    const action = codexConfigRemovalAction(ctx);
+    if (action?.kind !== "write") throw new Error("missing Codex config removal action");
+
+    const operatorEdit = 'approval_policy = "operator"\n';
+    writeFileSync(configPath, operatorEdit, "utf8");
+
+    await expect(executePlan({ capability: "prune", actions: [action] }, ctx)).rejects.toThrow(
+      /changed after the plan was computed/,
+    );
+    expect(readFileSync(configPath, "utf8")).toBe(operatorEdit);
+    expect(action).toMatchObject({
+      expect: { sha256: expect.stringMatching(/^[0-9a-f]{64}$/) },
+      trustedBase: codexDir,
+    });
+  });
+
+  it("refuses a stale Codex AGENTS removal instead of overwriting a concurrent operator edit", async () => {
+    const home = join(tmp, "stale-codex-agents-removal-home");
+    const codexDir = join(home, ".codex");
+    const agentsPath = join(codexDir, "AGENTS.md");
+    mkdirSync(codexDir, { recursive: true });
+    writeFileSync(
+      agentsPath,
+      [
+        "operator instructions",
+        "",
+        "<!-- BEGIN ecc-codex:agents (test) -->",
+        "managed instructions",
+        "<!-- END ecc-codex:agents -->",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const base = makeCtx({ cli: "codex" });
+    const ctx = { ...base, apply: true, env: { ...base.env, HOME: home, USERPROFILE: home } };
+    const action = codexAgentsBlockRemovalAction(ctx);
+    if (action?.kind !== "write") throw new Error("missing Codex AGENTS removal action");
+
+    const operatorEdit = "operator instructions\nconcurrent operator edit\n";
+    writeFileSync(agentsPath, operatorEdit, "utf8");
+
+    await expect(executePlan({ capability: "prune", actions: [action] }, ctx)).rejects.toThrow(
+      /changed after the plan was computed/,
+    );
+    expect(readFileSync(agentsPath, "utf8")).toBe(operatorEdit);
+    expect(action).toMatchObject({
+      expect: { sha256: expect.stringMatching(/^[0-9a-f]{64}$/) },
+      trustedBase: codexDir,
+    });
+  });
 
   function guardedMerge(configPath: string): ReturnType<typeof spawnSync> {
     const home = join(tmp, "home");

@@ -476,6 +476,44 @@ describe("aih prune command", () => {
     ).toBe(true);
   });
 
+  it("refuses a post-plan Codex state custody change before subtracting its config", async () => {
+    const home = join(dir, "state-custody-race-home");
+    const codexDir = join(home, ".codex");
+    const configPath = join(codexDir, "config.toml");
+    const statePath = join(codexDir, CODEX_INSTALL_STATE_FILE);
+    marker("claude");
+    write("ai-coding/adapters/claude.md");
+    write("ai-coding/adapters/codex.md");
+    mkdirSync(codexDir, { recursive: true });
+    const originalConfig = 'approval_policy = "on-request"\noperator_key = "keep"\n';
+    writeFileSync(configPath, originalConfig, "utf8");
+    writeFileSync(
+      statePath,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        managedBy: "aih",
+        codexToml: { rootKeys: ["approval_policy"], tables: [], tableKeys: {}, mcpServers: [] },
+        agentsBlock: false,
+      })}\n`,
+      "utf8",
+    );
+    const context = ctx({ apply: true, env: { HOME: home, USERPROFILE: home } });
+    const actions = await actionsOf(context);
+    const operatorState = `${JSON.stringify({
+      schemaVersion: 1,
+      managedBy: "aih",
+      codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: [] },
+      agentsBlock: false,
+    })}\n`;
+    writeFileSync(statePath, operatorState, "utf8");
+
+    await expect(executePlan({ capability: "prune", actions }, context)).rejects.toThrow(
+      /changed after the plan was computed/,
+    );
+    expect(readFileSync(configPath, "utf8")).toBe(originalConfig);
+    expect(readFileSync(statePath, "utf8")).toBe(operatorState);
+  });
+
   it("reports a malformed claimed Codex AIH state without planning its cleanup", async () => {
     const home = join(dir, "home");
     marker("claude");
