@@ -143,14 +143,29 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   package identity.** Every non-governed direct or verified Codex plan, scoped or
   unscoped and independent of optional MCP selection, replaces the pinned ECC
   helper's floating `chrome-devtools-mcp@latest` default with the active Core
-  ledger version and deterministic scoped configuration; governed plans retain
-  no Core MCP default. A prior exact AIH-written vendor stanza migrates only when
-  live AIH state still claims it; managed requested entries are re-rendered from
-  the current exact specification while other valid claimed scoped entries remain
-  intact. Existing operator-owned same-name servers are preserved and not claimed.
-  Later removal requires the intact AIH-managed MCP fence and fails visibly while
-  any claimed MCP custody remains; unknown, mixed, stale, or ambiguous identity
-  fails closed before install or cleanup.
+  ledger version and deterministic scoped configuration; the vendor MCP merge
+  helper is no longer a fallback, and governed plans retain no Core MCP default.
+  A prior exact AIH-written npm, Bun, pnpm, or Yarn vendor stanza migrates only
+  when live AIH state still claims it; managed requested entries are re-rendered
+  from the current exact specification while other valid claimed scoped entries
+  remain intact. Existing operator-owned same-name servers are preserved and not
+  claimed. The verified vendor baseline merge now prepares a candidate in a
+  unique temporary directory, narrowed to `0700`/`0600` modes where the platform
+  enforces POSIX modes, instead of mutating live config early, then commits config
+  and AIH state only after managed files and AGENTS are ready and the exact
+  pre-helper config and state bytes still match. Races fail closed, AGENTS/config
+  changes are rolled back when safe, and the temporary candidate is removed by
+  exact non-recursive cleanup. The reviewable install driver uses deterministic
+  compressed static program transport to stay below Windows command-line limits;
+  live paths and state remain separate arguments. Later removal requires the
+  intact AIH-managed MCP fence and fails visibly while any claimed MCP custody
+  remains. Prune binds its config and AGENTS subtraction to their exact observed
+  source bytes, asserts the same install-state snapshot in the filesystem
+  transaction before config changes, and deletes state only after exact state and
+  post-subtraction config re-observation. A present but malformed AIH state is an
+  explicit refusal; semantically duplicate, array, encoded, descendant, dotted,
+  inline, unknown, mixed, stale, or otherwise ambiguous identity fails closed
+  before install or cleanup.
 
 - Correct the BetterDoc pack page after the self-hosting cleanup: bundled pack
   bytes still ship, while this checkout intentionally has no AIH approval lock,
