@@ -12,7 +12,7 @@ import { fakeRunner } from "../../src/internals/proc.js";
 import { jsonFile } from "../../src/internals/render.js";
 import { mcpManagedAllowlistCheck } from "../../src/mcp/allowlist.js";
 import { bakedCatalogPins } from "../../src/mcp/currency.js";
-import { mcpPackagePinDriftProbe } from "../../src/mcp/hygiene.js";
+import { mcpHygieneIssues, mcpPackagePinDriftProbe } from "../../src/mcp/hygiene.js";
 import { command, mcpApproveCommand, RETIRED_AWS_CORE_MCP_SERVER } from "../../src/mcp/index.js";
 import { hasExactPackagePin, mcpResolverPinState, uvxPrimaryPin } from "../../src/mcp/pins.js";
 import { mcpApprovalSubject } from "../../src/mcp/policy.js";
@@ -22,7 +22,11 @@ import {
   mcpTomlBody,
   removeMcpTomlServers,
 } from "../../src/mcp/render.js";
-import type { McpServer } from "../../src/mcp/servers.js";
+import {
+  envPlaceholders,
+  type McpServer,
+  validateMcpSecretReferences,
+} from "../../src/mcp/servers.js";
 import type { Platform } from "../../src/platform/base.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
@@ -85,6 +89,10 @@ function makeTmp(): string {
   const dir = mkdtempSync(join(tmpdir(), "aih-mcp-"));
   tmpDirs.push(dir);
   return dir;
+}
+
+function testEnvRef(name: string): string {
+  return `\${${name}}`;
 }
 
 interface CtxOverrides {
@@ -1125,6 +1133,130 @@ describe("aih mcp — uv probe under --verify", () => {
 });
 
 describe("aih mcp — MCP write hygiene", () => {
+  it.each([
+    [
+      "accepts an exact stdio environment reference",
+      {
+        local: {
+          type: "stdio",
+          command: "fixture",
+          args: [],
+          env: { FIXTURE_TOKEN: testEnvRef("FIXTURE_TOKEN") },
+          description: "fixture",
+          classification: "local",
+          egress: "none",
+          credentials: "token",
+          supplyChain: "pinned",
+        },
+      },
+      ["FIXTURE_TOKEN"],
+    ],
+    [
+      "accepts the canonical bearer authorization reference",
+      {
+        remote: {
+          type: "http",
+          url: "https://mcp.example.test",
+          headers: { Authorization: `Bearer ${testEnvRef("FIXTURE_TOKEN")}` },
+          description: "fixture",
+          classification: "third-party-hosted",
+          egress: "third-party",
+          credentials: "token",
+          supplyChain: "hosted-remote",
+        },
+      },
+      ["FIXTURE_TOKEN"],
+    ],
+    [
+      "accepts an exact generic secret header reference",
+      {
+        remote: {
+          type: "http",
+          url: "https://mcp.example.test",
+          headers: { "X-API-Key": testEnvRef("FIXTURE_TOKEN") },
+          description: "fixture",
+          classification: "third-party-hosted",
+          egress: "third-party",
+          credentials: "token",
+          supplyChain: "hosted-remote",
+        },
+      },
+      ["FIXTURE_TOKEN"],
+    ],
+  ] as const)("secret grammar %s", (_name, servers, expected) => {
+    expect(validateMcpSecretReferences(servers)).toEqual(expected);
+    expect(envPlaceholders(servers)).toEqual(expected);
+  });
+
+  it.each([
+    ["a literal stdio environment", "env", "FIXTURE_TOKEN", "fixture-secret"],
+    [
+      "an interpolated stdio environment",
+      "env",
+      "FIXTURE_TOKEN",
+      `prefix-${testEnvRef("FIXTURE_TOKEN")}`,
+    ],
+    ["an unbalanced stdio environment", "env", "FIXTURE_TOKEN", "$" + "{FIXTURE_TOKEN"],
+    [
+      "two stdio environment references",
+      "env",
+      "FIXTURE_TOKEN",
+      testEnvRef("FIRST") + testEnvRef("SECOND"),
+    ],
+    ["a literal authorization value", "header", "Authorization", "Bearer fixture-secret"],
+    [
+      "a non-bearer authorization value",
+      "header",
+      "Authorization",
+      `Basic ${testEnvRef("FIXTURE_TOKEN")}`,
+    ],
+    [
+      "an interpolated bearer authorization value",
+      "header",
+      "Authorization",
+      `Bearer ${testEnvRef("FIXTURE_TOKEN")} trailing`,
+    ],
+    ["a literal generic header", "header", "X-API-Key", "fixture-secret"],
+    ["an interpolated generic header", "header", "X-API-Key", `key-${testEnvRef("FIXTURE_TOKEN")}`],
+  ] as const)("rejects %s without exposing its value", (_name, field, key, value) => {
+    const server: McpServer =
+      field === "env"
+        ? {
+            type: "stdio",
+            command: "fixture",
+            args: [],
+            env: { [key]: value },
+            description: "fixture",
+            classification: "local",
+            egress: "none",
+            credentials: "token",
+            supplyChain: "pinned",
+          }
+        : {
+            type: "http",
+            url: "https://mcp.example.test",
+            headers: { [key]: value },
+            description: "fixture",
+            classification: "third-party-hosted",
+            egress: "third-party",
+            credentials: "token",
+            supplyChain: "hosted-remote",
+          };
+    const servers = { fixture: server };
+    const expected = new RegExp(`server "fixture" ${field} "${key}"`);
+
+    expect(() => validateMcpSecretReferences(servers)).toThrow(expected);
+    expect(() => envPlaceholders(servers)).toThrow(expected);
+    // Planning calls hygiene before any CLI-specific projection, making this a
+    // truthful fail-closed seam for invalid code-owned catalog data.
+    expect(() => mcpHygieneIssues(servers, {})).toThrow(expected);
+    try {
+      validateMcpSecretReferences(servers);
+    } catch (error) {
+      expect(String(error)).not.toContain(value);
+    }
+  });
+
   it("--cli opencode writes the global config, preserves existing provider settings, and disables missing-token servers", async () => {
     const root = makeTmp();
     const home = makeTmp();
