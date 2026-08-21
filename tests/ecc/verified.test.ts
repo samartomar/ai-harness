@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { inflateRawSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
 import type { EccComponentSelection } from "../../src/ecc/components.js";
@@ -92,6 +93,14 @@ function driverSteps(actions: Action[]): Array<{
     env?: Record<string, string>;
     input?: string;
   }>;
+}
+
+function codexInstallProgram(step: { argv: string[] } | undefined): string {
+  const program = step?.argv[2];
+  if (typeof program !== "string") throw new Error("missing Codex install program");
+  const packed = /inflateRawSync\(Buffer\.from\("([^"\\]+)", "base64"\)\)/.exec(program);
+  if (!packed?.[1]) return program;
+  return inflateRawSync(Buffer.from(packed[1], "base64")).toString("utf8");
 }
 
 function selection(): EccComponentSelection {
@@ -523,7 +532,7 @@ describe("verifiedEccInstallPlan", () => {
       authorizationsForSelection("codex", selected),
     );
     const step = driverSteps(built.actions).find((candidate) =>
-      candidate.argv.join(" ").includes("codex-install-merge"),
+      codexInstallProgram(candidate).includes("codex-install-merge"),
     );
     if (step === undefined) throw new Error("missing Codex merge step");
     const executable = step.argv[0];
@@ -585,9 +594,10 @@ describe("verifiedEccInstallPlan", () => {
     expect(steps[1]?.env?.ECC_DISABLED_MCPS).toBe(
       "chrome-devtools,context7,exa,memory,playwright,supabase",
     );
-    expect(steps[1]?.argv[2]).toContain("if (!mcpSpec)");
-    expect(steps[1]?.argv[2]).toContain("prepareDestination(configPath)");
-    expect(steps[1]?.argv[2]).toContain('flag: "wx"');
+    const codexProgram = codexInstallProgram(steps[1]);
+    expect(codexProgram).not.toContain("mergeMcpConfig");
+    expect(codexProgram).toContain("prepareDestination(configPath)");
+    expect(codexProgram).toContain("mergeCodexConfigCandidate");
   });
 
   it("projects Core's exact Chrome DevTools default through the unscoped verified Codex path", () => {
@@ -679,7 +689,7 @@ describe("verifiedEccInstallPlan", () => {
       authorizationsForSelection("codex", request.selection),
     );
     const merge = driverSteps(built.actions).find((step) =>
-      step.argv.join(" ").includes("codex-install-merge"),
+      codexInstallProgram(step).includes("codex-install-merge"),
     );
     if (merge === undefined) throw new Error("missing Codex merge step");
     // argv: [node, -e, script, repoRoot, profileId, homeDir, …, governanceFlag, specB64, mcpB64, stateB64]

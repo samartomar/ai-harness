@@ -14,6 +14,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { inflateRawSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   codexInstallStateCleanupAction,
@@ -147,7 +148,17 @@ const execs = (actions: Action[]): ExecAction[] =>
   actions.filter((a): a is ExecAction => a.kind === "exec");
 const execBlob = (actions: Action[]): string =>
   execs(actions)
-    .map((e) => e.argv.join(" "))
+    .map((action) => {
+      const program = action.argv[2];
+      const packed =
+        typeof program === "string"
+          ? /inflateRawSync\(Buffer\.from\("([^"\\]+)", "base64"\)\)/.exec(program)
+          : undefined;
+      const source = packed?.[1]
+        ? inflateRawSync(Buffer.from(packed[1], "base64")).toString("utf8")
+        : "";
+      return `${action.argv.join(" ")}\n${source}`;
+    })
     .join("\n")
     .replace(/\\/g, "/");
 const installTargets = (actions: Action[]): (string | undefined)[] =>
@@ -349,7 +360,7 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     expect(installTargets(actions)).not.toContain("codex");
     expect(blob).not.toContain("ecc-install --target codex");
     expect(blob).toContain("scripts/codex/merge-codex-config.js");
-    expect(blob).toContain("scripts/codex/merge-mcp-config.js");
+    expect(blob).not.toContain("scripts/codex/merge-mcp-config.js");
     expect(blob).toContain("npm ci --omit=dev --ignore-scripts");
     expect(blob).not.toContain("--package-lock=false");
     expect(blob).toContain("createManifestInstallPlan");
@@ -379,6 +390,24 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     expect(codexInstallState(actions).codexToml.mcpServers).toContain("chrome-devtools");
   });
 
+  it("defaults a direct non-governed Codex action to Core's exact Chrome DevTools pin", () => {
+    const action = codexEccActions(
+      makeCtx({ cli: "codex" }),
+      { dir: tmp, posix: tmp.replace(/\\/g, "/"), explicit: true, hasCache: false },
+      "minimal",
+    ).find(
+      (candidate): candidate is ExecAction =>
+        candidate.kind === "exec" && candidate.describe.startsWith("Install ECC for Codex"),
+    );
+    if (action === undefined) throw new Error("missing direct Codex action");
+    const mcpB64 = action.argv.at(-2);
+    if (mcpB64 === undefined) throw new Error("missing default Codex MCP payload");
+    const rendered = Buffer.from(mcpB64, "base64").toString("utf8");
+
+    expect(rendered).toContain("chrome-devtools-mcp@1.7.0");
+    expect(rendered).not.toContain("@latest");
+  });
+
   it("does not claim an operator-owned Chrome DevTools server while retaining the Core projection", async () => {
     const home = join(tmp, "operator-home");
     mkdirSync(join(home, ".codex"), { recursive: true });
@@ -404,7 +433,7 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
       (await command.plan(makeCtx({ cli: "codex", profile: "minimal" }))).actions,
     ).find((e) => e.describe.includes("record prune state"));
     expect(install?.argv).toContain("minimal");
-    expect(install?.argv.join(" ")).toContain("createManifestInstallPlan");
+    expect(execBlob(install ? [install] : [])).toContain("createManifestInstallPlan");
   });
 
   it("--cli gemini installs via ecc-universal's ecc-install bin, not consult", async () => {
@@ -741,7 +770,7 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
     const base = makeCtx({ cli: "codex" });
     const ctx = { ...base, root, env: { ...base.env, HOME: home, USERPROFILE: home } };
     const actions = (await command.plan(ctx)).actions;
-    expect(execBlob(actions)).toContain("merge-mcp-config.js");
+    expect(execBlob(actions)).not.toContain("merge-mcp-config.js");
     const probes = actions.filter((a): a is ProbeAction => a.kind === "probe");
     const checks = await Promise.all(probes.map((p) => p.run(ctx)));
     expect(checks).not.toEqual(
@@ -761,7 +790,7 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
     const base = makeCtx({ cli: "codex" });
     const ctx = { ...base, root, env: { ...base.env, HOME: home, USERPROFILE: home } };
     const actions = (await command.plan(ctx)).actions;
-    expect(execBlob(actions)).toContain("merge-mcp-config.js");
+    expect(execBlob(actions)).not.toContain("merge-mcp-config.js");
     const probes = actions.filter((a): a is ProbeAction => a.kind === "probe");
     const checks = await Promise.all(probes.map((p) => p.run(ctx)));
     expect(checks).not.toEqual(
@@ -1011,15 +1040,24 @@ describe("Codex managed destination safety", () => {
       };
       const baselineFailure =
         legacyPosition === "managed-failure" || legacyPosition === "agents-failure";
+      const mergeBaseline = [
+        'var fs = require("node:fs");',
+        "const config = process.argv[2];",
+        'const raw = fs.readFileSync(config, "utf8");',
+        "const additions = [];",
+        "if (!/^[ \\t]*approval_policy\\s*=/m.test(raw)) additions.push('approval_policy = \"on-request\"\\n');",
+        "if (!/^[ \\t]*sandbox_mode\\s*=/m.test(raw)) additions.push('sandbox_mode = \"workspace-write\"\\n');",
+        'if (additions.length > 0) fs.writeFileSync(config, additions.join("") + raw);',
+      ].join(" ");
       putRepo(
         "scripts/codex/merge-codex-config.js",
         legacyPosition === "live-config-race"
-          ? `const fs = require("node:fs"); const live = ${JSON.stringify(join(home, ".codex", "config.toml"))}; fs.writeFileSync(live, 'sandbox_mode = "operator"\\n' + fs.readFileSync(live, "utf8"));`
+          ? `var fs = require("node:fs"); const live = ${JSON.stringify(join(home, ".codex", "config.toml"))}; fs.writeFileSync(live, 'sandbox_mode = "operator"\\n' + fs.readFileSync(live, "utf8")); ${mergeBaseline}`
           : legacyPosition === "temp-cleanup"
-            ? `require("node:fs").writeFileSync(${JSON.stringify(join(repo, "merge-path.txt"))}, process.argv[2]);`
+            ? `require("node:fs").writeFileSync(${JSON.stringify(join(repo, "merge-path.txt"))}, process.argv[2]); ${mergeBaseline}`
             : baselineFailure
-              ? 'const fs = require("node:fs"); const config = process.argv[2]; fs.writeFileSync(config, "approval_policy = \\\"on-request\\\"\\n" + fs.readFileSync(config, "utf8"));'
-              : "process.exit(0);\n",
+              ? 'const fs = require("node:fs"); const config = process.argv[2]; fs.writeFileSync(config, "approval_policy = "on-request"\\n" + fs.readFileSync(config, "utf8"));'
+              : mergeBaseline,
       );
       putRepo("scripts/codex/merge-mcp-config.js", 'throw new Error("vendor MCP merge ran");\n');
       putRepo(
@@ -1186,7 +1224,9 @@ describe("Codex managed destination safety", () => {
           ? readFileSync(join(home, ".codex", "config.toml"), "utf8")
           : undefined;
       const stateBeforeApply =
-        legacyPosition === "agents-failure" || legacyPosition === "live-config-race"
+        legacyPosition === "managed-failure" ||
+        legacyPosition === "agents-failure" ||
+        legacyPosition === "live-config-race"
           ? readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")
           : undefined;
 
@@ -1207,6 +1247,9 @@ describe("Codex managed destination safety", () => {
       if (legacyPosition === "managed-failure") {
         expect(result.status).not.toBe(0);
         expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toBe(configBeforeApply);
+        expect(readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")).toBe(
+          stateBeforeApply,
+        );
         expect(existsSync(join(home, ".codex", "AGENTS.md"))).toBe(false);
         return;
       }
@@ -1231,7 +1274,7 @@ describe("Codex managed destination safety", () => {
         return;
       }
 
-      expect(result.status).toBe(0);
+      expect(result.status, result.stderr).toBe(0);
       const config = readFileSync(join(home, ".codex", "config.toml"), "utf8");
       expect(config).toContain("chrome-devtools-mcp@1.7.0");
       expect(config).toContain("startup_timeout_sec = 30");
@@ -1239,7 +1282,8 @@ describe("Codex managed destination safety", () => {
       if (
         legacyPosition === "vanished" ||
         legacyPosition === "live-relinquished" ||
-        legacyPosition === "live-config-takeover"
+        legacyPosition === "live-config-takeover" ||
+        legacyPosition === "temp-cleanup"
       )
         expect(config).not.toContain('[mcp_servers."sequential-thinking"]');
       else expect(config).toContain('[mcp_servers."sequential-thinking"]');
@@ -1271,13 +1315,69 @@ describe("Codex managed destination safety", () => {
       if (
         legacyPosition === "vanished" ||
         legacyPosition === "live-relinquished" ||
-        legacyPosition === "live-config-takeover"
+        legacyPosition === "live-config-takeover" ||
+        legacyPosition === "temp-cleanup"
       ) {
         expect(outputState).not.toContain("sequential-thinking");
         expect(agents).not.toContain("`sequential-thinking`");
       } else expect(agents).toContain("`sequential-thinking`");
     },
   );
+
+  it("keeps the default scoped candidate config and state unchanged when managed files fail", () => {
+    const home = join(tmp, "direct-candidate-home");
+    const repo = join(tmp, "ecc");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    prepareCodexRepo(home);
+    writeFileSync(
+      join(repo, "scripts", "codex", "merge-codex-config.js"),
+      [
+        'const fs = require("node:fs");',
+        "const config = process.argv[2];",
+        'const raw = fs.readFileSync(config, "utf8");',
+        "fs.writeFileSync(config, 'approval_policy = \"on-request\"\\n' + raw);",
+      ].join(" "),
+    );
+    writeFileSync(
+      join(repo, "scripts", "codex", "merge-mcp-config.js"),
+      'throw new Error("vendor MCP merge must not run");\n',
+    );
+    const configPath = join(home, ".codex", "config.toml");
+    const statePath = join(home, ".codex", "ecc-aih-install-state.json");
+    writeFileSync(configPath, 'sandbox_mode = "operator"\n', "utf8");
+    writeFileSync(
+      statePath,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        managedBy: "aih",
+        codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: [] },
+        agentsBlock: true,
+      })}\n`,
+      "utf8",
+    );
+    const beforeConfig = readFileSync(configPath, "utf8");
+    const beforeState = readFileSync(statePath, "utf8");
+    const base = makeCtx({ cli: "codex" });
+    const action = codexEccActions(
+      { ...base, env: { ...base.env, HOME: home, USERPROFILE: home } },
+      { dir: repo, posix: repo.replace(/\\\\/g, "/"), explicit: true, hasCache: false },
+      "minimal",
+    ).find(
+      (candidate): candidate is ExecAction =>
+        candidate.kind === "exec" && candidate.describe.startsWith("Install ECC for Codex"),
+    );
+    if (action === undefined) throw new Error("missing default scoped Codex merge action");
+
+    const result = spawnSync(process.execPath, action.argv.slice(1), {
+      cwd: repo,
+      encoding: "utf8",
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(readFileSync(configPath, "utf8")).toBe(beforeConfig);
+    expect(readFileSync(statePath, "utf8")).toBe(beforeState);
+    expect(existsSync(join(home, ".codex", "AGENTS.md"))).toBe(false);
+  });
 
   it.each([
     ["stale claim", ["chrome-devtools", "sequential-thinking"]],
@@ -1433,7 +1533,9 @@ describe("Codex managed destination safety", () => {
       const result = guardedMerge(config);
 
       expect(result.status).not.toBe(0);
-      expect(`${result.stdout}${result.stderr}`).toMatch(/unsafe existing Codex destination/);
+      expect(`${result.stdout}${result.stderr}`).toMatch(
+        /unsafe (?:existing Codex destination|live Codex file)/,
+      );
       if (kind === "existing") expect(readFileSync(outside, "utf8")).toBe("outside-before\n");
       else expect(existsSync(outside)).toBe(false);
     },
@@ -1450,7 +1552,9 @@ describe("Codex managed destination safety", () => {
     const result = guardedMerge(config);
 
     expect(result.status).not.toBe(0);
-    expect(`${result.stdout}${result.stderr}`).toMatch(/unsafe existing Codex destination/);
+    expect(`${result.stdout}${result.stderr}`).toMatch(
+      /unsafe (?:existing Codex destination|live Codex file)/,
+    );
     expect(readFileSync(outside, "utf8")).toBe("outside-before\n");
   });
 
