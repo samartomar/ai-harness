@@ -96,7 +96,7 @@ describe("workspace state collection", () => {
     expect(state).toMatchObject({ ahead: 2, behind: 1 });
   });
 
-  it.each(["1\t2 extra", "1x\t2", "-1\t2", "1\t-2", "9007199254740992\t0"])(
+  it.each(["1\t2 extra", "1\t2 ", "1 2", "1x\t2", "-1\t2", "1\t-2", "9007199254740992\t0"])(
     "omits invalid ahead/behind counts from malformed git output %j",
     async (upstream) => {
       const run: Runner = async (argv) => {

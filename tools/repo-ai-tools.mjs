@@ -926,7 +926,13 @@ function verifyCodexProjection() {
     if (!Array.isArray(transport.args) || !transport.args.includes(server.launcher)) {
       throw new Error(`${server.name} Codex launcher drifted`);
     }
-    const enabledTools = Array.isArray(entry.enabled_tools) ? entry.enabled_tools : [];
+    if (
+      !Array.isArray(entry.enabled_tools) ||
+      entry.enabled_tools.some((tool) => typeof tool !== "string")
+    ) {
+      throw new Error(`${server.name} Codex enabled_tools managed list is malformed`);
+    }
+    const enabledTools = entry.enabled_tools;
     const missing = server.enabledTools.filter((tool) => !enabledTools.includes(tool));
     if (missing.length > 0) {
       throw new Error(`${server.name} Codex tool allowlist drifted: ${missing.join(", ")}`);

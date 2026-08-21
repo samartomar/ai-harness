@@ -49,14 +49,20 @@ export interface Snapshot {
 }
 
 /** Added/removed lines across the last 7 days (binary files count as 0). */
-async function locDelta(ctx: PlanContext): Promise<Snapshot["loc"]> {
+async function locDelta(ctx: PlanContext): Promise<Snapshot["loc"] | undefined> {
   const out = await gitRead(ctx, ["log", "--since=7 days ago", "--numstat", "--pretty=tformat:"]);
+  if (out === undefined) return undefined;
   let added = 0;
   let removed = 0;
-  for (const line of (out ?? "").split("\n").filter(Boolean)) {
-    const [a, r] = line.split("\t");
-    added += gitInt(a);
-    removed += gitInt(r);
+  for (const line of out.split("\n").filter(Boolean)) {
+    const [a, r, path] = line.split("\t", 3);
+    if (path === undefined) return undefined;
+    if (a === "-" && r === "-") continue;
+    const addedCount = gitInt(a);
+    const removedCount = gitInt(r);
+    if (addedCount === undefined || removedCount === undefined) return undefined;
+    added += addedCount;
+    removed += removedCount;
   }
   return { added, removed, net: added - removed };
 }
@@ -91,6 +97,7 @@ export async function collectSnapshot(ctx: PlanContext): Promise<Snapshot | unde
     await gitRead(ctx, ["rev-list", "--count", "--since=7 days ago", "HEAD"]),
   );
   const loc = await locDelta(ctx);
+  if (commits7d === undefined || loc === undefined) return undefined;
   const inv = inventory(ctx.root, ctx.contextDir);
   const present = inv.filter((i) => i.present).length;
   const lsFiles = await gitRead(ctx, ["ls-files"]);

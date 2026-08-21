@@ -20,19 +20,25 @@ const HEATMAP_DAYS = 105;
 async function locWindow(
   ctx: PlanContext,
   days: number,
-): Promise<{ added: number; removed: number; net: number }> {
+): Promise<{ added: number; removed: number; net: number } | undefined> {
   const out = await gitRead(ctx, [
     "log",
     `--since=${days}.days.ago`,
     "--numstat",
     "--pretty=tformat:",
   ]);
+  if (out === undefined) return undefined;
   let added = 0;
   let removed = 0;
-  for (const line of (out ?? "").split("\n").filter(Boolean)) {
-    const [a, r] = line.split("\t");
-    added += gitInt(a);
-    removed += gitInt(r);
+  for (const line of out.split("\n").filter(Boolean)) {
+    const [a, r, path] = line.split("\t", 3);
+    if (path === undefined) return undefined;
+    if (a === "-" && r === "-") continue;
+    const addedCount = gitInt(a);
+    const removedCount = gitInt(r);
+    if (addedCount === undefined || removedCount === undefined) return undefined;
+    added += addedCount;
+    removed += removedCount;
   }
   return { added, removed, net: added - removed };
 }
@@ -74,11 +80,12 @@ export async function velocityDigests(ctx: PlanContext): Promise<DigestAction[]>
   const d7 = gitInt(await gitRead(ctx, ["rev-list", "--count", "--since=7.days.ago", "HEAD"]));
   const d30 = gitInt(await gitRead(ctx, ["rev-list", "--count", "--since=30.days.ago", "HEAD"]));
   const total = gitInt(await gitRead(ctx, ["rev-list", "--count", "HEAD"]));
+  const loc = await locWindow(ctx, LOC_WINDOW_DAYS);
+  if (d7 === undefined || d30 === undefined || total === undefined || loc === undefined) return [];
   const daily = await dailyCommits(ctx, DAILY_DAYS);
   // A longer per-day series for the v4 dashboard's activity heatmap (gap-filled,
   // most-recent last). Cheap extra git call; the legacy renderer ignores it.
   const daily90 = await dailyCommits(ctx, HEATMAP_DAYS);
-  const loc = await locWindow(ctx, LOC_WINDOW_DAYS);
 
   const commitsDigest = digest(
     `Daily commits — ${d7} in 7d · ${d30} in 30d · ${total} total`,

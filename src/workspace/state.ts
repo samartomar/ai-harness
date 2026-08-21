@@ -1,6 +1,7 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { AihError } from "../errors.js";
+import { gitInt } from "../internals/git.js";
 import type { PlanContext } from "../internals/plan.js";
 import { checkWorkspaceChildPath } from "./detect.js";
 import {
@@ -20,6 +21,8 @@ export interface WorkspaceRepoState {
   git: boolean;
   ahead?: number;
   behind?: number;
+  /** Volatile revision evidence could not be captured as one coherent observation. */
+  observation?: "diverged" | "unavailable";
 }
 
 export interface WorkspaceSnapshot {
@@ -35,20 +38,48 @@ async function gitChildRead(
   ctx: PlanContext,
   repo: WorkspaceRepo,
   args: string[],
+  options: { trim?: boolean } = {},
 ): Promise<string | undefined> {
   const res = await ctx.run(["git", "-C", join(ctx.root, repo.path), ...args]);
   if (res.spawnError || res.code !== 0) return undefined;
-  return res.stdout.replace(/\s+$/, "");
+  return options.trim === false ? res.stdout : res.stdout.replace(/\s+$/, "");
 }
 
 function parseAheadBehind(raw: string | undefined): { ahead?: number; behind?: number } {
-  const [behindRaw, aheadRaw] = (raw ?? "").split(/\s+/);
-  const behind = Number.parseInt(behindRaw ?? "", 10);
-  const ahead = Number.parseInt(aheadRaw ?? "", 10);
-  return {
-    ...(Number.isFinite(ahead) ? { ahead } : {}),
-    ...(Number.isFinite(behind) ? { behind } : {}),
-  };
+  const fields = raw?.replace(/\r?\n$/, "").split("\t");
+  if (fields === undefined || fields.length !== 2) return {};
+  const behind = gitInt(fields[0]);
+  const ahead = gitInt(fields[1]);
+  if (ahead === undefined || behind === undefined) return {};
+  return { ahead, behind };
+}
+
+interface WorkspaceRevision {
+  branch: string;
+  sha: string;
+}
+
+async function readWorkspaceRevision(
+  ctx: PlanContext,
+  repo: WorkspaceRepo,
+): Promise<WorkspaceRevision | undefined> {
+  const [branch, sha] = await Promise.all([
+    gitChildRead(ctx, repo, ["rev-parse", "--abbrev-ref", "HEAD"]),
+    gitChildRead(ctx, repo, ["rev-parse", "HEAD"]),
+  ]);
+  if (branch === undefined || sha === undefined) return undefined;
+  return { branch, sha };
+}
+
+function sameWorkspaceRevision(left: WorkspaceRevision, right: WorkspaceRevision): boolean {
+  return left.branch === right.branch && left.sha === right.sha;
+}
+
+function incompleteWorkspaceRepoState(
+  repo: WorkspaceRepo,
+  observation: "diverged" | "unavailable",
+): WorkspaceRepoState {
+  return { id: repo.id, path: repo.path, dirty: false, git: true, observation };
 }
 
 function safeObservedRemote(raw: string | undefined): string | undefined {
@@ -77,21 +108,28 @@ export async function readWorkspaceRepoState(
   if (!checked.exists) return { id: repo.id, path: repo.path, dirty: false, git: false };
   const inside = (await gitChildRead(ctx, repo, ["rev-parse", "--is-inside-work-tree"])) === "true";
   if (!inside) return { id: repo.id, path: repo.path, dirty: false, git: false };
-  const [branch, sha, status, upstream, remote] = await Promise.all([
-    gitChildRead(ctx, repo, ["rev-parse", "--abbrev-ref", "HEAD"]),
-    gitChildRead(ctx, repo, ["rev-parse", "HEAD"]),
+  const before = await readWorkspaceRevision(ctx, repo);
+  if (before === undefined) return incompleteWorkspaceRepoState(repo, "unavailable");
+  const [status, upstream, remote] = await Promise.all([
     gitChildRead(ctx, repo, ["status", "--porcelain"]),
-    gitChildRead(ctx, repo, ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]),
+    gitChildRead(ctx, repo, ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"], {
+      trim: false,
+    }),
     repo.remote === undefined ? readWorkspaceRepoRemote(ctx, repo) : Promise.resolve(repo.remote),
   ]);
+  const after = await readWorkspaceRevision(ctx, repo);
+  if (after === undefined) return incompleteWorkspaceRepoState(repo, "unavailable");
+  if (!sameWorkspaceRevision(before, after)) {
+    return incompleteWorkspaceRepoState(repo, "diverged");
+  }
   const dirty = (status ?? "").length > 0;
   const aheadBehind = parseAheadBehind(upstream);
   return {
     id: repo.id,
     path: repo.path,
     ...(remote ? { remote } : {}),
-    ...(branch ? { branch } : {}),
-    ...(sha ? { sha } : {}),
+    branch: before.branch,
+    sha: before.sha,
     dirty,
     git: true,
     ...aheadBehind,
