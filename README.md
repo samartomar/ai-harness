@@ -413,6 +413,8 @@ The portable Policy Workbench uses a flat Ledger paper-and-ink identity in light
 
 The Workbench also authors source-locked ECC hook controls: Minimal, Standard, or Strict profile selection and eligible per-hook disables. Policy projection records those choices only as receipt-owned `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` keys in Claude `settings.json.env`; it never rewrites ECC launchers. ECC executes and enforces the selection after process spawn, so disabling a hook does not erase its spawn cost.
 
+The Workbench can also import one standalone `GovernanceDecisionV1` for inspection and canonical download. It applies the strict decision grammar and semantics, keeps the record separate from policy and receipt state, renders its untrusted fields as text, and labels it unverified and not effective. This is an inert transport view: it cannot edit, verify, sign, fetch, resolve, project, or materialize the decision, and importing one never grants approval or changes the authored policy.
+
 ### Layered AI canon (`bootstrap-ai`)
 
 The harness models the same two-layer setup used in the reference repos (eicp / ai-os / syntegris):
