@@ -178,6 +178,26 @@ describe("workspace state collection", () => {
     expect(state).not.toHaveProperty("sha");
   });
 
+  it("returns an explicit unavailable observation when git status cannot be read", async () => {
+    const run: Runner = async (argv) => {
+      const tail = argv.slice(3).join(" ");
+      if (tail === "rev-parse --is-inside-work-tree")
+        return { code: 0, stdout: "true\n", stderr: "" };
+      if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
+      if (tail === "rev-parse HEAD")
+        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
+      if (tail === "status --porcelain") return { code: 1, stdout: "", stderr: "status failed" };
+      if (tail === "rev-list --left-right --count HEAD...@{upstream}") {
+        return { code: 0, stdout: "1\t2\n", stderr: "" };
+      }
+      return { code: 1, stdout: "", stderr: "" };
+    };
+
+    const state = await readWorkspaceRepoState(ctx(run), childRepo("ui"));
+
+    expect(state).toEqual({ id: "ui", path: "ui", git: true, observation: "unavailable" });
+  });
+
   it("captures the child fetch remote from local git config", async () => {
     const run: Runner = async (argv) => {
       const tail = argv.slice(3).join(" ");
