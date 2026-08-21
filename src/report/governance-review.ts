@@ -103,11 +103,20 @@ function subjectCaptureState(
 function receiptFor(
   candidate: EffectiveOrgPolicy["candidates"][number],
   receipts: ReviewReceipts,
-): { state: string } {
+): { state: string; targets?: Record<string, string> } {
   if (candidate.kind === "mcp") {
-    return candidate.projection.requestedTargets.includes("kiro")
-      ? { state: receipts.kiro.state }
-      : { state: receipts.mcp.state };
+    const targets = Object.fromEntries(
+      candidate.projection.requestedTargets.flatMap((target) => {
+        if (target === "claude") return [[target, receipts.mcp.state]];
+        if (target === "kiro") return [[target, receipts.kiro.state]];
+        return [];
+      }),
+    );
+    const states = [...new Set(Object.values(targets))];
+    return {
+      state: states.length === 1 ? (states[0] ?? candidate.projection.receipt) : "multiple",
+      ...(Object.keys(targets).length === 0 ? {} : { targets }),
+    };
   }
   if (candidate.projection.ownership === "usage-hook-receipt")
     return { state: receipts.hook.state };
@@ -208,7 +217,13 @@ export function governanceReviewView(input: GovernanceReviewInput): DigestAction
     "|---:|---|---:|---:|---|---|---|---|",
     ...subjects.map(
       (subject) =>
-        `| ${subject.ordinal} | ${subject.id} | ${subject.requested ? "yes" : "no"} | ${subject.effective ? "yes" : "no"} | ${subject.evidence.state}; findings=${subject.evidence.findings.length}; blockers=${subject.evidence.blockers.length + subject.evidence.decisionBlockers.length} | decision=${subject.decision.state}; approval=${subject.approval.state}; revocation=${subject.revocation.state} | ${subject.projector.name}; coverage=${subject.projector.coverage}; receipt=${subject.materialization.state} | ${subject.usage.state}; exact=${subject.attribution.exact}; heuristic=${subject.attribution.heuristic} |`,
+        `| ${subject.ordinal} | ${subject.id} | ${subject.requested ? "yes" : "no"} | ${subject.effective ? "yes" : "no"} | ${subject.evidence.state}; findings=${subject.evidence.findings.length}; blockers=${subject.evidence.blockers.length + subject.evidence.decisionBlockers.length} | decision=${subject.decision.state}; approval=${subject.approval.state}; revocation=${subject.revocation.state} | ${subject.projector.name}; coverage=${subject.projector.coverage}; receipt=${subject.materialization.state}${
+          subject.materialization.targets === undefined
+            ? ""
+            : ` (${Object.entries(subject.materialization.targets)
+                .map(([target, state]) => `${target}:${state}`)
+                .join(",")})`
+        } | ${subject.usage.state}; exact=${subject.attribution.exact}; heuristic=${subject.attribution.heuristic} |`,
     ),
   );
   return digest(

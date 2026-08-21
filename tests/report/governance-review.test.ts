@@ -181,6 +181,34 @@ describe("governanceReviewView", () => {
     expect(installedZero.text).toContain("installed-zero-observed");
     expect(installedZero.text).toContain("receipt=missing");
   });
+
+  it("keeps each selected MCP target's strict receipt verdict", () => {
+    const multiTarget = effective(["context7"]);
+    const subject = multiTarget.candidates[0];
+    if (subject === undefined) throw new Error("expected governed subject");
+    subject.projection.requestedTargets = ["claude", "kiro"];
+    subject.projection.supportedTargets = ["claude", "kiro"];
+    subject.projection.availableTargets = ["claude", "kiro"];
+
+    const digest = governanceReviewView({
+      effective: multiTarget,
+      receipts: RECEIPTS,
+      captureInstalled: true,
+      usage: { events: [], malformed: 0, unknownKind: 0 },
+    });
+
+    expect(digest.data).toMatchObject({
+      subjects: [
+        {
+          materialization: {
+            state: "multiple",
+            targets: { claude: "missing", kiro: "not-requested" },
+          },
+        },
+      ],
+    });
+    expect(digest.text).toContain("receipt=multiple (claude:missing,kiro:not-requested)");
+  });
 });
 
 describe("governanceReviewDigest", () => {
