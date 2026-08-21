@@ -1,0 +1,221 @@
+import { createHash } from "node:crypto";
+import { z } from "zod";
+
+const ID = /^[a-z][a-z0-9-]{0,63}$/;
+const SHA256 = /^sha256:[0-9a-f]{64}$/;
+const OFFSET_TIMESTAMP =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(Z|[+-](\d{2}):(\d{2}))$/;
+const MAX_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
+
+const stableId = z.string().regex(ID, "must be a bounded stable identifier");
+const decisionId = stableId.regex(/^decision-/, "decision ids must begin with decision-");
+const digest = z.string().regex(SHA256, "must be a sha256 digest");
+const text = z
+  .string()
+  .min(1)
+  .max(500)
+  .refine((value) => value === value.trim() && !/[\p{C}]/u.test(value), "must be visible text");
+
+function timestamp(value: string): boolean {
+  const match = OFFSET_TIMESTAMP.exec(value);
+  if (match === null) return false;
+  const [
+    ,
+    yearText,
+    monthText,
+    dayText,
+    hourText,
+    minuteText,
+    secondText,
+    ,
+    offsetHourText,
+    offsetMinuteText,
+  ] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const offsetHour = offsetHourText === undefined ? 0 : Number(offsetHourText);
+  const offsetMinute = offsetMinuteText === undefined ? 0 : Number(offsetMinuteText);
+  return (
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= daysInGregorianMonth(year, month) &&
+    hour <= 23 &&
+    minute <= 59 &&
+    second <= 59 &&
+    offsetHour <= 23 &&
+    offsetMinute <= 59 &&
+    Number.isFinite(Date.parse(value))
+  );
+}
+
+function daysInGregorianMonth(year: number, month: number): number {
+  if (month === 2) return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28;
+  return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
+}
+
+const timestampSchema = z
+  .string()
+  .refine(timestamp, "must be an offset-qualified ISO-8601 timestamp");
+
+function sortedUnique(values: readonly string[]): boolean {
+  return values.every(
+    (value, index) => index === 0 || ordinalCompare(values[index - 1] ?? "", value) < 0,
+  );
+}
+
+function ordinalCompare(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+const exactSet = z
+  .array(stableId)
+  .max(64)
+  .refine(sortedUnique, "must be sorted and duplicate-free");
+const conditions = z.array(text).max(32).refine(sortedUnique, "must be sorted and duplicate-free");
+
+const decisionBase = z
+  .object({
+    format: z.literal("aih-governance-decision"),
+    version: z.literal(1),
+    id: decisionId,
+    candidate: stableId,
+    kind: stableId,
+    targets: exactSet.min(1),
+    effects: exactSet.min(1),
+    policyVersion: text,
+    sourceDigest: digest,
+    evidenceDigest: digest,
+    reviewedControlDigest: digest,
+    issuer: stableId,
+    actor: stableId,
+    reason: text,
+    issuedAt: timestampSchema,
+    notBefore: timestampSchema,
+    expiresAt: timestampSchema,
+  })
+  .strict();
+
+const approved = decisionBase
+  .extend({
+    disposition: z.literal("approved"),
+    acceptedFindings: exactSet.max(0),
+    acceptedGaps: exactSet.max(0),
+    conditions: conditions.max(0),
+  })
+  .strict();
+
+const accepted = decisionBase
+  .extend({
+    disposition: z.literal("accepted-with-conditions"),
+    acceptedFindings: exactSet,
+    acceptedGaps: exactSet,
+    conditions: conditions.min(1),
+    reviewBy: timestampSchema,
+  })
+  .strict();
+
+const rejected = decisionBase
+  .extend({
+    disposition: z.literal("rejected"),
+    acceptedFindings: exactSet.max(0),
+    acceptedGaps: exactSet.max(0),
+    conditions: conditions.max(0),
+  })
+  .strict();
+
+export const GovernanceDecisionV1Schema = z
+  .discriminatedUnion("disposition", [approved, accepted, rejected])
+  .superRefine((value, ctx) => {
+    const issued = Date.parse(value.issuedAt);
+    const notBefore = Date.parse(value.notBefore);
+    const expires = Date.parse(value.expiresAt);
+    if (notBefore < issued || expires <= notBefore || expires - issued > MAX_WINDOW_MS) {
+      ctx.addIssue({
+        code: "custom",
+        message: "decision validity must be ordered and at most 90 days",
+      });
+    }
+    if (value.disposition === "accepted-with-conditions") {
+      if (value.acceptedFindings.some((finding) => value.acceptedGaps.includes(finding))) {
+        ctx.addIssue({
+          code: "custom",
+          message: "accepted findings and gaps must not overlap",
+        });
+      }
+      if (value.acceptedFindings.length + value.acceptedGaps.length === 0) {
+        ctx.addIssue({
+          code: "custom",
+          message: "accepted decisions require findings and/or named waivable gaps",
+        });
+      }
+      const review = Date.parse(value.reviewBy);
+      if (review < notBefore || review > expires || review - issued > MAX_WINDOW_MS) {
+        ctx.addIssue({
+          code: "custom",
+          message: "reviewBy must fall inside the bounded validity window",
+        });
+      }
+    }
+  });
+
+export type GovernanceDecisionV1 = z.infer<typeof GovernanceDecisionV1Schema>;
+
+export const GovernanceDecisionRevocationV1Schema = z
+  .object({
+    format: z.literal("aih-governance-decision-revocation"),
+    version: z.literal(1),
+    decision: decisionId,
+    issuer: stableId,
+    revokedAt: timestampSchema,
+    reason: text,
+  })
+  .strict();
+
+export type GovernanceDecisionRevocationV1 = z.infer<typeof GovernanceDecisionRevocationV1Schema>;
+
+export function parseGovernanceDecisionV1(value: unknown): GovernanceDecisionV1 {
+  return GovernanceDecisionV1Schema.parse(value);
+}
+
+export function parseGovernanceDecisionRevocationV1(
+  value: unknown,
+): GovernanceDecisionRevocationV1 {
+  return GovernanceDecisionRevocationV1Schema.parse(value);
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => ordinalCompare(left, right))
+      .map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/** Canonical bytes are inert transport material until a future authority seam verifies them. */
+export function canonicalGovernanceDecisionV1(value: GovernanceDecisionV1): string {
+  return stableJson(value);
+}
+
+export function governanceDecisionDigestV1(value: GovernanceDecisionV1): string {
+  return `sha256:${createHash("sha256").update(canonicalGovernanceDecisionV1(value), "utf8").digest("hex")}`;
+}
+
+export function canonicalGovernanceDecisionRevocationV1(
+  value: GovernanceDecisionRevocationV1,
+): string {
+  return stableJson(value);
+}
+
+export function governanceDecisionRevocationDigestV1(
+  value: GovernanceDecisionRevocationV1,
+): string {
+  return `sha256:${createHash("sha256").update(canonicalGovernanceDecisionRevocationV1(value), "utf8").digest("hex")}`;
+}
