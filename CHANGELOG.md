@@ -139,6 +139,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The ECC Codex Chrome DevTools launcher is now bound to Core's exact reviewed
+  package identity.** Full Codex plans replace the pinned ECC helper's floating
+  `chrome-devtools-mcp@latest` default with the active Core ledger version and
+  deterministic scoped configuration. Existing operator-owned same-name
+  servers are preserved and not claimed; unknown or mixed transport identity
+  fails closed before install.
+
 - Correct the BetterDoc pack page after the self-hosting cleanup: bundled pack
   bytes still ship, while this checkout intentionally has no AIH approval lock,
   vet report, promoted copy, or product-command validation loop. The page now
