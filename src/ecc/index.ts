@@ -646,7 +646,7 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   "  return next;",
   "}",
   "const liveConfigRaw = governed ? undefined : readSafeOptional(configPath);",
-  "if (!governed) planScopedMcps(undefined, false);",
+  "const initialScopedPlan = governed ? undefined : planScopedMcps(undefined, false, undefined, false);",
   'const candidateConfig = governed ? undefined : mergeCodexConfigCandidate(liveConfigRaw || "");',
   'if (!governed) actualCurrentRunState = actualBaselineEffects(liveConfigRaw || "", candidateConfig, state);',
   "function installCodexAgents() {",
@@ -728,10 +728,10 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   '  if (server.startupTimeoutSec !== undefined && (!Number.isSafeInteger(server.startupTimeoutSec) || server.startupTimeoutSec < 1 || server.startupTimeoutSec > 3600)) throw new Error("invalid scoped Codex MCP startup timeout: " + name);',
   '  if (server.startupTimeoutSec !== undefined) section.push("startup_timeout_sec = " + String(server.startupTimeoutSec)); return section.join("\\n");',
   "}",
-  "function planScopedMcps(candidateConfig, hasExpectedLiveConfig, expectedLiveConfigRaw) {",
+  "function planScopedMcps(candidateConfig, hasExpectedLiveConfig, expectedLiveConfigRaw, hasExpectedLiveState, expectedLiveStateRaw) {",
   "  if (!mcpSpec) return undefined;",
   '  if (!mcpSpec.servers || typeof mcpSpec.servers !== "object" || Array.isArray(mcpSpec.servers)) throw new Error("invalid scoped Codex MCP payload");',
-  '  const liveConfigRaw = hasExpectedLiveConfig ? expectedLiveConfigRaw : readSafeOptional(configPath); const existingConfig = candidateConfig === undefined ? (liveConfigRaw || "") : candidateConfig; const liveStateRaw = readSafeOptional(expectedAihStatePath); const liveState = liveStateRaw === undefined ? undefined : exactAihState(liveStateRaw);',
+  '  const liveConfigRaw = hasExpectedLiveConfig ? expectedLiveConfigRaw : readSafeOptional(configPath); const existingConfig = candidateConfig === undefined ? (liveConfigRaw || "") : candidateConfig; const liveStateRaw = hasExpectedLiveState ? expectedLiveStateRaw : readSafeOptional(expectedAihStatePath); const liveState = liveStateRaw === undefined ? undefined : exactAihState(liveStateRaw);',
   "  const parsed = parseManagedFence(existingConfig); const claimed = new Set(liveState ? liveState.codexToml.mcpServers : []);",
   '  if (parsed.fence && !liveState) throw new Error("managed Codex MCP fence has no live AIH state");',
   '  if (parsed.fence && parsed.fence.sections.some((section) => !claimed.has(section.name))) throw new Error("managed Codex MCP fence contains an unclaimed server");',
@@ -758,7 +758,7 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   'function restoreLiveConfig(plan) { if (readSafeOptional(configPath) !== plan.merged) throw new Error("Codex config changed during rollback"); if (plan.liveConfigRaw === undefined) fs.rmSync(prepareDestination(configPath), { force: true }); else fs.writeFileSync(prepareDestination(configPath), plan.liveConfigRaw, "utf8"); }',
   'function installScopedMcps(plan, nextState) { if (!stableScopedPlan(plan)) throw new Error("Codex MCP config or state changed during apply"); fs.writeFileSync(prepareDestination(configPath), plan.merged, "utf8"); try { fs.writeFileSync(prepareDestination(expectedAihStatePath), JSON.stringify(nextState, null, 2) + "\\n", "utf8"); } catch (error) { restoreLiveConfig(plan); throw error; } state = nextState; return plan.installed; }',
   "installCodexManagedFiles();",
-  "const scopedPlan = governed ? undefined : planScopedMcps(candidateConfig, true, liveConfigRaw);",
+  "const scopedPlan = governed ? undefined : planScopedMcps(candidateConfig, true, liveConfigRaw, true, initialScopedPlan.liveStateRaw);",
   "const scopedStateNext = scopedPlan ? scopedState(scopedPlan) : state;",
   "effectiveMcpNames = governed ? [] : (scopedStateNext.codexToml.mcpServers || []);",
   "const agentsChange = installCodexAgents();",
@@ -787,11 +787,7 @@ export function codexEccActions(
   const mergeCodexConfig = join(repo.dir, "scripts", "codex", "merge-codex-config.js");
   const sourceAgents = join(repo.dir, ".codex", "AGENTS.md");
   const statePath = codexInstallStatePath(ctx);
-  const plannedMcpServers = materialization
-    ? []
-    : effectiveScopedMcps === undefined
-      ? undefined
-      : Object.keys(effectiveScopedMcps);
+  const plannedMcpServers = materialization ? [] : Object.keys(effectiveScopedMcps);
   const stateB64 = Buffer.from(
     codexInstallStateContents(ctx, plannedMcpServers, governed),
     "utf8",
@@ -799,9 +795,9 @@ export function codexEccActions(
   const materializationB64 = materialization
     ? Buffer.from(JSON.stringify(materialization), "utf8").toString("base64")
     : undefined;
-  const mcpB64 = effectiveScopedMcps
-    ? Buffer.from(JSON.stringify({ servers: effectiveScopedMcps }), "utf8").toString("base64")
-    : undefined;
+  const mcpB64 = Buffer.from(JSON.stringify({ servers: effectiveScopedMcps }), "utf8").toString(
+    "base64",
+  );
   return [
     exec(
       `Install ECC Node dependencies for Codex merge helpers — npm ci --omit=dev --ignore-scripts in ${repo.posix} (lockfile-based, under --apply)`,
