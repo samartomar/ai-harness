@@ -935,8 +935,9 @@ describe("governed candidate projection", () => {
       const policy = reviewedMcpPolicy();
       if (policy.governance === undefined) throw new Error("expected governance fixture");
       policy.governance.authority.decisions = [decision];
-      const decisions =
-        receipt ?? [currentReviewedDecision(policy, { id: decision, candidate: "not-catalog" })];
+      const decisions = receipt ?? [
+        currentReviewedDecision(policy, { id: decision, candidate: "not-catalog" }),
+      ];
       writeDecisionAuthorityReceipt(decisions);
       writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(policy));
 
@@ -2159,7 +2160,10 @@ describe("governed candidate projection", () => {
     const initial = reviewedMcpPolicy({ allowedServers: [], disabledServers: [] });
     const applied = ctx({ apply: true });
     await executePlan(
-      plan("project legacy Claude managed settings", ...(await verifiedOrgPolicyProjectionActions(applied, initial))),
+      plan(
+        "project legacy Claude managed settings",
+        ...(await verifiedOrgPolicyProjectionActions(applied, initial)),
+      ),
       applied,
     );
     const markerPath = join(dir, ".aih-config.json");

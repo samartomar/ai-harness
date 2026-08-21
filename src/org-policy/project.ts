@@ -106,7 +106,37 @@ const AUTHORITY_DEPENDENT_BLOCK_CODES: ReadonlySet<string> = new Set([
 
 function candidateBlockDetail(candidate: EffectiveOrgPolicy["candidates"][number]): string {
   const decision = (candidate.decisionBlockers ?? []).map((blocker) => blocker.code);
-  return [...candidate.dangerCodes, ...candidate.blockingCodes, ...decision].join(", ");
+  return (
+    [...candidate.dangerCodes, ...candidate.blockingCodes, ...decision].join(", ") ||
+    "not-effective"
+  );
+}
+
+function policyDecisionBlockDetail(effective: EffectiveOrgPolicy): string {
+  return effective.decisionBlockers
+    .map(
+      (blocker) => `${blocker.code}${blocker.decision === undefined ? "" : `:${blocker.decision}`}`,
+    )
+    .sort(ordinalCompare)
+    .join(", ");
+}
+
+function blockedProjectionDetail(effective: EffectiveOrgPolicy): string {
+  const candidates = effective.candidates
+    .filter((candidate) => candidate.requested && !candidate.effective)
+    .map(
+      (candidate) =>
+        `${candidate.id}: ${candidateBlockDetail(candidate)}${
+          candidate.resolutionReasons.length === 0
+            ? ""
+            : `; resolution=${candidate.resolutionReasons.join(", ")}`
+        }`,
+    )
+    .join("; ");
+  const policy = policyDecisionBlockDetail(effective);
+  return [candidates, policy === "" ? "" : `policy decision blockers: ${policy}`]
+    .filter((detail) => detail !== "")
+    .join("; ");
 }
 
 /**
@@ -144,10 +174,7 @@ function stdioAllowedServers(
 ): { servers: Record<string, StdioServer>; effective: EffectiveOrgPolicy } {
   const { catalog, effective } = runtime;
   if (effective.blocking) {
-    const blocked = effective.candidates
-      .filter((candidate) => candidate.requested && !candidate.effective)
-      .map((candidate) => `${candidate.id}: ${candidateBlockDetail(candidate)}`)
-      .join("; ");
+    const blocked = blockedProjectionDetail(effective);
     throw new OrgPolicyError(
       `policy project refuses blocked candidate activation(s): ${blocked || "unknown policy resolution failure"}${authoritySuffix(runtime)}`,
     );
@@ -1334,17 +1361,7 @@ function projectionActionsFromRuntime(
   const posture = ctx.posture ?? policy.minimumPosture;
   const targets = ctx.targets ?? ["claude"];
   if (runtime.effective.blocking) {
-    const blocked = runtime.effective.candidates
-      .filter((candidate) => candidate.requested && !candidate.effective)
-      .map(
-        (candidate) =>
-          `${candidate.id}: ${candidateBlockDetail(candidate)}${
-            candidate.resolutionReasons.length === 0
-              ? ""
-              : `; resolution=${candidate.resolutionReasons.join(", ")}`
-          }`,
-      )
-      .join("; ");
+    const blocked = blockedProjectionDetail(runtime.effective);
     throw new OrgPolicyError(
       `policy project refuses blocked candidate activation(s): ${blocked || "unknown policy resolution failure"}${authoritySuffix(runtime)}`,
     );
@@ -1390,7 +1407,15 @@ function projectionActionsFromRuntime(
       managedMcpEnabled &&
       onDisk?.matches === true &&
       onDisk.ownership.schemaVersion === 1 &&
-      stableJson(onDisk.ownership.expected) === stableJson(managedMcpSettings);
+      stableJson(onDisk.ownership.expected) === stableJson(managedMcpSettings) &&
+      settingsSource !== undefined &&
+      (() => {
+        try {
+          return stableJson(JSON.parse(settingsSource)) === stableJson(settings);
+        } catch {
+          return false;
+        }
+      })();
     if (!strictLegacyMarkerRefresh) {
       actions.push(
         withExpectedContents(
@@ -1401,6 +1426,10 @@ function projectionActionsFromRuntime(
             {
               merge: true,
               replaceJsonKeys: managedMcpEnabled ? [...MANAGED_MCP_PROJECTION_KEYS] : undefined,
+              replaceJsonChildKeys: {
+                organizationPolicy: ["minimumPosture", "references", "effectiveCandidates"],
+                sandbox: ["commandPolicy"],
+              },
               // Only subtract the managed keys when the governed selection is
               // being deactivated. An already clean active projection must keep
               // its exact replacement keys, or a later doctor plan would claim

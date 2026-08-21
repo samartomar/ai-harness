@@ -26,6 +26,14 @@ function publicList(values: readonly string[]): string {
   return ordered.length === 0 ? "none" : ordered.join(",");
 }
 
+function publicPolicyDecisionBlockers(effective: EffectiveOrgPolicy): string {
+  return publicList(
+    effective.decisionBlockers.map(
+      (blocker) => `${blocker.code}${blocker.decision === undefined ? "" : `:${blocker.decision}`}`,
+    ),
+  );
+}
+
 /** Bounded public decision facts shared by policy evaluate and doctor checks. */
 function requestedCandidateSummary(effective: EffectiveOrgPolicy): string {
   const summaries = requestedCandidates(effective)
@@ -46,7 +54,7 @@ function requestedCandidateSummary(effective: EffectiveOrgPolicy): string {
         `decisionBlockers=${publicList(candidate.decisionBlockers.map((blocker) => blocker.code))}}`
       );
     });
-  return `requested candidates: ${summaries.length === 0 ? "none" : summaries.join(" | ")}`;
+  return `requested candidates: ${summaries.length === 0 ? "none" : summaries.join(" | ")}; policyDecisionBlockers=${publicPolicyDecisionBlockers(effective)}`;
 }
 
 function withRequestedCandidateSummary(detail: string, effective: EffectiveOrgPolicy): string {
@@ -267,7 +275,7 @@ export async function orgPolicyEffectiveDigest(
       `Managed-MCP receipt: ${mcpReceipt.state} — ${mcpReceipt.detail}.`,
       `Kiro workspace-MCP receipt: ${kiroMcpReceipt.state} — ${kiroMcpReceipt.detail}.`,
       `Hook registrar: ${hookRegistrar.state} — ${hookRegistrar.detail}.`,
-      `Policy decision blockers: ${effective.decisionBlockers.map((blocker) => `${blocker.code}${blocker.decision === undefined ? "" : `:${blocker.decision}`}`).join(", ") || "none"}.`,
+      `Policy decision blockers: ${publicPolicyDecisionBlockers(effective)}.`,
       ...(hookRegistrar.unowned.length === 0
         ? []
         : [
