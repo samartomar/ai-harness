@@ -155,6 +155,30 @@ function gitResult(
   return { stdout: result.stdout, code: result.code };
 }
 
+function canonicalGitTopLevel(stdout: string): { root: string; dev: number; ino: number } {
+  const topLevel = stdout.trim();
+  if (
+    topLevel.length === 0 ||
+    topLevel.includes("\r") ||
+    topLevel.includes("\n") ||
+    !isAbsolute(topLevel)
+  ) {
+    fail("Git top-level result is malformed");
+  }
+  try {
+    const stat = lstatSync(topLevel);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      fail("Git top-level result must name a real directory");
+    }
+    const root = realpathSync(topLevel);
+    const canonicalStat = statSync(root);
+    return { root, dev: canonicalStat.dev, ino: canonicalStat.ino };
+  } catch (error) {
+    if (error instanceof ScanAcceptanceCheckError) throw error;
+    fail("Git top-level result is unavailable or unreadable");
+  }
+}
+
 async function checkoutIdentity(checkoutPath: string, runner: Runner): Promise<CheckoutIdentity> {
   let root: string;
   let dev: number;
@@ -188,6 +212,15 @@ async function checkoutIdentity(checkoutPath: string, runner: Runner): Promise<C
   );
   if (inside.code !== 0 || inside.stdout.trim() !== "true") {
     fail("vendor checkout is not a Git work tree");
+  }
+  const topLevel = gitResult(
+    await runner(["git", "-C", root, "rev-parse", "--show-toplevel"]),
+    "repository top-level",
+  );
+  if (topLevel.code !== 0) fail("vendor checkout must be the Git work-tree top-level");
+  const gitRoot = canonicalGitTopLevel(topLevel.stdout);
+  if (gitRoot.dev !== dev || gitRoot.ino !== ino) {
+    fail("vendor checkout must be the Git work-tree top-level");
   }
   const remote = gitResult(
     await runner(["git", "-C", root, "remote", "get-url", "origin"]),
