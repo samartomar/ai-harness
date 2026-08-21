@@ -36,6 +36,7 @@ import {
   FENCED_POLICY_PREREQUISITE_CODES,
   resolveEffectiveOrgPolicy,
   reviewedControlDigest,
+  stableJson,
 } from "../../src/org-policy/effective.js";
 import {
   orgPolicyEffectiveCheck,
@@ -307,6 +308,14 @@ function currentUsageHookDecision(
     conditions: ["Review hook finding before expiry."],
     reviewBy: new Date(now + 43_200_000).toISOString(),
   };
+}
+
+function recomputeHookReceiptSelfDigest(receipt: Record<string, unknown>): string {
+  const payload = { ...receipt };
+  delete payload.selfDigest;
+  return `sha256:${createHash("sha256")
+    .update(`aih-org-policy-hook-receipt/v3\0${stableJson(payload)}`, "utf8")
+    .digest("hex")}`;
 }
 
 function governanceDecision(overrides: Record<string, unknown> = {}) {
@@ -2090,6 +2099,81 @@ describe("governed candidate projection", () => {
     ).toHaveLength(0);
     await executePlan(plan("renew decision-bound policy hooks", ...refresh), applied);
     expect([host, recorder, ignore].map((path) => readFileSync(path, "utf8"))).toEqual(before);
+  });
+
+  it("fails closed on recomputed-digest v3 receipt shape and binding adversaries", async () => {
+    const applied = ctx({ apply: true });
+    const policy = usageHookPolicy("active");
+    await executePlan(
+      plan("policy hooks", ...(await verifiedOrgPolicyProjectionActions(applied, policy))),
+      applied,
+    );
+    const receiptPath = join(dir, ".aih", "org-policy-hook-receipt.json");
+    const baseline = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, unknown>;
+    const binding = {
+      candidate: "usage-metering",
+      id: "decision-1",
+      issuer: "platform-security",
+      digest: DIGEST,
+      expiresAt: "2026-09-01T00:00:00+00:00",
+    };
+    for (const mutate of [
+      (receipt: Record<string, unknown>) => {
+        receipt.decisions = [binding, { ...binding, id: "decision-2" }];
+      },
+      (receipt: Record<string, unknown>) => {
+        receipt.decisions = [{ ...binding, expiresAt: "2026-09-01" }];
+      },
+      (receipt: Record<string, unknown>) => {
+        receipt.decisions = Array.from({ length: 65 }, (_, index) => ({
+          ...binding,
+          candidate: `candidate-${String.fromCharCode(97 + index)}`,
+          id: `decision-a${index}`,
+        }));
+      },
+      (receipt: Record<string, unknown>) => {
+        receipt.extra = true;
+      },
+      (receipt: Record<string, unknown>) => {
+        const hook = (receipt.hooks as Array<Record<string, unknown>>)[0];
+        if (hook === undefined) throw new Error("expected hook receipt entry");
+        hook.extra = true;
+      },
+      (receipt: Record<string, unknown>) => {
+        const entry = (receipt.entries as Array<Record<string, unknown>>)[0];
+        if (entry === undefined) throw new Error("expected receipt ownership entry");
+        entry.extra = true;
+      },
+    ]) {
+      const mutated = JSON.parse(JSON.stringify(baseline)) as Record<string, unknown>;
+      mutate(mutated);
+      mutated.selfDigest = recomputeHookReceiptSelfDigest(mutated);
+      writeFileSync(receiptPath, JSON.stringify(mutated));
+      await expect(verifiedOrgPolicyProjectionActions(applied, policy)).rejects.toThrow(
+        /invalid v3 decision bindings|unexpected receipt fields|unexpected ownership fields|invalid hook identity/,
+      );
+    }
+  });
+
+  it("rejects a semantic forged gitignore digest even with a recomputed v3 self-digest", async () => {
+    const applied = ctx({ apply: true });
+    const policy = usageHookPolicy("active");
+    await executePlan(
+      plan("policy hooks", ...(await verifiedOrgPolicyProjectionActions(applied, policy))),
+      applied,
+    );
+    const receiptPath = join(dir, ".aih", "org-policy-hook-receipt.json");
+    const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, unknown>;
+    const ignore = (receipt.entries as Array<Record<string, unknown>>).find(
+      (entry) => entry.path === ".gitignore",
+    );
+    if (ignore === undefined) throw new Error("expected .gitignore ownership entry");
+    ignore.expectedDigest = "b".repeat(64);
+    receipt.selfDigest = recomputeHookReceiptSelfDigest(receipt);
+    writeFileSync(receiptPath, JSON.stringify(receipt));
+    await expect(
+      verifiedOrgPolicyProjectionActions(applied, usageHookPolicy("disabled")),
+    ).rejects.toThrow(/not the exact AIH policy marker state/);
   });
 
   it("reports retained-invalid-decision for exact owned MCP bytes after authority binding changes", async () => {
