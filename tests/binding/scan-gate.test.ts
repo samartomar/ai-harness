@@ -153,7 +153,13 @@ describe("rollupScanFindings", () => {
 
   it("keeps absent, false, and true acceptance states deterministically distinct", () => {
     const findings = [
-      { code: "x", severity: "high" as const, detail: "same", coverage: "complete" as const, path: "a" },
+      {
+        code: "x",
+        severity: "high" as const,
+        detail: "same",
+        coverage: "complete" as const,
+        path: "a",
+      },
       {
         code: "x",
         severity: "high" as const,
