@@ -752,7 +752,8 @@ describe("governed candidate projection", () => {
     const legacy = (await resolveRuntimeOrgPolicy(ctx(), pair)).effective.candidates.find(
       (candidate) => candidate.id === secondCandidate.id,
     );
-    expect(legacy).toMatchObject({ effective: true, decision: undefined, decisionBlockers: [] });
+    expect(legacy).toMatchObject({ effective: true, decisionBlockers: [] });
+    expect(legacy).not.toHaveProperty("decision");
 
     const rejectedB = currentReviewedDecision(
       pair,

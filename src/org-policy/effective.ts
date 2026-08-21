@@ -940,8 +940,7 @@ function resolveDecision(
     };
   }
   if (governance.authority.decisions.length === 0) return { blockers: [] };
-  if (referenced.length === 0)
-    return { blockers: [{ scope: "candidate", code: "decision-missing" }] };
+  if (referenced.length === 0) return { blockers: [] };
 
   const current = referenced.filter(
     (decision) =>
@@ -1093,6 +1092,12 @@ function resolveCandidate(
   let revocation: EffectivePolicyCandidate["revocation"];
   let mandatoryEvidenceGap = false;
   let waivableGap = false;
+  const candidateHasDecisionReference =
+    authority?.receipt.version === 2 &&
+    authority.receipt.decisions.some(
+      (decision) =>
+        governance.authority.decisions.includes(decision.id) && decision.candidate === candidate.id,
+    );
   if (externalEvidence !== undefined) {
     for (const finding of externalEvidence.findings)
       if (isUnwaivable(finding)) dangerCodes.push(finding);
@@ -1109,7 +1114,7 @@ function resolveCandidate(
       (externalEvidence.state === "missing" ||
         (externalEvidence.state === "failed" && externalEvidence.waivable) ||
         waivableGap);
-    if (needsApproval && governance.authority.decisions.length === 0) {
+    if (needsApproval && !candidateHasDecisionReference) {
       const decision = matchingApproval(
         governance,
         candidate,
@@ -1421,8 +1426,7 @@ const ACTIVATION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
 };
 
 const AUTHORITY_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
-  "decisions.*":
-    "future authority resolver: policy decision reference; no resolver or effect behavior is wired yet",
+  "decisions.*": "effective resolver: candidate-scoped exact policy decision-reference lookup",
   "approvals.*.candidate": "authority resolver: exact candidate binding",
   "approvals.*.clarification":
     "authority resolver: signed clarification binding and report consumer",
