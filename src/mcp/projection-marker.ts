@@ -36,7 +36,9 @@ export function coalesceMcpProjectionMarkerActions(actions: readonly Action[]): 
   for (const key of ["managedMcpProjection", "kiroMcpProjection"]) {
     const writes = selected.filter((action) => Object.hasOwn(action.json as object, key));
     if (writes.length > 1) {
-      const firstValue = JSON.stringify((writes[0]?.json as Record<string, unknown>)[key]);
+      const first = writes[0];
+      if (first === undefined) continue;
+      const firstValue = JSON.stringify((first.json as Record<string, unknown>)[key]);
       if (
         writes.some(
           (action) => JSON.stringify((action.json as Record<string, unknown>)[key]) !== firstValue,
