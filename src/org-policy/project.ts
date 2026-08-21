@@ -82,7 +82,28 @@ const AUTHORITY_DEPENDENT_BLOCK_CODES: ReadonlySet<string> = new Set([
   "approval-clarification-missing",
   "approval-policy-version-mismatch",
   "approval-duration-invalid",
+  "decision-receipt-missing",
+  "decision-receipt-version",
+  "decision-receipt-expired",
+  "decision-reference-missing",
+  "decision-reference-unresolved",
+  "decision-receipt-mismatch",
+  "decision-signer-mismatch",
+  "decision-subject-mismatch",
+  "decision-control-mismatch",
+  "decision-scope-mismatch",
+  "decision-coverage-mismatch",
+  "decision-rejected",
+  "decision-revoked",
+  "decision-not-yet-valid",
+  "decision-expired",
+  "decision-review-overdue",
 ]);
+
+function candidateBlockDetail(candidate: EffectiveOrgPolicy["candidates"][number]): string {
+  const decision = (candidate.decisionBlockers ?? []).map((blocker) => blocker.code);
+  return [...candidate.dangerCodes, ...candidate.blockingCodes, ...decision].join(", ");
+}
 
 /**
  * The registry note, only when a blocked candidate's own codes depend on it.
@@ -96,14 +117,17 @@ const AUTHORITY_DEPENDENT_BLOCK_CODES: ReadonlySet<string> = new Set([
  */
 export function authoritySuffix(runtime: RuntimeOrgPolicyResolution): string {
   if (runtime.authorityProblem === undefined) return "";
-  const dependsOnAuthority = runtime.effective.candidates.some(
-    (candidate) =>
-      candidate.requested &&
-      !candidate.effective &&
-      [...candidate.dangerCodes, ...candidate.blockingCodes].some((code) =>
-        AUTHORITY_DEPENDENT_BLOCK_CODES.has(code),
-      ),
-  );
+  const dependsOnAuthority =
+    runtime.effective.candidates.some(
+      (candidate) =>
+        candidate.requested &&
+        !candidate.effective &&
+        [
+          ...candidate.dangerCodes,
+          ...candidate.blockingCodes,
+          ...(candidate.decisionBlockers ?? []).map((blocker) => blocker.code),
+        ].some((code) => AUTHORITY_DEPENDENT_BLOCK_CODES.has(code)),
+    ) || (runtime.effective.decisionBlockers?.length ?? 0) > 0;
   return dependsOnAuthority ? `; authority: ${runtime.authorityProblem}` : "";
 }
 
@@ -118,10 +142,7 @@ function stdioAllowedServers(
   if (effective.blocking) {
     const blocked = effective.candidates
       .filter((candidate) => candidate.requested && !candidate.effective)
-      .map(
-        (candidate) =>
-          `${candidate.id}: ${[...candidate.dangerCodes, ...candidate.blockingCodes].join(", ")}`,
-      )
+      .map((candidate) => `${candidate.id}: ${candidateBlockDetail(candidate)}`)
       .join("; ");
     throw new OrgPolicyError(
       `policy project refuses blocked candidate activation(s): ${blocked || "unknown policy resolution failure"}${authoritySuffix(runtime)}`,
@@ -986,8 +1007,10 @@ function managedSettings(
               evidence: candidate.evidence,
               evidenceRecord: candidate.evidenceRecord,
               ...(candidate.approval === undefined ? {} : { approval: candidate.approval }),
+              ...(candidate.decision === undefined ? {} : { decision: candidate.decision }),
               dangerCodes: candidate.dangerCodes,
               blockingCodes: candidate.blockingCodes,
+              decisionBlockers: candidate.decisionBlockers,
               ...(candidate.clarification === undefined
                 ? {}
                 : { clarification: candidate.clarification }),
@@ -1023,7 +1046,7 @@ function projectionActionsFromRuntime(
       .filter((candidate) => candidate.requested && !candidate.effective)
       .map(
         (candidate) =>
-          `${candidate.id}: ${[...candidate.dangerCodes, ...candidate.blockingCodes].join(", ")}${
+          `${candidate.id}: ${candidateBlockDetail(candidate)}${
             candidate.resolutionReasons.length === 0
               ? ""
               : `; resolution=${candidate.resolutionReasons.join(", ")}`

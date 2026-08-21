@@ -4,6 +4,7 @@ import {
   type PolicyAuthorityReceipt,
   type VerifiedPolicyAuthority,
 } from "./authority.js";
+import { type GovernanceDecisionV1, governanceDecisionDigestV1 } from "./governance-decision-v1.js";
 import { governanceOwnsAihSurfaces, type OrgPolicy } from "./schema.js";
 
 /**
@@ -82,10 +83,56 @@ export type ResolutionBlockCode =
   | "approval-duration-invalid"
   | "framework-contract-unavailable";
 
+export type PolicyDecisionBlockCode =
+  | "decision-receipt-missing"
+  | "decision-receipt-version"
+  | "decision-receipt-expired"
+  | "decision-reference-missing"
+  | "decision-reference-unresolved";
+export type CandidateDecisionBlockCode =
+  | "decision-missing"
+  | "decision-ambiguous"
+  | "decision-receipt-mismatch"
+  | "decision-signer-mismatch"
+  | "decision-subject-mismatch"
+  | "decision-control-mismatch"
+  | "decision-scope-mismatch"
+  | "decision-coverage-mismatch"
+  | "decision-rejected"
+  | "decision-revoked"
+  | "decision-not-yet-valid"
+  | "decision-expired"
+  | "decision-review-overdue";
+export type DecisionSubjectField =
+  | "candidate"
+  | "kind"
+  | "sourceDigest"
+  | "evidenceDigest"
+  | "reviewedControlDigest"
+  | "policyVersion"
+  | "targets"
+  | "effects"
+  | "issuer";
+export type PolicyDecisionBlocker = {
+  scope: "policy";
+  code: PolicyDecisionBlockCode;
+  decision?: string;
+};
+export type CandidateDecisionBlocker = {
+  scope: "candidate";
+  code: CandidateDecisionBlockCode;
+  decision?: string;
+  field?: DecisionSubjectField;
+  accepted?: string[];
+  observed?: string[];
+};
+export type DecisionBlocker = PolicyDecisionBlocker | CandidateDecisionBlocker;
+
 type Governance = NonNullable<OrgPolicy["governance"]>;
 type Candidate = Governance["catalog"]["reviewed"][number];
 type Approval = Governance["authority"]["approvals"][number];
 type EvidenceRecord = PolicyAuthorityReceipt["evidence"][number];
+type Decision = GovernanceDecisionV1;
 
 /** The immutable, action-significant identity of an AIH-shipped reviewed control. */
 export type AiReviewedControl = Pick<
@@ -171,8 +218,25 @@ export interface EffectivePolicyCandidate {
     revokedAt: string;
     reason: string;
   };
+  decision?: {
+    id: string;
+    digest: string;
+    issuer: string;
+    actor: string;
+    disposition: Decision["disposition"];
+    conditions: string[];
+    notBefore: string;
+    expiresAt: string;
+    reviewBy?: string;
+    acceptedFindings: string[];
+    acceptedGaps: string[];
+    observedFindings: string[];
+    observedGaps: string[];
+    riskState?: "clean" | "accepted";
+  };
   dangerCodes: PolicyDangerCode[];
   blockingCodes: ResolutionBlockCode[];
+  decisionBlockers: CandidateDecisionBlocker[];
   /** Actionable resolver diagnostics; danger codes remain the stable policy fence. */
   resolutionReasons: string[];
   clarification?: string;
@@ -282,6 +346,7 @@ export interface EffectiveOrgPolicy {
     }>;
     status: "requested-evidence-needed";
   }>;
+  decisionBlockers: PolicyDecisionBlocker[];
   blocking: boolean;
   authority: { verified: boolean; receiptDigest?: string; problem?: string };
 }
@@ -290,11 +355,15 @@ export function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
   if (value !== null && typeof value === "object") {
     return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => ordinalCompare(left, right))
       .map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`)
       .join(",")}}`;
   }
   return JSON.stringify(value);
+}
+
+function ordinalCompare(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 /** Digest only immutable source identity, never catalog wording or an activation flag. */
@@ -360,7 +429,7 @@ export function approvalAttestationDigest(
 }
 
 function sortedUnique<T extends string>(values: readonly T[]): T[] {
-  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+  return [...new Set(values)].sort(ordinalCompare);
 }
 
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
@@ -653,14 +722,296 @@ function matchingApproval(
   return { approval };
 }
 
+const REGISTERED_DECISION_EFFECTS: Readonly<Record<string, readonly string[]>> = {
+  "mcp-managed-settings": ["managed-settings"],
+  "hook-managed-settings": ["hook-managed-settings"],
+  "usage-hook": ["usage-hook"],
+  "framework-contract": ["framework-contract"],
+};
+
+function receiptIsCurrent(authority: VerifiedPolicyAuthority | undefined, now: Date): boolean {
+  if (authority === undefined) return false;
+  const issuedAt = Date.parse(authority.receipt.issuedAt);
+  const expiresAt = Date.parse(authority.receipt.expiresAt);
+  return issuedAt <= now.getTime() && now.getTime() < expiresAt;
+}
+
+function decisionIsRevoked(
+  receipt: Extract<PolicyAuthorityReceipt, { version: 2 }>,
+  decision: Decision,
+  now: Date,
+): boolean {
+  return receipt.decisionRevocations.some(
+    (revocation) =>
+      revocation.decision === decision.id &&
+      revocation.issuer === decision.issuer &&
+      Date.parse(revocation.revokedAt) <= now.getTime(),
+  );
+}
+
+function currentDecisionState(
+  receipt: Extract<PolicyAuthorityReceipt, { version: 2 }>,
+  decision: Decision,
+  now: Date,
+): CandidateDecisionBlockCode | undefined {
+  if (decisionIsRevoked(receipt, decision, now)) return "decision-revoked";
+  if (now.getTime() < Date.parse(decision.notBefore)) return "decision-not-yet-valid";
+  if (now.getTime() >= Date.parse(decision.expiresAt)) return "decision-expired";
+  return undefined;
+}
+
+function decisionSummary(
+  decision: Decision,
+  observedFindings: readonly string[],
+  effective: boolean,
+): NonNullable<EffectivePolicyCandidate["decision"]> {
+  return {
+    id: decision.id,
+    digest: governanceDecisionDigestV1(decision),
+    issuer: decision.issuer,
+    actor: decision.actor,
+    disposition: decision.disposition,
+    conditions: sortedUnique(decision.conditions),
+    notBefore: decision.notBefore,
+    expiresAt: decision.expiresAt,
+    ...(decision.disposition === "accepted-with-conditions" ? { reviewBy: decision.reviewBy } : {}),
+    acceptedFindings: sortedUnique(decision.acceptedFindings),
+    acceptedGaps: sortedUnique(decision.acceptedGaps),
+    observedFindings: sortedUnique(observedFindings),
+    observedGaps: [],
+    ...(effective
+      ? {
+          riskState:
+            decision.disposition === "approved" ? ("clean" as const) : ("accepted" as const),
+        }
+      : {}),
+  };
+}
+
+function decisionJoinBlocker(
+  decision: Decision,
+  candidate: Candidate,
+  origin: "reviewed" | "custom",
+  evidence: EvidenceRecord | undefined,
+  requestedTargets: readonly string[],
+  governance: Governance,
+  context: EffectivePolicyContext,
+  receipt: Extract<PolicyAuthorityReceipt, { version: 2 }>,
+): CandidateDecisionBlocker | undefined {
+  const sourceDigest = candidateIdentityDigest(candidate);
+  if (decision.kind !== candidate.kind) {
+    return {
+      scope: "candidate",
+      code: "decision-subject-mismatch",
+      decision: decision.id,
+      field: "kind",
+    };
+  }
+  if (decision.sourceDigest !== sourceDigest) {
+    return {
+      scope: "candidate",
+      code: "decision-subject-mismatch",
+      decision: decision.id,
+      field: "sourceDigest",
+    };
+  }
+  if (decision.evidenceDigest !== evidence?.evidenceDigest) {
+    return {
+      scope: "candidate",
+      code: "decision-subject-mismatch",
+      decision: decision.id,
+      field: "evidenceDigest",
+    };
+  }
+  if (decision.policyVersion !== governance.policyVersion) {
+    return {
+      scope: "candidate",
+      code: "decision-subject-mismatch",
+      decision: decision.id,
+      field: "policyVersion",
+    };
+  }
+  if (!sameStrings(decision.targets, requestedTargets)) {
+    return {
+      scope: "candidate",
+      code: "decision-scope-mismatch",
+      decision: decision.id,
+      field: "targets",
+    };
+  }
+  const effects = REGISTERED_DECISION_EFFECTS[candidate.projector] ?? [];
+  if (!sameStrings(decision.effects, effects)) {
+    return {
+      scope: "candidate",
+      code: "decision-scope-mismatch",
+      decision: decision.id,
+      field: "effects",
+    };
+  }
+  const reviewed = context.aihReviewedControls?.[candidate.id];
+  if (
+    origin !== "reviewed" ||
+    reviewed === undefined ||
+    reviewed.controlDigest !== reviewedControlDigest(reviewed.control) ||
+    decision.reviewedControlDigest !== reviewed.controlDigest
+  ) {
+    return {
+      scope: "candidate",
+      code: "decision-control-mismatch",
+      decision: decision.id,
+      field: "reviewedControlDigest",
+    };
+  }
+  if (!receipt.trustedIssuers.some((issuer) => issuer.id === decision.issuer)) {
+    return {
+      scope: "candidate",
+      code: "decision-signer-mismatch",
+      decision: decision.id,
+      field: "issuer",
+    };
+  }
+  return undefined;
+}
+
+function policyDecisionBlockers(
+  governance: Governance,
+  candidates: readonly Candidate[],
+  authority: VerifiedPolicyAuthority | undefined,
+  now: Date,
+): PolicyDecisionBlocker[] {
+  const references = governance.authority.decisions;
+  if (references.length === 0) return [];
+  if (authority === undefined) return [{ scope: "policy", code: "decision-receipt-missing" }];
+  if (authority.receipt.version !== 2)
+    return [{ scope: "policy", code: "decision-receipt-version" }];
+  if (!receiptIsCurrent(authority, now))
+    return [{ scope: "policy", code: "decision-receipt-expired" }];
+  const blockers: PolicyDecisionBlocker[] = [];
+  for (const id of references) {
+    const decision = authority.receipt.decisions.find((item) => item.id === id);
+    if (decision === undefined) {
+      blockers.push({ scope: "policy", code: "decision-reference-missing", decision: id });
+    } else if (!candidates.some((candidate) => candidate.id === decision.candidate)) {
+      blockers.push({ scope: "policy", code: "decision-reference-unresolved", decision: id });
+    }
+  }
+  return blockers.sort((left, right) => {
+    const leftKey = `${left.code}:${left.decision ?? ""}`;
+    const rightKey = `${right.code}:${right.decision ?? ""}`;
+    return ordinalCompare(leftKey, rightKey);
+  });
+}
+
+function resolveDecision(
+  governance: Governance,
+  candidate: Candidate,
+  origin: "reviewed" | "custom",
+  evidence: EvidenceRecord | undefined,
+  requestedTargets: readonly string[],
+  context: EffectivePolicyContext,
+  authority: VerifiedPolicyAuthority | undefined,
+  now: Date,
+): { decision?: Decision; blockers: CandidateDecisionBlocker[] } {
+  if (
+    authority === undefined ||
+    authority.receipt.version !== 2 ||
+    !receiptIsCurrent(authority, now)
+  ) {
+    return governance.authority.decisions.length === 0
+      ? { blockers: [] }
+      : { blockers: [{ scope: "candidate", code: "decision-receipt-mismatch" }] };
+  }
+  const receipt = authority.receipt;
+  const referenced = receipt.decisions.filter(
+    (decision) =>
+      governance.authority.decisions.includes(decision.id) && decision.candidate === candidate.id,
+  );
+  const activeRejection = receipt.decisions.find(
+    (decision) =>
+      decision.disposition === "rejected" &&
+      decision.candidate === candidate.id &&
+      decision.kind === candidate.kind &&
+      currentDecisionState(receipt, decision, now) === undefined,
+  );
+  if (activeRejection !== undefined) {
+    return {
+      decision: activeRejection,
+      blockers: [{ scope: "candidate", code: "decision-rejected", decision: activeRejection.id }],
+    };
+  }
+  if (governance.authority.decisions.length === 0) return { blockers: [] };
+  if (referenced.length === 0)
+    return { blockers: [{ scope: "candidate", code: "decision-missing" }] };
+
+  const current = referenced.filter(
+    (decision) =>
+      decision.disposition !== "rejected" &&
+      currentDecisionState(receipt, decision, now) === undefined,
+  );
+  const exact = current.filter(
+    (decision) =>
+      decisionJoinBlocker(
+        decision,
+        candidate,
+        origin,
+        evidence,
+        requestedTargets,
+        governance,
+        context,
+        receipt,
+      ) === undefined,
+  );
+  if (exact.length > 1) {
+    return {
+      blockers: exact.map((decision) => ({
+        scope: "candidate" as const,
+        code: "decision-ambiguous" as const,
+        decision: decision.id,
+      })),
+    };
+  }
+  if (exact.length === 1) return { decision: exact[0], blockers: [] };
+  const firstCurrent = current[0];
+  if (firstCurrent !== undefined) {
+    return {
+      decision: firstCurrent,
+      blockers: [
+        decisionJoinBlocker(
+          firstCurrent,
+          candidate,
+          origin,
+          evidence,
+          requestedTargets,
+          governance,
+          context,
+          receipt,
+        ) ?? { scope: "candidate", code: "decision-subject-mismatch", decision: firstCurrent.id },
+      ],
+    };
+  }
+  const first = referenced[0];
+  if (first === undefined) return { blockers: [{ scope: "candidate", code: "decision-missing" }] };
+  return {
+    decision: first,
+    blockers: [
+      {
+        scope: "candidate",
+        code: currentDecisionState(receipt, first, now) ?? "decision-subject-mismatch",
+        decision: first.id,
+      },
+    ],
+  };
+}
+
 function resolveCandidate(
   policy: OrgPolicy,
   governance: Governance,
   candidate: Candidate,
   origin: "reviewed" | "custom",
   context: EffectivePolicyContext,
+  now: Date,
+  policyDecisionBlocked: boolean,
 ): EffectivePolicyCandidate {
-  const now = context.now ?? new Date();
   const activation = governance.activations.find((item) => item.candidate === candidate.id);
   const requested = activation?.state === "active";
   const requestedTargets = activation?.targets ?? candidate.targets;
@@ -758,7 +1109,7 @@ function resolveCandidate(
       (externalEvidence.state === "missing" ||
         (externalEvidence.state === "failed" && externalEvidence.waivable) ||
         waivableGap);
-    if (needsApproval) {
+    if (needsApproval && governance.authority.decisions.length === 0) {
       const decision = matchingApproval(
         governance,
         candidate,
@@ -796,10 +1147,73 @@ function resolveCandidate(
 
   const uniqueDangerCodes = sortedUnique(dangerCodes);
   const uniqueBlockingCodes = sortedUnique(blockingCodes);
+  const observedFindings = uniqueDangerCodes.filter(isDispositionableFinding);
+  const decisionResolution = resolveDecision(
+    governance,
+    candidate,
+    origin,
+    externalEvidence,
+    requestedTargets,
+    context,
+    authority,
+    now,
+  );
+  const decisionBlockers = decisionResolution.blockers;
+  let coverageBlocker: CandidateDecisionBlocker | undefined;
+  if (decisionResolution.decision !== undefined && decisionBlockers.length === 0) {
+    const decision = decisionResolution.decision;
+    if (decision.disposition === "approved") {
+      if (
+        observedFindings.length !== 0 ||
+        decision.acceptedFindings.length !== 0 ||
+        decision.acceptedGaps.length !== 0
+      ) {
+        coverageBlocker = {
+          scope: "candidate",
+          code: "decision-coverage-mismatch",
+          decision: decision.id,
+          accepted: sortedUnique(decision.acceptedFindings),
+          observed: observedFindings,
+        };
+      }
+    } else if (decision.disposition === "accepted-with-conditions") {
+      if (
+        !sameStrings(decision.acceptedFindings, observedFindings) ||
+        decision.acceptedGaps.length !== 0
+      ) {
+        coverageBlocker = {
+          scope: "candidate",
+          code: "decision-coverage-mismatch",
+          decision: decision.id,
+          accepted: sortedUnique(decision.acceptedFindings),
+          observed: observedFindings,
+        };
+      } else if (now.getTime() >= Date.parse(decision.reviewBy)) {
+        coverageBlocker = {
+          scope: "candidate",
+          code: "decision-review-overdue",
+          decision: decision.id,
+        };
+      }
+    }
+  }
+  if (coverageBlocker !== undefined) decisionBlockers.push(coverageBlocker);
+  const acceptedFindings =
+    decisionResolution.decision?.disposition === "accepted-with-conditions" &&
+    decisionBlockers.length === 0
+      ? decisionResolution.decision.acceptedFindings
+      : [];
+  const hasUnacceptedFinding = observedFindings.some(
+    (finding) => !acceptedFindings.includes(finding),
+  );
+  const hasFencedDanger = uniqueDangerCodes.some(isFencedPrerequisite);
   const effective =
     requested &&
-    uniqueDangerCodes.length === 0 &&
+    !hasFencedDanger &&
+    !hasUnacceptedFinding &&
     uniqueBlockingCodes.length === 0 &&
+    decisionBlockers.length === 0 &&
+    !policyDecisionBlocked &&
     (evidence === "verified" || evidence === "approved");
   return {
     id: candidate.id,
@@ -813,8 +1227,12 @@ function resolveCandidate(
     ...(externalEvidence === undefined ? {} : { evidenceRecord: externalEvidence }),
     ...(approval === undefined ? {} : { approval }),
     ...(revocation === undefined ? {} : { revocation }),
+    ...(decisionResolution.decision === undefined
+      ? {}
+      : { decision: decisionSummary(decisionResolution.decision, observedFindings, effective) }),
     dangerCodes: uniqueDangerCodes,
     blockingCodes: uniqueBlockingCodes,
+    decisionBlockers,
     resolutionReasons,
     ...((activation?.clarification ?? candidate.clarification)
       ? { clarification: activation?.clarification ?? candidate.clarification }
@@ -830,6 +1248,8 @@ export function resolveEffectiveOrgPolicy(
   policy: OrgPolicy,
   context: EffectivePolicyContext = {},
 ): EffectiveOrgPolicy {
+  const now = context.now ?? new Date();
+  const resolvedContext = { ...context, now };
   const authority = isVerifiedPolicyAuthority(context.authority) ? context.authority : undefined;
   if (!governanceOwnsAihSurfaces(policy)) {
     return {
@@ -849,6 +1269,7 @@ export function resolveEffectiveOrgPolicy(
       frameworkSelections: [],
       externalCuration: [],
       externalSelections: [],
+      decisionBlockers: [],
       blocking: false,
       authority: {
         verified: authority !== undefined,
@@ -857,14 +1278,32 @@ export function resolveEffectiveOrgPolicy(
     };
   }
   const governance = policy.governance;
+  const sourceCandidates = [...governance.catalog.reviewed, ...governance.catalog.custom];
+  const decisionBlockers = policyDecisionBlockers(governance, sourceCandidates, authority, now);
   const candidates = [
     ...governance.catalog.reviewed.map((candidate) =>
-      resolveCandidate(policy, governance, candidate, "reviewed", context),
+      resolveCandidate(
+        policy,
+        governance,
+        candidate,
+        "reviewed",
+        resolvedContext,
+        now,
+        decisionBlockers.length > 0,
+      ),
     ),
     ...governance.catalog.custom.map((candidate) =>
-      resolveCandidate(policy, governance, candidate, "custom", context),
+      resolveCandidate(
+        policy,
+        governance,
+        candidate,
+        "custom",
+        resolvedContext,
+        now,
+        decisionBlockers.length > 0,
+      ),
     ),
-  ].sort((left, right) => left.id.localeCompare(right.id));
+  ].sort((left, right) => ordinalCompare(left.id, right.id));
   return {
     ...(policy.capabilityPackages === undefined
       ? {}
@@ -880,9 +1319,12 @@ export function resolveEffectiveOrgPolicy(
     policyVersion: governance.policyVersion,
     candidates,
     activeMcpServerIds: candidates
-      .filter((candidate) => candidate.effective && candidate.kind === "mcp")
+      .filter(
+        (candidate) =>
+          decisionBlockers.length === 0 && candidate.effective && candidate.kind === "mcp",
+      )
       .map((candidate) => candidate.id)
-      .sort((left, right) => left.localeCompare(right)),
+      .sort(ordinalCompare),
     frameworkSelections: candidates
       .filter((candidate) => candidate.requested && candidate.kind === "framework")
       .flatMap((candidate) => {
@@ -893,7 +1335,7 @@ export function resolveEffectiveOrgPolicy(
           ? []
           : [{ id: candidate.id, framework: source.framework }];
       })
-      .sort((left, right) => left.id.localeCompare(right.id)),
+      .sort((left, right) => ordinalCompare(left.id, right.id)),
     externalCuration: governance.externalCuration.map((curation) => ({
       framework: curation.framework,
       items: curation.items.map((item) => ({ ...item })),
@@ -904,11 +1346,10 @@ export function resolveEffectiveOrgPolicy(
       items: selection.items.map((item) => ({ ...item, source: { ...item.source } })),
       status: "requested-evidence-needed" as const,
     })),
-    blocking: candidates.some(
-      (candidate) =>
-        candidate.requested &&
-        (candidate.dangerCodes.length > 0 || candidate.blockingCodes.length > 0),
-    ),
+    decisionBlockers,
+    blocking:
+      decisionBlockers.length > 0 ||
+      candidates.some((candidate) => candidate.requested && !candidate.effective),
     authority: {
       verified: authority !== undefined,
       ...(authority === undefined

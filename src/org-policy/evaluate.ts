@@ -20,7 +20,11 @@ function blockedDetail(effective: EffectiveOrgPolicy): string {
   const blocked = requestedCandidates(effective).filter((candidate) => !candidate.effective);
   return blocked
     .map((candidate) => {
-      const codes = [...candidate.dangerCodes, ...candidate.blockingCodes];
+      const codes = [
+        ...candidate.dangerCodes,
+        ...candidate.blockingCodes,
+        ...candidate.decisionBlockers.map((blocker) => blocker.code),
+      ];
       const reasons = candidate.resolutionReasons;
       return `${candidate.id}: ${codes.length === 0 ? "not-effective" : codes.join(", ")}${
         reasons.length === 0 ? "" : `; resolution=${reasons.join(", ")}`
@@ -40,6 +44,7 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
         frameworkSelections: [],
         externalCuration: [],
         externalSelections: [],
+        decisionBlockers: [],
         blocking: false,
         authority: { verified: false },
       });
@@ -162,9 +167,11 @@ export async function orgPolicyEffectiveDigest(
         const approval = candidate.approval;
         const sourceEvidence = `${candidate.sourceDigest}; ${stableJson(candidate.source)}; evidence=${candidate.evidenceRecord?.evidenceDigest ?? "unverified"}`;
         const authority =
-          approval === undefined
-            ? candidate.evidence
-            : `${approval.issuer} @ ${approval.repository}; ${approval.attestationId}; ${approval.reason}; clarification=${approval.clarification}`;
+          candidate.decision === undefined
+            ? approval === undefined
+              ? candidate.evidence
+              : `${approval.issuer} @ ${approval.repository}; ${approval.attestationId}; ${approval.reason}; clarification=${approval.clarification}`
+            : `${candidate.decision.id}; digest=${candidate.decision.digest}; issuer=${candidate.decision.issuer}; actor=${candidate.decision.actor}; disposition=${candidate.decision.disposition}; risk=${candidate.decision.riskState ?? "blocked"}; accepted=${candidate.decision.acceptedFindings.join(",") || "none"}; observed=${candidate.decision.observedFindings.join(",") || "none"}`;
         const requestedTargets = candidate.projection.requestedTargets;
         const targetProjector =
           candidate.kind === "mcp" && candidate.projection.projector === "mcp-managed-settings"
@@ -190,7 +197,12 @@ export async function orgPolicyEffectiveDigest(
               : candidate.projection.receipt;
         const notes =
           [candidate.clarification, candidate.annotation].filter(Boolean).join(" / ") || "—";
-        const codes = [...candidate.dangerCodes, ...candidate.blockingCodes].join(", ") || "—";
+        const codes =
+          [
+            ...candidate.dangerCodes,
+            ...candidate.blockingCodes,
+            ...candidate.decisionBlockers.map((blocker) => blocker.code),
+          ].join(", ") || "—";
         const blocked =
           candidate.resolutionReasons.length === 0
             ? codes
@@ -206,6 +218,7 @@ export async function orgPolicyEffectiveDigest(
       `Managed-MCP receipt: ${mcpReceipt.state} — ${mcpReceipt.detail}.`,
       `Kiro workspace-MCP receipt: ${kiroMcpReceipt.state} — ${kiroMcpReceipt.detail}.`,
       `Hook registrar: ${hookRegistrar.state} — ${hookRegistrar.detail}.`,
+      `Policy decision blockers: ${effective.decisionBlockers.map((blocker) => `${blocker.code}${blocker.decision === undefined ? "" : `:${blocker.decision}`}`).join(", ") || "none"}.`,
       ...(hookRegistrar.unowned.length === 0
         ? []
         : [
@@ -232,6 +245,7 @@ export async function orgPolicyEffectiveDigest(
       {
         policyVersion: effective.policyVersion,
         blocking: effective.blocking,
+        decisionBlockers: effective.decisionBlockers,
         candidates,
         activeMcpServerIds: effective.activeMcpServerIds,
         frameworkSelections: effective.frameworkSelections,
