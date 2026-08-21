@@ -62,6 +62,15 @@ describe("admin baseline evidence cache v1", () => {
     ).toThrow();
   });
 
+  it("rejects an impossible Gregorian downloaded-at day before cache custody", () => {
+    expect(() =>
+      createAdminBaselineEvidenceCacheRecordV1({
+        ...evidence,
+        downloadedAt: "2026-02-31T00:00:00Z",
+      }),
+    ).toThrow(/admin baseline evidence cache/);
+  });
+
   it("claims one contained cache slot and treats present invalid bytes as terminal", () => {
     const root = mkdtempSync(join(tmpdir(), "aih-baseline-cache-"));
     try {

@@ -161,6 +161,28 @@ describe("admin baseline evidence resolution v1", () => {
         now: "2026-08-21T00:00:00Z",
       }),
     ).toThrow(/admin baseline evidence/);
+    expect(() =>
+      parseGithubBaselineEvidenceAttestationV1(
+        Buffer.from(
+          JSON.stringify([
+            {
+              ...realShape[0],
+              verificationResult: {
+                ...realShape[0]?.verificationResult,
+                verifiedTimestamps: [
+                  {
+                    type: "signed",
+                    uri: "https://rekor.sigstore.dev",
+                    timestamp: "2026-02-31T18:59:00-05:00",
+                  },
+                ],
+              },
+            },
+          ]),
+        ),
+        { ...bootstrap, subjectSha256, now: "2026-08-21T00:00:00Z" },
+      ),
+    ).toThrow(/admin baseline evidence/);
   });
   it("uses fresh evidence before cache and only falls through on literal unavailable", async () => {
     const calls: string[] = [];
@@ -283,6 +305,23 @@ describe("admin baseline evidence resolution v1", () => {
           attestationBytes: Buffer.from("x"),
         }),
         readLastDownloaded: () => cached,
+        commitLastDownloaded: () => true,
+        verifyGithubAttestation: verify,
+      }),
+    ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+  });
+
+  it("rejects an impossible Gregorian input clock before cache-age authority", async () => {
+    await expect(
+      resolveAdminBaselineEvidenceV1({
+        bootstrap,
+        now: "2026-02-31T00:00:00Z",
+        fetchFresh: async () => ({ kind: "unavailable" }),
+        readLastDownloaded: () => ({
+          artifact,
+          attestationBytes: Buffer.from("attestation"),
+          downloadedAt: "2026-03-03T00:00:00Z",
+        }),
         commitLastDownloaded: () => true,
         verifyGithubAttestation: verify,
       }),
