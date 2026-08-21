@@ -289,6 +289,19 @@ describe("active external-pin ledger", () => {
     });
   });
 
+  it("binds the vendor evidence download action to the governed external pin ledger", () => {
+    const vendorEvidenceWorkflow = readFileSync(
+      resolve(root, ".github/workflows/vendor-baseline-evidence.yml"),
+      "utf8",
+    );
+    expect(entry("download-artifact-action")).toMatchObject({
+      ...workflowActionPin(vendorEvidenceWorkflow, "actions/download-artifact"),
+      disposition: "active",
+    });
+    expect(entry("download-artifact-action").reason).toMatch(/exact reviewed pin.*v8/i);
+    expect(entry("download-artifact-action").reason).toMatch(/digest mismatch.*fail/i);
+  });
+
   it("binds every CodeQL workflow action to one governed ledger identity", () => {
     const workflows = [
       readFileSync(resolve(root, ".github/workflows/codeql.yml"), "utf8"),
