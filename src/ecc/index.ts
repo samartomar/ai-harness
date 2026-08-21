@@ -23,7 +23,6 @@ import { execArgv } from "../tools/install.js";
 import {
   CODEX_AGENTS_BLOCK_MARKER,
   type CodexScopedMcpServers,
-  type CodexTomlFootprint,
   codexHomeDir,
   codexInstallStateContents,
   codexInstallStatePath,
@@ -470,8 +469,8 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   'const child = require("child_process");',
   'const fs = require("fs");',
   'const path = require("path");',
-  "const [repoRoot, profileId, homeDir, mergeCodexConfig, mergeMcpConfig, configPath, sourceAgents, targetAgents, statePath, governanceFlag, specB64, currentRunStateB64, mcpB64, stateB64] = process.argv.slice(1);",
-  'if (!repoRoot || !profileId || !homeDir || !mergeCodexConfig || !mergeMcpConfig || !configPath || !sourceAgents || !targetAgents || !statePath || !stateB64 || !currentRunStateB64) { console.error("usage: codex-install-merge <repo-root> <profile> <home-dir> <merge-config> <merge-mcp> <config> <source-agents> <target-agents> <state-path> <state-b64> <current-run-state-b64>"); process.exit(1); }',
+  "const [repoRoot, profileId, homeDir, mergeCodexConfig, mergeMcpConfig, configPath, sourceAgents, targetAgents, statePath, governanceFlag, specB64, mcpB64, stateB64] = process.argv.slice(1);",
+  'if (!repoRoot || !profileId || !homeDir || !mergeCodexConfig || !mergeMcpConfig || !configPath || !sourceAgents || !targetAgents || !statePath || !stateB64) { console.error("usage: codex-install-merge <repo-root> <profile> <home-dir> <merge-config> <merge-mcp> <config> <source-agents> <target-agents> <state-path> <state-b64>"); process.exit(1); }',
   'const normalize = (value) => String(value || "").replace(/\\\\/g, "/");',
   "const declaredHome = path.resolve(homeDir);",
   "const trustedHome = fs.realpathSync(declaredHome);",
@@ -507,7 +506,7 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   'const spec = specB64 ? JSON.parse(Buffer.from(specB64, "base64").toString("utf8")) : null;',
   'const mcpSpec = mcpB64 ? JSON.parse(Buffer.from(mcpB64, "base64").toString("utf8")) : null;',
   'let state = JSON.parse(Buffer.from(stateB64, "base64").toString("utf8"));',
-  'const currentRunState = JSON.parse(Buffer.from(currentRunStateB64, "base64").toString("utf8"));',
+  "let actualCurrentRunState = state;",
   "let effectiveMcpNames;",
   'const governed = governanceFlag === "1";',
   'if (governed && (!spec || spec.excludeAihOwnedSurfaces !== true)) throw new Error("governed Codex ECC install requires the AIH-owned-surface exclusion spec");',
@@ -647,6 +646,7 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   "}",
   "if (!governed) planScopedMcps();",
   "const mergeSteps = governed ? [] : [[process.execPath, mergeCodexConfig, configPath]];",
+  "let configBeforeBaseline;",
   "if (!governed) prepareDestination(configPath);",
   // `wx` already means "create only if absent" atomically, so the existsSync
   // pre-check added a TOCTOU window and nothing else. It also disagreed with the
@@ -654,12 +654,14 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   // Windows), turning a benign already-exists into a hard EEXIST crash.
   'if (!governed) { try { fs.writeFileSync(configPath, "", { flag: "wx" }); }',
   'catch (e) { if (e.code !== "EEXIST") throw e; } }',
+  'if (!governed) configBeforeBaseline = readSafeOptional(configPath) || "";',
   "if (!governed && !mcpSpec) mergeSteps.push([process.execPath, mergeMcpConfig, configPath]);",
   "for (const argv of mergeSteps) {",
   '  const result = child.spawnSync(argv[0], argv.slice(1), { stdio: "inherit" });',
   "  if (result.error) { console.error(result.error.message); process.exit(1); }",
   "  if (result.status !== 0) process.exit(result.status || 1);",
   "}",
+  'if (!governed) actualCurrentRunState = actualBaselineEffects(configBeforeBaseline, readSafeOptional(configPath) || "", state);',
   "function installCodexAgents() {",
   'const source = normalizeCodexAgentsSource(fs.readFileSync(sourceAgents, "utf8")).replace(/\\s+$/, "");',
   `const marker = ${JSON.stringify(CODEX_AGENTS_BLOCK_MARKER)};`,
@@ -698,6 +700,7 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   '  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate) || !exactKeys(candidate, ["schemaVersion", "managedBy", "codexToml", "agentsBlock"]) || candidate.schemaVersion !== 1 || candidate.managedBy !== "aih" || candidate.agentsBlock !== true || !candidate.codexToml || typeof candidate.codexToml !== "object" || Array.isArray(candidate.codexToml) || !exactKeys(candidate.codexToml, ["rootKeys", "tables", "tableKeys", "mcpServers"]) || !array(candidate.codexToml.rootKeys) || !array(candidate.codexToml.tables) || !array(candidate.codexToml.mcpServers) || new Set(candidate.codexToml.mcpServers).size !== candidate.codexToml.mcpServers.length || !candidate.codexToml.mcpServers.every((name) => /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(name)) || !candidate.codexToml.tableKeys || typeof candidate.codexToml.tableKeys !== "object" || Array.isArray(candidate.codexToml.tableKeys) || !Object.values(candidate.codexToml.tableKeys).every(array)) throw new Error("malformed live Codex AIH state");',
   "  return candidate;",
   "}",
+  'function actualBaselineEffects(before, after, candidate) { const delta = exactAihState(JSON.stringify(candidate)); const normalized = (raw) => raw.replace(/\\r\\n/g, "\\n"); const escape = (value) => value.replace(/[\\\\^$*+?.()|[\\]{}]/g, "\\\\$&"); const rootExists = (raw, key) => { for (const line of normalized(raw).split("\\n")) { if (/^[ \\t]*\\[/.test(line)) return false; if (new RegExp("^[ \\t]*" + escape(key) + "\\\\s*=").test(line)) return true; } return false; }; const tableExists = (raw, table) => new RegExp("^[ \\t]*\\\\[" + escape(table) + "\\\\][ \\t]*(?:#.*)?$", "m").test(normalized(raw)); const tableKeyExists = (raw, table, key) => { let active = false; for (const line of normalized(raw).split("\\n")) { if (new RegExp("^[ \\t]*\\\\[" + escape(table) + "\\\\][ \\t]*(?:#.*)?$").test(line)) { active = true; continue; } if (active && /^[ \\t]*\\[/.test(line)) active = false; if (active && new RegExp("^[ \\t]*" + escape(key) + "\\\\s*=").test(line)) return true; } return false; }; const tableKeys = {}; for (const [table, keys] of Object.entries(delta.codexToml.tableKeys)) { const added = keys.filter((key) => !tableKeyExists(before, table, key) && tableKeyExists(after, table, key)); if (added.length > 0) tableKeys[table] = added; } return { schemaVersion: 1, managedBy: "aih", codexToml: { rootKeys: delta.codexToml.rootKeys.filter((key) => !rootExists(before, key) && rootExists(after, key)), tables: delta.codexToml.tables.filter((table) => !tableExists(before, table) && tableExists(after, table)), tableKeys, mcpServers: [] }, agentsBlock: true }; }',
   "function parseManagedFence(raw) {",
   '  const begin = "# >>> aih managed (mcp) >>>"; const end = "# <<< aih managed (mcp) <<<";',
   '  const lines = raw.replace(/\\r\\n/g, "\\n").split("\\n");',
@@ -762,7 +765,7 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   "}",
   "function unionStrings(...lists) { return [...new Set(lists.flat())].sort(); }",
   'function mergeLiveAihState(live, delta) { const tableKeys = {}; for (const key of unionStrings(Object.keys(live.codexToml.tableKeys), Object.keys(delta.codexToml.tableKeys))) tableKeys[key] = unionStrings(live.codexToml.tableKeys[key] || [], delta.codexToml.tableKeys[key] || []); return { schemaVersion: 1, managedBy: "aih", codexToml: { rootKeys: unionStrings(live.codexToml.rootKeys, delta.codexToml.rootKeys), tables: unionStrings(live.codexToml.tables, delta.codexToml.tables), tableKeys, mcpServers: live.codexToml.mcpServers.slice() }, agentsBlock: true }; }',
-  'function scopedState(plan) { const delta = exactAihState(JSON.stringify(currentRunState)); const next = plan.liveState ? mergeLiveAihState(plan.liveState, delta) : { schemaVersion: 1, managedBy: "aih", codexToml: { rootKeys: delta.codexToml.rootKeys.slice(), tables: delta.codexToml.tables.slice(), tableKeys: Object.fromEntries(Object.entries(delta.codexToml.tableKeys).map(([key, values]) => [key, values.slice()])), mcpServers: [] }, agentsBlock: true }; next.codexToml.mcpServers = unionStrings(next.codexToml.mcpServers || [], plan.retained, plan.installed); return next; }',
+  'function scopedState(plan) { const delta = exactAihState(JSON.stringify(actualCurrentRunState)); const next = plan.liveState ? mergeLiveAihState(plan.liveState, delta) : { schemaVersion: 1, managedBy: "aih", codexToml: { rootKeys: delta.codexToml.rootKeys.slice(), tables: delta.codexToml.tables.slice(), tableKeys: Object.fromEntries(Object.entries(delta.codexToml.tableKeys).map(([key, values]) => [key, values.slice()])), mcpServers: [] }, agentsBlock: true }; next.codexToml.mcpServers = unionStrings(next.codexToml.mcpServers || [], plan.retained, plan.installed); return next; }',
   'function stableScopedPlan(plan) { return (readSafeOptional(configPath) || "") === plan.existingConfig && readSafeOptional(expectedAihStatePath) === plan.liveStateRaw; }',
   'function installScopedMcps(plan, nextState) { if (!stableScopedPlan(plan)) throw new Error("Codex MCP config or state changed during apply"); fs.writeFileSync(prepareDestination(configPath), plan.merged, "utf8"); try { fs.writeFileSync(prepareDestination(expectedAihStatePath), JSON.stringify(nextState, null, 2) + "\\n", "utf8"); } catch (error) { if ((readSafeOptional(configPath) || "") === plan.merged) fs.writeFileSync(prepareDestination(configPath), plan.existingConfig, "utf8"); throw error; } state = nextState; return plan.installed; }',
   "installCodexManagedFiles();",
@@ -772,44 +775,6 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   "const agentsChange = installCodexAgents();",
   'try { if (scopedPlan) installScopedMcps(scopedPlan, scopedStateNext); else fs.writeFileSync(prepareDestination(expectedAihStatePath), JSON.stringify(state, null, 2) + "\\n", "utf8"); } catch (error) { restoreCodexAgents(agentsChange); throw error; }',
 ].join("\n");
-
-interface CodexRuntimeInstallState {
-  schemaVersion: 1;
-  managedBy: "aih";
-  codexToml: CodexTomlFootprint;
-  agentsBlock: true;
-}
-
-function codexCurrentRunStateDelta(
-  ctx: PlanContext,
-  plannedMcpServers: readonly string[] | undefined,
-  governed: boolean,
-): string {
-  const planned = JSON.parse(
-    codexInstallStateContents(ctx, plannedMcpServers, governed),
-  ) as CodexRuntimeInstallState;
-  const prior = JSON.parse(
-    codexInstallStateContents(ctx, undefined, true),
-  ) as CodexRuntimeInstallState;
-  const difference = (next: readonly string[], existing: readonly string[]) =>
-    next.filter((value) => !existing.includes(value));
-  const tableKeys: Record<string, string[]> = {};
-  for (const [table, keys] of Object.entries(planned.codexToml.tableKeys)) {
-    const next = difference(keys ?? [], prior.codexToml.tableKeys[table] ?? []);
-    if (next.length > 0) tableKeys[table] = next;
-  }
-  return JSON.stringify({
-    schemaVersion: 1,
-    managedBy: "aih",
-    codexToml: {
-      rootKeys: difference(planned.codexToml.rootKeys, prior.codexToml.rootKeys),
-      tables: difference(planned.codexToml.tables, prior.codexToml.tables),
-      tableKeys,
-      mcpServers: difference(planned.codexToml.mcpServers, prior.codexToml.mcpServers),
-    },
-    agentsBlock: true,
-  } satisfies CodexRuntimeInstallState);
-}
 
 export function codexEccActions(
   ctx: PlanContext,
@@ -833,10 +798,6 @@ export function codexEccActions(
       : Object.keys(scopedMcps);
   const stateB64 = Buffer.from(
     codexInstallStateContents(ctx, plannedMcpServers, governed),
-    "utf8",
-  ).toString("base64");
-  const currentRunStateB64 = Buffer.from(
-    codexCurrentRunStateDelta(ctx, plannedMcpServers, governed),
     "utf8",
   ).toString("base64");
   const materializationB64 = materialization
@@ -875,7 +836,6 @@ export function codexEccActions(
         statePath,
         governed ? "1" : "0",
         materializationB64 ?? "",
-        currentRunStateB64,
         mcpB64 ?? "",
         stateB64,
       ],

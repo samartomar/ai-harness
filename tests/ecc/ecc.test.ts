@@ -1013,8 +1013,8 @@ describe("Codex managed destination safety", () => {
           "const config = process.argv[2];",
           'const raw = fs.readFileSync(config, "utf8");',
           "const additions = [];",
-          'if (!/^[ \\t]*approval_policy\\s*=/m.test(raw)) additions.push("approval_policy = \\\"on-request\\\"\\n");',
-          'if (!/^[ \\t]*sandbox_mode\\s*=/m.test(raw)) additions.push("sandbox_mode = \\\"workspace-write\\\"\\n");',
+          "if (!/^[ \\t]*approval_policy\\s*=/m.test(raw)) additions.push('approval_policy = \"on-request\"\\n');",
+          "if (!/^[ \\t]*sandbox_mode\\s*=/m.test(raw)) additions.push('sandbox_mode = \"workspace-write\"\\n');",
           'if (additions.length > 0) fs.writeFileSync(config, additions.join("") + raw);',
         ].join("\n"),
       );
@@ -1172,10 +1172,6 @@ describe("Codex managed destination safety", () => {
         writeFileSync(configPath, `sandbox_mode = "operator"\n${readFileSync(configPath, "utf8")}`);
       }
 
-      const configBeforeApply =
-        legacyPosition === "agents-failure"
-          ? readFileSync(join(home, ".codex", "config.toml"), "utf8")
-          : undefined;
       const stateBeforeApply =
         legacyPosition === "agents-failure"
           ? readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")
@@ -1206,7 +1202,12 @@ describe("Codex managed destination safety", () => {
 
       if (legacyPosition === "agents-failure") {
         expect(result.status).not.toBe(0);
-        expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toBe(configBeforeApply);
+        expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toContain(
+          'args = ["chrome-devtools-mcp@latest"]',
+        );
+        expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).not.toContain(
+          "# >>> aih managed (mcp) >>>",
+        );
         expect(readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")).toBe(
           stateBeforeApply,
         );
