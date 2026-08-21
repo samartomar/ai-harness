@@ -170,7 +170,7 @@ function canonicalGitTopLevel(stdout: string): { root: string; dev: number; ino:
     if (!stat.isDirectory() || stat.isSymbolicLink()) {
       fail("Git top-level result must name a real directory");
     }
-    const root = realpathSync(topLevel);
+    const root = realpathSync.native(topLevel);
     const canonicalStat = statSync(root);
     return { root, dev: canonicalStat.dev, ino: canonicalStat.ino };
   } catch (error) {
@@ -187,7 +187,7 @@ async function checkoutIdentity(checkoutPath: string, runner: Runner): Promise<C
     const stat = lstatSync(checkoutPath);
     if (!stat.isDirectory() || stat.isSymbolicLink())
       fail("vendor checkout must be a real directory");
-    root = realpathSync(checkoutPath);
+    root = realpathSync.native(checkoutPath);
     const canonicalStat = statSync(root);
     dev = canonicalStat.dev;
     ino = canonicalStat.ino;
@@ -219,7 +219,7 @@ async function checkoutIdentity(checkoutPath: string, runner: Runner): Promise<C
   );
   if (topLevel.code !== 0) fail("vendor checkout must be the Git work-tree top-level");
   const gitRoot = canonicalGitTopLevel(topLevel.stdout);
-  if (gitRoot.dev !== dev || gitRoot.ino !== ino) {
+  if (gitRoot.root !== root || gitRoot.dev !== dev || gitRoot.ino !== ino) {
     fail("vendor checkout must be the Git work-tree top-level");
   }
   const remote = gitResult(
