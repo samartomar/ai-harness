@@ -27,6 +27,10 @@ function git(dir: string, args: string[]): void {
   execFileSync("git", args, { cwd: dir, stdio: "pipe", env: hermeticGitEnv() });
 }
 
+function gitOutput(dir: string, args: string[]): string {
+  return execFileSync("git", args, { cwd: dir, encoding: "utf8", env: hermeticGitEnv() }).trim();
+}
+
 function initVendorCheckout(files: Record<string, string>): void {
   mkdirSync(checkout, { recursive: true });
   git(checkout, ["init", "-b", "main"]);
@@ -337,6 +341,30 @@ describe("checkSuperpowersScanAcceptance", () => {
           }),
           runner: malformedIndexRunner,
         },
+      ),
+    ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    expect(inspections).toBe(0);
+  });
+
+  it("rejects replacement refs that substitute the detached checkout tree", async () => {
+    initVendorCheckout({ "SKILL.md": "pinned\n" });
+    const pinnedCommit = gitOutput(checkout, ["rev-parse", "HEAD"]);
+    git(checkout, ["checkout", "-b", "replacement"]);
+    writeFileSync(join(checkout, "SKILL.md"), "substituted\n", "utf8");
+    git(checkout, ["add", "SKILL.md"]);
+    git(checkout, ["commit", "-m", "replacement tree"]);
+    const replacementCommit = gitOutput(checkout, ["rev-parse", "HEAD"]);
+    git(checkout, ["replace", pinnedCommit, replacementCommit]);
+    git(checkout, ["checkout", "--detach", pinnedCommit]);
+    git(checkout, ["reset", "--hard", "HEAD"]);
+    let inspections = 0;
+    await expect(
+      checkSuperpowersScanAcceptance(
+        { checkoutPath: checkout },
+        fixtureDeps(artifact([]), () => {
+          inspections += 1;
+          return [];
+        }),
       ),
     ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
     expect(inspections).toBe(0);
