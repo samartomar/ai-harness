@@ -363,12 +363,16 @@ describe("policy generate", () => {
       { ...valid, format: "other" },
       { ...valid, version: 2 },
       { ...valid, unknown: true },
+      { ...valid, id: "not-a-decision-id" },
       { ...valid, sourceDigest: "sha256:ABC" },
       { ...valid, issuedAt: "2026-08-32T00:00:00+00:00" },
       { ...valid, notBefore: "2026-07-31T00:00:00+00:00" },
       { ...valid, reviewBy: "2026-08-11T00:00:00+00:00" },
+      { ...valid, targets: ["kiro", "claude"] },
       { ...valid, acceptedFindings: ["prompt-injection", "prompt-injection"] },
+      { ...valid, acceptedGaps: ["prompt-injection"] },
       { ...valid, conditions: [] },
+      { ...valid, conditions: [["nested"]] },
     ];
     for (const adversary of adversaries) {
       const accepted = (() => {
@@ -409,6 +413,74 @@ describe("policy generate", () => {
     expect(document.getElementById("decision-rows")?.textContent).toContain(
       "decision-rejected-browser",
     );
+  });
+
+  it("keeps decision import deterministic across out-of-order file reads", async () => {
+    const window = new Window({ url: "http://localhost/" });
+    const readers: Array<{
+      result: string | null;
+      onload: (() => void) | null;
+      complete: (text: string) => void;
+    }> = [];
+    class ControlledFileReader {
+      result: string | null = null;
+      onload: (() => void) | null = null;
+
+      readAsText(): void {
+        readers.push(this);
+      }
+
+      complete(text: string): void {
+        this.result = text;
+        this.onload?.();
+      }
+    }
+    Object.defineProperty(window, "FileReader", {
+      configurable: true,
+      value: ControlledFileReader,
+    });
+    const html = policyStudioHtml(policyStudioModel());
+    window.document.write(html);
+    loadStudio(window, html);
+    const document = window.document;
+    const decisionFile = document.getElementById("decision-file");
+    if (decisionFile === null) throw new Error("expected decision file input");
+    const select = (value: unknown) => {
+      Object.defineProperty(decisionFile, "files", {
+        configurable: true,
+        value: [new window.File([JSON.stringify(value)], "decision.json", { type: "application/json" })],
+      });
+      decisionFile.dispatchEvent(new window.Event("change", { bubbles: true }));
+    };
+    const initial = governanceDecision({ id: "decision-initial" });
+    select(initial);
+    readers[0]?.complete(JSON.stringify(initial));
+    await settle(window, () =>
+      (document.getElementById("decision-rows")?.textContent ?? "").includes("decision-initial"),
+    );
+
+    const older = governanceDecision({ id: "decision-older" });
+    const newest = governanceDecision({ id: "decision-newest" });
+    select(older);
+    select(newest);
+    readers[2]?.complete(JSON.stringify(newest));
+    await settle(window, () =>
+      (document.getElementById("decision-rows")?.textContent ?? "").includes("decision-newest"),
+    );
+    readers[1]?.complete(JSON.stringify(older));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(document.getElementById("decision-rows")?.textContent).toContain("decision-newest");
+
+    const inFlightOlder = governanceDecision({ id: "decision-in-flight" });
+    const invalidNewest = { ...newest, version: 2 };
+    select(inFlightOlder);
+    select(invalidNewest);
+    readers[3]?.complete(JSON.stringify(inFlightOlder));
+    readers[4]?.complete(JSON.stringify(invalidNewest));
+    await settle(window, () =>
+      (document.getElementById("announcement")?.textContent ?? "").includes("Decision import rejected"),
+    );
+    expect(document.getElementById("decision-rows")?.textContent).toContain("decision-newest");
   });
 
   it("preserves valid optional governance absence and rejects root trust refinements in browser import", async () => {
