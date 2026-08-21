@@ -1023,6 +1023,8 @@ describe("Codex managed destination safety", () => {
     ["descendant", "npx", '["chrome-devtools-mcp@latest"]'],
     ["single-quoted-descendant", "npx", '["chrome-devtools-mcp@latest"]'],
     ["single-quoted-child-descendant", "npx", '["chrome-devtools-mcp@latest"]'],
+    ["double-quoted-child-descendant", "npx", '["chrome-devtools-mcp@latest"]'],
+    ["escaped-basic-descendant", "npx", '["chrome-devtools-mcp@latest"]'],
     ["spaced-quoted-descendant", "npx", '["chrome-devtools-mcp@latest"]'],
     ["array-descendant", "npx", '["chrome-devtools-mcp@latest"]'],
     ["managed-failure", "npx", '["chrome-devtools-mcp@latest"]'],
@@ -1125,11 +1127,15 @@ describe("Codex managed destination safety", () => {
             ? "[mcp_servers.'chrome-devtools'.env]"
             : legacyPosition === "single-quoted-child-descendant"
               ? "[mcp_servers.'chrome-devtools'.'env']"
-              : legacyPosition === "spaced-quoted-descendant"
-                ? "['mcp_servers' . \"chrome-devtools\" . env]"
-                : legacyPosition === "array-descendant"
-                  ? '[[mcp_servers."chrome-devtools".env]]'
-                  : undefined;
+              : legacyPosition === "double-quoted-child-descendant"
+                ? '[mcp_servers."chrome-devtools"."env"]'
+                : legacyPosition === "escaped-basic-descendant"
+                  ? '[mcp_servers."chrome\\u002ddevtools".env]'
+                  : legacyPosition === "spaced-quoted-descendant"
+                    ? "['mcp_servers' . \"chrome-devtools\" . env]"
+                    : legacyPosition === "array-descendant"
+                      ? '[[mcp_servers."chrome-devtools".env]]'
+                      : undefined;
       const fence = [
         "# >>> aih managed (mcp) >>>",
         ...(legacyPosition === "inside" ? legacy : []),
