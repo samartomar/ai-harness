@@ -6,12 +6,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
-
-- Correct the BetterDoc pack page after the self-hosting cleanup: bundled pack
-  bytes still ship, while this checkout intentionally has no AIH approval lock,
-  vet report, promoted copy, or product-command validation loop (#822).
-
 ### Added
 
 - **`aih report` adds a deterministic governed-subject review without turning local usage into
@@ -136,6 +130,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   omitting `<admin-root>` retains the portable rootless artifact with no catalog acquisition.
 
 ### Fixed
+
+- Correct the BetterDoc pack page after the self-hosting cleanup: bundled pack
+  bytes still ship, while this checkout intentionally has no AIH approval lock,
+  vet report, promoted copy, or product-command validation loop. The page now
+  also distinguishes the manually curated repository copy and the retained
+  skill card's non-authoritative pre-cleanup metadata (#822).
 
 - **Decision sessions now use the companion's current truth homes.** The
   repo-curated decision-partner skill reads the companion's declared navigation,
