@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -830,8 +831,8 @@ describe("bindPlugin — project custody", () => {
           locateCache: () => resolved.treePath,
         },
       );
-      expect(process.cwd()).toBe(ambient);
-      expect(ambient).not.toBe(root);
+      expect(realpathSync.native(process.cwd())).toBe(realpathSync.native(ambient));
+      expect(realpathSync.native(ambient)).not.toBe(realpathSync.native(root));
       expect(cwd).toEqual([root, root, root]);
     } finally {
       process.chdir(originalCwd);
