@@ -406,7 +406,9 @@ describe("policy generate", () => {
     await importDecision(maxLengthApproved);
     expect(document.getElementById("decision-rows")?.textContent).toContain(maxLengthApproved.id);
     await importDecision(rejected);
-    expect(document.getElementById("decision-rows")?.textContent).toContain("decision-rejected-browser");
+    expect(document.getElementById("decision-rows")?.textContent).toContain(
+      "decision-rejected-browser",
+    );
   });
 
   it("preserves valid optional governance absence and rejects root trust refinements in browser import", async () => {
