@@ -22,6 +22,8 @@ export interface GovernanceReviewInput {
 }
 
 type Attribution = { exact: number; heuristic: number };
+type SurfaceReceipt = { state: string; targets?: Record<string, string> };
+type Materialization = SurfaceReceipt | { state: "not-projected"; surfaceReceipt: SurfaceReceipt };
 
 function ordinalCompare(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -44,23 +46,35 @@ function nameMatchesSubject(event: UsageEvent, subject: string): boolean {
 function attributeEvents(
   candidates: readonly EffectiveOrgPolicy["candidates"][number][],
   events: readonly UsageEvent[],
-): { bySubject: ReadonlyMap<string, Attribution>; unmatched: number; heuristic: number } {
+): {
+  bySubject: ReadonlyMap<string, Attribution>;
+  unmatched: number;
+  heuristic: number;
+  nonSubject: number;
+} {
   const bySubject = new Map<string, Attribution>(
     candidates.map((candidate) => [candidate.id, { exact: 0, heuristic: 0 }]),
   );
   let unmatched = 0;
   let heuristicCount = 0;
+  let nonSubject = 0;
   for (const event of events) {
-    const exact = candidates.filter(
-      (candidate) => event.kind === "mcp" && event.server === mcpServerOf(candidate),
-    );
+    const explicitMcpIdentity = event.kind === "mcp" && event.server !== undefined;
+    const exact = explicitMcpIdentity
+      ? candidates.filter((candidate) => event.server === mcpServerOf(candidate))
+      : [];
+    if (explicitMcpIdentity && exact.length !== 1) {
+      unmatched += 1;
+      continue;
+    }
     const heuristic =
       exact.length === 0
         ? candidates.filter((candidate) => nameMatchesSubject(event, candidate.id))
         : [];
-    const match = exact.length > 0 ? exact[0] : heuristic.length === 1 ? heuristic[0] : undefined;
+    const match = exact[0] ?? (heuristic.length === 1 ? heuristic[0] : undefined);
     if (match === undefined) {
-      unmatched += 1;
+      if (heuristic.length > 1) unmatched += 1;
+      else nonSubject += 1;
       continue;
     }
     const counts = bySubject.get(match.id);
@@ -72,7 +86,7 @@ function attributeEvents(
       heuristicCount += 1;
     }
   }
-  return { bySubject, unmatched, heuristic: heuristicCount };
+  return { bySubject, unmatched, heuristic: heuristicCount, nonSubject };
 }
 
 function captureState(
@@ -116,10 +130,10 @@ function strictCaptureInstalled(
   );
 }
 
-function receiptFor(
+function surfaceReceiptFor(
   candidate: EffectiveOrgPolicy["candidates"][number],
   receipts: ReviewReceipts,
-): { state: string; targets?: Record<string, string> } {
+): SurfaceReceipt {
   if (candidate.kind === "mcp") {
     const targets = Object.fromEntries(
       candidate.projection.requestedTargets.flatMap((target) => {
@@ -140,6 +154,31 @@ function receiptFor(
     return { state: receipts.registrar.state };
   }
   return { state: candidate.projection.receipt };
+}
+
+function materializationFor(
+  candidate: EffectiveOrgPolicy["candidates"][number],
+  receipts: ReviewReceipts,
+): Materialization {
+  const surfaceReceipt = surfaceReceiptFor(candidate, receipts);
+  return candidate.effective ? surfaceReceipt : { state: "not-projected", surfaceReceipt };
+}
+
+function receiptText(receipt: SurfaceReceipt): string {
+  return `${receipt.state}${
+    receipt.targets === undefined
+      ? ""
+      : ` (${Object.entries(receipt.targets)
+          .map(([target, state]) => `${target}:${state}`)
+          .join(",")})`
+  }`;
+}
+
+function materializationText(materialization: Materialization): string {
+  if ("surfaceReceipt" in materialization) {
+    return `${materialization.state}; surface-receipt=${receiptText(materialization.surfaceReceipt)}`;
+  }
+  return receiptText(materialization);
 }
 
 function decisionFacts(candidate: EffectiveOrgPolicy["candidates"][number]) {
@@ -205,7 +244,7 @@ export function governanceReviewView(input: GovernanceReviewInput): DigestAction
         coverage: candidate.projection.coverage,
         ownership: candidate.projection.ownership,
       },
-      materialization: receiptFor(candidate, input.receipts),
+      materialization: materializationFor(candidate, input.receipts),
       usage: {
         count: counts.exact + counts.heuristic,
         signal: subjectCaptureState(installed, counts),
@@ -228,6 +267,7 @@ export function governanceReviewView(input: GovernanceReviewInput): DigestAction
       malformedExcluded: input.usage.malformed,
       unknownKindExcluded: input.usage.unknownKind,
       unmatched: attribution.unmatched,
+      nonSubject: attribution.nonSubject,
     },
     subjects,
   };
@@ -235,19 +275,13 @@ export function governanceReviewView(input: GovernanceReviewInput): DigestAction
     "Read-only governance review. Usage is an attribution signal only; it never changes requested or effective state.",
     "Unmatched event names and rejected payloads are never rendered.",
     "",
-    `Capture: ${data.usage.state}; valid=${data.usage.validEvents}; malformed-excluded=${data.usage.malformedExcluded}; unknown-kind-excluded=${data.usage.unknownKindExcluded}; unmatched=${data.usage.unmatched}.`,
+    `Capture: ${data.usage.state}; valid=${data.usage.validEvents}; malformed-excluded=${data.usage.malformedExcluded}; unknown-kind-excluded=${data.usage.unknownKindExcluded}; unmatched=${data.usage.unmatched}; non-subject=${data.usage.nonSubject}.`,
     "",
     "| # | Subject | Requested | Effective | Evidence / blockers | Decision / approval / revocation | Projector / receipt | Capture / attribution |",
     "|---:|---|---:|---:|---|---|---|---|",
     ...subjects.map(
       (subject) =>
-        `| ${subject.ordinal} | ${subject.id} | ${subject.requested ? "yes" : "no"} | ${subject.effective ? "yes" : "no"} | ${subject.evidence.state}; findings=${subject.evidence.findings.length}; blockers=${subject.evidence.blockers.length + subject.evidence.decisionBlockers.length} | decision=${subject.decision.state}; approval=${subject.approval.state}; revocation=${subject.revocation.state} | ${subject.projector.name}; coverage=${subject.projector.coverage}; receipt=${subject.materialization.state}${
-          subject.materialization.targets === undefined
-            ? ""
-            : ` (${Object.entries(subject.materialization.targets)
-                .map(([target, state]) => `${target}:${state}`)
-                .join(",")})`
-        } | ${subject.usage.signal}; count=${subject.usage.count}; exact=${subject.attribution.exact}; heuristic=${subject.attribution.heuristic} |`,
+        `| ${subject.ordinal} | ${subject.id} | ${subject.requested ? "yes" : "no"} | ${subject.effective ? "yes" : "no"} | ${subject.evidence.state}; findings=${subject.evidence.findings.length}; blockers=${subject.evidence.blockers.length + subject.evidence.decisionBlockers.length} | decision=${subject.decision.state}; approval=${subject.approval.state}; revocation=${subject.revocation.state} | ${subject.projector.name}; coverage=${subject.projector.coverage}; receipt=${materializationText(subject.materialization)} | ${subject.usage.signal}; count=${subject.usage.count}; exact=${subject.attribution.exact}; heuristic=${subject.attribution.heuristic} |`,
     ),
   );
   return digest(
@@ -271,6 +305,7 @@ function unavailableReview(
       malformedExcluded: usage.malformed,
       unknownKindExcluded: usage.unknownKind,
       unmatched: usage.events.length,
+      nonSubject: 0,
     },
   };
   return digest(

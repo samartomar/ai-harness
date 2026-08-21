@@ -172,7 +172,8 @@ describe("governanceReviewView", () => {
     });
     expect(data.usage).toMatchObject({
       state: "no-capture",
-      unmatched: 1,
+      unmatched: 0,
+      nonSubject: 1,
       malformedExcluded: 0,
       unknownKindExcluded: 1,
     });
@@ -209,11 +210,16 @@ describe("governanceReviewView", () => {
     });
     expect(activeReceipt.data).toMatchObject({ usage: { state: "installed-zero-observed" } });
     expect(activeReceiptSubjects.find((subject) => subject.id === "context7")).toMatchObject({
-      materialization: { state: "missing" },
+      materialization: {
+        state: "not-projected",
+        surfaceReceipt: { state: "missing", targets: { claude: "missing" } },
+      },
       usage: { signal: "not-observed-with-installed-capture", count: 0 },
     });
     expect(activeReceipt.text).toContain("installed-zero-observed");
-    expect(activeReceipt.text).toContain("receipt=missing");
+    expect(activeReceipt.text).toContain(
+      "receipt=not-projected; surface-receipt=missing (claude:missing)",
+    );
   });
 
   it("keeps each selected MCP target's strict receipt verdict", () => {
@@ -234,13 +240,18 @@ describe("governanceReviewView", () => {
       subjects: [
         {
           materialization: {
-            state: "multiple",
-            targets: { claude: "missing", kiro: "not-requested" },
+            state: "not-projected",
+            surfaceReceipt: {
+              state: "multiple",
+              targets: { claude: "missing", kiro: "not-requested" },
+            },
           },
         },
       ],
     });
-    expect(digest.text).toContain("receipt=multiple (claude:missing,kiro:not-requested)");
+    expect(digest.text).toContain(
+      "receipt=not-projected; surface-receipt=multiple (claude:missing,kiro:not-requested)",
+    );
   });
 
   it("keeps observed and not-observed subjects distinct without inferring action", () => {
@@ -393,6 +404,7 @@ describe("governanceReviewDigest", () => {
         malformedExcluded: 0,
         unknownKindExcluded: 0,
         unmatched: 1,
+        nonSubject: 0,
       },
     });
     expect(digest.text).not.toContain(root);
