@@ -13,6 +13,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  kiroMcpProjectionOwnership,
+  managedMcpProjectionOwnership,
+} from "../../src/config/marker.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { plan } from "../../src/internals/plan.js";
@@ -21,10 +25,6 @@ import { command as mcpCommand } from "../../src/mcp/index.js";
 import { managedMcpProjectionState } from "../../src/mcp/managed-projection.js";
 import { mcpApprovalSubject } from "../../src/mcp/policy.js";
 import { mcpServers } from "../../src/mcp/servers.js";
-import {
-  kiroMcpProjectionOwnership,
-  managedMcpProjectionOwnership,
-} from "../../src/config/marker.js";
 import {
   PolicyAuthorityReceiptSchema,
   verifyPolicyAuthorityReceipt,
@@ -1815,7 +1815,11 @@ describe("governed candidate projection", () => {
 
   it("classifies disabled exact legacy Claude and Kiro receipts as retained, not upgrade-required", async () => {
     for (const targets of [["claude"], ["kiro"]] as const) {
-      const active = reviewedMcpPolicy({ allowedServers: [], disabledServers: [], targets });
+      const active = reviewedMcpPolicy({
+        allowedServers: [],
+        disabledServers: [],
+        targets: [...targets],
+      });
       const applied = ctx({ apply: true, targets: [...targets] });
       await executePlan(
         plan("governed MCP", ...(await verifiedOrgPolicyProjectionActions(applied, active))),
@@ -1837,8 +1841,12 @@ describe("governed candidate projection", () => {
       writeFileSync(markerPath, JSON.stringify(marker));
       const disabled = JSON.parse(JSON.stringify(active)) as typeof active;
       if (disabled.governance === undefined) throw new Error("expected governance fixture");
-      disabled.governance.activations[0]!.state = "disabled";
-      disabled.mcp!.allowManagedOnly = false;
+      const activation = disabled.governance.activations[0];
+      if (activation === undefined || disabled.mcp === undefined) {
+        throw new Error("expected managed activation fixture");
+      }
+      activation.state = "disabled";
+      disabled.mcp.allowManagedOnly = false;
       const effective = (await resolveRuntimeOrgPolicy(applied, disabled)).effective;
       const state =
         targets[0] === "claude"

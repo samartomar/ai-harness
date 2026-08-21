@@ -288,14 +288,22 @@ function decisionReceiptState(
   surface: "mcp" | "usage-hook",
   target: string | ReadonlySet<string>,
 ): "upgrade-required" | "retained-invalid-decision" | undefined {
-  if (ownership.schemaVersion === 1) return "upgrade-required";
-  const prior = ownership.decisions ?? [];
-  const current = decisionBindingsFor(effective, surface, target);
-  if (stableJson(prior) === stableJson(current)) return undefined;
   const matchesTarget = (candidate: EffectiveOrgPolicy["candidates"][number]) =>
     typeof target === "string"
       ? candidate.projection.requestedTargets.includes(target)
       : candidate.projection.requestedTargets.some((item) => target.has(item));
+  const requestedOnSurface = effective.candidates.some(
+    (candidate) =>
+      candidate.requested &&
+      isProjectionSurfaceCandidate(candidate, surface) &&
+      matchesTarget(candidate),
+  );
+  if (ownership.schemaVersion === 1) {
+    return requestedOnSurface ? "upgrade-required" : undefined;
+  }
+  const prior = ownership.decisions ?? [];
+  const current = decisionBindingsFor(effective, surface, target);
+  if (stableJson(prior) === stableJson(current)) return undefined;
   const stillRequested = effective.candidates.some(
     (candidate) =>
       candidate.requested &&
