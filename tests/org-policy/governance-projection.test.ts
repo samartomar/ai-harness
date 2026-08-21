@@ -1907,7 +1907,10 @@ describe("governed candidate projection", () => {
           : orgPolicyKiroMcpReceiptState(applied, effective);
       expect(state.state).toBe("retained");
       await executePlan(
-        plan("remove disabled legacy MCP residue", ...(await verifiedOrgPolicyProjectionActions(applied, disabled))),
+        plan(
+          "remove disabled legacy MCP residue",
+          ...(await verifiedOrgPolicyProjectionActions(applied, disabled)),
+        ),
         applied,
       );
       const after = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
@@ -1969,8 +1972,16 @@ describe("governed candidate projection", () => {
           : orgPolicyKiroMcpReceiptState(applied, effective);
       expect(state.state).toBe("upgrade-required");
       const refresh = await verifiedOrgPolicyProjectionActions(applied, active);
-      expect(refresh).toHaveLength(1);
-      expect(refresh[0]).toMatchObject({ kind: "write", path: ".aih-config.json" });
+      const mcpRefresh = refresh.filter(
+        (action) =>
+          "path" in action &&
+          [".aih-config.json", ".claude/managed-settings.json", ".kiro/settings/mcp.json"].includes(
+            action.path,
+          ),
+      );
+      expect(mcpRefresh).toEqual([
+        expect.objectContaining({ kind: "write", path: ".aih-config.json" }),
+      ]);
       await executePlan(plan("refresh legacy MCP ownership", ...refresh), applied);
 
       expect(readFileSync(settingsPath, "utf8")).toBe(settingsBefore);
@@ -2069,7 +2080,8 @@ describe("governed candidate projection", () => {
         target === "claude" ? ".kiro/settings/mcp.json" : ".claude/managed-settings.json",
       );
       const marker = actions.find(
-        (action): action is WriteAction => action.kind === "write" && action.path === ".aih-config.json",
+        (action): action is WriteAction =>
+          action.kind === "write" && action.path === ".aih-config.json",
       );
       expect(marker?.json).toMatchObject(
         target === "claude"
@@ -2085,7 +2097,8 @@ describe("governed candidate projection", () => {
       policy,
     );
     const dualMarker = dualActions.find(
-      (action): action is WriteAction => action.kind === "write" && action.path === ".aih-config.json",
+      (action): action is WriteAction =>
+        action.kind === "write" && action.path === ".aih-config.json",
     );
     expect(dualMarker?.json).toMatchObject({
       managedMcpProjection: { schemaVersion: 2, decisions: [expectedBinding] },

@@ -391,6 +391,13 @@ export function kiroMcpProjectionActions(
   ) {
     return [];
   }
+  if (
+    residue !== undefined &&
+    residue.ownership.schemaVersion === 1 &&
+    isDeepStrictEqual(residue.ownership.expected, expected)
+  ) {
+    return [ownershipAction(ctx, desiredOwnership, residue.markerSource)];
+  }
   if (residue === undefined) {
     if (Object.keys(expected.mcpServers).length === 0) return [];
     const collision = unreceiptedCollision(ctx.root, expected);

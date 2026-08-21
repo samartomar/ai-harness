@@ -1371,26 +1371,35 @@ function projectionActionsFromRuntime(
     // through a symlinked/occupied managed-settings path.
     const settingsSource =
       onDisk === undefined ? readManagedSettings(ctx.root) : onDisk.settingsSource;
-    actions.push(
-      withExpectedContents(
-        writeJson(
-          MANAGED_SETTINGS_PATH,
-          settings,
-          "project managed-settings compiled from aih-org-policy.json",
-          {
-            merge: true,
-            replaceJsonKeys: managedMcpEnabled ? [...MANAGED_MCP_PROJECTION_KEYS] : undefined,
-            // Only subtract the managed keys when the governed selection is
-            // being deactivated. An already clean active projection must keep
-            // its exact replacement keys, or a later doctor plan would claim
-            // the same owned settings should be absent.
-            removeJsonTopLevelKeys:
-              !managedMcpEnabled && onDisk?.matches ? [...MANAGED_MCP_PROJECTION_KEYS] : undefined,
-          },
+    const strictLegacyMarkerRefresh =
+      managedMcpEnabled &&
+      onDisk?.matches === true &&
+      onDisk.ownership.schemaVersion === 1 &&
+      stableJson(onDisk.ownership.expected) === stableJson(managedMcpSettings);
+    if (!strictLegacyMarkerRefresh) {
+      actions.push(
+        withExpectedContents(
+          writeJson(
+            MANAGED_SETTINGS_PATH,
+            settings,
+            "project managed-settings compiled from aih-org-policy.json",
+            {
+              merge: true,
+              replaceJsonKeys: managedMcpEnabled ? [...MANAGED_MCP_PROJECTION_KEYS] : undefined,
+              // Only subtract the managed keys when the governed selection is
+              // being deactivated. An already clean active projection must keep
+              // its exact replacement keys, or a later doctor plan would claim
+              // the same owned settings should be absent.
+              removeJsonTopLevelKeys:
+                !managedMcpEnabled && onDisk?.matches
+                  ? [...MANAGED_MCP_PROJECTION_KEYS]
+                  : undefined,
+            },
+          ),
+          settingsSource,
         ),
-        settingsSource,
-      ),
-    );
+      );
+    }
     if (owned !== undefined) actions.push(owned);
     else if (onDisk !== undefined) {
       actions.push(
