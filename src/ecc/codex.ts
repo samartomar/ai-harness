@@ -48,6 +48,10 @@ const CODEX_MCP_BLOCK_END = "# <<< aih managed (mcp) <<<";
 export const CODEX_AGENTS_BLOCK_MARKER = "ecc-codex:agents";
 export const CODEX_INSTALL_STATE_FILE = "ecc-aih-install-state.json";
 
+// This runs after planning, so it repeats the narrow MCP-header identity
+// check rather than trusting plan-time custody observations.
+const CODEX_CLEANUP_REOBSERVE_SCRIPT = String.raw`const fs=require("fs");const config=process.argv[2];const claimed=new Set(JSON.parse(process.argv[3]));function header(line){let quote,clean="";for(let index=0;index<line.length;index+=1){const character=line[index];if(quote==='"'){clean+=character;if(character==="\\"){const escaped=line[index+1];if(escaped===undefined)return;if(escaped!==undefined){clean+=escaped;index+=1;}}else if(character==='"')quote=undefined;continue;}if(quote==="'"){clean+=character;if(character==="'")quote=undefined;continue;}if(character==='"'||character==="'"){quote=character;clean+=character;continue;}if(character==="#")break;clean+=character;}clean=clean.trim();const array=clean.startsWith("[[");const open=array?"[[":"[";const close=array?"]]":"]";if(!clean.startsWith(open)||!clean.endsWith(close))return;const body=clean.slice(open.length,-close.length);const keys=[];let index=0;const spaces=()=>{while(index<body.length&&/[ \t]/.test(body[index]))index+=1;};const basic=()=>{let value="";index+=1;while(index<body.length){const character=body[index];if(character==='"'){index+=1;return value;}if(character==="\r"||character==="\n")return;if(character!=="\\"){value+=character;index+=1;continue;}const escapedKey=body[index+1];if(escapedKey==="u"||escapedKey==="U"){const width=escapedKey==="u"?4:8;const hex=body.slice(index+2,index+2+width);if(!new RegExp("^[0-9A-Fa-f]{"+width+"}$").test(hex))return;const codePoint=Number.parseInt(hex,16);if(codePoint>0x10ffff||(codePoint>=0xd800&&codePoint<=0xdfff))return;value+=String.fromCodePoint(codePoint);index+=width+2;continue;}const simple={b:"\b",t:"\t",n:"\n",f:"\f",r:"\r",'"':'"',"\\":"\\"};if(escapedKey===undefined||!Object.prototype.hasOwnProperty.call(simple,escapedKey))return;value+=simple[escapedKey];index+=2;}return;};spaces();while(index<body.length){let key;if(body[index]==='"')key=basic();else if(body[index]==="'"){const end=body.indexOf("'",index+1);if(end<0)return;key=body.slice(index+1,end);index=end+1;}else{const match=/^[A-Za-z0-9_-]+/.exec(body.slice(index));if(!match)return;key=match[0];index+=key.length;}if(key===undefined)return;keys.push(key);spaces();if(index===body.length)break;if(body[index]!==".")return;index+=1;spaces();if(index===body.length)return;}return keys.length>=2&&keys[0]==="mcp_servers"?keys:undefined;}const raw=fs.existsSync(config)?fs.readFileSync(config,"utf8"):"";if(raw.replace(/\r\n/g,"\n").split("\n").some((line)=>{const keys=header(line);return keys&&keys.length===2&&claimed.has(keys[1]);}))throw new Error("claimed Codex MCP configuration remains; refusing AIH state cleanup");fs.rmSync(process.argv[1],{force:true});`;
+
 export interface CodexTomlFootprint {
   rootKeys: string[];
   tables: string[];
@@ -867,7 +871,7 @@ export function codexInstallStateCleanupAction(ctx: PlanContext): Action | undef
     [
       "node",
       "-e",
-      'const fs=require("fs"); const config=process.argv[2]; const claimed=new Set(JSON.parse(process.argv[3])); const raw=fs.existsSync(config)?fs.readFileSync(config,"utf8"):""; const header=/^[ \\t]*\\[mcp_servers\\.(?:"([^"]+)"|\'([^\']+)\'|([^.\\]\\\'"]+))\\][ \\t]*(?:#.*)?$/; if (raw.replace(/\\r\\n/g,"\\n").split("\\n").some((line)=>{const match=line.match(header); return match && claimed.has(match[1]||match[2]||match[3]);})) throw new Error("claimed Codex MCP configuration remains; refusing AIH state cleanup"); fs.rmSync(process.argv[1], { force: true });',
+      CODEX_CLEANUP_REOBSERVE_SCRIPT,
       statePath,
       join(codexHomeDir(ctx), "config.toml"),
       JSON.stringify(state.codexToml.mcpServers),
