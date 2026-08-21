@@ -8,8 +8,15 @@ import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { policyGenerateCommand } from "../../src/org-policy/generate.js";
 import {
+  canonicalGovernanceDecisionV1,
+  governanceDecisionDigestV1,
+  parseGovernanceDecisionV1,
+} from "../../src/org-policy/governance-decision-v1.js";
+import {
   defaultStudioPolicy,
+  exportStudioDecision,
   exportStudioPolicy,
+  parseStudioDecisionImport,
   parseStudioPolicyImport,
   policyStudioModel,
 } from "../../src/org-policy/studio-model.js";
@@ -56,6 +63,34 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
 }
 
 const sha = (character: string) => `sha256:${character.repeat(64)}`;
+
+function governanceDecision(overrides: Record<string, unknown> = {}) {
+  return {
+    format: "aih-governance-decision",
+    version: 1,
+    id: "decision-workbench",
+    disposition: "accepted-with-conditions",
+    candidate: "code-review-graph",
+    kind: "mcp",
+    targets: ["claude"],
+    effects: ["managed-settings"],
+    policyVersion: "2026.08",
+    sourceDigest: sha("a"),
+    evidenceDigest: sha("b"),
+    reviewedControlDigest: sha("c"),
+    issuer: "platform-security",
+    actor: "security-admin",
+    reason: "<img src=x onerror=alert(1)> Decision reason",
+    issuedAt: "2026-08-01T00:00:00+00:00",
+    notBefore: "2026-08-01T00:00:00+00:00",
+    expiresAt: "2026-08-10T00:00:00+00:00",
+    reviewBy: "2026-08-05T00:00:00+00:00",
+    acceptedFindings: ["prompt-injection"],
+    acceptedGaps: [],
+    conditions: ["<img src=x onerror=alert(1)> Review before expiry"],
+    ...overrides,
+  };
+}
 
 function loadStudio(window: Window, html: string, setup = ""): void {
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
@@ -270,6 +305,73 @@ describe("policy generate", () => {
     if (firstCurationItem === undefined) throw new Error("expected external curation item");
     firstCurationItem.source.path = "../unsafe.md";
     expect(() => parseStudioPolicyImport(JSON.stringify(unsafe))).toThrow(/safe repo-relative/i);
+  });
+
+  it("round-trips one standalone governance decision through canonical UI-only transport", () => {
+    const decision = parseStudioDecisionImport(JSON.stringify(governanceDecision()));
+    const exported = exportStudioDecision(decision);
+    expect(exported).toBe(`${canonicalGovernanceDecisionV1(decision)}\n`);
+    const reparsed = parseStudioDecisionImport(exported);
+    expect(reparsed).toEqual(decision);
+    expect(governanceDecisionDigestV1(reparsed)).toBe(governanceDecisionDigestV1(decision));
+  });
+
+  it("keeps standalone decision import strict, inert, and parity-checked in the browser", async () => {
+    const window = new Window({ url: "http://localhost/" });
+    const html = policyStudioHtml(policyStudioModel());
+    window.document.write(html);
+    loadStudio(window, html);
+    const document = window.document;
+    const decisionFile = document.getElementById("decision-file");
+    if (decisionFile === null) throw new Error("expected decision file input");
+    const importDecision = async (value: unknown) => {
+      Object.defineProperty(decisionFile, "files", {
+        configurable: true,
+        value: [
+          new window.File([JSON.stringify(value)], "decision.json", { type: "application/json" }),
+        ],
+      });
+      decisionFile.dispatchEvent(new window.Event("change", { bubbles: true }));
+      await settle(window, () => (document.getElementById("announcement")?.textContent ?? "") !== "");
+    };
+    const policyBefore = exportStudioPolicy(defaultStudioPolicy());
+    const valid = governanceDecision();
+    expect(() => parseGovernanceDecisionV1(valid)).not.toThrow();
+    await importDecision(valid);
+    expect(document.getElementById("decision-state")?.textContent).toContain("imported");
+    expect(document.getElementById("decision-state")?.textContent).toContain("unverified");
+    expect(document.getElementById("decision-state")?.textContent).toContain("not effective");
+    expect(document.getElementById("decision-rows")?.textContent).toContain("decision-workbench");
+    expect(document.querySelector("#decision-rows img")).toBeNull();
+    expect(document.getElementById("decision-rows")?.innerHTML).toContain("&lt;img");
+    expect(document.getElementById("decision-export")?.textContent).toBe(
+      canonicalGovernanceDecisionV1(parseGovernanceDecisionV1(valid)),
+    );
+    expect(exportStudioPolicy(defaultStudioPolicy())).toBe(policyBefore);
+
+    const adversaries = [
+      { ...valid, version: 2 },
+      { ...valid, unknown: true },
+      { ...valid, sourceDigest: "sha256:ABC" },
+      { ...valid, issuedAt: "2026-08-32T00:00:00+00:00" },
+      { ...valid, notBefore: "2026-07-31T00:00:00+00:00" },
+      { ...valid, acceptedFindings: ["prompt-injection", "prompt-injection"] },
+      { ...valid, conditions: [] },
+    ];
+    for (const adversary of adversaries) {
+      const accepted = (() => {
+        try {
+          parseGovernanceDecisionV1(adversary);
+          return true;
+        } catch {
+          return false;
+        }
+      })();
+      expect(accepted).toBe(false);
+      await importDecision(adversary);
+      expect(document.getElementById("announcement")?.textContent).toContain("Decision import rejected");
+      expect(document.getElementById("decision-rows")?.textContent).toContain("decision-workbench");
+    }
   });
 
   it("preserves valid optional governance absence and rejects root trust refinements in browser import", async () => {
