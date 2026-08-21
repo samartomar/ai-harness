@@ -1,9 +1,9 @@
+import { describe, expect, it } from "vitest";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
 import {
-  parseAdminBaselineEvidenceBootstrapV1Json,
   type AdminBaselineEvidenceBootstrapV1,
+  parseAdminBaselineEvidenceBootstrapV1Json,
 } from "../../src/org-policy/admin-baseline-evidence-bootstrap-v1.js";
-import { describe, expect, it } from "vitest";
 
 const record: AdminBaselineEvidenceBootstrapV1 = {
   artifactUrl: "https://artifacts.example.test/vendor-evidence/SHA256SUMS",
@@ -37,8 +37,8 @@ describe("admin baseline evidence bootstrap V1", () => {
     ["untrusted ref", { ...record, expectedRef: "refs/heads/feature..unsafe" }],
     ["wrong source pin", { ...record, source: { ...record.source, pinnedSha: "A".repeat(40) } }],
   ])("fails closed on %s", (_label, value) => {
-    expect(() => parseAdminBaselineEvidenceBootstrapV1Json(canonicalStrictJsonBytesV1(value))).toThrow(
-      /AIH_ADMIN_BASELINE_EVIDENCE/,
-    );
+    expect(() =>
+      parseAdminBaselineEvidenceBootstrapV1Json(canonicalStrictJsonBytesV1(value)),
+    ).toThrow(/admin baseline evidence bootstrap/);
   });
 });

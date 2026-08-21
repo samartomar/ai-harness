@@ -1,0 +1,171 @@
+import { codeUnitCompare } from "../capability/package-graph/canonical.js";
+import {
+  canonicalStrictJsonBytesV1,
+  deepFreezeStrictJsonV1,
+  parseStrictJsonObjectV1,
+} from "../contract/strict-json-v1.js";
+import { AihError } from "../errors.js";
+
+const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const WORKFLOW =
+  /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/.github\/workflows\/[A-Za-z0-9][A-Za-z0-9._-]*\.ya?ml$/;
+const ISSUER = /^https:\/\/[A-Za-z0-9][A-Za-z0-9.-]*(?:\/[A-Za-z0-9._~!$&'()*+,;=:@%-]+)*$/;
+const FIELDS = [
+  "artifactUrl",
+  "attestationUrl",
+  "cacheMaxAgeSeconds",
+  "expectedEnvironment",
+  "expectedIssuer",
+  "expectedRef",
+  "expectedRepository",
+  "expectedWorkflow",
+  "maxSchemaVersion",
+  "minSchemaVersion",
+  "protocol",
+  "source",
+] as const;
+
+export interface AdminBaselineEvidenceBootstrapV1 {
+  readonly artifactUrl: string;
+  readonly attestationUrl: string;
+  readonly cacheMaxAgeSeconds: number;
+  readonly expectedEnvironment: string;
+  readonly expectedIssuer: string;
+  readonly expectedRef: string;
+  readonly expectedRepository: string;
+  readonly expectedWorkflow: string;
+  readonly maxSchemaVersion: number;
+  readonly minSchemaVersion: number;
+  readonly protocol: "AdminBaselineEvidenceBootstrapV1";
+  readonly source: Readonly<{ id: string; owner: string; pinnedSha: string; repo: string }>;
+}
+
+function fail(label: string): never {
+  throw new AihError(`admin baseline evidence bootstrap: ${label}`, "AIH_ADMIN_BASELINE_EVIDENCE");
+}
+
+function exact(value: Record<string, unknown>, keys: readonly string[], label: string): void {
+  const actual = Object.keys(value).sort(codeUnitCompare);
+  const expected = [...keys].sort(codeUnitCompare);
+  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index]))
+    fail(label);
+}
+
+function text(value: unknown, label: string, max = 512): string {
+  if (typeof value !== "string" || value.length === 0 || value.length > max) fail(label);
+  return value;
+}
+
+function locator(value: unknown, label: string): string {
+  const raw = text(value, label);
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    fail(label);
+  }
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.href !== raw ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.port !== "" ||
+    parsed.search !== "" ||
+    parsed.hash !== "" ||
+    !parsed.hostname.includes(".") ||
+    !parsed.pathname.startsWith("/") ||
+    parsed.pathname.endsWith("/") ||
+    parsed.pathname.split("/").some((part) => part === "." || part === "..")
+  )
+    fail(label);
+  return raw;
+}
+
+function validRef(value: string): boolean {
+  const match = /^refs\/(?:heads|tags)\/(.+)$/.exec(value);
+  if (match?.[1] === undefined || value.endsWith(".") || value.length > 512) return false;
+  return (
+    !match[1].includes("..") &&
+    match[1]
+      .split("/")
+      .every((part) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(part) && !part.endsWith(".lock"))
+  );
+}
+
+export function parseAdminBaselineEvidenceBootstrapV1Json(
+  value: unknown,
+): AdminBaselineEvidenceBootstrapV1 {
+  if (!Buffer.isBuffer(value) && !(value instanceof Uint8Array)) fail("bytes");
+  const bytes = Buffer.from(value);
+  if (bytes.length === 0 || bytes.length > 256 * 1024) fail("bytes");
+  let raw: Record<string, unknown>;
+  try {
+    raw = parseStrictJsonObjectV1(
+      new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+      "bootstrap",
+    );
+  } catch {
+    fail("bytes");
+  }
+  exact(raw, FIELDS, "fields");
+  if (raw.protocol !== "AdminBaselineEvidenceBootstrapV1") fail("protocol");
+  const repository = text(raw.expectedRepository, "repository", 256);
+  const workflow = text(raw.expectedWorkflow, "workflow", 512);
+  const issuer = text(raw.expectedIssuer, "issuer", 512);
+  const ref = text(raw.expectedRef, "ref", 512);
+  const environment = text(raw.expectedEnvironment, "environment", 128);
+  if (
+    !REPOSITORY.test(repository) ||
+    !WORKFLOW.test(workflow) ||
+    !workflow.startsWith(`${repository}/.github/workflows/`) ||
+    !ISSUER.test(issuer) ||
+    !validRef(ref) ||
+    !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(environment)
+  )
+    fail("identity");
+  if (
+    !Number.isSafeInteger(raw.minSchemaVersion) ||
+    !Number.isSafeInteger(raw.maxSchemaVersion) ||
+    (raw.minSchemaVersion as number) < 1 ||
+    (raw.maxSchemaVersion as number) < (raw.minSchemaVersion as number)
+  )
+    fail("schema range");
+  if (
+    !Number.isSafeInteger(raw.cacheMaxAgeSeconds) ||
+    (raw.cacheMaxAgeSeconds as number) < 60 ||
+    (raw.cacheMaxAgeSeconds as number) > 31_536_000
+  )
+    fail("cache policy");
+  if (typeof raw.source !== "object" || raw.source === null || Array.isArray(raw.source))
+    fail("source");
+  const source = raw.source as Record<string, unknown>;
+  exact(source, ["id", "owner", "pinnedSha", "repo"], "source");
+  const result: AdminBaselineEvidenceBootstrapV1 = {
+    artifactUrl: locator(raw.artifactUrl, "artifact locator"),
+    attestationUrl: locator(raw.attestationUrl, "attestation locator"),
+    cacheMaxAgeSeconds: raw.cacheMaxAgeSeconds as number,
+    expectedEnvironment: environment,
+    expectedIssuer: issuer,
+    expectedRef: ref,
+    expectedRepository: repository,
+    expectedWorkflow: workflow,
+    maxSchemaVersion: raw.maxSchemaVersion as number,
+    minSchemaVersion: raw.minSchemaVersion as number,
+    protocol: "AdminBaselineEvidenceBootstrapV1",
+    source: {
+      id: text(source.id, "source", 128),
+      owner: text(source.owner, "source", 128),
+      pinnedSha: text(source.pinnedSha, "source", 40),
+      repo: text(source.repo, "source", 128),
+    },
+  };
+  if (
+    !/^[a-z0-9][a-z0-9._-]*$/.test(result.source.id) ||
+    !/^[A-Za-z0-9_.-]+$/.test(result.source.owner) ||
+    !/^[A-Za-z0-9_.-]+$/.test(result.source.repo) ||
+    !/^[a-f0-9]{40}$/.test(result.source.pinnedSha)
+  )
+    fail("source");
+  if (canonicalStrictJsonBytesV1(result).compare(bytes) !== 0) fail("noncanonical bytes");
+  return deepFreezeStrictJsonV1(structuredClone(result)) as AdminBaselineEvidenceBootstrapV1;
+}
