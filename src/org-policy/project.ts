@@ -156,7 +156,15 @@ function stdioAllowedServers(
   // never add to or subtract from a reviewed control selection. `allowManagedOnly`
   // is still the explicit adapter enablement gate checked by the resolver.
   const governed = governanceOwnsAihSurfaces(policy);
-  const allowedSet = new Set(governed ? effective.activeMcpServerIds : [...allowed]);
+  const allowedSet = new Set(
+    governed
+      ? effective.candidates
+          .filter(
+            (candidate) => candidate.effective && isProjectionSurfaceCandidate(candidate, "mcp"),
+          )
+          .map((candidate) => candidate.id)
+      : [...allowed],
+  );
   const disabledSet = new Set(governed ? [] : disabled);
   const out: Record<string, StdioServer> = {};
   for (const [name, server] of Object.entries(catalog)) {
@@ -913,7 +921,7 @@ export function orgPolicyMcpReceiptState(
     .filter(
       (candidate) =>
         candidate.effective &&
-        candidate.kind === "mcp" &&
+        isProjectionSurfaceCandidate(candidate, "mcp") &&
         candidate.projection.requestedTargets.includes("claude"),
     )
     .map((candidate) => candidate.id);
@@ -990,7 +998,7 @@ export function orgPolicyKiroMcpReceiptState(
     .filter(
       (candidate) =>
         candidate.effective &&
-        candidate.kind === "mcp" &&
+        isProjectionSurfaceCandidate(candidate, "mcp") &&
         candidate.projection.requestedTargets.includes("kiro"),
     )
     .map((candidate) => candidate.id);
@@ -1403,7 +1411,7 @@ function projectionActionsFromRuntime(
       .filter(
         (candidate) =>
           candidate.effective &&
-          candidate.kind === "mcp" &&
+          isProjectionSurfaceCandidate(candidate, "mcp") &&
           candidate.projection.requestedTargets.includes("kiro"),
       )
       .map((candidate) => candidate.id);
