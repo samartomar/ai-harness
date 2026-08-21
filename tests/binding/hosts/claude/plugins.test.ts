@@ -17,6 +17,7 @@ import {
   homeMarketplaceTarget,
   homePluginCacheTarget,
 } from "../../../../src/binding/hosts/claude/plugin-identity.js";
+import { planClaudeRemoval } from "../../../../src/binding/hosts/claude/removal.js";
 import {
   type BindPluginResult,
   bindPlugin,
@@ -46,6 +47,7 @@ import {
 } from "../../../../src/binding/scan-gate.js";
 import type { BindingDeclaration } from "../../../../src/binding/schema.js";
 import { fakeRunner, type Runner, type RunResult } from "../../../../src/internals/proc.js";
+import { applyActions, readJson } from "./support.js";
 
 const PLUGIN = "ecc";
 const MARKETPLACE = "ecc-mkt";
@@ -733,6 +735,132 @@ describe("removePlugin — conservative machine-scope reconciliation", () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe("bindPlugin — project custody", () => {
+  it("pins an absent settings file and refuses an absent-to-created race before mutation", async () => {
+    const { resolved, disposition } = scannedFixture("settings-race", { "SKILL.md": "# skill\n" });
+    const { runner } = recordingRunner();
+
+    await expect(
+      bindPlugin(
+        { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+        {
+          root,
+          runner,
+          env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+          locateCache: () => resolved.treePath,
+          applyActions: async (target, actions) => {
+            const settings = join(target, ".claude", "settings.json");
+            mkdirSync(join(settings, ".."), { recursive: true });
+            writeFileSync(settings, `${JSON.stringify({ userCreated: true }, null, 2)}\n`, "utf8");
+            return applyActions(target, actions);
+          },
+        },
+      ),
+    ).rejects.toThrow(/changed after the plan was computed/i);
+
+    expect(readJson(root, ".claude/settings.json")).toEqual({ userCreated: true });
+  });
+
+  it("runs every bind lifecycle subprocess with the requested project root as cwd", async () => {
+    const { resolved, disposition } = scannedFixture("rooted-cli", { "SKILL.md": "# skill\n" });
+    const cwd: Array<string | undefined> = [];
+    const runner: Runner = async (_argv, options) => {
+      cwd.push(options?.cwd);
+      return { code: 0, stdout: "{}", stderr: "" };
+    };
+
+    await bindPlugin(
+      { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+      {
+        root,
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => resolved.treePath,
+      },
+    );
+
+    expect(cwd).toEqual([root, root, root]);
+  });
+});
+
+describe("removePlugin — post-uninstall project custody", () => {
+  it.each([
+    {
+      name: "re-settles an exact receipt-owned enabledPlugins value recreated by uninstall",
+      recreated: { [KEY]: true },
+      expectEnabledPlugins: undefined,
+      drift: false,
+    },
+    {
+      name: "preserves a divergent enabledPlugins value recreated by uninstall",
+      recreated: { [KEY]: true, "user@plugin": true },
+      expectEnabledPlugins: { [KEY]: true, "user@plugin": true },
+      drift: true,
+    },
+  ])("$name", async ({ recreated, expectEnabledPlugins, drift }) => {
+    const bound = await bindForProjectRemoval();
+    const repoRelativeOwnership = bound.ownership.filter(
+      (entry) => !entry.target.startsWith("home:"),
+    );
+    // The mandatory pre-uninstall project restore has already happened.
+    await applyActions(root, planClaudeRemoval(root, { ownership: repoRelativeOwnership }).actions);
+    expect(readJson(root, ".claude/settings.json").enabledPlugins).toBeUndefined();
+
+    const { runner, calls } = recordingRunner((argv) => {
+      if (argv.includes("uninstall")) {
+        writeFileSync(
+          join(root, ".claude", "settings.json"),
+          `${JSON.stringify({ enabledPlugins: recreated }, null, 2)}\n`,
+          "utf8",
+        );
+      }
+      return undefined;
+    });
+    const removal = await removePlugin(
+      {
+        ownership: bound.ownership.filter((entry) => entry.target.startsWith("home:")),
+        plugin: PLUGIN,
+        marketplace: MARKETPLACE,
+        scope: "project",
+        projectRoot: root,
+        repoRelativeOwnership,
+      },
+      {
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => bound.loadedTreePath,
+        applyActions,
+      },
+    );
+
+    expect(calls.findIndex((argv) => argv.includes("uninstall"))).toBeGreaterThanOrEqual(0);
+    expect(readJson(root, ".claude/settings.json").enabledPlugins).toEqual(expectEnabledPlugins);
+    if (drift) {
+      expect(removal.drift).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ target: ".claude/settings.json#/enabledPlugins" }),
+        ]),
+      );
+    } else {
+      expect(removal.drift).toEqual([]);
+    }
+  });
+});
+
+async function bindForProjectRemoval(): Promise<BindPluginResult> {
+  const { resolved, disposition } = scannedFixture("project-removal", { "SKILL.md": "# skill\n" });
+  const { runner } = recordingRunner();
+  return bindPlugin(
+    { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+    {
+      root,
+      runner,
+      env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+      locateCache: () => resolved.treePath,
+    },
+  );
+}
 
 describe("bindPlugin — re-bind idempotency", () => {
   it("re-binds to identical settings bytes and preserves the original pre-existing state", async () => {

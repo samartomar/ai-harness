@@ -600,13 +600,17 @@ describe("remove — plan/apply separation, round-trip, and missing-lock mode", 
     expect(removalPlanResult.repoRelativeDrift).toEqual([]);
     expect(removalPlanResult.plugin).toBe(SUPERPOWERS_PLUGIN_NAME);
     expect(removalPlanResult.marketplace).toBe(SUPERPOWERS_MARKETPLACE_NAME);
+    expect(removalPlanResult.projectRoot).toBe(root);
+    expect(removalPlanResult.repoRelativeOwnership.length).toBeGreaterThan(0);
 
     // Caller applies: repo-relative restore FIRST, then machine-scope teardown.
     // This order is a HARD HOST CONSTRAINT (empirically verified on 2.1.214):
     // `claude plugin uninstall` REFUSES while the plugin is still enabled at
     // project scope, so the enabledPlugins restore must land before removePlugin
     // ever runs `uninstall` — reversing these two calls fails on a real host.
+    const lifecycle: string[] = [];
     await applyActions(root, removalPlanResult.repoRelativeActions);
+    lifecycle.push("restore");
     const { runner: removeRunner, calls } = recordingRunner();
     const removal = await removePlugin(
       {
@@ -614,14 +618,18 @@ describe("remove — plan/apply separation, round-trip, and missing-lock mode", 
         plugin: removalPlanResult.plugin,
         marketplace: removalPlanResult.marketplace,
         scope: removalPlanResult.scope,
+        projectRoot: removalPlanResult.projectRoot,
+        repoRelativeOwnership: removalPlanResult.repoRelativeOwnership,
       },
       {
         runner: removeRunner,
         env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
         locateCache: () => resolved.treePath,
+        applyActions,
       },
     );
     expect(removal.drift).toEqual([]);
+    expect(lifecycle).toEqual(["restore"]);
     expect(calls).toContainEqual(["claude", "plugin", "uninstall", KEY, "--scope", "project"]);
     expect(calls).toContainEqual([
       "claude",
