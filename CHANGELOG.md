@@ -72,6 +72,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Claude binding lifecycle mutations now retain exact custody of their observed state.**
+  Plugin reconciliation binds the explicit absolute checkout root, re-observes the exact
+  `enabledPlugins` ownership entry before and after mutation, and stops before cache or
+  marketplace effects when that state drifts or is ambiguous. Removal restores only the single
+  bound JSON, text, or file snapshot it classified, refuses missing or duplicate custody receipts,
+  and does not reclassify a changed target into a different effect. Framework callers carry their
+  resolved repository root through both paths instead of allowing either operation to infer it
+  from ambient process state.
+
 - **MCP catalog secret references now use one strict, fail-closed grammar.** Stdio environment
   values and generic HTTP headers must contain exactly one `${VAR}` reference, while an
   `Authorization` header must contain exactly `Bearer ${VAR}`. Literal, interpolated, alternate,
