@@ -253,9 +253,11 @@ describe("OrgPolicySchema", () => {
       ["decision-2026-q3", "decision-2026-q3"],
       ["approval-2026-q3"],
     ]) {
-      expect(() => parseOrgPolicy(policy({ governance: { ...governance, authority: { approvals: [], decisions } } }))).toThrow(
-        /org-policy is invalid/,
-      );
+      expect(() =>
+        parseOrgPolicy(
+          policy({ governance: { ...governance, authority: { approvals: [], decisions } } }),
+        ),
+      ).toThrow(/org-policy is invalid/);
     }
     expect(() =>
       parseOrgPolicy(

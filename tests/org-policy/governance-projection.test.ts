@@ -393,18 +393,17 @@ describe("governed candidate projection", () => {
       notBefore: "2026-08-01T00:00:00+00:00",
       expiresAt: "2026-08-10T00:00:00+00:00",
     });
+    const legacyRevocation = {
+      approval: approval.id,
+      issuer: approval.issuer,
+      revokedAt: "2026-08-02T00:00:00+00:00",
+      reason: "The legacy approval was withdrawn.",
+    };
     const base = authorityReceiptV2({
       decisions: [decision],
       decisionRevocations: [revocation],
       approvals: [approval],
-      revocations: [
-        {
-          approval: approval.id,
-          issuer: approval.issuer,
-          revokedAt: "2026-08-02T00:00:00+00:00",
-          reason: "The legacy approval was withdrawn.",
-        },
-      ],
+      revocations: [legacyRevocation],
     });
     const hostAmbiguous = [
       ["issuedAt", { ...base, issuedAt: "2026-08-03T00:00:00" }],
@@ -421,7 +420,7 @@ describe("governed candidate projection", () => {
         "legacy revocation revokedAt",
         {
           ...base,
-          revocations: [{ ...base.revocations[0], revokedAt: "2026-08-02T00:00:00" }],
+          revocations: [{ ...legacyRevocation, revokedAt: "2026-08-02T00:00:00" }],
         },
       ],
     ] as const;
@@ -431,7 +430,14 @@ describe("governed candidate projection", () => {
     const cases = [
       { ...base, decisions: undefined },
       { ...base, decisionRevocations: undefined },
-      { ...base, decisions: [governanceDecision({ id: "decision-z" }), governanceDecision({ id: "decision-a" })] },
+      {
+        ...base,
+        decisions: [
+          governanceDecision({ id: "decision-z" }),
+          governanceDecision({ id: "decision-a" }),
+        ],
+      },
+      { ...base, decisions: [decision, decision] },
       {
         ...base,
         decisionRevocations: [
@@ -439,16 +445,31 @@ describe("governed candidate projection", () => {
           { ...revocation, decision: "decision-a" },
         ],
       },
+      { ...base, decisionRevocations: [revocation, revocation] },
       { ...base, decisionRevocations: [{ ...revocation, decision: "decision-missing" }] },
       { ...base, decisionRevocations: [{ ...revocation, issuer: "other-issuer" }] },
-      { ...base, decisions: [governanceDecision({ issuedAt: "2026-08-04T00:00:00+00:00", notBefore: "2026-08-04T00:00:00+00:00", expiresAt: "2026-08-10T00:00:00+00:00" })], decisionRevocations: [] },
+      {
+        ...base,
+        decisions: [
+          governanceDecision({
+            issuedAt: "2026-08-04T00:00:00+00:00",
+            notBefore: "2026-08-04T00:00:00+00:00",
+            expiresAt: "2026-08-10T00:00:00+00:00",
+          }),
+        ],
+        decisionRevocations: [],
+      },
       { ...base, decisionRevocations: [{ ...revocation, revokedAt: "2026-07-31T00:00:00+00:00" }] },
       { ...base, decisionRevocations: [{ ...revocation, revokedAt: "2026-08-04T00:00:00+00:00" }] },
       { ...base, decisions: [governanceDecision({ targets: ["codex"] })], decisionRevocations: [] },
-      { ...base, decisions: [governanceDecision({ issuer: "other-issuer" })], decisionRevocations: [] },
+      {
+        ...base,
+        decisions: [governanceDecision({ issuer: "other-issuer" })],
+        decisionRevocations: [],
+      },
       { ...base, approvals: [{ ...approval, candidate: decision.candidate }] },
       { ...base, approvals: [{ ...approval, id: "decision-legacy" }] },
-      { ...base, revocations: [{ ...base.revocations[0], approval: "decision-legacy" }] },
+      { ...base, revocations: [{ ...legacyRevocation, approval: "decision-legacy" }] },
     ];
     for (const receipt of cases) {
       expect(PolicyAuthorityReceiptSchema.safeParse(receipt).success).toBe(false);

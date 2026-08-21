@@ -980,6 +980,8 @@ const ACTIVATION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
 };
 
 const AUTHORITY_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
+  "decisions.*":
+    "future authority resolver: policy decision reference; no resolver or effect behavior is wired yet",
   "approvals.*.candidate": "authority resolver: exact candidate binding",
   "approvals.*.clarification":
     "authority resolver: signed clarification binding and report consumer",

@@ -44,7 +44,7 @@ describe("committed JSON Schemas", () => {
     expect(schemas[2]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
       title: ".aih/policy-authority-receipt.json",
-      type: "object",
+      oneOf: expect.any(Array),
     });
     expect(schemas[3]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",

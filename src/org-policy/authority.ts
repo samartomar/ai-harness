@@ -7,6 +7,11 @@ import { readRegularFile } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import { findOnPath } from "../live/runner.js";
 import {
+  GovernanceDecisionRevocationV1Schema,
+  GovernanceDecisionTimestampSchema,
+  GovernanceDecisionV1Schema,
+} from "./governance-decision-v1.js";
+import {
   CandidateSourceSchema,
   PolicyApprovalSchema,
   PolicyDangerCodeSchema,
@@ -60,8 +65,75 @@ const ReceiptRevocationSchema = z
   })
   .strict();
 
-/** Strict external authority receipt contract; policy JSON cannot supply these facts. */
-export const PolicyAuthorityReceiptSchema = z
+const LegacyApprovalIdV2Schema = SafeId.refine(
+  (id) => !id.startsWith("decision-"),
+  "legacy approval ids must not use the decision- namespace",
+);
+const PolicyApprovalReceiptV2Schema = PolicyApprovalSchema.extend({
+  id: LegacyApprovalIdV2Schema,
+  notBefore: GovernanceDecisionTimestampSchema,
+  expiresAt: GovernanceDecisionTimestampSchema,
+}).strict();
+const ReceiptRevocationV2Schema = ReceiptRevocationSchema.extend({
+  approval: LegacyApprovalIdV2Schema,
+  revokedAt: GovernanceDecisionTimestampSchema,
+}).strict();
+
+function ordinalCompare(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function sortedUniqueBy<T>(items: readonly T[], id: (item: T) => string): boolean {
+  return items.every(
+    (item, index) => index === 0 || ordinalCompare(id(items[index - 1] as T), id(item)) < 0,
+  );
+}
+
+const ReceiptDecisionsV2Schema = z
+  .array(GovernanceDecisionV1Schema)
+  .max(64)
+  .refine(
+    (decisions) => sortedUniqueBy(decisions, (decision) => decision.id),
+    "decisions must be ordinal-sorted and unique by id",
+  );
+const ReceiptDecisionRevocationsV2Schema = z
+  .array(GovernanceDecisionRevocationV1Schema)
+  .max(64)
+  .refine(
+    (revocations) => sortedUniqueBy(revocations, (revocation) => revocation.decision),
+    "decisionRevocations must be ordinal-sorted and unique by decision",
+  );
+
+function receiptBaseIssues(
+  receipt: {
+    issuedAt: string;
+    expiresAt: string;
+    trustedIssuers: readonly { id: string }[];
+    evidence: readonly { id: string }[];
+    approvals: readonly { id: string }[];
+  },
+  ctx: z.RefinementCtx,
+): void {
+  if (Date.parse(receipt.expiresAt) <= Date.parse(receipt.issuedAt)) {
+    ctx.addIssue({ code: "custom", message: "receipt expiresAt must be after issuedAt" });
+  }
+  if (Date.parse(receipt.expiresAt) - Date.parse(receipt.issuedAt) > 90 * 24 * 60 * 60 * 1000) {
+    ctx.addIssue({ code: "custom", message: "receipt lifetime must not exceed 90 days" });
+  }
+  const duplicate = <T extends { id: string }>(items: readonly T[], label: string) => {
+    const seen = new Set<string>();
+    for (const item of items) {
+      if (seen.has(item.id))
+        ctx.addIssue({ code: "custom", message: `duplicate ${label} ${item.id}` });
+      seen.add(item.id);
+    }
+  };
+  duplicate(receipt.trustedIssuers, "trusted issuer");
+  duplicate(receipt.evidence, "evidence record");
+  duplicate(receipt.approvals, "approval");
+}
+
+const PolicyAuthorityReceiptV1Schema = z
   .object({
     format: z.literal("aih-policy-authority-receipt"),
     version: z.literal(1),
@@ -77,25 +149,91 @@ export const PolicyAuthorityReceiptSchema = z
     targets: z.array(Target).min(1).max(3),
   })
   .strict()
+  .superRefine(receiptBaseIssues);
+
+const PolicyAuthorityReceiptV2Schema = z
+  .object({
+    format: z.literal("aih-policy-authority-receipt"),
+    version: z.literal(2),
+    /** Must match the out-of-band organization authority registry. */
+    issuerRepository: Repository,
+    issuedAt: GovernanceDecisionTimestampSchema,
+    expiresAt: GovernanceDecisionTimestampSchema,
+    trustedIssuers: z.array(ReceiptIssuerSchema).default([]),
+    evidence: z.array(ReceiptEvidenceSchema).default([]),
+    approvals: z.array(PolicyApprovalReceiptV2Schema).default([]),
+    revocations: z.array(ReceiptRevocationV2Schema).default([]),
+    /** Receipt-wide control coverage, checked against every active activation. */
+    targets: z.array(Target).min(1).max(3),
+    /** Exact signed decision artifacts; policy may only reference their ids. */
+    decisions: ReceiptDecisionsV2Schema,
+    /** Exact signed revocation artifacts, never an inline decision state. */
+    decisionRevocations: ReceiptDecisionRevocationsV2Schema,
+  })
+  .strict()
   .superRefine((receipt, ctx) => {
-    if (Date.parse(receipt.expiresAt) <= Date.parse(receipt.issuedAt)) {
-      ctx.addIssue({ code: "custom", message: "receipt expiresAt must be after issuedAt" });
-    }
-    if (Date.parse(receipt.expiresAt) - Date.parse(receipt.issuedAt) > 90 * 24 * 60 * 60 * 1000) {
-      ctx.addIssue({ code: "custom", message: "receipt lifetime must not exceed 90 days" });
-    }
-    const duplicate = <T extends { id: string }>(items: readonly T[], label: string) => {
-      const seen = new Set<string>();
-      for (const item of items) {
-        if (seen.has(item.id))
-          ctx.addIssue({ code: "custom", message: `duplicate ${label} ${item.id}` });
-        seen.add(item.id);
+    receiptBaseIssues(receipt, ctx);
+    const trustedIssuers = new Set(receipt.trustedIssuers.map((issuer) => issuer.id));
+    const receiptTargets = new Set(receipt.targets);
+    const receiptIssuedAt = Date.parse(receipt.issuedAt);
+    const decisions = new Map(receipt.decisions.map((decision) => [decision.id, decision]));
+    const approvalCandidates = new Set(receipt.approvals.map((approval) => approval.candidate));
+
+    for (const decision of receipt.decisions) {
+      if (!trustedIssuers.has(decision.issuer)) {
+        ctx.addIssue({ code: "custom", message: `decision ${decision.id} issuer is not trusted` });
       }
-    };
-    duplicate(receipt.trustedIssuers, "trusted issuer");
-    duplicate(receipt.evidence, "evidence record");
-    duplicate(receipt.approvals, "approval");
+      if (
+        decision.targets.some((target) => !receiptTargets.has(target as z.infer<typeof Target>))
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          message: `decision ${decision.id} exceeds receipt targets`,
+        });
+      }
+      if (Date.parse(decision.issuedAt) > receiptIssuedAt) {
+        ctx.addIssue({
+          code: "custom",
+          message: `decision ${decision.id} was issued after the receipt`,
+        });
+      }
+      if (approvalCandidates.has(decision.candidate)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `decision ${decision.id} candidate overlaps a legacy approval`,
+        });
+      }
+    }
+    for (const revocation of receipt.decisionRevocations) {
+      const decision = decisions.get(revocation.decision);
+      if (decision === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          message: `decision revocation targets unknown ${revocation.decision}`,
+        });
+        continue;
+      }
+      const revokedAt = Date.parse(revocation.revokedAt);
+      if (revocation.issuer !== decision.issuer) {
+        ctx.addIssue({
+          code: "custom",
+          message: `decision revocation issuer mismatches ${decision.id}`,
+        });
+      }
+      if (revokedAt < Date.parse(decision.issuedAt) || revokedAt > receiptIssuedAt) {
+        ctx.addIssue({
+          code: "custom",
+          message: `decision revocation time is invalid for ${decision.id}`,
+        });
+      }
+    }
   });
+
+/** Strict external authority receipt contract; policy JSON cannot supply these facts. */
+export const PolicyAuthorityReceiptSchema = z.discriminatedUnion("version", [
+  PolicyAuthorityReceiptV1Schema,
+  PolicyAuthorityReceiptV2Schema,
+]);
 
 export type PolicyAuthorityReceipt = z.infer<typeof PolicyAuthorityReceiptSchema>;
 
@@ -112,6 +250,35 @@ export function policyAuthorityReceiptLeafPaths(): string[] {
 }
 
 const RECEIPT_TOP_LEVEL_CONSUMERS: Readonly<Record<string, string>> = {
+  "decisionRevocations.*.decision":
+    "future authority resolver: exact signed decision revocation lookup",
+  "decisionRevocations.*.format": "future authority resolver: fixed signed revocation protocol",
+  "decisionRevocations.*.issuer": "future authority resolver: exact decision issuer binding",
+  "decisionRevocations.*.reason": "future authority resolver: signed revocation audit record",
+  "decisionRevocations.*.revokedAt": "future authority resolver: signed revocation time gate",
+  "decisionRevocations.*.version": "future authority resolver: fixed signed revocation protocol",
+  "decisions.*.acceptedFindings.*": "future authority resolver: exact accepted finding coverage",
+  "decisions.*.acceptedGaps.*": "future authority resolver: exact accepted named-gap coverage",
+  "decisions.*.actor": "future authority resolver: signed decision actor audit binding",
+  "decisions.*.candidate": "future authority resolver: exact governed candidate binding",
+  "decisions.*.conditions.*": "future authority resolver: signed decision condition binding",
+  "decisions.*.disposition": "future authority resolver: decision disposition gate",
+  "decisions.*.effects.*": "future authority resolver: exact effect-scope binding",
+  "decisions.*.evidenceDigest": "future authority resolver: exact verified evidence binding",
+  "decisions.*.expiresAt": "future authority resolver: signed decision expiry gate",
+  "decisions.*.format": "future authority resolver: fixed signed decision protocol",
+  "decisions.*.id": "future authority resolver: exact policy decision-reference lookup",
+  "decisions.*.issuedAt": "future authority resolver: signed decision issuance time gate",
+  "decisions.*.issuer": "future authority resolver: trusted decision issuer lookup",
+  "decisions.*.kind": "future authority resolver: exact governed kind binding",
+  "decisions.*.notBefore": "future authority resolver: signed decision not-before gate",
+  "decisions.*.policyVersion": "future authority resolver: exact policy-version binding",
+  "decisions.*.reason": "future authority resolver: signed decision reason audit binding",
+  "decisions.*.reviewBy": "future authority resolver: accepted-risk review deadline gate",
+  "decisions.*.reviewedControlDigest": "future authority resolver: exact reviewed-control binding",
+  "decisions.*.sourceDigest": "future authority resolver: exact immutable source binding",
+  "decisions.*.targets.*": "future authority resolver: receipt target-coverage binding",
+  "decisions.*.version": "future authority resolver: fixed signed decision protocol",
   expiresAt: "authority verifier: receipt validity and 90-day lifetime",
   format: "authority verifier: fixed receipt protocol",
   issuedAt: "authority verifier: receipt validity and 90-day lifetime",
