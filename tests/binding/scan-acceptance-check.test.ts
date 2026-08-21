@@ -279,6 +279,69 @@ describe("checkSuperpowersScanAcceptance", () => {
     }
   });
 
+  it("rejects skip-worktree and assume-unchanged tracked files before inspection", async () => {
+    for (const flag of ["--skip-worktree", "--assume-unchanged"]) {
+      initVendorCheckout({ "SKILL.md": "pinned\n" });
+      git(checkout, ["update-index", flag, "SKILL.md"]);
+      writeFileSync(join(checkout, "SKILL.md"), "altered\n", "utf8");
+      let inspections = 0;
+      await expect(
+        checkSuperpowersScanAcceptance(
+          { checkoutPath: checkout },
+          fixtureDeps(artifact([]), () => {
+            inspections += 1;
+            return [];
+          }),
+        ),
+      ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+      expect(inspections).toBe(0);
+      rmSync(tempRoot, { recursive: true, force: true });
+      tempRoot = mkdtempSync(join(tmpdir(), "aih-scan-acceptance-"));
+      checkout = join(tempRoot, "superpowers");
+    }
+  });
+
+  it("rejects an actual sparse checkout before inspection", async () => {
+    initVendorCheckout({ "SKILL.md": "included\n", "excluded.md": "pinned\n" });
+    git(checkout, ["sparse-checkout", "init", "--no-cone"]);
+    git(checkout, ["sparse-checkout", "set", "--no-cone", "SKILL.md"]);
+    let inspections = 0;
+    await expect(
+      checkSuperpowersScanAcceptance(
+        { checkoutPath: checkout },
+        fixtureDeps(artifact([]), () => {
+          inspections += 1;
+          return [];
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    expect(inspections).toBe(0);
+  });
+
+  it("rejects malformed index tag output before inspection", async () => {
+    initVendorCheckout({ "SKILL.md": "safe\n" });
+    let inspections = 0;
+    const malformedIndexRunner: Runner = async (argv, options) => {
+      const result = await pinnedCheckoutRunner(argv, options);
+      return argv.at(-3) === "ls-files" && argv.at(-2) === "-v" && argv.at(-1) === "-z"
+        ? { ...result, stdout: "Q SKILL.md\0" }
+        : result;
+    };
+    await expect(
+      checkSuperpowersScanAcceptance(
+        { checkoutPath: checkout },
+        {
+          ...fixtureDeps(artifact([]), () => {
+            inspections += 1;
+            return [];
+          }),
+          runner: malformedIndexRunner,
+        },
+      ),
+    ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    expect(inspections).toBe(0);
+  });
+
   it("fails closed for wrong, mutable, unreadable, and mutation-during-inspection checkouts", async () => {
     initVendorCheckout({ "SKILL.md": "safe\n", "unreadable/child": "not a file" });
     await expect(
