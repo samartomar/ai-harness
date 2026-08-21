@@ -60,6 +60,42 @@ function defaultGitRunner(): Runner {
   });
 }
 
+function incompleteGitRunner(observation: "diverged" | "unavailable"): Runner {
+  let branchReads = 0;
+  let shaReads = 0;
+  return async (argv) => {
+    const tail = argv.slice(3).join(" ");
+    if (tail === "rev-parse --is-inside-work-tree") {
+      return { code: 0, stdout: "true\n", stderr: "" };
+    }
+    if (tail === "rev-parse --abbrev-ref HEAD") {
+      branchReads += 1;
+      return {
+        code: 0,
+        stdout: observation === "diverged" && branchReads > 1 ? "topic\n" : "main\n",
+        stderr: "",
+      };
+    }
+    if (tail === "rev-parse HEAD") {
+      shaReads += 1;
+      if (observation === "unavailable") return { code: 1, stdout: "", stderr: "" };
+      return {
+        code: 0,
+        stdout:
+          shaReads > 1
+            ? "1234567890abcdef1234567890abcdef12345678\n"
+            : "abcdef0123456789abcdef0123456789abcdef01\n",
+        stderr: "",
+      };
+    }
+    if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
+    if (tail === "rev-list --left-right --count HEAD...@{upstream}") {
+      return { code: 0, stdout: "0\t0\n", stderr: "" };
+    }
+    return { code: 1, stdout: "", stderr: "" };
+  };
+}
+
 function ctx(options: Record<string, unknown> = {}, run: Runner = defaultGitRunner()): PlanContext {
   return {
     root,
@@ -119,8 +155,11 @@ function child(
   }
 }
 
-async function workspaceDigest(options: Record<string, unknown> = {}): Promise<DigestAction> {
-  const digest = (await command.plan(ctx(options))).actions.find(
+async function workspaceDigest(
+  options: Record<string, unknown> = {},
+  run: Runner = defaultGitRunner(),
+): Promise<DigestAction> {
+  const digest = (await command.plan(ctx(options, run))).actions.find(
     (a): a is DigestAction => a.kind === "digest" && a.describe.startsWith("Workspace rollup"),
   );
   if (!digest) throw new Error("expected workspace rollup digest");
@@ -288,6 +327,50 @@ describe("report workspace rollup", () => {
       expect.objectContaining({ id: "ui", status: "CHANGED", before: "old123", after: "ui" }),
     ]);
   });
+
+  it.each(["unavailable", "diverged"] as const)(
+    "does not present a %s Git observation as clean or unchanged",
+    async (observation) => {
+      writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+      child("ui");
+      mkdirSync(join(root, ".aih", "workspace-snapshots"), { recursive: true });
+      writeFileSync(
+        join(root, ".aih", "workspace-snapshots", "20260630T000000Z-known-good.json"),
+        json({
+          schemaVersion: 1,
+          createdAt: "2026-06-30T00:00:00.000Z",
+          repos: [
+            {
+              id: "ui",
+              path: "ui",
+              branch: "main",
+              sha: "abcdef0123456789abcdef0123456789abcdef01",
+              dirty: false,
+            },
+          ],
+        }),
+      );
+
+      const d = await workspaceDigest({}, incompleteGitRunner(observation));
+      const data = d.data as WorkspaceReportDigest;
+
+      expect(data.rows[0]).toMatchObject({
+        git: { status: "WARN", detail: `git revision observation ${observation}` },
+        status: "WARN",
+      });
+      expect(data.rows[0]?.git).not.toHaveProperty("dirty");
+      expect(d.text).toContain("| ui | ui/ | WARN |");
+      expect(data.snapshot?.changes).toEqual([
+        expect.objectContaining({
+          id: "ui",
+          status: "MISSING",
+          detail: `current repo git revision observation ${observation}`,
+        }),
+      ]);
+      expect(data.snapshot?.changes[0]?.status).not.toBe("UNCHANGED");
+      expect(d.text).not.toContain("matches snapshot");
+    },
+  );
 
   it("renders workspace snapshot Source relative to the configured root", async () => {
     writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
