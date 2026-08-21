@@ -96,9 +96,15 @@ function parseWorkspaceSnapshotRepo(raw: unknown, label: string): WorkspaceRepoS
       "AIH_WORKSPACE",
     );
   }
+  const hasVolatileObservationFact =
+    raw.dirty !== undefined ||
+    raw.branch !== undefined ||
+    raw.sha !== undefined ||
+    raw.ahead !== undefined ||
+    raw.behind !== undefined;
   if (
     (observation === undefined && typeof raw.dirty !== "boolean") ||
-    (observation !== undefined && raw.dirty !== undefined)
+    (observation !== undefined && (raw.git !== true || hasVolatileObservationFact))
   ) {
     throw new AihError(
       `workspace hydrate requires coherent repo dirty state in ${label}`,
