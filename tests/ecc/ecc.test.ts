@@ -24,7 +24,6 @@ import {
   stripCodexTomlFootprint,
 } from "../../src/ecc/codex.js";
 import { codexEccActions, command } from "../../src/ecc/index.js";
-import { executePlan } from "../../src/internals/execute.js";
 import {
   AIH_DIRECT_ECC_INSTALL_TARGETS,
   ECC_INSTALL_MECHANISM_LABELS,
@@ -45,6 +44,7 @@ import {
 import { eccLanguages } from "../../src/ecc/select.js";
 import { REGISTRY_IDS } from "../../src/internals/cli-registry.js";
 import type { Cli } from "../../src/internals/clis.js";
+import { executePlan } from "../../src/internals/execute.js";
 import type {
   Action,
   DocAction,
