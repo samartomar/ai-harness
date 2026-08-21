@@ -1,4 +1,4 @@
-import { lstatSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -75,7 +75,7 @@ describe("readContainedRegularFile", () => {
     const target = join(root, "settings.json");
     writeFileSync(target, "before\n", "utf8");
     const before = lstatSync(target);
-    interposition.armedPath = target;
+    interposition.armedPath = realpathSync(target);
 
     expect(readContainedRegularFile(root, "settings.json", { maxBytes: 1024 })).toEqual({
       state: "unsafe",
