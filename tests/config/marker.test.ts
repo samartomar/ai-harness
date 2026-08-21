@@ -194,7 +194,7 @@ describe("aihConfigJson", () => {
 describe("managed-MCP projection ownership", () => {
   const decision = {
     candidate: "code-review-graph",
-    id: "decision-graph",
+    id: "decision-2026-q3",
     issuer: "security-admin",
     digest: `sha256:${"a".repeat(64)}`,
     expiresAt: "2026-09-01T00:00:00.000+00:00",
