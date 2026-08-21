@@ -1216,7 +1216,7 @@ describe("Codex managed destination safety", () => {
         expect(outputRootKeys).toContain("sandbox_mode");
       } else expect(outputRootKeys).toContain("approval_policy");
       const agents = readFileSync(join(home, ".codex", "AGENTS.md"), "utf8");
-      if (legacyPosition === "vanished") {
+      if (legacyPosition === "vanished" || legacyPosition === "live-relinquished") {
         expect(outputState).not.toContain("sequential-thinking");
         expect(agents).not.toContain("`sequential-thinking`");
       } else expect(agents).toContain("`sequential-thinking`");
