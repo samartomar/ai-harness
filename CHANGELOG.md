@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Correct the BetterDoc pack page after the self-hosting cleanup: bundled pack
+  bytes still ship, while this checkout intentionally has no AIH approval lock,
+  vet report, promoted copy, or product-command validation loop (#822).
+
 ### Added
 
 - **`aih report` adds a deterministic governed-subject review without turning local usage into
