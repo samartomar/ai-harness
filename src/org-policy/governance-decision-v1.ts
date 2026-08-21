@@ -43,7 +43,7 @@ function timestamp(value: string): boolean {
     month >= 1 &&
     month <= 12 &&
     day >= 1 &&
-    day <= new Date(Date.UTC(year, month, 0)).getUTCDate() &&
+    day <= daysInGregorianMonth(year, month) &&
     hour <= 23 &&
     minute <= 59 &&
     second <= 59 &&
@@ -51,6 +51,11 @@ function timestamp(value: string): boolean {
     offsetMinute <= 59 &&
     Number.isFinite(Date.parse(value))
   );
+}
+
+function daysInGregorianMonth(year: number, month: number): number {
+  if (month === 2) return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28;
+  return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
 }
 
 const timestampSchema = z

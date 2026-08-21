@@ -124,4 +124,23 @@ describe("GovernanceDecisionV1", () => {
     );
     expect(governanceDecisionRevocationDigestV1(revocation)).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
+
+  it("uses proleptic Gregorian leap years for offset-qualified revocations", () => {
+    expect(() =>
+      parseGovernanceDecisionRevocationV1({
+        decision: "decision-managed-mcp",
+        issuer: "platform-security",
+        revokedAt: "0000-02-29T00:00:00+00:00",
+        reason: "A valid low-year leap date remains valid.",
+      }),
+    ).not.toThrow();
+    expect(() =>
+      parseGovernanceDecisionRevocationV1({
+        decision: "decision-managed-mcp",
+        issuer: "platform-security",
+        revokedAt: "0099-02-29T00:00:00+00:00",
+        reason: "A non-leap low-year date must fail closed.",
+      }),
+    ).toThrow();
+  });
 });
