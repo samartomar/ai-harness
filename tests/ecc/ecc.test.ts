@@ -1218,6 +1218,7 @@ describe("Codex managed destination safety", () => {
     });
     expect(action?.kind).toBe("exec");
     if (action?.kind !== "exec") throw new Error("missing held-custody Codex cleanup action");
+    expect(action.describe).toContain("custody remains");
     const executable = action.argv[0];
     if (executable === undefined) throw new Error("missing held-custody Codex cleanup executable");
     const result = spawnSync(executable, action.argv.slice(1), { encoding: "utf8" });
