@@ -675,7 +675,18 @@ export function codexConfigRemovalAction(ctx: PlanContext): Action | undefined {
 
 export function codexInstallStateCleanupAction(ctx: PlanContext): Action | undefined {
   const statePath = codexInstallStatePath(ctx);
-  if (readIfExists(statePath) === undefined) return undefined;
+  const state = readCodexInstallState(ctx);
+  if (!state) return undefined;
+  const config = readIfExists(join(codexHomeDir(ctx), "config.toml"));
+  if (
+    config !== undefined &&
+    state.codexToml.mcpServers.length > 0 &&
+    stripCodexTomlFootprint(config, state.codexToml) === config
+  ) {
+    // The footprint is not removable (for example, a legacy pre-fence Chrome
+    // entry). Keeping the state prevents an orphaned @latest configuration.
+    return undefined;
+  }
   return exec("remove aih ECC Codex install-state after prune cleanup (under --apply)", [
     "node",
     "-e",

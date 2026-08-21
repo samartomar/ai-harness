@@ -14,7 +14,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { coreOwnedEccCodexMcpServers, stripCodexTomlFootprint } from "../../src/ecc/codex.js";
+import {
+  codexInstallStateCleanupAction,
+  coreOwnedEccCodexMcpServers,
+  stripCodexTomlFootprint,
+} from "../../src/ecc/codex.js";
 import { codexEccActions, command } from "../../src/ecc/index.js";
 import {
   AIH_DIRECT_ECC_INSTALL_TARGETS,
@@ -1031,7 +1035,7 @@ describe("Codex managed destination safety", () => {
     );
     writeFileSync(
       join(home, ".codex", "ecc-aih-install-state.json"),
-      JSON.stringify(
+      `${JSON.stringify(
         {
           schemaVersion: 1,
           managedBy: "aih",
@@ -1045,7 +1049,7 @@ describe("Codex managed destination safety", () => {
         },
         null,
         2,
-      ) + "\n",
+      )}\n`,
       "utf8",
     );
     const action = codexEccActions(
@@ -1059,6 +1063,15 @@ describe("Codex managed destination safety", () => {
         candidate.kind === "exec" && candidate.describe.startsWith("Install ECC for Codex"),
     );
     if (action === undefined) throw new Error("missing Codex merge action");
+    const plannedStateB64 = action.argv.at(-1);
+    if (plannedStateB64 === undefined) throw new Error("missing Codex AIH state");
+    expect(
+      (
+        JSON.parse(Buffer.from(plannedStateB64, "base64").toString("utf8")) as {
+          codexToml: { mcpServers: string[] };
+        }
+      ).codexToml.mcpServers,
+    ).toEqual(expect.arrayContaining(["chrome-devtools", "sequential-thinking"]));
 
     const result = spawnSync(process.execPath, action.argv.slice(1), {
       cwd: repo,
@@ -1075,6 +1088,40 @@ describe("Codex managed destination safety", () => {
     expect(readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")).toContain(
       '"chrome-devtools"',
     );
+    expect(readFileSync(join(home, ".codex", "AGENTS.md"), "utf8")).toContain(
+      "`sequential-thinking`",
+    );
+  });
+
+  it("keeps AIH state when prune cannot safely remove a claimed pre-fence Chrome table", () => {
+    const home = join(tmp, "legacy-prune-home");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      [
+        "[mcp_servers.chrome-devtools]",
+        'command = "npx"',
+        'args = ["-y", "chrome-devtools-mcp@latest"]',
+        "startup_timeout_sec = 30",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(home, ".codex", "ecc-aih-install-state.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        managedBy: "aih",
+        codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: ["chrome-devtools"] },
+        agentsBlock: true,
+      }),
+    );
+    const base = makeCtx({ cli: "codex" });
+    expect(
+      codexInstallStateCleanupAction({
+        ...base,
+        env: { ...base.env, HOME: home, USERPROFILE: home },
+      }),
+    ).toBeUndefined();
   });
 
   it.skipIf(!symlinksAvailable).each(["existing", "dangling"] as const)(
