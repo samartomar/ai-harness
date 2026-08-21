@@ -5,12 +5,10 @@ import { buildVendorBaselineEvidenceArtifactV1 } from "../../src/baseline-eviden
 import type { AdminBaselineEvidenceBootstrapV1 } from "../../src/org-policy/admin-baseline-evidence-bootstrap-v1.js";
 import { resolveAdminBaselineEvidenceV1 } from "../../src/org-policy/admin-baseline-evidence-operations-v1.js";
 
-const source = {
-  id: "ecc",
-  owner: "affaan-m",
-  repo: "ecc",
-  pinnedSha: "623f2c020f052319657674e4e6c29ab5d0ad566b",
-};
+const sources = [
+  { id: "ecc", owner: "affaan-m", repo: "ecc", pinnedSha: "623f2c020f052319657674e4e6c29ab5d0ad566b" },
+  { id: "superpowers", owner: "obra", repo: "Superpowers", pinnedSha: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9" },
+];
 const bootstrap: AdminBaselineEvidenceBootstrapV1 = {
   protocol: "AdminBaselineEvidenceBootstrapV1",
   artifactUrl: "https://evidence.example.test/artifact",
@@ -23,7 +21,7 @@ const bootstrap: AdminBaselineEvidenceBootstrapV1 = {
   expectedWorkflow: "samartomar/ai-harness/.github/workflows/vendor-baseline-evidence.yml",
   minSchemaVersion: 1,
   maxSchemaVersion: 1,
-  source,
+  sources,
 };
 const artifact = buildVendorBaselineEvidenceArtifactV1({
   lockBytes: vendorBaselineLockBytes(),
@@ -62,11 +60,16 @@ describe("admin baseline evidence resolution v1", () => {
       },
       commitLastDownloaded: () => {
         calls.push("commit");
+        return true;
       },
       verifyGithubAttestation: verify,
     });
     expect(result.provenance.tier).toBe("fresh");
     expect(calls).toEqual(["fresh", "commit"]);
+  });
+
+  it.each([false, undefined])("treats cache commit %j as terminal", async (commit) => {
+    await expect(resolveAdminBaselineEvidenceV1({ bootstrap, now: "2026-08-21T00:00:00Z", fetchFresh: async () => ({ kind: "available", artifact, attestationBytes: Buffer.from("attestation") }), readLastDownloaded: () => undefined, commitLastDownloaded: () => commit as never, verifyGithubAttestation: verify })).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
   });
 
   it("reverifies cache after literal unavailable and never masks malformed fresh input", async () => {
@@ -113,7 +116,7 @@ describe("admin baseline evidence resolution v1", () => {
     expect(result.provenance).toMatchObject({
       tier: "packaged",
       ageSeconds: null,
-      sourceId: "ecc",
+      sourceIds: ["ecc", "superpowers"],
       schemaVersion: 1,
       digest: createHash("sha256").update(vendorBaselineLockBytes()).digest("hex"),
     });
