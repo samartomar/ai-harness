@@ -324,7 +324,11 @@ describe("policy generate", () => {
     const document = window.document;
     const decisionFile = document.getElementById("decision-file");
     if (decisionFile === null) throw new Error("expected decision file input");
+    const configPreview = document.getElementById("config-preview") as unknown as { value: string };
+    const policyPreview = configPreview.value;
     const importDecision = async (value: unknown) => {
+      const announcement = document.getElementById("announcement");
+      if (announcement !== null) announcement.textContent = "";
       Object.defineProperty(decisionFile, "files", {
         configurable: true,
         value: [
@@ -332,7 +336,10 @@ describe("policy generate", () => {
         ],
       });
       decisionFile.dispatchEvent(new window.Event("change", { bubbles: true }));
-      await settle(window, () => (document.getElementById("announcement")?.textContent ?? "") !== "");
+      await settle(
+        window,
+        () => (document.getElementById("announcement")?.textContent ?? "") !== "",
+      );
     };
     const policyBefore = exportStudioPolicy(defaultStudioPolicy());
     const valid = governanceDecision();
@@ -347,14 +354,19 @@ describe("policy generate", () => {
     expect(document.getElementById("decision-export")?.textContent).toBe(
       canonicalGovernanceDecisionV1(parseGovernanceDecisionV1(valid)),
     );
+    expect(configPreview.value).toBe(policyPreview);
+    expect(policyPreview).not.toContain("decision-workbench");
     expect(exportStudioPolicy(defaultStudioPolicy())).toBe(policyBefore);
 
     const adversaries = [
+      null,
+      { ...valid, format: "other" },
       { ...valid, version: 2 },
       { ...valid, unknown: true },
       { ...valid, sourceDigest: "sha256:ABC" },
       { ...valid, issuedAt: "2026-08-32T00:00:00+00:00" },
       { ...valid, notBefore: "2026-07-31T00:00:00+00:00" },
+      { ...valid, reviewBy: "2026-08-11T00:00:00+00:00" },
       { ...valid, acceptedFindings: ["prompt-injection", "prompt-injection"] },
       { ...valid, conditions: [] },
     ];
@@ -369,7 +381,9 @@ describe("policy generate", () => {
       })();
       expect(accepted).toBe(false);
       await importDecision(adversary);
-      expect(document.getElementById("announcement")?.textContent).toContain("Decision import rejected");
+      expect(document.getElementById("announcement")?.textContent).toContain(
+        "Decision import rejected",
+      );
       expect(document.getElementById("decision-rows")?.textContent).toContain("decision-workbench");
     }
   });

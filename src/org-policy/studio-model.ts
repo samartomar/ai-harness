@@ -7,6 +7,12 @@ import {
   UNWAIVABLE_POLICY_DANGER_CODES,
 } from "./effective.js";
 import {
+  canonicalGovernanceDecisionV1,
+  type GovernanceDecisionV1,
+  GovernanceDecisionV1Schema,
+  parseGovernanceDecisionV1,
+} from "./governance-decision-v1.js";
+import {
   HTTPS_ORIGIN_ARGUMENT_PREFIXES,
   type OrgPolicy,
   OrgPolicySchema,
@@ -50,6 +56,22 @@ export function exportStudioPolicy(policy: unknown): string {
   return `${JSON.stringify(parseOrgPolicy(policy), null, 2)}\n`;
 }
 
+/** Strict, standalone decision transport for the Workbench's inert inspection surface. */
+export function parseStudioDecisionImport(text: string): GovernanceDecisionV1 {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new Error("Decision import is not valid JSON");
+  }
+  return parseGovernanceDecisionV1(value);
+}
+
+/** Canonical decision bytes are a transport identity only; this function verifies no authority. */
+export function exportStudioDecision(decision: unknown): string {
+  return `${canonicalGovernanceDecisionV1(parseGovernanceDecisionV1(decision))}\n`;
+}
+
 export interface PolicyStudioModel {
   initialPolicy: OrgPolicy;
   catalog: ReturnType<typeof policyAuthoringCatalog>;
@@ -63,6 +85,7 @@ export interface PolicyStudioModel {
    */
   catalogProvenance?: AdminCatalogProvenanceV1;
   schema: Record<string, unknown>;
+  decisionSchema: Record<string, unknown>;
   unwaivable: readonly string[];
   /**
    * The two halves of the finding model. `unwaivable` stays as their union so
@@ -86,6 +109,10 @@ export function policyStudioModel(catalogProvenance?: AdminCatalogProvenanceV1):
     catalog: policyAuthoringCatalog(),
     ...(catalogProvenance === undefined ? {} : { catalogProvenance }),
     schema: z.toJSONSchema(OrgPolicySchema, { io: "input" }) as Record<string, unknown>,
+    decisionSchema: z.toJSONSchema(GovernanceDecisionV1Schema, { io: "input" }) as Record<
+      string,
+      unknown
+    >,
     unwaivable: UNWAIVABLE_POLICY_DANGER_CODES,
     findings: {
       dispositionable: DISPOSITIONABLE_POLICY_FINDING_CODES,
