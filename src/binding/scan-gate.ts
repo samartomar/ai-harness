@@ -502,6 +502,33 @@ export interface ScanFinding {
   advisory?: TypographyAdvisory;
 }
 
+/** Deterministic file-scoped view of raw scan findings. No finding is merged or dropped. */
+export interface ScanFileRollup {
+  /** Absent only for a finding without a source file identity. */
+  path?: string;
+  findings: readonly ScanFinding[];
+}
+
+/** Group every raw finding by its exact source path without changing its identity. */
+export function rollupScanFindings(findings: readonly ScanFinding[]): ScanFileRollup[] {
+  const groups = new Map<string | undefined, ScanFinding[]>();
+  for (const finding of findings) {
+    const group = groups.get(finding.path);
+    if (group === undefined) groups.set(finding.path, [finding]);
+    else group.push(finding);
+  }
+  const compareFinding = (left: ScanFinding, right: ScanFinding): number =>
+    left.code.localeCompare(right.code) ||
+    SEVERITIES.indexOf(left.severity) - SEVERITIES.indexOf(right.severity) ||
+    left.detail.localeCompare(right.detail) ||
+    Number(left.accepted === true) - Number(right.accepted === true);
+  return [...groups.entries()]
+    .sort(([left], [right]) =>
+      left === undefined ? 1 : right === undefined ? -1 : left.localeCompare(right),
+    )
+    .map(([path, entries]) => ({ path, findings: [...entries].sort(compareFinding) }));
+}
+
 export interface DimensionInspectionContext {
   treePath: string;
   inventory: TrustFileInventory;
@@ -1076,6 +1103,8 @@ export interface ScanDisposition {
   /** Legacy verdict, always derived: `selectedProfileGate === "BLOCK" ? "block" : "allow"`. */
   readonly verdict: ScanVerdict;
   readonly findings: readonly ScanFinding[];
+  /** Deterministic per-file rollup of the same raw finding objects. */
+  readonly fileRollup: readonly ScanFileRollup[];
   readonly posture: Posture;
   readonly producedAt: string;
   /** Whole-tree outcome (descriptive; never authorizes on its own). */
@@ -1518,6 +1547,7 @@ function produceDisposition(
     digest,
     verdict: decision.verdict,
     findings: decision.findings,
+    fileRollup: rollupScanFindings(decision.findings),
     posture: policy.posture,
     producedAt,
     rawSourceScan: decision.rawSourceScan,

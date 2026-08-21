@@ -63,7 +63,7 @@ export interface ClaudeContaminationReport {
   /** Per-surface detail rows (one per counted surface instance). */
   entries: ContaminationEntry[];
   /** Informational context that is NOT leakage: `skillOverrides` keys from settings. */
-  informational: { skillOverrides: string[] };
+  informational: { skillOverrides: string[]; settingsHusk?: boolean };
   /** Named unreadable user-scope files (malformed JSON) — the report still rendered. */
   warnings: string[];
   /** True only when every leakage count is 0. */
@@ -125,7 +125,23 @@ function readUserJson(
     warnings.push(`unreadable user-scope JSON (skipped): ${label}`);
     return undefined;
   }
-  return isPlainObject(parsed) ? parsed : undefined;
+  if (!isPlainObject(parsed)) {
+    warnings.push(`unreadable user-scope JSON (skipped): ${label}`);
+    return undefined;
+  }
+  return parsed;
+}
+
+/** Empty settings and schema/empty-container scaffolds carry no loadable host behavior. */
+function isHarmlessSettingsHusk(settings: Record<string, unknown>): boolean {
+  const emptyContainers = new Set(["hooks", "enabledPlugins", CLAUDE_MCP_KEY, "skillOverrides"]);
+  return Object.entries(settings).every(
+    ([key, value]) =>
+      key === "$schema" ||
+      key === "$id" ||
+      key === "$comment" ||
+      (emptyContainers.has(key) && isPlainObject(value) && Object.keys(value).length === 0),
+  );
 }
 
 /**
@@ -359,6 +375,7 @@ export function claudeContaminationReport(
     ".claude/settings.json",
     warnings,
   );
+  const settingsHusk = settings !== undefined && isHarmlessSettingsHusk(settings);
   if (settings !== undefined) {
     for (const { event, command } of collectHookCommands(settings.hooks)) {
       entries.push({
@@ -420,7 +437,7 @@ export function claudeContaminationReport(
   return {
     leakage,
     entries,
-    informational: { skillOverrides },
+    informational: { skillOverrides, settingsHusk },
     warnings,
     clean,
     verdictInput: clean ? "clean" : "contaminated",

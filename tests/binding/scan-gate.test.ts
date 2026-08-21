@@ -13,8 +13,8 @@ import {
   resolvedSourceDigest,
   resolveGitSource,
   resolveNpmSource,
-  runFastScanGate,
   rollupScanFindings,
+  runFastScanGate,
   type ScanDisposition,
   scannableFromGit,
 } from "../../src/binding/scan-gate.js";
@@ -80,10 +80,34 @@ const producedCritical: DimensionInspector = {
 describe("rollupScanFindings", () => {
   it("groups every raw finding deterministically without masking duplicate identities", () => {
     const findings = [
-      { code: "z", severity: "high" as const, detail: "z", coverage: "complete" as const, path: "b.md", accepted: true },
-      { code: "a", severity: "medium" as const, detail: "a", coverage: "complete" as const, path: "a.md" },
-      { code: "a", severity: "high" as const, detail: "again", coverage: "complete" as const, path: "a.md" },
-      { code: "global", severity: "critical" as const, detail: "global", coverage: "complete" as const },
+      {
+        code: "z",
+        severity: "high" as const,
+        detail: "z",
+        coverage: "complete" as const,
+        path: "b.md",
+        accepted: true,
+      },
+      {
+        code: "a",
+        severity: "medium" as const,
+        detail: "a",
+        coverage: "complete" as const,
+        path: "a.md",
+      },
+      {
+        code: "a",
+        severity: "high" as const,
+        detail: "again",
+        coverage: "complete" as const,
+        path: "a.md",
+      },
+      {
+        code: "global",
+        severity: "critical" as const,
+        detail: "global",
+        coverage: "complete" as const,
+      },
     ];
     expect(rollupScanFindings(findings)).toEqual([
       expect.objectContaining({ path: "a.md", findings: [findings[1], findings[2]] }),

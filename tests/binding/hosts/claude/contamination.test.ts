@@ -153,7 +153,9 @@ describe("claudeContaminationReport — clean home", () => {
     let report = claudeContaminationReport({ home, projectRoot });
     expect(report.informational.settingsHusk).toBe(true);
     expect(report.clean).toBe(true);
-    seedJson(".claude/settings.json", { $schema: "https://json.schemastore.org/claude-code-settings.json" });
+    seedJson(".claude/settings.json", {
+      $schema: "https://json.schemastore.org/claude-code-settings.json",
+    });
     report = claudeContaminationReport({ home, projectRoot });
     expect(report.informational.settingsHusk).toBe(true);
     seedJson(".claude/settings.json", { hooks: { PreToolUse: ["echo unsafe"] } });
