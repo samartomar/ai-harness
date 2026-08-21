@@ -96,7 +96,7 @@ describe("Kiro governed MCP ownership", () => {
     });
   });
 
-  it("replaces narrowed Kiro ownership as v1 or v2 instead of merging stale receipt fields", async () => {
+  it("keeps narrowed Kiro ownership at strict v2 instead of downgrading its receipt", async () => {
     await apply({ "code-review-graph": graph, "sequential-thinking": sequential }, [decision]);
     const markerPath = join(root, ".aih-config.json");
     const v2 = JSON.parse(readFileSync(markerPath, "utf8"));
@@ -106,10 +106,14 @@ describe("Kiro governed MCP ownership", () => {
     });
 
     await apply({ "code-review-graph": graph });
-    const v1 = JSON.parse(readFileSync(markerPath, "utf8"));
-    expect(v1.kiroMcpProjection).toMatchObject({ schemaVersion: 1 });
-    expect(v1.kiroMcpProjection).not.toHaveProperty("decisions");
-    expect(v1.kiroMcpProjection.expected.mcpServers).toEqual({ "code-review-graph": graph });
+    const v2WithoutDecision = JSON.parse(readFileSync(markerPath, "utf8"));
+    expect(v2WithoutDecision.kiroMcpProjection).toMatchObject({
+      schemaVersion: 2,
+      decisions: [],
+    });
+    expect(v2WithoutDecision.kiroMcpProjection.expected.mcpServers).toEqual({
+      "code-review-graph": graph,
+    });
     expect(kiroMcpProjectionState(root).state).toBe("clean");
   });
 

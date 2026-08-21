@@ -475,6 +475,37 @@ describe("governed candidate projection", () => {
     expect(digest?.text).not.toContain("The bounded finding remains accepted pending review.");
   });
 
+  it("writes strict v2 Claude ownership with only the current effective decision binding", async () => {
+    const policy = reviewedMcpPolicy();
+    if (policy.governance === undefined) throw new Error("expected governance fixture");
+    const candidate = policy.governance.catalog.reviewed[0];
+    if (candidate === undefined) throw new Error("expected reviewed MCP fixture");
+    candidate.findings.push("prompt-injection");
+    policy.governance.authority.decisions = ["decision-reviewed-risk"];
+    const decision = currentReviewedDecision(policy);
+    writeDecisionAuthorityReceipt([decision]);
+
+    const actions = await verifiedOrgPolicyProjectionActions(ctx(), policy);
+    const marker = actions.find(
+      (action): action is WriteAction =>
+        action.kind === "write" && action.path === ".aih-config.json",
+    );
+    expect(marker?.json).toMatchObject({
+      managedMcpProjection: {
+        schemaVersion: 2,
+        decisions: [
+          {
+            candidate: "code-review-graph",
+            id: "decision-reviewed-risk",
+            issuer: "platform-security",
+            digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+            expiresAt: decision.reviewBy,
+          },
+        ],
+      },
+    });
+  });
+
   it("unlocks a clean reviewed control only with an exact approved decision", async () => {
     const policy = reviewedMcpPolicy();
     if (policy.governance === undefined) throw new Error("expected governance fixture");
@@ -1858,6 +1889,14 @@ describe("governed candidate projection", () => {
     expect(writes.map((write) => write.path)).toEqual(
       expect.arrayContaining([".aih/usage-record.mjs", ".gitignore", ".claude/settings.json"]),
     );
+    expect(
+      writes.find((write) => write.path === ".aih/org-policy-hook-receipt.json")?.json,
+    ).toMatchObject({
+      format: "aih-org-policy-hook-receipt",
+      version: 3,
+      decisions: [],
+      selfDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+    });
   });
 
   it("projects the supported AIH-owned hook for a Codex-only invocation", async () => {
