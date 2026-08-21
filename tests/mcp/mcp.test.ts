@@ -1133,7 +1133,7 @@ describe("aih mcp — uv probe under --verify", () => {
 });
 
 describe("aih mcp — MCP write hygiene", () => {
-  it.each([
+  const validSecretReferenceCatalogs: Array<[string, Record<string, McpServer>, string[]]> = [
     [
       "accepts an exact stdio environment reference",
       {
@@ -1183,9 +1183,16 @@ describe("aih mcp — MCP write hygiene", () => {
       },
       ["FIXTURE_TOKEN"],
     ],
-  ] as const)("secret grammar %s", (_name, servers, expected) => {
+  ];
+
+  it.each(validSecretReferenceCatalogs)("secret grammar %s", (_name, servers, expected) => {
     expect(validateMcpSecretReferences(servers)).toEqual(expected);
     expect(envPlaceholders(servers)).toEqual(expected);
+    expect(mcpHygieneIssues(servers, {})).toContainEqual({
+      server: Object.keys(servers)[0],
+      kind: "missing-env",
+      detail: `missing required env var ${expected[0]}`,
+    });
   });
 
   it.each([
@@ -1255,6 +1262,34 @@ describe("aih mcp — MCP write hygiene", () => {
     } catch (error) {
       expect(String(error)).not.toContain(value);
     }
+  });
+
+  it("selects an invalid secret reference diagnostic in sorted server and key order", () => {
+    const servers: Record<string, McpServer> = {
+      zulu: {
+        type: "http",
+        url: "https://mcp.example.test",
+        headers: { Authorization: "Basic fixture-secret" },
+        description: "fixture",
+        classification: "third-party-hosted",
+        egress: "third-party",
+        credentials: "token",
+        supplyChain: "hosted-remote",
+      },
+      alpha: {
+        type: "stdio",
+        command: "fixture",
+        args: [],
+        env: { ZED_TOKEN: "fixture-secret", ALPHA_TOKEN: "fixture-secret" },
+        description: "fixture",
+        classification: "local",
+        egress: "none",
+        credentials: "token",
+        supplyChain: "pinned",
+      },
+    };
+
+    expect(() => validateMcpSecretReferences(servers)).toThrow('server "alpha" env "ALPHA_TOKEN"');
   });
 
   it("--cli opencode writes the global config, preserves existing provider settings, and disables missing-token servers", async () => {
