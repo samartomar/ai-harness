@@ -982,8 +982,8 @@ describe("Codex managed destination safety", () => {
     });
   }
 
-  it.each(["before", "after"] as const)(
-    "writes Core's exact Chrome DevTools pin for a claimed legacy table %s the managed fence",
+  it.each(["before", "after", "inside"] as const)(
+    "writes Core's exact Chrome DevTools pin for a claimed mutable table %s the managed fence",
     (legacyPosition) => {
       const home = join(tmp, "home");
       const repo = join(tmp, "ecc");
@@ -1027,18 +1027,23 @@ describe("Codex managed destination safety", () => {
       ];
       const fence = [
         "# >>> aih managed (mcp) >>>",
+        ...(legacyPosition === "inside" ? legacy : []),
+        ...(legacyPosition === "inside" ? [""] : []),
         '[mcp_servers."sequential-thinking"]',
         'command = "npx"',
         "# <<< aih managed (mcp) <<<",
       ];
       writeFileSync(
         join(home, ".codex", "config.toml"),
-        [
-          ...(legacyPosition === "before" ? legacy : fence),
-          "",
-          ...(legacyPosition === "before" ? fence : legacy),
-          "",
-        ].join("\n"),
+        (legacyPosition === "inside"
+          ? [...fence, ""]
+          : [
+              ...(legacyPosition === "before" ? legacy : fence),
+              "",
+              ...(legacyPosition === "before" ? fence : legacy),
+              "",
+            ]
+        ).join("\n"),
         "utf8",
       );
       writeFileSync(
@@ -1102,12 +1107,70 @@ describe("Codex managed destination safety", () => {
     },
   );
 
+  it.each([
+    ["stale claim", ["chrome-devtools", "sequential-thinking"]],
+    ["duplicate claim", ["sequential-thinking", "sequential-thinking"]],
+    ["hostile claim", ["sequential-thinking", "bad\n[mcp_servers.evil]"]],
+  ])("refuses a %s in live Codex MCP state before effects", (_case, mcpServers) => {
+    const home = join(tmp, `state-${_case.replace(/\W+/g, "-")}`);
+    const repo = join(tmp, `ecc-${_case.replace(/\W+/g, "-")}`);
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    const putRepo = (relative: string, contents: string) => {
+      const target = join(repo, relative);
+      mkdirSync(join(target, ".."), { recursive: true });
+      writeFileSync(target, contents, "utf8");
+    };
+    putRepo("scripts/codex/merge-codex-config.js", "process.exit(0);\n");
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      [
+        "# >>> aih managed (mcp) >>>",
+        '[mcp_servers."sequential-thinking"]',
+        'command = "npx"',
+        "# <<< aih managed (mcp) <<<",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(home, ".codex", "ecc-aih-install-state.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        managedBy: "aih",
+        codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers },
+        agentsBlock: true,
+      }),
+    );
+    const base = makeCtx({ cli: "codex" });
+    const ctx = { ...base, env: { ...base.env, HOME: home, USERPROFILE: home } };
+    const action = codexEccActions(
+      ctx,
+      { dir: repo, posix: repo.replace(/\\/g, "/"), explicit: true, hasCache: false },
+      "minimal",
+      undefined,
+      coreOwnedEccCodexMcpServers(),
+    ).find(
+      (candidate): candidate is ExecAction =>
+        candidate.kind === "exec" && candidate.describe.startsWith("Install ECC for Codex"),
+    );
+    if (action === undefined) throw new Error("missing Codex merge action");
+    const before = readFileSync(join(home, ".codex", "config.toml"), "utf8");
+    const result = spawnSync(process.execPath, action.argv.slice(1), {
+      cwd: repo,
+      encoding: "utf8",
+    });
+    expect(result.status).not.toBe(0);
+    expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toBe(before);
+    expect(existsSync(join(home, ".codex", "AGENTS.md"))).toBe(false);
+  });
+
   it("keeps AIH state when prune cannot safely remove a claimed pre-fence Chrome table", () => {
     const home = join(tmp, "legacy-prune-home");
     mkdirSync(join(home, ".codex"), { recursive: true });
     writeFileSync(
       join(home, ".codex", "config.toml"),
       [
+        'approval_policy = "on-request"',
+        "",
         "[mcp_servers.chrome-devtools]",
         'command = "npx"',
         'args = ["-y", "chrome-devtools-mcp@latest"]',
@@ -1120,7 +1183,12 @@ describe("Codex managed destination safety", () => {
       JSON.stringify({
         schemaVersion: 1,
         managedBy: "aih",
-        codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: ["chrome-devtools"] },
+        codexToml: {
+          rootKeys: ["approval_policy"],
+          tables: [],
+          tableKeys: {},
+          mcpServers: ["chrome-devtools"],
+        },
         agentsBlock: true,
       }),
     );
@@ -1131,6 +1199,44 @@ describe("Codex managed destination safety", () => {
         env: { ...base.env, HOME: home, USERPROFILE: home },
       }),
     ).toBeUndefined();
+  });
+
+  it("reobserves the live Codex config before a planned state cleanup", () => {
+    const home = join(tmp, "prune-reobserve-home");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    const statePath = join(home, ".codex", "ecc-aih-install-state.json");
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      [
+        "# >>> aih managed (mcp) >>>",
+        '[mcp_servers."chrome-devtools"]',
+        'command = "npx"',
+        'args = ["-y", "chrome-devtools-mcp@1.7.0"]',
+        "# <<< aih managed (mcp) <<<",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        managedBy: "aih",
+        codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: ["chrome-devtools"] },
+        agentsBlock: true,
+      }),
+    );
+    const base = makeCtx({ cli: "codex" });
+    const action = codexInstallStateCleanupAction({
+      ...base,
+      env: { ...base.env, HOME: home, USERPROFILE: home },
+    });
+    expect(action?.kind).toBe("exec");
+    if (action?.kind !== "exec") throw new Error("missing Codex state cleanup action");
+    const executable = action.argv[0];
+    if (executable === undefined) throw new Error("missing Codex state cleanup executable");
+    const result = spawnSync(executable, action.argv.slice(1), { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(existsSync(statePath)).toBe(true);
   });
 
   it.skipIf(!symlinksAvailable).each(["existing", "dangling"] as const)(

@@ -673,6 +673,18 @@ export function codexConfigRemovalAction(ctx: PlanContext): Action | undefined {
   );
 }
 
+function claimedMcpTableRemains(raw: string, claimedNames: readonly string[]): boolean {
+  const claimed = new Set(claimedNames);
+  if (claimed.size === 0) return false;
+  return raw
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .some((line) => {
+      const header = line.match(TOML_SERVER_HEADER);
+      return header !== null && claimed.has(tomlHeaderName(header));
+    });
+}
+
 export function codexInstallStateCleanupAction(ctx: PlanContext): Action | undefined {
   const statePath = codexInstallStatePath(ctx);
   const state = readCodexInstallState(ctx);
@@ -680,17 +692,18 @@ export function codexInstallStateCleanupAction(ctx: PlanContext): Action | undef
   const config = readIfExists(join(codexHomeDir(ctx), "config.toml"));
   if (
     config !== undefined &&
-    state.codexToml.mcpServers.length > 0 &&
-    stripCodexTomlFootprint(config, state.codexToml) === config
-  ) {
-    // The footprint is not removable (for example, a legacy pre-fence Chrome
-    // entry). Keeping the state prevents an orphaned @latest configuration.
+    claimedMcpTableRemains(
+      stripCodexTomlFootprint(config, state.codexToml),
+      state.codexToml.mcpServers,
+    )
+  )
     return undefined;
-  }
   return exec("remove aih ECC Codex install-state after prune cleanup (under --apply)", [
     "node",
     "-e",
-    "const fs=require('fs'); fs.rmSync(process.argv[1], { force: true });",
+    'const fs=require("fs"); const config=process.argv[2]; const claimed=new Set(JSON.parse(process.argv[3])); const raw=fs.existsSync(config)?fs.readFileSync(config,"utf8"):""; const header=/^[ \\t]*\\[mcp_servers\\.(?:"([^"]+)"|\'([^\']+)\'|([^.\\]\\\'"]+))\\][ \\t]*(?:#.*)?$/; if (raw.replace(/\\r\\n/g,"\\n").split("\\n").some((line)=>{const match=line.match(header); return match && claimed.has(match[1]||match[2]||match[3]);})) process.exit(0); fs.rmSync(process.argv[1], { force: true });',
     statePath,
+    join(codexHomeDir(ctx), "config.toml"),
+    JSON.stringify(state.codexToml.mcpServers),
   ]);
 }
