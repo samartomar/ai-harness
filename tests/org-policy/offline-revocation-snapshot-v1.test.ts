@@ -189,7 +189,7 @@ describe("OfflineRevocationSnapshotV1", () => {
     durable = undefined;
     expect(
       claimOfflineRevocationStateV1({
-        claim: (_expected, _replacement) => {
+        claim: (_expected: unknown, _replacement: unknown) => {
           durable = { digestSha256: "c".repeat(64), issuer: "platform-security", sequence: 9 };
           return false;
         },
