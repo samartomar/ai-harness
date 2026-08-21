@@ -2239,7 +2239,7 @@ describe("governed candidate projection", () => {
       if (mode === "expired") {
         decision.expiresAt = new Date(initiallyValidAt.getTime() + 3_600_000).toISOString();
       }
-      writeDecisionAuthorityReceipt([decision]);
+      writeDecisionAuthorityReceipt([decision], [], [...targets]);
       const applied = ctx({ apply: true, targets: [...targets] });
       if (targets.includes("claude")) {
         mkdirSync(join(dir, ".claude"), { recursive: true });
@@ -2293,7 +2293,9 @@ describe("governed candidate projection", () => {
         /decision-expired|decision-revoked/,
       );
       expect(
-        Object.fromEntries(projectedFiles.map((path) => [path, readFileSync(join(dir, path), "utf8")])),
+        Object.fromEntries(
+          projectedFiles.map((path) => [path, readFileSync(join(dir, path), "utf8")]),
+        ),
       ).toEqual(projectedBytes);
       writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(policy));
       const check = await orgPolicyEffectiveCheck(applied);
@@ -2342,7 +2344,9 @@ describe("governed candidate projection", () => {
         const settings = JSON.parse(
           readFileSync(join(dir, ".kiro", "settings", "mcp.json"), "utf8"),
         );
-        expect(settings.mcpServers).toEqual({ operatorManagedSibling: { command: "operator-mcp" } });
+        expect(settings.mcpServers).toEqual({
+          operatorManagedSibling: { command: "operator-mcp" },
+        });
       }
     },
   );
