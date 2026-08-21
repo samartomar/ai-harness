@@ -356,6 +356,15 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     expect(blob).toContain(".codex/config.toml");
   });
 
+  it("projects the Chrome DevTools default from Core's exact pin, never ECC's floating merge", async () => {
+    const actions = (await command.plan(makeCtx({ cli: "codex" }))).actions;
+    const blob = execBlob(actions);
+
+    expect(blob).not.toContain("merge-mcp-config.js");
+    expect(blob).toContain("chrome-devtools-mcp@1.7.0");
+    expect(blob).not.toContain("chrome-devtools-mcp@latest");
+  });
+
   it("--cli codex passes the requested profile into the managed Codex file install", async () => {
     const install = execs(
       (await command.plan(makeCtx({ cli: "codex", profile: "minimal" }))).actions,
