@@ -1212,12 +1212,18 @@ describe("Codex managed destination safety", () => {
       }),
     );
     const base = makeCtx({ cli: "codex" });
-    expect(
-      codexInstallStateCleanupAction({
-        ...base,
-        env: { ...base.env, HOME: home, USERPROFILE: home },
-      }),
-    ).toBeUndefined();
+    const action = codexInstallStateCleanupAction({
+      ...base,
+      env: { ...base.env, HOME: home, USERPROFILE: home },
+    });
+    expect(action?.kind).toBe("exec");
+    if (action?.kind !== "exec") throw new Error("missing held-custody Codex cleanup action");
+    const executable = action.argv[0];
+    if (executable === undefined) throw new Error("missing held-custody Codex cleanup executable");
+    const result = spawnSync(executable, action.argv.slice(1), { encoding: "utf8" });
+    expect(result.status).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toContain("refusing AIH state cleanup");
+    expect(existsSync(join(home, ".codex", "ecc-aih-install-state.json"))).toBe(true);
   });
 
   it("reobserves the live Codex config before a planned state cleanup", () => {
