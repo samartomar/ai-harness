@@ -476,6 +476,35 @@ describe("aih prune command", () => {
     ).toBe(true);
   });
 
+  it("reports a malformed claimed Codex AIH state without planning its cleanup", async () => {
+    const home = join(dir, "home");
+    marker("claude");
+    write("ai-coding/adapters/claude.md");
+    write("ai-coding/adapters/codex.md");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(join(home, ".codex", CODEX_INSTALL_STATE_FILE), "{not-json\n", "utf8");
+
+    const context = ctx({ env: { HOME: home, USERPROFILE: home } });
+    const actions = (await command.plan(context)).actions;
+    const refusal = actions.find(
+      (action): action is Extract<Action, { kind: "probe" }> =>
+        action.kind === "probe" && action.describe.includes("invalid AIH ECC Codex install-state"),
+    );
+
+    expect(refusal).toBeDefined();
+    expect(
+      actions.some(
+        (action) =>
+          action.kind === "exec" &&
+          action.describe.includes("remove aih ECC Codex install-state"),
+      ),
+    ).toBe(false);
+    expect(await refusal?.run(context)).toMatchObject({
+      verdict: "fail",
+      code: "config.invalid",
+    });
+  });
+
   it("subtracts recorded ECC Codex keys from inline TOML tables when codex is dropped", async () => {
     const home = join(dir, "home");
     marker("claude");
