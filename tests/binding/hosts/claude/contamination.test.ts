@@ -147,6 +147,20 @@ describe("claudeContaminationReport — clean home", () => {
     expect(report.warnings).toEqual([]);
     expect(report.informational.skillOverrides).toEqual([]);
   });
+
+  it("classifies empty and schema-only user settings as harmless husks, but keeps active content contaminated", () => {
+    seed(".claude/settings.json", "{}\n");
+    let report = claudeContaminationReport({ home, projectRoot });
+    expect(report.informational.settingsHusk).toBe(true);
+    expect(report.clean).toBe(true);
+    seedJson(".claude/settings.json", { $schema: "https://json.schemastore.org/claude-code-settings.json" });
+    report = claudeContaminationReport({ home, projectRoot });
+    expect(report.informational.settingsHusk).toBe(true);
+    seedJson(".claude/settings.json", { hooks: { PreToolUse: ["echo unsafe"] } });
+    report = claudeContaminationReport({ home, projectRoot });
+    expect(report.informational.settingsHusk).toBe(false);
+    expect(report.clean).toBe(false);
+  });
 });
 
 describe("claudeContaminationReport — host-scaffolded empty skill directories", () => {

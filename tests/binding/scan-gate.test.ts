@@ -14,6 +14,7 @@ import {
   resolveGitSource,
   resolveNpmSource,
   runFastScanGate,
+  rollupScanFindings,
   type ScanDisposition,
   scannableFromGit,
 } from "../../src/binding/scan-gate.js";
@@ -75,6 +76,22 @@ const producedCritical: DimensionInspector = {
     ],
   }),
 };
+
+describe("rollupScanFindings", () => {
+  it("groups every raw finding deterministically without masking duplicate identities", () => {
+    const findings = [
+      { code: "z", severity: "high" as const, detail: "z", coverage: "complete" as const, path: "b.md", accepted: true },
+      { code: "a", severity: "medium" as const, detail: "a", coverage: "complete" as const, path: "a.md" },
+      { code: "a", severity: "high" as const, detail: "again", coverage: "complete" as const, path: "a.md" },
+      { code: "global", severity: "critical" as const, detail: "global", coverage: "complete" as const },
+    ];
+    expect(rollupScanFindings(findings)).toEqual([
+      expect.objectContaining({ path: "a.md", findings: [findings[1], findings[2]] }),
+      expect.objectContaining({ path: "b.md", findings: [findings[0]] }),
+      expect.objectContaining({ path: undefined, findings: [findings[3]] }),
+    ]);
+  });
+});
 
 // Simulates a future deep dimension (W7) that is unavailable, so coverage is
 // incomplete even though the W2 default inspectors all produce.

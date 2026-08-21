@@ -121,6 +121,15 @@ describe("classifyFileTypography (rule-8 per-file visible-typography demotion)",
     );
   });
 
+  it("keeps Turkish İ/ı prose, comments, and strings advisory while code positions block", () => {
+    expect(classifyFileTypography("docs/turkish.md", "Turkish İstanbul and ıslak prose.\n").demote).toBe(true);
+    expect(classifyFileTypography("src/turkish.ts", "// İstanbul and ıslak comment\nconst value = 1;\n").demote).toBe(true);
+    expect(classifyFileTypography("src/turkish.ts", 'const label = "İstanbul ıslak";\n').demote).toBe(true);
+    expect(classifyFileTypography("src/turkish.ts", "const İstanbul = 1;\n").demote).toBe(false);
+    expect(classifyFileTypography("settings.json", '{"İstanbul": "value"}\n').demote).toBe(false);
+    expect(classifyFileTypography("src/turkish.ts", "const value = İ;\n").demote).toBe(false);
+  });
+
   it("markdown code fence: decorative diagram demotes; confusable and point-3 block", () => {
     expect(
       classifyFileTypography("qa/SKILL.md", `\`\`\`\n${BOX.repeat(10)}\n${ARROW}\n\`\`\`\n`).demote,
