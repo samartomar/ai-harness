@@ -22,6 +22,10 @@ import { managedMcpProjectionState } from "../../src/mcp/managed-projection.js";
 import { mcpApprovalSubject } from "../../src/mcp/policy.js";
 import { mcpServers } from "../../src/mcp/servers.js";
 import {
+  kiroMcpProjectionOwnership,
+  managedMcpProjectionOwnership,
+} from "../../src/config/marker.js";
+import {
   PolicyAuthorityReceiptSchema,
   verifyPolicyAuthorityReceipt,
 } from "../../src/org-policy/authority.js";
@@ -40,6 +44,8 @@ import {
 import {
   authoritySuffix,
   orgPolicyHookReceiptState,
+  orgPolicyKiroMcpReceiptState,
+  orgPolicyMcpReceiptState,
   orgPolicyProjectionActions,
   verifiedOrgPolicyProjectionActions,
 } from "../../src/org-policy/project.js";
@@ -1805,6 +1811,41 @@ describe("governed candidate projection", () => {
     const check = await orgPolicyEffectiveCheck(applied);
     expect(check).toMatchObject({ verdict: "fail", code: "org-policy.effective-blocked" });
     expect(check.detail).toContain("retain a prior governed selection");
+  });
+
+  it("classifies disabled exact legacy Claude and Kiro receipts as retained, not upgrade-required", async () => {
+    for (const targets of [["claude"], ["kiro"]] as const) {
+      const active = reviewedMcpPolicy({ allowedServers: [], disabledServers: [], targets });
+      const applied = ctx({ apply: true, targets: [...targets] });
+      await executePlan(
+        plan("governed MCP", ...(await verifiedOrgPolicyProjectionActions(applied, active))),
+        applied,
+      );
+      const markerPath = join(dir, ".aih-config.json");
+      const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
+      if (targets[0] === "claude") {
+        const ownership = marker.managedMcpProjection as {
+          expected: Parameters<typeof managedMcpProjectionOwnership>[0];
+        };
+        marker.managedMcpProjection = managedMcpProjectionOwnership(ownership.expected);
+      } else {
+        const ownership = marker.kiroMcpProjection as {
+          expected: Parameters<typeof kiroMcpProjectionOwnership>[0];
+        };
+        marker.kiroMcpProjection = kiroMcpProjectionOwnership(ownership.expected);
+      }
+      writeFileSync(markerPath, JSON.stringify(marker));
+      const disabled = JSON.parse(JSON.stringify(active)) as typeof active;
+      if (disabled.governance === undefined) throw new Error("expected governance fixture");
+      disabled.governance.activations[0]!.state = "disabled";
+      disabled.mcp!.allowManagedOnly = false;
+      const effective = (await resolveRuntimeOrgPolicy(applied, disabled)).effective;
+      const state =
+        targets[0] === "claude"
+          ? orgPolicyMcpReceiptState(applied, effective)
+          : orgPolicyKiroMcpReceiptState(applied, effective);
+      expect(state.state).toBe("retained");
+    }
   });
 
   it("keeps a changed governed MCP selected set retained until policy project reconciles it", async () => {
