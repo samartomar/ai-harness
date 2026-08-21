@@ -514,7 +514,13 @@ function stripManagedMcpTables(raw: string, claimedNames: readonly string[]): st
       names.add(name);
       current = { name, lines: [line] };
     } else if (TOML_TABLE_HEADER.test(line)) {
-      return raw;
+      if (
+        current === undefined ||
+        !tableHeaderPattern(`mcp_servers.${current.name}`, true).test(line)
+      ) {
+        return raw;
+      }
+      current.lines.push(line);
     } else if (current !== undefined) {
       current.lines.push(line);
     } else if (line.trim().length > 0) {
