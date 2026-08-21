@@ -5,6 +5,7 @@ import {
   linkSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -995,6 +996,8 @@ describe("Codex managed destination safety", () => {
     ["live-relinquished", "npx", '["chrome-devtools-mcp@latest"]'],
     ["agents-failure", "npx", '["chrome-devtools-mcp@latest"]'],
     ["live-config-takeover", "npx", '["chrome-devtools-mcp@latest"]'],
+    ["live-config-race", "npx", '["chrome-devtools-mcp@latest"]'],
+    ["temp-cleanup", "npx", '["chrome-devtools-mcp@latest"]'],
   ] as const)(
     "writes Core's exact Chrome DevTools pin for a claimed mutable table %s the managed fence",
     (legacyPosition, command, args) => {
@@ -1006,17 +1009,17 @@ describe("Codex managed destination safety", () => {
         mkdirSync(join(target, ".."), { recursive: true });
         writeFileSync(target, contents, "utf8");
       };
+      const baselineFailure =
+        legacyPosition === "managed-failure" || legacyPosition === "agents-failure";
       putRepo(
         "scripts/codex/merge-codex-config.js",
-        [
-          'const fs = require("node:fs");',
-          "const config = process.argv[2];",
-          'const raw = fs.readFileSync(config, "utf8");',
-          "const additions = [];",
-          "if (!/^[ \\t]*approval_policy\\s*=/m.test(raw)) additions.push('approval_policy = \"on-request\"\\n');",
-          "if (!/^[ \\t]*sandbox_mode\\s*=/m.test(raw)) additions.push('sandbox_mode = \"workspace-write\"\\n');",
-          'if (additions.length > 0) fs.writeFileSync(config, additions.join("") + raw);',
-        ].join("\n"),
+        legacyPosition === "live-config-race"
+          ? `const fs = require("node:fs"); const live = ${JSON.stringify(join(home, ".codex", "config.toml"))}; fs.writeFileSync(live, 'sandbox_mode = "operator"\\n' + fs.readFileSync(live, "utf8"));`
+          : legacyPosition === "temp-cleanup"
+            ? `require("node:fs").writeFileSync(${JSON.stringify(join(repo, "merge-path.txt"))}, process.argv[2]);`
+            : baselineFailure
+              ? 'const fs = require("node:fs"); const config = process.argv[2]; fs.writeFileSync(config, "approval_policy = \\\"on-request\\\"\\n" + fs.readFileSync(config, "utf8"));'
+              : "process.exit(0);\n",
       );
       putRepo("scripts/codex/merge-mcp-config.js", 'throw new Error("vendor MCP merge ran");\n');
       putRepo(
@@ -1066,7 +1069,9 @@ describe("Codex managed destination safety", () => {
           : legacyPosition === "managed-failure" ||
               legacyPosition === "live-relinquished" ||
               legacyPosition === "agents-failure" ||
-              legacyPosition === "live-config-takeover"
+              legacyPosition === "live-config-takeover" ||
+              legacyPosition === "live-config-race" ||
+              legacyPosition === "temp-cleanup"
             ? [
                 ...(legacyPosition === "live-relinquished"
                   ? ['approval_policy = "operator"', ""]
@@ -1102,7 +1107,9 @@ describe("Codex managed destination safety", () => {
                       legacyPosition === "managed-failure" ||
                       legacyPosition === "live-relinquished" ||
                       legacyPosition === "agents-failure" ||
-                      legacyPosition === "live-config-takeover"
+                      legacyPosition === "live-config-takeover" ||
+                      legacyPosition === "live-config-race" ||
+                      legacyPosition === "temp-cleanup"
                     ? ["chrome-devtools"]
                     : ["chrome-devtools", "sequential-thinking"],
             },
@@ -1140,7 +1147,9 @@ describe("Codex managed destination safety", () => {
                 legacyPosition === "managed-failure" ||
                 legacyPosition === "live-relinquished" ||
                 legacyPosition === "agents-failure" ||
-                legacyPosition === "live-config-takeover"
+                legacyPosition === "live-config-takeover" ||
+                legacyPosition === "live-config-race" ||
+                legacyPosition === "temp-cleanup"
               ? ["chrome-devtools"]
               : ["chrome-devtools", "sequential-thinking"],
         ),
@@ -1172,8 +1181,12 @@ describe("Codex managed destination safety", () => {
         writeFileSync(configPath, `sandbox_mode = "operator"\n${readFileSync(configPath, "utf8")}`);
       }
 
+      const configBeforeApply =
+        legacyPosition === "managed-failure" || legacyPosition === "agents-failure"
+          ? readFileSync(join(home, ".codex", "config.toml"), "utf8")
+          : undefined;
       const stateBeforeApply =
-        legacyPosition === "agents-failure"
+        legacyPosition === "agents-failure" || legacyPosition === "live-config-race"
           ? readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")
           : undefined;
 
@@ -1193,20 +1206,24 @@ describe("Codex managed destination safety", () => {
 
       if (legacyPosition === "managed-failure") {
         expect(result.status).not.toBe(0);
-        expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).not.toContain(
-          "# >>> aih managed (mcp) >>>",
-        );
+        expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toBe(configBeforeApply);
         expect(existsSync(join(home, ".codex", "AGENTS.md"))).toBe(false);
         return;
       }
 
       if (legacyPosition === "agents-failure") {
         expect(result.status).not.toBe(0);
-        expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toContain(
-          'args = ["chrome-devtools-mcp@latest"]',
+        expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toBe(configBeforeApply);
+        expect(readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")).toBe(
+          stateBeforeApply,
         );
-        expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).not.toContain(
-          "# >>> aih managed (mcp) >>>",
+        return;
+      }
+
+      if (legacyPosition === "live-config-race") {
+        expect(result.status).not.toBe(0);
+        expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toContain(
+          'sandbox_mode = "operator"',
         );
         expect(readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")).toBe(
           stateBeforeApply,
@@ -1243,6 +1260,13 @@ describe("Codex managed destination safety", () => {
         expect(outputRootKeys).toContain("approval_policy");
         expect(outputRootKeys).not.toContain("sandbox_mode");
       } else expect(outputRootKeys).toContain("approval_policy");
+      if (legacyPosition === "temp-cleanup") {
+        const mergedPath = readFileSync(join(repo, "merge-path.txt"), "utf8");
+        expect(mergedPath).toMatch(/\.aih-codex-[^\\/]+[\\/]config\.toml$/);
+        expect(
+          readdirSync(join(home, ".codex")).filter((entry) => entry.startsWith(".aih-codex-")),
+        ).toEqual([]);
+      }
       const agents = readFileSync(join(home, ".codex", "AGENTS.md"), "utf8");
       if (
         legacyPosition === "vanished" ||
