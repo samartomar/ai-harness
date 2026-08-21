@@ -54,6 +54,10 @@ function trust(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function custodyTrust(overrides: Record<string, unknown> = {}) {
+  return { now: "2026-08-10T12:00:01Z", ...trust(), ...overrides };
+}
+
 function resolve(overrides: Record<string, unknown> = {}) {
   const signedSnapshot =
     (overrides.signedSnapshot as ReturnType<typeof signed> | undefined) ?? signed();
@@ -176,7 +180,9 @@ describe("OfflineRevocationSnapshotV1", () => {
 
   it("rejects rollback and equal-sequence substitution while producing a deterministic next durable state", () => {
     const current = { digestSha256: "b".repeat(64), issuer: "platform-security", sequence: 7 };
-    expect(transitionOfflineRevocationStateV1({ current, next: signed(), ...trust() })).toEqual({
+    expect(
+      transitionOfflineRevocationStateV1({ current, next: signed(), ...custodyTrust() }),
+    ).toEqual({
       kind: "conflict",
       state: current,
     });
@@ -184,7 +190,7 @@ describe("OfflineRevocationSnapshotV1", () => {
       transitionOfflineRevocationStateV1({
         current: { ...current, sequence: 8 },
         next: signed(),
-        ...trust(),
+        ...custodyTrust(),
       }),
     ).toEqual({
       kind: "rollback",
@@ -194,7 +200,7 @@ describe("OfflineRevocationSnapshotV1", () => {
       transitionOfflineRevocationStateV1({
         current,
         next: signed({ snapshot: snapshot({ sequence: 8 }) }),
-        ...trust(),
+        ...custodyTrust(),
       }),
     ).toMatchObject({
       kind: "advance",
@@ -216,7 +222,7 @@ describe("OfflineRevocationSnapshotV1", () => {
           claim(expected, replacement),
         next,
         observe: (_issuer: string) => durable,
-        ...trust(),
+        ...custodyTrust(),
       }),
     ).toMatchObject({
       kind: "advanced",
@@ -233,7 +239,7 @@ describe("OfflineRevocationSnapshotV1", () => {
         },
         next,
         observe: (_issuer: string) => durable,
-        ...trust(),
+        ...custodyTrust(),
       }),
     ).toEqual({ kind: "contended" });
 
@@ -244,7 +250,7 @@ describe("OfflineRevocationSnapshotV1", () => {
         observe: (_issuer: string) => {
           throw new Error("hostile storage error");
         },
-        ...trust(),
+        ...custodyTrust(),
       }),
     ).toThrow("offline revocation state custody");
 
@@ -257,7 +263,7 @@ describe("OfflineRevocationSnapshotV1", () => {
           asyncObservations += 1;
           return asyncObservations === 1 ? undefined : Promise.resolve(undefined);
         },
-        ...trust(),
+        ...custodyTrust(),
       }),
     ).toEqual({ kind: "contended" });
 
@@ -268,7 +274,7 @@ describe("OfflineRevocationSnapshotV1", () => {
         },
         next,
         observe: (_issuer: string) => undefined,
-        ...trust(),
+        ...custodyTrust(),
       }),
     ).toEqual({ kind: "contended" });
 
@@ -287,7 +293,7 @@ describe("OfflineRevocationSnapshotV1", () => {
             ? undefined
             : { digestSha256: "d".repeat(64), issuer: "platform-security", sequence: 9 };
         },
-        ...trust(),
+        ...custodyTrust(),
       }),
     ).toEqual({ kind: "contended" });
   });
@@ -309,7 +315,7 @@ describe("OfflineRevocationSnapshotV1", () => {
         transitionOfflineRevocationStateV1({
           current,
           next: forged,
-          ...trust({ verifyCanonicalPae }),
+          ...custodyTrust({ verifyCanonicalPae }),
         }),
       ).toEqual({ kind: "invalid-authority" });
       const claim = vi.fn(() => true);
@@ -319,11 +325,45 @@ describe("OfflineRevocationSnapshotV1", () => {
           claim,
           next: forged,
           observe,
-          ...trust({ verifyCanonicalPae }),
+          ...custodyTrust({ verifyCanonicalPae }),
         }),
       ).toEqual({ kind: "invalid-authority" });
       expect(claim).not.toHaveBeenCalled();
       expect(observe).not.toHaveBeenCalled();
+    }
+  });
+
+  it("settles future and expired snapshots before custody callbacks", () => {
+    for (const [label, next, now, expectedKind] of [
+      [
+        "future",
+        signed({ snapshot: snapshot({ issuedAt: "2026-08-10T12:00:02Z", sequence: 9 }) }),
+        "2026-08-10T12:00:01Z",
+        "invalid-authority",
+      ],
+      ["expired", signed(), "2026-08-11T12:00:00Z", "stale-authority"],
+    ] as const) {
+      expect(
+        transitionOfflineRevocationStateV1({
+          current: undefined,
+          next,
+          ...custodyTrust({ now }),
+        }),
+        label,
+      ).toEqual({ kind: expectedKind });
+      const observe = vi.fn((_issuer: string) => undefined);
+      const claim = vi.fn(() => true);
+      expect(
+        claimOfflineRevocationStateV1({
+          claim,
+          next,
+          observe,
+          ...custodyTrust({ now }),
+        }),
+        label,
+      ).toEqual({ kind: expectedKind });
+      expect(observe).not.toHaveBeenCalled();
+      expect(claim).not.toHaveBeenCalled();
     }
   });
 
@@ -364,7 +404,14 @@ describe("OfflineRevocationSnapshotV1", () => {
       transitionOfflineRevocationStateV1({
         current: undefined,
         next,
-        ...trust({ expectedIssuer: "other-issuer" }),
+        ...custodyTrust({ expectedIssuer: "other-issuer" }),
+      }),
+    ).toEqual({ kind: "invalid-authority" });
+    expect(
+      transitionOfflineRevocationStateV1({
+        current: { ...stateFor(next), issuer: "other-issuer" },
+        next,
+        ...custodyTrust(),
       }),
     ).toEqual({ kind: "invalid-authority" });
     const noncanonical = JSON.stringify(
@@ -396,7 +443,7 @@ describe("OfflineRevocationSnapshotV1", () => {
           Promise.resolve(true),
         next,
         observe: (_issuer: string) => undefined,
-        ...trust(),
+        ...custodyTrust(),
       }),
     ).toEqual({ kind: "contended" });
     expect(
@@ -404,7 +451,7 @@ describe("OfflineRevocationSnapshotV1", () => {
         claim: async () => true,
         next,
         observe: async () => undefined,
-        ...trust(),
+        ...custodyTrust(),
       }),
     ).toEqual({ kind: "contended" });
     expect(() =>
@@ -412,7 +459,7 @@ describe("OfflineRevocationSnapshotV1", () => {
         claim: null,
         next,
         observe: (_issuer: string) => undefined,
-        ...trust(),
+        ...custodyTrust(),
       }),
     ).toThrow("offline revocation state custody");
   });
