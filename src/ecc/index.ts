@@ -801,10 +801,27 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
     spaces();
     if (index === body.length) return undefined;
   }
-  return keys.length >= 2 && keys[0] === "mcp_servers" ? { keys, array } : undefined;
+  return keys.length >= 1 && keys[0] === "mcp_servers" ? { keys, array } : undefined;
 }
 function tomlMcpRootName(line) { const header = tomlMcpTableHeader(line); return header && header.keys.length === 2 ? header.keys[1] : undefined; }
+function assignmentLhs(line) { let quote; for (let index = 0; index < line.length; index += 1) { const character = line[index]; if (quote === '"') { if (character === "\\") index += 1; else if (character === '"') quote = undefined; continue; } if (quote === "'") { if (character === "'") quote = undefined; continue; } if (character === '"' || character === "'") quote = character; else if (character === "#") return undefined; else if (character === "=") return line.slice(0, index).trim(); } return undefined; }
+function nonRootMcpAmbiguity(lines, names) {
+  const roots = new Set(); for (const line of lines) { const header = tomlMcpTableHeader(line); if (header && !header.array && header.keys.length === 2) roots.add(header.keys[1]); }
+  let inMcpServers = false; let atDocumentRoot = true;
+  for (const line of lines) {
+    const header = tomlMcpTableHeader(line);
+    if (header) { inMcpServers = !header.array && header.keys.length === 1; atDocumentRoot = false; if (header.keys.length > 2 && names.has(header.keys[1]) && !roots.has(header.keys[1])) return "non-root Codex MCP representation"; continue; }
+    if (/^[ \t]*\[/.test(line)) { inMcpServers = false; atDocumentRoot = false; continue; }
+    const lhs = assignmentLhs(line); if (lhs === undefined) continue;
+    const direct = tomlMcpTableHeader("[" + lhs + "]");
+    if (atDocumentRoot && direct && direct.keys.length >= 2 && names.has(direct.keys[1])) return "non-root Codex MCP representation";
+    if (inMcpServers) { const scoped = tomlMcpTableHeader("[mcp_servers." + lhs + "]"); if (scoped && scoped.keys.length >= 2 && names.has(scoped.keys[1])) return "non-root Codex MCP representation"; }
+    if (atDocumentRoot && direct && direct.keys.length === 1) return "opaque Codex MCP representation";
+  }
+  return undefined;
+}
 function mcpRootAmbiguity(lines, names) {
+  const nonRoot = nonRootMcpAmbiguity(lines, names); if (nonRoot) return nonRoot;
   const seen = new Set();
   for (const line of lines) {
     const header = tomlMcpTableHeader(line);

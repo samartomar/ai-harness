@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
@@ -19,7 +20,7 @@ export interface CodexMcpCollision {
   existingTransport: CodexMcpTransport;
   conflictingScope: CodexMcpScope;
   conflictingTransport: CodexMcpTransport;
-  reason?: "duplicate semantic root" | "array-of-tables root";
+  reason?: "duplicate semantic root" | "array-of-tables root" | "non-root representation";
 }
 
 /**
@@ -50,7 +51,7 @@ export const CODEX_INSTALL_STATE_FILE = "ecc-aih-install-state.json";
 
 // This runs after planning, so it repeats the narrow MCP-header identity
 // check rather than trusting plan-time custody observations.
-const CODEX_CLEANUP_REOBSERVE_SCRIPT = String.raw`const fs=require("fs");const config=process.argv[2];const claimed=new Set(JSON.parse(process.argv[3]));function header(line){let quote,clean="";for(let index=0;index<line.length;index+=1){const character=line[index];if(quote==='"'){clean+=character;if(character==="\\"){const escaped=line[index+1];if(escaped===undefined)return;if(escaped!==undefined){clean+=escaped;index+=1;}}else if(character==='"')quote=undefined;continue;}if(quote==="'"){clean+=character;if(character==="'")quote=undefined;continue;}if(character==='"'||character==="'"){quote=character;clean+=character;continue;}if(character==="#")break;clean+=character;}clean=clean.trim();const array=clean.startsWith("[[");const open=array?"[[":"[";const close=array?"]]":"]";if(!clean.startsWith(open)||!clean.endsWith(close))return;const body=clean.slice(open.length,-close.length);const keys=[];let index=0;const spaces=()=>{while(index<body.length&&/[ \t]/.test(body[index]))index+=1;};const basic=()=>{let value="";index+=1;while(index<body.length){const character=body[index];if(character==='"'){index+=1;return value;}if(character==="\r"||character==="\n")return;if(character!=="\\"){value+=character;index+=1;continue;}const escapedKey=body[index+1];if(escapedKey==="u"||escapedKey==="U"){const width=escapedKey==="u"?4:8;const hex=body.slice(index+2,index+2+width);if(!new RegExp("^[0-9A-Fa-f]{"+width+"}$").test(hex))return;const codePoint=Number.parseInt(hex,16);if(codePoint>0x10ffff||(codePoint>=0xd800&&codePoint<=0xdfff))return;value+=String.fromCodePoint(codePoint);index+=width+2;continue;}const simple={b:"\b",t:"\t",n:"\n",f:"\f",r:"\r",'"':'"',"\\":"\\"};if(escapedKey===undefined||!Object.prototype.hasOwnProperty.call(simple,escapedKey))return;value+=simple[escapedKey];index+=2;}return;};spaces();while(index<body.length){let key;if(body[index]==='"')key=basic();else if(body[index]==="'"){const end=body.indexOf("'",index+1);if(end<0)return;key=body.slice(index+1,end);index=end+1;}else{const match=/^[A-Za-z0-9_-]+/.exec(body.slice(index));if(!match)return;key=match[0];index+=key.length;}if(key===undefined)return;keys.push(key);spaces();if(index===body.length)break;if(body[index]!==".")return;index+=1;spaces();if(index===body.length)return;}return keys.length>=2&&keys[0]==="mcp_servers"?keys:undefined;}const raw=fs.existsSync(config)?fs.readFileSync(config,"utf8"):"";if(raw.replace(/\r\n/g,"\n").split("\n").some((line)=>{const keys=header(line);return keys&&keys.length===2&&claimed.has(keys[1]);}))throw new Error("claimed Codex MCP configuration remains; refusing AIH state cleanup");fs.rmSync(process.argv[1],{force:true});`;
+const CODEX_CLEANUP_STABLE_SCRIPT = `const fs=require("fs"),crypto=require("crypto");const hash=(value)=>value===undefined?"absent":crypto.createHash("sha256").update(value).digest("hex");const state=fs.existsSync(process.argv[1])?fs.readFileSync(process.argv[1],"utf8"):undefined;const config=fs.existsSync(process.argv[2])?fs.readFileSync(process.argv[2],"utf8"):undefined;if(process.argv[5]==="1"||hash(state)!==process.argv[3]||hash(config)!==process.argv[4])throw new Error("Codex cleanup inputs changed or claimed MCP custody remains; refusing AIH state cleanup");fs.rmSync(process.argv[1],{force:true});`;
 
 export interface CodexTomlFootprint {
   rootKeys: string[];
@@ -210,12 +211,73 @@ function tomlMcpTableHeader(line: string): TomlMcpTableHeader | undefined {
     skipSpaces();
     if (index === body.length) return undefined;
   }
-  return keys.length >= 2 && keys[0] === "mcp_servers" ? { keys, array } : undefined;
+  return keys.length >= 1 && keys[0] === "mcp_servers" ? { keys, array } : undefined;
 }
 
 function tomlMcpRootName(line: string): string | undefined {
   const header = tomlMcpTableHeader(line);
   return header?.keys.length === 2 ? header.keys[1] : undefined;
+}
+
+function tomlAssignmentLhs(line: string): string | undefined {
+  let quote: '"' | "'" | undefined;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index] ?? "";
+    if (quote === '"') {
+      if (character === "\\") index += 1;
+      else if (character === '"') quote = undefined;
+      continue;
+    }
+    if (quote === "'") {
+      if (character === "'") quote = undefined;
+      continue;
+    }
+    if (character === '"' || character === "'") quote = character;
+    else if (character === "#") return undefined;
+    else if (character === "=") return line.slice(0, index).trim();
+  }
+  return undefined;
+}
+
+function nonRootMcpRepresentations(raw: string): Set<string> {
+  const names = new Set<string>();
+  const roots = new Set<string>();
+  const descendants = new Set<string>();
+  let inMcpServersTable = false;
+  let atDocumentRoot = true;
+  for (const line of raw.replace(/\r\n/g, "\n").split("\n")) {
+    const header = tomlMcpTableHeader(line);
+    if (header !== undefined) {
+      inMcpServersTable = !header.array && header.keys.length === 1;
+      atDocumentRoot = false;
+      if (header.keys.length === 2 && !header.array) roots.add(header.keys[1] ?? "");
+      else if (header.keys.length > 2) descendants.add(header.keys[1] ?? "");
+      continue;
+    }
+    if (TOML_TABLE_HEADER.test(line)) {
+      inMcpServersTable = false;
+      atDocumentRoot = false;
+      continue;
+    }
+    const lhs = tomlAssignmentLhs(line);
+    if (lhs === undefined) continue;
+    const direct = tomlMcpTableHeader(`[${lhs}]`);
+    if (atDocumentRoot && direct?.keys.length && direct.keys.length >= 2) {
+      names.add(direct.keys[1] ?? "");
+      continue;
+    }
+    if (inMcpServersTable) {
+      const scoped = tomlMcpTableHeader(`[mcp_servers.${lhs}]`);
+      if (scoped?.keys.length === 2) names.add(scoped.keys[1] ?? "");
+      else if (scoped?.keys.length && scoped.keys.length > 2) names.add(scoped.keys[1] ?? "");
+      continue;
+    }
+    if (atDocumentRoot && direct?.keys.length === 1) {
+      names.add("*");
+    }
+  }
+  for (const name of descendants) if (!roots.has(name)) names.add(name);
+  return names;
 }
 
 function mergeTransport(
@@ -228,12 +290,18 @@ function mergeTransport(
 
 interface CodexMcpTransportScan {
   transports: Map<string, CodexMcpTransport>;
-  invalidRoots: Map<string, "duplicate semantic root" | "array-of-tables root">;
+  invalidRoots: Map<
+    string,
+    "duplicate semantic root" | "array-of-tables root" | "non-root representation"
+  >;
 }
 
 function codexMcpTransports(raw: string): CodexMcpTransportScan {
   const transports = new Map<string, CodexMcpTransport>();
-  const invalidRoots = new Map<string, "duplicate semantic root" | "array-of-tables root">();
+  const invalidRoots = new Map<
+    string,
+    "duplicate semantic root" | "array-of-tables root" | "non-root representation"
+  >();
   let current: string | undefined;
   for (const line of raw.replace(/\r\n/g, "\n").split("\n")) {
     const header = tomlMcpTableHeader(line);
@@ -257,6 +325,8 @@ function codexMcpTransports(raw: string): CodexMcpTransportScan {
       transports.set(current, mergeTransport(transports.get(current) ?? "unknown", "http"));
     }
   }
+  for (const name of nonRootMcpRepresentations(raw))
+    if (!invalidRoots.has(name)) invalidRoots.set(name, "non-root representation");
   return { transports, invalidRoots };
 }
 
@@ -428,9 +498,7 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
-function readCodexInstallState(ctx: PlanContext): CodexInstallState | undefined {
-  const raw = readIfExists(codexInstallStatePath(ctx));
-  if (raw === undefined) return undefined;
+function parseCodexInstallState(raw: string): CodexInstallState | undefined {
   try {
     const parsed = JSON.parse(raw) as {
       schemaVersion?: unknown;
@@ -466,6 +534,11 @@ function readCodexInstallState(ctx: PlanContext): CodexInstallState | undefined 
   } catch {
     return undefined;
   }
+}
+
+function readCodexInstallState(ctx: PlanContext): CodexInstallState | undefined {
+  const raw = readIfExists(codexInstallStatePath(ctx));
+  return raw === undefined ? undefined : parseCodexInstallState(raw);
 }
 
 function unionSorted(a: readonly string[], b: readonly string[]): string[] {
@@ -732,11 +805,37 @@ export function codexMcpTransportCollisions(
   };
 
   for (const [name, reason] of project.invalidRoots) {
+    if (name === "*") {
+      for (const [plannedName, plannedTransport] of plannedTransports)
+        pushCollision(
+          plannedName,
+          "project",
+          "unknown",
+          "planned ECC",
+          plannedTransport,
+          true,
+          reason,
+        );
+      continue;
+    }
     const plannedTransport = plannedTransports.get(name);
     if (plannedTransport !== undefined)
       pushCollision(name, "project", "unknown", "planned ECC", plannedTransport, true, reason);
   }
   for (const [name, reason] of global.invalidRoots) {
+    if (name === "*") {
+      for (const [plannedName, plannedTransport] of plannedTransports)
+        pushCollision(
+          plannedName,
+          "global",
+          "unknown",
+          "planned ECC",
+          plannedTransport,
+          true,
+          reason,
+        );
+      continue;
+    }
     const plannedTransport = plannedTransports.get(name);
     if (plannedTransport !== undefined)
       pushCollision(name, "global", "unknown", "planned ECC", plannedTransport, true, reason);
@@ -844,11 +943,25 @@ function claimedMcpTableRemains(raw: string, claimedNames: readonly string[]): b
     });
 }
 
+function contentHash(raw: string | undefined): string {
+  return raw === undefined ? "absent" : createHash("sha256").update(raw).digest("hex");
+}
+
+function claimedMcpCustodyRemains(raw: string, claimedNames: readonly string[]): boolean {
+  const nonRoot = nonRootMcpRepresentations(raw);
+  return (
+    nonRoot.has("*") ||
+    claimedMcpTableRemains(raw, claimedNames) ||
+    claimedNames.some((name) => nonRoot.has(name))
+  );
+}
+
 export function codexInstallStateCleanupAction(ctx: PlanContext): Action | undefined {
   const statePath = codexInstallStatePath(ctx);
-  const state = readCodexInstallState(ctx);
+  const stateRaw = readIfExists(statePath);
+  const state = stateRaw === undefined ? undefined : parseCodexInstallState(stateRaw);
   if (!state) {
-    if (readIfExists(statePath) === undefined) return undefined;
+    if (stateRaw === undefined) return undefined;
     return probe("refuse invalid AIH ECC Codex install-state cleanup", () => ({
       name: "AIH ECC Codex install-state",
       verdict: "fail",
@@ -858,12 +971,11 @@ export function codexInstallStateCleanupAction(ctx: PlanContext): Action | undef
     }));
   }
   const config = readIfExists(join(codexHomeDir(ctx), "config.toml"));
+  const expectedConfig =
+    config === undefined ? undefined : stripCodexTomlFootprint(config, state.codexToml);
   const held =
-    config !== undefined &&
-    claimedMcpTableRemains(
-      stripCodexTomlFootprint(config, state.codexToml),
-      state.codexToml.mcpServers,
-    );
+    expectedConfig !== undefined &&
+    claimedMcpCustodyRemains(expectedConfig, state.codexToml.mcpServers);
   return exec(
     held
       ? "refuse AIH ECC Codex install-state cleanup while claimed MCP custody remains (under --apply)"
@@ -871,10 +983,12 @@ export function codexInstallStateCleanupAction(ctx: PlanContext): Action | undef
     [
       "node",
       "-e",
-      CODEX_CLEANUP_REOBSERVE_SCRIPT,
+      CODEX_CLEANUP_STABLE_SCRIPT,
       statePath,
       join(codexHomeDir(ctx), "config.toml"),
-      JSON.stringify(state.codexToml.mcpServers),
+      contentHash(stateRaw),
+      contentHash(expectedConfig),
+      held ? "1" : "0",
     ],
   );
 }

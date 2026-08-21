@@ -971,8 +971,20 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
     ["encoded descendant table", '[mcp_servers."chrome\\u002ddevtools".env]\ntoken = "operator"\n'],
     ["top-level dotted assignment", 'mcp_servers.chrome-devtools.command = "operator-devtools"\n'],
     [
+      "top-level inline server assignment",
+      'mcp_servers.chrome-devtools = { command = "operator-devtools" }\n',
+    ],
+    [
       "top-level inline table",
       'mcp_servers = { chrome-devtools = { command = "operator-devtools" } }\n',
+    ],
+    [
+      "top-level inline dotted server key",
+      'mcp_servers = { chrome-devtools.command = "operator-devtools" }\n',
+    ],
+    [
+      "top-level unrelated inline table",
+      "mcp_servers = { unrelated = { enabled = true } } # note\n",
     ],
     [
       "mcp_servers table dotted assignment",
@@ -1017,6 +1029,34 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
     const mixed =
       '[mcp_servers.chrome-devtools]\ncommand = "npx"\nurl = "https://example.invalid/mcp"\n';
     await expectChromeDevtoolsPreflightRefusal(mixed, mixed, "mixed");
+  });
+
+  it("does not mistake an unrelated table's dotted key for a root MCP representation", async () => {
+    const actions = await chromeDevtoolsCollisionChecks(
+      '[profiles.operator]\nmcp_servers.chrome-devtools.command = "operator"\n',
+      undefined,
+    );
+
+    expect(
+      execs(actions).some((action) => action.describe.startsWith("Install ECC for Codex")),
+    ).toBe(true);
+  });
+
+  it("preserves an operator-owned Chrome root with an env descendant", async () => {
+    const actions = await chromeDevtoolsCollisionChecks(
+      [
+        "[mcp_servers.chrome-devtools]",
+        'command = "operator-devtools"',
+        "[mcp_servers.chrome-devtools.env]",
+        'TOKEN = "operator"',
+        "",
+      ].join("\n"),
+      undefined,
+    );
+
+    expect(
+      execs(actions).some((action) => action.describe.startsWith("Install ECC for Codex")),
+    ).toBe(true);
   });
 
   it("allows unrelated unknown project/global definitions while preserving known collision checks", async () => {
