@@ -313,15 +313,17 @@ describe("OfflineRevocationSnapshotV1", () => {
         }),
       ).toEqual({ kind: "invalid-authority" });
       const claim = vi.fn(() => true);
+      const observe = vi.fn((_issuer: string) => current);
       expect(
         claimOfflineRevocationStateV1({
           claim,
           next: forged,
-          observe: (_issuer: string) => current,
+          observe,
           ...trust({ verifyCanonicalPae }),
         }),
       ).toEqual({ kind: "invalid-authority" });
       expect(claim).not.toHaveBeenCalled();
+      expect(observe).not.toHaveBeenCalled();
     }
   });
 
