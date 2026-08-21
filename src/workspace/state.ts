@@ -122,7 +122,8 @@ export async function readWorkspaceRepoState(
   if (!sameWorkspaceRevision(before, after)) {
     return incompleteWorkspaceRepoState(repo, "diverged");
   }
-  const dirty = (status ?? "").length > 0;
+  if (status === undefined) return incompleteWorkspaceRepoState(repo, "unavailable");
+  const dirty = status.length > 0;
   const aheadBehind = parseAheadBehind(upstream);
   return {
     id: repo.id,
