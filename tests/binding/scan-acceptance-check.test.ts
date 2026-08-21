@@ -97,7 +97,7 @@ afterEach(() => {
 });
 
 describe("checkSuperpowersScanAcceptance", () => {
-  it("normalizes CRLF to LF before hashing and produces repeatable sorted observations", () => {
+  it("normalizes CRLF to LF before hashing and produces repeatable sorted observations", async () => {
     initVendorCheckout({ "z.md": "z\r\n", "a.md": "a\r\n" });
     const accepted = [
       {
@@ -112,11 +112,11 @@ describe("checkSuperpowersScanAcceptance", () => {
       },
     ];
 
-    const first = check(accepted, [
+    const first = await check(accepted, [
       observation("z.md"),
       observation("a.md", "trust.prompt-injection"),
     ]);
-    const second = check(accepted, [
+    const second = await check(accepted, [
       observation("a.md", "trust.prompt-injection"),
       observation("z.md"),
     ]);
@@ -129,9 +129,9 @@ describe("checkSuperpowersScanAcceptance", () => {
     expect(first.new).toEqual([]);
   });
 
-  it("reports a stale accepted tuple and a newly observed unaccepted high without authorizing either", () => {
+  it("reports a stale accepted tuple and a newly observed unaccepted high without authorizing either", async () => {
     initVendorCheckout({ "SKILL.md": "current\n" });
-    const result = check(
+    const result = await check(
       [
         {
           code: "trust.hidden-unicode",
@@ -148,10 +148,13 @@ describe("checkSuperpowersScanAcceptance", () => {
     expect(result.authorizes).toBe(false);
   });
 
-  it("reports an accepted file whose corresponding finding is missing", () => {
+  it("reports an accepted file whose corresponding finding is missing", async () => {
     initVendorCheckout({ "SKILL.md": "content\n" });
     const fileSha256 = sha256("content\n");
-    const result = check([{ code: "trust.hidden-unicode", path: "SKILL.md", fileSha256 }], []);
+    const result = await check(
+      [{ code: "trust.hidden-unicode", path: "SKILL.md", fileSha256 }],
+      [],
+    );
 
     expect(result.missing).toEqual([
       { code: "trust.hidden-unicode", path: "SKILL.md", fileSha256 },
@@ -159,10 +162,10 @@ describe("checkSuperpowersScanAcceptance", () => {
     expect(result.authorizes).toBe(false);
   });
 
-  it("never accepts a critical observation even when its exact tuple is listed", () => {
+  it("never accepts a critical observation even when its exact tuple is listed", async () => {
     initVendorCheckout({ "SKILL.md": "content\n" });
     const fileSha256 = sha256("content\n");
-    const result = check(
+    const result = await check(
       [{ code: "trust.malicious-code", path: "SKILL.md", fileSha256 }],
       [observation("SKILL.md", "trust.malicious-code", "critical")],
     );
@@ -174,46 +177,55 @@ describe("checkSuperpowersScanAcceptance", () => {
   });
 
   it.each([
-    [{ code: "trust.hidden-unicode", path: "../SKILL.md", fileSha256: "a".repeat(64) }],
-    [{ code: "trust.hidden-unicode", path: "/SKILL.md", fileSha256: "a".repeat(64) }],
-    [{ code: "trust.hidden-unicode", path: "SKILL.md", fileSha256: "invalid" }],
+    [[{ code: "trust.hidden-unicode", path: "../SKILL.md", fileSha256: "a".repeat(64) }]],
+    [[{ code: "trust.hidden-unicode", path: "/SKILL.md", fileSha256: "a".repeat(64) }]],
+    [[{ code: "trust.hidden-unicode", path: "SKILL.md", fileSha256: "invalid" }]],
     [
-      { code: "trust.hidden-unicode", path: "SKILL.md", fileSha256: "a".repeat(64) },
-      { code: "trust.hidden-unicode", path: "SKILL.md", fileSha256: "b".repeat(64) },
+      [
+        { code: "trust.hidden-unicode", path: "SKILL.md", fileSha256: "a".repeat(64) },
+        { code: "trust.hidden-unicode", path: "SKILL.md", fileSha256: "b".repeat(64) },
+      ],
     ],
-  ])("rejects malformed, duplicate, absolute, and traversal acceptance entries", (accepted) => {
-    initVendorCheckout({ "SKILL.md": "content\n" });
-    expect(() => check(accepted, [])).toThrow(ScanAcceptanceCheckError);
-  });
+  ])(
+    "rejects malformed, duplicate, absolute, and traversal acceptance entries",
+    async (accepted) => {
+      initVendorCheckout({ "SKILL.md": "content\n" });
+      await expect(check(accepted, [])).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    },
+  );
 
-  it("fails closed for a wrong, mutable, or unreadable vendor checkout", () => {
-    initVendorCheckout({ "SKILL.md": "content\n", unreadable: "not a file" });
-    expect(() =>
+  it("fails closed for a wrong, mutable, or unreadable vendor checkout", async () => {
+    initVendorCheckout({ "SKILL.md": "content\n", "unreadable/child": "not a file" });
+    await expect(
       checkSuperpowersScanAcceptance({
         checkoutPath: checkout,
         acceptance: artifact([]),
         observations: [],
       }),
-    ).toThrow(ScanAcceptanceCheckError);
+    ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
 
     git(checkout, ["checkout", "main"]);
-    expect(() => check([], [])).toThrow(ScanAcceptanceCheckError);
+    await expect(check([], [])).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
 
     git(checkout, ["checkout", "--detach", "HEAD"]);
-    expect(() => check([], [observation("unreadable")])).toThrow(ScanAcceptanceCheckError);
+    await expect(check([], [observation("unreadable")])).rejects.toBeInstanceOf(
+      ScanAcceptanceCheckError,
+    );
   });
 
-  it("rejects the AI-Harness checkout as the vendor target", () => {
+  it("rejects the AI-Harness checkout as the vendor target", async () => {
     initVendorCheckout({ "package.json": '{"name":"@aihq/harness"}\n' });
-    expect(() => check([], [])).toThrow(ScanAcceptanceCheckError);
+    await expect(check([], [])).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
   });
 
-  it("writes only to an explicit destination outside the scanned checkout", () => {
+  it("writes only to an explicit destination outside the scanned checkout", async () => {
     initVendorCheckout({ "SKILL.md": "content\n" });
-    expect(() => check([], [], join(checkout, "report.json"))).toThrow(ScanAcceptanceCheckError);
+    await expect(check([], [], join(checkout, "report.json"))).rejects.toBeInstanceOf(
+      ScanAcceptanceCheckError,
+    );
 
     const outputPath = join(tempRoot, "report.json");
-    const result = check([], [], outputPath);
+    const result = await check([], [], outputPath);
     expect(JSON.parse(readFileSync(outputPath, "utf8"))).toEqual(result);
   });
 });
