@@ -2205,6 +2205,93 @@ describe("governed candidate projection", () => {
     });
   });
 
+  it.each([
+    ["expired", ["claude"]],
+    ["revoked", ["claude"]],
+  ] as const)(
+    "retains exact %s decision-bound MCP residue for %j until disabled rollback",
+    async (mode, targets) => {
+      const policy = reviewedMcpPolicy({
+        allowedServers: [],
+        disabledServers: [],
+        targets: [...targets],
+      });
+      if (policy.governance === undefined) throw new Error("expected governance fixture");
+      policy.governance.authority.decisions = ["decision-residue"];
+      const decision = currentReviewedDecision(policy, {
+        id: "decision-residue",
+        disposition: "approved",
+        targets: [...targets],
+        acceptedFindings: [],
+        acceptedGaps: [],
+        conditions: [],
+        reviewBy: undefined,
+      });
+      delete (decision as Record<string, unknown>).reviewBy;
+      writeDecisionAuthorityReceipt([decision]);
+      const applied = ctx({ apply: true, targets: [...targets] });
+      await executePlan(
+        plan(
+          "decision-bound residue",
+          ...(await verifiedOrgPolicyProjectionActions(applied, policy)),
+        ),
+        applied,
+      );
+      const invalid = {
+        ...decision,
+        ...(mode === "expired" ? { expiresAt: new Date(Date.now() - 60_000).toISOString() } : {}),
+      };
+      const revocations =
+        mode === "revoked"
+          ? [
+              {
+                format: "aih-governance-decision-revocation",
+                version: 1,
+                decision: invalid.id,
+                issuer: invalid.issuer,
+                revokedAt: new Date(Date.now() - 30_000).toISOString(),
+                reason: "withdrawn",
+              },
+            ]
+          : [];
+      writeDecisionAuthorityReceipt([invalid], revocations, [...targets]);
+      await expect(verifiedOrgPolicyProjectionActions(applied, policy)).rejects.toThrow(
+        /decision-expired|decision-revoked/,
+      );
+      writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(policy));
+      const check = await orgPolicyEffectiveCheck(applied);
+      expect(check.detail).toContain("retained-invalid-decision");
+      const digest = await orgPolicyEffectiveDigest(applied);
+      expect(digest?.text).toContain(mode === "expired" ? "decision-expired" : "decision-revoked");
+
+      const disabled = JSON.parse(JSON.stringify(policy)) as typeof policy;
+      if (disabled.governance === undefined || disabled.mcp === undefined) {
+        throw new Error("expected governed MCP fixture");
+      }
+      const activation = disabled.governance.activations[0];
+      if (activation === undefined) throw new Error("expected activation fixture");
+      activation.state = "disabled";
+      disabled.mcp.allowManagedOnly = false;
+      await executePlan(
+        plan("disabled residue", ...(await verifiedOrgPolicyProjectionActions(applied, disabled))),
+        applied,
+      );
+      if (targets.includes("claude")) {
+        const settings = JSON.parse(
+          readFileSync(join(dir, ".claude", "managed-settings.json"), "utf8"),
+        );
+        expect(settings.allowManagedMcpServersOnly).toBeUndefined();
+        expect(settings.allowedMcpServers).toBeUndefined();
+      }
+      if (targets.includes("kiro")) {
+        const settings = JSON.parse(
+          readFileSync(join(dir, ".kiro", "settings", "mcp.json"), "utf8"),
+        );
+        expect(settings.mcpServers["code-review-graph"]).toBeUndefined();
+      }
+    },
+  );
+
   it("refuses malformed or non-object pre-existing hook settings without taking ownership", async () => {
     for (const { contents, detail } of [
       { contents: "{", detail: "is malformed" },
