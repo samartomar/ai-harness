@@ -1,16 +1,9 @@
 import { createHash } from "node:crypto";
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-} from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { writeVendorBaselineEvidenceArtifactV1 } from "../../src/baseline-evidence/vendor-artifact.js";
 import {
   BASELINE_EVIDENCE_ARTIFACT_FILE_V1,
   BASELINE_EVIDENCE_ARTIFACT_LOCK_PATH_V1,
@@ -18,7 +11,6 @@ import {
   buildVendorBaselineEvidenceArtifactV1,
   verifyVendorBaselineEvidenceArtifactV1,
 } from "../../src/baseline-evidence/vendor-artifact-v1.js";
-import { writeVendorBaselineEvidenceArtifactV1 } from "../../src/baseline-evidence/vendor-artifact.js";
 
 const publisher = {
   environment: "baseline-evidence-publish",
@@ -208,7 +200,14 @@ describe("VendorBaselineEvidenceArtifactV1", () => {
   });
 
   it.each([
-    ["too many files", (artifact: ReturnType<typeof built>) => ({ ...artifact, files: [...artifact.files, artifact.files[0]!] })],
+    [
+      "too many files",
+      (artifact: ReturnType<typeof built>) => {
+        const first = artifact.files[0];
+        if (first === undefined) throw new Error("expected artifact file");
+        return { ...artifact, files: [...artifact.files, first] };
+      },
+    ],
     [
       "oversized lock bytes",
       (artifact: ReturnType<typeof built>) => ({
@@ -219,6 +218,25 @@ describe("VendorBaselineEvidenceArtifactV1", () => {
             : file,
         ),
       }),
+    ],
+    [
+      "oversized total bytes",
+      (artifact: ReturnType<typeof built>) => {
+        const sizes: Record<string, number> = {
+          [BASELINE_EVIDENCE_ARTIFACT_FILE_V1]: 128 * 1024,
+          "evidence.json": 128 * 1024,
+          [`files/${BASELINE_EVIDENCE_ARTIFACT_LOCK_PATH_V1}`]: 1024 * 1024,
+          "manifest.json": 128 * 1024,
+          [BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1]: 64 * 1024,
+        };
+        return {
+          ...artifact,
+          files: artifact.files.map((file) => ({
+            ...file,
+            bytes: Buffer.alloc(sizes[file.path] ?? 0),
+          })),
+        };
+      },
     ],
   ])("rejects bounded hostile artifact input before attestation: %s", (_label, mutate) => {
     const calls: unknown[] = [];
@@ -239,10 +257,19 @@ describe("VendorBaselineEvidenceArtifactV1", () => {
   });
 
   it.each([
-    ["missing subject digest", { bytes: Buffer.from("x"), path: BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1 }],
+    [
+      "missing subject digest",
+      { bytes: Buffer.from("x"), path: BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1 },
+    ],
     ["extra subject key", { ...built().subject, extra: true }],
-    ["non-buffer subject bytes", { bytes: "x", path: BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1, sha256: "a".repeat(64) }],
-    ["invalid subject digest", { bytes: Buffer.from("x"), path: BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1, sha256: "invalid" }],
+    [
+      "non-buffer subject bytes",
+      { bytes: "x", path: BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1, sha256: "a".repeat(64) },
+    ],
+    [
+      "invalid subject digest",
+      { bytes: Buffer.from("x"), path: BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1, sha256: "invalid" },
+    ],
   ])("rejects malformed subject wrappers locally: %s", (_label, subject) => {
     const calls: unknown[] = [];
     expect(() =>
@@ -270,7 +297,9 @@ describe("writeVendorBaselineEvidenceArtifactV1", () => {
       writeVendorBaselineEvidenceArtifactV1(output, publisher);
 
       expect(lstatSync(output).isSymbolicLink()).toBe(false);
-      expect(readFileSync(join(output, BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1)).length).toBeGreaterThan(0);
+      expect(
+        readFileSync(join(output, BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1)).length,
+      ).toBeGreaterThan(0);
       expect(() => writeVendorBaselineEvidenceArtifactV1(output, publisher)).toThrow();
     } finally {
       rmSync(parent, { force: true, recursive: true });

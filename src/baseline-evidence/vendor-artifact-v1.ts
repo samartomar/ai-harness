@@ -16,6 +16,15 @@ const ARTIFACT_PROTOCOL = "VendorBaselineEvidenceArtifactV1";
 const ARTIFACT_SCHEMA_VERSION = 1;
 const MANIFEST_PATH = "manifest.json";
 const EVIDENCE_PATH = "evidence.json";
+const ARTIFACT_FILE_BYTE_LIMITS = {
+  [BASELINE_EVIDENCE_ARTIFACT_FILE_V1]: 128 * 1024,
+  [EVIDENCE_PATH]: 128 * 1024,
+  [`files/${BASELINE_EVIDENCE_ARTIFACT_LOCK_PATH_V1}`]: 1024 * 1024,
+  [MANIFEST_PATH]: 128 * 1024,
+  [BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1]: 64 * 1024,
+} as const;
+const MAX_ARTIFACT_FILES = Object.keys(ARTIFACT_FILE_BYTE_LIMITS).length;
+const MAX_ARTIFACT_BYTES = 1280 * 1024;
 const SHA256 = /^[a-f0-9]{64}$/;
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const WORKFLOW =
@@ -113,6 +122,29 @@ function exactKeys(value: Record<string, unknown>, keys: readonly string[], labe
   }
 }
 
+/** Copies only closed, own, data properties so hostile wrappers never escape this boundary. */
+function plainDataRecord(value: unknown, label: string): Record<string, unknown> {
+  try {
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      Array.isArray(value) ||
+      Object.getPrototypeOf(value) !== Object.prototype
+    )
+      fail(label);
+    if (Object.getOwnPropertySymbols(value).length !== 0) fail(label);
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const result: Record<string, unknown> = {};
+    for (const [key, descriptor] of Object.entries(descriptors)) {
+      if (descriptor.get !== undefined || descriptor.set !== undefined) fail(label);
+      result[key] = descriptor.value;
+    }
+    return result;
+  } catch {
+    fail(label);
+  }
+}
+
 function sha(value: unknown, label: string): string {
   const result = text(value, label, 64);
   if (!SHA256.test(result)) fail(label);
@@ -120,8 +152,7 @@ function sha(value: unknown, label: string): string {
 }
 
 function source(value: unknown, label: string): BaselineEvidenceArtifactSourceV1 {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) fail(label);
-  const record = value as Record<string, unknown>;
+  const record = plainDataRecord(value, label);
   exactKeys(record, ["id", "owner", "pinnedSha", "repo"], label);
   const id = text(record.id, label, 128);
   const owner = text(record.owner, label, 128);
@@ -253,13 +284,33 @@ export function buildVendorBaselineEvidenceArtifactV1(input: {
   };
 }
 
-function artifactFiles(value: VendorBaselineEvidenceArtifactV1): Map<string, Buffer> {
-  if (typeof value !== "object" || value === null || !Array.isArray(value.files)) fail("artifact");
+function artifactFiles(value: unknown): {
+  readonly files: Map<string, Buffer>;
+  readonly subject: { readonly bytes: Buffer; readonly sha256: string };
+} {
+  const artifact = plainDataRecord(value, "artifact");
+  exactKeys(artifact, ["files", "subject"], "artifact");
+  const subjectRecord = plainDataRecord(artifact.subject, "subject binding");
+  exactKeys(subjectRecord, ["bytes", "path", "sha256"], "subject binding");
+  if (subjectRecord.path !== BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1) fail("subject binding");
+  if (!Buffer.isBuffer(subjectRecord.bytes)) fail("subject binding");
+  if (
+    subjectRecord.bytes.length > ARTIFACT_FILE_BYTE_LIMITS[BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1]
+  )
+    fail("artifact bounds");
+  const subject = {
+    bytes: Buffer.from(subjectRecord.bytes),
+    sha256: sha(subjectRecord.sha256, "subject binding"),
+  };
+  if (!Array.isArray(artifact.files) || artifact.files.length !== MAX_ARTIFACT_FILES)
+    fail("artifact bounds");
   const files = new Map<string, Buffer>();
-  for (const file of value.files) {
-    if (typeof file !== "object" || file === null) fail("artifact file");
-    const path = text((file as { path?: unknown }).path, "artifact path", 256);
-    const bytes = (file as { bytes?: unknown }).bytes;
+  let totalBytes = 0;
+  for (const file of artifact.files) {
+    const record = plainDataRecord(file, "artifact file");
+    exactKeys(record, ["bytes", "path"], "artifact file");
+    const path = text(record.path, "artifact path", 256);
+    const bytes = record.bytes;
     if (
       !Buffer.isBuffer(bytes) ||
       path.includes("\\") ||
@@ -268,18 +319,17 @@ function artifactFiles(value: VendorBaselineEvidenceArtifactV1): Map<string, Buf
     )
       fail("artifact file");
     if (files.has(path)) fail("duplicate artifact path");
+    const limit = ARTIFACT_FILE_BYTE_LIMITS[path as keyof typeof ARTIFACT_FILE_BYTE_LIMITS];
+    if (limit === undefined) fail("artifact layout");
+    if (bytes.length > limit || totalBytes > MAX_ARTIFACT_BYTES - bytes.length)
+      fail("artifact bounds");
+    totalBytes += bytes.length;
     files.set(path, Buffer.from(bytes));
   }
-  const expected = [
-    BASELINE_EVIDENCE_ARTIFACT_FILE_V1,
-    EVIDENCE_PATH,
-    `files/${BASELINE_EVIDENCE_ARTIFACT_LOCK_PATH_V1}`,
-    MANIFEST_PATH,
-    BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1,
-  ];
-  if (files.size !== expected.length || expected.some((path) => !files.has(path)))
+  const expected = Object.keys(ARTIFACT_FILE_BYTE_LIMITS);
+  if (files.size !== MAX_ARTIFACT_FILES || expected.some((path) => !files.has(path)))
     fail("artifact layout");
-  return files;
+  return { files, subject };
 }
 
 function parseMetadata(bytes: Buffer): ArtifactMetadataV1 {
@@ -416,20 +466,57 @@ function verifyEvidenceIndex(files: Map<string, Buffer>, lockBytes: Buffer): voi
     fail("evidence index");
 }
 
-function validatePolicy(policy: VerifyVendorBaselineEvidenceArtifactV1Input["policy"]): void {
+function validatePolicy(value: unknown): VerifyVendorBaselineEvidenceArtifactV1Input["policy"] {
+  const policy = plainDataRecord(value, "attestation policy");
+  exactKeys(
+    policy,
+    ["environment", "issuer", "ref", "repository", "sources", "workflow"],
+    "attestation policy",
+  );
+  const repository = text(policy.repository, "attestation policy", 256);
+  const workflow = text(policy.workflow, "attestation policy", 512);
+  const issuer = text(policy.issuer, "attestation policy", 512);
+  const ref = text(policy.ref, "attestation policy", 512);
+  const environment = text(policy.environment, "attestation policy", 128);
   if (
-    !REPOSITORY.test(policy.repository) ||
-    !WORKFLOW.test(policy.workflow) ||
-    !ISSUER.test(policy.issuer) ||
-    !REF.test(policy.ref) ||
-    !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(policy.environment)
+    !REPOSITORY.test(repository) ||
+    !WORKFLOW.test(workflow) ||
+    !ISSUER.test(issuer) ||
+    !REF.test(ref) ||
+    !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(environment)
   )
     fail("attestation policy");
-  if (!policy.workflow.startsWith(`${policy.repository}/.github/workflows/`))
-    fail("attestation policy");
+  if (!workflow.startsWith(`${repository}/.github/workflows/`)) fail("attestation policy");
   if (!Array.isArray(policy.sources) || policy.sources.length === 0) fail("source policy");
   const sources = policy.sources.map((item) => source(item, "source policy"));
   if (new Set(sources.map(sourceKey)).size !== sources.length) fail("source policy");
+  return {
+    environment,
+    issuer,
+    ref,
+    repository,
+    sources,
+    workflow,
+  };
+}
+
+function verifiedClaim(value: unknown): VerifiedBaselineEvidenceArtifactAttestationV1 {
+  const claims = plainDataRecord(value, "attestation rejected");
+  exactKeys(
+    claims,
+    ["environment", "issuer", "ref", "repository", "subjectSha256", "verified", "workflow"],
+    "attestation rejected",
+  );
+  if (claims.verified !== true) fail("attestation rejected");
+  return {
+    environment: text(claims.environment, "attestation rejected", 128),
+    issuer: text(claims.issuer, "attestation rejected", 512),
+    ref: text(claims.ref, "attestation rejected", 512),
+    repository: text(claims.repository, "attestation rejected", 256),
+    subjectSha256: sha(claims.subjectSha256, "attestation rejected"),
+    verified: true,
+    workflow: text(claims.workflow, "attestation rejected", 512),
+  };
 }
 
 function samePolicy(
@@ -456,8 +543,12 @@ export function verifyVendorBaselineEvidenceArtifactV1(
   readonly lock: BaselineEvidenceLock;
   readonly sources: readonly BaselineEvidenceArtifactSourceV1[];
 } {
-  validatePolicy(input.policy);
-  const files = artifactFiles(input.artifact);
+  const request = plainDataRecord(input, "input");
+  exactKeys(request, ["artifact", "policy", "verifyGithubAttestation"], "input");
+  if (typeof request.verifyGithubAttestation !== "function") fail("input");
+  const policy = validatePolicy(request.policy);
+  const artifact = artifactFiles(request.artifact);
+  const { files, subject } = artifact;
   verifySums(files);
   const lockBytes = files.get(`files/${BASELINE_EVIDENCE_ARTIFACT_LOCK_PATH_V1}`);
   const metadataBytes = files.get(BASELINE_EVIDENCE_ARTIFACT_FILE_V1);
@@ -468,43 +559,40 @@ export function verifyVendorBaselineEvidenceArtifactV1(
   const metadata = parseMetadata(metadataBytes);
   verifyManifest(files, lockBytes, metadataBytes);
   verifyEvidenceIndex(files, lockBytes);
-  const expectedSources = input.policy.sources
+  const expectedSources = policy.sources
     .map((item) => source(item, "source policy"))
     .sort((left, right) => codeUnitCompare(sourceKey(left), sourceKey(right)));
   if (
-    metadata.publisherRepository !== input.policy.repository ||
-    metadata.environment !== input.policy.environment ||
+    metadata.publisherRepository !== policy.repository ||
+    metadata.environment !== policy.environment ||
     metadata.lock.sha256 !== sha256(lockBytes) ||
     JSON.stringify(metadata.sources) !== JSON.stringify(expectedSources) ||
     JSON.stringify(metadata.sources) !== JSON.stringify(sourcesFromLock(lock))
   )
     fail("artifact binding");
-  if (
-    input.artifact.subject.path !== BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1 ||
-    !Buffer.isBuffer(input.artifact.subject.bytes) ||
-    input.artifact.subject.bytes.compare(subjectBytes) !== 0 ||
-    input.artifact.subject.sha256 !== sha256(subjectBytes)
-  )
+  if (subject.bytes.compare(subjectBytes) !== 0 || subject.sha256 !== sha256(subjectBytes))
     fail("subject binding");
   let claims: VerifiedBaselineEvidenceArtifactAttestationV1;
   try {
-    claims = input.verifyGithubAttestation({
-      policy: {
-        environment: input.policy.environment,
-        issuer: input.policy.issuer,
-        ref: input.policy.ref,
-        repository: input.policy.repository,
-        workflow: input.policy.workflow,
-      },
-      subjectBytes: Buffer.from(subjectBytes),
-      subjectSha256: sha256(subjectBytes),
-    });
+    claims = verifiedClaim(
+      request.verifyGithubAttestation({
+        policy: {
+          environment: policy.environment,
+          issuer: policy.issuer,
+          ref: policy.ref,
+          repository: policy.repository,
+          workflow: policy.workflow,
+        },
+        subjectBytes: Buffer.from(subjectBytes),
+        subjectSha256: sha256(subjectBytes),
+      }),
+    );
   } catch {
     fail("attestation rejected");
   }
   if (
     claims?.verified !== true ||
-    !samePolicy(claims, input.policy) ||
+    !samePolicy(claims, policy) ||
     claims.subjectSha256 !== sha256(subjectBytes)
   )
     fail("attestation rejected");
