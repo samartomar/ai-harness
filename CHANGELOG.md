@@ -8,6 +8,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Vendor baseline evidence now has a deterministic, separately attestable artifact.**
+  The bounded artifact binds the exact shipped lock, evidence bundle, manifest,
+  publisher, source pins, and a checksum subject covering every file. Local
+  verification completes before caller-owned GitHub attestation verification.
+  Its manual workflow separates unprivileged candidate preparation from a
+  protected-environment attestation job; merge does not run it, and it includes
+  no release or package-publication effect. (#815)
+
 - **`aih report` adds a deterministic governed-subject review without turning local usage into
   authority.** The read-only digest keeps requested/effective state, evidence and blockers,
   decision/approval/revocation facts, projector capability, strict receipt state, and local usage
