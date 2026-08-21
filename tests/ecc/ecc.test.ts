@@ -992,6 +992,8 @@ describe("Codex managed destination safety", () => {
     ["before", "yarn", '["dlx", "chrome-devtools-mcp@latest"]'],
     ["descendant", "npx", '["chrome-devtools-mcp@latest"]'],
     ["managed-failure", "npx", '["chrome-devtools-mcp@latest"]'],
+    ["live-relinquished", "npx", '["chrome-devtools-mcp@latest"]'],
+    ["agents-failure", "npx", '["chrome-devtools-mcp@latest"]'],
   ] as const)(
     "writes Core's exact Chrome DevTools pin for a claimed mutable table %s the managed fence",
     (legacyPosition, command, args) => {
@@ -1049,8 +1051,16 @@ describe("Codex managed destination safety", () => {
         join(home, ".codex", "config.toml"),
         (legacyPosition === "descendant"
           ? [...legacy, '  [mcp_servers."chrome-devtools".env]', 'token = "operator"', ""]
-          : legacyPosition === "managed-failure"
-            ? [...legacy, ""]
+          : legacyPosition === "managed-failure" ||
+              legacyPosition === "live-relinquished" ||
+              legacyPosition === "agents-failure"
+            ? [
+                ...(legacyPosition === "live-relinquished"
+                  ? ['approval_policy = "operator"', ""]
+                  : []),
+                ...legacy,
+                "",
+              ]
             : legacyPosition === "inside" || legacyPosition === "vanished"
               ? [...fence, ""]
               : [
@@ -1069,13 +1079,16 @@ describe("Codex managed destination safety", () => {
             schemaVersion: 1,
             managedBy: "aih",
             codexToml: {
-              rootKeys: [],
+              rootKeys: legacyPosition === "live-relinquished" ? ["approval_policy"] : [],
               tables: [],
               tableKeys: {},
               mcpServers:
                 legacyPosition === "vanished"
                   ? ["sequential-thinking"]
-                  : legacyPosition === "descendant" || legacyPosition === "managed-failure"
+                  : legacyPosition === "descendant" ||
+                      legacyPosition === "managed-failure" ||
+                      legacyPosition === "live-relinquished" ||
+                      legacyPosition === "agents-failure"
                     ? ["chrome-devtools"]
                     : ["chrome-devtools", "sequential-thinking"],
             },
@@ -1109,7 +1122,10 @@ describe("Codex managed destination safety", () => {
         expect.arrayContaining(
           legacyPosition === "vanished"
             ? ["sequential-thinking"]
-            : legacyPosition === "descendant" || legacyPosition === "managed-failure"
+            : legacyPosition === "descendant" ||
+                legacyPosition === "managed-failure" ||
+                legacyPosition === "live-relinquished" ||
+                legacyPosition === "agents-failure"
               ? ["chrome-devtools"]
               : ["chrome-devtools", "sequential-thinking"],
         ),
@@ -1119,6 +1135,31 @@ describe("Codex managed destination safety", () => {
         rmSync(join(home, ".codex", "config.toml"));
         rmSync(join(home, ".codex", "ecc-aih-install-state.json"));
       }
+
+      if (legacyPosition === "live-relinquished") {
+        writeFileSync(
+          join(home, ".codex", "ecc-aih-install-state.json"),
+          `${JSON.stringify({
+            schemaVersion: 1,
+            managedBy: "aih",
+            codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: ["chrome-devtools"] },
+            agentsBlock: true,
+          })}\n`,
+          "utf8",
+        );
+      }
+
+      if (legacyPosition === "agents-failure")
+        mkdirSync(join(home, ".codex", "AGENTS.md"), { recursive: true });
+
+      const configBeforeApply =
+        legacyPosition === "agents-failure"
+          ? readFileSync(join(home, ".codex", "config.toml"), "utf8")
+          : undefined;
+      const stateBeforeApply =
+        legacyPosition === "agents-failure"
+          ? readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")
+          : undefined;
 
       const result = spawnSync(process.execPath, action.argv.slice(1), {
         cwd: repo,
@@ -1143,12 +1184,21 @@ describe("Codex managed destination safety", () => {
         return;
       }
 
+      if (legacyPosition === "agents-failure") {
+        expect(result.status).not.toBe(0);
+        expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toBe(configBeforeApply);
+        expect(readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")).toBe(
+          stateBeforeApply,
+        );
+        return;
+      }
+
       expect(result.status).toBe(0);
       const config = readFileSync(join(home, ".codex", "config.toml"), "utf8");
       expect(config).toContain("chrome-devtools-mcp@1.7.0");
       expect(config).toContain("startup_timeout_sec = 30");
       expect(config).not.toContain("@latest");
-      if (legacyPosition === "vanished")
+      if (legacyPosition === "vanished" || legacyPosition === "live-relinquished")
         expect(config).not.toContain('[mcp_servers."sequential-thinking"]');
       else expect(config).toContain('[mcp_servers."sequential-thinking"]');
       expect(config.match(/# >>> aih managed \(mcp\) >>>/g)).toHaveLength(1);
@@ -1156,9 +1206,15 @@ describe("Codex managed destination safety", () => {
         '"chrome-devtools"',
       );
       const outputState = readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8");
-      expect(
-        (JSON.parse(outputState) as { codexToml: { rootKeys: string[] } }).codexToml.rootKeys,
-      ).toContain("approval_policy");
+      const outputRootKeys = (
+        JSON.parse(outputState) as {
+          codexToml: { rootKeys: string[] };
+        }
+      ).codexToml.rootKeys;
+      if (legacyPosition === "live-relinquished") {
+        expect(outputRootKeys).not.toContain("approval_policy");
+        expect(outputRootKeys).toContain("sandbox_mode");
+      } else expect(outputRootKeys).toContain("approval_policy");
       const agents = readFileSync(join(home, ".codex", "AGENTS.md"), "utf8");
       if (legacyPosition === "vanished") {
         expect(outputState).not.toContain("sequential-thinking");
