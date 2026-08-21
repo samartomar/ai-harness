@@ -80,6 +80,8 @@ const conditions = z.array(text).max(32).refine(sortedUnique, "must be sorted an
 
 const decisionBase = z
   .object({
+    format: z.literal("aih-governance-decision"),
+    version: z.literal(1),
     id: decisionId,
     candidate: stableId,
     kind: stableId,
@@ -139,6 +141,12 @@ export const GovernanceDecisionV1Schema = z
       });
     }
     if (value.disposition === "accepted-with-conditions") {
+      if (value.acceptedFindings.some((finding) => value.acceptedGaps.includes(finding))) {
+        ctx.addIssue({
+          code: "custom",
+          message: "accepted findings and gaps must not overlap",
+        });
+      }
       if (value.acceptedFindings.length + value.acceptedGaps.length === 0) {
         ctx.addIssue({
           code: "custom",
@@ -159,6 +167,8 @@ export type GovernanceDecisionV1 = z.infer<typeof GovernanceDecisionV1Schema>;
 
 export const GovernanceDecisionRevocationV1Schema = z
   .object({
+    format: z.literal("aih-governance-decision-revocation"),
+    version: z.literal(1),
     decision: decisionId,
     issuer: stableId,
     revokedAt: timestampSchema,
