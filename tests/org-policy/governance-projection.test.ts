@@ -589,7 +589,9 @@ describe("governed candidate projection", () => {
     policy.governance.authority.decisions = ["decision-parity"];
     const decision = currentReviewedDecision(policy, { id: "decision-parity" });
     writeDecisionAuthorityReceipt([decision]);
-    const managed = (await verifiedOrgPolicyProjectionActions(ctx(), policy)).find(
+    const applied = ctx({ apply: true });
+    const initialActions = await verifiedOrgPolicyProjectionActions(applied, policy);
+    const managed = initialActions.find(
       (action): action is WriteAction =>
         action.kind === "write" && action.path === ".claude/managed-settings.json",
     );
@@ -600,8 +602,9 @@ describe("governed candidate projection", () => {
       }
     ).organizationPolicy.effectiveCandidates[0];
     if (settingsCandidate === undefined) throw new Error("expected managed policy candidate");
+    await executePlan(plan("project decision parity", ...initialActions), applied);
     writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(policy));
-    const evaluated = (await orgPolicyEffectiveDigest(ctx()))?.data as {
+    const evaluated = (await orgPolicyEffectiveDigest(applied))?.data as {
       blocking: boolean;
       candidates: Array<Record<string, unknown>>;
     };
@@ -640,7 +643,7 @@ describe("governed candidate projection", () => {
     expect(evaluated.blocking).toBe(false);
     expect(hasKeyRecursively(settingsCandidate, "conditions")).toBe(false);
     expect(hasKeyRecursively(evaluated, "conditions")).toBe(false);
-    const acceptedCheck = await orgPolicyEffectiveCheck(ctx());
+    const acceptedCheck = await orgPolicyEffectiveCheck(applied);
     expect(acceptedCheck).toMatchObject({ verdict: "pass" });
     expect(acceptedCheck.detail).toContain(
       "requested candidates: code-review-graph{decision=decision-parity; observedFindings=prompt-injection; observedGaps=none; acceptedFindings=prompt-injection; acceptedGaps=none; risk=accepted; danger=prompt-injection; blocking=none; decisionBlockers=none}",
@@ -659,7 +662,7 @@ describe("governed candidate projection", () => {
     });
     writeDecisionAuthorityReceipt([blockedDecision]);
     writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(blocked));
-    const blockedEvaluation = (await orgPolicyEffectiveDigest(ctx()))?.data as {
+    const blockedEvaluation = (await orgPolicyEffectiveDigest(applied))?.data as {
       blocking: boolean;
       candidates: Array<Record<string, unknown>>;
     };
@@ -679,7 +682,7 @@ describe("governed candidate projection", () => {
     });
     expect((blockedOutput.decision as Record<string, unknown>).riskState).toBeUndefined();
     expect(hasKeyRecursively(blockedEvaluation, "conditions")).toBe(false);
-    const blockedCheck = await orgPolicyEffectiveCheck(ctx());
+    const blockedCheck = await orgPolicyEffectiveCheck(applied);
     expect(blockedCheck).toMatchObject({ verdict: "fail", code: "org-policy.effective-blocked" });
     expect(blockedCheck.detail).toContain(
       "requested candidates: code-review-graph{decision=decision-blocked-parity; observedFindings=prompt-injection; observedGaps=none; acceptedFindings=hidden-unicode; acceptedGaps=none; risk=blocked; danger=prompt-injection; blocking=none; decisionBlockers=decision-coverage-mismatch}",
@@ -2594,14 +2597,14 @@ describe("governed candidate projection", () => {
       const receiptPath = join(dir, ".aih", "org-policy-hook-receipt.json");
       const baseline = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, unknown>;
 
-      const strict = { ...baseline, policyVersion };
+      const strict: Record<string, unknown> = { ...baseline, policyVersion };
       strict.selfDigest = recomputeHookReceiptSelfDigest(strict);
       writeFileSync(receiptPath, JSON.stringify(strict));
       await expect(verifiedOrgPolicyProjectionActions(applied, policy)).rejects.toThrow(
         /invalid policyVersion/,
       );
 
-      const legacy = { ...baseline, version: 2, policyVersion };
+      const legacy: Record<string, unknown> = { ...baseline, version: 2, policyVersion };
       delete legacy.decisions;
       delete legacy.selfDigest;
       writeFileSync(receiptPath, JSON.stringify(legacy));

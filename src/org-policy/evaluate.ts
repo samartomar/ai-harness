@@ -17,6 +17,41 @@ function requestedCandidates(effective: EffectiveOrgPolicy) {
   return effective.candidates.filter((candidate) => candidate.requested);
 }
 
+function ordinalCompare(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function publicList(values: readonly string[]): string {
+  const ordered = [...new Set(values)].sort(ordinalCompare);
+  return ordered.length === 0 ? "none" : ordered.join(",");
+}
+
+/** Bounded public decision facts shared by policy evaluate and doctor checks. */
+function requestedCandidateSummary(effective: EffectiveOrgPolicy): string {
+  const summaries = requestedCandidates(effective)
+    .slice()
+    .sort((left, right) => ordinalCompare(left.id, right.id))
+    .map((candidate) => {
+      const decision = candidate.decision;
+      return (
+        `${candidate.id}{decision=${decision?.id ?? "none"}; ` +
+        `observedFindings=${publicList(decision?.observedFindings ?? [])}; ` +
+        `observedGaps=${publicList(decision?.observedGaps ?? [])}; ` +
+        `acceptedFindings=${publicList(decision?.acceptedFindings ?? [])}; ` +
+        `acceptedGaps=${publicList(decision?.acceptedGaps ?? [])}; ` +
+        `risk=${decision?.riskState ?? "blocked"}; ` +
+        `danger=${publicList(candidate.dangerCodes)}; ` +
+        `blocking=${publicList(candidate.blockingCodes)}; ` +
+        `decisionBlockers=${publicList(candidate.decisionBlockers.map((blocker) => blocker.code))}}`
+      );
+    });
+  return `requested candidates: ${summaries.length === 0 ? "none" : summaries.join(" | ")}`;
+}
+
+function withRequestedCandidateSummary(detail: string, effective: EffectiveOrgPolicy): string {
+  return `${detail}; ${requestedCandidateSummary(effective)}`;
+}
+
 function blockedDetail(effective: EffectiveOrgPolicy): string {
   const blocked = requestedCandidates(effective).filter((candidate) => !candidate.effective);
   return blocked
@@ -92,7 +127,7 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
         name: "org policy effective resolution",
         verdict: "fail",
         code: "org-policy.effective-blocked",
-        detail: hookReceipt.detail,
+        detail: withRequestedCandidateSummary(hookReceipt.detail, effective),
         location: { uri: ORG_POLICY_HOOK_RECEIPT_PATH },
         fingerprint: `org-policy-hook-receipt:${hookReceipt.state}`,
       };
@@ -102,7 +137,10 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
         name: "org policy effective resolution",
         verdict: "fail",
         code: "org-policy.effective-blocked",
-        detail: `managed-MCP ownership is ${mcpReceipt.state}: ${mcpReceipt.detail}`,
+        detail: withRequestedCandidateSummary(
+          `managed-MCP ownership is ${mcpReceipt.state}: ${mcpReceipt.detail}`,
+          effective,
+        ),
         location: { uri: ".claude/managed-settings.json" },
         fingerprint: `org-policy-mcp-receipt:${mcpReceipt.state}`,
       };
@@ -112,7 +150,10 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
         name: "org policy effective resolution",
         verdict: "fail",
         code: "org-policy.effective-blocked",
-        detail: `Kiro workspace-MCP ownership is ${kiroMcpReceipt.state}: ${kiroMcpReceipt.detail}`,
+        detail: withRequestedCandidateSummary(
+          `Kiro workspace-MCP ownership is ${kiroMcpReceipt.state}: ${kiroMcpReceipt.detail}`,
+          effective,
+        ),
         location: { uri: ".kiro/settings/mcp.json" },
         fingerprint: `org-policy-kiro-mcp-receipt:${kiroMcpReceipt.state}`,
       };
@@ -122,7 +163,10 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
         name: "org policy effective resolution",
         verdict: "fail",
         code: "org-policy.effective-blocked",
-        detail: `requested policy is blocked: ${blockedDetail(effective)}`,
+        detail: withRequestedCandidateSummary(
+          `requested policy is blocked: ${blockedDetail(effective)}`,
+          effective,
+        ),
         location: { uri: "aih-org-policy.json" },
         fingerprint: "org-policy-effective-blocked",
       };
@@ -130,7 +174,10 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
     return {
       name: "org policy effective resolution",
       verdict: "pass",
-      detail: `${requested.length} requested candidate(s) effective through supported AIH projectors`,
+      detail: withRequestedCandidateSummary(
+        `${requested.length} requested candidate(s) effective through supported AIH projectors`,
+        effective,
+      ),
     };
   } catch (error) {
     return {
