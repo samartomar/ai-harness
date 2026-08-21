@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import shippedAcceptanceJson from "../../src/binding/scan-acceptance.json";
 import {
   checkSuperpowersScanAcceptance,
   runScanAcceptanceCli,
@@ -87,6 +88,21 @@ afterEach(() => {
 });
 
 describe("checkSuperpowersScanAcceptance", () => {
+  it("ships no historical accepted rows", async () => {
+    // The exact vendor tree is intentionally external; its 3dcbd5c audit belongs
+    // to a disposable checkout. This regression proves the shipped ledger itself
+    // has no historical rows through the production checker seam.
+    initVendorCheckout({ "SKILL.md": "safe\n" });
+
+    const report = await checkSuperpowersScanAcceptance(
+      { checkoutPath: checkout },
+      fixtureDeps(shippedAcceptanceJson, () => []),
+    );
+
+    expect(report.accepted).toEqual([]);
+    expect(report.missing).toEqual([]);
+  });
+
   it("uses real inspector pins with CRLF compatibility and repeatable byte-identical JSON", async () => {
     initVendorCheckout({ "a.md": `a${ZWSP}\r\n`, "z.md": `z${ZWSP}\r\n` });
     const inspected = pinnedContentFindings(inspectTree(checkout));

@@ -87,6 +87,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Obsolete Superpowers scan acceptances no longer remain in the shipped ledger.** The exact
+  pinned-checkout audit found that none of the 62 historical code/path/content-digest rows joins
+  the current scanner output, so the ledger now ships with an empty accepted set. The 87 current
+  advisory observations remain visible and unaccepted; this cleanup changes no detector,
+  severity, vendor pin, runtime authorization rule, or critical-finding boundary. (#804)
+
 - **Claude binding lifecycle mutations now retain exact custody of their observed state.**
   Plugin reconciliation binds the explicit absolute checkout root, re-observes the exact
   `enabledPlugins` ownership entry before and after mutation, and stops before cache or

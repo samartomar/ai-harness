@@ -599,19 +599,8 @@ describe("maintainer-accepted content findings (scan-acceptance baseline)", () =
     expect(runFastScanGate(src, { posture: "vibe" }, { cacheHome }).verdict).toBe("allow");
   });
 
-  it("ships a valid acceptance artifact restricted to content-risk codes", () => {
+  it("ships the #804 empty acceptance ledger", () => {
     const artifact = readScanAcceptanceArtifact();
-    expect(artifact.accepted.length).toBeGreaterThan(0);
-    const contentRiskCodes = new Set([
-      "trust.hidden-unicode",
-      "trust.prompt-injection",
-      "trust.visible-unicode",
-    ]);
-    for (const entry of artifact.accepted) {
-      expect(contentRiskCodes.has(entry.code)).toBe(true);
-      expect(entry.fileSha256).toMatch(SHA256);
-      expect(entry.path.length).toBeGreaterThan(0);
-      expect(entry.path).not.toContain("\\");
-    }
+    expect(artifact.accepted).toEqual([]);
   });
 });

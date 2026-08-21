@@ -384,6 +384,12 @@ and critical findings. This is maintenance evidence only: it does not change
 `src/binding/scan-acceptance.json`, generate candidate entries, or authorize the
 runtime scan gate.
 
+The audit at `obra/Superpowers@3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9`
+reported 87 observations, 0 accepted, 0 stale, 62 historical entries no longer
+emitted, 87 new advisory observations, and 0 critical findings. Issue #804
+removed only those 62 obsolete ledger rows. The current observations were not
+translated into acceptance, and the shipped ledger is now intentionally empty.
+
 ### Incremental reuse and `--full`
 
 By default, `baseline:vet` and `baseline:check` reuse a component's prior receipt
