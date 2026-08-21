@@ -1035,6 +1035,7 @@ describe("Codex managed destination safety", () => {
       const home = join(tmp, "home");
       const repo = join(tmp, "ecc");
       const aihStatePath = join(home, ".codex", "ecc-aih-install-state.json");
+      const managedStateSentinel = join(repo, "managed-state-sentinel.txt");
       mkdirSync(join(home, ".codex"), { recursive: true });
       const putRepo = (relative: string, contents: string) => {
         const target = join(repo, relative);
@@ -1076,7 +1077,7 @@ describe("Codex managed destination safety", () => {
             : legacyPosition === "temp-cleanup"
               ? `require("node:fs").writeFileSync(${JSON.stringify(join(repo, "merge-path.txt"))}, process.argv[2]); ${mergeBaseline}`
               : baselineFailure
-                ? 'const fs = require("node:fs"); const config = process.argv[2]; fs.writeFileSync(config, "approval_policy = "on-request"\\n" + fs.readFileSync(config, "utf8"));'
+                ? `const fs = require("node:fs"); const config = process.argv[2]; fs.writeFileSync(config, ${JSON.stringify('approval_policy = "on-request"\n')} + fs.readFileSync(config, "utf8"));`
                 : mergeBaseline,
       );
       putRepo("scripts/codex/merge-mcp-config.js", 'throw new Error("vendor MCP merge ran");\n');
@@ -1089,8 +1090,10 @@ describe("Codex managed destination safety", () => {
       putRepo(
         "scripts/lib/install-state.js",
         legacyPosition === "managed-failure"
-          ? 'exports.writeInstallState = () => { throw new Error("intentional managed state failure"); };\n'
-          : 'exports.writeInstallState = (path, state) => require("node:fs").writeFileSync(path, JSON.stringify(state), "utf8");\n',
+          ? `exports.writeInstallState = () => { require("node:fs").writeFileSync(${JSON.stringify(managedStateSentinel)}, "reached", "utf8"); throw new Error("intentional managed state failure"); };\n`
+          : legacyPosition === "agents-failure"
+            ? `exports.writeInstallState = (path, state) => { const fs = require("node:fs"); fs.writeFileSync(${JSON.stringify(managedStateSentinel)}, "reached", "utf8"); fs.writeFileSync(path, JSON.stringify(state), "utf8"); };\n`
+            : 'exports.writeInstallState = (path, state) => require("node:fs").writeFileSync(path, JSON.stringify(state), "utf8");\n',
       );
       putRepo(
         ".codex/AGENTS.md",
@@ -1288,6 +1291,7 @@ describe("Codex managed destination safety", () => {
 
       if (legacyPosition === "managed-failure") {
         expect(result.status).not.toBe(0);
+        expect(readFileSync(managedStateSentinel, "utf8")).toBe("reached");
         expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toBe(configBeforeApply);
         expect(readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")).toBe(
           stateBeforeApply,
@@ -1298,6 +1302,7 @@ describe("Codex managed destination safety", () => {
 
       if (legacyPosition === "agents-failure") {
         expect(result.status).not.toBe(0);
+        expect(readFileSync(managedStateSentinel, "utf8")).toBe("reached");
         expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toBe(configBeforeApply);
         expect(readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")).toBe(
           stateBeforeApply,
