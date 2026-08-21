@@ -195,10 +195,13 @@ export interface SuperpowersAdapterDeps {
  * this order — REPO-RELATIVE FIRST, then machine-scope:
  *
  *  1. repo-relative restore: `executePlan(plan("...", ...repoRelativeActions), ctx)`
- *     — this is what PRUNES/RESTORES the project's `enabledPlugins` entry, i.e.
- *     disables the plugin at project scope;
- *  2. machine-scope teardown: `removePlugin({ownership: homeOwnership, plugin, marketplace}, deps)`
- *     — this is what runs `claude plugin uninstall`.
+ *     — this PRUNES/RESTORES the project's receipt-owned `enabledPlugins` entry;
+ *  2. machine-scope teardown: pass `ownership`, `repoRelativeOwnership`, `projectRoot`,
+ *     `plugin`, `marketplace`, and `scope` to `removePlugin`, plus the same
+ *     `applyActions` custody seam — it re-observes that exact receipt-owned entry before
+ *     and after `claude plugin uninstall`, treats the exact pre-existing value as already
+ *     settled, re-settles only the exact applied value, and refuses divergent state before
+ *     continuing with machine-scope effects.
  *
  * This order is a HARD HOST CONSTRAINT, not a style preference (empirically
  * verified on 2.1.214): `claude plugin uninstall` REFUSES while the plugin is
