@@ -8,6 +8,7 @@ import {
   orgPolicyHookReceiptState,
   orgPolicyKiroMcpReceiptState,
   orgPolicyMcpReceiptState,
+  publicDecisionView,
 } from "./project.js";
 import { resolveRuntimeOrgPolicy } from "./runtime.js";
 import { governanceOwnsAihSurfaces, readOrgPolicy } from "./schema.js";
@@ -86,16 +87,6 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
       };
     }
     const requested = requestedCandidates(effective);
-    if (effective.blocking) {
-      return {
-        name: "org policy effective resolution",
-        verdict: "fail",
-        code: "org-policy.effective-blocked",
-        detail: `requested policy is blocked: ${blockedDetail(effective)}`,
-        location: { uri: "aih-org-policy.json" },
-        fingerprint: "org-policy-effective-blocked",
-      };
-    }
     if (hookReceipt.state !== "absent" && hookReceipt.state !== "active") {
       return {
         name: "org policy effective resolution",
@@ -124,6 +115,16 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
         detail: `Kiro workspace-MCP ownership is ${kiroMcpReceipt.state}: ${kiroMcpReceipt.detail}`,
         location: { uri: ".kiro/settings/mcp.json" },
         fingerprint: `org-policy-kiro-mcp-receipt:${kiroMcpReceipt.state}`,
+      };
+    }
+    if (effective.blocking) {
+      return {
+        name: "org policy effective resolution",
+        verdict: "fail",
+        code: "org-policy.effective-blocked",
+        detail: `requested policy is blocked: ${blockedDetail(effective)}`,
+        location: { uri: "aih-org-policy.json" },
+        fingerprint: "org-policy-effective-blocked",
       };
     }
     return {
@@ -246,7 +247,12 @@ export async function orgPolicyEffectiveDigest(
         policyVersion: effective.policyVersion,
         blocking: effective.blocking,
         decisionBlockers: effective.decisionBlockers,
-        candidates,
+        candidates: candidates.map((candidate) => ({
+          ...candidate,
+          ...(candidate.decision === undefined
+            ? {}
+            : { decision: publicDecisionView(candidate.decision) }),
+        })),
         activeMcpServerIds: effective.activeMcpServerIds,
         frameworkSelections: effective.frameworkSelections,
         externalCuration: effective.externalCuration,

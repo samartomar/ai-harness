@@ -102,7 +102,11 @@ const DecisionBindingSchema = z
       .refine(isOffsetTimestamp, "must be an offset-qualified ISO-8601 timestamp"),
   })
   .strict();
-const DecisionBindingsSchema = z
+/**
+ * Strict, surface-neutral decision bindings. `expiresAt` is the next required
+ * authority re-evaluation instant: the earlier of decision expiry and reviewBy.
+ */
+export const McpProjectionDecisionBindingsSchema = z
   .array(DecisionBindingSchema)
   .max(64)
   .refine(
@@ -169,11 +173,11 @@ const KiroMcpProjectionV1Schema = z
 
 const ManagedMcpProjectionV2Schema = ManagedMcpProjectionV1Schema.extend({
   schemaVersion: z.literal(2),
-  decisions: DecisionBindingsSchema,
+  decisions: McpProjectionDecisionBindingsSchema,
 });
 const KiroMcpProjectionV2Schema = KiroMcpProjectionV1Schema.extend({
   schemaVersion: z.literal(2),
-  decisions: DecisionBindingsSchema,
+  decisions: McpProjectionDecisionBindingsSchema,
 });
 const ManagedMcpProjectionOwnershipSchema = z.discriminatedUnion("schemaVersion", [
   ManagedMcpProjectionV1Schema,
@@ -190,7 +194,7 @@ export type ActiveManagedMcpProjectionOwnership = ManagedMcpProjectionOwnership 
 export type KiroMcpProjectionOwnership = z.infer<typeof KiroMcpProjectionOwnershipSchema>;
 export type ActiveKiroMcpProjectionOwnership = KiroMcpProjectionOwnership & { state: "active" };
 export type McpProjectionDecisionBinding = z.infer<typeof DecisionBindingSchema>;
-export type McpProjectionDecisionBindings = readonly McpProjectionDecisionBinding[];
+export type McpProjectionDecisionBindings = readonly z.infer<typeof DecisionBindingSchema>[];
 
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -424,7 +428,7 @@ export function managedMcpProjectionOwnership(
 ): ManagedMcpProjectionOwnership {
   const state = "active";
   if (decisions !== undefined) {
-    const parsedDecisions = DecisionBindingsSchema.parse(decisions);
+    const parsedDecisions = McpProjectionDecisionBindingsSchema.parse(decisions);
     return {
       schemaVersion: 2,
       state,
@@ -483,7 +487,7 @@ export function kiroMcpProjectionOwnership(
 ): KiroMcpProjectionOwnership {
   const state = "active";
   if (decisions !== undefined) {
-    const parsedDecisions = DecisionBindingsSchema.parse(decisions);
+    const parsedDecisions = McpProjectionDecisionBindingsSchema.parse(decisions);
     return {
       schemaVersion: 2,
       state,
