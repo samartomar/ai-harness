@@ -31,8 +31,10 @@ repository also commits a CLI-neutral copy under `ai-coding/curated-skills/` for
 its own agents; that copy is manually adopted and AIH does not project or
 refresh it. `aih pack install` promotes a separate generated copy into a target
 context directory's `skills/` root. Generated promotion output is not committed,
-but the two source/curated homes above can drift and must be reconciled through
-ordinary review.
+The repository test byte-pins the four reference files shared by the source and
+curated copies; the curated `SKILL.md` and source-only files are not synchronized
+by AIH, so those homes can still drift and must be reconciled through ordinary
+review.
 
 ## Distribution: a first-party bundled local source
 
@@ -97,6 +99,10 @@ cd /path/to/different-target-repository
 # Seed the bundled bytes if the pack is not already committed there.
 aih pack scaffold --pack docs-quality --apply
 
+# Create that repository's evidence and approval record before install.
+aih skill vet packs/docs-quality/betterdoc --apply
+aih skill approve packs/docs-quality/betterdoc --owner <team> --pack docs-quality --apply
+
 # Preview (read-only) — resolves the local source and shows what install would promote.
 aih pack plan --pack docs-quality
 
@@ -110,8 +116,9 @@ aih pack validate                        # coded findings, non-zero exit when bl
 ```
 
 At the default (non-enterprise) posture `pack install` promotes even when the deep detectors are
-absent — install trusts the committed approval and a non-failing trust scan. At enterprise posture
-with a required detector, an unavailable detector fails the scan and blocks install by design.
+absent — install trusts that repository's recorded approval and a non-failing trust scan. At
+enterprise posture with a required detector, an unavailable detector fails the scan and blocks
+install by design.
 
 ## Updating BetterDoc
 
