@@ -377,8 +377,8 @@ npm run check:scan-acceptance -- --checkout /absolute/path/to/Superpowers
 ```
 
 The command refuses the AI-Harness checkout, a subdirectory, a mutable,
-sparse, skip-worktree, assume-unchanged, or symlinked checkout root, an
-unexpected origin, or any other revision. The
+sparse, skip-worktree, assume-unchanged, replacement-ref-substituted, or
+symlinked checkout root, an unexpected origin, or any other revision. The
 deterministic JSON separates exact matches from stale, missing, newly observed,
 and critical findings. This is maintenance evidence only: it does not change
 `src/binding/scan-acceptance.json`, generate candidate entries, or authorize the
