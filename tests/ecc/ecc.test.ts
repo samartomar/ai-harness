@@ -982,7 +982,7 @@ describe("Codex managed destination safety", () => {
     });
   }
 
-  it.each(["before", "after", "inside"] as const)(
+  it.each(["before", "after", "inside", "vanished"] as const)(
     "writes Core's exact Chrome DevTools pin for a claimed mutable table %s the managed fence",
     (legacyPosition) => {
       const home = join(tmp, "home");
@@ -1035,7 +1035,7 @@ describe("Codex managed destination safety", () => {
       ];
       writeFileSync(
         join(home, ".codex", "config.toml"),
-        (legacyPosition === "inside"
+        (legacyPosition === "inside" || legacyPosition === "vanished"
           ? [...fence, ""]
           : [
               ...(legacyPosition === "before" ? legacy : fence),
@@ -1056,7 +1056,10 @@ describe("Codex managed destination safety", () => {
               rootKeys: [],
               tables: [],
               tableKeys: {},
-              mcpServers: ["chrome-devtools", "sequential-thinking"],
+              mcpServers:
+                legacyPosition === "vanished"
+                  ? ["sequential-thinking"]
+                  : ["chrome-devtools", "sequential-thinking"],
             },
             agentsBlock: true,
           },
@@ -1084,7 +1087,18 @@ describe("Codex managed destination safety", () => {
             codexToml: { mcpServers: string[] };
           }
         ).codexToml.mcpServers,
-      ).toEqual(expect.arrayContaining(["chrome-devtools", "sequential-thinking"]));
+      ).toEqual(
+        expect.arrayContaining(
+          legacyPosition === "vanished"
+            ? ["sequential-thinking"]
+            : ["chrome-devtools", "sequential-thinking"],
+        ),
+      );
+
+      if (legacyPosition === "vanished") {
+        rmSync(join(home, ".codex", "config.toml"));
+        rmSync(join(home, ".codex", "ecc-aih-install-state.json"));
+      }
 
       const result = spawnSync(process.execPath, action.argv.slice(1), {
         cwd: repo,
@@ -1096,14 +1110,19 @@ describe("Codex managed destination safety", () => {
       expect(config).toContain("chrome-devtools-mcp@1.7.0");
       expect(config).toContain("startup_timeout_sec = 30");
       expect(config).not.toContain("@latest");
-      expect(config).toContain('[mcp_servers."sequential-thinking"]');
+      if (legacyPosition === "vanished")
+        expect(config).not.toContain('[mcp_servers."sequential-thinking"]');
+      else expect(config).toContain('[mcp_servers."sequential-thinking"]');
       expect(config.match(/# >>> aih managed \(mcp\) >>>/g)).toHaveLength(1);
       expect(readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")).toContain(
         '"chrome-devtools"',
       );
-      expect(readFileSync(join(home, ".codex", "AGENTS.md"), "utf8")).toContain(
-        "`sequential-thinking`",
-      );
+      const outputState = readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8");
+      const agents = readFileSync(join(home, ".codex", "AGENTS.md"), "utf8");
+      if (legacyPosition === "vanished") {
+        expect(outputState).not.toContain("sequential-thinking");
+        expect(agents).not.toContain("`sequential-thinking`");
+      } else expect(agents).toContain("`sequential-thinking`");
     },
   );
 
@@ -1235,7 +1254,7 @@ describe("Codex managed destination safety", () => {
     const executable = action.argv[0];
     if (executable === undefined) throw new Error("missing Codex state cleanup executable");
     const result = spawnSync(executable, action.argv.slice(1), { encoding: "utf8" });
-    expect(result.status).toBe(0);
+    expect(result.status).not.toBe(0);
     expect(existsSync(statePath)).toBe(true);
   });
 
