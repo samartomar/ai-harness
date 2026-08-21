@@ -140,9 +140,14 @@ describe("policy studio adoption recipe", () => {
 
   it.each([
     ["read_file", "file"],
+    ["create_text_file", "file"],
+    ["find_file", "file"],
+    ["replace_content", "file"],
+    ["replace_in_files", "file"],
     ["run_shell_command", "shell"],
     ["search_memory", "memory"],
     ["switch_project", "project"],
+    ["activate_project", "project"],
     ["set_mode", "mode"],
   ])("fails closed when Serena gains a reviewed-overlap %s tool", (tool, toolClass) => {
     const drifted = sources();
