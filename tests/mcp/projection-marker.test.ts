@@ -30,6 +30,8 @@ describe("MCP projection marker coalescing", () => {
       merge: true,
       removeJsonTopLevelKeys: ["managedMcpProjection"],
     });
-    expect(() => coalesceMcpProjectionMarkerActions([set, remove])).toThrow(/both writes and removes/i);
+    expect(() => coalesceMcpProjectionMarkerActions([set, remove])).toThrow(
+      /both writes and removes/i,
+    );
   });
 });
