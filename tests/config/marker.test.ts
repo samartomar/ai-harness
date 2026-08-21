@@ -215,6 +215,18 @@ describe("managed-MCP projection ownership", () => {
     });
   });
 
+  it("mints a strict v2 ownership record when decision bindings are explicitly supplied", () => {
+    const ownership = managedMcpProjectionOwnership(
+      {
+        allowManagedMcpServersOnly: true,
+        allowedMcpServers: [{ serverCommand: ["aih-mcp", "serve"] }],
+      },
+      [],
+    );
+    expect(ownership.schemaVersion).toBe(2);
+    expect(isManagedMcpProjectionOwnership(ownership)).toBe(true);
+  });
+
   it("refuses to write managed-MCP provenance through a malformed marker", () => {
     const ownership = managedMcpProjectionOwnership({
       allowManagedMcpServersOnly: true,
