@@ -1052,13 +1052,13 @@ describe("Codex managed destination safety", () => {
           : legacyPosition === "managed-failure"
             ? [...legacy, ""]
             : legacyPosition === "inside" || legacyPosition === "vanished"
-          ? [...fence, ""]
-          : [
-              ...(legacyPosition === "before" ? legacy : fence),
-              "",
-              ...(legacyPosition === "before" ? fence : legacy),
-              "",
-            ]
+              ? [...fence, ""]
+              : [
+                  ...(legacyPosition === "before" ? legacy : fence),
+                  "",
+                  ...(legacyPosition === "before" ? fence : legacy),
+                  "",
+                ]
         ).join("\n"),
         "utf8",
       );
@@ -1107,11 +1107,11 @@ describe("Codex managed destination safety", () => {
         ).codexToml.mcpServers,
       ).toEqual(
         expect.arrayContaining(
-            legacyPosition === "vanished"
-              ? ["sequential-thinking"]
-              : legacyPosition === "descendant" || legacyPosition === "managed-failure"
-                ? ["chrome-devtools"]
-                : ["chrome-devtools", "sequential-thinking"],
+          legacyPosition === "vanished"
+            ? ["sequential-thinking"]
+            : legacyPosition === "descendant" || legacyPosition === "managed-failure"
+              ? ["chrome-devtools"]
+              : ["chrome-devtools", "sequential-thinking"],
         ),
       );
 
