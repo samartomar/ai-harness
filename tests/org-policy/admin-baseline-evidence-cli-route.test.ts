@@ -42,4 +42,26 @@ describe("policy generate baseline evidence route", () => {
     expect(calls).toBe(1);
     rmSync(root, { recursive: true, force: true });
   });
+
+  it("uses the real baseline stage before catalog resolution when no test seam is supplied", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-baseline-default-route-"));
+    const output: string[] = [];
+    try {
+      const code = await runPolicyGenerate(command(), {
+        adminRoot: root,
+        catalog: {
+          fetchHttps: async () => {
+            throw new Error("catalog must not fetch before baseline authority");
+          },
+          now: "2026-08-21T00:00:00Z",
+        },
+        cwd: root,
+        write: (text) => output.push(text),
+      });
+      expect(code).toBe(1);
+      expect(output.join("")).toContain("AIH_ADMIN_BASELINE_EVIDENCE");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
