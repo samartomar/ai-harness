@@ -2560,6 +2560,35 @@ describe("governed candidate projection", () => {
     }
   });
 
+  it.each([42, null, [], {}] as const)(
+    "rejects a non-string present policyVersion in legacy v2 and recomputed v3 receipts: %j",
+    async (policyVersion) => {
+      const applied = ctx({ apply: true });
+      const policy = usageHookPolicy("active");
+      await executePlan(
+        plan("policy hooks", ...(await verifiedOrgPolicyProjectionActions(applied, policy))),
+        applied,
+      );
+      const receiptPath = join(dir, ".aih", "org-policy-hook-receipt.json");
+      const baseline = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, unknown>;
+
+      const strict = { ...baseline, policyVersion };
+      strict.selfDigest = recomputeHookReceiptSelfDigest(strict);
+      writeFileSync(receiptPath, JSON.stringify(strict));
+      await expect(verifiedOrgPolicyProjectionActions(applied, policy)).rejects.toThrow(
+        /invalid policyVersion/,
+      );
+
+      const legacy = { ...baseline, version: 2, policyVersion };
+      delete legacy.decisions;
+      delete legacy.selfDigest;
+      writeFileSync(receiptPath, JSON.stringify(legacy));
+      await expect(verifiedOrgPolicyProjectionActions(applied, policy)).rejects.toThrow(
+        /invalid policyVersion/,
+      );
+    },
+  );
+
   it("rejects a semantic forged gitignore digest even with a recomputed v3 self-digest", async () => {
     const applied = ctx({ apply: true });
     const policy = usageHookPolicy("active");
