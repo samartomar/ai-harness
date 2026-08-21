@@ -86,10 +86,19 @@ function parseTokens(value: unknown): UsageTokens | undefined | null {
   return Object.keys(tokens).length > 0 ? tokens : undefined;
 }
 
-function parseUsageEvent(value: unknown): UsageEvent | undefined {
+type UsageParseResult =
+  | { state: "valid"; event: UsageEvent }
+  | { state: "unknown-kind" }
+  | { state: "malformed" };
+
+function parseUsageEvent(value: unknown): UsageParseResult {
   const raw = recordOf(value);
-  if (!raw || typeof raw.tool !== "string" || !KINDS.has(raw.kind as UsageEvent["kind"])) {
-    return undefined;
+  if (!raw) return { state: "malformed" };
+  if (typeof raw.kind === "string" && !KINDS.has(raw.kind as UsageEvent["kind"])) {
+    return { state: "unknown-kind" };
+  }
+  if (typeof raw.tool !== "string" || !KINDS.has(raw.kind as UsageEvent["kind"])) {
+    return { state: "malformed" };
   }
   const event: UsageEvent = { tool: raw.tool, kind: raw.kind as UsageEvent["kind"] };
 
@@ -115,12 +124,14 @@ function parseUsageEvent(value: unknown): UsageEvent | undefined {
     files === null ||
     tokens === null
   ) {
-    return undefined;
+    return { state: "malformed" };
   }
 
   const source = raw.source;
   if (source !== undefined) {
-    if (typeof source !== "string" || !SOURCES.has(source as UsageSource)) return undefined;
+    if (typeof source !== "string" || !SOURCES.has(source as UsageSource)) {
+      return { state: "malformed" };
+    }
     event.source = source as UsageSource;
   }
   if (id !== undefined) event.id = id;
@@ -133,23 +144,43 @@ function parseUsageEvent(value: unknown): UsageEvent | undefined {
   if (sha !== undefined) event.sha = sha;
   if (branch !== undefined) event.branch = branch;
   if (tokens !== undefined) event.tokens = tokens;
-  return event;
+  return { state: "valid", event };
+}
+
+/** The strict reader's accepted rows plus bounded rejection counts. */
+export interface StrictUsageRead {
+  events: UsageEvent[];
+  malformed: number;
+  unknownKind: number;
+}
+
+/**
+ * Read the local usage log without widening its tolerant caller contract.
+ * Valid rows are retained exactly as {@link readUsage} retains them; discarded
+ * bytes become counts only, so a review cannot expose event payloads.
+ */
+export function readUsageStrict(ctx: PlanContext): StrictUsageRead {
+  const raw = readIfExists(join(ctx.root, USAGE_PATH));
+  if (!raw) return { events: [], malformed: 0, unknownKind: 0 };
+  const events: UsageEvent[] = [];
+  let malformed = 0;
+  let unknownKind = 0;
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const parsed = parseUsageEvent(JSON.parse(trimmed));
+      if (parsed.state === "valid") events.push(parsed.event);
+      else if (parsed.state === "unknown-kind") unknownKind += 1;
+      else malformed += 1;
+    } catch {
+      malformed += 1;
+    }
+  }
+  return { events, malformed, unknownKind };
 }
 
 /** Read + parse `.aih/usage.jsonl`, skipping malformed/invalid lines. */
 export function readUsage(ctx: PlanContext): UsageEvent[] {
-  const raw = readIfExists(join(ctx.root, USAGE_PATH));
-  if (!raw) return [];
-  const out: UsageEvent[] = [];
-  for (const line of raw.split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t) continue;
-    try {
-      const e = parseUsageEvent(JSON.parse(t));
-      if (e) out.push(e);
-    } catch {
-      // skip a malformed line rather than failing the whole read
-    }
-  }
-  return out;
+  return readUsageStrict(ctx).events;
 }

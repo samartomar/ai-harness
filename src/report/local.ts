@@ -12,6 +12,7 @@ import { cliCoverageDigest } from "./cli-coverage.js";
 import { contractTruthDigest } from "./contract.js";
 import { aiEventsDigest } from "./events.js";
 import { governanceRollupDigest } from "./governance.js";
+import { governanceReviewDigest } from "./governance-review.js";
 import { graphDigests } from "./graph.js";
 import { guardrailDigest } from "./guardrail.js";
 import { trendsPanel } from "./history.js";
@@ -170,6 +171,7 @@ export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
     governanceRollupDigest(ctx), // GOVERNANCE: posture-aware control verdict roll-up
     await orgPolicyIntegrityDigest(ctx), // GOVERNANCE: active org-policy source + local HEAD drift
     await orgPolicyEffectiveDigest(ctx), // GOVERNANCE: requested vs effective candidate resolution
+    await governanceReviewDigest(ctx), // GOVERNANCE: bounded read-only governance review
     leakPreventionsDigest(ctx), // SECURITY: scan-derived leak-prevention posture half
     await qualityDigest(ctx), // CODE QUALITY: test/source file ratio
     ...(await graphDigests(ctx)), // CODE QUALITY/PERF: code-review-graph (gated, Phase 2)

@@ -13,7 +13,7 @@ function postCommitHookIncludes(root: string, path: string): boolean {
   return readIfExists(join(root, path))?.includes("usage-record.mjs") === true;
 }
 
-function usageCaptureInstalled(ctx: PlanContext): boolean {
+export function usageCaptureInstalled(ctx: PlanContext): boolean {
   if (!existsSync(join(ctx.root, RECORDER_PATH))) return false;
   const postCommitPath = configuredRepoLocalHookPath(ctx.root, "post-commit", ctx.env);
   return postCommitPath !== undefined && postCommitHookIncludes(ctx.root, postCommitPath);

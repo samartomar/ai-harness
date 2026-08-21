@@ -39,10 +39,13 @@ function ctx(): PlanContext {
 
 function writeUsage(...rows: unknown[]): void {
   mkdirSync(join(root, ".aih"), { recursive: true });
-  writeFileSync(join(root, ".aih", "usage.jsonl"), `${rows.map(JSON.stringify).join("\n")}\n`);
+  writeFileSync(
+    join(root, ".aih", "usage.jsonl"),
+    `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`,
+  );
 }
 
-function candidate(id: string, requested = true) {
+function candidate(id: string, requested = true): EffectiveOrgPolicy["candidates"][number] {
   return {
     id,
     origin: "reviewed" as const,
@@ -53,7 +56,7 @@ function candidate(id: string, requested = true) {
     source: { type: "mcp" as const, server: id, subject: `mcp-server-sha256:${"b".repeat(64)}` },
     evidence: "missing" as const,
     dangerCodes: [],
-    blockingCodes: ["evidence-missing"] as const,
+    blockingCodes: ["evidence-missing"],
     decisionBlockers: [],
     resolutionReasons: ["projector-unavailable-for-candidate"],
     lifecycle: "supported" as const,
@@ -100,7 +103,7 @@ describe("governanceReviewView", () => {
       ...Array.from({ length: 9 }, (_, index) => `subject-${index + 3}`),
     ];
     writeUsage(
-      { tool: "codex", kind: "mcp", server: "subject-1", name: "secret-like-tool-name" },
+      { tool: "codex", kind: "mcp", server: "subject-1", name: "subject-2/check" },
       { tool: "codex", kind: "mcp", name: "subject-2/check" },
       { tool: "codex", kind: "mcp", name: "ghp_private-token-never-render" },
       { tool: "codex", kind: "unknown-kind" },
@@ -197,6 +200,17 @@ describe("governanceReviewDigest", () => {
         unmatched: 0,
       },
     });
+    expect(digest.text).not.toContain(root);
+  });
+
+  it("fails closed with an explicit, redacted invalid-policy view", async () => {
+    writeFileSync(join(root, "aih-org-policy.json"), "{ invalid json");
+
+    const digest = await governanceReviewDigest(ctx());
+
+    expect(digest.describe).toBe("Governance review — policy invalid");
+    expect(digest.data).toMatchObject({ policy: { state: "invalid" }, subjects: [] });
+    expect(digest.text).not.toContain("invalid json");
     expect(digest.text).not.toContain(root);
   });
 });
