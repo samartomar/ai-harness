@@ -102,6 +102,14 @@ function ctx(overrides: Partial<PlanContext> = {}): PlanContext {
   };
 }
 
+function hasKeyRecursively(value: unknown, key: string): boolean {
+  if (Array.isArray(value)) return value.some((item) => hasKeyRecursively(item, key));
+  if (value === null || typeof value !== "object") return false;
+  return Object.entries(value).some(
+    ([entryKey, entryValue]) => entryKey === key || hasKeyRecursively(entryValue, key),
+  );
+}
+
 function customSource() {
   return {
     type: "stdio" as const,
@@ -570,6 +578,100 @@ describe("governed candidate projection", () => {
     expect(JSON.stringify(managed?.json)).not.toContain(
       "Review the finding before the decision expires.",
     );
+  });
+
+  it("keeps managed settings and policy-evaluate JSON decision views public-safe and truthful", async () => {
+    const policy = reviewedMcpPolicy();
+    if (policy.governance === undefined) throw new Error("expected governance fixture");
+    const candidate = policy.governance.catalog.reviewed[0];
+    if (candidate === undefined) throw new Error("expected reviewed MCP fixture");
+    candidate.findings.push("prompt-injection");
+    policy.governance.authority.decisions = ["decision-parity"];
+    const decision = currentReviewedDecision(policy, { id: "decision-parity" });
+    writeDecisionAuthorityReceipt([decision]);
+    const managed = (await verifiedOrgPolicyProjectionActions(ctx(), policy)).find(
+      (action): action is WriteAction =>
+        action.kind === "write" && action.path === ".claude/managed-settings.json",
+    );
+    const settingsCandidate = (
+      managed?.json as {
+        organizationPolicy: { effectiveCandidates: Array<Record<string, unknown>> };
+      }
+    ).organizationPolicy.effectiveCandidates[0];
+    if (settingsCandidate === undefined) throw new Error("expected managed policy candidate");
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(policy));
+    const evaluated = (await orgPolicyEffectiveDigest(ctx()))?.data as {
+      blocking: boolean;
+      candidates: Array<Record<string, unknown>>;
+    };
+    const evaluatedCandidate = evaluated.candidates[0];
+    if (evaluatedCandidate === undefined) throw new Error("expected evaluated candidate");
+    const decisionFields = [
+      "id",
+      "digest",
+      "issuer",
+      "actor",
+      "disposition",
+      "notBefore",
+      "expiresAt",
+      "reviewBy",
+      "acceptedFindings",
+      "acceptedGaps",
+      "observedFindings",
+      "observedGaps",
+      "riskState",
+    ].sort();
+    expect(Object.keys(settingsCandidate.decision as object).sort()).toEqual(decisionFields);
+    expect(settingsCandidate.decision).toEqual(evaluatedCandidate.decision);
+    expect(settingsCandidate).toMatchObject({
+      effective: true,
+      dangerCodes: ["prompt-injection"],
+      blockingCodes: [],
+      decisionBlockers: [],
+      decision: {
+        id: "decision-parity",
+        disposition: "accepted-with-conditions",
+        acceptedFindings: ["prompt-injection"],
+        observedFindings: ["prompt-injection"],
+        riskState: "accepted",
+      },
+    });
+    expect(evaluated.blocking).toBe(false);
+    expect(hasKeyRecursively(settingsCandidate, "conditions")).toBe(false);
+    expect(hasKeyRecursively(evaluated, "conditions")).toBe(false);
+
+    const blocked = reviewedMcpPolicy();
+    if (blocked.governance === undefined) throw new Error("expected governance fixture");
+    const blockedCandidate = blocked.governance.catalog.reviewed[0];
+    if (blockedCandidate === undefined) throw new Error("expected reviewed MCP fixture");
+    blockedCandidate.findings.push("prompt-injection");
+    blocked.governance.authority.decisions = ["decision-blocked-parity"];
+    const blockedDecision = currentReviewedDecision(blocked, {
+      id: "decision-blocked-parity",
+      acceptedFindings: ["hidden-unicode"],
+    });
+    writeDecisionAuthorityReceipt([blockedDecision]);
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(blocked));
+    const blockedEvaluation = (await orgPolicyEffectiveDigest(ctx()))?.data as {
+      blocking: boolean;
+      candidates: Array<Record<string, unknown>>;
+    };
+    const blockedOutput = blockedEvaluation.candidates[0];
+    if (blockedOutput === undefined) throw new Error("expected blocked evaluated candidate");
+    expect(blockedEvaluation.blocking).toBe(true);
+    expect(blockedOutput).toMatchObject({
+      effective: false,
+      dangerCodes: ["prompt-injection"],
+      blockingCodes: [],
+      decisionBlockers: [expect.objectContaining({ code: "decision-coverage-mismatch" })],
+      decision: {
+        id: "decision-blocked-parity",
+        acceptedFindings: ["hidden-unicode"],
+        observedFindings: ["prompt-injection"],
+      },
+    });
+    expect((blockedOutput.decision as Record<string, unknown>).riskState).toBeUndefined();
+    expect(hasKeyRecursively(blockedEvaluation, "conditions")).toBe(false);
   });
 
   it("unlocks a clean reviewed control only with an exact approved decision", async () => {
@@ -2302,6 +2404,50 @@ describe("governed candidate projection", () => {
 
     expect(readFileSync(hostPath, "utf8")).toBe(hostBefore);
     expect(readFileSync(recorderPath, "utf8")).toBe(recorderBefore);
+  });
+
+  it("refreshes only a decision-free v3 hook receipt when policyVersion changes", async () => {
+    const policy = usageHookPolicy("active");
+    const applied = ctx({ apply: true });
+    await executePlan(
+      plan("project decision-free usage hook", ...(await verifiedOrgPolicyProjectionActions(applied, policy))),
+      applied,
+    );
+    const receiptPath = join(dir, ".aih", "org-policy-hook-receipt.json");
+    const artifactPaths = [
+      join(dir, ".claude", "settings.json"),
+      join(dir, ".aih", "usage-record.mjs"),
+      join(dir, ".gitignore"),
+    ];
+    const artifactBytes = artifactPaths.map((path) => readFileSync(path, "utf8"));
+    const revised = JSON.parse(JSON.stringify(policy)) as typeof policy;
+    if (revised.governance === undefined) throw new Error("expected governance fixture");
+    revised.governance.policyVersion = "2026.08.1";
+    const refresh = await verifiedOrgPolicyProjectionActions(applied, revised);
+    const hookRefresh = refresh.filter(
+      (action) =>
+        action.kind === "write" &&
+        [
+          ".claude/settings.json",
+          ".aih/usage-record.mjs",
+          ".gitignore",
+          ".aih/org-policy-hook-receipt.json",
+        ].includes(action.path),
+    );
+    expect(hookRefresh).toHaveLength(1);
+    expect(hookRefresh[0]).toMatchObject({
+      kind: "write",
+      path: ".aih/org-policy-hook-receipt.json",
+      json: { version: 3, policyVersion: "2026.08.1", decisions: [] },
+    });
+    await executePlan(plan("refresh decision-free hook receipt", ...refresh), applied);
+    expect(artifactPaths.map((path) => readFileSync(path, "utf8"))).toEqual(artifactBytes);
+    expect(JSON.parse(readFileSync(receiptPath, "utf8"))).toMatchObject({
+      version: 3,
+      policyVersion: "2026.08.1",
+      decisions: [],
+    });
+    expect(await verifiedOrgPolicyProjectionActions(applied, revised)).toEqual([]);
   });
 
   it("refreshes a decision-bearing usage v3 receipt without rewriting hook artifacts", async () => {
