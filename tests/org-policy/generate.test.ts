@@ -386,6 +386,27 @@ describe("policy generate", () => {
       );
       expect(document.getElementById("decision-rows")?.textContent).toContain("decision-workbench");
     }
+
+    const maxLengthApproved = {
+      ...valid,
+      id: `decision-${"a".repeat(55)}`,
+      disposition: "approved",
+      acceptedFindings: [],
+      acceptedGaps: [],
+      conditions: [],
+    };
+    delete (maxLengthApproved as Record<string, unknown>).reviewBy;
+    const rejected = {
+      ...maxLengthApproved,
+      id: "decision-rejected-browser",
+      disposition: "rejected",
+    };
+    expect(() => parseGovernanceDecisionV1(maxLengthApproved)).not.toThrow();
+    expect(() => parseGovernanceDecisionV1(rejected)).not.toThrow();
+    await importDecision(maxLengthApproved);
+    expect(document.getElementById("decision-rows")?.textContent).toContain(maxLengthApproved.id);
+    await importDecision(rejected);
+    expect(document.getElementById("decision-rows")?.textContent).toContain("decision-rejected-browser");
   });
 
   it("preserves valid optional governance absence and rejects root trust refinements in browser import", async () => {
