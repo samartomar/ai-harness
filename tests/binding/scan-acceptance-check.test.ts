@@ -219,6 +219,39 @@ describe("checkSuperpowersScanAcceptance", () => {
     expect(inspections).toBe(0);
   });
 
+  it("rejects ignored checkout content before inspection", async () => {
+    initVendorCheckout({ ".gitignore": "ignored/\n", "SKILL.md": "safe\n" });
+    const ignoredPath = join(checkout, "ignored", "nested", "risk.md");
+    mkdirSync(dirname(ignoredPath), { recursive: true });
+    writeFileSync(ignoredPath, "unsafe\n", "utf8");
+    let inspections = 0;
+    await expect(
+      checkSuperpowersScanAcceptance(
+        { checkoutPath: checkout },
+        fixtureDeps(artifact([]), () => {
+          inspections += 1;
+          return [];
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    expect(inspections).toBe(0);
+  });
+
+  it("accepts constrained GitHub Superpowers origin equivalents", async () => {
+    initVendorCheckout({ "SKILL.md": "safe\n" });
+    for (const remote of [
+      "https://github.com/obra/Superpowers",
+      "https://github.com/obra/Superpowers.git/",
+      "git@github.com:obra/Superpowers.git",
+      "ssh://git@github.com/obra/Superpowers.git",
+    ]) {
+      git(checkout, ["remote", "set-url", "origin", remote]);
+      await expect(
+        checkSuperpowersScanAcceptance({ checkoutPath: checkout }, fixtureDeps(artifact([]))),
+      ).resolves.toMatchObject({ authorizes: false });
+    }
+  });
+
   it("fails closed for wrong, mutable, unreadable, and mutation-during-inspection checkouts", async () => {
     initVendorCheckout({ "SKILL.md": "safe\n", "unreadable/child": "not a file" });
     await expect(
