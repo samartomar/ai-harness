@@ -266,6 +266,49 @@ function currentReviewedDecision(
   };
 }
 
+function currentUsageHookDecision(
+  policy: ReturnType<typeof usageHookPolicy>,
+  reason = "Bounded hook finding is accepted.",
+) {
+  const candidate = policy.governance?.catalog.reviewed[0];
+  if (candidate?.source.type !== "hook" || policy.governance === undefined) {
+    throw new Error("expected reviewed usage-hook fixture");
+  }
+  const now = Date.now();
+  const control = {
+    id: candidate.id,
+    kind: candidate.kind,
+    source: candidate.source,
+    targets: candidate.targets,
+    projector: candidate.projector,
+    lifecycle: candidate.lifecycle,
+  };
+  return {
+    format: "aih-governance-decision",
+    version: 1,
+    id: "decision-usage-1",
+    disposition: "accepted-with-conditions",
+    candidate: candidate.id,
+    kind: candidate.kind,
+    targets: ["claude"],
+    effects: ["usage-hook"],
+    policyVersion: policy.governance.policyVersion,
+    sourceDigest: candidateIdentityDigest(candidate),
+    evidenceDigest: candidateIdentityDigest(candidate),
+    reviewedControlDigest: reviewedControlDigest(control),
+    issuer: "platform-security",
+    actor: "security-admin",
+    reason,
+    issuedAt: new Date(now - 60_000).toISOString(),
+    notBefore: new Date(now - 60_000).toISOString(),
+    expiresAt: new Date(now + 86_400_000).toISOString(),
+    acceptedFindings: ["prompt-injection"],
+    acceptedGaps: [],
+    conditions: ["Review hook finding before expiry."],
+    reviewBy: new Date(now + 43_200_000).toISOString(),
+  };
+}
+
 function governanceDecision(overrides: Record<string, unknown> = {}) {
   return {
     format: "aih-governance-decision",
@@ -2007,6 +2050,46 @@ describe("governed candidate projection", () => {
 
     expect(readFileSync(hostPath, "utf8")).toBe(hostBefore);
     expect(readFileSync(recorderPath, "utf8")).toBe(recorderBefore);
+  });
+
+  it("refreshes a decision-bearing usage v3 receipt without rewriting hook artifacts", async () => {
+    const policy = usageHookPolicy("active");
+    if (policy.governance === undefined) throw new Error("expected governance fixture");
+    const candidate = policy.governance.catalog.reviewed[0];
+    if (candidate === undefined) throw new Error("expected usage-hook candidate fixture");
+    candidate.findings.push("prompt-injection");
+    policy.governance.authority.decisions = ["decision-usage-1"];
+    writeDecisionAuthorityReceipt([currentUsageHookDecision(policy)]);
+    const applied = ctx({ apply: true });
+    await executePlan(
+      plan(
+        "decision-bound policy hooks",
+        ...(await verifiedOrgPolicyProjectionActions(applied, policy)),
+      ),
+      applied,
+    );
+    const host = join(dir, ".claude", "settings.json");
+    const recorder = join(dir, ".aih", "usage-record.mjs");
+    const ignore = join(dir, ".gitignore");
+    const before = [host, recorder, ignore].map((path) => readFileSync(path, "utf8"));
+    writeDecisionAuthorityReceipt([
+      currentUsageHookDecision(policy, "Renewed bounded hook finding."),
+    ]);
+
+    const refresh = await verifiedOrgPolicyProjectionActions(applied, policy);
+    const hookWrites = refresh.filter(
+      (action) => action.kind === "write" && action.path === ".aih/org-policy-hook-receipt.json",
+    );
+    expect(hookWrites).toHaveLength(1);
+    expect(
+      refresh.filter(
+        (action) =>
+          action.kind === "write" &&
+          [".claude/settings.json", ".aih/usage-record.mjs", ".gitignore"].includes(action.path),
+      ),
+    ).toHaveLength(0);
+    await executePlan(plan("renew decision-bound policy hooks", ...refresh), applied);
+    expect([host, recorder, ignore].map((path) => readFileSync(path, "utf8"))).toEqual(before);
   });
 
   it("reports retained-invalid-decision for exact owned MCP bytes after authority binding changes", async () => {
