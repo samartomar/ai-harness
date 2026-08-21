@@ -1026,12 +1026,14 @@ describe("Codex managed destination safety", () => {
     ["agents-failure", "npx", '["chrome-devtools-mcp@latest"]'],
     ["live-config-takeover", "npx", '["chrome-devtools-mcp@latest"]'],
     ["live-config-race", "npx", '["chrome-devtools-mcp@latest"]'],
+    ["live-state-race", "npx", '["chrome-devtools-mcp@latest"]'],
     ["temp-cleanup", "npx", '["chrome-devtools-mcp@latest"]'],
   ] as const)(
     "writes Core's exact Chrome DevTools pin for a claimed mutable table %s the managed fence",
     (legacyPosition, command, args) => {
       const home = join(tmp, "home");
       const repo = join(tmp, "ecc");
+      const aihStatePath = join(home, ".codex", "ecc-aih-install-state.json");
       mkdirSync(join(home, ".codex"), { recursive: true });
       const putRepo = (relative: string, contents: string) => {
         const target = join(repo, relative);
@@ -1049,15 +1051,32 @@ describe("Codex managed destination safety", () => {
         "if (!/^[ \\t]*sandbox_mode\\s*=/m.test(raw)) additions.push('sandbox_mode = \"workspace-write\"\\n');",
         'if (additions.length > 0) fs.writeFileSync(config, additions.join("") + raw);',
       ].join(" ");
+      const racedState = `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          managedBy: "aih",
+          codexToml: {
+            rootKeys: ["notify"],
+            tables: [],
+            tableKeys: {},
+            mcpServers: ["chrome-devtools"],
+          },
+          agentsBlock: true,
+        },
+        null,
+        2,
+      )}\n`;
       putRepo(
         "scripts/codex/merge-codex-config.js",
         legacyPosition === "live-config-race"
           ? `var fs = require("node:fs"); const live = ${JSON.stringify(join(home, ".codex", "config.toml"))}; fs.writeFileSync(live, 'sandbox_mode = "operator"\\n' + fs.readFileSync(live, "utf8")); ${mergeBaseline}`
-          : legacyPosition === "temp-cleanup"
-            ? `require("node:fs").writeFileSync(${JSON.stringify(join(repo, "merge-path.txt"))}, process.argv[2]); ${mergeBaseline}`
-            : baselineFailure
-              ? 'const fs = require("node:fs"); const config = process.argv[2]; fs.writeFileSync(config, "approval_policy = "on-request"\\n" + fs.readFileSync(config, "utf8"));'
-              : mergeBaseline,
+          : legacyPosition === "live-state-race"
+            ? `require("node:fs").writeFileSync(${JSON.stringify(aihStatePath)}, ${JSON.stringify(racedState)}); ${mergeBaseline}`
+            : legacyPosition === "temp-cleanup"
+              ? `require("node:fs").writeFileSync(${JSON.stringify(join(repo, "merge-path.txt"))}, process.argv[2]); ${mergeBaseline}`
+              : baselineFailure
+                ? 'const fs = require("node:fs"); const config = process.argv[2]; fs.writeFileSync(config, "approval_policy = "on-request"\\n" + fs.readFileSync(config, "utf8"));'
+                : mergeBaseline,
       );
       putRepo("scripts/codex/merge-mcp-config.js", 'throw new Error("vendor MCP merge ran");\n');
       putRepo(
@@ -1109,6 +1128,7 @@ describe("Codex managed destination safety", () => {
               legacyPosition === "agents-failure" ||
               legacyPosition === "live-config-takeover" ||
               legacyPosition === "live-config-race" ||
+              legacyPosition === "live-state-race" ||
               legacyPosition === "temp-cleanup"
             ? [
                 ...(legacyPosition === "live-relinquished"
@@ -1147,6 +1167,7 @@ describe("Codex managed destination safety", () => {
                       legacyPosition === "agents-failure" ||
                       legacyPosition === "live-config-takeover" ||
                       legacyPosition === "live-config-race" ||
+                      legacyPosition === "live-state-race" ||
                       legacyPosition === "temp-cleanup"
                     ? ["chrome-devtools"]
                     : ["chrome-devtools", "sequential-thinking"],
@@ -1187,6 +1208,7 @@ describe("Codex managed destination safety", () => {
                 legacyPosition === "agents-failure" ||
                 legacyPosition === "live-config-takeover" ||
                 legacyPosition === "live-config-race" ||
+                legacyPosition === "live-state-race" ||
                 legacyPosition === "temp-cleanup"
               ? ["chrome-devtools"]
               : ["chrome-devtools", "sequential-thinking"],
@@ -1220,7 +1242,9 @@ describe("Codex managed destination safety", () => {
       }
 
       const configBeforeApply =
-        legacyPosition === "managed-failure" || legacyPosition === "agents-failure"
+        legacyPosition === "managed-failure" ||
+        legacyPosition === "agents-failure" ||
+        legacyPosition === "live-state-race"
           ? readFileSync(join(home, ".codex", "config.toml"), "utf8")
           : undefined;
       const stateBeforeApply =
@@ -1271,6 +1295,14 @@ describe("Codex managed destination safety", () => {
         expect(readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")).toBe(
           stateBeforeApply,
         );
+        return;
+      }
+
+      if (legacyPosition === "live-state-race") {
+        expect(result.status).not.toBe(0);
+        expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toBe(configBeforeApply);
+        expect(readFileSync(aihStatePath, "utf8")).toBe(racedState);
+        expect(existsSync(join(home, ".codex", "AGENTS.md"))).toBe(false);
         return;
       }
 
