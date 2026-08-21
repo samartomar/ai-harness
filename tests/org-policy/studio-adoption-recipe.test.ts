@@ -4,6 +4,8 @@ import {
   buildAdoptionRecipe,
   type AdoptionRecipeSources,
 } from "../../src/org-policy/adoption-recipe.js";
+import { ECC_MCP_DISABLED, ECC_MCP_SELECTED, SERENA_ALLOWED_TOOLS } from "../../src/ecc-profile/mcp-profile.js";
+import { ECC_MCP_CATALOG_IDS } from "../../src/org-policy/ecc-mcp-catalog.js";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
@@ -36,19 +38,30 @@ describe("policy studio adoption recipe", () => {
     expect(new Set(recipe.roles.map((role) => role.questionClass)).size).toBe(
       recipe.roles.length,
     );
-    expect(recipe.roles.map((role) => role.route.kind)).toEqual([
-      "aih-ecc-profile-lifecycle",
-      "aih-ecc-profile-lifecycle",
-      "workbench-row",
-      "workbench-row",
-      "ecc-mcp-approval",
+    expect(recipe.roles.map((role) => role.route)).toEqual([
+      { kind: "aih-ecc-profile-lifecycle", command: "aih ecc --lifecycle install" },
+      { kind: "aih-ecc-profile-lifecycle", command: "aih ecc --lifecycle install" },
+      { kind: "workbench-row", candidate: "code-review-graph" },
+      { kind: "workbench-row", candidate: "codebase-memory-mcp" },
+      { kind: "ecc-mcp-approval", id: "token-optimizer", addability: "manual-stdio" },
     ]);
     expect(recipe.roles.find((role) => role.id === "token-savior")?.usage).toEqual({
       kind: "none-captured",
     });
     expect(
-      recipe.roles.filter((role) => role.usage.kind === "mcp-server-event").map((role) => role.id),
-    ).toEqual(["code-review-graph", "codebase-memory-mcp"]);
+      recipe.roles
+        .filter((role) => role.usage.kind === "mcp-server-event")
+        .map((role) => [role.id, role.usage.serverId]),
+    ).toEqual([
+      ["serena", "serena"],
+      ["code-review-graph", "code-review-graph"],
+      ["codebase-memory-mcp", "codebase-memory-mcp"],
+      ["token-optimizer", "token-optimizer"],
+    ]);
+    expect(recipe.sources.eccMcpSelected).toEqual(ECC_MCP_SELECTED);
+    expect(recipe.sources.eccMcpDisabled).toEqual(ECC_MCP_DISABLED);
+    expect(recipe.sources.serenaAllowedTools).toEqual(SERENA_ALLOWED_TOOLS);
+    expect(recipe.sources.eccMcpCatalogIds).toEqual(ECC_MCP_CATALOG_IDS);
   });
 
   it("fails closed when the selected profile or real core catalog drifts", () => {
@@ -57,8 +70,28 @@ describe("policy studio adoption recipe", () => {
     expect(() => buildAdoptionRecipe(missingSerena)).toThrow(/serena/i);
 
     const unknownCore = sources();
-    delete unknownCore.coreMcpCatalog["code-review-graph"];
+    unknownCore.coreMcpIds = unknownCore.coreMcpIds.filter((id) => id !== "code-review-graph");
     expect(() => buildAdoptionRecipe(unknownCore)).toThrow(/code-review-graph/i);
+  });
+
+  it("fails closed when Token Savior, Serena, or Token Optimizer no longer has its reviewed source", () => {
+    const tokenSaviorEnabled = sources();
+    tokenSaviorEnabled.eccMcpDisabled = tokenSaviorEnabled.eccMcpDisabled.filter(
+      (id) => id !== "token-savior",
+    );
+    expect(() => buildAdoptionRecipe(tokenSaviorEnabled)).toThrow(/token savior/i);
+
+    const serenaOverlap = sources();
+    serenaOverlap.serenaAllowedTools = serenaOverlap.serenaAllowedTools.filter(
+      (tool) => tool !== "find_symbol",
+    );
+    expect(() => buildAdoptionRecipe(serenaOverlap)).toThrow(/serena tool find_symbol/i);
+
+    const optimizerWrongRoute = sources();
+    const optimizer = optimizerWrongRoute.eccMcpCatalog.find((entry) => entry.id === "token-optimizer");
+    if (optimizer === undefined) throw new Error("expected Token Optimizer catalog entry");
+    optimizer.addability = "https-configurable";
+    expect(() => buildAdoptionRecipe(optimizerWrongRoute)).toThrow(/token-optimizer.*manual-stdio/i);
   });
 
   it("renders a separate escaped, inert panel without altering authored policy or ticker counts", () => {
