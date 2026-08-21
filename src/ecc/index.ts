@@ -696,13 +696,11 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   "  const ends = lines.map((line, index) => line === end ? index : -1).filter((index) => index >= 0);",
   "  if (begins.length === 0 && ends.length === 0) return { lines, fence: undefined };",
   '  if (begins.length !== 1 || ends.length !== 1 || begins[0] >= ends[0]) throw new Error("ambiguous managed Codex MCP fence");',
-  "  const server = /^\\[mcp_servers\\.(?:\"([^\"\\\\]+)\"|'([^'\\\\]+)'|([A-Za-z0-9_-]+))\\]\\s*(?:#.*)?$/;",
-  "  const child = /^\\[mcp_servers\\.(?:\"([^\"\\\\]+)\"|'([^'\\\\]+)'|([A-Za-z0-9_-]+))\\.([A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*)\\]\\s*(?:#.*)?$/;",
   "  const sections = []; let current; const names = new Set();",
   "  for (const line of lines.slice(begins[0] + 1, ends[0])) {",
-  "    const root = line.match(server); const descendant = line.match(child);",
-  '    if (root) { const name = root[1] || root[2] || root[3]; if (names.has(name)) throw new Error("duplicate managed Codex MCP table: " + name); names.add(name); if (current) sections.push(current); current = { name, lines: [line] }; continue; }',
-  '    if (descendant) { const name = descendant[1] || descendant[2] || descendant[3]; if (!current || current.name !== name) throw new Error("ambiguous managed Codex MCP descendant table"); current.lines.push(line); continue; }',
+  "    const header = tomlMcpTableHeader(line);",
+  '    if (header && !header.array && header.keys.length === 2) { const name = header.keys[1]; if (names.has(name)) throw new Error("duplicate managed Codex MCP table: " + name); names.add(name); if (current) sections.push(current); current = { name, lines: [line] }; continue; }',
+  '    if (header && !header.array && header.keys.length > 2) { const name = header.keys[1]; if (!current || current.name !== name) throw new Error("ambiguous managed Codex MCP descendant table"); current.lines.push(line); continue; }',
   '    if (/^[ \\t]*\\[/.test(line)) throw new Error("unrecognized managed Codex MCP table");',
   '    if (!current && line.trim().length > 0) throw new Error("unrecognized managed Codex MCP content");',
   "    if (current) current.lines.push(line);",
@@ -710,7 +708,7 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   "  if (current) sections.push(current);",
   "  return { lines, fence: { begin: begins[0], end: ends[0], sections } };",
   "}",
-  "function rootServerName(line) { const match = line.match(/^\\[mcp_servers\\.(?:\"([^\"\\\\]+)\"|'([^'\\\\]+)'|([A-Za-z0-9_-]+))\\]\\s*$/); return match ? (match[1] || match[2] || match[3]) : undefined; }",
+  "function rootServerName(line) { return tomlMcpRootName(line); }",
   "function serverTables(lines, name) {",
   "  const anyHeader = /^[ \\t]*\\[/;",
   '  const found = []; for (let index = 0; index < lines.length; index += 1) { if (rootServerName(lines[index]) !== name) continue; let end = index + 1; while (end < lines.length && !anyHeader.test(lines[end]) && lines[end] !== "# >>> aih managed (mcp) >>>" && lines[end] !== "# <<< aih managed (mcp) <<<") end += 1; found.push({ begin: index, end, lines: lines.slice(index, end) }); } return found;',
@@ -720,7 +718,104 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   '  const launch = [["npx", "args = [\\"chrome-devtools-mcp@latest\\"]"], ["bunx", "args = [\\"chrome-devtools-mcp@latest\\"]"], ["pnpm", "args = [\\"dlx\\", \\"chrome-devtools-mcp@latest\\"]"], ["yarn", "args = [\\"dlx\\", \\"chrome-devtools-mcp@latest\\"]"]];',
   '  return body.length === 4 && /^(?:\\[mcp_servers\\.chrome-devtools\\]|\\[mcp_servers\\."chrome-devtools"\\])$/.test(body[0]) && launch.some(([command, args]) => body[1] === "command = \\"" + command + "\\"" && body[2] === args) && body[3] === "startup_timeout_sec = 30";',
   "}",
-  String.raw`function legacyDescendantHeader(line) {
+  String.raw`function tomlMcpTableHeader(line) {
+  let quote;
+  let clean = "";
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (quote === '"') {
+      clean += character;
+      if (character === "\\") {
+        const escaped = line[index + 1];
+        if (escaped === undefined) return undefined;
+        clean += escaped;
+        index += 1;
+      } else if (character === '"') quote = undefined;
+      continue;
+    }
+    if (quote === "'") {
+      clean += character;
+      if (character === "'") quote = undefined;
+      continue;
+    }
+    if (character === '"' || character === "'") { quote = character; clean += character; continue; }
+    if (character === "#") break;
+    clean += character;
+  }
+  clean = clean.trim();
+  const array = clean.startsWith("[[");
+  const open = array ? "[[" : "[";
+  const close = array ? "]]" : "]";
+  if (!clean.startsWith(open) || !clean.endsWith(close)) return undefined;
+  const body = clean.slice(open.length, -close.length);
+  const keys = [];
+  let index = 0;
+  const spaces = () => { while (index < body.length && /[ \t]/.test(body[index])) index += 1; };
+  const basic = () => {
+    let value = "";
+    index += 1;
+    while (index < body.length) {
+      const character = body[index];
+      if (character === '"') { index += 1; return value; }
+      if (character === "\r" || character === "\n") return undefined;
+      if (character !== "\\") { value += character; index += 1; continue; }
+      const escape = body[index + 1];
+      if (escape === "u" || escape === "U") {
+        const width = escape === "u" ? 4 : 8;
+        const hex = body.slice(index + 2, index + 2 + width);
+        if (!new RegExp("^[0-9A-Fa-f]{" + width + "}$").test(hex)) return undefined;
+        const codePoint = Number.parseInt(hex, 16);
+        if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) return undefined;
+        value += String.fromCodePoint(codePoint);
+        index += width + 2;
+        continue;
+      }
+      const simple = { b: "\b", t: "\t", n: "\n", f: "\f", r: "\r", '"': '"', "\\": "\\" };
+      if (escape === undefined || !Object.prototype.hasOwnProperty.call(simple, escape)) return undefined;
+      value += simple[escape];
+      index += 2;
+    }
+    return undefined;
+  };
+  spaces();
+  while (index < body.length) {
+    let key;
+    if (body[index] === '"') key = basic();
+    else if (body[index] === "'") {
+      const end = body.indexOf("'", index + 1);
+      if (end < 0) return undefined;
+      key = body.slice(index + 1, end);
+      index = end + 1;
+    } else {
+      const match = /^[A-Za-z0-9_-]+/.exec(body.slice(index));
+      if (!match) return undefined;
+      key = match[0];
+      index += key.length;
+    }
+    if (key === undefined) return undefined;
+    keys.push(key);
+    spaces();
+    if (index === body.length) break;
+    if (body[index] !== ".") return undefined;
+    index += 1;
+    spaces();
+    if (index === body.length) return undefined;
+  }
+  return keys.length >= 2 && keys[0] === "mcp_servers" ? { keys, array } : undefined;
+}
+function tomlMcpRootName(line) { const header = tomlMcpTableHeader(line); return header && header.keys.length === 2 ? header.keys[1] : undefined; }
+function mcpRootAmbiguity(lines, names) {
+  const seen = new Set();
+  for (const line of lines) {
+    const header = tomlMcpTableHeader(line);
+    if (!header || header.keys.length !== 2 || !names.has(header.keys[1])) continue;
+    if (header.array) return "array-of-tables Codex MCP root";
+    if (seen.has(header.keys[1])) return "duplicate semantic Codex MCP root";
+    seen.add(header.keys[1]);
+  }
+  return undefined;
+}
+function legacyDescendantHeader(line) {
   const withoutComment = (raw) => {
     let quote;
     for (let index = 0; index < raw.length; index += 1) {
@@ -747,67 +842,10 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
     if (strict && !clean.endsWith(close)) return undefined;
     return clean.slice(open.length, strict ? -close.length : undefined);
   };
-  const parseKeys = (body) => {
-    const keys = [];
-    let index = 0;
-    const spaces = () => { while (index < body.length && /[ \t]/.test(body[index])) index += 1; };
-    const basic = () => {
-      let value = "";
-      index += 1;
-      while (index < body.length) {
-        const character = body[index];
-        if (character === '"') { index += 1; return value; }
-        if (character === "\r" || character === "\n") return undefined;
-        if (character !== "\\") { value += character; index += 1; continue; }
-        const escape = body[index + 1];
-        if (escape === "u" || escape === "U") {
-          const width = escape === "u" ? 4 : 8;
-          const hex = body.slice(index + 2, index + 2 + width);
-          if (!new RegExp("^[0-9A-Fa-f]{" + width + "}$").test(hex)) return undefined;
-          const codePoint = Number.parseInt(hex, 16);
-          if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) return undefined;
-          value += String.fromCodePoint(codePoint);
-          index += width + 2;
-          continue;
-        }
-        const simple = { b: "\b", t: "\t", n: "\n", f: "\f", r: "\r", '"': '"', "\\": "\\" };
-        if (!Object.prototype.hasOwnProperty.call(simple, escape)) return undefined;
-        value += simple[escape];
-        index += 2;
-      }
-      return undefined;
-    };
-    spaces();
-    while (index < body.length) {
-      let key;
-      if (body[index] === '"') key = basic();
-      else if (body[index] === "'") {
-        const end = body.indexOf("'", index + 1);
-        if (end < 0) return undefined;
-        key = body.slice(index + 1, end);
-        index = end + 1;
-      } else {
-        const match = /^[A-Za-z0-9_-]+/.exec(body.slice(index));
-        if (!match) return undefined;
-        key = match[0];
-        index += key.length;
-      }
-      if (key === undefined) return undefined;
-      keys.push(key);
-      spaces();
-      if (index === body.length) return keys;
-      if (body[index] !== ".") return undefined;
-      index += 1;
-      spaces();
-      if (index === body.length) return undefined;
-    }
-    return undefined;
-  };
-  const body = bodyOf(line, true);
-  const keys = body === undefined ? undefined : parseKeys(body);
-  if (keys) return keys.length > 2 && keys[0] === "mcp_servers" && keys[1] === "chrome-devtools";
-  const loose = bodyOf(line, false);
-  return loose !== undefined && /^[ \t]*(?:mcp_servers|"mcp_servers"|'mcp_servers')[ \t]*\.[ \t]*(?:chrome-devtools|"chrome-devtools"|'chrome-devtools')[ \t]*\./.test(loose);
+  const header = tomlMcpTableHeader(line);
+  if (header) return header.keys.length > 2 && header.keys[1] === "chrome-devtools";
+  const body = bodyOf(line, false);
+  return body !== undefined && /^[ \t]*(?:mcp_servers|"mcp_servers"|'mcp_servers')[ \t]*\.[ \t]*(?:chrome-devtools|"chrome-devtools"|'chrome-devtools')[ \t]*\./.test(body);
 }`,
   "function renderScopedSection(name, server) {",
   '  if (!server || typeof server !== "object" || Array.isArray(server)) throw new Error("invalid scoped Codex MCP server: " + name);',
@@ -820,20 +858,22 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   "function planScopedMcps(candidateConfig, hasExpectedLiveConfig, expectedLiveConfigRaw, hasExpectedLiveState, expectedLiveStateRaw) {",
   "  if (!mcpSpec) return undefined;",
   '  if (!mcpSpec.servers || typeof mcpSpec.servers !== "object" || Array.isArray(mcpSpec.servers)) throw new Error("invalid scoped Codex MCP payload");',
+  "  const requested = new Map(Object.entries(mcpSpec.servers));",
   '  const liveConfigRaw = hasExpectedLiveConfig ? expectedLiveConfigRaw : readSafeOptional(configPath); const existingConfig = candidateConfig === undefined ? (liveConfigRaw || "") : candidateConfig; const liveStateRaw = hasExpectedLiveState ? expectedLiveStateRaw : readSafeOptional(expectedAihStatePath); const liveState = liveStateRaw === undefined ? undefined : exactAihState(liveStateRaw);',
   "  const parsed = parseManagedFence(existingConfig); const claimed = new Set(liveState ? liveState.codexToml.mcpServers : []);",
   '  if (parsed.fence && !liveState) throw new Error("managed Codex MCP fence has no live AIH state");',
   '  if (parsed.fence && parsed.fence.sections.some((section) => !claimed.has(section.name))) throw new Error("managed Codex MCP fence contains an unclaimed server");',
   "  const beforeFence = parsed.fence ? parsed.lines.slice(0, parsed.fence.begin) : parsed.lines.slice(); const afterFence = parsed.fence ? parsed.lines.slice(parsed.fence.end + 1) : [];",
+  '  const rootProblem = mcpRootAmbiguity([...beforeFence, ...afterFence], new Set([...requested.keys(), ...claimed])); if (rootProblem) throw new Error("live Codex MCP configuration is ambiguous: " + rootProblem);',
   '  const legacyBefore = serverTables(beforeFence, "chrome-devtools"); const legacyAfter = serverTables(afterFence, "chrome-devtools"); const chrome = [...legacyBefore, ...legacyAfter]; const claimsChrome = claimed.has("chrome-devtools");',
   "  const legacyDescendant = [...beforeFence, ...afterFence].some(legacyDescendantHeader);",
   '  if (claimsChrome && legacyDescendant) throw new Error("live claimed Chrome DevTools table has an unsupported legacy descendant");',
   '  if (claimsChrome && chrome.length > 0 && (chrome.length !== 1 || !exactLegacyChrome(chrome[0]))) throw new Error("live claimed Chrome DevTools table is not the exact legacy AIH rendering");',
   '  const retained = parsed.fence ? parsed.fence.sections : []; const expectedClaims = new Set([...retained.map((section) => section.name), ...(claimsChrome && chrome.length === 1 ? ["chrome-devtools"] : [])]);',
   '  if (liveState && (expectedClaims.size !== claimed.size || [...expectedClaims].some((name) => !claimed.has(name)))) throw new Error("live AIH MCP state does not exactly match its managed MCP footprint");',
-  "  const present = new Set(); for (const line of [...beforeFence, ...afterFence]) { const match = line.match(/^\\[mcp_servers\\.(?:\"([^\"]+)\"|'([^']+)'|([A-Za-z0-9_-]+))\\]\\s*(?:#.*)?$/); if (match) present.add(match[1] || match[2] || match[3]); }",
+  "  const present = new Set(); for (const line of [...beforeFence, ...afterFence]) { const name = tomlMcpRootName(line); if (name !== undefined) present.add(name); }",
   '  if (claimsChrome && chrome.length === 1) present.delete("chrome-devtools");',
-  "  const requested = new Map(Object.entries(mcpSpec.servers)); const installed = []; const additions = []; for (const [name, server] of requested) { if (retained.some((section) => section.name === name)) continue; if (present.has(name)) continue; additions.push({ name, text: renderScopedSection(name, server) }); installed.push(name); }",
+  "  const installed = []; const additions = []; for (const [name, server] of requested) { if (retained.some((section) => section.name === name)) continue; if (present.has(name)) continue; additions.push({ name, text: renderScopedSection(name, server) }); installed.push(name); }",
   '  const sections = [...retained.map((section) => ({ name: section.name, text: requested.has(section.name) ? renderScopedSection(section.name, requested.get(section.name)) : section.lines.join("\\n").replace(/\\n+$/, "") })), ...additions];',
   '  const block = "# >>> aih managed (mcp) >>>\\n" + sections.map((section) => section.text).join("\\n\\n") + "\\n# <<< aih managed (mcp) <<<";',
   '  let mergedLines; if (parsed.fence) { const before = beforeFence.slice(); const after = afterFence.slice(); if (claimsChrome && chrome.length === 1) { if (legacyBefore.length === 1) before.splice(legacyBefore[0].begin, legacyBefore[0].end - legacyBefore[0].begin); else after.splice(legacyAfter[0].begin, legacyAfter[0].end - legacyAfter[0].begin); } mergedLines = [...before, block, ...after]; } else { const before = beforeFence.slice(); if (claimsChrome && chrome.length === 1) before.splice(legacyBefore[0].begin, legacyBefore[0].end - legacyBefore[0].begin); mergedLines = before.join("\\n").replace(/\\n+$/, "").split("\\n"); if (mergedLines.length === 1 && mergedLines[0] === "") mergedLines = []; mergedLines.push(...(mergedLines.length > 0 ? ["", block] : [block])); }',

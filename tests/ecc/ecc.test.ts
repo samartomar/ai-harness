@@ -1377,18 +1377,22 @@ describe("Codex managed destination safety", () => {
         expect.arrayContaining(
           legacyPosition === "vanished"
             ? ["sequential-thinking"]
-            : descendantHeader !== undefined ||
-                duplicateSemanticRootHeader !== undefined ||
-                arrayRootHeader !== undefined ||
-                legacyPosition === "managed-failure" ||
-                legacyPosition === "live-relinquished" ||
-                legacyPosition === "agents-failure" ||
-                legacyPosition === "live-config-takeover" ||
-                legacyPosition === "live-config-race" ||
-                legacyPosition === "live-state-race" ||
-                legacyPosition === "temp-cleanup"
-              ? ["chrome-devtools"]
-              : ["chrome-devtools", "sequential-thinking"],
+            : legacyPosition === "array-root"
+              ? []
+              : legacyPosition === "encoded-operator-root"
+                ? ["sequential-thinking"]
+                : descendantHeader !== undefined ||
+                    duplicateSemanticRootHeader !== undefined ||
+                    arrayRootHeader !== undefined ||
+                    legacyPosition === "managed-failure" ||
+                    legacyPosition === "live-relinquished" ||
+                    legacyPosition === "agents-failure" ||
+                    legacyPosition === "live-config-takeover" ||
+                    legacyPosition === "live-config-race" ||
+                    legacyPosition === "live-state-race" ||
+                    legacyPosition === "temp-cleanup"
+                  ? ["chrome-devtools"]
+                  : ["chrome-devtools", "sequential-thinking"],
         ),
       );
 

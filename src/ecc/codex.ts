@@ -19,6 +19,7 @@ export interface CodexMcpCollision {
   existingTransport: CodexMcpTransport;
   conflictingScope: CodexMcpScope;
   conflictingTransport: CodexMcpTransport;
+  reason?: "duplicate semantic root" | "array-of-tables root";
 }
 
 /**
@@ -41,8 +42,6 @@ export function coreOwnedEccCodexMcpServers(): CodexScopedMcpServers {
 // are registered through AIH's scoped writer, not this vendor-specific path.
 const ECC_CODEX_MCP_TRANSPORTS = new Map<string, CodexMcpTransport>([["chrome-devtools", "stdio"]]);
 
-const TOML_SERVER_HEADER =
-  /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|'([^']+)'|([^.\]'"]+))\][ \t]*(?:#.*)?$/;
 const TOML_TABLE_HEADER = /^[ \t]*\[/;
 const CODEX_MCP_BLOCK_BEGIN = "# >>> aih managed (mcp) >>>";
 const CODEX_MCP_BLOCK_END = "# <<< aih managed (mcp) <<<";
@@ -93,8 +92,126 @@ export function codexInstallStatePath(ctx: PlanContext): string {
   return join(codexHomeDir(ctx), CODEX_INSTALL_STATE_FILE);
 }
 
-function tomlHeaderName(match: RegExpMatchArray): string {
-  return match[1] ?? match[2] ?? match[3] ?? "";
+interface TomlMcpTableHeader {
+  keys: string[];
+  array: boolean;
+}
+
+/**
+ * This only recognizes TOML table headers under `mcp_servers`; it is not a
+ * general TOML parser. Keeping this narrow prevents equivalent quoted keys
+ * from bypassing MCP collision and ownership checks.
+ */
+function tomlMcpTableHeader(line: string): TomlMcpTableHeader | undefined {
+  let quote: '"' | "'" | undefined;
+  let clean = "";
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index] ?? "";
+    if (quote === '"') {
+      clean += character;
+      if (character === "\\") {
+        const escaped = line[index + 1];
+        if (escaped === undefined) return undefined;
+        clean += escaped;
+        index += 1;
+      } else if (character === '"') quote = undefined;
+      continue;
+    }
+    if (quote === "'") {
+      clean += character;
+      if (character === "'") quote = undefined;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      clean += character;
+      continue;
+    }
+    if (character === "#") break;
+    clean += character;
+  }
+  clean = clean.trim();
+  const array = clean.startsWith("[[");
+  const open = array ? "[[" : "[";
+  const close = array ? "]]" : "]";
+  if (!clean.startsWith(open) || !clean.endsWith(close)) return undefined;
+  const body = clean.slice(open.length, -close.length);
+  const keys: string[] = [];
+  let index = 0;
+  const skipSpaces = (): void => {
+    while (index < body.length && /[ \t]/.test(body[index] ?? "")) index += 1;
+  };
+  const basicKey = (): string | undefined => {
+    let value = "";
+    index += 1;
+    while (index < body.length) {
+      const character = body[index] ?? "";
+      if (character === '"') {
+        index += 1;
+        return value;
+      }
+      if (character === "\r" || character === "\n") return undefined;
+      if (character !== "\\") {
+        value += character;
+        index += 1;
+        continue;
+      }
+      const escapedKey = body[index + 1];
+      if (escapedKey === "u" || escapedKey === "U") {
+        const width = escapedKey === "u" ? 4 : 8;
+        const hex = body.slice(index + 2, index + 2 + width);
+        if (!new RegExp(`^[0-9A-Fa-f]{${width}}$`).test(hex)) return undefined;
+        const codePoint = Number.parseInt(hex, 16);
+        if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) return undefined;
+        value += String.fromCodePoint(codePoint);
+        index += width + 2;
+        continue;
+      }
+      const simple: Record<string, string> = {
+        b: "\b",
+        t: "\t",
+        n: "\n",
+        f: "\f",
+        r: "\r",
+        '"': '"',
+        "\\": "\\",
+      };
+      if (escapedKey === undefined || !(escapedKey in simple)) return undefined;
+      value += simple[escapedKey] ?? "";
+      index += 2;
+    }
+    return undefined;
+  };
+  skipSpaces();
+  while (index < body.length) {
+    let key: string | undefined;
+    if (body[index] === '"') key = basicKey();
+    else if (body[index] === "'") {
+      const end = body.indexOf("'", index + 1);
+      if (end < 0) return undefined;
+      key = body.slice(index + 1, end);
+      index = end + 1;
+    } else {
+      const match = /^[A-Za-z0-9_-]+/.exec(body.slice(index));
+      if (match === null) return undefined;
+      key = match[0];
+      index += key.length;
+    }
+    if (key === undefined) return undefined;
+    keys.push(key);
+    skipSpaces();
+    if (index === body.length) break;
+    if (body[index] !== ".") return undefined;
+    index += 1;
+    skipSpaces();
+    if (index === body.length) return undefined;
+  }
+  return keys.length >= 2 && keys[0] === "mcp_servers" ? { keys, array } : undefined;
+}
+
+function tomlMcpRootName(line: string): string | undefined {
+  const header = tomlMcpTableHeader(line);
+  return header?.keys.length === 2 ? header.keys[1] : undefined;
 }
 
 function mergeTransport(
@@ -105,13 +222,22 @@ function mergeTransport(
   return current === next ? current : "mixed";
 }
 
-function codexMcpTransports(raw: string): Map<string, CodexMcpTransport> {
+interface CodexMcpTransportScan {
+  transports: Map<string, CodexMcpTransport>;
+  invalidRoots: Map<string, "duplicate semantic root" | "array-of-tables root">;
+}
+
+function codexMcpTransports(raw: string): CodexMcpTransportScan {
   const transports = new Map<string, CodexMcpTransport>();
+  const invalidRoots = new Map<string, "duplicate semantic root" | "array-of-tables root">();
   let current: string | undefined;
   for (const line of raw.replace(/\r\n/g, "\n").split("\n")) {
-    const table = line.match(TOML_SERVER_HEADER);
-    if (table) {
-      current = tomlHeaderName(table);
+    const header = tomlMcpTableHeader(line);
+    if (header?.keys.length === 2) {
+      const name = header.keys[1] ?? "";
+      if (header.array) invalidRoots.set(name, "array-of-tables root");
+      else if (transports.has(name)) invalidRoots.set(name, "duplicate semantic root");
+      current = name;
       transports.set(current, transports.get(current) ?? "unknown");
       continue;
     }
@@ -127,7 +253,7 @@ function codexMcpTransports(raw: string): Map<string, CodexMcpTransport> {
       transports.set(current, mergeTransport(transports.get(current) ?? "unknown", "http"));
     }
   }
-  return transports;
+  return { transports, invalidRoots };
 }
 
 function tomlTablePathPattern(tablePath: string): string {
@@ -280,9 +406,14 @@ function tableKeyExists(raw: string, tablePath: string, key: string): boolean {
 }
 
 function mcpServerExists(raw: string, name: string): boolean {
-  return [name, ...(CODEX_MCP_ALIASES[name] ?? [])].some((server) =>
-    tableExists(raw, `mcp_servers.${server}`),
-  );
+  const names = new Set([name, ...(CODEX_MCP_ALIASES[name] ?? [])]);
+  return raw
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .some((line) => {
+      const existing = tomlMcpRootName(line);
+      return existing !== undefined && names.has(existing);
+    });
 }
 
 function emptyFootprint(): CodexTomlFootprint {
@@ -506,10 +637,10 @@ function stripManagedMcpTables(raw: string, claimedNames: readonly string[]): st
   let current: { name: string; lines: string[] } | undefined;
   const names = new Set<string>();
   for (const line of lines.slice(begin + 1, end)) {
-    const header = line.match(TOML_SERVER_HEADER);
-    if (header) {
+    const header = tomlMcpTableHeader(line);
+    if (header?.keys.length === 2 && !header.array) {
       if (current !== undefined) sections.push(current);
-      const name = tomlHeaderName(header);
+      const name = header.keys[1] ?? "";
       if (names.has(name)) return raw;
       names.add(name);
       current = { name, lines: [line] };
@@ -570,7 +701,19 @@ export function codexMcpTransportCollisions(
     conflictingScope: CodexMcpScope,
     conflictingTransport: CodexMcpTransport,
     strictUnknown = false,
+    reason?: CodexMcpCollision["reason"],
   ): void => {
+    if (reason !== undefined) {
+      collisions.push({
+        name,
+        existingScope,
+        existingTransport,
+        conflictingScope,
+        conflictingTransport,
+        reason,
+      });
+      return;
+    }
     const unknown = existingTransport === "unknown" || conflictingTransport === "unknown";
     if (unknown && !strictUnknown) return;
     if (!unknown && existingTransport === conflictingTransport && existingTransport !== "mixed")
@@ -584,26 +727,38 @@ export function codexMcpTransportCollisions(
     });
   };
 
-  for (const [name, projectTransport] of project) {
+  for (const [name, reason] of project.invalidRoots) {
     const plannedTransport = plannedTransports.get(name);
-    const globalTransport = global.get(name);
+    if (plannedTransport !== undefined)
+      pushCollision(name, "project", "unknown", "planned ECC", plannedTransport, true, reason);
+  }
+  for (const [name, reason] of global.invalidRoots) {
+    const plannedTransport = plannedTransports.get(name);
+    if (plannedTransport !== undefined)
+      pushCollision(name, "global", "unknown", "planned ECC", plannedTransport, true, reason);
+  }
+
+  for (const [name, projectTransport] of project.transports) {
+    const plannedTransport = plannedTransports.get(name);
+    const globalTransport = global.transports.get(name);
     if (plannedTransport !== undefined) {
       pushCollision(name, "project", projectTransport, "planned ECC", plannedTransport, true);
     } else if (globalTransport !== undefined) {
       pushCollision(name, "project", projectTransport, "global", globalTransport);
     }
   }
-  for (const [name, globalTransport] of global) {
+  for (const [name, globalTransport] of global.transports) {
     const plannedTransport = plannedTransports.get(name);
     if (plannedTransport !== undefined) {
       pushCollision(name, "global", globalTransport, "planned ECC", plannedTransport, true);
     }
   }
-  return collisions.sort((a, b) =>
-    a.name === b.name
-      ? a.existingScope.localeCompare(b.existingScope) ||
-        a.conflictingScope.localeCompare(b.conflictingScope)
-      : a.name.localeCompare(b.name),
+  return collisions.sort(
+    (a, b) =>
+      a.name.localeCompare(b.name) ||
+      a.existingScope.localeCompare(b.existingScope) ||
+      a.conflictingScope.localeCompare(b.conflictingScope) ||
+      (a.reason ?? "").localeCompare(b.reason ?? ""),
   );
 }
 
@@ -616,7 +771,7 @@ export function codexMcpCollisionActions(
   const summary = collisions
     .map(
       (c) =>
-        `${c.name} (${c.existingScope} ${c.existingTransport}, ` +
+        `${c.name} (${c.reason ? `${c.existingScope} ${c.reason}` : `${c.existingScope} ${c.existingTransport}`}, ` +
         `${c.conflictingScope} ${c.conflictingTransport})`,
     )
     .join(", ");
@@ -680,8 +835,8 @@ function claimedMcpTableRemains(raw: string, claimedNames: readonly string[]): b
     .replace(/\r\n/g, "\n")
     .split("\n")
     .some((line) => {
-      const header = line.match(TOML_SERVER_HEADER);
-      return header !== null && claimed.has(tomlHeaderName(header));
+      const name = tomlMcpRootName(line);
+      return name !== undefined && claimed.has(name);
     });
 }
 
