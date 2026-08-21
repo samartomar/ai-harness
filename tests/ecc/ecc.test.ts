@@ -967,6 +967,43 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
   });
 
   it.each([
+    ["descendant table", '[mcp_servers."chrome-devtools".env]\ntoken = "operator"\n'],
+    ["encoded descendant table", '[mcp_servers."chrome\\u002ddevtools".env]\ntoken = "operator"\n'],
+    ["top-level dotted assignment", 'mcp_servers.chrome-devtools.command = "operator-devtools"\n'],
+    [
+      "top-level inline table",
+      'mcp_servers = { chrome-devtools = { command = "operator-devtools" } }\n',
+    ],
+    [
+      "mcp_servers table dotted assignment",
+      '[mcp_servers]\nchrome-devtools.command = "operator-devtools"\n',
+    ],
+  ])(
+    "fails closed for an operator-owned non-root Chrome representation: %s",
+    async (_kind, config) => {
+      const actions = await chromeDevtoolsCollisionChecks(config, undefined);
+
+      expect(
+        execs(actions).some((action) => action.describe.startsWith("Install ECC for Codex")),
+      ).toBe(false);
+      const checks = await Promise.all(
+        actions
+          .filter((action): action is ProbeAction => action.kind === "probe")
+          .map((action) => action.run(makeCtx())),
+      );
+      expect(checks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            verdict: "fail",
+            code: "mcp.config-invalid",
+            detail: expect.stringMatching(/chrome-devtools.*non-root/i),
+          }),
+        ]),
+      );
+    },
+  );
+
+  it.each([
     ["project", "[mcp_servers.chrome-devtools]\nenabled = true\n", undefined],
     ["global", undefined, "[mcp_servers.chrome-devtools]\nenabled = true\n"],
   ])(
