@@ -180,6 +180,45 @@ describe("checkSuperpowersScanAcceptance", () => {
     }
   });
 
+  it("rejects a checkout subdirectory before inspection", async () => {
+    initVendorCheckout({ "nested/SKILL.md": "safe\n" });
+    let inspections = 0;
+    await expect(
+      checkSuperpowersScanAcceptance(
+        { checkoutPath: join(checkout, "nested") },
+        fixtureDeps(artifact([]), () => {
+          inspections += 1;
+          return [];
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    expect(inspections).toBe(0);
+  });
+
+  it("rejects a malformed Git top-level result before inspection", async () => {
+    initVendorCheckout({ "SKILL.md": "safe\n" });
+    let inspections = 0;
+    const malformedTopLevelRunner: Runner = async (argv, options) => {
+      const result = await pinnedCheckoutRunner(argv, options);
+      return argv.at(-2) === "rev-parse" && argv.at(-1) === "--show-toplevel"
+        ? { ...result, stdout: `${join(checkout, "not-a-directory")}\n` }
+        : result;
+    };
+    await expect(
+      checkSuperpowersScanAcceptance(
+        { checkoutPath: checkout },
+        {
+          ...fixtureDeps(artifact([]), () => {
+            inspections += 1;
+            return [];
+          }),
+          runner: malformedTopLevelRunner,
+        },
+      ),
+    ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    expect(inspections).toBe(0);
+  });
+
   it("fails closed for wrong, mutable, unreadable, and mutation-during-inspection checkouts", async () => {
     initVendorCheckout({ "SKILL.md": "safe\n", "unreadable/child": "not a file" });
     await expect(
