@@ -12,9 +12,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `approved`, `accepted-with-conditions`, and `rejected` immutable, while revocation is a separate
   record bound to the decision and issuer. Bounded identifiers, exact candidate/source/evidence/
   reviewed-control/target/effect identity, sorted coverage, offset-qualified bounded validity,
-  conditions, actor, and reason produce deterministic bytes and digests. These records are data
-  only: this foundation verifies no signer or receipt, resolves no observed finding, authorizes no
-  projector, and changes no Workbench or runtime effect.
+  conditions, actor, and reason produce format- and version-domain-separated deterministic bytes
+  and digests. These records are data only: this foundation verifies no signer or receipt, resolves
+  no observed finding, authorizes no projector, and changes no Workbench or runtime effect.
 
 - **Sharded ECC baseline vetting now requires a source-bound static preflight receipt.** A
   dispatcher can run the preview generator's lexical dependency-closure check once before
