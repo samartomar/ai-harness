@@ -131,6 +131,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Decision sessions now use the companion's current truth homes.** The
+  repo-curated decision-partner skill reads the companion's declared navigation,
+  operating rules, `NEXT.md`, and affected feature files. It no longer requires
+  retired decision-ledger files or directs agents to create a second history
+  store.
+
 - **Obsolete Superpowers scan acceptances no longer remain in the shipped ledger.** The exact
   pinned-checkout audit found that none of the 62 historical code/path/content-digest rows joins
   the current scanner output, so the ledger now ships with an empty accepted set. The 87 current

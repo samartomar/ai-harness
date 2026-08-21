@@ -85,18 +85,20 @@ owner's observed episode is the evidence that the contract itself is stale.
 
 ## Truth-home resolution — no second ledger
 
-The private companion already declares the durable homes for open and locked
+The private companion declares the durable homes for unresolved and settled
 decisions. Resolve that repository before advising or writing:
 
 1. Read the repo-local machine pointer with
    `git config --local --path --get aih.privateCompanionRoot`.
 2. If the pointer is absent, try the repo-local `.internal` directory.
-3. Resolve the candidate to an absolute path. Require its root `AGENTS.md`,
-   `decisions/OPEN-DECISIONS.md`, and `decisions/DECISION-LOG.md`; a partial or
-   malformed candidate is unavailable, not permission to invent a fallback.
-4. Read the companion `AGENTS.md`, its canonical read-order document, and its
-   operating rules before the first write. State the resolved authority in one
-   line: `Decision truth: <path> — <pointer or .internal>`.
+3. Resolve the candidate to an absolute path.
+   Require its root `AGENTS.md`, `README.md`, `OPERATING-RULES.md`, and `NEXT.md`;
+   a partial or malformed candidate is unavailable, not permission to invent a
+   fallback.
+4. Read those files in the companion's declared order before the first write.
+   Its operating rules decide which affected current-truth feature files also
+   need to be read or updated. State the resolved authority in one line:
+   `Decision truth: <path> — <pointer or .internal>`.
 
 The Git pointer supports a sibling clone without publishing its path or name;
 `.internal` supports an in-tree clone. Never scan arbitrary sibling directories,
@@ -108,9 +110,11 @@ explain how to configure the pointer and stop before asking the owner to rule.
 
 Read, in this order (Read tool; keep it to these — context is a budget):
 
-1. **Decision truth** — the companion's `decisions/OPEN-DECISIONS.md`,
-   `decisions/DECISION-LOG.md`, `NEXT.md`, and directly linked feature note.
-   Build the session agenda in chat from these sources; never persist a second
+1. **Decision truth** — the companion's `AGENTS.md`, `README.md`,
+   `OPERATING-RULES.md`, `NEXT.md`, and directly linked current-truth feature
+   files. Unresolved decisions stay in `NEXT.md`; settled decisions belong in
+   the affected current-truth feature files under the companion's own contract.
+   Build the session agenda in chat from those sources; never persist a second
    agenda file.
 2. **Intent** — `docs/product/finalized-positioning.md` (what aih is and
    deliberately is not), plus `ROADMAP.md` "Themes" and "Now".
@@ -120,9 +124,10 @@ Read, in this order (Read tool; keep it to these — context is a budget):
    name it.
 4. **History** — `docs/CANON_GOVERNANCE.md` (recorded practices **and** its
    "Known gaps (deliberately deferred)" list — those are parked decisions),
-   the companion decision log, directly linked ADR/feature notes, and, when the
-   gh CLI works, closed issues/milestones. `codebase-memory-mcp` may accelerate
-   recall, but it is advisory and never outranks the committed truth homes.
+   Git history for the affected current-truth files, directly linked ADRs, and,
+   when the gh CLI works, closed issues/milestones. `codebase-memory-mcp` may
+   accelerate recall, but it is advisory and never outranks committed current
+   truth.
 5. **Live** — variance, not the latest number: `gh run list --branch main
    --limit 15` for the recent CI pass/fail series, and the `[Unreleased]`
    section at the top of `CHANGELOG.md` (read only the head; the file is
@@ -182,9 +187,10 @@ Sweep, in one pass: open GitHub issues and milestones (when gh works),
 `docs/CANON_GOVERNANCE.md` and `ai-coding/project.md`, deferred plan docs
 (`docs/heal-plan.md`, `docs/research/`), TODO/FIXME in source, and the last
 8 weeks of commit subjects for unresolved forks. Reconcile that evidence with
-the companion's open-decision and NEXT truth homes. Render one chat agenda entry
-per real open decision: the question, evidence present, evidence absent, and who
-or what can settle it. Title every entry so a cold reader understands the fork;
+the companion's `NEXT.md` and directly linked current-truth feature files.
+Render one chat agenda entry per real open decision: the question, evidence
+present, evidence absent, and who or what can settle it. Title every entry so a
+cold reader understands the fork;
 entry codes are pointers, never names. Show the owner the list before advising
 on any item. Do not create a parallel agenda document.
 
@@ -200,7 +206,7 @@ Sort every open item by ENTRY CONDITION, not importance:
   threshold means you haven't parked it, you've procrastinated.
 - **C. Waiting on someone or something else** — name who, and what.
 - **D. Not a decision at all** — desk work, a bug, or a question that routes a
-  fix. Remove it from the decision truth home and route it through the
+  fix. Remove it from `NEXT.md` and route it through the
   companion's issue/intake process; do not create a local draft store.
 
 Then ask which one the owner wants first. Default: smallest-reversible first.
@@ -232,13 +238,15 @@ Then ask which one the owner wants first. Default: smallest-reversible first.
 ## Step 3 — record it, or it didn't happen
 
 When the owner decides, write the ruling in the same exchange directly to the
-companion's declared truth homes:
+companion's declared current-truth homes:
 
-- append the locked result to `decisions/DECISION-LOG.md` with the decision, its
-  measurement, the why in two sentences, and a numbered **REOPEN BAR**;
-- remove or narrow the resolved row in `decisions/OPEN-DECISIONS.md`;
-- update the directly linked feature note and `NEXT.md` only when the companion
-  contract says the ruling changes implementation state; and
+- record settled decisions as current behavior or a current boundary in the
+  affected current-truth feature files, with the evidence, cost, and a precise
+  **REOPEN BAR** where the operating contract permits it;
+- remove the resolved question from `NEXT.md`, or narrow it to an unresolved
+  evidence-gathering or implementation item with an exact trigger;
+- update other current navigation only when the companion contract requires it;
+  and
 - run every validation and generated-index check required by companion
   `AGENTS.md` before claiming the record is durable.
 
@@ -251,7 +259,7 @@ Route derived outputs without creating new authority:
 - **Architectural ruling future sessions must recall** → store it as an ADR
   via `codebase-memory-mcp` only when the companion contract treats that store
   as a derived recall index. If the server is down, warn once; the committed
-  decision log remains authoritative.
+  current-truth feature remains authoritative.
 - **Public-safe actionable outcome** → draft the issue (Problem → Fix →
   Acceptance → Source, existing label, proposed milestone) in the companion
   location its operating rules designate; file it only with explicit authority.
@@ -267,8 +275,8 @@ or optional.
 ## When a decision is genuinely premature
 
 Say exactly what evidence is missing, how much would be enough (a number), and
-how it gets generated. Then write or update the row in
-`decisions/OPEN-DECISIONS.md` with that threshold and its evidence generator.
+how it gets generated. Then write or update the unresolved decision in
+`NEXT.md` with that threshold and its evidence generator.
 Deciding on vibes is worse than waiting, and "revisit later" without a
 threshold is the same as forgetting.
 
