@@ -311,6 +311,75 @@ describe("planClaudeRemoval — never a whole-file replacement", () => {
   });
 });
 
+describe("planClaudeRemoval — planned actions pin the observed target", () => {
+  it("refuses a changed shared JSON file before mutation and leaves the new sibling intact", async () => {
+    seed(CLAUDE_SETTINGS_PATH, `${JSON.stringify({ telemetry: false }, null, 2)}\n`);
+    const built = new ClaudeManagedWriteEngine(root)
+      .jsonField(CLAUDE_SETTINGS_PATH, "/model", "aih-value")
+      .build();
+    const lock = await bindAndLock(built);
+    const removal = planClaudeRemoval(root, lock);
+
+    // This is a plan/apply race, not pre-plan drift: the owned value was exact
+    // when the removal plan was made, then a user changed the shared file.
+    seed(
+      CLAUDE_SETTINGS_PATH,
+      `${JSON.stringify({ telemetry: false, model: "aih-value", userKey: "new" }, null, 2)}\n`,
+    );
+
+    await expect(applyActions(root, removal.actions)).rejects.toThrow(
+      /changed (after the plan was computed|before commit)/i,
+    );
+    expect(readJson(root, CLAUDE_SETTINGS_PATH)).toEqual({
+      telemetry: false,
+      model: "aih-value",
+      userKey: "new",
+    });
+  });
+
+  it("refuses a changed owned file before archival removal", async () => {
+    const rel = ".claude/skills/ecc/SKILL.md";
+    const built = new ClaudeManagedWriteEngine(root).ownedFile(rel, "# aih skill\n").build();
+    const lock = await bindAndLock(built);
+    const removal = planClaudeRemoval(root, lock);
+    seed(rel, "# user changed after plan\n");
+
+    await expect(applyActions(root, removal.actions)).rejects.toThrow(
+      /changed (after the plan was computed|before commit)/i,
+    );
+    expect(readText(root, rel)).toBe("# user changed after plan\n");
+  });
+
+  it("refuses a changed managed block before stripping it", async () => {
+    const built = new ClaudeManagedWriteEngine(root).claudeMdBlock("AIH-managed body").build();
+    const lock = await bindAndLock(built);
+    const removal = planClaudeRemoval(root, lock);
+    seed(
+      CLAUDE_BOOTLOADER_PATH,
+      `${readText(root, CLAUDE_BOOTLOADER_PATH)}\nuser note after plan\n`,
+    );
+
+    await expect(applyActions(root, removal.actions)).rejects.toThrow(
+      /changed (after the plan was computed|before commit)/i,
+    );
+    expect(readText(root, CLAUDE_BOOTLOADER_PATH)).toContain("user note after plan");
+  });
+
+  it("refuses a changed owned file before restoring pre-existing content", async () => {
+    const rel = ".claude/agents/reviewer.md";
+    seed(rel, "# user original\n");
+    const built = new ClaudeManagedWriteEngine(root).ownedFile(rel, "# aih agent\n").build();
+    const lock = await bindAndLock(built);
+    const removal = planClaudeRemoval(root, lock);
+    seed(rel, "# user changed after plan\n");
+
+    await expect(applyActions(root, removal.actions)).rejects.toThrow(
+      /changed (after the plan was computed|before commit)/i,
+    );
+    expect(readText(root, rel)).toBe("# user changed after plan\n");
+  });
+});
+
 describe("planClaudeRemoval — malformed lock targets are preserved and reported", () => {
   it("reports drift for a json-pointer entry whose target carries no pointer", () => {
     seed(CLAUDE_SETTINGS_PATH, `${JSON.stringify({ model: "opus" }, null, 2)}\n`);
@@ -335,6 +404,52 @@ describe("planClaudeRemoval — malformed lock targets are preserved and reporte
 });
 
 describe("planClaudeRemoval — container ownership (own what AIH created)", () => {
+  it("treats an exact pre-existing empty container as already restored", () => {
+    seed(CLAUDE_SETTINGS_PATH, `${JSON.stringify({ enabledPlugins: {} }, null, 2)}\n`);
+    const lock = lockFrom(
+      [],
+      [
+        {
+          kind: "json-pointer",
+          target: `${CLAUDE_SETTINGS_PATH}#/enabledPlugins`,
+          preExisting: { value: {} },
+          applied: { "sample@aih-test": true },
+          postApplyDigest: "a".repeat(64),
+        },
+      ],
+    );
+
+    const removal = planClaudeRemoval(root, lock);
+
+    expect(removal.actions).toEqual([]);
+    expect(removal.drift).toEqual([]);
+    expect(readJson(root, CLAUDE_SETTINGS_PATH).enabledPlugins).toEqual({});
+  });
+
+  it("preserves an empty container introduced after an absent pre-existing state", () => {
+    seed(CLAUDE_SETTINGS_PATH, `${JSON.stringify({ enabledPlugins: {} }, null, 2)}\n`);
+    const lock = lockFrom(
+      [],
+      [
+        {
+          kind: "json-pointer",
+          target: `${CLAUDE_SETTINGS_PATH}#/enabledPlugins`,
+          preExisting: { absent: true },
+          applied: { "sample@aih-test": true },
+          postApplyDigest: "a".repeat(64),
+        },
+      ],
+    );
+
+    const removal = planClaudeRemoval(root, lock);
+
+    expect(removal.actions).toEqual([]);
+    expect(removal.drift).toEqual([
+      expect.objectContaining({ target: `${CLAUDE_SETTINGS_PATH}#/enabledPlugins` }),
+    ]);
+    expect(readJson(root, CLAUDE_SETTINGS_PATH).enabledPlugins).toEqual({});
+  });
+
   it("removes the whole container AIH created, leaving no empty object behind", async () => {
     seed(CLAUDE_SETTINGS_PATH, `${JSON.stringify({ model: "opus" }, null, 2)}\n`); // enabledPlugins absent
     const built = new ClaudeManagedWriteEngine(root)
