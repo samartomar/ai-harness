@@ -650,6 +650,13 @@ describe("governed candidate projection", () => {
     );
     expect(acceptedCheck.detail).not.toContain("Review the finding before the decision expires.");
 
+    const noDecision = reviewedMcpPolicy();
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(noDecision));
+    const noDecisionCheck = await orgPolicyEffectiveCheck(applied);
+    expect(noDecisionCheck.detail).toContain(
+      "requested candidates: code-review-graph{decision=none; observedFindings=none; observedGaps=none; acceptedFindings=none; acceptedGaps=none; risk=none; danger=none; blocking=none; decisionBlockers=none}",
+    );
+
     const blocked = reviewedMcpPolicy();
     if (blocked.governance === undefined) throw new Error("expected governance fixture");
     const blockedCandidate = blocked.governance.catalog.reviewed[0];

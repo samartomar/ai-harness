@@ -33,13 +33,14 @@ function requestedCandidateSummary(effective: EffectiveOrgPolicy): string {
     .sort((left, right) => ordinalCompare(left.id, right.id))
     .map((candidate) => {
       const decision = candidate.decision;
+      const risk = decision === undefined ? "none" : (decision.riskState ?? "blocked");
       return (
         `${candidate.id}{decision=${decision?.id ?? "none"}; ` +
         `observedFindings=${publicList(decision?.observedFindings ?? [])}; ` +
         `observedGaps=${publicList(decision?.observedGaps ?? [])}; ` +
         `acceptedFindings=${publicList(decision?.acceptedFindings ?? [])}; ` +
         `acceptedGaps=${publicList(decision?.acceptedGaps ?? [])}; ` +
-        `risk=${decision?.riskState ?? "blocked"}; ` +
+        `risk=${risk}; ` +
         `danger=${publicList(candidate.dangerCodes)}; ` +
         `blocking=${publicList(candidate.blockingCodes)}; ` +
         `decisionBlockers=${publicList(candidate.decisionBlockers.map((blocker) => blocker.code))}}`
