@@ -92,44 +92,91 @@ export function parseGithubBaselineEvidenceAttestationV1(
 ): VerifiedBaselineEvidenceArtifactAttestationV1 & { readonly signedAt: string } {
   if (!Buffer.isBuffer(bytes) || bytes.length === 0 || bytes.length > ATTESTATION_LIMIT)
     fail("attestation");
-  let claim: Record<string, unknown>;
+  let results: unknown[];
   try {
     const parsed: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      Array.isArray(parsed) ||
-      Object.getPrototypeOf(parsed) !== Object.prototype
-    )
-      fail("attestation claim");
-    claim = parsed as Record<string, unknown>;
+    if (!Array.isArray(parsed) || parsed.length !== 1) fail("attestation claim");
+    results = parsed;
   } catch {
     fail("attestation claim");
   }
-  const fields = [
-    "issuer",
-    "predicateType",
-    "ref",
-    "repository",
-    "signedAt",
-    "subjectSha256",
-    "workflow",
-  ];
-  if (Object.keys(claim).sort().join("\0") !== fields.sort().join("\0")) fail("attestation claim");
-  const signedAt = typeof claim.signedAt === "string" ? claim.signedAt : "";
-  const signed = epoch(signedAt, "attestation timestamp");
-  const now = epoch(expected.now, "clock");
-  if (signed > now || (now - signed) / 1000 > expected.cacheMaxAgeSeconds)
-    fail("attestation timestamp");
+  const record = (value: unknown): Record<string, unknown> => {
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      Array.isArray(value) ||
+      Object.getPrototypeOf(value) !== Object.prototype
+    )
+      fail("attestation claim");
+    return value as Record<string, unknown>;
+  };
+  const result = record(results[0]);
+  if (!Object.hasOwn(result, "attestation") || !Object.hasOwn(result, "verificationResult"))
+    fail("attestation claim");
+  const verification = record(result.verificationResult);
+  if (verification.mediaType !== "application/vnd.dev.sigstore.verificationresult+json;version=0.1")
+    fail("attestation claim");
+  const signature = record(verification.signature);
+  const certificate = record(signature.certificate);
+  const workflowUri = `https://github.com/${expected.expectedWorkflow}@${expected.expectedRef}`;
   if (
-    claim.predicateType !== "https://slsa.dev/provenance/v1" ||
-    claim.subjectSha256 !== expected.subjectSha256 ||
-    claim.repository !== expected.expectedRepository ||
-    claim.workflow !== expected.expectedWorkflow ||
-    claim.issuer !== expected.expectedIssuer ||
-    claim.ref !== expected.expectedRef
+    certificate.subjectAlternativeName !== workflowUri ||
+    certificate.buildSignerURI !== workflowUri ||
+    certificate.buildConfigURI !== workflowUri ||
+    certificate.issuer !== expected.expectedIssuer ||
+    certificate.sourceRepositoryURI !== `https://github.com/${expected.expectedRepository}` ||
+    certificate.sourceRepositoryRef !== expected.expectedRef ||
+    certificate.runnerEnvironment !== "github-hosted"
+  )
+    fail("attestation certificate");
+  const statement = record(verification.statement);
+  if (
+    statement._type !== "https://in-toto.io/Statement/v1" ||
+    statement.predicateType !== "https://slsa.dev/provenance/v1"
   )
     fail("attestation claim");
+  if (!Array.isArray(statement.subject) || statement.subject.length !== 1)
+    fail("attestation subject");
+  const subject = record(statement.subject[0]);
+  const digest = record(subject.digest);
+  if (
+    Object.keys(digest).length !== 1 ||
+    !/^[a-f0-9]{64}$/.test(String(digest.sha256)) ||
+    digest.sha256 !== expected.subjectSha256
+  )
+    fail("attestation subject");
+  if (
+    !Array.isArray(verification.verifiedTimestamps) ||
+    verification.verifiedTimestamps.length === 0 ||
+    verification.verifiedTimestamps.length > 16
+  )
+    fail("attestation timestamp");
+  const now = epoch(expected.now, "clock");
+  const observed = new Set<string>();
+  const moments = verification.verifiedTimestamps.map((entry) => {
+    const timestamp = record(entry);
+    if (
+      Object.keys(timestamp).sort().join("\0") !== ["timestamp", "type", "uri"].join("\0") ||
+      typeof timestamp.type !== "string" ||
+      typeof timestamp.uri !== "string" ||
+      typeof timestamp.timestamp !== "string" ||
+      !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:Z|[+-]\d\d:\d\d)$/.test(timestamp.timestamp)
+    )
+      fail("attestation timestamp");
+    const value = Date.parse(timestamp.timestamp);
+    if (
+      !Number.isSafeInteger(value) ||
+      value > now ||
+      now - value > expected.cacheMaxAgeSeconds * 1000
+    )
+      fail("attestation timestamp");
+    const key = `${timestamp.type}\0${timestamp.uri}\0${timestamp.timestamp}`;
+    if (observed.has(key)) fail("attestation timestamp");
+    observed.add(key);
+    return value;
+  });
+  const earliest = Math.min(...moments);
+  const signedAt = `${new Date(earliest).toISOString().slice(0, 19)}Z`;
   return {
     environment: expected.expectedEnvironment,
     issuer: expected.expectedIssuer,

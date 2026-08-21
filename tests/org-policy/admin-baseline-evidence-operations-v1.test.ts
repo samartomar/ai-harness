@@ -60,34 +60,51 @@ const verify = ({
 describe("admin baseline evidence resolution v1", () => {
   it("accepts only one real nested gh JSON SLSA result, never an echoed policy", () => {
     const subjectSha256 = "a".repeat(64);
-    const realShape = [{
-      attestation: { bundle: {} },
-      verificationResult: {
-        mediaType: "application/vnd.dev.sigstore.verificationresult+json;version=0.1",
-        signature: { certificate: {
-          subjectAlternativeName: `https://github.com/${bootstrap.expectedWorkflow}@${bootstrap.expectedRef}`,
-          issuer: bootstrap.expectedIssuer,
-          buildSignerURI: `https://github.com/${bootstrap.expectedWorkflow}@${bootstrap.expectedRef}`,
-          buildConfigURI: `https://github.com/${bootstrap.expectedWorkflow}@${bootstrap.expectedRef}`,
-          runnerEnvironment: "github-hosted",
-          sourceRepositoryURI: `https://github.com/${bootstrap.expectedRepository}`,
-          sourceRepositoryRef: bootstrap.expectedRef,
-        } },
-        verifiedTimestamps: [{ type: "signed", uri: "https://rekor.sigstore.dev", timestamp: "2026-08-20T18:59:00-05:00" }],
-        statement: { _type: "https://in-toto.io/Statement/v1", subject: [{ name: "SHA256SUMS", digest: { sha256: subjectSha256 } }], predicateType: "https://slsa.dev/provenance/v1", predicate: {} },
+    const realShape = [
+      {
+        attestation: { bundle: {} },
+        verificationResult: {
+          mediaType: "application/vnd.dev.sigstore.verificationresult+json;version=0.1",
+          signature: {
+            certificate: {
+              subjectAlternativeName: `https://github.com/${bootstrap.expectedWorkflow}@${bootstrap.expectedRef}`,
+              issuer: bootstrap.expectedIssuer,
+              buildSignerURI: `https://github.com/${bootstrap.expectedWorkflow}@${bootstrap.expectedRef}`,
+              buildConfigURI: `https://github.com/${bootstrap.expectedWorkflow}@${bootstrap.expectedRef}`,
+              runnerEnvironment: "github-hosted",
+              sourceRepositoryURI: `https://github.com/${bootstrap.expectedRepository}`,
+              sourceRepositoryRef: bootstrap.expectedRef,
+            },
+          },
+          verifiedTimestamps: [
+            {
+              type: "signed",
+              uri: "https://rekor.sigstore.dev",
+              timestamp: "2026-08-20T18:59:00-05:00",
+            },
+          ],
+          statement: {
+            _type: "https://in-toto.io/Statement/v1",
+            subject: [{ name: "SHA256SUMS", digest: { sha256: subjectSha256 } }],
+            predicateType: "https://slsa.dev/provenance/v1",
+            predicate: {},
+          },
+        },
       },
-    }];
+    ];
     expect(
-      parseGithubBaselineEvidenceAttestationV1(
-        Buffer.from(JSON.stringify(realShape)),
-        { ...bootstrap, subjectSha256, now: "2026-08-21T00:00:00Z" },
-      ),
+      parseGithubBaselineEvidenceAttestationV1(Buffer.from(JSON.stringify(realShape)), {
+        ...bootstrap,
+        subjectSha256,
+        now: "2026-08-21T00:00:00Z",
+      }),
     ).toMatchObject({ verified: true, signedAt: "2026-08-20T23:59:00Z" });
     expect(() =>
-      parseGithubBaselineEvidenceAttestationV1(
-        Buffer.from(JSON.stringify({ subjectSha256 })),
-        { ...bootstrap, subjectSha256, now: "2026-08-21T00:00:00Z" },
-      ),
+      parseGithubBaselineEvidenceAttestationV1(Buffer.from(JSON.stringify({ subjectSha256 })), {
+        ...bootstrap,
+        subjectSha256,
+        now: "2026-08-21T00:00:00Z",
+      }),
     ).toThrow(/admin baseline evidence/);
   });
   it("uses fresh evidence before cache and only falls through on literal unavailable", async () => {
