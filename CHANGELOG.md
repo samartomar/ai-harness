@@ -8,6 +8,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`aih report` adds a deterministic governed-subject review without turning local usage into
+  authority.** The read-only digest keeps requested/effective state, evidence and blockers,
+  decision/approval/revocation facts, projector capability, strict receipt state, and local usage
+  coverage separate for every governed subject. Exact MCP-server attribution wins; unique name
+  matches remain heuristic, unmatched names and rejected payloads become bounded counts only, and
+  absent capture is distinct from installed capture with no observed events. Low or zero counts
+  never change effective state, infer value, or recommend retirement. Invalid or non-governing
+  policy and absent/invalid receipts remain explicit and redacted; Package Graph identity is not
+  inferred.
+
 - **The Policy Workbench teaches the first bounded adoption recipe without creating another
   control plane.** An inert, code-owned panel assigns the low-token orientation, exact-symbol,
   broad-impact, durable-memory, and on-demand overhead questions to Token Savior, Serena,
