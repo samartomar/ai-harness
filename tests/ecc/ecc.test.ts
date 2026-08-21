@@ -408,25 +408,33 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     expect(rendered).not.toContain("@latest");
   });
 
-  it("does not claim an operator-owned Chrome DevTools server while retaining the Core projection", async () => {
-    const home = join(tmp, "operator-home");
-    mkdirSync(join(home, ".codex"), { recursive: true });
-    writeFileSync(
-      join(home, ".codex", "config.toml"),
-      '[mcp_servers.chrome-devtools]\ncommand = "operator-devtools"\nargs = ["--local"]\n',
-    );
-    const base = makeCtx({ cli: "codex" });
-    const actions = (
-      await command.plan({ ...base, env: { ...base.env, HOME: home, USERPROFILE: home } })
-    ).actions;
-    const state = codexInstallState(actions);
-    const install = execs(actions).find((action) => action.describe.includes("record prune state"));
-    const mcpB64 = install?.argv.at(-2);
-    if (mcpB64 === undefined) throw new Error("missing Core-owned Codex MCP payload");
+  it.each([
+    ["bare", "[mcp_servers.chrome-devtools]"],
+    ["encoded basic", '[mcp_servers."chrome\\u002ddevtools"]'],
+  ])(
+    "does not claim an operator-owned %s Chrome DevTools server while retaining the Core projection",
+    async (_spelling, header) => {
+      const home = join(tmp, "operator-home");
+      mkdirSync(join(home, ".codex"), { recursive: true });
+      writeFileSync(
+        join(home, ".codex", "config.toml"),
+        `${header}\ncommand = "operator-devtools"\nargs = ["--local"]\n`,
+      );
+      const base = makeCtx({ cli: "codex" });
+      const actions = (
+        await command.plan({ ...base, env: { ...base.env, HOME: home, USERPROFILE: home } })
+      ).actions;
+      const state = codexInstallState(actions);
+      const install = execs(actions).find((action) =>
+        action.describe.includes("record prune state"),
+      );
+      const mcpB64 = install?.argv.at(-2);
+      if (mcpB64 === undefined) throw new Error("missing Core-owned Codex MCP payload");
 
-    expect(state.codexToml.mcpServers).not.toContain("chrome-devtools");
-    expect(Buffer.from(mcpB64, "base64").toString("utf8")).toContain("chrome-devtools-mcp@1.7.0");
-  });
+      expect(state.codexToml.mcpServers).not.toContain("chrome-devtools");
+      expect(Buffer.from(mcpB64, "base64").toString("utf8")).toContain("chrome-devtools-mcp@1.7.0");
+    },
+  );
 
   it("--cli codex passes the requested profile into the managed Codex file install", async () => {
     const install = execs(
@@ -857,6 +865,50 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
           code: "mcp.config-invalid",
         }),
       ]),
+    );
+  });
+
+  it.each(["project", "global"] as const)(
+    "detects an encoded Chrome DevTools root collision in %s config",
+    async (scope) => {
+      const encoded =
+        '[mcp_servers."chrome\\u002ddevtools"]\nurl = "https://example.invalid/mcp"\n';
+      const actions = await chromeDevtoolsCollisionChecks(
+        scope === "project" ? encoded : undefined,
+        scope === "global" ? encoded : undefined,
+      );
+
+      expect(
+        execs(actions).some((action) => action.describe.startsWith("Install ECC for Codex")),
+      ).toBe(false);
+      const checks = await Promise.all(
+        actions
+          .filter((action): action is ProbeAction => action.kind === "probe")
+          .map((action) => action.run(makeCtx())),
+      );
+      expect(checks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            verdict: "fail",
+            code: "mcp.config-invalid",
+            detail: expect.stringMatching(/chrome-devtools.*http/i),
+          }),
+        ]),
+      );
+    },
+  );
+
+  it("fails closed for duplicate semantic Chrome DevTools roots with mixed transports", async () => {
+    await expectChromeDevtoolsPreflightRefusal(
+      [
+        "[mcp_servers.chrome-devtools]",
+        'command = "npx"',
+        '[mcp_servers."chrome\\u002ddevtools"]',
+        'url = "https://example.invalid/mcp"',
+        "",
+      ].join("\n"),
+      undefined,
+      "mixed",
     );
   });
 
