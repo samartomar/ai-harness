@@ -97,6 +97,66 @@ export interface HttpServer extends McpRisk {
 }
 export type McpServer = StdioServer | HttpServer;
 
+const ENV_REFERENCE = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/;
+const BEARER_ENV_REFERENCE = /^Bearer \$\{([A-Za-z_][A-Za-z0-9_]*)\}$/;
+
+function invalidSecretReference(server: string, field: "env" | "header", key: string): Error {
+  return new Error(`MCP secret reference invalid for server "${server}" ${field} "${key}"`);
+}
+
+function invalidHeaderName(server: string): Error {
+  return new Error(`MCP header name invalid for server "${server}"`);
+}
+
+function ambiguousAuthorizationHeader(server: string): Error {
+  return new Error(`MCP authorization header ambiguous for server "${server}"`);
+}
+
+function secretReference(
+  server: string,
+  field: "env" | "header",
+  key: string,
+  value: string,
+): string {
+  const ref =
+    field === "header" && key.toLowerCase() === "authorization"
+      ? BEARER_ENV_REFERENCE.exec(value)?.[1]
+      : ENV_REFERENCE.exec(value)?.[1];
+  if (ref === undefined) throw invalidSecretReference(server, field, key);
+  return ref;
+}
+
+/**
+ * Validate and collect the secret references used by a code-owned MCP catalog.
+ * Stdio environments and generic HTTP headers must be exactly `${VAR}`; the only
+ * fixed-prefix header is `Authorization: Bearer ${VAR}`. Errors deliberately name
+ * the server and key, never the rejected value.
+ */
+export function validateMcpSecretReferences(servers: Record<string, McpServer>): string[] {
+  const references = new Set<string>();
+  for (const name of Object.keys(servers).sort()) {
+    const server = servers[name];
+    if (server === undefined) continue;
+    const values = server.type === "stdio" ? server.env : server.headers;
+    const field = server.type === "stdio" ? "env" : "header";
+    if (values === undefined) continue;
+    const keys = Object.keys(values).sort();
+    if (
+      server.type === "http" &&
+      keys.filter((key) => key.toLowerCase() === "authorization").length > 1
+    ) {
+      throw ambiguousAuthorizationHeader(name);
+    }
+    for (const key of keys) {
+      if (field === "header" && key.trim().length === 0) throw invalidHeaderName(name);
+      const value = values[key];
+      if (value === undefined) continue;
+      references.add(secretReference(name, field, key, value));
+    }
+  }
+  return [...references].sort();
+}
+
 /** Base host for the n24q02m hosted enterprise toolset. */
 export const N24Q02M_HOST = "n24q02m.com";
 
@@ -125,7 +185,7 @@ export interface McpServersOptions {
  * projections select from this shared constructor instead of copying pins.
  */
 export function coreLocalMcpServers(): Record<string, McpServer> {
-  return normalizeResolverSupplyChains({
+  const servers = normalizeResolverSupplyChains({
     "code-review-graph": {
       type: "stdio",
       command: "uvx",
@@ -169,6 +229,8 @@ export function coreLocalMcpServers(): Record<string, McpServer> {
       supplyChain: "pinned",
     },
   });
+  validateMcpSecretReferences(servers);
+  return servers;
 }
 
 function githubMcpUrl(host: string | undefined): string {
@@ -273,7 +335,9 @@ export function mcpServers(
   };
 
   if (scope === "remote") Object.assign(servers, hostedServers());
-  return normalizeResolverSupplyChains(servers);
+  const normalized = normalizeResolverSupplyChains(servers);
+  validateMcpSecretReferences(normalized);
+  return normalized;
 }
 
 /**
@@ -283,18 +347,7 @@ export function mcpServers(
  * would be a hardcoded secret — see the `aih secrets` MCP-config scan).
  */
 export function envPlaceholders(servers: Record<string, McpServer>): string[] {
-  const vars = new Set<string>();
-  const collect = (value: string): void => {
-    for (const m of value.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)) {
-      if (m[1]) vars.add(m[1]);
-    }
-  };
-  for (const s of Object.values(servers)) {
-    if (s.type === "stdio" && s.env) for (const value of Object.values(s.env)) collect(value);
-    if (s.type === "http" && s.headers)
-      for (const value of Object.values(s.headers)) collect(value);
-  }
-  return [...vars].sort();
+  return validateMcpSecretReferences(servers);
 }
 
 /**

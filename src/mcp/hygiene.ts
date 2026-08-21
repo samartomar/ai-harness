@@ -4,7 +4,7 @@ import type { Check } from "../internals/verify.js";
 import { execArgv } from "../tools/install.js";
 import { mcpResolverPinState, npxLaunchPins } from "./pins.js";
 import type { McpEntry } from "./render.js";
-import type { McpServer } from "./servers.js";
+import { type McpServer, validateMcpSecretReferences } from "./servers.js";
 
 export type McpHygieneKind = "missing-env" | "placeholder-url";
 
@@ -19,23 +19,6 @@ interface NpmPackagePin {
   packageName: string;
   version: string;
   spec: string;
-}
-
-const ENV_REF = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
-function envRefs(value: string): string[] {
-  return [...value.matchAll(ENV_REF)].flatMap((match) => (match[1] ? [match[1]] : []));
-}
-
-function requiredEnvVars(server: McpServer): string[] {
-  const vars = new Set<string>();
-  if (server.type === "stdio" && server.env) {
-    for (const value of Object.values(server.env)) for (const ref of envRefs(value)) vars.add(ref);
-  }
-  if (server.type === "http" && server.headers) {
-    for (const value of Object.values(server.headers))
-      for (const ref of envRefs(value)) vars.add(ref);
-  }
-  return [...vars].sort();
 }
 
 function isMissingEnv(env: NodeJS.ProcessEnv, name: string): boolean {
@@ -66,8 +49,13 @@ export function mcpHygieneIssues(
   env: NodeJS.ProcessEnv,
 ): McpHygieneIssue[] {
   const issues: McpHygieneIssue[] = [];
+  const requiredByServer = new Map<string, string[]>();
+  for (const [server, config] of Object.entries(servers).sort()) {
+    const references = validateMcpSecretReferences({ [server]: config });
+    requiredByServer.set(server, references);
+  }
   for (const [server, config] of Object.entries(servers)) {
-    const missing = requiredEnvVars(config).filter((name) => isMissingEnv(env, name));
+    const missing = (requiredByServer.get(server) ?? []).filter((name) => isMissingEnv(env, name));
     if (missing.length > 0) {
       issues.push({
         server,
