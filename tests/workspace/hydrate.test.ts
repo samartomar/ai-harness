@@ -71,6 +71,30 @@ describe("workspace hydrate", () => {
     );
   });
 
+  it.each([
+    ["non-git state", { git: false }],
+    ["dirty state", { dirty: false }],
+    ["branch", { branch: "main" }],
+    ["commit SHA", { sha: "0123456789abcdef0123456789abcdef01234567" }],
+    ["ahead count", { ahead: 1 }],
+    ["behind count", { behind: 1 }],
+  ])("rejects incomplete observed lock rows with %s", async (_label, mixed) => {
+    mkdirSync(join(parent, "ai-coding"), { recursive: true });
+    writeManifest(["ui"]);
+    writeFileSync(
+      join(parent, "ai-coding", "workspace-lock.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        createdAt: "2026-07-04T00:00:00.000Z",
+        repos: [{ id: "ui", path: "ui", git: true, observation: "unavailable", ...mixed }],
+      }),
+    );
+
+    await expect(workspaceHydrateCommand.plan(ctx())).rejects.toThrow(
+      /workspace hydrate requires coherent repo dirty state/,
+    );
+  });
+
   it("plans clone and checkout actions for missing manifest children with recorded remote and ref", async () => {
     writeManifest([
       {
