@@ -912,6 +912,60 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
     );
   });
 
+  it("fails closed for duplicate semantic Chrome DevTools roots with equal transports", async () => {
+    const duplicate = [
+      "[mcp_servers.chrome-devtools]",
+      'command = "npx"',
+      '[mcp_servers."chrome\\u002ddevtools"]',
+      'command = "npx"',
+      "",
+    ].join("\n");
+    const actions = await chromeDevtoolsCollisionChecks(duplicate, undefined);
+
+    expect(
+      execs(actions).some((action) => action.describe.startsWith("Install ECC for Codex")),
+    ).toBe(false);
+    const checks = await Promise.all(
+      actions
+        .filter((action): action is ProbeAction => action.kind === "probe")
+        .map((action) => action.run(makeCtx())),
+    );
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "mcp.config-invalid",
+          detail: expect.stringMatching(/chrome-devtools.*duplicate/i),
+        }),
+      ]),
+    );
+  });
+
+  it("fails closed for an array-of-tables Chrome DevTools root", async () => {
+    const actions = await chromeDevtoolsCollisionChecks(
+      '[[mcp_servers."chrome-devtools"]]\ncommand = "npx"\n',
+      undefined,
+    );
+
+    expect(
+      execs(actions).some((action) => action.describe.startsWith("Install ECC for Codex")),
+    ).toBe(false);
+    const checks = await Promise.all(
+      actions
+        .filter((action): action is ProbeAction => action.kind === "probe")
+        .map((action) => action.run(makeCtx())),
+    );
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "mcp.config-invalid",
+          detail: expect.stringMatching(/chrome-devtools.*array/i),
+        }),
+      ]),
+    );
+  });
+
   it.each([
     ["project", "[mcp_servers.chrome-devtools]\nenabled = true\n", undefined],
     ["global", undefined, "[mcp_servers.chrome-devtools]\nenabled = true\n"],
@@ -1080,6 +1134,9 @@ describe("Codex managed destination safety", () => {
     ["escaped-basic-prefix-descendant", "npx", '["chrome-devtools-mcp@latest"]'],
     ["spaced-quoted-descendant", "npx", '["chrome-devtools-mcp@latest"]'],
     ["array-descendant", "npx", '["chrome-devtools-mcp@latest"]'],
+    ["duplicate-semantic-root", "npx", '["chrome-devtools-mcp@latest"]'],
+    ["array-root", "npx", '["chrome-devtools-mcp@latest"]'],
+    ["encoded-operator-root", "npx", '["chrome-devtools-mcp@latest"]'],
     ["managed-failure", "npx", '["chrome-devtools-mcp@latest"]'],
     ["live-relinquished", "npx", '["chrome-devtools-mcp@latest"]'],
     ["agents-failure", "npx", '["chrome-devtools-mcp@latest"]'],
@@ -1191,6 +1248,18 @@ describe("Codex managed destination safety", () => {
                       : legacyPosition === "array-descendant"
                         ? '[[mcp_servers."chrome-devtools".env]]'
                         : undefined;
+      const duplicateSemanticRootHeader =
+        legacyPosition === "duplicate-semantic-root"
+          ? '[mcp_servers."chrome\\u002ddevtools"]\ncommand = "npx"\nargs = ["chrome-devtools-mcp@latest"]\nstartup_timeout_sec = 30'
+          : undefined;
+      const arrayRootHeader =
+        legacyPosition === "array-root"
+          ? '[[mcp_servers."chrome-devtools"]]\ncommand = "npx"\nargs = ["chrome-devtools-mcp@latest"]\nstartup_timeout_sec = 30'
+          : undefined;
+      const encodedOperatorRootHeader =
+        legacyPosition === "encoded-operator-root"
+          ? '[mcp_servers."chrome\\u002ddevtools"]\ncommand = "operator-devtools"\nargs = ["--local"]'
+          : undefined;
       const fence = [
         "# >>> aih managed (mcp) >>>",
         ...(legacyPosition === "inside" ? legacy : []),
@@ -1201,30 +1270,42 @@ describe("Codex managed destination safety", () => {
       ];
       writeFileSync(
         join(home, ".codex", "config.toml"),
-        (descendantHeader !== undefined
-          ? [...legacy, descendantHeader, 'token = "operator"', ""]
-          : legacyPosition === "managed-failure" ||
-              legacyPosition === "live-relinquished" ||
-              legacyPosition === "agents-failure" ||
-              legacyPosition === "live-config-takeover" ||
-              legacyPosition === "live-config-race" ||
-              legacyPosition === "live-state-race" ||
-              legacyPosition === "temp-cleanup"
-            ? [
-                ...(legacyPosition === "live-relinquished"
-                  ? ['approval_policy = "operator"', ""]
-                  : []),
-                ...legacy,
-                "",
-              ]
-            : legacyPosition === "inside" || legacyPosition === "vanished"
-              ? [...fence, ""]
-              : [
-                  ...(legacyPosition === "before" ? legacy : fence),
-                  "",
-                  ...(legacyPosition === "before" ? fence : legacy),
+        (arrayRootHeader !== undefined
+          ? [arrayRootHeader, 'token = "operator"', ""]
+          : encodedOperatorRootHeader !== undefined
+            ? [encodedOperatorRootHeader, 'token = "operator"', ""]
+            : descendantHeader !== undefined || duplicateSemanticRootHeader !== undefined
+              ? [
+                  ...legacy,
+                  ...(descendantHeader !== undefined ? [descendantHeader] : []),
+                  ...(duplicateSemanticRootHeader !== undefined
+                    ? [duplicateSemanticRootHeader]
+                    : []),
+                  'token = "operator"',
                   "",
                 ]
+              : legacyPosition === "managed-failure" ||
+                  legacyPosition === "live-relinquished" ||
+                  legacyPosition === "agents-failure" ||
+                  legacyPosition === "live-config-takeover" ||
+                  legacyPosition === "live-config-race" ||
+                  legacyPosition === "live-state-race" ||
+                  legacyPosition === "temp-cleanup"
+                ? [
+                    ...(legacyPosition === "live-relinquished"
+                      ? ['approval_policy = "operator"', ""]
+                      : []),
+                    ...legacy,
+                    "",
+                  ]
+                : legacyPosition === "inside" || legacyPosition === "vanished"
+                  ? [...fence, ""]
+                  : [
+                      ...(legacyPosition === "before" ? legacy : fence),
+                      "",
+                      ...(legacyPosition === "before" ? fence : legacy),
+                      "",
+                    ]
         ).join("\n"),
         "utf8",
       );
@@ -1241,16 +1322,21 @@ describe("Codex managed destination safety", () => {
               mcpServers:
                 legacyPosition === "vanished"
                   ? ["sequential-thinking"]
-                  : descendantHeader !== undefined ||
-                      legacyPosition === "managed-failure" ||
-                      legacyPosition === "live-relinquished" ||
-                      legacyPosition === "agents-failure" ||
-                      legacyPosition === "live-config-takeover" ||
-                      legacyPosition === "live-config-race" ||
-                      legacyPosition === "live-state-race" ||
-                      legacyPosition === "temp-cleanup"
-                    ? ["chrome-devtools"]
-                    : ["chrome-devtools", "sequential-thinking"],
+                  : arrayRootHeader !== undefined
+                    ? []
+                    : encodedOperatorRootHeader !== undefined
+                      ? []
+                      : descendantHeader !== undefined ||
+                          duplicateSemanticRootHeader !== undefined ||
+                          legacyPosition === "managed-failure" ||
+                          legacyPosition === "live-relinquished" ||
+                          legacyPosition === "agents-failure" ||
+                          legacyPosition === "live-config-takeover" ||
+                          legacyPosition === "live-config-race" ||
+                          legacyPosition === "live-state-race" ||
+                          legacyPosition === "temp-cleanup"
+                        ? ["chrome-devtools"]
+                        : ["chrome-devtools", "sequential-thinking"],
             },
             agentsBlock: true,
           },
@@ -1264,7 +1350,16 @@ describe("Codex managed destination safety", () => {
         { dir: repo, posix: repo.replace(/\\/g, "/"), explicit: true, hasCache: false },
         "minimal",
         undefined,
-        coreOwnedEccCodexMcpServers(),
+        legacyPosition === "encoded-operator-root"
+          ? {
+              ...coreOwnedEccCodexMcpServers(),
+              "sequential-thinking": {
+                type: "stdio",
+                command: "npx",
+                args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.7.1"],
+              },
+            }
+          : coreOwnedEccCodexMcpServers(),
       ).find(
         (candidate): candidate is ExecAction =>
           candidate.kind === "exec" && candidate.describe.startsWith("Install ECC for Codex"),
@@ -1283,6 +1378,8 @@ describe("Codex managed destination safety", () => {
           legacyPosition === "vanished"
             ? ["sequential-thinking"]
             : descendantHeader !== undefined ||
+                duplicateSemanticRootHeader !== undefined ||
+                arrayRootHeader !== undefined ||
                 legacyPosition === "managed-failure" ||
                 legacyPosition === "live-relinquished" ||
                 legacyPosition === "agents-failure" ||
@@ -1323,6 +1420,8 @@ describe("Codex managed destination safety", () => {
 
       const configBeforeApply =
         descendantHeader !== undefined ||
+        duplicateSemanticRootHeader !== undefined ||
+        arrayRootHeader !== undefined ||
         legacyPosition === "managed-failure" ||
         legacyPosition === "agents-failure" ||
         legacyPosition === "live-state-race"
@@ -1330,6 +1429,8 @@ describe("Codex managed destination safety", () => {
           : undefined;
       const stateBeforeApply =
         descendantHeader !== undefined ||
+        duplicateSemanticRootHeader !== undefined ||
+        arrayRootHeader !== undefined ||
         legacyPosition === "managed-failure" ||
         legacyPosition === "agents-failure" ||
         legacyPosition === "live-config-race"
@@ -1341,13 +1442,26 @@ describe("Codex managed destination safety", () => {
         encoding: "utf8",
       });
 
-      if (descendantHeader !== undefined) {
+      if (
+        descendantHeader !== undefined ||
+        duplicateSemanticRootHeader !== undefined ||
+        arrayRootHeader !== undefined
+      ) {
         expect(result.status).not.toBe(0);
         expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toBe(configBeforeApply);
         expect(readFileSync(aihStatePath, "utf8")).toBe(stateBeforeApply);
-        expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toContain(
-          descendantHeader,
-        );
+        if (descendantHeader !== undefined)
+          expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toContain(
+            descendantHeader,
+          );
+        if (duplicateSemanticRootHeader !== undefined)
+          expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toContain(
+            duplicateSemanticRootHeader,
+          );
+        if (arrayRootHeader !== undefined)
+          expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toContain(
+            arrayRootHeader,
+          );
         expect(existsSync(join(home, ".codex", "AGENTS.md"))).toBe(false);
         return;
       }
@@ -1394,6 +1508,18 @@ describe("Codex managed destination safety", () => {
 
       expect(result.status, result.stderr).toBe(0);
       const config = readFileSync(join(home, ".codex", "config.toml"), "utf8");
+      if (encodedOperatorRootHeader !== undefined) {
+        expect(config).toContain(encodedOperatorRootHeader);
+        expect(config).not.toContain("chrome-devtools-mcp@1.7.0");
+        expect(config).toContain("@modelcontextprotocol/server-sequential-thinking@2025.7.1");
+        expect(config.match(/mcp_servers\..*chrome/gi)).toHaveLength(1);
+        const outputState = JSON.parse(
+          readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8"),
+        ) as { codexToml: { mcpServers: string[] } };
+        expect(outputState.codexToml.mcpServers).not.toContain("chrome-devtools");
+        expect(outputState.codexToml.mcpServers).toContain("sequential-thinking");
+        return;
+      }
       expect(config).toContain("chrome-devtools-mcp@1.7.0");
       expect(config).toContain("startup_timeout_sec = 30");
       expect(config).not.toContain("@latest");
