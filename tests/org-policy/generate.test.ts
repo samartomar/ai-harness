@@ -448,7 +448,9 @@ describe("policy generate", () => {
     const select = (value: unknown) => {
       Object.defineProperty(decisionFile, "files", {
         configurable: true,
-        value: [new window.File([JSON.stringify(value)], "decision.json", { type: "application/json" })],
+        value: [
+          new window.File([JSON.stringify(value)], "decision.json", { type: "application/json" }),
+        ],
       });
       decisionFile.dispatchEvent(new window.Event("change", { bubbles: true }));
     };
@@ -478,7 +480,9 @@ describe("policy generate", () => {
     readers[3]?.complete(JSON.stringify(inFlightOlder));
     readers[4]?.complete(JSON.stringify(invalidNewest));
     await settle(window, () =>
-      (document.getElementById("announcement")?.textContent ?? "").includes("Decision import rejected"),
+      (document.getElementById("announcement")?.textContent ?? "").includes(
+        "Decision import rejected",
+      ),
     );
     expect(document.getElementById("decision-rows")?.textContent).toContain("decision-newest");
   });
