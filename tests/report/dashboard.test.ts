@@ -98,6 +98,18 @@ describe("velocityDigests", () => {
     expect((commits?.data as { daily: unknown[] })?.daily).toHaveLength(3);
     expect((loc?.data as { loc: { net: number } })?.loc.net).toBe(4530 - 1890);
   });
+
+  it("omits velocity panels rather than fabricating counts from malformed git output", async () => {
+    const run = gitFake({
+      "rev-parse --is-inside-work-tree": "true",
+      "rev-list --count --since=7.days.ago HEAD": "23 commits",
+      "rev-list --count --since=30.days.ago HEAD": "87",
+      "rev-list --count HEAD": "1420",
+      "log --since=30.days.ago --numstat": "4520\t1890\tsrc/a.ts",
+    });
+
+    await expect(velocityDigests(ctx(run))).resolves.toEqual([]);
+  });
 });
 
 describe("qualityDigest", () => {

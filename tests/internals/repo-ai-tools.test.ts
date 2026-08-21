@@ -25,6 +25,31 @@ function toolingCommand(...args: string[]): Record<string, unknown> {
   ) as Record<string, unknown>;
 }
 
+function projectionVerifier(entries: Record<string, unknown>): () => void {
+  const launcher = readFileSync(resolve(root, "tools/repo-ai-tools.mjs"), "utf8");
+  const verifierSource = launcher.slice(
+    launcher.indexOf("function verifyCodexProjection"),
+    launcher.indexOf("function verifyEcc"),
+  );
+  return new Function(
+    "deps",
+    `
+      const { codexConfigPath, existsSync, parseJson, projectMcpServers, readFileSync,
+        renderCodexConfig, runCodex } = deps;
+      ${verifierSource}
+      return verifyCodexProjection;
+    `,
+  )({
+    codexConfigPath: "/work/.codex/config.toml",
+    existsSync: () => true,
+    parseJson: (value: string) => JSON.parse(value),
+    projectMcpServers: [{ name: "serena", launcher: "serena-mcp", enabledTools: ["find_symbol"] }],
+    readFileSync: () => "expected projection",
+    renderCodexConfig: () => "expected projection",
+    runCodex: (args: string[]) => JSON.stringify(entries[args[2] ?? ""]),
+  }) as () => void;
+}
+
 /**
  * True when `git ls-files` reports the path as part of the tracked index.
  * `existsSync` cannot stand in for this: an operator's local, gitignored
@@ -177,6 +202,27 @@ function createAtomicWriterFilesystem(
 }
 
 describe("ai-harness repo AI tooling", () => {
+  it.each([
+    ["absent", { transport: { command: "node", args: ["serena-mcp"] } }],
+    ["non-array", { transport: { command: "node", args: ["serena-mcp"] }, enabled_tools: {} }],
+    [
+      "non-string member",
+      { transport: { command: "node", args: ["serena-mcp"] }, enabled_tools: ["find_symbol", 7] },
+    ],
+  ])("reports a malformed Codex managed enabled_tools list when it is %s", (_label, entry) => {
+    expect(() => projectionVerifier({ serena: entry })()).toThrow(
+      "serena Codex enabled_tools managed list is malformed",
+    );
+  });
+
+  it("keeps a valid but incomplete Codex enabled_tools list as ordinary drift", () => {
+    expect(() =>
+      projectionVerifier({
+        serena: { transport: { command: "node", args: ["serena-mcp"] }, enabled_tools: [] },
+      })(),
+    ).toThrow("serena Codex tool allowlist drifted: find_symbol");
+  });
+
   it("pins the complete repo toolchain and keeps each runtime scope narrow", () => {
     expect(toolingPlan()).toMatchObject({
       pins: {

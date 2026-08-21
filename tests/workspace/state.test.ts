@@ -96,6 +96,86 @@ describe("workspace state collection", () => {
     expect(state).toMatchObject({ ahead: 2, behind: 1 });
   });
 
+  it.each(["1\t2 extra", "1x\t2", "-1\t2", "1\t-2", "9007199254740992\t0"])(
+    "omits invalid ahead/behind counts from malformed git output %j",
+    async (upstream) => {
+      const run: Runner = async (argv) => {
+        const tail = argv.slice(3).join(" ");
+        if (tail === "rev-parse --is-inside-work-tree")
+          return { code: 0, stdout: "true\n", stderr: "" };
+        if (tail === "rev-parse --abbrev-ref HEAD")
+          return { code: 0, stdout: "main\n", stderr: "" };
+        if (tail === "rev-parse HEAD")
+          return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
+        if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
+        if (tail === "rev-list --left-right --count HEAD...@{upstream}") {
+          return { code: 0, stdout: `${upstream}\n`, stderr: "" };
+        }
+        return { code: 1, stdout: "", stderr: "" };
+      };
+
+      const state = await readWorkspaceRepoState(ctx(run), childRepo("ui"));
+
+      expect(state).not.toHaveProperty("ahead");
+      expect(state).not.toHaveProperty("behind");
+    },
+  );
+
+  it("returns an explicit diverged observation instead of mixing facts across a branch switch", async () => {
+    let branchReads = 0;
+    let shaReads = 0;
+    const run: Runner = async (argv) => {
+      const tail = argv.slice(3).join(" ");
+      if (tail === "rev-parse --is-inside-work-tree")
+        return { code: 0, stdout: "true\n", stderr: "" };
+      if (tail === "rev-parse --abbrev-ref HEAD") {
+        branchReads += 1;
+        return { code: 0, stdout: branchReads === 1 ? "main\n" : "topic\n", stderr: "" };
+      }
+      if (tail === "rev-parse HEAD") {
+        shaReads += 1;
+        return {
+          code: 0,
+          stdout:
+            shaReads === 1
+              ? "abcdef0123456789abcdef0123456789abcdef01\n"
+              : "1234567890abcdef1234567890abcdef12345678\n",
+          stderr: "",
+        };
+      }
+      if (tail === "status --porcelain") return { code: 0, stdout: " M file.ts\n", stderr: "" };
+      if (tail === "rev-list --left-right --count HEAD...@{upstream}") {
+        return { code: 0, stdout: "1\t2\n", stderr: "" };
+      }
+      return { code: 1, stdout: "", stderr: "" };
+    };
+
+    const state = await readWorkspaceRepoState(ctx(run), childRepo("ui"));
+
+    expect(state).toMatchObject({ git: true, dirty: false, observation: "diverged" });
+    expect(state).not.toHaveProperty("branch");
+    expect(state).not.toHaveProperty("sha");
+    expect(state).not.toHaveProperty("ahead");
+    expect(state).not.toHaveProperty("behind");
+  });
+
+  it("returns an explicit unavailable observation when a revision anchor cannot be read", async () => {
+    const run: Runner = async (argv) => {
+      const tail = argv.slice(3).join(" ");
+      if (tail === "rev-parse --is-inside-work-tree")
+        return { code: 0, stdout: "true\n", stderr: "" };
+      if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
+      if (tail === "rev-parse HEAD") return { code: 1, stdout: "", stderr: "" };
+      return { code: 1, stdout: "", stderr: "" };
+    };
+
+    const state = await readWorkspaceRepoState(ctx(run), childRepo("ui"));
+
+    expect(state).toMatchObject({ git: true, dirty: false, observation: "unavailable" });
+    expect(state).not.toHaveProperty("branch");
+    expect(state).not.toHaveProperty("sha");
+  });
+
   it("captures the child fetch remote from local git config", async () => {
     const run: Runner = async (argv) => {
       const tail = argv.slice(3).join(" ");

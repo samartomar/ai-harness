@@ -98,6 +98,24 @@ describe("collectSnapshot", () => {
     expect(snap?.adoptionScore).toBeLessThanOrEqual(100);
   });
 
+  it("returns unavailable rather than recording a partial snapshot from malformed git counts", async () => {
+    const snap = await collectSnapshot(
+      makeCtx(
+        gitFake({
+          "rev-parse --is-inside-work-tree": "true",
+          "log -1 --pretty=format:%cI%n%h": "2026-06-24T10:00:00Z\nabc123",
+          "rev-parse --abbrev-ref HEAD": "main",
+          "for-each-ref --format=%(refname:short) refs/heads": "main",
+          "rev-list --count --since=7 days ago HEAD": "5 commits",
+          "log --since=7 days ago --numstat": "10x\t3\tfile.ts",
+          "ls-files": "a.ts",
+        }),
+      ),
+    );
+
+    expect(snap).toBeUndefined();
+  });
+
   it("records the v9 trend metrics so report trends can go live (§2a)", async () => {
     // Off-canon temp repo (no RULE_ROUTER.md): drift is 0 and the metrics are
     // well-formed numbers — enough to prove `aih track` captures the trend seam.
