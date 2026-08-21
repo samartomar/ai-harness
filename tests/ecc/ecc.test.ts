@@ -994,6 +994,7 @@ describe("Codex managed destination safety", () => {
     ["managed-failure", "npx", '["chrome-devtools-mcp@latest"]'],
     ["live-relinquished", "npx", '["chrome-devtools-mcp@latest"]'],
     ["agents-failure", "npx", '["chrome-devtools-mcp@latest"]'],
+    ["live-config-takeover", "npx", '["chrome-devtools-mcp@latest"]'],
   ] as const)(
     "writes Core's exact Chrome DevTools pin for a claimed mutable table %s the managed fence",
     (legacyPosition, command, args) => {
@@ -1005,7 +1006,18 @@ describe("Codex managed destination safety", () => {
         mkdirSync(join(target, ".."), { recursive: true });
         writeFileSync(target, contents, "utf8");
       };
-      putRepo("scripts/codex/merge-codex-config.js", "process.exit(0);\n");
+      putRepo(
+        "scripts/codex/merge-codex-config.js",
+        [
+          'const fs = require("node:fs");',
+          "const config = process.argv[2];",
+          'const raw = fs.readFileSync(config, "utf8");',
+          "const additions = [];",
+          'if (!/^[ \\t]*approval_policy\\s*=/m.test(raw)) additions.push("approval_policy = \\\"on-request\\\"\\n");',
+          'if (!/^[ \\t]*sandbox_mode\\s*=/m.test(raw)) additions.push("sandbox_mode = \\\"workspace-write\\\"\\n");',
+          'if (additions.length > 0) fs.writeFileSync(config, additions.join("") + raw);',
+        ].join("\n"),
+      );
       putRepo("scripts/codex/merge-mcp-config.js", 'throw new Error("vendor MCP merge ran");\n');
       putRepo(
         "scripts/lib/install-executor.js",
@@ -1053,7 +1065,8 @@ describe("Codex managed destination safety", () => {
           ? [...legacy, '  [mcp_servers."chrome-devtools".env]', 'token = "operator"', ""]
           : legacyPosition === "managed-failure" ||
               legacyPosition === "live-relinquished" ||
-              legacyPosition === "agents-failure"
+              legacyPosition === "agents-failure" ||
+              legacyPosition === "live-config-takeover"
             ? [
                 ...(legacyPosition === "live-relinquished"
                   ? ['approval_policy = "operator"', ""]
@@ -1088,7 +1101,8 @@ describe("Codex managed destination safety", () => {
                   : legacyPosition === "descendant" ||
                       legacyPosition === "managed-failure" ||
                       legacyPosition === "live-relinquished" ||
-                      legacyPosition === "agents-failure"
+                      legacyPosition === "agents-failure" ||
+                      legacyPosition === "live-config-takeover"
                     ? ["chrome-devtools"]
                     : ["chrome-devtools", "sequential-thinking"],
             },
@@ -1125,7 +1139,8 @@ describe("Codex managed destination safety", () => {
             : legacyPosition === "descendant" ||
                 legacyPosition === "managed-failure" ||
                 legacyPosition === "live-relinquished" ||
-                legacyPosition === "agents-failure"
+                legacyPosition === "agents-failure" ||
+                legacyPosition === "live-config-takeover"
               ? ["chrome-devtools"]
               : ["chrome-devtools", "sequential-thinking"],
         ),
@@ -1151,6 +1166,11 @@ describe("Codex managed destination safety", () => {
 
       if (legacyPosition === "agents-failure")
         mkdirSync(join(home, ".codex", "AGENTS.md"), { recursive: true });
+
+      if (legacyPosition === "live-config-takeover") {
+        const configPath = join(home, ".codex", "config.toml");
+        writeFileSync(configPath, `sandbox_mode = "operator"\n${readFileSync(configPath, "utf8")}`);
+      }
 
       const configBeforeApply =
         legacyPosition === "agents-failure"
@@ -1198,7 +1218,11 @@ describe("Codex managed destination safety", () => {
       expect(config).toContain("chrome-devtools-mcp@1.7.0");
       expect(config).toContain("startup_timeout_sec = 30");
       expect(config).not.toContain("@latest");
-      if (legacyPosition === "vanished" || legacyPosition === "live-relinquished")
+      if (
+        legacyPosition === "vanished" ||
+        legacyPosition === "live-relinquished" ||
+        legacyPosition === "live-config-takeover"
+      )
         expect(config).not.toContain('[mcp_servers."sequential-thinking"]');
       else expect(config).toContain('[mcp_servers."sequential-thinking"]');
       expect(config.match(/# >>> aih managed \(mcp\) >>>/g)).toHaveLength(1);
@@ -1214,9 +1238,16 @@ describe("Codex managed destination safety", () => {
       if (legacyPosition === "live-relinquished") {
         expect(outputRootKeys).not.toContain("approval_policy");
         expect(outputRootKeys).toContain("sandbox_mode");
+      } else if (legacyPosition === "live-config-takeover") {
+        expect(outputRootKeys).toContain("approval_policy");
+        expect(outputRootKeys).not.toContain("sandbox_mode");
       } else expect(outputRootKeys).toContain("approval_policy");
       const agents = readFileSync(join(home, ".codex", "AGENTS.md"), "utf8");
-      if (legacyPosition === "vanished" || legacyPosition === "live-relinquished") {
+      if (
+        legacyPosition === "vanished" ||
+        legacyPosition === "live-relinquished" ||
+        legacyPosition === "live-config-takeover"
+      ) {
         expect(outputState).not.toContain("sequential-thinking");
         expect(agents).not.toContain("`sequential-thinking`");
       } else expect(agents).toContain("`sequential-thinking`");
