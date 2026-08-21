@@ -349,6 +349,35 @@ describe("planClaudeRemoval — planned actions pin the observed target", () => 
     );
     expect(readText(root, rel)).toBe("# user changed after plan\n");
   });
+
+  it("refuses a changed managed block before stripping it", async () => {
+    const built = new ClaudeManagedWriteEngine(root).claudeMdBlock("AIH-managed body").build();
+    const lock = await bindAndLock(built);
+    const removal = planClaudeRemoval(root, lock);
+    seed(
+      CLAUDE_BOOTLOADER_PATH,
+      `${readText(root, CLAUDE_BOOTLOADER_PATH)}\nuser note after plan\n`,
+    );
+
+    await expect(applyActions(root, removal.actions)).rejects.toThrow(
+      /changed (after the plan was computed|before commit)/i,
+    );
+    expect(readText(root, CLAUDE_BOOTLOADER_PATH)).toContain("user note after plan");
+  });
+
+  it("refuses a changed owned file before restoring pre-existing content", async () => {
+    const rel = ".claude/agents/reviewer.md";
+    seed(rel, "# user original\n");
+    const built = new ClaudeManagedWriteEngine(root).ownedFile(rel, "# aih agent\n").build();
+    const lock = await bindAndLock(built);
+    const removal = planClaudeRemoval(root, lock);
+    seed(rel, "# user changed after plan\n");
+
+    await expect(applyActions(root, removal.actions)).rejects.toThrow(
+      /changed (after the plan was computed|before commit)/i,
+    );
+    expect(readText(root, rel)).toBe("# user changed after plan\n");
+  });
 });
 
 describe("planClaudeRemoval — malformed lock targets are preserved and reported", () => {

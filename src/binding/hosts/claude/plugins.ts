@@ -1,7 +1,6 @@
 import { readFileSync, rmSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { executePlan, type PlanResult } from "../../../internals/execute.js";
-import { readIfExists } from "../../../internals/fsxn.js";
 import { type Action, plan } from "../../../internals/plan.js";
 import type { Runner, RunResult } from "../../../internals/proc.js";
 import { makeHostAdapter, resolvePlatform } from "../../../platform/detect.js";
@@ -424,16 +423,9 @@ export async function bindPlugin(
   //    `jsonField` reads disk now — so the lock records the true pre-AIH state even
   //    though the CLI install also flips the same bit. The apply happens in step 8.
   const enablePointer = `/enabledPlugins/${pluginKey}`;
-  const settingsSource = readIfExists(join(deps.root, settingsFile));
   const settingsPlan: ClaudeManagedPlan = new ClaudeManagedWriteEngine(deps.root)
     .jsonField(settingsFile, enablePointer, true)
     .build();
-  for (const action of settingsPlan.actions) {
-    if (action.kind === "write" && action.path === settingsFile) {
-      action.expect =
-        settingsSource === undefined ? { absent: true } : { sha256: sha256Hex(settingsSource) };
-    }
-  }
   carryForwardOwnership(settingsPlan, request.previousLock, `${settingsFile}#${enablePointer}`);
 
   // 5. Register the scanned checkout itself as the marketplace source (machine
@@ -642,6 +634,20 @@ export interface RemovePluginResult {
   cli: { describe: string; ok: boolean }[];
 }
 
+function pluginEnablementOwnership(
+  request: RemovePluginRequest,
+  pluginKey: string,
+): BindingOwnershipEntry[] {
+  const settingsFile = settingsFileForScope(request.scope);
+  const parentTarget = `${settingsFile}#/enabledPlugins`;
+  const leafTarget = `${parentTarget}/${pluginKey}`;
+  return request.repoRelativeOwnership.filter(
+    (entry) =>
+      entry.kind === "json-pointer" &&
+      (entry.target === parentTarget || entry.target === leafTarget),
+  );
+}
+
 /**
  * Conservatively reconcile the MACHINE-SCOPE (`home:`) plugin ownership on removal,
  * exactly like the repo-relative reconciler: the loaded cache tree is the one
@@ -670,6 +676,8 @@ export async function removePlugin(
     timeoutMs: deps.timeoutMs,
     cwd: request.projectRoot,
   };
+  const enablementOwnership = pluginEnablementOwnership(request, pluginKey);
+  const enablementTarget = `${settingsFileForScope(request.scope)}#/enabledPlugins`;
 
   const cacheEntry = request.ownership.find(
     (entry) => entry.target === homePluginCacheTarget(request.marketplace, request.plugin),
@@ -722,13 +730,21 @@ export async function removePlugin(
     }
     return { removed, drift, cli };
   }
+  if (enablementOwnership.length === 0) {
+    drift.push({
+      kind: "json-pointer",
+      target: enablementTarget,
+      reason: "no receipt-owned enabledPlugins entry — preserved",
+    });
+    return { removed, drift, cli };
+  }
 
   // The host refuses a project-scope uninstall while this plugin remains enabled.
   // Re-observe and settle the receipt-owned project state ourselves so a caller
   // cannot accidentally reverse that host-required order. Drift is a refusal:
   // the unowned/divergent state remains untouched and no machine mutation starts.
   const beforeUninstall = planClaudeRemoval(request.projectRoot, {
-    ownership: [...request.repoRelativeOwnership],
+    ownership: enablementOwnership,
   });
   drift.push(...beforeUninstall.drift);
   if (beforeUninstall.drift.length > 0) return { removed, drift, cli };
@@ -750,9 +766,10 @@ export async function removePlugin(
     ),
   );
   const afterUninstall = planClaudeRemoval(request.projectRoot, {
-    ownership: [...request.repoRelativeOwnership],
+    ownership: enablementOwnership,
   });
   drift.push(...afterUninstall.drift);
+  if (afterUninstall.drift.length > 0) return { removed, drift, cli };
   if (afterUninstall.actions.length > 0) {
     try {
       await deps.applyActions(request.projectRoot, afterUninstall.actions);

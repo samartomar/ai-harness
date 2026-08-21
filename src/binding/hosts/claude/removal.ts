@@ -206,18 +206,23 @@ function classifyOwnershipEntry(root: string, entry: BindingOwnershipEntry): Own
  * The pure, READ-ONLY D18 settings-drift half of {@link planClaudeRemoval} (W7
  * §B.7). Returns the owned entries whose live value diverged from the applied
  * value since bind — the ones conservative removal PRESERVES rather than deletes —
- * in lock-ownership order. `planClaudeRemoval` CALLS this for its `drift`, so the
- * removal planner and the doctor's read-only settings-drift probe cannot disagree.
+ * in lock-ownership order. `planClaudeRemoval` derives its drift from the same
+ * one-read classifier, so the removal planner and the doctor's read-only
+ * settings-drift probe cannot disagree about classification semantics.
  */
 type RemovalLock = Pick<BindingLockForRemoval, "ownership">;
 
 export function readClaudeSettingsDrift(root: string, lock: RemovalLock): ClaudeDriftEntry[] {
-  const drift: ClaudeDriftEntry[] = [];
-  for (const entry of lock.ownership) {
-    const disposition = classifyOwnershipEntry(root, entry);
-    if (disposition.kind === "drift") drift.push(disposition.drift);
-  }
-  return drift;
+  return classifyOwnershipEntries(root, lock.ownership).flatMap((disposition) =>
+    disposition.kind === "drift" ? [disposition.drift] : [],
+  );
+}
+
+function classifyOwnershipEntries(
+  root: string,
+  ownership: readonly BindingOwnershipEntry[],
+): OwnershipDisposition[] {
+  return ownership.map((entry) => classifyOwnershipEntry(root, entry));
 }
 
 /** Apply one `json-remove` disposition's restore/prune to a file's accumulator. */
@@ -243,20 +248,22 @@ function applyJsonRemoval(
 }
 
 export function planClaudeRemoval(root: string, lock: RemovalLock): ClaudeRemovalPlan {
-  // The drift half is the pure {@link readClaudeSettingsDrift} — one source of the
-  // drift decision, shared with the doctor's B7 probe. The action half re-uses the
-  // SAME {@link classifyOwnershipEntry} so a drifted entry is preserved identically.
-  const drift = readClaudeSettingsDrift(root, lock);
+  // Classify every receipt entry exactly once. The same observed disposition feeds
+  // both the returned drift and the planned action, so a change between two reads
+  // cannot make an entry disappear from both outcomes.
+  const dispositions = classifyOwnershipEntries(root, lock.ownership);
+  const drift = dispositions.flatMap((disposition) =>
+    disposition.kind === "drift" ? [disposition.drift] : [],
+  );
   const jsonFiles = new Map<string, JsonRemovalAccumulator>();
   const otherActions: Action[] = [];
   const removedFiles = new Set<string>();
 
-  for (const entry of lock.ownership) {
-    const disposition = classifyOwnershipEntry(root, entry);
+  for (const disposition of dispositions) {
     switch (disposition.kind) {
       case "drift":
       case "noop":
-        break; // drift is collected by readClaudeSettingsDrift; a no-op does nothing
+        break; // drift is already collected above; a no-op does nothing
       case "json-remove": {
         const acc = jsonFiles.get(disposition.file) ?? newAccumulator();
         applyJsonRemoval(acc, disposition);

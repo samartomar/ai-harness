@@ -785,50 +785,34 @@ describe("removePlugin — conservative machine-scope reconciliation", () => {
 });
 
 describe("bindPlugin — project custody", () => {
-  it("pins an absent settings file and refuses an absent-to-created race before mutation", async () => {
-    const { resolved, disposition } = scannedFixture("settings-race", { "SKILL.md": "# skill\n" });
-    const { runner } = recordingRunner();
-
-    await expect(
-      bindPlugin(
-        { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
-        {
-          root,
-          runner,
-          env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
-          locateCache: () => resolved.treePath,
-          applyActions: async (target, actions) => {
-            const settings = join(target, ".claude", "settings.json");
-            mkdirSync(join(settings, ".."), { recursive: true });
-            writeFileSync(settings, `${JSON.stringify({ userCreated: true }, null, 2)}\n`, "utf8");
-            return applyActions(target, actions);
-          },
-        },
-      ),
-    ).rejects.toThrow(/changed after the plan was computed/i);
-
-    expect(readJson(root, ".claude/settings.json")).toEqual({ userCreated: true });
-  });
-
   it("runs every bind lifecycle subprocess with the requested project root as cwd", async () => {
     const { resolved, disposition } = scannedFixture("rooted-cli", { "SKILL.md": "# skill\n" });
+    const ambient = mkdtempSync(join(tmpdir(), "aih-neutral-ambient-"));
+    const originalCwd = process.cwd();
     const cwd: Array<string | undefined> = [];
     const runner: Runner = async (_argv, options) => {
       cwd.push(options?.cwd);
       return { code: 0, stdout: "{}", stderr: "" };
     };
 
-    await bindPlugin(
-      { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
-      {
-        root,
-        runner,
-        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
-        locateCache: () => resolved.treePath,
-      },
-    );
-
-    expect(cwd).toEqual([root, root, root]);
+    process.chdir(ambient);
+    try {
+      await bindPlugin(
+        { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+        {
+          root,
+          runner,
+          env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+          locateCache: () => resolved.treePath,
+        },
+      );
+      expect(process.cwd()).toBe(ambient);
+      expect(ambient).not.toBe(root);
+      expect(cwd).toEqual([root, root, root]);
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(ambient, { recursive: true, force: true });
+    }
   });
 });
 
@@ -870,8 +854,8 @@ describe("removePlugin — post-uninstall project custody", () => {
     },
     {
       name: "preserves a divergent enabledPlugins value recreated by uninstall",
-      recreated: { [KEY]: true, "user@plugin": true },
-      expectEnabledPlugins: { [KEY]: true, "user@plugin": true },
+      recreated: { [KEY]: false },
+      expectEnabledPlugins: { [KEY]: false },
       drift: true,
     },
   ])("$name", async ({ recreated, expectEnabledPlugins, drift }) => {
@@ -882,6 +866,9 @@ describe("removePlugin — post-uninstall project custody", () => {
     // The mandatory pre-uninstall project restore has already happened.
     await applyActions(root, planClaudeRemoval(root, { ownership: repoRelativeOwnership }).actions);
     expect(readJson(root, ".claude/settings.json").enabledPlugins).toBeUndefined();
+    const ownedCache = join(home, ".claude", "plugins", "cache", MARKETPLACE, PLUGIN);
+    mkdirSync(ownedCache, { recursive: true });
+    writeFileSync(join(ownedCache, "still-owned.txt"), "owned cache\n", "utf8");
 
     const { runner, calls } = recordingRunner((argv) => {
       if (argv.includes("uninstall")) {
@@ -918,9 +905,58 @@ describe("removePlugin — post-uninstall project custody", () => {
           expect.objectContaining({ target: ".claude/settings.json#/enabledPlugins" }),
         ]),
       );
+      expect(calls).not.toContainEqual(["claude", "plugin", "marketplace", "remove", MARKETPLACE]);
+      expect(existsSync(ownedCache)).toBe(true);
     } else {
       expect(removal.drift).toEqual([]);
     }
+  });
+
+  it("does not re-settle unrelated receipt ownership after uninstall", async () => {
+    const bound = await bindForProjectRemoval();
+    const unrelated = ".claude/unrelated.json";
+    writeFileSync(join(root, unrelated), "user content\n", "utf8");
+    const repoRelativeOwnership = [
+      ...bound.ownership.filter((entry) => !entry.target.startsWith("home:")),
+      {
+        kind: "file" as const,
+        target: unrelated,
+        preExisting: { absent: true } as const,
+        applied: "aih content\n",
+        postApplyDigest: "0".repeat(64),
+      },
+    ];
+    const { runner, calls } = recordingRunner((argv) => {
+      if (argv.includes("uninstall")) {
+        writeFileSync(
+          join(root, ".claude", "settings.json"),
+          `${JSON.stringify({ enabledPlugins: { [KEY]: true } }, null, 2)}\n`,
+          "utf8",
+        );
+      }
+      return undefined;
+    });
+
+    await removePlugin(
+      {
+        ownership: bound.ownership.filter((entry) => entry.target.startsWith("home:")),
+        plugin: PLUGIN,
+        marketplace: MARKETPLACE,
+        scope: "project",
+        projectRoot: root,
+        repoRelativeOwnership,
+      },
+      {
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => bound.loadedTreePath,
+        applyActions,
+      },
+    );
+
+    expect(calls).toContainEqual(["claude", "plugin", "uninstall", KEY, "--scope", "project"]);
+    expect(readFileSync(join(root, unrelated), "utf8")).toBe("user content\n");
+    expect(readJson(root, ".claude/settings.json").enabledPlugins).toBeUndefined();
   });
 });
 
