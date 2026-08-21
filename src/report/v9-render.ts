@@ -470,11 +470,17 @@ export function renderMcp(m: V9Mcp): string {
   const thirdParty = m.servers.filter(([, e]) => EGRESS_CLASS[e] === "third").length;
   const unknownCount = m.servers.filter(([, e]) => !EGRESS_CLASS[e]).length;
   const srvBadge =
-    thirdParty > 0
-      ? `<span class="badge warn">${thirdParty} third-party</span>`
-      : unknownCount > 0
-        ? `<span class="badge muted">${unknownCount} unknown</span>`
-        : '<span class="badge ok">all local/vendor</span>';
+    m.configState === "unsafe"
+      ? '<span class="badge bad">config unavailable</span>'
+      : thirdParty > 0
+        ? `<span class="badge warn">${thirdParty} third-party</span>`
+        : unknownCount > 0
+          ? `<span class="badge muted">${unknownCount} unknown</span>`
+          : '<span class="badge ok">all local/vendor</span>';
+  const configRefusal =
+    m.configState === "unsafe"
+      ? `<div class="method"><span class="badge bad">config refused</span> ${escHtml(m.configError ?? ".mcp.json unavailable")}</div>`
+      : "";
   const rows = m.servers
     .map(([name, egress]) => {
       const cls = EGRESS_CLASS[egress] ?? "unknown";
@@ -490,7 +496,7 @@ export function renderMcp(m: V9Mcp): string {
   const scopeBlock = scopePills
     ? `<div style="font-size:.6rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;margin:.7rem 0 .35rem">MCP source per CLI</div><div class="pills">${scopePills}</div><div class="method" style="margin-top:.5rem">Repo <code>.mcp.json</code> is committed + team-shared; <code>global</code> (e.g. codex <code>~/.codex</code>) is machine-only — wired, but not the same portable wiring.</div>`
     : "";
-  const servers = `<div class="card span-5"><div class="card-head"><h3>Servers + egress</h3>${srvBadge}</div><div class="card-body">${rows}${scopeBlock}</div></div>`;
+  const servers = `<div class="card span-5"><div class="card-head"><h3>Servers + egress</h3>${srvBadge}</div><div class="card-body">${configRefusal}${rows}${scopeBlock}</div></div>`;
   return wiring + servers;
 }
 

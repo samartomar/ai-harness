@@ -70,7 +70,8 @@ function redactSecretAssignments(text: string): string {
   let copied = 0;
   let output: string | undefined;
   for (let index = 0; index < text.length; ) {
-    if (!isAsciiLetter(text[index] ?? "") || isAsciiWordChar(text[index - 1])) {
+    const char = text[index] ?? "";
+    if ((!isAsciiLetter(char) && char !== "_") || isAsciiWordChar(text[index - 1])) {
       index++;
       continue;
     }
@@ -81,6 +82,20 @@ function redactSecretAssignments(text: string): string {
     const separatorAt = skipWhitespace(text, keyEnd);
     const separator = text[separatorAt];
     if (separator !== ":" && separator !== "=") continue;
+    const upperKey = key.toUpperCase();
+    const supportsLongAssignment =
+      isAsciiLetter(key[0] ?? "") &&
+      ASSIGNMENT_KEYWORDS.some((keyword) => upperKey.indexOf(keyword, 1) !== -1);
+    const supportsShortAssignment =
+      separator === "=" &&
+      /^[A-Z_]+$/.test(key) &&
+      SHORT_ASSIGNMENT_KEYWORDS.some((keyword) => key.endsWith(keyword));
+
+    // A non-secret key cannot redact regardless of its value. Do not scan that
+    // value: another key candidate may begin after its separator, and rescanning
+    // the same suffix for every such candidate is quadratic.
+    if (!supportsLongAssignment && !supportsShortAssignment) continue;
+
     const valueAt = skipWhitespace(text, separatorAt + 1);
     const quote = text[valueAt];
     const unquotedValueAt = quote === '"' || quote === "'" ? valueAt + 1 : valueAt;
@@ -93,18 +108,14 @@ function redactSecretAssignments(text: string): string {
     ) {
       longValueEnd++;
     }
-    const upperKey = key.toUpperCase();
-    if (
-      longValueEnd - unquotedValueAt >= 8 &&
-      ASSIGNMENT_KEYWORDS.some((keyword) => upperKey.includes(keyword))
-    ) {
+    if (longValueEnd - unquotedValueAt >= 8 && supportsLongAssignment) {
       output ??= "";
       output += text.slice(copied, keyStart) + REDACTED;
       copied = longValueEnd;
       index = longValueEnd;
       continue;
     }
-    if (separator === "=" && SHORT_ASSIGNMENT_KEYWORDS.some((keyword) => key.endsWith(keyword))) {
+    if (supportsShortAssignment) {
       let shortValueEnd = valueAt;
       while (shortValueEnd < text.length && !/\s/.test(text[shortValueEnd] ?? "")) shortValueEnd++;
       if (shortValueEnd > valueAt && /^[A-Z_]+$/.test(key)) {

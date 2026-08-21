@@ -72,6 +72,24 @@ describe("redactSecrets() — secret fixtures", () => {
     );
   });
 
+  it("redacts secret assignments with leading underscores without weakening word boundaries", () => {
+    for (const key of ["_API_KEY", "__API_KEY", "___MY_SECRET"]) {
+      expect(redactSecrets(`${key}=abcdefgh`), key).toBe("[REDACTED]");
+    }
+    expect(redactSecrets("1_API_KEY=abcdefgh")).toBe("1_API_KEY=abcdefgh");
+  });
+
+  it("leaves old-unmatched long-form diagnostics untouched", () => {
+    for (const text of [
+      "TOKEN: abcdefghij",
+      "SECRET_KEY: abcdefghij",
+      "Password: required",
+      "_secret: abcdefghij",
+    ]) {
+      expect(redactSecrets(text), text).toBe(text);
+    }
+  });
+
   it("scales near-linearly for long uppercase diagnostic text without an assignment", () => {
     const elapsed = (length: number): number => {
       const input = "A".repeat(length);
@@ -84,6 +102,19 @@ describe("redactSecrets() — secret fixtures", () => {
     const large = elapsed(100_000);
     expect(large).toBeLessThan(Math.max(750, small * 8 + 100));
   }, 5_000);
+
+  it("scales near-linearly for separator-dense diagnostic text without an assignment", () => {
+    const elapsed = (length: number): number => {
+      const input = "a=".repeat(length);
+      const started = performance.now();
+      expect(redactSecrets(input)).toBe(input);
+      return performance.now() - started;
+    };
+
+    const small = elapsed(8_000);
+    const large = elapsed(16_000);
+    expect(large).toBeLessThan(Math.max(3_000, small * 3 + 100));
+  }, 8_000);
 
   it("redacts provider token shapes shared with the detector layer", () => {
     const cases = [
