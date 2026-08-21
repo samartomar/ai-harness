@@ -284,10 +284,12 @@ a **Suggested actions** section leads with copy-to-clipboard tickets. Add `--dem
 or `--refresh <sec>` to keep it live.
 
 The local digest also includes a governed-subject review. With governed policy it keeps effective,
-decision, and receipt facts separate from bounded usage attribution: exact MCP-server matches are
-distinguished from heuristic name matches, unmatched names are never rendered, and no local counter
-becomes a value, revocation, retirement, or uninstall recommendation. Absent, invalid, or
-non-governing policy is an explicit redacted unavailable state.
+decision, and receipt facts separate from bounded usage attribution: an explicit MCP-server identity
+never falls back to a name heuristic, unique name matches remain partial attribution, and routine
+non-subject activity is counted separately from unknown or ambiguous subject evidence. Names never
+render. Non-effective subjects say `not-projected` and keep any surface-wide receipt explicitly
+separate; no local counter becomes a value, revocation, retirement, or uninstall recommendation.
+Absent, invalid, or non-governing policy is an explicit redacted unavailable state.
 
 ![aih report --v9 developer-console dashboard rendered with demo showcase data and local diagnostics, showing the harness-wiring score, ranked fix actions, and the remediation ledger](docs/assets/aih-report-v9.png)
 

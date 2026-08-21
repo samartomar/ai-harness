@@ -1014,12 +1014,15 @@ network call.
 The local digest includes a deterministic **Governance review**. Every governed subject remains in
 ordinal id order without truncation and keeps requested/effective state, evidence/findings/blockers,
 decision/approval/revocation facts, projector and target coverage, strict per-target receipt state,
-and local usage coverage separate. MCP events whose `server` exactly matches the governed source are
-exact; unique event-name matches are heuristic. Unmatched names and malformed or unknown-kind rows
-are never rendered and contribute bounded counts only. Strict receipt state—not path presence—decides
-whether capture is installed; zero observed events is review input, never proof of no use or a value,
-revoke, retire, trim, or uninstall recommendation. Invalid, absent, or non-governing policy is
-explicit and redacted, and Package Graph identity is omitted without an exact subject join.
+and local usage coverage separate. An MCP event with an explicit `server` either matches that exact
+governed source or remains unmatched; it never falls back to its name. Other unique event-name
+matches are heuristic. Unknown or ambiguous subject evidence and ordinary non-subject activity use
+separate bounded counts; their names, malformed rows, and unknown-kind rows never render.
+Non-effective subjects say `not-projected` while any surface-wide receipt remains a separately named
+fact. Strict receipt state—not path presence—decides whether capture is installed; zero observed
+events is review input, never proof of no use or a value, revoke, retire, trim, or uninstall
+recommendation. Invalid, absent, or non-governing policy is explicit and redacted, and Package Graph
+identity is omitted without an exact subject join.
 
 ## aih track
 
