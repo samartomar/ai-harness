@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { orgPolicyEffectiveDigest } from "../../src/org-policy/evaluate.js";
-import * as policyEvaluate from "../../src/org-policy/evaluate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/report/index.js";
 import {
@@ -338,11 +337,21 @@ describe("report local scope — composed panels", () => {
   });
 
   it("resolves the effective policy at most once before composing the governance review", async () => {
-    const resolved = vi.spyOn(policyEvaluate, "orgPolicyEffectiveResolution");
-
-    await localPanels(ctx());
-
-    expect(resolved).toHaveBeenCalledTimes(1);
+    vi.resetModules();
+    const resolveOnce = vi.fn(async () => undefined);
+    vi.doMock("../../src/org-policy/evaluate.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/org-policy/evaluate.js")>()),
+      orgPolicyEffectiveDigest: resolveOnce,
+      orgPolicyEffectiveResolution: vi.fn(() => undefined),
+    }));
+    try {
+      const { localPanels: isolatedLocalPanels } = await import("../../src/report/local.js");
+      await isolatedLocalPanels(ctx());
+      expect(resolveOnce).toHaveBeenCalledOnce();
+    } finally {
+      vi.doUnmock("../../src/org-policy/evaluate.js");
+      vi.resetModules();
+    }
   });
 
   it("mcpGovernanceDigest denies context7 (third-party egress) under the enterprise posture", () => {

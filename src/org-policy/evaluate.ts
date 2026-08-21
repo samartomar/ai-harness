@@ -13,6 +13,25 @@ import {
 import { resolveRuntimeOrgPolicy } from "./runtime.js";
 import { governanceOwnsAihSurfaces, readOrgPolicy } from "./schema.js";
 
+export interface OrgPolicyEffectiveDigestResolution {
+  effective: EffectiveOrgPolicy;
+  receipts: {
+    hook: Pick<ReturnType<typeof orgPolicyHookReceiptState>, "state">;
+    mcp: Pick<ReturnType<typeof orgPolicyMcpReceiptState>, "state">;
+    kiro: Pick<ReturnType<typeof orgPolicyKiroMcpReceiptState>, "state">;
+    registrar: Pick<ReturnType<typeof hookRegistrarReport>, "state">;
+  };
+}
+
+const effectiveDigestResolutions = new WeakMap<DigestAction, OrgPolicyEffectiveDigestResolution>();
+
+/** Runtime facts paired with one effective digest without widening its public JSON data. */
+export function orgPolicyEffectiveResolution(
+  digest: DigestAction | undefined,
+): OrgPolicyEffectiveDigestResolution | undefined {
+  return digest === undefined ? undefined : effectiveDigestResolutions.get(digest);
+}
+
 function requestedCandidates(effective: EffectiveOrgPolicy) {
   return effective.candidates.filter((candidate) => candidate.requested);
 }
@@ -296,7 +315,7 @@ export async function orgPolicyEffectiveDigest(
       ),
       ...(effective.externalCuration.length === 0 ? ["- none"] : []),
     );
-    return digest(
+    const result = digest(
       `Effective org policy — ${candidates.filter((candidate) => candidate.effective).length} effective · ${candidates.filter((candidate) => candidate.requested && !candidate.effective).length} blocked`,
       body,
       {
@@ -319,6 +338,16 @@ export async function orgPolicyEffectiveDigest(
         hookRegistrar,
       },
     );
+    effectiveDigestResolutions.set(result, {
+      effective,
+      receipts: {
+        hook: hookReceipt,
+        mcp: mcpReceipt,
+        kiro: kiroMcpReceipt,
+        registrar: hookRegistrar,
+      },
+    });
+    return result;
   } catch (error) {
     return digest("Effective org policy — invalid", "Effective policy cannot be resolved safely.", {
       blocking: true,

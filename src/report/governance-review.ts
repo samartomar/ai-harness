@@ -1,32 +1,23 @@
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import type { EffectiveOrgPolicy } from "../org-policy/effective.js";
-import { hookRegistrarReport } from "../org-policy/hook-registrar.js";
 import {
-  orgPolicyHookReceiptState,
-  orgPolicyKiroMcpReceiptState,
-  orgPolicyMcpReceiptState,
-  publicDecisionView,
-} from "../org-policy/project.js";
-import { resolveRuntimeOrgPolicy } from "../org-policy/runtime.js";
+  type OrgPolicyEffectiveDigestResolution,
+  orgPolicyEffectiveDigest,
+  orgPolicyEffectiveResolution,
+} from "../org-policy/evaluate.js";
+import { publicDecisionView } from "../org-policy/project.js";
 import { governanceOwnsAihSurfaces, readOrgPolicy } from "../org-policy/schema.js";
 import type { StrictUsageRead, UsageEvent } from "../usage/events.js";
 import { readUsageStrict } from "../usage/events.js";
-import { usageCaptureInstalled } from "./usage.js";
 
 const FORMAT = "aih-governance-review-v1";
 
-type ReviewReceipts = {
-  hook: Pick<ReturnType<typeof orgPolicyHookReceiptState>, "state">;
-  mcp: Pick<ReturnType<typeof orgPolicyMcpReceiptState>, "state">;
-  kiro: Pick<ReturnType<typeof orgPolicyKiroMcpReceiptState>, "state">;
-  registrar: Pick<ReturnType<typeof hookRegistrarReport>, "state">;
-};
+type ReviewReceipts = OrgPolicyEffectiveDigestResolution["receipts"];
 
 export interface GovernanceReviewInput {
   effective: EffectiveOrgPolicy;
   receipts: ReviewReceipts;
-  captureInstalled: boolean;
   usage: StrictUsageRead;
 }
 
@@ -43,7 +34,7 @@ function mcpServerOf(candidate: EffectiveOrgPolicy["candidates"][number]): strin
 }
 
 function nameMatchesSubject(event: UsageEvent, subject: string): boolean {
-  if (event.kind !== "mcp" || event.name === undefined) return false;
+  if (event.name === undefined) return false;
   return event.name
     .toLowerCase()
     .split(/[^a-z0-9-]+/)
@@ -93,11 +84,31 @@ function captureState(
 }
 
 function subjectCaptureState(
-  capture: ReturnType<typeof captureState>,
+  installed: boolean,
   attribution: Attribution,
-): "no-capture" | "installed-zero-observed" | "partial-attribution" | "attributed" {
-  if (capture === "no-capture" || capture === "installed-zero-observed") return capture;
-  return attribution.exact + attribution.heuristic > 0 ? "attributed" : "partial-attribution";
+): "observed" | "not-observed-with-installed-capture" | "unknown-no-capture" {
+  if (attribution.exact + attribution.heuristic > 0) return "observed";
+  return installed ? "not-observed-with-installed-capture" : "unknown-no-capture";
+}
+
+function strictCaptureInstalled(
+  candidates: readonly EffectiveOrgPolicy["candidates"][number][],
+  receipts: ReviewReceipts,
+): boolean {
+  return (
+    receipts.hook.state === "active" &&
+    candidates.some(
+      (candidate) =>
+        candidate.id === "usage-metering" &&
+        candidate.requested &&
+        candidate.effective &&
+        candidate.kind === "hook" &&
+        candidate.source.type === "hook" &&
+        candidate.source.handler === "usage-metering" &&
+        candidate.projection.projector === "usage-hook" &&
+        candidate.projection.ownership === "usage-hook-receipt",
+    )
+  );
 }
 
 function receiptFor(
@@ -156,7 +167,8 @@ export function governanceReviewView(input: GovernanceReviewInput): DigestAction
     ordinalCompare(left.id, right.id),
   );
   const attribution = attributeEvents(candidates, input.usage.events);
-  const capture = captureState(input.captureInstalled, input.usage, attribution.unmatched);
+  const installed = strictCaptureInstalled(candidates, input.receipts);
+  const capture = captureState(installed, input.usage, attribution.unmatched);
   const subjects = candidates.map((candidate, index) => {
     const counts = attribution.bySubject.get(candidate.id);
     if (counts === undefined)
@@ -184,8 +196,10 @@ export function governanceReviewView(input: GovernanceReviewInput): DigestAction
         ownership: candidate.projection.ownership,
       },
       materialization: receiptFor(candidate, input.receipts),
-      registrar: { state: input.receipts.registrar.state },
-      usage: { state: subjectCaptureState(capture, counts) },
+      usage: {
+        count: counts.exact + counts.heuristic,
+        signal: subjectCaptureState(installed, counts),
+      },
       attribution: counts,
     };
   });
@@ -223,7 +237,7 @@ export function governanceReviewView(input: GovernanceReviewInput): DigestAction
             : ` (${Object.entries(subject.materialization.targets)
                 .map(([target, state]) => `${target}:${state}`)
                 .join(",")})`
-        } | ${subject.usage.state}; exact=${subject.attribution.exact}; heuristic=${subject.attribution.heuristic} |`,
+        } | ${subject.usage.signal}; count=${subject.usage.count}; exact=${subject.attribution.exact}; heuristic=${subject.attribution.heuristic} |`,
     ),
   );
   return digest(
@@ -236,18 +250,17 @@ export function governanceReviewView(input: GovernanceReviewInput): DigestAction
 function unavailableReview(
   state: "absent" | "invalid" | "not-governing",
   usage: StrictUsageRead,
-  captureInstalled: boolean,
 ): DigestAction {
   const data = {
     format: FORMAT,
     policy: { state },
     subjects: [],
     usage: {
-      state: captureState(captureInstalled, usage, usage.events.length),
+      state: captureState(false, usage, usage.events.length),
       validEvents: usage.events.length,
       malformedExcluded: usage.malformed,
       unknownKindExcluded: usage.unknownKind,
-      unmatched: 0,
+      unmatched: usage.events.length,
     },
   };
   return digest(
@@ -260,28 +273,32 @@ function unavailableReview(
   );
 }
 
+export interface GovernanceReviewDigestOptions {
+  /** Reuse a local-panel policy digest, including an explicitly absent digest. */
+  effectiveDigest?: DigestAction;
+  reuseEffectiveDigest?: boolean;
+}
+
 /** Read policy/runtime facts once and pass only bounded facts to the review view. */
-export async function governanceReviewDigest(ctx: PlanContext): Promise<DigestAction> {
+export async function governanceReviewDigest(
+  ctx: PlanContext,
+  options: GovernanceReviewDigestOptions = {},
+): Promise<DigestAction> {
   const usage = readUsageStrict(ctx);
-  const installed = usageCaptureInstalled(ctx);
+  const effectiveDigest = options.reuseEffectiveDigest
+    ? options.effectiveDigest
+    : await orgPolicyEffectiveDigest(ctx);
+  const resolution = orgPolicyEffectiveResolution(effectiveDigest);
+  if (resolution !== undefined) {
+    return governanceReviewView({ ...resolution, usage });
+  }
+  if (effectiveDigest !== undefined) return unavailableReview("invalid", usage);
   try {
     const policy = readOrgPolicy(ctx.root, ctx.env);
-    if (policy === undefined) return unavailableReview("absent", usage, installed);
-    if (!governanceOwnsAihSurfaces(policy))
-      return unavailableReview("not-governing", usage, installed);
-    const effective = (await resolveRuntimeOrgPolicy(ctx, policy)).effective;
-    return governanceReviewView({
-      effective,
-      receipts: {
-        hook: orgPolicyHookReceiptState(ctx, effective),
-        mcp: orgPolicyMcpReceiptState(ctx, effective),
-        kiro: orgPolicyKiroMcpReceiptState(ctx, effective),
-        registrar: hookRegistrarReport(ctx.root),
-      },
-      captureInstalled: installed,
-      usage,
-    });
+    if (policy === undefined) return unavailableReview("absent", usage);
+    if (!governanceOwnsAihSurfaces(policy)) return unavailableReview("not-governing", usage);
+    return unavailableReview("invalid", usage);
   } catch {
-    return unavailableReview("invalid", usage, installed);
+    return unavailableReview("invalid", usage);
   }
 }

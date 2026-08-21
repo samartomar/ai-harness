@@ -171,7 +171,7 @@ describe("governanceReviewView", () => {
       heuristic: 1,
     });
     expect(data.usage).toMatchObject({
-      state: "partial-attribution",
+      state: "no-capture",
       unmatched: 1,
       malformedExcluded: 0,
       unknownKindExcluded: 1,
@@ -200,19 +200,17 @@ describe("governanceReviewView", () => {
       usage: { events: [], malformed: 0, unknownKind: 0 },
     });
 
-    expect(noCapture.data).toMatchObject({
-      usage: { state: "no-capture" },
-      subjects: [{ id: "context7", usage: { signal: "unknown-no-capture", count: 0 } }],
+    const noCaptureSubjects = (noCapture.data as { subjects: Array<{ id: string }> }).subjects;
+    const activeReceiptSubjects = (activeReceipt.data as { subjects: Array<{ id: string }> })
+      .subjects;
+    expect(noCapture.data).toMatchObject({ usage: { state: "no-capture" } });
+    expect(noCaptureSubjects.find((subject) => subject.id === "context7")).toMatchObject({
+      usage: { signal: "unknown-no-capture", count: 0 },
     });
-    expect(activeReceipt.data).toMatchObject({
-      usage: { state: "installed-zero-observed" },
-      subjects: [
-        {
-          id: "context7",
-          materialization: { state: "missing" },
-          usage: { signal: "not-observed-with-installed-capture", count: 0 },
-        },
-      ],
+    expect(activeReceipt.data).toMatchObject({ usage: { state: "installed-zero-observed" } });
+    expect(activeReceiptSubjects.find((subject) => subject.id === "context7")).toMatchObject({
+      materialization: { state: "missing" },
+      usage: { signal: "not-observed-with-installed-capture", count: 0 },
     });
     expect(activeReceipt.text).toContain("installed-zero-observed");
     expect(activeReceipt.text).toContain("receipt=missing");
@@ -258,11 +256,12 @@ describe("governanceReviewView", () => {
       },
     });
 
-    expect(digest.data).toMatchObject({
-      subjects: [
-        { id: "context7", usage: { count: 1, signal: "observed" } },
-        { id: "github", usage: { count: 0, signal: "not-observed-with-installed-capture" } },
-      ],
+    const subjects = (digest.data as { subjects: Array<{ id: string }> }).subjects;
+    expect(subjects.find((subject) => subject.id === "context7")).toMatchObject({
+      usage: { count: 1, signal: "observed" },
+    });
+    expect(subjects.find((subject) => subject.id === "github")).toMatchObject({
+      usage: { count: 0, signal: "not-observed-with-installed-capture" },
     });
     expect(digest.text).not.toMatch(/unused|trim|retire|revoke|uninstall|value/i);
   });
