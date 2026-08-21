@@ -816,6 +816,12 @@ visible and ineffective. Findings stay findings in output, with a derived `clean
 state only after every other gate passes. Decision conditions remain in the signed authority record
 and are deliberately omitted from public managed-settings and evaluate JSON.
 
+The generic decision record reserves `acceptedGaps` for an explicitly registered waivable named-gap
+class, but the current resolver registers none. Therefore current decisions must keep `acceptedGaps`
+empty and report `observedGaps` as empty. Evidence gaps such as missing or unverifiable evidence remain
+fenced prerequisites reported through the ordinary danger/blocker fields; a signed decision cannot
+turn them into accepted gaps or authorize an effect.
+
 The target-coverage triplet separates capability from invocation state: `supported` lists targets with
 a shipped projector adapter for that candidate, `available` lists targets selected in the current
 runtime, and `complete` or `blocked` says whether those requested targets are covered by shipped adapters

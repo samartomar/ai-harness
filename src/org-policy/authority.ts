@@ -257,7 +257,8 @@ const RECEIPT_TOP_LEVEL_CONSUMERS: Readonly<Record<string, string>> = {
   "decisionRevocations.*.revokedAt": "effective resolver: signed decision revocation time gate",
   "decisionRevocations.*.version": "receipt schema: fixed signed revocation artifact protocol",
   "decisions.*.acceptedFindings.*": "effective resolver: exact accepted finding coverage",
-  "decisions.*.acceptedGaps.*": "effective resolver: exact accepted named-gap coverage",
+  "decisions.*.acceptedGaps.*":
+    "effective resolver: exact accepted named-gap coverage; empty until a consumer registers a waivable gap class",
   "decisions.*.actor": "public-safe effective summary: signed decision actor audit binding",
   "decisions.*.candidate": "effective resolver: exact governed candidate binding",
   "decisions.*.conditions.*": "public-safe effective summary: signed condition audit binding",

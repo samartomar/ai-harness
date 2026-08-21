@@ -34,7 +34,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   always strict V2 and new usage-hook ownership is always V3 with domain-separated self-digests;
   legacy MCP V1 and usage-hook V2 receipts remain readable only for exact conservative cleanup or a
   receipt-only upgrade, never as current decision authority. Workbench decision authoring remains a
-  separate follow-up and is not added by this runtime phase.
+  separate follow-up and is not added by this runtime phase. The generic record reserves named-gap
+  coverage for future explicitly registered waivable gap classes; the current resolver registers none,
+  so accepted and observed named-gap lists remain empty and evidence gaps stay non-waivable blockers.
 
 - **Sharded ECC baseline vetting now requires a source-bound static preflight receipt.** A
   dispatcher can run the preview generator's lexical dependency-closure check once before
