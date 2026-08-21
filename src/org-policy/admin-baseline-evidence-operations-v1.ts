@@ -23,6 +23,7 @@ import {
 } from "./admin-baseline-evidence-bootstrap-v1.js";
 import {
   ADMIN_BASELINE_EVIDENCE_ARTIFACT_FILES_V1,
+  adminBaselineEvidenceTimestampEpochV1,
   commitAdminBaselineEvidenceCacheV1,
   type DownloadedEvidenceV1,
   readAdminBaselineEvidenceCacheV1,
@@ -251,12 +252,8 @@ export function parseGithubBaselineEvidenceAttestationV1(
       !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:Z|[+-]\d\d:\d\d)$/.test(timestamp.timestamp)
     )
       fail("attestation timestamp");
-    const value = Date.parse(timestamp.timestamp);
-    if (
-      !Number.isSafeInteger(value) ||
-      value > now ||
-      now - value > expected.cacheMaxAgeSeconds * 1000
-    )
+    const value = adminBaselineEvidenceTimestampEpochV1(timestamp.timestamp, true);
+    if (value === undefined || value > now || now - value > expected.cacheMaxAgeSeconds * 1000)
       fail("attestation timestamp");
     const key = `${timestamp.type}\0${timestamp.uri}\0${timestamp.timestamp}`;
     if (observed.has(key)) fail("attestation timestamp");
@@ -452,9 +449,8 @@ function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 function epoch(value: string, label: string): number {
-  if (typeof value !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(value)) fail(label);
-  const time = Date.parse(value);
-  if (!Number.isSafeInteger(time)) fail(label);
+  const time = adminBaselineEvidenceTimestampEpochV1(value, false);
+  if (time === undefined) fail(label);
   return time;
 }
 function lockInfo(

@@ -30,7 +30,8 @@ const ARTIFACT_FILE_LIMIT = 1024 * 1024;
 const TOTAL_ARTIFACT_LIMIT = 1280 * 1024;
 const CACHE_LIMIT = 1600 * 1024;
 const SHA256 = /^[a-f0-9]{64}$/;
-const UTC_SECOND = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/;
+const SECOND_TIMESTAMP =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(Z|([+-])(\d{2}):(\d{2}))$/;
 
 export const ADMIN_BASELINE_EVIDENCE_ARTIFACT_FILES_V1 = [
   BASELINE_EVIDENCE_ARTIFACT_FILE_V1,
@@ -59,6 +60,53 @@ function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+function daysInGregorianMonth(year: number, month: number): number {
+  if (month === 2) return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28;
+  return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
+}
+
+/** Strict, calendar-valid second timestamps for the baseline evidence trust boundary. */
+export function adminBaselineEvidenceTimestampEpochV1(
+  value: unknown,
+  allowOffset: boolean,
+): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const match = SECOND_TIMESTAMP.exec(value);
+  if (match === null || (!allowOffset && match[7] !== "Z")) return undefined;
+  const [year, month, day, hour, minute, second, offsetHour, offsetMinute] = [
+    match[1],
+    match[2],
+    match[3],
+    match[4],
+    match[5],
+    match[6],
+    match[9] ?? "0",
+    match[10] ?? "0",
+  ].map(Number);
+  if (
+    year === undefined ||
+    month === undefined ||
+    day === undefined ||
+    hour === undefined ||
+    minute === undefined ||
+    second === undefined ||
+    offsetHour === undefined ||
+    offsetMinute === undefined ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > daysInGregorianMonth(year, month) ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHour > 23 ||
+    offsetMinute > 59
+  )
+    return undefined;
+  const epoch = Date.parse(value);
+  return Number.isSafeInteger(epoch) ? epoch : undefined;
+}
+
 function exact(value: Record<string, unknown>, fields: readonly string[], label: string): void {
   const actual = Object.keys(value).sort(codeUnitCompare);
   const expected = [...fields].sort(codeUnitCompare);
@@ -69,8 +117,7 @@ function exact(value: Record<string, unknown>, fields: readonly string[], label:
 function timestamp(value: unknown, label: string): string {
   if (
     typeof value !== "string" ||
-    !UTC_SECOND.test(value) ||
-    !Number.isSafeInteger(Date.parse(value))
+    adminBaselineEvidenceTimestampEpochV1(value, false) === undefined
   )
     fail(label);
   return value;
