@@ -82,6 +82,44 @@ describe("committed JSON Schemas", () => {
     });
   });
 
+  it("publishes strict v1 or decision-bound v2 MCP ownership receipts", () => {
+    const base = { schemaVersion: 1, contextDir: "ai-coding" };
+    const binding = {
+      candidate: "code-review-graph",
+      id: "decision-graph",
+      issuer: "security-admin",
+      digest: `sha256:${"a".repeat(64)}`,
+      expiresAt: "2026-09-01T00:00:00.000+00:00",
+    };
+    const v2 = {
+      schemaVersion: 2,
+      state: "active",
+      expected: {
+        allowManagedMcpServersOnly: true,
+        allowedMcpServers: [{ serverCommand: ["aih-mcp", "serve"] }],
+      },
+      decisions: [binding],
+      sha256: "b".repeat(64),
+    };
+
+    validateCommittedSchema("schemas/aih-config.schema.json", {
+      ...base,
+      managedMcpProjection: v2,
+    });
+    for (const invalid of [
+      { ...v2, schemaVersion: 1 },
+      { ...v2, schemaVersion: "2" },
+      { ...v2, decisions: undefined },
+      { ...v2, decisions: [{ ...binding, expiresAt: "2026-09-01T00:00:00" }] },
+      { ...v2, unexpected: true },
+    ]) {
+      rejectCommittedSchema("schemas/aih-config.schema.json", {
+        ...base,
+        managedMcpProjection: invalid,
+      });
+    }
+  });
+
   it("publishes package-root-only policy selection without authority fields", () => {
     const base = {
       schemaVersion: 2,

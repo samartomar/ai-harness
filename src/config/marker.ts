@@ -37,7 +37,79 @@ const ManagedMcpProjectionExpectedSchema = z
     allowedMcpServers: z.array(z.object({ serverCommand: z.array(z.string()) }).strict()),
   })
   .strict();
-const ManagedMcpProjectionOwnershipSchema = z
+const OFFSET_TIMESTAMP =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(Z|[+-](\d{2}):(\d{2}))$/;
+
+function daysInGregorianMonth(year: number, month: number): number {
+  if (month === 2) return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28;
+  return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
+}
+
+function isOffsetTimestamp(value: string): boolean {
+  const match = OFFSET_TIMESTAMP.exec(value);
+  if (match === null) return false;
+  const [
+    ,
+    yearText,
+    monthText,
+    dayText,
+    hourText,
+    minuteText,
+    secondText,
+    ,
+    offsetHourText,
+    offsetMinuteText,
+  ] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const offsetHour = offsetHourText === undefined ? 0 : Number(offsetHourText);
+  const offsetMinute = offsetMinuteText === undefined ? 0 : Number(offsetMinuteText);
+  return (
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= daysInGregorianMonth(year, month) &&
+    hour <= 23 &&
+    minute <= 59 &&
+    second <= 59 &&
+    offsetHour <= 23 &&
+    offsetMinute <= 59 &&
+    Number.isFinite(Date.parse(value))
+  );
+}
+
+function ordinalCompare(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+const DecisionBindingSchema = z
+  .object({
+    candidate: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
+    id: z.string().regex(/^decision-[a-z][a-z0-9-]{0,54}$/),
+    issuer: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
+    digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+    expiresAt: z
+      .string()
+      .regex(OFFSET_TIMESTAMP)
+      .refine(isOffsetTimestamp, "must be an offset-qualified ISO-8601 timestamp"),
+  })
+  .strict();
+const DecisionBindingsSchema = z
+  .array(DecisionBindingSchema)
+  .max(64)
+  .refine(
+    (items) =>
+      items.every(
+        (item, index) =>
+          index === 0 || ordinalCompare(items[index - 1]?.candidate ?? "", item.candidate) < 0,
+      ),
+    "decision bindings must be sorted and unique by candidate",
+  );
+const ManagedMcpProjectionV1Schema = z
   .object({
     schemaVersion: z.literal(1),
     state: z.enum(["active", "revoked"]),
@@ -82,7 +154,7 @@ const KiroMcpProjectionExpectedSchema = z
     mcpServers: z.record(z.string().regex(/^[a-z][a-z0-9-]{0,119}$/), KiroMcpServerEntrySchema),
   })
   .strict();
-const KiroMcpProjectionOwnershipSchema = z
+const KiroMcpProjectionV1Schema = z
   .object({
     schemaVersion: z.literal(1),
     state: z.enum(["active", "revoked"]),
@@ -91,25 +163,82 @@ const KiroMcpProjectionOwnershipSchema = z
   })
   .strict();
 
+const ManagedMcpProjectionV2Schema = ManagedMcpProjectionV1Schema.extend({
+  schemaVersion: z.literal(2),
+  decisions: DecisionBindingsSchema,
+});
+const KiroMcpProjectionV2Schema = KiroMcpProjectionV1Schema.extend({
+  schemaVersion: z.literal(2),
+  decisions: DecisionBindingsSchema,
+});
+const ManagedMcpProjectionOwnershipSchema = z.discriminatedUnion("schemaVersion", [
+  ManagedMcpProjectionV1Schema,
+  ManagedMcpProjectionV2Schema,
+]);
+const KiroMcpProjectionOwnershipSchema = z.discriminatedUnion("schemaVersion", [
+  KiroMcpProjectionV1Schema,
+  KiroMcpProjectionV2Schema,
+]);
 export type ManagedMcpProjectionOwnership = z.infer<typeof ManagedMcpProjectionOwnershipSchema>;
 export type ActiveManagedMcpProjectionOwnership = ManagedMcpProjectionOwnership & {
   state: "active";
 };
 export type KiroMcpProjectionOwnership = z.infer<typeof KiroMcpProjectionOwnershipSchema>;
 export type ActiveKiroMcpProjectionOwnership = KiroMcpProjectionOwnership & { state: "active" };
+export type McpProjectionDecisionBinding = z.infer<typeof DecisionBindingSchema>;
+export type McpProjectionDecisionBindings = readonly McpProjectionDecisionBinding[];
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort(ordinalCompare)
+      .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+      .join(",")}}`;
+  }
+  const encoded = JSON.stringify(value);
+  if (encoded === undefined)
+    throw new TypeError("MCP projection ownership must be JSON-serializable");
+  return encoded;
+}
 
 function managedMcpProjectionSha256(
   state: ManagedMcpProjectionOwnership["state"],
   expected: ManagedMcpProjectionOwnership["expected"],
+  decisions?: McpProjectionDecisionBindings,
 ): string {
-  return createHash("sha256").update(JSON.stringify({ state, expected }), "utf8").digest("hex");
+  const payload =
+    decisions === undefined
+      ? JSON.stringify({ state, expected })
+      : stableJson({
+          format: "aih-mcp-projection-ownership",
+          surface: "claude-managed-mcp",
+          schemaVersion: 2,
+          state,
+          expected,
+          decisions,
+        });
+  return createHash("sha256").update(payload, "utf8").digest("hex");
 }
 
 function kiroMcpProjectionSha256(
   state: KiroMcpProjectionOwnership["state"],
   expected: KiroMcpProjectionOwnership["expected"],
+  decisions?: McpProjectionDecisionBindings,
 ): string {
-  return createHash("sha256").update(JSON.stringify({ state, expected }), "utf8").digest("hex");
+  const payload =
+    decisions === undefined
+      ? JSON.stringify({ state, expected })
+      : stableJson({
+          format: "aih-mcp-projection-ownership",
+          surface: "kiro-workspace-mcp",
+          schemaVersion: 2,
+          state,
+          expected,
+          decisions,
+        });
+  return createHash("sha256").update(payload, "utf8").digest("hex");
 }
 
 /**
@@ -287,8 +416,19 @@ export function aihConfigJson(
 
 export function managedMcpProjectionOwnership(
   expected: ManagedMcpProjectionOwnership["expected"],
+  decisions?: McpProjectionDecisionBindings,
 ): ManagedMcpProjectionOwnership {
   const state = "active";
+  if (decisions !== undefined) {
+    const parsedDecisions = DecisionBindingsSchema.parse(decisions);
+    return {
+      schemaVersion: 2,
+      state,
+      expected,
+      decisions: parsedDecisions,
+      sha256: managedMcpProjectionSha256(state, expected, parsedDecisions),
+    };
+  }
   return {
     schemaVersion: 1,
     state,
@@ -300,8 +440,15 @@ export function managedMcpProjectionOwnership(
 export function isManagedMcpProjectionOwnership(
   value: ManagedMcpProjectionOwnership | undefined,
 ): value is ManagedMcpProjectionOwnership {
+  const parsed = ManagedMcpProjectionOwnershipSchema.safeParse(value);
   return (
-    value !== undefined && value.sha256 === managedMcpProjectionSha256(value.state, value.expected)
+    parsed.success &&
+    parsed.data.sha256 ===
+      managedMcpProjectionSha256(
+        parsed.data.state,
+        parsed.data.expected,
+        parsed.data.schemaVersion === 2 ? parsed.data.decisions : undefined,
+      )
   );
 }
 
@@ -318,14 +465,29 @@ export function revokedManagedMcpProjectionOwnership(
   return {
     ...ownership,
     state,
-    sha256: managedMcpProjectionSha256(state, ownership.expected),
+    sha256: managedMcpProjectionSha256(
+      state,
+      ownership.expected,
+      ownership.schemaVersion === 2 ? ownership.decisions : undefined,
+    ),
   };
 }
 
 export function kiroMcpProjectionOwnership(
   expected: KiroMcpProjectionOwnership["expected"],
+  decisions?: McpProjectionDecisionBindings,
 ): KiroMcpProjectionOwnership {
   const state = "active";
+  if (decisions !== undefined) {
+    const parsedDecisions = DecisionBindingsSchema.parse(decisions);
+    return {
+      schemaVersion: 2,
+      state,
+      expected,
+      decisions: parsedDecisions,
+      sha256: kiroMcpProjectionSha256(state, expected, parsedDecisions),
+    };
+  }
   return {
     schemaVersion: 1,
     state,
@@ -337,8 +499,15 @@ export function kiroMcpProjectionOwnership(
 export function isKiroMcpProjectionOwnership(
   value: KiroMcpProjectionOwnership | undefined,
 ): value is KiroMcpProjectionOwnership {
+  const parsed = KiroMcpProjectionOwnershipSchema.safeParse(value);
   return (
-    value !== undefined && value.sha256 === kiroMcpProjectionSha256(value.state, value.expected)
+    parsed.success &&
+    parsed.data.sha256 ===
+      kiroMcpProjectionSha256(
+        parsed.data.state,
+        parsed.data.expected,
+        parsed.data.schemaVersion === 2 ? parsed.data.decisions : undefined,
+      )
   );
 }
 
@@ -355,7 +524,11 @@ export function revokedKiroMcpProjectionOwnership(
   return {
     ...ownership,
     state,
-    sha256: kiroMcpProjectionSha256(state, ownership.expected),
+    sha256: kiroMcpProjectionSha256(
+      state,
+      ownership.expected,
+      ownership.schemaVersion === 2 ? ownership.decisions : undefined,
+    ),
   };
 }
 
