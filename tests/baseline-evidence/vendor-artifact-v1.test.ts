@@ -119,14 +119,21 @@ describe("VendorBaselineEvidenceArtifactV1", () => {
       (artifact: ReturnType<typeof built>) => {
         const first = artifact.files[0];
         if (first === undefined) throw new Error("expected artifact file");
-        return { ...artifact, files: [...artifact.files, first] };
+        return {
+          ...artifact,
+          files: artifact.files.map((file, index) =>
+            index === 1 ? { ...file, path: first.path } : file,
+          ),
+        };
       },
     ],
     [
       "unsafe path",
       (artifact: ReturnType<typeof built>) => ({
         ...artifact,
-        files: [{ path: "../SHA256SUMS", bytes: artifact.subject.bytes }],
+        files: artifact.files.map((file, index) =>
+          index === 0 ? { ...file, path: "../SHA256SUMS" } : file,
+        ),
       }),
     ],
     [
@@ -171,6 +178,78 @@ describe("VendorBaselineEvidenceArtifactV1", () => {
         verifyGithubAttestation: (request) => verifiedClaims(request.subjectSha256, claims),
       }),
     ).toThrow(/BASELINE_EVIDENCE_ARTIFACT_V1/);
+  });
+
+  it("rejects an exact-count artifact with an incomplete expected layout", () => {
+    const artifact = built();
+    expect(() =>
+      verifyVendorBaselineEvidenceArtifactV1({
+        artifact: {
+          ...artifact,
+          files: artifact.files.map((file) =>
+            file.path === "evidence.json" ? { ...file, path: "unexpected.json" } : file,
+          ),
+        },
+        policy: {
+          ...attestationPolicy,
+          sources: [{ id: "ecc", owner: "affaan-m", pinnedSha: "b".repeat(40), repo: "ecc" }],
+        },
+        verifyGithubAttestation: (request) =>
+          verifiedClaims(request.subjectSha256, { ref: request.policy.ref }),
+      }),
+    ).toThrow(/BASELINE_EVIDENCE_ARTIFACT_V1: artifact layout/);
+  });
+
+  it.each([
+    "refs/heads/feature..name",
+    "refs/heads/feature//name",
+    "refs/heads/feature/",
+    "refs/heads/feature.",
+    "refs/heads/.hidden",
+    "refs/tags/release.lock",
+  ])("rejects Git-prohibited attestation ref %s", (ref) => {
+    expect(() =>
+      verifyVendorBaselineEvidenceArtifactV1({
+        artifact: built(),
+        policy: {
+          ...attestationPolicy,
+          ref,
+          sources: [{ id: "ecc", owner: "affaan-m", pinnedSha: "b".repeat(40), repo: "ecc" }],
+        },
+        verifyGithubAttestation: (request) =>
+          verifiedClaims(request.subjectSha256, { ref: request.policy.ref }),
+      }),
+    ).toThrow(/BASELINE_EVIDENCE_ARTIFACT_V1: attestation policy/);
+  });
+
+  it("rejects oversized builder lock bytes before parsing or hashing", () => {
+    expect(() =>
+      buildVendorBaselineEvidenceArtifactV1({
+        lockBytes: Buffer.alloc(1_048_577),
+        publisher,
+      }),
+    ).toThrow(/BASELINE_EVIDENCE_ARTIFACT_V1: artifact bounds/);
+  });
+
+  it("refuses to build an artifact that exceeds its own verifier bounds", () => {
+    const source = {
+      id: "skill:review",
+      paths: ["skills/review"],
+      treeSha256: "a".repeat(64),
+      verdict: "pass",
+      analyzers: [{ name: "aih-native", version: "1" }],
+      findings: [],
+    };
+    const sources = Array.from({ length: 1200 }, (_, index) => ({
+      id: `source-${index}`,
+      owner: "owner",
+      repo: "repo",
+      pinnedSha: index.toString(16).padStart(40, "0"),
+      components: [source],
+    }));
+    expect(() =>
+      buildVendorBaselineEvidenceArtifactV1({ lockBytes: lockBytes({ sources }), publisher }),
+    ).toThrow(/BASELINE_EVIDENCE_ARTIFACT_V1: artifact bounds/);
   });
 
   it("does not call the attestation boundary until all local bytes have passed", () => {
