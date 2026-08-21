@@ -12,10 +12,11 @@ export const SUPERPOWERS_ACCEPTANCE_COMMIT = "3dcbd5c4b48e02263fbf4a3c01e3fe4f81
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 const SHA40 = /^[0-9a-f]{40}$/;
 const SEVERITIES = ["info", "low", "medium", "high", "critical"] as const;
-const ALLOWED_REMOTES = new Set([
-  "https://github.com/obra/superpowers.git",
-  "git@github.com:obra/superpowers.git",
-]);
+const ALLOWED_SUPERPOWERS_REMOTE_PATTERNS = [
+  /^https:\/\/github\.com\/obra\/superpowers(?:\.git)?\/?$/i,
+  /^git@github\.com:obra\/superpowers(?:\.git)?\/?$/i,
+  /^ssh:\/\/git@github\.com\/obra\/superpowers(?:\.git)?\/?$/i,
+];
 
 const AcceptanceEntrySchema = z
   .object({
@@ -179,6 +180,11 @@ function canonicalGitTopLevel(stdout: string): { root: string; dev: number; ino:
   }
 }
 
+function isAllowedSuperpowersRemote(stdout: string): boolean {
+  const remote = stdout.trim();
+  return ALLOWED_SUPERPOWERS_REMOTE_PATTERNS.some((pattern) => pattern.test(remote));
+}
+
 async function checkoutIdentity(checkoutPath: string, runner: Runner): Promise<CheckoutIdentity> {
   let root: string;
   let dev: number;
@@ -226,7 +232,7 @@ async function checkoutIdentity(checkoutPath: string, runner: Runner): Promise<C
     await runner(["git", "-C", root, "remote", "get-url", "origin"]),
     "origin remote",
   );
-  if (remote.code !== 0 || !ALLOWED_REMOTES.has(remote.stdout.trim())) {
+  if (remote.code !== 0 || !isAllowedSuperpowersRemote(remote.stdout)) {
     fail("vendor checkout origin is not obra/superpowers");
   }
   const branch = gitResult(
@@ -242,7 +248,15 @@ async function checkoutIdentity(checkoutPath: string, runner: Runner): Promise<C
     fail(`vendor checkout must be detached at ${SUPERPOWERS_ACCEPTANCE_COMMIT}`);
   }
   const status = gitResult(
-    await runner(["git", "-C", root, "status", "--porcelain=v1", "--untracked-files=all"]),
+    await runner([
+      "git",
+      "-C",
+      root,
+      "status",
+      "--porcelain=v1",
+      "--untracked-files=all",
+      "--ignored=matching",
+    ]),
     "working tree status",
   );
   if (status.code !== 0 || status.stdout.trim().length !== 0) {

@@ -252,6 +252,33 @@ describe("checkSuperpowersScanAcceptance", () => {
     }
   });
 
+  it("rejects ambiguous GitHub Superpowers origin equivalents before inspection", async () => {
+    initVendorCheckout({ "SKILL.md": "safe\n" });
+    for (const remote of [
+      "https://user@github.com/obra/superpowers.git",
+      "https://github.com:443/obra/superpowers.git",
+      "https://github.com/obra/superpowers.git?ref=main",
+      "https://github.com/obra/superpowers.git#readme",
+      "https://github.com/obra/superpowers.git/extra",
+      "ssh://other@github.com/obra/superpowers.git",
+      "ssh://git@github.com:22/obra/superpowers.git",
+      "https://github.com/obra%2fsuperpowers.git",
+    ]) {
+      git(checkout, ["remote", "set-url", "origin", remote]);
+      let inspections = 0;
+      await expect(
+        checkSuperpowersScanAcceptance(
+          { checkoutPath: checkout },
+          fixtureDeps(artifact([]), () => {
+            inspections += 1;
+            return [];
+          }),
+        ),
+      ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+      expect(inspections).toBe(0);
+    }
+  });
+
   it("fails closed for wrong, mutable, unreadable, and mutation-during-inspection checkouts", async () => {
     initVendorCheckout({ "SKILL.md": "safe\n", "unreadable/child": "not a file" });
     await expect(
