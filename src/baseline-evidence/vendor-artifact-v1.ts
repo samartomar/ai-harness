@@ -29,7 +29,6 @@ const SHA256 = /^[a-f0-9]{64}$/;
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const WORKFLOW =
   /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/.github\/workflows\/[A-Za-z0-9][A-Za-z0-9._-]*\.ya?ml$/;
-const REF = /^refs\/(?:heads|tags)\/[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 const ISSUER = /^https:\/\/[A-Za-z0-9][A-Za-z0-9.-]*(?:\/[A-Za-z0-9._~!$&'()*+,;=:@%-]+)*$/;
 
 export interface VendorBaselineEvidenceArtifactFileV1 {
@@ -151,6 +150,21 @@ function sha(value: unknown, label: string): string {
   return result;
 }
 
+function validRef(value: string): boolean {
+  const match = /^refs\/(?:heads|tags)\/(.+)$/.exec(value);
+  if (match?.[1] === undefined || value.length > 512 || value.endsWith(".")) return false;
+  const name = match[1];
+  if (name.includes("..") || name.includes("@{")) return false;
+  return name
+    .split("/")
+    .every(
+      (segment) =>
+        /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment) &&
+        !segment.startsWith(".") &&
+        !segment.endsWith(".lock"),
+    );
+}
+
 function source(value: unknown, label: string): BaselineEvidenceArtifactSourceV1 {
   const record = plainDataRecord(value, label);
   exactKeys(record, ["id", "owner", "pinnedSha", "repo"], label);
@@ -227,15 +241,37 @@ function sums(files: readonly VendorBaselineEvidenceArtifactFileV1[]): Buffer {
   );
 }
 
+function builderInput(value: unknown): {
+  readonly lockBytes: Buffer;
+  readonly publisher: BaselineEvidenceArtifactPublisherV1;
+} {
+  const input = plainDataRecord(value, "builder input");
+  exactKeys(input, ["lockBytes", "publisher"], "builder input");
+  if (!Buffer.isBuffer(input.lockBytes) || input.lockBytes.length === 0) fail("lock bytes");
+  if (
+    input.lockBytes.length >
+    ARTIFACT_FILE_BYTE_LIMITS[`files/${BASELINE_EVIDENCE_ARTIFACT_LOCK_PATH_V1}`]
+  )
+    fail("artifact bounds");
+  const publisher = plainDataRecord(input.publisher, "publisher identity");
+  exactKeys(publisher, ["environment", "repository"], "publisher identity");
+  return {
+    lockBytes: Buffer.from(input.lockBytes),
+    publisher: {
+      environment: text(publisher.environment, "environment", 128),
+      repository: text(publisher.repository, "publisher repository", 256),
+    },
+  };
+}
+
 /** Builds bytes only; it has no signing, process, network, or candidate-code path. */
 export function buildVendorBaselineEvidenceArtifactV1(input: {
   readonly lockBytes: Buffer;
   readonly publisher: BaselineEvidenceArtifactPublisherV1;
 }): VendorBaselineEvidenceArtifactV1 {
-  if (!Buffer.isBuffer(input.lockBytes) || input.lockBytes.length === 0) fail("lock bytes");
-  const lockBytes = Buffer.from(input.lockBytes);
+  const { lockBytes, publisher } = builderInput(input);
   const lock = canonicalLock(lockBytes);
-  const artifactBytes = canonical(metadata(lockBytes, lock, input.publisher));
+  const artifactBytes = canonical(metadata(lockBytes, lock, publisher));
   const manifestBytes = canonical({
     files: [
       {
@@ -274,7 +310,7 @@ export function buildVendorBaselineEvidenceArtifactV1(input: {
     ...checked,
     { bytes: subjectBytes, path: BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1 },
   ];
-  return {
+  const artifact: VendorBaselineEvidenceArtifactV1 = {
     files: files.map((file) => ({ bytes: Buffer.from(file.bytes), path: file.path })),
     subject: {
       bytes: Buffer.from(subjectBytes),
@@ -282,6 +318,8 @@ export function buildVendorBaselineEvidenceArtifactV1(input: {
       sha256: sha256(subjectBytes),
     },
   };
+  artifactFiles(artifact);
+  return artifact;
 }
 
 function artifactFiles(value: unknown): {
@@ -482,7 +520,7 @@ function validatePolicy(value: unknown): VerifyVendorBaselineEvidenceArtifactV1I
     !REPOSITORY.test(repository) ||
     !WORKFLOW.test(workflow) ||
     !ISSUER.test(issuer) ||
-    !REF.test(ref) ||
+    !validRef(ref) ||
     !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(environment)
   )
     fail("attestation policy");

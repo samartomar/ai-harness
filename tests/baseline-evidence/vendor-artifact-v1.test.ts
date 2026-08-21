@@ -240,7 +240,7 @@ describe("VendorBaselineEvidenceArtifactV1", () => {
       analyzers: [{ name: "aih-native", version: "1" }],
       findings: [],
     };
-    const sources = Array.from({ length: 1200 }, (_, index) => ({
+    const sources = Array.from({ length: 1600 }, (_, index) => ({
       id: `source-${index}`,
       owner: "owner",
       repo: "repo",

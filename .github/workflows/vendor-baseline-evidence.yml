@@ -7,18 +7,15 @@ permissions:
   contents: read
 
 jobs:
-  attest:
+  build:
     runs-on: ubuntu-latest
-    environment: baseline-evidence-publish
     permissions:
-      attestations: write
       contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Bind manual attestation to current protected main
+      - name: Bind manual build to current protected main
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = "refs/heads/main"
@@ -28,11 +25,33 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Build deterministic vendor baseline-evidence subject
         run: >-
           npm run baseline:artifact -- --out .baseline-evidence-artifact
           --repository "$GITHUB_REPOSITORY" --environment baseline-evidence-publish
+      - name: Transfer complete vendor baseline-evidence artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: vendor-baseline-evidence-v1
+          path: .baseline-evidence-artifact
+          if-no-files-found: error
+          include-hidden-files: true
+  attest:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: baseline-evidence-publish
+    permissions:
+      attestations: write
+      id-token: write
+    steps:
+      - name: Download same-run vendor baseline-evidence artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: vendor-baseline-evidence-v1
+          path: .baseline-evidence-artifact
+      - name: Require downloaded checksum subject
+        run: test -f .baseline-evidence-artifact/SHA256SUMS
       - name: Attest vendor baseline-evidence checksums
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
