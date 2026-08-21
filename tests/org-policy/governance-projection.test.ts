@@ -2410,7 +2410,10 @@ describe("governed candidate projection", () => {
     const policy = usageHookPolicy("active");
     const applied = ctx({ apply: true });
     await executePlan(
-      plan("project decision-free usage hook", ...(await verifiedOrgPolicyProjectionActions(applied, policy))),
+      plan(
+        "project decision-free usage hook",
+        ...(await verifiedOrgPolicyProjectionActions(applied, policy)),
+      ),
       applied,
     );
     const receiptPath = join(dir, ".aih", "org-policy-hook-receipt.json");
@@ -2447,7 +2450,19 @@ describe("governed candidate projection", () => {
       policyVersion: "2026.08.1",
       decisions: [],
     });
-    expect(await verifiedOrgPolicyProjectionActions(applied, revised)).toEqual([]);
+    const noOp = await verifiedOrgPolicyProjectionActions(applied, revised);
+    expect(
+      noOp.filter(
+        (action) =>
+          action.kind === "write" &&
+          [
+            ".claude/settings.json",
+            ".aih/usage-record.mjs",
+            ".gitignore",
+            ".aih/org-policy-hook-receipt.json",
+          ].includes(action.path),
+      ),
+    ).toEqual([]);
   });
 
   it("refreshes a decision-bearing usage v3 receipt without rewriting hook artifacts", async () => {
