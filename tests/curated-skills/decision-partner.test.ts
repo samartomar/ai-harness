@@ -6,13 +6,21 @@ const skill = readFileSync(resolve("ai-coding/curated-skills/decision-partner/SK
 const gitignore = readFileSync(resolve(".gitignore"), "utf8");
 
 describe("decision-partner truth routing", () => {
-  it("uses the companion's declared decision homes instead of a second ledger", () => {
+  it("rejects the retired decision ledgers and requires the current companion read set", () => {
     expect(skill).toContain("aih.privateCompanionRoot");
-    expect(skill).toContain("decisions/OPEN-DECISIONS.md");
-    expect(skill).toContain("decisions/DECISION-LOG.md");
+    expect(skill).toMatch(
+      /Require its root `AGENTS\.md`, `README\.md`, `OPERATING-RULES\.md`, and `NEXT\.md`/,
+    );
+    expect(skill).not.toContain("decisions/OPEN-DECISIONS.md");
+    expect(skill).not.toContain("decisions/DECISION-LOG.md");
     expect(skill).not.toContain(".internal/decision-sessions/");
     expect(skill).not.toContain("/.decision-sessions/");
     expect(skill).not.toMatch(/(?:^|[/`])DECISIONS\.md/);
+  });
+
+  it("keeps unresolved decisions in NEXT and settled decisions in affected current-truth feature files", () => {
+    expect(skill).toMatch(/unresolved decisions?[^.]*`NEXT\.md`/i);
+    expect(skill).toMatch(/settled decisions?[^.]*affected current-truth feature files/i);
   });
 
   it("cannot close a decision without the durable companion truth home", () => {
