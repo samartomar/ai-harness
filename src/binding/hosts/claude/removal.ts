@@ -139,6 +139,9 @@ function classifyJsonEntry(root: string, entry: BindingOwnershipEntry): Ownershi
   }
   const found = valueAtPointer(parsed, pointer);
   if (!found.present) return { kind: "noop" }; // already gone — idempotent no-op
+  if ("value" in entry.preExisting && jsonEqual(found.value, entry.preExisting.value)) {
+    return { kind: "noop" }; // a prior restore already settled this receipt slot
+  }
   if (!jsonEqual(found.value, entry.applied)) {
     return {
       kind: "drift",

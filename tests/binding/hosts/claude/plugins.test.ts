@@ -924,6 +924,87 @@ describe("removePlugin — post-uninstall project custody", () => {
     expect(cacheLookups).toBe(0);
   });
 
+  it("refuses missing receipt enabledPlugins ownership before cache, apply, or CLI effects", async () => {
+    const bound = await bindForProjectRemoval();
+    const { runner, calls } = recordingRunner();
+    let applies = 0;
+    let cacheLookups = 0;
+
+    const result = await removePlugin(
+      {
+        ownership: bound.ownership.filter((entry) => entry.target.startsWith("home:")),
+        plugin: PLUGIN,
+        marketplace: MARKETPLACE,
+        scope: "project",
+        projectRoot: root,
+        repoRelativeOwnership: [],
+      },
+      {
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => {
+          cacheLookups += 1;
+          return bound.loadedTreePath;
+        },
+        applyActions: async (target, actions) => {
+          applies += 1;
+          return applyActions(target, actions);
+        },
+      },
+    );
+
+    expect(result.drift).toEqual([
+      expect.objectContaining({
+        target: ".claude/settings.json#/enabledPlugins",
+        reason: "no receipt-owned enabledPlugins entry — preserved",
+      }),
+    ]);
+    expect(calls).toHaveLength(0);
+    expect(applies).toBe(0);
+    expect(cacheLookups).toBe(0);
+  });
+
+  it("treats an exact leaf pre-existing value as settled before host teardown", async () => {
+    const bound = await bindForProjectRemoval();
+    writeFileSync(
+      join(root, ".claude", "settings.json"),
+      `${JSON.stringify({ enabledPlugins: { [KEY]: false } }, null, 2)}\n`,
+      "utf8",
+    );
+    const leafOwnership = [
+      {
+        kind: "json-pointer" as const,
+        target: `.claude/settings.json#/enabledPlugins/${KEY}`,
+        preExisting: { value: false },
+        applied: true,
+        postApplyDigest: "0".repeat(64),
+      },
+    ];
+    const { runner, calls } = recordingRunner();
+
+    const removal = await removePlugin(
+      {
+        ownership: bound.ownership.filter((entry) => entry.target.startsWith("home:")),
+        plugin: PLUGIN,
+        marketplace: MARKETPLACE,
+        scope: "project",
+        projectRoot: root,
+        repoRelativeOwnership: leafOwnership,
+      },
+      {
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => bound.loadedTreePath,
+        applyActions,
+      },
+    );
+
+    expect(removal.drift).toEqual([]);
+    expect(calls).toContainEqual(["claude", "plugin", "uninstall", KEY, "--scope", "project"]);
+    expect(calls).toContainEqual(["claude", "plugin", "marketplace", "remove", MARKETPLACE]);
+    expect(readJson(root, ".claude/settings.json").enabledPlugins).toEqual({ [KEY]: false });
+  });
+
   it("runs every removal lifecycle subprocess with the requested project root as cwd", async () => {
     const bound = await bindForProjectRemoval();
     const cwd: Array<string | undefined> = [];

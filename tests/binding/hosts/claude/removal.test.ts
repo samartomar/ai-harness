@@ -404,6 +404,52 @@ describe("planClaudeRemoval — malformed lock targets are preserved and reporte
 });
 
 describe("planClaudeRemoval — container ownership (own what AIH created)", () => {
+  it("treats an exact pre-existing empty container as already restored", () => {
+    seed(CLAUDE_SETTINGS_PATH, `${JSON.stringify({ enabledPlugins: {} }, null, 2)}\n`);
+    const lock = lockFrom(
+      [],
+      [
+        {
+          kind: "json-pointer",
+          target: `${CLAUDE_SETTINGS_PATH}#/enabledPlugins`,
+          preExisting: { value: {} },
+          applied: { "sample@aih-test": true },
+          postApplyDigest: "a".repeat(64),
+        },
+      ],
+    );
+
+    const removal = planClaudeRemoval(root, lock);
+
+    expect(removal.actions).toEqual([]);
+    expect(removal.drift).toEqual([]);
+    expect(readJson(root, CLAUDE_SETTINGS_PATH).enabledPlugins).toEqual({});
+  });
+
+  it("preserves an empty container introduced after an absent pre-existing state", () => {
+    seed(CLAUDE_SETTINGS_PATH, `${JSON.stringify({ enabledPlugins: {} }, null, 2)}\n`);
+    const lock = lockFrom(
+      [],
+      [
+        {
+          kind: "json-pointer",
+          target: `${CLAUDE_SETTINGS_PATH}#/enabledPlugins`,
+          preExisting: { absent: true },
+          applied: { "sample@aih-test": true },
+          postApplyDigest: "a".repeat(64),
+        },
+      ],
+    );
+
+    const removal = planClaudeRemoval(root, lock);
+
+    expect(removal.actions).toEqual([]);
+    expect(removal.drift).toEqual([
+      expect.objectContaining({ target: `${CLAUDE_SETTINGS_PATH}#/enabledPlugins` }),
+    ]);
+    expect(readJson(root, CLAUDE_SETTINGS_PATH).enabledPlugins).toEqual({});
+  });
+
   it("removes the whole container AIH created, leaving no empty object behind", async () => {
     seed(CLAUDE_SETTINGS_PATH, `${JSON.stringify({ model: "opus" }, null, 2)}\n`); // enabledPlugins absent
     const built = new ClaudeManagedWriteEngine(root)
