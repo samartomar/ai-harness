@@ -622,6 +622,46 @@ describe("verifiedEccInstallPlan", () => {
     expect(JSON.parse(Buffer.from(mcpB64, "base64").toString("utf8"))).toEqual({ servers: {} });
   });
 
+  it.each([
+    ["project", "[mcp_servers.chrome-devtools]\nenabled = false\n"],
+    ["global", '[mcp_servers.chrome-devtools]\nurl = "https://example.invalid/mcp"\n'],
+  ])(
+    "refuses a verified Codex install on a planned Core-name %s ambiguity",
+    async (scope, config) => {
+      const home = join(root, "collision-home");
+      const projectConfig = join(root, ".codex", "config.toml");
+      const globalConfig = join(home, ".codex", "config.toml");
+      const target = scope === "project" ? projectConfig : globalConfig;
+      mkdirSync(join(target, ".."), { recursive: true });
+      writeFileSync(target, config, "utf8");
+      const context = { ...ctx(), env: { HOME: home, USERPROFILE: home } };
+      const selected = selection();
+
+      const plan = verifiedEccInstallPlan(
+        context,
+        join(root, "quarantine", "tree"),
+        { clis: ["codex"], profile: "minimal", packs: [], selection: selected },
+        authorizationsForSelection("codex", selected),
+      );
+
+      expect(
+        driverSteps(plan.actions).some((step) =>
+          step.argv.join(" ").includes("codex-install-merge"),
+        ),
+      ).toBe(false);
+      const checks = await Promise.all(
+        plan.actions
+          .filter((action): action is Extract<Action, { kind: "probe" }> => action.kind === "probe")
+          .map((action) => action.run(context)),
+      );
+      expect(checks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: "mcp.config-invalid", verdict: "fail" }),
+        ]),
+      );
+    },
+  );
+
   // #506 F1: the enterprise rollout observed the Codex merge receiving the core
   // profile regardless of `--profile full`. These two tests lock the resolved
   // profile end-to-end through the LIVE path (registration request → verified
@@ -793,7 +833,7 @@ describe("verifiedEccInstallPlan", () => {
     const sourceRoot = join(root, "ecc-source");
     const home = join(root, "home");
     mkdirSync(join(home, ".codex"), { recursive: true });
-    writeFileSync(join(home, ".codex", "config.toml"), "", "utf8");
+    writeFileSync(join(home, ".codex", "config.toml"), "# operator-owned\r\n", "utf8");
     put(
       join(sourceRoot, "scripts", "lib", "install-executor.js"),
       `exports.createManifestInstallPlan = ({ homeDir }) => ({
@@ -876,6 +916,14 @@ describe("verifiedEccInstallPlan", () => {
     expect(
       readFileSync(join(home, ".codex", "skills", "coding-standards", "SKILL.md"), "utf8"),
     ).toBe("# Coding standards\n");
+    const config = readFileSync(join(home, ".codex", "config.toml"), "utf8");
+    expect(config).toContain("chrome-devtools-mcp@1.7.0");
+    expect(config).toContain("startup_timeout_sec = 30");
+    expect(config).not.toContain("@latest");
+    expect(config).toContain("\r\n");
+    expect(readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")).toContain(
+      '"chrome-devtools"',
+    );
     const statePath = join(home, ".codex", "ecc-install-state.json");
     const firstState = readFileSync(statePath, "utf8");
     const state = JSON.parse(firstState) as { operations: Array<{ destinationPath: string }> };

@@ -4,10 +4,14 @@ import { readIfExists } from "../internals/fsxn.js";
 import { stripManagedBlock } from "../internals/markers.js";
 import { type Action, doc, exec, type PlanContext, probe, writeText } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
-import type { McpServer } from "../mcp/servers.js";
-
 export type CodexMcpTransport = "stdio" | "http" | "mixed" | "unknown";
 type CodexMcpScope = "project" | "global" | "planned ECC";
+
+/** Codex's scoped TOML writer accepts this local projection only. */
+export type CodexScopedMcpServer =
+  | { type: "stdio"; command: string; args: string[]; startupTimeoutSec?: number }
+  | { type: "http"; url: string; startupTimeoutSec?: number };
+export type CodexScopedMcpServers = Record<string, CodexScopedMcpServer>;
 
 export interface CodexMcpCollision {
   name: string;
@@ -22,17 +26,13 @@ export interface CodexMcpCollision {
  * through a floating npm tag. Its exact package identity is bound to the active
  * external-pin ledger; optional ECC MCPs remain on their scoped policy path.
  */
-export function coreOwnedEccCodexMcpServers(): Record<string, McpServer> {
+export function coreOwnedEccCodexMcpServers(): CodexScopedMcpServers {
   return {
     "chrome-devtools": {
       type: "stdio",
       command: "npx",
       args: ["-y", "chrome-devtools-mcp@1.7.0"],
-      description: "Chrome DevTools MCP from Core's exact reviewed npm package pin.",
-      classification: "local",
-      egress: "local-only",
-      credentials: "none",
-      supplyChain: "pinned",
+      startupTimeoutSec: 30,
     },
   };
 }
@@ -520,13 +520,12 @@ export function codexMcpTransportCollisions(
     existingTransport: CodexMcpTransport,
     conflictingScope: CodexMcpScope,
     conflictingTransport: CodexMcpTransport,
+    strictUnknown = false,
   ): void => {
-    if (
-      (existingTransport === "stdio" || existingTransport === "http") &&
-      existingTransport === conflictingTransport
-    ) {
+    const unknown = existingTransport === "unknown" || conflictingTransport === "unknown";
+    if (unknown && !strictUnknown) return;
+    if (!unknown && existingTransport === conflictingTransport && existingTransport !== "mixed")
       return;
-    }
     collisions.push({
       name,
       existingScope,
@@ -537,22 +536,18 @@ export function codexMcpTransportCollisions(
   };
 
   for (const [name, projectTransport] of project) {
+    const plannedTransport = plannedTransports.get(name);
     const globalTransport = global.get(name);
-    if (globalTransport !== undefined) {
+    if (plannedTransport !== undefined) {
+      pushCollision(name, "project", projectTransport, "planned ECC", plannedTransport, true);
+    } else if (globalTransport !== undefined) {
       pushCollision(name, "project", projectTransport, "global", globalTransport);
-    } else {
-      const plannedTransport = plannedTransports.get(name);
-      if (plannedTransport !== undefined) {
-        pushCollision(name, "project", projectTransport, "planned ECC", plannedTransport);
-      }
     }
   }
-  if (scopedPlannedTransports === undefined) {
-    for (const [name, globalTransport] of global) {
-      const plannedTransport = plannedTransports.get(name);
-      if (plannedTransport !== undefined) {
-        pushCollision(name, "global", globalTransport, "planned ECC", plannedTransport);
-      }
+  for (const [name, globalTransport] of global) {
+    const plannedTransport = plannedTransports.get(name);
+    if (plannedTransport !== undefined) {
+      pushCollision(name, "global", globalTransport, "planned ECC", plannedTransport, true);
     }
   }
   return collisions.sort((a, b) =>

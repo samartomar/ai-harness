@@ -16,13 +16,13 @@ import {
   probe,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
-import type { McpServer } from "../mcp/servers.js";
 import { readOrgPolicy } from "../org-policy/schema.js";
 import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
 import { execArgv } from "../tools/install.js";
 import {
   CODEX_AGENTS_BLOCK_MARKER,
+  type CodexScopedMcpServers,
   codexHomeDir,
   codexInstallStateContents,
   codexInstallStatePath,
@@ -701,6 +701,8 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   "    } else {",
   '      throw new Error("unsupported scoped Codex MCP server shape: " + name);',
   "    }",
+  '    if (server.startupTimeoutSec !== undefined && (!Number.isSafeInteger(server.startupTimeoutSec) || server.startupTimeoutSec < 1 || server.startupTimeoutSec > 3600)) throw new Error("invalid scoped Codex MCP startup timeout: " + name);',
+  '    if (server.startupTimeoutSec !== undefined) section.push("startup_timeout_sec = " + String(server.startupTimeoutSec));',
   '    sections.push(section.join("\\n"));',
   "    installed.push(name);",
   "  }",
@@ -725,7 +727,7 @@ export function codexEccActions(
   repo: EccRepoCheckout,
   profile: string,
   materialization?: EccMaterializationSpec,
-  scopedMcps?: Record<string, McpServer>,
+  scopedMcps?: CodexScopedMcpServers,
   governed = false,
 ): Action[] {
   const codexDir = codexHomeDir(ctx);
