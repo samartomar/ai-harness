@@ -14,6 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { coreOwnedEccCodexMcpServers } from "../../src/ecc/codex.js";
 import { codexEccActions, command } from "../../src/ecc/index.js";
 import {
   AIH_DIRECT_ECC_INSTALL_TARGETS,
@@ -849,6 +850,67 @@ describe("Codex managed destination safety", () => {
       encoding: "utf8",
     });
   }
+
+  it("writes Core's exact Chrome DevTools pin without executing the vendor merge helper", () => {
+    const home = join(tmp, "home");
+    const repo = join(tmp, "ecc");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    const putRepo = (relative: string, contents: string) => {
+      const target = join(repo, relative);
+      mkdirSync(join(target, ".."), { recursive: true });
+      writeFileSync(target, contents, "utf8");
+    };
+    putRepo("scripts/codex/merge-codex-config.js", "process.exit(0);\n");
+    putRepo("scripts/codex/merge-mcp-config.js", 'throw new Error("vendor MCP merge ran");\n');
+    putRepo(
+      "scripts/lib/install-executor.js",
+      `exports.createManifestInstallPlan = () => ({ operations: [], statePreview: { operations: [] }, installStatePath: ${JSON.stringify(
+        join(home, ".codex", "ecc-install-state.json"),
+      )} });`,
+    );
+    putRepo(
+      "scripts/lib/install-state.js",
+      'exports.writeInstallState = (path, state) => require("node:fs").writeFileSync(path, JSON.stringify(state), "utf8");\n',
+    );
+    putRepo(
+      ".codex/AGENTS.md",
+      [
+        "## Skills Discovery",
+        "",
+        "Available skills:",
+        "",
+        "## MCP Servers",
+        "",
+        "## External Action Boundaries",
+      ].join("\n"),
+    );
+    const base = makeCtx({ cli: "codex" });
+    const ctx = { ...base, env: { ...base.env, HOME: home, USERPROFILE: home } };
+    const action = codexEccActions(
+      ctx,
+      { dir: repo, posix: repo.replace(/\\/g, "/"), explicit: true, hasCache: false },
+      "minimal",
+      undefined,
+      coreOwnedEccCodexMcpServers(),
+    ).find(
+      (candidate): candidate is ExecAction =>
+        candidate.kind === "exec" && candidate.describe.startsWith("Install ECC for Codex"),
+    );
+    if (action === undefined) throw new Error("missing Codex merge action");
+
+    const result = spawnSync(process.execPath, action.argv.slice(1), {
+      cwd: repo,
+      encoding: "utf8",
+    });
+
+    expect(result.status).toBe(0);
+    const config = readFileSync(join(home, ".codex", "config.toml"), "utf8");
+    expect(config).toContain("chrome-devtools-mcp@1.7.0");
+    expect(config).not.toContain("@latest");
+    expect(readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")).toContain(
+      '"chrome-devtools"',
+    );
+  });
 
   it.skipIf(!symlinksAvailable).each(["existing", "dangling"] as const)(
     "rejects an %s destination symlink before following it",
