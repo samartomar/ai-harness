@@ -1255,6 +1255,7 @@ describe("Codex managed destination safety", () => {
     if (executable === undefined) throw new Error("missing Codex state cleanup executable");
     const result = spawnSync(executable, action.argv.slice(1), { encoding: "utf8" });
     expect(result.status).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toContain("refusing AIH state cleanup");
     expect(existsSync(statePath)).toBe(true);
   });
 

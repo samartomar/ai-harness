@@ -701,7 +701,7 @@ export function codexInstallStateCleanupAction(ctx: PlanContext): Action | undef
   return exec("remove aih ECC Codex install-state after prune cleanup (under --apply)", [
     "node",
     "-e",
-    'const fs=require("fs"); const config=process.argv[2]; const claimed=new Set(JSON.parse(process.argv[3])); const raw=fs.existsSync(config)?fs.readFileSync(config,"utf8"):""; const header=/^[ \\t]*\\[mcp_servers\\.(?:"([^"]+)"|\'([^\']+)\'|([^.\\]\\\'"]+))\\][ \\t]*(?:#.*)?$/; if (raw.replace(/\\r\\n/g,"\\n").split("\\n").some((line)=>{const match=line.match(header); return match && claimed.has(match[1]||match[2]||match[3]);})) process.exit(0); fs.rmSync(process.argv[1], { force: true });',
+    'const fs=require("fs"); const config=process.argv[2]; const claimed=new Set(JSON.parse(process.argv[3])); const raw=fs.existsSync(config)?fs.readFileSync(config,"utf8"):""; const header=/^[ \\t]*\\[mcp_servers\\.(?:"([^"]+)"|\'([^\']+)\'|([^.\\]\\\'"]+))\\][ \\t]*(?:#.*)?$/; if (raw.replace(/\\r\\n/g,"\\n").split("\\n").some((line)=>{const match=line.match(header); return match && claimed.has(match[1]||match[2]||match[3]);})) throw new Error("claimed Codex MCP configuration remains; refusing AIH state cleanup"); fs.rmSync(process.argv[1], { force: true });',
     statePath,
     join(codexHomeDir(ctx), "config.toml"),
     JSON.stringify(state.codexToml.mcpServers),
