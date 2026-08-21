@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { vendorBaselineLockBytes } from "../../src/baseline-evidence/vendor.js";
 import { buildVendorBaselineEvidenceArtifactV1 } from "../../src/baseline-evidence/vendor-artifact-v1.js";
@@ -6,6 +9,7 @@ import type { AdminBaselineEvidenceBootstrapV1 } from "../../src/org-policy/admi
 import {
   parseGithubBaselineEvidenceAttestationV1,
   resolveAdminBaselineEvidenceV1,
+  verifyGithubBaselineEvidenceAttestationLiveV1,
 } from "../../src/org-policy/admin-baseline-evidence-operations-v1.js";
 
 const sources = [
@@ -58,6 +62,14 @@ const verify = ({
 }) => ({ ...policy, subjectSha256, verified: true as const });
 
 describe("admin baseline evidence resolution v1", () => {
+  it("stages an offline bundle under custody and pins the gh verifier argv", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-baseline-gh-"));
+    const argv: string[][] = [];
+    try {
+      await expect(verifyGithubBaselineEvidenceAttestationLiveV1({ bootstrap, subjectBytes: Buffer.from("sum"), subjectSha256: createHash("sha256").update("sum").digest("hex"), attestationBytes: Buffer.from("bundle"), gh: "/tools/gh", tempRoot: root, run: async (args) => { argv.push(args); return { code: 1, stdout: "", stderr: "" }; }, now: "2026-08-21T00:00:00Z" })).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+      expect(argv[0]).toEqual(expect.arrayContaining(["attestation", "verify", "--bundle", "--format", "json", "--repo", bootstrap.expectedRepository, "--predicate-type", "https://slsa.dev/provenance/v1", "--cert-identity", `https://github.com/${bootstrap.expectedWorkflow}@${bootstrap.expectedRef}`, "--cert-oidc-issuer", bootstrap.expectedIssuer, "--source-ref", bootstrap.expectedRef, "--deny-self-hosted-runners"]));
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
   it("accepts only one real nested gh JSON SLSA result, never an echoed policy", () => {
     const subjectSha256 = "a".repeat(64);
     const realShape = [
