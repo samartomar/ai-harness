@@ -419,7 +419,8 @@ describe("admin baseline evidence resolution v1", () => {
             if (path === undefined) return malformedUnavailable(kind) as never;
             return {
               kind: "available" as const,
-              bytes: artifact.files.find((file) => file.path === path)?.bytes ?? Buffer.from("missing"),
+              bytes:
+                artifact.files.find((file) => file.path === path)?.bytes ?? Buffer.from("missing"),
             };
           },
         }),

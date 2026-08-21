@@ -393,12 +393,12 @@ export async function fetchAdminBaselineEvidenceArtifactV1(input: {
       fail("fresh transport");
     }
     if (typeof response !== "object" || response === null) fail("fresh response");
-    if (response.kind === "unavailable") {
+    if (isExactUnavailable(response)) {
       if (!available) return { kind: "unavailable" };
       fail("fresh incomplete");
     }
     if (
-      response.kind !== "available" ||
+      !hasOwnDataKind(response, "available") ||
       !Buffer.isBuffer(response.bytes) ||
       response.bytes.length === 0 ||
       response.bytes.length > ARTIFACT_FILE_LIMIT
@@ -420,7 +420,7 @@ export async function fetchAdminBaselineEvidenceArtifactV1(input: {
     fail("fresh transport");
   }
   if (
-    attestation.kind !== "available" ||
+    !hasOwnDataKind(attestation, "available") ||
     !Buffer.isBuffer(attestation.bytes) ||
     attestation.bytes.length === 0 ||
     attestation.bytes.length > ATTESTATION_LIMIT
@@ -445,6 +445,34 @@ export async function fetchAdminBaselineEvidenceArtifactV1(input: {
 function fail(label: string): never {
   throw new AihError(`admin baseline evidence: ${label}`, "AIH_ADMIN_BASELINE_EVIDENCE");
 }
+
+/** Only this inert sentinel may advance from fresh acquisition to fallback custody. */
+function isExactUnavailable(value: unknown): value is { readonly kind: "unavailable" } {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  try {
+    if (Object.getPrototypeOf(value) !== Object.prototype) return false;
+    const keys = Reflect.ownKeys(value);
+    if (keys.length !== 1 || keys[0] !== "kind") return false;
+    const descriptor = Object.getOwnPropertyDescriptor(value, "kind");
+    return descriptor !== undefined && "value" in descriptor && descriptor.value === "unavailable";
+  } catch {
+    return false;
+  }
+}
+
+function hasOwnDataKind(
+  value: unknown,
+  expected: "available",
+): value is { readonly kind: "available" } {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, "kind");
+    return descriptor !== undefined && "value" in descriptor && descriptor.value === expected;
+  } catch {
+    return false;
+  }
+}
+
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -607,7 +635,8 @@ export async function resolveAdminBaselineEvidenceV1(
 ): Promise<ResolvedAdminBaselineEvidenceV1> {
   const now = epoch(input.now, "clock");
   const fresh = await input.fetchFresh();
-  if (fresh.kind === "available") {
+  if (!isExactUnavailable(fresh)) {
+    if (!hasOwnDataKind(fresh, "available")) fail("fresh response");
     const downloaded: DownloadedEvidenceV1 = { ...fresh, downloadedAt: input.now };
     const info = await verify(downloaded, input.bootstrap, input.verifyGithubAttestation);
     if (input.commitLastDownloaded(downloaded) !== true) fail("cache commit failed");
@@ -621,7 +650,6 @@ export async function resolveAdminBaselineEvidenceV1(
       },
     };
   }
-  if (fresh.kind !== "unavailable") fail("fresh response");
   const cached = input.readLastDownloaded();
   if (cached !== undefined) {
     const age = (now - epoch(cached.downloadedAt, "cache age")) / 1000;
