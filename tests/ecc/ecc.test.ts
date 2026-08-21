@@ -1653,7 +1653,16 @@ describe("Codex managed destination safety", () => {
     ["descendant", '[mcp_servers."chrome-devtools".env]\ntoken = "operator"\n'],
     ["encoded descendant", '[mcp_servers."chrome\\u002ddevtools".env]\ntoken = "operator"\n'],
     ["dotted assignment", 'mcp_servers.chrome-devtools.command = "operator-devtools"\n'],
+    [
+      "dotted server assignment",
+      'mcp_servers.chrome-devtools = { command = "operator-devtools" }\n',
+    ],
     ["inline table", 'mcp_servers = { chrome-devtools = { command = "operator-devtools" } }\n'],
+    [
+      "inline dotted server key",
+      'mcp_servers = { chrome-devtools.command = "operator-devtools" }\n',
+    ],
+    ["inline unrelated table", "mcp_servers = { unrelated = { enabled = true } } # note\n"],
     ["mcp_servers table key", '[mcp_servers]\nchrome-devtools.command = "operator-devtools"\n'],
   ])("refuses direct apply for an unowned non-root Chrome representation: %s", (_kind, config) => {
     const home = join(tmp, `non-root-${_kind.replace(/\W+/g, "-")}-home`);
@@ -1706,6 +1715,82 @@ describe("Codex managed destination safety", () => {
     expect(existsSync(mergeSentinel)).toBe(false);
     expect(existsSync(managedSentinel)).toBe(false);
     expect(existsSync(join(home, ".codex", "AGENTS.md"))).toBe(false);
+  });
+
+  it("preserves an operator-owned Chrome root with an env descendant during direct apply", () => {
+    const home = join(tmp, "operator-root-env-home");
+    const repo = join(tmp, "ecc");
+    const configPath = join(home, ".codex", "config.toml");
+    const statePath = join(home, ".codex", "ecc-aih-install-state.json");
+    const operatorRoot = [
+      "[mcp_servers.chrome-devtools]",
+      'command = "operator-devtools"',
+      'args = ["--local"]',
+      "[mcp_servers.chrome-devtools.env]",
+      'TOKEN = "operator"',
+      "",
+    ].join("\n");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    prepareCodexRepo(home);
+    writeFileSync(
+      join(repo, "scripts", "codex", "merge-codex-config.js"),
+      [
+        'const fs = require("node:fs");',
+        "const config = process.argv[2];",
+        'const raw = fs.readFileSync(config, "utf8");',
+        "if (!/^[ \\t]*approval_policy\\s*=/m.test(raw)) fs.writeFileSync(config, 'approval_policy = \"on-request\"\\n' + raw);",
+      ].join(" "),
+    );
+    writeFileSync(
+      join(repo, "scripts", "lib", "install-state.js"),
+      'exports.writeInstallState = (path, state) => require("node:fs").writeFileSync(path, JSON.stringify(state), "utf8");\n',
+    );
+    writeFileSync(configPath, operatorRoot, "utf8");
+    writeFileSync(
+      statePath,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        managedBy: "aih",
+        codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: [] },
+        agentsBlock: true,
+      })}\n`,
+      "utf8",
+    );
+    const base = makeCtx({ cli: "codex" });
+    const action = codexEccActions(
+      { ...base, env: { ...base.env, HOME: home, USERPROFILE: home } },
+      { dir: repo, posix: repo.replace(/\\/g, "/"), explicit: true, hasCache: false },
+      "minimal",
+      undefined,
+      {
+        ...coreOwnedEccCodexMcpServers(),
+        "sequential-thinking": {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.7.1"],
+        },
+      },
+    ).find(
+      (candidate): candidate is ExecAction =>
+        candidate.kind === "exec" && candidate.describe.startsWith("Install ECC for Codex"),
+    );
+    if (action === undefined) throw new Error("missing operator-root Codex merge action");
+
+    const result = spawnSync(process.execPath, action.argv.slice(1), {
+      cwd: repo,
+      encoding: "utf8",
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    const config = readFileSync(configPath, "utf8");
+    expect(config).toContain(operatorRoot.trim());
+    expect(config).not.toContain("chrome-devtools-mcp@1.7.0");
+    expect(config).toContain("@modelcontextprotocol/server-sequential-thinking@2025.7.1");
+    const outputState = JSON.parse(readFileSync(statePath, "utf8")) as {
+      codexToml: { mcpServers: string[] };
+    };
+    expect(outputState.codexToml.mcpServers).not.toContain("chrome-devtools");
+    expect(outputState.codexToml.mcpServers).toContain("sequential-thinking");
   });
 
   it("keeps the default scoped candidate config and state unchanged when managed files fail", () => {
@@ -1947,6 +2032,49 @@ describe("Codex managed destination safety", () => {
     expect(existsSync(statePath)).toBe(true);
   });
 
+  it("keeps AIH state when a whole MCP root inline table appears after cleanup planning", () => {
+    const home = join(tmp, "non-root-inline-cleanup-race-home");
+    const configPath = join(home, ".codex", "config.toml");
+    const statePath = join(home, ".codex", "ecc-aih-install-state.json");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      configPath,
+      [
+        "# >>> aih managed (mcp) >>>",
+        '[mcp_servers."chrome-devtools"]',
+        'command = "npx"',
+        'args = ["-y", "chrome-devtools-mcp@1.7.0"]',
+        "# <<< aih managed (mcp) <<<",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        managedBy: "aih",
+        codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: ["chrome-devtools"] },
+        agentsBlock: true,
+      }),
+    );
+    const base = makeCtx({ cli: "codex" });
+    const action = codexInstallStateCleanupAction({
+      ...base,
+      env: { ...base.env, HOME: home, USERPROFILE: home },
+    });
+    if (action?.kind !== "exec") throw new Error("missing inline-root race Codex cleanup action");
+    writeFileSync(configPath, "mcp_servers = { unrelated = { enabled = true } } # note\n");
+    const executable = action.argv[0];
+    if (executable === undefined)
+      throw new Error("missing inline-root race Codex cleanup executable");
+
+    const result = spawnSync(executable, action.argv.slice(1), { encoding: "utf8" });
+
+    expect(result.status).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toContain("refusing AIH state cleanup");
+    expect(existsSync(statePath)).toBe(true);
+  });
+
   it("reobserves the live Codex config before a planned state cleanup", () => {
     const home = join(tmp, "prune-reobserve-home");
     mkdirSync(join(home, ".codex"), { recursive: true });
@@ -2036,7 +2164,16 @@ describe("Codex managed destination safety", () => {
     ["descendant", '[mcp_servers."chrome-devtools".env]\ntoken = "operator"\n'],
     ["encoded descendant", '[mcp_servers."chrome\\u002ddevtools".env]\ntoken = "operator"\n'],
     ["dotted assignment", 'mcp_servers.chrome-devtools.command = "operator-devtools"\n'],
+    [
+      "dotted server assignment",
+      'mcp_servers.chrome-devtools = { command = "operator-devtools" }\n',
+    ],
     ["inline table", 'mcp_servers = { chrome-devtools = { command = "operator-devtools" } }\n'],
+    [
+      "inline dotted server key",
+      'mcp_servers = { chrome-devtools.command = "operator-devtools" }\n',
+    ],
+    ["inline unrelated table", "mcp_servers = { unrelated = { enabled = true } } # note\n"],
     ["mcp_servers table key", '[mcp_servers]\nchrome-devtools.command = "operator-devtools"\n'],
   ])(
     "keeps AIH state for a claimed non-root Chrome representation during cleanup: %s",
