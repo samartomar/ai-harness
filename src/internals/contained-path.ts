@@ -107,7 +107,10 @@ export function readContainedRegularFile(
     after.kind !== "file" ||
     after.realPath !== before.realPath ||
     after.stats.dev !== opened.stats.dev ||
-    after.stats.ino !== opened.stats.ino
+    after.stats.ino !== opened.stats.ino ||
+    after.stats.size !== opened.stats.size ||
+    after.stats.mtimeMs !== opened.stats.mtimeMs ||
+    after.stats.ctimeMs !== opened.stats.ctimeMs
   ) {
     return { state: "unsafe", reason: "changed" };
   }
