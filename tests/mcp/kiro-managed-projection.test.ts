@@ -62,8 +62,22 @@ const graph = {
   supplyChain: "pinned",
 } as const satisfies McpServer;
 
-async function apply(servers: Record<string, McpServer>) {
-  return executePlan(plan("kiro managed mcp", ...kiroMcpProjectionActions(ctx(), servers)), ctx());
+const decision = {
+  candidate: "code-review-graph",
+  id: "decision-graph",
+  issuer: "security-admin",
+  digest: `sha256:${"a".repeat(64)}`,
+  expiresAt: "2026-09-01T00:00:00.000+00:00",
+} as const;
+
+async function apply(
+  servers: Record<string, McpServer>,
+  decisions?: readonly typeof decision[],
+) {
+  return executePlan(
+    plan("kiro managed mcp", ...kiroMcpProjectionActions(ctx(), servers, decisions)),
+    ctx(),
+  );
 }
 
 describe("Kiro governed MCP ownership", () => {
@@ -76,6 +90,36 @@ describe("Kiro governed MCP ownership", () => {
     expect(kiroMcpProjectionState(root)).toEqual({
       state: "absent",
       detail: "no Kiro workspace-MCP ownership receipt",
+    });
+  });
+
+  it("replaces Kiro ownership as v1 or v2 instead of merging stale receipt fields", async () => {
+    await apply({ "code-review-graph": graph }, [decision]);
+    const markerPath = join(root, ".aih-config.json");
+    const v2 = JSON.parse(readFileSync(markerPath, "utf8"));
+    expect(v2.kiroMcpProjection).toMatchObject({
+      schemaVersion: 2,
+      decisions: [decision],
+    });
+
+    await apply({ "code-review-graph": graph });
+    const v1 = JSON.parse(readFileSync(markerPath, "utf8"));
+    expect(v1.kiroMcpProjection).toMatchObject({ schemaVersion: 1 });
+    expect(v1.kiroMcpProjection).not.toHaveProperty("decisions");
+    expect(kiroMcpProjectionState(root).state).toBe("clean");
+  });
+
+  it("does not treat a changed v2 decision binding as idempotent", async () => {
+    await apply({ "code-review-graph": graph }, [decision]);
+    const renewed = { ...decision, digest: `sha256:${"b".repeat(64)}` } as const;
+
+    const actions = kiroMcpProjectionActions(ctx(), { "code-review-graph": graph }, [renewed]);
+    const marker = actions.find(
+      (action) => action.kind === "write" && action.path === ".aih-config.json",
+    );
+    expect(marker).toMatchObject({
+      replaceJsonKeys: ["kiroMcpProjection"],
+      json: { kiroMcpProjection: { schemaVersion: 2, decisions: [renewed] } },
     });
   });
 
