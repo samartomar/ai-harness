@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AIH_CONFIG_FILE,
+  McpProjectionDecisionBindingsSchema,
   aihConfigJson,
   isActiveManagedMcpProjectionOwnership,
   isKiroMcpProjectionOwnership,
@@ -279,6 +280,25 @@ describe("managed-MCP projection ownership", () => {
         { ...decision, candidate: "another-candidate", id: "decision-another" },
       ]),
     ).toThrow(/sorted and unique/);
+  });
+
+  it("exports the strict decision-binding parser for all ownership surfaces", () => {
+    const valid = [decision];
+    expect(McpProjectionDecisionBindingsSchema.safeParse(valid).success).toBe(true);
+    expect(
+      McpProjectionDecisionBindingsSchema.safeParse([{ ...decision, id: "decision-a-b" }]).success,
+    ).toBe(true);
+    for (const invalid of [
+      [decision, { ...decision, id: "decision-renewed" }],
+      [{ ...decision, expiresAt: "2026-09-01" }],
+      Array.from({ length: 65 }, (_, index) => ({
+        ...decision,
+        candidate: `candidate-${index.toString().padStart(2, "0")}`,
+        id: `decision-${index.toString().padStart(2, "0")}`,
+      })),
+    ]) {
+      expect(McpProjectionDecisionBindingsSchema.safeParse(invalid).success).toBe(false);
+    }
   });
 
   it("refuses to write managed-MCP provenance through a malformed marker", () => {
