@@ -15,7 +15,7 @@ import {
   gitPostCommitHook,
   usageRecorderScript,
 } from "../../src/usage/capture.js";
-import { readUsage, type UsageEvent } from "../../src/usage/events.js";
+import { readUsage, readUsageStrict, type UsageEvent } from "../../src/usage/events.js";
 import { command } from "../../src/usage/index.js";
 
 const TEST_PROCESS_TIMEOUT_MS = 10_000;
@@ -159,6 +159,30 @@ describe("readUsage", () => {
 
   it("returns [] when there is no log", () => {
     expect(readUsage(makeCtx())).toEqual([]);
+  });
+});
+
+describe("readUsageStrict", () => {
+  it("retains valid events while separately counting malformed and unknown-kind rows", () => {
+    writeUsage(
+      JSON.stringify({ tool: "claude", kind: "mcp", server: "context7", name: "resolve" }),
+      "{ malformed",
+      JSON.stringify({ tool: "claude", kind: "unrecognized", name: "ignored" }),
+      JSON.stringify({ tool: "claude", kind: "skill", name: 42 }),
+    );
+
+    const strict = readUsageStrict(makeCtx());
+
+    expect(strict.events).toEqual([
+      { tool: "claude", kind: "mcp", server: "context7", name: "resolve" },
+    ]);
+    expect(strict.malformed).toBe(2);
+    expect(strict.unknownKind).toBe(1);
+    expect(readUsage(makeCtx())).toEqual(strict.events);
+  });
+
+  it("reports no rejected rows when the usage log is absent", () => {
+    expect(readUsageStrict(makeCtx())).toEqual({ events: [], malformed: 0, unknownKind: 0 });
   });
 });
 
