@@ -2039,42 +2039,28 @@ describe("governed candidate projection", () => {
     },
   );
 
-  it("projects dual-target decision bindings only on the invoked MCP surface", async () => {
-    const policy = reviewedMcpPolicy({
-      allowedServers: [],
-      disabledServers: [],
-      targets: ["claude", "kiro"],
-    });
-    if (policy.governance === undefined) throw new Error("expected governance fixture");
-    policy.governance.authority.decisions = ["decision-dual-surface"];
-    const decision = currentReviewedDecision(policy, {
-      id: "decision-dual-surface",
-      targets: ["claude", "kiro"],
-      disposition: "approved",
-      acceptedFindings: [],
-      acceptedGaps: [],
-      conditions: [],
-      reviewBy: undefined,
-    });
-    delete (decision as Record<string, unknown>).reviewBy;
-    writeDecisionAuthorityReceipt([decision], [], ["claude", "kiro"]);
-    const expectedBinding = {
-      candidate: "code-review-graph",
-      id: "decision-dual-surface",
-      issuer: "platform-security",
-      digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
-      expiresAt: decision.expiresAt,
-    };
+  it("keeps exact single-target and dual-target MCP decision bindings on their own surfaces", async () => {
     for (const target of ["claude", "kiro"] as const) {
-      const singleTarget = JSON.parse(JSON.stringify(policy)) as typeof policy;
-      if (singleTarget.governance === undefined) throw new Error("expected governance fixture");
-      const activation = singleTarget.governance.activations[0];
-      if (activation === undefined) throw new Error("expected governed activation");
-      activation.targets = [target];
-      const actions = await verifiedOrgPolicyProjectionActions(
-        ctx({ targets: [target] }),
-        singleTarget,
-      );
+      const single = reviewedMcpPolicy({
+        allowedServers: [],
+        disabledServers: [],
+        targets: [target],
+      });
+      if (single.governance === undefined) throw new Error("expected governance fixture");
+      const decisionId = `decision-${target}-surface`;
+      single.governance.authority.decisions = [decisionId];
+      const decision = currentReviewedDecision(single, {
+        id: decisionId,
+        targets: [target],
+        disposition: "approved",
+        acceptedFindings: [],
+        acceptedGaps: [],
+        conditions: [],
+        reviewBy: undefined,
+      });
+      delete (decision as Record<string, unknown>).reviewBy;
+      writeDecisionAuthorityReceipt([decision], [], [target]);
+      const actions = await verifiedOrgPolicyProjectionActions(ctx({ targets: [target] }), single);
       const paths = actions.flatMap((action) => ("path" in action ? [action.path] : []));
       expect(paths).not.toContain(
         target === "claude" ? ".kiro/settings/mcp.json" : ".claude/managed-settings.json",
@@ -2085,30 +2071,83 @@ describe("governed candidate projection", () => {
       );
       expect(marker?.json).toMatchObject(
         target === "claude"
-          ? { managedMcpProjection: { schemaVersion: 2, decisions: [expectedBinding] } }
-          : { kiroMcpProjection: { schemaVersion: 2, decisions: [expectedBinding] } },
+          ? {
+              managedMcpProjection: {
+                schemaVersion: 2,
+                decisions: [
+                  expect.objectContaining({ candidate: "code-review-graph", id: decisionId }),
+                ],
+              },
+            }
+          : {
+              kiroMcpProjection: {
+                schemaVersion: 2,
+                decisions: [
+                  expect.objectContaining({ candidate: "code-review-graph", id: decisionId }),
+                ],
+              },
+            },
       );
       expect(marker?.json).not.toHaveProperty(
         target === "claude" ? "kiroMcpProjection" : "managedMcpProjection",
       );
     }
+
+    const dual = reviewedMcpPolicy({
+      allowedServers: [],
+      disabledServers: [],
+      targets: ["claude", "kiro"],
+    });
+    if (dual.governance === undefined) throw new Error("expected governance fixture");
+    dual.governance.authority.decisions = ["decision-dual-surface"];
+    const dualDecision = currentReviewedDecision(dual, {
+      id: "decision-dual-surface",
+      targets: ["claude", "kiro"],
+      disposition: "approved",
+      acceptedFindings: [],
+      acceptedGaps: [],
+      conditions: [],
+      reviewBy: undefined,
+    });
+    delete (dualDecision as Record<string, unknown>).reviewBy;
+    writeDecisionAuthorityReceipt([dualDecision], [], ["claude", "kiro"]);
     const dualActions = await verifiedOrgPolicyProjectionActions(
       ctx({ targets: ["claude", "kiro"] }),
-      policy,
+      dual,
     );
     const dualMarker = dualActions.find(
       (action): action is WriteAction =>
         action.kind === "write" && action.path === ".aih-config.json",
     );
     expect(dualMarker?.json).toMatchObject({
-      managedMcpProjection: { schemaVersion: 2, decisions: [expectedBinding] },
-      kiroMcpProjection: { schemaVersion: 2, decisions: [expectedBinding] },
+      managedMcpProjection: {
+        schemaVersion: 2,
+        decisions: [expect.objectContaining({ id: "decision-dual-surface" })],
+      },
+      kiroMcpProjection: {
+        schemaVersion: 2,
+        decisions: [expect.objectContaining({ id: "decision-dual-surface" })],
+      },
     });
     const owned = dualMarker?.json as {
       managedMcpProjection: { decisions: unknown[] };
       kiroMcpProjection: { decisions: unknown[] };
     };
     expect(owned.managedMcpProjection.decisions).toEqual(owned.kiroMcpProjection.decisions);
+
+    const narrowed = JSON.parse(JSON.stringify(dual)) as typeof dual;
+    if (narrowed.governance === undefined) throw new Error("expected governance fixture");
+    const activation = narrowed.governance.activations[0];
+    if (activation === undefined) throw new Error("expected governed activation");
+    activation.targets = ["claude"];
+    await expect(
+      verifiedOrgPolicyProjectionActions(ctx({ targets: ["claude"] }), narrowed),
+    ).rejects.toThrow(/decision-scope-mismatch/);
+    await expect(
+      verifiedOrgPolicyProjectionActions(ctx({ targets: ["claude"] }), dual),
+    ).rejects.toThrow(/target-not-selected/);
+    expect(existsSync(join(dir, ".aih-config.json"))).toBe(false);
+    expect(existsSync(join(dir, ".kiro", "settings", "mcp.json"))).toBe(false);
   });
 
   it("keeps a changed governed MCP selected set retained until policy project reconciles it", async () => {
