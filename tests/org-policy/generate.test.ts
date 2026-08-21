@@ -420,11 +420,17 @@ describe("policy generate", () => {
     const readers: Array<{
       result: string | null;
       onload: (() => void) | null;
+      onerror: (() => void) | null;
+      onabort: (() => void) | null;
       complete: (text: string) => void;
+      fail: () => void;
+      abort: () => void;
     }> = [];
     class ControlledFileReader {
       result: string | null = null;
       onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
 
       readAsText(): void {
         readers.push(this);
@@ -433,6 +439,14 @@ describe("policy generate", () => {
       complete(text: string): void {
         this.result = text;
         this.onload?.();
+      }
+
+      fail(): void {
+        this.onerror?.();
+      }
+
+      abort(): void {
+        this.onabort?.();
       }
     }
     Object.defineProperty(window, "FileReader", {
@@ -483,6 +497,32 @@ describe("policy generate", () => {
       (document.getElementById("announcement")?.textContent ?? "").includes(
         "Decision import rejected",
       ),
+    );
+    expect(document.getElementById("decision-rows")?.textContent).toContain("decision-newest");
+
+    select(governanceDecision({ id: "decision-stale-read-error" }));
+    select(governanceDecision({ id: "decision-latest-read-error" }));
+    readers[5]?.fail();
+    readers[6]?.fail();
+    await settle(window, () =>
+      (document.getElementById("announcement")?.textContent ?? "").includes(
+        "Decision import rejected: unable to read decision file",
+      ),
+    );
+    expect(document.getElementById("announcement")?.textContent).toContain(
+      "Decision import rejected: unable to read decision file",
+    );
+    expect(document.getElementById("decision-rows")?.textContent).toContain("decision-newest");
+
+    select(governanceDecision({ id: "decision-latest-read-abort" }));
+    readers[7]?.abort();
+    await settle(window, () =>
+      (document.getElementById("announcement")?.textContent ?? "").includes(
+        "Decision import rejected: unable to read decision file",
+      ),
+    );
+    expect(document.getElementById("announcement")?.textContent).toContain(
+      "Decision import rejected: unable to read decision file",
     );
     expect(document.getElementById("decision-rows")?.textContent).toContain("decision-newest");
   });
