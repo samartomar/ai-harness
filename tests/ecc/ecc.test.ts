@@ -841,6 +841,16 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
       '[mcp_servers.chrome-devtools]\ncommand = "npx"\nurl = "https://example.invalid/mcp"\n';
     await expectChromeDevtoolsPreflightRefusal(mixed, mixed, "mixed");
   });
+
+  it("allows unrelated unknown project/global definitions while preserving known collision checks", async () => {
+    const actions = await chromeDevtoolsCollisionChecks(
+      '[mcp_servers.foo]\nenabled = false\n',
+      '[mcp_servers.foo]\ncommand = "operator-foo"\n',
+    );
+    expect(execs(actions).some((action) => action.describe.startsWith("Install ECC for Codex"))).toBe(
+      true,
+    );
+  });
 });
 
 describe("Codex managed destination safety", () => {
@@ -966,6 +976,7 @@ describe("Codex managed destination safety", () => {
     expect(result.status).toBe(0);
     const config = readFileSync(join(home, ".codex", "config.toml"), "utf8");
     expect(config).toContain("chrome-devtools-mcp@1.7.0");
+    expect(config).toContain("startup_timeout_sec = 30");
     expect(config).not.toContain("@latest");
     expect(readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")).toContain(
       '"chrome-devtools"',

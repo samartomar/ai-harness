@@ -565,6 +565,12 @@ describe("verifiedEccInstallPlan", () => {
     if (mcpB64 === undefined) throw new Error("missing Codex MCP registration spec");
     expect(JSON.parse(Buffer.from(mcpB64, "base64").toString("utf8"))).toMatchObject({
       servers: {
+        "chrome-devtools": {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "chrome-devtools-mcp@1.7.0"],
+          startupTimeoutSec: 30,
+        },
         "sequential-thinking": {
           type: "stdio",
           command: "npx",
@@ -582,6 +588,38 @@ describe("verifiedEccInstallPlan", () => {
     expect(steps[1]?.argv[2]).toContain("if (!mcpSpec)");
     expect(steps[1]?.argv[2]).toContain("prepareDestination(configPath)");
     expect(steps[1]?.argv[2]).toContain('flag: "wx"');
+  });
+
+  it("projects Core's exact Chrome DevTools default through the unscoped verified Codex path", () => {
+    const plan = verifiedEccInstallPlan(
+      ctx(),
+      join(root, "quarantine", "tree"),
+      { clis: ["codex"], profile: "minimal", packs: [] },
+      [authorization()],
+    );
+    const step = driverSteps(plan.actions)[1];
+    const mcpB64 = step?.argv.at(-2);
+    if (mcpB64 === undefined) throw new Error("missing Codex MCP registration spec");
+    const rendered = Buffer.from(mcpB64, "base64").toString("utf8");
+
+    expect(rendered).toContain("chrome-devtools-mcp@1.7.0");
+    expect(rendered).toContain('"startupTimeoutSec":30');
+    expect(rendered).not.toContain("@latest");
+  });
+
+  it("keeps the Core Chrome DevTools default out of governed verified Codex installs", () => {
+    const selected = selection();
+    const plan = verifiedEccInstallPlan(
+      ctx(),
+      join(root, "quarantine", "tree"),
+      { clis: ["codex"], profile: "minimal", packs: [], selection: selected, governance: true },
+      authorizationsForSelection("codex", selected),
+    );
+    const step = driverSteps(plan.actions)[1];
+    const mcpB64 = step?.argv.at(-2);
+    if (mcpB64 === undefined) throw new Error("missing Codex MCP registration spec");
+
+    expect(JSON.parse(Buffer.from(mcpB64, "base64").toString("utf8"))).toEqual({ servers: {} });
   });
 
   // #506 F1: the enterprise rollout observed the Codex merge receiving the core
