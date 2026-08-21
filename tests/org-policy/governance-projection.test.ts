@@ -218,10 +218,13 @@ function writeDecisionAuthorityReceipt(
 }
 
 function currentReviewedDecision(
-  policy: ReturnType<typeof reviewedMcpPolicy>,
+  policy: ReturnType<typeof parseOrgPolicy>,
   overrides: Record<string, unknown> = {},
+  candidateId?: string,
 ) {
-  const candidate = policy.governance?.catalog.reviewed[0];
+  const candidate = policy.governance?.catalog.reviewed.find(
+    (item) => candidateId === undefined || item.id === candidateId,
+  );
   if (candidate?.source.type !== "mcp" || policy.governance === undefined) {
     throw new Error("expected reviewed MCP fixture");
   }
@@ -689,6 +692,90 @@ describe("governed candidate projection", () => {
       decisionBlockers: [{ scope: "policy", code: "decision-receipt-missing" }],
     });
     expect(runtime.effective.candidates[0]?.effective).toBe(false);
+  });
+
+  it("keeps unrelated candidates on the legacy path while unreferenced rejection remains negative authority", async () => {
+    const first = reviewedMcpPolicy({ allowedServers: [], disabledServers: [] });
+    const second = reviewedMcpPolicy({
+      allowedServers: [],
+      disabledServers: [],
+      serverId: "sequential-thinking",
+    });
+    const firstCandidate = first.governance?.catalog.reviewed[0];
+    const secondCandidate = second.governance?.catalog.reviewed[0];
+    if (
+      first.governance === undefined ||
+      firstCandidate === undefined ||
+      secondCandidate === undefined
+    ) {
+      throw new Error("expected reviewed MCP fixtures");
+    }
+    const pair = parseOrgPolicy({
+      ...JSON.parse(JSON.stringify(first)),
+      governance: {
+        ...JSON.parse(JSON.stringify(first)).governance,
+        catalog: { reviewed: [firstCandidate, secondCandidate], custom: [] },
+        activations: [
+          { candidate: firstCandidate.id, state: "active", targets: ["claude"] },
+          { candidate: secondCandidate.id, state: "active", targets: ["claude"] },
+        ],
+        authority: { approvals: [], decisions: ["decision-a"] },
+      },
+    });
+    const approvedA = currentReviewedDecision(
+      pair,
+      {
+        id: "decision-a",
+        disposition: "approved",
+        acceptedFindings: [],
+        acceptedGaps: [],
+        conditions: [],
+        reviewBy: undefined,
+      },
+      firstCandidate.id,
+    );
+    delete (approvedA as Record<string, unknown>).reviewBy;
+    const inertPositiveB = currentReviewedDecision(
+      pair,
+      {
+        id: "decision-b-positive",
+        disposition: "approved",
+        acceptedFindings: [],
+        acceptedGaps: [],
+        conditions: [],
+        reviewBy: undefined,
+      },
+      secondCandidate.id,
+    );
+    delete (inertPositiveB as Record<string, unknown>).reviewBy;
+    writeDecisionAuthorityReceipt([approvedA, inertPositiveB]);
+    const legacy = (await resolveRuntimeOrgPolicy(ctx(), pair)).effective.candidates.find(
+      (candidate) => candidate.id === secondCandidate.id,
+    );
+    expect(legacy).toMatchObject({ effective: true, decision: undefined, decisionBlockers: [] });
+
+    const rejectedB = currentReviewedDecision(
+      pair,
+      {
+        id: "decision-b-rejected",
+        disposition: "rejected",
+        acceptedFindings: [],
+        acceptedGaps: [],
+        conditions: [],
+        reviewBy: undefined,
+      },
+      secondCandidate.id,
+    );
+    delete (rejectedB as Record<string, unknown>).reviewBy;
+    writeDecisionAuthorityReceipt([approvedA, rejectedB]);
+    const rejected = (await resolveRuntimeOrgPolicy(ctx(), pair)).effective.candidates.find(
+      (candidate) => candidate.id === secondCandidate.id,
+    );
+    expect(rejected).toMatchObject({
+      effective: false,
+      decision: expect.objectContaining({ id: "decision-b-rejected", disposition: "rejected" }),
+      decisionBlockers: [expect.objectContaining({ code: "decision-rejected" })],
+    });
   });
 
   it("accepts only exact decision-bearing v2 authority receipts", () => {
