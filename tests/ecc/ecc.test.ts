@@ -683,9 +683,7 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
   async function chromeDevtoolsCollisionChecks(
     projectConfig: string | undefined,
     globalConfig: string | undefined,
-  ): Promise<
-    ReturnType<typeof command.plan> extends Promise<infer Plan> ? Plan["actions"] : never
-  > {
+  ): Promise<Action[]> {
     const home = join(tmp, "home");
     const root = join(tmp, "repo");
     mkdirSync(join(root, ".codex"), { recursive: true });

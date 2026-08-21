@@ -522,8 +522,7 @@ export function codexMcpTransportCollisions(
     conflictingTransport: CodexMcpTransport,
   ): void => {
     if (
-      existingTransport === "unknown" ||
-      conflictingTransport === "unknown" ||
+      (existingTransport === "stdio" || existingTransport === "http") &&
       existingTransport === conflictingTransport
     ) {
       return;
