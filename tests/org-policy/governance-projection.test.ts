@@ -41,6 +41,7 @@ import {
   orgPolicyProjectionActions,
   verifiedOrgPolicyProjectionActions,
 } from "../../src/org-policy/project.js";
+import { resolveRuntimeOrgPolicy } from "../../src/org-policy/runtime.js";
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { scanRepo } from "../../src/profile/scan.js";
@@ -184,6 +185,28 @@ function writeAuthorityReceipt({
       ],
       approvals,
       revocations,
+    }),
+  );
+}
+
+function writeDecisionAuthorityReceipt(decision: Record<string, unknown>) {
+  const now = Date.now();
+  mkdirSync(join(dir, ".aih"), { recursive: true });
+  writeFileSync(
+    join(dir, ".aih", "policy-authority-receipt.json"),
+    JSON.stringify({
+      format: "aih-policy-authority-receipt",
+      version: 2,
+      issuerRepository: "acme/governance",
+      issuedAt: new Date(now - 30_000).toISOString(),
+      expiresAt: new Date(now + 86_400_000).toISOString(),
+      targets: ["claude"],
+      trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+      evidence: [],
+      approvals: [],
+      revocations: [],
+      decisions: [decision],
+      decisionRevocations: [],
     }),
   );
 }
@@ -362,6 +385,64 @@ function reviewedMcpPolicy({
 }
 
 describe("governed candidate projection", () => {
+  it("keeps accepted findings visible while an exact current reviewed decision unlocks", async () => {
+    const policy = reviewedMcpPolicy();
+    const candidate = policy.governance?.catalog.reviewed[0];
+    if (candidate?.source.type !== "mcp" || policy.governance === undefined) {
+      throw new Error("expected reviewed MCP fixture");
+    }
+    candidate.findings.push("prompt-injection");
+    policy.governance.authority.decisions = ["decision-reviewed-risk"];
+    const control = {
+      id: candidate.id,
+      kind: candidate.kind,
+      source: candidate.source,
+      targets: candidate.targets,
+      projector: candidate.projector,
+      lifecycle: candidate.lifecycle,
+    };
+    const now = Date.now();
+    writeDecisionAuthorityReceipt({
+      format: "aih-governance-decision",
+      version: 1,
+      id: "decision-reviewed-risk",
+      disposition: "accepted-with-conditions",
+      candidate: candidate.id,
+      kind: candidate.kind,
+      targets: ["claude"],
+      effects: ["managed-settings"],
+      policyVersion: policy.governance.policyVersion,
+      sourceDigest: candidateIdentityDigest(candidate),
+      evidenceDigest: candidateIdentityDigest(candidate),
+      reviewedControlDigest: reviewedControlDigest(control),
+      issuer: "platform-security",
+      actor: "security-admin",
+      reason: "The bounded finding remains accepted pending review.",
+      issuedAt: new Date(now - 60_000).toISOString(),
+      notBefore: new Date(now - 60_000).toISOString(),
+      expiresAt: new Date(now + 86_400_000).toISOString(),
+      acceptedFindings: ["prompt-injection"],
+      acceptedGaps: [],
+      conditions: ["Review the finding before the decision expires."],
+      reviewBy: new Date(now + 43_200_000).toISOString(),
+    });
+
+    const runtime = await resolveRuntimeOrgPolicy(ctx(), policy);
+    expect(runtime.effective.candidates[0]).toMatchObject({
+      requested: true,
+      effective: true,
+      dangerCodes: ["prompt-injection"],
+      decision: {
+        id: "decision-reviewed-risk",
+        disposition: "accepted-with-conditions",
+        riskState: "accepted",
+        acceptedFindings: ["prompt-injection"],
+      },
+      decisionBlockers: [],
+    });
+    expect(runtime.effective.blocking).toBe(false);
+  });
+
   it("accepts only exact decision-bearing v2 authority receipts", () => {
     const v2 = authorityReceiptV2({ decisions: [governanceDecision()] });
     expect(PolicyAuthorityReceiptSchema.safeParse(v2).success).toBe(true);
