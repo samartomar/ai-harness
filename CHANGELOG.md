@@ -144,9 +144,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unscoped and independent of optional MCP selection, replaces the pinned ECC
   helper's floating `chrome-devtools-mcp@latest` default with the active Core
   ledger version and deterministic scoped configuration; governed plans retain
-  no Core MCP default. Existing operator-owned same-name servers are preserved
-  and not claimed, and later removal requires the intact AIH-managed MCP fence;
-  unknown or mixed transport identity fails closed before install.
+  no Core MCP default. A prior exact AIH-written vendor stanza migrates only when
+  live AIH state still claims it; managed requested entries are re-rendered from
+  the current exact specification while other valid claimed scoped entries remain
+  intact. Existing operator-owned same-name servers are preserved and not claimed.
+  Later removal requires the intact AIH-managed MCP fence and fails visibly while
+  any claimed MCP custody remains; unknown, mixed, stale, or ambiguous identity
+  fails closed before install or cleanup.
 
 - Correct the BetterDoc pack page after the self-hosting cleanup: bundled pack
   bytes still ship, while this checkout intentionally has no AIH approval lock,
