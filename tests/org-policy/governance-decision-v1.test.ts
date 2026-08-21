@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  canonicalGovernanceDecisionRevocationV1,
   canonicalGovernanceDecisionV1,
   governanceDecisionDigestV1,
+  governanceDecisionRevocationDigestV1,
   parseGovernanceDecisionRevocationV1,
   parseGovernanceDecisionV1,
 } from "../../src/org-policy/governance-decision-v1.js";
@@ -71,14 +73,54 @@ describe("GovernanceDecisionV1", () => {
     expect(() => parseGovernanceDecisionV1(accepted({ disposition: "approved" }))).toThrow();
   });
 
-  it("parses only separately signed decision revocations", () => {
-    expect(
-      parseGovernanceDecisionRevocationV1({
-        decision: "decision-managed-mcp",
-        issuer: "platform-security",
-        revokedAt: "2026-08-02T00:00:00+00:00",
-        reason: "The control no longer satisfies the review conditions.",
+  it.each([
+    ["findings only", { acceptedGaps: [] }],
+    ["gaps only", { acceptedFindings: [] }],
+  ])("allows accepted coverage with %s", (_label, overrides) => {
+    expect(() => parseGovernanceDecisionV1(accepted(overrides))).not.toThrow();
+  });
+
+  it("rejects accepted decisions with no findings or gaps", () => {
+    expect(() =>
+      parseGovernanceDecisionV1(accepted({ acceptedFindings: [], acceptedGaps: [] })),
+    ).toThrow();
+  });
+
+  it("allows rejected records only with empty coverage and conditions", () => {
+    const rejected = accepted();
+    delete (rejected as Record<string, unknown>).reviewBy;
+    expect(() =>
+      parseGovernanceDecisionV1({
+        ...rejected,
+        disposition: "rejected",
+        acceptedFindings: [],
+        acceptedGaps: [],
+        conditions: [],
       }),
-    ).toMatchObject({ decision: "decision-managed-mcp" });
+    ).not.toThrow();
+    expect(() => parseGovernanceDecisionV1({ ...rejected, disposition: "rejected" })).toThrow();
+  });
+
+  it("uses ordinal ordering for non-ASCII canonical condition bytes", () => {
+    const decision = parseGovernanceDecisionV1(
+      accepted({ conditions: ["a condition", "ä condition"] }),
+    );
+    expect(canonicalGovernanceDecisionV1(decision)).toContain(
+      '"conditions":["a condition","ä condition"]',
+    );
+  });
+
+  it("parses only separately signed decision revocations", () => {
+    const revocation = parseGovernanceDecisionRevocationV1({
+      decision: "decision-managed-mcp",
+      issuer: "platform-security",
+      revokedAt: "2026-08-02T00:00:00+00:00",
+      reason: "The control no longer satisfies the review conditions.",
+    });
+    expect(revocation).toMatchObject({ decision: "decision-managed-mcp" });
+    expect(canonicalGovernanceDecisionRevocationV1(revocation)).toContain(
+      '"decision":"decision-managed-mcp"',
+    );
+    expect(governanceDecisionRevocationDigestV1(revocation)).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 });

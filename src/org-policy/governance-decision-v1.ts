@@ -25,8 +25,12 @@ const timestampSchema = z
 
 function sortedUnique(values: readonly string[]): boolean {
   return values.every(
-    (value, index) => index === 0 || (values[index - 1]?.localeCompare(value) ?? 0) < 0,
+    (value, index) => index === 0 || ordinalCompare(values[index - 1] ?? "", value) < 0,
   );
+}
+
+function ordinalCompare(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 const exactSet = z
@@ -67,8 +71,8 @@ const approved = decisionBase
 const accepted = decisionBase
   .extend({
     disposition: z.literal("accepted-with-conditions"),
-    acceptedFindings: exactSet.min(1),
-    acceptedGaps: exactSet.min(1),
+    acceptedFindings: exactSet,
+    acceptedGaps: exactSet,
     conditions: conditions.min(1),
     reviewBy: timestampSchema,
   })
@@ -96,6 +100,12 @@ export const GovernanceDecisionV1Schema = z
       });
     }
     if (value.disposition === "accepted-with-conditions") {
+      if (value.acceptedFindings.length + value.acceptedGaps.length === 0) {
+        ctx.addIssue({
+          code: "custom",
+          message: "accepted decisions require findings and/or named waivable gaps",
+        });
+      }
       const review = Date.parse(value.reviewBy);
       if (review < notBefore || review > expires || review - issued > MAX_WINDOW_MS) {
         ctx.addIssue({
@@ -133,7 +143,7 @@ function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
   if (value !== null && typeof value === "object") {
     return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => ordinalCompare(left, right))
       .map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`)
       .join(",")}}`;
   }
@@ -147,4 +157,16 @@ export function canonicalGovernanceDecisionV1(value: GovernanceDecisionV1): stri
 
 export function governanceDecisionDigestV1(value: GovernanceDecisionV1): string {
   return `sha256:${createHash("sha256").update(canonicalGovernanceDecisionV1(value), "utf8").digest("hex")}`;
+}
+
+export function canonicalGovernanceDecisionRevocationV1(
+  value: GovernanceDecisionRevocationV1,
+): string {
+  return stableJson(value);
+}
+
+export function governanceDecisionRevocationDigestV1(
+  value: GovernanceDecisionRevocationV1,
+): string {
+  return `sha256:${createHash("sha256").update(canonicalGovernanceDecisionRevocationV1(value), "utf8").digest("hex")}`;
 }
