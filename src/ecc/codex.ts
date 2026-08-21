@@ -3,7 +3,15 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
 import { stripManagedBlock } from "../internals/markers.js";
-import { type Action, doc, exec, type PlanContext, probe, writeText } from "../internals/plan.js";
+import {
+  type Action,
+  doc,
+  exec,
+  type PlanContext,
+  probe,
+  type WriteAction,
+  writeText,
+} from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 export type CodexMcpTransport = "stdio" | "http" | "mixed" | "unknown";
 type CodexMcpScope = "project" | "global" | "planned ECC";
@@ -541,6 +549,39 @@ function readCodexInstallState(ctx: PlanContext): CodexInstallState | undefined 
   return raw === undefined ? undefined : parseCodexInstallState(raw);
 }
 
+function externalPinnedWrite(
+  path: string,
+  existing: string,
+  contents: string,
+  describe: string,
+  trustedBase: string,
+): WriteAction {
+  return writeText(path, contents, describe, {
+    external: true,
+    trustedBase,
+    expect: { sha256: contentHash(existing) },
+  });
+}
+
+function externalUnchangedAssertion(
+  path: string,
+  existing: string,
+  describe: string,
+  trustedBase: string,
+): WriteAction {
+  return {
+    kind: "write",
+    path,
+    contents: existing,
+    exactContents: true,
+    describe,
+    external: true,
+    trustedBase,
+    expect: { sha256: contentHash(existing) },
+    assertUnchanged: true,
+  };
+}
+
 function unionSorted(a: readonly string[], b: readonly string[]): string[] {
   return [...new Set([...a, ...b])].sort();
 }
@@ -902,32 +943,36 @@ export function codexMcpCollisionActions(
 }
 
 export function codexAgentsBlockRemovalAction(ctx: PlanContext): Action | undefined {
-  const agentsPath = join(codexHomeDir(ctx), "AGENTS.md");
+  const codexRoot = codexHomeDir(ctx);
+  const agentsPath = join(codexRoot, "AGENTS.md");
   const existing = readIfExists(agentsPath);
   if (existing === undefined) return undefined;
   const stripped = stripManagedBlock(existing, CODEX_AGENTS_BLOCK_MARKER);
   if (stripped === existing) return undefined;
-  return writeText(
+  return externalPinnedWrite(
     agentsPath,
+    existing,
     stripped,
     "subtract ECC Codex AGENTS block from ~/.codex/AGENTS.md (codex dropped)",
-    { external: true },
+    codexRoot,
   );
 }
 
 export function codexConfigRemovalAction(ctx: PlanContext): Action | undefined {
   const state = readCodexInstallState(ctx);
   if (!state) return undefined;
-  const configPath = join(codexHomeDir(ctx), "config.toml");
+  const codexRoot = codexHomeDir(ctx);
+  const configPath = join(codexRoot, "config.toml");
   const existing = readIfExists(configPath);
   if (existing === undefined) return undefined;
   const stripped = stripCodexTomlFootprint(existing, state.codexToml);
   if (stripped === existing) return undefined;
-  return writeText(
+  return externalPinnedWrite(
     configPath,
+    existing,
     stripped,
     "subtract ECC Codex TOML footprint from ~/.codex/config.toml (codex dropped)",
-    { external: true },
+    codexRoot,
   );
 }
 
@@ -956,10 +1001,13 @@ function claimedMcpCustodyRemains(raw: string, claimedNames: readonly string[]):
   );
 }
 
-export function codexInstallStateCleanupAction(ctx: PlanContext): Action | undefined {
-  const statePath = codexInstallStatePath(ctx);
-  const stateRaw = readIfExists(statePath);
-  const state = stateRaw === undefined ? undefined : parseCodexInstallState(stateRaw);
+function codexInstallStateCleanupFromSnapshot(
+  ctx: PlanContext,
+  statePath: string,
+  stateRaw: string | undefined,
+  state: CodexInstallState | undefined,
+  config: string | undefined,
+): Action | undefined {
   if (!state) {
     if (stateRaw === undefined) return undefined;
     return probe("refuse invalid AIH ECC Codex install-state cleanup", () => ({
@@ -970,7 +1018,6 @@ export function codexInstallStateCleanupAction(ctx: PlanContext): Action | undef
         "AIH-owned Codex install-state is invalid; preserving it and all claimed config for manual recovery.",
     }));
   }
-  const config = readIfExists(join(codexHomeDir(ctx), "config.toml"));
   const expectedConfig =
     config === undefined ? undefined : stripCodexTomlFootprint(config, state.codexToml);
   const held =
@@ -991,4 +1038,76 @@ export function codexInstallStateCleanupAction(ctx: PlanContext): Action | undef
       held ? "1" : "0",
     ],
   );
+}
+
+/**
+ * Construct the legacy dropped-Codex prune actions from one live state/config
+ * snapshot. The unchanged state assertion prevents a stale footprint from
+ * deleting config after an operator has changed or relinquished its claim.
+ */
+export function codexPruneRemovalActions(ctx: PlanContext): {
+  actions: Action[];
+  removesAgentsBlock: boolean;
+} {
+  const codexRoot = codexHomeDir(ctx);
+  const statePath = codexInstallStatePath(ctx);
+  const stateRaw = readIfExists(statePath);
+  const state = stateRaw === undefined ? undefined : parseCodexInstallState(stateRaw);
+  const configPath = join(codexRoot, "config.toml");
+  const config = readIfExists(configPath);
+  const actions: Action[] = [];
+  let removesConfig = false;
+  if (state !== undefined && config !== undefined) {
+    const stripped = stripCodexTomlFootprint(config, state.codexToml);
+    if (stripped !== config) {
+      actions.push(
+        externalPinnedWrite(
+          configPath,
+          config,
+          stripped,
+          "subtract ECC Codex TOML footprint from ~/.codex/config.toml (codex dropped)",
+          codexRoot,
+        ),
+      );
+      removesConfig = true;
+    }
+  }
+  if (removesConfig && stateRaw !== undefined) {
+    actions.push(
+      externalUnchangedAssertion(
+        statePath,
+        stateRaw,
+        "assert AIH ECC Codex install-state is unchanged before config removal (codex dropped)",
+        codexRoot,
+      ),
+    );
+  }
+
+  const agentsPath = join(codexRoot, "AGENTS.md");
+  const agents = readIfExists(agentsPath);
+  const strippedAgents =
+    agents === undefined ? undefined : stripManagedBlock(agents, CODEX_AGENTS_BLOCK_MARKER);
+  const removesAgentsBlock = agents !== undefined && strippedAgents !== agents;
+  if (agents !== undefined && strippedAgents !== undefined && removesAgentsBlock) {
+    actions.push(
+      externalPinnedWrite(
+        agentsPath,
+        agents,
+        strippedAgents,
+        "subtract ECC Codex AGENTS block from ~/.codex/AGENTS.md (codex dropped)",
+        codexRoot,
+      ),
+    );
+  }
+  const cleanup = codexInstallStateCleanupFromSnapshot(ctx, statePath, stateRaw, state, config);
+  if (cleanup !== undefined) actions.push(cleanup);
+  return { actions, removesAgentsBlock };
+}
+
+export function codexInstallStateCleanupAction(ctx: PlanContext): Action | undefined {
+  const statePath = codexInstallStatePath(ctx);
+  const stateRaw = readIfExists(statePath);
+  const state = stateRaw === undefined ? undefined : parseCodexInstallState(stateRaw);
+  const config = readIfExists(join(codexHomeDir(ctx), "config.toml"));
+  return codexInstallStateCleanupFromSnapshot(ctx, statePath, stateRaw, state, config);
 }
