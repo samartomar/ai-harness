@@ -1254,6 +1254,78 @@ describe("aih mcp — MCP write hygiene", () => {
     expect(envPlaceholders(servers)).toEqual(expected);
   });
 
+  it("accepts exactly one lowercase authorization header", () => {
+    const servers: Record<string, McpServer> = {
+      fixture: {
+        type: "http",
+        url: "https://mcp.example.test",
+        headers: { authorization: `Bearer ${testEnvRef("LOWERCASE_TOKEN")}` },
+        description: "fixture",
+        classification: "third-party-hosted",
+        egress: "third-party",
+        credentials: "token",
+        supplyChain: "hosted-remote",
+      },
+    };
+
+    expect(validateMcpSecretReferences(servers)).toEqual(["LOWERCASE_TOKEN"]);
+  });
+
+  it("rejects duplicate case variants of the authorization header without exposing values", () => {
+    const firstValue = `Bearer ${testEnvRef("FIRST_TOKEN")}`;
+    const secondValue = `Bearer ${testEnvRef("SECOND_TOKEN")}`;
+    const servers: Record<string, McpServer> = {
+      fixture: {
+        type: "http",
+        url: "https://mcp.example.test",
+        headers: { Authorization: firstValue, authorization: secondValue },
+        description: "fixture",
+        classification: "third-party-hosted",
+        egress: "third-party",
+        credentials: "token",
+        supplyChain: "hosted-remote",
+      },
+    };
+
+    const expected = 'MCP authorization header ambiguous for server "fixture"';
+    expect(() => validateMcpSecretReferences(servers)).toThrow(expected);
+    expect(() => envPlaceholders(servers)).toThrow(expected);
+    expect(() => mcpHygieneIssues(servers, {})).toThrow(expected);
+    try {
+      validateMcpSecretReferences(servers);
+    } catch (error) {
+      expect(String(error)).not.toContain(firstValue);
+      expect(String(error)).not.toContain(secondValue);
+    }
+  });
+
+  it("rejects empty or whitespace-only HTTP header names without exposing values", () => {
+    const value = testEnvRef("FIXTURE_TOKEN");
+    for (const key of ["", " ", "\t"] as const) {
+      const servers: Record<string, McpServer> = {
+        fixture: {
+          type: "http",
+          url: "https://mcp.example.test",
+          headers: { [key]: value },
+          description: "fixture",
+          classification: "third-party-hosted",
+          egress: "third-party",
+          credentials: "token",
+          supplyChain: "hosted-remote",
+        },
+      };
+
+      const expected = 'MCP header name invalid for server "fixture"';
+      expect(() => validateMcpSecretReferences(servers)).toThrow(expected);
+      try {
+        validateMcpSecretReferences(servers);
+      } catch (error) {
+        expect(String(error)).toBe(`Error: ${expected}`);
+        expect(String(error)).not.toContain(value);
+      }
+    }
+  });
+
   it.each([
     ["a literal stdio environment", "env", "FIXTURE_TOKEN", "fixture-secret"],
     ["a dollar alternate stdio environment", "env", "FIXTURE_TOKEN", "$FIXTURE_TOKEN"],

@@ -104,6 +104,14 @@ function invalidSecretReference(server: string, field: "env" | "header", key: st
   return new Error(`MCP secret reference invalid for server "${server}" ${field} "${key}"`);
 }
 
+function invalidHeaderName(server: string): Error {
+  return new Error(`MCP header name invalid for server "${server}"`);
+}
+
+function ambiguousAuthorizationHeader(server: string): Error {
+  return new Error(`MCP authorization header ambiguous for server "${server}"`);
+}
+
 function secretReference(
   server: string,
   field: "env" | "header",
@@ -132,7 +140,15 @@ export function validateMcpSecretReferences(servers: Record<string, McpServer>):
     const values = server.type === "stdio" ? server.env : server.headers;
     const field = server.type === "stdio" ? "env" : "header";
     if (values === undefined) continue;
-    for (const key of Object.keys(values).sort()) {
+    const keys = Object.keys(values).sort();
+    if (
+      server.type === "http" &&
+      keys.filter((key) => key.toLowerCase() === "authorization").length > 1
+    ) {
+      throw ambiguousAuthorizationHeader(name);
+    }
+    for (const key of keys) {
+      if (field === "header" && key.trim().length === 0) throw invalidHeaderName(name);
       const value = values[key];
       if (value === undefined) continue;
       references.add(secretReference(name, field, key, value));
