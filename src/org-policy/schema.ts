@@ -14,6 +14,7 @@ import {
 } from "./ecc-hook-controls.js";
 import { ECC_EXTERNAL_MCP_APPROVAL_IDS } from "./ecc-mcp-approval.js";
 import { ECC_MCP_CATALOG_PROVENANCE } from "./ecc-mcp-catalog.js";
+import { GovernanceDecisionIdSchema } from "./governance-decision-v1.js";
 
 const PostureSchema = z.enum(["vibe", "enterprise"]);
 
@@ -613,6 +614,14 @@ const PolicyActivationSchema = z
   })
   .strict();
 
+const PolicyDecisionReferencesSchema = z
+  .array(GovernanceDecisionIdSchema)
+  .max(64)
+  .refine(
+    (ids) => ids.every((id, index) => index === 0 || (ids[index - 1] ?? "") < id),
+    "decision references must be ordinal-sorted and duplicate-free",
+  );
+
 export const PolicyApprovalSchema = z
   .object({
     id: SafePolicyIdentifierSchema,
@@ -1065,9 +1074,11 @@ const GovernedPolicyGovernanceSchema = z
          * must contain byte-for-byte equivalent approval subjects.
          */
         approvals: z.array(PolicyApprovalSchema).default([]),
+        /** Untrusted decision references; only a verified receipt v2 can carry the exact artifacts. */
+        decisions: PolicyDecisionReferencesSchema.default([]),
       })
       .strict()
-      .default({ approvals: [] }),
+      .default({ approvals: [], decisions: [] }),
     /** Report-only external framework curation; never feeds an installer or projector. */
     externalCuration: z.array(ExternalFrameworkCurationSchema).default([]),
     /**
@@ -1193,6 +1204,17 @@ const GovernedPolicyGovernanceSchema = z
     const duplicateApproval = approvalIds.find((id, index) => approvalIds.indexOf(id) !== index);
     if (duplicateApproval !== undefined) {
       ctx.addIssue({ code: "custom", message: `approval ${duplicateApproval} is duplicated` });
+    }
+    if (
+      governance.authority.decisions.length > 0 &&
+      governance.authority.approvals.some((approval) => approval.id.startsWith("decision-"))
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["authority", "approvals"],
+        message:
+          "legacy approval ids may not use the decision- namespace when decisions are referenced",
+      });
     }
     const frameworkCuration = governance.externalCuration.map((item) => item.framework);
     const duplicateCuration = frameworkCuration.find(

@@ -6,7 +6,10 @@ import {
   AIH_CONFIG_FILE,
   aihConfigJson,
   isActiveManagedMcpProjectionOwnership,
+  isKiroMcpProjectionOwnership,
   isManagedMcpProjectionOwnership,
+  kiroMcpProjectionOwnership,
+  McpProjectionDecisionBindingsSchema,
   managedMcpProjectionConfigJson,
   managedMcpProjectionConfigJsonFromRaw,
   managedMcpProjectionOwnership,
@@ -190,6 +193,18 @@ describe("aihConfigJson", () => {
 });
 
 describe("managed-MCP projection ownership", () => {
+  const decision = {
+    candidate: "code-review-graph",
+    id: "decision-2026-q3",
+    issuer: "security-admin",
+    digest: `sha256:${"a".repeat(64)}`,
+    expiresAt: "2026-09-01T00:00:00.000+00:00",
+  } as const;
+  const expected: Parameters<typeof managedMcpProjectionOwnership>[0] = {
+    allowManagedMcpServersOnly: true,
+    allowedMcpServers: [{ serverCommand: ["aih-mcp", "serve"] }],
+  };
+
   it("integrity-binds both lifecycle states and rejects a forged state flip", () => {
     const active = managedMcpProjectionOwnership({
       allowManagedMcpServersOnly: true,
@@ -213,6 +228,77 @@ describe("managed-MCP projection ownership", () => {
     expect(managedMcpProjectionConfigJson(dir, "ai-coding", ["claude"], ownership)).toEqual({
       managedMcpProjection: ownership,
     });
+  });
+
+  it("mints a strict v2 ownership record when decision bindings are explicitly supplied", () => {
+    const ownership = managedMcpProjectionOwnership(expected, []);
+    expect(ownership.schemaVersion).toBe(2);
+    expect(isManagedMcpProjectionOwnership(ownership)).toBe(true);
+  });
+
+  it("keeps v1 frozen while strict v2 rejects malformed and cross-surface bindings", () => {
+    const v1 = managedMcpProjectionOwnership(expected);
+    const v2 = managedMcpProjectionOwnership(expected, [decision]);
+    const kiro = kiroMcpProjectionOwnership({ mcpServers: {} }, [decision]);
+
+    expect(isManagedMcpProjectionOwnership({ ...v1, decisions: [] } as never)).toBe(false);
+    expect(
+      isManagedMcpProjectionOwnership({
+        ...v2,
+        decisions: [{ ...decision, expiresAt: "2026-02-29T00:00:00+00:00" }],
+      } as never),
+    ).toBe(false);
+    expect(isManagedMcpProjectionOwnership({ ...kiro, expected } as never)).toBe(false);
+    expect(isKiroMcpProjectionOwnership(kiro)).toBe(true);
+  });
+
+  it("uses stable domain-bound v2 hashes and preserves v2 bindings on revocation", () => {
+    const left = managedMcpProjectionOwnership(expected, [decision]);
+    const right = managedMcpProjectionOwnership(
+      {
+        allowedMcpServers: [{ serverCommand: ["aih-mcp", "serve"] }],
+        allowManagedMcpServersOnly: true,
+      },
+      [decision],
+    );
+    const revoked = revokedManagedMcpProjectionOwnership(left);
+
+    expect(left.sha256).toBe(right.sha256);
+    expect(revoked).toMatchObject({ schemaVersion: 2, state: "revoked", decisions: [decision] });
+    expect(isManagedMcpProjectionOwnership(revoked)).toBe(true);
+  });
+
+  it("rejects impossible or noncanonical decision bindings before minting a receipt", () => {
+    expect(() =>
+      managedMcpProjectionOwnership(expected, [
+        { ...decision, expiresAt: "2026-02-29T00:00:00+00:00" },
+      ]),
+    ).toThrow(/offset-qualified ISO-8601/);
+    expect(() =>
+      managedMcpProjectionOwnership(expected, [
+        decision,
+        { ...decision, candidate: "another-candidate", id: "decision-another" },
+      ]),
+    ).toThrow(/sorted and unique/);
+  });
+
+  it("exports the strict decision-binding parser for all ownership surfaces", () => {
+    const valid = [decision];
+    expect(McpProjectionDecisionBindingsSchema.safeParse(valid).success).toBe(true);
+    expect(
+      McpProjectionDecisionBindingsSchema.safeParse([{ ...decision, id: "decision-a-b" }]).success,
+    ).toBe(true);
+    for (const invalid of [
+      [decision, { ...decision, id: "decision-renewed" }],
+      [{ ...decision, expiresAt: "2026-09-01" }],
+      Array.from({ length: 65 }, (_, index) => ({
+        ...decision,
+        candidate: `candidate-${index.toString().padStart(2, "0")}`,
+        id: `decision-${index.toString().padStart(2, "0")}`,
+      })),
+    ]) {
+      expect(McpProjectionDecisionBindingsSchema.safeParse(invalid).success).toBe(false);
+    }
   });
 
   it("refuses to write managed-MCP provenance through a malformed marker", () => {

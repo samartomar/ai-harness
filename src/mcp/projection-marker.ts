@@ -33,13 +33,33 @@ export function coalesceMcpProjectionMarkerActions(actions: readonly Action[]): 
   if (selected.some((action) => JSON.stringify(action.expect) !== expect)) {
     throw new Error("MCP ownership actions were planned from different marker snapshots");
   }
+  for (const key of ["managedMcpProjection", "kiroMcpProjection"]) {
+    const writes = selected.filter((action) => Object.hasOwn(action.json as object, key));
+    if (writes.length > 1) {
+      const first = writes[0];
+      if (first === undefined) continue;
+      const firstValue = JSON.stringify((first.json as Record<string, unknown>)[key]);
+      if (
+        writes.some(
+          (action) => JSON.stringify((action.json as Record<string, unknown>)[key]) !== firstValue,
+        )
+      ) {
+        throw new Error(`conflicting MCP ownership replacement for ${key}`);
+      }
+    }
+    const removes = selected.some((action) => action.removeJsonTopLevelKeys?.includes(key));
+    if (writes.length > 0 && removes)
+      throw new Error(`MCP ownership action both writes and removes ${key}`);
+  }
   const json = Object.assign({}, ...selected.map((action) => action.json));
+  const replaceJsonKeys = [...new Set(selected.flatMap((action) => action.replaceJsonKeys ?? []))];
   const removeJsonTopLevelKeys = [
     ...new Set(selected.flatMap((action) => action.removeJsonTopLevelKeys ?? [])),
   ];
   const coalesced: WriteAction = {
     ...writeJson(AIH_CONFIG_FILE, json, "reconcile Claude and Kiro MCP projection ownership", {
       merge: true,
+      ...(replaceJsonKeys.length === 0 ? {} : { replaceJsonKeys }),
       ...(removeJsonTopLevelKeys.length === 0 ? {} : { removeJsonTopLevelKeys }),
     }),
     expect: first.expect,

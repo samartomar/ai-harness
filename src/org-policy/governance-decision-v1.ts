@@ -8,7 +8,11 @@ const OFFSET_TIMESTAMP =
 const MAX_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 
 const stableId = z.string().regex(ID, "must be a bounded stable identifier");
-const decisionId = stableId.regex(/^decision-/, "decision ids must begin with decision-");
+/** Reusable grammar for a stable identifier that occupies the decision namespace. */
+export const GovernanceDecisionIdSchema = stableId.regex(
+  /^decision-/,
+  "decision ids must begin with decision-",
+);
 const digest = z.string().regex(SHA256, "must be a sha256 digest");
 const text = z
   .string()
@@ -58,7 +62,8 @@ function daysInGregorianMonth(year: number, month: number): number {
   return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
 }
 
-const timestampSchema = z
+/** Calendar-valid, offset-qualified timestamps used by signed governance decision artifacts. */
+export const GovernanceDecisionTimestampSchema = z
   .string()
   .refine(timestamp, "must be an offset-qualified ISO-8601 timestamp");
 
@@ -82,7 +87,7 @@ const decisionBase = z
   .object({
     format: z.literal("aih-governance-decision"),
     version: z.literal(1),
-    id: decisionId,
+    id: GovernanceDecisionIdSchema,
     candidate: stableId,
     kind: stableId,
     targets: exactSet.min(1),
@@ -94,9 +99,9 @@ const decisionBase = z
     issuer: stableId,
     actor: stableId,
     reason: text,
-    issuedAt: timestampSchema,
-    notBefore: timestampSchema,
-    expiresAt: timestampSchema,
+    issuedAt: GovernanceDecisionTimestampSchema,
+    notBefore: GovernanceDecisionTimestampSchema,
+    expiresAt: GovernanceDecisionTimestampSchema,
   })
   .strict();
 
@@ -115,7 +120,7 @@ const accepted = decisionBase
     acceptedFindings: exactSet,
     acceptedGaps: exactSet,
     conditions: conditions.min(1),
-    reviewBy: timestampSchema,
+    reviewBy: GovernanceDecisionTimestampSchema,
   })
   .strict();
 
@@ -169,9 +174,9 @@ export const GovernanceDecisionRevocationV1Schema = z
   .object({
     format: z.literal("aih-governance-decision-revocation"),
     version: z.literal(1),
-    decision: decisionId,
+    decision: GovernanceDecisionIdSchema,
     issuer: stableId,
-    revokedAt: timestampSchema,
+    revokedAt: GovernanceDecisionTimestampSchema,
     reason: text,
   })
   .strict();
@@ -199,7 +204,12 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
-/** Canonical bytes are inert transport material until a future authority seam verifies them. */
+/**
+ * Canonical bytes and their digest identify one immutable decision artifact.
+ * External receipt attestation verifies the enclosing receipt; live resolution
+ * still applies its exact bindings and time gates, so canonicalization alone
+ * never grants authority.
+ */
 export function canonicalGovernanceDecisionV1(value: GovernanceDecisionV1): string {
   return stableJson(value);
 }

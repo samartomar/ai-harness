@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { lstatSync } from "node:fs";
 import { join } from "node:path";
+import {
+  type McpProjectionDecisionBindings,
+  McpProjectionDecisionBindingsSchema,
+} from "../config/marker.js";
 import { readRegularFile } from "../internals/fsxn.js";
 import {
   canAppendPolicyAihIgnore,
@@ -82,7 +86,58 @@ const AUTHORITY_DEPENDENT_BLOCK_CODES: ReadonlySet<string> = new Set([
   "approval-clarification-missing",
   "approval-policy-version-mismatch",
   "approval-duration-invalid",
+  "decision-receipt-missing",
+  "decision-receipt-version",
+  "decision-receipt-expired",
+  "decision-reference-missing",
+  "decision-reference-unresolved",
+  "decision-receipt-mismatch",
+  "decision-signer-mismatch",
+  "decision-subject-mismatch",
+  "decision-control-mismatch",
+  "decision-scope-mismatch",
+  "decision-coverage-mismatch",
+  "decision-rejected",
+  "decision-revoked",
+  "decision-not-yet-valid",
+  "decision-expired",
+  "decision-review-overdue",
 ]);
+
+function candidateBlockDetail(candidate: EffectiveOrgPolicy["candidates"][number]): string {
+  const decision = (candidate.decisionBlockers ?? []).map((blocker) => blocker.code);
+  return (
+    [...candidate.dangerCodes, ...candidate.blockingCodes, ...decision].join(", ") ||
+    "not-effective"
+  );
+}
+
+function policyDecisionBlockDetail(effective: EffectiveOrgPolicy): string {
+  return effective.decisionBlockers
+    .map(
+      (blocker) => `${blocker.code}${blocker.decision === undefined ? "" : `:${blocker.decision}`}`,
+    )
+    .sort(ordinalCompare)
+    .join(", ");
+}
+
+function blockedProjectionDetail(effective: EffectiveOrgPolicy): string {
+  const candidates = effective.candidates
+    .filter((candidate) => candidate.requested && !candidate.effective)
+    .map(
+      (candidate) =>
+        `${candidate.id}: ${candidateBlockDetail(candidate)}${
+          candidate.resolutionReasons.length === 0
+            ? ""
+            : `; resolution=${candidate.resolutionReasons.join(", ")}`
+        }`,
+    )
+    .join("; ");
+  const policy = policyDecisionBlockDetail(effective);
+  return [candidates, policy === "" ? "" : `policy decision blockers: ${policy}`]
+    .filter((detail) => detail !== "")
+    .join("; ");
+}
 
 /**
  * The registry note, only when a blocked candidate's own codes depend on it.
@@ -96,14 +151,17 @@ const AUTHORITY_DEPENDENT_BLOCK_CODES: ReadonlySet<string> = new Set([
  */
 export function authoritySuffix(runtime: RuntimeOrgPolicyResolution): string {
   if (runtime.authorityProblem === undefined) return "";
-  const dependsOnAuthority = runtime.effective.candidates.some(
-    (candidate) =>
-      candidate.requested &&
-      !candidate.effective &&
-      [...candidate.dangerCodes, ...candidate.blockingCodes].some((code) =>
-        AUTHORITY_DEPENDENT_BLOCK_CODES.has(code),
-      ),
-  );
+  const dependsOnAuthority =
+    runtime.effective.candidates.some(
+      (candidate) =>
+        candidate.requested &&
+        !candidate.effective &&
+        [
+          ...candidate.dangerCodes,
+          ...candidate.blockingCodes,
+          ...(candidate.decisionBlockers ?? []).map((blocker) => blocker.code),
+        ].some((code) => AUTHORITY_DEPENDENT_BLOCK_CODES.has(code)),
+    ) || (runtime.effective.decisionBlockers?.length ?? 0) > 0;
   return dependsOnAuthority ? `; authority: ${runtime.authorityProblem}` : "";
 }
 
@@ -116,13 +174,7 @@ function stdioAllowedServers(
 ): { servers: Record<string, StdioServer>; effective: EffectiveOrgPolicy } {
   const { catalog, effective } = runtime;
   if (effective.blocking) {
-    const blocked = effective.candidates
-      .filter((candidate) => candidate.requested && !candidate.effective)
-      .map(
-        (candidate) =>
-          `${candidate.id}: ${[...candidate.dangerCodes, ...candidate.blockingCodes].join(", ")}`,
-      )
-      .join("; ");
+    const blocked = blockedProjectionDetail(effective);
     throw new OrgPolicyError(
       `policy project refuses blocked candidate activation(s): ${blocked || "unknown policy resolution failure"}${authoritySuffix(runtime)}`,
     );
@@ -131,7 +183,15 @@ function stdioAllowedServers(
   // never add to or subtract from a reviewed control selection. `allowManagedOnly`
   // is still the explicit adapter enablement gate checked by the resolver.
   const governed = governanceOwnsAihSurfaces(policy);
-  const allowedSet = new Set(governed ? effective.activeMcpServerIds : [...allowed]);
+  const allowedSet = new Set(
+    governed
+      ? effective.candidates
+          .filter(
+            (candidate) => candidate.effective && isProjectionSurfaceCandidate(candidate, "mcp"),
+          )
+          .map((candidate) => candidate.id)
+      : [...allowed],
+  );
   const disabledSet = new Set(governed ? [] : disabled);
   const out: Record<string, StdioServer> = {};
   for (const [name, server] of Object.entries(catalog)) {
@@ -157,14 +217,169 @@ interface PolicyHookReceiptEntry {
 
 interface PolicyHookReceipt {
   format: "aih-org-policy-hook-receipt";
-  version: 2;
+  version: 2 | 3;
   policyVersion?: string;
   hooks: Array<{ id: string; sourceDigest: string; targets: string[] }>;
   entries: PolicyHookReceiptEntry[];
+  /** v3 binds current, effective decisions without embedding decision prose. */
+  decisions?: McpProjectionDecisionBindings;
+  /** Domain-separated integrity digest; it never grants authority by itself. */
+  selfDigest?: string;
 }
 
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function ordinalCompare(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function isProjectionSurfaceCandidate(
+  candidate: EffectiveOrgPolicy["candidates"][number],
+  surface: "mcp" | "usage-hook",
+): boolean {
+  return surface === "mcp"
+    ? candidate.kind === "mcp" && candidate.projection.projector === "mcp-managed-settings"
+    : candidate.kind === "hook" &&
+        candidate.projection.projector === "usage-hook" &&
+        candidate.source.type === "hook" &&
+        candidate.source.handler === "usage-metering";
+}
+
+function decisionBindingsFor(
+  effective: EffectiveOrgPolicy,
+  surface: "mcp" | "usage-hook",
+  target: string | ReadonlySet<string>,
+): McpProjectionDecisionBindings {
+  const includesTarget = (candidate: EffectiveOrgPolicy["candidates"][number]) =>
+    typeof target === "string"
+      ? candidate.projection.requestedTargets.includes(target)
+      : candidate.projection.requestedTargets.some((item) => target.has(item));
+  return effective.candidates
+    .filter(
+      (candidate) =>
+        candidate.effective &&
+        isProjectionSurfaceCandidate(candidate, surface) &&
+        includesTarget(candidate) &&
+        candidate.decision !== undefined,
+    )
+    .map((candidate) => {
+      const decision = candidate.decision;
+      if (decision === undefined) throw new OrgPolicyError("missing effective decision binding");
+      const expiresAt =
+        decision.reviewBy !== undefined &&
+        Date.parse(decision.reviewBy) < Date.parse(decision.expiresAt)
+          ? decision.reviewBy
+          : decision.expiresAt;
+      return {
+        candidate: candidate.id,
+        id: decision.id,
+        issuer: decision.issuer,
+        digest: decision.digest,
+        expiresAt,
+      };
+    })
+    .sort((left, right) =>
+      left.candidate === right.candidate
+        ? ordinalCompare(left.id, right.id)
+        : ordinalCompare(left.candidate, right.candidate),
+    );
+}
+
+function usageHookIdentities(
+  effective: EffectiveOrgPolicy,
+  currentTargets: ReadonlySet<string>,
+): Array<{ id: string; sourceDigest: string; targets: string[] }> {
+  return effective.candidates
+    .filter(
+      (candidate) =>
+        candidate.effective &&
+        candidate.kind === "hook" &&
+        candidate.projection.projector === "usage-hook" &&
+        candidate.source.type === "hook" &&
+        candidate.source.handler === "usage-metering",
+    )
+    .map((candidate) => ({
+      id: candidate.id,
+      sourceDigest: candidate.sourceDigest,
+      targets: candidate.projection.requestedTargets.filter((target) => currentTargets.has(target)),
+    }))
+    .filter((candidate) => candidate.targets.length > 0)
+    .sort((left, right) => ordinalCompare(left.id, right.id));
+}
+
+function decisionReceiptState(
+  ownership: { schemaVersion: number; decisions?: McpProjectionDecisionBindings },
+  effective: EffectiveOrgPolicy,
+  surface: "mcp" | "usage-hook",
+  target: string | ReadonlySet<string>,
+): "upgrade-required" | "retained-invalid-decision" | undefined {
+  const matchesTarget = (candidate: EffectiveOrgPolicy["candidates"][number]) =>
+    typeof target === "string"
+      ? candidate.projection.requestedTargets.includes(target)
+      : candidate.projection.requestedTargets.some((item) => target.has(item));
+  const requestedOnSurface = effective.candidates.some(
+    (candidate) =>
+      candidate.requested &&
+      isProjectionSurfaceCandidate(candidate, surface) &&
+      matchesTarget(candidate),
+  );
+  if (ownership.schemaVersion === 1) {
+    return requestedOnSurface ? "upgrade-required" : undefined;
+  }
+  const prior = ownership.decisions ?? [];
+  const current = decisionBindingsFor(effective, surface, target);
+  if (stableJson(prior) === stableJson(current)) return undefined;
+  const stillRequested = effective.candidates.some(
+    (candidate) =>
+      candidate.requested &&
+      isProjectionSurfaceCandidate(candidate, surface) &&
+      matchesTarget(candidate) &&
+      (prior.some((binding) => binding.candidate === candidate.id) ||
+        current.some((binding) => binding.candidate === candidate.id)),
+  );
+  return stillRequested ? "retained-invalid-decision" : undefined;
+}
+
+export function publicDecisionView(
+  decision: NonNullable<EffectiveOrgPolicy["candidates"][number]["decision"]>,
+) {
+  return {
+    id: decision.id,
+    digest: decision.digest,
+    issuer: decision.issuer,
+    actor: decision.actor,
+    disposition: decision.disposition,
+    notBefore: decision.notBefore,
+    expiresAt: decision.expiresAt,
+    ...(decision.reviewBy === undefined ? {} : { reviewBy: decision.reviewBy }),
+    acceptedFindings: decision.acceptedFindings,
+    acceptedGaps: decision.acceptedGaps,
+    observedFindings: decision.observedFindings,
+    observedGaps: decision.observedGaps,
+    ...(decision.riskState === undefined ? {} : { riskState: decision.riskState }),
+  };
+}
+
+function hookReceiptPayload(
+  policyVersion: string | undefined,
+  hooks: PolicyHookReceipt["hooks"],
+  entries: PolicyHookReceiptEntry[],
+  decisions: McpProjectionDecisionBindings,
+) {
+  return {
+    format: "aih-org-policy-hook-receipt" as const,
+    version: 3 as const,
+    ...(policyVersion === undefined ? {} : { policyVersion }),
+    hooks,
+    entries,
+    decisions,
+  };
+}
+
+function hookReceiptSelfDigest(payload: ReturnType<typeof hookReceiptPayload>): string {
+  return `sha256:${sha256(`aih-org-policy-hook-receipt/v3\0${stableJson(payload)}`)}`;
 }
 
 function usageHookSourceDigest(): string {
@@ -258,6 +473,18 @@ function expectedHostHook(
   return { path: action.path, postToolUse };
 }
 
+/** Persisted receipt metadata must retain the policy's authored text boundary. */
+function isSafePolicyVersion(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length >= 1 &&
+    value.length <= 500 &&
+    value === value.trim() &&
+    /\S/u.test(value) &&
+    !/\p{C}/u.test(value)
+  );
+}
+
 function parseHookReceipt(ctx: PlanContext): { receipt?: PolicyHookReceipt; raw?: string } {
   const raw = ownedText(ctx, ORG_POLICY_HOOK_RECEIPT_PATH);
   if (raw === undefined) return {};
@@ -272,9 +499,17 @@ function parseHookReceipt(ctx: PlanContext): { receipt?: PolicyHookReceipt; raw?
   if (
     !isPlainObject(value) ||
     value.format !== "aih-org-policy-hook-receipt" ||
-    value.version !== 2
+    (value.version !== 2 && value.version !== 3)
   ) {
     throw new OrgPolicyError(`${ORG_POLICY_HOOK_RECEIPT_PATH} is not an AIH policy hook receipt`);
+  }
+  const allowedTopLevel = new Set(
+    value.version === 2
+      ? ["format", "version", "policyVersion", "hooks", "entries"]
+      : ["format", "version", "policyVersion", "hooks", "entries", "decisions", "selfDigest"],
+  );
+  if (Object.keys(value).some((key) => !allowedTopLevel.has(key))) {
+    throw new OrgPolicyError(`${ORG_POLICY_HOOK_RECEIPT_PATH} has unexpected receipt fields`);
   }
   if (!Array.isArray(value.hooks) || !Array.isArray(value.entries)) {
     throw new OrgPolicyError(`${ORG_POLICY_HOOK_RECEIPT_PATH} has incomplete ownership entries`);
@@ -285,6 +520,7 @@ function parseHookReceipt(ctx: PlanContext): { receipt?: PolicyHookReceipt; raw?
   const hooks = value.hooks.map((hook) => {
     if (
       !isPlainObject(hook) ||
+      Object.keys(hook).some((key) => !["id", "sourceDigest", "targets"].includes(key)) ||
       hook.id !== "usage-metering" ||
       typeof hook.sourceDigest !== "string" ||
       hook.sourceDigest !== usageHookSourceDigest() ||
@@ -313,6 +549,13 @@ function parseHookReceipt(ctx: PlanContext): { receipt?: PolicyHookReceipt; raw?
       (entry.preExisting !== "absent" && entry.preExisting !== "present")
     ) {
       throw new OrgPolicyError(`${ORG_POLICY_HOOK_RECEIPT_PATH} has invalid ownership entries`);
+    }
+    const allowedEntryFields =
+      entry.kind === "json-hook"
+        ? ["kind", "path", "preExisting", "hooksPresent", "expectedPostToolUse"]
+        : ["kind", "path", "preExisting", "expectedDigest"];
+    if (Object.keys(entry).some((key) => !allowedEntryFields.includes(key))) {
+      throw new OrgPolicyError(`${ORG_POLICY_HOOK_RECEIPT_PATH} has unexpected ownership fields`);
     }
     if (entry.kind === "json-hook") {
       if (
@@ -366,16 +609,31 @@ function parseHookReceipt(ctx: PlanContext): { receipt?: PolicyHookReceipt; raw?
       `${ORG_POLICY_HOOK_RECEIPT_PATH} does not prove exactly one host entry per selected target`,
     );
   }
-  return {
-    raw,
-    receipt: {
-      format: "aih-org-policy-hook-receipt",
-      version: 2,
-      ...(typeof value.policyVersion === "string" ? { policyVersion: value.policyVersion } : {}),
-      hooks,
-      entries,
-    },
-  };
+  if (Object.hasOwn(value, "policyVersion") && !isSafePolicyVersion(value.policyVersion)) {
+    throw new OrgPolicyError(`${ORG_POLICY_HOOK_RECEIPT_PATH} has an invalid policyVersion`);
+  }
+  const policyVersion = value.policyVersion as string | undefined;
+  if (value.version === 2) {
+    return {
+      raw,
+      receipt: {
+        format: "aih-org-policy-hook-receipt",
+        version: 2,
+        ...(policyVersion === undefined ? {} : { policyVersion }),
+        hooks,
+        entries,
+      },
+    };
+  }
+  const parsedDecisions = McpProjectionDecisionBindingsSchema.safeParse(value.decisions);
+  if (!parsedDecisions.success || typeof value.selfDigest !== "string") {
+    throw new OrgPolicyError(`${ORG_POLICY_HOOK_RECEIPT_PATH} has invalid v3 decision bindings`);
+  }
+  const payload = hookReceiptPayload(policyVersion, hooks, entries, parsedDecisions.data);
+  if (value.selfDigest !== hookReceiptSelfDigest(payload)) {
+    throw new OrgPolicyError(`${ORG_POLICY_HOOK_RECEIPT_PATH} has an invalid v3 self-digest`);
+  }
+  return { raw, receipt: { ...payload, selfDigest: value.selfDigest } };
 }
 
 const usageHostPaths = [
@@ -599,7 +857,15 @@ export function orgPolicyHookReceiptState(
   ctx: PlanContext,
   effective: EffectiveOrgPolicy,
 ): {
-  state: "absent" | "active" | "retained" | "drifted" | "invalid" | "unowned";
+  state:
+    | "absent"
+    | "active"
+    | "retained"
+    | "retained-invalid-decision"
+    | "upgrade-required"
+    | "drifted"
+    | "invalid"
+    | "unowned";
   detail: string;
 } {
   let parsed: { receipt?: PolicyHookReceipt };
@@ -637,23 +903,47 @@ export function orgPolicyHookReceiptState(
   } catch (error) {
     return { state: "drifted", detail: (error as Error).message };
   }
-  const active = effective.candidates
-    .filter(
-      (candidate) =>
-        candidate.effective &&
-        candidate.kind === "hook" &&
-        candidate.source.type === "hook" &&
-        candidate.source.handler === "usage-metering",
-    )
-    .map((candidate) => ({
-      id: candidate.id,
-      sourceDigest: candidate.sourceDigest,
-      targets: candidate.projection.requestedTargets,
-    }));
+  const currentTargets = new Set(ctx.targets ?? ["claude"]);
+  if (parsed.receipt.version === 3) {
+    const bindingState = decisionReceiptState(
+      { schemaVersion: 2, decisions: parsed.receipt.decisions },
+      effective,
+      "usage-hook",
+      currentTargets,
+    );
+    if (bindingState === "retained-invalid-decision") {
+      return {
+        state: bindingState,
+        detail:
+          "receipt and owned artifacts retain a decision binding that is no longer current; policy project must refresh or remove it",
+      };
+    }
+  }
+  const active = usageHookIdentities(effective, currentTargets);
   if (stableJson(active) !== stableJson(parsed.receipt.hooks)) {
     return {
       state: "retained",
       detail: "receipt names a hook no longer effective; conservative rollback is required",
+    };
+  }
+  if (parsed.receipt.version === 2) {
+    return {
+      state: "upgrade-required",
+      detail: "legacy v2 policy-hook receipt and owned artifacts require a v3 receipt refresh",
+    };
+  }
+  const decisions = decisionBindingsFor(effective, "usage-hook", currentTargets);
+  if (stableJson(parsed.receipt.decisions) !== stableJson(decisions)) {
+    return {
+      state: "retained-invalid-decision",
+      detail:
+        "receipt and owned artifacts retain a decision binding that is no longer current; policy project must refresh or remove it",
+    };
+  }
+  if (parsed.receipt.policyVersion !== effective.policyVersion) {
+    return {
+      state: "upgrade-required",
+      detail: "policy-hook receipt policyVersion is stale and requires a receipt-only refresh",
     };
   }
   return { state: "active", detail: "receipt and every AIH-owned hook artifact match" };
@@ -668,6 +958,8 @@ export function orgPolicyMcpReceiptState(
     | "not-requested"
     | "clean"
     | "retained"
+    | "retained-invalid-decision"
+    | "upgrade-required"
     | "missing"
     | "altered"
     | "revoked"
@@ -679,7 +971,7 @@ export function orgPolicyMcpReceiptState(
     .filter(
       (candidate) =>
         candidate.effective &&
-        candidate.kind === "mcp" &&
+        isProjectionSurfaceCandidate(candidate, "mcp") &&
         candidate.projection.requestedTargets.includes("claude"),
     )
     .map((candidate) => candidate.id);
@@ -694,6 +986,19 @@ export function orgPolicyMcpReceiptState(
   );
   const state = managedMcpProjectionState(ctx.root);
   const prior = managedMcpProjectionOnDisk(ctx.root);
+  const bindingState =
+    state.state === "clean" && prior !== undefined
+      ? decisionReceiptState(prior.ownership, effective, "mcp", "claude")
+      : undefined;
+  if (bindingState !== undefined) {
+    return {
+      state: bindingState,
+      detail:
+        bindingState === "upgrade-required"
+          ? "legacy v1 managed-MCP receipt and owned settings require a strict v2 receipt refresh"
+          : "managed-MCP receipt and owned settings retain a decision binding that is no longer current; policy project must refresh or remove it",
+    };
+  }
   if (activeIds.length === 0) {
     if (state.state === "clean" && prior !== undefined) {
       return {
@@ -729,6 +1034,8 @@ export function orgPolicyKiroMcpReceiptState(
     | "not-requested"
     | "clean"
     | "retained"
+    | "retained-invalid-decision"
+    | "upgrade-required"
     | "absent"
     | "altered"
     | "missing"
@@ -741,7 +1048,7 @@ export function orgPolicyKiroMcpReceiptState(
     .filter(
       (candidate) =>
         candidate.effective &&
-        candidate.kind === "mcp" &&
+        isProjectionSurfaceCandidate(candidate, "mcp") &&
         candidate.projection.requestedTargets.includes("kiro"),
     )
     .map((candidate) => candidate.id);
@@ -759,6 +1066,19 @@ export function orgPolicyKiroMcpReceiptState(
   );
   const state = kiroMcpProjectionState(ctx.root);
   const prior = kiroMcpProjectionOnDisk(ctx.root);
+  const bindingState =
+    state.state === "clean" && prior !== undefined
+      ? decisionReceiptState(prior.ownership, effective, "mcp", "kiro")
+      : undefined;
+  if (bindingState !== undefined) {
+    return {
+      state: bindingState,
+      detail:
+        bindingState === "upgrade-required"
+          ? "legacy v1 Kiro workspace-MCP receipt and owned entries require a strict v2 receipt refresh"
+          : "Kiro workspace-MCP receipt and owned entries retain a decision binding that is no longer current; policy project must refresh or remove it",
+    };
+  }
   if (activeIds.length === 0) {
     return state.state === "clean" && prior !== undefined
       ? {
@@ -801,6 +1121,24 @@ function usageHookReceiptOwnsPath(ctx: PlanContext, path: string): boolean {
   );
 }
 
+function hookReceiptAction(
+  raw: string | undefined,
+  policyVersion: string | undefined,
+  hooks: PolicyHookReceipt["hooks"],
+  entries: PolicyHookReceiptEntry[],
+  decisions: McpProjectionDecisionBindings,
+): Action {
+  const payload = hookReceiptPayload(policyVersion, hooks, entries, decisions);
+  return withExpectedContents(
+    writeJson(
+      ORG_POLICY_HOOK_RECEIPT_PATH,
+      { ...payload, selfDigest: hookReceiptSelfDigest(payload) },
+      "record AIH-owned policy hook receipt for conservative rollback",
+    ),
+    raw,
+  );
+}
+
 function usageHookProjectionActions(ctx: PlanContext, effective: EffectiveOrgPolicy): Action[] {
   const currentTargets = new Set(ctx.targets ?? ["claude"]);
   const targets = [
@@ -820,26 +1158,34 @@ function usageHookProjectionActions(ctx: PlanContext, effective: EffectiveOrgPol
   ];
   if (targets.length === 0) return hookDeactivationActions(ctx);
   const existing = parseHookReceipt(ctx);
-  const hooks = effective.candidates
-    .filter(
-      (candidate) =>
-        candidate.effective &&
-        candidate.kind === "hook" &&
-        candidate.source.type === "hook" &&
-        candidate.source.handler === "usage-metering",
-    )
-    .map((candidate) => ({
-      id: candidate.id,
-      sourceDigest: candidate.sourceDigest,
-      targets: candidate.projection.requestedTargets,
-    }));
+  const hooks = usageHookIdentities(effective, currentTargets);
+  const decisions = decisionBindingsFor(effective, "usage-hook", currentTargets);
   if (existing.receipt !== undefined) {
     if (stableJson(existing.receipt.hooks) === stableJson(hooks)) {
-      const state = orgPolicyHookReceiptState(ctx, effective);
-      if (state.state === "active") return [];
-      throw new OrgPolicyError(
-        `${ORG_POLICY_HOOK_RECEIPT_PATH} cannot skip projection: ${state.detail}`,
-      );
+      const ownershipIssue = usageArtifactOwnershipIssue(ctx, existing.receipt);
+      if (ownershipIssue !== undefined) {
+        throw new OrgPolicyError(
+          `${ORG_POLICY_HOOK_RECEIPT_PATH} cannot refresh projection: ${ownershipIssue}`,
+        );
+      }
+      if (
+        existing.receipt.version === 3 &&
+        stableJson(existing.receipt.decisions) === stableJson(decisions) &&
+        existing.receipt.policyVersion === effective.policyVersion
+      ) {
+        return [];
+      }
+      // A legacy v2 or a changed decision binding refreshes only the receipt;
+      // the exact, receipt-owned host artifacts remain untouched.
+      return [
+        hookReceiptAction(
+          existing.raw,
+          effective.policyVersion,
+          hooks,
+          existing.receipt.entries,
+          decisions,
+        ),
+      ];
     }
     throw new OrgPolicyError(
       `${ORG_POLICY_HOOK_RECEIPT_PATH} owns a different hook selection; deactivate it first`,
@@ -935,20 +1281,7 @@ function usageHookProjectionActions(ctx: PlanContext, effective: EffectiveOrgPol
     ),
     withExpectedContents(ignoreAction, ignore),
     ...hostActions,
-    withExpectedContents(
-      writeJson(
-        ORG_POLICY_HOOK_RECEIPT_PATH,
-        {
-          format: "aih-org-policy-hook-receipt",
-          version: 2,
-          policyVersion: effective.policyVersion,
-          hooks,
-          entries,
-        },
-        "record AIH-owned policy hook receipt for conservative rollback",
-      ),
-      existing.raw,
-    ),
+    hookReceiptAction(existing.raw, effective.policyVersion, hooks, entries, decisions),
   ];
 }
 
@@ -986,8 +1319,17 @@ function managedSettings(
               evidence: candidate.evidence,
               evidenceRecord: candidate.evidenceRecord,
               ...(candidate.approval === undefined ? {} : { approval: candidate.approval }),
+              ...(candidate.decision === undefined
+                ? {}
+                : {
+                    // Managed settings are a public operator surface. Keep only
+                    // status/identity facts; the canonical decision digest binds
+                    // any private conditions in the external authority receipt.
+                    decision: publicDecisionView(candidate.decision),
+                  }),
               dangerCodes: candidate.dangerCodes,
               blockingCodes: candidate.blockingCodes,
+              decisionBlockers: candidate.decisionBlockers,
               ...(candidate.clarification === undefined
                 ? {}
                 : { clarification: candidate.clarification }),
@@ -1019,17 +1361,7 @@ function projectionActionsFromRuntime(
   const posture = ctx.posture ?? policy.minimumPosture;
   const targets = ctx.targets ?? ["claude"];
   if (runtime.effective.blocking) {
-    const blocked = runtime.effective.candidates
-      .filter((candidate) => candidate.requested && !candidate.effective)
-      .map(
-        (candidate) =>
-          `${candidate.id}: ${[...candidate.dangerCodes, ...candidate.blockingCodes].join(", ")}${
-            candidate.resolutionReasons.length === 0
-              ? ""
-              : `; resolution=${candidate.resolutionReasons.join(", ")}`
-          }`,
-      )
-      .join("; ");
+    const blocked = blockedProjectionDetail(runtime.effective);
     throw new OrgPolicyError(
       `policy project refuses blocked candidate activation(s): ${blocked || "unknown policy resolution failure"}${authoritySuffix(runtime)}`,
     );
@@ -1052,7 +1384,12 @@ function projectionActionsFromRuntime(
       );
     }
     const owned = managedMcpEnabled
-      ? managedMcpProjectionOwnershipAction(ctx, ["claude"], managedMcpSettings)
+      ? managedMcpProjectionOwnershipAction(
+          ctx,
+          ["claude"],
+          managedMcpSettings,
+          decisionBindingsFor(runtime.effective, "mcp", "claude"),
+        )
       : undefined;
     // The deactivation branch reuses the shared managed-MCP lifecycle
     // (`src/mcp/managed-projection.ts`), but folds the key subtraction into the
@@ -1066,26 +1403,47 @@ function projectionActionsFromRuntime(
     // through a symlinked/occupied managed-settings path.
     const settingsSource =
       onDisk === undefined ? readManagedSettings(ctx.root) : onDisk.settingsSource;
-    actions.push(
-      withExpectedContents(
-        writeJson(
-          MANAGED_SETTINGS_PATH,
-          settings,
-          "project managed-settings compiled from aih-org-policy.json",
-          {
-            merge: true,
-            replaceJsonKeys: managedMcpEnabled ? [...MANAGED_MCP_PROJECTION_KEYS] : undefined,
-            // Only subtract the managed keys when the governed selection is
-            // being deactivated. An already clean active projection must keep
-            // its exact replacement keys, or a later doctor plan would claim
-            // the same owned settings should be absent.
-            removeJsonTopLevelKeys:
-              !managedMcpEnabled && onDisk?.matches ? [...MANAGED_MCP_PROJECTION_KEYS] : undefined,
-          },
+    const strictLegacyMarkerRefresh =
+      managedMcpEnabled &&
+      onDisk?.matches === true &&
+      onDisk.ownership.schemaVersion === 1 &&
+      stableJson(onDisk.ownership.expected) === stableJson(managedMcpSettings) &&
+      settingsSource !== undefined &&
+      (() => {
+        try {
+          return stableJson(JSON.parse(settingsSource)) === stableJson(settings);
+        } catch {
+          return false;
+        }
+      })();
+    if (!strictLegacyMarkerRefresh) {
+      actions.push(
+        withExpectedContents(
+          writeJson(
+            MANAGED_SETTINGS_PATH,
+            settings,
+            "project managed-settings compiled from aih-org-policy.json",
+            {
+              merge: true,
+              replaceJsonKeys: managedMcpEnabled ? [...MANAGED_MCP_PROJECTION_KEYS] : undefined,
+              replaceJsonChildKeys: {
+                organizationPolicy: ["minimumPosture", "references", "effectiveCandidates"],
+                sandbox: ["commandPolicy"],
+              },
+              // Only subtract the managed keys when the governed selection is
+              // being deactivated. An already clean active projection must keep
+              // its exact replacement keys, or a later doctor plan would claim
+              // the same owned settings should be absent.
+              removeJsonTopLevelKeys:
+                !managedMcpEnabled && onDisk?.matches
+                  ? [...MANAGED_MCP_PROJECTION_KEYS]
+                  : undefined,
+            },
+          ),
+          settingsSource,
         ),
-        settingsSource,
-      ),
-    );
+      );
+    }
     if (owned !== undefined) actions.push(owned);
     else if (onDisk !== undefined) {
       actions.push(
@@ -1114,7 +1472,7 @@ function projectionActionsFromRuntime(
       .filter(
         (candidate) =>
           candidate.effective &&
-          candidate.kind === "mcp" &&
+          isProjectionSurfaceCandidate(candidate, "mcp") &&
           candidate.projection.requestedTargets.includes("kiro"),
       )
       .map((candidate) => candidate.id);
@@ -1127,7 +1485,13 @@ function projectionActionsFromRuntime(
     // No Kiro activation and no Kiro receipt is a true no-op. In particular it
     // must never turn a Claude-only governed policy into a Kiro projection.
     if (selectedIds.length > 0 || kiroMcpProjectionOnDisk(ctx.root) !== undefined) {
-      actions.push(...kiroMcpProjectionActions(ctx, selected));
+      actions.push(
+        ...kiroMcpProjectionActions(
+          ctx,
+          selected,
+          decisionBindingsFor(runtime.effective, "mcp", "kiro"),
+        ),
+      );
     }
   }
   // Legacy org policies retain the established generic usage lifecycle. Only a

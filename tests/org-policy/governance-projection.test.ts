@@ -12,7 +12,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  kiroMcpProjectionOwnership,
+  managedMcpProjectionOwnership,
+} from "../../src/config/marker.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { plan } from "../../src/internals/plan.js";
@@ -25,11 +29,14 @@ import {
   PolicyAuthorityReceiptSchema,
   verifyPolicyAuthorityReceipt,
 } from "../../src/org-policy/authority.js";
+import { aihPolicyControls } from "../../src/org-policy/catalog.js";
 import {
   approvalAttestationDigest,
   candidateIdentityDigest,
+  FENCED_POLICY_PREREQUISITE_CODES,
   resolveEffectiveOrgPolicy,
   reviewedControlDigest,
+  stableJson,
 } from "../../src/org-policy/effective.js";
 import {
   orgPolicyEffectiveCheck,
@@ -38,9 +45,12 @@ import {
 import {
   authoritySuffix,
   orgPolicyHookReceiptState,
+  orgPolicyKiroMcpReceiptState,
+  orgPolicyMcpReceiptState,
   orgPolicyProjectionActions,
   verifiedOrgPolicyProjectionActions,
 } from "../../src/org-policy/project.js";
+import { resolveRuntimeOrgPolicy } from "../../src/org-policy/runtime.js";
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { scanRepo } from "../../src/profile/scan.js";
@@ -61,6 +71,7 @@ beforeEach(() => {
   trustedGh = realpathSync.native(trustedGhFile);
 });
 afterEach(() => {
+  vi.useRealTimers();
   rmSync(dir, { recursive: true, force: true });
   rmSync(authorityBin, { recursive: true, force: true });
 });
@@ -89,6 +100,14 @@ function ctx(overrides: Partial<PlanContext> = {}): PlanContext {
     options: {},
     ...otherOverrides,
   };
+}
+
+function hasKeyRecursively(value: unknown, key: string): boolean {
+  if (Array.isArray(value)) return value.some((item) => hasKeyRecursively(item, key));
+  if (value === null || typeof value !== "object") return false;
+  return Object.entries(value).some(
+    ([entryKey, entryValue]) => entryKey === key || hasKeyRecursively(entryValue, key),
+  );
 }
 
 function customSource() {
@@ -186,6 +205,171 @@ function writeAuthorityReceipt({
       revocations,
     }),
   );
+}
+
+function writeDecisionAuthorityReceipt(
+  decisions: readonly Record<string, unknown>[],
+  decisionRevocations: readonly Record<string, unknown>[] = [],
+  targets: readonly string[] = ["claude"],
+) {
+  const now = Date.now();
+  mkdirSync(join(dir, ".aih"), { recursive: true });
+  writeFileSync(
+    join(dir, ".aih", "policy-authority-receipt.json"),
+    JSON.stringify({
+      format: "aih-policy-authority-receipt",
+      version: 2,
+      issuerRepository: "acme/governance",
+      issuedAt: new Date(now - 30_000).toISOString(),
+      expiresAt: new Date(now + 86_400_000).toISOString(),
+      targets,
+      trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+      evidence: [],
+      approvals: [],
+      revocations: [],
+      decisions,
+      decisionRevocations,
+    }),
+  );
+}
+
+function currentReviewedDecision(
+  policy: ReturnType<typeof parseOrgPolicy>,
+  overrides: Record<string, unknown> = {},
+  candidateId?: string,
+) {
+  const candidate = policy.governance?.catalog.reviewed.find(
+    (item) => candidateId === undefined || item.id === candidateId,
+  );
+  if (candidate?.source.type !== "mcp" || policy.governance === undefined) {
+    throw new Error("expected reviewed MCP fixture");
+  }
+  const control = aihPolicyControls(
+    mcpServers("project", scanRepo(dir, { maxDepth: 8, contextDir: "ai-coding" })),
+  ).find((item) => item.id === candidate.id);
+  if (control === undefined) throw new Error("expected AIH-owned reviewed control");
+  const now = Date.now();
+  return {
+    format: "aih-governance-decision",
+    version: 1,
+    id: "decision-reviewed-risk",
+    disposition: "accepted-with-conditions",
+    candidate: candidate.id,
+    kind: candidate.kind,
+    targets: ["claude"],
+    effects: ["managed-settings"],
+    policyVersion: policy.governance.policyVersion,
+    sourceDigest: candidateIdentityDigest(candidate),
+    evidenceDigest: candidateIdentityDigest(candidate),
+    reviewedControlDigest: reviewedControlDigest(control),
+    issuer: "platform-security",
+    actor: "security-admin",
+    reason: "The bounded finding remains accepted pending review.",
+    issuedAt: new Date(now - 60_000).toISOString(),
+    notBefore: new Date(now - 60_000).toISOString(),
+    expiresAt: new Date(now + 86_400_000).toISOString(),
+    acceptedFindings: ["prompt-injection"],
+    acceptedGaps: [],
+    conditions: ["Review the finding before the decision expires."],
+    reviewBy: new Date(now + 43_200_000).toISOString(),
+    ...overrides,
+  };
+}
+
+function currentUsageHookDecision(
+  policy: ReturnType<typeof usageHookPolicy>,
+  reason = "Bounded hook finding is accepted.",
+) {
+  const candidate = policy.governance?.catalog.reviewed[0];
+  if (candidate?.source.type !== "hook" || policy.governance === undefined) {
+    throw new Error("expected reviewed usage-hook fixture");
+  }
+  const now = Date.now();
+  const control = {
+    id: candidate.id,
+    kind: candidate.kind,
+    source: candidate.source,
+    targets: candidate.targets,
+    projector: candidate.projector,
+    lifecycle: candidate.lifecycle,
+  };
+  return {
+    format: "aih-governance-decision",
+    version: 1,
+    id: "decision-usage-1",
+    disposition: "accepted-with-conditions",
+    candidate: candidate.id,
+    kind: candidate.kind,
+    targets: ["claude"],
+    effects: ["usage-hook"],
+    policyVersion: policy.governance.policyVersion,
+    sourceDigest: candidateIdentityDigest(candidate),
+    evidenceDigest: candidateIdentityDigest(candidate),
+    reviewedControlDigest: reviewedControlDigest(control),
+    issuer: "platform-security",
+    actor: "security-admin",
+    reason,
+    issuedAt: new Date(now - 60_000).toISOString(),
+    notBefore: new Date(now - 60_000).toISOString(),
+    expiresAt: new Date(now + 86_400_000).toISOString(),
+    acceptedFindings: ["prompt-injection"],
+    acceptedGaps: [],
+    conditions: ["Review hook finding before expiry."],
+    reviewBy: new Date(now + 43_200_000).toISOString(),
+  };
+}
+
+function recomputeHookReceiptSelfDigest(receipt: Record<string, unknown>): string {
+  const payload = { ...receipt };
+  delete payload.selfDigest;
+  return `sha256:${createHash("sha256")
+    .update(`aih-org-policy-hook-receipt/v3\0${stableJson(payload)}`, "utf8")
+    .digest("hex")}`;
+}
+
+function governanceDecision(overrides: Record<string, unknown> = {}) {
+  return {
+    format: "aih-governance-decision",
+    version: 1,
+    id: "decision-2026-q3",
+    disposition: "approved",
+    candidate: "custom-mcp",
+    kind: "mcp",
+    targets: ["claude"],
+    effects: ["managed-settings"],
+    policyVersion: "2026.08.0",
+    sourceDigest: DIGEST,
+    evidenceDigest: DIGEST,
+    reviewedControlDigest: DIGEST,
+    issuer: "platform-security",
+    actor: "security-admin",
+    reason: "The reviewed control is clean.",
+    issuedAt: "2026-08-01T00:00:00+00:00",
+    notBefore: "2026-08-01T00:00:00+00:00",
+    expiresAt: "2026-08-10T00:00:00+00:00",
+    acceptedFindings: [],
+    acceptedGaps: [],
+    conditions: [],
+    ...overrides,
+  };
+}
+
+function authorityReceiptV2(overrides: Record<string, unknown> = {}) {
+  return {
+    format: "aih-policy-authority-receipt",
+    version: 2,
+    issuerRepository: "acme/governance",
+    issuedAt: "2026-08-03T00:00:00+00:00",
+    expiresAt: "2026-08-20T00:00:00+00:00",
+    targets: ["claude"],
+    trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+    evidence: [],
+    approvals: [],
+    revocations: [],
+    decisions: [],
+    decisionRevocations: [],
+    ...overrides,
+  };
 }
 
 function waivableApproval(overrides: Record<string, unknown> = {}) {
@@ -317,6 +501,658 @@ function reviewedMcpPolicy({
 }
 
 describe("governed candidate projection", () => {
+  it("keeps accepted findings visible while an exact current reviewed decision unlocks", async () => {
+    const policy = reviewedMcpPolicy();
+    const candidate = policy.governance?.catalog.reviewed[0];
+    if (candidate?.source.type !== "mcp" || policy.governance === undefined) {
+      throw new Error("expected reviewed MCP fixture");
+    }
+    candidate.findings.push("prompt-injection");
+    policy.governance.authority.decisions = ["decision-reviewed-risk"];
+    writeDecisionAuthorityReceipt([currentReviewedDecision(policy)]);
+
+    const runtime = await resolveRuntimeOrgPolicy(ctx(), policy);
+    expect(runtime.effective.candidates[0]).toMatchObject({
+      requested: true,
+      effective: true,
+      dangerCodes: ["prompt-injection"],
+      decision: {
+        id: "decision-reviewed-risk",
+        disposition: "accepted-with-conditions",
+        riskState: "accepted",
+        acceptedFindings: ["prompt-injection"],
+      },
+      decisionBlockers: [],
+    });
+    expect(runtime.effective.blocking).toBe(false);
+    await expect(verifiedOrgPolicyProjectionActions(ctx(), policy)).resolves.toEqual(
+      expect.any(Array),
+    );
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(policy));
+    const digest = await orgPolicyEffectiveDigest(ctx());
+    expect(digest?.data).toMatchObject({
+      blocking: false,
+      candidates: [
+        expect.objectContaining({
+          dangerCodes: ["prompt-injection"],
+          decision: expect.objectContaining({ riskState: "accepted" }),
+        }),
+      ],
+    });
+    expect(digest?.text).not.toContain("The bounded finding remains accepted pending review.");
+  });
+
+  it("writes strict v2 Claude ownership with only the current effective decision binding", async () => {
+    const policy = reviewedMcpPolicy();
+    if (policy.governance === undefined) throw new Error("expected governance fixture");
+    const candidate = policy.governance.catalog.reviewed[0];
+    if (candidate === undefined) throw new Error("expected reviewed MCP fixture");
+    candidate.findings.push("prompt-injection");
+    policy.governance.authority.decisions = ["decision-reviewed-risk"];
+    const decision = currentReviewedDecision(policy);
+    writeDecisionAuthorityReceipt([decision]);
+
+    const actions = await verifiedOrgPolicyProjectionActions(ctx(), policy);
+    const marker = actions.find(
+      (action): action is WriteAction =>
+        action.kind === "write" && action.path === ".aih-config.json",
+    );
+    expect(marker?.json).toMatchObject({
+      managedMcpProjection: {
+        schemaVersion: 2,
+        decisions: [
+          {
+            candidate: "code-review-graph",
+            id: "decision-reviewed-risk",
+            issuer: "platform-security",
+            digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+            expiresAt: decision.reviewBy,
+          },
+        ],
+      },
+    });
+    const managed = actions.find(
+      (action): action is WriteAction =>
+        action.kind === "write" && action.path === ".claude/managed-settings.json",
+    );
+    expect(JSON.stringify(managed?.json)).not.toContain(
+      "Review the finding before the decision expires.",
+    );
+  });
+
+  it("keeps managed settings and policy-evaluate JSON decision views public-safe and truthful", async () => {
+    const policy = reviewedMcpPolicy();
+    if (policy.governance === undefined) throw new Error("expected governance fixture");
+    const candidate = policy.governance.catalog.reviewed[0];
+    if (candidate === undefined) throw new Error("expected reviewed MCP fixture");
+    candidate.findings.push("prompt-injection");
+    policy.governance.authority.decisions = ["decision-parity"];
+    const decision = currentReviewedDecision(policy, { id: "decision-parity" });
+    writeDecisionAuthorityReceipt([decision]);
+    const applied = ctx({ apply: true });
+    const initialActions = await verifiedOrgPolicyProjectionActions(applied, policy);
+    const managed = initialActions.find(
+      (action): action is WriteAction =>
+        action.kind === "write" && action.path === ".claude/managed-settings.json",
+    );
+    if (managed === undefined) throw new Error("expected managed settings action");
+    const settingsCandidate = (
+      managed.json as {
+        organizationPolicy: { effectiveCandidates: Array<Record<string, unknown>> };
+      }
+    ).organizationPolicy.effectiveCandidates[0];
+    if (settingsCandidate === undefined) throw new Error("expected managed policy candidate");
+    await executePlan(plan("project decision parity", ...initialActions), applied);
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(policy));
+    const evaluated = (await orgPolicyEffectiveDigest(applied))?.data as {
+      blocking: boolean;
+      candidates: Array<Record<string, unknown>>;
+    };
+    const evaluatedCandidate = evaluated.candidates[0];
+    if (evaluatedCandidate === undefined) throw new Error("expected evaluated candidate");
+    const decisionFields = [
+      "id",
+      "digest",
+      "issuer",
+      "actor",
+      "disposition",
+      "notBefore",
+      "expiresAt",
+      "reviewBy",
+      "acceptedFindings",
+      "acceptedGaps",
+      "observedFindings",
+      "observedGaps",
+      "riskState",
+    ].sort();
+    expect(Object.keys(settingsCandidate.decision as object).sort()).toEqual(decisionFields);
+    expect(settingsCandidate.decision).toEqual(evaluatedCandidate.decision);
+    expect(settingsCandidate).toMatchObject({
+      effective: true,
+      dangerCodes: ["prompt-injection"],
+      blockingCodes: [],
+      decisionBlockers: [],
+      decision: {
+        id: "decision-parity",
+        disposition: "accepted-with-conditions",
+        acceptedFindings: ["prompt-injection"],
+        observedFindings: ["prompt-injection"],
+        riskState: "accepted",
+      },
+    });
+    expect(evaluated.blocking).toBe(false);
+    expect(hasKeyRecursively(settingsCandidate, "conditions")).toBe(false);
+    expect(hasKeyRecursively(evaluated, "conditions")).toBe(false);
+    const acceptedCheck = await orgPolicyEffectiveCheck(applied);
+    expect(acceptedCheck).toMatchObject({ verdict: "pass" });
+    expect(acceptedCheck.detail).toContain(
+      "requested candidates: code-review-graph{decision=decision-parity; observedFindings=prompt-injection; observedGaps=none; acceptedFindings=prompt-injection; acceptedGaps=none; risk=accepted; danger=prompt-injection; blocking=none; decisionBlockers=none}",
+    );
+    expect(acceptedCheck.detail).not.toContain("Review the finding before the decision expires.");
+
+    const noDecision = reviewedMcpPolicy();
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(noDecision));
+    const noDecisionCheck = await orgPolicyEffectiveCheck(applied);
+    expect(noDecisionCheck.detail).toContain(
+      "requested candidates: code-review-graph{decision=none; observedFindings=none; observedGaps=none; acceptedFindings=none; acceptedGaps=none; risk=none; danger=none; blocking=none; decisionBlockers=none}",
+    );
+
+    const blocked = reviewedMcpPolicy();
+    if (blocked.governance === undefined) throw new Error("expected governance fixture");
+    const blockedCandidate = blocked.governance.catalog.reviewed[0];
+    if (blockedCandidate === undefined) throw new Error("expected reviewed MCP fixture");
+    blockedCandidate.findings.push("prompt-injection");
+    blocked.governance.authority.decisions = ["decision-blocked-parity"];
+    const blockedDecision = currentReviewedDecision(blocked, {
+      id: "decision-blocked-parity",
+      acceptedFindings: ["hidden-unicode"],
+    });
+    writeDecisionAuthorityReceipt([blockedDecision]);
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(blocked));
+    const blockedEvaluation = (await orgPolicyEffectiveDigest(applied))?.data as {
+      blocking: boolean;
+      candidates: Array<Record<string, unknown>>;
+    };
+    const blockedOutput = blockedEvaluation.candidates[0];
+    if (blockedOutput === undefined) throw new Error("expected blocked evaluated candidate");
+    expect(blockedEvaluation.blocking).toBe(true);
+    expect(blockedOutput).toMatchObject({
+      effective: false,
+      dangerCodes: ["prompt-injection"],
+      blockingCodes: [],
+      decisionBlockers: [expect.objectContaining({ code: "decision-coverage-mismatch" })],
+      decision: {
+        id: "decision-blocked-parity",
+        acceptedFindings: ["hidden-unicode"],
+        observedFindings: ["prompt-injection"],
+      },
+    });
+    expect((blockedOutput.decision as Record<string, unknown>).riskState).toBeUndefined();
+    expect(hasKeyRecursively(blockedEvaluation, "conditions")).toBe(false);
+    const blockedCheck = await orgPolicyEffectiveCheck(applied);
+    expect(blockedCheck).toMatchObject({ verdict: "fail", code: "org-policy.effective-blocked" });
+    expect(blockedCheck.detail).toContain(
+      "requested candidates: code-review-graph{decision=decision-blocked-parity; observedFindings=prompt-injection; observedGaps=none; acceptedFindings=hidden-unicode; acceptedGaps=none; risk=blocked; danger=prompt-injection; blocking=none; decisionBlockers=decision-coverage-mismatch}",
+    );
+    expect(blockedCheck.detail).not.toContain("Review the finding before the decision expires.");
+  });
+
+  it("unlocks a clean reviewed control only with an exact approved decision", async () => {
+    const policy = reviewedMcpPolicy();
+    if (policy.governance === undefined) throw new Error("expected governance fixture");
+    policy.governance.authority.decisions = ["decision-clean"];
+    const approved = currentReviewedDecision(policy, {
+      id: "decision-clean",
+      disposition: "approved",
+      acceptedFindings: [],
+      acceptedGaps: [],
+      conditions: [],
+      reviewBy: undefined,
+    });
+    delete (approved as Record<string, unknown>).reviewBy;
+    writeDecisionAuthorityReceipt([approved]);
+    expect((await resolveRuntimeOrgPolicy(ctx(), policy)).effective.candidates[0]).toMatchObject({
+      effective: true,
+      dangerCodes: [],
+      decision: {
+        id: "decision-clean",
+        disposition: "approved",
+        riskState: "clean",
+      },
+    });
+  });
+
+  it("never lets accepted coverage waive a fenced prerequisite", async () => {
+    for (const code of FENCED_POLICY_PREREQUISITE_CODES) {
+      const policy = reviewedMcpPolicy();
+      const candidate = policy.governance?.catalog.reviewed[0];
+      if (candidate === undefined || policy.governance === undefined) {
+        throw new Error("expected reviewed MCP fixture");
+      }
+      candidate.findings.push(code);
+      policy.governance.authority.decisions = ["decision-fenced"];
+      writeDecisionAuthorityReceipt([
+        currentReviewedDecision(policy, {
+          id: "decision-fenced",
+          acceptedFindings: [code],
+        }),
+      ]);
+      const resolved = (await resolveRuntimeOrgPolicy(ctx(), policy)).effective.candidates[0];
+      expect(resolved).toMatchObject({
+        effective: false,
+        dangerCodes: expect.arrayContaining([code]),
+      });
+    }
+  });
+
+  it("fails closed for decision coverage, binding, time, revocation, and signed rejection", async () => {
+    const cases = [
+      {
+        name: "under coverage",
+        decision: { acceptedFindings: ["malicious-code"] },
+        code: "decision-coverage-mismatch",
+      },
+      {
+        name: "nonempty named gap",
+        decision: { acceptedGaps: ["optional-detector"] },
+        code: "decision-coverage-mismatch",
+      },
+      {
+        name: "candidate kind drift",
+        decision: { kind: "hook" },
+        code: "decision-subject-mismatch",
+      },
+      {
+        name: "source digest drift",
+        decision: { sourceDigest: `sha256:${"c".repeat(64)}` },
+        code: "decision-subject-mismatch",
+      },
+      {
+        name: "evidence digest drift",
+        decision: { evidenceDigest: `sha256:${"c".repeat(64)}` },
+        code: "decision-subject-mismatch",
+      },
+      {
+        name: "reviewed control drift",
+        decision: { reviewedControlDigest: `sha256:${"c".repeat(64)}` },
+        code: "decision-control-mismatch",
+      },
+      {
+        name: "policy version drift",
+        decision: { policyVersion: "2026.08.1" },
+        code: "decision-subject-mismatch",
+      },
+      {
+        name: "registered effect drift",
+        decision: { effects: ["usage-hook"] },
+        code: "decision-scope-mismatch",
+      },
+      {
+        name: "review deadline",
+        decision: { reviewBy: new Date(Date.now() - 30_000).toISOString() },
+        code: "decision-review-overdue",
+      },
+      {
+        name: "expiry",
+        decision: {
+          expiresAt: new Date(Date.now() - 1_000).toISOString(),
+          reviewBy: new Date(Date.now() - 2_000).toISOString(),
+        },
+        code: "decision-expired",
+      },
+    ] as const;
+    for (const item of cases) {
+      const policy = reviewedMcpPolicy();
+      const candidate = policy.governance?.catalog.reviewed[0];
+      if (candidate === undefined || policy.governance === undefined) {
+        throw new Error("expected reviewed MCP fixture");
+      }
+      candidate.findings.push("prompt-injection");
+      policy.governance.authority.decisions = ["decision-reviewed-risk"];
+      writeDecisionAuthorityReceipt([currentReviewedDecision(policy, item.decision)]);
+      const runtime = await resolveRuntimeOrgPolicy(ctx(), policy);
+      expect(runtime.effective.candidates[0]).toMatchObject({
+        effective: false,
+        decisionBlockers: [expect.objectContaining({ code: item.code })],
+      });
+    }
+
+    const targetPolicy = reviewedMcpPolicy();
+    const targetCandidate = targetPolicy.governance?.catalog.reviewed[0];
+    if (targetCandidate === undefined || targetPolicy.governance === undefined) {
+      throw new Error("expected reviewed MCP fixture");
+    }
+    targetCandidate.findings.push("prompt-injection");
+    targetPolicy.governance.authority.decisions = ["decision-reviewed-risk"];
+    writeDecisionAuthorityReceipt(
+      [currentReviewedDecision(targetPolicy, { targets: ["kiro"] })],
+      [],
+      ["claude", "kiro"],
+    );
+    expect(
+      (await resolveRuntimeOrgPolicy(ctx(), targetPolicy)).effective.candidates[0],
+    ).toMatchObject({
+      effective: false,
+      decisionBlockers: [
+        expect.objectContaining({ code: "decision-scope-mismatch", field: "targets" }),
+      ],
+    });
+
+    const ambiguousPolicy = reviewedMcpPolicy();
+    const ambiguousCandidate = ambiguousPolicy.governance?.catalog.reviewed[0];
+    if (ambiguousCandidate === undefined || ambiguousPolicy.governance === undefined) {
+      throw new Error("expected reviewed MCP fixture");
+    }
+    ambiguousCandidate.findings.push("prompt-injection");
+    ambiguousPolicy.governance.authority.decisions = ["decision-reviewed-risk", "decision-second"];
+    writeDecisionAuthorityReceipt([
+      currentReviewedDecision(ambiguousPolicy),
+      currentReviewedDecision(ambiguousPolicy, { id: "decision-second" }),
+    ]);
+    expect(
+      (await resolveRuntimeOrgPolicy(ctx(), ambiguousPolicy)).effective.candidates[0],
+    ).toMatchObject({
+      effective: false,
+      decisionBlockers: expect.arrayContaining([
+        expect.objectContaining({ code: "decision-ambiguous" }),
+      ]),
+    });
+
+    const revokedPolicy = reviewedMcpPolicy();
+    const revokedCandidate = revokedPolicy.governance?.catalog.reviewed[0];
+    if (revokedCandidate === undefined || revokedPolicy.governance === undefined) {
+      throw new Error("expected reviewed MCP fixture");
+    }
+    revokedCandidate.findings.push("prompt-injection");
+    revokedPolicy.governance.authority.decisions = ["decision-reviewed-risk"];
+    const revoked = currentReviewedDecision(revokedPolicy);
+    writeDecisionAuthorityReceipt(
+      [revoked],
+      [
+        {
+          format: "aih-governance-decision-revocation",
+          version: 1,
+          decision: revoked.id,
+          issuer: revoked.issuer,
+          revokedAt: new Date(Date.now() - 40_000).toISOString(),
+          reason: "The decision was withdrawn.",
+        },
+      ],
+    );
+    expect(
+      (await resolveRuntimeOrgPolicy(ctx(), revokedPolicy)).effective.candidates[0],
+    ).toMatchObject({
+      effective: false,
+      decisionBlockers: [expect.objectContaining({ code: "decision-revoked" })],
+    });
+
+    const rejectedPolicy = reviewedMcpPolicy();
+    const rejected = currentReviewedDecision(rejectedPolicy, {
+      disposition: "rejected",
+      acceptedFindings: [],
+      acceptedGaps: [],
+      conditions: [],
+      reviewBy: undefined,
+    });
+    delete (rejected as Record<string, unknown>).reviewBy;
+    writeDecisionAuthorityReceipt([rejected]);
+    expect(
+      (await resolveRuntimeOrgPolicy(ctx(), rejectedPolicy)).effective.candidates[0],
+    ).toMatchObject({
+      effective: false,
+      decisionBlockers: [expect.objectContaining({ code: "decision-rejected" })],
+    });
+  });
+
+  it("withholds all projections when a policy decision reference lacks a current receipt artifact", async () => {
+    const policy = reviewedMcpPolicy();
+    if (policy.governance === undefined) throw new Error("expected governance fixture");
+    policy.governance.authority.decisions = ["decision-missing"];
+    const runtime = await resolveRuntimeOrgPolicy(ctx(), policy);
+    expect(runtime.effective).toMatchObject({
+      blocking: true,
+      decisionBlockers: [{ scope: "policy", code: "decision-receipt-missing" }],
+    });
+    expect(runtime.effective.candidates[0]?.effective).toBe(false);
+  });
+
+  it.each([
+    {
+      name: "missing receipt decision",
+      decision: "decision-missing",
+      receipt: [] as Record<string, unknown>[],
+      code: "decision-reference-missing:decision-missing",
+    },
+    {
+      name: "receipt decision for a non-catalog candidate",
+      decision: "decision-unresolved",
+      receipt: undefined,
+      code: "decision-reference-unresolved:decision-unresolved",
+    },
+  ])(
+    "reports policy-scope decision blockers in effective checks and projection refusal for $name",
+    async ({ decision, receipt, code }) => {
+      const policy = reviewedMcpPolicy();
+      if (policy.governance === undefined) throw new Error("expected governance fixture");
+      policy.governance.authority.decisions = [decision];
+      const decisions = receipt ?? [
+        currentReviewedDecision(policy, { id: decision, candidate: "not-catalog" }),
+      ];
+      writeDecisionAuthorityReceipt(decisions);
+      writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(policy));
+
+      const effective = (await resolveRuntimeOrgPolicy(ctx(), policy)).effective;
+      expect(effective.decisionBlockers).toEqual([
+        expect.objectContaining({ scope: "policy", code: code.split(":")[0], decision }),
+      ]);
+      const check = await orgPolicyEffectiveCheck(ctx());
+      expect(check).toMatchObject({ verdict: "fail", code: "org-policy.effective-blocked" });
+      expect(check.detail).toContain(`policyDecisionBlockers=${code}`);
+      await expect(verifiedOrgPolicyProjectionActions(ctx(), policy)).rejects.toThrow(
+        new RegExp(`policy decision blockers: ${code}`),
+      );
+    },
+  );
+
+  it("keeps unrelated candidates on the legacy path while unreferenced rejection remains negative authority", async () => {
+    const first = reviewedMcpPolicy({ allowedServers: [], disabledServers: [] });
+    const second = reviewedMcpPolicy({
+      allowedServers: [],
+      disabledServers: [],
+      serverId: "sequential-thinking",
+    });
+    const firstCandidate = first.governance?.catalog.reviewed[0];
+    const secondCandidate = second.governance?.catalog.reviewed[0];
+    if (
+      first.governance === undefined ||
+      firstCandidate === undefined ||
+      secondCandidate === undefined
+    ) {
+      throw new Error("expected reviewed MCP fixtures");
+    }
+    const pair = parseOrgPolicy({
+      ...JSON.parse(JSON.stringify(first)),
+      governance: {
+        ...JSON.parse(JSON.stringify(first)).governance,
+        catalog: { reviewed: [firstCandidate, secondCandidate], custom: [] },
+        activations: [
+          { candidate: firstCandidate.id, state: "active", targets: ["claude"] },
+          { candidate: secondCandidate.id, state: "active", targets: ["claude"] },
+        ],
+        authority: { approvals: [], decisions: ["decision-a"] },
+      },
+    });
+    const approvedA = currentReviewedDecision(
+      pair,
+      {
+        id: "decision-a",
+        disposition: "approved",
+        acceptedFindings: [],
+        acceptedGaps: [],
+        conditions: [],
+        reviewBy: undefined,
+      },
+      firstCandidate.id,
+    );
+    delete (approvedA as Record<string, unknown>).reviewBy;
+    const inertPositiveB = currentReviewedDecision(
+      pair,
+      {
+        id: "decision-b-positive",
+        disposition: "approved",
+        acceptedFindings: [],
+        acceptedGaps: [],
+        conditions: [],
+        reviewBy: undefined,
+      },
+      secondCandidate.id,
+    );
+    delete (inertPositiveB as Record<string, unknown>).reviewBy;
+    writeDecisionAuthorityReceipt([approvedA, inertPositiveB]);
+    const legacy = (await resolveRuntimeOrgPolicy(ctx(), pair)).effective.candidates.find(
+      (candidate) => candidate.id === secondCandidate.id,
+    );
+    expect(legacy).toMatchObject({ effective: true, decisionBlockers: [] });
+    expect(legacy).not.toHaveProperty("decision");
+
+    const rejectedB = currentReviewedDecision(
+      pair,
+      {
+        id: "decision-b-rejected",
+        disposition: "rejected",
+        acceptedFindings: [],
+        acceptedGaps: [],
+        conditions: [],
+        reviewBy: undefined,
+      },
+      secondCandidate.id,
+    );
+    delete (rejectedB as Record<string, unknown>).reviewBy;
+    writeDecisionAuthorityReceipt([approvedA, rejectedB]);
+    const rejected = (await resolveRuntimeOrgPolicy(ctx(), pair)).effective.candidates.find(
+      (candidate) => candidate.id === secondCandidate.id,
+    );
+    expect(rejected).toMatchObject({
+      effective: false,
+      decision: expect.objectContaining({ id: "decision-b-rejected", disposition: "rejected" }),
+      decisionBlockers: [expect.objectContaining({ code: "decision-rejected" })],
+    });
+  });
+
+  it("accepts only exact decision-bearing v2 authority receipts", () => {
+    const v2 = authorityReceiptV2({ decisions: [governanceDecision()] });
+    expect(PolicyAuthorityReceiptSchema.safeParse(v2).success).toBe(true);
+
+    const v1 = { ...v2, version: 1 };
+    delete (v1 as Record<string, unknown>).decisions;
+    delete (v1 as Record<string, unknown>).decisionRevocations;
+    expect(
+      PolicyAuthorityReceiptSchema.safeParse({
+        ...v1,
+        issuedAt: "2026-08-03T00:00:00",
+        expiresAt: "2026-08-20T00:00:00",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects malformed or non-authoritative v2 decision receipt relationships", () => {
+    const decision = governanceDecision();
+    const revocation = {
+      format: "aih-governance-decision-revocation",
+      version: 1,
+      decision: decision.id,
+      issuer: decision.issuer,
+      revokedAt: "2026-08-02T00:00:00+00:00",
+      reason: "The reviewed control was withdrawn.",
+    };
+    const approval = waivableApproval({
+      candidate: "other-candidate",
+      notBefore: "2026-08-01T00:00:00+00:00",
+      expiresAt: "2026-08-10T00:00:00+00:00",
+    });
+    const legacyRevocation = {
+      approval: approval.id,
+      issuer: approval.issuer,
+      revokedAt: "2026-08-02T00:00:00+00:00",
+      reason: "The legacy approval was withdrawn.",
+    };
+    const base = authorityReceiptV2({
+      decisions: [decision],
+      decisionRevocations: [revocation],
+      approvals: [approval],
+      revocations: [legacyRevocation],
+    });
+    const hostAmbiguous = [
+      ["issuedAt", { ...base, issuedAt: "2026-08-03T00:00:00" }],
+      ["expiresAt", { ...base, expiresAt: "2026-08-20T00:00:00" }],
+      [
+        "approval notBefore",
+        { ...base, approvals: [{ ...approval, notBefore: "2026-08-01T00:00:00" }] },
+      ],
+      [
+        "approval expiresAt",
+        { ...base, approvals: [{ ...approval, expiresAt: "2026-08-10T00:00:00" }] },
+      ],
+      [
+        "legacy revocation revokedAt",
+        {
+          ...base,
+          revocations: [{ ...legacyRevocation, revokedAt: "2026-08-02T00:00:00" }],
+        },
+      ],
+    ] as const;
+    for (const [_label, receipt] of hostAmbiguous) {
+      expect(PolicyAuthorityReceiptSchema.safeParse(receipt).success).toBe(false);
+    }
+    const cases = [
+      { ...base, decisions: undefined },
+      { ...base, decisionRevocations: undefined },
+      {
+        ...base,
+        decisions: [
+          governanceDecision({ id: "decision-z" }),
+          governanceDecision({ id: "decision-a" }),
+        ],
+      },
+      { ...base, decisions: [decision, decision] },
+      {
+        ...base,
+        decisionRevocations: [
+          { ...revocation, decision: "decision-z" },
+          { ...revocation, decision: "decision-a" },
+        ],
+      },
+      { ...base, decisionRevocations: [revocation, revocation] },
+      { ...base, decisionRevocations: [{ ...revocation, decision: "decision-missing" }] },
+      { ...base, decisionRevocations: [{ ...revocation, issuer: "other-issuer" }] },
+      {
+        ...base,
+        decisions: [
+          governanceDecision({
+            issuedAt: "2026-08-04T00:00:00+00:00",
+            notBefore: "2026-08-04T00:00:00+00:00",
+            expiresAt: "2026-08-10T00:00:00+00:00",
+          }),
+        ],
+        decisionRevocations: [],
+      },
+      { ...base, decisionRevocations: [{ ...revocation, revokedAt: "2026-07-31T00:00:00+00:00" }] },
+      { ...base, decisionRevocations: [{ ...revocation, revokedAt: "2026-08-04T00:00:00+00:00" }] },
+      { ...base, decisions: [governanceDecision({ targets: ["codex"] })], decisionRevocations: [] },
+      {
+        ...base,
+        decisions: [governanceDecision({ issuer: "other-issuer" })],
+        decisionRevocations: [],
+      },
+      { ...base, approvals: [{ ...approval, candidate: decision.candidate }] },
+      { ...base, approvals: [{ ...approval, id: "decision-legacy" }] },
+      { ...base, revocations: [{ ...legacyRevocation, approval: "decision-legacy" }] },
+    ];
+    for (const receipt of cases) {
+      expect(PolicyAuthorityReceiptSchema.safeParse(receipt).success).toBe(false);
+    }
+  });
+
   it("rejects invalid external authority receipt lifetimes, duplicate identities, and workflow controls", async () => {
     writeAuthorityReceipt({
       trustedIssuers: [
@@ -1193,6 +2029,375 @@ describe("governed candidate projection", () => {
     expect(check.detail).toContain("retain a prior governed selection");
   });
 
+  it("classifies disabled exact legacy Claude and Kiro receipts as retained, not upgrade-required", async () => {
+    for (const targets of [["claude"], ["kiro"]] as const) {
+      const active = reviewedMcpPolicy({
+        allowedServers: [],
+        disabledServers: [],
+        targets: [...targets],
+      });
+      const applied = ctx({ apply: true, targets: [...targets] });
+      await executePlan(
+        plan("governed MCP", ...(await verifiedOrgPolicyProjectionActions(applied, active))),
+        applied,
+      );
+      const markerPath = join(dir, ".aih-config.json");
+      const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
+      if (targets[0] === "claude") {
+        const ownership = marker.managedMcpProjection as {
+          expected: Parameters<typeof managedMcpProjectionOwnership>[0];
+        };
+        marker.managedMcpProjection = managedMcpProjectionOwnership(ownership.expected);
+      } else {
+        const ownership = marker.kiroMcpProjection as {
+          expected: Parameters<typeof kiroMcpProjectionOwnership>[0];
+        };
+        marker.kiroMcpProjection = kiroMcpProjectionOwnership(ownership.expected);
+      }
+      writeFileSync(markerPath, JSON.stringify(marker));
+      const disabled = JSON.parse(JSON.stringify(active)) as typeof active;
+      if (disabled.governance === undefined) throw new Error("expected governance fixture");
+      const activation = disabled.governance.activations[0];
+      if (activation === undefined || disabled.mcp === undefined) {
+        throw new Error("expected managed activation fixture");
+      }
+      activation.state = "disabled";
+      disabled.mcp.allowManagedOnly = false;
+      const effective = (await resolveRuntimeOrgPolicy(applied, disabled)).effective;
+      const state =
+        targets[0] === "claude"
+          ? orgPolicyMcpReceiptState(applied, effective)
+          : orgPolicyKiroMcpReceiptState(applied, effective);
+      expect(state.state).toBe("retained");
+      await executePlan(
+        plan(
+          "remove disabled legacy MCP residue",
+          ...(await verifiedOrgPolicyProjectionActions(applied, disabled)),
+        ),
+        applied,
+      );
+      const after = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
+      if (targets[0] === "claude") {
+        expect(after.managedMcpProjection).toBeUndefined();
+        const settings = JSON.parse(
+          readFileSync(join(dir, ".claude", "managed-settings.json"), "utf8"),
+        ) as Record<string, unknown>;
+        expect(settings.allowManagedMcpServersOnly).toBeUndefined();
+        expect(settings.allowedMcpServers).toBeUndefined();
+      } else {
+        expect(after.kiroMcpProjection).toBeUndefined();
+        const settings = JSON.parse(
+          readFileSync(join(dir, ".kiro", "settings", "mcp.json"), "utf8"),
+        ) as { mcpServers: Record<string, unknown> };
+        expect(settings.mcpServers["code-review-graph"]).toBeUndefined();
+      }
+    }
+  });
+
+  it.each(["claude", "kiro"] as const)(
+    "refreshes exact active legacy %s ownership to strict v2 without rewriting managed bytes",
+    async (target) => {
+      const targets = [target];
+      const active = reviewedMcpPolicy({
+        allowedServers: [],
+        disabledServers: [],
+        targets: [...targets],
+      });
+      const applied = ctx({ apply: true, targets: [...targets] });
+      await executePlan(
+        plan("active governed MCP", ...(await verifiedOrgPolicyProjectionActions(applied, active))),
+        applied,
+      );
+      const markerPath = join(dir, ".aih-config.json");
+      const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
+      const settingsPath =
+        targets[0] === "claude"
+          ? join(dir, ".claude", "managed-settings.json")
+          : join(dir, ".kiro", "settings", "mcp.json");
+      const settingsBefore = readFileSync(settingsPath, "utf8");
+      if (targets[0] === "claude") {
+        const ownership = marker.managedMcpProjection as {
+          expected: Parameters<typeof managedMcpProjectionOwnership>[0];
+        };
+        marker.managedMcpProjection = managedMcpProjectionOwnership(ownership.expected);
+      } else {
+        const ownership = marker.kiroMcpProjection as {
+          expected: Parameters<typeof kiroMcpProjectionOwnership>[0];
+        };
+        marker.kiroMcpProjection = kiroMcpProjectionOwnership(ownership.expected);
+      }
+      writeFileSync(markerPath, JSON.stringify(marker));
+
+      const effective = (await resolveRuntimeOrgPolicy(applied, active)).effective;
+      const state =
+        targets[0] === "claude"
+          ? orgPolicyMcpReceiptState(applied, effective)
+          : orgPolicyKiroMcpReceiptState(applied, effective);
+      expect(state.state).toBe("upgrade-required");
+      const refresh = await verifiedOrgPolicyProjectionActions(applied, active);
+      const mcpRefresh = refresh.filter(
+        (action) =>
+          "path" in action &&
+          typeof action.path === "string" &&
+          [".aih-config.json", ".claude/managed-settings.json", ".kiro/settings/mcp.json"].includes(
+            action.path,
+          ),
+      );
+      expect(mcpRefresh).toEqual([
+        expect.objectContaining({ kind: "write", path: ".aih-config.json" }),
+      ]);
+      await executePlan(plan("refresh legacy MCP ownership", ...refresh), applied);
+
+      expect(readFileSync(settingsPath, "utf8")).toBe(settingsBefore);
+      const refreshed = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
+      const ownership =
+        targets[0] === "claude" ? refreshed.managedMcpProjection : refreshed.kiroMcpProjection;
+      expect(ownership).toMatchObject({ schemaVersion: 2, decisions: [] });
+    },
+  );
+
+  it("refreshes legacy Claude ownership and managed settings when a new decision summary changes full settings", async () => {
+    const initial = reviewedMcpPolicy({ allowedServers: [], disabledServers: [] });
+    const applied = ctx({ apply: true });
+    await executePlan(
+      plan(
+        "project legacy Claude managed settings",
+        ...(await verifiedOrgPolicyProjectionActions(applied, initial)),
+      ),
+      applied,
+    );
+    const markerPath = join(dir, ".aih-config.json");
+    const settingsPath = join(dir, ".claude", "managed-settings.json");
+    const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
+    const ownership = marker.managedMcpProjection as {
+      expected: Parameters<typeof managedMcpProjectionOwnership>[0];
+    };
+    marker.managedMcpProjection = managedMcpProjectionOwnership(ownership.expected);
+    writeFileSync(markerPath, JSON.stringify(marker));
+    const seededSettings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
+      organizationPolicy: Record<string, unknown>;
+      sandbox: Record<string, unknown>;
+    };
+    seededSettings.organizationPolicy.operatorManagedSibling = { preserve: "organization-policy" };
+    seededSettings.sandbox.operatorManagedSibling = { preserve: "sandbox" };
+    writeFileSync(settingsPath, JSON.stringify(seededSettings));
+    const settingsBefore = readFileSync(settingsPath, "utf8");
+
+    const renewed = reviewedMcpPolicy({ allowedServers: [], disabledServers: [] });
+    if (renewed.governance === undefined) throw new Error("expected governance fixture");
+    const candidate = renewed.governance.catalog.reviewed[0];
+    if (candidate === undefined) throw new Error("expected reviewed MCP fixture");
+    candidate.findings.push("prompt-injection");
+    renewed.governance.authority.decisions = ["decision-reviewed-risk"];
+    writeDecisionAuthorityReceipt([currentReviewedDecision(renewed)]);
+
+    const refresh = await verifiedOrgPolicyProjectionActions(applied, renewed);
+    const settingsRefresh = refresh.find(
+      (action): action is WriteAction =>
+        action.kind === "write" && action.path === ".claude/managed-settings.json",
+    );
+    expect(settingsRefresh).toMatchObject({
+      expect: { sha256: createHash("sha256").update(settingsBefore, "utf8").digest("hex") },
+    });
+    await executePlan(plan("refresh decision-aware managed settings", ...refresh), applied);
+    expect(readFileSync(settingsPath, "utf8")).not.toBe(settingsBefore);
+    const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
+      organizationPolicy: {
+        effectiveCandidates: Array<{ decision?: { id?: string } }>;
+        operatorManagedSibling?: unknown;
+      };
+      sandbox: { operatorManagedSibling?: unknown };
+    };
+    expect(settings.organizationPolicy.effectiveCandidates[0]?.decision?.id).toBe(
+      "decision-reviewed-risk",
+    );
+    expect(settings.organizationPolicy.operatorManagedSibling).toEqual({
+      preserve: "organization-policy",
+    });
+    expect(settings.sandbox.operatorManagedSibling).toEqual({ preserve: "sandbox" });
+    const refreshed = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
+    expect(refreshed.managedMcpProjection).toMatchObject({ schemaVersion: 2 });
+
+    await executePlan(
+      plan(
+        "replace stale decision-aware managed settings",
+        ...(await verifiedOrgPolicyProjectionActions(applied, initial)),
+      ),
+      applied,
+    );
+    const replaced = JSON.parse(readFileSync(settingsPath, "utf8")) as {
+      organizationPolicy: {
+        effectiveCandidates: Array<{ decision?: unknown }>;
+        operatorManagedSibling?: unknown;
+      };
+      sandbox: { operatorManagedSibling?: unknown };
+    };
+    expect(replaced.organizationPolicy.effectiveCandidates).toHaveLength(1);
+    expect(replaced.organizationPolicy.effectiveCandidates[0]?.decision).toBeUndefined();
+    expect(replaced.organizationPolicy.operatorManagedSibling).toEqual({
+      preserve: "organization-policy",
+    });
+    expect(replaced.sandbox.operatorManagedSibling).toEqual({ preserve: "sandbox" });
+  });
+
+  it.each(["claude", "kiro"] as const)(
+    "keeps disabled strict v2 decision ownership retained for %s until conservative rollback",
+    async (target) => {
+      const targets = [target];
+      const active = reviewedMcpPolicy({
+        allowedServers: [],
+        disabledServers: [],
+        targets: [...targets],
+      });
+      if (active.governance === undefined) throw new Error("expected governance fixture");
+      active.governance.authority.decisions = ["decision-disabled-retained"];
+      const decision = currentReviewedDecision(active, {
+        id: "decision-disabled-retained",
+        targets: [...targets],
+        disposition: "approved",
+        acceptedFindings: [],
+        acceptedGaps: [],
+        conditions: [],
+        reviewBy: undefined,
+      });
+      delete (decision as Record<string, unknown>).reviewBy;
+      writeDecisionAuthorityReceipt([decision], [], [...targets]);
+      const applied = ctx({ apply: true, targets: [...targets] });
+      await executePlan(
+        plan("decision-bound MCP", ...(await verifiedOrgPolicyProjectionActions(applied, active))),
+        applied,
+      );
+      const disabled = JSON.parse(JSON.stringify(active)) as typeof active;
+      if (disabled.governance === undefined || disabled.mcp === undefined) {
+        throw new Error("expected governed MCP fixture");
+      }
+      const activation = disabled.governance.activations[0];
+      if (activation === undefined) throw new Error("expected governed activation");
+      activation.state = "disabled";
+      disabled.mcp.allowManagedOnly = false;
+      const effective = (await resolveRuntimeOrgPolicy(applied, disabled)).effective;
+      const state =
+        targets[0] === "claude"
+          ? orgPolicyMcpReceiptState(applied, effective)
+          : orgPolicyKiroMcpReceiptState(applied, effective);
+      expect(state.state).toBe("retained");
+      await expect(verifiedOrgPolicyProjectionActions(applied, disabled)).resolves.toEqual(
+        expect.any(Array),
+      );
+    },
+  );
+
+  it("keeps exact single-target and dual-target MCP decision bindings on their own surfaces", async () => {
+    for (const target of ["claude", "kiro"] as const) {
+      const single = reviewedMcpPolicy({
+        allowedServers: [],
+        disabledServers: [],
+        targets: [target],
+      });
+      if (single.governance === undefined) throw new Error("expected governance fixture");
+      const decisionId = `decision-${target}-surface`;
+      single.governance.authority.decisions = [decisionId];
+      const decision = currentReviewedDecision(single, {
+        id: decisionId,
+        targets: [target],
+        disposition: "approved",
+        acceptedFindings: [],
+        acceptedGaps: [],
+        conditions: [],
+        reviewBy: undefined,
+      });
+      delete (decision as Record<string, unknown>).reviewBy;
+      writeDecisionAuthorityReceipt([decision], [], [target]);
+      const actions = await verifiedOrgPolicyProjectionActions(ctx({ targets: [target] }), single);
+      const paths = actions.flatMap((action) => ("path" in action ? [action.path] : []));
+      expect(paths).not.toContain(
+        target === "claude" ? ".kiro/settings/mcp.json" : ".claude/managed-settings.json",
+      );
+      const marker = actions.find(
+        (action): action is WriteAction =>
+          action.kind === "write" && action.path === ".aih-config.json",
+      );
+      expect(marker?.json).toMatchObject(
+        target === "claude"
+          ? {
+              managedMcpProjection: {
+                schemaVersion: 2,
+                decisions: [
+                  expect.objectContaining({ candidate: "code-review-graph", id: decisionId }),
+                ],
+              },
+            }
+          : {
+              kiroMcpProjection: {
+                schemaVersion: 2,
+                decisions: [
+                  expect.objectContaining({ candidate: "code-review-graph", id: decisionId }),
+                ],
+              },
+            },
+      );
+      expect(marker?.json).not.toHaveProperty(
+        target === "claude" ? "kiroMcpProjection" : "managedMcpProjection",
+      );
+    }
+
+    const dual = reviewedMcpPolicy({
+      allowedServers: [],
+      disabledServers: [],
+      targets: ["claude", "kiro"],
+    });
+    if (dual.governance === undefined) throw new Error("expected governance fixture");
+    dual.governance.authority.decisions = ["decision-dual-surface"];
+    const dualDecision = currentReviewedDecision(dual, {
+      id: "decision-dual-surface",
+      targets: ["claude", "kiro"],
+      disposition: "approved",
+      acceptedFindings: [],
+      acceptedGaps: [],
+      conditions: [],
+      reviewBy: undefined,
+    });
+    delete (dualDecision as Record<string, unknown>).reviewBy;
+    writeDecisionAuthorityReceipt([dualDecision], [], ["claude", "kiro"]);
+    const dualActions = await verifiedOrgPolicyProjectionActions(
+      ctx({ targets: ["claude", "kiro"] }),
+      dual,
+    );
+    const dualMarker = dualActions.find(
+      (action): action is WriteAction =>
+        action.kind === "write" && action.path === ".aih-config.json",
+    );
+    expect(dualMarker?.json).toMatchObject({
+      managedMcpProjection: {
+        schemaVersion: 2,
+        decisions: [expect.objectContaining({ id: "decision-dual-surface" })],
+      },
+      kiroMcpProjection: {
+        schemaVersion: 2,
+        decisions: [expect.objectContaining({ id: "decision-dual-surface" })],
+      },
+    });
+    const owned = dualMarker?.json as {
+      managedMcpProjection: { decisions: unknown[] };
+      kiroMcpProjection: { decisions: unknown[] };
+    };
+    expect(owned.managedMcpProjection.decisions).toEqual(owned.kiroMcpProjection.decisions);
+
+    const narrowed = JSON.parse(JSON.stringify(dual)) as typeof dual;
+    if (narrowed.governance === undefined) throw new Error("expected governance fixture");
+    const activation = narrowed.governance.activations[0];
+    if (activation === undefined) throw new Error("expected governed activation");
+    activation.targets = ["claude"];
+    await expect(
+      verifiedOrgPolicyProjectionActions(ctx({ targets: ["claude"] }), narrowed),
+    ).rejects.toThrow(/decision-scope-mismatch/);
+    await expect(
+      verifiedOrgPolicyProjectionActions(ctx({ targets: ["claude"] }), dual),
+    ).rejects.toThrow(/target-not-selected/);
+    expect(existsSync(join(dir, ".aih-config.json"))).toBe(false);
+    expect(existsSync(join(dir, ".kiro", "settings", "mcp.json"))).toBe(false);
+  });
+
   it("keeps a changed governed MCP selected set retained until policy project reconciles it", async () => {
     const active = reviewedMcpPolicy({ allowedServers: [], disabledServers: [] });
     const applied = ctx({ apply: true });
@@ -1282,6 +2487,14 @@ describe("governed candidate projection", () => {
     expect(writes.map((write) => write.path)).toEqual(
       expect.arrayContaining([".aih/usage-record.mjs", ".gitignore", ".claude/settings.json"]),
     );
+    expect(
+      writes.find((write) => write.path === ".aih/org-policy-hook-receipt.json")?.json,
+    ).toMatchObject({
+      format: "aih-org-policy-hook-receipt",
+      version: 3,
+      decisions: [],
+      selfDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+    });
   });
 
   it("projects the supported AIH-owned hook for a Codex-only invocation", async () => {
@@ -1295,6 +2508,436 @@ describe("governed candidate projection", () => {
       expect.arrayContaining([".aih/usage-record.mjs", ".gitignore", ".codex/hooks.json"]),
     );
   });
+
+  it("upgrades an exact legacy usage receipt to v3 without rewriting owned hook artifacts", async () => {
+    const applied = ctx({ apply: true });
+    const policy = usageHookPolicy("active");
+    await executePlan(
+      plan("policy hooks", ...(await verifiedOrgPolicyProjectionActions(applied, policy))),
+      applied,
+    );
+    const hostPath = join(dir, ".claude", "settings.json");
+    const recorderPath = join(dir, ".aih", "usage-record.mjs");
+    const hostBefore = readFileSync(hostPath, "utf8");
+    const recorderBefore = readFileSync(recorderPath, "utf8");
+    const receiptPath = join(dir, ".aih", "org-policy-hook-receipt.json");
+    const legacy = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, unknown>;
+    legacy.version = 2;
+    delete legacy.decisions;
+    delete legacy.selfDigest;
+    writeFileSync(receiptPath, JSON.stringify(legacy));
+
+    const refresh = await verifiedOrgPolicyProjectionActions(applied, policy);
+    const hookRefresh = refresh.filter(
+      (action) =>
+        "path" in action &&
+        typeof action.path === "string" &&
+        [
+          ".aih/usage-record.mjs",
+          ".gitignore",
+          ".claude/settings.json",
+          ".aih/org-policy-hook-receipt.json",
+        ].includes(action.path),
+    );
+    expect(hookRefresh).toHaveLength(1);
+    expect(hookRefresh[0]).toMatchObject({
+      kind: "write",
+      path: ".aih/org-policy-hook-receipt.json",
+      json: { version: 3, decisions: [], selfDigest: expect.any(String) },
+    });
+    await executePlan(plan("upgrade policy hook receipt", ...refresh), applied);
+
+    expect(readFileSync(hostPath, "utf8")).toBe(hostBefore);
+    expect(readFileSync(recorderPath, "utf8")).toBe(recorderBefore);
+  });
+
+  it("refreshes only a decision-free v3 hook receipt when policyVersion changes", async () => {
+    const policy = usageHookPolicy("active");
+    const applied = ctx({ apply: true });
+    await executePlan(
+      plan(
+        "project decision-free usage hook",
+        ...(await verifiedOrgPolicyProjectionActions(applied, policy)),
+      ),
+      applied,
+    );
+    const receiptPath = join(dir, ".aih", "org-policy-hook-receipt.json");
+    const artifactPaths = [
+      join(dir, ".claude", "settings.json"),
+      join(dir, ".aih", "usage-record.mjs"),
+      join(dir, ".gitignore"),
+    ];
+    const artifactBytes = artifactPaths.map((path) => readFileSync(path, "utf8"));
+    const revised = JSON.parse(JSON.stringify(policy)) as typeof policy;
+    if (revised.governance === undefined) throw new Error("expected governance fixture");
+    revised.governance.policyVersion = "2026.08.1";
+    const refresh = await verifiedOrgPolicyProjectionActions(applied, revised);
+    const hookRefresh = refresh.filter(
+      (action) =>
+        action.kind === "write" &&
+        [
+          ".claude/settings.json",
+          ".aih/usage-record.mjs",
+          ".gitignore",
+          ".aih/org-policy-hook-receipt.json",
+        ].includes(action.path),
+    );
+    expect(hookRefresh).toHaveLength(1);
+    expect(hookRefresh[0]).toMatchObject({
+      kind: "write",
+      path: ".aih/org-policy-hook-receipt.json",
+      json: { version: 3, policyVersion: "2026.08.1", decisions: [] },
+    });
+    await executePlan(plan("refresh decision-free hook receipt", ...refresh), applied);
+    expect(artifactPaths.map((path) => readFileSync(path, "utf8"))).toEqual(artifactBytes);
+    expect(JSON.parse(readFileSync(receiptPath, "utf8"))).toMatchObject({
+      version: 3,
+      policyVersion: "2026.08.1",
+      decisions: [],
+    });
+    const noOp = await verifiedOrgPolicyProjectionActions(applied, revised);
+    expect(
+      noOp.filter(
+        (action) =>
+          action.kind === "write" &&
+          [
+            ".claude/settings.json",
+            ".aih/usage-record.mjs",
+            ".gitignore",
+            ".aih/org-policy-hook-receipt.json",
+          ].includes(action.path),
+      ),
+    ).toEqual([]);
+  });
+
+  it("refreshes a decision-bearing usage v3 receipt without rewriting hook artifacts", async () => {
+    const policy = usageHookPolicy("active");
+    if (policy.governance === undefined) throw new Error("expected governance fixture");
+    const candidate = policy.governance.catalog.reviewed[0];
+    if (candidate === undefined) throw new Error("expected usage-hook candidate fixture");
+    candidate.findings.push("prompt-injection");
+    policy.governance.authority.decisions = ["decision-usage-1"];
+    writeDecisionAuthorityReceipt([currentUsageHookDecision(policy)]);
+    const applied = ctx({ apply: true });
+    await executePlan(
+      plan(
+        "decision-bound policy hooks",
+        ...(await verifiedOrgPolicyProjectionActions(applied, policy)),
+      ),
+      applied,
+    );
+    const host = join(dir, ".claude", "settings.json");
+    const recorder = join(dir, ".aih", "usage-record.mjs");
+    const ignore = join(dir, ".gitignore");
+    const before = [host, recorder, ignore].map((path) => readFileSync(path, "utf8"));
+    writeDecisionAuthorityReceipt([
+      currentUsageHookDecision(policy, "Renewed bounded hook finding."),
+    ]);
+
+    const refresh = await verifiedOrgPolicyProjectionActions(applied, policy);
+    const hookWrites = refresh.filter(
+      (action) => action.kind === "write" && action.path === ".aih/org-policy-hook-receipt.json",
+    );
+    expect(hookWrites).toHaveLength(1);
+    expect(
+      refresh.filter(
+        (action) =>
+          action.kind === "write" &&
+          [".claude/settings.json", ".aih/usage-record.mjs", ".gitignore"].includes(action.path),
+      ),
+    ).toHaveLength(0);
+    await executePlan(plan("renew decision-bound policy hooks", ...refresh), applied);
+    expect([host, recorder, ignore].map((path) => readFileSync(path, "utf8"))).toEqual(before);
+  });
+
+  it("fails closed on recomputed-digest v3 receipt shape and binding adversaries", async () => {
+    const applied = ctx({ apply: true });
+    const policy = usageHookPolicy("active");
+    await executePlan(
+      plan("policy hooks", ...(await verifiedOrgPolicyProjectionActions(applied, policy))),
+      applied,
+    );
+    const receiptPath = join(dir, ".aih", "org-policy-hook-receipt.json");
+    const baseline = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, unknown>;
+    const binding = {
+      candidate: "usage-metering",
+      id: "decision-1",
+      issuer: "platform-security",
+      digest: DIGEST,
+      expiresAt: "2026-09-01T00:00:00+00:00",
+    };
+    for (const mutate of [
+      (receipt: Record<string, unknown>) => {
+        receipt.decisions = [binding, { ...binding, id: "decision-2" }];
+      },
+      (receipt: Record<string, unknown>) => {
+        receipt.decisions = [{ ...binding, expiresAt: "2026-09-01" }];
+      },
+      (receipt: Record<string, unknown>) => {
+        receipt.decisions = Array.from({ length: 65 }, (_, index) => ({
+          ...binding,
+          candidate: `candidate-${String.fromCharCode(97 + index)}`,
+          id: `decision-a${index}`,
+        }));
+      },
+      (receipt: Record<string, unknown>) => {
+        receipt.extra = true;
+      },
+      (receipt: Record<string, unknown>) => {
+        const hook = (receipt.hooks as Array<Record<string, unknown>>)[0];
+        if (hook === undefined) throw new Error("expected hook receipt entry");
+        hook.extra = true;
+      },
+      (receipt: Record<string, unknown>) => {
+        const entry = (receipt.entries as Array<Record<string, unknown>>)[0];
+        if (entry === undefined) throw new Error("expected receipt ownership entry");
+        entry.extra = true;
+      },
+    ]) {
+      const mutated = JSON.parse(JSON.stringify(baseline)) as Record<string, unknown>;
+      mutate(mutated);
+      mutated.selfDigest = recomputeHookReceiptSelfDigest(mutated);
+      writeFileSync(receiptPath, JSON.stringify(mutated));
+      await expect(verifiedOrgPolicyProjectionActions(applied, policy)).rejects.toThrow(
+        /invalid v3 decision bindings|unexpected receipt fields|unexpected ownership fields|invalid hook identity/,
+      );
+    }
+  });
+
+  it.each([
+    42,
+    null,
+    [],
+    {},
+    "",
+    "  ",
+    "2026.08.0\n",
+    "2026.08.0\u0000",
+    "2026.08.0\u200B",
+  ] as const)(
+    "rejects an invalid present policyVersion in legacy v2 and recomputed v3 receipts: %j",
+    async (policyVersion) => {
+      const applied = ctx({ apply: true });
+      const policy = usageHookPolicy("active");
+      await executePlan(
+        plan("policy hooks", ...(await verifiedOrgPolicyProjectionActions(applied, policy))),
+        applied,
+      );
+      const receiptPath = join(dir, ".aih", "org-policy-hook-receipt.json");
+      const baseline = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, unknown>;
+
+      const strict: Record<string, unknown> = { ...baseline, policyVersion };
+      strict.selfDigest = recomputeHookReceiptSelfDigest(strict);
+      writeFileSync(receiptPath, JSON.stringify(strict));
+      await expect(verifiedOrgPolicyProjectionActions(applied, policy)).rejects.toThrow(
+        /invalid policyVersion/,
+      );
+
+      const legacy: Record<string, unknown> = { ...baseline, version: 2, policyVersion };
+      delete legacy.decisions;
+      delete legacy.selfDigest;
+      writeFileSync(receiptPath, JSON.stringify(legacy));
+      await expect(verifiedOrgPolicyProjectionActions(applied, policy)).rejects.toThrow(
+        /invalid policyVersion/,
+      );
+    },
+  );
+
+  it("rejects a semantic forged gitignore digest even with a recomputed v3 self-digest", async () => {
+    const applied = ctx({ apply: true });
+    const policy = usageHookPolicy("active");
+    await executePlan(
+      plan("policy hooks", ...(await verifiedOrgPolicyProjectionActions(applied, policy))),
+      applied,
+    );
+    const receiptPath = join(dir, ".aih", "org-policy-hook-receipt.json");
+    const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, unknown>;
+    const ignore = (receipt.entries as Array<Record<string, unknown>>).find(
+      (entry) => entry.path === ".gitignore",
+    );
+    if (ignore === undefined) throw new Error("expected .gitignore ownership entry");
+    ignore.expectedDigest = "b".repeat(64);
+    receipt.selfDigest = recomputeHookReceiptSelfDigest(receipt);
+    writeFileSync(receiptPath, JSON.stringify(receipt));
+    await expect(
+      verifiedOrgPolicyProjectionActions(applied, usageHookPolicy("disabled")),
+    ).rejects.toThrow(/not the exact AIH policy marker state/);
+  });
+
+  it("reports retained-invalid-decision for exact owned MCP bytes after authority binding changes", async () => {
+    const policy = reviewedMcpPolicy({ allowedServers: [], disabledServers: [] });
+    if (policy.governance === undefined) throw new Error("expected governance fixture");
+    policy.governance.authority.decisions = ["decision-clean"];
+    const decision = currentReviewedDecision(policy, {
+      id: "decision-clean",
+      disposition: "approved",
+      acceptedFindings: [],
+      acceptedGaps: [],
+      conditions: [],
+      reviewBy: undefined,
+    });
+    delete (decision as Record<string, unknown>).reviewBy;
+    writeDecisionAuthorityReceipt([decision]);
+    const applied = ctx({ apply: true });
+    await executePlan(
+      plan("decision-bound MCP", ...(await verifiedOrgPolicyProjectionActions(applied, policy))),
+      applied,
+    );
+
+    policy.governance.authority.decisions = [];
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(policy));
+    const check = await orgPolicyEffectiveCheck(applied);
+    expect(check).toMatchObject({
+      verdict: "fail",
+      detail: expect.stringContaining("retained-invalid-decision"),
+    });
+  });
+
+  it.each([
+    ["expired", ["claude"]],
+    ["revoked", ["claude"]],
+    ["expired", ["kiro"]],
+    ["revoked", ["kiro"]],
+    ["expired", ["claude", "kiro"]],
+    ["revoked", ["claude", "kiro"]],
+  ] as const)(
+    "retains exact %s decision-bound MCP residue for %j until disabled rollback",
+    async (mode, targets) => {
+      const initiallyValidAt = new Date("2026-08-01T00:00:00.000Z");
+      const targetSet = new Set<string>(targets);
+      vi.useFakeTimers();
+      vi.setSystemTime(initiallyValidAt);
+      const policy = reviewedMcpPolicy({
+        allowedServers: [],
+        disabledServers: [],
+        targets: [...targets],
+      });
+      if (policy.governance === undefined) throw new Error("expected governance fixture");
+      policy.governance.authority.decisions = ["decision-residue"];
+      const decision = currentReviewedDecision(policy, {
+        id: "decision-residue",
+        disposition: "approved",
+        targets: [...targets],
+        acceptedFindings: [],
+        acceptedGaps: [],
+        conditions: [],
+        reviewBy: undefined,
+      });
+      delete (decision as Record<string, unknown>).reviewBy;
+      if (mode === "expired") {
+        decision.expiresAt = new Date(initiallyValidAt.getTime() + 3_600_000).toISOString();
+      }
+      writeDecisionAuthorityReceipt([decision], [], [...targets]);
+      const applied = ctx({ apply: true, targets: [...targets] });
+      if (targetSet.has("claude")) {
+        mkdirSync(join(dir, ".claude"), { recursive: true });
+        writeFileSync(
+          join(dir, ".claude", "managed-settings.json"),
+          JSON.stringify({ operatorManagedSibling: { preserve: true } }),
+        );
+      }
+      if (targetSet.has("kiro")) {
+        mkdirSync(join(dir, ".kiro", "settings"), { recursive: true });
+        writeFileSync(
+          join(dir, ".kiro", "settings", "mcp.json"),
+          JSON.stringify({
+            mcpServers: { operatorManagedSibling: { command: "operator-mcp" } },
+          }),
+        );
+      }
+      await executePlan(
+        plan(
+          "decision-bound residue",
+          ...(await verifiedOrgPolicyProjectionActions(applied, policy)),
+        ),
+        applied,
+      );
+      const projectedFiles = [
+        ".aih-config.json",
+        ...(targetSet.has("claude") ? [".claude/managed-settings.json"] : []),
+        ...(targetSet.has("kiro") ? [".kiro/settings/mcp.json"] : []),
+      ];
+      const projectedBytes = Object.fromEntries(
+        projectedFiles.map((path) => [path, readFileSync(join(dir, path), "utf8")]),
+      );
+      vi.setSystemTime(new Date(initiallyValidAt.getTime() + 7_200_000));
+      if (mode === "revoked") {
+        writeDecisionAuthorityReceipt(
+          [decision],
+          [
+            {
+              format: "aih-governance-decision-revocation",
+              version: 1,
+              decision: decision.id,
+              issuer: decision.issuer,
+              revokedAt: new Date(initiallyValidAt.getTime() + 3_600_000).toISOString(),
+              reason: "withdrawn",
+            },
+          ],
+          [...targets],
+        );
+      }
+      await expect(verifiedOrgPolicyProjectionActions(applied, policy)).rejects.toThrow(
+        /decision-expired|decision-revoked/,
+      );
+      expect(
+        Object.fromEntries(
+          projectedFiles.map((path) => [path, readFileSync(join(dir, path), "utf8")]),
+        ),
+      ).toEqual(projectedBytes);
+      writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(policy));
+      const check = await orgPolicyEffectiveCheck(applied);
+      expect(check.detail).toContain("retained-invalid-decision");
+      const digest = await orgPolicyEffectiveDigest(applied);
+      expect(digest?.text).toContain(mode === "expired" ? "decision-expired" : "decision-revoked");
+
+      const disabled = JSON.parse(JSON.stringify(policy)) as typeof policy;
+      if (disabled.governance === undefined || disabled.mcp === undefined) {
+        throw new Error("expected governed MCP fixture");
+      }
+      const activation = disabled.governance.activations[0];
+      if (activation === undefined) throw new Error("expected activation fixture");
+      activation.state = "disabled";
+      if (targetSet.has("claude")) {
+        await executePlan(
+          plan(
+            "retain restrictive empty Claude allowlist",
+            ...(await verifiedOrgPolicyProjectionActions(applied, disabled)),
+          ),
+          applied,
+        );
+        const restrictive = JSON.parse(
+          readFileSync(join(dir, ".claude", "managed-settings.json"), "utf8"),
+        );
+        expect(restrictive).toMatchObject({
+          allowManagedMcpServersOnly: true,
+          allowedMcpServers: [],
+          operatorManagedSibling: { preserve: true },
+        });
+      }
+      disabled.mcp.allowManagedOnly = false;
+      await executePlan(
+        plan("disabled residue", ...(await verifiedOrgPolicyProjectionActions(applied, disabled))),
+        applied,
+      );
+      if (targetSet.has("claude")) {
+        const settings = JSON.parse(
+          readFileSync(join(dir, ".claude", "managed-settings.json"), "utf8"),
+        );
+        expect(settings.allowManagedMcpServersOnly).toBeUndefined();
+        expect(settings.allowedMcpServers).toBeUndefined();
+        expect(settings.operatorManagedSibling).toEqual({ preserve: true });
+      }
+      if (targetSet.has("kiro")) {
+        const settings = JSON.parse(
+          readFileSync(join(dir, ".kiro", "settings", "mcp.json"), "utf8"),
+        );
+        expect(settings.mcpServers).toEqual({
+          operatorManagedSibling: { command: "operator-mcp" },
+        });
+      }
+    },
+  );
 
   it("refuses malformed or non-object pre-existing hook settings without taking ownership", async () => {
     for (const { contents, detail } of [
@@ -1615,7 +3258,7 @@ describe("governed candidate projection", () => {
     ).rejects.toThrow(/unsafe text ownership entries/);
   });
 
-  it("rejects an arbitrary .gitignore digest even when the receipt hashes those bytes", async () => {
+  it("rejects a tampered v3 receipt before it can authorize an arbitrary .gitignore digest", async () => {
     const applied = ctx({ apply: true });
     await executePlan(
       plan(
@@ -1637,7 +3280,7 @@ describe("governed candidate projection", () => {
 
     await expect(
       verifiedOrgPolicyProjectionActions(applied, usageHookPolicy("disabled")),
-    ).rejects.toThrow(/not the exact AIH policy marker state/);
+    ).rejects.toThrow(/invalid v3 self-digest/);
   });
 
   it("blocks inactive policy projection when matching legacy usage artifacts have no receipt", async () => {

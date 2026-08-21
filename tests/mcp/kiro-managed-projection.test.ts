@@ -61,9 +61,26 @@ const graph = {
   credentials: "none",
   supplyChain: "pinned",
 } as const satisfies McpServer;
+const sequential = {
+  ...graph,
+  command: "npx",
+  args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.7.4"],
+  description: "Sequential reasoning",
+} as const satisfies McpServer;
 
-async function apply(servers: Record<string, McpServer>) {
-  return executePlan(plan("kiro managed mcp", ...kiroMcpProjectionActions(ctx(), servers)), ctx());
+const decision = {
+  candidate: "code-review-graph",
+  id: "decision-graph",
+  issuer: "security-admin",
+  digest: `sha256:${"a".repeat(64)}`,
+  expiresAt: "2026-09-01T00:00:00.000+00:00",
+} as const;
+
+async function apply(servers: Record<string, McpServer>, decisions?: readonly (typeof decision)[]) {
+  return executePlan(
+    plan("kiro managed mcp", ...kiroMcpProjectionActions(ctx(), servers, decisions)),
+    ctx(),
+  );
 }
 
 describe("Kiro governed MCP ownership", () => {
@@ -76,6 +93,51 @@ describe("Kiro governed MCP ownership", () => {
     expect(kiroMcpProjectionState(root)).toEqual({
       state: "absent",
       detail: "no Kiro workspace-MCP ownership receipt",
+    });
+  });
+
+  it("keeps narrowed Kiro ownership at strict v2 instead of downgrading its receipt", async () => {
+    await apply({ "code-review-graph": graph, "sequential-thinking": sequential }, [decision]);
+    const markerPath = join(root, ".aih-config.json");
+    const v2 = JSON.parse(readFileSync(markerPath, "utf8"));
+    expect(v2.kiroMcpProjection).toMatchObject({
+      schemaVersion: 2,
+      decisions: [decision],
+    });
+
+    await apply({ "code-review-graph": graph });
+    const v2WithoutDecision = JSON.parse(readFileSync(markerPath, "utf8"));
+    expect(v2WithoutDecision.kiroMcpProjection).toMatchObject({
+      schemaVersion: 2,
+      decisions: [],
+    });
+    expect(v2WithoutDecision.kiroMcpProjection.expected.mcpServers).toEqual({
+      "code-review-graph": graph,
+    });
+    expect(kiroMcpProjectionState(root).state).toBe("clean");
+  });
+
+  it("marks Claude ownership writes as whole-receipt replacements", () => {
+    const generated = managedMcpAllowlistSettings({ "code-review-graph": graph });
+    expect(
+      managedMcpProjectionOwnershipAction(ctx(), ["claude"], generated, [decision]),
+    ).toMatchObject({
+      replaceJsonKeys: ["managedMcpProjection"],
+      json: { managedMcpProjection: { schemaVersion: 2, decisions: [decision] } },
+    });
+  });
+
+  it("does not treat a changed v2 decision binding as idempotent", async () => {
+    await apply({ "code-review-graph": graph }, [decision]);
+    const renewed = { ...decision, digest: `sha256:${"b".repeat(64)}` } as const;
+
+    const actions = kiroMcpProjectionActions(ctx(), { "code-review-graph": graph }, [renewed]);
+    const marker = actions.find(
+      (action) => action.kind === "write" && action.path === ".aih-config.json",
+    );
+    expect(marker).toMatchObject({
+      replaceJsonKeys: ["kiroMcpProjection"],
+      json: { kiroMcpProjection: { schemaVersion: 2, decisions: [renewed] } },
     });
   });
 
@@ -243,6 +305,11 @@ describe("Kiro governed MCP ownership", () => {
       expect(
         actions.some((action) => "path" in action && action.path === KIRO_MCP_SETTINGS_PATH),
       ).toBe(false);
+      expect(actions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ replaceJsonKeys: ["kiroMcpProjection"] }),
+        ]),
+      );
       await executePlan(plan("revoke Kiro MCP", ...actions), ctx());
       expect(kiroMcpProjectionState(root).state).toBe("revoked");
       if (before !== undefined) expect(readFileSync(path, "utf8")).toBe(before);

@@ -8,6 +8,7 @@ import {
   orgPolicyHookReceiptState,
   orgPolicyKiroMcpReceiptState,
   orgPolicyMcpReceiptState,
+  publicDecisionView,
 } from "./project.js";
 import { resolveRuntimeOrgPolicy } from "./runtime.js";
 import { governanceOwnsAihSurfaces, readOrgPolicy } from "./schema.js";
@@ -16,11 +17,59 @@ function requestedCandidates(effective: EffectiveOrgPolicy) {
   return effective.candidates.filter((candidate) => candidate.requested);
 }
 
+function ordinalCompare(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function publicList(values: readonly string[]): string {
+  const ordered = [...new Set(values)].sort(ordinalCompare);
+  return ordered.length === 0 ? "none" : ordered.join(",");
+}
+
+function publicPolicyDecisionBlockers(effective: EffectiveOrgPolicy): string {
+  return publicList(
+    effective.decisionBlockers.map(
+      (blocker) => `${blocker.code}${blocker.decision === undefined ? "" : `:${blocker.decision}`}`,
+    ),
+  );
+}
+
+/** Bounded public decision facts shared by policy evaluate and doctor checks. */
+function requestedCandidateSummary(effective: EffectiveOrgPolicy): string {
+  const summaries = requestedCandidates(effective)
+    .slice()
+    .sort((left, right) => ordinalCompare(left.id, right.id))
+    .map((candidate) => {
+      const decision = candidate.decision;
+      const risk = decision === undefined ? "none" : (decision.riskState ?? "blocked");
+      return (
+        `${candidate.id}{decision=${decision?.id ?? "none"}; ` +
+        `observedFindings=${publicList(decision?.observedFindings ?? [])}; ` +
+        `observedGaps=${publicList(decision?.observedGaps ?? [])}; ` +
+        `acceptedFindings=${publicList(decision?.acceptedFindings ?? [])}; ` +
+        `acceptedGaps=${publicList(decision?.acceptedGaps ?? [])}; ` +
+        `risk=${risk}; ` +
+        `danger=${publicList(candidate.dangerCodes)}; ` +
+        `blocking=${publicList(candidate.blockingCodes)}; ` +
+        `decisionBlockers=${publicList(candidate.decisionBlockers.map((blocker) => blocker.code))}}`
+      );
+    });
+  return `requested candidates: ${summaries.length === 0 ? "none" : summaries.join(" | ")}; policyDecisionBlockers=${publicPolicyDecisionBlockers(effective)}`;
+}
+
+function withRequestedCandidateSummary(detail: string, effective: EffectiveOrgPolicy): string {
+  return `${detail}; ${requestedCandidateSummary(effective)}`;
+}
+
 function blockedDetail(effective: EffectiveOrgPolicy): string {
   const blocked = requestedCandidates(effective).filter((candidate) => !candidate.effective);
   return blocked
     .map((candidate) => {
-      const codes = [...candidate.dangerCodes, ...candidate.blockingCodes];
+      const codes = [
+        ...candidate.dangerCodes,
+        ...candidate.blockingCodes,
+        ...candidate.decisionBlockers.map((blocker) => blocker.code),
+      ];
       const reasons = candidate.resolutionReasons;
       return `${candidate.id}: ${codes.length === 0 ? "not-effective" : codes.join(", ")}${
         reasons.length === 0 ? "" : `; resolution=${reasons.join(", ")}`
@@ -40,6 +89,7 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
         frameworkSelections: [],
         externalCuration: [],
         externalSelections: [],
+        decisionBlockers: [],
         blocking: false,
         authority: { verified: false },
       });
@@ -81,22 +131,12 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
       };
     }
     const requested = requestedCandidates(effective);
-    if (effective.blocking) {
-      return {
-        name: "org policy effective resolution",
-        verdict: "fail",
-        code: "org-policy.effective-blocked",
-        detail: `requested policy is blocked: ${blockedDetail(effective)}`,
-        location: { uri: "aih-org-policy.json" },
-        fingerprint: "org-policy-effective-blocked",
-      };
-    }
     if (hookReceipt.state !== "absent" && hookReceipt.state !== "active") {
       return {
         name: "org policy effective resolution",
         verdict: "fail",
         code: "org-policy.effective-blocked",
-        detail: hookReceipt.detail,
+        detail: withRequestedCandidateSummary(hookReceipt.detail, effective),
         location: { uri: ORG_POLICY_HOOK_RECEIPT_PATH },
         fingerprint: `org-policy-hook-receipt:${hookReceipt.state}`,
       };
@@ -106,7 +146,10 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
         name: "org policy effective resolution",
         verdict: "fail",
         code: "org-policy.effective-blocked",
-        detail: `managed-MCP ownership is ${mcpReceipt.state}: ${mcpReceipt.detail}`,
+        detail: withRequestedCandidateSummary(
+          `managed-MCP ownership is ${mcpReceipt.state}: ${mcpReceipt.detail}`,
+          effective,
+        ),
         location: { uri: ".claude/managed-settings.json" },
         fingerprint: `org-policy-mcp-receipt:${mcpReceipt.state}`,
       };
@@ -116,15 +159,34 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
         name: "org policy effective resolution",
         verdict: "fail",
         code: "org-policy.effective-blocked",
-        detail: `Kiro workspace-MCP ownership is ${kiroMcpReceipt.state}: ${kiroMcpReceipt.detail}`,
+        detail: withRequestedCandidateSummary(
+          `Kiro workspace-MCP ownership is ${kiroMcpReceipt.state}: ${kiroMcpReceipt.detail}`,
+          effective,
+        ),
         location: { uri: ".kiro/settings/mcp.json" },
         fingerprint: `org-policy-kiro-mcp-receipt:${kiroMcpReceipt.state}`,
+      };
+    }
+    if (effective.blocking) {
+      return {
+        name: "org policy effective resolution",
+        verdict: "fail",
+        code: "org-policy.effective-blocked",
+        detail: withRequestedCandidateSummary(
+          `requested policy is blocked: ${blockedDetail(effective)}`,
+          effective,
+        ),
+        location: { uri: "aih-org-policy.json" },
+        fingerprint: "org-policy-effective-blocked",
       };
     }
     return {
       name: "org policy effective resolution",
       verdict: "pass",
-      detail: `${requested.length} requested candidate(s) effective through supported AIH projectors`,
+      detail: withRequestedCandidateSummary(
+        `${requested.length} requested candidate(s) effective through supported AIH projectors`,
+        effective,
+      ),
     };
   } catch (error) {
     return {
@@ -162,9 +224,11 @@ export async function orgPolicyEffectiveDigest(
         const approval = candidate.approval;
         const sourceEvidence = `${candidate.sourceDigest}; ${stableJson(candidate.source)}; evidence=${candidate.evidenceRecord?.evidenceDigest ?? "unverified"}`;
         const authority =
-          approval === undefined
-            ? candidate.evidence
-            : `${approval.issuer} @ ${approval.repository}; ${approval.attestationId}; ${approval.reason}; clarification=${approval.clarification}`;
+          candidate.decision === undefined
+            ? approval === undefined
+              ? candidate.evidence
+              : `${approval.issuer} @ ${approval.repository}; ${approval.attestationId}; ${approval.reason}; clarification=${approval.clarification}`
+            : `${candidate.decision.id}; digest=${candidate.decision.digest}; issuer=${candidate.decision.issuer}; actor=${candidate.decision.actor}; disposition=${candidate.decision.disposition}; risk=${candidate.decision.riskState ?? "blocked"}; accepted=${candidate.decision.acceptedFindings.join(",") || "none"}; observed=${candidate.decision.observedFindings.join(",") || "none"}`;
         const requestedTargets = candidate.projection.requestedTargets;
         const targetProjector =
           candidate.kind === "mcp" && candidate.projection.projector === "mcp-managed-settings"
@@ -190,7 +254,12 @@ export async function orgPolicyEffectiveDigest(
               : candidate.projection.receipt;
         const notes =
           [candidate.clarification, candidate.annotation].filter(Boolean).join(" / ") || "—";
-        const codes = [...candidate.dangerCodes, ...candidate.blockingCodes].join(", ") || "—";
+        const codes =
+          [
+            ...candidate.dangerCodes,
+            ...candidate.blockingCodes,
+            ...candidate.decisionBlockers.map((blocker) => blocker.code),
+          ].join(", ") || "—";
         const blocked =
           candidate.resolutionReasons.length === 0
             ? codes
@@ -206,6 +275,7 @@ export async function orgPolicyEffectiveDigest(
       `Managed-MCP receipt: ${mcpReceipt.state} — ${mcpReceipt.detail}.`,
       `Kiro workspace-MCP receipt: ${kiroMcpReceipt.state} — ${kiroMcpReceipt.detail}.`,
       `Hook registrar: ${hookRegistrar.state} — ${hookRegistrar.detail}.`,
+      `Policy decision blockers: ${publicPolicyDecisionBlockers(effective)}.`,
       ...(hookRegistrar.unowned.length === 0
         ? []
         : [
@@ -232,7 +302,13 @@ export async function orgPolicyEffectiveDigest(
       {
         policyVersion: effective.policyVersion,
         blocking: effective.blocking,
-        candidates,
+        decisionBlockers: effective.decisionBlockers,
+        candidates: candidates.map((candidate) => ({
+          ...candidate,
+          ...(candidate.decision === undefined
+            ? {}
+            : { decision: publicDecisionView(candidate.decision) }),
+        })),
         activeMcpServerIds: effective.activeMcpServerIds,
         frameworkSelections: effective.frameworkSelections,
         externalCuration: effective.externalCuration,

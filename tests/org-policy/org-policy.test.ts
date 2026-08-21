@@ -214,6 +214,63 @@ describe("policy project", () => {
 });
 
 describe("OrgPolicySchema", () => {
+  it("accepts only sorted decision authority references and keeps approval ids disjoint", () => {
+    const legacyApproval = {
+      id: "decision-legacy",
+      candidate: "catalog-mcp",
+      kind: "mcp",
+      source: {
+        type: "mcp",
+        server: "catalog-mcp",
+        subject: `mcp-server-sha256:${"a".repeat(64)}`,
+      },
+      issuer: "platform-security",
+      sourceDigest: `sha256:${"b".repeat(64)}`,
+      evidenceDigest: `sha256:${"c".repeat(64)}`,
+      projector: "mcp-managed-settings",
+      policyVersion: "2026.08.0",
+      reason: "Legacy approval record remains structurally valid.",
+      scope: ["claude"],
+      notBefore: "2026-08-01T00:00:00.000Z",
+      expiresAt: "2026-08-10T00:00:00.000Z",
+      github: {
+        repository: "acme/governance",
+        attestationId: "transport-locator",
+        subjectDigest: `sha256:${"d".repeat(64)}`,
+      },
+    };
+    const governance = {
+      policyVersion: "2026.08.0",
+      catalog: { reviewed: [], custom: [] },
+      activations: [],
+      authority: { approvals: [], decisions: ["decision-2026-q3"] },
+    };
+    expect(parseOrgPolicy(policy({ governance })).governance?.authority.decisions).toEqual([
+      "decision-2026-q3",
+    ]);
+    for (const decisions of [
+      ["decision-z", "decision-a"],
+      ["decision-2026-q3", "decision-2026-q3"],
+      ["approval-2026-q3"],
+    ]) {
+      expect(() =>
+        parseOrgPolicy(
+          policy({ governance: { ...governance, authority: { approvals: [], decisions } } }),
+        ),
+      ).toThrow(/org-policy is invalid/);
+    }
+    expect(() =>
+      parseOrgPolicy(
+        policy({
+          governance: {
+            ...governance,
+            authority: { approvals: [legacyApproval], decisions: governance.authority.decisions },
+          },
+        }),
+      ),
+    ).toThrow(/org-policy is invalid/);
+  });
+
   it("accepts package roots as policy selection without embedding package authority", () => {
     const parsed = parseOrgPolicy(
       policy({

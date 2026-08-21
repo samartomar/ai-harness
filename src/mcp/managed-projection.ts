@@ -8,6 +8,7 @@ import {
   isActiveManagedMcpProjectionOwnership,
   isManagedMcpProjectionOwnership,
   type ManagedMcpProjectionOwnership,
+  type McpProjectionDecisionBindings,
   managedMcpProjectionConfigJsonFromRaw,
   managedMcpProjectionOwnership,
   revokedManagedMcpProjectionOwnership,
@@ -325,6 +326,7 @@ export function managedMcpProjectionOwnershipAction(
   ctx: PlanContext,
   targets: readonly Cli[] | readonly string[],
   generated: ManagedMcpAllowlistSettings,
+  decisions?: McpProjectionDecisionBindings,
 ): Action {
   const source = readManagedProjectionFile(ctx.root, AIH_CONFIG_FILE);
   return withExpectedContents(
@@ -334,10 +336,12 @@ export function managedMcpProjectionOwnershipAction(
         source,
         ctx.contextDir,
         [...targets],
-        managedMcpProjectionOwnership(generated),
+        // New ownership is always strict v2. Version 1 remains readable only
+        // so an exact legacy projection can be conservatively subtracted.
+        managedMcpProjectionOwnership(generated, decisions ?? []),
       ),
       "record Claude managed-MCP projection ownership",
-      { merge: true },
+      { merge: true, replaceJsonKeys: ["managedMcpProjection"] },
     ),
     source,
   );
@@ -364,7 +368,7 @@ export function revokeManagedMcpProjectionOwnershipAction(
       AIH_CONFIG_FILE,
       { managedMcpProjection: revokedManagedMcpProjectionOwnership(ownership) },
       "revoke Claude managed-MCP projection ownership after operator change",
-      { merge: true },
+      { merge: true, replaceJsonKeys: ["managedMcpProjection"] },
     ),
     source,
   );

@@ -10,6 +10,7 @@ import {
   type KiroMcpProjectionOwnership,
   kiroMcpProjectionConfigJsonFromRaw,
   kiroMcpProjectionOwnership,
+  type McpProjectionDecisionBindings,
   revokedKiroMcpProjectionOwnership,
 } from "../config/marker.js";
 import { readRegularFile } from "../internals/fsxn.js";
@@ -261,7 +262,7 @@ function projectionWrite(
 
 function ownershipAction(
   ctx: PlanContext,
-  expected: KiroExpected,
+  ownership: KiroMcpProjectionOwnership,
   source: string | undefined,
 ): Action {
   return withExpectedContents(
@@ -271,10 +272,10 @@ function ownershipAction(
         source,
         ctx.contextDir,
         [...(ctx.targets ?? [])],
-        kiroMcpProjectionOwnership(expected),
+        ownership,
       ),
       "record Kiro workspace-MCP projection ownership",
-      { merge: true },
+      { merge: true, replaceJsonKeys: ["kiroMcpProjection"] },
     ),
     source,
   );
@@ -319,7 +320,7 @@ function revokeOwnershipAction(
       AIH_CONFIG_FILE,
       { kiroMcpProjection: revokedKiroMcpProjectionOwnership(ownership) },
       "revoke Kiro workspace-MCP ownership after operator change",
-      { merge: true },
+      { merge: true, replaceJsonKeys: ["kiroMcpProjection"] },
     ),
     source,
   );
@@ -365,8 +366,12 @@ function unreceiptedCollision(
 export function kiroMcpProjectionActions(
   ctx: PlanContext,
   servers: Record<string, McpServer>,
+  decisions?: McpProjectionDecisionBindings,
 ): Action[] {
   const expected = kiroMcpProjectionExpected(servers);
+  // New ownership is always strict v2. Version 1 remains readable only so an
+  // exact legacy projection can be conservatively subtracted.
+  const desiredOwnership = kiroMcpProjectionOwnership(expected, decisions ?? []);
   const residue = kiroMcpProjectionOnDisk(ctx.root);
   if (residue !== undefined && !residue.matches) {
     if (Object.keys(expected.mcpServers).length > 0) {
@@ -376,7 +381,23 @@ export function kiroMcpProjectionActions(
     }
     return [revokeOwnershipAction(residue.ownership, residue.markerSource)];
   }
-  if (residue !== undefined && isDeepStrictEqual(residue.ownership.expected, expected)) return [];
+  if (
+    residue !== undefined &&
+    isDeepStrictEqual(residue.ownership.expected, expected) &&
+    residue.ownership.schemaVersion === desiredOwnership.schemaVersion &&
+    (residue.ownership.schemaVersion === 1 ||
+      (desiredOwnership.schemaVersion === 2 &&
+        isDeepStrictEqual(residue.ownership.decisions, desiredOwnership.decisions)))
+  ) {
+    return [];
+  }
+  if (
+    residue !== undefined &&
+    residue.ownership.schemaVersion === 1 &&
+    isDeepStrictEqual(residue.ownership.expected, expected)
+  ) {
+    return [ownershipAction(ctx, desiredOwnership, residue.markerSource)];
+  }
   if (residue === undefined) {
     if (Object.keys(expected.mcpServers).length === 0) return [];
     const collision = unreceiptedCollision(ctx.root, expected);
@@ -386,7 +407,7 @@ export function kiroMcpProjectionActions(
     const markerSource = readProjectionFile(ctx.root, AIH_CONFIG_FILE);
     return [
       projectionWrite(expected, configSource, undefined),
-      ownershipAction(ctx, expected, markerSource),
+      ownershipAction(ctx, desiredOwnership, markerSource),
     ];
   }
   if (Object.keys(expected.mcpServers).length === 0) {
@@ -404,7 +425,7 @@ export function kiroMcpProjectionActions(
   if (collision !== undefined) throw new Error(`Kiro governed MCP projection refuses ${collision}`);
   return [
     projectionWrite(expected, residue.settingsSource, residue.ownership.expected),
-    ownershipAction(ctx, expected, residue.markerSource),
+    ownershipAction(ctx, desiredOwnership, residue.markerSource),
   ];
 }
 
