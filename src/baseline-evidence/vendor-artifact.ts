@@ -16,11 +16,13 @@ function claimOutputDirectory(out: string): string {
   if (typeof out !== "string" || out.length === 0) fail("output directory");
   const lexicalRoot = resolve(out);
   const lexicalParent = dirname(lexicalRoot);
-  for (let current = lexicalParent; ; current = dirname(current)) {
-    safeDirectory(current);
-    if (dirname(current) === current) break;
-  }
-  const root = join(realpathSync(lexicalParent), basename(lexicalRoot));
+  // Refuse a caller-supplied linked parent, but do not reject a normal parent
+  // merely because an operating-system ancestor (for example /var on macOS)
+  // is an alias. All creation uses the canonical regular parent below.
+  safeDirectory(lexicalParent);
+  const canonicalParent = realpathSync(lexicalParent);
+  safeDirectory(canonicalParent);
+  const root = join(canonicalParent, basename(lexicalRoot));
   mkdirSync(root);
   safeDirectory(root);
   return root;
