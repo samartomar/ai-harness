@@ -550,6 +550,8 @@ describe("policy generate", () => {
     const policyFile = window.document.getElementById("policy-file");
     if (policyFile === null) throw new Error("expected policy file input");
     const importPolicy = async (policy: Record<string, unknown>) => {
+      const announcement = window.document.getElementById("announcement");
+      if (announcement !== null) announcement.textContent = "";
       Object.defineProperty(policyFile, "files", {
         configurable: true,
         value: [
@@ -557,7 +559,10 @@ describe("policy generate", () => {
         ],
       });
       policyFile.dispatchEvent(new window.Event("change", { bubbles: true }));
-      await new Promise((resolve) => window.setTimeout(resolve, 50));
+      await settle(
+        window,
+        () => (window.document.getElementById("announcement")?.textContent ?? "") !== "",
+      );
     };
     await importPolicy(noGovernance);
     expect(window.document.getElementById("announcement")?.textContent).toContain(
@@ -804,7 +809,11 @@ describe("policy generate", () => {
     );
     Object.defineProperty(policyFile, "files", { configurable: true, value: [invalid] });
     policyFile.dispatchEvent(new window.Event("change", { bubbles: true }));
-    await new Promise((resolve) => window.setTimeout(resolve, 50));
+    await settle(window, () =>
+      (document.getElementById("announcement")?.textContent ?? "").includes(
+        "Policy import rejected",
+      ),
+    );
     expect(document.getElementById("announcement")?.textContent).toContain(
       "Policy import rejected",
     );
@@ -827,7 +836,11 @@ describe("policy generate", () => {
     });
     Object.defineProperty(policyFile, "files", { configurable: true, value: [unsafeFile] });
     policyFile.dispatchEvent(new window.Event("change", { bubbles: true }));
-    await new Promise((resolve) => window.setTimeout(resolve, 50));
+    await settle(window, () =>
+      (document.getElementById("announcement")?.textContent ?? "").includes(
+        "safe repo-relative POSIX path",
+      ),
+    );
     expect(document.getElementById("announcement")?.textContent).toContain(
       "safe repo-relative POSIX path",
     );
@@ -1033,7 +1046,9 @@ describe("policy generate", () => {
       ],
     });
     policyFile.dispatchEvent(new window.Event("change", { bubbles: true }));
-    await new Promise((resolve) => window.setTimeout(resolve, 50));
+    await settle(window, () =>
+      (document.getElementById("curation-rows")?.textContent ?? "").includes("Repository:"),
+    );
     expect(document.getElementById("curation-rows")?.textContent).toContain("Repository:");
     expect(document.getElementById("curation-rows")?.textContent).toContain("Commit:");
     expect(document.getElementById("curation-rows")?.textContent).toContain("Path:");
@@ -1167,7 +1182,11 @@ describe("policy generate", () => {
         ],
       });
       policyFile.dispatchEvent(new window.Event("change", { bubbles: true }));
-      await new Promise((resolve) => window.setTimeout(resolve, 50));
+      await settle(window, () =>
+        (window.document.getElementById("announcement")?.textContent ?? "").includes(
+          "Policy import rejected",
+        ),
+      );
       expect(window.document.getElementById("announcement")?.textContent, fixture.name).toContain(
         "Policy import rejected",
       );

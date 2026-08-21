@@ -8,6 +8,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The Policy Workbench teaches the first bounded adoption recipe without creating another
+  control plane.** An inert, code-owned panel assigns the low-token orientation, exact-symbol,
+  broad-impact, durable-memory, and on-demand overhead questions to Token Savior, Serena,
+  code-review-graph, codebase-memory-mcp, and Token Optimizer respectively. It keeps their real
+  lifecycle, existing-row, and approval/manual-only routes distinct; states prerequisites,
+  overlap, and captured-usage limits; and fails closed if the owning profile or catalog facts
+  drift. The panel adds no inventory row, selection, approval, authority, evidence, projector,
+  materialization, provider execution, or exported policy state. Generic signed recipe
+  distribution remains outside this surface.
+
 - **Pinned Superpowers scan acceptances are independently reproducible.** Maintainers can run
   `npm run check:scan-acceptance -- --checkout <absolute-path>` against a separate, clean checkout
   detached at the shipped Superpowers commit. The read-only JSON audit re-runs the existing content

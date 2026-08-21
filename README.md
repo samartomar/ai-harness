@@ -411,6 +411,13 @@ approved entries.
 
 The portable Policy Workbench uses a flat Ledger paper-and-ink identity in light and dark themes. Its left rail remains the canonical selection surface, including on compact screens; the inspector is mutation-free, narrates the selected-to-materialized journey, and offers one routed next action. Curation and custom-source forms live in a separate authoring sidebar. The separate Add MCP sidebar records the exact `governance.eccMcpApprovals` decision; it does not choose a client or configure one. For an entry marked HTTPS-configurable, the seat operator still selects one client explicitly with the command above; manual entries remain approval-only until a supported lifecycle exists.
 
+The Workbench also shows the first bounded adoption recipe for Token Savior, Serena,
+code-review-graph, codebase-memory-mcp, and Token Optimizer. It assigns one question class to each
+role and states the prerequisite, overlap boundary, supported next route, and locally captured usage
+signal without adding an inventory row or selection control. This is inert guidance: it neither
+approves nor installs anything, changes no exported policy bytes, and is not a generic recipe or
+catalog-distribution plane.
+
 The Workbench also authors source-locked ECC hook controls: Minimal, Standard, or Strict profile selection and eligible per-hook disables. Policy projection records those choices only as receipt-owned `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` keys in Claude `settings.json.env`; it never rewrites ECC launchers. ECC executes and enforces the selection after process spawn, so disabling a hook does not erase its spawn cost.
 
 The Workbench can also import one standalone `GovernanceDecisionV1` for inspection and canonical download. It applies the strict decision grammar and semantics, keeps the record separate from policy and receipt state, renders its untrusted fields as text, and labels it unverified and not effective. This is an inert transport view: it cannot edit, verify, sign, fetch, resolve, project, or materialize the decision, and importing one never grants approval or changes the authored policy.
