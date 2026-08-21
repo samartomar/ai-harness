@@ -1048,7 +1048,7 @@ describe("Codex managed destination safety", () => {
       writeFileSync(
         join(home, ".codex", "config.toml"),
         (legacyPosition === "descendant"
-          ? [...legacy, '[mcp_servers."chrome-devtools".env]', 'token = "operator"', ""]
+          ? [...legacy, '  [mcp_servers."chrome-devtools".env]', 'token = "operator"', ""]
           : legacyPosition === "managed-failure"
             ? [...legacy, ""]
             : legacyPosition === "inside" || legacyPosition === "vanished"
@@ -1128,7 +1128,7 @@ describe("Codex managed destination safety", () => {
       if (legacyPosition === "descendant") {
         expect(result.status).not.toBe(0);
         expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).toContain(
-          '[mcp_servers."chrome-devtools".env]',
+          '  [mcp_servers."chrome-devtools".env]',
         );
         expect(existsSync(join(home, ".codex", "AGENTS.md"))).toBe(false);
         return;
