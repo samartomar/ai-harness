@@ -31,10 +31,18 @@ describe("vendor baseline evidence publication workflow", () => {
     expect(Object.keys(workflow.on ?? {})).toEqual(["workflow_dispatch"]);
     expect(workflow.permissions).toEqual({ contents: "read" });
     expect(job?.environment).toBe("baseline-evidence-publish");
-    expect(job?.permissions).toEqual({ attestations: "write", contents: "read", "id-token": "write" });
+    expect(job?.permissions).toEqual({
+      attestations: "write",
+      contents: "read",
+      "id-token": "write",
+    });
     const commands = job?.steps?.map((step) => step.run ?? "").join("\n") ?? "";
+    expect(commands).toContain('test "$GITHUB_REF" = "refs/heads/main"');
+    expect(commands).toContain('test "$GITHUB_SHA" = "$(git rev-parse origin/main)"');
     expect(commands).toContain("npm run baseline:artifact");
     expect(commands).not.toMatch(/npm publish|gh release|gh attestation sign|cosign sign/);
-    expect(job?.steps?.some((step) => step.uses?.startsWith("actions/attest-build-provenance@"))).toBe(true);
+    expect(
+      job?.steps?.some((step) => step.uses?.startsWith("actions/attest-build-provenance@")),
+    ).toBe(true);
   });
 });

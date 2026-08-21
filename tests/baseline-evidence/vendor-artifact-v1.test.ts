@@ -32,20 +32,20 @@ function lockBytes(overrides: Record<string, unknown> = {}): Buffer {
         schemaVersion: 1,
         sources: [
           {
+            id: "ecc",
+            owner: "affaan-m",
+            repo: "ecc",
+            pinnedSha: "b".repeat(40),
             components: [
               {
-                analyzers: [{ name: "aih-native", version: "1" }],
-                findings: [],
                 id: "skill:review",
                 paths: ["skills/review"],
                 treeSha256: "a".repeat(64),
                 verdict: "pass",
+                analyzers: [{ name: "aih-native", version: "1" }],
+                findings: [],
               },
             ],
-            id: "ecc",
-            owner: "affaan-m",
-            pinnedSha: "b".repeat(40),
-            repo: "ecc",
           },
         ],
         ...overrides,
@@ -110,21 +110,53 @@ describe("VendorBaselineEvidenceArtifactV1", () => {
   });
 
   it.each([
-    ["duplicate path", (artifact: ReturnType<typeof built>) => ({ ...artifact, files: [...artifact.files, artifact.files[0]!] })],
-    ["unsafe path", (artifact: ReturnType<typeof built>) => ({ ...artifact, files: [{ path: "../SHA256SUMS", bytes: artifact.subject.bytes }] })],
-    ["checksum drift", (artifact: ReturnType<typeof built>) => ({ ...artifact, files: artifact.files.map((file) => file.path === `files/${BASELINE_EVIDENCE_ARTIFACT_LOCK_PATH_V1}` ? { ...file, bytes: Buffer.from("tampered\n") } : file) })],
+    [
+      "duplicate path",
+      (artifact: ReturnType<typeof built>) => {
+        const first = artifact.files[0];
+        if (first === undefined) throw new Error("expected artifact file");
+        return { ...artifact, files: [...artifact.files, first] };
+      },
+    ],
+    [
+      "unsafe path",
+      (artifact: ReturnType<typeof built>) => ({
+        ...artifact,
+        files: [{ path: "../SHA256SUMS", bytes: artifact.subject.bytes }],
+      }),
+    ],
+    [
+      "checksum drift",
+      (artifact: ReturnType<typeof built>) => ({
+        ...artifact,
+        files: artifact.files.map((file) =>
+          file.path === `files/${BASELINE_EVIDENCE_ARTIFACT_LOCK_PATH_V1}`
+            ? { ...file, bytes: Buffer.from("tampered\n") }
+            : file,
+        ),
+      }),
+    ],
     ["wrong source pin", (artifact: ReturnType<typeof built>) => artifact],
+    ["wrong repository claim", (artifact: ReturnType<typeof built>) => artifact],
     ["wrong workflow claim", (artifact: ReturnType<typeof built>) => artifact],
+    ["wrong issuer claim", (artifact: ReturnType<typeof built>) => artifact],
+    ["wrong ref claim", (artifact: ReturnType<typeof built>) => artifact],
     ["wrong environment claim", (artifact: ReturnType<typeof built>) => artifact],
   ])("fails closed on %s", (_label, mutate) => {
     const artifact = mutate(built());
     const expectedPin = _label === "wrong source pin" ? "c".repeat(40) : "b".repeat(40);
     const claims =
-      _label === "wrong workflow claim"
-        ? { workflow: "samartomar/ai-harness/.github/workflows/other.yml" }
-        : _label === "wrong environment claim"
-          ? { environment: "other" }
-          : {};
+      _label === "wrong repository claim"
+        ? { repository: "other/repository" }
+        : _label === "wrong workflow claim"
+          ? { workflow: "samartomar/ai-harness/.github/workflows/other.yml" }
+          : _label === "wrong issuer claim"
+            ? { issuer: "https://issuer.example" }
+            : _label === "wrong ref claim"
+              ? { ref: "refs/heads/other" }
+              : _label === "wrong environment claim"
+                ? { environment: "other" }
+                : {};
     expect(() =>
       verifyVendorBaselineEvidenceArtifactV1({
         artifact,
@@ -134,7 +166,7 @@ describe("VendorBaselineEvidenceArtifactV1", () => {
         },
         verifyGithubAttestation: (request) => verifiedClaims(request.subjectSha256, claims),
       }),
-    ).toThrow(/baseline evidence artifact/i);
+    ).toThrow(/BASELINE_EVIDENCE_ARTIFACT_V1/);
   });
 
   it("does not call the attestation boundary until all local bytes have passed", () => {

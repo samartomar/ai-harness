@@ -1,0 +1,39 @@
+name: vendor-baseline-evidence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    environment: baseline-evidence-publish
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Bind manual attestation to current protected main
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          test "$GITHUB_SHA" = "$(git rev-parse origin/main)"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - name: Build deterministic vendor baseline-evidence subject
+        run: >-
+          npm run baseline:artifact -- --out .baseline-evidence-artifact
+          --repository "$GITHUB_REPOSITORY" --environment baseline-evidence-publish
+      - name: Attest vendor baseline-evidence checksums
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: .baseline-evidence-artifact/SHA256SUMS
