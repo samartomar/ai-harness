@@ -8,6 +8,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Pinned Superpowers scan acceptances are independently reproducible.** Maintainers can run
+  `npm run check:scan-acceptance -- --checkout <absolute-path>` against a separate, clean checkout
+  detached at the shipped Superpowers commit. The read-only JSON audit re-runs the existing content
+  inspector, sorts exact code/path/LF-normalized-content-digest observations, and distinguishes
+  matched, stale, missing, new, and critical findings. It never edits the checkout or acceptance
+  artifact, never accepts a finding, and never authorizes the runtime scan gate.
+
 - **Governance decisions gain a canonical, inert V1 transport contract.** The strict record keeps
   `approved`, `accepted-with-conditions`, and `rejected` immutable, while revocation is a separate
   record bound to the decision and issuer. Bounded identifiers, exact candidate/source/evidence/

@@ -368,6 +368,22 @@ The maintainer drift check above exists to enforce exactly this: it re-runs the
 vetter against the canonical upstream SHAs and fails on any hash, receipt, or
 verdict divergence.
 
+To reproduce the separate Superpowers content-acceptance observations, use a
+dedicated upstream checkout whose canonical Git root is clean and detached at
+the shipped commit:
+
+```bash
+npm run check:scan-acceptance -- --checkout /absolute/path/to/Superpowers
+```
+
+The command refuses the AI-Harness checkout, a subdirectory, a mutable,
+sparse, skip-worktree, assume-unchanged, replacement-ref-substituted, or
+symlinked checkout root, an unexpected origin, or any other revision. The
+deterministic JSON separates exact matches from stale, missing, newly observed,
+and critical findings. This is maintenance evidence only: it does not change
+`src/binding/scan-acceptance.json`, generate candidate entries, or authorize the
+runtime scan gate.
+
 ### Incremental reuse and `--full`
 
 By default, `baseline:vet` and `baseline:check` reuse a component's prior receipt
