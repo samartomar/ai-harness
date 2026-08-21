@@ -40,6 +40,20 @@ export type AdoptionRecipeRouteSpec =
   | { kind: "aih-ecc-profile-lifecycle"; command: "aih ecc --lifecycle install" }
   | { kind: "none" };
 
+export type AdoptionRecipePrerequisite =
+  | "ECC profile lifecycle is installed"
+  | "Reviewed Serena symbol/refactor tools"
+  | "Existing AIH core catalog Workbench row"
+  | "Explicit on-demand overhead audit"
+  | "ECC MCP approval";
+
+export type AdoptionRecipeConflict =
+  | "The current ECC profile disables token-savior; it is not an MCP route"
+  | "Memory, file, shell, project, and mode tools remain outside the reviewed route"
+  | "One broad impact/reviewer query owner; no sibling route"
+  | "Durable architectural memory stays on this existing row; no sibling route"
+  | "manual-stdio only; no HTTPS Add route";
+
 export interface AdoptionRecipeRole {
   id: "token-savior" | "serena" | "code-review-graph" | "codebase-memory-mcp" | "token-optimizer";
   questionClass:
@@ -50,6 +64,8 @@ export interface AdoptionRecipeRole {
     | "on-demand-overhead-audit";
   label: string;
   guidance: string;
+  prerequisites: AdoptionRecipePrerequisite[];
+  conflicts: AdoptionRecipeConflict[];
   route: AdoptionRecipeRouteSpec;
   usage: { kind: "none-captured" } | { kind: "mcp-server-event"; serverId: string };
 }
@@ -69,6 +85,16 @@ const SERENA_MINIMUM_TOOLS = [
   "rename_symbol",
 ] as const;
 const CORE_ROLE_IDS = ["code-review-graph", "codebase-memory-mcp"] as const;
+const SERENA_FORBIDDEN_OVERLAP_CLASSES = [
+  {
+    name: "file",
+    pattern: /^(?:read|write|edit|create|delete|list)_(?:file|files|directory|dir)$/,
+  },
+  { name: "shell", pattern: /(?:^|_)(?:shell|terminal|command|exec)(?:_|$)/ },
+  { name: "memory", pattern: /(?:^|_)(?:memory|memories|recall)(?:_|$)/ },
+  { name: "project", pattern: /^(?:switch|set|open|close)_project(?:_|$)/ },
+  { name: "mode", pattern: /^(?:switch|set|open|close)_mode(?:_|$)/ },
+] as const;
 
 function ordinal(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -160,6 +186,20 @@ export function buildAdoptionRecipe(
       throw new Error(`adoption recipe source drift: Serena tool ${tool} is unavailable`);
     }
   }
+  for (const { name, pattern } of SERENA_FORBIDDEN_OVERLAP_CLASSES) {
+    const overlap = serenaAllowedTools.find((tool) => pattern.test(tool));
+    if (overlap !== undefined) {
+      throw new Error(
+        `adoption recipe source drift: Serena forbidden ${name} overlap tool ${overlap}`,
+      );
+    }
+  }
+  for (const id of ["token-savior", "serena", ...CORE_ROLE_IDS]) {
+    if (eccMcpSelected.includes(id) && eccMcpDisabled.includes(id)) {
+      const label = id === "token-savior" ? "Token Savior" : id === "serena" ? "Serena" : id;
+      throw new Error(`adoption recipe source conflict: ${label} appears in selected and disabled`);
+    }
+  }
   for (const id of CORE_ROLE_IDS) {
     if (!coreMcpIds.includes(id)) {
       throw new Error(`adoption recipe source drift: core MCP ${id} is unavailable`);
@@ -180,6 +220,8 @@ export function buildAdoptionRecipe(
       questionClass: "low-token-orientation",
       label: "Token Savior",
       guidance: "Use for low-token orientation. No attributable usage signal is captured today.",
+      prerequisites: ["ECC profile lifecycle is installed"],
+      conflicts: ["The current ECC profile disables token-savior; it is not an MCP route"],
       route: { kind: "aih-ecc-profile-lifecycle", command: "aih ecc --lifecycle install" },
       usage: { kind: "none-captured" },
     },
@@ -188,6 +230,11 @@ export function buildAdoptionRecipe(
       questionClass: "symbol-navigation-and-refactors",
       label: "Serena",
       guidance: "Use for exact symbol navigation and refactors.",
+      prerequisites: [
+        "ECC profile lifecycle is installed",
+        "Reviewed Serena symbol/refactor tools",
+      ],
+      conflicts: ["Memory, file, shell, project, and mode tools remain outside the reviewed route"],
       route: { kind: "aih-ecc-profile-lifecycle", command: "aih ecc --lifecycle install" },
       usage: { kind: "mcp-server-event", serverId: "serena" },
     },
@@ -195,7 +242,9 @@ export function buildAdoptionRecipe(
       id: "code-review-graph",
       questionClass: "broad-impact-context",
       label: "code-review-graph",
-      guidance: "Use for broad impact and reviewer context.",
+      guidance: "Use for one broad impact/reviewer query.",
+      prerequisites: ["Existing AIH core catalog Workbench row"],
+      conflicts: ["One broad impact/reviewer query owner; no sibling route"],
       route: { kind: "workbench-row", candidate: "code-review-graph" },
       usage: { kind: "mcp-server-event", serverId: "code-review-graph" },
     },
@@ -203,7 +252,9 @@ export function buildAdoptionRecipe(
       id: "codebase-memory-mcp",
       questionClass: "semantic-relationship-memory",
       label: "codebase-memory-mcp",
-      guidance: "Use for semantic relationships and durable memory.",
+      guidance: "Use for semantic relationships and durable architectural memory.",
+      prerequisites: ["Existing AIH core catalog Workbench row"],
+      conflicts: ["Durable architectural memory stays on this existing row; no sibling route"],
       route: { kind: "workbench-row", candidate: "codebase-memory-mcp" },
       usage: { kind: "mcp-server-event", serverId: "codebase-memory-mcp" },
     },
@@ -212,6 +263,8 @@ export function buildAdoptionRecipe(
       questionClass: "on-demand-overhead-audit",
       label: "Token Optimizer",
       guidance: "Use only for an explicit on-demand overhead audit.",
+      prerequisites: ["Explicit on-demand overhead audit", "ECC MCP approval"],
+      conflicts: ["manual-stdio only; no HTTPS Add route"],
       route: { kind: "ecc-mcp-approval", id: "token-optimizer", addability: "manual-stdio" },
       usage: { kind: "mcp-server-event", serverId: "token-optimizer" },
     },

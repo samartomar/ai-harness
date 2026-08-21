@@ -61,8 +61,13 @@ describe("policy studio adoption recipe", () => {
       },
       {
         id: "serena",
-        prerequisites: ["ECC profile lifecycle is installed", "Reviewed Serena symbol/refactor tools"],
-        conflicts: ["Memory, file, shell, project, and mode tools remain outside the reviewed route"],
+        prerequisites: [
+          "ECC profile lifecycle is installed",
+          "Reviewed Serena symbol/refactor tools",
+        ],
+        conflicts: [
+          "Memory, file, shell, project, and mode tools remain outside the reviewed route",
+        ],
       },
       {
         id: "code-review-graph",
@@ -148,7 +153,9 @@ describe("policy studio adoption recipe", () => {
   it("fails closed when routed profile identities overlap selected and disabled sources", () => {
     const tokenSaviorSelected = sources();
     tokenSaviorSelected.eccMcpSelected.push("token-savior");
-    expect(() => buildAdoptionRecipe(tokenSaviorSelected)).toThrow(/token savior.*selected.*disabled/i);
+    expect(() => buildAdoptionRecipe(tokenSaviorSelected)).toThrow(
+      /token savior.*selected.*disabled/i,
+    );
 
     const serenaDisabled = sources();
     serenaDisabled.eccMcpDisabled.push("serena");
@@ -182,7 +189,7 @@ describe("policy studio adoption recipe", () => {
     expect(panel.textContent).toContain("Token Savior");
     expect(panel.textContent).toContain("Usage / coverage: none captured");
     expect(panel.textContent).toContain("code-review-graph");
-    expect(panel.textContent).toContain("one broad impact/reviewer query owner");
+    expect(panel.textContent).toContain("One broad impact/reviewer query owner");
     expect(panel.textContent).toContain("codebase-memory-mcp");
     expect(panel.textContent).toContain("Durable architectural memory");
     expect(panel.textContent).toContain("Token Optimizer");
