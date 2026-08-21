@@ -875,6 +875,18 @@ describe("Codex MCP removal custody", () => {
         "",
       ].join("\n"),
     ],
+    [
+      "managed fence with an unrecognized table",
+      [
+        "# >>> aih managed (mcp) >>>",
+        '[mcp_servers."chrome-devtools"]',
+        'command = "operator-devtools"',
+        "[unexpected]",
+        "value = true",
+        "# <<< aih managed (mcp) <<<",
+        "",
+      ].join("\n"),
+    ],
   ])("preserves an operator-adopted Chrome DevTools table after an %s", (_case, config) => {
     expect(stripCodexTomlFootprint(config, chromeFootprint)).toBe(config);
   });

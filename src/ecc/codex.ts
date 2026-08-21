@@ -44,6 +44,8 @@ const ECC_CODEX_MCP_TRANSPORTS = new Map<string, CodexMcpTransport>([["chrome-de
 const TOML_SERVER_HEADER =
   /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|'([^']+)'|([^.\]'"]+))\][ \t]*(?:#.*)?$/;
 const TOML_TABLE_HEADER = /^[ \t]*\[/;
+const CODEX_MCP_BLOCK_BEGIN = "# >>> aih managed (mcp) >>>";
+const CODEX_MCP_BLOCK_END = "# <<< aih managed (mcp) <<<";
 export const CODEX_AGENTS_BLOCK_MARKER = "ecc-codex:agents";
 export const CODEX_INSTALL_STATE_FILE = "ecc-aih-install-state.json";
 
@@ -486,11 +488,52 @@ function removeInlineTableKeys(lines: string[], tablePath: string, keys: Set<str
   return lines.map((entry, entryIndex) => (entryIndex === index ? nextLine : entry));
 }
 
+function stripManagedMcpTables(raw: string, claimedNames: readonly string[]): string {
+  if (claimedNames.length === 0) return raw;
+  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+  const begins = lines
+    .map((line, index) => (line === CODEX_MCP_BLOCK_BEGIN ? index : -1))
+    .filter((index) => index >= 0);
+  const ends = lines
+    .map((line, index) => (line === CODEX_MCP_BLOCK_END ? index : -1))
+    .filter((index) => index >= 0);
+  if (begins.length !== 1 || ends.length !== 1) return raw;
+  const begin = begins[0];
+  const end = ends[0];
+  if (begin === undefined || end === undefined || begin >= end) return raw;
+
+  const sections: Array<{ name: string; lines: string[] }> = [];
+  let current: { name: string; lines: string[] } | undefined;
+  const names = new Set<string>();
+  for (const line of lines.slice(begin + 1, end)) {
+    const header = line.match(TOML_SERVER_HEADER);
+    if (header) {
+      if (current !== undefined) sections.push(current);
+      const name = tomlHeaderName(header);
+      if (names.has(name)) return raw;
+      names.add(name);
+      current = { name, lines: [line] };
+    } else if (TOML_TABLE_HEADER.test(line)) {
+      return raw;
+    } else if (current !== undefined) {
+      current.lines.push(line);
+    } else if (line.trim().length > 0) {
+      return raw;
+    }
+  }
+  if (current !== undefined) sections.push(current);
+  const claimed = new Set(claimedNames);
+  const retained = sections.filter((section) => !claimed.has(section.name));
+  if (retained.length === sections.length) return raw;
+  const body = retained.map((section) => section.lines.join("\n").replace(/\n+$/, "")).join("\n\n");
+  const replacement = body.length > 0 ? [CODEX_MCP_BLOCK_BEGIN, body, CODEX_MCP_BLOCK_END] : [];
+  return [...lines.slice(0, begin), ...replacement, ...lines.slice(end + 1)].join("\n");
+}
+
 export function stripCodexTomlFootprint(raw: string, footprint: CodexTomlFootprint): string {
   const usesCrlf = /\r\n/.test(raw);
-  const mcpTables = footprint.mcpServers.map((name) => `mcp_servers.${name}`);
-  let lines = removeTables(raw, footprint.tables);
-  lines = removeTables(lines.join("\n"), mcpTables, { includeDescendants: true });
+  const mcpStripped = stripManagedMcpTables(raw, footprint.mcpServers);
+  let lines = removeTables(mcpStripped, footprint.tables);
   lines = removeKeysFromScope(lines, undefined, new Set(footprint.rootKeys));
   for (const [table, keys] of Object.entries(footprint.tableKeys)) {
     const keySet = new Set(keys);
