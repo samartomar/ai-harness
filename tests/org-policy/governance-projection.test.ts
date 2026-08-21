@@ -593,8 +593,9 @@ describe("governed candidate projection", () => {
       (action): action is WriteAction =>
         action.kind === "write" && action.path === ".claude/managed-settings.json",
     );
+    if (managed === undefined) throw new Error("expected managed settings action");
     const settingsCandidate = (
-      managed?.json as {
+      managed.json as {
         organizationPolicy: { effectiveCandidates: Array<Record<string, unknown>> };
       }
     ).organizationPolicy.effectiveCandidates[0];
