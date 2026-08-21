@@ -1,10 +1,11 @@
-import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { z } from "zod";
 import { AihError } from "../errors.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import shippedAcceptanceJson from "./scan-acceptance.json";
+import { type DimensionReport, inspectTree, type ScanSeverity } from "./scan-gate.js";
 
 export const SUPERPOWERS_ACCEPTANCE_COMMIT = "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9";
 
@@ -36,31 +37,19 @@ const AcceptanceArtifactSchema = z
   })
   .strict();
 
-const ObservationSchema = z
-  .object({
-    code: z.string().min(1).max(240),
-    severity: z.enum(SEVERITIES),
-    path: z.string().min(1).max(1_024),
-  })
-  .strict();
-
 export type ScanAcceptanceArtifact = z.infer<typeof AcceptanceArtifactSchema>;
-export type ScanAcceptanceObservation = z.infer<typeof ObservationSchema>;
 
 export interface ScanAcceptanceCheckInput {
-  /** An explicit, independently cloned Superpowers checkout; this checker never acquires one. */
+  /** Explicit absolute path to an independently cloned Superpowers checkout. */
   checkoutPath: string;
-  /** The committed acceptance artifact to audit. It is never modified. */
-  acceptance: unknown;
-  /** Static scanner findings to compare; the checker reads but never executes their source files. */
-  observations: readonly unknown[];
-  /** Optional explicit report destination. It must be absolute and outside the scanned checkout. */
-  outputPath?: string;
-  /** Test seam for git only. Production callers use the hermetic default runner. */
-  runner?: Runner;
 }
 
-export type ShippedScanAcceptanceCheckInput = Omit<ScanAcceptanceCheckInput, "acceptance">;
+/** Test seams only; production calls use the shipped artifact, runtime inspector, and runner. */
+export interface ScanAcceptanceCheckDeps {
+  runner?: Runner;
+  inspectTree?: (treePath: string) => readonly DimensionReport[];
+  acceptanceArtifact?: unknown;
+}
 
 export interface ScanAcceptanceTuple {
   code: string;
@@ -69,26 +58,33 @@ export interface ScanAcceptanceTuple {
 }
 
 export interface ScanAcceptanceObservedTuple extends ScanAcceptanceTuple {
-  severity: (typeof SEVERITIES)[number];
+  severity: ScanSeverity;
 }
 
 export interface ScanAcceptanceCheckReport {
-  checkout: { path: string; commitSha: string };
+  checkout: { repository: "obra/superpowers"; commitSha: string };
   observations: readonly ScanAcceptanceObservedTuple[];
   accepted: readonly ScanAcceptanceObservedTuple[];
   stale: readonly ScanAcceptanceTuple[];
   missing: readonly ScanAcceptanceTuple[];
   new: readonly ScanAcceptanceObservedTuple[];
   critical: readonly ScanAcceptanceObservedTuple[];
-  /** This audit is observational only and can never authorize a runtime gate. */
+  /** This audit is observational only and never authorizes a runtime gate. */
   authorizes: false;
 }
 
-/** Fail-closed scan-acceptance input, checkout, or output-boundary error. */
+/** Fail-closed scan-acceptance input, checkout, or CLI error. */
 export class ScanAcceptanceCheckError extends AihError {
   constructor(message: string) {
     super(message, "AIH_SCAN_ACCEPTANCE");
   }
+}
+
+interface CheckoutIdentity {
+  root: string;
+  dev: number;
+  ino: number;
+  commitSha: string;
 }
 
 function fail(message: string): never {
@@ -103,13 +99,21 @@ function fullTupleKey(tuple: ScanAcceptanceTuple): string {
   return JSON.stringify([tuple.code, tuple.path, tuple.fileSha256]);
 }
 
-function compareTuples(
-  left: Pick<ScanAcceptanceTuple, "code" | "path">,
-  right: Pick<ScanAcceptanceTuple, "code" | "path">,
-): number {
-  if (left.code !== right.code) return left.code < right.code ? -1 : 1;
-  if (left.path !== right.path) return left.path < right.path ? -1 : 1;
-  return 0;
+function compareText(left: string, right: string): number {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
+function compareTuples(left: ScanAcceptanceTuple, right: ScanAcceptanceTuple): number {
+  return (
+    compareText(left.code, right.code) ||
+    compareText(left.path, right.path) ||
+    compareText(left.fileSha256, right.fileSha256)
+  );
+}
+
+function severityRank(severity: ScanSeverity): number {
+  return SEVERITIES.indexOf(severity);
 }
 
 function normalizeRelativePosixPath(path: string, label: string): void {
@@ -141,186 +145,168 @@ function parseAcceptance(value: unknown): ScanAcceptanceArtifact {
   return parsed.data;
 }
 
-function parseObservations(values: readonly unknown[]): ScanAcceptanceObservation[] {
-  const parsed: ScanAcceptanceObservation[] = [];
-  const keys = new Set<string>();
-  for (const value of values) {
-    const result = ObservationSchema.safeParse(value);
-    if (!result.success) fail("scan acceptance observation is malformed");
-    normalizeRelativePosixPath(result.data.path, "observation path");
-    const key = tupleKey(result.data);
-    if (keys.has(key))
-      fail(`duplicate scan acceptance observation: ${result.data.code} ${result.data.path}`);
-    keys.add(key);
-    parsed.push(result.data);
-  }
-  return parsed.sort(compareTuples);
-}
-
 function gitResult(
   result: Awaited<ReturnType<Runner>>,
   operation: string,
-): { stdout: string; code: number | null } {
+): { stdout: string; code: number } {
   if (result.spawnError || result.truncated || result.code === null) {
     fail(`unable to verify Superpowers checkout (${operation})`);
   }
   return { stdout: result.stdout, code: result.code };
 }
 
-async function assertExternalPinnedCheckout(checkoutPath: string, runner: Runner): Promise<string> {
-  let checkout: string;
+async function checkoutIdentity(checkoutPath: string, runner: Runner): Promise<CheckoutIdentity> {
+  let root: string;
+  let dev: number;
+  let ino: number;
   try {
     const stat = lstatSync(checkoutPath);
     if (!stat.isDirectory() || stat.isSymbolicLink())
       fail("vendor checkout must be a real directory");
-    checkout = realpathSync(checkoutPath);
+    root = realpathSync(checkoutPath);
+    const canonicalStat = statSync(root);
+    dev = canonicalStat.dev;
+    ino = canonicalStat.ino;
   } catch (error) {
     if (error instanceof ScanAcceptanceCheckError) throw error;
     fail("vendor checkout is unavailable or unreadable");
   }
 
-  const packageJson = resolve(checkout, "package.json");
   try {
-    const parsed = JSON.parse(readFileSync(packageJson, "utf8")) as { name?: unknown };
-    if (parsed.name === "@aihq/harness")
+    const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
+      name?: unknown;
+    };
+    if (packageJson.name === "@aihq/harness")
       fail("AI-Harness checkout cannot be scanned as Superpowers");
   } catch (error) {
     if (error instanceof ScanAcceptanceCheckError) throw error;
-    // A Superpowers checkout need not have a package manifest; malformed local metadata is ignored.
   }
 
   const inside = gitResult(
-    await runner(["git", "-C", checkout, "rev-parse", "--is-inside-work-tree"]),
+    await runner(["git", "-C", root, "rev-parse", "--is-inside-work-tree"]),
     "repository status",
   );
   if (inside.code !== 0 || inside.stdout.trim() !== "true") {
     fail("vendor checkout is not a Git work tree");
   }
   const remote = gitResult(
-    await runner(["git", "-C", checkout, "remote", "get-url", "origin"]),
+    await runner(["git", "-C", root, "remote", "get-url", "origin"]),
     "origin remote",
   );
   if (remote.code !== 0 || !ALLOWED_REMOTES.has(remote.stdout.trim())) {
     fail("vendor checkout origin is not obra/superpowers");
   }
   const branch = gitResult(
-    await runner(["git", "-C", checkout, "symbolic-ref", "-q", "HEAD"]),
+    await runner(["git", "-C", root, "symbolic-ref", "-q", "HEAD"]),
     "detached HEAD",
   );
   if (branch.code !== 1 || branch.stdout.trim().length !== 0) {
     fail("vendor checkout must have a detached HEAD");
   }
-  const head = gitResult(
-    await runner(["git", "-C", checkout, "rev-parse", "HEAD"]),
-    "HEAD revision",
-  );
+  const head = gitResult(await runner(["git", "-C", root, "rev-parse", "HEAD"]), "HEAD revision");
   const commitSha = head.stdout.trim();
   if (head.code !== 0 || !SHA40.test(commitSha) || commitSha !== SUPERPOWERS_ACCEPTANCE_COMMIT) {
     fail(`vendor checkout must be detached at ${SUPERPOWERS_ACCEPTANCE_COMMIT}`);
   }
   const status = gitResult(
-    await runner(["git", "-C", checkout, "status", "--porcelain=v1", "--untracked-files=all"]),
+    await runner(["git", "-C", root, "status", "--porcelain=v1", "--untracked-files=all"]),
     "working tree status",
   );
   if (status.code !== 0 || status.stdout.trim().length !== 0) {
     fail("vendor checkout must be clean and immutable");
   }
-  return checkout;
+  return { root, dev, ino, commitSha };
 }
 
-function hashObservedFile(root: string, path: string): string {
-  const target = resolve(root, ...path.split("/"));
-  const sourceRelative = relative(root, target);
+function assertSameCheckout(before: CheckoutIdentity, after: CheckoutIdentity): void {
   if (
-    sourceRelative.length === 0 ||
-    sourceRelative === ".." ||
-    sourceRelative.startsWith("../") ||
-    sourceRelative.startsWith("..\\")
+    before.root !== after.root ||
+    before.dev !== after.dev ||
+    before.ino !== after.ino ||
+    before.commitSha !== after.commitSha
   ) {
-    fail(`observation path escapes vendor checkout: ${path}`);
-  }
-  try {
-    const stat = lstatSync(target);
-    if (!stat.isFile() || stat.isSymbolicLink())
-      fail(`observation path is not a readable regular file: ${path}`);
-    const text = readFileSync(target, "utf8").replace(/\r\n?/g, "\n");
-    return createHash("sha256").update(text, "utf8").digest("hex");
-  } catch (error) {
-    if (error instanceof ScanAcceptanceCheckError) throw error;
-    fail(`observation file is unavailable or unreadable: ${path}`);
+    fail("vendor checkout identity changed during inspection");
   }
 }
 
-function assertOutputOutsideCheckout(outputPath: string, checkout: string): string {
-  if (!isAbsolute(outputPath)) fail("scan acceptance output path must be explicit and absolute");
-  const output = resolve(outputPath);
-  let outputDir: string;
-  try {
-    outputDir = realpathSync(dirname(output));
-  } catch {
-    fail("scan acceptance output directory is unavailable or unreadable");
+function scannerCandidates(reports: readonly DimensionReport[]): ScanAcceptanceObservedTuple[] {
+  const candidates = new Map<string, ScanAcceptanceObservedTuple>();
+  for (const report of reports) {
+    for (const finding of report.findings) {
+      if (finding.path === undefined || finding.contentSha256 === undefined) continue;
+      if (!SHA256_HEX.test(finding.contentSha256))
+        fail("inspector emitted an invalid content SHA-256");
+      normalizeRelativePosixPath(finding.path, "inspector finding path");
+      const candidate: ScanAcceptanceObservedTuple = {
+        code: finding.code,
+        path: finding.path,
+        fileSha256: finding.contentSha256,
+        severity: finding.severity,
+      };
+      const key = fullTupleKey(candidate);
+      const prior = candidates.get(key);
+      if (prior === undefined || severityRank(candidate.severity) > severityRank(prior.severity)) {
+        candidates.set(key, candidate);
+      }
+    }
   }
-  const relativeDir = relative(checkout, outputDir);
-  const outsideCheckout =
-    relativeDir === ".." || relativeDir.startsWith("../") || relativeDir.startsWith("..\\");
-  if (!outsideCheckout) {
-    fail("scan acceptance output path must be outside the scanned checkout");
-  }
-  if (existsSync(output) && lstatSync(output).isSymbolicLink()) {
-    fail("scan acceptance output path must not be a symbolic link");
-  }
-  return output;
+  return [...candidates.values()].sort(compareTuples);
 }
 
 /**
- * Read-only audit of a supplied Superpowers checkout against a supplied committed
- * acceptance artifact. The audit never changes the artifact and never authorizes
- * a scan/provisioning decision; its only optional mutation is a caller-selected
- * JSON report outside the scanned source tree.
+ * Audit scanner-derived content findings against the committed Superpowers
+ * acceptance artifact. The caller provides only the checkout; observations are
+ * always produced by the existing runtime inspector and no files are written.
  */
 export async function checkSuperpowersScanAcceptance(
   input: ScanAcceptanceCheckInput,
+  deps: ScanAcceptanceCheckDeps = {},
 ): Promise<ScanAcceptanceCheckReport> {
-  const acceptance = parseAcceptance(input.acceptance);
-  const observations = parseObservations(input.observations);
-  const checkout = await assertExternalPinnedCheckout(
-    input.checkoutPath,
-    input.runner ?? defaultRunner,
-  );
-  const observed = observations.map((entry) => ({
-    ...entry,
-    fileSha256: hashObservedFile(checkout, entry.path),
-  }));
-  const observedByPath = new Map(observed.map((entry) => [tupleKey(entry), entry]));
-  const acceptedEntries = [...acceptance.accepted].sort(compareTuples);
+  if (!isAbsolute(input.checkoutPath)) fail("vendor checkout path must be explicit and absolute");
+  const acceptance = parseAcceptance(deps.acceptanceArtifact ?? shippedAcceptanceJson);
+  const runner = deps.runner ?? defaultRunner;
+  const before = await checkoutIdentity(input.checkoutPath, runner);
+  let reports: readonly DimensionReport[];
+  try {
+    reports = (deps.inspectTree ?? inspectTree)(before.root);
+  } catch {
+    fail("vendor checkout inspection is unavailable or unreadable");
+  }
+  const observations = scannerCandidates(reports);
+  const after = await checkoutIdentity(input.checkoutPath, runner);
+  assertSameCheckout(before, after);
+
+  const observationsByTuple = new Map(observations.map((entry) => [fullTupleKey(entry), entry]));
+  const observationsByCodePath = new Map<string, ScanAcceptanceObservedTuple[]>();
+  for (const observation of observations) {
+    const key = tupleKey(observation);
+    observationsByCodePath.set(key, [...(observationsByCodePath.get(key) ?? []), observation]);
+  }
   const accepted: ScanAcceptanceObservedTuple[] = [];
   const stale: ScanAcceptanceTuple[] = [];
   const missing: ScanAcceptanceTuple[] = [];
-  for (const entry of acceptedEntries) {
+  for (const entry of [...acceptance.accepted].sort(compareTuples)) {
     const tuple: ScanAcceptanceTuple = {
       code: entry.code,
       path: entry.path,
       fileSha256: entry.fileSha256,
     };
-    if (hashObservedFile(checkout, entry.path) !== entry.fileSha256) {
-      stale.push(tuple);
+    const exact = observationsByTuple.get(fullTupleKey(tuple));
+    if (exact !== undefined) {
+      if (exact.severity !== "critical") accepted.push(exact);
       continue;
     }
-    const current = observedByPath.get(tupleKey(tuple));
-    if (current === undefined) {
-      missing.push(tuple);
-      continue;
-    }
-    if (current.severity !== "critical") accepted.push(current);
+    if (observationsByCodePath.has(tupleKey(tuple))) stale.push(tuple);
+    else missing.push(tuple);
   }
   const acceptedKeys = new Set(accepted.map(fullTupleKey));
-  const critical = observed.filter((entry) => entry.severity === "critical");
-  const newFindings = observed.filter(
+  const critical = observations.filter((entry) => entry.severity === "critical");
+  const newFindings = observations.filter(
     (entry) => entry.severity === "critical" || !acceptedKeys.has(fullTupleKey(entry)),
   );
-  const report: ScanAcceptanceCheckReport = {
-    checkout: { path: checkout, commitSha: SUPERPOWERS_ACCEPTANCE_COMMIT },
-    observations: observed,
+  return {
+    checkout: { repository: "obra/superpowers", commitSha: before.commitSha },
+    observations,
     accepted,
     stale,
     missing,
@@ -328,19 +314,36 @@ export async function checkSuperpowersScanAcceptance(
     critical,
     authorizes: false,
   };
-  if (input.outputPath !== undefined) {
-    writeFileSync(
-      assertOutputOutsideCheckout(input.outputPath, checkout),
-      `${JSON.stringify(report)}\n`,
-      "utf8",
-    );
-  }
-  return report;
 }
 
-/** Audit the repository's committed Superpowers acceptance artifact. */
-export async function checkShippedSuperpowersScanAcceptance(
-  input: ShippedScanAcceptanceCheckInput,
-): Promise<ScanAcceptanceCheckReport> {
-  return checkSuperpowersScanAcceptance({ ...input, acceptance: shippedAcceptanceJson });
+export interface ScanAcceptanceCliDeps {
+  check?: (input: ScanAcceptanceCheckInput) => Promise<ScanAcceptanceCheckReport>;
+}
+
+/** Parse the intentionally narrow stdout-only scan-acceptance command. */
+export async function runScanAcceptanceCli(
+  argv: readonly string[],
+  deps: ScanAcceptanceCliDeps = {},
+): Promise<string> {
+  const checkoutPath = argv[1] ?? "";
+  if (argv.length !== 2 || argv[0] !== "--checkout" || !isAbsolute(checkoutPath)) {
+    fail("usage: check:scan-acceptance --checkout <absolute-superpowers-checkout>");
+  }
+  const report = await (deps.check ?? checkSuperpowersScanAcceptance)({ checkoutPath });
+  return `${JSON.stringify(report)}\n`;
+}
+
+function isMainModule(): boolean {
+  const entry = process.argv[1];
+  return entry !== undefined && import.meta.url === pathToFileURL(entry).href;
+}
+
+if (isMainModule()) {
+  void runScanAcceptanceCli(process.argv.slice(2))
+    .then((output) => process.stdout.write(output))
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : "scan acceptance check failed";
+      process.stderr.write(`${message}\n`);
+      process.exitCode = 1;
+    });
 }

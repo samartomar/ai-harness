@@ -53,6 +53,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
+    "check:scan-acceptance": "tsx src/binding/scan-acceptance-check.ts",
     "check:artifacts": "tsx src/internals/check-tracked-artifacts.ts",
     "check:ai-runtime": "tsx src/internals/ai-runtime-inventory.ts --root .",
     "check:bugbounty-report": "tsx src/internals/bugbounty-report.ts --source .internal/defects/BUGBOUNTY.md",

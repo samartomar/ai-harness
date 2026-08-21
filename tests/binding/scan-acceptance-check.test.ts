@@ -108,6 +108,7 @@ describe("checkSuperpowersScanAcceptance", () => {
     );
 
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
+    expect(JSON.stringify(first)).not.toContain(checkout);
     expect(first.new).toEqual([]);
     expect(first.authorizes).toBe(false);
     expect(gitStatus(checkout)).toBe("");
@@ -123,6 +124,14 @@ describe("checkSuperpowersScanAcceptance", () => {
         dimension: "critical",
         status: "produced",
         findings: [
+          {
+            code: finding.code,
+            severity: finding.severity,
+            detail: "changed fixture",
+            coverage: "complete",
+            path: finding.path,
+            contentSha256: "c".repeat(64),
+          },
           {
             code: "trust.malicious-code",
             severity: "critical",
@@ -148,7 +157,7 @@ describe("checkSuperpowersScanAcceptance", () => {
 
     expect(report.stale).toHaveLength(1);
     expect(report.missing).toHaveLength(1);
-    expect(report.new).toHaveLength(1);
+    expect(report.new).toHaveLength(2);
     expect(report.critical).toHaveLength(1);
     expect(report.accepted).toEqual([]);
     expect(report.authorizes).toBe(false);
@@ -186,6 +195,19 @@ describe("checkSuperpowersScanAcceptance", () => {
     ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
 
     git(checkout, ["checkout", "--detach", "HEAD"]);
+    git(checkout, ["remote", "set-url", "origin", "https://example.invalid/not-superpowers.git"]);
+    await expect(
+      checkSuperpowersScanAcceptance({ checkoutPath: checkout }, fixtureDeps(artifact([]))),
+    ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    git(checkout, ["remote", "set-url", "origin", "https://github.com/obra/superpowers.git"]);
+    await expect(
+      checkSuperpowersScanAcceptance(
+        { checkoutPath: checkout },
+        fixtureDeps(artifact([]), () => {
+          throw new Error("EACCES");
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
     await expect(
       checkSuperpowersScanAcceptance(
         { checkoutPath: checkout },
@@ -210,7 +232,7 @@ describe("checkSuperpowersScanAcceptance", () => {
 describe("runScanAcceptanceCli", () => {
   it("accepts only an explicit absolute checkout argument and emits deterministic JSON", async () => {
     const report = {
-      checkout: { repository: "obra/superpowers", commitSha: SUPERPOWERS_COMMIT },
+      checkout: { repository: "obra/superpowers" as const, commitSha: SUPERPOWERS_COMMIT },
       observations: [],
       accepted: [],
       stale: [],
@@ -219,7 +241,13 @@ describe("runScanAcceptanceCli", () => {
       critical: [],
       authorizes: false as const,
     };
-    const deps = { check: async () => report };
+    let checks = 0;
+    const deps = {
+      check: async () => {
+        checks += 1;
+        return report;
+      },
+    };
     await expect(runScanAcceptanceCli([], deps)).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
     await expect(runScanAcceptanceCli(["--checkout", "relative"], deps)).rejects.toBeInstanceOf(
       ScanAcceptanceCheckError,
@@ -227,9 +255,11 @@ describe("runScanAcceptanceCli", () => {
     await expect(
       runScanAcceptanceCli(["--checkout", checkout, "--apply"], deps),
     ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    expect(checks).toBe(0);
     await expect(runScanAcceptanceCli(["--checkout", checkout], deps)).resolves.toBe(
       `${JSON.stringify(report)}\n`,
     );
+    expect(checks).toBe(1);
   });
 });
 
