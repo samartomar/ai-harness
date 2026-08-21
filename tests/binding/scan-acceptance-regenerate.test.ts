@@ -1,7 +1,11 @@
+import { mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   regenerateSuperpowersScanAcceptance,
   runScanAcceptanceRegenerateCli,
+  SCAN_ACCEPTANCE_LEDGER_PATH,
   ScanAcceptanceRegenerateError,
 } from "../../src/binding/scan-acceptance-regenerate.js";
 
@@ -75,5 +79,37 @@ describe("scan-acceptance regeneration", () => {
         read: () => "{}\n",
       }),
     ).rejects.toBeInstanceOf(ScanAcceptanceRegenerateError);
+  });
+
+  it.each([
+    [
+      "wrong repository",
+      { ...clean, checkout: { ...clean.checkout, repository: "other/repo" as "obra/superpowers" } },
+    ],
+    ["wrong pin", { ...clean, checkout: { ...clean.checkout, commitSha: "0".repeat(40) } }],
+    ["authorization claim", { ...clean, authorizes: true as false }],
+  ])("refuses a checker report with %s", async (_label, report) => {
+    await expect(
+      regenerateSuperpowersScanAcceptance({ checkoutPath: checkout }, { check: async () => report }),
+    ).rejects.toBeInstanceOf(ScanAcceptanceRegenerateError);
+  });
+
+  it("refuses a linked target before writing and anchors its default target independently of cwd", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "aih-regen-"));
+    const real = join(dir, "real.json");
+    const linked = join(dir, "linked.json");
+    writeFileSync(real, "{}\n");
+    try { symlinkSync(real, linked, "file"); } catch { return; }
+    const writes: string[] = [];
+    await expect(
+      regenerateSuperpowersScanAcceptance(
+        { checkoutPath: checkout },
+        { check: async () => clean, targetPath: linked, write: () => writes.push("write") },
+      ),
+    ).rejects.toBeInstanceOf(ScanAcceptanceRegenerateError);
+    expect(writes).toEqual([]);
+    expect(SCAN_ACCEPTANCE_LEDGER_PATH.replaceAll("\\", "/")).toMatch(
+      /\/src\/binding\/scan-acceptance\.json$/,
+    );
   });
 });

@@ -115,6 +115,33 @@ describe("rollupScanFindings", () => {
       expect.objectContaining({ path: undefined, findings: [findings[3]] }),
     ]);
   });
+
+  it("is byte-stable across permutations and preserves advisory and content identities", () => {
+    const findings = [
+      {
+        code: "x",
+        severity: "high" as const,
+        detail: "same",
+        coverage: "complete" as const,
+        path: "a",
+        contentSha256: "b".repeat(64),
+        advisory: { reclassifiedFrom: "high" as const, contextClass: "comment" },
+      },
+      {
+        code: "x",
+        severity: "high" as const,
+        detail: "same",
+        coverage: "complete" as const,
+        path: "a",
+        contentSha256: "a".repeat(64),
+        advisory: { reclassifiedFrom: "high" as const, contextClass: "comment" },
+      },
+    ];
+    expect(JSON.stringify(rollupScanFindings(findings))).toBe(
+      JSON.stringify(rollupScanFindings([...findings].reverse())),
+    );
+    expect(rollupScanFindings(findings)[0]?.findings).toHaveLength(2);
+  });
 });
 
 // Simulates a future deep dimension (W7) that is unavailable, so coverage is
