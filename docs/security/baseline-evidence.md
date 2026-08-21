@@ -52,6 +52,34 @@ Org evidence is an extension, not a waiver. It cannot turn an exact vendor
 is useful signed evidence: it means “stop until the upstream bytes or pin change
 and vet cleanly.”
 
+### Vendor artifact and attestation boundary
+
+`npm run baseline:artifact -- --out <new-directory> --repository <owner/repo>
+--environment <environment>` builds the deterministic vendor-evidence artifact
+from the exact shipped lock. The output contains canonical artifact metadata,
+the evidence bundle and manifest, the lock at
+`files/.aih/baseline-reports/vendor-lock.json`, and `SHA256SUMS`; every path and
+byte count is bounded, and every file is covered by the checksum subject. The
+writer claims a new output directory and refuses existing, linked, or reparse
+custody instead of merging with ambient files.
+
+The artifact verifier first re-checks the complete closed layout, canonical
+bytes, checksums, schema, source pins, publisher identity, and policy. Only then
+does it call the caller-owned GitHub attestation verifier, and the returned
+claim must bind the exact checksum subject, issuer, repository, workflow, ref,
+and environment. Building the artifact does not verify, sign, authorize, cache,
+install, or publish it.
+
+`.github/workflows/vendor-baseline-evidence.yml` is manual-dispatch only. Its
+unprivileged `build` job re-observes that the selected SHA is current `main`,
+installs without lifecycle scripts, builds the complete artifact, and transfers
+it as a same-run candidate. A separate `attest` job downloads that candidate and
+receives only `attestations: write` and `id-token: write` inside the protected
+`baseline-evidence-publish` environment; it has no checkout, package install,
+repository code execution, release, or package-publication step. A merge does
+not dispatch this workflow. The first real dispatch remains a publication action
+and requires separate authorization for the exact SHA.
+
 ### Enterprise org-evidence boundary
 
 At Enterprise posture, an exact organization override is required for the
