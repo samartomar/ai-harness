@@ -53,7 +53,8 @@ export type OfflineRevocationAuthorityV1Result =
 type OfflineRevocationStateTransitionV1 =
   | Readonly<{ kind: "advance"; state: OfflineRevocationStateV1 }>
   | Readonly<{ kind: "conflict" | "rollback" | "unchanged"; state: OfflineRevocationStateV1 }>
-  | Readonly<{ kind: "invalid-authority" }>;
+  | Readonly<{ kind: "invalid-authority" }>
+  | Readonly<{ kind: "stale-authority" }>;
 
 interface Trust {
   readonly expectedAdminSignerIdentity: string;
@@ -355,8 +356,12 @@ function stale(): OfflineRevocationAuthorityV1Result {
   });
 }
 
-function invalidTransition(): OfflineRevocationStateTransitionV1 {
+function invalidTransition(): Readonly<{ kind: "invalid-authority" }> {
   return deepFreezeStrictJsonV1({ kind: "invalid-authority" as const });
+}
+
+function staleTransition(): Readonly<{ kind: "stale-authority" }> {
+  return deepFreezeStrictJsonV1({ kind: "stale-authority" as const });
 }
 
 function trust(value: Json): Trust {
@@ -404,6 +409,15 @@ function reverify(value: unknown, expected: Trust): SignedOfflineRevocationSnaps
     return undefined;
   }
   return signed;
+}
+
+function custodyTime(
+  snapshot: OfflineRevocationSnapshotV1,
+  now: string,
+): "current" | "expired" | "future" {
+  if (Date.parse(snapshot.issuedAt) > Date.parse(now)) return "future";
+  if (Date.parse(snapshot.validUntil) <= Date.parse(now)) return "expired";
+  return "current";
 }
 
 function decision(value: unknown): {
@@ -525,17 +539,22 @@ export function transitionOfflineRevocationStateV1(
       "expectedAdminSignerRootSha256",
       "expectedIssuer",
       "next",
+      "now",
       "verifyCanonicalPae",
     ],
     "offline revocation state transition fields",
   );
+  const now = timestamp(item.now, "now");
   const next = reverify(item.next, trust(item));
   if (next === undefined) return invalidTransition();
+  const time = custodyTime(next.snapshot, now);
+  if (time === "future") return invalidTransition();
+  if (time === "expired") return staleTransition();
   const nextState = snapshotStateFor(next);
   if (item.current === undefined)
     return deepFreezeStrictJsonV1({ kind: "advance" as const, state: nextState });
   const current = state(item.current);
-  if (current.issuer !== nextState.issuer) fail("offline revocation state issuer");
+  if (current.issuer !== nextState.issuer) return invalidTransition();
   if (nextState.sequence < current.sequence)
     return deepFreezeStrictJsonV1({ kind: "rollback" as const, state: current });
   if (nextState.sequence === current.sequence)
@@ -563,7 +582,7 @@ export function claimOfflineRevocationStateV1(
 ):
   | Readonly<{ kind: "advanced"; state: OfflineRevocationStateV1 }>
   | Readonly<{ kind: "conflict" | "rollback" | "unchanged"; state: OfflineRevocationStateV1 }>
-  | Readonly<{ kind: "invalid-authority" }>
+  | Readonly<{ kind: "invalid-authority" | "stale-authority" }>
   | Readonly<{ kind: "contended" }> {
   const item = record(value, "offline revocation state claim");
   exact(
@@ -574,12 +593,14 @@ export function claimOfflineRevocationStateV1(
       "expectedAdminSignerRootSha256",
       "expectedIssuer",
       "next",
+      "now",
       "observe",
       "verifyCanonicalPae",
     ],
     "offline revocation state claim fields",
   );
   const expected = trust(item);
+  const now = timestamp(item.now, "now");
   const observe = item.observe;
   const claim = item.claim;
   if (
@@ -591,8 +612,11 @@ export function claimOfflineRevocationStateV1(
     fail("offline revocation state custody");
   // Do not even consult custody for unauthenticated material. The transition
   // below deliberately re-verifies again against the same live caller trust.
-  if (reverify(item.next, expected) === undefined)
-    return deepFreezeStrictJsonV1({ kind: "invalid-authority" as const });
+  const next = reverify(item.next, expected);
+  if (next === undefined) return invalidTransition();
+  const time = custodyTime(next.snapshot, now);
+  if (time === "future") return invalidTransition();
+  if (time === "expired") return staleTransition();
   let current: unknown;
   try {
     current = observe(expected.expectedIssuer);
@@ -607,9 +631,11 @@ export function claimOfflineRevocationStateV1(
     expectedAdminSignerRootSha256: expected.expectedAdminSignerRootSha256,
     expectedIssuer: expected.expectedIssuer,
     next: item.next,
+    now,
     verifyCanonicalPae: expected.verifyCanonicalPae,
   });
-  if (transition.kind === "invalid-authority") return transition;
+  if (transition.kind === "invalid-authority" || transition.kind === "stale-authority")
+    return transition;
   if (transition.kind !== "advance")
     return deepFreezeStrictJsonV1({ kind: transition.kind, state: transition.state });
   try {
