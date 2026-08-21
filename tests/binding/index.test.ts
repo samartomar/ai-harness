@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import * as binding from "../../src/binding/index.js";
 import {
   AdapterRegistry,
   type BindingDeclaration,
@@ -58,6 +59,11 @@ afterEach(() => {
 });
 
 describe("binding W2 end-to-end (declaration authority + derived caches)", () => {
+  it("keeps the maintainer-only acceptance ledger regenerator out of the library API", () => {
+    expect("regenerateSuperpowersScanAcceptance" in binding).toBe(false);
+    expect("runScanAcceptanceRegenerateCli" in binding).toBe(false);
+  });
+
   it("binds a framework through the D6 contract and persists a derived lock", async () => {
     // 1. The COMMITTED declaration is the authority.
     const resolvedForDeclaration = await resolveGitSource(

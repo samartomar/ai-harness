@@ -161,6 +161,14 @@ describe("claudeContaminationReport — clean home", () => {
     expect(report.informational.settingsHusk).toBe(true);
     seedJson(".claude/settings.json", { hooks: {}, enabledPlugins: {}, mcpServers: {} });
     expect(claudeContaminationReport({ home, projectRoot }).informational.settingsHusk).toBe(true);
+    seedJson(".claude/settings.json", { hooks: { PreToolUse: [] } });
+    expect(claudeContaminationReport({ home, projectRoot }).informational.settingsHusk).toBe(true);
+    seedJson(".claude/settings.json", { hooks: { PreToolUse: [{ matcher: "*", hooks: [] }] } });
+    expect(claudeContaminationReport({ home, projectRoot }).informational.settingsHusk).toBe(true);
+    seedJson(".claude/settings.json", { hooks: { PreToolUse: {} } });
+    report = claudeContaminationReport({ home, projectRoot });
+    expect(report.informational.settingsHusk).toBe(false);
+    expect(report.warnings.some((warning) => warning.includes("settings.json"))).toBe(true);
     seedJson(".claude/settings.json", { hooks: { PreToolUse: ["echo unsafe"] } });
     report = claudeContaminationReport({ home, projectRoot });
     expect(report.informational.settingsHusk).toBe(false);

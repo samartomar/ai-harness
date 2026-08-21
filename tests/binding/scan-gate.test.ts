@@ -150,6 +150,36 @@ describe("rollupScanFindings", () => {
     );
     expect(rollupScanFindings(findings)[0]?.findings).toHaveLength(2);
   });
+
+  it("keeps absent, false, and true acceptance states deterministically distinct", () => {
+    const findings = [
+      { code: "x", severity: "high" as const, detail: "same", coverage: "complete" as const, path: "a" },
+      {
+        code: "x",
+        severity: "high" as const,
+        detail: "same",
+        coverage: "complete" as const,
+        path: "a",
+        accepted: false,
+      },
+      {
+        code: "x",
+        severity: "high" as const,
+        detail: "same",
+        coverage: "complete" as const,
+        path: "a",
+        accepted: true,
+      },
+    ];
+    expect(JSON.stringify(rollupScanFindings(findings))).toBe(
+      JSON.stringify(rollupScanFindings([...findings].reverse())),
+    );
+    expect(rollupScanFindings(findings)[0]?.findings.map((finding) => finding.accepted)).toEqual([
+      undefined,
+      false,
+      true,
+    ]);
+  });
 });
 
 // Simulates a future deep dimension (W7) that is unavailable, so coverage is
