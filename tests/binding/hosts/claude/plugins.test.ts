@@ -966,11 +966,6 @@ describe("removePlugin — post-uninstall project custody", () => {
 
   it("treats an exact leaf pre-existing value as settled before host teardown", async () => {
     const bound = await bindForProjectRemoval();
-    writeFileSync(
-      join(root, ".claude", "settings.json"),
-      `${JSON.stringify({ enabledPlugins: { [KEY]: false } }, null, 2)}\n`,
-      "utf8",
-    );
     const leafOwnership = [
       {
         kind: "json-pointer" as const,
@@ -980,6 +975,11 @@ describe("removePlugin — post-uninstall project custody", () => {
         postApplyDigest: "0".repeat(64),
       },
     ];
+    expect(readJson(root, ".claude/settings.json").enabledPlugins).toEqual({ [KEY]: true });
+    const restore = planClaudeRemoval(root, { ownership: leafOwnership });
+    expect(restore.drift).toEqual([]);
+    await applyActions(root, restore.actions);
+    expect(readJson(root, ".claude/settings.json").enabledPlugins).toEqual({ [KEY]: false });
     const { runner, calls } = recordingRunner();
 
     const removal = await removePlugin(
@@ -1000,6 +1000,12 @@ describe("removePlugin — post-uninstall project custody", () => {
     );
 
     expect(removal.drift).toEqual([]);
+    expect(removal.removed).toEqual(
+      expect.arrayContaining([
+        homePluginCacheTarget(MARKETPLACE, PLUGIN),
+        homeMarketplaceTarget(MARKETPLACE),
+      ]),
+    );
     expect(calls).toContainEqual(["claude", "plugin", "uninstall", KEY, "--scope", "project"]);
     expect(calls).toContainEqual(["claude", "plugin", "marketplace", "remove", MARKETPLACE]);
     expect(readJson(root, ".claude/settings.json").enabledPlugins).toEqual({ [KEY]: false });
