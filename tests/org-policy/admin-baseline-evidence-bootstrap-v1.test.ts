@@ -1,0 +1,44 @@
+import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
+import {
+  parseAdminBaselineEvidenceBootstrapV1Json,
+  type AdminBaselineEvidenceBootstrapV1,
+} from "../../src/org-policy/admin-baseline-evidence-bootstrap-v1.js";
+import { describe, expect, it } from "vitest";
+
+const record: AdminBaselineEvidenceBootstrapV1 = {
+  artifactUrl: "https://artifacts.example.test/vendor-evidence/SHA256SUMS",
+  attestationUrl: "https://artifacts.example.test/vendor-evidence/attestation.json",
+  cacheMaxAgeSeconds: 3600,
+  expectedEnvironment: "baseline-evidence-publish",
+  expectedIssuer: "https://token.actions.githubusercontent.com",
+  expectedRef: "refs/heads/main",
+  expectedRepository: "samartomar/ai-harness",
+  expectedWorkflow: "samartomar/ai-harness/.github/workflows/vendor-baseline-evidence.yml",
+  maxSchemaVersion: 1,
+  minSchemaVersion: 1,
+  protocol: "AdminBaselineEvidenceBootstrapV1",
+  source: {
+    id: "ecc",
+    owner: "affaan-m",
+    pinnedSha: "b".repeat(40),
+    repo: "ecc",
+  },
+};
+
+describe("admin baseline evidence bootstrap V1", () => {
+  it("accepts only canonical credential-free HTTPS authority bound to exact #815 identity", () => {
+    const parsed = parseAdminBaselineEvidenceBootstrapV1Json(canonicalStrictJsonBytesV1(record));
+    expect(parsed).toEqual(record);
+  });
+
+  it.each([
+    ["credential locator", { ...record, artifactUrl: "https://token@artifacts.example.test/a" }],
+    ["schema range", { ...record, maxSchemaVersion: 0 }],
+    ["untrusted ref", { ...record, expectedRef: "refs/heads/feature..unsafe" }],
+    ["wrong source pin", { ...record, source: { ...record.source, pinnedSha: "A".repeat(40) } }],
+  ])("fails closed on %s", (_label, value) => {
+    expect(() => parseAdminBaselineEvidenceBootstrapV1Json(canonicalStrictJsonBytesV1(value))).toThrow(
+      /AIH_ADMIN_BASELINE_EVIDENCE/,
+    );
+  });
+});
