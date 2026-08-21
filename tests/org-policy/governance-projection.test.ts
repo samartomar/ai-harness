@@ -1975,6 +1975,7 @@ describe("governed candidate projection", () => {
       const mcpRefresh = refresh.filter(
         (action) =>
           "path" in action &&
+          typeof action.path === "string" &&
           [".aih-config.json", ".claude/managed-settings.json", ".kiro/settings/mcp.json"].includes(
             action.path,
           ),
