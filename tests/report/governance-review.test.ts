@@ -295,6 +295,86 @@ describe("governanceReviewView", () => {
     expect(heuristicOnly.data).toMatchObject({ usage: { state: "partial-attribution" } });
     expect(mixed.data).toMatchObject({ usage: { state: "partial-attribution" } });
   });
+
+  it("keeps explicit unknown MCP identities unmatched and routine tool events non-subject", () => {
+    const installed = effective(["context7", "github"]);
+    installed.candidates.push(usageMeteringCandidate());
+    const input = {
+      effective: installed,
+      receipts: { ...RECEIPTS, hook: { state: "active" as const } },
+      usage: { malformed: 0, unknownKind: 0 },
+    };
+    const explicitUnknown = governanceReviewView({
+      ...input,
+      usage: {
+        ...input.usage,
+        events: [
+          {
+            tool: "codex",
+            kind: "mcp",
+            server: "unmanaged-server",
+            name: "context7/check",
+          },
+        ],
+      },
+    });
+    const ordinary = governanceReviewView({
+      ...input,
+      usage: {
+        ...input.usage,
+        events: [{ tool: "codex", kind: "tool", name: "shell-command" }],
+      },
+    });
+    const ambiguous = governanceReviewView({
+      ...input,
+      usage: {
+        ...input.usage,
+        events: [{ tool: "codex", kind: "skill", name: "context7/github", source: "ecc" }],
+      },
+    });
+
+    const explicitSubjects = (explicitUnknown.data as { subjects: Array<{ id: string }> }).subjects;
+    expect(explicitSubjects.find((subject) => subject.id === "context7")).toMatchObject({
+      attribution: { exact: 0, heuristic: 0 },
+    });
+    expect(explicitUnknown.data).toMatchObject({
+      usage: { state: "partial-attribution", unmatched: 1, nonSubject: 0 },
+    });
+    expect(ordinary.data).toMatchObject({
+      usage: { state: "attributed", unmatched: 0, nonSubject: 1 },
+    });
+    expect(ambiguous.data).toMatchObject({
+      usage: { state: "partial-attribution", unmatched: 1, nonSubject: 0 },
+    });
+    expect(explicitUnknown.text).not.toContain("unmanaged-server");
+    expect(ordinary.text).not.toContain("shell-command");
+  });
+
+  it("marks blocked subjects not-projected while retaining the surface receipt separately", () => {
+    const policy = effective(["blocked-mcp", "effective-mcp"]);
+    const effectiveSubject = policy.candidates.find((subject) => subject.id === "effective-mcp");
+    if (effectiveSubject === undefined) throw new Error("expected effective MCP subject");
+    effectiveSubject.effective = true;
+    effectiveSubject.evidence = "verified";
+    effectiveSubject.blockingCodes = [];
+    const digest = governanceReviewView({
+      effective: policy,
+      receipts: { ...RECEIPTS, mcp: { state: "clean" as const } },
+      usage: { events: [], malformed: 0, unknownKind: 0 },
+    });
+    const subjects = (digest.data as { subjects: Array<{ id: string }> }).subjects;
+
+    expect(subjects.find((subject) => subject.id === "effective-mcp")).toMatchObject({
+      materialization: { state: "clean", targets: { claude: "clean" } },
+    });
+    expect(subjects.find((subject) => subject.id === "blocked-mcp")).toMatchObject({
+      materialization: {
+        state: "not-projected",
+        surfaceReceipt: { state: "clean", targets: { claude: "clean" } },
+      },
+    });
+    expect(digest.text).toContain("receipt=not-projected; surface-receipt=clean (claude:clean)");
+  });
 });
 
 describe("governanceReviewDigest", () => {
