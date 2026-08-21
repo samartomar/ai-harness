@@ -47,6 +47,39 @@ describe("policy studio adoption recipe", () => {
       { kind: "workbench-row", candidate: "codebase-memory-mcp" },
       { kind: "ecc-mcp-approval", id: "token-optimizer", addability: "manual-stdio" },
     ]);
+    expect(
+      recipe.roles.map((role) => ({
+        id: role.id,
+        prerequisites: role.prerequisites,
+        conflicts: role.conflicts,
+      })),
+    ).toEqual([
+      {
+        id: "token-savior",
+        prerequisites: ["ECC profile lifecycle is installed"],
+        conflicts: ["The current ECC profile disables token-savior; it is not an MCP route"],
+      },
+      {
+        id: "serena",
+        prerequisites: ["ECC profile lifecycle is installed", "Reviewed Serena symbol/refactor tools"],
+        conflicts: ["Memory, file, shell, project, and mode tools remain outside the reviewed route"],
+      },
+      {
+        id: "code-review-graph",
+        prerequisites: ["Existing AIH core catalog Workbench row"],
+        conflicts: ["One broad impact/reviewer query owner; no sibling route"],
+      },
+      {
+        id: "codebase-memory-mcp",
+        prerequisites: ["Existing AIH core catalog Workbench row"],
+        conflicts: ["Durable architectural memory stays on this existing row; no sibling route"],
+      },
+      {
+        id: "token-optimizer",
+        prerequisites: ["Explicit on-demand overhead audit", "ECC MCP approval"],
+        conflicts: ["manual-stdio only; no HTTPS Add route"],
+      },
+    ]);
     expect(recipe.roles.find((role) => role.id === "token-savior")?.usage).toEqual({
       kind: "none-captured",
     });
@@ -100,6 +133,28 @@ describe("policy studio adoption recipe", () => {
     );
   });
 
+  it.each([
+    ["read_file", "file"],
+    ["run_shell_command", "shell"],
+    ["search_memory", "memory"],
+    ["switch_project", "project"],
+    ["set_mode", "mode"],
+  ])("fails closed when Serena gains a reviewed-overlap %s tool", (tool, toolClass) => {
+    const drifted = sources();
+    drifted.serenaAllowedTools.push(tool);
+    expect(() => buildAdoptionRecipe(drifted)).toThrow(new RegExp(`Serena.*${toolClass}`, "i"));
+  });
+
+  it("fails closed when routed profile identities overlap selected and disabled sources", () => {
+    const tokenSaviorSelected = sources();
+    tokenSaviorSelected.eccMcpSelected.push("token-savior");
+    expect(() => buildAdoptionRecipe(tokenSaviorSelected)).toThrow(/token savior.*selected.*disabled/i);
+
+    const serenaDisabled = sources();
+    serenaDisabled.eccMcpDisabled.push("serena");
+    expect(() => buildAdoptionRecipe(serenaDisabled)).toThrow(/serena.*selected.*disabled/i);
+  });
+
   it("renders a separate escaped, inert panel without altering authored policy or ticker counts", () => {
     const model = structuredClone(policyStudioModel());
     const role = model.adoptionRecipe.roles[0];
@@ -114,6 +169,24 @@ describe("policy studio adoption recipe", () => {
     expect(panel.querySelector("img")).toBeNull();
     expect(panel.textContent).toContain('<img src=x onerror="globalThis.__unsafe=true"> hostile');
     expect((window as unknown as { __unsafe?: boolean }).__unsafe).toBeUndefined();
+    for (const recipeRole of model.adoptionRecipe.roles) {
+      const rendered = panel.querySelector(`[data-adoption-role="${recipeRole.id}"]`);
+      if (rendered === null) throw new Error(`expected ${recipeRole.id} adoption role`);
+      expect(rendered.textContent).toContain("Prerequisites:");
+      expect(rendered.textContent).toContain(recipeRole.prerequisites.join("; "));
+      expect(rendered.textContent).toContain("Overlap / conflict:");
+      expect(rendered.textContent).toContain(recipeRole.conflicts.join("; "));
+      expect(rendered.textContent).toContain("Next action:");
+      expect(rendered.textContent).toContain("Usage / coverage:");
+    }
+    expect(panel.textContent).toContain("Token Savior");
+    expect(panel.textContent).toContain("Usage / coverage: none captured");
+    expect(panel.textContent).toContain("code-review-graph");
+    expect(panel.textContent).toContain("one broad impact/reviewer query owner");
+    expect(panel.textContent).toContain("codebase-memory-mcp");
+    expect(panel.textContent).toContain("Durable architectural memory");
+    expect(panel.textContent).toContain("Token Optimizer");
+    expect(panel.textContent).toContain("Explicit on-demand overhead audit");
     expect(
       (window.document.getElementById("config-preview") as unknown as { value: string }).value,
     ).toBe(`${JSON.stringify(model.initialPolicy, null, 2)}\n`);
