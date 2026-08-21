@@ -14,7 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { coreOwnedEccCodexMcpServers } from "../../src/ecc/codex.js";
+import { coreOwnedEccCodexMcpServers, stripCodexTomlFootprint } from "../../src/ecc/codex.js";
 import { codexEccActions, command } from "../../src/ecc/index.js";
 import {
   AIH_DIRECT_ECC_INSTALL_TARGETS,
@@ -850,6 +850,51 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
     expect(
       execs(actions).some((action) => action.describe.startsWith("Install ECC for Codex")),
     ).toBe(true);
+  });
+});
+
+describe("Codex MCP removal custody", () => {
+  const chromeFootprint = {
+    rootKeys: [],
+    tables: [],
+    tableKeys: {},
+    mcpServers: ["chrome-devtools"],
+  };
+
+  it.each([
+    [
+      "absent managed fence",
+      '[mcp_servers."chrome-devtools"]\ncommand = "operator-devtools"\nargs = ["--adopted"]\n',
+    ],
+    [
+      "malformed managed fence",
+      [
+        "# >>> aih managed (mcp) >>>",
+        '[mcp_servers."chrome-devtools"]',
+        'command = "operator-devtools"',
+        "",
+      ].join("\n"),
+    ],
+  ])("preserves an operator-adopted Chrome DevTools table after an %s", (_case, config) => {
+    expect(stripCodexTomlFootprint(config, chromeFootprint)).toBe(config);
+  });
+
+  it("removes only a state-claimed Chrome DevTools table from a valid managed fence", () => {
+    const config = [
+      '[mcp_servers."operator"]',
+      'command = "operator-devtools"',
+      "",
+      "# >>> aih managed (mcp) >>>",
+      '[mcp_servers."chrome-devtools"]',
+      'command = "npx"',
+      'args = ["-y", "chrome-devtools-mcp@1.7.0"]',
+      "# <<< aih managed (mcp) <<<",
+      "",
+    ].join("\n");
+
+    expect(stripCodexTomlFootprint(config, chromeFootprint)).toBe(
+      '[mcp_servers."operator"]\ncommand = "operator-devtools"\n',
+    );
   });
 });
 
