@@ -380,6 +380,9 @@ export async function bindPlugin(
   request: BindPluginRequest,
   deps: BindPluginDeps,
 ): Promise<BindPluginResult> {
+  if (!isAbsolute(deps.root)) {
+    throw new ClaudePluginError("refusing Claude bind root — must be an absolute path");
+  }
   const scope = request.scope ?? "project";
   const { disposition, resolved, plugin, marketplace } = request;
 
@@ -665,6 +668,9 @@ export async function removePlugin(
   request: RemovePluginRequest,
   deps: RemovePluginDeps,
 ): Promise<RemovePluginResult> {
+  if (!isAbsolute(request.projectRoot)) {
+    throw new ClaudePluginError("refusing Claude removal root — must be an absolute path");
+  }
   assertSafePluginName(request.plugin, "plugin");
   assertSafePluginName(request.marketplace, "marketplace");
   const pluginKey = pluginEnableKey(request.plugin, request.marketplace);
@@ -689,6 +695,18 @@ export async function removePlugin(
   const removed: string[] = [];
   const drift: ClaudeDriftEntry[] = [];
   const cli: RemovePluginResult["cli"] = [];
+
+  if (enablementOwnership.length !== 1) {
+    drift.push({
+      kind: "json-pointer",
+      target: enablementTarget,
+      reason:
+        enablementOwnership.length === 0
+          ? "no receipt-owned enabledPlugins entry — preserved"
+          : "ambiguous receipt-owned enabledPlugins entries — preserved",
+    });
+    return { removed, drift, cli };
+  }
 
   if (cacheEntry === undefined) {
     // Nothing machine-scope recorded — nothing to reconcile.
@@ -730,15 +748,6 @@ export async function removePlugin(
     }
     return { removed, drift, cli };
   }
-  if (enablementOwnership.length === 0) {
-    drift.push({
-      kind: "json-pointer",
-      target: enablementTarget,
-      reason: "no receipt-owned enabledPlugins entry — preserved",
-    });
-    return { removed, drift, cli };
-  }
-
   // The host refuses a project-scope uninstall while this plugin remains enabled.
   // Re-observe and settle the receipt-owned project state ourselves so a caller
   // cannot accidentally reverse that host-required order. Drift is a refusal:

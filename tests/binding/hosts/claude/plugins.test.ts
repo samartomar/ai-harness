@@ -785,6 +785,30 @@ describe("removePlugin — conservative machine-scope reconciliation", () => {
 });
 
 describe("bindPlugin — project custody", () => {
+  it("refuses a relative project root before any runner or apply call", async () => {
+    const { resolved, disposition } = scannedFixture("relative-root", { "SKILL.md": "# skill\n" });
+    const { runner, calls } = recordingRunner();
+    let applies = 0;
+
+    await expect(
+      bindPlugin(
+        { disposition, resolved, plugin: PLUGIN, marketplace: MARKETPLACE },
+        {
+          root: "relative-project-root",
+          runner,
+          env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+          locateCache: () => resolved.treePath,
+          applyActions: async (target, actions) => {
+            applies += 1;
+            return applyActions(target, actions);
+          },
+        },
+      ),
+    ).rejects.toThrow(/bind root.*absolute/i);
+    expect(calls).toHaveLength(0);
+    expect(applies).toBe(0);
+  });
+
   it("runs every bind lifecycle subprocess with the requested project root as cwd", async () => {
     const { resolved, disposition } = scannedFixture("rooted-cli", { "SKILL.md": "# skill\n" });
     const ambient = mkdtempSync(join(tmpdir(), "aih-neutral-ambient-"));
@@ -817,6 +841,88 @@ describe("bindPlugin — project custody", () => {
 });
 
 describe("removePlugin — post-uninstall project custody", () => {
+  it("refuses a relative project root before any runner or apply call", async () => {
+    const bound = await bindForProjectRemoval();
+    const { runner, calls } = recordingRunner();
+    let applies = 0;
+
+    await expect(
+      removePlugin(
+        {
+          ownership: bound.ownership.filter((entry) => entry.target.startsWith("home:")),
+          plugin: PLUGIN,
+          marketplace: MARKETPLACE,
+          scope: "project",
+          projectRoot: "relative-project-root",
+          repoRelativeOwnership: bound.ownership.filter(
+            (entry) => !entry.target.startsWith("home:"),
+          ),
+        },
+        {
+          runner,
+          env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+          locateCache: () => bound.loadedTreePath,
+          applyActions: async (target, actions) => {
+            applies += 1;
+            return applyActions(target, actions);
+          },
+        },
+      ),
+    ).rejects.toThrow(/removal root.*absolute/i);
+    expect(calls).toHaveLength(0);
+    expect(applies).toBe(0);
+  });
+
+  it("refuses duplicate receipt enabledPlugins ownership before cache, apply, or CLI effects", async () => {
+    const bound = await bindForProjectRemoval();
+    const { runner, calls } = recordingRunner();
+    let applies = 0;
+    let cacheLookups = 0;
+    const repoRelativeOwnership = [
+      ...bound.ownership.filter((entry) => !entry.target.startsWith("home:")),
+      {
+        kind: "json-pointer" as const,
+        target: `.claude/settings.json#/enabledPlugins/${KEY}`,
+        preExisting: { absent: true } as const,
+        applied: true,
+        postApplyDigest: "0".repeat(64),
+      },
+    ];
+
+    const result = await removePlugin(
+      {
+        ownership: bound.ownership.filter((entry) => entry.target.startsWith("home:")),
+        plugin: PLUGIN,
+        marketplace: MARKETPLACE,
+        scope: "project",
+        projectRoot: root,
+        repoRelativeOwnership,
+      },
+      {
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => {
+          cacheLookups += 1;
+          return bound.loadedTreePath;
+        },
+        applyActions: async (target, actions) => {
+          applies += 1;
+          return applyActions(target, actions);
+        },
+      },
+    );
+
+    expect(result.drift).toEqual([
+      expect.objectContaining({
+        target: ".claude/settings.json#/enabledPlugins",
+        reason: "ambiguous receipt-owned enabledPlugins entries — preserved",
+      }),
+    ]);
+    expect(calls).toHaveLength(0);
+    expect(applies).toBe(0);
+    expect(cacheLookups).toBe(0);
+  });
+
   it("runs every removal lifecycle subprocess with the requested project root as cwd", async () => {
     const bound = await bindForProjectRemoval();
     const cwd: Array<string | undefined> = [];
