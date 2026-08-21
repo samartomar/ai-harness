@@ -2174,6 +2174,13 @@ describe("governed candidate projection", () => {
     };
     marker.managedMcpProjection = managedMcpProjectionOwnership(ownership.expected);
     writeFileSync(markerPath, JSON.stringify(marker));
+    const seededSettings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
+      organizationPolicy: Record<string, unknown>;
+      sandbox: Record<string, unknown>;
+    };
+    seededSettings.organizationPolicy.operatorManagedSibling = { preserve: "organization-policy" };
+    seededSettings.sandbox.operatorManagedSibling = { preserve: "sandbox" };
+    writeFileSync(settingsPath, JSON.stringify(seededSettings));
     const settingsBefore = readFileSync(settingsPath, "utf8");
 
     const renewed = reviewedMcpPolicy({ allowedServers: [], disabledServers: [] });
@@ -2195,13 +2202,42 @@ describe("governed candidate projection", () => {
     await executePlan(plan("refresh decision-aware managed settings", ...refresh), applied);
     expect(readFileSync(settingsPath, "utf8")).not.toBe(settingsBefore);
     const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
-      organizationPolicy: { effectiveCandidates: Array<{ decision?: { id?: string } }> };
+      organizationPolicy: {
+        effectiveCandidates: Array<{ decision?: { id?: string } }>;
+        operatorManagedSibling?: unknown;
+      };
+      sandbox: { operatorManagedSibling?: unknown };
     };
     expect(settings.organizationPolicy.effectiveCandidates[0]?.decision?.id).toBe(
       "decision-reviewed-risk",
     );
+    expect(settings.organizationPolicy.operatorManagedSibling).toEqual({
+      preserve: "organization-policy",
+    });
+    expect(settings.sandbox.operatorManagedSibling).toEqual({ preserve: "sandbox" });
     const refreshed = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
     expect(refreshed.managedMcpProjection).toMatchObject({ schemaVersion: 2 });
+
+    await executePlan(
+      plan(
+        "replace stale decision-aware managed settings",
+        ...(await verifiedOrgPolicyProjectionActions(applied, initial)),
+      ),
+      applied,
+    );
+    const replaced = JSON.parse(readFileSync(settingsPath, "utf8")) as {
+      organizationPolicy: {
+        effectiveCandidates: Array<{ decision?: unknown }>;
+        operatorManagedSibling?: unknown;
+      };
+      sandbox: { operatorManagedSibling?: unknown };
+    };
+    expect(replaced.organizationPolicy.effectiveCandidates).toHaveLength(1);
+    expect(replaced.organizationPolicy.effectiveCandidates[0]?.decision).toBeUndefined();
+    expect(replaced.organizationPolicy.operatorManagedSibling).toEqual({
+      preserve: "organization-policy",
+    });
+    expect(replaced.sandbox.operatorManagedSibling).toEqual({ preserve: "sandbox" });
   });
 
   it.each(["claude", "kiro"] as const)(
