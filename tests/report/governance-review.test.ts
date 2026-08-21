@@ -265,6 +265,36 @@ describe("governanceReviewView", () => {
     });
     expect(digest.text).not.toMatch(/unused|trim|retire|revoke|uninstall|value/i);
   });
+
+  it("keeps heuristic-only and mixed attribution globally partial", () => {
+    const installed = effective(["context7", "github"]);
+    installed.candidates.push(usageMeteringCandidate());
+    const input = {
+      effective: installed,
+      receipts: { ...RECEIPTS, hook: { state: "active" } },
+      usage: { malformed: 0, unknownKind: 0 },
+    };
+    const heuristicOnly = governanceReviewView({
+      ...input,
+      usage: {
+        ...input.usage,
+        events: [{ tool: "codex", kind: "skill", name: "context7/check", source: "ecc" }],
+      },
+    });
+    const mixed = governanceReviewView({
+      ...input,
+      usage: {
+        ...input.usage,
+        events: [
+          { tool: "codex", kind: "mcp", server: "context7" },
+          { tool: "codex", kind: "skill", name: "github/check", source: "ecc" },
+        ],
+      },
+    });
+
+    expect(heuristicOnly.data).toMatchObject({ usage: { state: "partial-attribution" } });
+    expect(mixed.data).toMatchObject({ usage: { state: "partial-attribution" } });
+  });
 });
 
 describe("governanceReviewDigest", () => {
