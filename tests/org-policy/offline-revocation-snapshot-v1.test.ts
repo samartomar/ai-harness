@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   canonicalOfflineRevocationSnapshotV1Bytes,
@@ -87,7 +89,7 @@ describe("OfflineRevocationSnapshotV1", () => {
     const missing = resolve({
       signedSnapshot: signed({ snapshot: snapshot({ issuedAt: "2026-08-10T11:00:00Z" }) }),
     });
-    const expired = resolve({ now: "2026-08-11T12:00:01Z" });
+    const expired = resolve({ now: "2026-08-11T12:00:00Z" });
     for (const result of [missing, expired]) {
       expect(result).toEqual({
         effective: false,
@@ -203,5 +205,12 @@ describe("OfflineRevocationSnapshotV1", () => {
     expect(resolve()).not.toHaveProperty("stop");
     expect(resolve()).not.toHaveProperty("delete");
     expect(resolve()).not.toHaveProperty("subtract");
+    const source = readFileSync(
+      resolvePath("src/org-policy/offline-revocation-snapshot-v1.ts"),
+      "utf8",
+    );
+    expect(source).not.toMatch(
+      /node:(?:child_process|fs|http|https|net|tls)|\b(?:writeFile|readFile|spawn|exec|fetch|materialize|delete|stop)\s*\(/,
+    );
   });
 });

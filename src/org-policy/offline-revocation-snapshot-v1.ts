@@ -431,7 +431,7 @@ export function resolveOfflineRevocationAuthorityV1(
   }
   if (!verified || Date.parse(snapshot.issuedAt) > Date.parse(now)) return invalid();
   if (
-    Date.parse(snapshot.validUntil) < Date.parse(now) ||
+    Date.parse(snapshot.validUntil) <= Date.parse(now) ||
     Date.parse(snapshot.issuedAt) < Date.parse(resolvedDecision.issuedAt) ||
     Date.parse(snapshot.issuedAt) < Date.parse(resolvedDecision.notBefore)
   )
