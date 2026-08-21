@@ -204,7 +204,12 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
-/** Canonical bytes are inert transport material until a future authority seam verifies them. */
+/**
+ * Canonical bytes and their digest identify one immutable decision artifact.
+ * External receipt attestation verifies the enclosing receipt; live resolution
+ * still applies its exact bindings and time gates, so canonicalization alone
+ * never grants authority.
+ */
 export function canonicalGovernanceDecisionV1(value: GovernanceDecisionV1): string {
   return stableJson(value);
 }
