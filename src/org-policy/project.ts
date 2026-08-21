@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstatSync } from "node:fs";
 import { join } from "node:path";
+import type { McpProjectionDecisionBindings } from "../config/marker.js";
 import { readRegularFile } from "../internals/fsxn.js";
 import {
   canAppendPolicyAihIgnore,
@@ -178,14 +179,125 @@ interface PolicyHookReceiptEntry {
 
 interface PolicyHookReceipt {
   format: "aih-org-policy-hook-receipt";
-  version: 2;
+  version: 2 | 3;
   policyVersion?: string;
   hooks: Array<{ id: string; sourceDigest: string; targets: string[] }>;
   entries: PolicyHookReceiptEntry[];
+  /** v3 binds current, effective decisions without embedding decision prose. */
+  decisions?: McpProjectionDecisionBindings;
+  /** Domain-separated integrity digest; it never grants authority by itself. */
+  selfDigest?: string;
 }
 
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function decisionBindingsFor(
+  effective: EffectiveOrgPolicy,
+  kind: "mcp" | "hook",
+  target: string | ReadonlySet<string>,
+): McpProjectionDecisionBindings {
+  const includesTarget = (candidate: EffectiveOrgPolicy["candidates"][number]) =>
+    typeof target === "string"
+      ? candidate.projection.requestedTargets.includes(target)
+      : candidate.projection.requestedTargets.some((item) => target.has(item));
+  return effective.candidates
+    .filter(
+      (candidate) =>
+        candidate.effective &&
+        candidate.kind === kind &&
+        includesTarget(candidate) &&
+        candidate.decision !== undefined,
+    )
+    .map((candidate) => {
+      const decision = candidate.decision;
+      if (decision === undefined) throw new OrgPolicyError("missing effective decision binding");
+      const expiresAt =
+        decision.reviewBy !== undefined &&
+        Date.parse(decision.reviewBy) < Date.parse(decision.expiresAt)
+          ? decision.reviewBy
+          : decision.expiresAt;
+      return {
+        candidate: candidate.id,
+        id: decision.id,
+        issuer: decision.issuer,
+        digest: decision.digest,
+        expiresAt,
+      };
+    })
+    .sort((left, right) =>
+      left.candidate === right.candidate
+        ? left.id.localeCompare(right.id)
+        : left.candidate.localeCompare(right.candidate),
+    );
+}
+
+function usageHookIdentities(
+  effective: EffectiveOrgPolicy,
+  currentTargets: ReadonlySet<string>,
+): Array<{ id: string; sourceDigest: string; targets: string[] }> {
+  return effective.candidates
+    .filter(
+      (candidate) =>
+        candidate.effective &&
+        candidate.kind === "hook" &&
+        candidate.source.type === "hook" &&
+        candidate.source.handler === "usage-metering",
+    )
+    .map((candidate) => ({
+      id: candidate.id,
+      sourceDigest: candidate.sourceDigest,
+      targets: candidate.projection.requestedTargets.filter((target) => currentTargets.has(target)),
+    }))
+    .filter((candidate) => candidate.targets.length > 0)
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function hookReceiptPayload(
+  policyVersion: string | undefined,
+  hooks: PolicyHookReceipt["hooks"],
+  entries: PolicyHookReceiptEntry[],
+  decisions: McpProjectionDecisionBindings,
+) {
+  return {
+    format: "aih-org-policy-hook-receipt" as const,
+    version: 3 as const,
+    ...(policyVersion === undefined ? {} : { policyVersion }),
+    hooks,
+    entries,
+    decisions,
+  };
+}
+
+function hookReceiptSelfDigest(payload: ReturnType<typeof hookReceiptPayload>): string {
+  return `sha256:${sha256(`aih-org-policy-hook-receipt/v3\0${stableJson(payload)}`)}`;
+}
+
+function isStrictDecisionBindings(value: unknown): value is McpProjectionDecisionBindings {
+  if (!Array.isArray(value)) return false;
+  let previous = "";
+  return value.every((item) => {
+    if (!isPlainObject(item) || Object.keys(item).length !== 5) return false;
+    if (
+      typeof item.candidate !== "string" ||
+      typeof item.id !== "string" ||
+      typeof item.issuer !== "string" ||
+      typeof item.digest !== "string" ||
+      typeof item.expiresAt !== "string" ||
+      !/^[a-z][a-z0-9-]{0,63}$/.test(item.candidate) ||
+      !/^decision-[a-z][a-z0-9-]{0,63}$/.test(item.id) ||
+      !/^[a-z][a-z0-9-]{0,63}$/.test(item.issuer) ||
+      !/^sha256:[a-f0-9]{64}$/.test(item.digest) ||
+      !Number.isFinite(Date.parse(item.expiresAt))
+    ) {
+      return false;
+    }
+    const key = `${item.candidate}\0${item.id}`;
+    if (previous !== "" && previous >= key) return false;
+    previous = key;
+    return true;
+  });
 }
 
 function usageHookSourceDigest(): string {
@@ -293,7 +405,7 @@ function parseHookReceipt(ctx: PlanContext): { receipt?: PolicyHookReceipt; raw?
   if (
     !isPlainObject(value) ||
     value.format !== "aih-org-policy-hook-receipt" ||
-    value.version !== 2
+    (value.version !== 2 && value.version !== 3)
   ) {
     throw new OrgPolicyError(`${ORG_POLICY_HOOK_RECEIPT_PATH} is not an AIH policy hook receipt`);
   }
@@ -387,16 +499,27 @@ function parseHookReceipt(ctx: PlanContext): { receipt?: PolicyHookReceipt; raw?
       `${ORG_POLICY_HOOK_RECEIPT_PATH} does not prove exactly one host entry per selected target`,
     );
   }
-  return {
-    raw,
-    receipt: {
-      format: "aih-org-policy-hook-receipt",
-      version: 2,
-      ...(typeof value.policyVersion === "string" ? { policyVersion: value.policyVersion } : {}),
-      hooks,
-      entries,
-    },
-  };
+  const policyVersion = typeof value.policyVersion === "string" ? value.policyVersion : undefined;
+  if (value.version === 2) {
+    return {
+      raw,
+      receipt: {
+        format: "aih-org-policy-hook-receipt",
+        version: 2,
+        ...(policyVersion === undefined ? {} : { policyVersion }),
+        hooks,
+        entries,
+      },
+    };
+  }
+  if (!isStrictDecisionBindings(value.decisions) || typeof value.selfDigest !== "string") {
+    throw new OrgPolicyError(`${ORG_POLICY_HOOK_RECEIPT_PATH} has invalid v3 decision bindings`);
+  }
+  const payload = hookReceiptPayload(policyVersion, hooks, entries, value.decisions);
+  if (value.selfDigest !== hookReceiptSelfDigest(payload)) {
+    throw new OrgPolicyError(`${ORG_POLICY_HOOK_RECEIPT_PATH} has an invalid v3 self-digest`);
+  }
+  return { raw, receipt: { ...payload, selfDigest: value.selfDigest } };
 }
 
 const usageHostPaths = [
@@ -620,7 +743,14 @@ export function orgPolicyHookReceiptState(
   ctx: PlanContext,
   effective: EffectiveOrgPolicy,
 ): {
-  state: "absent" | "active" | "retained" | "drifted" | "invalid" | "unowned";
+  state:
+    | "absent"
+    | "active"
+    | "retained"
+    | "retained-invalid-decision"
+    | "drifted"
+    | "invalid"
+    | "unowned";
   detail: string;
 } {
   let parsed: { receipt?: PolicyHookReceipt };
@@ -658,23 +788,23 @@ export function orgPolicyHookReceiptState(
   } catch (error) {
     return { state: "drifted", detail: (error as Error).message };
   }
-  const active = effective.candidates
-    .filter(
-      (candidate) =>
-        candidate.effective &&
-        candidate.kind === "hook" &&
-        candidate.source.type === "hook" &&
-        candidate.source.handler === "usage-metering",
-    )
-    .map((candidate) => ({
-      id: candidate.id,
-      sourceDigest: candidate.sourceDigest,
-      targets: candidate.projection.requestedTargets,
-    }));
+  const currentTargets = new Set(ctx.targets ?? ["claude"]);
+  const active = usageHookIdentities(effective, currentTargets);
   if (stableJson(active) !== stableJson(parsed.receipt.hooks)) {
     return {
       state: "retained",
       detail: "receipt names a hook no longer effective; conservative rollback is required",
+    };
+  }
+  const decisions = decisionBindingsFor(effective, "hook", currentTargets);
+  if (
+    parsed.receipt.version !== 3 ||
+    stableJson(parsed.receipt.decisions) !== stableJson(decisions)
+  ) {
+    return {
+      state: "retained-invalid-decision",
+      detail:
+        "receipt and owned artifacts retain a decision binding that is no longer current; policy project must refresh or remove it",
     };
   }
   return { state: "active", detail: "receipt and every AIH-owned hook artifact match" };
@@ -689,6 +819,7 @@ export function orgPolicyMcpReceiptState(
     | "not-requested"
     | "clean"
     | "retained"
+    | "retained-invalid-decision"
     | "missing"
     | "altered"
     | "revoked"
@@ -738,6 +869,19 @@ export function orgPolicyMcpReceiptState(
         "managed-MCP receipt and owned settings retain a different governed selection; policy project must reconcile the requested selection",
     };
   }
+  const decisions = decisionBindingsFor(effective, "mcp", "claude");
+  if (
+    state.state === "clean" &&
+    prior !== undefined &&
+    (prior.ownership.schemaVersion !== 2 ||
+      stableJson(prior.ownership.decisions) !== stableJson(decisions))
+  ) {
+    return {
+      state: "retained-invalid-decision",
+      detail:
+        "managed-MCP receipt and owned settings retain a decision binding that is no longer current; policy project must refresh or remove it",
+    };
+  }
   return state;
 }
 
@@ -750,6 +894,7 @@ export function orgPolicyKiroMcpReceiptState(
     | "not-requested"
     | "clean"
     | "retained"
+    | "retained-invalid-decision"
     | "absent"
     | "altered"
     | "missing"
@@ -805,6 +950,19 @@ export function orgPolicyKiroMcpReceiptState(
         "Kiro workspace-MCP receipt retains a different governed selection; policy project must reconcile the requested selection",
     };
   }
+  const decisions = decisionBindingsFor(effective, "mcp", "kiro");
+  if (
+    state.state === "clean" &&
+    prior !== undefined &&
+    (prior.ownership.schemaVersion !== 2 ||
+      stableJson(prior.ownership.decisions) !== stableJson(decisions))
+  ) {
+    return {
+      state: "retained-invalid-decision",
+      detail:
+        "Kiro workspace-MCP receipt retains a decision binding that is no longer current; policy project must refresh or remove it",
+    };
+  }
   return state;
 }
 
@@ -819,6 +977,24 @@ function usageHookReceiptOwnsPath(ctx: PlanContext, path: string): boolean {
   const { receipt } = parseHookReceipt(ctx);
   return (receipt?.entries ?? []).some(
     (entry) => entry.kind === "json-hook" && entry.path === path,
+  );
+}
+
+function hookReceiptAction(
+  raw: string | undefined,
+  policyVersion: string | undefined,
+  hooks: PolicyHookReceipt["hooks"],
+  entries: PolicyHookReceiptEntry[],
+  decisions: McpProjectionDecisionBindings,
+): Action {
+  const payload = hookReceiptPayload(policyVersion, hooks, entries, decisions);
+  return withExpectedContents(
+    writeJson(
+      ORG_POLICY_HOOK_RECEIPT_PATH,
+      { ...payload, selfDigest: hookReceiptSelfDigest(payload) },
+      "record AIH-owned policy hook receipt for conservative rollback",
+    ),
+    raw,
   );
 }
 
@@ -841,26 +1017,33 @@ function usageHookProjectionActions(ctx: PlanContext, effective: EffectiveOrgPol
   ];
   if (targets.length === 0) return hookDeactivationActions(ctx);
   const existing = parseHookReceipt(ctx);
-  const hooks = effective.candidates
-    .filter(
-      (candidate) =>
-        candidate.effective &&
-        candidate.kind === "hook" &&
-        candidate.source.type === "hook" &&
-        candidate.source.handler === "usage-metering",
-    )
-    .map((candidate) => ({
-      id: candidate.id,
-      sourceDigest: candidate.sourceDigest,
-      targets: candidate.projection.requestedTargets,
-    }));
+  const hooks = usageHookIdentities(effective, currentTargets);
+  const decisions = decisionBindingsFor(effective, "hook", currentTargets);
   if (existing.receipt !== undefined) {
     if (stableJson(existing.receipt.hooks) === stableJson(hooks)) {
-      const state = orgPolicyHookReceiptState(ctx, effective);
-      if (state.state === "active") return [];
-      throw new OrgPolicyError(
-        `${ORG_POLICY_HOOK_RECEIPT_PATH} cannot skip projection: ${state.detail}`,
-      );
+      const ownershipIssue = usageArtifactOwnershipIssue(ctx, existing.receipt);
+      if (ownershipIssue !== undefined) {
+        throw new OrgPolicyError(
+          `${ORG_POLICY_HOOK_RECEIPT_PATH} cannot refresh projection: ${ownershipIssue}`,
+        );
+      }
+      if (
+        existing.receipt.version === 3 &&
+        stableJson(existing.receipt.decisions) === stableJson(decisions)
+      ) {
+        return [];
+      }
+      // A legacy v2 or a changed decision binding refreshes only the receipt;
+      // the exact, receipt-owned host artifacts remain untouched.
+      return [
+        hookReceiptAction(
+          existing.raw,
+          effective.policyVersion,
+          hooks,
+          existing.receipt.entries,
+          decisions,
+        ),
+      ];
     }
     throw new OrgPolicyError(
       `${ORG_POLICY_HOOK_RECEIPT_PATH} owns a different hook selection; deactivate it first`,
@@ -956,20 +1139,7 @@ function usageHookProjectionActions(ctx: PlanContext, effective: EffectiveOrgPol
     ),
     withExpectedContents(ignoreAction, ignore),
     ...hostActions,
-    withExpectedContents(
-      writeJson(
-        ORG_POLICY_HOOK_RECEIPT_PATH,
-        {
-          format: "aih-org-policy-hook-receipt",
-          version: 2,
-          policyVersion: effective.policyVersion,
-          hooks,
-          entries,
-        },
-        "record AIH-owned policy hook receipt for conservative rollback",
-      ),
-      existing.raw,
-    ),
+    hookReceiptAction(existing.raw, effective.policyVersion, hooks, entries, decisions),
   ];
 }
 
@@ -1007,7 +1177,26 @@ function managedSettings(
               evidence: candidate.evidence,
               evidenceRecord: candidate.evidenceRecord,
               ...(candidate.approval === undefined ? {} : { approval: candidate.approval }),
-              ...(candidate.decision === undefined ? {} : { decision: candidate.decision }),
+              ...(candidate.decision === undefined
+                ? {}
+                : {
+                    // Managed settings are a public operator surface. Keep only
+                    // status/identity facts; the canonical decision digest binds
+                    // any private conditions in the external authority receipt.
+                    decision: {
+                      id: candidate.decision.id,
+                      digest: candidate.decision.digest,
+                      issuer: candidate.decision.issuer,
+                      disposition: candidate.decision.disposition,
+                      expiresAt: candidate.decision.expiresAt,
+                      ...(candidate.decision.reviewBy === undefined
+                        ? {}
+                        : { reviewBy: candidate.decision.reviewBy }),
+                      ...(candidate.decision.riskState === undefined
+                        ? {}
+                        : { riskState: candidate.decision.riskState }),
+                    },
+                  }),
               dangerCodes: candidate.dangerCodes,
               blockingCodes: candidate.blockingCodes,
               decisionBlockers: candidate.decisionBlockers,
@@ -1075,7 +1264,12 @@ function projectionActionsFromRuntime(
       );
     }
     const owned = managedMcpEnabled
-      ? managedMcpProjectionOwnershipAction(ctx, ["claude"], managedMcpSettings)
+      ? managedMcpProjectionOwnershipAction(
+          ctx,
+          ["claude"],
+          managedMcpSettings,
+          decisionBindingsFor(runtime.effective, "mcp", "claude"),
+        )
       : undefined;
     // The deactivation branch reuses the shared managed-MCP lifecycle
     // (`src/mcp/managed-projection.ts`), but folds the key subtraction into the
@@ -1150,7 +1344,13 @@ function projectionActionsFromRuntime(
     // No Kiro activation and no Kiro receipt is a true no-op. In particular it
     // must never turn a Claude-only governed policy into a Kiro projection.
     if (selectedIds.length > 0 || kiroMcpProjectionOnDisk(ctx.root) !== undefined) {
-      actions.push(...kiroMcpProjectionActions(ctx, selected));
+      actions.push(
+        ...kiroMcpProjectionActions(
+          ctx,
+          selected,
+          decisionBindingsFor(runtime.effective, "mcp", "kiro"),
+        ),
+      );
     }
   }
   // Legacy org policies retain the established generic usage lifecycle. Only a

@@ -369,7 +369,9 @@ export function kiroMcpProjectionActions(
   decisions?: McpProjectionDecisionBindings,
 ): Action[] {
   const expected = kiroMcpProjectionExpected(servers);
-  const desiredOwnership = kiroMcpProjectionOwnership(expected, decisions);
+  // New ownership is always strict v2. Version 1 remains readable only so an
+  // exact legacy projection can be conservatively subtracted.
+  const desiredOwnership = kiroMcpProjectionOwnership(expected, decisions ?? []);
   const residue = kiroMcpProjectionOnDisk(ctx.root);
   if (residue !== undefined && !residue.matches) {
     if (Object.keys(expected.mcpServers).length > 0) {

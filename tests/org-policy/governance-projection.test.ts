@@ -504,6 +504,13 @@ describe("governed candidate projection", () => {
         ],
       },
     });
+    const managed = actions.find(
+      (action): action is WriteAction =>
+        action.kind === "write" && action.path === ".claude/managed-settings.json",
+    );
+    expect(JSON.stringify(managed?.json)).not.toContain(
+      "Review the finding before the decision expires.",
+    );
   });
 
   it("unlocks a clean reviewed control only with an exact approved decision", async () => {
@@ -1911,6 +1918,77 @@ describe("governed candidate projection", () => {
     );
   });
 
+  it("upgrades an exact legacy usage receipt to v3 without rewriting owned hook artifacts", async () => {
+    const applied = ctx({ apply: true });
+    const policy = usageHookPolicy("active");
+    await executePlan(
+      plan("policy hooks", ...(await verifiedOrgPolicyProjectionActions(applied, policy))),
+      applied,
+    );
+    const hostPath = join(dir, ".claude", "settings.json");
+    const recorderPath = join(dir, ".aih", "usage-record.mjs");
+    const hostBefore = readFileSync(hostPath, "utf8");
+    const recorderBefore = readFileSync(recorderPath, "utf8");
+    const receiptPath = join(dir, ".aih", "org-policy-hook-receipt.json");
+    const legacy = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, unknown>;
+    legacy.version = 2;
+    delete legacy.decisions;
+    delete legacy.selfDigest;
+    writeFileSync(receiptPath, JSON.stringify(legacy));
+
+    const refresh = await verifiedOrgPolicyProjectionActions(applied, policy);
+    const hookRefresh = refresh.filter(
+      (action) =>
+        "path" in action &&
+        typeof action.path === "string" &&
+        [
+          ".aih/usage-record.mjs",
+          ".gitignore",
+          ".claude/settings.json",
+          ".aih/org-policy-hook-receipt.json",
+        ].includes(action.path),
+    );
+    expect(hookRefresh).toHaveLength(1);
+    expect(hookRefresh[0]).toMatchObject({
+      kind: "write",
+      path: ".aih/org-policy-hook-receipt.json",
+      json: { version: 3, decisions: [], selfDigest: expect.any(String) },
+    });
+    await executePlan(plan("upgrade policy hook receipt", ...refresh), applied);
+
+    expect(readFileSync(hostPath, "utf8")).toBe(hostBefore);
+    expect(readFileSync(recorderPath, "utf8")).toBe(recorderBefore);
+  });
+
+  it("reports retained-invalid-decision for exact owned MCP bytes after authority binding changes", async () => {
+    const policy = reviewedMcpPolicy({ allowedServers: [], disabledServers: [] });
+    if (policy.governance === undefined) throw new Error("expected governance fixture");
+    policy.governance.authority.decisions = ["decision-clean"];
+    const decision = currentReviewedDecision(policy, {
+      id: "decision-clean",
+      disposition: "approved",
+      acceptedFindings: [],
+      acceptedGaps: [],
+      conditions: [],
+      reviewBy: undefined,
+    });
+    delete (decision as Record<string, unknown>).reviewBy;
+    writeDecisionAuthorityReceipt([decision]);
+    const applied = ctx({ apply: true });
+    await executePlan(
+      plan("decision-bound MCP", ...(await verifiedOrgPolicyProjectionActions(applied, policy))),
+      applied,
+    );
+
+    policy.governance.authority.decisions = [];
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(policy));
+    const check = await orgPolicyEffectiveCheck(applied);
+    expect(check).toMatchObject({
+      verdict: "fail",
+      detail: expect.stringContaining("retained-invalid-decision"),
+    });
+  });
+
   it("refuses malformed or non-object pre-existing hook settings without taking ownership", async () => {
     for (const { contents, detail } of [
       { contents: "{", detail: "is malformed" },
@@ -2230,7 +2308,7 @@ describe("governed candidate projection", () => {
     ).rejects.toThrow(/unsafe text ownership entries/);
   });
 
-  it("rejects an arbitrary .gitignore digest even when the receipt hashes those bytes", async () => {
+  it("rejects a tampered v3 receipt before it can authorize an arbitrary .gitignore digest", async () => {
     const applied = ctx({ apply: true });
     await executePlan(
       plan(
@@ -2252,7 +2330,7 @@ describe("governed candidate projection", () => {
 
     await expect(
       verifiedOrgPolicyProjectionActions(applied, usageHookPolicy("disabled")),
-    ).rejects.toThrow(/not the exact AIH policy marker state/);
+    ).rejects.toThrow(/invalid v3 self-digest/);
   });
 
   it("blocks inactive policy projection when matching legacy usage artifacts have no receipt", async () => {

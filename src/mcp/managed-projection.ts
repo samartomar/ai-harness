@@ -336,7 +336,9 @@ export function managedMcpProjectionOwnershipAction(
         source,
         ctx.contextDir,
         [...targets],
-        managedMcpProjectionOwnership(generated, decisions),
+        // New ownership is always strict v2. Version 1 remains readable only
+        // so an exact legacy projection can be conservatively subtracted.
+        managedMcpProjectionOwnership(generated, decisions ?? []),
       ),
       "record Claude managed-MCP projection ownership",
       { merge: true, replaceJsonKeys: ["managedMcpProjection"] },
