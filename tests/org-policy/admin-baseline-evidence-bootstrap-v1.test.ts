@@ -18,8 +18,18 @@ const record: AdminBaselineEvidenceBootstrapV1 = {
   minSchemaVersion: 1,
   protocol: "AdminBaselineEvidenceBootstrapV1",
   sources: [
-    { id: "ecc", owner: "affaan-m", pinnedSha: "623f2c020f052319657674e4e6c29ab5d0ad566b", repo: "ecc" },
-    { id: "superpowers", owner: "obra", pinnedSha: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9", repo: "Superpowers" },
+    {
+      id: "ecc",
+      owner: "affaan-m",
+      pinnedSha: "623f2c020f052319657674e4e6c29ab5d0ad566b",
+      repo: "ecc",
+    },
+    {
+      id: "superpowers",
+      owner: "obra",
+      pinnedSha: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
+      repo: "Superpowers",
+    },
   ],
 };
 
@@ -33,7 +43,13 @@ describe("admin baseline evidence bootstrap V1", () => {
     ["credential locator", { ...record, artifactUrl: "https://token@artifacts.example.test/a" }],
     ["schema range", { ...record, maxSchemaVersion: 0 }],
     ["untrusted ref", { ...record, expectedRef: "refs/heads/feature..unsafe" }],
-    ["wrong source pin", { ...record, sources: [{ ...record.sources[0], pinnedSha: "A".repeat(40) }, record.sources[1]] }],
+    [
+      "wrong source pin",
+      {
+        ...record,
+        sources: [{ ...record.sources[0], pinnedSha: "A".repeat(40) }, record.sources[1]],
+      },
+    ],
     ["incomplete sources", { ...record, sources: [record.sources[0]] }],
     ["unordered sources", { ...record, sources: [record.sources[1], record.sources[0]] }],
   ])("fails closed on %s", (_label, value) => {

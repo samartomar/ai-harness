@@ -22,7 +22,22 @@ const FIELDS = [
   "maxSchemaVersion",
   "minSchemaVersion",
   "protocol",
-  "source",
+  "sources",
+] as const;
+
+const REQUIRED_SOURCES = [
+  {
+    id: "ecc",
+    owner: "affaan-m",
+    pinnedSha: "623f2c020f052319657674e4e6c29ab5d0ad566b",
+    repo: "ecc",
+  },
+  {
+    id: "superpowers",
+    owner: "obra",
+    pinnedSha: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
+    repo: "Superpowers",
+  },
 ] as const;
 
 export interface AdminBaselineEvidenceBootstrapV1 {
@@ -37,7 +52,12 @@ export interface AdminBaselineEvidenceBootstrapV1 {
   readonly maxSchemaVersion: number;
   readonly minSchemaVersion: number;
   readonly protocol: "AdminBaselineEvidenceBootstrapV1";
-  readonly source: Readonly<{ id: string; owner: string; pinnedSha: string; repo: string }>;
+  readonly sources: readonly Readonly<{
+    id: string;
+    owner: string;
+    pinnedSha: string;
+    repo: string;
+  }>[];
 }
 
 function fail(label: string): never {
@@ -136,10 +156,19 @@ export function parseAdminBaselineEvidenceBootstrapV1Json(
     (raw.cacheMaxAgeSeconds as number) > 31_536_000
   )
     fail("cache policy");
-  if (typeof raw.source !== "object" || raw.source === null || Array.isArray(raw.source))
-    fail("source");
-  const source = raw.source as Record<string, unknown>;
-  exact(source, ["id", "owner", "pinnedSha", "repo"], "source");
+  if (!Array.isArray(raw.sources) || raw.sources.length !== REQUIRED_SOURCES.length)
+    fail("sources");
+  const sources = raw.sources.map((item) => {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) fail("sources");
+    const source = item as Record<string, unknown>;
+    exact(source, ["id", "owner", "pinnedSha", "repo"], "sources");
+    return {
+      id: text(source.id, "sources", 128),
+      owner: text(source.owner, "sources", 128),
+      pinnedSha: text(source.pinnedSha, "sources", 40),
+      repo: text(source.repo, "sources", 128),
+    };
+  });
   const result: AdminBaselineEvidenceBootstrapV1 = {
     artifactUrl: locator(raw.artifactUrl, "artifact locator"),
     attestationUrl: locator(raw.attestationUrl, "attestation locator"),
@@ -152,20 +181,9 @@ export function parseAdminBaselineEvidenceBootstrapV1Json(
     maxSchemaVersion: raw.maxSchemaVersion as number,
     minSchemaVersion: raw.minSchemaVersion as number,
     protocol: "AdminBaselineEvidenceBootstrapV1",
-    source: {
-      id: text(source.id, "source", 128),
-      owner: text(source.owner, "source", 128),
-      pinnedSha: text(source.pinnedSha, "source", 40),
-      repo: text(source.repo, "source", 128),
-    },
+    sources,
   };
-  if (
-    !/^[a-z0-9][a-z0-9._-]*$/.test(result.source.id) ||
-    !/^[A-Za-z0-9_.-]+$/.test(result.source.owner) ||
-    !/^[A-Za-z0-9_.-]+$/.test(result.source.repo) ||
-    !/^[a-f0-9]{40}$/.test(result.source.pinnedSha)
-  )
-    fail("source");
+  if (JSON.stringify(result.sources) !== JSON.stringify(REQUIRED_SOURCES)) fail("source");
   if (canonicalStrictJsonBytesV1(result).compare(bytes) !== 0) fail("noncanonical bytes");
   return deepFreezeStrictJsonV1(structuredClone(result)) as AdminBaselineEvidenceBootstrapV1;
 }

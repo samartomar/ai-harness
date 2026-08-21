@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { parseBaselineEvidenceLock } from "../baseline-evidence/schema.js";
-import { readVendorBaselineLock, vendorBaselineLockBytes } from "../baseline-evidence/vendor.js";
+import { vendorBaselineLockBytes } from "../baseline-evidence/vendor.js";
 import {
   type VendorBaselineEvidenceArtifactV1,
   type VerifiedBaselineEvidenceArtifactAttestationV1,
@@ -16,7 +16,7 @@ export interface AdminBaselineEvidenceProvenanceV1 {
   readonly digest: string;
   readonly resolvedAt: string;
   readonly schemaVersion: number;
-  readonly sourceId: string;
+  readonly sourceIds: readonly string[];
   readonly tier: "fresh" | "last-downloaded" | "packaged";
 }
 
@@ -39,7 +39,7 @@ export interface ResolveAdminBaselineEvidenceV1Input {
   >;
   readonly readLastDownloaded: () => DownloadedEvidenceV1 | undefined;
   /** Claim-before-effect boundary. Implementations must atomically claim their contained cache slot. */
-  readonly commitLastDownloaded: (evidence: DownloadedEvidenceV1) => void;
+  readonly commitLastDownloaded: (evidence: DownloadedEvidenceV1) => true;
   readonly verifyGithubAttestation: (request: {
     readonly policy: {
       readonly environment: string;
@@ -87,14 +87,18 @@ function lockInfo(
     lock.schemaVersion > bootstrap.maxSchemaVersion
   )
     fail("schema");
-  const matches = lock.sources.filter(
-    (entry) =>
-      entry.id === bootstrap.source.id &&
-      entry.owner === bootstrap.source.owner &&
-      entry.repo === bootstrap.source.repo &&
-      entry.pinnedSha === bootstrap.source.pinnedSha,
-  );
-  if (matches.length !== 1) fail("source pin");
+  const expected = bootstrap.sources;
+  if (
+    lock.sources.length !== expected.length ||
+    lock.sources.some(
+      (entry, index) =>
+        entry.id !== expected[index]?.id ||
+        entry.owner !== expected[index]?.owner ||
+        entry.repo !== expected[index]?.repo ||
+        entry.pinnedSha !== expected[index]?.pinnedSha,
+    )
+  )
+    fail("source pin");
   return { digest: sha256(lockBytes), schemaVersion: lock.schemaVersion };
 }
 function verify(
@@ -117,12 +121,7 @@ function verify(
         ref: bootstrap.expectedRef,
         repository: bootstrap.expectedRepository,
         workflow: bootstrap.expectedWorkflow,
-        sources: readVendorBaselineLock().sources.map(({ id, owner, repo, pinnedSha }) => ({
-          id,
-          owner,
-          repo,
-          pinnedSha,
-        })),
+        sources: bootstrap.sources,
       },
       verifyGithubAttestation: (request) => {
         // The strict V1 verifier owns bytes/subject binding; this adapter gives the caller
@@ -144,13 +143,13 @@ export async function resolveAdminBaselineEvidenceV1(
   if (fresh.kind === "available") {
     const downloaded: DownloadedEvidenceV1 = { ...fresh, downloadedAt: input.now };
     const info = verify(downloaded, input.bootstrap, input.verifyGithubAttestation);
-    input.commitLastDownloaded(downloaded);
+    if (input.commitLastDownloaded(downloaded) !== true) fail("cache commit failed");
     return {
       provenance: {
         tier: "fresh",
         ageSeconds: 0,
         resolvedAt: input.now,
-        sourceId: input.bootstrap.source.id,
+        sourceIds: input.bootstrap.sources.map((source) => source.id),
         ...info,
       },
     };
@@ -167,7 +166,7 @@ export async function resolveAdminBaselineEvidenceV1(
         tier: "last-downloaded",
         ageSeconds: age,
         resolvedAt: input.now,
-        sourceId: input.bootstrap.source.id,
+        sourceIds: input.bootstrap.sources.map((source) => source.id),
         ...info,
       },
     };
@@ -179,7 +178,7 @@ export async function resolveAdminBaselineEvidenceV1(
       tier: "packaged",
       ageSeconds: null,
       resolvedAt: input.now,
-      sourceId: input.bootstrap.source.id,
+      sourceIds: input.bootstrap.sources.map((source) => source.id),
       ...info,
     },
   };

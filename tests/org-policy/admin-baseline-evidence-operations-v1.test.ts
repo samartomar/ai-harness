@@ -6,8 +6,18 @@ import type { AdminBaselineEvidenceBootstrapV1 } from "../../src/org-policy/admi
 import { resolveAdminBaselineEvidenceV1 } from "../../src/org-policy/admin-baseline-evidence-operations-v1.js";
 
 const sources = [
-  { id: "ecc", owner: "affaan-m", repo: "ecc", pinnedSha: "623f2c020f052319657674e4e6c29ab5d0ad566b" },
-  { id: "superpowers", owner: "obra", repo: "Superpowers", pinnedSha: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9" },
+  {
+    id: "ecc",
+    owner: "affaan-m",
+    repo: "ecc",
+    pinnedSha: "623f2c020f052319657674e4e6c29ab5d0ad566b",
+  },
+  {
+    id: "superpowers",
+    owner: "obra",
+    repo: "Superpowers",
+    pinnedSha: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
+  },
 ];
 const bootstrap: AdminBaselineEvidenceBootstrapV1 = {
   protocol: "AdminBaselineEvidenceBootstrapV1",
@@ -69,7 +79,20 @@ describe("admin baseline evidence resolution v1", () => {
   });
 
   it.each([false, undefined])("treats cache commit %j as terminal", async (commit) => {
-    await expect(resolveAdminBaselineEvidenceV1({ bootstrap, now: "2026-08-21T00:00:00Z", fetchFresh: async () => ({ kind: "available", artifact, attestationBytes: Buffer.from("attestation") }), readLastDownloaded: () => undefined, commitLastDownloaded: () => commit as never, verifyGithubAttestation: verify })).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+    await expect(
+      resolveAdminBaselineEvidenceV1({
+        bootstrap,
+        now: "2026-08-21T00:00:00Z",
+        fetchFresh: async () => ({
+          kind: "available",
+          artifact,
+          attestationBytes: Buffer.from("attestation"),
+        }),
+        readLastDownloaded: () => undefined,
+        commitLastDownloaded: () => commit as never,
+        verifyGithubAttestation: verify,
+      }),
+    ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
   });
 
   it("reverifies cache after literal unavailable and never masks malformed fresh input", async () => {
@@ -84,7 +107,7 @@ describe("admin baseline evidence resolution v1", () => {
         now: "2026-08-21T00:00:00Z",
         fetchFresh: async () => ({ kind: "unavailable" }),
         readLastDownloaded: () => cached,
-        commitLastDownloaded: () => undefined,
+        commitLastDownloaded: () => true,
         verifyGithubAttestation: verify,
       }),
     ).resolves.toMatchObject({ provenance: { tier: "last-downloaded", ageSeconds: 60 } });
@@ -98,7 +121,7 @@ describe("admin baseline evidence resolution v1", () => {
           attestationBytes: Buffer.from("x"),
         }),
         readLastDownloaded: () => cached,
-        commitLastDownloaded: () => undefined,
+        commitLastDownloaded: () => true,
         verifyGithubAttestation: verify,
       }),
     ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
@@ -110,7 +133,7 @@ describe("admin baseline evidence resolution v1", () => {
       now: "2026-08-21T00:00:00Z",
       fetchFresh: async () => ({ kind: "unavailable" }),
       readLastDownloaded: () => undefined,
-      commitLastDownloaded: () => undefined,
+      commitLastDownloaded: () => true,
       verifyGithubAttestation: verify,
     });
     expect(result.provenance).toMatchObject({
