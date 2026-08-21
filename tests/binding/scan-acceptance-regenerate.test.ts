@@ -54,6 +54,15 @@ describe("scan-acceptance regeneration", () => {
     expect(writes).toEqual([first]);
   });
 
+  it("ships the exact pinned canonical ledger at its module-owned target", async () => {
+    await expect(
+      regenerateSuperpowersScanAcceptance(
+        { checkoutPath: checkout, check: true },
+        { check: async () => clean },
+      ),
+    ).resolves.toContain(clean.checkout.commitSha);
+  });
+
   it("refuses critical observations and non-canonical check output", async () => {
     await expect(
       regenerateSuperpowersScanAcceptance(
@@ -90,7 +99,10 @@ describe("scan-acceptance regeneration", () => {
     ["authorization claim", { ...clean, authorizes: true as false }],
   ])("refuses a checker report with %s", async (_label, report) => {
     await expect(
-      regenerateSuperpowersScanAcceptance({ checkoutPath: checkout }, { check: async () => report }),
+      regenerateSuperpowersScanAcceptance(
+        { checkoutPath: checkout },
+        { check: async () => report },
+      ),
     ).rejects.toBeInstanceOf(ScanAcceptanceRegenerateError);
   });
 
@@ -99,7 +111,11 @@ describe("scan-acceptance regeneration", () => {
     const real = join(dir, "real.json");
     const linked = join(dir, "linked.json");
     writeFileSync(real, "{}\n");
-    try { symlinkSync(real, linked, "file"); } catch { return; }
+    try {
+      symlinkSync(real, linked, "file");
+    } catch {
+      return;
+    }
     const writes: string[] = [];
     await expect(
       regenerateSuperpowersScanAcceptance(
@@ -111,5 +127,17 @@ describe("scan-acceptance regeneration", () => {
     expect(SCAN_ACCEPTANCE_LEDGER_PATH.replaceAll("\\", "/")).toMatch(
       /\/src\/binding\/scan-acceptance\.json$/,
     );
+  });
+
+  it("refuses a non-regular target before writing", async () => {
+    const target = mkdtempSync(join(tmpdir(), "aih-regen-directory-"));
+    const writes: string[] = [];
+    await expect(
+      regenerateSuperpowersScanAcceptance(
+        { checkoutPath: checkout },
+        { check: async () => clean, targetPath: target, write: () => writes.push("write") },
+      ),
+    ).rejects.toBeInstanceOf(ScanAcceptanceRegenerateError);
+    expect(writes).toEqual([]);
   });
 });

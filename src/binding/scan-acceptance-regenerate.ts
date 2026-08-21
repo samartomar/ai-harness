@@ -1,15 +1,22 @@
-import { readFileSync, writeFileSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { randomUUID } from "node:crypto";
+import { chmodSync, lstatSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   checkSuperpowersScanAcceptance,
   ScanAcceptanceCheckError,
   type ScanAcceptanceCheckReport,
+  SUPERPOWERS_ACCEPTANCE_COMMIT,
 } from "./scan-acceptance-check.js";
 
-const TARGET = resolve("src/binding/scan-acceptance.json");
-const REASON =
-  "No content findings are accepted for the exact pinned obra/superpowers framework tree. This observational ledger never authorizes a runtime gate; regeneration records no acceptance.";
+/** The shipped ledger lives with this module, never relative to the caller's cwd. */
+export const SCAN_ACCEPTANCE_LEDGER_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "scan-acceptance.json",
+);
+export const SCAN_ACCEPTANCE_REGEN_REASON =
+  `No content findings are accepted for the exact pinned obra/superpowers framework tree at ${SUPERPOWERS_ACCEPTANCE_COMMIT}. ` +
+  "This observational ledger never authorizes a runtime gate; regeneration records no acceptance.";
 
 export class ScanAcceptanceRegenerateError extends ScanAcceptanceCheckError {}
 
@@ -30,7 +37,52 @@ function fail(message: string): never {
 }
 
 function canonicalLedger(): string {
-  return `${JSON.stringify({ schemaVersion: 2, reason: REASON, accepted: [] }, null, 2)}\n`;
+  return `${JSON.stringify(
+    { schemaVersion: 2, reason: SCAN_ACCEPTANCE_REGEN_REASON, accepted: [] },
+    null,
+    2,
+  )}\n`;
+}
+
+function assertExactObservationalReport(report: ScanAcceptanceCheckReport): void {
+  if (
+    report.checkout?.repository !== "obra/superpowers" ||
+    report.checkout?.commitSha !== SUPERPOWERS_ACCEPTANCE_COMMIT ||
+    report.authorizes !== false
+  ) {
+    fail("checker did not prove the exact observational Superpowers acceptance state");
+  }
+}
+
+function assertRegularUnlinkedTarget(target: string): void {
+  if (!isAbsolute(target)) fail("scan acceptance artifact path must be absolute");
+  try {
+    const directory = lstatSync(dirname(target));
+    const destination = lstatSync(target);
+    if (
+      directory.isSymbolicLink() ||
+      !directory.isDirectory() ||
+      destination.isSymbolicLink() ||
+      !destination.isFile()
+    ) {
+      fail("scan acceptance artifact target must be a regular unlinked file");
+    }
+  } catch (error) {
+    if (error instanceof ScanAcceptanceRegenerateError) throw error;
+    fail("scan acceptance artifact target is unavailable or unsafe");
+  }
+}
+
+function writeCanonicalLedgerAtomic(target: string, contents: string): void {
+  const directory = dirname(target);
+  const temporary = join(directory, `.${basename(target)}.${process.pid}.${randomUUID()}.tmp`);
+  try {
+    writeFileSync(temporary, contents, { encoding: "utf8", flag: "wx", mode: 0o600 });
+    chmodSync(temporary, 0o600);
+    renameSync(temporary, target);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
 }
 
 /**
@@ -46,10 +98,12 @@ export async function regenerateSuperpowersScanAcceptance(
   const report = await (deps.check ?? checkSuperpowersScanAcceptance)({
     checkoutPath: input.checkoutPath,
   });
+  assertExactObservationalReport(report);
   if (report.critical.length > 0)
     fail("critical scanner observations cannot regenerate acceptance");
   const bytes = canonicalLedger();
-  const target = deps.targetPath ?? TARGET;
+  const target = deps.targetPath ?? SCAN_ACCEPTANCE_LEDGER_PATH;
+  assertRegularUnlinkedTarget(target);
   if (input.check === true) {
     let current: string;
     try {
@@ -64,7 +118,7 @@ export async function regenerateSuperpowersScanAcceptance(
     return bytes;
   }
   try {
-    (deps.write ?? ((path, contents) => writeFileSync(path, contents, "utf8")))(target, bytes);
+    (deps.write ?? writeCanonicalLedgerAtomic)(target, bytes);
   } catch {
     fail("scan acceptance artifact could not be written");
   }

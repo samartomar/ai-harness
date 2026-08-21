@@ -79,6 +79,13 @@ const producedCritical: DimensionInspector = {
 
 describe("rollupScanFindings", () => {
   it("groups every raw finding deterministically without masking duplicate identities", () => {
+    const duplicate = {
+      code: "a",
+      severity: "medium" as const,
+      detail: "a",
+      coverage: "complete" as const,
+      path: "a.md",
+    };
     const findings = [
       {
         code: "z",
@@ -95,6 +102,7 @@ describe("rollupScanFindings", () => {
         coverage: "complete" as const,
         path: "a.md",
       },
+      duplicate,
       {
         code: "a",
         severity: "high" as const,
@@ -110,9 +118,9 @@ describe("rollupScanFindings", () => {
       },
     ];
     expect(rollupScanFindings(findings)).toEqual([
-      expect.objectContaining({ path: "a.md", findings: [findings[1], findings[2]] }),
+      expect.objectContaining({ path: "a.md", findings: [findings[1], findings[2], findings[3]] }),
       expect.objectContaining({ path: "b.md", findings: [findings[0]] }),
-      expect.objectContaining({ path: undefined, findings: [findings[3]] }),
+      expect.objectContaining({ path: undefined, findings: [findings[4]] }),
     ]);
   });
 

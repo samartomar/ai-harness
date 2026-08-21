@@ -165,7 +165,10 @@ describe("claudeContaminationReport — clean home", () => {
     report = claudeContaminationReport({ home, projectRoot });
     expect(report.informational.settingsHusk).toBe(false);
     expect(report.clean).toBe(false);
-    seedJson(".claude/settings.json", { enabledPlugins: { plugin: true }, mcpServers: { server: {} } });
+    seedJson(".claude/settings.json", {
+      enabledPlugins: { plugin: true },
+      mcpServers: { server: {} },
+    });
     report = claudeContaminationReport({ home, projectRoot });
     expect(report.informational.settingsHusk).toBe(false);
     expect(report.leakage.plugins).toBe(1);

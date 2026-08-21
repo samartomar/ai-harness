@@ -63,7 +63,7 @@ export interface ClaudeContaminationReport {
   /** Per-surface detail rows (one per counted surface instance). */
   entries: ContaminationEntry[];
   /** Informational context that is NOT leakage: `skillOverrides` keys from settings. */
-  informational: { skillOverrides: string[]; settingsHusk?: boolean };
+  informational: { skillOverrides: string[]; settingsHusk: boolean };
   /** Named unreadable user-scope files (malformed JSON) — the report still rendered. */
   warnings: string[];
   /** True only when every leakage count is 0. */
