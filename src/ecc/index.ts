@@ -27,6 +27,7 @@ import {
   codexInstallStateContents,
   codexInstallStatePath,
   codexMcpCollisionActions,
+  coreOwnedEccCodexMcpServers,
 } from "./codex.js";
 import {
   type EccInstallInputs,
@@ -635,7 +636,7 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   "  }",
   "  if (mcpSpec) {",
   "    const names = Object.keys(mcpSpec.servers || {}).sort();",
-  '    const body = "## MCP Servers\\n\\naih registers only this validated scoped set: " + (names.length > 0 ? names.map((name) => "`" + name + "`").join(", ") : "none") + ". Existing user-defined same-name servers win; egress-bearing servers are never added by default.\\n\\n";',
+  '    const body = "## MCP Servers\\n\\naih registers only this validated scoped set: " + (names.length > 0 ? names.map((name) => "`" + name + "`").join(", ") : "none") + ". Existing user-defined same-name servers win; each server\'s declared risk profile remains subject to the configured policy.\\n\\n";',
   "    next = next.replace(/## MCP Servers[\\s\\S]*?(?=## External Action Boundaries)/, body);",
   "  }",
   "  return next;",
@@ -735,7 +736,11 @@ export function codexEccActions(
   const sourceAgents = join(repo.dir, ".codex", "AGENTS.md");
   const statePath = codexInstallStatePath(ctx);
   const stateB64 = Buffer.from(
-    codexInstallStateContents(ctx, materialization ? [] : undefined, governed),
+    codexInstallStateContents(
+      ctx,
+      materialization ? [] : scopedMcps === undefined ? undefined : Object.keys(scopedMcps),
+      governed,
+    ),
     "utf8",
   ).toString("base64");
   const materializationB64 = materialization
@@ -872,7 +877,10 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
       }
     } else if (cli === "codex") {
       if (codexBlockers.length > 0) actions.push(...codexBlockers);
-      else if (repo) actions.push(...codexEccActions(ctx, repo, profile));
+      else if (repo)
+        actions.push(
+          ...codexEccActions(ctx, repo, profile, undefined, coreOwnedEccCodexMcpServers()),
+        );
     } else {
       if (isAihDirectEccInstallTarget(cli)) npmInstallerPlanned = true;
       actions.push(...eccActionsForCli(cli, inputs));

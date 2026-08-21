@@ -4,6 +4,7 @@ import { readIfExists } from "../internals/fsxn.js";
 import { stripManagedBlock } from "../internals/markers.js";
 import { type Action, doc, exec, type PlanContext, probe, writeText } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import type { McpServer } from "../mcp/servers.js";
 
 export type CodexMcpTransport = "stdio" | "http" | "mixed" | "unknown";
 type CodexMcpScope = "project" | "global" | "planned ECC";
@@ -16,8 +17,28 @@ export interface CodexMcpCollision {
   conflictingTransport: CodexMcpTransport;
 }
 
-// Keep in sync with the exact vendor-locked `merge-mcp-config.js` default set.
-// Optional MCPs are registered through AIH's scoped writer, not this merge helper.
+/**
+ * Core owns this one ECC default because the vendor helper currently launches it
+ * through a floating npm tag. Its exact package identity is bound to the active
+ * external-pin ledger; optional ECC MCPs remain on their scoped policy path.
+ */
+export function coreOwnedEccCodexMcpServers(): Record<string, McpServer> {
+  return {
+    "chrome-devtools": {
+      type: "stdio",
+      command: "npx",
+      args: ["-y", "chrome-devtools-mcp@1.7.0"],
+      description: "Chrome DevTools MCP from Core's exact reviewed npm package pin.",
+      classification: "local",
+      egress: "local-only",
+      credentials: "none",
+      supplyChain: "pinned",
+    },
+  };
+}
+
+// The collision preflight mirrors the Core-owned default above. Optional MCPs
+// are registered through AIH's scoped writer, not this vendor-specific path.
 const ECC_CODEX_MCP_TRANSPORTS = new Map<string, CodexMcpTransport>([["chrome-devtools", "stdio"]]);
 
 const TOML_SERVER_HEADER =

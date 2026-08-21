@@ -150,13 +150,13 @@ const installTargets = (actions: Action[]): (string | undefined)[] =>
     .map((e) => e.argv[e.argv.indexOf("--target") + 1]);
 
 function codexInstallState(actions: Action[]): {
-  codexToml: { tables: string[]; tableKeys: Record<string, string[]> };
+  codexToml: { tables: string[]; tableKeys: Record<string, string[]>; mcpServers: string[] };
 } {
   const install = execs(actions).find((e) => e.describe.includes("record prune state"));
   const stateB64 = install?.argv.at(-1);
   if (!stateB64) throw new Error("missing encoded Codex install state");
   return JSON.parse(Buffer.from(stateB64, "base64").toString("utf8")) as {
-    codexToml: { tables: string[]; tableKeys: Record<string, string[]> };
+    codexToml: { tables: string[]; tableKeys: Record<string, string[]>; mcpServers: string[] };
   };
 }
 
@@ -358,11 +358,39 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
 
   it("projects the Chrome DevTools default from Core's exact pin, never ECC's floating merge", async () => {
     const actions = (await command.plan(makeCtx({ cli: "codex" }))).actions;
-    const blob = execBlob(actions);
+    const install = execs(actions).find((action) => action.describe.includes("record prune state"));
+    const mcpB64 = install?.argv.at(-2);
+    if (mcpB64 === undefined) throw new Error("missing Core-owned Codex MCP payload");
+    const scoped = JSON.parse(Buffer.from(mcpB64, "base64").toString("utf8")) as {
+      servers: Record<string, { command: string; args: string[] }>;
+    };
+    const chrome = scoped.servers["chrome-devtools"];
+    if (chrome === undefined) throw new Error("missing Core-owned Chrome DevTools MCP server");
 
-    expect(blob).not.toContain("merge-mcp-config.js");
-    expect(blob).toContain("chrome-devtools-mcp@1.7.0");
-    expect(blob).not.toContain("chrome-devtools-mcp@latest");
+    expect(chrome.command).toBe("npx");
+    expect(chrome.args).toEqual(["-y", "chrome-devtools-mcp@1.7.0"]);
+    expect(chrome.args.join(" ")).not.toContain("@latest");
+    expect(codexInstallState(actions).codexToml.mcpServers).toContain("chrome-devtools");
+  });
+
+  it("does not claim an operator-owned Chrome DevTools server while retaining the Core projection", async () => {
+    const home = join(tmp, "operator-home");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      '[mcp_servers.chrome-devtools]\ncommand = "operator-devtools"\nargs = ["--local"]\n',
+    );
+    const base = makeCtx({ cli: "codex" });
+    const actions = (
+      await command.plan({ ...base, env: { ...base.env, HOME: home, USERPROFILE: home } })
+    ).actions;
+    const state = codexInstallState(actions);
+    const install = execs(actions).find((action) => action.describe.includes("record prune state"));
+    const mcpB64 = install?.argv.at(-2);
+    if (mcpB64 === undefined) throw new Error("missing Core-owned Codex MCP payload");
+
+    expect(state.codexToml.mcpServers).not.toContain("chrome-devtools");
+    expect(Buffer.from(mcpB64, "base64").toString("utf8")).toContain("chrome-devtools-mcp@1.7.0");
   });
 
   it("--cli codex passes the requested profile into the managed Codex file install", async () => {
