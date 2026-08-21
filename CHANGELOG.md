@@ -72,6 +72,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Contained reads now reject same-file mutations observed after the descriptor read.** The
+  shared reader for trust evidence, workspace locks and snapshots, reports, and MCP configuration
+  now compares the final regular-file identity, size, modification time, and change time with the
+  opened descriptor before returning bytes. A same-inode write that changes those stable metadata
+  fields is reported as `changed`; linked, out-of-root, non-file, and inaccessible inputs retain
+  their existing fail-closed outcomes. This narrows the read-time race window but does not claim an
+  atomic filesystem snapshot.
+
 - **Sensitive local reads and assignment redaction are now bounded and root-contained.** Secret-assignment redaction uses a linear-time forward scan that recognizes leading-underscore keys; trust evidence, workspace snapshots and locks, and MCP config reads accept only canonical-root-contained regular files up to 1 MiB and refuse linked parents, while snapshot `Source` remains root-relative. Trust source excerpts are limited to locations through line 10,000; beyond either bound, reads fail closed and source excerpts are omitted.
 
 - **The three Repair execution hardenings that only bite once Repair can write.** Each closed a gap that was documented rather than hidden, and each was carried as recorded debt until now because none of them is reachable without an execution route.
