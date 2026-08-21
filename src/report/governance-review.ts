@@ -44,11 +44,12 @@ function nameMatchesSubject(event: UsageEvent, subject: string): boolean {
 function attributeEvents(
   candidates: readonly EffectiveOrgPolicy["candidates"][number][],
   events: readonly UsageEvent[],
-): { bySubject: ReadonlyMap<string, Attribution>; unmatched: number } {
+): { bySubject: ReadonlyMap<string, Attribution>; unmatched: number; heuristic: number } {
   const bySubject = new Map<string, Attribution>(
     candidates.map((candidate) => [candidate.id, { exact: 0, heuristic: 0 }]),
   );
   let unmatched = 0;
+  let heuristicCount = 0;
   for (const event of events) {
     const exact = candidates.filter(
       (candidate) => event.kind === "mcp" && event.server === mcpServerOf(candidate),
@@ -66,19 +67,23 @@ function attributeEvents(
     if (counts === undefined)
       throw new Error("governance review attribution lost a governed subject");
     if (exact.length > 0) counts.exact += 1;
-    else counts.heuristic += 1;
+    else {
+      counts.heuristic += 1;
+      heuristicCount += 1;
+    }
   }
-  return { bySubject, unmatched };
+  return { bySubject, unmatched, heuristic: heuristicCount };
 }
 
 function captureState(
   installed: boolean,
   usage: StrictUsageRead,
   unmatched: number,
+  heuristic: number,
 ): "no-capture" | "installed-zero-observed" | "partial-attribution" | "attributed" {
   if (!installed) return "no-capture";
   if (usage.events.length === 0) return "installed-zero-observed";
-  return unmatched > 0 || usage.malformed > 0 || usage.unknownKind > 0
+  return unmatched > 0 || heuristic > 0 || usage.malformed > 0 || usage.unknownKind > 0
     ? "partial-attribution"
     : "attributed";
 }
@@ -168,7 +173,12 @@ export function governanceReviewView(input: GovernanceReviewInput): DigestAction
   );
   const attribution = attributeEvents(candidates, input.usage.events);
   const installed = strictCaptureInstalled(candidates, input.receipts);
-  const capture = captureState(installed, input.usage, attribution.unmatched);
+  const capture = captureState(
+    installed,
+    input.usage,
+    attribution.unmatched,
+    attribution.heuristic,
+  );
   const subjects = candidates.map((candidate, index) => {
     const counts = attribution.bySubject.get(candidate.id);
     if (counts === undefined)
@@ -256,7 +266,7 @@ function unavailableReview(
     policy: { state },
     subjects: [],
     usage: {
-      state: captureState(false, usage, usage.events.length),
+      state: captureState(false, usage, usage.events.length, 0),
       validEvents: usage.events.length,
       malformedExcluded: usage.malformed,
       unknownKindExcluded: usage.unknownKind,

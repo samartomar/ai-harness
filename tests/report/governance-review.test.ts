@@ -196,7 +196,7 @@ describe("governanceReviewView", () => {
     });
     const activeReceipt = governanceReviewView({
       effective: noReceipt,
-      receipts: { ...RECEIPTS, hook: { state: "active" } },
+      receipts: { ...RECEIPTS, hook: { state: "active" as const } },
       usage: { events: [], malformed: 0, unknownKind: 0 },
     });
 
@@ -248,7 +248,7 @@ describe("governanceReviewView", () => {
     installed.candidates.push(usageMeteringCandidate());
     const digest = governanceReviewView({
       effective: installed,
-      receipts: { ...RECEIPTS, hook: { state: "active" } },
+      receipts: { ...RECEIPTS, hook: { state: "active" as const } },
       usage: {
         events: [{ tool: "codex", kind: "mcp", server: "context7" }],
         malformed: 0,
@@ -271,7 +271,7 @@ describe("governanceReviewView", () => {
     installed.candidates.push(usageMeteringCandidate());
     const input = {
       effective: installed,
-      receipts: { ...RECEIPTS, hook: { state: "active" } },
+      receipts: { ...RECEIPTS, hook: { state: "active" as const } },
       usage: { malformed: 0, unknownKind: 0 },
     };
     const heuristicOnly = governanceReviewView({
