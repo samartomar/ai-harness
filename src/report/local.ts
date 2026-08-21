@@ -12,6 +12,7 @@ import { cliCoverageDigest } from "./cli-coverage.js";
 import { contractTruthDigest } from "./contract.js";
 import { aiEventsDigest } from "./events.js";
 import { governanceRollupDigest } from "./governance.js";
+import { governanceReviewDigest } from "./governance-review.js";
 import { graphDigests } from "./graph.js";
 import { guardrailDigest } from "./guardrail.js";
 import { trendsPanel } from "./history.js";
@@ -162,6 +163,7 @@ export function economyPanel(ctx: PlanContext): DigestAction {
  * the repo/branch-status panel reads git through the Runner seam.
  */
 export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
+  const effectivePolicy = await orgPolicyEffectiveDigest(ctx);
   const panels: (DigestAction | undefined)[] = [
     ...(await velocityDigests(ctx)), // OUTPUT VELOCITY: daily commits + LOC 30d
     aiEventsDigest(ctx), // AI events feed (undefined when no events recorded)
@@ -169,7 +171,11 @@ export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
     ...(await contractTruthDigest(ctx)), // REPO CONTRACT: committed project.json (omitted off-contract)
     governanceRollupDigest(ctx), // GOVERNANCE: posture-aware control verdict roll-up
     await orgPolicyIntegrityDigest(ctx), // GOVERNANCE: active org-policy source + local HEAD drift
-    await orgPolicyEffectiveDigest(ctx), // GOVERNANCE: requested vs effective candidate resolution
+    effectivePolicy, // GOVERNANCE: requested vs effective candidate resolution
+    await governanceReviewDigest(ctx, {
+      effectiveDigest: effectivePolicy,
+      reuseEffectiveDigest: true,
+    }), // GOVERNANCE: bounded read-only governance review
     leakPreventionsDigest(ctx), // SECURITY: scan-derived leak-prevention posture half
     await qualityDigest(ctx), // CODE QUALITY: test/source file ratio
     ...(await graphDigests(ctx)), // CODE QUALITY/PERF: code-review-graph (gated, Phase 2)

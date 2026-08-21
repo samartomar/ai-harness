@@ -227,7 +227,7 @@ for the vet/sign/policy flow. <!-- aih:claim CM-20 -->
 
 | Command | What it does |
 | --- | --- |
-| [`aih report`](docs/commands.md#aih-report) | Render the read-only analytics digest — context footprint, adoption, trends; `--v9`/`--open` build the offline HTML dashboard. |
+| [`aih report`](docs/commands.md#aih-report) | Render the read-only analytics digest — context footprint, adoption, governed-subject review, trends; `--v9`/`--open` build the offline HTML dashboard. |
 | [`aih track`](docs/commands.md#aih-track) | Record one metrics sample (commits, LOC delta, adoption) to `.aih/history.jsonl` — the time-series behind `aih report` trends. |
 | [`aih usage`](docs/commands.md#aih-usage) | Install the multi-tool usage-capture layer → `.aih/usage.jsonl` — local activity counts only, no cost, no prompts. |
 | [`aih telemetry`](docs/commands.md#aih-telemetry) | Inject OpenTelemetry env, a redacting Bindplane collector, and an analytics fetcher. |
@@ -282,6 +282,14 @@ the newer developer-console dashboard: every panel is explicitly LIVE, PREVIEW, 
 data never reads as real. When the report derives findings (see [Support tickets](#support-tickets)),
 a **Suggested actions** section leads with copy-to-clipboard tickets. Add `--demo` for showcase data,
 or `--refresh <sec>` to keep it live.
+
+The local digest also includes a governed-subject review. With governed policy it keeps effective,
+decision, and receipt facts separate from bounded usage attribution: an explicit MCP-server identity
+never falls back to a name heuristic, unique name matches remain partial attribution, and routine
+non-subject activity is counted separately from unknown or ambiguous subject evidence. Names never
+render. Non-effective subjects say `not-projected` and keep any surface-wide receipt explicitly
+separate; no local counter becomes a value, revocation, retirement, or uninstall recommendation.
+Absent, invalid, or non-governing policy is an explicit redacted unavailable state.
 
 ![aih report --v9 developer-console dashboard rendered with demo showcase data and local diagnostics, showing the harness-wiring score, ranked fix actions, and the remediation ledger](docs/assets/aih-report-v9.png)
 

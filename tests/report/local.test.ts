@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { orgPolicyEffectiveDigest } from "../../src/org-policy/evaluate.js";
@@ -320,11 +320,11 @@ describe("report local scope — composed panels", () => {
   it("localPanels returns the always-on panels; git/usage-gated panels omit off-repo", async () => {
     const panels = await localPanels(ctx());
     // Non-repo, no-usage fixture: velocity (2), AI events, test-ratio, and repo-info all
-    // return undefined and are filtered out — leaving the 12 unconditional panels:
-    // governance-rollup, org-policy-integrity, repo-status, trends, usage,
+    // return undefined and are filtered out — leaving the 13 unconditional panels:
+    // governance-rollup, org-policy-integrity, governance-review, repo-status, trends, usage,
     // ai-cli-wiring, mcp-governance, vdi-compatibility, config, machine-tooling,
     // economy, tools-installed.
-    expect(panels).toHaveLength(12);
+    expect(panels).toHaveLength(13);
     const prefixes = panels.map((p) => (p.kind === "digest" ? p.describe : ""));
     expect(prefixes.some((s) => s.startsWith("Tools installed"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("Repo status"))).toBe(true);
@@ -332,7 +332,26 @@ describe("report local scope — composed panels", () => {
     expect(prefixes.some((s) => s.startsWith("MCP governance"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("VDI compatibility"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("Governance roll-up"))).toBe(true);
+    expect(prefixes.some((s) => s.startsWith("Governance review"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("Org policy integrity"))).toBe(true);
+  });
+
+  it("resolves the effective policy at most once before composing the governance review", async () => {
+    vi.resetModules();
+    const resolveOnce = vi.fn(async () => undefined);
+    vi.doMock("../../src/org-policy/evaluate.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/org-policy/evaluate.js")>()),
+      orgPolicyEffectiveDigest: resolveOnce,
+      orgPolicyEffectiveResolution: vi.fn(() => undefined),
+    }));
+    try {
+      const { localPanels: isolatedLocalPanels } = await import("../../src/report/local.js");
+      await isolatedLocalPanels(ctx());
+      expect(resolveOnce).toHaveBeenCalledOnce();
+    } finally {
+      vi.doUnmock("../../src/org-policy/evaluate.js");
+      vi.resetModules();
+    }
   });
 
   it("mcpGovernanceDigest denies context7 (third-party egress) under the enterprise posture", () => {
