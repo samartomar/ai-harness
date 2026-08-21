@@ -152,7 +152,8 @@ describe("workspace state collection", () => {
 
     const state = await readWorkspaceRepoState(ctx(run), childRepo("ui"));
 
-    expect(state).toMatchObject({ git: true, dirty: false, observation: "diverged" });
+    expect(state).toMatchObject({ git: true, observation: "diverged" });
+    expect(state).not.toHaveProperty("dirty");
     expect(state).not.toHaveProperty("branch");
     expect(state).not.toHaveProperty("sha");
     expect(state).not.toHaveProperty("ahead");
@@ -171,7 +172,8 @@ describe("workspace state collection", () => {
 
     const state = await readWorkspaceRepoState(ctx(run), childRepo("ui"));
 
-    expect(state).toMatchObject({ git: true, dirty: false, observation: "unavailable" });
+    expect(state).toMatchObject({ git: true, observation: "unavailable" });
+    expect(state).not.toHaveProperty("dirty");
     expect(state).not.toHaveProperty("branch");
     expect(state).not.toHaveProperty("sha");
   });
