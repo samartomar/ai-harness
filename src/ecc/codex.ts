@@ -688,7 +688,16 @@ function claimedMcpTableRemains(raw: string, claimedNames: readonly string[]): b
 export function codexInstallStateCleanupAction(ctx: PlanContext): Action | undefined {
   const statePath = codexInstallStatePath(ctx);
   const state = readCodexInstallState(ctx);
-  if (!state) return undefined;
+  if (!state) {
+    if (readIfExists(statePath) === undefined) return undefined;
+    return probe("refuse invalid AIH ECC Codex install-state cleanup", () => ({
+      name: "AIH ECC Codex install-state",
+      verdict: "fail",
+      code: "mcp.config-invalid",
+      detail:
+        "AIH-owned Codex install-state is invalid; preserving it and all claimed config for manual recovery.",
+    }));
+  }
   const config = readIfExists(join(codexHomeDir(ctx), "config.toml"));
   const held =
     config !== undefined &&

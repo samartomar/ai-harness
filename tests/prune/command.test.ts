@@ -495,13 +495,12 @@ describe("aih prune command", () => {
     expect(
       actions.some(
         (action) =>
-          action.kind === "exec" &&
-          action.describe.includes("remove aih ECC Codex install-state"),
+          action.kind === "exec" && action.describe.includes("remove aih ECC Codex install-state"),
       ),
     ).toBe(false);
     expect(await refusal?.run(context)).toMatchObject({
       verdict: "fail",
-      code: "config.invalid",
+      code: "mcp.config-invalid",
     });
   });
 
