@@ -707,6 +707,15 @@ hard-blocked candidates with no activation affordance until supported scanning, 
 
 The left rail is the sole selection surface for ECC languages, frameworks, capabilities, and modules; those controls are not repeated in the main inventory, preset toolbar, or inspector. The flat Ledger paper-and-ink presentation reserves colour for evidence state, supports a neutral dark theme, and keeps that canonical rail available on compact screens. The inspector contains no policy mutation controls: it narrates the selected-to-materialized journey and routes one next action to the canonical selection or a separate authoring sidebar. A separate Add MCP sidebar authors approved/revoked `governance.eccMcpApprovals` records at the pinned catalog digest. It lists all 31 external ECC entries and records declarative permission. Only entries labeled HTTPS-configurable can use the later `aih ecc mcp add <id> --cli <client>` path; manual entries remain approval-only. The browser does not install, contact, scan, attest, or observe the endpoint.
 
+A separate adoption-recipe panel is the first bounded, code-owned routing guide rather than another
+inventory or authoring surface. It gives exactly one question class to each of Token Savior, Serena,
+code-review-graph, codebase-memory-mcp, and Token Optimizer; states the prerequisite and overlap
+boundary; names the existing Workbench-row, AIH ECC lifecycle, or ECC approval/manual route; and
+reports only the usage signal the local capture layer can attribute. Token Savior explicitly has no
+captured attribution. The panel is escaped and inert: it adds no row or control, changes no policy
+export, executes no provider, and grants no evidence, authority, effective state, projector, or
+materialization. It is not a generic signed-recipe or catalog-distribution plane.
+
 ### Administrator catalog consumption
 
 `aih policy generate <admin-root>` opts a single administrator workstation into signed supported-catalog consumption before
