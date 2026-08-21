@@ -79,6 +79,14 @@ function seams() {
   };
   return {
     calls,
+    baseline: async () => ({
+      ageSeconds: 0,
+      digest: "a".repeat(64),
+      resolvedAt: WALL_CLOCK,
+      schemaVersion: 1,
+      sourceIds: ["ecc", "superpowers"],
+      tier: "fresh" as const,
+    }),
     catalog: {
       fetchHttps: async (request: { url: string }) => {
         calls.urls.push(request.url);
@@ -129,6 +137,7 @@ describe("policy generate admin catalog route", () => {
     const injected = seams();
     const code = await runPolicyGenerate(commandStub(), {
       adminRoot,
+      baseline: injected.baseline,
       catalog: injected.catalog,
       cwd,
       env: { PATH: toolchain },
@@ -162,6 +171,7 @@ describe("policy generate admin catalog route", () => {
     const output: string[] = [];
     const code = await runPolicyGenerate(commandStub({ apply: false }), {
       adminRoot,
+      baseline: injected.baseline,
       catalog: injected.catalog,
       cwd,
       env: { PATH: toolchain },
@@ -182,6 +192,7 @@ describe("policy generate admin catalog route", () => {
     const output: string[] = [];
     const code = await runPolicyGenerate(commandStub(), {
       adminRoot: ` ${adminRoot} `,
+      baseline: injected.baseline,
       catalog: injected.catalog,
       cwd,
       env: { PATH: toolchain },
@@ -199,6 +210,7 @@ describe("policy generate admin catalog route", () => {
     const output: string[] = [];
     const code = await runPolicyGenerate(commandStub({ json: true }), {
       adminRoot,
+      baseline: injected.baseline,
       catalog: injected.catalog,
       cwd,
       env: {},
@@ -217,6 +229,7 @@ describe("policy generate admin catalog route", () => {
     const injected = seams();
     const code = await runPolicyGenerate(commandStub({ posture: "enterprise" }), {
       adminRoot,
+      baseline: injected.baseline,
       catalog: injected.catalog,
       cwd,
       env: { AIH_POSTURE: "vibe" },

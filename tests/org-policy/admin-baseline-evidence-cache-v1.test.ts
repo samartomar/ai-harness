@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -68,7 +68,17 @@ describe("admin baseline evidence cache v1", () => {
       expect(readAdminBaselineEvidenceCacheV1(root, bootstrap)).toBeUndefined();
       expect(commitAdminBaselineEvidenceCacheV1(root, bootstrap, evidence)).toBe(true);
       expect(readAdminBaselineEvidenceCacheV1(root, bootstrap)).toEqual(evidence);
-      expect(adminBaselineEvidenceCacheSlotPathV1(root, bootstrap)).toContain("cache");
+      const slot = adminBaselineEvidenceCacheSlotPathV1(root, bootstrap);
+      expect(slot).toContain("cache");
+      writeFileSync(slot, "{}", "utf8");
+      expect(() => readAdminBaselineEvidenceCacheV1(root, bootstrap)).toThrow(
+        /admin baseline evidence cache/,
+      );
+      rmSync(slot);
+      mkdirSync(slot);
+      expect(() => readAdminBaselineEvidenceCacheV1(root, bootstrap)).toThrow(
+        /admin baseline evidence cache/,
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

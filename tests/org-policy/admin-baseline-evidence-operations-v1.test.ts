@@ -1,14 +1,22 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { vendorBaselineLockBytes } from "../../src/baseline-evidence/vendor.js";
 import { buildVendorBaselineEvidenceArtifactV1 } from "../../src/baseline-evidence/vendor-artifact-v1.js";
-import type { AdminBaselineEvidenceBootstrapV1 } from "../../src/org-policy/admin-baseline-evidence-bootstrap-v1.js";
+import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
 import {
+  type AdminBaselineEvidenceBootstrapV1,
+  adminBaselineEvidenceBootstrapPathV1,
+  vibeAdminBaselineEvidenceRootV1,
+} from "../../src/org-policy/admin-baseline-evidence-bootstrap-v1.js";
+import {
+  ADMIN_BASELINE_EVIDENCE_ARTIFACT_FILES_V1,
+  fetchAdminBaselineEvidenceArtifactV1,
   parseGithubBaselineEvidenceAttestationV1,
   resolveAdminBaselineEvidenceV1,
+  resolveOperationalAdminBaselineEvidenceV1,
   verifyGithubBaselineEvidenceAttestationLiveV1,
 } from "../../src/org-policy/admin-baseline-evidence-operations-v1.js";
 
@@ -225,6 +233,30 @@ describe("admin baseline evidence resolution v1", () => {
     ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
   });
 
+  it("never commits fresh bytes when live attestation verification fails", async () => {
+    let committed = 0;
+    await expect(
+      resolveAdminBaselineEvidenceV1({
+        bootstrap,
+        now: "2026-08-21T00:00:00Z",
+        fetchFresh: async () => ({
+          kind: "available",
+          artifact,
+          attestationBytes: Buffer.from("attestation"),
+        }),
+        readLastDownloaded: () => undefined,
+        commitLastDownloaded: () => {
+          committed += 1;
+          return true;
+        },
+        verifyGithubAttestation: async () => {
+          throw new Error("unverified");
+        },
+      }),
+    ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+    expect(committed).toBe(0);
+  });
+
   it("reverifies cache after literal unavailable and never masks malformed fresh input", async () => {
     const cached = {
       artifact,
@@ -273,5 +305,162 @@ describe("admin baseline evidence resolution v1", () => {
       schemaVersion: 1,
       digest: createHash("sha256").update(vendorBaselineLockBytes()).digest("hex"),
     });
+  });
+
+  it("treats a partially available fresh artifact as terminal instead of falling through", async () => {
+    let calls = 0;
+    await expect(
+      fetchAdminBaselineEvidenceArtifactV1({
+        artifactUrl: "https://evidence.example.test/artifact/",
+        attestationUrl: bootstrap.attestationUrl,
+        fetchHttps: async () => {
+          calls += 1;
+          return calls === 1
+            ? { kind: "available" as const, bytes: artifact.files[0]?.bytes ?? Buffer.from("x") }
+            : { kind: "unavailable" as const };
+        },
+      }),
+    ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+  });
+
+  it("composes bootstrap, five raw files, live gh verification, and reverified custody cache", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-baseline-operational-"));
+    const toolchain = join(root, "toolchain");
+    const operationalBootstrap = {
+      ...bootstrap,
+      artifactUrl: "https://evidence.example.test/artifact/",
+    };
+    const urls: string[] = [];
+    const argv: string[][] = [];
+    try {
+      mkdirSync(toolchain, { recursive: true });
+      const gh = join(toolchain, process.platform === "win32" ? "gh.exe" : "gh");
+      writeFileSync(gh, "test gh");
+      if (process.platform !== "win32") chmodSync(gh, 0o700);
+      const evidenceRoot = vibeAdminBaselineEvidenceRootV1(root);
+      mkdirSync(evidenceRoot, { recursive: true });
+      writeFileSync(
+        adminBaselineEvidenceBootstrapPathV1(evidenceRoot),
+        canonicalStrictJsonBytesV1(operationalBootstrap),
+      );
+      const fresh = await resolveOperationalAdminBaselineEvidenceV1({
+        adminRoot: root,
+        env: { PATH: toolchain },
+        fetchHttps: async ({ url }) => {
+          urls.push(url);
+          const path = ADMIN_BASELINE_EVIDENCE_ARTIFACT_FILES_V1.find((candidate) =>
+            url.endsWith(`/${candidate}`),
+          );
+          if (path === undefined)
+            return url === operationalBootstrap.attestationUrl
+              ? { kind: "available" as const, bytes: Buffer.from("bundle") }
+              : { kind: "unavailable" as const };
+          return {
+            kind: "available" as const,
+            bytes:
+              artifact.files.find((file) => file.path === path)?.bytes ?? Buffer.from("missing"),
+          };
+        },
+        now: "2026-08-21T00:00:00Z",
+        posture: "vibe",
+        run: async (args) => {
+          argv.push(args);
+          return {
+            code: 0,
+            stderr: "",
+            stdout: JSON.stringify([
+              {
+                attestation: { bundle: {} },
+                verificationResult: {
+                  mediaType: "application/vnd.dev.sigstore.verificationresult+json;version=0.1",
+                  signature: {
+                    certificate: {
+                      buildConfigURI: `https://github.com/${operationalBootstrap.expectedWorkflow}@${operationalBootstrap.expectedRef}`,
+                      buildSignerURI: `https://github.com/${operationalBootstrap.expectedWorkflow}@${operationalBootstrap.expectedRef}`,
+                      issuer: operationalBootstrap.expectedIssuer,
+                      runnerEnvironment: "github-hosted",
+                      sourceRepositoryRef: operationalBootstrap.expectedRef,
+                      sourceRepositoryURI: `https://github.com/${operationalBootstrap.expectedRepository}`,
+                      subjectAlternativeName: `https://github.com/${operationalBootstrap.expectedWorkflow}@${operationalBootstrap.expectedRef}`,
+                    },
+                  },
+                  statement: {
+                    _type: "https://in-toto.io/Statement/v1",
+                    predicate: {},
+                    predicateType: "https://slsa.dev/provenance/v1",
+                    subject: [{ digest: { sha256: artifact.subject.sha256 }, name: "SHA256SUMS" }],
+                  },
+                  verifiedTimestamps: [
+                    {
+                      timestamp: "2026-08-20T23:59:00Z",
+                      type: "signed",
+                      uri: "https://rekor.sigstore.dev",
+                    },
+                  ],
+                },
+              },
+            ]),
+          };
+        },
+        tempRoot: root,
+      });
+      expect(fresh.provenance.tier).toBe("fresh");
+      expect(urls).toHaveLength(6);
+      expect(argv).toHaveLength(1);
+      const cached = await resolveOperationalAdminBaselineEvidenceV1({
+        adminRoot: root,
+        env: { PATH: toolchain },
+        fetchHttps: async ({ url }) => {
+          urls.push(url);
+          return { kind: "unavailable" as const };
+        },
+        now: "2026-08-21T00:00:00Z",
+        posture: "vibe",
+        run: async (args) => {
+          argv.push(args);
+          return {
+            code: 0,
+            stderr: "",
+            stdout: JSON.stringify([
+              {
+                attestation: { bundle: {} },
+                verificationResult: {
+                  mediaType: "application/vnd.dev.sigstore.verificationresult+json;version=0.1",
+                  signature: {
+                    certificate: {
+                      buildConfigURI: `https://github.com/${operationalBootstrap.expectedWorkflow}@${operationalBootstrap.expectedRef}`,
+                      buildSignerURI: `https://github.com/${operationalBootstrap.expectedWorkflow}@${operationalBootstrap.expectedRef}`,
+                      issuer: operationalBootstrap.expectedIssuer,
+                      runnerEnvironment: "github-hosted",
+                      sourceRepositoryRef: operationalBootstrap.expectedRef,
+                      sourceRepositoryURI: `https://github.com/${operationalBootstrap.expectedRepository}`,
+                      subjectAlternativeName: `https://github.com/${operationalBootstrap.expectedWorkflow}@${operationalBootstrap.expectedRef}`,
+                    },
+                  },
+                  statement: {
+                    _type: "https://in-toto.io/Statement/v1",
+                    predicate: {},
+                    predicateType: "https://slsa.dev/provenance/v1",
+                    subject: [{ digest: { sha256: artifact.subject.sha256 }, name: "SHA256SUMS" }],
+                  },
+                  verifiedTimestamps: [
+                    {
+                      timestamp: "2026-08-20T23:59:00Z",
+                      type: "signed",
+                      uri: "https://rekor.sigstore.dev",
+                    },
+                  ],
+                },
+              },
+            ]),
+          };
+        },
+        tempRoot: root,
+      });
+      expect(cached.provenance.tier).toBe("last-downloaded");
+      expect(argv).toHaveLength(2);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

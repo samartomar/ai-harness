@@ -6,7 +6,11 @@ import { executePlan, summarizeResult } from "../internals/execute.js";
 import { type CommandSpec, digest, type PlanContext, plan, writeText } from "../internals/plan.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import { makeHostAdapter } from "../platform/detect.js";
-import type { AdminBaselineEvidenceProvenanceV1 } from "./admin-baseline-evidence-operations-v1.js";
+import {
+  type AdminBaselineEvidenceProvenanceV1,
+  type ResolveOperationalAdminBaselineEvidenceV1Input,
+  resolveOperationalAdminBaselineEvidenceV1,
+} from "./admin-baseline-evidence-operations-v1.js";
 import {
   type AdminCatalogProvenanceV1,
   type ResolveOperationalAdminCatalogV1Input,
@@ -105,6 +109,13 @@ export interface PolicyGenerateRunDeps {
   >;
   /** Administrator-only verified baseline stage; never constructed for portable/dry routes. */
   baseline?: () => Promise<AdminBaselineEvidenceProvenanceV1>;
+  /** Test-only operational boundary overrides; production leaves every field unset. */
+  baselineOperational?: Partial<
+    Pick<
+      ResolveOperationalAdminBaselineEvidenceV1Input,
+      "fetchHttps" | "now" | "platformAdminRoot" | "tempRoot"
+    >
+  >;
 }
 
 /** UTC second precision — the only clock granularity the contracts accept. */
@@ -173,18 +184,36 @@ export async function runPolicyGenerate(
     }
     // Resolution happens BEFORE any plan is built, so a fatal catalog outcome
     // can never leave a rendered workbench behind.
+    const adminRoot =
+      deps.adminRoot === undefined ? undefined : adminRootArgument(root, deps.adminRoot);
+    const posture = policyGeneratePosture(opts);
     const baselineEvidenceProvenance =
-      deps.adminRoot === undefined ? undefined : await deps.baseline?.();
+      adminRoot === undefined
+        ? undefined
+        : deps.baseline !== undefined
+          ? await deps.baseline()
+          : (
+              await resolveOperationalAdminBaselineEvidenceV1({
+                adminRoot,
+                env,
+                fetchHttps: deps.baselineOperational?.fetchHttps,
+                now: deps.baselineOperational?.now ?? utcSecondNow(),
+                platformAdminRoot: deps.baselineOperational?.platformAdminRoot,
+                posture,
+                run,
+                tempRoot: deps.baselineOperational?.tempRoot,
+              })
+            ).provenance;
     const catalogProvenance =
-      deps.adminRoot === undefined
+      adminRoot === undefined
         ? undefined
         : await resolveOperationalAdminCatalogV1({
-            adminRoot: adminRootArgument(root, deps.adminRoot),
+            adminRoot,
             fetchHttps: deps.catalog?.fetchHttps,
             env,
             now: deps.catalog?.now ?? utcSecondNow(),
             platformAdminRoot: deps.catalog?.platformAdminRoot,
-            posture: policyGeneratePosture(opts),
+            posture,
             run,
             tempRoot: deps.catalog?.tempRoot,
           });

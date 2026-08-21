@@ -1,30 +1,39 @@
 import { createHash } from "node:crypto";
 import { chmodSync, lstatSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { request as httpsRequest } from "node:https";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseBaselineEvidenceLock } from "../baseline-evidence/schema.js";
 import { vendorBaselineLockBytes } from "../baseline-evidence/vendor.js";
 import {
-  BASELINE_EVIDENCE_ARTIFACT_FILE_V1,
-  BASELINE_EVIDENCE_ARTIFACT_LOCK_PATH_V1,
   BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1,
   type VendorBaselineEvidenceArtifactV1,
   type VerifiedBaselineEvidenceArtifactAttestationV1,
   verifyVendorBaselineEvidenceArtifactV1,
 } from "../baseline-evidence/vendor-artifact-v1.js";
+import { codeUnitCompare } from "../capability/package-graph/canonical.js";
+import type { Posture } from "../config/posture.js";
 import { AihError } from "../errors.js";
-import type { Runner } from "../internals/proc.js";
-import type { AdminBaselineEvidenceBootstrapV1 } from "./admin-baseline-evidence-bootstrap-v1.js";
+import { defaultRunner, type Runner } from "../internals/proc.js";
+import { findOnPath } from "../live/runner.js";
+import {
+  type AdminBaselineEvidenceBootstrapV1,
+  enterpriseAdminBaselineEvidenceRootV1,
+  resolveAdminBaselineEvidenceBootstrapV1,
+} from "./admin-baseline-evidence-bootstrap-v1.js";
+import {
+  ADMIN_BASELINE_EVIDENCE_ARTIFACT_FILES_V1,
+  commitAdminBaselineEvidenceCacheV1,
+  type DownloadedEvidenceV1,
+  readAdminBaselineEvidenceCacheV1,
+} from "./admin-baseline-evidence-cache-v1.js";
 
 const ATTESTATION_LIMIT = 256 * 1024;
 const ARTIFACT_FILE_LIMIT = 1024 * 1024;
 const TOTAL_ARTIFACT_LIMIT = 1280 * 1024;
-export const ADMIN_BASELINE_EVIDENCE_ARTIFACT_FILES_V1 = [
-  BASELINE_EVIDENCE_ARTIFACT_FILE_V1,
-  "evidence.json",
-  `files/${BASELINE_EVIDENCE_ARTIFACT_LOCK_PATH_V1}`,
-  "manifest.json",
-  BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1,
-] as const;
+
+export type { DownloadedEvidenceV1 } from "./admin-baseline-evidence-cache-v1.js";
+export { ADMIN_BASELINE_EVIDENCE_ARTIFACT_FILES_V1 } from "./admin-baseline-evidence-cache-v1.js";
 export type AdminBaselineEvidenceHttpsFetchV1 = (request: {
   readonly url: string;
   readonly maxBytes: number;
@@ -42,12 +51,6 @@ export interface AdminBaselineEvidenceProvenanceV1 {
   readonly tier: "fresh" | "last-downloaded" | "packaged";
 }
 
-interface DownloadedEvidenceV1 {
-  readonly artifact: VendorBaselineEvidenceArtifactV1;
-  readonly attestationBytes: Buffer;
-  readonly downloadedAt: string;
-}
-
 export interface ResolveAdminBaselineEvidenceV1Input {
   readonly bootstrap: AdminBaselineEvidenceBootstrapV1;
   readonly now: string;
@@ -61,7 +64,7 @@ export interface ResolveAdminBaselineEvidenceV1Input {
   >;
   readonly readLastDownloaded: () => DownloadedEvidenceV1 | undefined;
   /** Claim-before-effect boundary. Implementations must atomically claim their contained cache slot. */
-  readonly commitLastDownloaded: (evidence: DownloadedEvidenceV1) => true;
+  readonly commitLastDownloaded: (evidence: DownloadedEvidenceV1) => unknown;
   readonly verifyGithubAttestation: (request: {
     readonly policy: {
       readonly environment: string;
@@ -73,12 +76,94 @@ export interface ResolveAdminBaselineEvidenceV1Input {
     readonly subjectBytes: Buffer;
     readonly subjectSha256: string;
     readonly attestationBytes?: Buffer;
-  }) => VerifiedBaselineEvidenceArtifactAttestationV1;
+  }) => Promise<VerifiedBaselineEvidenceArtifactAttestationV1>;
 }
 
 export interface ResolvedAdminBaselineEvidenceV1 {
   readonly provenance: AdminBaselineEvidenceProvenanceV1;
 }
+
+export interface ResolveOperationalAdminBaselineEvidenceV1Input {
+  readonly adminRoot: string;
+  readonly now: string;
+  readonly posture: Posture;
+  readonly env?: NodeJS.ProcessEnv;
+  readonly fetchHttps?: AdminBaselineEvidenceHttpsFetchV1;
+  readonly platformAdminRoot?: string;
+  readonly run?: Runner;
+  readonly tempRoot?: string;
+}
+
+/** Bounded HTTPS acquisition with no redirect, credential, retry, or fallback behavior. */
+export const defaultAdminBaselineEvidenceHttpsFetchV1: AdminBaselineEvidenceHttpsFetchV1 = (
+  input,
+) =>
+  new Promise((settle) => {
+    let done = false;
+    const finish = (
+      result:
+        | { readonly kind: "available"; readonly bytes: Buffer }
+        | { readonly kind: "unavailable" },
+    ): void => {
+      if (done) return;
+      done = true;
+      settle(result);
+    };
+    let target: URL;
+    try {
+      target = new URL(input.url);
+    } catch {
+      finish({ kind: "unavailable" });
+      return;
+    }
+    if (target.protocol !== "https:" || target.username !== "" || target.password !== "") {
+      finish({ kind: "unavailable" });
+      return;
+    }
+    const call = httpsRequest(
+      target,
+      {
+        headers: {
+          accept: "application/octet-stream",
+          "user-agent": "aih-admin-baseline-evidence",
+        },
+        method: "GET",
+        timeout: input.timeoutMs,
+      },
+      (response) => {
+        if (response.statusCode !== 200) {
+          response.resume();
+          finish({ kind: "unavailable" });
+          return;
+        }
+        const chunks: Buffer[] = [];
+        let size = 0;
+        response.on("data", (chunk: Buffer) => {
+          size += chunk.length;
+          if (size > input.maxBytes) {
+            call.destroy();
+            finish({ kind: "unavailable" });
+            return;
+          }
+          chunks.push(chunk);
+        });
+        response.on("error", () => finish({ kind: "unavailable" }));
+        response.on("end", () =>
+          finish(
+            size === 0
+              ? { kind: "unavailable" }
+              : { kind: "available", bytes: Buffer.concat(chunks) },
+          ),
+        );
+      },
+    );
+    call.on("error", () => finish({ kind: "unavailable" }));
+    call.on("timeout", () => {
+      call.destroy();
+      finish({ kind: "unavailable" });
+    });
+    call.end();
+  });
 
 /**
  * Closed projection of `gh attestation verify --format json` after the exact
@@ -293,42 +378,59 @@ export async function fetchAdminBaselineEvidenceArtifactV1(input: {
   try {
     base = new URL(input.artifactUrl);
   } catch {
-    return { kind: "unavailable" };
+    fail("fresh locator");
   }
-  if (base.protocol !== "https:" || !base.pathname.endsWith("/")) return { kind: "unavailable" };
+  if (base.protocol !== "https:" || !base.pathname.endsWith("/")) fail("fresh locator");
   const files: { path: string; bytes: Buffer }[] = [];
   let total = 0;
+  let available = false;
   for (const path of ADMIN_BASELINE_EVIDENCE_ARTIFACT_FILES_V1) {
-    const response = await input.fetchHttps({
-      url: new URL(path, base).href,
-      maxBytes: ARTIFACT_FILE_LIMIT,
-      timeoutMs: 10_000,
-    });
+    let response: Awaited<ReturnType<AdminBaselineEvidenceHttpsFetchV1>>;
+    try {
+      response = await input.fetchHttps({
+        url: new URL(path, base).href,
+        maxBytes: ARTIFACT_FILE_LIMIT,
+        timeoutMs: 10_000,
+      });
+    } catch {
+      fail("fresh transport");
+    }
+    if (typeof response !== "object" || response === null) fail("fresh response");
+    if (response.kind === "unavailable") {
+      if (!available) return { kind: "unavailable" };
+      fail("fresh incomplete");
+    }
     if (
       response.kind !== "available" ||
       !Buffer.isBuffer(response.bytes) ||
       response.bytes.length === 0 ||
       response.bytes.length > ARTIFACT_FILE_LIMIT
     )
-      return { kind: "unavailable" };
+      fail("fresh response");
+    available = true;
     total += response.bytes.length;
-    if (total > TOTAL_ARTIFACT_LIMIT) return { kind: "unavailable" };
+    if (total > TOTAL_ARTIFACT_LIMIT) fail("fresh bounds");
     files.push({ path, bytes: Buffer.from(response.bytes) });
   }
-  const attestation = await input.fetchHttps({
-    url: input.attestationUrl,
-    maxBytes: ATTESTATION_LIMIT,
-    timeoutMs: 10_000,
-  });
+  let attestation: Awaited<ReturnType<AdminBaselineEvidenceHttpsFetchV1>>;
+  try {
+    attestation = await input.fetchHttps({
+      url: input.attestationUrl,
+      maxBytes: ATTESTATION_LIMIT,
+      timeoutMs: 10_000,
+    });
+  } catch {
+    fail("fresh transport");
+  }
   if (
     attestation.kind !== "available" ||
     !Buffer.isBuffer(attestation.bytes) ||
     attestation.bytes.length === 0 ||
     attestation.bytes.length > ATTESTATION_LIMIT
   )
-    return { kind: "unavailable" };
-  const subject = files.find((file) => file.path === BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1);
-  if (subject === undefined) return { kind: "unavailable" };
+    fail("fresh incomplete");
+  const subject = files.at(-1);
+  if (subject === undefined) fail("fresh layout");
   return {
     kind: "available",
     artifact: {
@@ -386,11 +488,74 @@ function lockInfo(
     fail("source pin");
   return { digest: sha256(lockBytes), schemaVersion: lock.schemaVersion };
 }
-function verify(
+function preverifiedSubject(downloaded: DownloadedEvidenceV1): {
+  readonly bytes: Buffer;
+  readonly sha256: string;
+} {
+  try {
+    const subject = (downloaded.artifact as { readonly subject?: unknown }).subject as {
+      readonly bytes?: unknown;
+    };
+    if (!Buffer.isBuffer(subject?.bytes) || subject.bytes.length === 0) fail("artifact subject");
+    const bytes = Buffer.from(subject.bytes);
+    return { bytes, sha256: sha256(bytes) };
+  } catch (error) {
+    if (error instanceof AihError) throw error;
+    fail("artifact subject");
+  }
+}
+
+function sameAttestationRequest(
+  value: unknown,
+  policy: {
+    readonly environment: string;
+    readonly issuer: string;
+    readonly ref: string;
+    readonly repository: string;
+    readonly workflow: string;
+  },
+  subject: { readonly bytes: Buffer; readonly sha256: string },
+): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const request = value as Record<string, unknown>;
+  const requestKeys = Object.keys(request).sort(codeUnitCompare);
+  if (
+    requestKeys.length !== 3 ||
+    requestKeys.some((key, index) => key !== ["policy", "subjectBytes", "subjectSha256"][index])
+  )
+    return false;
+  if (!Buffer.isBuffer(request.subjectBytes) || request.subjectBytes.compare(subject.bytes) !== 0)
+    return false;
+  if (request.subjectSha256 !== subject.sha256) return false;
+  if (
+    typeof request.policy !== "object" ||
+    request.policy === null ||
+    Array.isArray(request.policy)
+  )
+    return false;
+  const actual = request.policy as Record<string, unknown>;
+  const keys = Object.keys(actual).sort(codeUnitCompare);
+  if (
+    keys.length !== 5 ||
+    keys.some(
+      (key, index) => key !== ["environment", "issuer", "ref", "repository", "workflow"][index],
+    )
+  )
+    return false;
+  return (
+    actual.environment === policy.environment &&
+    actual.issuer === policy.issuer &&
+    actual.ref === policy.ref &&
+    actual.repository === policy.repository &&
+    actual.workflow === policy.workflow
+  );
+}
+
+async function verify(
   downloaded: DownloadedEvidenceV1,
   bootstrap: AdminBaselineEvidenceBootstrapV1,
   verifyAttestation: ResolveAdminBaselineEvidenceV1Input["verifyGithubAttestation"],
-): { digest: string; schemaVersion: number } {
+): Promise<{ digest: string; schemaVersion: number }> {
   if (
     !Buffer.isBuffer(downloaded.attestationBytes) ||
     downloaded.attestationBytes.length === 0 ||
@@ -398,20 +563,41 @@ function verify(
   )
     fail("attestation");
   try {
+    const policy = {
+      environment: bootstrap.expectedEnvironment,
+      issuer: bootstrap.expectedIssuer,
+      ref: bootstrap.expectedRef,
+      repository: bootstrap.expectedRepository,
+      workflow: bootstrap.expectedWorkflow,
+    };
+    const subject = preverifiedSubject(downloaded);
+    // This async boundary is the only place a live verifier runs. The captured
+    // projection stays in memory and is released to the synchronous foundation
+    // only if its independently constructed request is byte-identical.
+    const live = await verifyAttestation({
+      attestationBytes: Buffer.from(downloaded.attestationBytes),
+      policy,
+      subjectBytes: Buffer.from(subject.bytes),
+      subjectSha256: subject.sha256,
+    });
+    const claim: VerifiedBaselineEvidenceArtifactAttestationV1 = {
+      environment: live.environment,
+      issuer: live.issuer,
+      ref: live.ref,
+      repository: live.repository,
+      subjectSha256: live.subjectSha256,
+      verified: live.verified,
+      workflow: live.workflow,
+    };
     const checked = verifyVendorBaselineEvidenceArtifactV1({
       artifact: downloaded.artifact,
       policy: {
-        environment: bootstrap.expectedEnvironment,
-        issuer: bootstrap.expectedIssuer,
-        ref: bootstrap.expectedRef,
-        repository: bootstrap.expectedRepository,
-        workflow: bootstrap.expectedWorkflow,
+        ...policy,
         sources: bootstrap.sources,
       },
       verifyGithubAttestation: (request) => {
-        // The strict V1 verifier owns bytes/subject binding; this adapter gives the caller
-        // attestation bytes only after local artifact checks have completed.
-        return verifyAttestation({ ...request, attestationBytes: downloaded.attestationBytes });
+        if (!sameAttestationRequest(request, policy, subject)) fail("attestation request");
+        return claim;
       },
     });
     return lockInfo(Buffer.from(`${JSON.stringify(checked.lock, null, 2)}\n`, "utf8"), bootstrap);
@@ -427,7 +613,7 @@ export async function resolveAdminBaselineEvidenceV1(
   const fresh = await input.fetchFresh();
   if (fresh.kind === "available") {
     const downloaded: DownloadedEvidenceV1 = { ...fresh, downloadedAt: input.now };
-    const info = verify(downloaded, input.bootstrap, input.verifyGithubAttestation);
+    const info = await verify(downloaded, input.bootstrap, input.verifyGithubAttestation);
     if (input.commitLastDownloaded(downloaded) !== true) fail("cache commit failed");
     return {
       provenance: {
@@ -445,7 +631,7 @@ export async function resolveAdminBaselineEvidenceV1(
     const age = (now - epoch(cached.downloadedAt, "cache age")) / 1000;
     if (!Number.isSafeInteger(age) || age < 0 || age > input.bootstrap.cacheMaxAgeSeconds)
       fail("cache age");
-    const info = verify(cached, input.bootstrap, input.verifyGithubAttestation);
+    const info = await verify(cached, input.bootstrap, input.verifyGithubAttestation);
     return {
       provenance: {
         tier: "last-downloaded",
@@ -467,4 +653,54 @@ export async function resolveAdminBaselineEvidenceV1(
       ...info,
     },
   };
+}
+
+/**
+ * Production administrator-only composition. Raw fresh/cache bytes cross the
+ * effect boundary here; the pure resolver below it receives only a synchronous
+ * captured-claim seam and never persists authentication results.
+ */
+export async function resolveOperationalAdminBaselineEvidenceV1(
+  input: ResolveOperationalAdminBaselineEvidenceV1Input,
+): Promise<ResolvedAdminBaselineEvidenceV1> {
+  const resolved = resolveAdminBaselineEvidenceBootstrapV1({
+    adminRoot: input.adminRoot,
+    platformAdminRoot:
+      input.platformAdminRoot ?? enterpriseAdminBaselineEvidenceRootV1(process.platform),
+    posture: input.posture,
+  });
+  const fetchHttps = input.fetchHttps ?? defaultAdminBaselineEvidenceHttpsFetchV1;
+  const run = input.run ?? defaultRunner;
+  const tempRoot = input.tempRoot ?? tmpdir();
+  const environment = input.env ?? process.env;
+  return resolveAdminBaselineEvidenceV1({
+    bootstrap: resolved.bootstrap,
+    now: input.now,
+    fetchFresh: () =>
+      fetchAdminBaselineEvidenceArtifactV1({
+        artifactUrl: resolved.bootstrap.artifactUrl,
+        attestationUrl: resolved.bootstrap.attestationUrl,
+        fetchHttps,
+      }),
+    readLastDownloaded: () => readAdminBaselineEvidenceCacheV1(resolved.root, resolved.bootstrap),
+    commitLastDownloaded: (evidence) =>
+      commitAdminBaselineEvidenceCacheV1(resolved.root, resolved.bootstrap, evidence),
+    verifyGithubAttestation: async (request) => {
+      const gh = findOnPath("gh", environment, process.platform, {
+        excludeRoot: resolved.root,
+        windowsExeOnly: true,
+      });
+      if (gh === undefined) fail("GitHub attestation verifier is unavailable on absolute PATH");
+      return verifyGithubBaselineEvidenceAttestationLiveV1({
+        attestationBytes: request.attestationBytes ?? fail("attestation"),
+        bootstrap: resolved.bootstrap,
+        gh,
+        now: input.now,
+        run,
+        subjectBytes: request.subjectBytes,
+        subjectSha256: request.subjectSha256,
+        tempRoot,
+      });
+    },
+  });
 }
