@@ -555,6 +555,29 @@ describe("buildAihDataV9 — panels + gating", () => {
     expect(m?.mcpScopes).toContainEqual(["codex", "global · 0"]);
   });
 
+  it("carries an unsafe MCP config refusal through data assembly and HTML", () => {
+    const refused = digest("MCP servers — config refused", "body", {
+      servers: [],
+      configState: "unsafe",
+      configError: ".mcp.json refused: unavailable",
+    });
+    const d = buildAihDataV9([
+      ...ALL.filter((x) => !x.describe.startsWith("MCP servers")),
+      refused,
+    ]);
+
+    expect(d.mcp).toMatchObject({
+      servers: [],
+      configState: "unsafe",
+      configError: ".mcp.json refused: unavailable",
+    });
+
+    const view = assembleViewV9(d, V9_DEMO);
+    const html = view.sections["sec-mcp"]?.html ?? "";
+    expect(html).toMatch(/config refused|unavailable/i);
+    expect(html).not.toContain("all local/vendor");
+  });
+
   it("binds adoption, drift and support", () => {
     const d = buildAihDataV9(ALL);
     expect(d.adoption?.checks).toContainEqual(["AGENTS.md", 0]);

@@ -39,11 +39,97 @@ const PATTERNS: RegExp[] = [
   fromGitleaks(PRIVATE_KEY_REGEX), // -----BEGIN … PRIVATE KEY-----
   ...PROVIDER_TOKEN_REDACTION_PATTERNS.map((pattern) => globalPattern(pattern.re)),
   /bearer\s+[A-Za-z0-9._-]+/gi, // Authorization: Bearer <token>
-  /\b[A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|ACCESS_KEY)[A-Z0-9_]*\s*[:=]\s*["']?[^\s"']{8,}/gi,
-  /\b[A-Z_]*(?:TOKEN|SECRET|PASSWORD|API_KEY)\s*=\s*\S+/g, // FOO_TOKEN=…, API_KEY=…
 ];
+
+const ASSIGNMENT_KEYWORDS = ["TOKEN", "SECRET", "PASSWORD", "PASSWD", "API_KEY", "ACCESS_KEY"];
+const SHORT_ASSIGNMENT_KEYWORDS = ["TOKEN", "SECRET", "PASSWORD", "API_KEY"];
+
+function isAsciiLetter(char: string): boolean {
+  return (char >= "A" && char <= "Z") || (char >= "a" && char <= "z");
+}
+
+function isAssignmentKeyChar(char: string): boolean {
+  return isAsciiLetter(char) || (char >= "0" && char <= "9") || char === "_";
+}
+
+function isAsciiWordChar(char: string | undefined): boolean {
+  return char !== undefined && (isAssignmentKeyChar(char) || char === "_");
+}
+
+function skipWhitespace(text: string, index: number): number {
+  while (index < text.length && /\s/.test(text[index] ?? "")) index++;
+  return index;
+}
+
+/**
+ * Redact `KEY=VALUE` diagnostics with a single forward scan. This preserves the
+ * two former assignment-pattern behaviors without regex backtracking on
+ * attacker-controlled uppercase diagnostic text.
+ */
+function redactSecretAssignments(text: string): string {
+  let copied = 0;
+  let output: string | undefined;
+  for (let index = 0; index < text.length; ) {
+    const char = text[index] ?? "";
+    if ((!isAsciiLetter(char) && char !== "_") || isAsciiWordChar(text[index - 1])) {
+      index++;
+      continue;
+    }
+    const keyStart = index;
+    while (index < text.length && isAssignmentKeyChar(text[index] ?? "")) index++;
+    const keyEnd = index;
+    const key = text.slice(keyStart, keyEnd);
+    const separatorAt = skipWhitespace(text, keyEnd);
+    const separator = text[separatorAt];
+    if (separator !== ":" && separator !== "=") continue;
+    const upperKey = key.toUpperCase();
+    const supportsLongAssignment =
+      isAsciiLetter(key[0] ?? "") &&
+      ASSIGNMENT_KEYWORDS.some((keyword) => upperKey.indexOf(keyword, 1) !== -1);
+    const supportsShortAssignment =
+      separator === "=" &&
+      /^[A-Z_]+$/.test(key) &&
+      SHORT_ASSIGNMENT_KEYWORDS.some((keyword) => key.endsWith(keyword));
+
+    // A non-secret key cannot redact regardless of its value. Do not scan that
+    // value: another key candidate may begin after its separator, and rescanning
+    // the same suffix for every such candidate is quadratic.
+    if (!supportsLongAssignment && !supportsShortAssignment) continue;
+
+    const valueAt = skipWhitespace(text, separatorAt + 1);
+    const quote = text[valueAt];
+    const unquotedValueAt = quote === '"' || quote === "'" ? valueAt + 1 : valueAt;
+    let longValueEnd = unquotedValueAt;
+    while (
+      longValueEnd < text.length &&
+      !/\s/.test(text[longValueEnd] ?? "") &&
+      text[longValueEnd] !== '"' &&
+      text[longValueEnd] !== "'"
+    ) {
+      longValueEnd++;
+    }
+    if (longValueEnd - unquotedValueAt >= 8 && supportsLongAssignment) {
+      output ??= "";
+      output += text.slice(copied, keyStart) + REDACTED;
+      copied = longValueEnd;
+      index = longValueEnd;
+      continue;
+    }
+    if (supportsShortAssignment) {
+      let shortValueEnd = valueAt;
+      while (shortValueEnd < text.length && !/\s/.test(text[shortValueEnd] ?? "")) shortValueEnd++;
+      if (shortValueEnd > valueAt && /^[A-Z_]+$/.test(key)) {
+        output ??= "";
+        output += text.slice(copied, keyStart) + REDACTED;
+        copied = shortValueEnd;
+        index = shortValueEnd;
+      }
+    }
+  }
+  return output === undefined ? text : output + text.slice(copied);
+}
 
 /** Replace any matched secret material in `text` with `[REDACTED]`. */
 export function redactSecrets(text: string): string {
-  return PATTERNS.reduce((s, re) => s.replace(re, REDACTED), text);
+  return redactSecretAssignments(PATTERNS.reduce((s, re) => s.replace(re, REDACTED), text));
 }

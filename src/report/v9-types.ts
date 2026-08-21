@@ -202,6 +202,10 @@ export interface V9Mcp {
   /** Per-CLI MCP source — [cli, label] e.g. ["claude","repo · 5"], ["codex","global · 16"].
    * Surfaces that a repo-committed `.mcp.json` and a machine-global `~/.codex` are NOT the same. */
   mcpScopes: Array<[string, string]>;
+  /** A local `.mcp.json` was present but refused before its server names were read. */
+  configState?: "unsafe";
+  /** Bounded, safe-to-render refusal detail. Present only when `configState` is `"unsafe"`. */
+  configError?: string;
 }
 
 /** 06 — adoption checks + tooling. */

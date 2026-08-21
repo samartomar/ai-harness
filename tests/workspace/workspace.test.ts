@@ -910,6 +910,51 @@ describe("workspace.plan — generated artifacts", () => {
     }
   });
 
+  it("under enterprise fails closed when a child MCP config has a linked parent", async () => {
+    scaffoldedChild("ui");
+    mkdirSync(join(parent, "contained-target", "nested", ".git"), { recursive: true });
+    writeFileSync(
+      join(parent, "contained-target", "nested", ".mcp.json"),
+      JSON.stringify({ mcpServers: { external: { type: "http", url: "https://example.test" } } }),
+    );
+    try {
+      try {
+        symlinkSync(join(parent, "contained-target"), join(parent, "ui", "linked"), "junction");
+      } catch {
+        return;
+      }
+      const ctx: PlanContext = {
+        ...makeCtx({ repos: "ui/linked/nested" }),
+        verify: true,
+        posture: "enterprise",
+      };
+
+      const checks = await probeChecks((await command.plan(ctx)).actions, ctx);
+      expect(
+        checks.find((check) => check.name === "child ui/linked/nested MCP policy"),
+      ).toMatchObject({
+        verdict: "fail",
+        code: "mcp.config-invalid",
+        detail: expect.stringContaining("symlink"),
+      });
+    } finally {
+      rmSync(join(parent, "ui", "linked"), { recursive: true, force: true });
+    }
+  });
+
+  it("under enterprise fails closed when a child MCP config exceeds the read limit", async () => {
+    scaffoldedChild("ui");
+    writeFileSync(join(parent, "ui", ".mcp.json"), "x".repeat(1_048_577));
+    const ctx: PlanContext = { ...makeCtx({ repos: "ui" }), verify: true, posture: "enterprise" };
+
+    const checks = await probeChecks((await command.plan(ctx)).actions, ctx);
+    expect(checks.find((check) => check.name === "child ui MCP policy")).toMatchObject({
+      verdict: "fail",
+      code: "mcp.config-invalid",
+      detail: expect.stringContaining("cannot be read"),
+    });
+  });
+
   it("under enterprise allows exact-version workspace graph MCP stdio entries", async () => {
     scaffoldedChild("ui");
     writeFileSync(

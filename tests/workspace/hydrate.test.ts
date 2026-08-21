@@ -321,6 +321,55 @@ describe("workspace hydrate", () => {
     await expect(workspaceHydrateCommand.plan(ctx())).rejects.toThrow(/committed context dir/);
   });
 
+  it("fails closed on linked, non-regular, and oversized committed workspace locks", async () => {
+    mkdirSync(join(parent, "ai-coding"), { recursive: true });
+    writeManifest(["ui"]);
+    const lock = join(parent, "ai-coding", "workspace-lock.json");
+    const external = mkdtempSync(join(tmpdir(), "aih-hydrate-external-"));
+    try {
+      writeFileSync(join(external, "lock.json"), "{}", "utf8");
+      try {
+        symlinkSync(join(external, "lock.json"), lock, "file");
+      } catch {
+        return;
+      }
+      await expect(workspaceHydrateCommand.plan(ctx())).rejects.toThrow(
+        /could not read workspace-lock/,
+      );
+      rmSync(lock, { force: true });
+      mkdirSync(lock);
+      await expect(workspaceHydrateCommand.plan(ctx())).rejects.toThrow(
+        /could not read workspace-lock/,
+      );
+      rmSync(lock, { recursive: true, force: true });
+      writeFileSync(lock, "x".repeat(1_048_577));
+      await expect(workspaceHydrateCommand.plan(ctx())).rejects.toThrow(
+        /could not read workspace-lock/,
+      );
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed on a committed workspace lock reached through an in-root linked parent", async () => {
+    const contained = join(parent, "contained-context");
+    mkdirSync(contained, { recursive: true });
+    writeManifest(["ui"]);
+    writeFileSync(
+      join(contained, "workspace-lock.json"),
+      JSON.stringify({ schemaVersion: 1, createdAt: "2026-07-04T00:00:00.000Z", repos: [] }),
+    );
+    try {
+      symlinkSync(contained, join(parent, "ai-coding"), "junction");
+    } catch {
+      return;
+    }
+
+    await expect(workspaceHydrateCommand.plan(ctx())).rejects.toThrow(
+      /could not read workspace-lock/,
+    );
+  });
+
   it("rejects missing clone targets below linked ancestors", async () => {
     const external = mkdtempSync(join(tmpdir(), "aih-hydrate-external-"));
     try {

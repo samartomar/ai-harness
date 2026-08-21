@@ -495,6 +495,11 @@ function buildMcp(digests: DigestAction[]): V9Mcp | undefined {
   const servers = bag(digests, "MCP servers");
   const srvRows =
     servers && Array.isArray(servers.servers) ? (servers.servers as Array<[string, string]>) : [];
+  const configUnsafe = servers?.configState === "unsafe";
+  const configError =
+    configUnsafe && typeof servers?.configError === "string"
+      ? servers.configError.slice(0, 240)
+      : undefined;
   const mcpScopes: Array<[string, string]> = rows.map((r) => [
     String(r.cli ?? ""),
     mcpScopeLabel(r.mcp),
@@ -505,6 +510,7 @@ function buildMcp(digests: DigestAction[]): V9Mcp | undefined {
     totalClis: SUPPORTED_CLIS.length,
     servers: srvRows,
     mcpScopes,
+    ...(configUnsafe ? { configState: "unsafe" as const, configError } : {}),
   };
 }
 

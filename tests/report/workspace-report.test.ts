@@ -289,6 +289,28 @@ describe("report workspace rollup", () => {
     ]);
   });
 
+  it("renders workspace snapshot Source relative to the configured root", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    child("ui");
+    mkdirSync(join(root, ".aih", "workspace-snapshots"), { recursive: true });
+    const snapshot = ".aih/workspace-snapshots/20260630T000000Z-known-good.json";
+    writeFileSync(
+      join(root, ".aih", "workspace-snapshots", "20260630T000000Z-known-good.json"),
+      json({
+        schemaVersion: 1,
+        createdAt: "2026-06-30T00:00:00.000Z",
+        label: "known-good",
+        repos: [{ id: "ui", path: "ui", branch: "main", sha: "old123", dirty: false }],
+      }),
+    );
+
+    const d = await workspaceDigest();
+    const data = d.data as WorkspaceReportDigest;
+
+    expect(data.snapshot?.source).toBe(snapshot);
+    expect(d.text).toContain(`Source: ${snapshot} (known-good)`);
+  });
+
   it("does not render unsafe labels from workspace snapshots", async () => {
     writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
     child("ui");
@@ -310,6 +332,54 @@ describe("report workspace rollup", () => {
     expect(data.snapshot).toBeUndefined();
   });
 
+  it("ignores missing, linked, non-regular, and oversized workspace snapshots", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    child("ui");
+    mkdirSync(join(root, ".aih", "workspace-snapshots"), { recursive: true });
+    const snapshots = join(root, ".aih", "workspace-snapshots");
+    const external = mkdtempSync(join(tmpdir(), "aih-workspace-report-external-"));
+    try {
+      writeFileSync(
+        join(external, "outside.json"),
+        json({ createdAt: "2026-06-30T00:00:00.000Z" }),
+      );
+      try {
+        symlinkSync(
+          join(external, "outside.json"),
+          join(snapshots, "20260630T000000Z-link.json"),
+          "file",
+        );
+      } catch {
+        return;
+      }
+      mkdirSync(join(snapshots, "20260630T000001Z-directory.json"));
+      writeFileSync(join(snapshots, "20260630T000002Z-large.json"), "x".repeat(1_048_577));
+
+      expect(((await workspaceDigest()).data as WorkspaceReportDigest).snapshot).toBeUndefined();
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores a workspace snapshot reached through an in-root linked parent", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    child("ui");
+    const contained = join(root, "contained-snapshots");
+    mkdirSync(contained, { recursive: true });
+    writeFileSync(
+      join(contained, "20260630T000000Z-linked-parent.json"),
+      json({ createdAt: "2026-06-30T00:00:00.000Z", repos: [] }),
+    );
+    mkdirSync(join(root, ".aih"), { recursive: true });
+    try {
+      symlinkSync(contained, join(root, ".aih", "workspace-snapshots"), "junction");
+    } catch {
+      return;
+    }
+
+    expect(((await workspaceDigest()).data as WorkspaceReportDigest).snapshot).toBeUndefined();
+  });
+
   it("warns when declared workspace repos have no parent graph MCP config", async () => {
     writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
     child("ui");
@@ -321,6 +391,65 @@ describe("report workspace rollup", () => {
       detail:
         "declared workspace repos have no parent .mcp.json; run `aih workspace --apply` to add graph MCP servers",
     });
+  });
+
+  it("fails closed when the parent MCP config is an off-root symlink", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    child("ui");
+    const external = mkdtempSync(join(tmpdir(), "aih-workspace-report-mcp-external-"));
+    try {
+      writeFileSync(
+        join(external, ".mcp.json"),
+        json({
+          mcpServers: {
+            filesystem: {
+              command: "npx",
+              args: ["-y", "@modelcontextprotocol/server-filesystem", "."],
+            },
+          },
+        }),
+      );
+      try {
+        symlinkSync(join(external, ".mcp.json"), join(root, ".mcp.json"), "file");
+      } catch {
+        return;
+      }
+
+      const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+      expect(data.mcp).toMatchObject({
+        status: "ERROR",
+        detail: expect.stringContaining("symlink"),
+      });
+      expect(data.mcp.detail).not.toContain("filesystem server has broad workspace scope");
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when the parent MCP config exceeds the bounded read limit", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    child("ui");
+    writeFileSync(
+      join(root, ".mcp.json"),
+      json({
+        mcpServers: {
+          filesystem: {
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-filesystem", "."],
+          },
+        },
+        padding: "x".repeat(1_048_577),
+      }),
+    );
+
+    const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+    expect(data.mcp).toMatchObject({
+      status: "ERROR",
+      detail: expect.stringContaining("cannot be read"),
+    });
+    expect(data.mcp.detail).not.toContain("filesystem server has broad workspace scope");
   });
 
   it("routes governed workspace MCP hints through policy evaluation and projection", async () => {

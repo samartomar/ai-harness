@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -114,6 +114,8 @@ describe("driftDigest", () => {
 
 interface ServerData {
   servers: Array<[string, string]>;
+  configState?: "unsafe";
+  configError?: string;
   thirdParty?: number;
   catalogError?: string;
   policyDisabled?: string[];
@@ -122,6 +124,53 @@ interface ServerData {
 describe("mcpServersDigest", () => {
   it("returns undefined when there is no .mcp.json", () => {
     expect(mcpServersDigest(ctx())).toBeUndefined();
+  });
+
+  it("refuses an off-root symlinked .mcp.json without rendering its server names", () => {
+    const outside = mkdtempSync(join(tmpdir(), "aih-v9panels-mcp-outside-"));
+    const serverName = "off-root-configured-server";
+    try {
+      writeFileSync(
+        join(outside, ".mcp.json"),
+        JSON.stringify({ mcpServers: { [serverName]: {} } }),
+      );
+      try {
+        symlinkSync(join(outside, ".mcp.json"), join(dir, ".mcp.json"), "file");
+      } catch {
+        return; // symlink unsupported in this environment — nothing to prove
+      }
+
+      const d = mcpServersDigest(ctx());
+      expect(d).toBeDefined();
+      const data = d?.data as ServerData;
+      expect(data.configState).toBe("unsafe");
+      expect(data.configError).toBeTypeOf("string");
+      expect(data.configError).not.toContain(outside);
+      expect(d?.text).toContain(".mcp.json");
+      expect(d?.text).toMatch(/refused|unavailable/i);
+      expect(d?.text ?? "").not.toContain(serverName);
+      expect(JSON.stringify(d?.data)).not.toContain(serverName);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a .mcp.json larger than 1 MiB without rendering its server names", () => {
+    const serverName = "oversized-configured-server";
+    put(
+      ".mcp.json",
+      `${JSON.stringify({ mcpServers: { [serverName]: {} } })}${" ".repeat(1_048_577)}`,
+    );
+
+    const d = mcpServersDigest(ctx());
+    expect(d).toBeDefined();
+    const data = d?.data as ServerData;
+    expect(data.configState).toBe("unsafe");
+    expect(data.configError).toBeTypeOf("string");
+    expect(d?.text).toContain(".mcp.json");
+    expect(d?.text).toMatch(/refused|unavailable/i);
+    expect(d?.text ?? "").not.toContain(serverName);
+    expect(JSON.stringify(d?.data)).not.toContain(serverName);
   });
 
   it("maps configured servers to the catalog's egress class", () => {

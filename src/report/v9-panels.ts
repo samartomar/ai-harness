@@ -11,6 +11,7 @@ import { eccLanguages } from "../ecc/select.js";
 import { DEFAULT_EVIDENCE_OUT, EVIDENCE_FILE, EvidenceBundleSchema } from "../evidence/manifest.js";
 import { homeDir } from "../internals/cli-detect.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
+import { readContainedRegularFile } from "../internals/contained-path.js";
 import { readIfExists, readRegularFileWithStats } from "../internals/fsxn.js";
 import { gitRead } from "../internals/git.js";
 import { extractManagedBlock } from "../internals/markers.js";
@@ -99,28 +100,79 @@ function errorDetail(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Configured MCP server names from this repo's `.mcp.json` (undefined when absent). */
-function configuredServerNames(root: string): string[] | undefined {
-  const text = readIfExists(join(root, ".mcp.json"));
-  if (text === undefined) return undefined;
+/** Configured MCP server names from this repo's `.mcp.json`. */
+const MAX_MCP_CONFIG_BYTES = 1024 * 1024;
+
+type McpConfig =
+  | { state: "absent" }
+  | { state: "unsafe"; reason: string }
+  | { state: "present"; names: string[] };
+
+function unsafeMcpConfigReason(reason: string): string {
+  switch (reason) {
+    case "symlink":
+      return "symlink";
+    case "outside-root":
+      return "outside root";
+    case "inaccessible":
+      return "unavailable";
+    case "invalid-relative":
+      return "invalid path";
+    case "not-file":
+      return "not a regular file";
+    case "changed":
+      return "changed during read";
+    default:
+      return "unavailable";
+  }
+}
+
+function configuredServerNames(root: string): McpConfig {
+  const file = readContainedRegularFile(root, ".mcp.json", { maxBytes: MAX_MCP_CONFIG_BYTES });
+  if (file.state === "absent") return file;
+  if (file.state === "unsafe") {
+    return { state: "unsafe", reason: unsafeMcpConfigReason(file.reason) };
+  }
   try {
-    const parsed = JSON.parse(text) as { mcpServers?: Record<string, unknown> };
-    return parsed.mcpServers && typeof parsed.mcpServers === "object"
-      ? Object.keys(parsed.mcpServers)
-      : [];
+    const parsed = JSON.parse(file.contents.toString("utf8")) as {
+      mcpServers?: Record<string, unknown>;
+    };
+    return {
+      state: "present",
+      names:
+        parsed.mcpServers && typeof parsed.mcpServers === "object"
+          ? Object.keys(parsed.mcpServers)
+          : [],
+    };
   } catch {
-    return [];
+    return { state: "present", names: [] };
   }
 }
 
 /**
  * MCP servers + egress — the repo's configured MCP servers (`.mcp.json`) mapped to the
  * curated catalog's egress classification (`src/mcp/servers.ts`). No runtime metering;
- * pure supply-chain truth (local / vendor / third-party). Undefined when no `.mcp.json`.
+ * pure supply-chain truth (local / vendor / third-party). Undefined when no `.mcp.json`;
+ * unsafe local configuration is reported without reading or exposing its contents.
  */
 export function mcpServersDigest(ctx: PlanContext): DigestAction | undefined {
-  const names = configuredServerNames(ctx.root);
-  if (names === undefined) return undefined;
+  const config = configuredServerNames(ctx.root);
+  if (config.state === "absent") return undefined;
+  if (config.state === "unsafe") {
+    const configError = `.mcp.json refused: ${config.reason}`;
+    const body = lines(
+      "MCP server configuration unavailable.",
+      "",
+      `  ${configError}.`,
+      "  Refusing to read or report configured servers until the local configuration is safe.",
+    );
+    return digest("MCP servers — configuration unavailable", body, {
+      servers: [],
+      configState: "unsafe",
+      configError,
+    });
+  }
+  const names = config.names;
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const catalogResult = policyAwareMcpCatalog(ctx, {
     scope: "local",

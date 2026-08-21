@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -16,6 +16,60 @@ afterEach(() => {
 });
 
 describe("trust evidence layers", () => {
+  it("reads only bounded, contained regular-file evidence at positive integral lines", () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-trust-evidence-"));
+    const external = mkdtempSync(join(tmpdir(), "aih-trust-evidence-external-"));
+    roots.push(root, external);
+    mkdirSync(join(root, "skills"), { recursive: true });
+    writeFileSync(join(root, "skills", "safe.md"), "first\nsecond\n");
+    mkdirSync(join(root, "contained"), { recursive: true });
+    writeFileSync(join(root, "contained", "inside.md"), "inside\n");
+    writeFileSync(join(external, "outside.md"), "outside\n");
+    writeFileSync(join(root, "skills", "large.md"), "x".repeat(1_048_577));
+    mkdirSync(join(root, "skills", "directory.md"));
+    try {
+      symlinkSync(join(external, "outside.md"), join(root, "skills", "leaf.md"), "file");
+      symlinkSync(external, join(root, "linked"), "junction");
+      symlinkSync(join(root, "contained"), join(root, "linked-inside"), "junction");
+    } catch {
+      return;
+    }
+    const sourceValue = (uri: string, startLine: number): string | undefined =>
+      normalizeTrustFindings(
+        root,
+        [
+          {
+            name: "trust.detector-finding",
+            code: "trust.detector-finding",
+            verdict: "pass",
+            location: { uri, startLine },
+          },
+        ],
+        [],
+      )[0]?.sourceValue;
+
+    expect(sourceValue("skills/safe.md", 2)).toBe("second");
+    for (const [uri, line] of [
+      ["../outside.md", 1],
+      [join(external, "outside.md"), 1],
+      ["skills/leaf.md", 1],
+      ["linked/outside.md", 1],
+      ["linked-inside/inside.md", 1],
+      ["skills/large.md", 1],
+      ["skills/missing.md", 1],
+      ["skills/directory.md", 1],
+      ["skills/safe.md", 0],
+      ["skills/safe.md", -1],
+      ["skills/safe.md", 1.5],
+      ["skills/safe.md", Number.NaN],
+      ["skills/safe.md", Number.POSITIVE_INFINITY],
+      ["skills/safe.md", 10_001],
+      ["skills/safe.md", 3],
+    ] as const) {
+      expect(sourceValue(uri, line)).toBeUndefined();
+    }
+  });
+
   it("retains duplicate raw occurrences while normalizing one policy finding", () => {
     const root = mkdtempSync(join(tmpdir(), "aih-trust-evidence-"));
     roots.push(root);

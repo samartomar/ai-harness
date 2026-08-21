@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { readContainedRegularFile } from "../internals/contained-path.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
@@ -227,6 +228,8 @@ function mcpFilesystemPackageSpec(server: unknown): string | undefined {
   );
 }
 
+const MAX_WORKSPACE_MCP_BYTES = 1024 * 1024;
+
 function workspaceMcpStatus(
   root: string,
   manifest: WorkspaceManifest,
@@ -235,8 +238,10 @@ function workspaceMcpStatus(
   const rootAbs = resolve(root);
   const governedGuidance =
     "governance exclusively owns AIH MCP projection—run `aih policy evaluate`, then `aih policy project --apply` after its external evidence/authority checks; `aih workspace --apply` and `aih mcp --apply` are intentionally blocked";
-  const text = readIfExists(join(root, ".mcp.json"));
-  if (text === undefined) {
+  const mcpConfig = readContainedRegularFile(rootAbs, ".mcp.json", {
+    maxBytes: MAX_WORKSPACE_MCP_BYTES,
+  });
+  if (mcpConfig.state === "absent") {
     return manifest.repos.length > 0
       ? {
           status: "WARN",
@@ -246,9 +251,20 @@ function workspaceMcpStatus(
         }
       : { status: "UNKNOWN", detail: "no parent .mcp.json" };
   }
+  if (mcpConfig.state !== "present") {
+    return {
+      status: "ERROR",
+      detail:
+        mcpConfig.reason === "symlink"
+          ? "parent .mcp.json is a symlink; cannot be read as a regular file"
+          : "parent .mcp.json cannot be read as a regular file",
+    };
+  }
   let parsed: { mcpServers?: Record<string, unknown> };
   try {
-    parsed = JSON.parse(text) as { mcpServers?: Record<string, unknown> };
+    parsed = JSON.parse(mcpConfig.contents.toString("utf8")) as {
+      mcpServers?: Record<string, unknown>;
+    };
   } catch {
     return { status: "ERROR", detail: "parent .mcp.json is malformed" };
   }
@@ -520,11 +536,15 @@ interface SnapshotFile {
   repos?: Array<{ id?: string; path?: string; branch?: string; sha?: string; dirty?: boolean }>;
 }
 
-function readSnapshot(path: string): SnapshotFile | undefined {
-  const text = readIfExists(path);
-  if (text === undefined) return undefined;
+const MAX_WORKSPACE_SNAPSHOT_BYTES = 1024 * 1024;
+
+function readSnapshot(root: string, relativePath: string): SnapshotFile | undefined {
+  const file = readContainedRegularFile(root, relativePath, {
+    maxBytes: MAX_WORKSPACE_SNAPSHOT_BYTES,
+  });
+  if (file.state !== "present") return undefined;
   try {
-    const parsed = JSON.parse(text) as SnapshotFile;
+    const parsed = JSON.parse(file.contents.toString("utf8")) as SnapshotFile;
     const label = normalizeWorkspaceDisplayText(parsed.label, "workspace snapshot label");
     const snapshot = { ...parsed };
     delete snapshot.label;
@@ -547,9 +567,11 @@ function workspaceSnapshot(
   const candidates = [
     latestWorkspaceSnapshotPath(root),
     join(root, manifest.contextDir, "workspace-lock.json"),
-  ].filter((path): path is string => path !== undefined);
+  ]
+    .filter((path): path is string => path !== undefined)
+    .map((path) => relative(root, path));
   const loaded = candidates
-    .map((path) => ({ path, snapshot: readSnapshot(path) }))
+    .map((path) => ({ path, snapshot: readSnapshot(root, path) }))
     .filter(
       (entry): entry is { path: string; snapshot: SnapshotFile } => entry.snapshot !== undefined,
     )
@@ -617,7 +639,7 @@ function workspaceSnapshot(
     };
   });
   return {
-    source: relative(root, baseline.path).replace(/\\/g, "/"),
+    source: baseline.path.replace(/\\/g, "/"),
     ...(baseline.snapshot.label ? { label: baseline.snapshot.label } : {}),
     ...(baseline.snapshot.createdAt ? { createdAt: baseline.snapshot.createdAt } : {}),
     changes,

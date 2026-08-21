@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { isAbsolute, join, normalize, relative } from "node:path";
+import { readContainedRegularFile } from "../internals/contained-path.js";
 import type { Check, CheckCode } from "../internals/verify.js";
 
 export const TRUST_POLICY_VERSION = 3;
+const MAX_SOURCE_EVIDENCE_BYTES = 1024 * 1024;
+const MAX_SOURCE_EVIDENCE_LINE = 10_000;
 
 export type TrustPolicyLevel = "BLOCK" | "REVIEW" | "WARN" | "INFORMATIONAL" | "SUPPRESSED";
 
@@ -75,16 +76,18 @@ function safeSourceValue(
   root: string,
   location: Check["location"] | RawScannerOccurrence["location"],
 ): string | undefined {
-  if (location === undefined || isAbsolute(location.uri)) return undefined;
-  const candidate = normalize(join(root, location.uri));
-  const fromRoot = relative(normalize(root), candidate);
-  if (fromRoot.startsWith("..") || isAbsolute(fromRoot)) return undefined;
-  try {
-    const line = location.startLine ?? 1;
-    return readFileSync(candidate, "utf8").split(/\r?\n/)[line - 1];
-  } catch {
-    return undefined;
-  }
+  if (location === undefined) return undefined;
+  const line = location.startLine ?? 1;
+  if (!Number.isSafeInteger(line) || line < 1 || line > MAX_SOURCE_EVIDENCE_LINE) return undefined;
+  const source = readContainedRegularFile(root, location.uri, {
+    maxBytes: MAX_SOURCE_EVIDENCE_BYTES,
+  });
+  if (source.state !== "present") return undefined;
+  const lines = source.contents.toString("utf8").split(/\r?\n/);
+  // split() represents a terminal newline as one synthetic trailing empty item;
+  // it is not a source line that an evidence location may address.
+  if (line > lines.length || (line === lines.length && lines.at(-1) === "")) return undefined;
+  return lines[line - 1];
 }
 
 function inferredCode(check: Check): CheckCode | undefined {
@@ -161,6 +164,7 @@ export function normalizeTrustFindings(
     const raw = matchingRaw(check, rawOccurrences);
     for (const occurrence of raw) consumed.add(occurrence.fingerprint);
     const detail = check.detail ?? check.name;
+    const sourceValue = safeSourceValue(root, check.location);
     mergeNormalizedFinding(findings, findingsByKey, {
       fingerprint:
         check.fingerprint ??
@@ -171,9 +175,7 @@ export function normalizeTrustFindings(
       checkVerdict: check.verdict,
       detail,
       ...(check.location === undefined ? {} : { location: check.location }),
-      ...(safeSourceValue(root, check.location) === undefined
-        ? {}
-        : { sourceValue: safeSourceValue(root, check.location) }),
+      ...(sourceValue === undefined ? {} : { sourceValue }),
       rawOccurrenceFingerprints: raw.map((occurrence) => occurrence.fingerprint),
     });
   }
