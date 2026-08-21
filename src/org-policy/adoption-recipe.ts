@@ -88,11 +88,12 @@ const CORE_ROLE_IDS = ["code-review-graph", "codebase-memory-mcp"] as const;
 const SERENA_FORBIDDEN_OVERLAP_CLASSES = [
   {
     name: "file",
-    pattern: /^(?:read|write|edit|create|delete|list)_(?:file|files|directory|dir)$/,
+    pattern:
+      /^(?:(?:read|write|edit|create|delete|list|find)_(?:file|files|directory|dir)|create_text_file|replace_content|replace_in_files)$/,
   },
   { name: "shell", pattern: /(?:^|_)(?:shell|terminal|command|exec)(?:_|$)/ },
   { name: "memory", pattern: /(?:^|_)(?:memory|memories|recall)(?:_|$)/ },
-  { name: "project", pattern: /^(?:switch|set|open|close)_project(?:_|$)/ },
+  { name: "project", pattern: /^(?:activate|switch|set|open|close)_project(?:_|$)/ },
   { name: "mode", pattern: /^(?:switch|set|open|close)_mode(?:_|$)/ },
 ] as const;
 
