@@ -327,13 +327,6 @@ export {
   writeBindingLockAtomic,
 } from "./lock.js";
 export { type AcquireNpmTreeOptions, acquireNpmTree } from "./npm-source.js";
-export {
-  regenerateSuperpowersScanAcceptance,
-  runScanAcceptanceRegenerateCli,
-  type ScanAcceptanceRegenerateDeps,
-  ScanAcceptanceRegenerateError,
-  type ScanAcceptanceRegenerateInput,
-} from "./scan-acceptance-regenerate.js";
 // W7 §C (Phase 2) — the two D12 scan cache tiers (deep-scan + runtime-qualification),
 // the async deep-scanner dimensions (cisco@uvx produced, skillspector@docker missing
 // on this VM), and the canonical tier keys. Off-tuple never satisfies the runtime-qual

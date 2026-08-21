@@ -132,16 +132,48 @@ function readUserJson(
   return parsed;
 }
 
+type SettingsHuskState = "husk" | "active" | "malformed";
+
+/** Claude loads neither an empty event list nor an empty nested hook group. */
+function hookHuskState(hooks: unknown): SettingsHuskState {
+  if (!isPlainObject(hooks)) return "malformed";
+  for (const groups of Object.values(hooks)) {
+    if (!Array.isArray(groups)) return "malformed";
+    for (const group of groups) {
+      if (!isPlainObject(group)) return typeof group === "string" ? "active" : "malformed";
+      if (typeof group.command === "string") return "active";
+      if (!Array.isArray(group.hooks)) return "malformed";
+      for (const nested of group.hooks) {
+        if (!isPlainObject(nested)) return typeof nested === "string" ? "active" : "malformed";
+        if (typeof nested.command === "string") return "active";
+        return "malformed";
+      }
+    }
+  }
+  return "husk";
+}
+
+function settingsHuskState(settings: Record<string, unknown>): SettingsHuskState {
+  for (const [key, value] of Object.entries(settings)) {
+    if (key === "$schema" || key === "$id" || key === "$comment") continue;
+    if (key === "hooks") {
+      const state = hookHuskState(value);
+      if (state !== "husk") return state;
+      continue;
+    }
+    if (key === "enabledPlugins" || key === CLAUDE_MCP_KEY || key === "skillOverrides") {
+      if (!isPlainObject(value)) return "malformed";
+      if (Object.keys(value).length > 0) return "active";
+      continue;
+    }
+    return "active";
+  }
+  return "husk";
+}
+
 /** Empty settings and schema/empty-container scaffolds carry no loadable host behavior. */
 function isHarmlessSettingsHusk(settings: Record<string, unknown>): boolean {
-  const emptyContainers = new Set(["hooks", "enabledPlugins", CLAUDE_MCP_KEY, "skillOverrides"]);
-  return Object.entries(settings).every(
-    ([key, value]) =>
-      key === "$schema" ||
-      key === "$id" ||
-      key === "$comment" ||
-      (emptyContainers.has(key) && isPlainObject(value) && Object.keys(value).length === 0),
-  );
+  return settingsHuskState(settings) === "husk";
 }
 
 /**
@@ -375,7 +407,11 @@ export function claudeContaminationReport(
     ".claude/settings.json",
     warnings,
   );
+  const huskState = settings === undefined ? undefined : settingsHuskState(settings);
   const settingsHusk = settings !== undefined && isHarmlessSettingsHusk(settings);
+  if (huskState === "malformed") {
+    warnings.push("malformed user-scope settings structure (skipped): .claude/settings.json");
+  }
   if (settings !== undefined) {
     for (const { event, command } of collectHookCommands(settings.hooks)) {
       entries.push({

@@ -517,7 +517,8 @@ function compareCodeUnits(left: string, right: string): number {
 /** Every finding field that affects its public identity, in deterministic key order. */
 function canonicalFindingKey(finding: ScanFinding): string {
   return JSON.stringify({
-    accepted: finding.accepted === true,
+    accepted:
+      finding.accepted === undefined ? "absent" : finding.accepted === true ? "true" : "false",
     advisory:
       finding.advisory === undefined
         ? undefined
