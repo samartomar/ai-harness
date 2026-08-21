@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -369,6 +377,30 @@ describe("VendorBaselineEvidenceArtifactV1", () => {
 });
 
 describe("writeVendorBaselineEvidenceArtifactV1", () => {
+  it("allows a normal output parent below an aliased ancestor", (ctx) => {
+    const root = mkdtempSync(join(tmpdir(), "aih-vendor-artifact-alias-"));
+    const canonicalAncestor = join(root, "canonical-ancestor");
+    const canonicalParent = join(canonicalAncestor, "regular-parent");
+    const alias = join(root, "aliased-ancestor");
+    try {
+      mkdirSync(canonicalParent, { recursive: true });
+      try {
+        symlinkSync(canonicalAncestor, alias, "junction");
+      } catch {
+        ctx.skip();
+        return;
+      }
+
+      writeVendorBaselineEvidenceArtifactV1(join(alias, "regular-parent", "artifact"), publisher);
+
+      expect(
+        existsSync(join(canonicalParent, "artifact", BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1)),
+      ).toBe(true);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
   it("claims a new output directory and refuses to merge into an existing directory", () => {
     const parent = mkdtempSync(join(tmpdir(), "aih-vendor-artifact-"));
     try {
