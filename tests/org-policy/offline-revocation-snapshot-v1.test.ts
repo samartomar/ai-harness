@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -33,7 +34,29 @@ function signed(overrides: Record<string, unknown> = {}) {
   });
 }
 
+function stateFor(value: ReturnType<typeof signed>) {
+  return {
+    digestSha256: createHash("sha256")
+      .update(canonicalOfflineRevocationSnapshotV1Bytes(value))
+      .digest("hex"),
+    issuer: value.snapshot.issuer,
+    sequence: value.snapshot.sequence,
+  };
+}
+
+function trust(overrides: Record<string, unknown> = {}) {
+  return {
+    expectedAdminSignerIdentity: "signer:org-admin",
+    expectedAdminSignerRootSha256: DIGEST,
+    expectedIssuer: "platform-security",
+    verifyCanonicalPae: vi.fn(() => true),
+    ...overrides,
+  };
+}
+
 function resolve(overrides: Record<string, unknown> = {}) {
+  const signedSnapshot =
+    (overrides.signedSnapshot as ReturnType<typeof signed> | undefined) ?? signed();
   return resolveOfflineRevocationAuthorityV1({
     decision: {
       expiresAt: "2026-08-12T12:00:00Z",
@@ -42,13 +65,11 @@ function resolve(overrides: Record<string, unknown> = {}) {
       notBefore: "2026-08-10T11:59:59Z",
       reviewBy: "2026-08-12T12:00:00Z",
     },
-    expectedAdminSignerIdentity: "signer:org-admin",
-    expectedAdminSignerRootSha256: DIGEST,
-    expectedIssuer: "platform-security",
+    durableState: stateFor(signedSnapshot),
     now: "2026-08-10T12:00:01Z",
     receiptExpiresAt: "2026-08-12T12:00:00Z",
-    signedSnapshot: signed(),
-    verifyCanonicalPae: vi.fn(() => true),
+    signedSnapshot,
+    ...trust(),
     ...overrides,
   });
 }
@@ -153,12 +174,16 @@ describe("OfflineRevocationSnapshotV1", () => {
 
   it("rejects rollback and equal-sequence substitution while producing a deterministic next durable state", () => {
     const current = { digestSha256: "b".repeat(64), issuer: "platform-security", sequence: 7 };
-    expect(transitionOfflineRevocationStateV1({ current, next: signed() })).toEqual({
+    expect(transitionOfflineRevocationStateV1({ current, next: signed(), ...trust() })).toEqual({
       kind: "conflict",
       state: current,
     });
     expect(
-      transitionOfflineRevocationStateV1({ current: { ...current, sequence: 8 }, next: signed() }),
+      transitionOfflineRevocationStateV1({
+        current: { ...current, sequence: 8 },
+        next: signed(),
+        ...trust(),
+      }),
     ).toEqual({
       kind: "rollback",
       state: { ...current, sequence: 8 },
@@ -167,6 +192,7 @@ describe("OfflineRevocationSnapshotV1", () => {
       transitionOfflineRevocationStateV1({
         current,
         next: signed({ snapshot: snapshot({ sequence: 8 }) }),
+        ...trust(),
       }),
     ).toMatchObject({
       kind: "advance",
@@ -182,7 +208,15 @@ describe("OfflineRevocationSnapshotV1", () => {
       durable = replacement;
       return true;
     });
-    expect(claimOfflineRevocationStateV1({ claim, next, observe: () => durable })).toMatchObject({
+    expect(
+      claimOfflineRevocationStateV1({
+        claim: (_issuer: string, expected: unknown, replacement: unknown) =>
+          claim(expected, replacement),
+        next,
+        observe: (_issuer: string) => durable,
+        ...trust(),
+      }),
+    ).toMatchObject({
       kind: "advanced",
       state: { sequence: 8 },
     });
@@ -196,7 +230,87 @@ describe("OfflineRevocationSnapshotV1", () => {
           return false;
         },
         next,
-        observe: () => durable,
+        observe: (_issuer: string) => durable,
+        ...trust(),
+      }),
+    ).toEqual({ kind: "contended" });
+  });
+
+  it("cannot poison high-water state with a structurally valid parsed forged signature", () => {
+    const forged = parseOfflineRevocationSnapshotV1Json(
+      canonicalOfflineRevocationSnapshotV1Bytes(
+        signed({ snapshot: snapshot({ sequence: 9_999_999 }) }),
+      ),
+    );
+    const current = stateFor(signed());
+    const verifier = vi.fn(() => false);
+    expect(
+      transitionOfflineRevocationStateV1({
+        current,
+        next: forged,
+        ...trust({ verifyCanonicalPae: verifier }),
+      }),
+    ).toEqual({ kind: "invalid-authority" });
+    const claim = vi.fn(() => true);
+    expect(
+      claimOfflineRevocationStateV1({
+        claim,
+        next: forged,
+        observe: (_issuer: string) => current,
+        ...trust({ verifyCanonicalPae: verifier }),
+      }),
+    ).toEqual({ kind: "invalid-authority" });
+    expect(claim).not.toHaveBeenCalled();
+  });
+
+  it("binds current authority to exact durable state and rejects verifier, issuer, noncanonical, and async substitutions", () => {
+    const next = signed();
+    expect(resolve({ durableState: undefined, signedSnapshot: next })).toMatchObject({
+      kind: "stale-authority",
+    });
+    expect(
+      resolve({ durableState: { ...stateFor(next), sequence: 8 }, signedSnapshot: next }),
+    ).toMatchObject({ kind: "stale-authority" });
+    expect(
+      resolve({
+        durableState: { ...stateFor(next), digestSha256: "b".repeat(64) },
+        signedSnapshot: next,
+      }),
+    ).toMatchObject({ kind: "invalid-authority" });
+    expect(
+      resolve({
+        durableState: { ...stateFor(next), issuer: "other-issuer" },
+        signedSnapshot: next,
+      }),
+    ).toMatchObject({ kind: "invalid-authority" });
+    for (const verifyCanonicalPae of [
+      () => false,
+      () => {
+        throw new Error("hostile verifier message");
+      },
+    ])
+      expect(resolve({ verifyCanonicalPae, signedSnapshot: next })).toMatchObject({
+        kind: "invalid-authority",
+      });
+    expect(
+      transitionOfflineRevocationStateV1({
+        current: undefined,
+        next,
+        ...trust({ expectedIssuer: "other-issuer" }),
+      }),
+    ).toEqual({ kind: "invalid-authority" });
+    const noncanonical = JSON.stringify(
+      JSON.parse(canonicalOfflineRevocationSnapshotV1Bytes(next).toString("utf8")),
+      null,
+      2,
+    );
+    expect(() => parseOfflineRevocationSnapshotV1Json(noncanonical)).toThrow();
+    expect(
+      claimOfflineRevocationStateV1({
+        claim: async () => true,
+        next,
+        observe: async () => undefined,
+        ...trust(),
       }),
     ).toEqual({ kind: "contended" });
   });
