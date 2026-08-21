@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   kiroMcpProjectionOwnership,
   managedMcpProjectionOwnership,
@@ -71,6 +71,7 @@ beforeEach(() => {
   trustedGh = realpathSync.native(trustedGhFile);
 });
 afterEach(() => {
+  vi.useRealTimers();
   rmSync(dir, { recursive: true, force: true });
   rmSync(authorityBin, { recursive: true, force: true });
 });
@@ -2208,9 +2209,16 @@ describe("governed candidate projection", () => {
   it.each([
     ["expired", ["claude"]],
     ["revoked", ["claude"]],
+    ["expired", ["kiro"]],
+    ["revoked", ["kiro"]],
+    ["expired", ["claude", "kiro"]],
+    ["revoked", ["claude", "kiro"]],
   ] as const)(
     "retains exact %s decision-bound MCP residue for %j until disabled rollback",
     async (mode, targets) => {
+      const initiallyValidAt = new Date("2026-08-01T00:00:00.000Z");
+      vi.useFakeTimers();
+      vi.setSystemTime(initiallyValidAt);
       const policy = reviewedMcpPolicy({
         allowedServers: [],
         disabledServers: [],
@@ -2228,8 +2236,27 @@ describe("governed candidate projection", () => {
         reviewBy: undefined,
       });
       delete (decision as Record<string, unknown>).reviewBy;
+      if (mode === "expired") {
+        decision.expiresAt = new Date(initiallyValidAt.getTime() + 3_600_000).toISOString();
+      }
       writeDecisionAuthorityReceipt([decision]);
       const applied = ctx({ apply: true, targets: [...targets] });
+      if (targets.includes("claude")) {
+        mkdirSync(join(dir, ".claude"), { recursive: true });
+        writeFileSync(
+          join(dir, ".claude", "managed-settings.json"),
+          JSON.stringify({ operatorManagedSibling: { preserve: true } }),
+        );
+      }
+      if (targets.includes("kiro")) {
+        mkdirSync(join(dir, ".kiro", "settings"), { recursive: true });
+        writeFileSync(
+          join(dir, ".kiro", "settings", "mcp.json"),
+          JSON.stringify({
+            mcpServers: { operatorManagedSibling: { command: "operator-mcp" } },
+          }),
+        );
+      }
       await executePlan(
         plan(
           "decision-bound residue",
@@ -2237,27 +2264,37 @@ describe("governed candidate projection", () => {
         ),
         applied,
       );
-      const invalid = {
-        ...decision,
-        ...(mode === "expired" ? { expiresAt: new Date(Date.now() - 60_000).toISOString() } : {}),
-      };
-      const revocations =
-        mode === "revoked"
-          ? [
-              {
-                format: "aih-governance-decision-revocation",
-                version: 1,
-                decision: invalid.id,
-                issuer: invalid.issuer,
-                revokedAt: new Date(Date.now() - 30_000).toISOString(),
-                reason: "withdrawn",
-              },
-            ]
-          : [];
-      writeDecisionAuthorityReceipt([invalid], revocations, [...targets]);
+      const projectedFiles = [
+        ".aih-config.json",
+        ...(targets.includes("claude") ? [".claude/managed-settings.json"] : []),
+        ...(targets.includes("kiro") ? [".kiro/settings/mcp.json"] : []),
+      ];
+      const projectedBytes = Object.fromEntries(
+        projectedFiles.map((path) => [path, readFileSync(join(dir, path), "utf8")]),
+      );
+      vi.setSystemTime(new Date(initiallyValidAt.getTime() + 7_200_000));
+      if (mode === "revoked") {
+        writeDecisionAuthorityReceipt(
+          [decision],
+          [
+            {
+              format: "aih-governance-decision-revocation",
+              version: 1,
+              decision: decision.id,
+              issuer: decision.issuer,
+              revokedAt: new Date(initiallyValidAt.getTime() + 3_600_000).toISOString(),
+              reason: "withdrawn",
+            },
+          ],
+          [...targets],
+        );
+      }
       await expect(verifiedOrgPolicyProjectionActions(applied, policy)).rejects.toThrow(
         /decision-expired|decision-revoked/,
       );
+      expect(
+        Object.fromEntries(projectedFiles.map((path) => [path, readFileSync(join(dir, path), "utf8")])),
+      ).toEqual(projectedBytes);
       writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(policy));
       const check = await orgPolicyEffectiveCheck(applied);
       expect(check.detail).toContain("retained-invalid-decision");
@@ -2271,6 +2308,23 @@ describe("governed candidate projection", () => {
       const activation = disabled.governance.activations[0];
       if (activation === undefined) throw new Error("expected activation fixture");
       activation.state = "disabled";
+      if (targets.includes("claude")) {
+        await executePlan(
+          plan(
+            "retain restrictive empty Claude allowlist",
+            ...(await verifiedOrgPolicyProjectionActions(applied, disabled)),
+          ),
+          applied,
+        );
+        const restrictive = JSON.parse(
+          readFileSync(join(dir, ".claude", "managed-settings.json"), "utf8"),
+        );
+        expect(restrictive).toMatchObject({
+          allowManagedMcpServersOnly: true,
+          allowedMcpServers: [],
+          operatorManagedSibling: { preserve: true },
+        });
+      }
       disabled.mcp.allowManagedOnly = false;
       await executePlan(
         plan("disabled residue", ...(await verifiedOrgPolicyProjectionActions(applied, disabled))),
@@ -2282,6 +2336,13 @@ describe("governed candidate projection", () => {
         );
         expect(settings.allowManagedMcpServersOnly).toBeUndefined();
         expect(settings.allowedMcpServers).toBeUndefined();
+        expect(settings.operatorManagedSibling).toEqual({ preserve: true });
+      }
+      if (targets.includes("kiro")) {
+        const settings = JSON.parse(
+          readFileSync(join(dir, ".kiro", "settings", "mcp.json"), "utf8"),
+        );
+        expect(settings.mcpServers).toEqual({ operatorManagedSibling: { command: "operator-mcp" } });
       }
     },
   );
