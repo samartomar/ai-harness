@@ -720,6 +720,95 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   '  const launch = [["npx", "args = [\\"chrome-devtools-mcp@latest\\"]"], ["bunx", "args = [\\"chrome-devtools-mcp@latest\\"]"], ["pnpm", "args = [\\"dlx\\", \\"chrome-devtools-mcp@latest\\"]"], ["yarn", "args = [\\"dlx\\", \\"chrome-devtools-mcp@latest\\"]"]];',
   '  return body.length === 4 && /^(?:\\[mcp_servers\\.chrome-devtools\\]|\\[mcp_servers\\."chrome-devtools"\\])$/.test(body[0]) && launch.some(([command, args]) => body[1] === "command = \\"" + command + "\\"" && body[2] === args) && body[3] === "startup_timeout_sec = 30";',
   "}",
+  String.raw`function legacyDescendantHeader(line) {
+  const withoutComment = (raw) => {
+    let quote;
+    for (let index = 0; index < raw.length; index += 1) {
+      const character = raw[index];
+      if (quote === '"') {
+        if (character === "\\") { index += 1; continue; }
+        if (character === '"') quote = undefined;
+        continue;
+      }
+      if (quote === "'") {
+        if (character === "'") quote = undefined;
+        continue;
+      }
+      if (character === '"' || character === "'") { quote = character; continue; }
+      if (character === "#") return raw.slice(0, index).trim();
+    }
+    return raw.trim();
+  };
+  const bodyOf = (raw, strict) => {
+    const clean = withoutComment(raw);
+    const open = clean.startsWith("[[") ? "[[" : clean.startsWith("[") ? "[" : undefined;
+    if (!open) return undefined;
+    const close = open === "[[" ? "]]" : "]";
+    if (strict && !clean.endsWith(close)) return undefined;
+    return clean.slice(open.length, strict ? -close.length : undefined);
+  };
+  const parseKeys = (body) => {
+    const keys = [];
+    let index = 0;
+    const spaces = () => { while (index < body.length && /[ \t]/.test(body[index])) index += 1; };
+    const basic = () => {
+      let value = "";
+      index += 1;
+      while (index < body.length) {
+        const character = body[index];
+        if (character === '"') { index += 1; return value; }
+        if (character === "\r" || character === "\n") return undefined;
+        if (character !== "\\") { value += character; index += 1; continue; }
+        const escape = body[index + 1];
+        if (escape === "u" || escape === "U") {
+          const width = escape === "u" ? 4 : 8;
+          const hex = body.slice(index + 2, index + 2 + width);
+          if (!new RegExp("^[0-9A-Fa-f]{" + width + "}$").test(hex)) return undefined;
+          const codePoint = Number.parseInt(hex, 16);
+          if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) return undefined;
+          value += String.fromCodePoint(codePoint);
+          index += width + 2;
+          continue;
+        }
+        const simple = { b: "\b", t: "\t", n: "\n", f: "\f", r: "\r", '"': '"', "\\": "\\" };
+        if (!Object.prototype.hasOwnProperty.call(simple, escape)) return undefined;
+        value += simple[escape];
+        index += 2;
+      }
+      return undefined;
+    };
+    spaces();
+    while (index < body.length) {
+      let key;
+      if (body[index] === '"') key = basic();
+      else if (body[index] === "'") {
+        const end = body.indexOf("'", index + 1);
+        if (end < 0) return undefined;
+        key = body.slice(index + 1, end);
+        index = end + 1;
+      } else {
+        const match = /^[A-Za-z0-9_-]+/.exec(body.slice(index));
+        if (!match) return undefined;
+        key = match[0];
+        index += key.length;
+      }
+      if (key === undefined) return undefined;
+      keys.push(key);
+      spaces();
+      if (index === body.length) return keys;
+      if (body[index] !== ".") return undefined;
+      index += 1;
+      spaces();
+      if (index === body.length) return undefined;
+    }
+    return undefined;
+  };
+  const body = bodyOf(line, true);
+  const keys = body === undefined ? undefined : parseKeys(body);
+  if (keys) return keys.length > 2 && keys[0] === "mcp_servers" && keys[1] === "chrome-devtools";
+  const loose = bodyOf(line, false);
+  return loose !== undefined && /^[ \t]*(?:mcp_servers|"mcp_servers"|'mcp_servers')[ \t]*\.[ \t]*(?:chrome-devtools|"chrome-devtools"|'chrome-devtools')[ \t]*\./.test(loose);
+}`,
   "function renderScopedSection(name, server) {",
   '  if (!server || typeof server !== "object" || Array.isArray(server)) throw new Error("invalid scoped Codex MCP server: " + name);',
   '  const quote = (value) => JSON.stringify(String(value)); const section = ["[mcp_servers." + quote(name) + "]"];',
@@ -737,7 +826,7 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   '  if (parsed.fence && parsed.fence.sections.some((section) => !claimed.has(section.name))) throw new Error("managed Codex MCP fence contains an unclaimed server");',
   "  const beforeFence = parsed.fence ? parsed.lines.slice(0, parsed.fence.begin) : parsed.lines.slice(); const afterFence = parsed.fence ? parsed.lines.slice(parsed.fence.end + 1) : [];",
   '  const legacyBefore = serverTables(beforeFence, "chrome-devtools"); const legacyAfter = serverTables(afterFence, "chrome-devtools"); const chrome = [...legacyBefore, ...legacyAfter]; const claimsChrome = claimed.has("chrome-devtools");',
-  "  const legacyDescendant = [...beforeFence, ...afterFence].some((line) => /^[ \\t]*\\[mcp_servers\\.(?:\"chrome-devtools\"|'chrome-devtools'|chrome-devtools)\\.[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*\\]\\s*(?:#.*)?$/.test(line));",
+  "  const legacyDescendant = [...beforeFence, ...afterFence].some(legacyDescendantHeader);",
   '  if (claimsChrome && legacyDescendant) throw new Error("live claimed Chrome DevTools table has an unsupported legacy descendant");',
   '  if (claimsChrome && chrome.length > 0 && (chrome.length !== 1 || !exactLegacyChrome(chrome[0]))) throw new Error("live claimed Chrome DevTools table is not the exact legacy AIH rendering");',
   '  const retained = parsed.fence ? parsed.fence.sections : []; const expectedClaims = new Set([...retained.map((section) => section.name), ...(claimsChrome && chrome.length === 1 ? ["chrome-devtools"] : [])]);',
