@@ -185,6 +185,16 @@ function isAllowedSuperpowersRemote(stdout: string): boolean {
   return ALLOWED_SUPERPOWERS_REMOTE_PATTERNS.some((pattern) => pattern.test(remote));
 }
 
+function assertFullyMaterializedIndex(stdout: string): void {
+  if (stdout.length === 0) return;
+  if (!stdout.endsWith("\0")) fail("vendor checkout index state is malformed");
+  for (const entry of stdout.slice(0, -1).split("\0")) {
+    if (entry.length < 3 || entry[0] !== "H" || entry[1] !== " " || entry.slice(2).length === 0) {
+      fail("vendor checkout index contains concealed tracked entries");
+    }
+  }
+}
+
 async function checkoutIdentity(checkoutPath: string, runner: Runner): Promise<CheckoutIdentity> {
   let root: string;
   let dev: number;
@@ -262,6 +272,12 @@ async function checkoutIdentity(checkoutPath: string, runner: Runner): Promise<C
   if (status.code !== 0 || status.stdout.trim().length !== 0) {
     fail("vendor checkout must be clean and immutable");
   }
+  const index = gitResult(
+    await runner(["git", "-C", root, "ls-files", "-v", "-z"]),
+    "tracked index state",
+  );
+  if (index.code !== 0) fail("vendor checkout index is unavailable");
+  assertFullyMaterializedIndex(index.stdout);
   return { root, dev, ino, commitSha };
 }
 
