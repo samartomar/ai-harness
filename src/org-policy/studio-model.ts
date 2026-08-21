@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AdminCatalogProvenanceV1 } from "./admin-catalog-operations-v1.js";
+import { type AdoptionRecipe, buildAdoptionRecipe } from "./adoption-recipe.js";
 import { policyAuthoringCatalog } from "./catalog.js";
 import {
   DISPOSITIONABLE_POLICY_FINDING_CODES,
@@ -75,6 +76,8 @@ export function exportStudioDecision(decision: unknown): string {
 export interface PolicyStudioModel {
   initialPolicy: OrgPolicy;
   catalog: ReturnType<typeof policyAuthoringCatalog>;
+  /** Code-owned inert guidance; policy bytes never carry or depend on it. */
+  adoptionRecipe: AdoptionRecipe;
   /**
    * Verified supported-catalog provenance when the administrator route resolved
    * one, else absent. The visible provenance line renders tier, source,
@@ -107,6 +110,7 @@ export function policyStudioModel(catalogProvenance?: AdminCatalogProvenanceV1):
   return {
     initialPolicy: defaultStudioPolicy(),
     catalog: policyAuthoringCatalog(),
+    adoptionRecipe: buildAdoptionRecipe(),
     ...(catalogProvenance === undefined ? {} : { catalogProvenance }),
     schema: z.toJSONSchema(OrgPolicySchema, { io: "input" }) as Record<string, unknown>,
     decisionSchema: z.toJSONSchema(GovernanceDecisionV1Schema, { io: "input" }) as Record<

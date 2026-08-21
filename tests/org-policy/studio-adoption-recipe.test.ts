@@ -1,10 +1,14 @@
 import { Window } from "happy-dom";
 import { describe, expect, it } from "vitest";
 import {
-  buildAdoptionRecipe,
+  ECC_MCP_DISABLED,
+  ECC_MCP_SELECTED,
+  SERENA_ALLOWED_TOOLS,
+} from "../../src/ecc-profile/mcp-profile.js";
+import {
   type AdoptionRecipeSources,
+  buildAdoptionRecipe,
 } from "../../src/org-policy/adoption-recipe.js";
-import { ECC_MCP_DISABLED, ECC_MCP_SELECTED, SERENA_ALLOWED_TOOLS } from "../../src/ecc-profile/mcp-profile.js";
 import { ECC_MCP_CATALOG_IDS } from "../../src/org-policy/ecc-mcp-catalog.js";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
@@ -35,9 +39,7 @@ describe("policy studio adoption recipe", () => {
       "codebase-memory-mcp",
       "token-optimizer",
     ]);
-    expect(new Set(recipe.roles.map((role) => role.questionClass)).size).toBe(
-      recipe.roles.length,
-    );
+    expect(new Set(recipe.roles.map((role) => role.questionClass)).size).toBe(recipe.roles.length);
     expect(recipe.roles.map((role) => role.route)).toEqual([
       { kind: "aih-ecc-profile-lifecycle", command: "aih ecc --lifecycle install" },
       { kind: "aih-ecc-profile-lifecycle", command: "aih ecc --lifecycle install" },
@@ -49,9 +51,9 @@ describe("policy studio adoption recipe", () => {
       kind: "none-captured",
     });
     expect(
-      recipe.roles
-        .filter((role) => role.usage.kind === "mcp-server-event")
-        .map((role) => [role.id, role.usage.serverId]),
+      recipe.roles.flatMap((role) =>
+        role.usage.kind === "mcp-server-event" ? [[role.id, role.usage.serverId]] : [],
+      ),
     ).toEqual([
       ["serena", "serena"],
       ["code-review-graph", "code-review-graph"],
@@ -88,10 +90,14 @@ describe("policy studio adoption recipe", () => {
     expect(() => buildAdoptionRecipe(serenaOverlap)).toThrow(/serena tool find_symbol/i);
 
     const optimizerWrongRoute = sources();
-    const optimizer = optimizerWrongRoute.eccMcpCatalog.find((entry) => entry.id === "token-optimizer");
+    const optimizer = optimizerWrongRoute.eccMcpCatalog.find(
+      (entry) => entry.id === "token-optimizer",
+    );
     if (optimizer === undefined) throw new Error("expected Token Optimizer catalog entry");
     optimizer.addability = "https-configurable";
-    expect(() => buildAdoptionRecipe(optimizerWrongRoute)).toThrow(/token-optimizer.*manual-stdio/i);
+    expect(() => buildAdoptionRecipe(optimizerWrongRoute)).toThrow(
+      /token-optimizer.*manual-stdio/i,
+    );
   });
 
   it("renders a separate escaped, inert panel without altering authored policy or ticker counts", () => {
@@ -110,7 +116,7 @@ describe("policy studio adoption recipe", () => {
     expect((window as unknown as { __unsafe?: boolean }).__unsafe).toBeUndefined();
     expect(
       (window.document.getElementById("config-preview") as unknown as { value: string }).value,
-    ).toBe(JSON.stringify(model.initialPolicy, null, 2));
+    ).toBe(`${JSON.stringify(model.initialPolicy, null, 2)}\n`);
     const eccAssets = model.catalog.frameworks.find((framework) => framework.id === "ecc")?.assets;
     const superpowersAssets = model.catalog.frameworks.find(
       (framework) => framework.id === "superpowers",
