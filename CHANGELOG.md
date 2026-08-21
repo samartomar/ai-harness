@@ -23,6 +23,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and digests. These records are data only: this foundation verifies no signer or receipt, resolves
   no observed finding, authorizes no projector, and changes no Workbench or runtime effect.
 
+- **Externally verified governance decisions now control qualified policy effects.** Authority
+  receipt V2 carries strict decision and revocation artifacts, and the effective resolver joins each
+  referenced decision to the exact candidate, source, evidence, AIH-shipped control, policy version,
+  target set, effect set, issuer, validity window, and observed dispositionable findings. Accepted
+  findings remain visible and are reported as accepted risk; signed decisions cannot waive a fenced
+  prerequisite, invent evidence, unlock custom candidates, or broaden projector support. Evaluate,
+  doctor, managed settings, Claude/Kiro MCP ownership, and usage-hook ownership expose deterministic,
+  public-safe decision identity and blocker state without decision conditions. New MCP ownership is
+  always strict V2 and new usage-hook ownership is always V3 with domain-separated self-digests;
+  legacy MCP V1 and usage-hook V2 receipts remain readable only for exact conservative cleanup or a
+  receipt-only upgrade, never as current decision authority. Workbench decision authoring remains a
+  separate follow-up and is not added by this runtime phase.
+
 - **Sharded ECC baseline vetting now requires a source-bound static preflight receipt.** A
   dispatcher can run the preview generator's lexical dependency-closure check once before
   launching scanner shards, then carry the strict receipt to every shard and the final fan-in.

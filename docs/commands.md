@@ -778,6 +778,14 @@ for example, produces no managed-settings projection. When managed-only MCP is a
 configuration write when `AIH_ORG_POLICY` selects an override; previewing without `--apply` remains
 inspectable, but mutation requires the committed default policy source.
 
+New Claude and Kiro MCP ownership records are always strict schema V2 and bind the exact effective
+decision identity for their own surface. New usage-hook ownership records are always V3 and bind the
+same decision facts plus the policy version under a domain-separated self-digest. The persisted
+records are comparison and rollback evidence, never authority: the externally verified authority
+receipt is resolved first. Exact legacy MCP V1 and usage-hook V2 records remain readable only so
+`project --apply` can conservatively subtract unchanged owned state or refresh the receipt without
+rewriting unchanged host content. They never authorize a current decision-bearing effect.
+
 `project --apply` is also the upgrade migration path: it replaces managed MCP allowlist entries an
 earlier aih generation wrote (for example a pre-hardening bare `uvx <pkg>` launch shape or an older
 version pin) and adds projection keys a newer generation introduced. When `aih doctor` can
@@ -796,6 +804,18 @@ materialization and rollback lifecycle; policy evaluation and projection never c
 commands. Unsafe inputs, collisions, missing projectors, unsupported targets, and all unwaivable danger
 codes remain blocked.
 
+When `governance.authority.decisions` is non-empty, each value is an untrusted decision-id reference.
+Only the byte-exact copy inside a currently verified authority receipt V2 can affect resolution. A
+current decision must join the exact candidate kind, source and evidence digests, AIH-shipped
+reviewed-control digest, policy version, requested targets, registered effect set, and trusted
+issuer. `approved` requires no observed dispositionable findings or accepted coverage;
+`accepted-with-conditions` requires exact accepted-to-observed finding equality and a current review
+deadline; `rejected` and separately signed revocation events withhold the effect. Missing, ambiguous,
+expired, not-yet-valid, over- or under-scoped, or otherwise mismatched decisions leave the request
+visible and ineffective. Findings stay findings in output, with a derived `clean` or `accepted` risk
+state only after every other gate passes. Decision conditions remain in the signed authority record
+and are deliberately omitted from public managed-settings and evaluate JSON.
+
 The target-coverage triplet separates capability from invocation state: `supported` lists targets with
 a shipped projector adapter for that candidate, `available` lists targets selected in the current
 runtime, and `complete` or `blocked` says whether those requested targets are covered by shipped adapters
@@ -805,7 +825,7 @@ Vibe posture can report `supported=claude,kiro; available=kiro; blocked`: the Ki
 exists, but posture intentionally disabled this invocation. Custom stdio candidates without an
 integrity-enforcing materializer continue to report `supported=none`.
 
-Custom evidence and approvals require `.aih/policy-authority-receipt.json`, a regular-file receipt that
+Custom evidence, approvals, and governance decisions require `.aih/policy-authority-receipt.json`, a regular-file receipt that
 has passed `gh attestation verify` against the **out-of-band organization authority** named by
 `AIH_POLICY_AUTHORITY_REPOSITORY`; deployments can additionally constrain the exact signing workflow with
 `AIH_POLICY_AUTHORITY_WORKFLOW`. These process-environment values must be supplied by the organization
@@ -823,6 +843,13 @@ generic phases, workspace graph MCP registration is suppressed, and governed ECC
 host-hook/runtime operations across core, platform, and full scope while retaining eligible agents, skills, and commands.
 Use
 `aih policy evaluate --verify` in CI and inspect the digest before `aih policy project --apply`.
+
+Authority receipt V1 remains the legacy approval transport. Decision-bearing policy requires receipt
+V2, whose decision and revocation arrays are strict, bounded, sorted, namespace-disjoint from legacy
+approvals, issuer-checked, target-bounded, and time-bounded. A V1 receipt can never satisfy a decision
+reference, and a decision present only in policy JSON has no authority. The portable Workbench does
+not yet import or author these decision records; that browser-only, still-unverified round-trip is a
+separate phase.
 
 Approvals cover only a missing or failed **waivable** evidence record, require a non-empty signed reason,
 and last at most 90 days. Mandatory detector failures and every unwaivable danger code remain blocked even
