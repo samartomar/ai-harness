@@ -1728,6 +1728,47 @@ describe("Codex managed destination safety", () => {
     expect(existsSync(join(home, ".codex", "ecc-aih-install-state.json"))).toBe(true);
   });
 
+  it("keeps AIH state when cleanup reobserves an encoded claimed Chrome root", () => {
+    const home = join(tmp, "encoded-legacy-prune-home");
+    const statePath = join(home, ".codex", "ecc-aih-install-state.json");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      [
+        '[mcp_servers."chrome\\u002ddevtools"]',
+        'command = "operator-devtools"',
+        'args = ["--local"]',
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        managedBy: "aih",
+        codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: ["chrome-devtools"] },
+        agentsBlock: true,
+      }),
+    );
+    const base = makeCtx({ cli: "codex" });
+    const action = codexInstallStateCleanupAction({
+      ...base,
+      env: { ...base.env, HOME: home, USERPROFILE: home },
+    });
+    expect(action?.kind).toBe("exec");
+    if (action?.kind !== "exec") throw new Error("missing encoded-custody Codex cleanup action");
+    expect(action.describe).toContain("custody remains");
+    const executable = action.argv[0];
+    if (executable === undefined)
+      throw new Error("missing encoded-custody Codex cleanup executable");
+
+    const result = spawnSync(executable, action.argv.slice(1), { encoding: "utf8" });
+
+    expect(result.status).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toContain("refusing AIH state cleanup");
+    expect(existsSync(statePath)).toBe(true);
+  });
+
   it("reobserves the live Codex config before a planned state cleanup", () => {
     const home = join(tmp, "prune-reobserve-home");
     mkdirSync(join(home, ".codex"), { recursive: true });
@@ -1762,6 +1803,52 @@ describe("Codex managed destination safety", () => {
     const executable = action.argv[0];
     if (executable === undefined) throw new Error("missing Codex state cleanup executable");
     const result = spawnSync(executable, action.argv.slice(1), { encoding: "utf8" });
+    expect(result.status).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toContain("refusing AIH state cleanup");
+    expect(existsSync(statePath)).toBe(true);
+  });
+
+  it("keeps AIH state when an encoded claimed Chrome root appears after cleanup planning", () => {
+    const home = join(tmp, "encoded-prune-reobserve-home");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    const configPath = join(home, ".codex", "config.toml");
+    const statePath = join(home, ".codex", "ecc-aih-install-state.json");
+    writeFileSync(
+      configPath,
+      [
+        "# >>> aih managed (mcp) >>>",
+        '[mcp_servers."chrome-devtools"]',
+        'command = "npx"',
+        'args = ["-y", "chrome-devtools-mcp@1.7.0"]',
+        "# <<< aih managed (mcp) <<<",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        managedBy: "aih",
+        codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: ["chrome-devtools"] },
+        agentsBlock: true,
+      }),
+    );
+    const base = makeCtx({ cli: "codex" });
+    const action = codexInstallStateCleanupAction({
+      ...base,
+      env: { ...base.env, HOME: home, USERPROFILE: home },
+    });
+    expect(action?.kind).toBe("exec");
+    if (action?.kind !== "exec") throw new Error("missing Codex state cleanup action");
+    writeFileSync(
+      configPath,
+      '[mcp_servers."chrome\\u002ddevtools"]\ncommand = "operator-devtools"\n',
+    );
+    const executable = action.argv[0];
+    if (executable === undefined) throw new Error("missing Codex state cleanup executable");
+
+    const result = spawnSync(executable, action.argv.slice(1), { encoding: "utf8" });
+
     expect(result.status).not.toBe(0);
     expect(`${result.stdout}${result.stderr}`).toContain("refusing AIH state cleanup");
     expect(existsSync(statePath)).toBe(true);
