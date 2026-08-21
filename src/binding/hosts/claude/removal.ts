@@ -50,6 +50,7 @@ interface JsonRemovalAccumulator {
   replaceChildKeys: Map<string, Set<string>>;
   removeTopLevel: Set<string>;
   removeChild: Map<string, Set<string>>;
+  expect?: { sha256: string };
 }
 
 function newAccumulator(): JsonRemovalAccumulator {
@@ -102,13 +103,14 @@ type OwnershipDisposition =
       child: string;
       single: boolean;
       preExisting: BindingOwnershipEntry["preExisting"];
+      raw: string;
     }
   /** Strip an AIH-managed CLAUDE.md fence. */
   | { kind: "block-strip"; file: string; marker: string; raw: string }
   /** Restore a file's pre-existing content. */
-  | { kind: "file-restore"; target: string; contents: string }
+  | { kind: "file-restore"; target: string; contents: string; raw: string }
   /** Remove an AIH-created file that had no pre-existing content. */
-  | { kind: "file-remove"; target: string };
+  | { kind: "file-remove"; target: string; raw: string };
 
 /** Classify a JSON-pointer / MCP-server entry (pure read; drift is PRESERVED, never deleted). */
 function classifyJsonEntry(root: string, entry: BindingOwnershipEntry): OwnershipDisposition {
@@ -150,6 +152,7 @@ function classifyJsonEntry(root: string, entry: BindingOwnershipEntry): Ownershi
     child: pointer[1] ?? "",
     single: pointer.length === 1,
     preExisting: entry.preExisting,
+    raw: raw as string,
   };
 }
 
@@ -184,9 +187,9 @@ function classifyFileEntry(root: string, entry: BindingOwnershipEntry): Ownershi
   const pre = entry.preExisting;
   if ("value" in pre) {
     const contents = typeof pre.value === "string" ? pre.value : canonicalJson(pre.value);
-    return { kind: "file-restore", target: entry.target, contents };
+    return { kind: "file-restore", target: entry.target, contents, raw: current };
   }
-  return { kind: "file-remove", target: entry.target };
+  return { kind: "file-remove", target: entry.target, raw: current };
 }
 
 /** Route one owned entry to its per-kind classifier (json / block / file). */
@@ -222,6 +225,7 @@ function applyJsonRemoval(
   acc: JsonRemovalAccumulator,
   d: OwnershipDisposition & { kind: "json-remove" },
 ): void {
+  acc.expect ??= { sha256: sha256Hex(d.raw) };
   const pre = d.preExisting;
   if ("value" in pre) {
     if (d.single) {
@@ -265,6 +269,7 @@ export function planClaudeRemoval(root: string, lock: RemovalLock): ClaudeRemova
             disposition.file,
             stripManagedBlock(disposition.raw, disposition.marker),
             "Remove Claude managed CLAUDE.md block",
+            { expect: { sha256: sha256Hex(disposition.raw) } },
           ),
         );
         break;
@@ -274,12 +279,15 @@ export function planClaudeRemoval(root: string, lock: RemovalLock): ClaudeRemova
             disposition.target,
             disposition.contents,
             `Restore pre-existing file ${disposition.target}`,
+            { expect: { sha256: sha256Hex(disposition.raw) } },
           ),
         );
         break;
       case "file-remove":
         otherActions.push(
-          remove(disposition.target, `Remove Claude owned file ${disposition.target}`),
+          remove(disposition.target, `Remove Claude owned file ${disposition.target}`, {
+            expect: { sha256: sha256Hex(disposition.raw) },
+          }),
         );
         removedFiles.add(disposition.target);
         break;
@@ -298,6 +306,7 @@ export function planClaudeRemoval(root: string, lock: RemovalLock): ClaudeRemova
           : {}),
         ...(acc.removeChild.size > 0 ? { removeJsonKeys: mapToRecord(acc.removeChild) } : {}),
         ...(acc.removeTopLevel.size > 0 ? { removeJsonTopLevelKeys: [...acc.removeTopLevel] } : {}),
+        ...(acc.expect === undefined ? {} : { expect: acc.expect }),
       }),
     );
   }

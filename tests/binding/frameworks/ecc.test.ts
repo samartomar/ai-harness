@@ -1451,6 +1451,8 @@ describe("Full — remove parity (partition + plugin/marketplace / missing lock)
     if (result.mode !== "apply") throw new Error("expected apply mode");
     expect(result.plugin).toBe(ECC_FULL_PLUGIN_NAME);
     expect(result.marketplace).toBe(ECC_FULL_MARKETPLACE_NAME);
+    expect(result.projectRoot).toBe(root);
+    expect(result.repoRelativeOwnership.length).toBeGreaterThan(0);
     // the two machine-scope entries (marketplace + cache) partition out.
     expect(result.homeOwnership).toHaveLength(2);
     expect(result.homeOwnership.every((entry) => entry.target.startsWith("home:"))).toBe(true);

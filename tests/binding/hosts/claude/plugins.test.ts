@@ -17,7 +17,6 @@ import {
   homeMarketplaceTarget,
   homePluginCacheTarget,
 } from "../../../../src/binding/hosts/claude/plugin-identity.js";
-import { planClaudeRemoval } from "../../../../src/binding/hosts/claude/removal.js";
 import {
   type BindPluginResult,
   bindPlugin,
@@ -31,6 +30,7 @@ import {
   removePlugin,
   uninstallPlugin,
 } from "../../../../src/binding/hosts/claude/plugins.js";
+import { planClaudeRemoval } from "../../../../src/binding/hosts/claude/removal.js";
 import {
   type BindingLock,
   BindingLockSchema,
@@ -331,8 +331,10 @@ describe("bindPlugin — D7 digest mismatch fails closed", () => {
     ).rejects.toBeInstanceOf(ClaudePluginIdentityError);
 
     // Teardown was scheduled (disable + uninstall), fail closed.
-    expect(calls).toContainEqual(["claude", "plugin", "disable", KEY]);
-    expect(calls).toContainEqual(["claude", "plugin", "uninstall", KEY, "--scope", "project"]);
+    const disableAt = calls.findIndex((argv) => argv.includes("disable"));
+    const uninstallAt = calls.findIndex((argv) => argv.includes("uninstall"));
+    expect(disableAt).toBeGreaterThanOrEqual(0);
+    expect(uninstallAt).toBeGreaterThan(disableAt);
     // No partial project state.
     expect(existsSync(join(root, ".claude/settings.json"))).toBe(false);
   });
@@ -648,14 +650,31 @@ describe("removePlugin — conservative machine-scope reconciliation", () => {
 
   it("tears down plugin + marketplace when the cache still equals the recorded digest", async () => {
     const bound = await bindForRemoval();
-    const { runner, calls } = recordingRunner();
+    const lifecycle: string[] = [];
+    const calls: string[][] = [];
+    const runner = fakeRunner((argv) => {
+      calls.push(argv);
+      if (argv.includes("uninstall")) lifecycle.push("uninstall");
+      return undefined;
+    });
 
     const removal = await removePlugin(
-      { ownership: bound.ownership, plugin: PLUGIN, marketplace: MARKETPLACE, scope: "project" },
+      {
+        ownership: bound.ownership,
+        plugin: PLUGIN,
+        marketplace: MARKETPLACE,
+        scope: "project",
+        projectRoot: root,
+        repoRelativeOwnership: bound.ownership.filter((entry) => !entry.target.startsWith("home:")),
+      },
       {
         runner,
         env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
         locateCache: () => bound.loadedTreePath,
+        applyActions: async (target, actions) => {
+          lifecycle.push("restore");
+          return applyActions(target, actions);
+        },
       },
     );
 
@@ -664,6 +683,7 @@ describe("removePlugin — conservative machine-scope reconciliation", () => {
     expect(removal.removed).toContain(homeMarketplaceTarget(MARKETPLACE));
     expect(calls).toContainEqual(["claude", "plugin", "uninstall", KEY, "--scope", "project"]);
     expect(calls).toContainEqual(["claude", "plugin", "marketplace", "remove", MARKETPLACE]);
+    expect(lifecycle).toEqual(["restore", "uninstall"]);
   });
 
   it("preserves + reports drift when the materialized cache was modified since bind", async () => {
@@ -673,11 +693,19 @@ describe("removePlugin — conservative machine-scope reconciliation", () => {
     const { runner, calls } = recordingRunner();
 
     const removal = await removePlugin(
-      { ownership: bound.ownership, plugin: PLUGIN, marketplace: MARKETPLACE, scope: "project" },
+      {
+        ownership: bound.ownership,
+        plugin: PLUGIN,
+        marketplace: MARKETPLACE,
+        scope: "project",
+        projectRoot: root,
+        repoRelativeOwnership: bound.ownership.filter((entry) => !entry.target.startsWith("home:")),
+      },
       {
         runner,
         env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
         locateCache: () => bound.loadedTreePath,
+        applyActions,
       },
     );
 
@@ -700,8 +728,20 @@ describe("removePlugin — conservative machine-scope reconciliation", () => {
     const { runner, calls } = recordingRunner();
 
     const removal = await removePlugin(
-      { ownership: bound.ownership, plugin: PLUGIN, marketplace: MARKETPLACE, scope: "project" },
-      { runner, env: { USERPROFILE: home, AIH_PLATFORM: "linux" }, locateCache: () => emptyCache },
+      {
+        ownership: bound.ownership,
+        plugin: PLUGIN,
+        marketplace: MARKETPLACE,
+        scope: "project",
+        projectRoot: root,
+        repoRelativeOwnership: bound.ownership.filter((entry) => !entry.target.startsWith("home:")),
+      },
+      {
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => emptyCache,
+        applyActions,
+      },
     );
 
     expect(removal.removed).toHaveLength(0);
@@ -722,11 +762,19 @@ describe("removePlugin — conservative machine-scope reconciliation", () => {
     const { runner, calls } = recordingRunner();
 
     const removal = await removePlugin(
-      { ownership: bound.ownership, plugin: PLUGIN, marketplace: MARKETPLACE, scope: "project" },
+      {
+        ownership: bound.ownership,
+        plugin: PLUGIN,
+        marketplace: MARKETPLACE,
+        scope: "project",
+        projectRoot: root,
+        repoRelativeOwnership: bound.ownership.filter((entry) => !entry.target.startsWith("home:")),
+      },
       {
         runner,
         env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
         locateCache: () => join(home, "absent-cache"),
+        applyActions,
       },
     );
 
@@ -785,6 +833,34 @@ describe("bindPlugin — project custody", () => {
 });
 
 describe("removePlugin — post-uninstall project custody", () => {
+  it("runs every removal lifecycle subprocess with the requested project root as cwd", async () => {
+    const bound = await bindForProjectRemoval();
+    const cwd: Array<string | undefined> = [];
+    const runner: Runner = async (_argv, options) => {
+      cwd.push(options?.cwd);
+      return { code: 0, stdout: "", stderr: "" };
+    };
+
+    await removePlugin(
+      {
+        ownership: bound.ownership.filter((entry) => entry.target.startsWith("home:")),
+        plugin: PLUGIN,
+        marketplace: MARKETPLACE,
+        scope: "project",
+        projectRoot: root,
+        repoRelativeOwnership: bound.ownership.filter((entry) => !entry.target.startsWith("home:")),
+      },
+      {
+        runner,
+        env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
+        locateCache: () => bound.loadedTreePath,
+        applyActions,
+      },
+    );
+
+    expect(cwd).toEqual([root, root]);
+  });
+
   it.each([
     {
       name: "re-settles an exact receipt-owned enabledPlugins value recreated by uninstall",
@@ -1014,11 +1090,19 @@ describe("marketplace manifest-name contract (W4 live-run correction)", () => {
     writeFileSync(join(ownedRoot, "1.0.0", "SKILL.md"), "# left behind\n", "utf8");
 
     const removal = await removePlugin(
-      { ownership: bound.ownership, plugin: PLUGIN, marketplace: MARKETPLACE, scope: "project" },
+      {
+        ownership: bound.ownership,
+        plugin: PLUGIN,
+        marketplace: MARKETPLACE,
+        scope: "project",
+        projectRoot: root,
+        repoRelativeOwnership: bound.ownership.filter((entry) => !entry.target.startsWith("home:")),
+      },
       {
         runner,
         env: { USERPROFILE: home, AIH_PLATFORM: "linux" },
         locateCache: () => bound.loadedTreePath,
+        applyActions,
       },
     );
     expect(removal.removed).toContain(homePluginCacheTarget(MARKETPLACE, PLUGIN));

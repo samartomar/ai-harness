@@ -436,6 +436,7 @@ export function writeText(
     once?: boolean;
     external?: boolean;
     trustedBase?: string;
+    expect?: WriteAction["expect"];
     sensitive?: ActionSensitivity;
     requiresPriorExecSuccess?: boolean;
   } = {},
@@ -450,6 +451,7 @@ export function writeText(
     once: opts.once,
     external: opts.external,
     trustedBase: opts.trustedBase,
+    expect: opts.expect,
     requiresPriorExecSuccess: opts.requiresPriorExecSuccess,
     ...(opts.sensitive === undefined ? {} : { sensitive: opts.sensitive }),
   };
@@ -468,6 +470,7 @@ export function writeJson(
     merge?: boolean;
     external?: boolean;
     trustedBase?: string;
+    expect?: WriteAction["expect"];
     removeJsonKeys?: Record<string, readonly string[]>;
     replaceJsonKeys?: readonly string[];
     replaceJsonChildKeys?: Record<string, readonly string[]>;
@@ -493,6 +496,7 @@ export function writeJson(
     merge: opts.merge,
     external: opts.external,
     trustedBase: opts.trustedBase,
+    expect: opts.expect,
     removeJsonKeys: opts.removeJsonKeys,
     replaceJsonKeys: opts.replaceJsonKeys,
     replaceJsonChildKeys: opts.replaceJsonChildKeys,

@@ -1,6 +1,7 @@
 import { readFileSync, rmSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { executePlan, type PlanResult } from "../../../internals/execute.js";
+import { readIfExists } from "../../../internals/fsxn.js";
 import { type Action, plan } from "../../../internals/plan.js";
 import type { Runner, RunResult } from "../../../internals/proc.js";
 import { makeHostAdapter, resolvePlatform } from "../../../platform/detect.js";
@@ -34,7 +35,7 @@ import {
   pluginSourceSubtreeDigest,
   verifyPluginIdentity,
 } from "./plugin-identity.js";
-import type { ClaudeDriftEntry } from "./removal.js";
+import { type ClaudeDriftEntry, planClaudeRemoval } from "./removal.js";
 import {
   assertSafeKey,
   CLAUDE_SETTINGS_LOCAL_PATH,
@@ -134,6 +135,8 @@ export interface PluginCliDeps {
   env?: NodeJS.ProcessEnv;
   /** Per-call timeout override. */
   timeoutMs?: number;
+  /** Explicit project root for every binding-lifecycle subprocess. */
+  cwd?: string;
 }
 
 async function runClaude(deps: PluginCliDeps, argv: string[]): Promise<RunResult> {
@@ -141,6 +144,7 @@ async function runClaude(deps: PluginCliDeps, argv: string[]): Promise<RunResult
   // (ENOENT/EINVAL) — route through the canon cmd /c wrap (injection-asserted
   // per argv element), exactly as the harness already spawns npm/npx.
   return deps.runner(execArgv(resolvePlatform(deps.env), argv), {
+    cwd: deps.cwd,
     env: deps.env,
     timeoutMs: deps.timeoutMs ?? DEFAULT_PLUGIN_CLI_TIMEOUT_MS,
   });
@@ -391,7 +395,12 @@ export async function bindPlugin(
   const settingsFile = settingsFileForScope(scope);
   const home = claudeHomeDir(deps.env ?? {});
   const locate = deps.locateCache ?? defaultPluginCacheLocator;
-  const cliDeps: PluginCliDeps = { runner: deps.runner, env: deps.env, timeoutMs: deps.timeoutMs };
+  const cliDeps: PluginCliDeps = {
+    runner: deps.runner,
+    env: deps.env,
+    timeoutMs: deps.timeoutMs,
+    cwd: deps.root,
+  };
 
   // 3. D7 anchor (empirically corrected): the plugin's own SOURCE SUBTREE, not
   //    the whole scanned checkout — computed BEFORE any CLI call, so a
@@ -415,9 +424,16 @@ export async function bindPlugin(
   //    `jsonField` reads disk now — so the lock records the true pre-AIH state even
   //    though the CLI install also flips the same bit. The apply happens in step 8.
   const enablePointer = `/enabledPlugins/${pluginKey}`;
+  const settingsSource = readIfExists(join(deps.root, settingsFile));
   const settingsPlan: ClaudeManagedPlan = new ClaudeManagedWriteEngine(deps.root)
     .jsonField(settingsFile, enablePointer, true)
     .build();
+  for (const action of settingsPlan.actions) {
+    if (action.kind === "write" && action.path === settingsFile) {
+      action.expect =
+        settingsSource === undefined ? { absent: true } : { sha256: sha256Hex(settingsSource) };
+    }
+  }
   carryForwardOwnership(settingsPlan, request.previousLock, `${settingsFile}#${enablePointer}`);
 
   // 5. Register the scanned checkout itself as the marketplace source (machine
@@ -601,6 +617,10 @@ export interface RemovePluginRequest {
   /** The scope the plugin was installed at — uninstall must name it (the CLI
    * defaults to user scope; W4 live-run correction). */
   scope: PluginScope;
+  /** The explicit project root whose receipt-owned state must be re-settled. */
+  projectRoot: string;
+  /** Receipt-proven project entries to re-observe after host uninstall. */
+  repoRelativeOwnership: readonly BindingOwnershipEntry[];
 }
 
 export interface RemovePluginDeps {
@@ -609,6 +629,8 @@ export interface RemovePluginDeps {
   /** Injectable cache locator; defaults to {@link defaultPluginCacheLocator}. */
   locateCache?: PluginCacheLocator;
   timeoutMs?: number;
+  /** Apply seam for exact post-uninstall project-state re-settlement. */
+  applyActions: (root: string, actions: Action[]) => Promise<PlanResult>;
 }
 
 export interface RemovePluginResult {
@@ -642,7 +664,12 @@ export async function removePlugin(
   const pluginKey = pluginEnableKey(request.plugin, request.marketplace);
   const home = claudeHomeDir(deps.env ?? {});
   const locate = deps.locateCache ?? defaultPluginCacheLocator;
-  const cliDeps: PluginCliDeps = { runner: deps.runner, env: deps.env, timeoutMs: deps.timeoutMs };
+  const cliDeps: PluginCliDeps = {
+    runner: deps.runner,
+    env: deps.env,
+    timeoutMs: deps.timeoutMs,
+    cwd: request.projectRoot,
+  };
 
   const cacheEntry = request.ownership.find(
     (entry) => entry.target === homePluginCacheTarget(request.marketplace, request.plugin),
@@ -696,6 +723,25 @@ export async function removePlugin(
     return { removed, drift, cli };
   }
 
+  // The host refuses a project-scope uninstall while this plugin remains enabled.
+  // Re-observe and settle the receipt-owned project state ourselves so a caller
+  // cannot accidentally reverse that host-required order. Drift is a refusal:
+  // the unowned/divergent state remains untouched and no machine mutation starts.
+  const beforeUninstall = planClaudeRemoval(request.projectRoot, {
+    ownership: [...request.repoRelativeOwnership],
+  });
+  drift.push(...beforeUninstall.drift);
+  if (beforeUninstall.drift.length > 0) return { removed, drift, cli };
+  if (beforeUninstall.actions.length > 0) {
+    try {
+      await deps.applyActions(request.projectRoot, beforeUninstall.actions);
+    } catch (err) {
+      throw new ClaudePluginError(
+        `pre-uninstall project re-settlement failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   // Clean: tear the plugin and its marketplace down (best-effort, idempotent).
   cli.push(
     await bestEffortCli(
@@ -703,6 +749,19 @@ export async function removePlugin(
       `claude plugin uninstall ${pluginKey} --scope ${request.scope}`,
     ),
   );
+  const afterUninstall = planClaudeRemoval(request.projectRoot, {
+    ownership: [...request.repoRelativeOwnership],
+  });
+  drift.push(...afterUninstall.drift);
+  if (afterUninstall.actions.length > 0) {
+    try {
+      await deps.applyActions(request.projectRoot, afterUninstall.actions);
+    } catch (err) {
+      throw new ClaudePluginError(
+        `post-uninstall project re-settlement failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
   // 2.1.214 empirical (W4 live rehearsal): a project-scope uninstall
   // deregisters the plugin but leaves the materialized cache bytes on disk.
   // The digest check above proved this tree is EXACTLY the recorded surface,

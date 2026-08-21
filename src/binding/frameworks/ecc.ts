@@ -1816,6 +1816,8 @@ export type EccFullRemoveResult =
       mode: "apply";
       repoRelativeActions: Action[];
       repoRelativeDrift: ClaudeDriftEntry[];
+      projectRoot: string;
+      repoRelativeOwnership: BindingOwnershipEntry[];
       homeOwnership: BindingOwnershipEntry[];
       plugin: string;
       marketplace: string;
@@ -1835,6 +1837,8 @@ function removeEccFull(deps: EccLeanAdapterDeps): EccFullRemoveResult {
     mode: "apply",
     repoRelativeActions: repoRelative.actions,
     repoRelativeDrift: repoRelative.drift,
+    projectRoot: deps.root,
+    repoRelativeOwnership,
     homeOwnership,
     plugin: ECC_FULL_PLUGIN_NAME,
     marketplace: ECC_FULL_MARKETPLACE_NAME,

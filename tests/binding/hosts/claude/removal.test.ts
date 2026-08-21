@@ -328,7 +328,7 @@ describe("planClaudeRemoval — planned actions pin the observed target", () => 
     );
 
     await expect(applyActions(root, removal.actions)).rejects.toThrow(
-      /changed after the plan was computed/i,
+      /changed (after the plan was computed|before commit)/i,
     );
     expect(readJson(root, CLAUDE_SETTINGS_PATH)).toEqual({
       telemetry: false,
@@ -345,7 +345,7 @@ describe("planClaudeRemoval — planned actions pin the observed target", () => 
     seed(rel, "# user changed after plan\n");
 
     await expect(applyActions(root, removal.actions)).rejects.toThrow(
-      /changed after the plan was computed/i,
+      /changed (after the plan was computed|before commit)/i,
     );
     expect(readText(root, rel)).toBe("# user changed after plan\n");
   });

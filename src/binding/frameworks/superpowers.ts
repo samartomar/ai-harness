@@ -216,6 +216,8 @@ export type SuperpowersRemoveResult =
       mode: "apply";
       repoRelativeActions: Action[];
       repoRelativeDrift: ClaudeDriftEntry[];
+      projectRoot: string;
+      repoRelativeOwnership: BindingOwnershipEntry[];
       homeOwnership: BindingOwnershipEntry[];
       plugin: string;
       marketplace: string;
@@ -443,6 +445,8 @@ function removeSuperpowers(deps: SuperpowersAdapterDeps): SuperpowersRemoveResul
     mode: "apply",
     repoRelativeActions: repoRelative.actions,
     repoRelativeDrift: repoRelative.drift,
+    projectRoot: deps.root,
+    repoRelativeOwnership,
     homeOwnership,
     plugin: SUPERPOWERS_PLUGIN_NAME,
     marketplace: SUPERPOWERS_MARKETPLACE_NAME,
