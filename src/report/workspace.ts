@@ -539,7 +539,14 @@ function summary(
 interface SnapshotFile {
   createdAt?: string;
   label?: string;
-  repos?: Array<{ id?: string; path?: string; branch?: string; sha?: string; dirty?: boolean }>;
+  repos?: Array<{
+    id?: string;
+    path?: string;
+    branch?: string;
+    sha?: string;
+    dirty?: boolean;
+    observation?: unknown;
+  }>;
 }
 
 const MAX_WORKSPACE_SNAPSHOT_BYTES = 1024 * 1024;
@@ -594,6 +601,27 @@ function workspaceSnapshot(
         path: row.path,
         status: "UNKNOWN",
         detail: "repo not present in snapshot",
+      };
+    }
+    if (before.observation !== undefined) {
+      const observation =
+        before.observation === "unavailable" || before.observation === "diverged"
+          ? before.observation
+          : "invalid";
+      return {
+        id: row.id,
+        path: row.path,
+        status: "UNKNOWN",
+        before: before.sha,
+        detail: `snapshot row has git revision observation ${observation}`,
+      };
+    }
+    if (!before.sha && !before.branch) {
+      return {
+        id: row.id,
+        path: row.path,
+        status: "UNKNOWN",
+        detail: "snapshot row has no revision evidence",
       };
     }
     if (row.git.status !== "OK") {

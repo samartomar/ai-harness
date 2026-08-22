@@ -171,7 +171,7 @@ describe("workspace hydrate", () => {
     ]);
   });
 
-  it("hydrates from a canonical SHA-256 workspace lock SHA", async () => {
+  it("hydrates a detached canonical SHA-256 workspace lock SHA without a branch ref", async () => {
     const sha = "a".repeat(64);
     mkdirSync(join(parent, "ai-coding"), { recursive: true });
     writeManifest(["ui"]);

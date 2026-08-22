@@ -362,6 +362,57 @@ describe("report workspace rollup", () => {
     },
   );
 
+  it.each(["unavailable", "diverged"] as const)(
+    "does not treat a %s baseline observation as an unchanged revision",
+    async (observation) => {
+      writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+      child("ui");
+      mkdirSync(join(root, ".aih", "workspace-snapshots"), { recursive: true });
+      writeFileSync(
+        join(root, ".aih", "workspace-snapshots", "20260630T000000Z-baseline.json"),
+        json({
+          schemaVersion: 1,
+          createdAt: "2026-06-30T00:00:00.000Z",
+          repos: [{ id: "ui", path: "ui", observation, git: true }],
+        }),
+      );
+
+      const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+      expect(data.snapshot?.changes).toEqual([
+        expect.objectContaining({
+          id: "ui",
+          status: "UNKNOWN",
+          detail: `snapshot row has git revision observation ${observation}`,
+        }),
+      ]);
+    },
+  );
+
+  it("does not treat a baseline without SHA or branch evidence as unchanged", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    child("ui");
+    mkdirSync(join(root, ".aih", "workspace-snapshots"), { recursive: true });
+    writeFileSync(
+      join(root, ".aih", "workspace-snapshots", "20260630T000000Z-baseline.json"),
+      json({
+        schemaVersion: 1,
+        createdAt: "2026-06-30T00:00:00.000Z",
+        repos: [{ id: "ui", path: "ui", dirty: false, git: true }],
+      }),
+    );
+
+    const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+    expect(data.snapshot?.changes).toEqual([
+      expect.objectContaining({
+        id: "ui",
+        status: "UNKNOWN",
+        detail: "snapshot row has no revision evidence",
+      }),
+    ]);
+  });
+
   it("renders workspace snapshot Source relative to the configured root", async () => {
     writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
     child("ui");

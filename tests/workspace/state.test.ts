@@ -100,6 +100,67 @@ describe("workspace state collection", () => {
     expect(calls.filter((call) => call === "status --porcelain=v2 --branch")).toHaveLength(2);
   });
 
+  it("omits Git's detached HEAD marker from a serialized workspace lock while retaining its SHA", async () => {
+    mkdirSync(join(parent, "ai-coding"), { recursive: true });
+    childRepo("ui");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({ repos: ["ui"], contextDir: "ai-coding" }),
+    );
+    const run: Runner = async (argv) => {
+      const tail = argv.slice(3).join(" ");
+      if (tail === "rev-parse --is-inside-work-tree")
+        return { code: 0, stdout: "true\n", stderr: "" };
+      if (tail === "status --porcelain=v2 --branch") {
+        return {
+          code: 0,
+          stdout:
+            "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head (detached)\n",
+          stderr: "",
+        };
+      }
+      return { code: 1, stdout: "", stderr: "" };
+    };
+
+    const actions = (await snapshotCommand.plan(ctx(run, { lock: true }))).actions;
+    const lock = writesByPath(actions).get("ai-coding/workspace-lock.json")?.json as
+      | { repos?: unknown[] }
+      | undefined;
+
+    expect(lock?.repos).toEqual([
+      {
+        id: "ui",
+        path: "ui",
+        sha: "abcdef0123456789abcdef0123456789abcdef01",
+        dirty: false,
+        git: true,
+      },
+    ]);
+  });
+
+  it("rejects a noncanonical porcelain branch head as unavailable", async () => {
+    const run: Runner = async (argv) => {
+      const tail = argv.slice(3).join(" ");
+      if (tail === "rev-parse --is-inside-work-tree")
+        return { code: 0, stdout: "true\n", stderr: "" };
+      if (tail === "status --porcelain=v2 --branch") {
+        return {
+          code: 0,
+          stdout: "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head -hostile\n",
+          stderr: "",
+        };
+      }
+      return { code: 1, stdout: "", stderr: "" };
+    };
+
+    await expect(readWorkspaceRepoState(ctx(run), childRepo("ui"))).resolves.toEqual({
+      id: "ui",
+      path: "ui",
+      git: true,
+      observation: "unavailable",
+    });
+  });
+
   it("keeps each coherent status observation in one Git process", async () => {
     let active = 0;
     let maxActive = 0;

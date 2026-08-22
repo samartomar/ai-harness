@@ -186,7 +186,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   success.** Codex managed-server projections distinguish malformed `enabled_tools` data from a
   valid incomplete allowlist. Git counts and numstat rows accept only complete non-negative safe
   integer shapes, while workspace collection brackets one coherent branch/commit/dirty/divergence
-  observation and reports changing or unavailable state without mixing facts. Applied GitHub trust
+  observation and reports changing or unavailable state without mixing facts. A detached child
+  remains a complete SHA-only observation: the literal Git `(detached)` marker never becomes a
+  checkout ref, and an incomplete baseline can never certify the current child as unchanged. Applied GitHub trust
   scans and skill vets require one bounded, regular, exact-source metadata record before and after
   analyzer execution; missing, unreadable, malformed, mismatched, or replaced metadata has a named
   blocking code, and a caller pin is never substituted for fetched provenance. Bounded generated

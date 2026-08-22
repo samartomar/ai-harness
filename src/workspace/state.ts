@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { AihError } from "../errors.js";
 import { gitInt } from "../internals/git.js";
 import type { PlanContext } from "../internals/plan.js";
+import { isSafeGitRefName } from "../trust/fetch.js";
 import { checkWorkspaceChildPath } from "./detect.js";
 import {
   normalizeWorkspaceRemote,
@@ -55,7 +56,7 @@ function parseBranchDivergence(raw: string): { ahead: number; behind: number } |
 }
 
 interface WorkspaceRevision {
-  branch: string;
+  branch?: string;
   sha: string;
   dirty: boolean;
   ahead?: number;
@@ -88,19 +89,21 @@ async function readWorkspaceRevision(
     if (value.length === 0 || headers.has(key)) return undefined;
     headers.set(key, value);
   }
-  const branch = headers.get("branch.head");
+  const branchHead = headers.get("branch.head");
   const sha = headers.get("branch.oid");
   if (
-    branch === undefined ||
-    branch.length === 0 ||
+    branchHead === undefined ||
+    branchHead.length === 0 ||
     sha === undefined ||
     !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(sha)
   )
     return undefined;
+  const branch = branchHead === "(detached)" ? undefined : branchHead;
+  if (branch !== undefined && !isSafeGitRefName(branch)) return undefined;
   const branchAb = headers.get("branch.ab");
   const counts = branchAb === undefined ? {} : parseBranchDivergence(branchAb);
   if (counts === undefined) return undefined;
-  return { branch, sha, dirty: entries.length > 0, ...counts };
+  return { ...(branch === undefined ? {} : { branch }), sha, dirty: entries.length > 0, ...counts };
 }
 
 function sameWorkspaceRevision(left: WorkspaceRevision, right: WorkspaceRevision): boolean {
@@ -158,7 +161,7 @@ export async function readWorkspaceRepoState(
     id: repo.id,
     path: repo.path,
     ...(remote ? { remote } : {}),
-    branch: before.branch,
+    ...(before.branch === undefined ? {} : { branch: before.branch }),
     sha: before.sha,
     dirty: before.dirty,
     git: true,

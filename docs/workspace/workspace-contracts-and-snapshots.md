@@ -221,6 +221,12 @@ dirty, ahead, and behind so a branch switch or concurrent worktree change cannot
 apparently clean row. Hydrate accepts that explicit incomplete form but never treats it as checkout
 authority.
 
+A detached child is still a complete observation: its exact SHA and dirty state are retained while
+the literal Git `(detached)` marker is omitted instead of being recorded as a branch ref. Hydrate
+therefore checks out the exact SHA without parsing the marker as authority. A baseline row with an
+incomplete observation, or with neither SHA nor branch evidence, reports `UNKNOWN`; it cannot prove
+that a later child revision is unchanged.
+
 ## Changed-since-snapshot report
 
 The workspace report compares current child rows with the newest readable
