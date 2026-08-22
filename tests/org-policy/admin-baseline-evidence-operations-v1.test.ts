@@ -298,6 +298,47 @@ describe("admin baseline evidence resolution v1", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("treats a request-level acquisition error as terminal before cache custody", async () => {
+    let requestError: (() => void) | undefined;
+    const requestFailure = createAdminBaselineEvidenceHttpsFetchV1(() => ({
+      destroy() {
+        return undefined;
+      },
+      end() {
+        queueMicrotask(() => requestError?.());
+      },
+      on(event, listener) {
+        if (event === "error") requestError = listener;
+        return this;
+      },
+    }));
+    let cacheReads = 0;
+    let cacheCommits = 0;
+    await expect(
+      resolveAdminBaselineEvidenceV1({
+        bootstrap,
+        now: "2026-08-21T00:00:00Z",
+        fetchFresh: () =>
+          fetchAdminBaselineEvidenceArtifactV1({
+            artifactUrl: "https://evidence.example.test/artifact/",
+            attestationUrl: bootstrap.attestationUrl,
+            fetchHttps: requestFailure,
+          }),
+        readLastDownloaded: () => {
+          cacheReads += 1;
+          return undefined;
+        },
+        commitLastDownloaded: () => {
+          cacheCommits += 1;
+          return true;
+        },
+        verifyGithubAttestation: verify,
+      }),
+    ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+    expect(cacheReads).toBe(0);
+    expect(cacheCommits).toBe(0);
+  });
   it("accepts only one real nested gh JSON SLSA result, never an echoed policy", () => {
     const subjectSha256 = "a".repeat(64);
     const realShape = [
