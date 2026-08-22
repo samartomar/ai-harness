@@ -372,6 +372,12 @@ describe("admin baseline evidence resolution v1", () => {
     };
     const mutations: readonly [string, (claim: typeof realShape) => void][] = [
       [
+        "verification media type",
+        (claim: typeof realShape) => {
+          verification(claim).mediaType = "application/wrong";
+        },
+      ],
+      [
         "SAN",
         (claim: typeof realShape) => {
           verification(claim).signature.certificate.subjectAlternativeName =
@@ -419,6 +425,12 @@ describe("admin baseline evidence resolution v1", () => {
         "predicate",
         (claim: typeof realShape) => {
           verification(claim).statement.predicateType = "wrong";
+        },
+      ],
+      [
+        "statement type",
+        (claim: typeof realShape) => {
+          verification(claim).statement._type = "https://wrong.example/Statement/v1";
         },
       ],
       [

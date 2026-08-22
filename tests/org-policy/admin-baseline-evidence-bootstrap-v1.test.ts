@@ -167,6 +167,26 @@ describe("admin baseline evidence bootstrap V1", () => {
           }),
         ).toThrow(/baseline root links/);
       }
+
+      const linkedRootAdmin = join(workspace, "linked-root-admin");
+      const outsideRoot = join(workspace, "outside-root");
+      write(outsideRoot);
+      mkdirSync(join(linkedRootAdmin, ".aih"), { recursive: true });
+      if (
+        mustLink(
+          outsideRoot,
+          vibeAdminBaselineEvidenceRootV1(linkedRootAdmin),
+          process.platform === "win32" ? "junction" : "dir",
+        )
+      ) {
+        expect(() =>
+          resolveAdminBaselineEvidenceBootstrapV1({
+            adminRoot: linkedRootAdmin,
+            platformAdminRoot: platformRoot,
+            posture: "vibe",
+          }),
+        ).toThrow(/baseline root links/);
+      }
     } finally {
       rmSync(workspace, { recursive: true, force: true });
     }
