@@ -67,6 +67,26 @@ function fail(label: string): never {
   throw new TypeError(`OFFLINE_REVOCATION_SNAPSHOT_V1: ${label}`);
 }
 
+/** Scan data-property values before strict JSON can traverse a nested proxy trap. */
+function assertProxyFreeStrictJson(
+  value: unknown,
+  label: string,
+  seen = new WeakSet<object>(),
+): void {
+  if (isProxy(value)) fail(label);
+  if (typeof value !== "object" || value === null || seen.has(value)) return;
+  seen.add(value);
+  try {
+    for (const key of Reflect.ownKeys(value)) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (descriptor !== undefined && Object.hasOwn(descriptor, "value"))
+        assertProxyFreeStrictJson(descriptor.value, label, seen);
+    }
+  } catch {
+    fail(label);
+  }
+}
+
 function record(value: unknown, label: string): Json {
   if (isProxy(value)) fail(label);
   if (typeof value !== "object" || value === null || Array.isArray(value)) fail(label);
@@ -140,6 +160,7 @@ function sha256(bytes: Buffer): string {
 }
 
 function rawSnapshot(value: unknown): OfflineRevocationSnapshotV1 {
+  assertProxyFreeStrictJson(value, "offline revocation snapshot");
   assertStrictJsonValueV1(value, "offline revocation snapshot");
   const item = record(value, "snapshot");
   exact(
@@ -262,11 +283,13 @@ export function createOfflineRevocationSnapshotV1(
 ): SignedOfflineRevocationSnapshotV1 {
   const item = record(value, "signed snapshot");
   exact(item, ["signatures", "signerIdentity", "snapshot"], "signed snapshot fields");
-  if (!Array.isArray(item.signatures) || item.signatures.length !== 1) fail("signatures");
+  const signatures = item.signatures;
+  if (isProxy(signatures) || !Array.isArray(signatures) || signatures.length !== 1)
+    fail("signatures");
   return createSigned(
     rawSnapshot(item.snapshot),
     text(item.signerIdentity, "signer identity", 256),
-    [signature(item.signatures[0])],
+    [signature(signatures[0])],
   );
 }
 
@@ -625,15 +648,20 @@ export function claimOfflineRevocationStateV1(
   } catch {
     fail("offline revocation state custody");
   }
-  const transition = transitionOfflineRevocationStateV1({
-    current,
-    expectedAdminSignerIdentity: expected.expectedAdminSignerIdentity,
-    expectedAdminSignerRootSha256: expected.expectedAdminSignerRootSha256,
-    expectedIssuer: expected.expectedIssuer,
-    next: item.next,
-    now,
-    verifyCanonicalPae: expected.verifyCanonicalPae,
-  });
+  let transition: OfflineRevocationStateTransitionV1;
+  try {
+    transition = transitionOfflineRevocationStateV1({
+      current,
+      expectedAdminSignerIdentity: expected.expectedAdminSignerIdentity,
+      expectedAdminSignerRootSha256: expected.expectedAdminSignerRootSha256,
+      expectedIssuer: expected.expectedIssuer,
+      next: item.next,
+      now,
+      verifyCanonicalPae: expected.verifyCanonicalPae,
+    });
+  } catch {
+    return deepFreezeStrictJsonV1({ kind: "contended" as const });
+  }
   if (transition.kind === "invalid-authority" || transition.kind === "stale-authority")
     return transition;
   if (transition.kind !== "advance")
