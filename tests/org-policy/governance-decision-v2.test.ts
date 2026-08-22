@@ -195,6 +195,22 @@ describe("GovernanceDecisionV2 public contract", () => {
       ).success,
     ).toBe(false);
     expect(
+      GovernanceDecisionV2Schema.safeParse(
+        decision({
+          evidence: {
+            id: "scan-record",
+            digest: `sha256:${"e".repeat(64)}`,
+            attestor: "github:Acme/security/evidence@v2",
+          },
+          qualificationBasis: {
+            kind: "organization-qualified",
+            evidenceDigest: `sha256:${"e".repeat(64)}`,
+            attestor: "github:Acme/security/evidence@v2",
+          },
+        }),
+      ).success,
+    ).toBe(true);
+    expect(
       GovernanceDecisionRevocationV2Schema.safeParse({
         format: "aih-governance-decision-revocation",
         version: 2,
