@@ -69,6 +69,38 @@ function manifest(repos: WorkspaceRepo[]): WorkspaceManifest {
 }
 
 describe("workspace state collection", () => {
+  it("anchors each revision from one Git process so branch and SHA cannot cross a switch", async () => {
+    const calls: string[] = [];
+    const run: Runner = async (argv) => {
+      const tail = argv.slice(3).join(" ");
+      calls.push(tail);
+      if (tail === "rev-parse --is-inside-work-tree")
+        return { code: 0, stdout: "true\n", stderr: "" };
+      if (tail === "rev-parse --abbrev-ref HEAD HEAD") {
+        return {
+          code: 0,
+          stdout: "main\nabcdef0123456789abcdef0123456789abcdef01\n",
+          stderr: "",
+        };
+      }
+      if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
+      if (tail === "rev-list --left-right --count HEAD...@{upstream}") {
+        return { code: 0, stdout: "1\t2\n", stderr: "" };
+      }
+      return { code: 1, stdout: "", stderr: "" };
+    };
+
+    await expect(readWorkspaceRepoState(ctx(run), childRepo("ui"))).resolves.toMatchObject({
+      branch: "main",
+      sha: "abcdef0123456789abcdef0123456789abcdef01",
+      ahead: 2,
+      behind: 1,
+    });
+    expect(calls).not.toContain("rev-parse --abbrev-ref HEAD");
+    expect(calls).not.toContain("rev-parse HEAD");
+    expect(calls.filter((call) => call === "rev-parse --abbrev-ref HEAD HEAD")).toHaveLength(2);
+  });
+
   it("reads independent git facts for one repo concurrently after the git check", async () => {
     let active = 0;
     let maxActive = 0;
