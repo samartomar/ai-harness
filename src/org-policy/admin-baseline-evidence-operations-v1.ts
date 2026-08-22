@@ -95,11 +95,92 @@ export interface ResolveOperationalAdminBaselineEvidenceV1Input {
   readonly tempRoot?: string;
 }
 
+type BoundedHttpsResponseV1 = {
+  readonly statusCode?: number;
+  on(event: string, listener: (...values: unknown[]) => void): unknown;
+  resume(): unknown;
+};
+
+/**
+ * Classifies one HTTPS response without creating a fallback authority: only a
+ * deliberately absent first artifact (404 or 410) is the exact unavailable
+ * sentinel. Every malformed or interrupted response rejects the acquisition.
+ */
+export function collectBoundedAdminBaselineEvidenceResponseV1(
+  response: BoundedHttpsResponseV1,
+  maxBytes: number,
+  abort: () => void,
+): Promise<
+  { readonly kind: "available"; readonly bytes: Buffer } | { readonly kind: "unavailable" }
+> {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const unavailable = (): void => {
+      if (done) return;
+      done = true;
+      resolve({ kind: "unavailable" });
+    };
+    const failed = (): void => {
+      if (done) return;
+      done = true;
+      reject(
+        new AihError("admin baseline evidence: fresh transport", "AIH_ADMIN_BASELINE_EVIDENCE"),
+      );
+    };
+    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+      failed();
+      return;
+    }
+    if (response.statusCode === 404 || response.statusCode === 410) {
+      response.resume();
+      unavailable();
+      return;
+    }
+    if (response.statusCode !== 200) {
+      response.resume();
+      failed();
+      return;
+    }
+    const chunks: Buffer[] = [];
+    let size = 0;
+    response.on("data", (...values) => {
+      const chunk = values[0];
+      if (!Buffer.isBuffer(chunk)) {
+        failed();
+        return;
+      }
+      size += chunk.length;
+      if (size > maxBytes) {
+        try {
+          abort();
+        } catch {
+          // The failed acquisition remains terminal regardless of abort cleanup.
+        }
+        failed();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    response.on("error", failed);
+    response.on("aborted", failed);
+    response.on("close", failed);
+    response.on("end", () => {
+      if (size === 0) {
+        failed();
+        return;
+      }
+      if (done) return;
+      done = true;
+      resolve({ kind: "available", bytes: Buffer.concat(chunks) });
+    });
+  });
+}
+
 /** Bounded HTTPS acquisition with no redirect, credential, retry, or fallback behavior. */
 export const defaultAdminBaselineEvidenceHttpsFetchV1: AdminBaselineEvidenceHttpsFetchV1 = (
   input,
 ) =>
-  new Promise((settle) => {
+  new Promise((resolve, reject) => {
     let done = false;
     const finish = (
       result:
@@ -108,62 +189,62 @@ export const defaultAdminBaselineEvidenceHttpsFetchV1: AdminBaselineEvidenceHttp
     ): void => {
       if (done) return;
       done = true;
-      settle(result);
+      resolve(result);
+    };
+    const failed = (): void => {
+      if (done) return;
+      done = true;
+      reject(
+        new AihError("admin baseline evidence: fresh transport", "AIH_ADMIN_BASELINE_EVIDENCE"),
+      );
     };
     let target: URL;
     try {
+      if (
+        typeof input.url !== "string" ||
+        !Number.isSafeInteger(input.maxBytes) ||
+        input.maxBytes <= 0 ||
+        !Number.isSafeInteger(input.timeoutMs) ||
+        input.timeoutMs <= 0
+      ) {
+        failed();
+        return;
+      }
       target = new URL(input.url);
     } catch {
-      finish({ kind: "unavailable" });
+      failed();
       return;
     }
     if (target.protocol !== "https:" || target.username !== "" || target.password !== "") {
-      finish({ kind: "unavailable" });
+      failed();
       return;
     }
-    const call = httpsRequest(
-      target,
-      {
-        headers: {
-          accept: "application/octet-stream",
-          "user-agent": "aih-admin-baseline-evidence",
+    try {
+      const call = httpsRequest(
+        target,
+        {
+          headers: {
+            accept: "application/octet-stream",
+            "user-agent": "aih-admin-baseline-evidence",
+          },
+          method: "GET",
+          timeout: input.timeoutMs,
         },
-        method: "GET",
-        timeout: input.timeoutMs,
-      },
-      (response) => {
-        if (response.statusCode !== 200) {
-          response.resume();
-          finish({ kind: "unavailable" });
-          return;
-        }
-        const chunks: Buffer[] = [];
-        let size = 0;
-        response.on("data", (chunk: Buffer) => {
-          size += chunk.length;
-          if (size > input.maxBytes) {
-            call.destroy();
-            finish({ kind: "unavailable" });
-            return;
-          }
-          chunks.push(chunk);
-        });
-        response.on("error", () => finish({ kind: "unavailable" }));
-        response.on("end", () =>
-          finish(
-            size === 0
-              ? { kind: "unavailable" }
-              : { kind: "available", bytes: Buffer.concat(chunks) },
-          ),
-        );
-      },
-    );
-    call.on("error", () => finish({ kind: "unavailable" }));
-    call.on("timeout", () => {
-      call.destroy();
-      finish({ kind: "unavailable" });
-    });
-    call.end();
+        (response) => {
+          void collectBoundedAdminBaselineEvidenceResponseV1(response, input.maxBytes, () =>
+            call.destroy(),
+          ).then(finish, failed);
+        },
+      );
+      call.on("error", failed);
+      call.on("timeout", () => {
+        call.destroy();
+        failed();
+      });
+      call.end();
+    } catch {
+      failed();
+    }
   });
 
 /**

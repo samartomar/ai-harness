@@ -168,18 +168,21 @@ describe("policy generate admin catalog route", () => {
   it("renders applied administrator output with bounded baseline provenance only", async () => {
     seedBootstrap();
     const injected = seams();
-    const secret = "secret-baseline-custody-value";
+    const attestationSecret = "secret-baseline-attestation-value";
+    const bootstrapSecret = "secret-baseline-bootstrap-value";
+    const cacheSecret = "secret-baseline-cache-value";
+    const signatureSecret = "secret-baseline-signature-value";
     const code = await runPolicyGenerate(commandStub(), {
       adminRoot,
       baseline: async () => ({
         ageSeconds: 0,
-        attestationBytes: Buffer.from(secret),
-        bootstrapLocator: secret,
-        cachePath: secret,
+        attestationBytes: Buffer.from(attestationSecret),
+        bootstrapLocator: bootstrapSecret,
+        cachePath: cacheSecret,
         digest: "a".repeat(64),
         resolvedAt: WALL_CLOCK,
         schemaVersion: 1,
-        signature: secret,
+        signature: signatureSecret,
         sourceIds: ["ecc", "superpowers"],
         tier: "fresh" as const,
       }),
@@ -193,13 +196,7 @@ describe("policy generate admin catalog route", () => {
     const html = readFileSync(join(cwd, "aih-policy-workbench.html"), "utf8");
     expect(html).toContain('id="baseline-evidence-provenance"');
     expect(html).toContain("sources ecc,superpowers");
-    for (const forbidden of [
-      secret,
-      "attestationBytes",
-      "bootstrapLocator",
-      "cachePath",
-      "signature",
-    ]) {
+    for (const forbidden of [attestationSecret, bootstrapSecret, cacheSecret, signatureSecret]) {
       expect(html.includes(forbidden), forbidden).toBe(false);
     }
   });

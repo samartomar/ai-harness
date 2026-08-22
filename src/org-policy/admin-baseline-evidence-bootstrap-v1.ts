@@ -1,5 +1,6 @@
 import { lstatSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isProxy } from "node:util/types";
 import { codeUnitCompare } from "../capability/package-graph/canonical.js";
 import type { Posture } from "../config/posture.js";
 import {
@@ -125,7 +126,7 @@ function validRef(value: string): boolean {
 export function parseAdminBaselineEvidenceBootstrapV1Json(
   value: unknown,
 ): AdminBaselineEvidenceBootstrapV1 {
-  if (!Buffer.isBuffer(value) && !(value instanceof Uint8Array)) fail("bytes");
+  if (isProxy(value) || (!Buffer.isBuffer(value) && !(value instanceof Uint8Array))) fail("bytes");
   const bytes = Buffer.from(value);
   if (bytes.length === 0 || bytes.length > 256 * 1024) fail("bytes");
   let raw: Record<string, unknown>;

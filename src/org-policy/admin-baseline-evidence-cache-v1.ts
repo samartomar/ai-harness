@@ -1,7 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
   chmodSync,
-  linkSync,
   lstatSync,
   mkdirSync,
   realpathSync,
@@ -11,6 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isProxy } from "node:util/types";
 import type { VendorBaselineEvidenceArtifactV1 } from "../baseline-evidence/vendor-artifact-v1.js";
 import {
   BASELINE_EVIDENCE_ARTIFACT_FILE_V1,
@@ -324,7 +324,7 @@ export function createAdminBaselineEvidenceCacheRecordV1(value: DownloadedEviden
 }
 
 export function parseAdminBaselineEvidenceCacheRecordV1Json(value: unknown): DownloadedEvidenceV1 {
-  if (!Buffer.isBuffer(value) && !(value instanceof Uint8Array)) fail("bytes");
+  if (isProxy(value) || (!Buffer.isBuffer(value) && !(value instanceof Uint8Array))) fail("bytes");
   const bytes = Buffer.from(value);
   if (bytes.length === 0 || bytes.length > CACHE_LIMIT) fail("bytes");
   let raw: Record<string, unknown>;
@@ -414,7 +414,6 @@ export function commitAdminBaselineEvidenceCacheV1(
 ): boolean {
   let temporary: string | undefined;
   let lockPath: string | undefined;
-  let lockTemporary: string | undefined;
   let lockIdentity: FileIdentity | undefined;
   try {
     const canonical = canonicalRoot(root);
@@ -426,17 +425,13 @@ export function commitAdminBaselineEvidenceCacheV1(
     const cacheIdentity = directoryIdentity(directory);
     if (rootIdentity === undefined || cacheIdentity === undefined) return false;
     lockPath = `${slot}.lock`;
-    lockTemporary = join(directory, `.${randomBytes(12).toString("hex")}.lock.tmp`);
-    writeFileSync(lockTemporary, Buffer.from("AIH_ADMIN_BASELINE_EVIDENCE_CACHE_LOCK_V1\n"), {
+    writeFileSync(lockPath, Buffer.from("AIH_ADMIN_BASELINE_EVIDENCE_CACHE_LOCK_V1\n"), {
       flag: "wx",
       mode: 0o600,
     });
-    chmodSync(lockTemporary, 0o600);
-    linkSync(lockTemporary, lockPath);
+    chmodSync(lockPath, 0o600);
     lockIdentity = fileIdentity(lockPath);
     if (lockIdentity === undefined) return false;
-    unlinkSync(lockTemporary);
-    lockTemporary = undefined;
     try {
       const existing = lstatSync(slot);
       if (existing.isSymbolicLink() || !existing.isFile()) return false;
@@ -468,13 +463,6 @@ export function commitAdminBaselineEvidenceCacheV1(
   } catch {
     return false;
   } finally {
-    if (lockTemporary !== undefined) {
-      try {
-        rmSync(lockTemporary, { force: true });
-      } catch {
-        // The successful/failed replacement result is already fixed above.
-      }
-    }
     if (lockPath !== undefined && lockIdentity !== undefined) {
       try {
         releaseLock(lockPath, lockIdentity);

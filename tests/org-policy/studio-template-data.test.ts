@@ -37,4 +37,31 @@ describe("policy workbench data embedding", () => {
     expect(html).toContain('candidate.targets.includes("kiro")');
     expect(html).toContain("Kiro MCP projection supports stdio catalog entries only");
   });
+
+  it("embeds only bounded baseline evidence provenance fields", () => {
+    const model = policyStudioModel(undefined, {
+      ageSeconds: 12,
+      attestationUrl: "https://leak.example.test/attestation",
+      digest: "a".repeat(64),
+      localPath: "C:\\secret\\baseline",
+      rawAttestation: "signature bytes",
+      resolvedAt: "2026-08-21T00:00:00Z",
+      schemaVersion: 1,
+      sourceIds: ["ecc", "superpowers"],
+      tier: "fresh",
+    } as never);
+    const html = policyStudioHtml(model);
+    expect(model.baselineEvidenceProvenance).toEqual({
+      ageSeconds: 12,
+      digest: "a".repeat(64),
+      resolvedAt: "2026-08-21T00:00:00Z",
+      schemaVersion: 1,
+      sourceIds: ["ecc", "superpowers"],
+      tier: "fresh",
+    });
+    expect(html).toContain("Baseline evidence");
+    expect(html).not.toContain("leak.example.test");
+    expect(html).not.toContain("C:\\secret\\baseline");
+    expect(html).not.toContain("signature bytes");
+  });
 });
