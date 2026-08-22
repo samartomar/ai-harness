@@ -1,12 +1,26 @@
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
 import { stripManagedBlock } from "../internals/markers.js";
-import { type Action, doc, exec, type PlanContext, probe, writeText } from "../internals/plan.js";
+import {
+  type Action,
+  doc,
+  exec,
+  type PlanContext,
+  probe,
+  type WriteAction,
+  writeText,
+} from "../internals/plan.js";
 import { lines } from "../internals/render.js";
-
 export type CodexMcpTransport = "stdio" | "http" | "mixed" | "unknown";
 type CodexMcpScope = "project" | "global" | "planned ECC";
+
+/** Codex's scoped TOML writer accepts this local projection only. */
+export type CodexScopedMcpServer =
+  | { type: "stdio"; command: string; args: string[]; startupTimeoutSec?: number }
+  | { type: "http"; url: string; startupTimeoutSec?: number };
+export type CodexScopedMcpServers = Record<string, CodexScopedMcpServer>;
 
 export interface CodexMcpCollision {
   name: string;
@@ -14,17 +28,38 @@ export interface CodexMcpCollision {
   existingTransport: CodexMcpTransport;
   conflictingScope: CodexMcpScope;
   conflictingTransport: CodexMcpTransport;
+  reason?: "duplicate semantic root" | "array-of-tables root" | "non-root representation";
 }
 
-// Keep in sync with the exact vendor-locked `merge-mcp-config.js` default set.
-// Optional MCPs are registered through AIH's scoped writer, not this merge helper.
+/**
+ * Core owns this one ECC default because the vendor helper currently launches it
+ * through a floating npm tag. Its exact package identity is bound to the active
+ * external-pin ledger; optional ECC MCPs remain on their scoped policy path.
+ */
+export function coreOwnedEccCodexMcpServers(): CodexScopedMcpServers {
+  return {
+    "chrome-devtools": {
+      type: "stdio",
+      command: "npx",
+      args: ["-y", "chrome-devtools-mcp@1.7.0"],
+      startupTimeoutSec: 30,
+    },
+  };
+}
+
+// The collision preflight mirrors the Core-owned default above. Optional MCPs
+// are registered through AIH's scoped writer, not this vendor-specific path.
 const ECC_CODEX_MCP_TRANSPORTS = new Map<string, CodexMcpTransport>([["chrome-devtools", "stdio"]]);
 
-const TOML_SERVER_HEADER =
-  /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|'([^']+)'|([^.\]'"]+))\][ \t]*(?:#.*)?$/;
 const TOML_TABLE_HEADER = /^[ \t]*\[/;
+const CODEX_MCP_BLOCK_BEGIN = "# >>> aih managed (mcp) >>>";
+const CODEX_MCP_BLOCK_END = "# <<< aih managed (mcp) <<<";
 export const CODEX_AGENTS_BLOCK_MARKER = "ecc-codex:agents";
 export const CODEX_INSTALL_STATE_FILE = "ecc-aih-install-state.json";
+
+// This runs after planning, so it repeats the narrow MCP-header identity
+// check rather than trusting plan-time custody observations.
+const CODEX_CLEANUP_STABLE_SCRIPT = `const fs=require("fs"),crypto=require("crypto");const hash=(value)=>value===undefined?"absent":crypto.createHash("sha256").update(value).digest("hex");const state=fs.existsSync(process.argv[1])?fs.readFileSync(process.argv[1],"utf8"):undefined;const config=fs.existsSync(process.argv[2])?fs.readFileSync(process.argv[2],"utf8"):undefined;if(process.argv[5]==="1"||hash(state)!==process.argv[3]||hash(config)!==process.argv[4])throw new Error("Codex cleanup inputs changed or claimed MCP custody remains; refusing AIH state cleanup");fs.rmSync(process.argv[1],{force:true});`;
 
 export interface CodexTomlFootprint {
   rootKeys: string[];
@@ -70,8 +105,187 @@ export function codexInstallStatePath(ctx: PlanContext): string {
   return join(codexHomeDir(ctx), CODEX_INSTALL_STATE_FILE);
 }
 
-function tomlHeaderName(match: RegExpMatchArray): string {
-  return match[1] ?? match[2] ?? match[3] ?? "";
+interface TomlMcpTableHeader {
+  keys: string[];
+  array: boolean;
+}
+
+/**
+ * This only recognizes TOML table headers under `mcp_servers`; it is not a
+ * general TOML parser. Keeping this narrow prevents equivalent quoted keys
+ * from bypassing MCP collision and ownership checks.
+ */
+function tomlMcpTableHeader(line: string): TomlMcpTableHeader | undefined {
+  let quote: '"' | "'" | undefined;
+  let clean = "";
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index] ?? "";
+    if (quote === '"') {
+      clean += character;
+      if (character === "\\") {
+        const escaped = line[index + 1];
+        if (escaped === undefined) return undefined;
+        clean += escaped;
+        index += 1;
+      } else if (character === '"') quote = undefined;
+      continue;
+    }
+    if (quote === "'") {
+      clean += character;
+      if (character === "'") quote = undefined;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      clean += character;
+      continue;
+    }
+    if (character === "#") break;
+    clean += character;
+  }
+  clean = clean.trim();
+  const array = clean.startsWith("[[");
+  const open = array ? "[[" : "[";
+  const close = array ? "]]" : "]";
+  if (!clean.startsWith(open) || !clean.endsWith(close)) return undefined;
+  const body = clean.slice(open.length, -close.length);
+  const keys: string[] = [];
+  let index = 0;
+  const skipSpaces = (): void => {
+    while (index < body.length && /[ \t]/.test(body[index] ?? "")) index += 1;
+  };
+  const basicKey = (): string | undefined => {
+    let value = "";
+    index += 1;
+    while (index < body.length) {
+      const character = body[index] ?? "";
+      if (character === '"') {
+        index += 1;
+        return value;
+      }
+      if (character === "\r" || character === "\n") return undefined;
+      if (character !== "\\") {
+        value += character;
+        index += 1;
+        continue;
+      }
+      const escapedKey = body[index + 1];
+      if (escapedKey === "u" || escapedKey === "U") {
+        const width = escapedKey === "u" ? 4 : 8;
+        const hex = body.slice(index + 2, index + 2 + width);
+        if (!new RegExp(`^[0-9A-Fa-f]{${width}}$`).test(hex)) return undefined;
+        const codePoint = Number.parseInt(hex, 16);
+        if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) return undefined;
+        value += String.fromCodePoint(codePoint);
+        index += width + 2;
+        continue;
+      }
+      const simple: Record<string, string> = {
+        b: "\b",
+        t: "\t",
+        n: "\n",
+        f: "\f",
+        r: "\r",
+        '"': '"',
+        "\\": "\\",
+      };
+      if (escapedKey === undefined || !(escapedKey in simple)) return undefined;
+      value += simple[escapedKey] ?? "";
+      index += 2;
+    }
+    return undefined;
+  };
+  skipSpaces();
+  while (index < body.length) {
+    let key: string | undefined;
+    if (body[index] === '"') key = basicKey();
+    else if (body[index] === "'") {
+      const end = body.indexOf("'", index + 1);
+      if (end < 0) return undefined;
+      key = body.slice(index + 1, end);
+      index = end + 1;
+    } else {
+      const match = /^[A-Za-z0-9_-]+/.exec(body.slice(index));
+      if (match === null) return undefined;
+      key = match[0];
+      index += key.length;
+    }
+    if (key === undefined) return undefined;
+    keys.push(key);
+    skipSpaces();
+    if (index === body.length) break;
+    if (body[index] !== ".") return undefined;
+    index += 1;
+    skipSpaces();
+    if (index === body.length) return undefined;
+  }
+  return keys.length >= 1 && keys[0] === "mcp_servers" ? { keys, array } : undefined;
+}
+
+function tomlMcpRootName(line: string): string | undefined {
+  const header = tomlMcpTableHeader(line);
+  return header?.keys.length === 2 ? header.keys[1] : undefined;
+}
+
+function tomlAssignmentLhs(line: string): string | undefined {
+  let quote: '"' | "'" | undefined;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index] ?? "";
+    if (quote === '"') {
+      if (character === "\\") index += 1;
+      else if (character === '"') quote = undefined;
+      continue;
+    }
+    if (quote === "'") {
+      if (character === "'") quote = undefined;
+      continue;
+    }
+    if (character === '"' || character === "'") quote = character;
+    else if (character === "#") return undefined;
+    else if (character === "=") return line.slice(0, index).trim();
+  }
+  return undefined;
+}
+
+function nonRootMcpRepresentations(raw: string): Set<string> {
+  const names = new Set<string>();
+  const roots = new Set<string>();
+  const descendants = new Set<string>();
+  let inMcpServersTable = false;
+  let atDocumentRoot = true;
+  for (const line of raw.replace(/\r\n/g, "\n").split("\n")) {
+    const header = tomlMcpTableHeader(line);
+    if (header !== undefined) {
+      inMcpServersTable = !header.array && header.keys.length === 1;
+      atDocumentRoot = false;
+      if (header.keys.length === 2 && !header.array) roots.add(header.keys[1] ?? "");
+      else if (header.keys.length > 2) descendants.add(header.keys[1] ?? "");
+      continue;
+    }
+    if (TOML_TABLE_HEADER.test(line)) {
+      inMcpServersTable = false;
+      atDocumentRoot = false;
+      continue;
+    }
+    const lhs = tomlAssignmentLhs(line);
+    if (lhs === undefined) continue;
+    const direct = tomlMcpTableHeader(`[${lhs}]`);
+    if (atDocumentRoot && direct?.keys.length && direct.keys.length >= 2) {
+      names.add(direct.keys[1] ?? "");
+      continue;
+    }
+    if (inMcpServersTable) {
+      const scoped = tomlMcpTableHeader(`[mcp_servers.${lhs}]`);
+      if (scoped?.keys.length === 2) names.add(scoped.keys[1] ?? "");
+      else if (scoped?.keys.length && scoped.keys.length > 2) names.add(scoped.keys[1] ?? "");
+      continue;
+    }
+    if (atDocumentRoot && direct?.keys.length === 1) {
+      names.add("*");
+    }
+  }
+  for (const name of descendants) if (!roots.has(name)) names.add(name);
+  return names;
 }
 
 function mergeTransport(
@@ -82,13 +296,28 @@ function mergeTransport(
   return current === next ? current : "mixed";
 }
 
-function codexMcpTransports(raw: string): Map<string, CodexMcpTransport> {
+interface CodexMcpTransportScan {
+  transports: Map<string, CodexMcpTransport>;
+  invalidRoots: Map<
+    string,
+    "duplicate semantic root" | "array-of-tables root" | "non-root representation"
+  >;
+}
+
+function codexMcpTransports(raw: string): CodexMcpTransportScan {
   const transports = new Map<string, CodexMcpTransport>();
+  const invalidRoots = new Map<
+    string,
+    "duplicate semantic root" | "array-of-tables root" | "non-root representation"
+  >();
   let current: string | undefined;
   for (const line of raw.replace(/\r\n/g, "\n").split("\n")) {
-    const table = line.match(TOML_SERVER_HEADER);
-    if (table) {
-      current = tomlHeaderName(table);
+    const header = tomlMcpTableHeader(line);
+    if (header?.keys.length === 2) {
+      const name = header.keys[1] ?? "";
+      if (header.array) invalidRoots.set(name, "array-of-tables root");
+      else if (transports.has(name)) invalidRoots.set(name, "duplicate semantic root");
+      current = name;
       transports.set(current, transports.get(current) ?? "unknown");
       continue;
     }
@@ -104,7 +333,9 @@ function codexMcpTransports(raw: string): Map<string, CodexMcpTransport> {
       transports.set(current, mergeTransport(transports.get(current) ?? "unknown", "http"));
     }
   }
-  return transports;
+  for (const name of nonRootMcpRepresentations(raw))
+    if (!invalidRoots.has(name)) invalidRoots.set(name, "non-root representation");
+  return { transports, invalidRoots };
 }
 
 function tomlTablePathPattern(tablePath: string): string {
@@ -257,9 +488,14 @@ function tableKeyExists(raw: string, tablePath: string, key: string): boolean {
 }
 
 function mcpServerExists(raw: string, name: string): boolean {
-  return [name, ...(CODEX_MCP_ALIASES[name] ?? [])].some((server) =>
-    tableExists(raw, `mcp_servers.${server}`),
-  );
+  const names = new Set([name, ...(CODEX_MCP_ALIASES[name] ?? [])]);
+  return raw
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .some((line) => {
+      const existing = tomlMcpRootName(line);
+      return existing !== undefined && names.has(existing);
+    });
 }
 
 function emptyFootprint(): CodexTomlFootprint {
@@ -270,9 +506,7 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
-function readCodexInstallState(ctx: PlanContext): CodexInstallState | undefined {
-  const raw = readIfExists(codexInstallStatePath(ctx));
-  if (raw === undefined) return undefined;
+function parseCodexInstallState(raw: string): CodexInstallState | undefined {
   try {
     const parsed = JSON.parse(raw) as {
       schemaVersion?: unknown;
@@ -308,6 +542,47 @@ function readCodexInstallState(ctx: PlanContext): CodexInstallState | undefined 
   } catch {
     return undefined;
   }
+}
+
+function readCodexInstallState(ctx: PlanContext): CodexInstallState | undefined {
+  const raw = readIfExists(codexInstallStatePath(ctx));
+  return raw === undefined ? undefined : parseCodexInstallState(raw);
+}
+
+function externalPinnedWrite(
+  path: string,
+  existing: string,
+  contents: string,
+  describe: string,
+  trustedBase: string,
+): WriteAction {
+  return {
+    ...writeText(path, contents, describe, {
+      external: true,
+      trustedBase,
+      expect: { sha256: contentHash(existing) },
+    }),
+    exactContents: true,
+  };
+}
+
+function externalUnchangedAssertion(
+  path: string,
+  existing: string,
+  describe: string,
+  trustedBase: string,
+): WriteAction {
+  return {
+    kind: "write",
+    path,
+    contents: existing,
+    exactContents: true,
+    describe,
+    external: true,
+    trustedBase,
+    expect: { sha256: contentHash(existing) },
+    assertUnchanged: true,
+  };
 }
 
 function unionSorted(a: readonly string[], b: readonly string[]): string[] {
@@ -465,11 +740,58 @@ function removeInlineTableKeys(lines: string[], tablePath: string, keys: Set<str
   return lines.map((entry, entryIndex) => (entryIndex === index ? nextLine : entry));
 }
 
+function stripManagedMcpTables(raw: string, claimedNames: readonly string[]): string {
+  if (claimedNames.length === 0) return raw;
+  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+  const begins = lines
+    .map((line, index) => (line === CODEX_MCP_BLOCK_BEGIN ? index : -1))
+    .filter((index) => index >= 0);
+  const ends = lines
+    .map((line, index) => (line === CODEX_MCP_BLOCK_END ? index : -1))
+    .filter((index) => index >= 0);
+  if (begins.length !== 1 || ends.length !== 1) return raw;
+  const begin = begins[0];
+  const end = ends[0];
+  if (begin === undefined || end === undefined || begin >= end) return raw;
+
+  const sections: Array<{ name: string; lines: string[] }> = [];
+  let current: { name: string; lines: string[] } | undefined;
+  const names = new Set<string>();
+  for (const line of lines.slice(begin + 1, end)) {
+    const header = tomlMcpTableHeader(line);
+    if (header?.keys.length === 2 && !header.array) {
+      if (current !== undefined) sections.push(current);
+      const name = header.keys[1] ?? "";
+      if (names.has(name)) return raw;
+      names.add(name);
+      current = { name, lines: [line] };
+    } else if (TOML_TABLE_HEADER.test(line)) {
+      if (
+        current === undefined ||
+        !tableHeaderPattern(`mcp_servers.${current.name}`, true).test(line)
+      ) {
+        return raw;
+      }
+      current.lines.push(line);
+    } else if (current !== undefined) {
+      current.lines.push(line);
+    } else if (line.trim().length > 0) {
+      return raw;
+    }
+  }
+  if (current !== undefined) sections.push(current);
+  const claimed = new Set(claimedNames);
+  const retained = sections.filter((section) => !claimed.has(section.name));
+  if (retained.length === sections.length) return raw;
+  const body = retained.map((section) => section.lines.join("\n").replace(/\n+$/, "")).join("\n\n");
+  const replacement = body.length > 0 ? [CODEX_MCP_BLOCK_BEGIN, body, CODEX_MCP_BLOCK_END] : [];
+  return [...lines.slice(0, begin), ...replacement, ...lines.slice(end + 1)].join("\n");
+}
+
 export function stripCodexTomlFootprint(raw: string, footprint: CodexTomlFootprint): string {
   const usesCrlf = /\r\n/.test(raw);
-  const mcpTables = footprint.mcpServers.map((name) => `mcp_servers.${name}`);
-  let lines = removeTables(raw, footprint.tables);
-  lines = removeTables(lines.join("\n"), mcpTables, { includeDescendants: true });
+  const mcpStripped = stripManagedMcpTables(raw, footprint.mcpServers);
+  let lines = removeTables(mcpStripped, footprint.tables);
   lines = removeKeysFromScope(lines, undefined, new Set(footprint.rootKeys));
   for (const [table, keys] of Object.entries(footprint.tableKeys)) {
     const keySet = new Set(keys);
@@ -499,14 +821,24 @@ export function codexMcpTransportCollisions(
     existingTransport: CodexMcpTransport,
     conflictingScope: CodexMcpScope,
     conflictingTransport: CodexMcpTransport,
+    strictUnknown = false,
+    reason?: CodexMcpCollision["reason"],
   ): void => {
-    if (
-      existingTransport === "unknown" ||
-      conflictingTransport === "unknown" ||
-      existingTransport === conflictingTransport
-    ) {
+    if (reason !== undefined) {
+      collisions.push({
+        name,
+        existingScope,
+        existingTransport,
+        conflictingScope,
+        conflictingTransport,
+        reason,
+      });
       return;
     }
+    const unknown = existingTransport === "unknown" || conflictingTransport === "unknown";
+    if (unknown && !strictUnknown) return;
+    if (!unknown && existingTransport === conflictingTransport && existingTransport !== "mixed")
+      return;
     collisions.push({
       name,
       existingScope,
@@ -516,30 +848,64 @@ export function codexMcpTransportCollisions(
     });
   };
 
-  for (const [name, projectTransport] of project) {
-    const globalTransport = global.get(name);
-    if (globalTransport !== undefined) {
+  for (const [name, reason] of project.invalidRoots) {
+    if (name === "*") {
+      for (const [plannedName, plannedTransport] of plannedTransports)
+        pushCollision(
+          plannedName,
+          "project",
+          "unknown",
+          "planned ECC",
+          plannedTransport,
+          true,
+          reason,
+        );
+      continue;
+    }
+    const plannedTransport = plannedTransports.get(name);
+    if (plannedTransport !== undefined)
+      pushCollision(name, "project", "unknown", "planned ECC", plannedTransport, true, reason);
+  }
+  for (const [name, reason] of global.invalidRoots) {
+    if (name === "*") {
+      for (const [plannedName, plannedTransport] of plannedTransports)
+        pushCollision(
+          plannedName,
+          "global",
+          "unknown",
+          "planned ECC",
+          plannedTransport,
+          true,
+          reason,
+        );
+      continue;
+    }
+    const plannedTransport = plannedTransports.get(name);
+    if (plannedTransport !== undefined)
+      pushCollision(name, "global", "unknown", "planned ECC", plannedTransport, true, reason);
+  }
+
+  for (const [name, projectTransport] of project.transports) {
+    const plannedTransport = plannedTransports.get(name);
+    const globalTransport = global.transports.get(name);
+    if (plannedTransport !== undefined) {
+      pushCollision(name, "project", projectTransport, "planned ECC", plannedTransport, true);
+    } else if (globalTransport !== undefined) {
       pushCollision(name, "project", projectTransport, "global", globalTransport);
-    } else {
-      const plannedTransport = plannedTransports.get(name);
-      if (plannedTransport !== undefined) {
-        pushCollision(name, "project", projectTransport, "planned ECC", plannedTransport);
-      }
     }
   }
-  if (scopedPlannedTransports === undefined) {
-    for (const [name, globalTransport] of global) {
-      const plannedTransport = plannedTransports.get(name);
-      if (plannedTransport !== undefined) {
-        pushCollision(name, "global", globalTransport, "planned ECC", plannedTransport);
-      }
+  for (const [name, globalTransport] of global.transports) {
+    const plannedTransport = plannedTransports.get(name);
+    if (plannedTransport !== undefined) {
+      pushCollision(name, "global", globalTransport, "planned ECC", plannedTransport, true);
     }
   }
-  return collisions.sort((a, b) =>
-    a.name === b.name
-      ? a.existingScope.localeCompare(b.existingScope) ||
-        a.conflictingScope.localeCompare(b.conflictingScope)
-      : a.name.localeCompare(b.name),
+  return collisions.sort(
+    (a, b) =>
+      a.name.localeCompare(b.name) ||
+      a.existingScope.localeCompare(b.existingScope) ||
+      a.conflictingScope.localeCompare(b.conflictingScope) ||
+      (a.reason ?? "").localeCompare(b.reason ?? ""),
   );
 }
 
@@ -552,7 +918,7 @@ export function codexMcpCollisionActions(
   const summary = collisions
     .map(
       (c) =>
-        `${c.name} (${c.existingScope} ${c.existingTransport}, ` +
+        `${c.name} (${c.reason ? `${c.existingScope} ${c.reason}` : `${c.existingScope} ${c.existingTransport}`}, ` +
         `${c.conflictingScope} ${c.conflictingTransport})`,
     )
     .join(", ");
@@ -580,42 +946,171 @@ export function codexMcpCollisionActions(
 }
 
 export function codexAgentsBlockRemovalAction(ctx: PlanContext): Action | undefined {
-  const agentsPath = join(codexHomeDir(ctx), "AGENTS.md");
+  const codexRoot = codexHomeDir(ctx);
+  const agentsPath = join(codexRoot, "AGENTS.md");
   const existing = readIfExists(agentsPath);
   if (existing === undefined) return undefined;
   const stripped = stripManagedBlock(existing, CODEX_AGENTS_BLOCK_MARKER);
   if (stripped === existing) return undefined;
-  return writeText(
+  return externalPinnedWrite(
     agentsPath,
+    existing,
     stripped,
     "subtract ECC Codex AGENTS block from ~/.codex/AGENTS.md (codex dropped)",
-    { external: true },
+    codexRoot,
   );
 }
 
 export function codexConfigRemovalAction(ctx: PlanContext): Action | undefined {
   const state = readCodexInstallState(ctx);
   if (!state) return undefined;
-  const configPath = join(codexHomeDir(ctx), "config.toml");
+  const codexRoot = codexHomeDir(ctx);
+  const configPath = join(codexRoot, "config.toml");
   const existing = readIfExists(configPath);
   if (existing === undefined) return undefined;
   const stripped = stripCodexTomlFootprint(existing, state.codexToml);
   if (stripped === existing) return undefined;
-  return writeText(
+  return externalPinnedWrite(
     configPath,
+    existing,
     stripped,
     "subtract ECC Codex TOML footprint from ~/.codex/config.toml (codex dropped)",
-    { external: true },
+    codexRoot,
   );
+}
+
+function claimedMcpTableRemains(raw: string, claimedNames: readonly string[]): boolean {
+  const claimed = new Set(claimedNames);
+  if (claimed.size === 0) return false;
+  return raw
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .some((line) => {
+      const name = tomlMcpRootName(line);
+      return name !== undefined && claimed.has(name);
+    });
+}
+
+function contentHash(raw: string | undefined): string {
+  return raw === undefined ? "absent" : createHash("sha256").update(raw).digest("hex");
+}
+
+function claimedMcpCustodyRemains(raw: string, claimedNames: readonly string[]): boolean {
+  const nonRoot = nonRootMcpRepresentations(raw);
+  return (
+    nonRoot.has("*") ||
+    claimedMcpTableRemains(raw, claimedNames) ||
+    claimedNames.some((name) => nonRoot.has(name))
+  );
+}
+
+function codexInstallStateCleanupFromSnapshot(
+  ctx: PlanContext,
+  statePath: string,
+  stateRaw: string | undefined,
+  state: CodexInstallState | undefined,
+  config: string | undefined,
+): Action | undefined {
+  if (!state) {
+    if (stateRaw === undefined) return undefined;
+    return probe("refuse invalid AIH ECC Codex install-state cleanup", () => ({
+      name: "AIH ECC Codex install-state",
+      verdict: "fail",
+      code: "mcp.config-invalid",
+      detail:
+        "AIH-owned Codex install-state is invalid; preserving it and all claimed config for manual recovery.",
+    }));
+  }
+  const expectedConfig =
+    config === undefined ? undefined : stripCodexTomlFootprint(config, state.codexToml);
+  const held =
+    expectedConfig !== undefined &&
+    claimedMcpCustodyRemains(expectedConfig, state.codexToml.mcpServers);
+  return exec(
+    held
+      ? "refuse AIH ECC Codex install-state cleanup while claimed MCP custody remains (under --apply)"
+      : "remove aih ECC Codex install-state after prune cleanup (under --apply)",
+    [
+      "node",
+      "-e",
+      CODEX_CLEANUP_STABLE_SCRIPT,
+      statePath,
+      join(codexHomeDir(ctx), "config.toml"),
+      contentHash(stateRaw),
+      contentHash(expectedConfig),
+      held ? "1" : "0",
+    ],
+  );
+}
+
+/**
+ * Construct the legacy dropped-Codex prune actions from one live state/config
+ * snapshot. The unchanged state assertion prevents a stale footprint from
+ * deleting config after an operator has changed or relinquished its claim.
+ */
+export function codexPruneRemovalActions(ctx: PlanContext): {
+  actions: Action[];
+  removesAgentsBlock: boolean;
+} {
+  const codexRoot = codexHomeDir(ctx);
+  const statePath = codexInstallStatePath(ctx);
+  const stateRaw = readIfExists(statePath);
+  const state = stateRaw === undefined ? undefined : parseCodexInstallState(stateRaw);
+  const configPath = join(codexRoot, "config.toml");
+  const config = readIfExists(configPath);
+  const actions: Action[] = [];
+  let removesConfig = false;
+  if (state !== undefined && config !== undefined) {
+    const stripped = stripCodexTomlFootprint(config, state.codexToml);
+    if (stripped !== config) {
+      actions.push(
+        externalPinnedWrite(
+          configPath,
+          config,
+          stripped,
+          "subtract ECC Codex TOML footprint from ~/.codex/config.toml (codex dropped)",
+          codexRoot,
+        ),
+      );
+      removesConfig = true;
+    }
+  }
+  if (removesConfig && stateRaw !== undefined) {
+    actions.push(
+      externalUnchangedAssertion(
+        statePath,
+        stateRaw,
+        "assert AIH ECC Codex install-state is unchanged before config removal (codex dropped)",
+        codexRoot,
+      ),
+    );
+  }
+
+  const agentsPath = join(codexRoot, "AGENTS.md");
+  const agents = readIfExists(agentsPath);
+  const strippedAgents =
+    agents === undefined ? undefined : stripManagedBlock(agents, CODEX_AGENTS_BLOCK_MARKER);
+  const removesAgentsBlock = agents !== undefined && strippedAgents !== agents;
+  if (agents !== undefined && strippedAgents !== undefined && removesAgentsBlock) {
+    actions.push(
+      externalPinnedWrite(
+        agentsPath,
+        agents,
+        strippedAgents,
+        "subtract ECC Codex AGENTS block from ~/.codex/AGENTS.md (codex dropped)",
+        codexRoot,
+      ),
+    );
+  }
+  const cleanup = codexInstallStateCleanupFromSnapshot(ctx, statePath, stateRaw, state, config);
+  if (cleanup !== undefined) actions.push(cleanup);
+  return { actions, removesAgentsBlock };
 }
 
 export function codexInstallStateCleanupAction(ctx: PlanContext): Action | undefined {
   const statePath = codexInstallStatePath(ctx);
-  if (readIfExists(statePath) === undefined) return undefined;
-  return exec("remove aih ECC Codex install-state after prune cleanup (under --apply)", [
-    "node",
-    "-e",
-    "const fs=require('fs'); fs.rmSync(process.argv[1], { force: true });",
-    statePath,
-  ]);
+  const stateRaw = readIfExists(statePath);
+  const state = stateRaw === undefined ? undefined : parseCodexInstallState(stateRaw);
+  const config = readIfExists(join(codexHomeDir(ctx), "config.toml"));
+  return codexInstallStateCleanupFromSnapshot(ctx, statePath, stateRaw, state, config);
 }

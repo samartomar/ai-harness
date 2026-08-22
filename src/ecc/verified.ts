@@ -17,7 +17,11 @@ import {
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { execArgv } from "../tools/install.js";
-import { codexMcpCollisionActions } from "./codex.js";
+import {
+  type CodexScopedMcpServers,
+  codexMcpCollisionActions,
+  coreOwnedEccCodexMcpServers,
+} from "./codex.js";
 import type { EccComponentSelection } from "./components.js";
 import { authorizedEccSelection, installedEccComponentRegistrations } from "./evidence.js";
 import { codexEccActions, type EccRepoCheckout, kiroEccActions } from "./index.js";
@@ -463,14 +467,12 @@ export function verifiedEccInstallPlan(
       continue;
     }
     if (cli === "codex") {
-      const scopedMcps =
-        selection === undefined ? undefined : selectedEccMcpServers(selection.mcps);
-      const plannedTransports =
-        scopedMcps === undefined
-          ? undefined
-          : new Map(
-              Object.entries(scopedMcps).map(([name, server]) => [name, server.type] as const),
-            );
+      const selectedMcps = selection === undefined ? {} : selectedEccMcpServers(selection.mcps);
+      const scopedMcps: CodexScopedMcpServers =
+        request.governance === true ? {} : { ...selectedMcps, ...coreOwnedEccCodexMcpServers() };
+      const plannedTransports = new Map(
+        Object.entries(scopedMcps).map(([name, server]) => [name, server.type] as const),
+      );
       const blockers = codexMcpCollisionActions(ctx, plannedTransports);
       if (blockers.length > 0) {
         pre.push(...blockers);
