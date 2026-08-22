@@ -56,6 +56,7 @@ jobs:
       # evidence describes a different pin set, nothing downstream can be
       # trusted, and failing here explains that in one cheap step.
       - name: Fail closed if the committed evidence is not current for the declared pins
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         run: npm run check:baseline-pins
 
       - name: Set up scanner Python
@@ -138,7 +139,22 @@ jobs:
       # genuine rescan of exactly the affected components. What it stops doing is
       # re-proving unchanged content, which is the part that cost an hour and
       # could not have changed.
+      - name: Regenerate every receipt for a manually dispatched full re-vet
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "vet-head=$(git rev-parse HEAD)"
+          npm run check:native-identity
+          npm run baseline:vet -- \
+            --full \
+            --ecc-root .baseline-sources/ecc \
+            --superpowers-root .baseline-sources/superpowers
+          sha256sum \
+            src/baseline-evidence/vendor-lock.json \
+            src/baseline-evidence/ecc-install-preview.json
       - name: Prove the committed lock still reproduces from the pinned sources
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -146,7 +162,7 @@ jobs:
             --ecc-root .baseline-sources/ecc \
             --superpowers-root .baseline-sources/superpowers
       - name: Upload baseline evidence report
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (github.event_name != 'workflow_dispatch' || success()) }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: baseline-evidence-lock
