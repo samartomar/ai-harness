@@ -8,6 +8,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Applied administrator Workbench generation can refresh the exact vendor baseline evidence
+  channel without granting a developer-seat fetch path.** A separate administrator bootstrap pins
+  credential-free HTTPS locators, publisher repository/workflow/issuer/ref/environment identity,
+  the supported ECC and Superpowers source commits, schema bounds, and cache age. The applied
+  administrator-root route resolves fresh, reverified last-downloaded, then packaged evidence;
+  only an exact unavailable result advances to the next tier, while malformed, stale, mismatched,
+  untrusted, partial, or uncommitted evidence is terminal. Fresh and cached subjects are verified
+  locally and through an exact `gh attestation verify` policy before a contained owner-only cache
+  commit or Workbench render. Rootless and non-applying routes gain no network, process, or cache
+  effect, and the Workbench receives only bounded tier/source/schema/digest/age/time provenance —
+  never locators, paths, credentials, signatures, or raw attestations. (#814)
+
 - **Offline revocation has a replay-resistant, inert V1 contract before any continuation is
   enabled.** A canonical signed snapshot binds its exact issuer, monotonic sequence,
   second-granularity issuance and validity window, and the complete sorted decision-id revocation

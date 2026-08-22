@@ -80,6 +80,33 @@ repository code execution, release, or package-publication step. A merge does
 not dispatch this workflow. The first real dispatch remains a publication action
 and requires separate authorization for the exact SHA.
 
+### Administrator fetch and cache boundary
+
+`aih policy generate <admin-root> --apply` resolves baseline evidence before it
+renders the administrator Workbench. Enterprise accepts only the fixed
+OS/admin-managed bootstrap root; Vibe accepts only the canonical bootstrap
+under the supplied administrator root. That strict canonical record owns the
+credential-free HTTPS artifact and attestation locators, exact publisher
+repository/workflow/issuer/ref/environment identity, the two supported source
+pins, schema range, and cache-age policy. Repository-local policy cannot choose
+or widen this channel.
+
+The route attempts a complete fresh artifact first, then a reverified
+last-downloaded record, then the packaged lock. Only the exact unavailable
+sentinel advances to another tier. Partial, malformed, oversized, stale,
+wrong-source, wrong-pin, wrong-schema, untrusted, or cache-commit outcomes stop
+the run. Fresh and cached artifacts repeat the complete local artifact check
+and exact GitHub attestation verification; a prior verification result is never
+cache authority. Fresh bytes enter one bootstrap-derived, contained owner-only
+cache slot only after verification and before the Workbench uses them.
+
+Omitting `<admin-root>` preserves portable generation without acquisition or
+cache authority. Supplying it without `--apply` fails before HTTPS, process,
+cache, or Workbench effects. The rendered administrator artifact receives only
+bounded tier, source ids, schema version, digest, download age, and resolution
+time. Locators, local paths, credentials, signatures, attestation bytes, signer
+roots, and machine details are not representable in that provenance.
+
 ### Enterprise org-evidence boundary
 
 At Enterprise posture, an exact organization override is required for the
