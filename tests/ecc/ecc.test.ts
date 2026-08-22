@@ -20,6 +20,7 @@ import {
   codexAgentsBlockRemovalAction,
   codexConfigRemovalAction,
   codexInstallStateCleanupAction,
+  codexPruneRemovalActions,
   coreOwnedEccCodexMcpServers,
   stripCodexTomlFootprint,
 } from "../../src/ecc/codex.js";
@@ -1236,6 +1237,55 @@ describe("Codex managed destination safety", () => {
     });
   });
 
+  it("removes an entirely AIH-owned Codex config and install state with matching exact bytes", async () => {
+    const home = join(tmp, "fully-owned-codex-prune-home");
+    const codexDir = join(home, ".codex");
+    const configPath = join(codexDir, "config.toml");
+    const statePath = join(codexDir, "ecc-aih-install-state.json");
+    mkdirSync(codexDir, { recursive: true });
+    writeFileSync(
+      configPath,
+      ['approval_policy = "on-request"', "", "[features]", "multi_agent = true", ""].join("\n"),
+      "utf8",
+    );
+    writeFileSync(
+      statePath,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        managedBy: "aih",
+        codexToml: {
+          rootKeys: ["approval_policy"],
+          tables: ["features"],
+          tableKeys: { features: ["multi_agent"] },
+          mcpServers: [],
+        },
+        agentsBlock: false,
+      })}\n`,
+      "utf8",
+    );
+    const base = makeCtx({ cli: "codex" });
+    const ctx = {
+      ...base,
+      apply: true,
+      env: { ...base.env, HOME: home, USERPROFILE: home },
+      run: async (argv: string[]) => {
+        const result = spawnSync(argv[0] ?? "", argv.slice(1), { encoding: "utf8" });
+        return {
+          code: result.status ?? 1,
+          stdout: result.stdout ?? "",
+          stderr: result.stderr ?? "",
+        };
+      },
+    };
+    const { actions } = codexPruneRemovalActions(ctx);
+
+    const result = await executePlan({ capability: "prune", actions }, ctx);
+
+    expect(readFileSync(configPath, "utf8")).toBe("");
+    expect(existsSync(statePath)).toBe(false);
+    expect(result.execs).toEqual([expect.objectContaining({ ok: true })]);
+  });
+
   function guardedMerge(configPath: string): ReturnType<typeof spawnSync> {
     const home = join(tmp, "home");
     const repo = join(tmp, "ecc");
@@ -1269,6 +1319,7 @@ describe("Codex managed destination safety", () => {
 
   it.each([
     ["before", "npx", '["chrome-devtools-mcp@latest"]'],
+    ["bare-npx", "npx", '["chrome-devtools-mcp@latest"]'],
     ["after", "npx", '["chrome-devtools-mcp@latest"]'],
     ["inside", "npx", '["chrome-devtools-mcp@latest"]'],
     ["vanished", "npx", '["chrome-devtools-mcp@latest"]'],
@@ -1374,7 +1425,9 @@ describe("Codex managed destination safety", () => {
       const base = makeCtx({ cli: "codex" });
       const ctx = { ...base, env: { ...base.env, HOME: home, USERPROFILE: home } };
       const legacy = [
-        '[mcp_servers."chrome-devtools"]',
+        legacyPosition === "bare-npx"
+          ? "[mcp_servers.chrome-devtools]"
+          : '[mcp_servers."chrome-devtools"]',
         `command = "${command}"`,
         `args = ${args}`,
         "startup_timeout_sec = 30",
