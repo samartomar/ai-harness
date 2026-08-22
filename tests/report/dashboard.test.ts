@@ -111,6 +111,18 @@ describe("velocityDigests", () => {
     await expect(velocityDigests(ctx(run))).resolves.toEqual([]);
   });
 
+  it("omits velocity panels when numstat records contain extra fields", async () => {
+    const run = gitFake({
+      "rev-parse --is-inside-work-tree": "true",
+      "rev-list --count --since=7.days.ago HEAD": "23",
+      "rev-list --count --since=30.days.ago HEAD": "87",
+      "rev-list --count HEAD": "1420",
+      "log --since=30.days.ago --numstat": "4520\t1890\tsrc/a.ts\textra",
+    });
+
+    await expect(velocityDigests(ctx(run))).resolves.toEqual([]);
+  });
+
   it("omits velocity panels when cumulative numstat totals exceed safe integers", async () => {
     const run = gitFake({
       "rev-parse --is-inside-work-tree": "true",

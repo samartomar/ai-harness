@@ -129,4 +129,29 @@ describe("aih track", () => {
       reason: "git-state-unavailable",
     });
   });
+
+  it("does not record a partial sample when latest commit identity cannot be read", async () => {
+    const actions = (
+      await command.plan(
+        makeCtx(
+          gitFake({
+            "rev-parse --is-inside-work-tree": "true",
+            "rev-parse --verify HEAD": "abcdef0123456789abcdef0123456789abcdef01",
+            "rev-parse --abbrev-ref HEAD": "main",
+            "for-each-ref --format=%(refname:short) refs/heads": "main",
+            "rev-list --count --since=7 days ago HEAD": "2",
+            "log --since=7 days ago --numstat": "4\t1\tx.ts",
+            "ls-files": "x.ts",
+          }),
+        ),
+      )
+    ).actions;
+
+    expect(actions.some((action) => action.kind === "write")).toBe(false);
+    const digestAction = actions.find((action) => action.kind === "digest");
+    expect(digestAction?.kind === "digest" ? digestAction.data : undefined).toMatchObject({
+      recorded: false,
+      reason: "git-state-unavailable",
+    });
+  });
 });

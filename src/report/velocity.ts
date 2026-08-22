@@ -31,7 +31,9 @@ async function locWindow(
   let added = 0;
   let removed = 0;
   for (const line of out.split("\n").filter(Boolean)) {
-    const [a, r, path] = line.split("\t", 3);
+    const fields = line.split("\t");
+    if (fields.length !== 3) return undefined;
+    const [a, r, path] = fields;
     if (path === undefined) return undefined;
     if (a === "-" && r === "-") continue;
     const addedCount = gitInt(a);

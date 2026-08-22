@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import process from "node:process";
 import { AihError, PathContainmentError } from "../errors.js";
+import { readRegularFileWithStats } from "../internals/fsxn.js";
 import { type ExecAction, exec, type PlanContext } from "../internals/plan.js";
 import type { RunResult } from "../internals/proc.js";
 
@@ -74,6 +75,10 @@ export interface TrustFetchMetadata {
   source: string;
   treePath: string;
 }
+
+export type GitHubTrustFetchMetadataValidation =
+  | { state: "trusted"; metadata: TrustFetchMetadata }
+  | { state: "missing" | "unreadable" | "malformed" | "mismatched" };
 
 const GITHUB_SOURCE = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/;
 const SAFE_ENV_KEYS = new Set([
@@ -369,8 +374,91 @@ export function assertTrustTreeSafe(
 }
 
 export function readTrustFetchMetadata(source: GitHubTrustSource): TrustFetchMetadata {
-  const text = readFileSync(source.metadataPath, "utf8");
-  return JSON.parse(text) as TrustFetchMetadata;
+  const validation = validateGitHubTrustFetchMetadata(source);
+  if (validation.state === "trusted") return validation.metadata;
+  throw new AihError(`fetched GitHub metadata is ${validation.state}`, "AIH_TRUST");
+}
+
+function isTrustFetchMetadata(value: unknown): value is TrustFetchMetadata {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const metadata = value as Record<string, unknown>;
+  const keys = Object.keys(metadata).sort();
+  const expected = ["kind", "owner", "pinnedSha", "ref", "repo", "source", "treePath"];
+  return (
+    keys.length === expected.length &&
+    keys.every((key, index) => key === expected[index]) &&
+    metadata.kind === "github" &&
+    typeof metadata.owner === "string" &&
+    typeof metadata.repo === "string" &&
+    typeof metadata.ref === "string" &&
+    typeof metadata.pinnedSha === "string" &&
+    /^[a-f0-9]{40}$/.test(metadata.pinnedSha) &&
+    typeof metadata.source === "string" &&
+    typeof metadata.treePath === "string"
+  );
+}
+
+/**
+ * Treat fetched metadata as untrusted unless it still binds this exact quarantine source.
+ * The result intentionally contains no filesystem paths or parser errors because it is
+ * surfaced in public verification output.
+ */
+export function validateGitHubTrustFetchMetadata(
+  source: GitHubTrustSource,
+): GitHubTrustFetchMetadataValidation {
+  try {
+    const listed = lstatSync(source.metadataPath);
+    if (!listed.isFile() || listed.isSymbolicLink() || listed.nlink !== 1)
+      return { state: "unreadable" };
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT"
+      ? { state: "missing" }
+      : { state: "unreadable" };
+  }
+  const read = readRegularFileWithStats(source.metadataPath, { maxBytes: 64 * 1024 });
+  if (read === undefined || read.stats.nlink !== 1) return { state: "unreadable" };
+  try {
+    const value: unknown = JSON.parse(read.contents.toString("utf8"));
+    if (!isTrustFetchMetadata(value)) return { state: "malformed" };
+    const metadata: TrustFetchMetadata = {
+      kind: value.kind,
+      owner: value.owner,
+      repo: value.repo,
+      ref: value.ref,
+      pinnedSha: value.pinnedSha,
+      source: value.source,
+      treePath: value.treePath,
+    };
+    if (
+      metadata.owner !== source.owner ||
+      metadata.repo !== source.repo ||
+      metadata.ref !== source.ref ||
+      metadata.source !== `${source.owner}/${source.repo}` ||
+      metadata.treePath !== source.treePath ||
+      (source.pin !== undefined && metadata.pinnedSha !== source.pin)
+    ) {
+      return { state: "mismatched" };
+    }
+    return { state: "trusted", metadata };
+  } catch {
+    return { state: "malformed" };
+  }
+}
+
+/** Metadata describes the exact fetched tree that analyzers inspected. */
+export function sameGitHubTrustFetchMetadata(
+  first: TrustFetchMetadata,
+  second: TrustFetchMetadata,
+): boolean {
+  return (
+    first.kind === second.kind &&
+    first.owner === second.owner &&
+    first.repo === second.repo &&
+    first.ref === second.ref &&
+    first.pinnedSha === second.pinnedSha &&
+    first.source === second.source &&
+    first.treePath === second.treePath
+  );
 }
 
 const GITHUB_FETCH_SCRIPT = String.raw`

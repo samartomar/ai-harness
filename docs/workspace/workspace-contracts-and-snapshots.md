@@ -197,7 +197,7 @@ Snapshot files have:
       "path": "ui",
       "remote": "https://github.com/acme/ui.git",
       "branch": "main",
-      "sha": "abc123",
+      "sha": "abcdef0123456789abcdef0123456789abcdef01",
       "dirty": false,
       "git": true,
       "ahead": 0,
@@ -213,6 +213,14 @@ workspace manifest or child Git state can provide them. A manifest-declared
 child-local `origin` URL. A missing or non-Git child still appears with
 `git: false` and `dirty: false`.
 
+For a Git child, branch, commit, dirty state, and upstream divergence come from one
+`git status --porcelain=v2 --branch` observation, repeated after the dependent remote lookup. If
+either observation is unavailable, the row carries `observation: "unavailable"`; if the two
+observations differ, it carries `observation: "diverged"`. Both incomplete forms omit branch, SHA,
+dirty, ahead, and behind so a branch switch or concurrent worktree change cannot produce a mixed
+apparently clean row. Hydrate accepts that explicit incomplete form but never treats it as checkout
+authority.
+
 ## Changed-since-snapshot report
 
 The workspace report compares current child rows with the newest readable
@@ -227,7 +235,7 @@ UNCHANGED, CHANGED, DIRTY, MISSING, UNKNOWN
 Examples:
 
 - no matching repo in the snapshot -> `UNKNOWN`;
-- current Git state unavailable -> `MISSING`;
+- current Git state unavailable or diverged -> `MISSING` with the named observation;
 - current child worktree dirty -> `DIRTY`;
 - branch or SHA changed -> `CHANGED`;
 - branch/SHA match -> `UNCHANGED`.

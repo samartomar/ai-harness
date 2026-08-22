@@ -55,7 +55,9 @@ async function locDelta(ctx: PlanContext): Promise<Snapshot["loc"] | undefined> 
   let added = 0;
   let removed = 0;
   for (const line of out.split("\n").filter(Boolean)) {
-    const [a, r, path] = line.split("\t", 3);
+    const fields = line.split("\t");
+    if (fields.length !== 3) return undefined;
+    const [a, r, path] = fields;
     if (path === undefined) return undefined;
     if (a === "-" && r === "-") continue;
     const addedCount = gitInt(a);
@@ -87,10 +89,19 @@ function countDrift(ctx: PlanContext): number {
 /** Collect one metrics snapshot from git + repo state; `undefined` outside a repo. */
 export async function collectSnapshot(ctx: PlanContext): Promise<Snapshot | undefined> {
   if ((await gitRead(ctx, ["rev-parse", "--is-inside-work-tree"])) !== "true") return undefined;
-  const [ts = "", sha = ""] = (
-    (await gitRead(ctx, ["log", "-1", "--pretty=format:%cI%n%h"])) ?? ""
-  ).split("\n");
-  const branch = (await gitRead(ctx, ["rev-parse", "--abbrev-ref", "HEAD"])) || "HEAD";
+  const latest = await gitRead(ctx, ["log", "-1", "--pretty=format:%cI%n%h"]);
+  if (latest === undefined) return undefined;
+  const [ts, sha, ...extraIdentityFields] = latest.split("\n");
+  if (
+    ts === undefined ||
+    ts.length === 0 ||
+    sha === undefined ||
+    sha.length === 0 ||
+    extraIdentityFields.length !== 0
+  )
+    return undefined;
+  const branch = await gitRead(ctx, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (branch === undefined || branch.length === 0) return undefined;
   const branchList = await gitRead(ctx, [
     "for-each-ref",
     "--format=%(refname:short)",
@@ -100,10 +111,11 @@ export async function collectSnapshot(ctx: PlanContext): Promise<Snapshot | unde
     await gitRead(ctx, ["rev-list", "--count", "--since=7 days ago", "HEAD"]),
   );
   const loc = await locDelta(ctx);
-  if (commits7d === undefined || loc === undefined) return undefined;
+  if (branchList === undefined || commits7d === undefined || loc === undefined) return undefined;
   const inv = inventory(ctx.root, ctx.contextDir);
   const present = inv.filter((i) => i.present).length;
   const lsFiles = await gitRead(ctx, ["ls-files"]);
+  if (lsFiles === undefined) return undefined;
   // v9 trend metrics — wiring score (scorecard), per-turn ctx %, drift count, open
   // actions. Reuse the report's own scoring so trends match `aih report`.
   const scData = scorecardDigest(ctx)?.data as
@@ -121,12 +133,12 @@ export async function collectSnapshot(ctx: PlanContext): Promise<Snapshot | unde
     ts,
     sha,
     branch,
-    branches: (branchList ?? "").split("\n").filter(Boolean).length,
+    branches: branchList.split("\n").filter(Boolean).length,
     commits7d,
     loc,
     adoptionScore: inv.length > 0 ? Math.round((100 * present) / inv.length) : 0,
     contextTokens: scanContextBloat(ctx.root, ctx.contextDir).totalTokens,
-    sourceFiles: (lsFiles ?? "").split("\n").filter(Boolean).length,
+    sourceFiles: lsFiles.split("\n").filter(Boolean).length,
     wiringScore,
     perTurnPct,
     driftCount,

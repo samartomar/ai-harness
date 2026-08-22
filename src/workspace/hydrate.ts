@@ -32,7 +32,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isFullGitSha(value: string | undefined): boolean {
-  return value !== undefined && /^[0-9a-fA-F]{40}$/.test(value);
+  return value !== undefined && /^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/.test(value);
 }
 
 function normalizeSnapshotSha(raw: unknown): string | undefined {
@@ -40,7 +40,7 @@ function normalizeSnapshotSha(raw: unknown): string | undefined {
   if (sha === undefined) return undefined;
   if (!isFullGitSha(sha)) {
     throw new AihError(
-      "workspace snapshot sha must be a full 40-character hex commit id; regenerate the workspace lock",
+      "workspace snapshot sha must be a full 40- or 64-character hex commit id; regenerate the workspace lock",
       "AIH_WORKSPACE",
     );
   }

@@ -171,6 +171,36 @@ describe("workspace hydrate", () => {
     ]);
   });
 
+  it("hydrates from a canonical SHA-256 workspace lock SHA", async () => {
+    const sha = "a".repeat(64);
+    mkdirSync(join(parent, "ai-coding"), { recursive: true });
+    writeManifest(["ui"]);
+    writeFileSync(
+      join(parent, "ai-coding", "workspace-lock.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        createdAt: "2026-07-04T00:00:00.000Z",
+        repos: [
+          {
+            id: "ui",
+            path: "ui",
+            remote: "https://github.com/acme/ui.git",
+            sha,
+            dirty: false,
+            git: true,
+          },
+        ],
+      }),
+    );
+
+    const planned = await workspaceHydrateCommand.plan(ctx());
+
+    expect(execs(planned.actions).map((action) => action.argv)).toEqual([
+      ["git", "clone", "--no-checkout", "--", "https://github.com/acme/ui.git", "ui"],
+      ["git", "-C", join(parent, "ui"), "checkout", "--detach", sha],
+    ]);
+  });
+
   it("prefers committed workspace lock sha over a mutable manifest ref", async () => {
     mkdirSync(join(parent, "ai-coding"), { recursive: true });
     writeManifest([
