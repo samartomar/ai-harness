@@ -239,6 +239,18 @@ function sameFile(path: string, expected: FileIdentity): boolean {
   return current !== undefined && current.dev === expected.dev && current.ino === expected.ino;
 }
 
+export function adminBaselineEvidenceCacheSlotStateV1(
+  path: string,
+  stat: (path: string) => ReturnType<typeof lstatSync> = lstatSync,
+): "absent" | "invalid" | "regular" {
+  try {
+    const info = stat(path);
+    return info === undefined || info.isSymbolicLink() || !info.isFile() ? "invalid" : "regular";
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? "absent" : "invalid";
+  }
+}
+
 function releaseLock(path: string, identity: FileIdentity): boolean {
   try {
     if (!sameFile(path, identity)) return false;
@@ -441,12 +453,7 @@ export function commitAdminBaselineEvidenceCacheV1(
       if (lockDescriptor !== undefined) closeSync(lockDescriptor);
     }
     chmodSync(lockPath, 0o600);
-    try {
-      const existing = lstatSync(slot);
-      if (existing.isSymbolicLink() || !existing.isFile()) return false;
-    } catch {
-      // An absent slot is valid; the exclusive sidecar claim is already held.
-    }
+    if (adminBaselineEvidenceCacheSlotStateV1(slot) === "invalid") return false;
     temporary = join(directory, `.${randomBytes(12).toString("hex")}.tmp`);
     writeFileSync(temporary, bytes, { flag: "wx", mode: 0o600 });
     chmodSync(temporary, 0o600);
@@ -457,12 +464,7 @@ export function commitAdminBaselineEvidenceCacheV1(
       !sameFile(lockPath, lockIdentity)
     )
       return false;
-    try {
-      const live = lstatSync(slot);
-      if (live.isSymbolicLink() || !live.isFile()) return false;
-    } catch {
-      // Still absent: the held sidecar claim protects the replacement below.
-    }
+    if (adminBaselineEvidenceCacheSlotStateV1(slot) === "invalid") return false;
     renameSync(temporary, slot);
     temporary = undefined;
     if (!releaseLock(lockPath, lockIdentity)) return false;

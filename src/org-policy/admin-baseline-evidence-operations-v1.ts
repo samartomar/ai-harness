@@ -128,6 +128,16 @@ export function collectBoundedAdminBaselineEvidenceResponseV1(
 > {
   return new Promise((resolve, reject) => {
     let done = false;
+    let aborted = false;
+    const abortOnce = (): void => {
+      if (aborted) return;
+      aborted = true;
+      try {
+        abort();
+      } catch {
+        // Cleanup failure cannot change the acquisition's settled trust result.
+      }
+    };
     const unavailable = (): void => {
       if (done) return;
       done = true;
@@ -140,57 +150,49 @@ export function collectBoundedAdminBaselineEvidenceResponseV1(
         new AihError("admin baseline evidence: fresh transport", "AIH_ADMIN_BASELINE_EVIDENCE"),
       );
     };
+    const terminalFailure = (): void => {
+      if (done) return;
+      abortOnce();
+      failed();
+    };
     if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
       failed();
       return;
     }
     if (response.statusCode === 404 || response.statusCode === 410) {
-      try {
-        abort();
-      } catch {
-        // The exact unavailable sentinel remains safe after abort cleanup fails.
-      }
+      abortOnce();
       unavailable();
       return;
     }
     if (response.statusCode !== 200) {
-      try {
-        abort();
-      } catch {
-        // The failed acquisition remains terminal regardless of abort cleanup.
-      }
-      failed();
+      terminalFailure();
       return;
     }
     const chunks: Buffer[] = [];
     let size = 0;
     response.on("data", (...values) => {
+      if (done) return;
       const chunk = values[0];
       if (!Buffer.isBuffer(chunk)) {
-        failed();
+        terminalFailure();
         return;
       }
       size += chunk.length;
       if (size > maxBytes) {
-        try {
-          abort();
-        } catch {
-          // The failed acquisition remains terminal regardless of abort cleanup.
-        }
-        failed();
+        terminalFailure();
         return;
       }
       chunks.push(chunk);
     });
-    response.on("error", failed);
-    response.on("aborted", failed);
-    response.on("close", failed);
+    response.on("error", terminalFailure);
+    response.on("aborted", terminalFailure);
+    response.on("close", terminalFailure);
     response.on("end", () => {
+      if (done) return;
       if (size === 0) {
-        failed();
+        terminalFailure();
         return;
       }
-      if (done) return;
       done = true;
       resolve({ kind: "available", bytes: Buffer.concat(chunks) });
     });
