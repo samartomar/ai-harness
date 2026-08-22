@@ -200,6 +200,13 @@ describe("UpstreamObservationReceiptV1 public contract", () => {
       verifyUpstreamObservationV1({
         ...input,
         receipt: currentObservation,
+        verify: (() => Promise.resolve(true)) as never,
+      }),
+    ).toBeUndefined();
+    expect(
+      verifyUpstreamObservationV1({
+        ...input,
+        receipt: currentObservation,
         expectedInstalled: { ...currentObservation.installed, digest: `sha256:${"0".repeat(64)}` },
         verify: () => true,
       }),

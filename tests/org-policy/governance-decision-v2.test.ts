@@ -279,4 +279,38 @@ describe("GovernanceDecisionV2 public contract", () => {
       ).toBe(false);
     }
   });
+
+  it("accepts durable canonical provider identities without treating locator labels as digests", () => {
+    const parsed = GovernanceDecisionV2Schema.parse(decision());
+    const cases = [
+      { ...parsed.subject.source, commit: "a".repeat(64) },
+      {
+        type: "npm",
+        registry: "https://packages.example.test/npm/private/",
+        package: "review-tool",
+        version: "1.2.3+build.7",
+        integrity: `sha512-${Buffer.alloc(64).toString("base64")}`,
+      },
+      {
+        type: "pypi",
+        registry: "https://packages.example.test/pypi/simple/",
+        package: "review-tool",
+        version: "1!2.0rc1.post2",
+        filename: "review_tool+build-1.2.3.whl",
+        sha256: `sha256:${"c".repeat(64)}`,
+      },
+      {
+        type: "remote",
+        endpoint: "https://mcp.example.test/api/v1/servers/review",
+        contentDigest: `sha256:${"f".repeat(64)}`,
+      },
+    ];
+    for (const source of cases) {
+      expect(
+        GovernanceDecisionV2Schema.safeParse(
+          decision({ subject: { ...parsed.subject, source } }),
+        ).success,
+      ).toBe(true);
+    }
+  });
 });
