@@ -205,6 +205,29 @@ describe("admin baseline evidence resolution v1", () => {
     ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
     expect(timedOutRequestDestroyed).toBe(1);
 
+    let idleTimeout: (() => void) | undefined;
+    const fetchWithThrowingIdleTeardown = createAdminBaselineEvidenceHttpsFetchV1(() => ({
+      destroy() {
+        throw new Error("teardown failed");
+      },
+      end() {
+        return undefined;
+      },
+      on(event, listener) {
+        if (event === "timeout") idleTimeout = listener;
+        return this;
+      },
+    }));
+    const idleTimeoutResult = fetchWithThrowingIdleTeardown({
+      maxBytes: 8,
+      timeoutMs: 1,
+      url: "https://evidence.example.test/artifact",
+    });
+    void idleTimeoutResult.catch(() => undefined);
+    expect(idleTimeout).toBeTypeOf("function");
+    expect(() => idleTimeout?.()).not.toThrow();
+    await expect(idleTimeoutResult).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+
     let cacheReads = 0;
     await expect(
       resolveAdminBaselineEvidenceV1({
