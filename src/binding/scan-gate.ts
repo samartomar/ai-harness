@@ -6,6 +6,7 @@ import { z } from "zod";
 import { hashComponentTree } from "../baseline-evidence/hash.js";
 import type { Posture } from "../config/posture.js";
 import { AihError } from "../errors.js";
+import { readContainedRegularFile } from "../internals/contained-path.js";
 import type { Runner } from "../internals/proc.js";
 import { scanNativeMaliciousCode } from "../trust/detectors.js";
 import { isSafeGitRefName } from "../trust/fetch.js";
@@ -664,6 +665,11 @@ const MAX_SCAN_BYTES = 512 * 1024;
 const STRUCTURE_MAX_FILE_BYTES = 50 * 1024 * 1024;
 const STRUCTURE_MAX_FILES = 20_000;
 const MAX_FINDINGS_PER_DIMENSION = 50;
+
+function readContainedTextSafe(root: string, rel: string): string | undefined {
+  const read = readContainedRegularFile(root, rel, { maxBytes: MAX_SCAN_BYTES });
+  return read.state === "present" ? read.contents.toString("utf8") : undefined;
+}
 
 const BINARY_EXTENSIONS = new Set([
   ".a",
@@ -1794,7 +1800,7 @@ export function runFastScanGate(
   // seeded-closure reclassifier remains inert without a closure, while the
   // U+0130 occurrence check applies to every gate mode.
   const typographyReader = (rel: string): string | undefined =>
-    readTextSafe(join(source.treePath, rel));
+    readContainedTextSafe(source.treePath, rel);
   // Phase-2 (§C.4) deep-dimension fold — THE one integration seam. Pre-computed deep
   // dimensions (from `scan-cache-tiers.ts`) are appended to the fast dimensions so the
   // SAME `decide()`/coverage path handles both. Absent ⇒ the SAME array reference is

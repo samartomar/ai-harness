@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -658,6 +658,72 @@ describe("fast scan disposition (D12 gate + posture-graded coverage)", () => {
       expect(
         disposition.findings.find((finding) => finding.code === "trust.visible-unicode"),
       ).not.toHaveProperty("accepted");
+    },
+  );
+
+  it.each(["parent traversal", "symlink"])(
+    "fails closed when a deep visible-unicode path escapes the checkout by %s",
+    async (escapeKind) => {
+      const root = join(repoDir, `deep-visible-unicode-${escapeKind.replace(" ", "-")}`);
+      initGitRepo(root, { "src/safe.ts": "export const safe = true;\n" });
+      const resolved = await resolveGitSource(
+        { repository: root, ref: "HEAD" },
+        { runner: defaultRunner, cacheHome },
+      );
+      const outsideName = `outside-${escapeKind.replace(" ", "-")}.md`;
+      const outsidePath = join(resolved.treePath, "..", outsideName);
+      const outsideText = "Turkish İ prose.\n";
+      writeFileSync(outsidePath, outsideText);
+      const path =
+        escapeKind === "parent traversal" ? `../${outsideName}` : "src/linked-outside.md";
+      if (escapeKind === "symlink") {
+        symlinkSync(outsidePath, join(resolved.treePath, path), "file");
+      }
+      try {
+        const contentSha256 = createHash("sha256").update(outsideText, "utf8").digest("hex");
+        const disposition = runFastScanGate(
+          scannableFromGit(resolved),
+          {
+            posture: "vibe",
+            allowIncompleteAtVibe: true,
+            acceptedFindings: [
+              {
+                repository: "test/fixture",
+                code: "trust.visible-unicode",
+                path,
+                fileSha256: contentSha256,
+              },
+            ],
+            deepDimensionReports: [
+              {
+                dimension: "deep-visible-unicode",
+                status: "produced",
+                findings: [
+                  {
+                    code: "trust.visible-unicode",
+                    severity: "medium",
+                    detail: "crafted external visible Unicode",
+                    coverage: "complete",
+                    path,
+                    contentSha256,
+                  },
+                ],
+              },
+            ],
+          },
+          { cacheHome },
+        );
+
+        expect(disposition.verdict).toBe("block");
+        const finding = disposition.findings.find(
+          (candidate) => candidate.code === "trust.visible-unicode",
+        );
+        expect(finding).toMatchObject({ severity: "medium", path });
+        expect(finding).not.toHaveProperty("advisory");
+        expect(finding).not.toHaveProperty("accepted");
+      } finally {
+        rmSync(outsidePath, { force: true });
+      }
     },
   );
 });
