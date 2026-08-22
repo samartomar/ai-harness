@@ -1055,6 +1055,25 @@ describe("governed candidate projection", () => {
     ).toBe(true);
   });
 
+  it("rejects legacy approvals and V1 decisions from V3 authority receipts", () => {
+    const v3 = {
+      format: "aih-policy-authority-receipt",
+      version: 3,
+      issuerRepository: "acme/governance",
+      issuedAt: "2026-08-03T00:00:00+00:00",
+      expiresAt: "2026-08-20T00:00:00+00:00",
+      targets: ["claude"],
+      trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+      decisions: [],
+      decisionRevocations: [],
+    };
+    expect(PolicyAuthorityReceiptSchema.safeParse(v3).success).toBe(true);
+    expect(PolicyAuthorityReceiptSchema.safeParse({ ...v3, approvals: [] }).success).toBe(false);
+    expect(
+      PolicyAuthorityReceiptSchema.safeParse({ ...v3, decisions: [governanceDecision()] }).success,
+    ).toBe(false);
+  });
+
   it("rejects malformed or non-authoritative v2 decision receipt relationships", () => {
     const decision = governanceDecision();
     const revocation = {
