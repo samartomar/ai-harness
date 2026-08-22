@@ -1,6 +1,6 @@
 import { mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   regenerateSuperpowersScanAcceptance,
@@ -9,7 +9,7 @@ import {
   ScanAcceptanceRegenerateError,
 } from "../../src/binding/scan-acceptance-regenerate.js";
 
-const checkout = join(tmpdir(), "vendor", "superpowers");
+const checkout = resolve(tmpdir(), "vendor", "superpowers");
 const clean = {
   checkout: {
     repository: "obra/superpowers" as const,
