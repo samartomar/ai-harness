@@ -131,7 +131,7 @@ export type DecisionBlocker = PolicyDecisionBlocker | CandidateDecisionBlocker;
 type Governance = NonNullable<OrgPolicy["governance"]>;
 type Candidate = Governance["catalog"]["reviewed"][number];
 type Approval = Governance["authority"]["approvals"][number];
-type EvidenceRecord = PolicyAuthorityReceipt["evidence"][number];
+type EvidenceRecord = Extract<PolicyAuthorityReceipt, { version: 1 | 2 }>["evidence"][number];
 type Decision = GovernanceDecisionV1;
 
 /** The immutable, action-significant identity of an AIH-shipped reviewed control. */
@@ -616,7 +616,7 @@ function receiptEvidence(
   candidate: Candidate,
   authority: VerifiedPolicyAuthority | undefined,
 ): EvidenceRecord | undefined {
-  if (authority === undefined) return undefined;
+  if (authority === undefined || authority.receipt.version === 3) return undefined;
   const sourceDigest = candidateIdentityDigest(candidate);
   const matches = authority.receipt.evidence.filter(
     (record) => record.id === candidate.evidence.record,
@@ -648,7 +648,11 @@ function matchingApproval(
   code?: ResolutionBlockCode;
   revocation?: { issuer: string; revokedAt: string; reason: string };
 } {
-  if (authority === undefined || !isVerifiedPolicyAuthority(authority)) {
+  if (
+    authority === undefined ||
+    !isVerifiedPolicyAuthority(authority) ||
+    authority.receipt.version === 3
+  ) {
     return { code: "authority-receipt-unverified" };
   }
   const sourceDigest = candidateIdentityDigest(candidate);

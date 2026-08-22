@@ -24,6 +24,8 @@ export * from "./internals/plan.js";
 export * from "./internals/proc.js";
 export * from "./internals/render.js";
 export * from "./internals/verify.js";
+export * from "./org-policy/governance-decision-v2.js";
+export * from "./org-policy/upstream-observation-receipt-v1.js";
 export * from "./platform/base.js";
 export * from "./platform/detect.js";
 export * from "./platform/parse.js";

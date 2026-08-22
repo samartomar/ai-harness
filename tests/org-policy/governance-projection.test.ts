@@ -42,6 +42,7 @@ import {
   orgPolicyEffectiveCheck,
   orgPolicyEffectiveDigest,
 } from "../../src/org-policy/evaluate.js";
+import { governanceDecisionDigestV2 } from "../../src/org-policy/governance-decision-v2.js";
 import {
   authoritySuffix,
   orgPolicyHookReceiptState,
@@ -368,6 +369,47 @@ function authorityReceiptV2(overrides: Record<string, unknown> = {}) {
     revocations: [],
     decisions: [],
     decisionRevocations: [],
+    ...overrides,
+  };
+}
+
+function governanceDecisionV2(overrides: Record<string, unknown> = {}) {
+  return {
+    format: "aih-governance-decision",
+    version: 2,
+    id: "decision-platform-tool",
+    qualification: "organization-qualified",
+    subject: {
+      kind: "tool",
+      id: "platform-review-tool",
+      source: {
+        type: "github",
+        repository: "acme/review-tool",
+        commit: "a".repeat(40),
+        path: "tool.json",
+      },
+      sourceDigest: `sha256:${"a".repeat(64)}`,
+      subjectDigest: `sha256:${"b".repeat(64)}`,
+    },
+    targets: ["claude"],
+    allowedEffects: ["configure"],
+    policy: { id: "platform-policy", version: "2026.08", digest: `sha256:${"c".repeat(64)}` },
+    control: { id: "review-control", digest: `sha256:${"d".repeat(64)}` },
+    evidence: {
+      id: "scan-record",
+      digest: `sha256:${"e".repeat(64)}`,
+      attestor: "scanner-service",
+    },
+    issuer: "platform-security",
+    actor: "security-admin",
+    reason: "The exact pinned subject passed the reviewed control.",
+    issuedAt: "2026-08-01T00:00:00+00:00",
+    notBefore: "2026-08-01T00:00:00+00:00",
+    expiresAt: "2026-08-10T00:00:00+00:00",
+    disposition: "approved",
+    acceptedFindings: [],
+    acceptedGaps: [],
+    conditions: [],
     ...overrides,
   };
 }
@@ -1056,6 +1098,7 @@ describe("governed candidate projection", () => {
   });
 
   it("rejects legacy approvals and V1 decisions from V3 authority receipts", () => {
+    const decision = governanceDecisionV2();
     const v3 = {
       format: "aih-policy-authority-receipt",
       version: 3,
@@ -1064,7 +1107,7 @@ describe("governed candidate projection", () => {
       expiresAt: "2026-08-20T00:00:00+00:00",
       targets: ["claude"],
       trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
-      decisions: [],
+      decisions: [decision],
       decisionRevocations: [],
     };
     expect(PolicyAuthorityReceiptSchema.safeParse(v3).success).toBe(true);
@@ -1072,6 +1115,25 @@ describe("governed candidate projection", () => {
     expect(
       PolicyAuthorityReceiptSchema.safeParse({ ...v3, decisions: [governanceDecision()] }).success,
     ).toBe(false);
+    for (const invalid of [
+      { ...v3, decisions: [{ ...decision, targets: ["codex"] }] },
+      { ...v3, decisions: [{ ...decision, issuer: "other-issuer" }] },
+      {
+        ...v3,
+        decisionRevocations: [
+          {
+            format: "aih-governance-decision-revocation",
+            version: 2,
+            decisionDigest: governanceDecisionDigestV2(decision as never),
+            issuer: "other-issuer",
+            revokedAt: "2026-08-02T00:00:00+00:00",
+            reason: "Withdrawn.",
+          },
+        ],
+      },
+    ]) {
+      expect(PolicyAuthorityReceiptSchema.safeParse(invalid).success).toBe(false);
+    }
   });
 
   it("rejects malformed or non-authoritative v2 decision receipt relationships", () => {

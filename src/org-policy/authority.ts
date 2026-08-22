@@ -12,6 +12,12 @@ import {
   GovernanceDecisionV1Schema,
 } from "./governance-decision-v1.js";
 import {
+  GovernanceDecisionRevocationV2Schema,
+  GovernanceDecisionTargetV2Schema,
+  GovernanceDecisionV2Schema,
+  governanceDecisionDigestV2,
+} from "./governance-decision-v2.js";
+import {
   CandidateSourceSchema,
   PolicyApprovalSchema,
   PolicyDangerCodeSchema,
@@ -89,6 +95,10 @@ function sortedUniqueBy<T>(items: readonly T[], id: (item: T) => string): boolea
   );
 }
 
+function sortedUniqueByString(items: readonly string[]): boolean {
+  return sortedUniqueBy(items, (item) => item);
+}
+
 const ReceiptDecisionsV2Schema = z
   .array(GovernanceDecisionV1Schema)
   .max(64)
@@ -102,6 +112,29 @@ const ReceiptDecisionRevocationsV2Schema = z
   .refine(
     (revocations) => sortedUniqueBy(revocations, (revocation) => revocation.decision),
     "decisionRevocations must be ordinal-sorted and unique by decision",
+  );
+
+const ReceiptDecisionsV3Schema = z
+  .array(GovernanceDecisionV2Schema)
+  .max(64)
+  .superRefine((decisions, ctx) => {
+    if (!sortedUniqueBy(decisions, (decision) => decision.id)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "decisions must be ordinal-sorted and unique by id",
+      });
+    }
+    const digests = decisions.map(governanceDecisionDigestV2);
+    if (new Set(digests).size !== digests.length) {
+      ctx.addIssue({ code: "custom", message: "decisions must be unique by immutable digest" });
+    }
+  });
+const ReceiptDecisionRevocationsV3Schema = z
+  .array(GovernanceDecisionRevocationV2Schema)
+  .max(64)
+  .refine(
+    (revocations) => sortedUniqueBy(revocations, (revocation) => revocation.decisionDigest),
+    "decisionRevocations must be ordinal-sorted and unique by immutable decision digest",
   );
 
 function receiptBaseIssues(
@@ -174,7 +207,7 @@ const PolicyAuthorityReceiptV2Schema = z
   .superRefine((receipt, ctx) => {
     receiptBaseIssues(receipt, ctx);
     const trustedIssuers = new Set(receipt.trustedIssuers.map((issuer) => issuer.id));
-    const receiptTargets = new Set(receipt.targets);
+    const receiptTargets = new Set<string>(receipt.targets);
     const receiptIssuedAt = Date.parse(receipt.issuedAt);
     const decisions = new Map(receipt.decisions.map((decision) => [decision.id, decision]));
     const approvalCandidates = new Set(receipt.approvals.map((approval) => approval.candidate));
@@ -229,10 +262,85 @@ const PolicyAuthorityReceiptV2Schema = z
     }
   });
 
+/**
+ * V3 is deliberately decision-only: it cannot carry V1/V2 approvals,
+ * revocations, or evidence. A verified attestation is still required before
+ * this parsed data becomes a usable authority object.
+ */
+const PolicyAuthorityReceiptV3Schema = z
+  .object({
+    format: z.literal("aih-policy-authority-receipt"),
+    version: z.literal(3),
+    issuerRepository: Repository,
+    issuedAt: GovernanceDecisionTimestampSchema,
+    expiresAt: GovernanceDecisionTimestampSchema,
+    trustedIssuers: z
+      .array(ReceiptIssuerSchema)
+      .min(1)
+      .max(64)
+      .refine(
+        (issuers) => sortedUniqueBy(issuers, (issuer) => issuer.id),
+        "trustedIssuers must be ordinal-sorted and unique by id",
+      ),
+    targets: z
+      .array(GovernanceDecisionTargetV2Schema)
+      .min(1)
+      .max(64)
+      .refine(sortedUniqueByString, "targets must be ordinal-sorted and unique"),
+    decisions: ReceiptDecisionsV3Schema,
+    decisionRevocations: ReceiptDecisionRevocationsV3Schema,
+  })
+  .strict()
+  .superRefine((receipt, ctx) => {
+    const issuedAt = Date.parse(receipt.issuedAt);
+    const expiresAt = Date.parse(receipt.expiresAt);
+    if (expiresAt <= issuedAt) {
+      ctx.addIssue({ code: "custom", message: "receipt expiresAt must be after issuedAt" });
+    }
+    if (expiresAt - issuedAt > 90 * 24 * 60 * 60 * 1000) {
+      ctx.addIssue({ code: "custom", message: "receipt lifetime must not exceed 90 days" });
+    }
+    const trustedIssuers = new Set(receipt.trustedIssuers.map((issuer) => issuer.id));
+    const receiptTargets = new Set<string>(receipt.targets);
+    const decisions = new Map(
+      receipt.decisions.map((decision) => [governanceDecisionDigestV2(decision), decision]),
+    );
+    for (const decision of receipt.decisions) {
+      const digest = governanceDecisionDigestV2(decision);
+      if (!trustedIssuers.has(decision.issuer)) {
+        ctx.addIssue({ code: "custom", message: `decision ${digest} issuer is not trusted` });
+      }
+      if (decision.targets.some((target) => !receiptTargets.has(target))) {
+        ctx.addIssue({ code: "custom", message: `decision ${digest} exceeds receipt targets` });
+      }
+      if (Date.parse(decision.issuedAt) > issuedAt || Date.parse(decision.expiresAt) > expiresAt) {
+        ctx.addIssue({ code: "custom", message: `decision ${digest} is outside receipt validity` });
+      }
+    }
+    for (const revocation of receipt.decisionRevocations) {
+      const decision = decisions.get(revocation.decisionDigest);
+      if (decision === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          message: `decision revocation targets unknown ${revocation.decisionDigest}`,
+        });
+        continue;
+      }
+      const revokedAt = Date.parse(revocation.revokedAt);
+      if (revocation.issuer !== decision.issuer) {
+        ctx.addIssue({ code: "custom", message: "decision revocation issuer mismatches decision" });
+      }
+      if (revokedAt < Date.parse(decision.issuedAt) || revokedAt > issuedAt) {
+        ctx.addIssue({ code: "custom", message: "decision revocation time is invalid" });
+      }
+    }
+  });
+
 /** Strict external authority receipt contract; policy JSON cannot supply these facts. */
 export const PolicyAuthorityReceiptSchema = z.discriminatedUnion("version", [
   PolicyAuthorityReceiptV1Schema,
   PolicyAuthorityReceiptV2Schema,
+  PolicyAuthorityReceiptV3Schema,
 ]);
 
 export type PolicyAuthorityReceipt = z.infer<typeof PolicyAuthorityReceiptSchema>;
@@ -251,6 +359,8 @@ export function policyAuthorityReceiptLeafPaths(): string[] {
 
 const RECEIPT_TOP_LEVEL_CONSUMERS: Readonly<Record<string, string>> = {
   "decisionRevocations.*.decision": "effective resolver: exact signed decision revocation lookup",
+  "decisionRevocations.*.decisionDigest":
+    "V3 downstream resolver: immutable decision revocation lookup",
   "decisionRevocations.*.format": "receipt schema: fixed signed revocation artifact protocol",
   "decisionRevocations.*.issuer": "effective resolver: exact revoking issuer binding",
   "decisionRevocations.*.reason": "signed revocation audit-only record; never authorizes an effect",
@@ -259,10 +369,16 @@ const RECEIPT_TOP_LEVEL_CONSUMERS: Readonly<Record<string, string>> = {
   "decisions.*.acceptedFindings.*": "effective resolver: exact accepted finding coverage",
   "decisions.*.acceptedGaps.*":
     "effective resolver: exact accepted named-gap coverage; empty until a consumer registers a waivable gap class",
+  "decisions.*.allowedEffects.*": "V3 downstream resolver: exact allowed effect binding",
   "decisions.*.actor": "public-safe effective summary: signed decision actor audit binding",
   "decisions.*.candidate": "effective resolver: exact governed candidate binding",
+  "decisions.*.control.digest": "V3 downstream resolver: exact reviewed control binding",
+  "decisions.*.control.id": "V3 downstream resolver: reviewed control identity binding",
   "decisions.*.conditions.*": "public-safe effective summary: signed condition audit binding",
   "decisions.*.disposition": "effective resolver: signed disposition gate",
+  "decisions.*.evidence.attestor": "V3 downstream resolver: attributable evidence attestor binding",
+  "decisions.*.evidence.digest": "V3 downstream resolver: exact evidence digest binding",
+  "decisions.*.evidence.id": "V3 downstream resolver: evidence record identity binding",
   "decisions.*.effects.*": "effective resolver: exact registered effect-scope binding",
   "decisions.*.evidenceDigest": "effective resolver: exact verified evidence binding",
   "decisions.*.expiresAt": "effective resolver: signed decision expiry gate",
@@ -274,10 +390,44 @@ const RECEIPT_TOP_LEVEL_CONSUMERS: Readonly<Record<string, string>> = {
   "decisions.*.kind": "effective resolver: exact governed kind binding",
   "decisions.*.notBefore": "effective resolver: signed decision not-before gate",
   "decisions.*.policyVersion": "effective resolver: exact policy-version binding",
+  "decisions.*.policy.digest": "V3 downstream resolver: exact policy binding",
+  "decisions.*.policy.id": "V3 downstream resolver: policy identity binding",
+  "decisions.*.policy.version": "V3 downstream resolver: policy version binding",
+  "decisions.*.qualification":
+    "V3 downstream resolver: approval provenance only; never unqualified",
   "decisions.*.reason": "signed decision audit-only record; never authorizes an effect",
   "decisions.*.reviewBy": "effective resolver: accepted-risk review deadline gate",
   "decisions.*.reviewedControlDigest": "effective resolver: exact reviewed-control binding",
   "decisions.*.sourceDigest": "effective resolver: exact immutable source binding",
+  "decisions.*.subject.id": "V3 downstream resolver: exact subject identity binding",
+  "decisions.*.subject.kind": "V3 downstream resolver: exact subject kind binding",
+  "decisions.*.subject.source.commit": "V3 downstream resolver: immutable git commit binding",
+  "decisions.*.subject.source.contentDigest":
+    "V3 downstream resolver: immutable remote content binding",
+  "decisions.*.subject.source.filename": "V3 downstream resolver: immutable PyPI filename binding",
+  "decisions.*.subject.source.indexDigest": "V3 downstream resolver: immutable OCI index binding",
+  "decisions.*.subject.source.integrity": "V3 downstream resolver: immutable npm integrity binding",
+  "decisions.*.subject.source.manifestDigest":
+    "V3 downstream resolver: immutable OCI platform manifest binding",
+  "decisions.*.subject.source.origin": "V3 downstream resolver: exact remote origin binding",
+  "decisions.*.subject.source.package": "V3 downstream resolver: exact npm package binding",
+  "decisions.*.subject.source.path": "V3 downstream resolver: immutable git path binding",
+  "decisions.*.subject.source.platform.architecture":
+    "V3 downstream resolver: OCI platform architecture binding",
+  "decisions.*.subject.source.platform.os": "V3 downstream resolver: OCI platform OS binding",
+  "decisions.*.subject.source.platform.variant":
+    "V3 downstream resolver: OCI platform variant binding",
+  "decisions.*.subject.source.registry": "V3 downstream resolver: exact npm registry binding",
+  "decisions.*.subject.source.release": "V3 downstream resolver: exact AIH release binding",
+  "decisions.*.subject.source.repository":
+    "V3 downstream resolver: immutable git repository binding",
+  "decisions.*.subject.source.revision": "V3 downstream resolver: immutable AIH revision binding",
+  "decisions.*.subject.source.sha256": "V3 downstream resolver: immutable PyPI artifact binding",
+  "decisions.*.subject.source.type": "V3 downstream resolver: immutable source variant binding",
+  "decisions.*.subject.source.version": "V3 downstream resolver: exact npm version binding",
+  "decisions.*.subject.sourceDigest": "V3 downstream resolver: exact source digest binding",
+  "decisions.*.subject.subjectDigest":
+    "V3 downstream resolver: exact canonical subject digest binding",
   "decisions.*.targets.*": "effective resolver: exact requested-target scope binding",
   "decisions.*.version": "receipt schema: fixed signed decision artifact protocol",
   expiresAt: "authority verifier: receipt validity and 90-day lifetime",
