@@ -123,26 +123,23 @@ function ownData(record: Record<string, unknown>, key: string): unknown {
   return descriptor.value;
 }
 
-function boundedSourceIds(value: unknown): readonly string[] {
+function exactSourceIds(value: unknown): readonly ["ecc", "superpowers"] {
   if (
     isProxy(value) ||
     !Array.isArray(value) ||
     Object.getPrototypeOf(value) !== Array.prototype ||
-    value.length === 0 ||
-    value.length > 16
+    value.length !== 2
   )
     invalidBaselineEvidenceWorkbenchProvenance();
-  const sourceIds: string[] = [];
-  for (let index = 0; index < value.length; index += 1) {
+  const sourceIds: ["ecc", "superpowers"] = ["ecc", "superpowers"];
+  for (let index = 0; index < sourceIds.length; index += 1) {
     const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
     if (
       descriptor === undefined ||
       !("value" in descriptor) ||
-      typeof descriptor.value !== "string" ||
-      !/^[a-z][a-z0-9-]{0,63}$/.test(descriptor.value)
+      descriptor.value !== sourceIds[index]
     )
       invalidBaselineEvidenceWorkbenchProvenance();
-    sourceIds.push(descriptor.value);
   }
   return Object.freeze(sourceIds);
 }
@@ -163,14 +160,20 @@ function baselineEvidenceWorkbenchProvenance(
   const digest = ownData(record, "digest");
   const resolvedAt = ownData(record, "resolvedAt");
   const schemaVersion = ownData(record, "schemaVersion");
-  const sourceIds = boundedSourceIds(ownData(record, "sourceIds"));
+  const sourceIds = exactSourceIds(ownData(record, "sourceIds"));
   const tier = ownData(record, "tier");
   const validAgeSeconds =
-    ageSeconds === null
-      ? null
-      : typeof ageSeconds === "number" && Number.isSafeInteger(ageSeconds) && ageSeconds >= 0
-        ? ageSeconds
-        : invalidBaselineEvidenceWorkbenchProvenance();
+    tier === "fresh" && ageSeconds === 0
+      ? 0
+      : tier === "packaged" && ageSeconds === null
+        ? null
+        : tier === "last-downloaded" &&
+            typeof ageSeconds === "number" &&
+            Number.isSafeInteger(ageSeconds) &&
+            ageSeconds >= 0 &&
+            ageSeconds <= 31_536_000
+          ? ageSeconds
+          : invalidBaselineEvidenceWorkbenchProvenance();
   const validDigest =
     typeof digest === "string" && /^[a-f0-9]{64}$/.test(digest)
       ? digest
@@ -183,10 +186,7 @@ function baselineEvidenceWorkbenchProvenance(
       ? resolvedAt
       : invalidBaselineEvidenceWorkbenchProvenance();
   const validSchemaVersion =
-    typeof schemaVersion === "number" &&
-    Number.isSafeInteger(schemaVersion) &&
-    schemaVersion >= 1 &&
-    schemaVersion <= 1024
+    typeof schemaVersion === "number" && Number.isSafeInteger(schemaVersion) && schemaVersion === 1
       ? schemaVersion
       : invalidBaselineEvidenceWorkbenchProvenance();
   const validTier =

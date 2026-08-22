@@ -48,7 +48,7 @@ describe("policy workbench data embedding", () => {
       resolvedAt: "2026-08-21T00:00:00Z",
       schemaVersion: 1,
       sourceIds: ["ecc", "superpowers"],
-      tier: "fresh",
+      tier: "last-downloaded",
     } as never);
     const html = policyStudioHtml(model);
     expect(model.baselineEvidenceProvenance).toEqual({
@@ -57,7 +57,7 @@ describe("policy workbench data embedding", () => {
       resolvedAt: "2026-08-21T00:00:00Z",
       schemaVersion: 1,
       sourceIds: ["ecc", "superpowers"],
-      tier: "fresh",
+      tier: "last-downloaded",
     });
     expect(html).toContain("Baseline evidence");
     expect(html).not.toContain("leak.example.test");

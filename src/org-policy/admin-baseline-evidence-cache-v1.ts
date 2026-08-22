@@ -1,13 +1,17 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
   chmodSync,
+  closeSync,
+  fstatSync,
   lstatSync,
   mkdirSync,
+  openSync,
   realpathSync,
   renameSync,
   rmSync,
   unlinkSync,
   writeFileSync,
+  writeSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isProxy } from "node:util/types";
@@ -425,13 +429,18 @@ export function commitAdminBaselineEvidenceCacheV1(
     const cacheIdentity = directoryIdentity(directory);
     if (rootIdentity === undefined || cacheIdentity === undefined) return false;
     lockPath = `${slot}.lock`;
-    writeFileSync(lockPath, Buffer.from("AIH_ADMIN_BASELINE_EVIDENCE_CACHE_LOCK_V1\n"), {
-      flag: "wx",
-      mode: 0o600,
-    });
+    let lockDescriptor: number | undefined;
+    try {
+      lockDescriptor = openSync(lockPath, "wx", 0o600);
+      const lockInfo = fstatSync(lockDescriptor);
+      if (!lockInfo.isFile()) return false;
+      lockIdentity = { dev: lockInfo.dev, ino: lockInfo.ino };
+      const lockBytes = Buffer.from("AIH_ADMIN_BASELINE_EVIDENCE_CACHE_LOCK_V1\n");
+      if (writeSync(lockDescriptor, lockBytes) !== lockBytes.length) return false;
+    } finally {
+      if (lockDescriptor !== undefined) closeSync(lockDescriptor);
+    }
     chmodSync(lockPath, 0o600);
-    lockIdentity = fileIdentity(lockPath);
-    if (lockIdentity === undefined) return false;
     try {
       const existing = lstatSync(slot);
       if (existing.isSymbolicLink() || !existing.isFile()) return false;

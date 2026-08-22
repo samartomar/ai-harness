@@ -98,7 +98,20 @@ export interface ResolveOperationalAdminBaselineEvidenceV1Input {
 type BoundedHttpsResponseV1 = {
   readonly statusCode?: number;
   on(event: string, listener: (...values: unknown[]) => void): unknown;
-  resume(): unknown;
+};
+
+type AdminBaselineEvidenceHttpsRequestV1 = (
+  target: URL,
+  options: {
+    readonly headers: { readonly accept: string; readonly "user-agent": string };
+    readonly method: "GET";
+    readonly timeout: number;
+  },
+  onResponse: (response: BoundedHttpsResponseV1) => void,
+) => {
+  destroy(): unknown;
+  end(): unknown;
+  on(event: "error" | "timeout", listener: () => void): unknown;
 };
 
 /**
@@ -132,12 +145,20 @@ export function collectBoundedAdminBaselineEvidenceResponseV1(
       return;
     }
     if (response.statusCode === 404 || response.statusCode === 410) {
-      response.resume();
+      try {
+        abort();
+      } catch {
+        // The exact unavailable sentinel remains safe after abort cleanup fails.
+      }
       unavailable();
       return;
     }
     if (response.statusCode !== 200) {
-      response.resume();
+      try {
+        abort();
+      } catch {
+        // The failed acquisition remains terminal regardless of abort cleanup.
+      }
       failed();
       return;
     }
@@ -177,75 +198,98 @@ export function collectBoundedAdminBaselineEvidenceResponseV1(
 }
 
 /** Bounded HTTPS acquisition with no redirect, credential, retry, or fallback behavior. */
-export const defaultAdminBaselineEvidenceHttpsFetchV1: AdminBaselineEvidenceHttpsFetchV1 = (
-  input,
-) =>
-  new Promise((resolve, reject) => {
-    let done = false;
-    const finish = (
-      result:
-        | { readonly kind: "available"; readonly bytes: Buffer }
-        | { readonly kind: "unavailable" },
-    ): void => {
-      if (done) return;
-      done = true;
-      resolve(result);
-    };
-    const failed = (): void => {
-      if (done) return;
-      done = true;
-      reject(
-        new AihError("admin baseline evidence: fresh transport", "AIH_ADMIN_BASELINE_EVIDENCE"),
-      );
-    };
-    let target: URL;
-    try {
-      if (
-        typeof input.url !== "string" ||
-        !Number.isSafeInteger(input.maxBytes) ||
-        input.maxBytes <= 0 ||
-        !Number.isSafeInteger(input.timeoutMs) ||
-        input.timeoutMs <= 0
-      ) {
+export function createAdminBaselineEvidenceHttpsFetchV1(
+  request: AdminBaselineEvidenceHttpsRequestV1,
+): AdminBaselineEvidenceHttpsFetchV1 {
+  return (input) =>
+    new Promise((resolve, reject) => {
+      let done = false;
+      let deadline: NodeJS.Timeout | undefined;
+      const clearDeadline = (): void => {
+        if (deadline === undefined) return;
+        clearTimeout(deadline);
+        deadline = undefined;
+      };
+      const finish = (
+        result:
+          | { readonly kind: "available"; readonly bytes: Buffer }
+          | { readonly kind: "unavailable" },
+      ): void => {
+        if (done) return;
+        done = true;
+        clearDeadline();
+        resolve(result);
+      };
+      const failed = (): void => {
+        if (done) return;
+        done = true;
+        clearDeadline();
+        reject(
+          new AihError("admin baseline evidence: fresh transport", "AIH_ADMIN_BASELINE_EVIDENCE"),
+        );
+      };
+      let target: URL;
+      try {
+        if (
+          typeof input.url !== "string" ||
+          !Number.isSafeInteger(input.maxBytes) ||
+          input.maxBytes <= 0 ||
+          !Number.isSafeInteger(input.timeoutMs) ||
+          input.timeoutMs <= 0
+        ) {
+          failed();
+          return;
+        }
+        target = new URL(input.url);
+      } catch {
         failed();
         return;
       }
-      target = new URL(input.url);
-    } catch {
-      failed();
-      return;
-    }
-    if (target.protocol !== "https:" || target.username !== "" || target.password !== "") {
-      failed();
-      return;
-    }
-    try {
-      const call = httpsRequest(
-        target,
-        {
-          headers: {
-            accept: "application/octet-stream",
-            "user-agent": "aih-admin-baseline-evidence",
-          },
-          method: "GET",
-          timeout: input.timeoutMs,
-        },
-        (response) => {
-          void collectBoundedAdminBaselineEvidenceResponseV1(response, input.maxBytes, () =>
-            call.destroy(),
-          ).then(finish, failed);
-        },
-      );
-      call.on("error", failed);
-      call.on("timeout", () => {
-        call.destroy();
+      if (target.protocol !== "https:" || target.username !== "" || target.password !== "") {
         failed();
-      });
-      call.end();
-    } catch {
-      failed();
-    }
-  });
+        return;
+      }
+      try {
+        let call: ReturnType<AdminBaselineEvidenceHttpsRequestV1> | undefined;
+        deadline = setTimeout(() => {
+          try {
+            call?.destroy();
+          } catch {
+            // The deadline failure remains terminal if socket teardown throws.
+          }
+          failed();
+        }, input.timeoutMs);
+        call = request(
+          target,
+          {
+            headers: {
+              accept: "application/octet-stream",
+              "user-agent": "aih-admin-baseline-evidence",
+            },
+            method: "GET",
+            timeout: input.timeoutMs,
+          },
+          (response) => {
+            void collectBoundedAdminBaselineEvidenceResponseV1(response, input.maxBytes, () =>
+              call?.destroy(),
+            ).then(finish, failed);
+          },
+        );
+        call.on("error", failed);
+        call.on("timeout", () => {
+          call.destroy();
+          failed();
+        });
+        call.end();
+      } catch {
+        failed();
+      }
+    });
+}
+
+export const defaultAdminBaselineEvidenceHttpsFetchV1 = createAdminBaselineEvidenceHttpsFetchV1(
+  httpsRequest as unknown as AdminBaselineEvidenceHttpsRequestV1,
+);
 
 /**
  * Closed projection of `gh attestation verify --format json` after the exact
