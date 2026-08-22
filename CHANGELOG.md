@@ -13,12 +13,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   credential-free HTTPS locators, publisher repository/workflow/issuer/ref/environment identity,
   the supported ECC and Superpowers source commits, schema bounds, and cache age. The applied
   administrator-root route resolves fresh, reverified last-downloaded, then packaged evidence;
-  only an exact unavailable result advances to the next tier, while malformed, stale, mismatched,
-  untrusted, partial, or uncommitted evidence is terminal. Fresh and cached subjects are verified
-  locally and through an exact `gh attestation verify` policy before a contained owner-only cache
-  commit or Workbench render. Rootless and non-applying routes gain no network, process, or cache
-  effect, and the Workbench receives only bounded tier/source/schema/digest/age/time provenance —
-  never locators, paths, credentials, signatures, or raw attestations. (#814)
+  only first-artifact HTTP 404 or 410 is unavailable and advances to the next tier. DNS, TLS,
+  connection, request, timeout, redirect, and other non-200 statuses are terminal so origin
+  reachability cannot force cached or packaged evidence; malformed, stale, mismatched, untrusted,
+  partial, or uncommitted evidence is terminal too. Fresh and cached subjects are verified locally
+  and through an exact `gh attestation verify` policy before a contained owner-only cache commit or
+  Workbench render. Rootless and non-applying routes gain no network, process, or cache effect, and
+  the Workbench receives only bounded tier/source/schema/digest/age/time provenance — never
+  locators, paths, credentials, signatures, or raw attestations. (#814)
 
 - **Offline revocation has a replay-resistant, inert V1 contract before any continuation is
   enabled.** A canonical signed snapshot binds its exact issuer, monotonic sequence,

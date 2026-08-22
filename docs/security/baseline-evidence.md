@@ -93,12 +93,18 @@ or widen this channel.
 
 The route attempts a complete fresh artifact first, then a reverified
 last-downloaded record, then the packaged lock. Only the exact unavailable
-sentinel advances to another tier. Partial, malformed, oversized, stale,
-wrong-source, wrong-pin, wrong-schema, untrusted, or cache-commit outcomes stop
-the run. Fresh and cached artifacts repeat the complete local artifact check
-and exact GitHub attestation verification; a prior verification result is never
-cache authority. Fresh bytes enter one bootstrap-derived, contained owner-only
-cache slot only after verification and before the Workbench uses them.
+sentinel advances to another tier: it is emitted only when the first artifact
+request receives HTTP 404 or 410. DNS, TLS, connection, request, or timeout
+failures, every redirect, and every non-200 status other than 404 or 410 are
+terminal; they cannot force a downgrade to cached or packaged evidence. The
+applied administrator route therefore requires the baseline origin to answer
+before its downstream catalog stage can run. Partial, malformed, oversized,
+stale, wrong-source, wrong-pin, wrong-schema, untrusted, or cache-commit
+outcomes also stop the run.
+Fresh and cached artifacts repeat the complete local artifact check and exact
+GitHub attestation verification; a prior verification result is never cache
+authority. Fresh bytes enter one bootstrap-derived, contained owner-only cache
+slot only after verification and before the Workbench uses them.
 
 Omitting `<admin-root>` preserves portable generation without acquisition or
 cache authority. Supplying it without `--apply` fails before HTTPS, process,
