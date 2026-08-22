@@ -879,6 +879,43 @@ reference, and a decision present only in policy JSON has no authority. The port
 standalone decision import is likewise an unverified inspection and canonical-transport view only: it
 is not copied into the policy or receipt, cannot create authority, and cannot decide effective state.
 
+### Strict V2 organization-qualified contract foundation
+
+The public library and package schemas expose `GovernanceDecisionV2`, digest-bound
+`GovernanceDecisionRevocationV2`, authority receipt V3, and
+`UpstreamObservationReceiptV1`. The decision can identify an exact organization-chosen
+tool, skill, MCP server, package, or profile through immutable GitHub, npm, PyPI,
+OCI, remote-content, or AIH identity. Private npm/PyPI registry paths and complete
+remote HTTPS endpoint paths remain part of the identity. Canonical library helpers
+derive the source and subject digests; portable JSON Schema validates the closed shape,
+while the TypeScript parser enforces those digest relationships. A qualification basis
+must reference either the decision's exact attributable organization evidence or the
+exact catalog signer identity, head, catalog, member, subject kind, and subject digest.
+`aih-supported` and `organization-qualified` are derived qualification provenance, not
+administrator-set status labels; absence from the maintained catalog is not a schema denial, and
+`unqualified` is a non-effective resolver state rather than an approvable origin.
+
+Receipt V3 is usable only after the same out-of-band GitHub attestation verification
+that mints other `VerifiedPolicyAuthority` values. It carries only Strict V2 decisions
+and revocations: unsigned policy or Workbench `approved` fields, legacy approvals,
+and standalone decision files cannot enter it. The separate observation receipt binds
+the decision digest, exact subject and installed digests, registered targets/effects,
+the named upstream integration owner and exact integration version,
+code-owned verifier id/version/digest, explicit outcome, and a bounded observation
+window. Core's internal pure resolver accepts only the opaque verified V3 authority token
+and an exact decision id/digest reference; raw decisions and revocations are untrusted data.
+It reports `observed-effective` only when those facts match a current approved or
+conditionally accepted decision from that receipt. Missing, rejected,
+revoked, stale, partial, refused, drifted, unknown, or mismatched inputs remain
+explicitly non-effective.
+
+This is a cross-repository data contract, not a new `aih policy` command or a generic
+installer. Current policy evaluation and projection do not consume V3 decisions, so
+custom stdio and remote candidates remain visible but non-projectable. The contract
+does no scanning, provider access, process launch, package planning, or filesystem
+write and cannot satisfy or bypass the held ECC preview and executable-package
+closure work.
+
 Approvals cover only a missing or failed **waivable** evidence record, require a non-empty signed reason,
 and last at most 90 days. Mandatory detector failures and every unwaivable danger code remain blocked even
 with an otherwise valid approval.

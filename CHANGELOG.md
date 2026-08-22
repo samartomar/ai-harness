@@ -8,6 +8,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Strict V2 establishes the data-only organization-qualified governance boundary without
+  making the maintained catalog an allow-list.** A public canonical decision contract covers
+  exact GitHub, npm, PyPI, OCI, remote, and AIH identities for tools, skills, MCP servers,
+  packages, and profiles. Canonical helpers derive the source and subject digests from the closed
+  descriptor, including path-based private registries and exact remote HTTPS endpoints. Its
+  qualification basis points either to exact attributable organization evidence or to an exact
+  catalog signer identity plus head, catalog, and member digests; neither path self-authorizes.
+  Decision V2 binds policy/control identity, registered targets and effects, issuer, actor,
+  disposition, and bounded validity; digest-bound revocation V2 travels with it only inside
+  externally verified authority receipt V3. A separate
+  upstream-observation receipt records exact installed identity, upstream integration owner and
+  version, code-owned verifier identity, phase-honest outcome, and bounded freshness. The internal
+  pure resolver returns effective only when an opaque, externally verified, attested authority
+  receipt V3 supplies the exact current approved or conditionally accepted decision and a
+  separate exact successful observation matches it; rejection, revocation, stale or partial
+  observation, unknown target/effect/verifier, or any binding mismatch stays non-effective. This
+  foundation performs no scan, preview, install,
+  process, network, or filesystem effect, does not yet make custom policy candidates projectable,
+  and does not widen the held ECC or generic executable-package closures. (#832)
+
 - **Applied administrator Workbench generation can refresh the exact vendor baseline evidence
   channel without granting a developer-seat fetch path.** A separate administrator bootstrap pins
   credential-free HTTPS locators, publisher repository/workflow/issuer/ref/environment identity,

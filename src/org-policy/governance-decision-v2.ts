@@ -37,7 +37,33 @@ const exactSemver = ExactSemverV2Schema;
 const exactPypiVersion = z
   .string()
   .regex(/^[A-Za-z0-9][A-Za-z0-9.!+_-]{0,127}$/, "must be a bounded exact provider version");
-const ociRepository = z.string().regex(/^[a-z0-9][a-z0-9._/-]*$/);
+const ociSegment = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
+const ociRepository = z
+  .string()
+  .min(1)
+  .max(500)
+  .refine(
+    (value) => value.split("/").every((segment) => ociSegment.test(segment)),
+    "must be canonical lowercase OCI repository segments",
+  );
+const ociRegistry = z.string().refine((value) => {
+  try {
+    const url = new URL(`https://${value}`);
+    const dnsHost =
+      /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$/;
+    return (
+      url.username === "" &&
+      url.password === "" &&
+      url.pathname === "/" &&
+      url.search === "" &&
+      url.hash === "" &&
+      value === url.host &&
+      (url.hostname.startsWith("[") || dnsHost.test(url.hostname))
+    );
+  } catch {
+    return false;
+  }
+}, "must be a canonical OCI registry authority");
 const httpsBaseUrl = z.string().refine((value) => {
   try {
     const url = new URL(value);
@@ -140,7 +166,7 @@ export const GovernanceDecisionSourceV2Schema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("oci"),
-      registry: z.string().regex(/^[A-Za-z0-9.-]+(?::[0-9]{1,5})?$/),
+      registry: ociRegistry,
       repository: ociRepository,
       indexDigest: digest,
       platform: z

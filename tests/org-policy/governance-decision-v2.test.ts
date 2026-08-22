@@ -391,4 +391,43 @@ describe("GovernanceDecisionV2 public contract", () => {
       ).success,
     ).toBe(false);
   });
+
+  it("accepts only canonical OCI registry authorities and repository paths", () => {
+    const parsed = GovernanceDecisionV2Schema.parse(decision());
+    const validSource = {
+      type: "oci" as const,
+      registry: "registry.example.test:5000",
+      repository: "acme/review-tool",
+      indexDigest: `sha256:${"d".repeat(64)}`,
+      platform: { os: "linux", architecture: "amd64" },
+      manifestDigest: `sha256:${"e".repeat(64)}`,
+    };
+    const sourceDigest = governanceDecisionSourceDigestV2(validSource);
+    const subject = {
+      ...parsed.subject,
+      source: validSource,
+      sourceDigest,
+      subjectDigest: governanceDecisionSubjectDigestV2({
+        kind: "tool",
+        id: parsed.subject.id,
+        sourceDigest,
+      }),
+    };
+    expect(GovernanceDecisionV2Schema.safeParse(decision({ subject })).success).toBe(true);
+    for (const change of [
+      { registry: "REGISTRY.example.test:5000" },
+      { registry: "registry.example.test:99999" },
+      { registry: "registry.example.test:443" },
+      { repository: "acme//review-tool" },
+      { repository: "acme/./review-tool" },
+      { repository: "/acme/review-tool" },
+      { repository: "acme/review-tool/" },
+    ]) {
+      expect(
+        GovernanceDecisionV2Schema.safeParse(
+          decision({ subject: { ...subject, source: { ...validSource, ...change } } }),
+        ).success,
+      ).toBe(false);
+    }
+  });
 });
