@@ -13,7 +13,8 @@ const ID = /^[a-z][a-z0-9-]{0,63}$/;
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
 const stableId = z.string().regex(ID, "must be a bounded stable identifier");
 const digest = z.string().regex(SHA256, "must be a sha256 digest");
-const exactSemver = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
+const exactSemver = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/);
+const accountableIdentity = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$/);
 
 /** Live upstream state is short-lived; a receipt cannot claim a longer window. */
 export const MAX_UPSTREAM_OBSERVATION_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -63,7 +64,7 @@ export const UpstreamObservationReceiptV1Schema = z
     integration: z
       .object({
         mode: z.literal("upstream-managed"),
-        owner: stableId,
+        owner: accountableIdentity,
         version: exactSemver,
       })
       .strict(),

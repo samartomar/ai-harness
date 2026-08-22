@@ -406,13 +406,13 @@ const RECEIPT_TOP_LEVEL_CONSUMERS: Readonly<Record<string, string>> = {
     "V3 downstream resolver: exact AIH qualification catalog binding",
   "decisions.*.qualificationBasis.catalogHeadDigest":
     "V3 downstream resolver: exact AIH qualification catalog head binding",
-  "decisions.*.qualificationBasis.catalogIssuer":
-    "V3 downstream resolver: exact AIH qualification catalog issuer binding",
+  "decisions.*.qualificationBasis.catalogSignerIdentity":
+    "V3 downstream resolver: exact AIH qualification catalog signer identity binding",
   "decisions.*.qualificationBasis.evidenceDigest":
     "V3 downstream resolver: exact organization qualification evidence binding",
   "decisions.*.qualificationBasis.kind":
     "V3 downstream resolver: qualification provenance variant binding",
-  "decisions.*.qualificationBasis.memberDigest":
+  "decisions.*.qualificationBasis.catalogMemberDigest":
     "V3 downstream resolver: exact AIH qualification catalog member binding",
   "decisions.*.qualificationBasis.subjectKind":
     "V3 downstream resolver: exact AIH qualification subject-kind binding",

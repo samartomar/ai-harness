@@ -94,10 +94,10 @@ describe("GovernanceDecisionV2 public contract", () => {
         ...valid,
         qualificationBasis: {
           kind: "aih-supported",
-          catalogIssuer: "aih-catalog",
+          catalogSignerIdentity: "aih-catalog",
           catalogDigest: `sha256:${"0".repeat(64)}`,
           catalogHeadDigest: `sha256:${"1".repeat(64)}`,
-          memberDigest: `sha256:${"2".repeat(64)}`,
+          catalogMemberDigest: `sha256:${"2".repeat(64)}`,
           subjectKind: "skill",
           subjectDigest: valid.subject.subjectDigest,
         },
@@ -153,10 +153,10 @@ describe("GovernanceDecisionV2 public contract", () => {
       decision({
         qualificationBasis: {
           kind: "aih-supported",
-          catalogIssuer: "aih-catalog",
+          catalogSignerIdentity: "aih-catalog",
           catalogDigest: `sha256:${"0".repeat(64)}`,
           catalogHeadDigest: `sha256:${"1".repeat(64)}`,
-          memberDigest: `sha256:${"2".repeat(64)}`,
+          catalogMemberDigest: `sha256:${"2".repeat(64)}`,
           subjectKind: "skill",
           subjectDigest: `sha256:${"b".repeat(64)}`,
         },
@@ -169,10 +169,10 @@ describe("GovernanceDecisionV2 public contract", () => {
         decision({
           qualificationBasis: {
             kind: "aih-supported",
-            catalogIssuer: "aih-catalog",
+            catalogSignerIdentity: "aih-catalog",
             catalogDigest: `sha256:${"0".repeat(64)}`,
             catalogHeadDigest: `sha256:${"1".repeat(64)}`,
-            memberDigest: `sha256:${"2".repeat(64)}`,
+            catalogMemberDigest: `sha256:${"2".repeat(64)}`,
             subjectKind: "tool",
             subjectDigest: decision().subject.subjectDigest,
           },
@@ -184,10 +184,10 @@ describe("GovernanceDecisionV2 public contract", () => {
         decision({
           qualificationBasis: {
             kind: "aih-supported",
-            catalogIssuer: "aih-catalog",
+            catalogSignerIdentity: "aih-catalog",
             catalogDigest: `sha256:${"0".repeat(64)}`,
             catalogHeadDigest: `sha256:${"1".repeat(64)}`,
-            memberDigest: `sha256:${"2".repeat(64)}`,
+            catalogMemberDigest: `sha256:${"2".repeat(64)}`,
             subjectKind: "tool",
             subjectDigest: `sha256:${"0".repeat(64)}`,
           },

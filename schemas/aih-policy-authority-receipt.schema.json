@@ -2522,7 +2522,7 @@
                             "type": "string",
                             "const": "aih-supported"
                           },
-                          "catalogIssuer": {
+                          "catalogSignerIdentity": {
                             "type": "string",
                             "pattern": "^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$"
                           },
@@ -2534,7 +2534,7 @@
                             "type": "string",
                             "pattern": "^sha256:[0-9a-f]{64}$"
                           },
-                          "memberDigest": {
+                          "catalogMemberDigest": {
                             "type": "string",
                             "pattern": "^sha256:[0-9a-f]{64}$"
                           },
@@ -2555,10 +2555,10 @@
                         },
                         "required": [
                           "kind",
-                          "catalogIssuer",
+                          "catalogSignerIdentity",
                           "catalogDigest",
                           "catalogHeadDigest",
-                          "memberDigest",
+                          "catalogMemberDigest",
                           "subjectKind",
                           "subjectDigest"
                         ],
@@ -2680,7 +2680,7 @@
                               },
                               "package": {
                                 "type": "string",
-                                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
                               },
                               "version": {
                                 "type": "string",
@@ -2904,7 +2904,7 @@
                       },
                       "attestor": {
                         "type": "string",
-                        "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$"
                       }
                     },
                     "required": [
@@ -3021,7 +3021,7 @@
                             "type": "string",
                             "const": "aih-supported"
                           },
-                          "catalogIssuer": {
+                          "catalogSignerIdentity": {
                             "type": "string",
                             "pattern": "^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$"
                           },
@@ -3033,7 +3033,7 @@
                             "type": "string",
                             "pattern": "^sha256:[0-9a-f]{64}$"
                           },
-                          "memberDigest": {
+                          "catalogMemberDigest": {
                             "type": "string",
                             "pattern": "^sha256:[0-9a-f]{64}$"
                           },
@@ -3054,10 +3054,10 @@
                         },
                         "required": [
                           "kind",
-                          "catalogIssuer",
+                          "catalogSignerIdentity",
                           "catalogDigest",
                           "catalogHeadDigest",
-                          "memberDigest",
+                          "catalogMemberDigest",
                           "subjectKind",
                           "subjectDigest"
                         ],
@@ -3179,7 +3179,7 @@
                               },
                               "package": {
                                 "type": "string",
-                                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
                               },
                               "version": {
                                 "type": "string",
@@ -3403,7 +3403,7 @@
                       },
                       "attestor": {
                         "type": "string",
-                        "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$"
                       }
                     },
                     "required": [
@@ -3525,7 +3525,7 @@
                             "type": "string",
                             "const": "aih-supported"
                           },
-                          "catalogIssuer": {
+                          "catalogSignerIdentity": {
                             "type": "string",
                             "pattern": "^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$"
                           },
@@ -3537,7 +3537,7 @@
                             "type": "string",
                             "pattern": "^sha256:[0-9a-f]{64}$"
                           },
-                          "memberDigest": {
+                          "catalogMemberDigest": {
                             "type": "string",
                             "pattern": "^sha256:[0-9a-f]{64}$"
                           },
@@ -3558,10 +3558,10 @@
                         },
                         "required": [
                           "kind",
-                          "catalogIssuer",
+                          "catalogSignerIdentity",
                           "catalogDigest",
                           "catalogHeadDigest",
-                          "memberDigest",
+                          "catalogMemberDigest",
                           "subjectKind",
                           "subjectDigest"
                         ],
@@ -3683,7 +3683,7 @@
                               },
                               "package": {
                                 "type": "string",
-                                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
                               },
                               "version": {
                                 "type": "string",
@@ -3907,7 +3907,7 @@
                       },
                       "attestor": {
                         "type": "string",
-                        "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$"
                       }
                     },
                     "required": [

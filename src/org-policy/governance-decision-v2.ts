@@ -126,7 +126,7 @@ export const GovernanceDecisionSourceV2Schema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("pypi"),
       registry: httpsBaseUrl,
-      package: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/),
+      package: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
       version: exactPypiVersion,
       filename: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._+-]*$/),
       sha256: digest,
@@ -168,10 +168,10 @@ const qualificationBasis = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("aih-supported"),
-      catalogIssuer: qualificationIdentity,
+      catalogSignerIdentity: qualificationIdentity,
       catalogDigest: digest,
       catalogHeadDigest: digest,
-      memberDigest: digest,
+      catalogMemberDigest: digest,
       subjectKind: z.enum(["tool", "skill", "mcp", "package", "profile"]),
       subjectDigest: digest,
     })
@@ -196,7 +196,7 @@ const base = z
     allowedEffects: effects,
     policy: z.object({ id: stableId, version: text, digest }).strict(),
     control: z.object({ id: stableId, digest }).strict(),
-    evidence: z.object({ id: stableId, digest, attestor: stableId }).strict(),
+    evidence: z.object({ id: stableId, digest, attestor: qualificationIdentity }).strict(),
     issuer: stableId,
     actor: stableId,
     reason: text,
