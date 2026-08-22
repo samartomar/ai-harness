@@ -502,6 +502,62 @@ export interface ScanFinding {
   advisory?: TypographyAdvisory;
 }
 
+/** Deterministic file-scoped view of raw scan findings. No finding is merged or dropped. */
+export interface ScanFileRollup {
+  /** Absent only for a finding without a source file identity. */
+  path?: string;
+  findings: readonly ScanFinding[];
+}
+
+function compareCodeUnits(left: string, right: string): number {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
+/** Every finding field that affects its public identity, in deterministic key order. */
+function canonicalFindingKey(finding: ScanFinding): string {
+  return JSON.stringify({
+    accepted:
+      finding.accepted === undefined ? "absent" : finding.accepted === true ? "true" : "false",
+    advisory:
+      finding.advisory === undefined
+        ? undefined
+        : {
+            contextClass: finding.advisory.contextClass,
+            reclassifiedFrom: finding.advisory.reclassifiedFrom,
+          },
+    classification: finding.classification,
+    closureReachability: finding.closureReachability,
+    code: finding.code,
+    contentSha256: finding.contentSha256,
+    coverage: finding.coverage,
+    detail: finding.detail,
+    path: finding.path,
+    severity: finding.severity,
+  });
+}
+
+/** Group every raw finding by its exact source path without changing its identity. */
+export function rollupScanFindings(findings: readonly ScanFinding[]): ScanFileRollup[] {
+  const groups = new Map<string | undefined, ScanFinding[]>();
+  for (const finding of findings) {
+    const group = groups.get(finding.path);
+    if (group === undefined) groups.set(finding.path, [finding]);
+    else group.push(finding);
+  }
+  const compareFinding = (left: ScanFinding, right: ScanFinding): number =>
+    compareCodeUnits(left.code, right.code) ||
+    SEVERITIES.indexOf(left.severity) - SEVERITIES.indexOf(right.severity) ||
+    compareCodeUnits(left.detail, right.detail) ||
+    Number(left.accepted === true) - Number(right.accepted === true) ||
+    compareCodeUnits(canonicalFindingKey(left), canonicalFindingKey(right));
+  return [...groups.entries()]
+    .sort(([left], [right]) =>
+      left === undefined ? 1 : right === undefined ? -1 : compareCodeUnits(left, right),
+    )
+    .map(([path, entries]) => ({ path, findings: [...entries].sort(compareFinding) }));
+}
+
 export interface DimensionInspectionContext {
   treePath: string;
   inventory: TrustFileInventory;
@@ -1076,6 +1132,8 @@ export interface ScanDisposition {
   /** Legacy verdict, always derived: `selectedProfileGate === "BLOCK" ? "block" : "allow"`. */
   readonly verdict: ScanVerdict;
   readonly findings: readonly ScanFinding[];
+  /** Deterministic per-file rollup of the same raw finding objects. */
+  readonly fileRollup: readonly ScanFileRollup[];
   readonly posture: Posture;
   readonly producedAt: string;
   /** Whole-tree outcome (descriptive; never authorizes on its own). */
@@ -1518,6 +1576,7 @@ function produceDisposition(
     digest,
     verdict: decision.verdict,
     findings: decision.findings,
+    fileRollup: rollupScanFindings(decision.findings),
     posture: policy.posture,
     producedAt,
     rawSourceScan: decision.rawSourceScan,

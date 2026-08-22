@@ -13,6 +13,7 @@ import {
   resolvedSourceDigest,
   resolveGitSource,
   resolveNpmSource,
+  rollupScanFindings,
   runFastScanGate,
   type ScanDisposition,
   scannableFromGit,
@@ -75,6 +76,117 @@ const producedCritical: DimensionInspector = {
     ],
   }),
 };
+
+describe("rollupScanFindings", () => {
+  it("groups every raw finding deterministically without masking duplicate identities", () => {
+    const duplicate = {
+      code: "a",
+      severity: "medium" as const,
+      detail: "a",
+      coverage: "complete" as const,
+      path: "a.md",
+    };
+    const findings = [
+      {
+        code: "z",
+        severity: "high" as const,
+        detail: "z",
+        coverage: "complete" as const,
+        path: "b.md",
+        accepted: true,
+      },
+      {
+        code: "a",
+        severity: "medium" as const,
+        detail: "a",
+        coverage: "complete" as const,
+        path: "a.md",
+      },
+      duplicate,
+      {
+        code: "a",
+        severity: "high" as const,
+        detail: "again",
+        coverage: "complete" as const,
+        path: "a.md",
+      },
+      {
+        code: "global",
+        severity: "critical" as const,
+        detail: "global",
+        coverage: "complete" as const,
+      },
+    ];
+    expect(rollupScanFindings(findings)).toEqual([
+      expect.objectContaining({ path: "a.md", findings: [findings[1], findings[2], findings[3]] }),
+      expect.objectContaining({ path: "b.md", findings: [findings[0]] }),
+      expect.objectContaining({ path: undefined, findings: [findings[4]] }),
+    ]);
+  });
+
+  it("is byte-stable across permutations and preserves advisory and content identities", () => {
+    const findings = [
+      {
+        code: "x",
+        severity: "high" as const,
+        detail: "same",
+        coverage: "complete" as const,
+        path: "a",
+        contentSha256: "b".repeat(64),
+        advisory: { reclassifiedFrom: "high" as const, contextClass: "comment" },
+      },
+      {
+        code: "x",
+        severity: "high" as const,
+        detail: "same",
+        coverage: "complete" as const,
+        path: "a",
+        contentSha256: "a".repeat(64),
+        advisory: { reclassifiedFrom: "high" as const, contextClass: "comment" },
+      },
+    ];
+    expect(JSON.stringify(rollupScanFindings(findings))).toBe(
+      JSON.stringify(rollupScanFindings([...findings].reverse())),
+    );
+    expect(rollupScanFindings(findings)[0]?.findings).toHaveLength(2);
+  });
+
+  it("keeps absent, false, and true acceptance states deterministically distinct", () => {
+    const findings = [
+      {
+        code: "x",
+        severity: "high" as const,
+        detail: "same",
+        coverage: "complete" as const,
+        path: "a",
+      },
+      {
+        code: "x",
+        severity: "high" as const,
+        detail: "same",
+        coverage: "complete" as const,
+        path: "a",
+        accepted: false,
+      },
+      {
+        code: "x",
+        severity: "high" as const,
+        detail: "same",
+        coverage: "complete" as const,
+        path: "a",
+        accepted: true,
+      },
+    ];
+    expect(JSON.stringify(rollupScanFindings(findings))).toBe(
+      JSON.stringify(rollupScanFindings([...findings].reverse())),
+    );
+    expect(rollupScanFindings(findings)[0]?.findings.map((finding) => finding.accepted)).toEqual([
+      undefined,
+      false,
+      true,
+    ]);
+  });
+});
 
 // Simulates a future deep dimension (W7) that is unavailable, so coverage is
 // incomplete even though the W2 default inspectors all produce.
