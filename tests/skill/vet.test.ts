@@ -78,7 +78,10 @@ function license(): void {
   write("LICENSE", "MIT License\n\nCopyright (c) Example\n");
 }
 
-function githubFetchRunner(pin: string): Runner {
+function githubFetchRunner(
+  pin: string,
+  metadataMutation?: "remove" | "unreadable" | "corrupt" | "mismatch",
+): Runner {
   const detectors = detectorRunner();
   return async (argv, opts) => {
     if (argv[0] === process.execPath && argv[1] === "-e") {
@@ -121,6 +124,27 @@ function githubFetchRunner(pin: string): Runner {
         ),
         "utf8",
       );
+      if (metadataMutation === "remove") rmSync(input.metadataPath, { force: true });
+      if (metadataMutation === "unreadable") {
+        rmSync(input.metadataPath, { force: true });
+        mkdirSync(input.metadataPath);
+      }
+      if (metadataMutation === "corrupt") writeFileSync(input.metadataPath, "{ broken", "utf8");
+      if (metadataMutation === "mismatch") {
+        writeFileSync(
+          input.metadataPath,
+          JSON.stringify({
+            kind: "github",
+            owner: "other",
+            repo: input.repo,
+            ref: input.pin,
+            pinnedSha: pin,
+            source: `other/${input.repo}`,
+            treePath: input.treePath,
+          }),
+          "utf8",
+        );
+      }
       return { code: 0, stdout: "", stderr: "" };
     }
     return detectors(argv, opts);
@@ -907,5 +931,27 @@ describe("skillVetCommand", () => {
     );
     expect(JSON.stringify(evidence.checks)).not.toContain("Ignore previous instructions");
     expect(evidence.checks.some((check) => check.code === "trust.prompt-injection")).toBe(false);
+  });
+
+  it.each([
+    ["removed", "remove", "trust.fetch-metadata-missing"],
+    ["unreadable", "unreadable", "trust.fetch-metadata-unreadable"],
+    ["corrupt", "corrupt", "trust.fetch-metadata-malformed"],
+    ["mismatched", "mismatch", "trust.fetch-metadata-mismatched"],
+  ] as const)("keeps a %s fetched GitHub metadata record untrusted", async (_, mutation, code) => {
+    const pin = "a".repeat(40);
+    const c = ctx({ source: "owner/repo", pin }, true, githubFetchRunner(pin, mutation), {
+      SNYK_TOKEN: "snyk-token-for-scanner",
+    });
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "trust.fetch-metadata", code })]),
+    );
+    const digest = vetDigestOf(result);
+    expect(digest.data.pinnedSha).toBeUndefined();
+    expect(digest.data.verdict).toBe("UNKNOWN");
   });
 });

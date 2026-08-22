@@ -50,47 +50,32 @@ function defaultGitRunner(): Runner {
     const repo = cwd.replace(/\\/g, "/").split("/").at(-1) ?? "";
     const tail = argv.slice(3).join(" ");
     if (tail === "rev-parse --is-inside-work-tree") return { stdout: "true\n" };
-    if (tail === "rev-parse --abbrev-ref HEAD") return { stdout: "main\n" };
-    if (tail === "rev-parse HEAD") return { stdout: `${repo.slice(0, 6) || "abc123"}\n` };
-    if (tail === "status --porcelain") return { stdout: "" };
-    if (tail === "rev-list --left-right --count HEAD...@{upstream}") {
-      return { code: 1, stdout: "" };
+    if (tail === "status --porcelain=v2 --branch") {
+      const sha = repo === "backend" ? "b".repeat(40) : "a".repeat(40);
+      return { stdout: `# branch.oid ${sha}\n# branch.head main\n` };
     }
     return undefined;
   });
 }
 
 function incompleteGitRunner(observation: "diverged" | "unavailable"): Runner {
-  let branchReads = 0;
-  let shaReads = 0;
+  let statusReads = 0;
   return async (argv) => {
     const tail = argv.slice(3).join(" ");
     if (tail === "rev-parse --is-inside-work-tree") {
       return { code: 0, stdout: "true\n", stderr: "" };
     }
-    if (tail === "rev-parse --abbrev-ref HEAD") {
-      branchReads += 1;
-      return {
-        code: 0,
-        stdout: observation === "diverged" && branchReads > 1 ? "topic\n" : "main\n",
-        stderr: "",
-      };
-    }
-    if (tail === "rev-parse HEAD") {
-      shaReads += 1;
+    if (tail === "status --porcelain=v2 --branch") {
       if (observation === "unavailable") return { code: 1, stdout: "", stderr: "" };
+      statusReads += 1;
       return {
         code: 0,
         stdout:
-          shaReads > 1
-            ? "1234567890abcdef1234567890abcdef12345678\n"
-            : "abcdef0123456789abcdef0123456789abcdef01\n",
+          statusReads > 1
+            ? "# branch.oid 1234567890abcdef1234567890abcdef12345678\n# branch.head topic\n"
+            : "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head main\n",
         stderr: "",
       };
-    }
-    if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
-    if (tail === "rev-list --left-right --count HEAD...@{upstream}") {
-      return { code: 0, stdout: "0\t0\n", stderr: "" };
     }
     return { code: 1, stdout: "", stderr: "" };
   };
@@ -324,7 +309,12 @@ describe("report workspace rollup", () => {
 
     expect(d.text).toContain("Changed since snapshot");
     expect(data.snapshot?.changes).toEqual([
-      expect.objectContaining({ id: "ui", status: "CHANGED", before: "old123", after: "ui" }),
+      expect.objectContaining({
+        id: "ui",
+        status: "CHANGED",
+        before: "old123",
+        after: "a".repeat(40),
+      }),
     ]);
   });
 

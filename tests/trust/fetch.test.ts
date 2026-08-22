@@ -31,6 +31,7 @@ import {
   scrubFetchEnv,
   trustFetchExec,
   trustPackageFetchActions,
+  validateGitHubTrustFetchMetadata,
 } from "../../src/trust/fetch.js";
 
 let dir: string;
@@ -274,6 +275,35 @@ describe("trust fetch source resolution", () => {
     } finally {
       if (first.kind === "github") rmSync(first.quarantineRoot, { recursive: true, force: true });
       if (second.kind === "github") rmSync(second.quarantineRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("classifies unavailable or unbound GitHub fetch metadata without exposing quarantine paths", () => {
+    const source = resolveTrustSource("Owner/Repo", { root: dir, pin: "a".repeat(40) });
+    if (source.kind !== "github") throw new Error("expected GitHub source");
+    const metadata = {
+      kind: "github",
+      owner: source.owner,
+      repo: source.repo,
+      ref: source.ref,
+      pinnedSha: source.pin,
+      source: `${source.owner}/${source.repo}`,
+      treePath: source.treePath,
+    };
+    try {
+      expect(validateGitHubTrustFetchMetadata(source)).toEqual({ state: "missing" });
+
+      mkdirSync(source.metadataPath);
+      expect(validateGitHubTrustFetchMetadata(source)).toEqual({ state: "unreadable" });
+      rmSync(source.metadataPath, { recursive: true, force: true });
+
+      writeFileSync(source.metadataPath, "{ broken", "utf8");
+      expect(validateGitHubTrustFetchMetadata(source)).toEqual({ state: "malformed" });
+
+      writeFileSync(source.metadataPath, JSON.stringify({ ...metadata, owner: "other" }), "utf8");
+      expect(validateGitHubTrustFetchMetadata(source)).toEqual({ state: "mismatched" });
+    } finally {
+      rmSync(source.quarantineRoot, { recursive: true, force: true });
     }
   });
 
