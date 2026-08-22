@@ -1,4 +1,7 @@
+import { isProxy } from "node:util/types";
 import { z } from "zod";
+import { AihError } from "../errors.js";
+import type { AdminBaselineEvidenceProvenanceV1 } from "./admin-baseline-evidence-operations-v1.js";
 import type { AdminCatalogProvenanceV1 } from "./admin-catalog-operations-v1.js";
 import { type AdoptionRecipe, buildAdoptionRecipe } from "./adoption-recipe.js";
 import { policyAuthoringCatalog } from "./catalog.js";
@@ -87,6 +90,7 @@ export interface PolicyStudioModel {
    * attestation, signer identity, root digest, or machine detail.
    */
   catalogProvenance?: AdminCatalogProvenanceV1;
+  baselineEvidenceProvenance?: AdminBaselineEvidenceProvenanceV1;
   schema: Record<string, unknown>;
   decisionSchema: Record<string, unknown>;
   unwaivable: readonly string[];
@@ -105,13 +109,117 @@ export interface PolicyStudioModel {
   };
 }
 
+function invalidBaselineEvidenceWorkbenchProvenance(): never {
+  throw new AihError(
+    "Policy Workbench baseline evidence provenance is invalid",
+    "AIH_POLICY_GENERATE",
+  );
+}
+
+function ownData(record: Record<string, unknown>, key: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(record, key);
+  if (descriptor === undefined || !("value" in descriptor))
+    invalidBaselineEvidenceWorkbenchProvenance();
+  return descriptor.value;
+}
+
+function exactSourceIds(value: unknown): readonly ["ecc", "superpowers"] {
+  if (
+    isProxy(value) ||
+    !Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Array.prototype ||
+    value.length !== 2
+  )
+    invalidBaselineEvidenceWorkbenchProvenance();
+  const sourceIds: ["ecc", "superpowers"] = ["ecc", "superpowers"];
+  for (let index = 0; index < sourceIds.length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+    if (
+      descriptor === undefined ||
+      !("value" in descriptor) ||
+      descriptor.value !== sourceIds[index]
+    )
+      invalidBaselineEvidenceWorkbenchProvenance();
+  }
+  return Object.freeze(sourceIds);
+}
+
+function baselineEvidenceWorkbenchProvenance(
+  provenance: AdminBaselineEvidenceProvenanceV1,
+): AdminBaselineEvidenceProvenanceV1 {
+  if (
+    typeof provenance !== "object" ||
+    provenance === null ||
+    isProxy(provenance) ||
+    Array.isArray(provenance) ||
+    Object.getPrototypeOf(provenance) !== Object.prototype
+  )
+    invalidBaselineEvidenceWorkbenchProvenance();
+  const record = provenance as unknown as Record<string, unknown>;
+  const ageSeconds = ownData(record, "ageSeconds");
+  const digest = ownData(record, "digest");
+  const resolvedAt = ownData(record, "resolvedAt");
+  const schemaVersion = ownData(record, "schemaVersion");
+  const sourceIds = exactSourceIds(ownData(record, "sourceIds"));
+  const tier = ownData(record, "tier");
+  const validAgeSeconds =
+    tier === "fresh" && ageSeconds === 0
+      ? 0
+      : tier === "packaged" && ageSeconds === null
+        ? null
+        : tier === "last-downloaded" &&
+            typeof ageSeconds === "number" &&
+            Number.isSafeInteger(ageSeconds) &&
+            ageSeconds >= 0 &&
+            ageSeconds <= 31_536_000
+          ? ageSeconds
+          : invalidBaselineEvidenceWorkbenchProvenance();
+  const validDigest =
+    typeof digest === "string" && /^[a-f0-9]{64}$/.test(digest)
+      ? digest
+      : invalidBaselineEvidenceWorkbenchProvenance();
+  const validResolvedAt =
+    typeof resolvedAt === "string" &&
+    /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(resolvedAt) &&
+    Number.isFinite(Date.parse(resolvedAt)) &&
+    new Date(Date.parse(resolvedAt)).toISOString() === `${resolvedAt.slice(0, -1)}.000Z`
+      ? resolvedAt
+      : invalidBaselineEvidenceWorkbenchProvenance();
+  const validSchemaVersion =
+    typeof schemaVersion === "number" && Number.isSafeInteger(schemaVersion) && schemaVersion === 1
+      ? schemaVersion
+      : invalidBaselineEvidenceWorkbenchProvenance();
+  const validTier =
+    tier === "fresh" || tier === "last-downloaded" || tier === "packaged"
+      ? tier
+      : invalidBaselineEvidenceWorkbenchProvenance();
+  return Object.freeze({
+    ageSeconds: validAgeSeconds,
+    digest: validDigest,
+    resolvedAt: validResolvedAt,
+    schemaVersion: validSchemaVersion,
+    sourceIds,
+    tier: validTier,
+  });
+}
+
 /** Serializable payload embedded in every portable workbench artifact. */
-export function policyStudioModel(catalogProvenance?: AdminCatalogProvenanceV1): PolicyStudioModel {
+export function policyStudioModel(
+  catalogProvenance?: AdminCatalogProvenanceV1,
+  baselineEvidenceProvenance?: AdminBaselineEvidenceProvenanceV1,
+): PolicyStudioModel {
   return {
     initialPolicy: defaultStudioPolicy(),
     catalog: policyAuthoringCatalog(),
     adoptionRecipe: buildAdoptionRecipe(),
     ...(catalogProvenance === undefined ? {} : { catalogProvenance }),
+    ...(baselineEvidenceProvenance === undefined
+      ? {}
+      : {
+          baselineEvidenceProvenance: baselineEvidenceWorkbenchProvenance(
+            baselineEvidenceProvenance,
+          ),
+        }),
     schema: z.toJSONSchema(OrgPolicySchema, { io: "input" }) as Record<string, unknown>,
     decisionSchema: z.toJSONSchema(GovernanceDecisionV1Schema, { io: "input" }) as Record<
       string,

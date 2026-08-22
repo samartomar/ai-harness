@@ -79,6 +79,14 @@ function seams() {
   };
   return {
     calls,
+    baseline: async () => ({
+      ageSeconds: 0,
+      digest: "a".repeat(64),
+      resolvedAt: WALL_CLOCK,
+      schemaVersion: 1,
+      sourceIds: ["ecc", "superpowers"],
+      tier: "fresh" as const,
+    }),
     catalog: {
       fetchHttps: async (request: { url: string }) => {
         calls.urls.push(request.url);
@@ -129,6 +137,7 @@ describe("policy generate admin catalog route", () => {
     const injected = seams();
     const code = await runPolicyGenerate(commandStub(), {
       adminRoot,
+      baseline: injected.baseline,
       catalog: injected.catalog,
       cwd,
       env: { PATH: toolchain },
@@ -156,12 +165,49 @@ describe("policy generate admin catalog route", () => {
     }
   });
 
+  it("renders applied administrator output with bounded baseline provenance only", async () => {
+    seedBootstrap();
+    const injected = seams();
+    const attestationSecret = "secret-baseline-attestation-value";
+    const bootstrapSecret = "secret-baseline-bootstrap-value";
+    const cacheSecret = "secret-baseline-cache-value";
+    const signatureSecret = "secret-baseline-signature-value";
+    const code = await runPolicyGenerate(commandStub(), {
+      adminRoot,
+      baseline: async () => ({
+        ageSeconds: 0,
+        attestationBytes: Buffer.from(attestationSecret),
+        bootstrapLocator: bootstrapSecret,
+        cachePath: cacheSecret,
+        digest: "a".repeat(64),
+        resolvedAt: WALL_CLOCK,
+        schemaVersion: 1,
+        signature: signatureSecret,
+        sourceIds: ["ecc", "superpowers"],
+        tier: "fresh" as const,
+      }),
+      catalog: injected.catalog,
+      cwd,
+      env: { PATH: toolchain },
+      run: injected.run,
+      write: () => undefined,
+    });
+    expect(code).toBe(0);
+    const html = readFileSync(join(cwd, "aih-policy-workbench.html"), "utf8");
+    expect(html).toContain('id="baseline-evidence-provenance"');
+    expect(html).toContain("sources ecc,superpowers");
+    for (const forbidden of [attestationSecret, bootstrapSecret, cacheSecret, signatureSecret]) {
+      expect(html.includes(forbidden), forbidden).toBe(false);
+    }
+  });
+
   it("keeps an admin-root dry run plan-only, with no HTTPS, gh, cache, or workbench effects", async () => {
     seedBootstrap();
     const injected = seams();
     const output: string[] = [];
     const code = await runPolicyGenerate(commandStub({ apply: false }), {
       adminRoot,
+      baseline: injected.baseline,
       catalog: injected.catalog,
       cwd,
       env: { PATH: toolchain },
@@ -182,6 +228,7 @@ describe("policy generate admin catalog route", () => {
     const output: string[] = [];
     const code = await runPolicyGenerate(commandStub(), {
       adminRoot: ` ${adminRoot} `,
+      baseline: injected.baseline,
       catalog: injected.catalog,
       cwd,
       env: { PATH: toolchain },
@@ -199,6 +246,7 @@ describe("policy generate admin catalog route", () => {
     const output: string[] = [];
     const code = await runPolicyGenerate(commandStub({ json: true }), {
       adminRoot,
+      baseline: injected.baseline,
       catalog: injected.catalog,
       cwd,
       env: {},
@@ -217,6 +265,7 @@ describe("policy generate admin catalog route", () => {
     const injected = seams();
     const code = await runPolicyGenerate(commandStub({ posture: "enterprise" }), {
       adminRoot,
+      baseline: injected.baseline,
       catalog: injected.catalog,
       cwd,
       env: { AIH_POSTURE: "vibe" },
