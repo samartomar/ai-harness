@@ -57,4 +57,22 @@ describe("admin baseline evidence bootstrap V1", () => {
       parseAdminBaselineEvidenceBootstrapV1Json(canonicalStrictJsonBytesV1(value)),
     ).toThrow(/admin baseline evidence bootstrap/);
   });
+
+  it("rejects proxy and revoked-proxy byte inputs with the fixed parser error", () => {
+    let traps = 0;
+    const proxied = new Proxy(canonicalStrictJsonBytesV1(record), {
+      get() {
+        traps += 1;
+        throw new Error("trap");
+      },
+    });
+    const revoked = Proxy.revocable(canonicalStrictJsonBytesV1(record), {});
+    revoked.revoke();
+    for (const value of [proxied, revoked.proxy]) {
+      expect(() => parseAdminBaselineEvidenceBootstrapV1Json(value)).toThrow(
+        /admin baseline evidence bootstrap: bytes/,
+      );
+    }
+    expect(traps).toBe(0);
+  });
 });

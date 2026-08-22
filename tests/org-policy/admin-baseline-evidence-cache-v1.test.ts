@@ -76,6 +76,25 @@ describe("admin baseline evidence cache v1", () => {
     ).toThrow(/admin baseline evidence cache/);
   });
 
+  it("rejects proxy and revoked-proxy byte inputs with the fixed parser error", () => {
+    const bytes = createAdminBaselineEvidenceCacheRecordV1(evidence);
+    let traps = 0;
+    const proxied = new Proxy(bytes, {
+      get() {
+        traps += 1;
+        throw new Error("trap");
+      },
+    });
+    const revoked = Proxy.revocable(bytes, {});
+    revoked.revoke();
+    for (const value of [proxied, revoked.proxy]) {
+      expect(() => parseAdminBaselineEvidenceCacheRecordV1Json(value)).toThrow(
+        /admin baseline evidence cache: bytes/,
+      );
+    }
+    expect(traps).toBe(0);
+  });
+
   it("claims one contained cache slot and treats present invalid bytes as terminal", () => {
     const root = mkdtempSync(join(tmpdir(), "aih-baseline-cache-"));
     try {

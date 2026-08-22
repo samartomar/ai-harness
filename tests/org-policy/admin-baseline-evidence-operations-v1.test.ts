@@ -13,6 +13,8 @@ import {
 } from "../../src/org-policy/admin-baseline-evidence-bootstrap-v1.js";
 import {
   ADMIN_BASELINE_EVIDENCE_ARTIFACT_FILES_V1,
+  collectBoundedAdminBaselineEvidenceResponseV1,
+  defaultAdminBaselineEvidenceHttpsFetchV1,
   fetchAdminBaselineEvidenceArtifactV1,
   parseGithubBaselineEvidenceAttestationV1,
   resolveAdminBaselineEvidenceV1,
@@ -79,6 +81,111 @@ function malformedUnavailable(kind: "extra" | "nonplain" | "accessor"): unknown 
 }
 
 describe("admin baseline evidence resolution v1", () => {
+  it("classifies only absent first artifacts as unavailable and keeps transport failures terminal", async () => {
+    const response = (statusCode: number | undefined) => {
+      const listeners = new Map<string, ((...values: unknown[]) => void)[]>();
+      let resumed = 0;
+      return {
+        emit(event: string, ...values: unknown[]) {
+          for (const listener of listeners.get(event) ?? []) listener(...values);
+        },
+        response: {
+          on(event: string, listener: (...values: unknown[]) => void) {
+            listeners.set(event, [...(listeners.get(event) ?? []), listener]);
+            return this;
+          },
+          resume() {
+            resumed += 1;
+            return this;
+          },
+          statusCode,
+        },
+        resumed: () => resumed,
+      };
+    };
+    const missing = response(404);
+    await expect(
+      collectBoundedAdminBaselineEvidenceResponseV1(missing.response, 8, () => undefined),
+    ).resolves.toEqual({ kind: "unavailable" });
+    expect(missing.resumed()).toBe(1);
+
+    const gone = response(410);
+    await expect(
+      collectBoundedAdminBaselineEvidenceResponseV1(gone.response, 8, () => undefined),
+    ).resolves.toEqual({ kind: "unavailable" });
+
+    const forbidden = response(403);
+    await expect(
+      collectBoundedAdminBaselineEvidenceResponseV1(forbidden.response, 8, () => undefined),
+    ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+
+    const empty = response(200);
+    const emptyResult = collectBoundedAdminBaselineEvidenceResponseV1(
+      empty.response,
+      8,
+      () => undefined,
+    );
+    empty.emit("end");
+    await expect(emptyResult).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+
+    let aborted = 0;
+    const tooLarge = response(200);
+    const tooLargeResult = collectBoundedAdminBaselineEvidenceResponseV1(
+      tooLarge.response,
+      4,
+      () => {
+        aborted += 1;
+      },
+    );
+    tooLarge.emit("data", Buffer.from("abcde"));
+    await expect(tooLargeResult).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+    expect(aborted).toBe(1);
+
+    const broken = response(200);
+    const brokenResult = collectBoundedAdminBaselineEvidenceResponseV1(
+      broken.response,
+      8,
+      () => undefined,
+    );
+    broken.emit("data", Buffer.from("abc"));
+    broken.emit("aborted");
+    await expect(brokenResult).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+
+    await expect(
+      defaultAdminBaselineEvidenceHttpsFetchV1({
+        maxBytes: 8,
+        timeoutMs: 10,
+        url: "not a locator",
+      }),
+    ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+
+    let cacheReads = 0;
+    await expect(
+      resolveAdminBaselineEvidenceV1({
+        bootstrap,
+        now: "2026-08-21T00:00:00Z",
+        fetchFresh: () =>
+          fetchAdminBaselineEvidenceArtifactV1({
+            artifactUrl: "https://evidence.example.test/artifact/",
+            attestationUrl: bootstrap.attestationUrl,
+            fetchHttps: async () =>
+              collectBoundedAdminBaselineEvidenceResponseV1(
+                response(500).response,
+                8,
+                () => undefined,
+              ),
+          }),
+        readLastDownloaded: () => {
+          cacheReads += 1;
+          return undefined;
+        },
+        commitLastDownloaded: () => true,
+        verifyGithubAttestation: verify,
+      }),
+    ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+    expect(cacheReads).toBe(0);
+  });
+
   it("stages an offline bundle under custody and pins the gh verifier argv", async () => {
     const root = mkdtempSync(join(tmpdir(), "aih-baseline-gh-"));
     const argv: string[][] = [];

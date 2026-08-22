@@ -4,6 +4,8 @@ import { join } from "node:path";
 import type { Command } from "commander";
 import { describe, expect, it } from "vitest";
 import { runPolicyGenerate } from "../../src/org-policy/generate.js";
+import { policyStudioModel } from "../../src/org-policy/studio-model.js";
+import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
 const command = (apply = true): Command =>
   ({ optsWithGlobals: () => ({ apply, posture: "vibe" }) }) as unknown as Command;
@@ -63,5 +65,53 @@ describe("policy generate baseline evidence route", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("projects only fixed baseline provenance fields and rejects hostile supplied projections", () => {
+    const secret = "credential://should-not-render";
+    const supplied = {
+      ageSeconds: 0,
+      attestationBytes: Buffer.from(secret),
+      bootstrapLocator: secret,
+      cachePath: secret,
+      digest: "a".repeat(64),
+      resolvedAt: "2026-08-21T00:00:00Z",
+      schemaVersion: 1,
+      signature: secret,
+      sourceIds: ["ecc", "superpowers"],
+      tier: "fresh" as const,
+    };
+    const model = policyStudioModel(undefined, supplied);
+    expect(model.baselineEvidenceProvenance).toEqual({
+      ageSeconds: 0,
+      digest: "a".repeat(64),
+      resolvedAt: "2026-08-21T00:00:00Z",
+      schemaVersion: 1,
+      sourceIds: ["ecc", "superpowers"],
+      tier: "fresh",
+    });
+    expect(Object.isFrozen(model.baselineEvidenceProvenance)).toBe(true);
+    supplied.sourceIds.push("injected");
+    expect(model.baselineEvidenceProvenance?.sourceIds).toEqual(["ecc", "superpowers"]);
+    expect(policyStudioHtml(model)).not.toContain(secret);
+
+    let traps = 0;
+    const proxied = new Proxy(supplied, {
+      get() {
+        traps += 1;
+        throw new Error("trap");
+      },
+    });
+    expect(() => policyStudioModel(undefined, proxied)).toThrow(/baseline evidence provenance/);
+    expect(traps).toBe(0);
+    expect(() =>
+      policyStudioModel(
+        undefined,
+        Object.defineProperty({ ...supplied }, "tier", {
+          enumerable: true,
+          get: () => "fresh",
+        }),
+      ),
+    ).toThrow(/baseline evidence provenance/);
   });
 });
