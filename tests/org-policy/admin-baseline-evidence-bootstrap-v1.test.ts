@@ -1,8 +1,14 @@
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
 import {
   type AdminBaselineEvidenceBootstrapV1,
+  adminBaselineEvidenceBootstrapPathV1,
   parseAdminBaselineEvidenceBootstrapV1Json,
+  resolveAdminBaselineEvidenceBootstrapV1,
+  vibeAdminBaselineEvidenceRootV1,
 } from "../../src/org-policy/admin-baseline-evidence-bootstrap-v1.js";
 
 const record: AdminBaselineEvidenceBootstrapV1 = {
@@ -41,6 +47,14 @@ describe("admin baseline evidence bootstrap V1", () => {
 
   it.each([
     ["credential locator", { ...record, artifactUrl: "https://token@artifacts.example.test/a" }],
+    [
+      "artifact locator without trailing slash",
+      { ...record, artifactUrl: "https://artifacts.example.test/vendor-evidence" },
+    ],
+    [
+      "trailing attestation locator",
+      { ...record, attestationUrl: "https://artifacts.example.test/attestation/" },
+    ],
     ["schema range", { ...record, maxSchemaVersion: 0 }],
     ["untrusted ref", { ...record, expectedRef: "refs/heads/feature..unsafe" }],
     [
@@ -74,5 +88,87 @@ describe("admin baseline evidence bootstrap V1", () => {
       );
     }
     expect(traps).toBe(0);
+  });
+
+  it("uses one bounded regular bootstrap file per posture and rejects linked custody", () => {
+    const workspace = mkdtempSync(join(tmpdir(), "aih-baseline-bootstrap-"));
+    const adminRoot = join(workspace, "admin");
+    const platformRoot = join(workspace, "platform");
+    const write = (root: string) => {
+      mkdirSync(root, { recursive: true });
+      writeFileSync(adminBaselineEvidenceBootstrapPathV1(root), canonicalStrictJsonBytesV1(record));
+    };
+    const mustLink = (target: string, path: string, type?: "dir" | "file" | "junction") => {
+      try {
+        symlinkSync(target, path, type);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "EPERM" || code === "EACCES") return false;
+        throw error;
+      }
+      return true;
+    };
+    try {
+      write(vibeAdminBaselineEvidenceRootV1(adminRoot));
+      expect(() =>
+        resolveAdminBaselineEvidenceBootstrapV1({
+          adminRoot,
+          platformAdminRoot: platformRoot,
+          posture: "enterprise",
+        }),
+      ).toThrow(/enterprise posture requires the OS\/admin-managed canonical bootstrap file/);
+      write(platformRoot);
+      expect(
+        resolveAdminBaselineEvidenceBootstrapV1({
+          adminRoot,
+          platformAdminRoot: platformRoot,
+          posture: "enterprise",
+        }),
+      ).toMatchObject({ provenance: "os-admin-managed", root: platformRoot });
+      expect(() =>
+        resolveAdminBaselineEvidenceBootstrapV1({
+          adminRoot: join(workspace, "missing"),
+          platformAdminRoot: platformRoot,
+          posture: "vibe",
+        }),
+      ).toThrow(/vibe posture requires the canonical bootstrap file under the admin root/);
+
+      const linkedFileAdmin = join(workspace, "linked-file-admin");
+      const linkedFileRoot = vibeAdminBaselineEvidenceRootV1(linkedFileAdmin);
+      mkdirSync(linkedFileRoot, { recursive: true });
+      const outsideFile = join(workspace, "outside-bootstrap.json");
+      writeFileSync(outsideFile, canonicalStrictJsonBytesV1(record));
+      if (mustLink(outsideFile, adminBaselineEvidenceBootstrapPathV1(linkedFileRoot), "file")) {
+        expect(() =>
+          resolveAdminBaselineEvidenceBootstrapV1({
+            adminRoot: linkedFileAdmin,
+            platformAdminRoot: platformRoot,
+            posture: "vibe",
+          }),
+        ).toThrow(/vibe posture requires the canonical bootstrap file under the admin root/);
+      }
+
+      const linkedParentAdmin = join(workspace, "linked-parent-admin");
+      const outsideParent = join(workspace, "outside-parent");
+      write(join(outsideParent, "admin-baseline-evidence"));
+      mkdirSync(linkedParentAdmin, { recursive: true });
+      if (
+        mustLink(
+          outsideParent,
+          join(linkedParentAdmin, ".aih"),
+          process.platform === "win32" ? "junction" : "dir",
+        )
+      ) {
+        expect(() =>
+          resolveAdminBaselineEvidenceBootstrapV1({
+            adminRoot: linkedParentAdmin,
+            platformAdminRoot: platformRoot,
+            posture: "vibe",
+          }),
+        ).toThrow(/baseline root links/);
+      }
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
   });
 });

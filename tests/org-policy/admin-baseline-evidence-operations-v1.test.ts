@@ -339,6 +339,109 @@ describe("admin baseline evidence resolution v1", () => {
         now: "2026-08-21T00:00:00Z",
       }),
     ).toMatchObject({ verified: true, signedAt: "2026-08-20T23:59:00Z" });
+    const stale = structuredClone(realShape);
+    stale[0]?.verificationResult.verifiedTimestamps.splice(0, 1, {
+      timestamp: "2025-01-01T00:00:00Z",
+      type: "signed",
+      uri: "https://rekor.sigstore.dev",
+    });
+    expect(
+      parseGithubBaselineEvidenceAttestationV1(Buffer.from(JSON.stringify(stale)), {
+        ...bootstrap,
+        subjectSha256,
+        now: "2026-08-21T00:00:00Z",
+      }),
+    ).toMatchObject({ verified: true, signedAt: "2025-01-01T00:00:00Z" });
+    const future = structuredClone(realShape);
+    future[0]?.verificationResult.verifiedTimestamps.splice(0, 1, {
+      timestamp: "2026-08-21T00:00:01Z",
+      type: "signed",
+      uri: "https://rekor.sigstore.dev",
+    });
+    expect(() =>
+      parseGithubBaselineEvidenceAttestationV1(Buffer.from(JSON.stringify(future)), {
+        ...bootstrap,
+        subjectSha256,
+        now: "2026-08-21T00:00:00Z",
+      }),
+    ).toThrow(/admin baseline evidence/);
+    const verification = (claim: typeof realShape) => {
+      const result = claim[0]?.verificationResult;
+      if (result === undefined) throw new Error("expected verification result");
+      return result;
+    };
+    for (const [label, mutate] of [
+      [
+        "SAN",
+        (claim: typeof realShape) => {
+          verification(claim).signature.certificate.subjectAlternativeName =
+            "https://wrong.example";
+        },
+      ],
+      [
+        "build signer",
+        (claim: typeof realShape) => {
+          verification(claim).signature.certificate.buildSignerURI = "https://wrong.example";
+        },
+      ],
+      [
+        "build config",
+        (claim: typeof realShape) => {
+          verification(claim).signature.certificate.buildConfigURI = "https://wrong.example";
+        },
+      ],
+      [
+        "issuer",
+        (claim: typeof realShape) => {
+          verification(claim).signature.certificate.issuer = "https://wrong.example";
+        },
+      ],
+      [
+        "source URI",
+        (claim: typeof realShape) => {
+          verification(claim).signature.certificate.sourceRepositoryURI =
+            "https://github.com/wrong/repo";
+        },
+      ],
+      [
+        "source ref",
+        (claim: typeof realShape) => {
+          verification(claim).signature.certificate.sourceRepositoryRef = "refs/heads/wrong";
+        },
+      ],
+      [
+        "self-hosted runner",
+        (claim: typeof realShape) => {
+          verification(claim).signature.certificate.runnerEnvironment = "self-hosted";
+        },
+      ],
+      [
+        "predicate",
+        (claim: typeof realShape) => {
+          verification(claim).statement.predicateType = "wrong";
+        },
+      ],
+      [
+        "subject digest",
+        (claim: typeof realShape) => {
+          const subject = verification(claim).statement.subject[0];
+          if (subject === undefined) throw new Error("expected attestation subject");
+          subject.digest.sha256 = "b".repeat(64);
+        },
+      ],
+    ]) {
+      const mutated = structuredClone(realShape);
+      mutate(mutated);
+      expect(
+        () =>
+          parseGithubBaselineEvidenceAttestationV1(Buffer.from(JSON.stringify(mutated)), {
+            ...bootstrap,
+            subjectSha256,
+            now: "2026-08-21T00:00:00Z",
+          }),
+        label,
+      ).toThrow(/admin baseline evidence/);
+    }
     expect(() =>
       parseGithubBaselineEvidenceAttestationV1(Buffer.from(JSON.stringify({ subjectSha256 })), {
         ...bootstrap,
@@ -529,6 +632,47 @@ describe("admin baseline evidence resolution v1", () => {
       schemaVersion: 1,
       digest: createHash("sha256").update(vendorBaselineLockBytes()).digest("hex"),
     });
+  });
+
+  it("treats stale cache custody and bootstrap identity incompatibility as terminal before verification", async () => {
+    let verifierCalls = 0;
+    await expect(
+      resolveAdminBaselineEvidenceV1({
+        bootstrap,
+        now: "2026-08-21T00:00:00Z",
+        fetchFresh: async () => ({ kind: "unavailable" }),
+        readLastDownloaded: () => ({
+          artifact,
+          attestationBytes: Buffer.from("attestation"),
+          downloadedAt: "2026-08-20T22:59:59Z",
+        }),
+        commitLastDownloaded: () => true,
+        verifyGithubAttestation: async () => {
+          verifierCalls += 1;
+          throw new Error("verifier must not run for stale cache");
+        },
+      }),
+    ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+    expect(verifierCalls).toBe(0);
+
+    for (const incompatible of [
+      { ...bootstrap, maxSchemaVersion: 2, minSchemaVersion: 2 },
+      {
+        ...bootstrap,
+        sources: [{ ...bootstrap.sources[0], pinnedSha: "a".repeat(40) }, bootstrap.sources[1]],
+      },
+    ]) {
+      await expect(
+        resolveAdminBaselineEvidenceV1({
+          bootstrap: incompatible,
+          now: "2026-08-21T00:00:00Z",
+          fetchFresh: async () => ({ kind: "unavailable" }),
+          readLastDownloaded: () => undefined,
+          commitLastDownloaded: () => true,
+          verifyGithubAttestation: verify,
+        }),
+      ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+    }
   });
 
   it.each(["extra", "nonplain", "accessor"] as const)(
