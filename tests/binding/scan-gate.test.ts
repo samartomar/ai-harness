@@ -470,6 +470,85 @@ describe("fast scan disposition (D12 gate + posture-graded coverage)", () => {
     expect(disposition.verdict).toBe("block");
     expect(disposition.findings.some((f) => f.severity === "critical")).toBe(true);
   });
+
+  const TURKISH_UNICODE_CASES = [
+    ["dotted İ in prose", "docs/turkish.md", "Turkish İ prose.\n", "allow"],
+    [
+      "dotted İ in a comment",
+      "src/turkish.ts",
+      "// Turkish İ comment\nexport const value = 1;\n",
+      "allow",
+    ],
+    ["dotted İ in a string", "src/turkish.ts", 'export const label = "İ string";\n', "allow"],
+    ["dotted İ in an identifier", "src/turkish.ts", "export const İd = 1;\n", "block"],
+    ["dotted İ in a config key", "settings.json", '{"İd":"value"}\n', "block"],
+    ["dotless ı in prose", "docs/turkish.md", "Turkish ı prose.\n", "allow"],
+    [
+      "dotless ı in a comment",
+      "src/turkish.ts",
+      "// Turkish ı comment\nexport const value = 1;\n",
+      "allow",
+    ],
+    ["dotless ı in a string", "src/turkish.ts", 'export const label = "ı string";\n', "allow"],
+    ["dotless ı in an identifier", "src/turkish.ts", "export const ıd = 1;\n", "block"],
+    ["dotless ı in a config key", "settings.json", '{"ıd":"value"}\n', "block"],
+  ] as const;
+
+  it.each(TURKISH_UNICODE_CASES)(
+    "%s has the correct end-to-end gate outcome",
+    async (_label, path, text, expected) => {
+      const root = join(repoDir, `turkish-${_label.replace(/[^a-z]/gi, "")}`);
+      initGitRepo(root, { [path]: text });
+      const resolved = await resolveGitSource(
+        { repository: root, ref: "HEAD" },
+        { runner: defaultRunner, cacheHome },
+      );
+      const disposition = runFastScanGate(
+        scannableFromGit(resolved),
+        { posture: "vibe", allowIncompleteAtVibe: true },
+        { cacheHome },
+      );
+      expect(disposition.verdict).toBe(expected);
+      if (expected === "allow") {
+        expect(
+          disposition.findings.find((finding) => finding.code === "trust.visible-unicode")
+            ?.advisory,
+        ).toBeDefined();
+      }
+      if (text.includes("İ") && expected === "block") {
+        expect(
+          disposition.findings.find((finding) => finding.code === "trust.visible-unicode"),
+        ).toMatchObject({
+          severity: "medium",
+          advisory: undefined,
+        });
+      }
+    },
+  );
+
+  it("keeps dotted İ prose advisory when a different glyph blocks the same file", async () => {
+    const root = join(repoDir, "turkish-mixed-context");
+    initGitRepo(root, {
+      "src/turkish.ts": "// Turkish İ prose\nexport const ıd = 1;\n",
+    });
+    const resolved = await resolveGitSource(
+      { repository: root, ref: "HEAD" },
+      { runner: defaultRunner, cacheHome },
+    );
+    const disposition = runFastScanGate(
+      scannableFromGit(resolved),
+      { posture: "vibe", allowIncompleteAtVibe: true },
+      { cacheHome },
+    );
+
+    expect(disposition.verdict).toBe("block");
+    expect(
+      disposition.findings.find((finding) => finding.code === "trust.visible-unicode")?.advisory,
+    ).toBeDefined();
+    expect(disposition.findings.some((finding) => finding.code === "trust.hidden-unicode")).toBe(
+      true,
+    );
+  });
 });
 
 describe("scan cache (derived, rebuildable)", () => {
