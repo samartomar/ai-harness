@@ -178,6 +178,49 @@ describe("OfflineRevocationSnapshotV1", () => {
     expect(resolve({ now: "2026-08-10T11:59:59Z" })).toMatchObject({ kind: "invalid-authority" });
   });
 
+  it("rejects nested proxy snapshot and signatures material without running traps", () => {
+    const snapshotTrap = vi.fn(() => {
+      throw new Error("hostile snapshot proxy trap");
+    });
+    const signaturesTrap = vi.fn(() => {
+      throw new Error("hostile signatures proxy trap");
+    });
+    for (const [label, value] of [
+      [
+        "snapshot",
+        {
+          signerIdentity: "signer:org-admin",
+          signatures: [{ keyid: "admin-key", sig: Buffer.from("admin-key").toString("base64") }],
+          snapshot: {
+            ...snapshot(),
+            revokedDecisionIds: new Proxy(["decision-revoked"], {
+              get: snapshotTrap,
+            }),
+          },
+        },
+      ],
+      [
+        "signatures",
+        {
+          signerIdentity: "signer:org-admin",
+          signatures: new Proxy(
+            [{ keyid: "admin-key", sig: Buffer.from("admin-key").toString("base64") }],
+            {
+              get: signaturesTrap,
+            },
+          ),
+          snapshot: snapshot(),
+        },
+      ],
+    ] as const) {
+      expect(() => createOfflineRevocationSnapshotV1(value), label).toThrow(
+        `OFFLINE_REVOCATION_SNAPSHOT_V1: ${label === "snapshot" ? "offline revocation snapshot" : "signatures"}`,
+      );
+    }
+    expect(snapshotTrap).not.toHaveBeenCalled();
+    expect(signaturesTrap).not.toHaveBeenCalled();
+  });
+
   it("rejects rollback and equal-sequence substitution while producing a deterministic next durable state", () => {
     const current = { digestSha256: "b".repeat(64), issuer: "platform-security", sequence: 7 };
     expect(
@@ -296,6 +339,26 @@ describe("OfflineRevocationSnapshotV1", () => {
         ...custodyTrust(),
       }),
     ).toEqual({ kind: "contended" });
+  });
+
+  it("treats crash-corrupted observed durable state as a no-write custody contention", () => {
+    const next = signed({ snapshot: snapshot({ sequence: 8 }) });
+    for (const current of [
+      {},
+      { issuer: "platform-security", sequence: 7 },
+      { digestSha256: DIGEST, issuer: "platform-security", sequence: 0 },
+    ]) {
+      const claim = vi.fn(() => true);
+      expect(
+        claimOfflineRevocationStateV1({
+          claim,
+          next,
+          observe: (_issuer: string) => current,
+          ...custodyTrust(),
+        }),
+      ).toEqual({ kind: "contended" });
+      expect(claim).not.toHaveBeenCalled();
+    }
   });
 
   it("cannot poison high-water state with a structurally valid parsed forged signature", () => {
