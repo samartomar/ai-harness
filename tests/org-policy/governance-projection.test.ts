@@ -1120,6 +1120,21 @@ describe("governed candidate projection", () => {
       { ...v3, decisions: [{ ...decision, issuer: "other-issuer" }] },
       {
         ...v3,
+        decisions: [
+          {
+            ...decision,
+            id: "decision-duplicate",
+            subject: { ...decision.subject, id: "first-subject" },
+          },
+          {
+            ...decision,
+            id: "decision-duplicate",
+            subject: { ...decision.subject, id: "second-subject" },
+          },
+        ],
+      },
+      {
+        ...v3,
         decisionRevocations: [
           {
             format: "aih-governance-decision-revocation",

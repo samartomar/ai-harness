@@ -61,10 +61,7 @@ function validSha512Sri(value: string): boolean {
   if (match?.[1] === undefined) return false;
   const encoded = match[1];
   const decoded = Buffer.from(encoded, "base64");
-  return (
-    decoded.length === 64 &&
-    decoded.toString("base64").replace(/=+$/, "") === encoded.replace(/=+$/, "")
-  );
+  return decoded.length === 64 && decoded.toString("base64") === encoded;
 }
 
 const exactSet = z
@@ -75,7 +72,7 @@ export const GovernanceDecisionTargetV2Schema = stableId;
 const targets = z
   .array(GovernanceDecisionTargetV2Schema)
   .min(1)
-  .max(3)
+  .max(64)
   .refine(sortedUnique, "must be sorted and duplicate-free");
 export const GovernanceDecisionEffectV2Schema = z.enum(["configure", "install", "observe", "use"]);
 const effects = z

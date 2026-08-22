@@ -16,6 +16,9 @@ const stableId = z.string().regex(ID, "must be a bounded stable identifier");
 const digest = z.string().regex(SHA256, "must be a sha256 digest");
 const exactSemver = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
 
+/** Live upstream state is short-lived; a receipt cannot claim a longer window. */
+export const MAX_UPSTREAM_OBSERVATION_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 function ordinalCompare(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -29,7 +32,7 @@ function sortedUnique(values: readonly string[]): boolean {
 const targets = z
   .array(GovernanceDecisionTargetV2Schema)
   .min(1)
-  .max(3)
+  .max(64)
   .refine(sortedUnique, "must be sorted and duplicate-free");
 const effects = z
   .array(GovernanceDecisionEffectV2Schema)
@@ -69,12 +72,84 @@ export const UpstreamObservationReceiptV1Schema = z
     if (Date.parse(value.validUntil) <= Date.parse(value.observedAt)) {
       ctx.addIssue({ code: "custom", message: "validUntil must be after observedAt" });
     }
+    if (
+      Date.parse(value.validUntil) - Date.parse(value.observedAt) >
+      MAX_UPSTREAM_OBSERVATION_WINDOW_MS
+    ) {
+      ctx.addIssue({ code: "custom", message: "observation window must not exceed 24 hours" });
+    }
   });
 
 export type UpstreamObservationReceiptV1 = z.infer<typeof UpstreamObservationReceiptV1Schema>;
 
 export function parseUpstreamObservationReceiptV1(value: unknown): UpstreamObservationReceiptV1 {
   return UpstreamObservationReceiptV1Schema.parse(value);
+}
+
+const verifiedObservations = new WeakSet<object>();
+
+/** Opaque proof minted only by the code-owned observation verification seam. */
+export interface VerifiedUpstreamObservationV1 {
+  readonly receipt: UpstreamObservationReceiptV1;
+}
+
+export function isVerifiedUpstreamObservationV1(
+  value: unknown,
+): value is VerifiedUpstreamObservationV1 {
+  return typeof value === "object" && value !== null && verifiedObservations.has(value);
+}
+
+export interface VerifyUpstreamObservationV1Input {
+  receipt: unknown;
+  expectedVerifier: UpstreamObservationReceiptV1["verifier"];
+  expectedInstalled: UpstreamObservationReceiptV1["installed"];
+  subject: Pick<GovernanceDecisionV2["subject"], "kind" | "id" | "sourceDigest" | "subjectDigest">;
+  target: string;
+  effect: z.infer<typeof GovernanceDecisionEffectV2Schema>;
+  supportedTargets: readonly string[];
+  now: string;
+  /** Code-owned verifier seam; it must not perform process, network, or filesystem work here. */
+  verify: (receipt: UpstreamObservationReceiptV1) => boolean;
+}
+
+/**
+ * The sole pure mint for resolver-usable observations. A parsed JSON object,
+ * spread, clone, or self-described verifier can never enter the WeakSet.
+ */
+export function verifyUpstreamObservationV1(
+  input: VerifyUpstreamObservationV1Input,
+): VerifiedUpstreamObservationV1 | undefined {
+  const parsed = UpstreamObservationReceiptV1Schema.safeParse(input.receipt);
+  const now = Date.parse(input.now);
+  if (!parsed.success || !Number.isFinite(now)) return undefined;
+  const receipt = parsed.data;
+  if (
+    receipt.outcome !== "observed-success" ||
+    Date.parse(receipt.observedAt) > now ||
+    now >= Date.parse(receipt.validUntil) ||
+    receipt.verifier.id !== input.expectedVerifier.id ||
+    receipt.verifier.version !== input.expectedVerifier.version ||
+    receipt.verifier.digest !== input.expectedVerifier.digest ||
+    receipt.installed.id !== input.expectedInstalled.id ||
+    receipt.installed.digest !== input.expectedInstalled.digest ||
+    receipt.subject.kind !== input.subject.kind ||
+    receipt.subject.id !== input.subject.id ||
+    receipt.subject.sourceDigest !== input.subject.sourceDigest ||
+    receipt.subject.subjectDigest !== input.subject.subjectDigest ||
+    !input.supportedTargets.includes(input.target) ||
+    !receipt.targets.includes(input.target) ||
+    !receipt.allowedEffects.includes(input.effect)
+  ) {
+    return undefined;
+  }
+  try {
+    if (!input.verify(receipt)) return undefined;
+  } catch {
+    return undefined;
+  }
+  const verified: VerifiedUpstreamObservationV1 = Object.freeze({ receipt });
+  verifiedObservations.add(verified);
+  return verified;
 }
 
 export type ObservedEffectResolution =
@@ -88,6 +163,7 @@ export type ObservedEffectResolution =
         | "decision-revocation-invalid"
         | "decision-scope-mismatch"
         | "observation-missing"
+        | "observation-unverified"
         | "observation-invalid"
         | "observation-stale"
         | "observation-unsuccessful"
@@ -104,6 +180,7 @@ export interface ObservedEffectResolutionInput {
   effect: z.infer<typeof GovernanceDecisionEffectV2Schema>;
   supportedTargets: readonly string[];
   expectedVerifier: UpstreamObservationReceiptV1["verifier"];
+  expectedInstalled: UpstreamObservationReceiptV1["installed"];
   now: string;
 }
 
@@ -156,9 +233,10 @@ export function resolveObservedEffect(
     return { state: "decision-scope-mismatch", decisionDigest };
   }
   if (input.observation === undefined) return { state: "observation-missing", decisionDigest };
-  const parsedObservation = UpstreamObservationReceiptV1Schema.safeParse(input.observation);
-  if (!parsedObservation.success) return { state: "observation-invalid", decisionDigest };
-  const observation = parsedObservation.data;
+  if (!isVerifiedUpstreamObservationV1(input.observation)) {
+    return { state: "observation-unverified", decisionDigest };
+  }
+  const observation = input.observation.receipt;
   if (observation.outcome !== "observed-success") {
     return { state: "observation-unsuccessful", decisionDigest };
   }
@@ -177,6 +255,11 @@ export function resolveObservedEffect(
     observation.verifier.id !== input.expectedVerifier.id ||
     observation.verifier.version !== input.expectedVerifier.version ||
     observation.verifier.digest !== input.expectedVerifier.digest ||
+    observation.installed.id !== input.expectedInstalled.id ||
+    observation.installed.digest !== input.expectedInstalled.digest ||
+    Date.parse(observation.validUntil) > Date.parse(decision.expiresAt) ||
+    (decision.disposition === "accepted-with-conditions" &&
+      Date.parse(observation.validUntil) > Date.parse(decision.reviewBy)) ||
     !observation.targets.includes(input.target) ||
     !observation.allowedEffects.includes(input.effect)
   ) {

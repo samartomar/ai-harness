@@ -146,7 +146,7 @@ describe("GovernanceDecisionV2 public contract", () => {
         registry: "https://pypi.org",
         package: "review-tool",
         version: "1.2.3",
-        filename: "review_tool-1.2.3.whl",
+        filename: "review_tool+build-1.2.3.whl",
         sha256: `sha256:${"c".repeat(64)}`,
       },
       {
@@ -157,6 +157,12 @@ describe("GovernanceDecisionV2 public contract", () => {
         platform: { os: "linux", architecture: "amd64" },
         manifestDigest: `sha256:${"e".repeat(64)}`,
       },
+      {
+        type: "remote",
+        origin: "https://mcp.example.test",
+        contentDigest: `sha256:${"f".repeat(64)}`,
+      },
+      { type: "aih", release: "6.1.0", revision: `sha256:${"0".repeat(64)}` },
     ];
     for (const [index, kind] of ["tool", "skill", "mcp", "package", "profile"].entries()) {
       expect(
@@ -171,6 +177,15 @@ describe("GovernanceDecisionV2 public contract", () => {
         ).success,
       ).toBe(true);
     }
+    for (const source of sources.slice(4)) {
+      expect(
+        GovernanceDecisionV2Schema.safeParse(
+          decision({
+            subject: { ...GovernanceDecisionV2Schema.parse(decision()).subject, source },
+          }),
+        ).success,
+      ).toBe(true);
+    }
     expect(
       GovernanceDecisionV2Schema.safeParse(
         decision({
@@ -181,5 +196,20 @@ describe("GovernanceDecisionV2 public contract", () => {
         }),
       ).success,
     ).toBe(false);
+    for (const integrity of [
+      "sha512-AAAA",
+      `sha512-${Buffer.alloc(64).toString("base64").replace(/=$/, "")}`,
+    ]) {
+      expect(
+        GovernanceDecisionV2Schema.safeParse(
+          decision({
+            subject: {
+              ...GovernanceDecisionV2Schema.parse(decision()).subject,
+              source: { ...sources[1], integrity },
+            },
+          }),
+        ).success,
+      ).toBe(false);
+    }
   });
 });

@@ -2759,7 +2759,7 @@
                   },
                   "targets": {
                     "minItems": 1,
-                    "maxItems": 3,
+                    "maxItems": 64,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -3189,7 +3189,7 @@
                   },
                   "targets": {
                     "minItems": 1,
-                    "maxItems": 3,
+                    "maxItems": 64,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -3624,7 +3624,7 @@
                   },
                   "targets": {
                     "minItems": 1,
-                    "maxItems": 3,
+                    "maxItems": 64,
                     "type": "array",
                     "items": {
                       "type": "string",
