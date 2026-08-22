@@ -1347,6 +1347,7 @@ describe("governed candidate projection", () => {
       signedDecision: ReturnType<typeof governanceDecisionV2>,
       revocations: unknown[] = [],
       additionalDecisions: ReturnType<typeof governanceDecisionV2>[] = [],
+      receiptTargets = ["claude"],
     ) => {
       mkdirSync(join(dir, ".aih"), { recursive: true });
       writeFileSync(
@@ -1357,7 +1358,7 @@ describe("governed candidate projection", () => {
           issuerRepository: "acme/governance",
           issuedAt: receiptIssuedAt,
           expiresAt,
-          targets: ["claude"],
+          targets: receiptTargets,
           trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
           decisions: [signedDecision, ...additionalDecisions].sort((left, right) =>
             left.id.localeCompare(right.id),
@@ -1444,6 +1445,80 @@ describe("governed candidate projection", () => {
       state: "decision-rejected",
       decisionDigest: governanceDecisionDigestV2(coPresentRejected as never),
     });
+    const expiredRejected = governanceDecisionV2({
+      id: "decision-expired-rejection",
+      disposition: "rejected",
+      issuedAt,
+      notBefore: issuedAt,
+      expiresAt: new Date(now - 60_000).toISOString(),
+    });
+    const expiredOverlay = await mint(approved, [], [expiredRejected]);
+    expect(
+      resolveObservedEffect({ ...expiredOverlay.input, observation: expiredOverlay.observation }),
+    ).toMatchObject({ state: "observed-effective" });
+    const revokedRejected = governanceDecisionV2({
+      id: "decision-revoked-rejection",
+      disposition: "rejected",
+      issuedAt,
+      notBefore: issuedAt,
+      expiresAt,
+    });
+    const revokedRejectedDigest = governanceDecisionDigestV2(revokedRejected as never);
+    const revokedOverlay = await mint(
+      approved,
+      [
+        {
+          format: "aih-governance-decision-revocation",
+          version: 2,
+          decisionDigest: revokedRejectedDigest,
+          issuer: revokedRejected.issuer,
+          revokedAt: new Date(now - 150 * 60_000).toISOString(),
+          reason: "Withdrawn.",
+        },
+      ],
+      [revokedRejected],
+    );
+    expect(
+      resolveObservedEffect({ ...revokedOverlay.input, observation: revokedOverlay.observation }),
+    ).toMatchObject({ state: "observed-effective" });
+    const irrelevantRejected = governanceDecisionV2({
+      id: "decision-irrelevant-rejection",
+      disposition: "rejected",
+      targets: ["codex"],
+      allowedEffects: ["use"],
+      issuedAt,
+      notBefore: issuedAt,
+      expiresAt,
+    });
+    const irrelevantOverlay = await mint(approved, [], [irrelevantRejected], ["claude", "codex"]);
+    expect(
+      resolveObservedEffect({
+        ...irrelevantOverlay.input,
+        observation: irrelevantOverlay.observation,
+      }),
+    ).toMatchObject({ state: "observed-effective" });
+    const rejectionA = governanceDecisionV2({
+      id: "decision-a-rejection",
+      disposition: "rejected",
+      issuedAt,
+      notBefore: issuedAt,
+      expiresAt,
+    });
+    const rejectionZ = governanceDecisionV2({
+      id: "decision-z-rejection",
+      disposition: "rejected",
+      issuedAt,
+      notBefore: issuedAt,
+      expiresAt,
+    });
+    const multipleOverlay = await mint(approved, [], [rejectionZ, rejectionA]);
+    const expectedRejectionDigest = [
+      governanceDecisionDigestV2(rejectionA as never),
+      governanceDecisionDigestV2(rejectionZ as never),
+    ].sort()[0];
+    expect(
+      resolveObservedEffect({ ...multipleOverlay.input, observation: multipleOverlay.observation }),
+    ).toMatchObject({ state: "decision-rejected", decisionDigest: expectedRejectionDigest });
     const approvedDigest = governanceDecisionDigestV2(approved as never);
     const revokedMint = await mint(approved, [
       {
