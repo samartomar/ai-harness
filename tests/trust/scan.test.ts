@@ -5506,6 +5506,67 @@ describe("trustScanCommand", () => {
     if (quarantineRoot !== undefined) rmSync(quarantineRoot, { recursive: true, force: true });
   });
 
+  it.each([
+    ["removed", "remove", "trust.fetch-metadata-missing"],
+    ["unreadable", "unreadable", "trust.fetch-metadata-unreadable"],
+    ["corrupt", "corrupt", "trust.fetch-metadata-malformed"],
+    ["mismatched", "mismatch", "trust.fetch-metadata-mismatched"],
+  ] as const)("fails closed when fetched GitHub metadata is %s", async (_, mutation, code) => {
+    let quarantineRoot: string | undefined;
+    const run = fakeRunner((argv) => {
+      if (argv[0] !== process.execPath || argv[1] !== "-e") return undefined;
+      const input = JSON.parse(argv[3] ?? "{}") as {
+        metadataPath: string;
+        owner: string;
+        quarantineRoot: string;
+        ref: string;
+        repo: string;
+        treePath: string;
+      };
+      quarantineRoot = input.quarantineRoot;
+      mkdirSync(join(input.treePath, "skills", "clean"), { recursive: true });
+      writeFileSync(join(input.treePath, "skills", "clean", "SKILL.md"), "# Clean\n", "utf8");
+      const metadata = {
+        kind: "github",
+        owner: input.owner,
+        repo: input.repo,
+        ref: input.ref,
+        pinnedSha: "a".repeat(40),
+        source: `${input.owner}/${input.repo}`,
+        treePath: input.treePath,
+      };
+      if (mutation === "remove") return { code: 0 };
+      if (mutation === "unreadable") {
+        mkdirSync(input.metadataPath);
+        return { code: 0 };
+      }
+      writeFileSync(
+        input.metadataPath,
+        mutation === "corrupt"
+          ? "{ broken"
+          : JSON.stringify({ ...metadata, pinnedSha: "b".repeat(40) }),
+        "utf8",
+      );
+      return { code: 0 };
+    });
+    orgPolicy({ approvedSources: [{ owner: "owner", repo: "repo", pinnedSha: "a".repeat(40) }] });
+    const c = {
+      ...ctx({ target: "owner/repo", pin: "a".repeat(40) }, {}, "vibe", run),
+      apply: true,
+    };
+
+    const result = await executePlan(await trustScanCommand.plan(c), c);
+
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "trust.fetch-metadata", code })]),
+    );
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "trust.untrusted-publisher" })]),
+    );
+    expect(JSON.stringify(result.report?.checks)).not.toContain(quarantineRoot ?? "");
+  });
+
   it("plans a read-only local scan that fails through verify checks", async () => {
     skill(
       "skills/evil",

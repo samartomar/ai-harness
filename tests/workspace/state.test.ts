@@ -169,6 +169,30 @@ describe("workspace state collection", () => {
     },
   );
 
+  it.each(["a".repeat(41), "A".repeat(40)])(
+    "fails closed on a noncanonical branch object ID %j",
+    async (sha) => {
+      const run: Runner = async (argv) => {
+        const tail = argv.slice(3).join(" ");
+        if (tail === "rev-parse --is-inside-work-tree")
+          return { code: 0, stdout: "true\n", stderr: "" };
+        if (tail === "status --porcelain=v2 --branch") {
+          return {
+            code: 0,
+            stdout: `# branch.oid ${sha}\n# branch.head main\n`,
+            stderr: "",
+          };
+        }
+        return { code: 1, stdout: "", stderr: "" };
+      };
+
+      await expect(readWorkspaceRepoState(ctx(run), childRepo("ui"))).resolves.toMatchObject({
+        git: true,
+        observation: "unavailable",
+      });
+    },
+  );
+
   it("returns an explicit diverged observation instead of mixing facts across a branch switch", async () => {
     let revisionReads = 0;
     const run: Runner = async (argv) => {
