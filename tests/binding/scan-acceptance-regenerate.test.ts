@@ -9,7 +9,7 @@ import {
   ScanAcceptanceRegenerateError,
 } from "../../src/binding/scan-acceptance-regenerate.js";
 
-const checkout = "C:/vendor/superpowers";
+const checkout = join(tmpdir(), "vendor", "superpowers");
 const clean = {
   checkout: {
     repository: "obra/superpowers" as const,
@@ -25,6 +25,20 @@ const clean = {
 };
 
 describe("scan-acceptance regeneration", () => {
+  it("requires an explicit absolute checkout path", async () => {
+    await expect(
+      regenerateSuperpowersScanAcceptance(
+        { checkoutPath: "vendor/superpowers" },
+        { check: async () => clean },
+      ),
+    ).rejects.toBeInstanceOf(ScanAcceptanceRegenerateError);
+    await expect(
+      runScanAcceptanceRegenerateCli(["--checkout", "vendor/superpowers"], {
+        check: async () => clean,
+      }),
+    ).rejects.toBeInstanceOf(ScanAcceptanceRegenerateError);
+  });
+
   it("writes canonical empty ledger bytes without accepting observations and check mode is read-only", async () => {
     const writes: string[] = [];
     const deps = {
