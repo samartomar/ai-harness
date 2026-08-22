@@ -279,7 +279,11 @@ export function createAdminBaselineEvidenceHttpsFetchV1(
         );
         call.on("error", failed);
         call.on("timeout", () => {
-          call.destroy();
+          try {
+            call.destroy();
+          } catch {
+            // Idle teardown failure cannot change the terminal acquisition result.
+          }
           failed();
         });
         call.end();
