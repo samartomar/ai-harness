@@ -52,6 +52,11 @@ const evidence = {
   attestationBytes: Buffer.from("attestation"),
   downloadedAt: "2026-08-21T00:00:00Z",
 };
+const refreshedEvidence = {
+  ...evidence,
+  attestationBytes: Buffer.from("refreshed-attestation"),
+  downloadedAt: "2026-08-21T00:01:00Z",
+};
 
 describe("admin baseline evidence cache v1", () => {
   it("round-trips only a canonical complete raw artifact and binds its subject", () => {
@@ -79,6 +84,12 @@ describe("admin baseline evidence cache v1", () => {
       expect(readAdminBaselineEvidenceCacheV1(root, bootstrap)).toEqual(evidence);
       const slot = adminBaselineEvidenceCacheSlotPathV1(root, bootstrap);
       expect(slot).toContain("cache");
+      expect(commitAdminBaselineEvidenceCacheV1(root, bootstrap, refreshedEvidence)).toBe(true);
+      expect(readAdminBaselineEvidenceCacheV1(root, bootstrap)).toEqual(refreshedEvidence);
+      writeFileSync(`${slot}.lock`, "claimed", "utf8");
+      expect(commitAdminBaselineEvidenceCacheV1(root, bootstrap, evidence)).toBe(false);
+      expect(readAdminBaselineEvidenceCacheV1(root, bootstrap)).toEqual(refreshedEvidence);
+      rmSync(`${slot}.lock`);
       writeFileSync(slot, "{}", "utf8");
       expect(() => readAdminBaselineEvidenceCacheV1(root, bootstrap)).toThrow(
         /admin baseline evidence cache/,

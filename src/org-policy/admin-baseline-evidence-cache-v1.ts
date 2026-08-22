@@ -1,11 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
   chmodSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   realpathSync,
   renameSync,
   rmSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -48,6 +50,10 @@ export interface DownloadedEvidenceV1 {
 }
 
 interface DirectoryIdentity {
+  readonly dev: number;
+  readonly ino: number;
+}
+interface FileIdentity {
   readonly dev: number;
   readonly ino: number;
 }
@@ -213,6 +219,30 @@ function directoryIdentity(path: string): DirectoryIdentity | undefined {
 function sameDirectory(path: string, expected: DirectoryIdentity): boolean {
   const current = directoryIdentity(path);
   return current !== undefined && current.dev === expected.dev && current.ino === expected.ino;
+}
+
+function fileIdentity(path: string): FileIdentity | undefined {
+  try {
+    const info = lstatSync(path);
+    return info.isSymbolicLink() || !info.isFile() ? undefined : { dev: info.dev, ino: info.ino };
+  } catch {
+    return undefined;
+  }
+}
+
+function sameFile(path: string, expected: FileIdentity): boolean {
+  const current = fileIdentity(path);
+  return current !== undefined && current.dev === expected.dev && current.ino === expected.ino;
+}
+
+function releaseLock(path: string, identity: FileIdentity): boolean {
+  try {
+    if (!sameFile(path, identity)) return false;
+    unlinkSync(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function artifactFrom(value: unknown): VendorBaselineEvidenceArtifactV1 {
@@ -383,6 +413,9 @@ export function commitAdminBaselineEvidenceCacheV1(
   evidence: DownloadedEvidenceV1,
 ): boolean {
   let temporary: string | undefined;
+  let lockPath: string | undefined;
+  let lockTemporary: string | undefined;
+  let lockIdentity: FileIdentity | undefined;
   try {
     const canonical = canonicalRoot(root);
     const slot = adminBaselineEvidenceCacheSlotPathV1(canonical, bootstrap);
@@ -392,11 +425,23 @@ export function commitAdminBaselineEvidenceCacheV1(
     const rootIdentity = directoryIdentity(canonical);
     const cacheIdentity = directoryIdentity(directory);
     if (rootIdentity === undefined || cacheIdentity === undefined) return false;
+    lockPath = `${slot}.lock`;
+    lockTemporary = join(directory, `.${randomBytes(12).toString("hex")}.lock.tmp`);
+    writeFileSync(lockTemporary, Buffer.from("AIH_ADMIN_BASELINE_EVIDENCE_CACHE_LOCK_V1\n"), {
+      flag: "wx",
+      mode: 0o600,
+    });
+    chmodSync(lockTemporary, 0o600);
+    linkSync(lockTemporary, lockPath);
+    lockIdentity = fileIdentity(lockPath);
+    if (lockIdentity === undefined) return false;
+    unlinkSync(lockTemporary);
+    lockTemporary = undefined;
     try {
       const existing = lstatSync(slot);
       if (existing.isSymbolicLink() || !existing.isFile()) return false;
     } catch {
-      // An absent slot is valid; the exclusive temporary claim is below.
+      // An absent slot is valid; the exclusive sidecar claim is already held.
     }
     temporary = join(directory, `.${randomBytes(12).toString("hex")}.tmp`);
     writeFileSync(temporary, bytes, { flag: "wx", mode: 0o600 });
@@ -404,20 +449,39 @@ export function commitAdminBaselineEvidenceCacheV1(
     if (
       !safeCacheDirectory(canonical, directory, false) ||
       !sameDirectory(canonical, rootIdentity) ||
-      !sameDirectory(directory, cacheIdentity)
+      !sameDirectory(directory, cacheIdentity) ||
+      !sameFile(lockPath, lockIdentity)
     )
       return false;
     try {
       const live = lstatSync(slot);
       if (live.isSymbolicLink() || !live.isFile()) return false;
     } catch {
-      // Still absent: the atomic rename below claims the slot.
+      // Still absent: the held sidecar claim protects the replacement below.
     }
     renameSync(temporary, slot);
+    temporary = undefined;
+    if (!releaseLock(lockPath, lockIdentity)) return false;
+    lockPath = undefined;
+    lockIdentity = undefined;
     return true;
   } catch {
     return false;
   } finally {
+    if (lockTemporary !== undefined) {
+      try {
+        rmSync(lockTemporary, { force: true });
+      } catch {
+        // The successful/failed replacement result is already fixed above.
+      }
+    }
+    if (lockPath !== undefined && lockIdentity !== undefined) {
+      try {
+        releaseLock(lockPath, lockIdentity);
+      } catch {
+        // The successful/failed replacement result is already fixed above.
+      }
+    }
     if (temporary !== undefined) {
       try {
         rmSync(temporary, { force: true });
