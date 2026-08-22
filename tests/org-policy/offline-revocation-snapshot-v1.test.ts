@@ -221,6 +221,22 @@ describe("OfflineRevocationSnapshotV1", () => {
     expect(signaturesTrap).not.toHaveBeenCalled();
   });
 
+  it("rejects accessor-backed signatures without reading the accessor", () => {
+    const accessorTrap = vi.fn(() => {
+      throw new Error("hostile signatures accessor");
+    });
+    const signatures: unknown[] = [];
+    Object.defineProperty(signatures, "0", { enumerable: true, get: accessorTrap });
+    expect(() =>
+      createOfflineRevocationSnapshotV1({
+        signerIdentity: "signer:org-admin",
+        signatures,
+        snapshot: snapshot(),
+      }),
+    ).toThrow("OFFLINE_REVOCATION_SNAPSHOT_V1: signatures");
+    expect(accessorTrap).not.toHaveBeenCalled();
+  });
+
   it("rejects rollback and equal-sequence substitution while producing a deterministic next durable state", () => {
     const current = { digestSha256: "b".repeat(64), issuer: "platform-security", sequence: 7 };
     expect(
