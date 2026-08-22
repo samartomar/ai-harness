@@ -237,6 +237,41 @@ describe("OfflineRevocationSnapshotV1", () => {
     expect(accessorTrap).not.toHaveBeenCalled();
   });
 
+  it("rejects proxy parser bytes without invoking traps", () => {
+    const parserTrap = vi.fn(() => {
+      throw new Error("hostile parser proxy trap");
+    });
+    const bytes = new Proxy(new Uint8Array(), { getPrototypeOf: parserTrap });
+    expect(() => parseOfflineRevocationSnapshotV1Json(bytes)).toThrow(
+      "OFFLINE_REVOCATION_SNAPSHOT_V1: signed snapshot bytes",
+    );
+    expect(parserTrap).not.toHaveBeenCalled();
+  });
+
+  it("classifies explicit missing snapshot coverage as stale authority", () => {
+    expect(
+      resolveOfflineRevocationAuthorityV1({
+        decision: {
+          expiresAt: "2026-08-12T12:00:00Z",
+          id: "decision-live",
+          issuedAt: "2026-08-10T11:59:59Z",
+          notBefore: "2026-08-10T11:59:59Z",
+          reviewBy: "2026-08-12T12:00:00Z",
+        },
+        durableState: undefined,
+        now: "2026-08-10T12:00:01Z",
+        receiptExpiresAt: "2026-08-12T12:00:00Z",
+        signedSnapshot: undefined,
+        ...trust(),
+      }),
+    ).toEqual({
+      effective: false,
+      kind: "stale-authority",
+      materializable: false,
+      revoked: false,
+    });
+  });
+
   it("rejects rollback and equal-sequence substitution while producing a deterministic next durable state", () => {
     const current = { digestSha256: "b".repeat(64), issuer: "platform-security", sequence: 7 };
     expect(
