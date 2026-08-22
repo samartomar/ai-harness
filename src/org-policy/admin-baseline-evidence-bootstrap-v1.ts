@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isProxy } from "node:util/types";
 import { codeUnitCompare } from "../capability/package-graph/canonical.js";
@@ -9,6 +9,7 @@ import {
   parseStrictJsonObjectV1,
 } from "../contract/strict-json-v1.js";
 import { AihError } from "../errors.js";
+import { readRegularFile } from "../internals/fsxn.js";
 
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const WORKFLOW =
@@ -105,6 +106,7 @@ function locator(value: unknown, label: string): string {
     parsed.hash !== "" ||
     !parsed.hostname.includes(".") ||
     !parsed.pathname.startsWith("/") ||
+    (label === "artifact locator" && !parsed.pathname.endsWith("/")) ||
     (label !== "artifact locator" && parsed.pathname.endsWith("/")) ||
     parsed.pathname.split("/").some((part) => part === "." || part === "..")
   )
@@ -251,10 +253,10 @@ export function resolveAdminBaselineEvidenceBootstrapV1(input: {
     : vibeAdminBaselineEvidenceRootV1(input.adminRoot);
   const boundary = enterprise ? root : absoluteRoot(input.adminRoot, "admin root");
   if (hasLinkedAuthorityPath(boundary, root)) fail("baseline root links");
-  let bytes: Buffer;
-  try {
-    bytes = readFileSync(adminBaselineEvidenceBootstrapPathV1(root));
-  } catch {
+  const bytes = readRegularFile(adminBaselineEvidenceBootstrapPathV1(root), {
+    maxBytes: 256 * 1024,
+  });
+  if (bytes === undefined) {
     fail(
       enterprise
         ? "enterprise posture requires the OS/admin-managed canonical bootstrap file"

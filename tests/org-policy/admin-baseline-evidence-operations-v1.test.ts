@@ -370,7 +370,7 @@ describe("admin baseline evidence resolution v1", () => {
       if (result === undefined) throw new Error("expected verification result");
       return result;
     };
-    for (const [label, mutate] of [
+    const mutations: readonly [string, (claim: typeof realShape) => void][] = [
       [
         "SAN",
         (claim: typeof realShape) => {
@@ -429,7 +429,8 @@ describe("admin baseline evidence resolution v1", () => {
           subject.digest.sha256 = "b".repeat(64);
         },
       ],
-    ]) {
+    ];
+    for (const [label, mutate] of mutations) {
       const mutated = structuredClone(realShape);
       mutate(mutated);
       expect(
@@ -655,16 +656,21 @@ describe("admin baseline evidence resolution v1", () => {
     ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
     expect(verifierCalls).toBe(0);
 
-    for (const incompatible of [
+    const ecc = bootstrap.sources[0];
+    const superpowers = bootstrap.sources[1];
+    if (ecc === undefined || superpowers === undefined)
+      throw new Error("expected bootstrap sources");
+    const incompatible: AdminBaselineEvidenceBootstrapV1[] = [
       { ...bootstrap, maxSchemaVersion: 2, minSchemaVersion: 2 },
       {
         ...bootstrap,
-        sources: [{ ...bootstrap.sources[0], pinnedSha: "a".repeat(40) }, bootstrap.sources[1]],
+        sources: [{ ...ecc, pinnedSha: "a".repeat(40) }, superpowers],
       },
-    ]) {
+    ];
+    for (const bootstrap of incompatible) {
       await expect(
         resolveAdminBaselineEvidenceV1({
-          bootstrap: incompatible,
+          bootstrap,
           now: "2026-08-21T00:00:00Z",
           fetchFresh: async () => ({ kind: "unavailable" }),
           readLastDownloaded: () => undefined,

@@ -384,8 +384,7 @@ export function parseGithubBaselineEvidenceAttestationV1(
     )
       fail("attestation timestamp");
     const value = adminBaselineEvidenceTimestampEpochV1(timestamp.timestamp, true);
-    if (value === undefined || value > now || now - value > expected.cacheMaxAgeSeconds * 1000)
-      fail("attestation timestamp");
+    if (value === undefined || value > now) fail("attestation timestamp");
     const key = `${timestamp.type}\0${timestamp.uri}\0${timestamp.timestamp}`;
     if (observed.has(key)) fail("attestation timestamp");
     observed.add(key);
