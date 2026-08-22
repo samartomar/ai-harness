@@ -3,9 +3,9 @@ import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
 import {
+  ExactSemverV2Schema,
   GovernanceDecisionRevocationV2Schema,
   GovernanceDecisionV2Schema,
-  ExactSemverV2Schema,
   governanceDecisionDigestV2,
   governanceDecisionSourceDigestV2,
   governanceDecisionSubjectDigestV2,
