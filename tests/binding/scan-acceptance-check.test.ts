@@ -386,6 +386,23 @@ describe("checkSuperpowersScanAcceptance", () => {
     expect(inspections).toBe(0);
   });
 
+  it("rejects an inert replacement ref before inspection", async () => {
+    initVendorCheckout({ "SKILL.md": "pinned\n" });
+    const pinnedCommit = gitOutput(checkout, ["rev-parse", "HEAD"]);
+    git(checkout, ["update-ref", `refs/replace/${"f".repeat(40)}`, pinnedCommit]);
+    let inspections = 0;
+    await expect(
+      checkSuperpowersScanAcceptance(
+        { checkoutPath: checkout },
+        fixtureDeps(artifact([]), () => {
+          inspections += 1;
+          return [];
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    expect(inspections).toBe(0);
+  });
+
   it("fails closed for wrong, mutable, unreadable, and mutation-during-inspection checkouts", async () => {
     initVendorCheckout({ "SKILL.md": "safe\n", "unreadable/child": "not a file" });
     await expect(
