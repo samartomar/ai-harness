@@ -472,31 +472,91 @@ describe("fast scan disposition (D12 gate + posture-graded coverage)", () => {
   });
 
   const TURKISH_UNICODE_CASES = [
-    ["dotted İ in prose", "docs/turkish.md", "Turkish İ prose.\n", "allow"],
+    [
+      "dotted İ in prose",
+      "docs/turkish.md",
+      "Turkish İ prose.\n",
+      "trust.visible-unicode",
+      "medium",
+      "allow",
+    ],
     [
       "dotted İ in a comment",
       "src/turkish.ts",
       "// Turkish İ comment\nexport const value = 1;\n",
+      "trust.visible-unicode",
+      "medium",
       "allow",
     ],
-    ["dotted İ in a string", "src/turkish.ts", 'export const label = "İ string";\n', "allow"],
-    ["dotted İ in an identifier", "src/turkish.ts", "export const İd = 1;\n", "block"],
-    ["dotted İ in a config key", "settings.json", '{"İd":"value"}\n', "block"],
-    ["dotless ı in prose", "docs/turkish.md", "Turkish ı prose.\n", "allow"],
+    [
+      "dotted İ in a string",
+      "src/turkish.ts",
+      'export const label = "İ string";\n',
+      "trust.visible-unicode",
+      "medium",
+      "allow",
+    ],
+    [
+      "dotted İ in an identifier",
+      "src/turkish.ts",
+      "export const İd = 1;\n",
+      "trust.visible-unicode",
+      "medium",
+      "block",
+    ],
+    [
+      "dotted İ in a config key",
+      "settings.json",
+      '{"İd":"value"}\n',
+      "trust.visible-unicode",
+      "medium",
+      "block",
+    ],
+    [
+      "dotless ı in prose",
+      "docs/turkish.md",
+      "Turkish ı prose.\n",
+      "trust.visible-unicode",
+      "medium",
+      "allow",
+    ],
     [
       "dotless ı in a comment",
       "src/turkish.ts",
       "// Turkish ı comment\nexport const value = 1;\n",
+      "trust.visible-unicode",
+      "medium",
       "allow",
     ],
-    ["dotless ı in a string", "src/turkish.ts", 'export const label = "ı string";\n', "allow"],
-    ["dotless ı in an identifier", "src/turkish.ts", "export const ıd = 1;\n", "block"],
-    ["dotless ı in a config key", "settings.json", '{"ıd":"value"}\n', "block"],
+    [
+      "dotless ı in a string",
+      "src/turkish.ts",
+      'export const label = "ı string";\n',
+      "trust.visible-unicode",
+      "medium",
+      "allow",
+    ],
+    [
+      "dotless ı in an identifier",
+      "src/turkish.ts",
+      "export const ıd = 1;\n",
+      "trust.hidden-unicode",
+      "high",
+      "block",
+    ],
+    [
+      "dotless ı in a config key",
+      "settings.json",
+      '{"ıd":"value"}\n',
+      "trust.hidden-unicode",
+      "high",
+      "block",
+    ],
   ] as const;
 
   it.each(TURKISH_UNICODE_CASES)(
     "%s has the correct end-to-end gate outcome",
-    async (_label, path, text, expected) => {
+    async (_label, path, text, expectedCode, expectedSeverity, expected) => {
       const root = join(repoDir, `turkish-${_label.replace(/[^a-z]/gi, "")}`);
       initGitRepo(root, { [path]: text });
       const resolved = await resolveGitSource(
@@ -509,19 +569,13 @@ describe("fast scan disposition (D12 gate + posture-graded coverage)", () => {
         { cacheHome },
       );
       expect(disposition.verdict).toBe(expected);
+      const finding = disposition.findings.find((candidate) => candidate.code === expectedCode);
+      expect(finding).toMatchObject({ severity: expectedSeverity });
       if (expected === "allow") {
-        expect(
-          disposition.findings.find((finding) => finding.code === "trust.visible-unicode")
-            ?.advisory,
-        ).toBeDefined();
+        expect(finding?.advisory).toBeDefined();
       }
-      if (text.includes("İ") && expected === "block") {
-        expect(
-          disposition.findings.find((finding) => finding.code === "trust.visible-unicode"),
-        ).toMatchObject({
-          severity: "medium",
-          advisory: undefined,
-        });
+      if (expected === "block") {
+        expect(finding).not.toHaveProperty("advisory");
       }
     },
   );
@@ -549,6 +603,63 @@ describe("fast scan disposition (D12 gate + posture-graded coverage)", () => {
       true,
     );
   });
+
+  it.each(["changed", "unreadable"])(
+    "fails closed when a cached dotted İ finding's checkout content is %s",
+    async (state) => {
+      const root = join(repoDir, `turkish-cache-${state}`);
+      initGitRepo(root, {
+        "src/turkish.ts": "// Turkish İ prose\nexport const value = 1;\n",
+      });
+      const resolved = await resolveGitSource(
+        { repository: root, ref: "HEAD" },
+        { runner: defaultRunner, cacheHome },
+      );
+      const source = scannableFromGit(resolved);
+      const first = runFastScanGate(
+        source,
+        { posture: "vibe", allowIncompleteAtVibe: true },
+        { cacheHome },
+      );
+      expect(first.verdict).toBe("allow");
+      const pinnedVisibleFinding = first.findings.find(
+        (finding) => finding.code === "trust.visible-unicode",
+      );
+      expect(pinnedVisibleFinding?.contentSha256).toMatch(SHA256);
+
+      const checkoutFile = join(resolved.treePath, "src/turkish.ts");
+      if (state === "changed") {
+        writeFileSync(checkoutFile, "export const value = 1;\n");
+      } else {
+        rmSync(checkoutFile);
+      }
+      const disposition = runFastScanGate(
+        source,
+        {
+          posture: "vibe",
+          allowIncompleteAtVibe: true,
+          acceptedFindings: [
+            {
+              repository: "test/fixture",
+              code: "trust.visible-unicode",
+              path: "src/turkish.ts",
+              fileSha256: pinnedVisibleFinding?.contentSha256 ?? "",
+            },
+          ],
+        },
+        { cacheHome },
+      );
+
+      expect(disposition.verdict).toBe("block");
+      expect(disposition.rawSourceScan).toBe("FINDINGS_PRESENT");
+      expect(
+        disposition.findings.find((finding) => finding.code === "trust.visible-unicode"),
+      ).not.toHaveProperty("advisory");
+      expect(
+        disposition.findings.find((finding) => finding.code === "trust.visible-unicode"),
+      ).not.toHaveProperty("accepted");
+    },
+  );
 });
 
 describe("scan cache (derived, rebuildable)", () => {

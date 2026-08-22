@@ -30,7 +30,11 @@ import {
 } from "./closure/profile-closure.js";
 import scanAcceptanceJson from "./scan-acceptance.json";
 import { type BindingDeclaration, BindingNpmSourceSchema, isBareRepositorySlug } from "./schema.js";
-import { classifyFileTypography, type TypographyAdvisory } from "./visible-typography.js";
+import {
+  classifyFileTypography,
+  fileHasBlockingTypographyChar,
+  type TypographyAdvisory,
+} from "./visible-typography.js";
 
 /**
  * Fast-scan gate (D12). No adapter executes upstream code before a policy
@@ -587,6 +591,7 @@ const GRADED_SEVERITY: Record<string, ScanSeverity> = {
   "trust.external-egress": "medium",
   "trust.visible-unicode": "medium",
 };
+const DOTTED_LATIN_CAPITAL_I = "\u0130";
 
 function findingFromCode(
   code: string | undefined,
@@ -611,6 +616,10 @@ function readTextSafe(path: string): string | undefined {
   }
 }
 
+function normalizedTextSha256(text: string): string {
+  return createHash("sha256").update(text.replace(/\r\n/g, "\n"), "utf8").digest("hex");
+}
+
 function isDocSurface(rel: string): boolean {
   const name = rel.split("/").at(-1) ?? "";
   if (name === "SKILL.md") return true;
@@ -629,9 +638,7 @@ function inspectContentRisk(dimension: string, ctx: DimensionInspectionContext):
     if (source === undefined) continue;
     const pin = {
       path: toComparablePath(rel),
-      contentSha256: createHash("sha256")
-        .update(source.replace(/\r\n/g, "\n"), "utf8")
-        .digest("hex"),
+      contentSha256: normalizedTextSha256(source),
     };
     const checks = isDoc ? scanTrustDocument(rel, source) : scanTrustUnicodeDocument(rel, source);
     for (const check of checks) {
@@ -1344,6 +1351,7 @@ function buildDisclosure(
   blocking: readonly ScanFinding[],
   inert: readonly ScanFinding[],
   advisories: readonly ScanFinding[],
+  dottedIPathDispositions: ReadonlyMap<string, DottedIPathDisposition>,
 ): FrameworkCardDisclosure {
   const high = (finding: ScanFinding): boolean => rankOf(finding.severity) >= rankOf("high");
   const bySeverity: Record<ScanSeverity, number> = {
@@ -1368,7 +1376,10 @@ function buildDisclosure(
     acceptedRuntimeFindings: { total: blocking.filter((f) => f.accepted === true).length },
     visibleTypographyAdvisories: { total: advisories.length, files: advisoryFiles.size },
     residualRisk: {
-      blockingUnaccepted: blockingHigh.filter((f) => f.accepted !== true).length,
+      blockingUnaccepted: blocking.filter(
+        (finding) =>
+          gatesAtPolicyThreshold(finding, dottedIPathDispositions) && finding.accepted !== true,
+      ).length,
       unknownReachability,
       inertReported: inert.filter(high).length,
     },
@@ -1413,6 +1424,88 @@ function computeTypographyAdvisories(
 }
 
 /**
+ * A dotted capital I (U+0130) is normally visible typography and remains an
+ * advisory in human-facing contexts. When the shared typography classifier
+ * proves an occurrence is machine-sensitive, however, it is an exact
+ * identifier/key confusable and must gate. This is occurrence-level rather
+ * than a file roll-up: another glyph's blocker cannot turn a prose U+0130 into
+ * a gate finding. The reread is pinned to the finding's exact content hash, so
+ * a missing or changed checkout is uncertain and therefore gates rather than
+ * proving an advisory for different bytes.
+ */
+type DottedIPathDisposition = "advisory-proven" | "dotted-i-blocking" | "uncertain";
+
+function mergeDottedIPathDisposition(
+  previous: DottedIPathDisposition | undefined,
+  next: DottedIPathDisposition,
+): DottedIPathDisposition {
+  if (previous === "uncertain" || next === "uncertain") return "uncertain";
+  if (previous === "dotted-i-blocking" || next === "dotted-i-blocking") {
+    return "dotted-i-blocking";
+  }
+  return "advisory-proven";
+}
+
+function computeDottedIPathDispositions(
+  findings: readonly ScanFinding[],
+  reader: ((rel: string) => string | undefined) | undefined,
+): Map<string, DottedIPathDisposition> {
+  const dispositions = new Map<string, DottedIPathDisposition>();
+  for (const finding of findings) {
+    if (finding.code !== "trust.visible-unicode" || finding.path === undefined) {
+      continue;
+    }
+    const text = reader?.(finding.path);
+    const next =
+      text === undefined ||
+      finding.contentSha256 === undefined ||
+      normalizedTextSha256(text) !== finding.contentSha256
+        ? "uncertain"
+        : fileHasBlockingTypographyChar(finding.path, text, DOTTED_LATIN_CAPITAL_I)
+          ? "dotted-i-blocking"
+          : "advisory-proven";
+    dispositions.set(
+      finding.path,
+      mergeDottedIPathDisposition(dispositions.get(finding.path), next),
+    );
+  }
+  return dispositions;
+}
+
+function visibleUnicodePathDisposition(
+  finding: ScanFinding,
+  dottedIPathDispositions: ReadonlyMap<string, DottedIPathDisposition>,
+): DottedIPathDisposition | undefined {
+  if (finding.code !== "trust.visible-unicode" || finding.path === undefined) return undefined;
+  return dottedIPathDispositions.get(finding.path);
+}
+
+function isVisibleUnicodeGateFinding(
+  finding: ScanFinding,
+  dottedIPathDispositions: ReadonlyMap<string, DottedIPathDisposition>,
+): boolean {
+  const disposition = visibleUnicodePathDisposition(finding, dottedIPathDispositions);
+  return disposition !== undefined && disposition !== "advisory-proven";
+}
+
+function isVisibleUnicodeUncertainFinding(
+  finding: ScanFinding,
+  dottedIPathDispositions: ReadonlyMap<string, DottedIPathDisposition>,
+): boolean {
+  return visibleUnicodePathDisposition(finding, dottedIPathDispositions) === "uncertain";
+}
+
+function gatesAtPolicyThreshold(
+  finding: ScanFinding,
+  dottedIPathDispositions: ReadonlyMap<string, DottedIPathDisposition>,
+): boolean {
+  return (
+    rankOf(finding.severity) >= rankOf("high") ||
+    isVisibleUnicodeGateFinding(finding, dottedIPathDispositions)
+  );
+}
+
+/**
  * The (a2) decision. Collects findings (+ coverage findings for missing
  * dimensions), applies profile-scoped acceptance, classifies each finding against
  * the closure (when one is supplied), then decides the tri-state selected-profile
@@ -1432,6 +1525,7 @@ function decide(
   }
   const closureApplied = closure !== undefined;
   const advisoryByPath = computeTypographyAdvisories(collected, closure, typographyReader);
+  const dottedIPathDispositions = computeDottedIPathDispositions(collected, typographyReader);
 
   // Acceptance marking: a maintainer-accepted (code, path, fileSha256) triple
   // neutralizes exactly that content-pinned finding. Critical findings are
@@ -1447,8 +1541,9 @@ function decide(
   );
 
   const findings = collected.map((finding) => {
+    const visibleUnicodeGates = isVisibleUnicodeGateFinding(finding, dottedIPathDispositions);
     let marked =
-      finding.code === "trust.visible-unicode"
+      finding.code === "trust.visible-unicode" && !visibleUnicodeGates
         ? {
             ...finding,
             advisory: {
@@ -1492,6 +1587,7 @@ function decide(
       finding.path !== undefined &&
       finding.contentSha256 !== undefined &&
       rankOf(finding.severity) < rankOf("critical") &&
+      !isVisibleUnicodeUncertainFinding(finding, dottedIPathDispositions) &&
       acceptedKeys.has(acceptanceKey(finding.code, finding.path, finding.contentSha256))
     ) {
       marked = { ...marked, accepted: true };
@@ -1505,21 +1601,25 @@ function decide(
     : [];
   const advisories = findings.filter((finding) => finding.advisory !== undefined);
 
-  const blockingUnacceptedHigh = blocking.some(
-    (finding) => rankOf(finding.severity) >= rankOf("high") && finding.accepted !== true,
+  const blockingUnacceptedAtPolicyThreshold = blocking.some(
+    (finding) =>
+      gatesAtPolicyThreshold(finding, dottedIPathDispositions) && finding.accepted !== true,
   );
-  const acceptedBlockingHigh = blocking.filter(
-    (finding) => rankOf(finding.severity) >= rankOf("high") && finding.accepted === true,
+  const acceptedBlockingAtPolicyThreshold = blocking.filter(
+    (finding) =>
+      gatesAtPolicyThreshold(finding, dottedIPathDispositions) && finding.accepted === true,
   );
   const complete = reports.every((report) => report.status === "produced");
   // ALLOW_WITH_CONDITIONS only exists when a closure scopes the conditions; a
   // legacy disposition with accepted highs is a plain ALLOW (verdict-identical to
   // the pre-a2 gate, so W4 provisioning is unchanged).
   const conditionsGate: SelectedProfileGate =
-    closureApplied && acceptedBlockingHigh.length > 0 ? "ALLOW_WITH_CONDITIONS" : "ALLOW";
+    closureApplied && acceptedBlockingAtPolicyThreshold.length > 0
+      ? "ALLOW_WITH_CONDITIONS"
+      : "ALLOW";
 
   let gate: SelectedProfileGate;
-  if (blockingUnacceptedHigh) {
+  if (blockingUnacceptedAtPolicyThreshold) {
     gate = "BLOCK";
   } else if (!complete) {
     gate =
@@ -1528,13 +1628,13 @@ function decide(
     gate = conditionsGate;
   }
   const verdict: ScanVerdict = gate === "BLOCK" ? "block" : "allow";
-  const rawSourceScan: RawSourceOutcome = findings.some(
-    (finding) => rankOf(finding.severity) >= rankOf("high"),
+  const rawSourceScan: RawSourceOutcome = findings.some((finding) =>
+    gatesAtPolicyThreshold(finding, dottedIPathDispositions),
   )
     ? "FINDINGS_PRESENT"
     : "CLEAN";
   const requiredAcceptanceKeys = closureApplied
-    ? acceptedBlockingHigh
+    ? acceptedBlockingAtPolicyThreshold
         .filter((finding) => finding.path !== undefined && finding.contentSha256 !== undefined)
         .map((finding) =>
           acceptanceKey(finding.code, finding.path as string, finding.contentSha256 as string),
@@ -1545,7 +1645,7 @@ function decide(
     gate,
     rawSourceScan,
     findings,
-    disclosure: buildDisclosure(findings, blocking, inert, advisories),
+    disclosure: buildDisclosure(findings, blocking, inert, advisories, dottedIPathDispositions),
     requiredAcceptanceKeys,
   };
 }
@@ -1690,12 +1790,11 @@ export function runFastScanGate(
     policy.closureSpec === undefined
       ? undefined
       : computeClosureForSource(source, policy.closureSpec, policy.hostFacts, deps);
-  // The visible-typography reclassifier re-reads flagged files from the derived
-  // checkout; supplied only when a closure is active (it is otherwise inert).
-  const typographyReader =
-    closure === undefined
-      ? undefined
-      : (rel: string): string | undefined => readTextSafe(join(source.treePath, rel));
+  // Typography policy re-reads flagged files from the derived checkout. The
+  // seeded-closure reclassifier remains inert without a closure, while the
+  // U+0130 occurrence check applies to every gate mode.
+  const typographyReader = (rel: string): string | undefined =>
+    readTextSafe(join(source.treePath, rel));
   // Phase-2 (§C.4) deep-dimension fold — THE one integration seam. Pre-computed deep
   // dimensions (from `scan-cache-tiers.ts`) are appended to the fast dimensions so the
   // SAME `decide()`/coverage path handles both. Absent ⇒ the SAME array reference is
