@@ -7,6 +7,7 @@ import { buildVendorBaselineEvidenceArtifactV1 } from "../../src/baseline-eviden
 import type { AdminBaselineEvidenceBootstrapV1 } from "../../src/org-policy/admin-baseline-evidence-bootstrap-v1.js";
 import {
   adminBaselineEvidenceCacheSlotPathV1,
+  adminBaselineEvidenceCacheSlotStateV1,
   commitAdminBaselineEvidenceCacheV1,
   createAdminBaselineEvidenceCacheRecordV1,
   parseAdminBaselineEvidenceCacheRecordV1Json,
@@ -59,6 +60,20 @@ const refreshedEvidence = {
 };
 
 describe("admin baseline evidence cache v1", () => {
+  it("treats only ENOENT slot inspection errors as absent", () => {
+    const unavailable = Object.assign(new Error("I/O failed"), { code: "EIO" });
+    expect(
+      adminBaselineEvidenceCacheSlotStateV1("slot", () => {
+        throw unavailable;
+      }),
+    ).toBe("invalid");
+    expect(
+      adminBaselineEvidenceCacheSlotStateV1("slot", () => {
+        throw Object.assign(new Error("absent"), { code: "ENOENT" });
+      }),
+    ).toBe("absent");
+  });
+
   it("round-trips only a canonical complete raw artifact and binds its subject", () => {
     const bytes = createAdminBaselineEvidenceCacheRecordV1(evidence);
     expect(parseAdminBaselineEvidenceCacheRecordV1Json(bytes)).toEqual(evidence);

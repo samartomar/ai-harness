@@ -116,7 +116,9 @@ describe("admin baseline evidence resolution v1", () => {
 
     const gone = response(410);
     await expect(
-      collectBoundedAdminBaselineEvidenceResponseV1(gone.response, 8, () => undefined),
+      collectBoundedAdminBaselineEvidenceResponseV1(gone.response, 8, () => {
+        throw new Error("abort cleanup failed");
+      }),
     ).resolves.toEqual({ kind: "unavailable" });
 
     const forbidden = response(403);
@@ -155,6 +157,24 @@ describe("admin baseline evidence resolution v1", () => {
     broken.emit("data", Buffer.from("abc"));
     broken.emit("aborted");
     await expect(brokenResult).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+
+    let terminalAborts = 0;
+    const terminal = response(200);
+    const terminalResult = collectBoundedAdminBaselineEvidenceResponseV1(
+      terminal.response,
+      8,
+      () => {
+        terminalAborts += 1;
+        throw new Error("abort cleanup failed");
+      },
+    );
+    terminal.emit("data", "not bytes");
+    terminal.emit("data", Buffer.from("later bytes"));
+    terminal.emit("end");
+    terminal.emit("error");
+    terminal.emit("close");
+    await expect(terminalResult).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+    expect(terminalAborts).toBe(1);
 
     await expect(
       defaultAdminBaselineEvidenceHttpsFetchV1({
