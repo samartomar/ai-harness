@@ -137,12 +137,38 @@ export const GovernanceDecisionSubjectV2Schema = z
   })
   .strict();
 
+/**
+ * Qualification is an independently addressable fact, never an administrator
+ * status or a decision's self-asserted approval. Organization evidence is
+ * attributable; AIH support names the exact qualified catalog member.
+ */
+const qualificationBasis = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("aih-supported"),
+      catalogIssuer: stableId,
+      catalogDigest: digest,
+      catalogHeadDigest: digest,
+      memberDigest: digest,
+      subjectKind: z.enum(["tool", "skill", "mcp", "package", "profile"]),
+      subjectDigest: digest,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("organization-qualified"),
+      evidenceDigest: digest,
+      attestor: stableId,
+    })
+    .strict(),
+]);
+
 const base = z
   .object({
     format: z.literal("aih-governance-decision"),
     version: z.literal(2),
     id: stableId.regex(/^decision-/, "decision ids must begin with decision-"),
-    qualification: z.enum(["aih-supported", "organization-qualified"]),
+    qualificationBasis,
     subject: GovernanceDecisionSubjectV2Schema,
     targets,
     allowedEffects: effects,
@@ -214,6 +240,26 @@ export const GovernanceDecisionV2Schema = z
       if (review < notBefore || review > expires || review - issued > MAX_WINDOW_MS) {
         ctx.addIssue({ code: "custom", message: "reviewBy must fall inside the validity window" });
       }
+    }
+    if (
+      value.qualificationBasis.kind === "organization-qualified" &&
+      (value.qualificationBasis.evidenceDigest !== value.evidence.digest ||
+        value.qualificationBasis.attestor !== value.evidence.attestor)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "organization qualification must bind the exact decision evidence and attestor",
+      });
+    }
+    if (
+      value.qualificationBasis.kind === "aih-supported" &&
+      (value.qualificationBasis.subjectKind !== value.subject.kind ||
+        value.qualificationBasis.subjectDigest !== value.subject.subjectDigest)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "AIH catalog qualification must bind the exact subject kind and digest",
+      });
     }
   });
 

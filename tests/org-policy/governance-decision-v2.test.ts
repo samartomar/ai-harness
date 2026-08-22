@@ -15,7 +15,11 @@ function decision(overrides: Record<string, unknown> = {}) {
     format: "aih-governance-decision",
     version: 2,
     id: "decision-platform-tool",
-    qualification: "organization-qualified",
+    qualificationBasis: {
+      kind: "organization-qualified",
+      evidenceDigest: `sha256:${"e".repeat(64)}`,
+      attestor: "scanner-service",
+    },
     subject: {
       kind: "tool",
       id: "platform-review-tool",
@@ -65,7 +69,7 @@ describe("GovernanceDecisionV2 public contract", () => {
 
     expect(validate(valid), JSON.stringify(validate.errors)).toBe(true);
     for (const invalid of [
-      { ...valid, qualification: "unqualified" },
+      { ...valid, qualification: "organization-qualified" },
       {
         ...valid,
         subject: {
@@ -77,6 +81,20 @@ describe("GovernanceDecisionV2 public contract", () => {
     ]) {
       expect(validate(invalid)).toBe(false);
     }
+    expect(
+      GovernanceDecisionV2Schema.safeParse({
+        ...valid,
+        qualificationBasis: {
+          kind: "aih-supported",
+          catalogIssuer: "aih-catalog",
+          catalogDigest: `sha256:${"0".repeat(64)}`,
+          catalogHeadDigest: `sha256:${"1".repeat(64)}`,
+          memberDigest: `sha256:${"2".repeat(64)}`,
+          subjectKind: "skill",
+          subjectDigest: valid.subject.subjectDigest,
+        },
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects mutable sources and preserves canonical digest identity across round trips", () => {
@@ -116,9 +134,58 @@ describe("GovernanceDecisionV2 public contract", () => {
       decision({ allowedEffects: ["use", "configure"] }),
       decision({ issuedAt: "2026-08-02T00:00:00+00:00" }),
       decision({ qualification: "unqualified" }),
+      decision({ qualificationBasis: { kind: "aih-supported" } }),
+      decision({
+        qualificationBasis: {
+          kind: "organization-qualified",
+          evidenceDigest: `sha256:${"0".repeat(64)}`,
+          attestor: "unsigned-admin",
+        },
+      }),
+      decision({
+        qualificationBasis: {
+          kind: "aih-supported",
+          catalogIssuer: "aih-catalog",
+          catalogDigest: `sha256:${"0".repeat(64)}`,
+          catalogHeadDigest: `sha256:${"1".repeat(64)}`,
+          memberDigest: `sha256:${"2".repeat(64)}`,
+          subjectKind: "skill",
+          subjectDigest: `sha256:${"b".repeat(64)}`,
+        },
+      }),
     ]) {
       expect(GovernanceDecisionV2Schema.safeParse(invalid).success).toBe(false);
     }
+    expect(
+      GovernanceDecisionV2Schema.safeParse(
+        decision({
+          qualificationBasis: {
+            kind: "aih-supported",
+            catalogIssuer: "aih-catalog",
+            catalogDigest: `sha256:${"0".repeat(64)}`,
+            catalogHeadDigest: `sha256:${"1".repeat(64)}`,
+            memberDigest: `sha256:${"2".repeat(64)}`,
+            subjectKind: "tool",
+            subjectDigest: `sha256:${"b".repeat(64)}`,
+          },
+        }),
+      ).success,
+    ).toBe(true);
+    expect(
+      GovernanceDecisionV2Schema.safeParse(
+        decision({
+          qualificationBasis: {
+            kind: "aih-supported",
+            catalogIssuer: "aih-catalog",
+            catalogDigest: `sha256:${"0".repeat(64)}`,
+            catalogHeadDigest: `sha256:${"1".repeat(64)}`,
+            memberDigest: `sha256:${"2".repeat(64)}`,
+            subjectKind: "tool",
+            subjectDigest: `sha256:${"0".repeat(64)}`,
+          },
+        }),
+      ).success,
+    ).toBe(false);
     expect(
       GovernanceDecisionRevocationV2Schema.safeParse({
         format: "aih-governance-decision-revocation",

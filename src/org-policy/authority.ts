@@ -357,6 +357,13 @@ export function policyAuthorityReceiptLeafPaths(): string[] {
   ].sort((left, right) => left.localeCompare(right));
 }
 
+const V3_TRANSPORT_ONLY_PREFIX = "V3 downstream resolver: ";
+
+function phaseHonestV3Consumer(consumer: string): string {
+  if (!consumer.startsWith(V3_TRANSPORT_ONLY_PREFIX)) return consumer;
+  return `V3 externally verified signed transport/schema validation; legacy effective resolver deliberately withholds V3 runtime use: ${consumer.slice(V3_TRANSPORT_ONLY_PREFIX.length)}`;
+}
+
 const RECEIPT_TOP_LEVEL_CONSUMERS: Readonly<Record<string, string>> = {
   "decisionRevocations.*.decision": "effective resolver: exact signed decision revocation lookup",
   "decisionRevocations.*.decisionDigest":
@@ -393,8 +400,24 @@ const RECEIPT_TOP_LEVEL_CONSUMERS: Readonly<Record<string, string>> = {
   "decisions.*.policy.digest": "V3 downstream resolver: exact policy binding",
   "decisions.*.policy.id": "V3 downstream resolver: policy identity binding",
   "decisions.*.policy.version": "V3 downstream resolver: policy version binding",
-  "decisions.*.qualification":
-    "V3 downstream resolver: approval provenance only; never unqualified",
+  "decisions.*.qualificationBasis.attestor":
+    "V3 downstream resolver: attributable organization qualification attestor binding",
+  "decisions.*.qualificationBasis.catalogDigest":
+    "V3 downstream resolver: exact AIH qualification catalog binding",
+  "decisions.*.qualificationBasis.catalogHeadDigest":
+    "V3 downstream resolver: exact AIH qualification catalog head binding",
+  "decisions.*.qualificationBasis.catalogIssuer":
+    "V3 downstream resolver: exact AIH qualification catalog issuer binding",
+  "decisions.*.qualificationBasis.evidenceDigest":
+    "V3 downstream resolver: exact organization qualification evidence binding",
+  "decisions.*.qualificationBasis.kind":
+    "V3 downstream resolver: qualification provenance variant binding",
+  "decisions.*.qualificationBasis.memberDigest":
+    "V3 downstream resolver: exact AIH qualification catalog member binding",
+  "decisions.*.qualificationBasis.subjectKind":
+    "V3 downstream resolver: exact AIH qualification subject-kind binding",
+  "decisions.*.qualificationBasis.subjectDigest":
+    "V3 downstream resolver: exact AIH qualification subject digest binding",
   "decisions.*.reason": "signed decision audit-only record; never authorizes an effect",
   "decisions.*.reviewBy": "effective resolver: accepted-risk review deadline gate",
   "decisions.*.reviewedControlDigest": "effective resolver: exact reviewed-control binding",
@@ -524,7 +547,15 @@ function prefixedReceiptConsumers(
 /** Exact map compared to `policyAuthorityReceiptLeafPaths()` by the consumer-contract test. */
 export const POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS: Readonly<Record<string, string>> =
   Object.freeze({
-    ...prefixedReceiptConsumers("authorityReceipt", RECEIPT_TOP_LEVEL_CONSUMERS),
+    ...prefixedReceiptConsumers(
+      "authorityReceipt",
+      Object.fromEntries(
+        Object.entries(RECEIPT_TOP_LEVEL_CONSUMERS).map(([leaf, consumer]) => [
+          leaf,
+          phaseHonestV3Consumer(consumer),
+        ]),
+      ),
+    ),
     ...prefixedReceiptConsumers("authorityReceipt.trustedIssuers.*", RECEIPT_ISSUER_CONSUMERS),
     ...prefixedReceiptConsumers("authorityReceipt.evidence.*", RECEIPT_EVIDENCE_CONSUMERS),
     ...prefixedReceiptConsumers("authorityReceipt.evidence.*.source", RECEIPT_SOURCE_CONSUMERS),

@@ -18,7 +18,11 @@ function decision(overrides: Record<string, unknown> = {}) {
     format: "aih-governance-decision",
     version: 2,
     id: "decision-platform-tool",
-    qualification: "organization-qualified",
+    qualificationBasis: {
+      kind: "organization-qualified",
+      evidenceDigest: `sha256:${"e".repeat(64)}`,
+      attestor: "scanner-service",
+    },
     subject: {
       kind: "tool",
       id: "platform-review-tool",
@@ -69,6 +73,11 @@ function observation(overrides: Record<string, unknown> = {}) {
     },
     targets: ["claude"],
     allowedEffects: ["configure"],
+    integration: {
+      mode: "upstream-managed",
+      owner: "upstream-admin",
+      version: "1.0.0",
+    } as const,
     installed: { id: "platform-review-tool", digest: `sha256:${"d".repeat(64)}` },
     verifier: { id: "upstream-admin", version: "1.0.0", digest: `sha256:${"f".repeat(64)}` },
     observedAt: "2026-08-02T00:00:00+00:00",
@@ -90,6 +99,8 @@ describe("UpstreamObservationReceiptV1 public contract", () => {
       { ...valid, id: "not-an-observation" },
       { ...valid, verifier: { id: "upstream-admin", version: "latest" } },
       { ...valid, approved: true },
+      { ...valid, integration: { mode: "aih-managed", owner: "upstream-admin", version: "1.0.0" } },
+      { ...valid, integration: { mode: "upstream-managed", version: "1.0.0" } },
     ]) {
       expect(validate(invalid)).toBe(false);
     }
@@ -110,6 +121,7 @@ describe("UpstreamObservationReceiptV1 public contract", () => {
       supportedTargets: ["claude"],
       expectedVerifier: currentObservation.verifier,
       expectedInstalled: currentObservation.installed,
+      expectedIntegration: currentObservation.integration,
       now: "2026-08-02T12:00:00+00:00",
     };
     // A schema-valid receipt is untrusted data. Only the code-owned observation
@@ -192,6 +204,14 @@ describe("UpstreamObservationReceiptV1 public contract", () => {
         verify: () => true,
       }),
     ).toBeUndefined();
+    expect(
+      verifyUpstreamObservationV1({
+        ...input,
+        receipt: currentObservation,
+        expectedIntegration: { ...currentObservation.integration, owner: "aih-materializer" },
+        verify: () => true,
+      }),
+    ).toBeUndefined();
     const acceptedDecision = decision({
       disposition: "accepted-with-conditions",
       acceptedFindings: ["bounded-gap"],
@@ -263,6 +283,13 @@ describe("UpstreamObservationReceiptV1 public contract", () => {
           },
         },
       ],
+      [
+        "observation-mismatch",
+        {
+          ...effectiveInput,
+          expectedIntegration: { ...currentObservation.integration, owner: "aih-materializer" },
+        },
+      ],
       ["decision-not-current", { ...effectiveInput, now: "2026-08-11T00:00:00+00:00" }],
       ["observation-stale", { ...effectiveInput, now: "2026-08-03T00:00:00+00:00" }],
       [
@@ -311,6 +338,7 @@ describe("UpstreamObservationReceiptV1 public contract", () => {
         receipt: observation({ observedAt: "2026-08-02T12:01:00+00:00" }),
         expectedVerifier: base.verifier,
         expectedInstalled: base.installed,
+        expectedIntegration: base.integration,
         subject: decision().subject as never,
         target: "claude",
         effect: "configure",

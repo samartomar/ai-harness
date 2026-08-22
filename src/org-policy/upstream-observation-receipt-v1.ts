@@ -61,6 +61,13 @@ export const UpstreamObservationReceiptV1Schema = z
       .strict(),
     targets,
     allowedEffects: effects,
+    integration: z
+      .object({
+        mode: z.literal("upstream-managed"),
+        owner: stableId,
+        version: exactSemver,
+      })
+      .strict(),
     installed: z.object({ id: stableId, digest }).strict(),
     verifier: z.object({ id: stableId, version: exactSemver, digest }).strict(),
     observedAt: GovernanceDecisionTimestampSchema,
@@ -112,6 +119,7 @@ export interface VerifyUpstreamObservationV1Input {
   receipt: unknown;
   expectedVerifier: UpstreamObservationReceiptV1["verifier"];
   expectedInstalled: UpstreamObservationReceiptV1["installed"];
+  expectedIntegration: UpstreamObservationReceiptV1["integration"];
   subject: Pick<GovernanceDecisionV2["subject"], "kind" | "id" | "sourceDigest" | "subjectDigest">;
   target: string;
   effect: z.infer<typeof GovernanceDecisionEffectV2Schema>;
@@ -139,6 +147,9 @@ export function verifyUpstreamObservationV1(
     receipt.verifier.id !== input.expectedVerifier.id ||
     receipt.verifier.version !== input.expectedVerifier.version ||
     receipt.verifier.digest !== input.expectedVerifier.digest ||
+    receipt.integration.mode !== input.expectedIntegration.mode ||
+    receipt.integration.owner !== input.expectedIntegration.owner ||
+    receipt.integration.version !== input.expectedIntegration.version ||
     receipt.installed.id !== input.expectedInstalled.id ||
     receipt.installed.digest !== input.expectedInstalled.digest ||
     receipt.subject.kind !== input.subject.kind ||
@@ -192,6 +203,7 @@ export interface ObservedEffectResolutionInput {
   supportedTargets: readonly string[];
   expectedVerifier: UpstreamObservationReceiptV1["verifier"];
   expectedInstalled: UpstreamObservationReceiptV1["installed"];
+  expectedIntegration: UpstreamObservationReceiptV1["integration"];
   now: string;
 }
 
@@ -267,6 +279,9 @@ export function resolveObservedEffect(
     observation.verifier.id !== input.expectedVerifier.id ||
     observation.verifier.version !== input.expectedVerifier.version ||
     observation.verifier.digest !== input.expectedVerifier.digest ||
+    observation.integration.mode !== input.expectedIntegration.mode ||
+    observation.integration.owner !== input.expectedIntegration.owner ||
+    observation.integration.version !== input.expectedIntegration.version ||
     observation.installed.id !== input.expectedInstalled.id ||
     observation.installed.digest !== input.expectedInstalled.digest ||
     Date.parse(observation.validUntil) > Date.parse(decision.expiresAt) ||

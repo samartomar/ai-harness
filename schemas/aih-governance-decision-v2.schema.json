@@ -23,11 +23,80 @@
             }
           ]
         },
-        "qualification": {
-          "type": "string",
-          "enum": [
-            "aih-supported",
-            "organization-qualified"
+        "qualificationBasis": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "aih-supported"
+                },
+                "catalogIssuer": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                },
+                "catalogDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "catalogHeadDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "memberDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "subjectKind": {
+                  "type": "string",
+                  "enum": [
+                    "tool",
+                    "skill",
+                    "mcp",
+                    "package",
+                    "profile"
+                  ]
+                },
+                "subjectDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "kind",
+                "catalogIssuer",
+                "catalogDigest",
+                "catalogHeadDigest",
+                "memberDigest",
+                "subjectKind",
+                "subjectDigest"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "organization-qualified"
+                },
+                "evidenceDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "attestor": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                }
+              },
+              "required": [
+                "kind",
+                "evidenceDigest",
+                "attestor"
+              ],
+              "additionalProperties": false
+            }
           ]
         },
         "subject": {
@@ -411,7 +480,7 @@
         "format",
         "version",
         "id",
-        "qualification",
+        "qualificationBasis",
         "subject",
         "targets",
         "allowedEffects",
@@ -453,11 +522,80 @@
             }
           ]
         },
-        "qualification": {
-          "type": "string",
-          "enum": [
-            "aih-supported",
-            "organization-qualified"
+        "qualificationBasis": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "aih-supported"
+                },
+                "catalogIssuer": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                },
+                "catalogDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "catalogHeadDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "memberDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "subjectKind": {
+                  "type": "string",
+                  "enum": [
+                    "tool",
+                    "skill",
+                    "mcp",
+                    "package",
+                    "profile"
+                  ]
+                },
+                "subjectDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "kind",
+                "catalogIssuer",
+                "catalogDigest",
+                "catalogHeadDigest",
+                "memberDigest",
+                "subjectKind",
+                "subjectDigest"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "organization-qualified"
+                },
+                "evidenceDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "attestor": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                }
+              },
+              "required": [
+                "kind",
+                "evidenceDigest",
+                "attestor"
+              ],
+              "additionalProperties": false
+            }
           ]
         },
         "subject": {
@@ -845,7 +983,7 @@
         "format",
         "version",
         "id",
-        "qualification",
+        "qualificationBasis",
         "subject",
         "targets",
         "allowedEffects",
@@ -888,11 +1026,80 @@
             }
           ]
         },
-        "qualification": {
-          "type": "string",
-          "enum": [
-            "aih-supported",
-            "organization-qualified"
+        "qualificationBasis": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "aih-supported"
+                },
+                "catalogIssuer": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                },
+                "catalogDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "catalogHeadDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "memberDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "subjectKind": {
+                  "type": "string",
+                  "enum": [
+                    "tool",
+                    "skill",
+                    "mcp",
+                    "package",
+                    "profile"
+                  ]
+                },
+                "subjectDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "kind",
+                "catalogIssuer",
+                "catalogDigest",
+                "catalogHeadDigest",
+                "memberDigest",
+                "subjectKind",
+                "subjectDigest"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "organization-qualified"
+                },
+                "evidenceDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "attestor": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                }
+              },
+              "required": [
+                "kind",
+                "evidenceDigest",
+                "attestor"
+              ],
+              "additionalProperties": false
+            }
           ]
         },
         "subject": {
@@ -1276,7 +1483,7 @@
         "format",
         "version",
         "id",
-        "qualification",
+        "qualificationBasis",
         "subject",
         "targets",
         "allowedEffects",

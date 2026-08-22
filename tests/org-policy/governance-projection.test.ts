@@ -378,7 +378,11 @@ function governanceDecisionV2(overrides: Record<string, unknown> = {}) {
     format: "aih-governance-decision",
     version: 2,
     id: "decision-platform-tool",
-    qualification: "organization-qualified",
+    qualificationBasis: {
+      kind: "organization-qualified",
+      evidenceDigest: `sha256:${"e".repeat(64)}`,
+      attestor: "scanner-service",
+    },
     subject: {
       kind: "tool",
       id: "platform-review-tool",
