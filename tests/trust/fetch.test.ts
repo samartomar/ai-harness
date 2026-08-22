@@ -24,6 +24,7 @@ import {
   assertTrustTreeSafe,
   isFirstPartySource,
   localFileHash,
+  readTrustFetchMetadata,
   resolvePackageTrustSource,
   resolveTrustSource,
   safeSourceRelative,
@@ -292,16 +293,47 @@ describe("trust fetch source resolution", () => {
     };
     try {
       expect(validateGitHubTrustFetchMetadata(source)).toEqual({ state: "missing" });
+      expect(() => readTrustFetchMetadata(source)).toThrow("fetched GitHub metadata is missing");
 
       mkdirSync(source.metadataPath);
       expect(validateGitHubTrustFetchMetadata(source)).toEqual({ state: "unreadable" });
       rmSync(source.metadataPath, { recursive: true, force: true });
+
+      const linkedMetadata = join(dir, "linked-metadata.json");
+      writeFileSync(linkedMetadata, JSON.stringify(metadata), "utf8");
+      try {
+        symlinkSync(linkedMetadata, source.metadataPath, "file");
+        expect(validateGitHubTrustFetchMetadata(source)).toEqual({ state: "unreadable" });
+        rmSync(source.metadataPath, { force: true });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EPERM") throw error;
+      }
 
       writeFileSync(source.metadataPath, "{ broken", "utf8");
       expect(validateGitHubTrustFetchMetadata(source)).toEqual({ state: "malformed" });
 
       writeFileSync(source.metadataPath, JSON.stringify({ ...metadata, owner: "other" }), "utf8");
       expect(validateGitHubTrustFetchMetadata(source)).toEqual({ state: "mismatched" });
+
+      writeFileSync(
+        source.metadataPath,
+        JSON.stringify({ ...metadata, pinnedSha: "A".repeat(40) }),
+        "utf8",
+      );
+      expect(validateGitHubTrustFetchMetadata(source)).toEqual({ state: "malformed" });
+
+      writeFileSync(source.metadataPath, JSON.stringify({ ...metadata, extra: true }), "utf8");
+      expect(validateGitHubTrustFetchMetadata(source)).toEqual({ state: "malformed" });
+
+      writeFileSync(
+        source.metadataPath,
+        JSON.stringify({ ...metadata, treePath: `${source.treePath}.` }),
+        "utf8",
+      );
+      expect(validateGitHubTrustFetchMetadata(source)).toEqual({ state: "mismatched" });
+
+      writeFileSync(source.metadataPath, "x".repeat(64 * 1024 + 1), "utf8");
+      expect(validateGitHubTrustFetchMetadata(source)).toEqual({ state: "unreadable" });
     } finally {
       rmSync(source.quarantineRoot, { recursive: true, force: true });
     }

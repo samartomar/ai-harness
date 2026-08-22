@@ -9,12 +9,14 @@ import { resolveInternalScopes } from "../trust/depnames.js";
 import {
   cleanupQuarantine,
   isFirstPartySource,
-  readTrustFetchMetadata,
   resolveTrustSource,
+  sameGitHubTrustFetchMetadata,
   type TrustSource,
   trustFetchExec,
+  validateGitHubTrustFetchMetadata,
 } from "../trust/fetch.js";
 import {
+  githubFetchMetadataCheck,
   scanOptionsFromContext,
   scanTrustTreeWithAnalyzers,
   TRUST_SKIP_DIRS,
@@ -75,9 +77,10 @@ export interface SkillSourceScope {
 interface GithubVetScan {
   scan: TrustScanResult;
   shape: SkillShape;
-  license: Check;
+  license?: Check;
   sourceScope?: SkillSourceScope;
   pinnedSha?: string;
+  metadataTrusted: boolean;
 }
 
 interface SkillVetTarget {
@@ -123,15 +126,6 @@ function emptyShape(): SkillShape {
 
 function isPinned(source: TrustSource): boolean {
   return source.kind !== "github" || source.pin !== undefined;
-}
-
-function fetchedPinnedSha(source: TrustSource): string | undefined {
-  if (source.kind !== "github") return undefined;
-  try {
-    return readTrustFetchMetadata(source).pinnedSha.toLowerCase();
-  } catch {
-    return source.pin?.toLowerCase();
-  }
 }
 
 function optionSkillName(ctx: PlanContext): string | undefined {
@@ -458,6 +452,16 @@ export async function skillVetPlanForSource(
     let githubScan: Promise<GithubVetScan> | undefined;
     const scanGithubSource = (probeCtx: PlanContext): Promise<GithubVetScan> => {
       githubScan ??= (async () => {
+        const beforeScan = validateGitHubTrustFetchMetadata(source);
+        if (beforeScan.state !== "trusted") {
+          const metadataCheck = githubFetchMetadataCheck(source, beforeScan);
+          if (metadataCheck === undefined) throw new Error("expected metadata failure check");
+          return {
+            scan: { checks: [metadataCheck], analyzersRun: [] },
+            shape: emptyShape(),
+            metadataTrusted: false,
+          };
+        }
         const target = skillVetTarget(source.treePath, options.skillName);
         const scan = await scanTrustTreeWithAnalyzers(
           target.scanRoot,
@@ -466,12 +470,29 @@ export async function skillVetPlanForSource(
             sandboxSmokeShape: target.smokeShape,
           }),
         );
+        const afterScan = validateGitHubTrustFetchMetadata(source);
+        if (
+          afterScan.state !== "trusted" ||
+          !sameGitHubTrustFetchMetadata(beforeScan.metadata, afterScan.metadata)
+        ) {
+          const metadataCheck = githubFetchMetadataCheck(
+            source,
+            afterScan.state === "trusted" ? { state: "mismatched" } : afterScan,
+          );
+          if (metadataCheck === undefined) throw new Error("expected metadata failure check");
+          return {
+            scan: { checks: [metadataCheck], analyzersRun: [] },
+            shape: emptyShape(),
+            metadataTrusted: false,
+          };
+        }
         return {
           scan,
           shape: target.evidenceShape,
           license: licenseCheck(source.treePath, { skillRoot: target.skillRoot }),
           sourceScope: target.sourceScope,
-          pinnedSha: fetchedPinnedSha(source),
+          pinnedSha: afterScan.metadata.pinnedSha.toLowerCase(),
+          metadataTrusted: true,
         };
       })();
       return githubScan;
@@ -501,7 +522,7 @@ export async function skillVetPlanForSource(
           [
             ...vetted.scan.checks,
             ...(vetted.sourceScope !== undefined ? [sourceScopeCheck(vetted.sourceScope)] : []),
-            vetted.license,
+            ...(vetted.license === undefined ? [] : [vetted.license]),
           ],
           probeCtx,
         ).checks;
@@ -517,13 +538,13 @@ export async function skillVetPlanForSource(
               ...trustSourceOriginChecks(digestCtx, source),
               ...vetted.scan.checks,
               ...(vetted.sourceScope !== undefined ? [sourceScopeCheck(vetted.sourceScope)] : []),
-              vetted.license,
+              ...(vetted.license === undefined ? [] : [vetted.license]),
             ],
             digestCtx,
           ).checks;
           const graded = skillVerdict(checks, vetted.shape, {
             pinned: isPinned(source),
-            fetched: true,
+            fetched: vetted.metadataTrusted,
             firstParty: false,
           });
           return vetDigestResult(

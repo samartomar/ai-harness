@@ -1417,10 +1417,11 @@ describe("workspace snapshot command", () => {
       if (argv[0] !== "git") return undefined;
       const tail = argv.slice(3).join(" ");
       if (tail === "rev-parse --is-inside-work-tree") return { stdout: "true\n" };
-      if (tail === "rev-parse --abbrev-ref HEAD") return { stdout: "main\n" };
-      if (tail === "rev-parse HEAD")
-        return { stdout: "abcdef0123456789abcdef0123456789abcdef01\n" };
-      if (tail === "status --porcelain") return { stdout: "" };
+      if (tail === "status --porcelain=v2 --branch") {
+        return {
+          stdout: "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head main\n",
+        };
+      }
       return undefined;
     });
 

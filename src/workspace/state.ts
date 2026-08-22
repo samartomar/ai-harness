@@ -94,7 +94,7 @@ async function readWorkspaceRevision(
     branch === undefined ||
     branch.length === 0 ||
     sha === undefined ||
-    !/^[a-f0-9]{40,64}$/i.test(sha)
+    !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(sha)
   )
     return undefined;
   const branchAb = headers.get("branch.ab");

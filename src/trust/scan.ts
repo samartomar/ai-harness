@@ -34,13 +34,16 @@ import {
 import {
   assertTrustTreeSafe,
   cleanupQuarantine,
+  type GitHubTrustFetchMetadataValidation,
   type PackageTrustSource,
-  readTrustFetchMetadata,
   resolvePackageTrustSource,
   resolveTrustSource,
+  sameGitHubTrustFetchMetadata,
+  type TrustFetchMetadata,
   type TrustSource,
   trustFetchExec,
   trustPackageFetchActions,
+  validateGitHubTrustFetchMetadata,
 } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
 import type { SkillSpectorImageApproval } from "./images.js";
@@ -677,28 +680,23 @@ function stable(value: unknown): unknown {
   );
 }
 
-function resolvedSourceSha(source: TrustSource): string | undefined {
-  if (source.kind !== "github") return undefined;
-  if (source.pin !== undefined) return source.pin.toLowerCase();
-  try {
-    return readTrustFetchMetadata(source).pinnedSha.toLowerCase();
-  } catch {
-    return undefined;
-  }
-}
-
-function approvedSourceMatches(source: TrustSource, approved: ApprovedTrustSource): boolean {
+function approvedSourceMatches(
+  source: TrustSource,
+  approved: ApprovedTrustSource,
+  resolvedSha: string | undefined,
+): boolean {
   if (source.kind !== "github") return false;
   if (approved.owner.toLowerCase() !== source.owner.toLowerCase()) return false;
   if (approved.repo.toLowerCase() !== source.repo.toLowerCase()) return false;
   if (approved.pinnedSha === undefined) return true;
-  return resolvedSourceSha(source) === approved.pinnedSha;
+  return resolvedSha === approved.pinnedSha;
 }
 
 function sourceOriginFingerprint(
   code: "trust.untrusted-publisher" | "trust.unsigned-source",
   source: TrustSource,
   policy: NonNullable<OrgPolicy["trust"]>,
+  resolvedSha: string | undefined,
 ): string {
   const sourceName =
     source.kind === "github" ? `${source.owner}/${source.repo}`.toLowerCase() : source.id;
@@ -711,7 +709,7 @@ function sourceOriginFingerprint(
             repo: source.repo.toLowerCase(),
             ref: source.ref,
             pin: source.pin?.toLowerCase(),
-            resolvedSha: resolvedSourceSha(source),
+            resolvedSha,
           }
         : { id: source.id, root: source.root },
     policy: {
@@ -720,6 +718,25 @@ function sourceOriginFingerprint(
     },
   }).slice(0, 8);
   return `${code.replace(/\./g, "-")}:${sourceName}:${hash}`;
+}
+
+export function githubFetchMetadataCheck(
+  source: Extract<TrustSource, { kind: "github" }>,
+  validation: GitHubTrustFetchMetadataValidation = validateGitHubTrustFetchMetadata(source),
+): Check | undefined {
+  if (validation.state === "trusted") return undefined;
+  const detail = {
+    missing: "fetched GitHub metadata is missing",
+    unreadable: "fetched GitHub metadata cannot be read",
+    malformed: "fetched GitHub metadata is malformed",
+    mismatched: "fetched GitHub metadata does not bind the requested source",
+  }[validation.state];
+  return {
+    name: "trust.fetch-metadata",
+    verdict: "fail",
+    code: `trust.fetch-metadata-${validation.state}`,
+    detail,
+  };
 }
 
 function sourceOriginCheck(
@@ -752,28 +769,39 @@ function orgPolicyDriftCheck(error: unknown): Check {
 
 export function trustSourceOriginChecks(ctx: PlanContext, source: ScannableTrustSource): Check[] {
   if (source.kind !== "github") return [];
+  const checks: Check[] = [];
+  const fetchedMetadata = ctx.apply ? validateGitHubTrustFetchMetadata(source) : undefined;
+  if (fetchedMetadata !== undefined) {
+    const metadataCheck = githubFetchMetadataCheck(source, fetchedMetadata);
+    if (metadataCheck !== undefined) checks.push(metadataCheck);
+  }
+  const resolvedSha =
+    fetchedMetadata === undefined
+      ? source.pin?.toLowerCase()
+      : fetchedMetadata.state === "trusted"
+        ? fetchedMetadata.metadata.pinnedSha
+        : undefined;
   let policy: OrgPolicy["trust"] | undefined;
   try {
     policy = readOrgPolicy(ctx.root, ctx.env)?.trust;
   } catch (error) {
-    if (error instanceof OrgPolicyError) return [orgPolicyDriftCheck(error)];
+    if (error instanceof OrgPolicyError) return [...checks, orgPolicyDriftCheck(error)];
     throw error;
   }
-  if (policy === undefined) return [];
+  if (policy === undefined) return checks;
 
   const posture = postureFromContext(ctx);
-  const checks: Check[] = [];
   const sourceName = `${source.owner}/${source.repo}`;
   if (
     policy.approvedSources !== undefined &&
-    !policy.approvedSources.some((approved) => approvedSourceMatches(source, approved))
+    !policy.approvedSources.some((approved) => approvedSourceMatches(source, approved, resolvedSha))
   ) {
     checks.push(
       sourceOriginCheck(
         "trust.untrusted-publisher",
         `${sourceName} is not listed in org-policy trust.approvedSources`,
         posture,
-        sourceOriginFingerprint("trust.untrusted-publisher", source, policy),
+        sourceOriginFingerprint("trust.untrusted-publisher", source, policy, resolvedSha),
       ),
     );
   }
@@ -783,7 +811,7 @@ export function trustSourceOriginChecks(ctx: PlanContext, source: ScannableTrust
         "trust.unsigned-source",
         `${sourceName}@${source.ref} was acquired without an explicit --pin under trust.requireSignedSource`,
         posture,
-        sourceOriginFingerprint("trust.unsigned-source", source, policy),
+        sourceOriginFingerprint("trust.unsigned-source", source, policy, resolvedSha),
       ),
     );
   }
@@ -1078,13 +1106,43 @@ export async function trustScanPlanForSource(
   } else {
     let remoteScan: Promise<TrustScanResult> | undefined;
     const scanRemoteSource = (probeCtx: PlanContext): Promise<TrustScanResult> => {
-      remoteScan ??= scanTrustTreeWithAnalyzers(
-        source.treePath,
-        scanOptionsFromContext(probeCtx, {
-          ...scanOptions,
-          sandboxSmokeShape: sandboxSmokeShape(source.treePath),
-        }),
-      );
+      if (remoteScan !== undefined) return remoteScan;
+      let metadataBeforeScan: TrustFetchMetadata | undefined;
+      if (source.kind === "github") {
+        const validation = validateGitHubTrustFetchMetadata(source);
+        if (validation.state !== "trusted") {
+          const metadataCheck = githubFetchMetadataCheck(source, validation);
+          if (metadataCheck === undefined) throw new Error("expected metadata failure check");
+          remoteScan = Promise.resolve({ checks: [metadataCheck], analyzersRun: [] });
+          return remoteScan;
+        }
+        metadataBeforeScan = validation.metadata;
+      }
+      remoteScan = (async () => {
+        const scan = await scanTrustTreeWithAnalyzers(
+          source.treePath,
+          scanOptionsFromContext(probeCtx, {
+            ...scanOptions,
+            sandboxSmokeShape: sandboxSmokeShape(source.treePath),
+          }),
+        );
+        if (source.kind === "github") {
+          const validation = validateGitHubTrustFetchMetadata(source);
+          if (
+            metadataBeforeScan === undefined ||
+            validation.state !== "trusted" ||
+            !sameGitHubTrustFetchMetadata(metadataBeforeScan, validation.metadata)
+          ) {
+            const metadataCheck = githubFetchMetadataCheck(
+              source,
+              validation.state === "trusted" ? { state: "mismatched" } : validation,
+            );
+            if (metadataCheck === undefined) throw new Error("expected metadata failure check");
+            return { checks: [metadataCheck], analyzersRun: [] };
+          }
+        }
+        return scan;
+      })();
       return remoteScan;
     };
     const preflightEvidence =

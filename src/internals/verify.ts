@@ -132,6 +132,10 @@ export type CheckCode =
   | "baseline.evidence-schema-unsupported"
   // trust gate (external repos / skills)
   | "trust.fetch-blocked"
+  | "trust.fetch-metadata-missing"
+  | "trust.fetch-metadata-unreadable"
+  | "trust.fetch-metadata-malformed"
+  | "trust.fetch-metadata-mismatched"
   | "trust.detector-unavailable"
   | "trust.detector-finding"
   | "trust.legal-text-detector-finding"
