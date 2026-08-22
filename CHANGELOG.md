@@ -8,6 +8,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Offline revocation has a replay-resistant, inert V1 contract before any continuation is
+  enabled.** A canonical signed snapshot binds its exact issuer, monotonic sequence,
+  second-granularity issuance and validity window, and the complete sorted decision-id revocation
+  set through a domain-separated DSSE/in-toto subject. Every resolution and custody transition
+  re-verifies the signed bytes against caller-supplied administrator signer/root trust; a cached
+  verification result is never authority. Validity is bounded to 60 seconds through 90 days, and
+  snapshot coverage cannot predate the decision or extend the decision expiry, receipt expiry, or
+  review deadline. Per-issuer sequence/digest high-water state rejects rollback and equal-sequence
+  substitution, while its synchronous compare-and-swap seam observes live state before and after
+  the claim and reports races or corrupt state without another effect. Missing or expired coverage
+  is `stale-authority`; future, malformed, unverifiable, or conflicting authority is invalid. Even a
+  current exact revocation remains non-materializable data: this foundation adds no filesystem,
+  process, network, deletion, subtraction, stop, CLI, Workbench, or public-library route. (#816)
+
 - **Vendor baseline evidence now has a deterministic, separately attestable artifact.**
   The bounded artifact binds the exact shipped lock, evidence bundle, manifest,
   publisher, source pins, and a checksum subject covering every file. Local
