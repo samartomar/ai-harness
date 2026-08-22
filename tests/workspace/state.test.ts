@@ -138,7 +138,7 @@ describe("workspace state collection", () => {
     ]);
   });
 
-  it("rejects a noncanonical porcelain branch head as unavailable", async () => {
+  it("omits an unsafe porcelain branch head while retaining coherent SHA evidence", async () => {
     const run: Runner = async (argv) => {
       const tail = argv.slice(3).join(" ");
       if (tail === "rev-parse --is-inside-work-tree")
@@ -157,9 +157,40 @@ describe("workspace state collection", () => {
       id: "ui",
       path: "ui",
       git: true,
-      observation: "unavailable",
+      sha: "abcdef0123456789abcdef0123456789abcdef01",
+      dirty: false,
     });
   });
+
+  it.each(["dependabot/npm_and_yarn/@types/node-20", "release+candidate"])(
+    "omits a Git-valid but unsafe-for-ref-use branch label %s",
+    async (branchHead) => {
+      const run: Runner = async (argv) => {
+        const tail = argv.slice(3).join(" ");
+        if (tail === "rev-parse --is-inside-work-tree")
+          return { code: 0, stdout: "true\n", stderr: "" };
+        if (tail === "status --porcelain=v2 --branch") {
+          return {
+            code: 0,
+            stdout: `# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head ${branchHead}\n`,
+            stderr: "",
+          };
+        }
+        return { code: 1, stdout: "", stderr: "" };
+      };
+
+      const state = await readWorkspaceRepoState(ctx(run), childRepo("ui"));
+
+      expect(state).toEqual({
+        id: "ui",
+        path: "ui",
+        sha: "abcdef0123456789abcdef0123456789abcdef01",
+        dirty: false,
+        git: true,
+      });
+      expect(state).not.toHaveProperty("branch");
+    },
+  );
 
   it("keeps each coherent status observation in one Git process", async () => {
     let active = 0;

@@ -222,10 +222,11 @@ apparently clean row. Hydrate accepts that explicit incomplete form but never tr
 authority.
 
 A detached child is still a complete observation: its exact SHA and dirty state are retained while
-the literal Git `(detached)` marker is omitted instead of being recorded as a branch ref. Hydrate
-therefore checks out the exact SHA without parsing the marker as authority. A baseline row with an
-incomplete observation, or with neither SHA nor branch evidence, reports `UNKNOWN`; it cannot prove
-that a later child revision is unchanged.
+the literal Git `(detached)` marker is omitted instead of being recorded as a branch ref. The same
+SHA-backed form is used when Git reports a valid branch label that the downstream ref parser cannot
+safely consume; only the label is omitted. Hydrate therefore checks out the exact SHA without using
+either label as authority. A baseline row with an incomplete observation, or with neither SHA nor
+branch evidence, reports `UNKNOWN`; it cannot prove that a later child revision is unchanged.
 
 ## Changed-since-snapshot report
 

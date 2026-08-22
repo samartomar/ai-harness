@@ -98,8 +98,8 @@ async function readWorkspaceRevision(
     !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(sha)
   )
     return undefined;
-  const branch = branchHead === "(detached)" ? undefined : branchHead;
-  if (branch !== undefined && !isSafeGitRefName(branch)) return undefined;
+  const branch =
+    branchHead === "(detached)" || !isSafeGitRefName(branchHead) ? undefined : branchHead;
   const branchAb = headers.get("branch.ab");
   const counts = branchAb === undefined ? {} : parseBranchDivergence(branchAb);
   if (counts === undefined) return undefined;
