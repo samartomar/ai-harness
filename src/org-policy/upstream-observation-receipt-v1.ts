@@ -238,6 +238,24 @@ export function resolveObservedEffect(
   );
   if (decision === undefined) return { state: "decision-missing-or-mismatch" };
   const decisionDigest = governanceDecisionDigestV2(decision);
+  const matchingRejection = receipt.decisions
+    .filter(
+      (candidate) =>
+        candidate.disposition === "rejected" &&
+        candidate.subject.subjectDigest === decision.subject.subjectDigest &&
+        candidate.targets.includes(input.target) &&
+        candidate.allowedEffects.includes(input.effect) &&
+        Date.parse(candidate.notBefore) <= now &&
+        now < Date.parse(candidate.expiresAt) &&
+        !receipt.decisionRevocations.some(
+          (revocation) => revocation.decisionDigest === governanceDecisionDigestV2(candidate),
+        ),
+    )
+    .map((candidate) => ({ candidate, digest: governanceDecisionDigestV2(candidate) }))
+    .sort((left, right) => ordinalCompare(left.digest, right.digest))[0];
+  if (matchingRejection !== undefined) {
+    return { state: "decision-rejected", decisionDigest: matchingRejection.digest };
+  }
   if (decision.disposition === "rejected") return { state: "decision-rejected", decisionDigest };
   if (
     now < Date.parse(decision.notBefore) ||

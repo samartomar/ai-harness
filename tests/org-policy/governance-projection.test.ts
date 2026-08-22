@@ -1346,6 +1346,7 @@ describe("governed candidate projection", () => {
     const mint = async (
       signedDecision: ReturnType<typeof governanceDecisionV2>,
       revocations: unknown[] = [],
+      additionalDecisions: ReturnType<typeof governanceDecisionV2>[] = [],
     ) => {
       mkdirSync(join(dir, ".aih"), { recursive: true });
       writeFileSync(
@@ -1358,7 +1359,9 @@ describe("governed candidate projection", () => {
           expiresAt,
           targets: ["claude"],
           trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
-          decisions: [signedDecision],
+          decisions: [signedDecision, ...additionalDecisions].sort((left, right) =>
+            left.id.localeCompare(right.id),
+          ),
           decisionRevocations: revocations,
         }),
       );
@@ -1424,6 +1427,23 @@ describe("governed candidate projection", () => {
       } as never),
     ).toMatchObject({ state: "decision-rejected" });
     const approved = governanceDecisionV2({ issuedAt, notBefore: issuedAt, expiresAt });
+    const coPresentRejected = governanceDecisionV2({
+      id: "decision-rejection",
+      disposition: "rejected",
+      issuedAt,
+      notBefore: issuedAt,
+      expiresAt,
+    });
+    const rejectionOverlay = await mint(approved, [], [coPresentRejected]);
+    expect(
+      resolveObservedEffect({
+        ...rejectionOverlay.input,
+        observation: rejectionOverlay.observation,
+      }),
+    ).toMatchObject({
+      state: "decision-rejected",
+      decisionDigest: governanceDecisionDigestV2(coPresentRejected as never),
+    });
     const approvedDigest = governanceDecisionDigestV2(approved as never);
     const revokedMint = await mint(approved, [
       {
