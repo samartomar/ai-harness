@@ -216,6 +216,20 @@ function signature(value: unknown): Json {
   return { keyid, sig };
 }
 
+function singleSignature(value: unknown): Json {
+  if (isProxy(value) || !Array.isArray(value)) fail("signatures");
+  if (
+    Object.getPrototypeOf(value) !== Array.prototype ||
+    value.length !== 1 ||
+    Object.getOwnPropertySymbols(value).length !== 0 ||
+    Object.keys(value).some((key) => key !== "0")
+  )
+    fail("signatures");
+  const descriptor = Object.getOwnPropertyDescriptor(value, "0");
+  if (descriptor === undefined || !Object.hasOwn(descriptor, "value")) fail("signatures");
+  return signature(descriptor.value);
+}
+
 function pae(payloadType: string, payload: Buffer): Buffer {
   return Buffer.concat([
     Buffer.from(
@@ -283,13 +297,11 @@ export function createOfflineRevocationSnapshotV1(
 ): SignedOfflineRevocationSnapshotV1 {
   const item = record(value, "signed snapshot");
   exact(item, ["signatures", "signerIdentity", "snapshot"], "signed snapshot fields");
-  const signatures = item.signatures;
-  if (isProxy(signatures) || !Array.isArray(signatures) || signatures.length !== 1)
-    fail("signatures");
+  const signatures = singleSignature(item.signatures);
   return createSigned(
     rawSnapshot(item.snapshot),
     text(item.signerIdentity, "signer identity", 256),
-    [signature(signatures[0])],
+    [signatures],
   );
 }
 
@@ -304,6 +316,7 @@ export function canonicalOfflineRevocationSnapshotV1Bytes(
 export function parseOfflineRevocationSnapshotV1Json(
   value: unknown,
 ): SignedOfflineRevocationSnapshotV1 {
+  if (isProxy(value)) fail("signed snapshot bytes");
   const textValue =
     typeof value === "string"
       ? value
@@ -494,6 +507,7 @@ export function resolveOfflineRevocationAuthorityV1(
   const now = timestamp(item.now, "now");
   const receiptExpiresAt = timestamp(item.receiptExpiresAt, "receipt expires at");
   const resolvedDecision = decision(item.decision);
+  if (item.signedSnapshot === undefined) return stale();
   const signed = reverify(item.signedSnapshot, expected);
   if (signed === undefined) return invalid();
   const snapshot = signed.snapshot;
