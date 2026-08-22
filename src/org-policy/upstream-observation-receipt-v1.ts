@@ -86,17 +86,26 @@ export function parseUpstreamObservationReceiptV1(value: unknown): UpstreamObser
   return UpstreamObservationReceiptV1Schema.parse(value);
 }
 
-const verifiedObservations = new WeakSet<object>();
+const verifiedObservationReceipts = new WeakMap<object, Readonly<UpstreamObservationReceiptV1>>();
+declare const verifiedObservationBrand: unique symbol;
 
 /** Opaque proof minted only by the code-owned observation verification seam. */
 export interface VerifiedUpstreamObservationV1 {
-  readonly receipt: UpstreamObservationReceiptV1;
+  readonly [verifiedObservationBrand]?: never;
 }
 
 export function isVerifiedUpstreamObservationV1(
   value: unknown,
 ): value is VerifiedUpstreamObservationV1 {
-  return typeof value === "object" && value !== null && verifiedObservations.has(value);
+  return typeof value === "object" && value !== null && verifiedObservationReceipts.has(value);
+}
+
+function deepFreeze<T>(value: T): Readonly<T> {
+  if (value !== null && typeof value === "object") {
+    for (const child of Object.values(value as object)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
 }
 
 export interface VerifyUpstreamObservationV1Input {
@@ -114,7 +123,7 @@ export interface VerifyUpstreamObservationV1Input {
 
 /**
  * The sole pure mint for resolver-usable observations. A parsed JSON object,
- * spread, clone, or self-described verifier can never enter the WeakSet.
+ * spread, clone, or self-described verifier can never enter private custody.
  */
 export function verifyUpstreamObservationV1(
   input: VerifyUpstreamObservationV1Input,
@@ -143,12 +152,14 @@ export function verifyUpstreamObservationV1(
     return undefined;
   }
   try {
-    if (!input.verify(receipt)) return undefined;
+    if (!input.verify(deepFreeze(structuredClone(receipt)) as UpstreamObservationReceiptV1)) {
+      return undefined;
+    }
   } catch {
     return undefined;
   }
-  const verified: VerifiedUpstreamObservationV1 = Object.freeze({ receipt });
-  verifiedObservations.add(verified);
+  const verified: VerifiedUpstreamObservationV1 = Object.freeze({});
+  verifiedObservationReceipts.set(verified, deepFreeze(structuredClone(receipt)));
   return verified;
 }
 
@@ -236,7 +247,8 @@ export function resolveObservedEffect(
   if (!isVerifiedUpstreamObservationV1(input.observation)) {
     return { state: "observation-unverified", decisionDigest };
   }
-  const observation = input.observation.receipt;
+  const observation = verifiedObservationReceipts.get(input.observation);
+  if (observation === undefined) return { state: "observation-unverified", decisionDigest };
   if (observation.outcome !== "observed-success") {
     return { state: "observation-unsuccessful", decisionDigest };
   }

@@ -124,6 +124,26 @@ describe("UpstreamObservationReceiptV1 public contract", () => {
     if (verified === undefined) throw new Error("expected verified observation");
     const effectiveInput = { ...input, observation: verified };
     expect(resolveObservedEffect(effectiveInput)).toMatchObject({ state: "observed-effective" });
+    expect(verified).not.toHaveProperty("receipt");
+    expect(() => Object.assign(verified as object, { receipt: currentObservation })).toThrow();
+    expect(resolveObservedEffect(effectiveInput)).toMatchObject({ state: "observed-effective" });
+    const callbackMutation = verifyUpstreamObservationV1({
+      ...input,
+      receipt: currentObservation,
+      verify: (callbackReceipt) => {
+        try {
+          callbackReceipt.installed.digest = `sha256:${"0".repeat(64)}`;
+          callbackReceipt.targets.push("codex");
+        } catch {
+          // The callback gets an immutable detached snapshot.
+        }
+        return true;
+      },
+    });
+    expect(callbackMutation).toBeDefined();
+    expect(resolveObservedEffect({ ...input, observation: callbackMutation })).toMatchObject({
+      state: "observed-effective",
+    });
     const registeredDecision = { ...currentDecision, targets: ["custom-host"] };
     const registeredObservation = observation({
       decision: {
