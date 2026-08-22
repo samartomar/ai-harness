@@ -2524,7 +2524,7 @@
                           },
                           "catalogIssuer": {
                             "type": "string",
-                            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$"
                           },
                           "catalogDigest": {
                             "type": "string",
@@ -2577,7 +2577,7 @@
                           },
                           "attestor": {
                             "type": "string",
-                            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$"
                           }
                         },
                         "required": [
@@ -2621,7 +2621,7 @@
                               },
                               "commit": {
                                 "type": "string",
-                                "pattern": "^[0-9a-f]{40}$"
+                                "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$"
                               },
                               "path": {
                                 "type": "string",
@@ -2653,7 +2653,7 @@
                               },
                               "version": {
                                 "type": "string",
-                                "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+                                "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
                               },
                               "integrity": {
                                 "type": "string"
@@ -2684,7 +2684,7 @@
                               },
                               "version": {
                                 "type": "string",
-                                "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9.!+_-]{0,127}$"
                               },
                               "filename": {
                                 "type": "string",
@@ -2768,7 +2768,7 @@
                                 "type": "string",
                                 "const": "remote"
                               },
-                              "origin": {
+                              "endpoint": {
                                 "type": "string"
                               },
                               "contentDigest": {
@@ -2778,7 +2778,7 @@
                             },
                             "required": [
                               "type",
-                              "origin",
+                              "endpoint",
                               "contentDigest"
                             ],
                             "additionalProperties": false
@@ -2792,7 +2792,7 @@
                               },
                               "release": {
                                 "type": "string",
-                                "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+                                "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
                               },
                               "revision": {
                                 "type": "string",
@@ -3023,7 +3023,7 @@
                           },
                           "catalogIssuer": {
                             "type": "string",
-                            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$"
                           },
                           "catalogDigest": {
                             "type": "string",
@@ -3076,7 +3076,7 @@
                           },
                           "attestor": {
                             "type": "string",
-                            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$"
                           }
                         },
                         "required": [
@@ -3120,7 +3120,7 @@
                               },
                               "commit": {
                                 "type": "string",
-                                "pattern": "^[0-9a-f]{40}$"
+                                "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$"
                               },
                               "path": {
                                 "type": "string",
@@ -3152,7 +3152,7 @@
                               },
                               "version": {
                                 "type": "string",
-                                "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+                                "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
                               },
                               "integrity": {
                                 "type": "string"
@@ -3183,7 +3183,7 @@
                               },
                               "version": {
                                 "type": "string",
-                                "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9.!+_-]{0,127}$"
                               },
                               "filename": {
                                 "type": "string",
@@ -3267,7 +3267,7 @@
                                 "type": "string",
                                 "const": "remote"
                               },
-                              "origin": {
+                              "endpoint": {
                                 "type": "string"
                               },
                               "contentDigest": {
@@ -3277,7 +3277,7 @@
                             },
                             "required": [
                               "type",
-                              "origin",
+                              "endpoint",
                               "contentDigest"
                             ],
                             "additionalProperties": false
@@ -3291,7 +3291,7 @@
                               },
                               "release": {
                                 "type": "string",
-                                "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+                                "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
                               },
                               "revision": {
                                 "type": "string",
@@ -3527,7 +3527,7 @@
                           },
                           "catalogIssuer": {
                             "type": "string",
-                            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$"
                           },
                           "catalogDigest": {
                             "type": "string",
@@ -3580,7 +3580,7 @@
                           },
                           "attestor": {
                             "type": "string",
-                            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$"
                           }
                         },
                         "required": [
@@ -3624,7 +3624,7 @@
                               },
                               "commit": {
                                 "type": "string",
-                                "pattern": "^[0-9a-f]{40}$"
+                                "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$"
                               },
                               "path": {
                                 "type": "string",
@@ -3656,7 +3656,7 @@
                               },
                               "version": {
                                 "type": "string",
-                                "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+                                "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
                               },
                               "integrity": {
                                 "type": "string"
@@ -3687,7 +3687,7 @@
                               },
                               "version": {
                                 "type": "string",
-                                "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9.!+_-]{0,127}$"
                               },
                               "filename": {
                                 "type": "string",
@@ -3771,7 +3771,7 @@
                                 "type": "string",
                                 "const": "remote"
                               },
-                              "origin": {
+                              "endpoint": {
                                 "type": "string"
                               },
                               "contentDigest": {
@@ -3781,7 +3781,7 @@
                             },
                             "required": [
                               "type",
-                              "origin",
+                              "endpoint",
                               "contentDigest"
                             ],
                             "additionalProperties": false
@@ -3795,7 +3795,7 @@
                               },
                               "release": {
                                 "type": "string",
-                                "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+                                "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
                               },
                               "revision": {
                                 "type": "string",

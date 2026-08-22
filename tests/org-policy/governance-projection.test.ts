@@ -26,6 +26,7 @@ import { managedMcpProjectionState } from "../../src/mcp/managed-projection.js";
 import { mcpApprovalSubject } from "../../src/mcp/policy.js";
 import { mcpServers } from "../../src/mcp/servers.js";
 import {
+  isVerifiedPolicyAuthority,
   PolicyAuthorityReceiptSchema,
   verifyPolicyAuthorityReceipt,
 } from "../../src/org-policy/authority.js";
@@ -42,7 +43,11 @@ import {
   orgPolicyEffectiveCheck,
   orgPolicyEffectiveDigest,
 } from "../../src/org-policy/evaluate.js";
-import { governanceDecisionDigestV2 } from "../../src/org-policy/governance-decision-v2.js";
+import {
+  governanceDecisionDigestV2,
+  governanceDecisionSourceDigestV2,
+  governanceDecisionSubjectDigestV2,
+} from "../../src/org-policy/governance-decision-v2.js";
 import {
   authoritySuffix,
   orgPolicyHookReceiptState,
@@ -53,6 +58,10 @@ import {
 } from "../../src/org-policy/project.js";
 import { resolveRuntimeOrgPolicy } from "../../src/org-policy/runtime.js";
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
+import {
+  resolveObservedEffect,
+  verifyUpstreamObservationV1,
+} from "../../src/org-policy/upstream-observation-receipt-v1.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { scanRepo } from "../../src/profile/scan.js";
 import { usageRecorderScript } from "../../src/usage/capture.js";
@@ -374,6 +383,13 @@ function authorityReceiptV2(overrides: Record<string, unknown> = {}) {
 }
 
 function governanceDecisionV2(overrides: Record<string, unknown> = {}) {
+  const source = {
+    type: "github" as const,
+    repository: "acme/review-tool",
+    commit: "a".repeat(40),
+    path: "tool.json",
+  };
+  const sourceDigest = governanceDecisionSourceDigestV2(source);
   return {
     format: "aih-governance-decision",
     version: 2,
@@ -386,14 +402,13 @@ function governanceDecisionV2(overrides: Record<string, unknown> = {}) {
     subject: {
       kind: "tool",
       id: "platform-review-tool",
-      source: {
-        type: "github",
-        repository: "acme/review-tool",
-        commit: "a".repeat(40),
-        path: "tool.json",
-      },
-      sourceDigest: `sha256:${"a".repeat(64)}`,
-      subjectDigest: `sha256:${"b".repeat(64)}`,
+      source,
+      sourceDigest,
+      subjectDigest: governanceDecisionSubjectDigestV2({
+        kind: "tool",
+        id: "platform-review-tool",
+        sourceDigest,
+      }),
     },
     targets: ["claude"],
     allowedEffects: ["configure"],
@@ -1153,6 +1168,139 @@ describe("governed candidate projection", () => {
     ]) {
       expect(PolicyAuthorityReceiptSchema.safeParse(invalid).success).toBe(false);
     }
+  });
+
+  it("keeps externally verified V3 authority facts in immutable detached custody", async () => {
+    const now = Date.now();
+    const signedDecision = governanceDecisionV2({
+      issuedAt: new Date(now - 60_000).toISOString(),
+      notBefore: new Date(now - 60_000).toISOString(),
+      expiresAt: new Date(now + 20_000).toISOString(),
+    });
+    mkdirSync(join(dir, ".aih"), { recursive: true });
+    writeFileSync(
+      join(dir, ".aih", "policy-authority-receipt.json"),
+      JSON.stringify({
+        format: "aih-policy-authority-receipt",
+        version: 3,
+        issuerRepository: "acme/governance",
+        issuedAt: new Date(now - 30_000).toISOString(),
+        expiresAt: new Date(now + 30_000).toISOString(),
+        targets: ["claude"],
+        trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+        decisions: [signedDecision],
+        decisionRevocations: [],
+      }),
+    );
+    const authority = await verifiedAuthority(ctx());
+    expect(() => {
+      (authority.receipt as { decisions: Array<{ targets: string[] }> }).decisions[0]?.targets.push(
+        "codex",
+      );
+    }).toThrow();
+    expect(authority.receipt).toMatchObject({ version: 3, decisions: [{ targets: ["claude"] }] });
+    expect(isVerifiedPolicyAuthority({ ...authority })).toBe(false);
+    expect(isVerifiedPolicyAuthority(structuredClone(authority))).toBe(false);
+    const decisionDigest = governanceDecisionDigestV2(signedDecision as never);
+    const observed = {
+      format: "aih-upstream-observation-receipt",
+      version: 1,
+      id: "observation-platform-tool",
+      decision: { id: signedDecision.id, digest: decisionDigest },
+      subject: {
+        kind: signedDecision.subject.kind,
+        id: signedDecision.subject.id,
+        sourceDigest: signedDecision.subject.sourceDigest,
+        subjectDigest: signedDecision.subject.subjectDigest,
+      },
+      targets: ["claude"],
+      allowedEffects: ["configure"],
+      integration: { mode: "upstream-managed", owner: "upstream-admin", version: "1.0.0" } as const,
+      installed: { id: "platform-review-tool", digest: `sha256:${"d".repeat(64)}` },
+      verifier: { id: "upstream-admin", version: "1.0.0", digest: `sha256:${"f".repeat(64)}` },
+      observedAt: new Date(now - 10_000).toISOString(),
+      validUntil: new Date(now + 10_000).toISOString(),
+      outcome: "observed-success",
+    };
+    const resolverInput = {
+      authority,
+      decisionReference: { id: signedDecision.id, digest: decisionDigest },
+      subject: signedDecision.subject as never,
+      target: "claude",
+      effect: "configure" as const,
+      supportedTargets: ["claude"],
+      expectedVerifier: observed.verifier,
+      expectedInstalled: observed.installed,
+      expectedIntegration: observed.integration,
+      now: new Date(now).toISOString(),
+    };
+    const verifiedObservation = verifyUpstreamObservationV1({
+      ...resolverInput,
+      receipt: observed,
+      verify: () => true,
+    });
+    expect(verifiedObservation).toBeDefined();
+    expect(
+      resolveObservedEffect({ ...resolverInput, observation: verifiedObservation }),
+    ).toMatchObject({ state: "observed-effective" });
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        authority: { ...authority },
+        observation: verifiedObservation,
+      }),
+    ).toMatchObject({ state: "authority-unverified" });
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        decisionReference: { id: signedDecision.id, digest: `sha256:${"0".repeat(64)}` },
+        observation: verifiedObservation,
+      }),
+    ).toMatchObject({ state: "decision-missing-or-mismatch" });
+    expect(resolveObservedEffect({ ...resolverInput })).toMatchObject({
+      state: "observation-missing",
+    });
+    expect(
+      resolveObservedEffect({ ...resolverInput, observation: verifiedObservation, effect: "use" }),
+    ).toMatchObject({ state: "decision-scope-mismatch" });
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        observation: verifiedObservation,
+        expectedVerifier: { ...observed.verifier, version: "2.0.0" },
+      }),
+    ).toMatchObject({ state: "observation-mismatch" });
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        observation: verifiedObservation,
+        now: new Date(now + 15_000).toISOString(),
+      }),
+    ).toMatchObject({ state: "observation-stale" });
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        observation: verifiedObservation,
+        decision: { ...signedDecision, disposition: "rejected" },
+        revocation: { decisionDigest, issuer: signedDecision.issuer },
+      } as unknown as Parameters<typeof resolveObservedEffect>[0]),
+    ).toMatchObject({ state: "observed-effective" });
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        observation: verifiedObservation,
+        now: new Date(now + 31_000).toISOString(),
+      }),
+    ).toMatchObject({ state: "authority-not-current" });
+    writeAuthorityReceipt();
+    const legacyAuthority = await verifiedAuthority(ctx());
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        authority: legacyAuthority,
+        observation: verifiedObservation,
+      }),
+    ).toMatchObject({ state: "authority-version" });
   });
 
   it("rejects malformed or non-authoritative v2 decision receipt relationships", () => {

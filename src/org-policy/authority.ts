@@ -432,7 +432,7 @@ const RECEIPT_TOP_LEVEL_CONSUMERS: Readonly<Record<string, string>> = {
   "decisions.*.subject.source.integrity": "V3 downstream resolver: immutable npm integrity binding",
   "decisions.*.subject.source.manifestDigest":
     "V3 downstream resolver: immutable OCI platform manifest binding",
-  "decisions.*.subject.source.origin": "V3 downstream resolver: exact remote origin binding",
+  "decisions.*.subject.source.endpoint": "V3 downstream resolver: exact remote endpoint binding",
   "decisions.*.subject.source.package": "V3 downstream resolver: exact npm package binding",
   "decisions.*.subject.source.path": "V3 downstream resolver: immutable git path binding",
   "decisions.*.subject.source.platform.architecture":
@@ -565,6 +565,14 @@ export const POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS: Readonly<Record<string, s
   });
 
 const verifiedAuthorities = new WeakSet<object>();
+
+function deepFreeze<T>(value: T): Readonly<T> {
+  if (value !== null && typeof value === "object") {
+    for (const child of Object.values(value as object)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
+}
 
 /** Opaque result: only `verifyPolicyAuthorityReceipt` can mint a usable authority object. */
 export interface VerifiedPolicyAuthority {
@@ -707,7 +715,7 @@ export async function verifyPolicyAuthorityReceipt(
     return { problem: "GitHub authority receipt attestation could not be verified" };
   }
   const authority: VerifiedPolicyAuthority = Object.freeze({
-    receipt,
+    receipt: deepFreeze(structuredClone(receipt)) as PolicyAuthorityReceipt,
     receiptDigest: `sha256:${createHash("sha256").update(contents).digest("hex")}`,
     repository: root.repository,
   });

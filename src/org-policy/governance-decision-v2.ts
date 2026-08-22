@@ -4,7 +4,7 @@ import { GovernanceDecisionTimestampSchema } from "./governance-decision-v1.js";
 
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
-const SHA1 = /^[0-9a-f]{40}$/;
+const GIT_COMMIT = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const MAX_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 
 const stableId = z.string().regex(ID, "must be a bounded stable identifier");
@@ -28,23 +28,44 @@ const sourcePath = z
       !/[\p{C}]/u.test(value),
     "must be a bounded relative source path",
   );
-const exactSemver = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
+const exactSemver = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/);
+const exactPypiVersion = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9.!+_-]{0,127}$/, "must be a bounded exact provider version");
 const ociRepository = z.string().regex(/^[a-z0-9][a-z0-9._/-]*$/);
-const httpsOrigin = z.string().refine((value) => {
+const httpsBaseUrl = z.string().refine((value) => {
   try {
     const url = new URL(value);
     return (
       url.protocol === "https:" &&
       url.username === "" &&
       url.password === "" &&
-      value === url.origin &&
       url.search === "" &&
-      url.hash === ""
+      url.hash === "" &&
+      value === url.href &&
+      url.pathname.endsWith("/")
     );
   } catch {
     return false;
   }
-}, "must be a bare HTTPS origin");
+}, "must be a canonical HTTPS base URL");
+const httpsEndpoint = z.string().refine((value) => {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      url.username === "" &&
+      url.password === "" &&
+      url.search === "" &&
+      url.hash === "" &&
+      value === url.href &&
+      url.pathname.startsWith("/")
+    );
+  } catch {
+    return false;
+  }
+}, "must be a canonical HTTPS endpoint URL");
+const qualificationIdentity = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$/);
 
 function ordinalCompare(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -88,14 +109,14 @@ export const GovernanceDecisionSourceV2Schema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("github"),
       repository,
-      commit: z.string().regex(SHA1),
+      commit: z.string().regex(GIT_COMMIT),
       path: sourcePath,
     })
     .strict(),
   z
     .object({
       type: z.literal("npm"),
-      registry: httpsOrigin,
+      registry: httpsBaseUrl,
       package: z.string().regex(/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/),
       version: exactSemver,
       integrity: z.string().refine(validSha512Sri, "must be a canonical sha512 SRI digest"),
@@ -104,9 +125,9 @@ export const GovernanceDecisionSourceV2Schema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("pypi"),
-      registry: httpsOrigin,
+      registry: httpsBaseUrl,
       package: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/),
-      version: exactSemver,
+      version: exactPypiVersion,
       filename: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._+-]*$/),
       sha256: digest,
     })
@@ -123,7 +144,7 @@ export const GovernanceDecisionSourceV2Schema = z.discriminatedUnion("type", [
       manifestDigest: digest,
     })
     .strict(),
-  z.object({ type: z.literal("remote"), origin: httpsOrigin, contentDigest: digest }).strict(),
+  z.object({ type: z.literal("remote"), endpoint: httpsEndpoint, contentDigest: digest }).strict(),
   z.object({ type: z.literal("aih"), release: exactSemver, revision: digest }).strict(),
 ]);
 
@@ -136,6 +157,7 @@ export const GovernanceDecisionSubjectV2Schema = z
     subjectDigest: digest,
   })
   .strict();
+export type GovernanceDecisionSourceV2 = z.infer<typeof GovernanceDecisionSourceV2Schema>;
 
 /**
  * Qualification is an independently addressable fact, never an administrator
@@ -146,7 +168,7 @@ const qualificationBasis = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("aih-supported"),
-      catalogIssuer: stableId,
+      catalogIssuer: qualificationIdentity,
       catalogDigest: digest,
       catalogHeadDigest: digest,
       memberDigest: digest,
@@ -158,7 +180,7 @@ const qualificationBasis = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("organization-qualified"),
       evidenceDigest: digest,
-      attestor: stableId,
+      attestor: qualificationIdentity,
     })
     .strict(),
 ]);
@@ -217,6 +239,22 @@ const rejected = base
 export const GovernanceDecisionV2Schema = z
   .discriminatedUnion("disposition", [approved, accepted, rejected])
   .superRefine((value, ctx) => {
+    if (value.subject.sourceDigest !== governanceDecisionSourceDigestV2(value.subject.source)) {
+      ctx.addIssue({ code: "custom", message: "subject sourceDigest must bind the exact source" });
+    }
+    if (
+      value.subject.subjectDigest !==
+      governanceDecisionSubjectDigestV2({
+        kind: value.subject.kind,
+        id: value.subject.id,
+        sourceDigest: value.subject.sourceDigest,
+      })
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "subjectDigest must bind the exact subject descriptor",
+      });
+    }
     const issued = Date.parse(value.issuedAt);
     const notBefore = Date.parse(value.notBefore);
     const expires = Date.parse(value.expiresAt);
@@ -298,6 +336,30 @@ function stableJson(value: unknown): string {
       .join(",")}}`;
   }
   return JSON.stringify(value);
+}
+
+export function canonicalGovernanceDecisionSourceV2(value: GovernanceDecisionSourceV2): string {
+  return `aih-governance-decision-source/v2\0${stableJson(value)}`;
+}
+
+export function governanceDecisionSourceDigestV2(value: GovernanceDecisionSourceV2): string {
+  return `sha256:${createHash("sha256")
+    .update(canonicalGovernanceDecisionSourceV2(value), "utf8")
+    .digest("hex")}`;
+}
+
+export function canonicalGovernanceDecisionSubjectV2(
+  value: Pick<GovernanceDecisionV2["subject"], "kind" | "id" | "sourceDigest">,
+): string {
+  return `aih-governance-decision-subject/v2\0${stableJson(value)}`;
+}
+
+export function governanceDecisionSubjectDigestV2(
+  value: Pick<GovernanceDecisionV2["subject"], "kind" | "id" | "sourceDigest">,
+): string {
+  return `sha256:${createHash("sha256")
+    .update(canonicalGovernanceDecisionSubjectV2(value), "utf8")
+    .digest("hex")}`;
 }
 
 /** Canonical bytes are domain-separated so V1 and V2 digests cannot collide. */

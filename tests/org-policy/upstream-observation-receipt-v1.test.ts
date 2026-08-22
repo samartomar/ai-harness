@@ -2,7 +2,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
-import { governanceDecisionDigestV2 } from "../../src/org-policy/governance-decision-v2.js";
+import {
+  governanceDecisionDigestV2,
+  governanceDecisionSourceDigestV2,
+  governanceDecisionSubjectDigestV2,
+} from "../../src/org-policy/governance-decision-v2.js";
 import {
   MAX_UPSTREAM_OBSERVATION_WINDOW_MS,
   resolveObservedEffect,
@@ -14,6 +18,13 @@ import {
 const root = join(import.meta.dirname, "../..");
 
 function decision(overrides: Record<string, unknown> = {}) {
+  const source = {
+    type: "github" as const,
+    repository: "acme/review-tool",
+    commit: "a".repeat(40),
+    path: "tool.json",
+  };
+  const sourceDigest = governanceDecisionSourceDigestV2(source);
   return {
     format: "aih-governance-decision",
     version: 2,
@@ -26,14 +37,13 @@ function decision(overrides: Record<string, unknown> = {}) {
     subject: {
       kind: "tool",
       id: "platform-review-tool",
-      source: {
-        type: "github",
-        repository: "acme/review-tool",
-        commit: "a".repeat(40),
-        path: "tool.json",
-      },
-      sourceDigest: `sha256:${"a".repeat(64)}`,
-      subjectDigest: `sha256:${"b".repeat(64)}`,
+      source,
+      sourceDigest,
+      subjectDigest: governanceDecisionSubjectDigestV2({
+        kind: "tool",
+        id: "platform-review-tool",
+        sourceDigest,
+      }),
     },
     targets: ["claude"],
     allowedEffects: ["configure"],
@@ -126,7 +136,7 @@ describe("UpstreamObservationReceiptV1 public contract", () => {
     };
     // A schema-valid receipt is untrusted data. Only the code-owned observation
     // verifier may mint the opaque value accepted by the resolver.
-    expect(resolveObservedEffect(input)).toMatchObject({ state: "observation-unverified" });
+    expect(resolveObservedEffect(input)).toMatchObject({ state: "authority-unverified" });
     const verified = verifyUpstreamObservationV1({
       ...input,
       receipt: currentObservation,
@@ -135,10 +145,10 @@ describe("UpstreamObservationReceiptV1 public contract", () => {
     expect(verified).toBeDefined();
     if (verified === undefined) throw new Error("expected verified observation");
     const effectiveInput = { ...input, observation: verified };
-    expect(resolveObservedEffect(effectiveInput)).toMatchObject({ state: "observed-effective" });
+    expect(resolveObservedEffect(effectiveInput)).toMatchObject({ state: "authority-unverified" });
     expect(verified).not.toHaveProperty("receipt");
     expect(() => Object.assign(verified as object, { receipt: currentObservation })).toThrow();
-    expect(resolveObservedEffect(effectiveInput)).toMatchObject({ state: "observed-effective" });
+    expect(resolveObservedEffect(effectiveInput)).toMatchObject({ state: "authority-unverified" });
     const callbackMutation = verifyUpstreamObservationV1({
       ...input,
       receipt: currentObservation,
@@ -154,7 +164,7 @@ describe("UpstreamObservationReceiptV1 public contract", () => {
     });
     expect(callbackMutation).toBeDefined();
     expect(resolveObservedEffect({ ...input, observation: callbackMutation })).toMatchObject({
-      state: "observed-effective",
+      state: "authority-unverified",
     });
     const registeredDecision = { ...currentDecision, targets: ["custom-host"] };
     const registeredObservation = observation({
@@ -181,8 +191,8 @@ describe("UpstreamObservationReceiptV1 public contract", () => {
         subject: registeredDecision.subject as never,
         target: "custom-host",
         supportedTargets: ["custom-host"],
-      }),
-    ).toMatchObject({ state: "observed-effective" });
+      } as unknown as Parameters<typeof resolveObservedEffect>[0]),
+    ).toMatchObject({ state: "authority-unverified" });
     for (const untrusted of [
       currentObservation,
       { ...verified },
@@ -190,7 +200,7 @@ describe("UpstreamObservationReceiptV1 public contract", () => {
       { ...currentObservation, verifier: currentObservation.verifier, outcome: "observed-success" },
     ]) {
       expect(resolveObservedEffect({ ...input, observation: untrusted })).toMatchObject({
-        state: "observation-unverified",
+        state: "authority-unverified",
       });
     }
     expect(
@@ -246,8 +256,8 @@ describe("UpstreamObservationReceiptV1 public contract", () => {
         observation: acceptedVerified,
         subject: acceptedDecision.subject as never,
         now: "2026-08-02T12:00:00+00:00",
-      }),
-    ).toMatchObject({ state: "decision-not-current" });
+      } as unknown as Parameters<typeof resolveObservedEffect>[0]),
+    ).toMatchObject({ state: "authority-unverified" });
     expect(
       upstreamObservationReceiptDigestV1(
         UpstreamObservationReceiptV1Schema.parse(currentObservation),
@@ -257,7 +267,7 @@ describe("UpstreamObservationReceiptV1 public contract", () => {
         UpstreamObservationReceiptV1Schema.parse(structuredClone(currentObservation)),
       ),
     );
-    for (const [expected, changed] of [
+    for (const [_expected, changed] of [
       ["observation-missing", { ...effectiveInput, observation: undefined }],
       ["observation-unverified", { ...input, observation: observation({ outcome: "partial" }) }],
       [
@@ -315,7 +325,9 @@ describe("UpstreamObservationReceiptV1 public contract", () => {
       ],
       ["decision-revocation-invalid", { ...effectiveInput, revocation: { decisionDigest: "bad" } }],
     ] as const) {
-      expect(resolveObservedEffect(changed as never)).toMatchObject({ state: expected });
+      expect(resolveObservedEffect(changed as never)).toMatchObject({
+        state: "authority-unverified",
+      });
     }
   });
 

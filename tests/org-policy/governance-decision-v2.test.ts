@@ -6,11 +6,20 @@ import {
   GovernanceDecisionRevocationV2Schema,
   GovernanceDecisionV2Schema,
   governanceDecisionDigestV2,
+  governanceDecisionSourceDigestV2,
+  governanceDecisionSubjectDigestV2,
 } from "../../src/org-policy/governance-decision-v2.js";
 
 const root = join(import.meta.dirname, "../..");
 
 function decision(overrides: Record<string, unknown> = {}) {
+  const source = {
+    type: "github" as const,
+    repository: "acme/review-tool",
+    commit: "a".repeat(40),
+    path: "tool.json",
+  };
+  const sourceDigest = governanceDecisionSourceDigestV2(source);
   return {
     format: "aih-governance-decision",
     version: 2,
@@ -23,14 +32,13 @@ function decision(overrides: Record<string, unknown> = {}) {
     subject: {
       kind: "tool",
       id: "platform-review-tool",
-      source: {
-        type: "github",
-        repository: "acme/review-tool",
-        commit: "a".repeat(40),
-        path: "tool.json",
-      },
-      sourceDigest: `sha256:${"a".repeat(64)}`,
-      subjectDigest: `sha256:${"b".repeat(64)}`,
+      source,
+      sourceDigest,
+      subjectDigest: governanceDecisionSubjectDigestV2({
+        kind: "tool",
+        id: "platform-review-tool",
+        sourceDigest,
+      }),
     },
     targets: ["claude", "codex"],
     allowedEffects: ["configure", "use"],
@@ -166,7 +174,7 @@ describe("GovernanceDecisionV2 public contract", () => {
             catalogHeadDigest: `sha256:${"1".repeat(64)}`,
             memberDigest: `sha256:${"2".repeat(64)}`,
             subjectKind: "tool",
-            subjectDigest: `sha256:${"b".repeat(64)}`,
+            subjectDigest: decision().subject.subjectDigest,
           },
         }),
       ).success,
@@ -203,14 +211,14 @@ describe("GovernanceDecisionV2 public contract", () => {
       { type: "github", repository: "acme/review-tool", commit: "a".repeat(40), path: "tool.json" },
       {
         type: "npm",
-        registry: "https://registry.npmjs.org",
+        registry: "https://registry.npmjs.org/",
         package: "review-tool",
         version: "1.2.3",
         integrity: `sha512-${Buffer.alloc(64).toString("base64")}`,
       },
       {
         type: "pypi",
-        registry: "https://pypi.org",
+        registry: "https://pypi.org/",
         package: "review-tool",
         version: "1.2.3",
         filename: "review_tool+build-1.2.3.whl",
@@ -226,29 +234,47 @@ describe("GovernanceDecisionV2 public contract", () => {
       },
       {
         type: "remote",
-        origin: "https://mcp.example.test",
+        endpoint: "https://mcp.example.test/api/review",
         contentDigest: `sha256:${"f".repeat(64)}`,
       },
       { type: "aih", release: "6.1.0", revision: `sha256:${"0".repeat(64)}` },
     ];
     for (const [index, kind] of ["tool", "skill", "mcp", "package", "profile"].entries()) {
+      const source = sources[index % sources.length];
+      const sourceDigest = governanceDecisionSourceDigestV2(source as never);
       expect(
         GovernanceDecisionV2Schema.safeParse(
           decision({
             subject: {
               ...GovernanceDecisionV2Schema.parse(decision()).subject,
               kind,
-              source: sources[index % sources.length],
+              source,
+              sourceDigest,
+              subjectDigest: governanceDecisionSubjectDigestV2({
+                kind: kind as never,
+                id: "platform-review-tool",
+                sourceDigest,
+              }),
             },
           }),
         ).success,
       ).toBe(true);
     }
     for (const source of sources.slice(4)) {
+      const sourceDigest = governanceDecisionSourceDigestV2(source as never);
       expect(
         GovernanceDecisionV2Schema.safeParse(
           decision({
-            subject: { ...GovernanceDecisionV2Schema.parse(decision()).subject, source },
+            subject: {
+              ...GovernanceDecisionV2Schema.parse(decision()).subject,
+              source,
+              sourceDigest,
+              subjectDigest: governanceDecisionSubjectDigestV2({
+                kind: "tool",
+                id: "platform-review-tool",
+                sourceDigest,
+              }),
+            },
           }),
         ).success,
       ).toBe(true);
@@ -306,11 +332,40 @@ describe("GovernanceDecisionV2 public contract", () => {
       },
     ];
     for (const source of cases) {
+      const sourceDigest = governanceDecisionSourceDigestV2(source as never);
       expect(
         GovernanceDecisionV2Schema.safeParse(
-          decision({ subject: { ...parsed.subject, source } }),
+          decision({
+            subject: {
+              ...parsed.subject,
+              source,
+              sourceDigest,
+              subjectDigest: governanceDecisionSubjectDigestV2({
+                kind: "tool",
+                id: "platform-review-tool",
+                sourceDigest,
+              }),
+            },
+          }),
         ).success,
       ).toBe(true);
     }
+    expect(
+      GovernanceDecisionV2Schema.safeParse(
+        decision({
+          subject: {
+            ...parsed.subject,
+            source: {
+              type: "pypi",
+              registry: "https://packages.example.test/pypi/simple/",
+              package: "review-tool",
+              version: "1.0/../escape",
+              filename: "review_tool-1.0.whl",
+              sha256: `sha256:${"c".repeat(64)}`,
+            },
+          },
+        }),
+      ).success,
+    ).toBe(false);
   });
 });

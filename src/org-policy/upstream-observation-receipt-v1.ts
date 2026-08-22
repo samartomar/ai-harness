@@ -1,12 +1,11 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { isVerifiedPolicyAuthority } from "./authority.js";
 import { GovernanceDecisionTimestampSchema } from "./governance-decision-v1.js";
 import {
   GovernanceDecisionEffectV2Schema,
-  GovernanceDecisionRevocationV2Schema,
   GovernanceDecisionTargetV2Schema,
   type GovernanceDecisionV2,
-  GovernanceDecisionV2Schema,
   governanceDecisionDigestV2,
 } from "./governance-decision-v2.js";
 
@@ -163,7 +162,9 @@ export function verifyUpstreamObservationV1(
     return undefined;
   }
   try {
-    if (!input.verify(deepFreeze(structuredClone(receipt)) as UpstreamObservationReceiptV1)) {
+    if (
+      input.verify(deepFreeze(structuredClone(receipt)) as UpstreamObservationReceiptV1) !== true
+    ) {
       return undefined;
     }
   } catch {
@@ -178,25 +179,26 @@ export type ObservedEffectResolution =
   | { state: "observed-effective"; decisionDigest: string }
   | {
       state:
-        | "decision-invalid"
+        | "authority-unverified"
+        | "authority-version"
+        | "authority-not-current"
+        | "decision-missing-or-mismatch"
         | "decision-rejected"
         | "decision-revoked"
         | "decision-not-current"
-        | "decision-revocation-invalid"
         | "decision-scope-mismatch"
         | "observation-missing"
         | "observation-unverified"
-        | "observation-invalid"
         | "observation-stale"
-        | "observation-unsuccessful"
         | "observation-mismatch";
       decisionDigest?: string;
     };
 
 export interface ObservedEffectResolutionInput {
-  decision: unknown;
+  /** Only an opaque externally verified V3 authority can supply the decision. */
+  authority?: unknown;
+  decisionReference?: { id: string; digest: string };
   observation?: unknown;
-  revocation?: unknown;
   subject: Pick<GovernanceDecisionV2["subject"], "kind" | "id" | "sourceDigest" | "subjectDigest">;
   target: string;
   effect: z.infer<typeof GovernanceDecisionEffectV2Schema>;
@@ -216,12 +218,24 @@ export interface ObservedEffectResolutionInput {
 export function resolveObservedEffect(
   input: ObservedEffectResolutionInput,
 ): ObservedEffectResolution {
-  const parsedDecision = GovernanceDecisionV2Schema.safeParse(input.decision);
-  if (!parsedDecision.success) return { state: "decision-invalid" };
-  const decision = parsedDecision.data;
-  const decisionDigest = governanceDecisionDigestV2(decision);
+  if (!isVerifiedPolicyAuthority(input.authority)) return { state: "authority-unverified" };
+  const receipt = input.authority.receipt;
+  if (receipt.version !== 3) return { state: "authority-version" };
   const now = Date.parse(input.now);
-  if (!Number.isFinite(now)) return { state: "decision-not-current", decisionDigest };
+  if (
+    !Number.isFinite(now) ||
+    now < Date.parse(receipt.issuedAt) ||
+    now >= Date.parse(receipt.expiresAt)
+  ) {
+    return { state: "authority-not-current" };
+  }
+  const reference = input.decisionReference;
+  const decision = receipt.decisions.find(
+    (candidate) =>
+      candidate.id === reference?.id && governanceDecisionDigestV2(candidate) === reference.digest,
+  );
+  if (decision === undefined) return { state: "decision-missing-or-mismatch" };
+  const decisionDigest = governanceDecisionDigestV2(decision);
   if (decision.disposition === "rejected") return { state: "decision-rejected", decisionDigest };
   if (
     now < Date.parse(decision.notBefore) ||
@@ -231,16 +245,11 @@ export function resolveObservedEffect(
   ) {
     return { state: "decision-not-current", decisionDigest };
   }
-  if (input.revocation !== undefined) {
-    const parsedRevocation = GovernanceDecisionRevocationV2Schema.safeParse(input.revocation);
-    if (
-      !parsedRevocation.success ||
-      parsedRevocation.data.decisionDigest !== decisionDigest ||
-      parsedRevocation.data.issuer !== decision.issuer
-    ) {
-      return { state: "decision-revocation-invalid", decisionDigest };
-    }
-    if (Date.parse(parsedRevocation.data.revokedAt) <= now) {
+  const revocation = receipt.decisionRevocations.find(
+    (candidate) => candidate.decisionDigest === decisionDigest,
+  );
+  if (revocation !== undefined) {
+    if (Date.parse(revocation.revokedAt) <= now) {
       return { state: "decision-revoked", decisionDigest };
     }
   }
@@ -261,14 +270,11 @@ export function resolveObservedEffect(
   }
   const observation = verifiedObservationReceipts.get(input.observation);
   if (observation === undefined) return { state: "observation-unverified", decisionDigest };
-  if (observation.outcome !== "observed-success") {
-    return { state: "observation-unsuccessful", decisionDigest };
-  }
   if (now >= Date.parse(observation.validUntil)) {
     return { state: "observation-stale", decisionDigest };
   }
   if (
-    Date.parse(observation.observedAt) < Date.parse(decision.issuedAt) ||
+    Date.parse(observation.observedAt) < Date.parse(decision.notBefore) ||
     Date.parse(observation.observedAt) > now ||
     observation.decision.id !== decision.id ||
     observation.decision.digest !== decisionDigest ||
