@@ -146,6 +146,41 @@ describe("claudeContaminationReport — clean home", () => {
     expect(report.entries).toEqual([]);
     expect(report.warnings).toEqual([]);
     expect(report.informational.skillOverrides).toEqual([]);
+    expect(report.informational.settingsHusk).toBe(false);
+  });
+
+  it("classifies empty and schema-only user settings as harmless husks, but keeps active content contaminated", () => {
+    seed(".claude/settings.json", "{}\n");
+    let report = claudeContaminationReport({ home, projectRoot });
+    expect(report.informational.settingsHusk).toBe(true);
+    expect(report.clean).toBe(true);
+    seedJson(".claude/settings.json", {
+      $schema: "https://json.schemastore.org/claude-code-settings.json",
+    });
+    report = claudeContaminationReport({ home, projectRoot });
+    expect(report.informational.settingsHusk).toBe(true);
+    seedJson(".claude/settings.json", { hooks: {}, enabledPlugins: {}, mcpServers: {} });
+    expect(claudeContaminationReport({ home, projectRoot }).informational.settingsHusk).toBe(true);
+    seedJson(".claude/settings.json", { hooks: { PreToolUse: [] } });
+    expect(claudeContaminationReport({ home, projectRoot }).informational.settingsHusk).toBe(true);
+    seedJson(".claude/settings.json", { hooks: { PreToolUse: [{ matcher: "*", hooks: [] }] } });
+    expect(claudeContaminationReport({ home, projectRoot }).informational.settingsHusk).toBe(true);
+    seedJson(".claude/settings.json", { hooks: { PreToolUse: {} } });
+    report = claudeContaminationReport({ home, projectRoot });
+    expect(report.informational.settingsHusk).toBe(false);
+    expect(report.warnings.some((warning) => warning.includes("settings.json"))).toBe(true);
+    seedJson(".claude/settings.json", { hooks: { PreToolUse: ["echo unsafe"] } });
+    report = claudeContaminationReport({ home, projectRoot });
+    expect(report.informational.settingsHusk).toBe(false);
+    expect(report.clean).toBe(false);
+    seedJson(".claude/settings.json", {
+      enabledPlugins: { plugin: true },
+      mcpServers: { server: {} },
+    });
+    report = claudeContaminationReport({ home, projectRoot });
+    expect(report.informational.settingsHusk).toBe(false);
+    expect(report.leakage.plugins).toBe(1);
+    expect(report.leakage.mcpServers).toBe(1);
   });
 });
 
@@ -201,6 +236,13 @@ describe("claudeContaminationReport — malformed user-scope JSON does not crash
     const report = claudeContaminationReport({ home, projectRoot });
     expect(report.warnings.some((w) => w.includes(".mcp.json"))).toBe(true);
     expect(report.leakage.mcpServers).toBe(0);
+  });
+
+  it("warns for a non-object settings document and never labels it a harmless husk", () => {
+    seed(".claude/settings.json", "[]\n");
+    const report = claudeContaminationReport({ home, projectRoot });
+    expect(report.warnings.some((warning) => warning.includes("settings.json"))).toBe(true);
+    expect(report.informational.settingsHusk).toBe(false);
   });
 });
 

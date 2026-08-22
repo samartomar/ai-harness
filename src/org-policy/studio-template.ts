@@ -47,10 +47,18 @@ function catalogProvenanceLine(model: PolicyStudioModel): string {
   ].join(" · ");
   return `\n  <p class="help" id="catalog-provenance">${safeHtmlAttribute(detail)}</p>`;
 }
+function baselineEvidenceProvenanceLine(model: PolicyStudioModel): string {
+  const provenance = model.baselineEvidenceProvenance;
+  if (provenance === undefined) return "";
+  const age =
+    provenance.ageSeconds === null ? "packaged fallback" : `${String(provenance.ageSeconds)}s`;
+  return `\n  <p class="help" id="baseline-evidence-provenance">${safeHtmlAttribute([`Baseline evidence — ${provenance.tier}`, `sources ${provenance.sourceIds.join(",")}`, `schema ${String(provenance.schemaVersion)}`, `digest ${provenance.digest}`, `age ${age}`, `resolved ${provenance.resolvedAt}`].join(" · "))}</p>`;
+}
 
 /** Portable, dependency-free policy authoring surface. */
 export function policyStudioHtml(model: PolicyStudioModel): string {
   const catalogProvenance = catalogProvenanceLine(model);
+  const baselineEvidenceProvenance = baselineEvidenceProvenanceLine(model);
   const hookRegistryOwners = safeHtmlAttribute(
     [...new Set(model.catalog.hookRegistry.entries.map((entry) => entry.ownerLabel))].join(" "),
   );
@@ -458,7 +466,7 @@ body{font:400 var(--type-body)/1.55 var(--sans);color:var(--ink);background:var(
     <input class="hidden" id="decision-file" type="file" accept="application/json">
   </header>
 
-  <p id="announcement" class="announce" aria-live="polite"></p>${catalogProvenance}
+  <p id="announcement" class="announce" aria-live="polite"></p>${catalogProvenance}${baselineEvidenceProvenance}
 
   <nav class="ticker" id="owner-ticker" aria-label="Focus one surface"></nav>
 

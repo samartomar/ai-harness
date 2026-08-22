@@ -11,6 +11,7 @@ export const SUPERPOWERS_ACCEPTANCE_COMMIT = "3dcbd5c4b48e02263fbf4a3c01e3fe4f81
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 const SHA40 = /^[0-9a-f]{40}$/;
+const REPLACEMENT_REFS_MAX_BUFFER_BYTES = 64 * 1024;
 const SEVERITIES = ["info", "low", "medium", "high", "critical"] as const;
 const ALLOWED_SUPERPOWERS_REMOTE_PATTERNS = [
   /^https:\/\/github\.com\/obra\/superpowers(?:\.git)?\/?$/i,
@@ -195,6 +196,27 @@ function assertFullyMaterializedIndex(stdout: string): void {
   }
 }
 
+async function assertNoReplacementRefs(root: string, runner: Runner): Promise<void> {
+  const refs = gitResult(
+    await runner(
+      [
+        "git",
+        "--no-replace-objects",
+        "-C",
+        root,
+        "for-each-ref",
+        "refs/replace",
+        "--format=%(refname)",
+      ],
+      { maxBufferBytes: REPLACEMENT_REFS_MAX_BUFFER_BYTES },
+    ),
+    "replacement refs",
+  );
+  if (refs.code !== 0 || refs.stdout !== "") {
+    fail("vendor checkout must not contain replacement refs");
+  }
+}
+
 async function checkoutIdentity(checkoutPath: string, runner: Runner): Promise<CheckoutIdentity> {
   let root: string;
   let dev: number;
@@ -238,6 +260,7 @@ async function checkoutIdentity(checkoutPath: string, runner: Runner): Promise<C
   if (gitRoot.root !== root || gitRoot.dev !== dev || gitRoot.ino !== ino) {
     fail("vendor checkout must be the Git work-tree top-level");
   }
+  await assertNoReplacementRefs(root, runner);
   const remote = gitResult(
     await runner(["git", "--no-replace-objects", "-C", root, "remote", "get-url", "origin"]),
     "origin remote",

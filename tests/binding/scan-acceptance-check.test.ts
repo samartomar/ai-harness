@@ -386,6 +386,52 @@ describe("checkSuperpowersScanAcceptance", () => {
     expect(inspections).toBe(0);
   });
 
+  it("rejects an inert replacement ref before inspection", async () => {
+    initVendorCheckout({ "SKILL.md": "pinned\n" });
+    const pinnedCommit = gitOutput(checkout, ["rev-parse", "HEAD"]);
+    git(checkout, ["update-ref", `refs/replace/${"f".repeat(40)}`, pinnedCommit]);
+    let inspections = 0;
+    await expect(
+      checkSuperpowersScanAcceptance(
+        { checkoutPath: checkout },
+        fixtureDeps(artifact([]), () => {
+          inspections += 1;
+          return [];
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    expect(inspections).toBe(0);
+  });
+
+  it("fails closed when bounded replacement-ref enumeration fails", async () => {
+    initVendorCheckout({ "SKILL.md": "pinned\n" });
+    let inspections = 0;
+    const unavailableReplacementRefRunner: Runner = async (argv, options) => {
+      if (
+        argv.at(-3) === "for-each-ref" &&
+        argv.at(-2) === "refs/replace" &&
+        argv.at(-1) === "--format=%(refname)"
+      ) {
+        expect(options?.maxBufferBytes).toBe(64 * 1024);
+        return { code: 1, stdout: "", stderr: "unavailable" };
+      }
+      return pinnedCheckoutRunner(argv, options);
+    };
+    await expect(
+      checkSuperpowersScanAcceptance(
+        { checkoutPath: checkout },
+        {
+          ...fixtureDeps(artifact([]), () => {
+            inspections += 1;
+            return [];
+          }),
+          runner: unavailableReplacementRefRunner,
+        },
+      ),
+    ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    expect(inspections).toBe(0);
+  });
+
   it("fails closed for wrong, mutable, unreadable, and mutation-during-inspection checkouts", async () => {
     initVendorCheckout({ "SKILL.md": "safe\n", "unreadable/child": "not a file" });
     await expect(

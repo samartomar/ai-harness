@@ -7,6 +7,7 @@ import {
   CISCO_SKILL_SCANNER_VERSION,
   SEMGREP_VERSION,
 } from "../../src/baseline-evidence/analyzer-profile.js";
+import { coreOwnedEccCodexMcpServers } from "../../src/ecc/codex.js";
 import { CHECKOUT_ACTION_PIN } from "../../src/guardrails/sca.js";
 import { BASELINE_SOURCES } from "../../src/internals/baseline-sources.js";
 import { mcpServers, type StdioServer } from "../../src/mcp/servers.js";
@@ -178,6 +179,18 @@ describe("active external-pin ledger", () => {
     expect(entry("playwright-mcp").reason).toMatch(
       /initialize online.*offline cache.*Playwright build 1\.63\.0-alpha-2026-08-05/i,
     );
+    expect(entry("ecc-codex-chrome-devtools-mcp")).toMatchObject({
+      identity: "chrome-devtools-mcp",
+      version: "1.7.0",
+      integrity:
+        "sha512-6xFW7oiUxTxZuHcfyYBkKQtmttjCbfifKZMSEk5CV8H2FucvKweYiJr8CblddYHtYjA4C14K9VAs1r49906RBA==",
+      disposition: "active",
+    });
+    const chromeDevtools = coreOwnedEccCodexMcpServers()["chrome-devtools"];
+    if (chromeDevtools?.type !== "stdio") throw new Error("missing Core-owned Chrome DevTools MCP");
+    expect(entry("ecc-codex-chrome-devtools-mcp").version).toBe(
+      versionFromSpec(chromeDevtools.args[1] ?? ""),
+    );
 
     const github = servers.github as StdioServer;
     const githubImage = github.args.find((candidate) => candidate.startsWith("ghcr.io/github/"));
@@ -287,6 +300,19 @@ describe("active external-pin ledger", () => {
       ...workflowActionPin(releaseWorkflow, "actions/attest-build-provenance"),
       disposition: "active",
     });
+  });
+
+  it("binds the vendor evidence download action to the governed external pin ledger", () => {
+    const vendorEvidenceWorkflow = readFileSync(
+      resolve(root, ".github/workflows/vendor-baseline-evidence.yml"),
+      "utf8",
+    );
+    expect(entry("download-artifact-action")).toMatchObject({
+      ...workflowActionPin(vendorEvidenceWorkflow, "actions/download-artifact"),
+      disposition: "active",
+    });
+    expect(entry("download-artifact-action").reason).toMatch(/exact reviewed pin.*v8/i);
+    expect(entry("download-artifact-action").reason).toMatch(/digest mismatch.*fail/i);
   });
 
   it("binds every CodeQL workflow action to one governed ledger identity", () => {

@@ -52,6 +52,67 @@ Org evidence is an extension, not a waiver. It cannot turn an exact vendor
 is useful signed evidence: it means “stop until the upstream bytes or pin change
 and vet cleanly.”
 
+### Vendor artifact and attestation boundary
+
+`npm run baseline:artifact -- --out <new-directory> --repository <owner/repo>
+--environment <environment>` builds the deterministic vendor-evidence artifact
+from the exact shipped lock. The output contains canonical artifact metadata,
+the evidence bundle and manifest, the lock at
+`files/.aih/baseline-reports/vendor-lock.json`, and `SHA256SUMS`; every path and
+byte count is bounded, and every file is covered by the checksum subject. The
+writer claims a new output directory and refuses existing, linked, or reparse
+custody instead of merging with ambient files.
+
+The artifact verifier first re-checks the complete closed layout, canonical
+bytes, checksums, schema, source pins, publisher identity, and policy. Only then
+does it call the caller-owned GitHub attestation verifier, and the returned
+claim must bind the exact checksum subject, issuer, repository, workflow, ref,
+and environment. Building the artifact does not verify, sign, authorize, cache,
+install, or publish it.
+
+`.github/workflows/vendor-baseline-evidence.yml` is manual-dispatch only. Its
+unprivileged `build` job re-observes that the selected SHA is current `main`,
+installs without lifecycle scripts, builds the complete artifact, and transfers
+it as a same-run candidate. A separate `attest` job downloads that candidate and
+receives only `attestations: write` and `id-token: write` inside the protected
+`baseline-evidence-publish` environment; it has no checkout, package install,
+repository code execution, release, or package-publication step. A merge does
+not dispatch this workflow. The first real dispatch remains a publication action
+and requires separate authorization for the exact SHA.
+
+### Administrator fetch and cache boundary
+
+`aih policy generate <admin-root> --apply` resolves baseline evidence before it
+renders the administrator Workbench. Enterprise accepts only the fixed
+OS/admin-managed bootstrap root; Vibe accepts only the canonical bootstrap
+under the supplied administrator root. That strict canonical record owns the
+credential-free HTTPS artifact and attestation locators, exact publisher
+repository/workflow/issuer/ref/environment identity, the two supported source
+pins, schema range, and cache-age policy. Repository-local policy cannot choose
+or widen this channel.
+
+The route attempts a complete fresh artifact first, then a reverified
+last-downloaded record, then the packaged lock. Only the exact unavailable
+sentinel advances to another tier: it is emitted only when the first artifact
+request receives HTTP 404 or 410. DNS, TLS, connection, request, or timeout
+failures, every redirect, and every non-200 status other than 404 or 410 are
+terminal; they cannot force a downgrade to cached or packaged evidence. The
+applied administrator route therefore requires the baseline origin to answer
+before its downstream catalog stage can run. Partial, malformed, oversized,
+stale, wrong-source, wrong-pin, wrong-schema, untrusted, or cache-commit
+outcomes also stop the run.
+Fresh and cached artifacts repeat the complete local artifact check and exact
+GitHub attestation verification; a prior verification result is never cache
+authority. Fresh bytes enter one bootstrap-derived, contained owner-only cache
+slot only after verification and before the Workbench uses them.
+
+Omitting `<admin-root>` preserves portable generation without acquisition or
+cache authority. Supplying it without `--apply` fails before HTTPS, process,
+cache, or Workbench effects. The rendered administrator artifact receives only
+bounded tier, source ids, schema version, digest, download age, and resolution
+time. Locators, local paths, credentials, signatures, attestation bytes, signer
+roots, and machine details are not representable in that provenance.
+
 ### Enterprise org-evidence boundary
 
 At Enterprise posture, an exact organization override is required for the
@@ -374,6 +435,7 @@ the shipped commit:
 
 ```bash
 npm run check:scan-acceptance -- --checkout /absolute/path/to/Superpowers
+npm run regen:scan-acceptance -- --checkout /absolute/path/to/Superpowers --check
 ```
 
 The command refuses the AI-Harness checkout, a subdirectory, a mutable,
@@ -383,6 +445,13 @@ deterministic JSON separates exact matches from stale, missing, newly observed,
 and critical findings. This is maintenance evidence only: it does not change
 `src/binding/scan-acceptance.json`, generate candidate entries, or authorize the
 runtime scan gate.
+
+After that audit is reviewed, the maintainer-only regeneration command can
+reproduce the deliberately empty canonical ledger by omitting `--check`. Both
+modes rerun the same exact-checkout proof. Check mode compares bytes without a
+write; write mode refuses linked or non-regular ledger custody and replaces only
+the module-owned ledger through an exclusive temporary file. Neither mode turns
+an observation into an acceptance.
 
 The audit at `obra/Superpowers@3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9`
 reported 87 observations, 0 accepted, 0 stale, 62 historical entries no longer

@@ -8,6 +8,42 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Applied administrator Workbench generation can refresh the exact vendor baseline evidence
+  channel without granting a developer-seat fetch path.** A separate administrator bootstrap pins
+  credential-free HTTPS locators, publisher repository/workflow/issuer/ref/environment identity,
+  the supported ECC and Superpowers source commits, schema bounds, and cache age. The applied
+  administrator-root route resolves fresh, reverified last-downloaded, then packaged evidence;
+  only first-artifact HTTP 404 or 410 is unavailable and advances to the next tier. DNS, TLS,
+  connection, request, timeout, redirect, and other non-200 statuses are terminal so origin
+  reachability cannot force cached or packaged evidence; malformed, stale, mismatched, untrusted,
+  partial, or uncommitted evidence is terminal too. Fresh and cached subjects are verified locally
+  and through an exact `gh attestation verify` policy before a contained owner-only cache commit or
+  Workbench render. Rootless and non-applying routes gain no network, process, or cache effect, and
+  the Workbench receives only bounded tier/source/schema/digest/age/time provenance — never
+  locators, paths, credentials, signatures, or raw attestations. (#814)
+
+- **Offline revocation has a replay-resistant, inert V1 contract before any continuation is
+  enabled.** A canonical signed snapshot binds its exact issuer, monotonic sequence,
+  second-granularity issuance and validity window, and the complete sorted decision-id revocation
+  set through a domain-separated DSSE/in-toto subject. Every resolution and custody transition
+  re-verifies the signed bytes against caller-supplied administrator signer/root trust; a cached
+  verification result is never authority. Validity is bounded to 60 seconds through 90 days, and
+  snapshot coverage cannot predate the decision or extend the decision expiry, receipt expiry, or
+  review deadline. Per-issuer sequence/digest high-water state rejects rollback and equal-sequence
+  substitution, while its synchronous compare-and-swap seam observes live state before and after
+  the claim and reports races or corrupt state without another effect. Missing or expired coverage
+  is `stale-authority`; future, malformed, unverifiable, or conflicting authority is invalid. Even a
+  current exact revocation remains non-materializable data: this foundation adds no filesystem,
+  process, network, deletion, subtraction, stop, CLI, Workbench, or public-library route. (#816)
+
+- **Vendor baseline evidence now has a deterministic, separately attestable artifact.**
+  The bounded artifact binds the exact shipped lock, evidence bundle, manifest,
+  publisher, source pins, and a checksum subject covering every file. Local
+  verification completes before caller-owned GitHub attestation verification.
+  Its manual workflow separates unprivileged candidate preparation from a
+  protected-environment attestation job; merge does not run it, and it includes
+  no release or package-publication effect. (#815)
+
 - **`aih report` adds a deterministic governed-subject review without turning local usage into
   authority.** The read-only digest keeps requested/effective state, evidence and blockers,
   decision/approval/revocation facts, projector capability, strict receipt state, and local usage
@@ -36,6 +72,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   inspector, sorts exact code/path/LF-normalized-content-digest observations, and distinguishes
   matched, stale, missing, new, and critical findings. It never edits the checkout or acceptance
   artifact, never accepts a finding, and never authorizes the runtime scan gate.
+
+- **Binding scan residuals are explicit and reproducible.** Scan dispositions now retain every raw
+  finding in a deterministic per-file rollup, including distinct absent, false, and true acceptance
+  states. Turkish dotted and dotless I remain advisory only in proven prose, comment, and string
+  contexts; identifier, key, code, bidi-control, and standalone variation-selector positions remain
+  blocking. Dotted I retains the detector's raw medium finding while the binding gate applies the
+  blocking policy through an exact-hash, contained reread; missing, changed, linked, or escaping
+  paths fail closed and cannot be accepted. A maintainer-only regeneration command rewrites the
+  deliberately empty Superpowers acceptance ledger only after the existing checker proves the exact
+  detached, clean, unlinked,
+  no-replacement-ref vendor checkout; check mode is byte-exact and read-only, and neither mode can
+  accept a finding or authorize a runtime gate. Claude user settings are reported as a harmless
+  husk only when they contain schema/comment metadata and recognized empty hook, plugin, MCP, or
+  skill-override containers; malformed structure remains a warning, any other setting does not
+  receive the husk classification, and active content remains contamination. (#817)
 
 - **Governance decisions gain a canonical, inert V1 transport contract.** The strict record keeps
   `approved`, `accepted-with-conditions`, and `rejected` immutable, while revocation is a separate
@@ -130,6 +181,34 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   omitting `<admin-root>` retains the portable rootless artifact with no catalog acquisition.
 
 ### Fixed
+
+- **The ECC Codex Chrome DevTools launcher is now bound to Core's exact reviewed
+  package identity.** Every non-governed direct or verified Codex plan, scoped or
+  unscoped and independent of optional MCP selection, replaces the pinned ECC
+  helper's floating `chrome-devtools-mcp@latest` default with the active Core
+  ledger version and deterministic scoped configuration; the vendor MCP merge
+  helper is no longer a fallback, and governed plans retain no Core MCP default.
+  A prior exact AIH-written npm, Bun, pnpm, or Yarn vendor stanza migrates only
+  when live AIH state still claims it; managed requested entries are re-rendered
+  from the current exact specification while other valid claimed scoped entries
+  remain intact. Existing operator-owned same-name servers are preserved and not
+  claimed. The verified vendor baseline merge now prepares a candidate in a
+  unique temporary directory, narrowed to `0700`/`0600` modes where the platform
+  enforces POSIX modes, instead of mutating live config early, then commits config
+  and AIH state only after managed files and AGENTS are ready and the exact
+  pre-helper config and state bytes still match. Races fail closed, AGENTS/config
+  changes are rolled back when safe, and the temporary candidate is removed by
+  exact non-recursive cleanup. The reviewable install driver uses deterministic
+  compressed static program transport to stay below Windows command-line limits;
+  live paths and state remain separate arguments. Later removal requires the
+  intact AIH-managed MCP fence and fails visibly while any claimed MCP custody
+  remains. Prune binds its config and AGENTS subtraction to their exact observed
+  source bytes, asserts the same install-state snapshot in the filesystem
+  transaction before config changes, and deletes state only after exact state and
+  post-subtraction config re-observation. A present but malformed AIH state is an
+  explicit refusal; semantically duplicate, array, encoded, descendant, dotted,
+  inline, unknown, mixed, stale, or otherwise ambiguous identity fails closed
+  before install or cleanup.
 
 - Correct the BetterDoc pack page after the self-hosting cleanup: bundled pack
   bytes still ship, while this checkout intentionally has no AIH approval lock,

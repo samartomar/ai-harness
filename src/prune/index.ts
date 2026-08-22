@@ -1,11 +1,7 @@
 import { join } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
 import { AIH_CONFIG_FILE } from "../config/marker.js";
-import {
-  codexAgentsBlockRemovalAction,
-  codexConfigRemovalAction,
-  codexInstallStateCleanupAction,
-} from "../ecc/codex.js";
+import { codexPruneRemovalActions } from "../ecc/codex.js";
 import { ECC_NPM_CLI_BIN, ECC_NPM_PACKAGE, isAihDirectEccInstallTarget } from "../ecc/install.js";
 import {
   eccPruneReconciliationActions,
@@ -331,15 +327,9 @@ async function prunePlan(ctx: PlanContext): Promise<Plan> {
       actions.push(eccUninstallAction(ctx, cli));
     }
     if (!coordinatedCodexPrune && cli === "codex") {
-      const codexConfig = codexConfigRemovalAction(ctx);
-      if (codexConfig) actions.push(codexConfig);
-      const codexBlock = codexAgentsBlockRemovalAction(ctx);
-      if (codexBlock) {
-        actions.push(codexBlock);
-        subtracted += 1;
-      }
-      const codexStateCleanup = codexInstallStateCleanupAction(ctx);
-      if (codexStateCleanup) actions.push(codexStateCleanup);
+      const codexPrune = codexPruneRemovalActions(ctx);
+      actions.push(...codexPrune.actions);
+      if (codexPrune.removesAgentsBlock) subtracted += 1;
     }
   }
   actions.push(...eccPruneReconciliationActions(ctx, set.dropped));

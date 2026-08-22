@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { deflateRawSync } from "node:zlib";
 import { SettingsError } from "../errors.js";
 import { detectFallbackNotice, homeDir, resolveTargets } from "../internals/cli-detect.js";
 import { type Cli, resolveClis } from "../internals/clis.js";
@@ -16,17 +17,18 @@ import {
   probe,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
-import type { McpServer } from "../mcp/servers.js";
 import { readOrgPolicy } from "../org-policy/schema.js";
 import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
 import { execArgv } from "../tools/install.js";
 import {
   CODEX_AGENTS_BLOCK_MARKER,
+  type CodexScopedMcpServers,
   codexHomeDir,
   codexInstallStateContents,
   codexInstallStatePath,
   codexMcpCollisionActions,
+  coreOwnedEccCodexMcpServers,
 } from "./codex.js";
 import {
   type EccInstallInputs,
@@ -464,12 +466,12 @@ export function kiroEccActions(ctx: PlanContext, repo: EccRepoCheckout): Action[
   ];
 }
 
-const CODEX_INSTALL_MERGE_SCRIPT = [
+const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   'const child = require("child_process");',
   'const fs = require("fs");',
   'const path = require("path");',
-  "const [repoRoot, profileId, homeDir, mergeCodexConfig, mergeMcpConfig, configPath, sourceAgents, targetAgents, statePath, governanceFlag, specB64, mcpB64, stateB64] = process.argv.slice(1);",
-  'if (!repoRoot || !profileId || !homeDir || !mergeCodexConfig || !mergeMcpConfig || !configPath || !sourceAgents || !targetAgents || !statePath || !stateB64) { console.error("usage: codex-install-merge <repo-root> <profile> <home-dir> <merge-config> <merge-mcp> <config> <source-agents> <target-agents> <state-path> <state-b64>"); process.exit(1); }',
+  "const [repoRoot, profileId, homeDir, mergeCodexConfig, configPath, sourceAgents, targetAgents, statePath, governanceFlag, specB64, mcpB64, stateB64] = process.argv.slice(1);",
+  'if (!repoRoot || !profileId || !homeDir || !mergeCodexConfig || !configPath || !sourceAgents || !targetAgents || !statePath || !stateB64) { console.error("usage: codex-install-merge <repo-root> <profile> <home-dir> <merge-config> <config> <source-agents> <target-agents> <state-path> <state-b64>"); process.exit(1); }',
   'const normalize = (value) => String(value || "").replace(/\\\\/g, "/");',
   "const declaredHome = path.resolve(homeDir);",
   "const trustedHome = fs.realpathSync(declaredHome);",
@@ -504,6 +506,9 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   "}",
   'const spec = specB64 ? JSON.parse(Buffer.from(specB64, "base64").toString("utf8")) : null;',
   'const mcpSpec = mcpB64 ? JSON.parse(Buffer.from(mcpB64, "base64").toString("utf8")) : null;',
+  'let state = JSON.parse(Buffer.from(stateB64, "base64").toString("utf8"));',
+  "let actualCurrentRunState = state;",
+  "let effectiveMcpNames;",
   'const governed = governanceFlag === "1";',
   'if (governed && (!spec || spec.excludeAihOwnedSurfaces !== true)) throw new Error("governed Codex ECC install requires the AIH-owned-surface exclusion spec");',
   "const aihStateLocation = assertInsideHome(statePath);",
@@ -634,33 +639,25 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   '    next = next.replace(/Available skills:\\n(?:- .*\\n)*/, "Available skills:\\n" + skills + "\\n");',
   "  }",
   "  if (mcpSpec) {",
-  "    const names = Object.keys(mcpSpec.servers || {}).sort();",
-  '    const body = "## MCP Servers\\n\\naih registers only this validated scoped set: " + (names.length > 0 ? names.map((name) => "`" + name + "`").join(", ") : "none") + ". Existing user-defined same-name servers win; egress-bearing servers are never added by default.\\n\\n";',
+  "    const names = (effectiveMcpNames || Object.keys(mcpSpec.servers || {})).slice().sort();",
+  '    const body = "## MCP Servers\\n\\naih registers only this validated scoped set: " + (names.length > 0 ? names.map((name) => "`" + name + "`").join(", ") : "none") + ". Existing user-defined same-name servers win; each server\'s declared risk profile remains subject to the configured policy.\\n\\n";',
   "    next = next.replace(/## MCP Servers[\\s\\S]*?(?=## External Action Boundaries)/, body);",
   "  }",
   "  return next;",
   "}",
-  "const mergeSteps = governed ? [] : [[process.execPath, mergeCodexConfig, configPath]];",
-  "if (!governed) prepareDestination(configPath);",
-  // `wx` already means "create only if absent" atomically, so the existsSync
-  // pre-check added a TOCTOU window and nothing else. It also disagreed with the
-  // open() when the path traverses a directory symlink (a symlinked HOME on
-  // Windows), turning a benign already-exists into a hard EEXIST crash.
-  'if (!governed) { try { fs.writeFileSync(configPath, "", { flag: "wx" }); }',
-  'catch (e) { if (e.code !== "EEXIST") throw e; } }',
-  "if (!governed && !mcpSpec) mergeSteps.push([process.execPath, mergeMcpConfig, configPath]);",
-  "for (const argv of mergeSteps) {",
-  '  const result = child.spawnSync(argv[0], argv.slice(1), { stdio: "inherit" });',
-  "  if (result.error) { console.error(result.error.message); process.exit(1); }",
-  "  if (result.status !== 0) process.exit(result.status || 1);",
-  "}",
+  "const liveConfigRaw = governed ? undefined : readSafeOptional(configPath);",
+  "const initialScopedPlan = governed ? undefined : planScopedMcps(undefined, false, undefined, false);",
+  'const candidateConfig = governed ? undefined : mergeCodexConfigCandidate(liveConfigRaw || "");',
+  'if (!governed) actualCurrentRunState = actualBaselineEffects(liveConfigRaw || "", candidateConfig, state);',
+  "function installCodexAgents() {",
   'const source = normalizeCodexAgentsSource(fs.readFileSync(sourceAgents, "utf8")).replace(/\\s+$/, "");',
   `const marker = ${JSON.stringify(CODEX_AGENTS_BLOCK_MARKER)};`,
   'const begin = "<!-- BEGIN " + marker + " (generated from affaan-m/ECC .codex/AGENTS.md) -->";',
   'const end = "<!-- END " + marker + " -->";',
   'const rendered = begin + "\\n\\n" + source + "\\n\\n" + end;',
   "prepareDestination(targetAgents);",
-  'const existing = fs.existsSync(targetAgents) ? fs.readFileSync(targetAgents, "utf8") : "";',
+  "const existed = fs.existsSync(targetAgents);",
+  'const existing = existed ? fs.readFileSync(targetAgents, "utf8") : "";',
   "const usesCrlf = /\\r\\n/.test(existing);",
   'const normalized = existing.replace(/\\r\\n/g, "\\n");',
   'const start = normalized.indexOf("<!-- BEGIN " + marker);',
@@ -675,75 +672,278 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   'if (!next.endsWith("\\n")) next += "\\n";',
   'if (usesCrlf) next = next.replace(/\\n/g, "\\r\\n");',
   'fs.writeFileSync(targetAgents, next, "utf8");',
-  "function installScopedMcps() {",
-  "  if (!mcpSpec) return [];",
-  '  if (!mcpSpec.servers || typeof mcpSpec.servers !== "object" || Array.isArray(mcpSpec.servers)) throw new Error("invalid scoped Codex MCP payload");',
-  '  const beginMcp = "# >>> aih managed (mcp) >>>";',
-  '  const endMcp = "# <<< aih managed (mcp) <<<";',
-  '  const existingConfig = fs.readFileSync(configPath, "utf8");',
-  '  const normalizedConfig = existingConfig.replace(/\\r\\n/g, "\\n");',
-  '  const escapeMarker = (value) => value.replace(/[.*+?^$()|[\\]\\\\]/g, "\\\\$&");',
-  '  const outside = normalizedConfig.replace(new RegExp("\\\\n*" + escapeMarker(beginMcp) + "[\\\\s\\\\S]*?" + escapeMarker(endMcp) + "\\\\n*"), "\\n");',
-  "  const existingNames = new Set([...outside.matchAll(/^[ \\t]*\\[mcp_servers\\.(?:\"([^\"]+)\"|'([^']+)'|([^.\\]\\'\"]+))\\][ \\t]*(?:#.*)?$/gm)].map((match) => match[1] || match[2] || match[3]));",
-  "  const quote = (value) => JSON.stringify(String(value));",
-  "  const sections = [];",
-  "  const installed = [];",
-  "  for (const [name, server] of Object.entries(mcpSpec.servers)) {",
-  "    if (existingNames.has(name)) continue;",
-  '    if (!server || typeof server !== "object" || Array.isArray(server)) throw new Error("invalid scoped Codex MCP server: " + name);',
-  '    const section = ["[mcp_servers." + quote(name) + "]"];',
-  '    if (server.type === "stdio" && typeof server.command === "string" && Array.isArray(server.args) && server.args.every((arg) => typeof arg === "string")) {',
-  '      section.push("command = " + quote(server.command));',
-  '      if (server.args.length > 0) section.push("args = [" + server.args.map(quote).join(", ") + "]");',
-  '    } else if (server.type === "http" && typeof server.url === "string") {',
-  '      section.push("url = " + quote(server.url));',
-  "    } else {",
-  '      throw new Error("unsupported scoped Codex MCP server shape: " + name);',
-  "    }",
-  '    sections.push(section.join("\\n"));',
-  "    installed.push(name);",
-  "  }",
-  '  const block = beginMcp + "\\n" + sections.join("\\n\\n") + "\\n" + endMcp;',
-  '  const pattern = new RegExp(escapeMarker(beginMcp) + "[\\\\s\\\\S]*?" + escapeMarker(endMcp));',
-  '  let merged = pattern.test(normalizedConfig) ? normalizedConfig.replace(pattern, block) : normalizedConfig.replace(/\\n+$/, "") + (normalizedConfig.trim() ? "\\n\\n" : "") + block + "\\n";',
-  '  if (!merged.endsWith("\\n")) merged += "\\n";',
-  '  if (/\\r\\n/.test(existingConfig)) merged = merged.replace(/\\n/g, "\\r\\n");',
-  '  fs.writeFileSync(configPath, merged, "utf8");',
-  "  return installed;",
+  "return { existed, existing, next };",
   "}",
+  'function restoreCodexAgents(change) { if (readSafeOptional(targetAgents) !== change.next) throw new Error("Codex AGENTS changed during apply"); if (change.existed) fs.writeFileSync(prepareDestination(targetAgents), change.existing, "utf8"); else fs.rmSync(prepareDestination(targetAgents), { force: true }); }',
+  "function readSafeOptional(target) {",
+  "  const location = assertInsideHome(target);",
+  '  let stats; try { stats = fs.lstatSync(location.absolute); } catch (error) { if (error && error.code === "ENOENT") return undefined; throw error; }',
+  '  if (stats.isSymbolicLink() || !stats.isFile() || stats.nlink > 1) throw new Error("refusing unsafe live Codex file: " + location.absolute);',
+  '  return fs.readFileSync(location.absolute, "utf8");',
+  "}",
+  'function mergeCodexConfigCandidate(raw) { const parent = path.dirname(prepareDestination(configPath)); const temporaryRoot = fs.mkdtempSync(path.join(parent, ".aih-codex-")); const temporaryConfig = path.join(temporaryRoot, "config.toml"); const safeTempFile = (missing) => { let stats; try { stats = fs.lstatSync(temporaryConfig); } catch (error) { if (missing && error && error.code === "ENOENT") return false; throw error; } if (stats.isSymbolicLink() || !stats.isFile() || stats.nlink > 1) throw new Error("unsafe Codex merge temporary output"); return true; }; const cleanup = () => { if (safeTempFile(true)) fs.unlinkSync(temporaryConfig); const rootStats = fs.lstatSync(temporaryRoot); if (rootStats.isSymbolicLink() || !rootStats.isDirectory() || path.dirname(temporaryConfig) !== temporaryRoot) throw new Error("unsafe Codex merge temporary directory"); fs.rmdirSync(temporaryRoot); }; try { fs.chmodSync(temporaryRoot, 0o700); const rootStats = fs.lstatSync(temporaryRoot); if (rootStats.isSymbolicLink() || !rootStats.isDirectory() || path.dirname(temporaryConfig) !== temporaryRoot) throw new Error("unsafe Codex merge temporary directory"); const descriptor = fs.openSync(temporaryConfig, "wx", 0o600); try { fs.writeFileSync(descriptor, raw, "utf8"); } finally { fs.closeSync(descriptor); } const result = child.spawnSync(process.execPath, [mergeCodexConfig, temporaryConfig], { stdio: "inherit" }); if (result.error) throw result.error; if (result.status !== 0) throw new Error("Codex merge helper failed"); safeTempFile(false); return fs.readFileSync(temporaryConfig, "utf8"); } finally { cleanup(); } }',
+  "function exactAihState(raw) {",
+  '  let candidate; try { candidate = JSON.parse(raw); } catch { throw new Error("malformed live Codex AIH state"); }',
+  '  const array = (value) => Array.isArray(value) && value.every((entry) => typeof entry === "string"); const exactKeys = (value, keys) => Object.keys(value).sort().join("\\n") === keys.slice().sort().join("\\n");',
+  '  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate) || !exactKeys(candidate, ["schemaVersion", "managedBy", "codexToml", "agentsBlock"]) || candidate.schemaVersion !== 1 || candidate.managedBy !== "aih" || candidate.agentsBlock !== true || !candidate.codexToml || typeof candidate.codexToml !== "object" || Array.isArray(candidate.codexToml) || !exactKeys(candidate.codexToml, ["rootKeys", "tables", "tableKeys", "mcpServers"]) || !array(candidate.codexToml.rootKeys) || !array(candidate.codexToml.tables) || !array(candidate.codexToml.mcpServers) || new Set(candidate.codexToml.mcpServers).size !== candidate.codexToml.mcpServers.length || !candidate.codexToml.mcpServers.every((name) => /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(name)) || !candidate.codexToml.tableKeys || typeof candidate.codexToml.tableKeys !== "object" || Array.isArray(candidate.codexToml.tableKeys) || !Object.values(candidate.codexToml.tableKeys).every(array)) throw new Error("malformed live Codex AIH state");',
+  "  return candidate;",
+  "}",
+  'function actualBaselineEffects(before, after, candidate) { const delta = exactAihState(JSON.stringify(candidate)); const normalized = (raw) => raw.replace(/\\r\\n/g, "\\n"); const escape = (value) => value.replace(/[\\\\^$*+?.()|[\\]{}]/g, "\\\\$&"); const rootExists = (raw, key) => { for (const line of normalized(raw).split("\\n")) { if (/^[ \\t]*\\[/.test(line)) return false; if (new RegExp("^[ \\t]*" + escape(key) + "\\\\s*=").test(line)) return true; } return false; }; const tableExists = (raw, table) => new RegExp("^[ \\t]*\\\\[" + escape(table) + "\\\\][ \\t]*(?:#.*)?$", "m").test(normalized(raw)); const tableKeyExists = (raw, table, key) => { let active = false; for (const line of normalized(raw).split("\\n")) { if (new RegExp("^[ \\t]*\\\\[" + escape(table) + "\\\\][ \\t]*(?:#.*)?$").test(line)) { active = true; continue; } if (active && /^[ \\t]*\\[/.test(line)) active = false; if (active && new RegExp("^[ \\t]*" + escape(key) + "\\\\s*=").test(line)) return true; } return false; }; const tableKeys = {}; for (const [table, keys] of Object.entries(delta.codexToml.tableKeys)) { const added = keys.filter((key) => !tableKeyExists(before, table, key) && tableKeyExists(after, table, key)); if (added.length > 0) tableKeys[table] = added; } return { schemaVersion: 1, managedBy: "aih", codexToml: { rootKeys: delta.codexToml.rootKeys.filter((key) => !rootExists(before, key) && rootExists(after, key)), tables: delta.codexToml.tables.filter((table) => !tableExists(before, table) && tableExists(after, table)), tableKeys, mcpServers: [] }, agentsBlock: true }; }',
+  "function parseManagedFence(raw) {",
+  '  const begin = "# >>> aih managed (mcp) >>>"; const end = "# <<< aih managed (mcp) <<<";',
+  '  const lines = raw.replace(/\\r\\n/g, "\\n").split("\\n");',
+  "  const begins = lines.map((line, index) => line === begin ? index : -1).filter((index) => index >= 0);",
+  "  const ends = lines.map((line, index) => line === end ? index : -1).filter((index) => index >= 0);",
+  "  if (begins.length === 0 && ends.length === 0) return { lines, fence: undefined };",
+  '  if (begins.length !== 1 || ends.length !== 1 || begins[0] >= ends[0]) throw new Error("ambiguous managed Codex MCP fence");',
+  "  const sections = []; let current; const names = new Set();",
+  "  for (const line of lines.slice(begins[0] + 1, ends[0])) {",
+  "    const header = tomlMcpTableHeader(line);",
+  '    if (header && !header.array && header.keys.length === 2) { const name = header.keys[1]; if (names.has(name)) throw new Error("duplicate managed Codex MCP table: " + name); names.add(name); if (current) sections.push(current); current = { name, lines: [line] }; continue; }',
+  '    if (header && !header.array && header.keys.length > 2) { const name = header.keys[1]; if (!current || current.name !== name) throw new Error("ambiguous managed Codex MCP descendant table"); current.lines.push(line); continue; }',
+  '    if (/^[ \\t]*\\[/.test(line)) throw new Error("unrecognized managed Codex MCP table");',
+  '    if (!current && line.trim().length > 0) throw new Error("unrecognized managed Codex MCP content");',
+  "    if (current) current.lines.push(line);",
+  "  }",
+  "  if (current) sections.push(current);",
+  "  return { lines, fence: { begin: begins[0], end: ends[0], sections } };",
+  "}",
+  "function rootServerName(line) { return tomlMcpRootName(line); }",
+  "function serverTables(lines, name) {",
+  "  const anyHeader = /^[ \\t]*\\[/;",
+  '  const found = []; for (let index = 0; index < lines.length; index += 1) { if (rootServerName(lines[index]) !== name) continue; let end = index + 1; while (end < lines.length && !anyHeader.test(lines[end]) && lines[end] !== "# >>> aih managed (mcp) >>>" && lines[end] !== "# <<< aih managed (mcp) <<<") end += 1; found.push({ begin: index, end, lines: lines.slice(index, end) }); } return found;',
+  "}",
+  "function exactLegacyChrome(table) {",
+  "  const body = table.lines.filter((line) => line.trim().length > 0);",
+  '  const launch = [["npx", "args = [\\"chrome-devtools-mcp@latest\\"]"], ["bunx", "args = [\\"chrome-devtools-mcp@latest\\"]"], ["pnpm", "args = [\\"dlx\\", \\"chrome-devtools-mcp@latest\\"]"], ["yarn", "args = [\\"dlx\\", \\"chrome-devtools-mcp@latest\\"]"]];',
+  '  return body.length === 4 && /^(?:\\[mcp_servers\\.chrome-devtools\\]|\\[mcp_servers\\."chrome-devtools"\\])$/.test(body[0]) && launch.some(([command, args]) => body[1] === "command = \\"" + command + "\\"" && body[2] === args) && body[3] === "startup_timeout_sec = 30";',
+  "}",
+  String.raw`function tomlMcpTableHeader(line) {
+  let quote;
+  let clean = "";
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (quote === '"') {
+      clean += character;
+      if (character === "\\") {
+        const escaped = line[index + 1];
+        if (escaped === undefined) return undefined;
+        clean += escaped;
+        index += 1;
+      } else if (character === '"') quote = undefined;
+      continue;
+    }
+    if (quote === "'") {
+      clean += character;
+      if (character === "'") quote = undefined;
+      continue;
+    }
+    if (character === '"' || character === "'") { quote = character; clean += character; continue; }
+    if (character === "#") break;
+    clean += character;
+  }
+  clean = clean.trim();
+  const array = clean.startsWith("[[");
+  const open = array ? "[[" : "[";
+  const close = array ? "]]" : "]";
+  if (!clean.startsWith(open) || !clean.endsWith(close)) return undefined;
+  const body = clean.slice(open.length, -close.length);
+  const keys = [];
+  let index = 0;
+  const spaces = () => { while (index < body.length && /[ \t]/.test(body[index])) index += 1; };
+  const basic = () => {
+    let value = "";
+    index += 1;
+    while (index < body.length) {
+      const character = body[index];
+      if (character === '"') { index += 1; return value; }
+      if (character === "\r" || character === "\n") return undefined;
+      if (character !== "\\") { value += character; index += 1; continue; }
+      const escape = body[index + 1];
+      if (escape === "u" || escape === "U") {
+        const width = escape === "u" ? 4 : 8;
+        const hex = body.slice(index + 2, index + 2 + width);
+        if (!new RegExp("^[0-9A-Fa-f]{" + width + "}$").test(hex)) return undefined;
+        const codePoint = Number.parseInt(hex, 16);
+        if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) return undefined;
+        value += String.fromCodePoint(codePoint);
+        index += width + 2;
+        continue;
+      }
+      const simple = { b: "\b", t: "\t", n: "\n", f: "\f", r: "\r", '"': '"', "\\": "\\" };
+      if (escape === undefined || !Object.prototype.hasOwnProperty.call(simple, escape)) return undefined;
+      value += simple[escape];
+      index += 2;
+    }
+    return undefined;
+  };
+  spaces();
+  while (index < body.length) {
+    let key;
+    if (body[index] === '"') key = basic();
+    else if (body[index] === "'") {
+      const end = body.indexOf("'", index + 1);
+      if (end < 0) return undefined;
+      key = body.slice(index + 1, end);
+      index = end + 1;
+    } else {
+      const match = /^[A-Za-z0-9_-]+/.exec(body.slice(index));
+      if (!match) return undefined;
+      key = match[0];
+      index += key.length;
+    }
+    if (key === undefined) return undefined;
+    keys.push(key);
+    spaces();
+    if (index === body.length) break;
+    if (body[index] !== ".") return undefined;
+    index += 1;
+    spaces();
+    if (index === body.length) return undefined;
+  }
+  return keys.length >= 1 && keys[0] === "mcp_servers" ? { keys, array } : undefined;
+}
+function tomlMcpRootName(line) { const header = tomlMcpTableHeader(line); return header && header.keys.length === 2 ? header.keys[1] : undefined; }
+function assignmentLhs(line) { let quote; for (let index = 0; index < line.length; index += 1) { const character = line[index]; if (quote === '"') { if (character === "\\") index += 1; else if (character === '"') quote = undefined; continue; } if (quote === "'") { if (character === "'") quote = undefined; continue; } if (character === '"' || character === "'") quote = character; else if (character === "#") return undefined; else if (character === "=") return line.slice(0, index).trim(); } return undefined; }
+function nonRootMcpAmbiguity(lines, names) {
+  const roots = new Set(); for (const line of lines) { const header = tomlMcpTableHeader(line); if (header && !header.array && header.keys.length === 2) roots.add(header.keys[1]); }
+  let inMcpServers = false; let atDocumentRoot = true;
+  for (const line of lines) {
+    const header = tomlMcpTableHeader(line);
+    if (header) { inMcpServers = !header.array && header.keys.length === 1; atDocumentRoot = false; if (header.keys.length > 2 && names.has(header.keys[1]) && !roots.has(header.keys[1])) return "non-root Codex MCP representation"; continue; }
+    if (/^[ \t]*\[/.test(line)) { inMcpServers = false; atDocumentRoot = false; continue; }
+    const lhs = assignmentLhs(line); if (lhs === undefined) continue;
+    const direct = tomlMcpTableHeader("[" + lhs + "]");
+    if (atDocumentRoot && direct && direct.keys.length >= 2 && names.has(direct.keys[1])) return "non-root Codex MCP representation";
+    if (inMcpServers) { const scoped = tomlMcpTableHeader("[mcp_servers." + lhs + "]"); if (scoped && scoped.keys.length >= 2 && names.has(scoped.keys[1])) return "non-root Codex MCP representation"; }
+    if (atDocumentRoot && direct && direct.keys.length === 1) return "opaque Codex MCP representation";
+  }
+  return undefined;
+}
+function mcpRootAmbiguity(lines, names) {
+  const nonRoot = nonRootMcpAmbiguity(lines, names); if (nonRoot) return nonRoot;
+  const seen = new Set();
+  for (const line of lines) {
+    const header = tomlMcpTableHeader(line);
+    if (!header || header.keys.length !== 2 || !names.has(header.keys[1])) continue;
+    if (header.array) return "array-of-tables Codex MCP root";
+    if (seen.has(header.keys[1])) return "duplicate semantic Codex MCP root";
+    seen.add(header.keys[1]);
+  }
+  return undefined;
+}
+function legacyDescendantHeader(line) {
+  const withoutComment = (raw) => {
+    let quote;
+    for (let index = 0; index < raw.length; index += 1) {
+      const character = raw[index];
+      if (quote === '"') {
+        if (character === "\\") { index += 1; continue; }
+        if (character === '"') quote = undefined;
+        continue;
+      }
+      if (quote === "'") {
+        if (character === "'") quote = undefined;
+        continue;
+      }
+      if (character === '"' || character === "'") { quote = character; continue; }
+      if (character === "#") return raw.slice(0, index).trim();
+    }
+    return raw.trim();
+  };
+  const bodyOf = (raw, strict) => {
+    const clean = withoutComment(raw);
+    const open = clean.startsWith("[[") ? "[[" : clean.startsWith("[") ? "[" : undefined;
+    if (!open) return undefined;
+    const close = open === "[[" ? "]]" : "]";
+    if (strict && !clean.endsWith(close)) return undefined;
+    return clean.slice(open.length, strict ? -close.length : undefined);
+  };
+  const header = tomlMcpTableHeader(line);
+  if (header) return header.keys.length > 2 && header.keys[1] === "chrome-devtools";
+  const body = bodyOf(line, false);
+  return body !== undefined && /^[ \t]*(?:mcp_servers|"mcp_servers"|'mcp_servers')[ \t]*\.[ \t]*(?:chrome-devtools|"chrome-devtools"|'chrome-devtools')[ \t]*\./.test(body);
+}`,
+  "function renderScopedSection(name, server) {",
+  '  if (!server || typeof server !== "object" || Array.isArray(server)) throw new Error("invalid scoped Codex MCP server: " + name);',
+  '  const quote = (value) => JSON.stringify(String(value)); const section = ["[mcp_servers." + quote(name) + "]"];',
+  '  if (server.type === "stdio" && typeof server.command === "string" && Array.isArray(server.args) && server.args.every((arg) => typeof arg === "string")) { section.push("command = " + quote(server.command)); if (server.args.length > 0) section.push("args = [" + server.args.map(quote).join(", ") + "]"); }',
+  '  else if (server.type === "http" && typeof server.url === "string") section.push("url = " + quote(server.url)); else throw new Error("unsupported scoped Codex MCP server shape: " + name);',
+  '  if (server.startupTimeoutSec !== undefined && (!Number.isSafeInteger(server.startupTimeoutSec) || server.startupTimeoutSec < 1 || server.startupTimeoutSec > 3600)) throw new Error("invalid scoped Codex MCP startup timeout: " + name);',
+  '  if (server.startupTimeoutSec !== undefined) section.push("startup_timeout_sec = " + String(server.startupTimeoutSec)); return section.join("\\n");',
+  "}",
+  "function planScopedMcps(candidateConfig, hasExpectedLiveConfig, expectedLiveConfigRaw, hasExpectedLiveState, expectedLiveStateRaw) {",
+  "  if (!mcpSpec) return undefined;",
+  '  if (!mcpSpec.servers || typeof mcpSpec.servers !== "object" || Array.isArray(mcpSpec.servers)) throw new Error("invalid scoped Codex MCP payload");',
+  "  const requested = new Map(Object.entries(mcpSpec.servers));",
+  '  const liveConfigRaw = hasExpectedLiveConfig ? expectedLiveConfigRaw : readSafeOptional(configPath); const existingConfig = candidateConfig === undefined ? (liveConfigRaw || "") : candidateConfig; const liveStateRaw = hasExpectedLiveState ? expectedLiveStateRaw : readSafeOptional(expectedAihStatePath); const liveState = liveStateRaw === undefined ? undefined : exactAihState(liveStateRaw);',
+  "  const parsed = parseManagedFence(existingConfig); const claimed = new Set(liveState ? liveState.codexToml.mcpServers : []);",
+  '  if (parsed.fence && !liveState) throw new Error("managed Codex MCP fence has no live AIH state");',
+  '  if (parsed.fence && parsed.fence.sections.some((section) => !claimed.has(section.name))) throw new Error("managed Codex MCP fence contains an unclaimed server");',
+  "  const beforeFence = parsed.fence ? parsed.lines.slice(0, parsed.fence.begin) : parsed.lines.slice(); const afterFence = parsed.fence ? parsed.lines.slice(parsed.fence.end + 1) : [];",
+  '  const rootProblem = mcpRootAmbiguity([...beforeFence, ...afterFence], new Set([...requested.keys(), ...claimed])); if (rootProblem) throw new Error("live Codex MCP configuration is ambiguous: " + rootProblem);',
+  '  const legacyBefore = serverTables(beforeFence, "chrome-devtools"); const legacyAfter = serverTables(afterFence, "chrome-devtools"); const chrome = [...legacyBefore, ...legacyAfter]; const claimsChrome = claimed.has("chrome-devtools");',
+  "  const legacyDescendant = [...beforeFence, ...afterFence].some(legacyDescendantHeader);",
+  '  if (claimsChrome && legacyDescendant) throw new Error("live claimed Chrome DevTools table has an unsupported legacy descendant");',
+  '  if (claimsChrome && chrome.length > 0 && (chrome.length !== 1 || !exactLegacyChrome(chrome[0]))) throw new Error("live claimed Chrome DevTools table is not the exact legacy AIH rendering");',
+  '  const retained = parsed.fence ? parsed.fence.sections : []; const expectedClaims = new Set([...retained.map((section) => section.name), ...(claimsChrome && chrome.length === 1 ? ["chrome-devtools"] : [])]);',
+  '  if (liveState && (expectedClaims.size !== claimed.size || [...expectedClaims].some((name) => !claimed.has(name)))) throw new Error("live AIH MCP state does not exactly match its managed MCP footprint");',
+  "  const present = new Set(); for (const line of [...beforeFence, ...afterFence]) { const name = tomlMcpRootName(line); if (name !== undefined) present.add(name); }",
+  '  if (claimsChrome && chrome.length === 1) present.delete("chrome-devtools");',
+  "  const installed = []; const additions = []; for (const [name, server] of requested) { if (retained.some((section) => section.name === name)) continue; if (present.has(name)) continue; additions.push({ name, text: renderScopedSection(name, server) }); installed.push(name); }",
+  '  const sections = [...retained.map((section) => ({ name: section.name, text: requested.has(section.name) ? renderScopedSection(section.name, requested.get(section.name)) : section.lines.join("\\n").replace(/\\n+$/, "") })), ...additions];',
+  '  const block = "# >>> aih managed (mcp) >>>\\n" + sections.map((section) => section.text).join("\\n\\n") + "\\n# <<< aih managed (mcp) <<<";',
+  '  let mergedLines; if (parsed.fence) { const before = beforeFence.slice(); const after = afterFence.slice(); if (claimsChrome && chrome.length === 1) { if (legacyBefore.length === 1) before.splice(legacyBefore[0].begin, legacyBefore[0].end - legacyBefore[0].begin); else after.splice(legacyAfter[0].begin, legacyAfter[0].end - legacyAfter[0].begin); } mergedLines = [...before, block, ...after]; } else { const before = beforeFence.slice(); if (claimsChrome && chrome.length === 1) before.splice(legacyBefore[0].begin, legacyBefore[0].end - legacyBefore[0].begin); mergedLines = before.join("\\n").replace(/\\n+$/, "").split("\\n"); if (mergedLines.length === 1 && mergedLines[0] === "") mergedLines = []; mergedLines.push(...(mergedLines.length > 0 ? ["", block] : [block])); }',
+  '  let merged = mergedLines.join("\\n").replace(/^\\n+/, "").replace(/\\n+$/, "") + "\\n"; if (/\\r\\n/.test(existingConfig)) merged = merged.replace(/\\n/g, "\\r\\n");',
+  "  return { liveConfigRaw, liveStateRaw, liveState, merged, installed, retained: retained.map((section) => section.name) };",
+  "}",
+  "function unionStrings(...lists) { return [...new Set(lists.flat())].sort(); }",
+  'function mergeLiveAihState(live, delta) { const tableKeys = {}; for (const key of unionStrings(Object.keys(live.codexToml.tableKeys), Object.keys(delta.codexToml.tableKeys))) tableKeys[key] = unionStrings(live.codexToml.tableKeys[key] || [], delta.codexToml.tableKeys[key] || []); return { schemaVersion: 1, managedBy: "aih", codexToml: { rootKeys: unionStrings(live.codexToml.rootKeys, delta.codexToml.rootKeys), tables: unionStrings(live.codexToml.tables, delta.codexToml.tables), tableKeys, mcpServers: live.codexToml.mcpServers.slice() }, agentsBlock: true }; }',
+  'function scopedState(plan) { const delta = exactAihState(JSON.stringify(actualCurrentRunState)); const next = plan.liveState ? mergeLiveAihState(plan.liveState, delta) : { schemaVersion: 1, managedBy: "aih", codexToml: { rootKeys: delta.codexToml.rootKeys.slice(), tables: delta.codexToml.tables.slice(), tableKeys: Object.fromEntries(Object.entries(delta.codexToml.tableKeys).map(([key, values]) => [key, values.slice()])), mcpServers: [] }, agentsBlock: true }; next.codexToml.mcpServers = unionStrings(next.codexToml.mcpServers || [], plan.retained, plan.installed); return next; }',
+  "function stableScopedPlan(plan) { return readSafeOptional(configPath) === plan.liveConfigRaw && readSafeOptional(expectedAihStatePath) === plan.liveStateRaw; }",
+  'function restoreLiveConfig(plan) { if (readSafeOptional(configPath) !== plan.merged) throw new Error("Codex config changed during rollback"); if (plan.liveConfigRaw === undefined) fs.rmSync(prepareDestination(configPath), { force: true }); else fs.writeFileSync(prepareDestination(configPath), plan.liveConfigRaw, "utf8"); }',
+  'function installScopedMcps(plan, nextState) { if (!stableScopedPlan(plan)) throw new Error("Codex MCP config or state changed during apply"); fs.writeFileSync(prepareDestination(configPath), plan.merged, "utf8"); try { fs.writeFileSync(prepareDestination(expectedAihStatePath), JSON.stringify(nextState, null, 2) + "\\n", "utf8"); } catch (error) { restoreLiveConfig(plan); throw error; } state = nextState; return plan.installed; }',
   "installCodexManagedFiles();",
-  "const installedMcps = governed ? [] : installScopedMcps();",
-  'const state = JSON.parse(Buffer.from(stateB64, "base64").toString("utf8"));',
-  "if (installedMcps.length > 0) state.codexToml.mcpServers = [...new Set([...(state.codexToml.mcpServers || []), ...installedMcps])].sort();",
-  "prepareDestination(expectedAihStatePath);",
-  'fs.writeFileSync(expectedAihStatePath, JSON.stringify(state, null, 2) + "\\n", "utf8");',
+  "const scopedPlan = governed ? undefined : planScopedMcps(candidateConfig, true, liveConfigRaw, true, initialScopedPlan.liveStateRaw);",
+  "const scopedStateNext = scopedPlan ? scopedState(scopedPlan) : state;",
+  "effectiveMcpNames = governed ? [] : (scopedStateNext.codexToml.mcpServers || []);",
+  "const agentsChange = installCodexAgents();",
+  'try { if (scopedPlan) installScopedMcps(scopedPlan, scopedStateNext); else fs.writeFileSync(prepareDestination(expectedAihStatePath), JSON.stringify(state, null, 2) + "\\n", "utf8"); } catch (error) { restoreCodexAgents(agentsChange); throw error; }',
 ].join("\n");
+
+// Windows includes `node -e` source in its command-length limit. Keep the
+// reviewable source above, but transport only compressed static program text;
+// all live paths and state remain separate argv values below.
+const CODEX_INSTALL_MERGE_SCRIPT = `eval(require("node:zlib").inflateRawSync(Buffer.from(${JSON.stringify(
+  deflateRawSync(Buffer.from(CODEX_INSTALL_MERGE_SCRIPT_SOURCE)).toString("base64"),
+)}, "base64")).toString("utf8"))`;
 
 export function codexEccActions(
   ctx: PlanContext,
   repo: EccRepoCheckout,
   profile: string,
   materialization?: EccMaterializationSpec,
-  scopedMcps?: Record<string, McpServer>,
+  scopedMcps?: CodexScopedMcpServers,
   governed = false,
 ): Action[] {
+  const effectiveScopedMcps = governed ? {} : (scopedMcps ?? coreOwnedEccCodexMcpServers());
   const codexDir = codexHomeDir(ctx);
   const codexConfig = join(codexDir, "config.toml");
   const codexAgents = join(codexDir, "AGENTS.md");
   const mergeCodexConfig = join(repo.dir, "scripts", "codex", "merge-codex-config.js");
-  const mergeMcpConfig = join(repo.dir, "scripts", "codex", "merge-mcp-config.js");
   const sourceAgents = join(repo.dir, ".codex", "AGENTS.md");
   const statePath = codexInstallStatePath(ctx);
+  const plannedMcpServers = materialization ? [] : Object.keys(effectiveScopedMcps);
   const stateB64 = Buffer.from(
-    codexInstallStateContents(ctx, materialization ? [] : undefined, governed),
+    codexInstallStateContents(ctx, plannedMcpServers, governed),
     "utf8",
   ).toString("base64");
   const materializationB64 = materialization
     ? Buffer.from(JSON.stringify(materialization), "utf8").toString("base64")
     : undefined;
-  const mcpB64 = scopedMcps
-    ? Buffer.from(JSON.stringify({ servers: scopedMcps }), "utf8").toString("base64")
-    : undefined;
+  const mcpB64 = Buffer.from(JSON.stringify({ servers: effectiveScopedMcps }), "utf8").toString(
+    "base64",
+  );
   return [
     exec(
       `Install ECC Node dependencies for Codex merge helpers — npm ci --omit=dev --ignore-scripts in ${repo.posix} (lockfile-based, under --apply)`,
@@ -767,7 +967,6 @@ export function codexEccActions(
         profile,
         dirname(codexDir),
         mergeCodexConfig,
-        mergeMcpConfig,
         codexConfig,
         sourceAgents,
         codexAgents,
@@ -872,7 +1071,10 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
       }
     } else if (cli === "codex") {
       if (codexBlockers.length > 0) actions.push(...codexBlockers);
-      else if (repo) actions.push(...codexEccActions(ctx, repo, profile));
+      else if (repo)
+        actions.push(
+          ...codexEccActions(ctx, repo, profile, undefined, coreOwnedEccCodexMcpServers()),
+        );
     } else {
       if (isAihDirectEccInstallTarget(cli)) npmInstallerPlanned = true;
       actions.push(...eccActionsForCli(cli, inputs));

@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { inflateRawSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
 import type { EccComponentSelection } from "../../src/ecc/components.js";
@@ -92,6 +93,14 @@ function driverSteps(actions: Action[]): Array<{
     env?: Record<string, string>;
     input?: string;
   }>;
+}
+
+function codexInstallProgram(step: { argv: string[] } | undefined): string {
+  const program = step?.argv[2];
+  if (typeof program !== "string") throw new Error("missing Codex install program");
+  const packed = /inflateRawSync\(Buffer\.from\("([^"\\]+)", "base64"\)\)/.exec(program);
+  if (!packed?.[1]) return program;
+  return inflateRawSync(Buffer.from(packed[1], "base64")).toString("utf8");
 }
 
 function selection(): EccComponentSelection {
@@ -523,7 +532,7 @@ describe("verifiedEccInstallPlan", () => {
       authorizationsForSelection("codex", selected),
     );
     const step = driverSteps(built.actions).find((candidate) =>
-      candidate.argv.join(" ").includes("codex-install-merge"),
+      codexInstallProgram(candidate).includes("codex-install-merge"),
     );
     if (step === undefined) throw new Error("missing Codex merge step");
     const executable = step.argv[0];
@@ -565,6 +574,12 @@ describe("verifiedEccInstallPlan", () => {
     if (mcpB64 === undefined) throw new Error("missing Codex MCP registration spec");
     expect(JSON.parse(Buffer.from(mcpB64, "base64").toString("utf8"))).toMatchObject({
       servers: {
+        "chrome-devtools": {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "chrome-devtools-mcp@1.7.0"],
+          startupTimeoutSec: 30,
+        },
         "sequential-thinking": {
           type: "stdio",
           command: "npx",
@@ -579,10 +594,83 @@ describe("verifiedEccInstallPlan", () => {
     expect(steps[1]?.env?.ECC_DISABLED_MCPS).toBe(
       "chrome-devtools,context7,exa,memory,playwright,supabase",
     );
-    expect(steps[1]?.argv[2]).toContain("if (!mcpSpec)");
-    expect(steps[1]?.argv[2]).toContain("prepareDestination(configPath)");
-    expect(steps[1]?.argv[2]).toContain('flag: "wx"');
+    const codexProgram = codexInstallProgram(steps[1]);
+    expect(codexProgram).not.toContain("mergeMcpConfig");
+    expect(codexProgram).toContain("prepareDestination(configPath)");
+    expect(codexProgram).toContain("mergeCodexConfigCandidate");
   });
+
+  it("projects Core's exact Chrome DevTools default through the unscoped verified Codex path", () => {
+    const plan = verifiedEccInstallPlan(
+      ctx(),
+      join(root, "quarantine", "tree"),
+      { clis: ["codex"], profile: "minimal", packs: [] },
+      [authorization()],
+    );
+    const step = driverSteps(plan.actions)[1];
+    const mcpB64 = step?.argv.at(-2);
+    if (mcpB64 === undefined) throw new Error("missing Codex MCP registration spec");
+    const rendered = Buffer.from(mcpB64, "base64").toString("utf8");
+
+    expect(rendered).toContain("chrome-devtools-mcp@1.7.0");
+    expect(rendered).toContain('"startupTimeoutSec":30');
+    expect(rendered).not.toContain("@latest");
+  });
+
+  it("keeps the Core Chrome DevTools default out of governed verified Codex installs", () => {
+    const selected = selection();
+    const plan = verifiedEccInstallPlan(
+      ctx(),
+      join(root, "quarantine", "tree"),
+      { clis: ["codex"], profile: "minimal", packs: [], selection: selected, governance: true },
+      authorizationsForSelection("codex", selected),
+    );
+    const step = driverSteps(plan.actions)[1];
+    const mcpB64 = step?.argv.at(-2);
+    if (mcpB64 === undefined) throw new Error("missing Codex MCP registration spec");
+
+    expect(JSON.parse(Buffer.from(mcpB64, "base64").toString("utf8"))).toEqual({ servers: {} });
+  });
+
+  it.each([
+    ["project", "[mcp_servers.chrome-devtools]\nenabled = false\n"],
+    ["global", '[mcp_servers.chrome-devtools]\nurl = "https://example.invalid/mcp"\n'],
+  ])(
+    "refuses a verified Codex install on a planned Core-name %s ambiguity",
+    async (scope, config) => {
+      const home = join(root, "collision-home");
+      const projectConfig = join(root, ".codex", "config.toml");
+      const globalConfig = join(home, ".codex", "config.toml");
+      const target = scope === "project" ? projectConfig : globalConfig;
+      mkdirSync(join(target, ".."), { recursive: true });
+      writeFileSync(target, config, "utf8");
+      const context = { ...ctx(), env: { HOME: home, USERPROFILE: home } };
+      const selected = selection();
+
+      const plan = verifiedEccInstallPlan(
+        context,
+        join(root, "quarantine", "tree"),
+        { clis: ["codex"], profile: "minimal", packs: [], selection: selected },
+        authorizationsForSelection("codex", selected),
+      );
+
+      expect(
+        driverSteps(plan.actions).some((step) =>
+          step.argv.join(" ").includes("codex-install-merge"),
+        ),
+      ).toBe(false);
+      const checks = await Promise.all(
+        plan.actions
+          .filter((action): action is Extract<Action, { kind: "probe" }> => action.kind === "probe")
+          .map((action) => action.run(context)),
+      );
+      expect(checks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: "mcp.config-invalid", verdict: "fail" }),
+        ]),
+      );
+    },
+  );
 
   // #506 F1: the enterprise rollout observed the Codex merge receiving the core
   // profile regardless of `--profile full`. These two tests lock the resolved
@@ -601,7 +689,7 @@ describe("verifiedEccInstallPlan", () => {
       authorizationsForSelection("codex", request.selection),
     );
     const merge = driverSteps(built.actions).find((step) =>
-      step.argv.join(" ").includes("codex-install-merge"),
+      codexInstallProgram(step).includes("codex-install-merge"),
     );
     if (merge === undefined) throw new Error("missing Codex merge step");
     // argv: [node, -e, script, repoRoot, profileId, homeDir, …, governanceFlag, specB64, mcpB64, stateB64]
@@ -755,7 +843,7 @@ describe("verifiedEccInstallPlan", () => {
     const sourceRoot = join(root, "ecc-source");
     const home = join(root, "home");
     mkdirSync(join(home, ".codex"), { recursive: true });
-    writeFileSync(join(home, ".codex", "config.toml"), "", "utf8");
+    writeFileSync(join(home, ".codex", "config.toml"), "# operator-owned\r\n", "utf8");
     put(
       join(sourceRoot, "scripts", "lib", "install-executor.js"),
       `exports.createManifestInstallPlan = ({ homeDir }) => ({
@@ -838,6 +926,14 @@ describe("verifiedEccInstallPlan", () => {
     expect(
       readFileSync(join(home, ".codex", "skills", "coding-standards", "SKILL.md"), "utf8"),
     ).toBe("# Coding standards\n");
+    const config = readFileSync(join(home, ".codex", "config.toml"), "utf8");
+    expect(config).toContain("chrome-devtools-mcp@1.7.0");
+    expect(config).toContain("startup_timeout_sec = 30");
+    expect(config).not.toContain("@latest");
+    expect(config).toContain("\r\n");
+    expect(readFileSync(join(home, ".codex", "ecc-aih-install-state.json"), "utf8")).toContain(
+      '"chrome-devtools"',
+    );
     const statePath = join(home, ".codex", "ecc-install-state.json");
     const firstState = readFileSync(statePath, "utf8");
     const state = JSON.parse(firstState) as { operations: Array<{ destinationPath: string }> };

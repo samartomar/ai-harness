@@ -7,6 +7,11 @@ import { type CommandSpec, digest, type PlanContext, plan, writeText } from "../
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import { makeHostAdapter } from "../platform/detect.js";
 import {
+  type AdminBaselineEvidenceProvenanceV1,
+  type ResolveOperationalAdminBaselineEvidenceV1Input,
+  resolveOperationalAdminBaselineEvidenceV1,
+} from "./admin-baseline-evidence-operations-v1.js";
+import {
   type AdminCatalogProvenanceV1,
   type ResolveOperationalAdminCatalogV1Input,
   resolveOperationalAdminCatalogV1,
@@ -33,9 +38,13 @@ function outputPath(ctx: PlanContext): string {
  * after that route has fully resolved and verified the supported catalog — so
  * no rendering can precede resolution.
  */
-function policyGeneratePlan(ctx: PlanContext, catalogProvenance?: AdminCatalogProvenanceV1) {
+function policyGeneratePlan(
+  ctx: PlanContext,
+  catalogProvenance?: AdminCatalogProvenanceV1,
+  baselineEvidenceProvenance?: AdminBaselineEvidenceProvenanceV1,
+) {
   const path = outputPath(ctx);
-  const model = policyStudioModel(catalogProvenance);
+  const model = policyStudioModel(catalogProvenance, baselineEvidenceProvenance);
   return plan(
     "policy generate",
     writeText(
@@ -95,6 +104,15 @@ export interface PolicyGenerateRunDeps {
   catalog?: Partial<
     Pick<
       ResolveOperationalAdminCatalogV1Input,
+      "fetchHttps" | "now" | "platformAdminRoot" | "tempRoot"
+    >
+  >;
+  /** Administrator-only verified baseline stage; never constructed for portable/dry routes. */
+  baseline?: () => Promise<AdminBaselineEvidenceProvenanceV1>;
+  /** Test-only operational boundary overrides; production leaves every field unset. */
+  baselineOperational?: Partial<
+    Pick<
+      ResolveOperationalAdminBaselineEvidenceV1Input,
       "fetchHttps" | "now" | "platformAdminRoot" | "tempRoot"
     >
   >;
@@ -166,22 +184,46 @@ export async function runPolicyGenerate(
     }
     // Resolution happens BEFORE any plan is built, so a fatal catalog outcome
     // can never leave a rendered workbench behind.
+    const adminRoot =
+      deps.adminRoot === undefined ? undefined : adminRootArgument(root, deps.adminRoot);
+    const posture = policyGeneratePosture(opts);
+    const baselineEvidenceProvenance =
+      adminRoot === undefined
+        ? undefined
+        : deps.baseline !== undefined
+          ? await deps.baseline()
+          : (
+              await resolveOperationalAdminBaselineEvidenceV1({
+                adminRoot,
+                env,
+                fetchHttps: deps.baselineOperational?.fetchHttps,
+                now: deps.baselineOperational?.now ?? utcSecondNow(),
+                platformAdminRoot: deps.baselineOperational?.platformAdminRoot,
+                posture,
+                run,
+                tempRoot: deps.baselineOperational?.tempRoot,
+              })
+            ).provenance;
     const catalogProvenance =
-      deps.adminRoot === undefined
+      adminRoot === undefined
         ? undefined
         : await resolveOperationalAdminCatalogV1({
-            adminRoot: adminRootArgument(root, deps.adminRoot),
+            adminRoot,
             fetchHttps: deps.catalog?.fetchHttps,
             env,
             now: deps.catalog?.now ?? utcSecondNow(),
             platformAdminRoot: deps.catalog?.platformAdminRoot,
-            posture: policyGeneratePosture(opts),
+            posture,
             run,
             tempRoot: deps.catalog?.tempRoot,
           });
-    const result = await executePlan(policyGeneratePlan(ctx, catalogProvenance), ctx, {
-      skipWorktreeGate: true,
-    });
+    const result = await executePlan(
+      policyGeneratePlan(ctx, catalogProvenance, baselineEvidenceProvenance),
+      ctx,
+      {
+        skipWorktreeGate: true,
+      },
+    );
     if (json) write(`${JSON.stringify(result, null, 2)}\n`);
     else write(`${summarizeResult(result)}\n`);
     return 0;

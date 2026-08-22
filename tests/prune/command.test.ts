@@ -442,12 +442,14 @@ describe("aih prune command", () => {
         "[features]",
         "multi_agent = true",
         "",
+        "# >>> aih managed (mcp) >>>",
         "[mcp_servers.context7]",
         'command = "npx"',
         'args = ["-y", "@upstash/context7-mcp@latest"]',
         "",
         "[mcp_servers.context7.env]",
         'CONTEXT7_TOKEN = "remove"',
+        "# <<< aih managed (mcp) <<<",
         "",
         "[mcp_servers.user]",
         'url = "https://example.com/mcp"',
@@ -472,6 +474,72 @@ describe("aih prune command", () => {
         (a) => a.kind === "exec" && a.argv.includes(join(home, ".codex", CODEX_INSTALL_STATE_FILE)),
       ),
     ).toBe(true);
+  });
+
+  it("refuses a post-plan Codex state custody change before subtracting its config", async () => {
+    const home = join(dir, "state-custody-race-home");
+    const codexDir = join(home, ".codex");
+    const configPath = join(codexDir, "config.toml");
+    const statePath = join(codexDir, CODEX_INSTALL_STATE_FILE);
+    marker("claude");
+    write("ai-coding/adapters/claude.md");
+    write("ai-coding/adapters/codex.md");
+    mkdirSync(codexDir, { recursive: true });
+    const originalConfig = 'approval_policy = "on-request"\noperator_key = "keep"\n';
+    writeFileSync(configPath, originalConfig, "utf8");
+    writeFileSync(
+      statePath,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        managedBy: "aih",
+        codexToml: { rootKeys: ["approval_policy"], tables: [], tableKeys: {}, mcpServers: [] },
+        agentsBlock: false,
+      })}\n`,
+      "utf8",
+    );
+    const context = ctx({ apply: true, env: { HOME: home, USERPROFILE: home } });
+    const actions = await actionsOf(context);
+    const operatorState = `${JSON.stringify({
+      schemaVersion: 1,
+      managedBy: "aih",
+      codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: [] },
+      agentsBlock: false,
+    })}\n`;
+    writeFileSync(statePath, operatorState, "utf8");
+
+    await expect(executePlan({ capability: "prune", actions }, context)).rejects.toThrow(
+      /changed after the plan was computed/,
+    );
+    expect(readFileSync(configPath, "utf8")).toBe(originalConfig);
+    expect(readFileSync(statePath, "utf8")).toBe(operatorState);
+  });
+
+  it("reports a malformed claimed Codex AIH state without planning its cleanup", async () => {
+    const home = join(dir, "home");
+    marker("claude");
+    write("ai-coding/adapters/claude.md");
+    write("ai-coding/adapters/codex.md");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(join(home, ".codex", CODEX_INSTALL_STATE_FILE), "{not-json\n", "utf8");
+
+    const context = ctx({ env: { HOME: home, USERPROFILE: home } });
+    const actions = (await command.plan(context)).actions;
+    const refusal = actions.find(
+      (action): action is Extract<Action, { kind: "probe" }> =>
+        action.kind === "probe" && action.describe.includes("invalid AIH ECC Codex install-state"),
+    );
+
+    expect(refusal).toBeDefined();
+    expect(
+      actions.some(
+        (action) =>
+          action.kind === "exec" && action.describe.includes("remove aih ECC Codex install-state"),
+      ),
+    ).toBe(false);
+    expect(await refusal?.run(context)).toMatchObject({
+      verdict: "fail",
+      code: "mcp.config-invalid",
+    });
   });
 
   it("subtracts recorded ECC Codex keys from inline TOML tables when codex is dropped", async () => {
