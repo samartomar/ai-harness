@@ -402,6 +402,7 @@ the shipped commit:
 
 ```bash
 npm run check:scan-acceptance -- --checkout /absolute/path/to/Superpowers
+npm run regen:scan-acceptance -- --checkout /absolute/path/to/Superpowers --check
 ```
 
 The command refuses the AI-Harness checkout, a subdirectory, a mutable,
@@ -411,6 +412,13 @@ deterministic JSON separates exact matches from stale, missing, newly observed,
 and critical findings. This is maintenance evidence only: it does not change
 `src/binding/scan-acceptance.json`, generate candidate entries, or authorize the
 runtime scan gate.
+
+After that audit is reviewed, the maintainer-only regeneration command can
+reproduce the deliberately empty canonical ledger by omitting `--check`. Both
+modes rerun the same exact-checkout proof. Check mode compares bytes without a
+write; write mode refuses linked or non-regular ledger custody and replaces only
+the module-owned ledger through an exclusive temporary file. Neither mode turns
+an observation into an acceptance.
 
 The audit at `obra/Superpowers@3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9`
 reported 87 observations, 0 accepted, 0 stale, 62 historical entries no longer

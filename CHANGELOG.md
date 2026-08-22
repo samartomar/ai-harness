@@ -49,12 +49,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   finding in a deterministic per-file rollup, including distinct absent, false, and true acceptance
   states. Turkish dotted and dotless I remain advisory only in proven prose, comment, and string
   contexts; identifier, key, code, bidi-control, and standalone variation-selector positions remain
-  blocking. A maintainer-only regeneration command rewrites the deliberately empty Superpowers
-  acceptance ledger only after the existing checker proves the exact detached, clean, unlinked,
+  blocking. Dotted I retains the detector's raw medium finding while the binding gate applies the
+  blocking policy through an exact-hash, contained reread; missing, changed, linked, or escaping
+  paths fail closed and cannot be accepted. A maintainer-only regeneration command rewrites the
+  deliberately empty Superpowers acceptance ledger only after the existing checker proves the exact
+  detached, clean, unlinked,
   no-replacement-ref vendor checkout; check mode is byte-exact and read-only, and neither mode can
-  accept a finding or authorize a runtime gate. Claude user settings with no loadable hook, plugin,
-  or MCP content are reported as a harmless husk, while malformed structure remains a warning and
-  active content remains contamination. (#817)
+  accept a finding or authorize a runtime gate. Claude user settings are reported as a harmless
+  husk only when they contain schema/comment metadata and recognized empty hook, plugin, MCP, or
+  skill-override containers; malformed structure remains a warning, any other setting does not
+  receive the husk classification, and active content remains contamination. (#817)
 
 - **Governance decisions gain a canonical, inert V1 transport contract.** The strict record keeps
   `approved`, `accepted-with-conditions`, and `rejected` immutable, while revocation is a separate

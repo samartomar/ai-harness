@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyFileTypography,
   classifySentinelLineShape,
+  fileHasBlockingTypographyChar,
 } from "../../src/binding/visible-typography.js";
 
 // Visible typography (advisory-eligible) — literal glyphs are legible; all
@@ -135,6 +136,25 @@ describe("classifyFileTypography (rule-8 per-file visible-typography demotion)",
     expect(classifyFileTypography("src/turkish.ts", "const İstanbul = 1;\n").demote).toBe(false);
     expect(classifyFileTypography("settings.json", '{"İstanbul": "value"}\n').demote).toBe(false);
     expect(classifyFileTypography("src/turkish.ts", "const value = İ;\n").demote).toBe(false);
+  });
+
+  it("classifies each dotted İ occurrence without letting a separate blocker taint prose", () => {
+    expect(fileHasBlockingTypographyChar("docs/turkish.md", "Turkish İ prose.\n", "İ")).toBe(false);
+    expect(
+      fileHasBlockingTypographyChar(
+        "src/turkish.ts",
+        "// Turkish İ comment\nconst value = 1;\n",
+        "İ",
+      ),
+    ).toBe(false);
+    expect(
+      fileHasBlockingTypographyChar("src/turkish.ts", 'const label = "İ string";\n', "İ"),
+    ).toBe(false);
+    expect(fileHasBlockingTypographyChar("src/turkish.ts", "const İd = 1;\n", "İ")).toBe(true);
+    expect(fileHasBlockingTypographyChar("settings.json", '{"İd":"value"}\n', "İ")).toBe(true);
+    expect(
+      fileHasBlockingTypographyChar("src/turkish.ts", "// Turkish İ prose\nconst ıd = 1;\n", "İ"),
+    ).toBe(false);
   });
 
   it("markdown code fence: decorative diagram demotes; confusable and point-3 block", () => {

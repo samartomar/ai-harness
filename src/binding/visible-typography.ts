@@ -732,6 +732,20 @@ export function enumerateTypography(path: string, text: string): TypographyOccur
 }
 
 /**
+ * Whether at least one occurrence of `target` is blocking under the same
+ * tokenizer and per-occurrence policy as {@link classifyFileTypography}. Unlike
+ * the file roll-up, this deliberately ignores other characters so a separate
+ * blocker cannot reclassify a target that itself appeared only in prose.
+ */
+export function fileHasBlockingTypographyChar(path: string, text: string, target: string): boolean {
+  let blocks = false;
+  scanByClass(path, text, (ch, ctx, prev) => {
+    if (ch === target && classifyOccurrence(ch, ctx, prev).blocks) blocks = true;
+  });
+  return blocks;
+}
+
+/**
  * Classify a file's visible typography. Returns `demote: true` only when the file
  * has ≥1 non-ASCII occurrence and EVERY one is advisory-eligible (visible
  * typography in a proven prose/comment/human-facing-string context, a decorative

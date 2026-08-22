@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -470,6 +470,262 @@ describe("fast scan disposition (D12 gate + posture-graded coverage)", () => {
     expect(disposition.verdict).toBe("block");
     expect(disposition.findings.some((f) => f.severity === "critical")).toBe(true);
   });
+
+  const TURKISH_UNICODE_CASES = [
+    [
+      "dotted İ in prose",
+      "docs/turkish.md",
+      "Turkish İ prose.\n",
+      "trust.visible-unicode",
+      "medium",
+      "allow",
+    ],
+    [
+      "dotted İ in a comment",
+      "src/turkish.ts",
+      "// Turkish İ comment\nexport const value = 1;\n",
+      "trust.visible-unicode",
+      "medium",
+      "allow",
+    ],
+    [
+      "dotted İ in a string",
+      "src/turkish.ts",
+      'export const label = "İ string";\n',
+      "trust.visible-unicode",
+      "medium",
+      "allow",
+    ],
+    [
+      "dotted İ in an identifier",
+      "src/turkish.ts",
+      "export const İd = 1;\n",
+      "trust.visible-unicode",
+      "medium",
+      "block",
+    ],
+    [
+      "dotted İ in a config key",
+      "settings.json",
+      '{"İd":"value"}\n',
+      "trust.visible-unicode",
+      "medium",
+      "block",
+    ],
+    [
+      "dotless ı in prose",
+      "docs/turkish.md",
+      "Turkish ı prose.\n",
+      "trust.visible-unicode",
+      "medium",
+      "allow",
+    ],
+    [
+      "dotless ı in a comment",
+      "src/turkish.ts",
+      "// Turkish ı comment\nexport const value = 1;\n",
+      "trust.visible-unicode",
+      "medium",
+      "allow",
+    ],
+    [
+      "dotless ı in a string",
+      "src/turkish.ts",
+      'export const label = "ı string";\n',
+      "trust.visible-unicode",
+      "medium",
+      "allow",
+    ],
+    [
+      "dotless ı in an identifier",
+      "src/turkish.ts",
+      "export const ıd = 1;\n",
+      "trust.hidden-unicode",
+      "high",
+      "block",
+    ],
+    [
+      "dotless ı in a config key",
+      "settings.json",
+      '{"ıd":"value"}\n',
+      "trust.hidden-unicode",
+      "high",
+      "block",
+    ],
+  ] as const;
+
+  it.each(TURKISH_UNICODE_CASES)(
+    "%s has the correct end-to-end gate outcome",
+    async (_label, path, text, expectedCode, expectedSeverity, expected) => {
+      const root = join(repoDir, `turkish-${_label.replace(/[^a-z]/gi, "")}`);
+      initGitRepo(root, { [path]: text });
+      const resolved = await resolveGitSource(
+        { repository: root, ref: "HEAD" },
+        { runner: defaultRunner, cacheHome },
+      );
+      const disposition = runFastScanGate(
+        scannableFromGit(resolved),
+        { posture: "vibe", allowIncompleteAtVibe: true },
+        { cacheHome },
+      );
+      expect(disposition.verdict).toBe(expected);
+      const finding = disposition.findings.find((candidate) => candidate.code === expectedCode);
+      expect(finding).toMatchObject({ severity: expectedSeverity });
+      if (expected === "allow") {
+        expect(finding?.advisory).toBeDefined();
+      }
+      if (expected === "block") {
+        expect(finding).not.toHaveProperty("advisory");
+      }
+    },
+  );
+
+  it("keeps dotted İ prose advisory when a different glyph blocks the same file", async () => {
+    const root = join(repoDir, "turkish-mixed-context");
+    initGitRepo(root, {
+      "src/turkish.ts": "// Turkish İ prose\nexport const ıd = 1;\n",
+    });
+    const resolved = await resolveGitSource(
+      { repository: root, ref: "HEAD" },
+      { runner: defaultRunner, cacheHome },
+    );
+    const disposition = runFastScanGate(
+      scannableFromGit(resolved),
+      { posture: "vibe", allowIncompleteAtVibe: true },
+      { cacheHome },
+    );
+
+    expect(disposition.verdict).toBe("block");
+    expect(
+      disposition.findings.find((finding) => finding.code === "trust.visible-unicode")?.advisory,
+    ).toBeDefined();
+    expect(disposition.findings.some((finding) => finding.code === "trust.hidden-unicode")).toBe(
+      true,
+    );
+  });
+
+  it.each(["changed", "unreadable"])(
+    "fails closed when a cached dotted İ finding's checkout content is %s",
+    async (state) => {
+      const root = join(repoDir, `turkish-cache-${state}`);
+      initGitRepo(root, {
+        "src/turkish.ts": "// Turkish İ prose\nexport const value = 1;\n",
+      });
+      const resolved = await resolveGitSource(
+        { repository: root, ref: "HEAD" },
+        { runner: defaultRunner, cacheHome },
+      );
+      const source = scannableFromGit(resolved);
+      const first = runFastScanGate(
+        source,
+        { posture: "vibe", allowIncompleteAtVibe: true },
+        { cacheHome },
+      );
+      expect(first.verdict).toBe("allow");
+      const pinnedVisibleFinding = first.findings.find(
+        (finding) => finding.code === "trust.visible-unicode",
+      );
+      expect(pinnedVisibleFinding?.contentSha256).toMatch(SHA256);
+
+      const checkoutFile = join(resolved.treePath, "src/turkish.ts");
+      if (state === "changed") {
+        writeFileSync(checkoutFile, "export const value = 1;\n");
+      } else {
+        rmSync(checkoutFile);
+      }
+      const disposition = runFastScanGate(
+        source,
+        {
+          posture: "vibe",
+          allowIncompleteAtVibe: true,
+          acceptedFindings: [
+            {
+              repository: "test/fixture",
+              code: "trust.visible-unicode",
+              path: "src/turkish.ts",
+              fileSha256: pinnedVisibleFinding?.contentSha256 ?? "",
+            },
+          ],
+        },
+        { cacheHome },
+      );
+
+      expect(disposition.verdict).toBe("block");
+      expect(disposition.rawSourceScan).toBe("FINDINGS_PRESENT");
+      expect(
+        disposition.findings.find((finding) => finding.code === "trust.visible-unicode"),
+      ).not.toHaveProperty("advisory");
+      expect(
+        disposition.findings.find((finding) => finding.code === "trust.visible-unicode"),
+      ).not.toHaveProperty("accepted");
+    },
+  );
+
+  it.each(["parent traversal", "symlink"])(
+    "fails closed when a deep visible-unicode path escapes the checkout by %s",
+    async (escapeKind) => {
+      const root = join(repoDir, `deep-visible-unicode-${escapeKind.replace(" ", "-")}`);
+      initGitRepo(root, { "src/safe.ts": "export const safe = true;\n" });
+      const resolved = await resolveGitSource(
+        { repository: root, ref: "HEAD" },
+        { runner: defaultRunner, cacheHome },
+      );
+      const outsideName = `outside-${escapeKind.replace(" ", "-")}.md`;
+      const outsidePath = join(resolved.treePath, "..", outsideName);
+      const outsideText = "Turkish İ prose.\n";
+      writeFileSync(outsidePath, outsideText);
+      const path =
+        escapeKind === "parent traversal" ? `../${outsideName}` : "src/linked-outside.md";
+      if (escapeKind === "symlink") {
+        symlinkSync(outsidePath, join(resolved.treePath, path), "file");
+      }
+      try {
+        const contentSha256 = createHash("sha256").update(outsideText, "utf8").digest("hex");
+        const disposition = runFastScanGate(
+          scannableFromGit(resolved),
+          {
+            posture: "vibe",
+            allowIncompleteAtVibe: true,
+            acceptedFindings: [
+              {
+                repository: "test/fixture",
+                code: "trust.visible-unicode",
+                path,
+                fileSha256: contentSha256,
+              },
+            ],
+            deepDimensionReports: [
+              {
+                dimension: "deep-visible-unicode",
+                status: "produced",
+                findings: [
+                  {
+                    code: "trust.visible-unicode",
+                    severity: "medium",
+                    detail: "crafted external visible Unicode",
+                    coverage: "complete",
+                    path,
+                    contentSha256,
+                  },
+                ],
+              },
+            ],
+          },
+          { cacheHome },
+        );
+
+        expect(disposition.verdict).toBe("block");
+        const finding = disposition.findings.find(
+          (candidate) => candidate.code === "trust.visible-unicode",
+        );
+        expect(finding).toMatchObject({ severity: "medium", path });
+        expect(finding).not.toHaveProperty("advisory");
+        expect(finding).not.toHaveProperty("accepted");
+      } finally {
+        rmSync(outsidePath, { force: true });
+      }
+    },
+  );
 });
 
 describe("scan cache (derived, rebuildable)", () => {
