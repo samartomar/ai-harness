@@ -69,20 +69,154 @@ function manifest(repos: WorkspaceRepo[]): WorkspaceManifest {
 }
 
 describe("workspace state collection", () => {
-  it("reads independent git facts for one repo concurrently after the git check", async () => {
+  it("anchors revision, dirtiness, and divergence in one Git process", async () => {
+    const calls: string[] = [];
+    const run: Runner = async (argv) => {
+      const tail = argv.slice(3).join(" ");
+      calls.push(tail);
+      if (tail === "status --porcelain=v2 --branch") {
+        return {
+          code: 0,
+          stdout:
+            "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head main\n# branch.ab +2 -1\n",
+          stderr: "",
+        };
+      }
+      if (tail === "rev-parse --is-inside-work-tree")
+        return { code: 0, stdout: "true\n", stderr: "" };
+      return { code: 1, stdout: "", stderr: "" };
+    };
+
+    await expect(readWorkspaceRepoState(ctx(run), childRepo("ui"))).resolves.toMatchObject({
+      branch: "main",
+      sha: "abcdef0123456789abcdef0123456789abcdef01",
+      ahead: 2,
+      behind: 1,
+    });
+    expect(calls).not.toContain("rev-parse --abbrev-ref HEAD");
+    expect(calls).not.toContain("rev-parse HEAD");
+    expect(calls).not.toContain("status --porcelain");
+    expect(calls).not.toContain("rev-list --left-right --count HEAD...@{upstream}");
+    expect(calls.filter((call) => call === "status --porcelain=v2 --branch")).toHaveLength(2);
+  });
+
+  it("omits Git's detached HEAD marker from a serialized workspace lock while retaining its SHA", async () => {
+    mkdirSync(join(parent, "ai-coding"), { recursive: true });
+    childRepo("ui");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({ repos: ["ui"], contextDir: "ai-coding" }),
+    );
+    const run: Runner = async (argv) => {
+      const tail = argv.slice(3).join(" ");
+      if (tail === "rev-parse --is-inside-work-tree")
+        return { code: 0, stdout: "true\n", stderr: "" };
+      if (tail === "status --porcelain=v2 --branch") {
+        return {
+          code: 0,
+          stdout:
+            "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head (detached)\n",
+          stderr: "",
+        };
+      }
+      return { code: 1, stdout: "", stderr: "" };
+    };
+
+    const actions = (await snapshotCommand.plan(ctx(run, { lock: true }))).actions;
+    const lock = writesByPath(actions).get("ai-coding/workspace-lock.json")?.json as
+      | { repos?: unknown[] }
+      | undefined;
+
+    expect(lock?.repos).toEqual([
+      {
+        id: "ui",
+        path: "ui",
+        sha: "abcdef0123456789abcdef0123456789abcdef01",
+        dirty: false,
+        git: true,
+      },
+    ]);
+  });
+
+  it("omits an unsafe porcelain branch head while retaining coherent SHA evidence", async () => {
+    const run: Runner = async (argv) => {
+      const tail = argv.slice(3).join(" ");
+      if (tail === "rev-parse --is-inside-work-tree")
+        return { code: 0, stdout: "true\n", stderr: "" };
+      if (tail === "status --porcelain=v2 --branch") {
+        return {
+          code: 0,
+          stdout: "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head -hostile\n",
+          stderr: "",
+        };
+      }
+      return { code: 1, stdout: "", stderr: "" };
+    };
+
+    await expect(readWorkspaceRepoState(ctx(run), childRepo("ui"))).resolves.toEqual({
+      id: "ui",
+      path: "ui",
+      git: true,
+      sha: "abcdef0123456789abcdef0123456789abcdef01",
+      dirty: false,
+    });
+  });
+
+  it.each(["dependabot/npm_and_yarn/@types/node-20", "release+candidate"])(
+    "omits a Git-valid but unsafe-for-ref-use branch label %s",
+    async (branchHead) => {
+      const run: Runner = async (argv) => {
+        const tail = argv.slice(3).join(" ");
+        if (tail === "rev-parse --is-inside-work-tree")
+          return { code: 0, stdout: "true\n", stderr: "" };
+        if (tail === "status --porcelain=v2 --branch") {
+          return {
+            code: 0,
+            stdout: `# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head ${branchHead}\n`,
+            stderr: "",
+          };
+        }
+        return { code: 1, stdout: "", stderr: "" };
+      };
+
+      const state = await readWorkspaceRepoState(ctx(run), childRepo("ui"));
+
+      expect(state).toEqual({
+        id: "ui",
+        path: "ui",
+        sha: "abcdef0123456789abcdef0123456789abcdef01",
+        dirty: false,
+        git: true,
+      });
+      expect(state).not.toHaveProperty("branch");
+    },
+  );
+
+  it("keeps each coherent status observation in one Git process", async () => {
     let active = 0;
     let maxActive = 0;
     const run: Runner = async (argv) => {
       const tail = argv.slice(3).join(" ");
+      if (tail === "status --porcelain=v2 --branch") {
+        return {
+          code: 0,
+          stdout:
+            "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head main\n# branch.ab +2 -1\n",
+          stderr: "",
+        };
+      }
       active++;
       maxActive = Math.max(maxActive, active);
       await delay(5);
       active--;
       if (tail === "rev-parse --is-inside-work-tree")
         return { code: 0, stdout: "true\n", stderr: "" };
-      if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse HEAD")
-        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
+      if (tail === "rev-parse --abbrev-ref HEAD HEAD")
+        return {
+          code: 0,
+          stdout: "main\nabcdef0123456789abcdef0123456789abcdef01\n",
+          stderr: "",
+        };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       if (tail === "rev-list --left-right --count HEAD...@{upstream}") {
         return { code: 0, stdout: "1\t2\n", stderr: "" };
@@ -92,18 +226,156 @@ describe("workspace state collection", () => {
 
     const state = await readWorkspaceRepoState(ctx(run), childRepo("ui"));
 
-    expect(maxActive).toBeGreaterThan(1);
+    expect(maxActive).toBe(1);
     expect(state).toMatchObject({ ahead: 2, behind: 1 });
+  });
+
+  it.each(["+2 -1 extra", "+2 -1 ", "2 -1", "+x -1", "+2 --1", "+9007199254740992 -0"])(
+    "fails closed on malformed branch divergence %j",
+    async (branchAb) => {
+      const run: Runner = async (argv) => {
+        const tail = argv.slice(3).join(" ");
+        if (tail === "status --porcelain=v2 --branch") {
+          return {
+            code: 0,
+            stdout: `# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head main\n# branch.ab ${branchAb}\n`,
+            stderr: "",
+          };
+        }
+        if (tail === "rev-parse --is-inside-work-tree")
+          return { code: 0, stdout: "true\n", stderr: "" };
+        if (tail === "rev-parse --abbrev-ref HEAD HEAD")
+          return {
+            code: 0,
+            stdout: "main\nabcdef0123456789abcdef0123456789abcdef01\n",
+            stderr: "",
+          };
+        return { code: 1, stdout: "", stderr: "" };
+      };
+
+      const state = await readWorkspaceRepoState(ctx(run), childRepo("ui"));
+
+      expect(state).toMatchObject({ git: true, observation: "unavailable" });
+      expect(state).not.toHaveProperty("ahead");
+      expect(state).not.toHaveProperty("behind");
+    },
+  );
+
+  it.each(["a".repeat(41), "A".repeat(40)])(
+    "fails closed on a noncanonical branch object ID %j",
+    async (sha) => {
+      const run: Runner = async (argv) => {
+        const tail = argv.slice(3).join(" ");
+        if (tail === "rev-parse --is-inside-work-tree")
+          return { code: 0, stdout: "true\n", stderr: "" };
+        if (tail === "status --porcelain=v2 --branch") {
+          return {
+            code: 0,
+            stdout: `# branch.oid ${sha}\n# branch.head main\n`,
+            stderr: "",
+          };
+        }
+        return { code: 1, stdout: "", stderr: "" };
+      };
+
+      await expect(readWorkspaceRepoState(ctx(run), childRepo("ui"))).resolves.toMatchObject({
+        git: true,
+        observation: "unavailable",
+      });
+    },
+  );
+
+  it("returns an explicit diverged observation instead of mixing facts across a branch switch", async () => {
+    let revisionReads = 0;
+    const run: Runner = async (argv) => {
+      const tail = argv.slice(3).join(" ");
+      if (tail === "status --porcelain=v2 --branch") {
+        revisionReads += 1;
+        return {
+          code: 0,
+          stdout:
+            revisionReads === 1
+              ? "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head main\n# branch.ab +2 -1\n1 .M N... 100644 100644 100644 a a file.ts\n"
+              : "# branch.oid 1234567890abcdef1234567890abcdef12345678\n# branch.head topic\n# branch.ab +2 -1\n1 .M N... 100644 100644 100644 b b file.ts\n",
+          stderr: "",
+        };
+      }
+      if (tail === "rev-parse --is-inside-work-tree")
+        return { code: 0, stdout: "true\n", stderr: "" };
+      return { code: 1, stdout: "", stderr: "" };
+    };
+
+    const state = await readWorkspaceRepoState(ctx(run), childRepo("ui"));
+
+    expect(state).toMatchObject({ git: true, observation: "diverged" });
+    expect(state).not.toHaveProperty("dirty");
+    expect(state).not.toHaveProperty("branch");
+    expect(state).not.toHaveProperty("sha");
+    expect(state).not.toHaveProperty("ahead");
+    expect(state).not.toHaveProperty("behind");
+  });
+
+  it("returns an explicit unavailable observation when a revision anchor cannot be read", async () => {
+    const run: Runner = async (argv) => {
+      const tail = argv.slice(3).join(" ");
+      if (tail === "status --porcelain=v2 --branch") return { code: 1, stdout: "", stderr: "" };
+      if (tail === "rev-parse --is-inside-work-tree")
+        return { code: 0, stdout: "true\n", stderr: "" };
+      if (tail === "rev-parse --abbrev-ref HEAD HEAD") return { code: 1, stdout: "", stderr: "" };
+      return { code: 1, stdout: "", stderr: "" };
+    };
+
+    const state = await readWorkspaceRepoState(ctx(run), childRepo("ui"));
+
+    expect(state).toMatchObject({ git: true, observation: "unavailable" });
+    expect(state).not.toHaveProperty("dirty");
+    expect(state).not.toHaveProperty("branch");
+    expect(state).not.toHaveProperty("sha");
+  });
+
+  it("returns an explicit unavailable observation when git status cannot be read", async () => {
+    const run: Runner = async (argv) => {
+      const tail = argv.slice(3).join(" ");
+      if (tail === "status --porcelain=v2 --branch")
+        return { code: 1, stdout: "", stderr: "status failed" };
+      if (tail === "rev-parse --is-inside-work-tree")
+        return { code: 0, stdout: "true\n", stderr: "" };
+      if (tail === "rev-parse --abbrev-ref HEAD HEAD")
+        return {
+          code: 0,
+          stdout: "main\nabcdef0123456789abcdef0123456789abcdef01\n",
+          stderr: "",
+        };
+      if (tail === "status --porcelain") return { code: 1, stdout: "", stderr: "status failed" };
+      if (tail === "rev-list --left-right --count HEAD...@{upstream}") {
+        return { code: 0, stdout: "1\t2\n", stderr: "" };
+      }
+      return { code: 1, stdout: "", stderr: "" };
+    };
+
+    const state = await readWorkspaceRepoState(ctx(run), childRepo("ui"));
+
+    expect(state).toEqual({ id: "ui", path: "ui", git: true, observation: "unavailable" });
   });
 
   it("captures the child fetch remote from local git config", async () => {
     const run: Runner = async (argv) => {
       const tail = argv.slice(3).join(" ");
+      if (tail === "status --porcelain=v2 --branch") {
+        return {
+          code: 0,
+          stdout: "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head main\n",
+          stderr: "",
+        };
+      }
       if (tail === "rev-parse --is-inside-work-tree")
         return { code: 0, stdout: "true\n", stderr: "" };
-      if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse HEAD")
-        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
+      if (tail === "rev-parse --abbrev-ref HEAD HEAD")
+        return {
+          code: 0,
+          stdout: "main\nabcdef0123456789abcdef0123456789abcdef01\n",
+          stderr: "",
+        };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       if (tail === "config --local --get remote.origin.url") {
         return { code: 0, stdout: "https://github.com/acme/ui.git\n", stderr: "" };
@@ -125,11 +397,21 @@ describe("workspace state collection", () => {
   it("omits the child fetch remote when git cannot report one", async () => {
     const run: Runner = async (argv) => {
       const tail = argv.slice(3).join(" ");
+      if (tail === "status --porcelain=v2 --branch") {
+        return {
+          code: 0,
+          stdout: "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head main\n",
+          stderr: "",
+        };
+      }
       if (tail === "rev-parse --is-inside-work-tree")
         return { code: 0, stdout: "true\n", stderr: "" };
-      if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse HEAD")
-        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
+      if (tail === "rev-parse --abbrev-ref HEAD HEAD")
+        return {
+          code: 0,
+          stdout: "main\nabcdef0123456789abcdef0123456789abcdef01\n",
+          stderr: "",
+        };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       if (tail === "config --local --get remote.origin.url") {
         return { code: 1, stdout: "", stderr: "" };
@@ -145,11 +427,21 @@ describe("workspace state collection", () => {
   it("omits unsafe observed child origin values", async () => {
     const run: Runner = async (argv) => {
       const tail = argv.slice(3).join(" ");
+      if (tail === "status --porcelain=v2 --branch") {
+        return {
+          code: 0,
+          stdout: "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head main\n",
+          stderr: "",
+        };
+      }
       if (tail === "rev-parse --is-inside-work-tree")
         return { code: 0, stdout: "true\n", stderr: "" };
-      if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse HEAD")
-        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
+      if (tail === "rev-parse --abbrev-ref HEAD HEAD")
+        return {
+          code: 0,
+          stdout: "main\nabcdef0123456789abcdef0123456789abcdef01\n",
+          stderr: "",
+        };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       if (tail === "config --local --get remote.origin.url") {
         return { code: 0, stdout: "https://token@github.com/acme/ui.git\n", stderr: "" };
@@ -165,11 +457,21 @@ describe("workspace state collection", () => {
   it("accepts scp-like child origin values from local config", async () => {
     const run: Runner = async (argv) => {
       const tail = argv.slice(3).join(" ");
+      if (tail === "status --porcelain=v2 --branch") {
+        return {
+          code: 0,
+          stdout: "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head main\n",
+          stderr: "",
+        };
+      }
       if (tail === "rev-parse --is-inside-work-tree")
         return { code: 0, stdout: "true\n", stderr: "" };
-      if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse HEAD")
-        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
+      if (tail === "rev-parse --abbrev-ref HEAD HEAD")
+        return {
+          code: 0,
+          stdout: "main\nabcdef0123456789abcdef0123456789abcdef01\n",
+          stderr: "",
+        };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       if (tail === "config --local --get remote.origin.url") {
         return { code: 0, stdout: "git@github.com:acme/ui.git\n", stderr: "" };
@@ -186,12 +488,22 @@ describe("workspace state collection", () => {
     const calls: string[] = [];
     const run: Runner = async (argv) => {
       const tail = argv.slice(3).join(" ");
+      if (tail === "status --porcelain=v2 --branch") {
+        return {
+          code: 0,
+          stdout: "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head main\n",
+          stderr: "",
+        };
+      }
       calls.push(tail);
       if (tail === "rev-parse --is-inside-work-tree")
         return { code: 0, stdout: "true\n", stderr: "" };
-      if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse HEAD")
-        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
+      if (tail === "rev-parse --abbrev-ref HEAD HEAD")
+        return {
+          code: 0,
+          stdout: "main\nabcdef0123456789abcdef0123456789abcdef01\n",
+          stderr: "",
+        };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       if (tail === "config --local --get remote.origin.url") {
         return { code: 1, stdout: "", stderr: "" };
@@ -242,12 +554,22 @@ describe("workspace state collection", () => {
     const calls: string[] = [];
     const run: Runner = async (argv) => {
       const tail = argv.slice(3).join(" ");
+      if (tail === "status --porcelain=v2 --branch") {
+        return {
+          code: 0,
+          stdout: "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head main\n",
+          stderr: "",
+        };
+      }
       calls.push(tail);
       if (tail === "rev-parse --is-inside-work-tree")
         return { code: 0, stdout: "true\n", stderr: "" };
-      if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse HEAD")
-        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
+      if (tail === "rev-parse --abbrev-ref HEAD HEAD")
+        return {
+          code: 0,
+          stdout: "main\nabcdef0123456789abcdef0123456789abcdef01\n",
+          stderr: "",
+        };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       if (tail === "config --local --get remote.origin.url") {
         return { code: 0, stdout: "https://github.com/acme/observed.git\n", stderr: "" };
@@ -271,6 +593,13 @@ describe("workspace state collection", () => {
     let maxInsideChecks = 0;
     const run: Runner = async (argv) => {
       const tail = argv.slice(3).join(" ");
+      if (tail === "status --porcelain=v2 --branch") {
+        return {
+          code: 0,
+          stdout: "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head main\n",
+          stderr: "",
+        };
+      }
       if (tail === "rev-parse --is-inside-work-tree") {
         activeInsideChecks++;
         maxInsideChecks = Math.max(maxInsideChecks, activeInsideChecks);
@@ -278,9 +607,12 @@ describe("workspace state collection", () => {
         activeInsideChecks--;
         return { code: 0, stdout: "true\n", stderr: "" };
       }
-      if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse HEAD")
-        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
+      if (tail === "rev-parse --abbrev-ref HEAD HEAD")
+        return {
+          code: 0,
+          stdout: "main\nabcdef0123456789abcdef0123456789abcdef01\n",
+          stderr: "",
+        };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       return { code: 1, stdout: "", stderr: "" };
     };
@@ -295,6 +627,13 @@ describe("workspace state collection", () => {
     let maxInsideChecks = 0;
     const run: Runner = async (argv) => {
       const tail = argv.slice(3).join(" ");
+      if (tail === "status --porcelain=v2 --branch") {
+        return {
+          code: 0,
+          stdout: "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head main\n",
+          stderr: "",
+        };
+      }
       if (tail === "rev-parse --is-inside-work-tree") {
         activeInsideChecks++;
         maxInsideChecks = Math.max(maxInsideChecks, activeInsideChecks);
@@ -302,9 +641,12 @@ describe("workspace state collection", () => {
         activeInsideChecks--;
         return { code: 0, stdout: "true\n", stderr: "" };
       }
-      if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse HEAD")
-        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
+      if (tail === "rev-parse --abbrev-ref HEAD HEAD")
+        return {
+          code: 0,
+          stdout: "main\nabcdef0123456789abcdef0123456789abcdef01\n",
+          stderr: "",
+        };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       return { code: 1, stdout: "", stderr: "" };
     };
@@ -327,11 +669,21 @@ describe("workspace state collection", () => {
     );
     const run: Runner = async (argv) => {
       const tail = argv.slice(3).join(" ");
+      if (tail === "status --porcelain=v2 --branch") {
+        return {
+          code: 0,
+          stdout: "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head main\n",
+          stderr: "",
+        };
+      }
       if (tail === "rev-parse --is-inside-work-tree")
         return { code: 0, stdout: "true\n", stderr: "" };
-      if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse HEAD")
-        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
+      if (tail === "rev-parse --abbrev-ref HEAD HEAD")
+        return {
+          code: 0,
+          stdout: "main\nabcdef0123456789abcdef0123456789abcdef01\n",
+          stderr: "",
+        };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       if (tail === "config --local --get remote.origin.url") {
         return { code: 0, stdout: "https://github.com/acme/ui.git\n", stderr: "" };

@@ -182,6 +182,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Verification evidence now fails closed instead of becoming ordinary drift or a partial
+  success.** Codex managed-server projections distinguish malformed `enabled_tools` data from a
+  valid incomplete allowlist. Git counts and numstat rows accept only complete non-negative safe
+  integer shapes, while workspace collection brackets one coherent branch/commit/dirty/divergence
+  observation and reports changing or unavailable state without mixing facts. A detached child,
+  or one whose observed branch label is not safe for downstream ref use, remains a complete
+  SHA-backed observation: the label never becomes a checkout ref, and an incomplete baseline can
+  never certify the current child as unchanged. Applied GitHub trust
+  scans and skill vets require one bounded, regular, exact-source metadata record before and after
+  analyzer execution; missing, unreadable, malformed, mismatched, or replaced metadata has a named
+  blocking code, and a caller pin is never substituted for fetched provenance. Bounded generated
+  transaction sequences now cover preview, last-write/removal behavior, conflicts, disk/result
+  state, rollback, and preservation of concurrent operator edits. The shipped native identity and
+  all 151 vendor receipts were refreshed by full exact-pin re-vet
+  [run 32554191161](https://github.com/samartomar/ai-harness/actions/runs/32554191161);
+  the install preview, verdicts, findings, source pins, paths, and tree hashes are unchanged. (#818)
+
 - **The ECC Codex Chrome DevTools launcher is now bound to Core's exact reviewed
   package identity.** Every non-governed direct or verified Codex plan, scoped or
   unscoped and independent of optional MCP selection, replaces the pinned ECC

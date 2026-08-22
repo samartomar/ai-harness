@@ -421,12 +421,18 @@ async function childRow(
   const exists = existsSync(abs);
   const gitState = exists ? await readWorkspaceRepoState(ctx, repo) : undefined;
   const git: WorkspaceChildReportRow["git"] =
-    gitState?.git === true
-      ? { status: "OK", ...gitState }
-      : {
-          status: exists ? "MISSING" : "MISSING",
-          detail: exists ? "not a git repo" : "path missing",
-        };
+    gitState?.git === true && gitState.observation !== undefined
+      ? {
+          status: "WARN",
+          detail: `git revision observation ${gitState.observation}`,
+          ...gitState,
+        }
+      : gitState?.git === true
+        ? { status: "OK", ...gitState }
+        : {
+            status: exists ? "MISSING" : "MISSING",
+            detail: exists ? "not a git repo" : "path missing",
+          };
   const routerAbs = join(ctx.root, repo.path, repo.router);
   const canon: WorkspaceEvidenceCell = existsSync(routerAbs)
     ? { status: "OK" }
@@ -533,7 +539,14 @@ function summary(
 interface SnapshotFile {
   createdAt?: string;
   label?: string;
-  repos?: Array<{ id?: string; path?: string; branch?: string; sha?: string; dirty?: boolean }>;
+  repos?: Array<{
+    id?: string;
+    path?: string;
+    branch?: string;
+    sha?: string;
+    dirty?: boolean;
+    observation?: unknown;
+  }>;
 }
 
 const MAX_WORKSPACE_SNAPSHOT_BYTES = 1024 * 1024;
@@ -590,13 +603,36 @@ function workspaceSnapshot(
         detail: "repo not present in snapshot",
       };
     }
+    if (before.observation !== undefined) {
+      const observation =
+        before.observation === "unavailable" || before.observation === "diverged"
+          ? before.observation
+          : "invalid";
+      return {
+        id: row.id,
+        path: row.path,
+        status: "UNKNOWN",
+        before: before.sha,
+        detail: `snapshot row has git revision observation ${observation}`,
+      };
+    }
+    if (!before.sha && !before.branch) {
+      return {
+        id: row.id,
+        path: row.path,
+        status: "UNKNOWN",
+        detail: "snapshot row has no revision evidence",
+      };
+    }
     if (row.git.status !== "OK") {
       return {
         id: row.id,
         path: row.path,
         status: "MISSING",
         before: before.sha,
-        detail: "current repo git state unavailable",
+        detail: row.git.observation
+          ? `current repo git revision observation ${row.git.observation}`
+          : "current repo git state unavailable",
       };
     }
     if (row.git.dirty === true) {

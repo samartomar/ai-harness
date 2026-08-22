@@ -32,7 +32,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isFullGitSha(value: string | undefined): boolean {
-  return value !== undefined && /^[0-9a-fA-F]{40}$/.test(value);
+  return value !== undefined && /^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/.test(value);
 }
 
 function normalizeSnapshotSha(raw: unknown): string | undefined {
@@ -40,7 +40,7 @@ function normalizeSnapshotSha(raw: unknown): string | undefined {
   if (sha === undefined) return undefined;
   if (!isFullGitSha(sha)) {
     throw new AihError(
-      "workspace snapshot sha must be a full 40-character hex commit id; regenerate the workspace lock",
+      "workspace snapshot sha must be a full 40- or 64-character hex commit id; regenerate the workspace lock",
       "AIH_WORKSPACE",
     );
   }
@@ -86,9 +86,28 @@ function parseWorkspaceSnapshotRepo(raw: unknown, label: string): WorkspaceRepoS
   if (typeof raw.id !== "string" || typeof raw.path !== "string") {
     throw new AihError(`workspace hydrate requires repo id and path in ${label}`, "AIH_WORKSPACE");
   }
-  if (typeof raw.dirty !== "boolean" || typeof raw.git !== "boolean") {
+  if (typeof raw.git !== "boolean") {
+    throw new AihError(`workspace hydrate requires repo git state in ${label}`, "AIH_WORKSPACE");
+  }
+  const observation = raw.observation;
+  if (observation !== undefined && observation !== "diverged" && observation !== "unavailable") {
     throw new AihError(
-      `workspace hydrate requires repo dirty/git state in ${label}`,
+      `workspace hydrate requires a valid repo observation in ${label}`,
+      "AIH_WORKSPACE",
+    );
+  }
+  const hasVolatileObservationFact =
+    raw.dirty !== undefined ||
+    raw.branch !== undefined ||
+    raw.sha !== undefined ||
+    raw.ahead !== undefined ||
+    raw.behind !== undefined;
+  if (
+    (observation === undefined && typeof raw.dirty !== "boolean") ||
+    (observation !== undefined && (raw.git !== true || hasVolatileObservationFact))
+  ) {
+    throw new AihError(
+      `workspace hydrate requires coherent repo dirty state in ${label}`,
       "AIH_WORKSPACE",
     );
   }
@@ -103,8 +122,9 @@ function parseWorkspaceSnapshotRepo(raw: unknown, label: string): WorkspaceRepoS
     ...(remote ? { remote } : {}),
     ...(branch ? { branch } : {}),
     ...(sha ? { sha } : {}),
-    dirty: raw.dirty,
+    ...(typeof raw.dirty === "boolean" ? { dirty: raw.dirty } : {}),
     git: raw.git,
+    ...(observation ? { observation } : {}),
     ...(ahead !== undefined ? { ahead } : {}),
     ...(behind !== undefined ? { behind } : {}),
   };

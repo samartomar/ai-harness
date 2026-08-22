@@ -14,6 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import fc from "fast-check";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   FsTransaction,
@@ -149,6 +150,247 @@ describe("FsTransaction", () => {
 
   it("readIfExists returns undefined for a missing file", () => {
     expect(readIfExists(join(dir, "nope"))).toBeUndefined();
+  });
+});
+
+const PROPERTY_RUNS = 75;
+const PROPERTY_SEED = 818;
+const PROPERTY_PATHS = ["alpha.txt", "bravo.txt", "charlie.txt"] as const;
+const PROPERTY_CONTENT_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789 \\n".split("");
+
+type PropertyWrite = { kind: "write"; pathIndex: number; contents: string };
+type PropertyRemoval = { kind: "remove"; pathIndex: number; destination: number };
+type PropertyAssertion = { kind: "assert"; pathIndex: number };
+type PropertyOperation = PropertyWrite | PropertyRemoval | PropertyAssertion;
+
+const propertyContentsArb = fc
+  .array(fc.constantFrom(...PROPERTY_CONTENT_CHARS), { maxLength: 24 })
+  .map((chars) => chars.join(""));
+
+const propertyOperationArb: fc.Arbitrary<PropertyOperation> = fc.oneof(
+  fc.record({
+    kind: fc.constant("write" as const),
+    pathIndex: fc.integer({ min: 0, max: PROPERTY_PATHS.length - 1 }),
+    contents: propertyContentsArb,
+  }),
+  fc.record({
+    kind: fc.constant("remove" as const),
+    pathIndex: fc.integer({ min: 0, max: PROPERTY_PATHS.length - 1 }),
+    destination: fc.integer({ min: 0, max: 2 }),
+  }),
+  fc.record({
+    kind: fc.constant("assert" as const),
+    pathIndex: fc.integer({ min: 0, max: PROPERTY_PATHS.length - 1 }),
+  }),
+);
+
+function sha256(contents: string): string {
+  return createHash("sha256").update(contents, "utf8").digest("hex");
+}
+
+function lastByPath<T extends { pathIndex: number }>(operations: readonly T[]): Map<number, T> {
+  const byPath = new Map<number, T>();
+  for (const operation of operations) byPath.set(operation.pathIndex, operation);
+  return byPath;
+}
+
+describe("FsTransaction — bounded property model", () => {
+  it("keeps preview inert and commits every non-conflicting staged sequence as modeled", () => {
+    fc.assert(
+      fc.property(fc.array(propertyOperationArb, { maxLength: 12 }), (operations) => {
+        const caseDir = mkdtempSync(join(dir, "property-case-"));
+        const paths = PROPERTY_PATHS.map((name) => join(caseDir, name));
+        const initial = paths.map((_, index) => `initial-${index}\\n`);
+        for (const [index, path] of paths.entries()) writeFileSync(path, initial[index] as string);
+
+        const transaction = new FsTransaction();
+        for (const operation of operations) {
+          const path = paths[operation.pathIndex] as string;
+          if (operation.kind === "write") {
+            transaction.stage(path, operation.contents);
+          } else if (operation.kind === "remove") {
+            transaction.stageRemoval(
+              path,
+              join(
+                caseDir,
+                ".aih",
+                "legacy",
+                `${PROPERTY_PATHS[operation.pathIndex]}-${operation.destination}`,
+              ),
+            );
+          } else {
+            transaction.stageAssertion(
+              path,
+              sha256(initial[operation.pathIndex] as string),
+              "property pin",
+            );
+          }
+        }
+
+        const writes = operations.filter(
+          (operation): operation is PropertyWrite => operation.kind === "write",
+        );
+        const removals = operations.filter(
+          (operation): operation is PropertyRemoval => operation.kind === "remove",
+        );
+        const assertions = operations.filter(
+          (operation): operation is PropertyAssertion => operation.kind === "assert",
+        );
+        const finalWrites = lastByPath(writes);
+        const finalRemovals = lastByPath(removals);
+        const finalAssertions = lastByPath(assertions);
+
+        expect(transaction.preview().map(({ path, contents }) => ({ path, contents }))).toEqual(
+          writes.map(({ pathIndex, contents }) => ({ path: paths[pathIndex], contents })),
+        );
+        for (const [index, path] of paths.entries()) {
+          expect(readFileSync(path, "utf8")).toBe(initial[index]);
+        }
+
+        const mutatesAssertionPath = [...finalAssertions.keys()].some(
+          (pathIndex) => finalWrites.has(pathIndex) || finalRemovals.has(pathIndex),
+        );
+        const writesAndRemovesSamePath = [...finalWrites.keys()].some((pathIndex) =>
+          finalRemovals.has(pathIndex),
+        );
+        if (mutatesAssertionPath || writesAndRemovesSamePath) {
+          expect(() => transaction.commit()).toThrow();
+          for (const [index, path] of paths.entries()) {
+            expect(readFileSync(path, "utf8")).toBe(initial[index]);
+          }
+          return;
+        }
+
+        const result = transaction.commit();
+        expect(result.written).toEqual(
+          [...finalWrites.values()].map(({ pathIndex }) => paths[pathIndex]),
+        );
+        expect(result.backups).toEqual(
+          [...finalWrites.values()].map(({ pathIndex }) => `${paths[pathIndex]}.aih.bak`),
+        );
+        expect(result.removed).toEqual(
+          [...finalRemovals.values()].map(({ pathIndex, destination }) => ({
+            path: paths[pathIndex],
+            legacyPath: join(
+              caseDir,
+              ".aih",
+              "legacy",
+              `${PROPERTY_PATHS[pathIndex]}-${destination}`,
+            ),
+          })),
+        );
+        for (const [pathIndex, write] of finalWrites) {
+          const path = paths[pathIndex] as string;
+          expect(readFileSync(path, "utf8")).toBe(write.contents);
+          expect(readFileSync(`${path}.aih.bak`, "utf8")).toBe(initial[pathIndex]);
+        }
+        for (const [pathIndex, removal] of finalRemovals) {
+          const path = paths[pathIndex] as string;
+          const legacyPath = join(
+            caseDir,
+            ".aih",
+            "legacy",
+            `${PROPERTY_PATHS[pathIndex]}-${removal.destination}`,
+          );
+          expect(existsSync(path)).toBe(false);
+          expect(readFileSync(legacyPath, "utf8")).toBe(initial[pathIndex]);
+        }
+      }),
+      { numRuns: PROPERTY_RUNS, seed: PROPERTY_SEED },
+    );
+  });
+
+  it("rolls back injected write failures to their pre-transaction state", () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            pathIndex: fc.integer({ min: 0, max: PROPERTY_PATHS.length - 1 }),
+            revision: fc.integer({ min: 0, max: 999 }),
+          }),
+          { minLength: 1, maxLength: 8 },
+        ),
+        (writes) => {
+          const caseDir = mkdtempSync(join(dir, "property-case-"));
+          const paths = PROPERTY_PATHS.map((name) => join(caseDir, name));
+          const initial = paths.map((_, index) => `initial-${index}\\n`);
+          for (const [index, path] of paths.entries())
+            writeFileSync(path, initial[index] as string);
+
+          const failureParent = join(caseDir, "failure-parent");
+          writeFileSync(failureParent, "not a directory");
+          const transaction = new FsTransaction();
+          for (const write of writes) {
+            transaction.stage(paths[write.pathIndex] as string, `generated-${write.revision}\\n`);
+          }
+          transaction.stage(join(failureParent, "child.txt"), "must not be written");
+
+          expect(() => transaction.commit()).toThrow();
+          for (const [index, path] of paths.entries()) {
+            expect(readFileSync(path, "utf8")).toBe(initial[index]);
+            expect(existsSync(`${path}.aih.bak`)).toBe(false);
+          }
+        },
+      ),
+      { numRuns: PROPERTY_RUNS, seed: PROPERTY_SEED },
+    );
+  });
+
+  it("preserves operator-mutated files while rolling back generated writes", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.record({ existed: fc.boolean(), operatorMutated: fc.boolean() }), {
+          minLength: 1,
+          maxLength: 4,
+        }),
+        (scenarios) => {
+          const caseDir = mkdtempSync(join(dir, "property-case-"));
+          const applied = scenarios.map((scenario, index) => {
+            const path = join(caseDir, `rollback-${index}.txt`);
+            const initial = `before-${index}\\n`;
+            const generated = `generated-${index}\\n`;
+            const operator = `operator-${index}\\n`;
+            const backup = `${path}.aih.bak`;
+            if (scenario.existed) {
+              writeFileSync(path, initial);
+              writeFileSync(backup, initial);
+            }
+            writeFileSync(path, generated);
+            if (scenario.operatorMutated) writeFileSync(path, operator);
+            return { path, initial, generated, operator, backup, ...scenario };
+          });
+
+          const preserved = rollbackAppliedWrites(
+            applied.map(({ path, generated, backup, existed }) => ({
+              path,
+              contents: generated,
+              backup: existed ? backup : undefined,
+              created: !existed,
+            })),
+          );
+
+          expect([...preserved].sort()).toEqual(
+            applied
+              .filter(({ operatorMutated }) => operatorMutated)
+              .map(({ path }) => path)
+              .sort(),
+          );
+          for (const scenario of applied) {
+            if (scenario.operatorMutated) {
+              expect(readFileSync(scenario.path, "utf8")).toBe(scenario.operator);
+              if (scenario.existed)
+                expect(readFileSync(scenario.backup, "utf8")).toBe(scenario.initial);
+            } else if (scenario.existed) {
+              expect(readFileSync(scenario.path, "utf8")).toBe(scenario.initial);
+              expect(existsSync(scenario.backup)).toBe(false);
+            } else {
+              expect(existsSync(scenario.path)).toBe(false);
+            }
+          }
+        },
+      ),
+      { numRuns: PROPERTY_RUNS, seed: PROPERTY_SEED },
+    );
   });
 });
 

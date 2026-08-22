@@ -1,7 +1,9 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { AihError } from "../errors.js";
+import { gitInt } from "../internals/git.js";
 import type { PlanContext } from "../internals/plan.js";
+import { isSafeGitRefName } from "../trust/fetch.js";
 import { checkWorkspaceChildPath } from "./detect.js";
 import {
   normalizeWorkspaceRemote,
@@ -16,10 +18,12 @@ export interface WorkspaceRepoState {
   remote?: string;
   branch?: string;
   sha?: string;
-  dirty: boolean;
+  dirty?: boolean;
   git: boolean;
   ahead?: number;
   behind?: number;
+  /** Volatile revision evidence could not be captured as one coherent observation. */
+  observation?: "diverged" | "unavailable";
 }
 
 export interface WorkspaceSnapshot {
@@ -35,20 +39,88 @@ async function gitChildRead(
   ctx: PlanContext,
   repo: WorkspaceRepo,
   args: string[],
+  options: { trim?: boolean } = {},
 ): Promise<string | undefined> {
   const res = await ctx.run(["git", "-C", join(ctx.root, repo.path), ...args]);
   if (res.spawnError || res.code !== 0) return undefined;
-  return res.stdout.replace(/\s+$/, "");
+  return options.trim === false ? res.stdout : res.stdout.replace(/\s+$/, "");
 }
 
-function parseAheadBehind(raw: string | undefined): { ahead?: number; behind?: number } {
-  const [behindRaw, aheadRaw] = (raw ?? "").split(/\s+/);
-  const behind = Number.parseInt(behindRaw ?? "", 10);
-  const ahead = Number.parseInt(aheadRaw ?? "", 10);
-  return {
-    ...(Number.isFinite(ahead) ? { ahead } : {}),
-    ...(Number.isFinite(behind) ? { behind } : {}),
-  };
+function parseBranchDivergence(raw: string): { ahead: number; behind: number } | undefined {
+  const match = /^\+([0-9]+) -([0-9]+)$/.exec(raw);
+  if (match === null) return undefined;
+  const ahead = gitInt(match[1]);
+  const behind = gitInt(match[2]);
+  if (ahead === undefined || behind === undefined) return undefined;
+  return { ahead, behind };
+}
+
+interface WorkspaceRevision {
+  branch?: string;
+  sha: string;
+  dirty: boolean;
+  ahead?: number;
+  behind?: number;
+}
+
+async function readWorkspaceRevision(
+  ctx: PlanContext,
+  repo: WorkspaceRepo,
+): Promise<WorkspaceRevision | undefined> {
+  // `status --porcelain=v2 --branch` emits branch, HEAD, dirty state, and
+  // upstream divergence in one Git process. Independent rev-parse/status calls
+  // could otherwise each be valid yet describe different revisions mid-switch.
+  const raw = await gitChildRead(ctx, repo, ["status", "--porcelain=v2", "--branch"], {
+    trim: false,
+  });
+  if (raw === undefined) return undefined;
+  const headers = new Map<string, string>();
+  const entries: string[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    if (line.length === 0) continue;
+    if (!line.startsWith("# ")) {
+      entries.push(line);
+      continue;
+    }
+    const separator = line.indexOf(" ", 2);
+    if (separator < 0) return undefined;
+    const key = line.slice(2, separator);
+    const value = line.slice(separator + 1);
+    if (value.length === 0 || headers.has(key)) return undefined;
+    headers.set(key, value);
+  }
+  const branchHead = headers.get("branch.head");
+  const sha = headers.get("branch.oid");
+  if (
+    branchHead === undefined ||
+    branchHead.length === 0 ||
+    sha === undefined ||
+    !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(sha)
+  )
+    return undefined;
+  const branch =
+    branchHead === "(detached)" || !isSafeGitRefName(branchHead) ? undefined : branchHead;
+  const branchAb = headers.get("branch.ab");
+  const counts = branchAb === undefined ? {} : parseBranchDivergence(branchAb);
+  if (counts === undefined) return undefined;
+  return { ...(branch === undefined ? {} : { branch }), sha, dirty: entries.length > 0, ...counts };
+}
+
+function sameWorkspaceRevision(left: WorkspaceRevision, right: WorkspaceRevision): boolean {
+  return (
+    left.branch === right.branch &&
+    left.sha === right.sha &&
+    left.dirty === right.dirty &&
+    left.ahead === right.ahead &&
+    left.behind === right.behind
+  );
+}
+
+function incompleteWorkspaceRepoState(
+  repo: WorkspaceRepo,
+  observation: "diverged" | "unavailable",
+): WorkspaceRepoState {
+  return { id: repo.id, path: repo.path, git: true, observation };
 }
 
 function safeObservedRemote(raw: string | undefined): string | undefined {
@@ -77,24 +149,25 @@ export async function readWorkspaceRepoState(
   if (!checked.exists) return { id: repo.id, path: repo.path, dirty: false, git: false };
   const inside = (await gitChildRead(ctx, repo, ["rev-parse", "--is-inside-work-tree"])) === "true";
   if (!inside) return { id: repo.id, path: repo.path, dirty: false, git: false };
-  const [branch, sha, status, upstream, remote] = await Promise.all([
-    gitChildRead(ctx, repo, ["rev-parse", "--abbrev-ref", "HEAD"]),
-    gitChildRead(ctx, repo, ["rev-parse", "HEAD"]),
-    gitChildRead(ctx, repo, ["status", "--porcelain"]),
-    gitChildRead(ctx, repo, ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]),
-    repo.remote === undefined ? readWorkspaceRepoRemote(ctx, repo) : Promise.resolve(repo.remote),
-  ]);
-  const dirty = (status ?? "").length > 0;
-  const aheadBehind = parseAheadBehind(upstream);
+  const before = await readWorkspaceRevision(ctx, repo);
+  if (before === undefined) return incompleteWorkspaceRepoState(repo, "unavailable");
+  const remote = repo.remote === undefined ? await readWorkspaceRepoRemote(ctx, repo) : repo.remote;
+  const after = await readWorkspaceRevision(ctx, repo);
+  if (after === undefined) return incompleteWorkspaceRepoState(repo, "unavailable");
+  if (!sameWorkspaceRevision(before, after)) {
+    return incompleteWorkspaceRepoState(repo, "diverged");
+  }
   return {
     id: repo.id,
     path: repo.path,
     ...(remote ? { remote } : {}),
-    ...(branch ? { branch } : {}),
-    ...(sha ? { sha } : {}),
-    dirty,
+    ...(before.branch === undefined ? {} : { branch: before.branch }),
+    sha: before.sha,
+    dirty: before.dirty,
     git: true,
-    ...aheadBehind,
+    ...(before.ahead === undefined || before.behind === undefined
+      ? {}
+      : { ahead: before.ahead, behind: before.behind }),
   };
 }
 

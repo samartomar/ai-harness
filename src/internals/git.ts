@@ -21,8 +21,9 @@ export async function gitRead(
   return options.trim === false ? res.stdout : res.stdout.replace(/\s+$/, "");
 }
 
-/** Parse a base-10 int from possibly-undefined git output; `fallback` on miss. */
-export function gitInt(s: string | undefined, fallback = 0): number {
-  const n = Number.parseInt((s ?? "").trim(), 10);
-  return Number.isFinite(n) ? n : fallback;
+/** Parse a complete, non-negative, safe base-10 integer from Git output. */
+export function gitInt(s: string | undefined): number | undefined {
+  if (s === undefined || !/^[0-9]+$/.test(s)) return undefined;
+  const value = Number(s);
+  return Number.isSafeInteger(value) ? value : undefined;
 }

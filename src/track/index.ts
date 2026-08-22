@@ -1,3 +1,4 @@
+import { gitRead } from "../internals/git.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
 import { type CommandSpec, digest, type PlanContext, plan } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
@@ -14,6 +15,34 @@ import { collectSnapshot, historyWrite } from "../report/history.js";
 async function trackPlan(ctx: PlanContext) {
   const snap = await collectSnapshot(ctx);
   if (!snap) {
+    const inside = (await gitRead(ctx, ["rev-parse", "--is-inside-work-tree"])) === "true";
+    if (inside) {
+      const head = await gitRead(ctx, ["rev-parse", "--verify", "HEAD"]);
+      if (!head) {
+        return plan(
+          "track",
+          digest(
+            "track — no commits to sample",
+            lines(
+              "`aih track` samples the latest commit, but this repository has no commits yet.",
+              "Create the first commit before recording metrics history.",
+            ),
+            { recorded: false, reason: "no-commits" },
+          ),
+        );
+      }
+      return plan(
+        "track",
+        digest(
+          "track — Git state unavailable",
+          lines(
+            "`aih track` could not parse the repository's count evidence, so it will not record a partial sample.",
+            "Re-run after Git reports complete, non-negative count values.",
+          ),
+          { recorded: false, reason: "git-state-unavailable" },
+        ),
+      );
+    }
     return plan(
       "track",
       digest(
@@ -23,19 +52,6 @@ async function trackPlan(ctx: PlanContext) {
           "Run it inside a repository (or from a commit hook).",
         ),
         { recorded: false },
-      ),
-    );
-  }
-  if (snap.sha.length === 0 || snap.ts.length === 0) {
-    return plan(
-      "track",
-      digest(
-        "track — no commits to sample",
-        lines(
-          "`aih track` samples the latest commit, but this repository has no commits yet.",
-          "Create the first commit before recording metrics history.",
-        ),
-        { recorded: false, reason: "no-commits" },
       ),
     );
   }

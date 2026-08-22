@@ -50,14 +50,35 @@ function defaultGitRunner(): Runner {
     const repo = cwd.replace(/\\/g, "/").split("/").at(-1) ?? "";
     const tail = argv.slice(3).join(" ");
     if (tail === "rev-parse --is-inside-work-tree") return { stdout: "true\n" };
-    if (tail === "rev-parse --abbrev-ref HEAD") return { stdout: "main\n" };
-    if (tail === "rev-parse HEAD") return { stdout: `${repo.slice(0, 6) || "abc123"}\n` };
-    if (tail === "status --porcelain") return { stdout: "" };
-    if (tail === "rev-list --left-right --count HEAD...@{upstream}") {
-      return { code: 1, stdout: "" };
+    if (tail === "status --porcelain=v2 --branch") {
+      const sha = repo === "backend" ? "b".repeat(40) : "a".repeat(40);
+      return { stdout: `# branch.oid ${sha}\n# branch.head main\n` };
     }
     return undefined;
   });
+}
+
+function incompleteGitRunner(observation: "diverged" | "unavailable"): Runner {
+  let statusReads = 0;
+  return async (argv) => {
+    const tail = argv.slice(3).join(" ");
+    if (tail === "rev-parse --is-inside-work-tree") {
+      return { code: 0, stdout: "true\n", stderr: "" };
+    }
+    if (tail === "status --porcelain=v2 --branch") {
+      if (observation === "unavailable") return { code: 1, stdout: "", stderr: "" };
+      statusReads += 1;
+      return {
+        code: 0,
+        stdout:
+          statusReads > 1
+            ? "# branch.oid 1234567890abcdef1234567890abcdef12345678\n# branch.head topic\n"
+            : "# branch.oid abcdef0123456789abcdef0123456789abcdef01\n# branch.head main\n",
+        stderr: "",
+      };
+    }
+    return { code: 1, stdout: "", stderr: "" };
+  };
 }
 
 function ctx(options: Record<string, unknown> = {}, run: Runner = defaultGitRunner()): PlanContext {
@@ -119,8 +140,11 @@ function child(
   }
 }
 
-async function workspaceDigest(options: Record<string, unknown> = {}): Promise<DigestAction> {
-  const digest = (await command.plan(ctx(options))).actions.find(
+async function workspaceDigest(
+  options: Record<string, unknown> = {},
+  run: Runner = defaultGitRunner(),
+): Promise<DigestAction> {
+  const digest = (await command.plan(ctx(options, run))).actions.find(
     (a): a is DigestAction => a.kind === "digest" && a.describe.startsWith("Workspace rollup"),
   );
   if (!digest) throw new Error("expected workspace rollup digest");
@@ -285,7 +309,107 @@ describe("report workspace rollup", () => {
 
     expect(d.text).toContain("Changed since snapshot");
     expect(data.snapshot?.changes).toEqual([
-      expect.objectContaining({ id: "ui", status: "CHANGED", before: "old123", after: "ui" }),
+      expect.objectContaining({
+        id: "ui",
+        status: "CHANGED",
+        before: "old123",
+        after: "a".repeat(40),
+      }),
+    ]);
+  });
+
+  it.each(["unavailable", "diverged"] as const)(
+    "does not present a %s Git observation as clean or unchanged",
+    async (observation) => {
+      writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+      child("ui");
+      mkdirSync(join(root, ".aih", "workspace-snapshots"), { recursive: true });
+      writeFileSync(
+        join(root, ".aih", "workspace-snapshots", "20260630T000000Z-known-good.json"),
+        json({
+          schemaVersion: 1,
+          createdAt: "2026-06-30T00:00:00.000Z",
+          repos: [
+            {
+              id: "ui",
+              path: "ui",
+              branch: "main",
+              sha: "abcdef0123456789abcdef0123456789abcdef01",
+              dirty: false,
+            },
+          ],
+        }),
+      );
+
+      const d = await workspaceDigest({}, incompleteGitRunner(observation));
+      const data = d.data as WorkspaceReportDigest;
+
+      expect(data.rows[0]).toMatchObject({
+        git: { status: "WARN", detail: `git revision observation ${observation}` },
+        status: "WARN",
+      });
+      expect(data.rows[0]?.git).not.toHaveProperty("dirty");
+      expect(d.text).toContain("| ui | ui/ | WARN |");
+      expect(data.snapshot?.changes).toEqual([
+        expect.objectContaining({
+          id: "ui",
+          status: "MISSING",
+          detail: `current repo git revision observation ${observation}`,
+        }),
+      ]);
+      expect(data.snapshot?.changes[0]?.status).not.toBe("UNCHANGED");
+      expect(d.text).not.toContain("matches snapshot");
+    },
+  );
+
+  it.each(["unavailable", "diverged"] as const)(
+    "does not treat a %s baseline observation as an unchanged revision",
+    async (observation) => {
+      writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+      child("ui");
+      mkdirSync(join(root, ".aih", "workspace-snapshots"), { recursive: true });
+      writeFileSync(
+        join(root, ".aih", "workspace-snapshots", "20260630T000000Z-baseline.json"),
+        json({
+          schemaVersion: 1,
+          createdAt: "2026-06-30T00:00:00.000Z",
+          repos: [{ id: "ui", path: "ui", observation, git: true }],
+        }),
+      );
+
+      const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+      expect(data.snapshot?.changes).toEqual([
+        expect.objectContaining({
+          id: "ui",
+          status: "UNKNOWN",
+          detail: `snapshot row has git revision observation ${observation}`,
+        }),
+      ]);
+    },
+  );
+
+  it("does not treat a baseline without SHA or branch evidence as unchanged", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    child("ui");
+    mkdirSync(join(root, ".aih", "workspace-snapshots"), { recursive: true });
+    writeFileSync(
+      join(root, ".aih", "workspace-snapshots", "20260630T000000Z-baseline.json"),
+      json({
+        schemaVersion: 1,
+        createdAt: "2026-06-30T00:00:00.000Z",
+        repos: [{ id: "ui", path: "ui", dirty: false, git: true }],
+      }),
+    );
+
+    const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+    expect(data.snapshot?.changes).toEqual([
+      expect.objectContaining({
+        id: "ui",
+        status: "UNKNOWN",
+        detail: "snapshot row has no revision evidence",
+      }),
     ]);
   });
 

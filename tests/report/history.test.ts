@@ -21,13 +21,19 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
+type GitReply = string | { code: number };
+
 /** A runner that answers git by longest-prefix match on the args after `git -C <root>`. */
-function gitFake(map: Record<string, string>): Runner {
+function gitFake(map: Record<string, GitReply>): Runner {
   const keys = Object.keys(map).sort((a, b) => b.length - a.length);
   return fakeRunner((argv) => {
     if (argv[0] !== "git") return undefined;
     const joined = argv.slice(3).join(" ");
-    for (const k of keys) if (joined.startsWith(k)) return { stdout: map[k] };
+    for (const k of keys) {
+      if (!joined.startsWith(k)) continue;
+      const reply = map[k];
+      return typeof reply === "string" ? { stdout: reply } : reply;
+    }
     return undefined;
   });
 }
@@ -96,6 +102,82 @@ describe("collectSnapshot", () => {
     });
     expect(snap?.adoptionScore).toBeGreaterThanOrEqual(0);
     expect(snap?.adoptionScore).toBeLessThanOrEqual(100);
+  });
+
+  it("returns unavailable rather than recording a partial snapshot from malformed git counts", async () => {
+    const snap = await collectSnapshot(
+      makeCtx(
+        gitFake({
+          "rev-parse --is-inside-work-tree": "true",
+          "log -1 --pretty=format:%cI%n%h": "2026-06-24T10:00:00Z\nabc123",
+          "rev-parse --abbrev-ref HEAD": "main",
+          "for-each-ref --format=%(refname:short) refs/heads": "main",
+          "rev-list --count --since=7 days ago HEAD": "5 commits",
+          "log --since=7 days ago --numstat": "10x\t3\tfile.ts",
+          "ls-files": "a.ts",
+        }),
+      ),
+    );
+
+    expect(snap).toBeUndefined();
+  });
+
+  it.each([
+    ["latest commit identity", "log -1 --pretty=format:%cI%n%h"],
+    ["branch list", "for-each-ref --format=%(refname:short) refs/heads"],
+    ["tracked-file list", "ls-files"],
+  ])("returns unavailable when required %s evidence is absent", async (_label, omitted) => {
+    const evidence: Record<string, GitReply> = {
+      "rev-parse --is-inside-work-tree": "true",
+      "log -1 --pretty=format:%cI%n%h": "2026-06-24T10:00:00Z\nabc123",
+      "rev-parse --abbrev-ref HEAD": "main",
+      "for-each-ref --format=%(refname:short) refs/heads": "main",
+      "rev-list --count --since=7 days ago HEAD": "5",
+      "log --since=7 days ago --numstat": "10\t3\tfile.ts",
+      "ls-files": "a.ts",
+    };
+    evidence[omitted] = { code: 1 };
+
+    await expect(collectSnapshot(makeCtx(gitFake(evidence)))).resolves.toBeUndefined();
+  });
+
+  it("returns unavailable when numstat records contain extra fields", async () => {
+    const snap = await collectSnapshot(
+      makeCtx(
+        gitFake({
+          "rev-parse --is-inside-work-tree": "true",
+          "log -1 --pretty=format:%cI%n%h": "2026-06-24T10:00:00Z\nabc123",
+          "rev-parse --abbrev-ref HEAD": "main",
+          "for-each-ref --format=%(refname:short) refs/heads": "main",
+          "rev-list --count --since=7 days ago HEAD": "5",
+          "log --since=7 days ago --numstat": "10\t3\tfile.ts\textra",
+          "ls-files": "a.ts",
+        }),
+      ),
+    );
+
+    expect(snap).toBeUndefined();
+  });
+
+  it.each([
+    ["added", "9007199254740991\t0\ta.ts\n1\t0\tb.ts"],
+    ["removed", "0\t9007199254740991\ta.ts\n0\t1\tb.ts"],
+  ])("returns unavailable when cumulative %s numstat totals overflow", async (_label, numstat) => {
+    const snap = await collectSnapshot(
+      makeCtx(
+        gitFake({
+          "rev-parse --is-inside-work-tree": "true",
+          "log -1 --pretty=format:%cI%n%h": "2026-06-24T10:00:00Z\nabc123",
+          "rev-parse --abbrev-ref HEAD": "main",
+          "for-each-ref --format=%(refname:short) refs/heads": "main",
+          "rev-list --count --since=7 days ago HEAD": "1",
+          "log --since=7 days ago --numstat": numstat,
+          "ls-files": "a.ts\nb.ts",
+        }),
+      ),
+    );
+
+    expect(snap).toBeUndefined();
   });
 
   it("records the v9 trend metrics so report trends can go live (§2a)", async () => {

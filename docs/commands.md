@@ -587,12 +587,20 @@ Trust scans build one path-and-size inventory, stream bounded progress to stderr
 external detector boundaries, and keep `--json` stdout as one parseable result. Command-owned
 GitHub quarantines are removed after success, block, or error; `trust scan --keep-quarantine` is the
 only retention path and prints the retained temporary path to stderr.
+An applied GitHub scan also requires its generated quarantine metadata to be one bounded regular
+file whose owner, repository, ref, resolved commit, source name, and tree path bind the exact
+requested source. The record is checked before and after analyzer execution. Missing, unreadable,
+malformed, mismatched, or replaced metadata is a named blocking result; an explicit caller `--pin`
+is an expectation and never substitutes for fetched provenance.
 
 ## aih skill
 
 The **skill lifecycle** on top of `trust` — a complete governance loop for external agent skills.
 `vet <src>` runs the read-only gate pipeline (shape, license, trust scan) to a
 **GREEN/YELLOW/RED/UNKNOWN** verdict + a local evidence artifact (never installs).
+For an applied GitHub vet, the evidence artifact receives a commit only from the same strict,
+before-and-after quarantine metadata check used by `trust scan`; an untrusted metadata record keeps
+the verdict `UNKNOWN` and omits the commit rather than falling back to the requested pin.
 For multi-skill sources, `vet <src> --name <skill> --apply` writes scoped evidence for
 one logical skill; `card --name <skill>` and `approve --name <skill>` require that matching
 scoped evidence rather than a source-wide report.

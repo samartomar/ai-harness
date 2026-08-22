@@ -788,6 +788,34 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Do not promote the external source. Re-run with a reachable repository and an exact reviewed commit SHA, then verify the quarantined scan passes before promotion.",
   },
+  "trust.fetch-metadata-missing": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "fetched GitHub source has no custody metadata",
+    action:
+      "Do not promote the external source. Fetch and scan it again so the quarantined tree has a complete custody record bound to the requested source.",
+  },
+  "trust.fetch-metadata-unreadable": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "fetched GitHub source custody metadata is unreadable",
+    action:
+      "Do not promote the external source. Re-fetch it into a clean quarantine and investigate any filesystem interference before scanning again.",
+  },
+  "trust.fetch-metadata-malformed": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "fetched GitHub source custody metadata is malformed",
+    action:
+      "Do not promote the external source. Re-fetch it with the current harness and verify the complete custody record before scanning again.",
+  },
+  "trust.fetch-metadata-mismatched": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "fetched GitHub source custody metadata does not bind the requested source",
+    action:
+      "Do not promote the external source. Discard the quarantine, re-fetch the exact requested source, and scan only the newly bound tree.",
+  },
   "trust.detector-unavailable": {
     audience: "developer",
     failSeverity: "blocking",

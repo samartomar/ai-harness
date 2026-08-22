@@ -51,6 +51,50 @@ function execs(actions: Awaited<ReturnType<typeof workspaceHydrateCommand.plan>>
 }
 
 describe("workspace hydrate", () => {
+  it("accepts an incomplete observed lock row only when it omits dirty state", async () => {
+    mkdirSync(join(parent, "ai-coding"), { recursive: true });
+    writeManifest(["ui"]);
+    writeFileSync(
+      join(parent, "ai-coding", "workspace-lock.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        createdAt: "2026-07-04T00:00:00.000Z",
+        repos: [{ id: "ui", path: "ui", git: true, observation: "diverged" }],
+      }),
+    );
+
+    const planned = await workspaceHydrateCommand.plan(ctx());
+
+    expect(execs(planned.actions)).toEqual([]);
+    expect(planned.actions).toContainEqual(
+      expect.objectContaining({ kind: "doc", describe: "workspace hydrate skipped" }),
+    );
+  });
+
+  it.each([
+    ["non-git state", { git: false }],
+    ["dirty state", { dirty: false }],
+    ["branch", { branch: "main" }],
+    ["commit SHA", { sha: "0123456789abcdef0123456789abcdef01234567" }],
+    ["ahead count", { ahead: 1 }],
+    ["behind count", { behind: 1 }],
+  ])("rejects incomplete observed lock rows with %s", async (_label, mixed) => {
+    mkdirSync(join(parent, "ai-coding"), { recursive: true });
+    writeManifest(["ui"]);
+    writeFileSync(
+      join(parent, "ai-coding", "workspace-lock.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        createdAt: "2026-07-04T00:00:00.000Z",
+        repos: [{ id: "ui", path: "ui", git: true, observation: "unavailable", ...mixed }],
+      }),
+    );
+
+    await expect(workspaceHydrateCommand.plan(ctx())).rejects.toThrow(
+      /workspace hydrate requires coherent repo dirty state/,
+    );
+  });
+
   it("plans clone and checkout actions for missing manifest children with recorded remote and ref", async () => {
     writeManifest([
       {
@@ -124,6 +168,36 @@ describe("workspace hydrate", () => {
         "--detach",
         "0123456789abcdef0123456789abcdef01234567",
       ],
+    ]);
+  });
+
+  it("hydrates a detached canonical SHA-256 workspace lock SHA without a branch ref", async () => {
+    const sha = "a".repeat(64);
+    mkdirSync(join(parent, "ai-coding"), { recursive: true });
+    writeManifest(["ui"]);
+    writeFileSync(
+      join(parent, "ai-coding", "workspace-lock.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        createdAt: "2026-07-04T00:00:00.000Z",
+        repos: [
+          {
+            id: "ui",
+            path: "ui",
+            remote: "https://github.com/acme/ui.git",
+            sha,
+            dirty: false,
+            git: true,
+          },
+        ],
+      }),
+    );
+
+    const planned = await workspaceHydrateCommand.plan(ctx());
+
+    expect(execs(planned.actions).map((action) => action.argv)).toEqual([
+      ["git", "clone", "--no-checkout", "--", "https://github.com/acme/ui.git", "ui"],
+      ["git", "-C", join(parent, "ui"), "checkout", "--detach", sha],
     ]);
   });
 
