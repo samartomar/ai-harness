@@ -556,11 +556,14 @@ function externalPinnedWrite(
   describe: string,
   trustedBase: string,
 ): WriteAction {
-  return writeText(path, contents, describe, {
-    external: true,
-    trustedBase,
-    expect: { sha256: contentHash(existing) },
-  });
+  return {
+    ...writeText(path, contents, describe, {
+      external: true,
+      trustedBase,
+      expect: { sha256: contentHash(existing) },
+    }),
+    exactContents: true,
+  };
 }
 
 function externalUnchangedAssertion(

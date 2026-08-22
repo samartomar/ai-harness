@@ -1242,6 +1242,7 @@ describe("Codex managed destination safety", () => {
     const codexDir = join(home, ".codex");
     const configPath = join(codexDir, "config.toml");
     const statePath = join(codexDir, "ecc-aih-install-state.json");
+    const agentsPath = join(codexDir, "AGENTS.md");
     mkdirSync(codexDir, { recursive: true });
     writeFileSync(
       configPath,
@@ -1272,8 +1273,20 @@ describe("Codex managed destination safety", () => {
           tableKeys: { features: ["multi_agent"] },
           mcpServers: ["chrome-devtools"],
         },
-        agentsBlock: false,
+        agentsBlock: true,
       })}\n`,
+      "utf8",
+    );
+    writeFileSync(
+      agentsPath,
+      [
+        "operator notes",
+        "",
+        "<!-- BEGIN ecc-codex:agents (generated) -->",
+        "AIH guidance",
+        "<!-- END ecc-codex:agents -->",
+        "",
+      ].join("\n"),
       "utf8",
     );
     const base = makeCtx({ cli: "codex" });
@@ -1295,6 +1308,7 @@ describe("Codex managed destination safety", () => {
     const result = await executePlan({ capability: "prune", actions }, ctx);
 
     expect(readFileSync(configPath, "utf8")).toBe("");
+    expect(readFileSync(agentsPath, "utf8")).toBe("operator notes\n");
     expect(existsSync(statePath)).toBe(false);
     expect(result.execs).toEqual([expect.objectContaining({ ok: true })]);
   });
