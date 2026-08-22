@@ -641,5 +641,16 @@ describe("headless effective org policy", () => {
     expect(Object.keys(POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS).sort()).toEqual(
       policyAuthorityReceiptLeafPaths(),
     );
+    const v3Consumers = Object.entries(POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS)
+      .filter(([path]) => path.includes("decisions.*.") || path.includes("decisionRevocations.*."))
+      .map(([, consumer]) => consumer)
+      .filter((consumer) => consumer.startsWith("V3 "));
+    expect(v3Consumers).not.toContainEqual(expect.stringContaining("V3 downstream resolver"));
+    expect(v3Consumers).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("externally verified signed transport/schema validation"),
+        expect.stringContaining("legacy effective resolver deliberately withholds V3 runtime use"),
+      ]),
+    );
   });
 });

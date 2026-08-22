@@ -22,6 +22,30 @@ The enterprise examples in this public guide are intentionally limited to review
 
 Release baseline covered by this guide: `@aihq/harness@6.1.0`. The scoped public security doc documents SLSA v1.2 Build L2 for tagged release artifacts; no Build L3 or formal compliance claim is made.
 
+### Current organization-qualified boundary
+
+The maintained AIH catalog is intended to reduce administrator work; it is not the
+organization's permission boundary. The unreleased Strict V2 library/schema
+foundation can represent an exact organization-chosen tool, skill, MCP server,
+package, or profile, its attributable evidence and signed decision, and a separate
+upstream-managed installed-state observation that names the responsible integration
+owner and exact integration version. Qualification must point to the exact organization
+evidence or an exact catalog signer identity plus head, catalog, and member digests; it is
+not a status an administrator can assert. Core derives and checks canonical source/subject
+digests, and its internal effectiveness resolver accepts only an opaque, externally verified,
+attested V3 authority token—not a standalone decision file. It deliberately keeps
+`aih-supported`, `organization-qualified`, and `unqualified` distinct and never
+treats an unsigned `approved` field as authority.
+
+That foundation is not yet an end-to-end administrator command flow. The current
+CLI still leaves custom stdio and remote policy candidates non-projectable, and a
+V3 authority receipt alone cannot install, configure, or activate one. Do not tell
+developers that an organization-chosen subject is governed-effective until a later
+release supplies the runtime consumer or adapter and AIH has freshly observed the
+exact approved installed identity. Scanner and catalog publication are also separate
+trust and release boundaries. This limitation is intentional and must stay visible
+while the remaining Core, scanner, and catalog work is completed.
+
 ## 2. Quickstart / Implementation Blueprint
 
 ### Admin Workstation Prerequisites

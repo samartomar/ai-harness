@@ -24,6 +24,15 @@ export * from "./internals/plan.js";
 export * from "./internals/proc.js";
 export * from "./internals/render.js";
 export * from "./internals/verify.js";
+export * from "./org-policy/governance-decision-v2.js";
+export {
+  canonicalUpstreamObservationReceiptV1,
+  MAX_UPSTREAM_OBSERVATION_WINDOW_MS,
+  parseUpstreamObservationReceiptV1,
+  type UpstreamObservationReceiptV1,
+  UpstreamObservationReceiptV1Schema,
+  upstreamObservationReceiptDigestV1,
+} from "./org-policy/upstream-observation-receipt-v1.js";
 export * from "./platform/base.js";
 export * from "./platform/detect.js";
 export * from "./platform/parse.js";

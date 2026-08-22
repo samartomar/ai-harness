@@ -26,6 +26,7 @@ import { managedMcpProjectionState } from "../../src/mcp/managed-projection.js";
 import { mcpApprovalSubject } from "../../src/mcp/policy.js";
 import { mcpServers } from "../../src/mcp/servers.js";
 import {
+  isVerifiedPolicyAuthority,
   PolicyAuthorityReceiptSchema,
   verifyPolicyAuthorityReceipt,
 } from "../../src/org-policy/authority.js";
@@ -43,6 +44,11 @@ import {
   orgPolicyEffectiveDigest,
 } from "../../src/org-policy/evaluate.js";
 import {
+  governanceDecisionDigestV2,
+  governanceDecisionSourceDigestV2,
+  governanceDecisionSubjectDigestV2,
+} from "../../src/org-policy/governance-decision-v2.js";
+import {
   authoritySuffix,
   orgPolicyHookReceiptState,
   orgPolicyKiroMcpReceiptState,
@@ -52,6 +58,10 @@ import {
 } from "../../src/org-policy/project.js";
 import { resolveRuntimeOrgPolicy } from "../../src/org-policy/runtime.js";
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
+import {
+  resolveObservedEffect,
+  verifyUpstreamObservationV1,
+} from "../../src/org-policy/upstream-observation-receipt-v1.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { scanRepo } from "../../src/profile/scan.js";
 import { usageRecorderScript } from "../../src/usage/capture.js";
@@ -368,6 +378,57 @@ function authorityReceiptV2(overrides: Record<string, unknown> = {}) {
     revocations: [],
     decisions: [],
     decisionRevocations: [],
+    ...overrides,
+  };
+}
+
+function governanceDecisionV2(overrides: Record<string, unknown> = {}) {
+  const source = {
+    type: "github" as const,
+    repository: "acme/review-tool",
+    commit: "a".repeat(40),
+    path: "tool.json",
+  };
+  const sourceDigest = governanceDecisionSourceDigestV2(source);
+  return {
+    format: "aih-governance-decision",
+    version: 2,
+    id: "decision-platform-tool",
+    qualificationBasis: {
+      kind: "organization-qualified",
+      evidenceDigest: `sha256:${"e".repeat(64)}`,
+      attestor: "scanner-service",
+    },
+    subject: {
+      kind: "tool",
+      id: "platform-review-tool",
+      source,
+      sourceDigest,
+      subjectDigest: governanceDecisionSubjectDigestV2({
+        kind: "tool",
+        id: "platform-review-tool",
+        sourceDigest,
+      }),
+    },
+    targets: ["claude"],
+    allowedEffects: ["configure"],
+    policy: { id: "platform-policy", version: "2026.08", digest: `sha256:${"c".repeat(64)}` },
+    control: { id: "review-control", digest: `sha256:${"d".repeat(64)}` },
+    evidence: {
+      id: "scan-record",
+      digest: `sha256:${"e".repeat(64)}`,
+      attestor: "scanner-service",
+    },
+    issuer: "platform-security",
+    actor: "security-admin",
+    reason: "The exact pinned subject passed the reviewed control.",
+    issuedAt: "2026-08-01T00:00:00+00:00",
+    notBefore: "2026-08-01T00:00:00+00:00",
+    expiresAt: "2026-08-10T00:00:00+00:00",
+    disposition: "approved",
+    acceptedFindings: [],
+    acceptedGaps: [],
+    conditions: [],
     ...overrides,
   };
 }
@@ -1053,6 +1114,439 @@ describe("governed candidate projection", () => {
         expiresAt: "2026-08-20T00:00:00",
       }).success,
     ).toBe(true);
+  });
+
+  it("rejects legacy approvals and V1 decisions from V3 authority receipts", () => {
+    const decision = governanceDecisionV2();
+    const v3 = {
+      format: "aih-policy-authority-receipt",
+      version: 3,
+      issuerRepository: "acme/governance",
+      issuedAt: "2026-08-03T00:00:00+00:00",
+      expiresAt: "2026-08-20T00:00:00+00:00",
+      targets: ["claude"],
+      trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+      decisions: [decision],
+      decisionRevocations: [],
+    };
+    expect(PolicyAuthorityReceiptSchema.safeParse(v3).success).toBe(true);
+    expect(PolicyAuthorityReceiptSchema.safeParse({ ...v3, approvals: [] }).success).toBe(false);
+    expect(
+      PolicyAuthorityReceiptSchema.safeParse({ ...v3, decisions: [governanceDecision()] }).success,
+    ).toBe(false);
+    for (const invalid of [
+      { ...v3, decisions: [{ ...decision, targets: ["codex"] }] },
+      { ...v3, decisions: [{ ...decision, issuer: "other-issuer" }] },
+      {
+        ...v3,
+        decisions: [
+          {
+            ...decision,
+            id: "decision-duplicate",
+            subject: { ...decision.subject, id: "first-subject" },
+          },
+          {
+            ...decision,
+            id: "decision-duplicate",
+            subject: { ...decision.subject, id: "second-subject" },
+          },
+        ],
+      },
+      {
+        ...v3,
+        decisionRevocations: [
+          {
+            format: "aih-governance-decision-revocation",
+            version: 2,
+            decisionDigest: governanceDecisionDigestV2(decision as never),
+            issuer: "other-issuer",
+            revokedAt: "2026-08-02T00:00:00+00:00",
+            reason: "Withdrawn.",
+          },
+        ],
+      },
+    ]) {
+      expect(PolicyAuthorityReceiptSchema.safeParse(invalid).success).toBe(false);
+    }
+  });
+
+  it("keeps externally verified V3 authority facts in immutable detached custody", async () => {
+    const now = Date.now();
+    const signedDecision = governanceDecisionV2({
+      issuedAt: new Date(now - 90 * 60_000).toISOString(),
+      notBefore: new Date(now - 90 * 60_000).toISOString(),
+      expiresAt: new Date(now + 60 * 60_000).toISOString(),
+    });
+    mkdirSync(join(dir, ".aih"), { recursive: true });
+    writeFileSync(
+      join(dir, ".aih", "policy-authority-receipt.json"),
+      JSON.stringify({
+        format: "aih-policy-authority-receipt",
+        version: 3,
+        issuerRepository: "acme/governance",
+        issuedAt: new Date(now - 60 * 60_000).toISOString(),
+        expiresAt: new Date(now + 2 * 60 * 60_000).toISOString(),
+        targets: ["claude"],
+        trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+        decisions: [signedDecision],
+        decisionRevocations: [],
+      }),
+    );
+    const authority = await verifiedAuthority(ctx());
+    expect(() => {
+      (authority.receipt as { decisions: Array<{ targets: string[] }> }).decisions[0]?.targets.push(
+        "codex",
+      );
+    }).toThrow();
+    expect(authority.receipt).toMatchObject({ version: 3, decisions: [{ targets: ["claude"] }] });
+    expect(isVerifiedPolicyAuthority({ ...authority })).toBe(false);
+    expect(isVerifiedPolicyAuthority(structuredClone(authority))).toBe(false);
+    const decisionDigest = governanceDecisionDigestV2(signedDecision as never);
+    const observed = {
+      format: "aih-upstream-observation-receipt",
+      version: 1,
+      id: "observation-platform-tool",
+      decision: { id: signedDecision.id, digest: decisionDigest },
+      subject: {
+        kind: signedDecision.subject.kind,
+        id: signedDecision.subject.id,
+        sourceDigest: signedDecision.subject.sourceDigest,
+        subjectDigest: signedDecision.subject.subjectDigest,
+      },
+      targets: ["claude"],
+      allowedEffects: ["configure"],
+      integration: { mode: "upstream-managed", owner: "upstream-admin", version: "1.0.0" } as const,
+      installed: { id: "platform-review-tool", digest: `sha256:${"d".repeat(64)}` },
+      verifier: { id: "upstream-admin", version: "1.0.0", digest: `sha256:${"f".repeat(64)}` },
+      observedAt: new Date(now - 30 * 60_000).toISOString(),
+      validUntil: new Date(now + 30 * 60_000).toISOString(),
+      outcome: "observed-success",
+    };
+    const resolverInput = {
+      authority,
+      decisionReference: { id: signedDecision.id, digest: decisionDigest },
+      subject: signedDecision.subject as never,
+      target: "claude",
+      effect: "configure" as const,
+      supportedTargets: ["claude"],
+      expectedVerifier: observed.verifier,
+      expectedInstalled: observed.installed,
+      expectedIntegration: observed.integration,
+      now: new Date(now).toISOString(),
+    };
+    const verifiedObservation = verifyUpstreamObservationV1({
+      ...resolverInput,
+      receipt: observed,
+      verify: () => true,
+    });
+    expect(verifiedObservation).toBeDefined();
+    const preNotBeforeObservation = verifyUpstreamObservationV1({
+      ...resolverInput,
+      receipt: {
+        ...observed,
+        observedAt: new Date(now - 100 * 60_000).toISOString(),
+        validUntil: new Date(now + 10 * 60_000).toISOString(),
+      },
+      verify: () => true,
+    });
+    expect(
+      resolveObservedEffect({ ...resolverInput, observation: preNotBeforeObservation }),
+    ).toMatchObject({ state: "observation-mismatch" });
+    expect(
+      resolveObservedEffect({ ...resolverInput, observation: verifiedObservation }),
+    ).toMatchObject({ state: "observed-effective" });
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        authority: { ...authority },
+        observation: verifiedObservation,
+      }),
+    ).toMatchObject({ state: "authority-unverified" });
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        decisionReference: { id: signedDecision.id, digest: `sha256:${"0".repeat(64)}` },
+        observation: verifiedObservation,
+      }),
+    ).toMatchObject({ state: "decision-missing-or-mismatch" });
+    expect(resolveObservedEffect({ ...resolverInput })).toMatchObject({
+      state: "observation-missing",
+    });
+    expect(
+      resolveObservedEffect({ ...resolverInput, observation: verifiedObservation, effect: "use" }),
+    ).toMatchObject({ state: "decision-scope-mismatch" });
+    for (const unverified of [
+      observed,
+      { ...verifiedObservation },
+      structuredClone(verifiedObservation),
+    ]) {
+      expect(resolveObservedEffect({ ...resolverInput, observation: unverified })).toMatchObject({
+        state: "observation-unverified",
+      });
+    }
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        observation: verifiedObservation,
+        expectedInstalled: { ...observed.installed, digest: `sha256:${"0".repeat(64)}` },
+      }),
+    ).toMatchObject({ state: "observation-mismatch" });
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        observation: verifiedObservation,
+        expectedIntegration: { ...observed.integration, owner: "github:Acme/owner@v2" },
+      }),
+    ).toMatchObject({ state: "observation-mismatch" });
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        observation: verifiedObservation,
+        expectedVerifier: { ...observed.verifier, version: "2.0.0" },
+      }),
+    ).toMatchObject({ state: "observation-mismatch" });
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        observation: verifiedObservation,
+        now: new Date(now + 31 * 60_000).toISOString(),
+      }),
+    ).toMatchObject({ state: "observation-stale" });
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        observation: verifiedObservation,
+        decision: { ...signedDecision, disposition: "rejected" },
+        revocation: { decisionDigest, issuer: signedDecision.issuer },
+      } as unknown as Parameters<typeof resolveObservedEffect>[0]),
+    ).toMatchObject({ state: "observed-effective" });
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        observation: verifiedObservation,
+        now: new Date(now + 3 * 60 * 60_000).toISOString(),
+      }),
+    ).toMatchObject({ state: "authority-not-current" });
+    writeAuthorityReceipt();
+    const legacyAuthority = await verifiedAuthority(ctx());
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        authority: legacyAuthority,
+        observation: verifiedObservation,
+      }),
+    ).toMatchObject({ state: "authority-version" });
+  });
+
+  it("derives rejection, revocation, and conditional expiry only from verified V3 authority", async () => {
+    const now = Date.now();
+    const issuedAt = new Date(now - 3 * 60 * 60_000).toISOString();
+    const receiptIssuedAt = new Date(now - 2 * 60 * 60_000).toISOString();
+    const expiresAt = new Date(now + 2 * 60 * 60_000).toISOString();
+    const mint = async (
+      signedDecision: ReturnType<typeof governanceDecisionV2>,
+      revocations: unknown[] = [],
+      additionalDecisions: ReturnType<typeof governanceDecisionV2>[] = [],
+      receiptTargets = ["claude"],
+    ) => {
+      mkdirSync(join(dir, ".aih"), { recursive: true });
+      writeFileSync(
+        join(dir, ".aih", "policy-authority-receipt.json"),
+        JSON.stringify({
+          format: "aih-policy-authority-receipt",
+          version: 3,
+          issuerRepository: "acme/governance",
+          issuedAt: receiptIssuedAt,
+          expiresAt,
+          targets: receiptTargets,
+          trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+          decisions: [signedDecision, ...additionalDecisions].sort((left, right) =>
+            left.id.localeCompare(right.id),
+          ),
+          decisionRevocations: revocations,
+        }),
+      );
+      const authority = await verifiedAuthority(ctx());
+      const digest = governanceDecisionDigestV2(signedDecision as never);
+      const observed = {
+        format: "aih-upstream-observation-receipt",
+        version: 1,
+        id: "observation-platform-tool",
+        decision: { id: signedDecision.id, digest },
+        subject: {
+          kind: signedDecision.subject.kind,
+          id: signedDecision.subject.id,
+          sourceDigest: signedDecision.subject.sourceDigest,
+          subjectDigest: signedDecision.subject.subjectDigest,
+        },
+        targets: ["claude"],
+        allowedEffects: ["configure"],
+        integration: {
+          mode: "upstream-managed",
+          owner: "upstream-admin",
+          version: "1.0.0",
+        } as const,
+        installed: { id: "platform-review-tool", digest: `sha256:${"d".repeat(64)}` },
+        verifier: { id: "upstream-admin", version: "1.0.0", digest: `sha256:${"f".repeat(64)}` },
+        observedAt: new Date(now - 60_000).toISOString(),
+        validUntil: new Date(now + 60_000).toISOString(),
+        outcome: "observed-success",
+      };
+      const input = {
+        authority,
+        decisionReference: { id: signedDecision.id, digest },
+        subject: signedDecision.subject as never,
+        target: "claude",
+        effect: "configure" as const,
+        supportedTargets: ["claude"],
+        expectedVerifier: observed.verifier,
+        expectedInstalled: observed.installed,
+        expectedIntegration: observed.integration,
+        now: new Date(now).toISOString(),
+      };
+      return {
+        input,
+        observation: verifyUpstreamObservationV1({
+          ...input,
+          receipt: observed,
+          verify: () => true,
+        }),
+      };
+    };
+    const rejected = governanceDecisionV2({
+      disposition: "rejected",
+      issuedAt,
+      notBefore: issuedAt,
+      expiresAt,
+    });
+    const rejectedMint = await mint(rejected);
+    expect(
+      resolveObservedEffect({
+        ...rejectedMint.input,
+        observation: rejectedMint.observation,
+        decision: governanceDecisionV2(),
+      } as never),
+    ).toMatchObject({ state: "decision-rejected" });
+    const approved = governanceDecisionV2({ issuedAt, notBefore: issuedAt, expiresAt });
+    const coPresentRejected = governanceDecisionV2({
+      id: "decision-rejection",
+      disposition: "rejected",
+      issuedAt,
+      notBefore: issuedAt,
+      expiresAt,
+    });
+    const rejectionOverlay = await mint(approved, [], [coPresentRejected]);
+    expect(
+      resolveObservedEffect({
+        ...rejectionOverlay.input,
+        observation: rejectionOverlay.observation,
+      }),
+    ).toMatchObject({
+      state: "decision-rejected",
+      decisionDigest: governanceDecisionDigestV2(coPresentRejected as never),
+    });
+    const expiredRejected = governanceDecisionV2({
+      id: "decision-expired-rejection",
+      disposition: "rejected",
+      issuedAt,
+      notBefore: issuedAt,
+      expiresAt: new Date(now - 60_000).toISOString(),
+    });
+    const expiredOverlay = await mint(approved, [], [expiredRejected]);
+    expect(
+      resolveObservedEffect({ ...expiredOverlay.input, observation: expiredOverlay.observation }),
+    ).toMatchObject({ state: "observed-effective" });
+    const revokedRejected = governanceDecisionV2({
+      id: "decision-revoked-rejection",
+      disposition: "rejected",
+      issuedAt,
+      notBefore: issuedAt,
+      expiresAt,
+    });
+    const revokedRejectedDigest = governanceDecisionDigestV2(revokedRejected as never);
+    const revokedOverlay = await mint(
+      approved,
+      [
+        {
+          format: "aih-governance-decision-revocation",
+          version: 2,
+          decisionDigest: revokedRejectedDigest,
+          issuer: revokedRejected.issuer,
+          revokedAt: new Date(now - 150 * 60_000).toISOString(),
+          reason: "Withdrawn.",
+        },
+      ],
+      [revokedRejected],
+    );
+    expect(
+      resolveObservedEffect({ ...revokedOverlay.input, observation: revokedOverlay.observation }),
+    ).toMatchObject({ state: "observed-effective" });
+    const irrelevantRejected = governanceDecisionV2({
+      id: "decision-irrelevant-rejection",
+      disposition: "rejected",
+      targets: ["codex"],
+      allowedEffects: ["use"],
+      issuedAt,
+      notBefore: issuedAt,
+      expiresAt,
+    });
+    const irrelevantOverlay = await mint(approved, [], [irrelevantRejected], ["claude", "codex"]);
+    expect(
+      resolveObservedEffect({
+        ...irrelevantOverlay.input,
+        observation: irrelevantOverlay.observation,
+      }),
+    ).toMatchObject({ state: "observed-effective" });
+    const rejectionA = governanceDecisionV2({
+      id: "decision-a-rejection",
+      disposition: "rejected",
+      issuedAt,
+      notBefore: issuedAt,
+      expiresAt,
+    });
+    const rejectionZ = governanceDecisionV2({
+      id: "decision-z-rejection",
+      disposition: "rejected",
+      issuedAt,
+      notBefore: issuedAt,
+      expiresAt,
+    });
+    const multipleOverlay = await mint(approved, [], [rejectionZ, rejectionA]);
+    const expectedRejectionDigest = [
+      governanceDecisionDigestV2(rejectionA as never),
+      governanceDecisionDigestV2(rejectionZ as never),
+    ].sort()[0];
+    expect(
+      resolveObservedEffect({ ...multipleOverlay.input, observation: multipleOverlay.observation }),
+    ).toMatchObject({ state: "decision-rejected", decisionDigest: expectedRejectionDigest });
+    const approvedDigest = governanceDecisionDigestV2(approved as never);
+    const revokedMint = await mint(approved, [
+      {
+        format: "aih-governance-decision-revocation",
+        version: 2,
+        decisionDigest: approvedDigest,
+        issuer: approved.issuer,
+        revokedAt: new Date(now - 150 * 60_000).toISOString(),
+        reason: "Withdrawn.",
+      },
+    ]);
+    expect(
+      resolveObservedEffect({ ...revokedMint.input, observation: revokedMint.observation }),
+    ).toMatchObject({ state: "decision-revoked" });
+    const conditional = governanceDecisionV2({
+      disposition: "accepted-with-conditions",
+      acceptedFindings: ["bounded-gap"],
+      acceptedGaps: [],
+      conditions: ["Review."],
+      issuedAt,
+      notBefore: issuedAt,
+      expiresAt,
+      reviewBy: new Date(now - 60_000).toISOString(),
+    });
+    const conditionalMint = await mint(conditional);
+    expect(
+      resolveObservedEffect({ ...conditionalMint.input, observation: conditionalMint.observation }),
+    ).toMatchObject({ state: "decision-not-current" });
   });
 
   it("rejects malformed or non-authoritative v2 decision receipt relationships", () => {

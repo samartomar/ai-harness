@@ -2,10 +2,12 @@ import { type ZodTypeAny, z } from "zod";
 import { PackageGraphSchema } from "../capability/package-graph/schema.js";
 import { CapabilityPackageManifestSchema } from "../capability/package-manager/schema.js";
 import { PolicyAuthorityReceiptSchema } from "../org-policy/authority.js";
+import { GovernanceDecisionV2Schema } from "../org-policy/governance-decision-v2.js";
 import {
   enterpriseSupportedClisJsonSchemaConstraint,
   OrgPolicySchema,
 } from "../org-policy/schema.js";
+import { UpstreamObservationReceiptV1Schema } from "../org-policy/upstream-observation-receipt-v1.js";
 import { AihConfigSchema } from "./marker.js";
 
 export interface GeneratedConfigSchema {
@@ -33,6 +35,17 @@ export function generatedConfigSchemas(): GeneratedConfigSchema[] {
     {
       path: "schemas/aih-policy-authority-receipt.schema.json",
       schema: schemaFor(".aih/policy-authority-receipt.json", PolicyAuthorityReceiptSchema),
+    },
+    {
+      path: "schemas/aih-governance-decision-v2.schema.json",
+      schema: schemaFor("aih-governance-decision-v2.schema.json", GovernanceDecisionV2Schema),
+    },
+    {
+      path: "schemas/aih-upstream-observation-receipt-v1.schema.json",
+      schema: schemaFor(
+        "aih-upstream-observation-receipt-v1.schema.json",
+        UpstreamObservationReceiptV1Schema,
+      ),
     },
     {
       path: "schemas/aih-package-graph.schema.json",

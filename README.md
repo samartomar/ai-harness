@@ -73,6 +73,22 @@ Library integrations can import the strict Package Graph v1 TypeScript schema fr
 identity uniqueness, direct-member resolution, and evidence subject binding belong
 to the TypeScript parser; graph metadata is never approval or evidence by itself.
 
+<!-- aih:claim CM-86 -->
+The unreleased library surface also publishes Strict V2 organization-qualified
+decision and upstream-observation contracts, with matching JSON Schemas under
+`@aihq/harness/schemas/`. They let scanner and catalog producers share one exact
+GitHub/npm/PyPI/OCI/remote subject grammar, including canonical path-based registry and
+HTTPS endpoint identities. The TypeScript parser—not portable JSON Schema alone—enforces
+the domain-separated source and subject digest derivations. Core also has an internal
+resolver that accepts only an opaque, externally verified, attested authority receipt V3
+and an exact signed decision reference plus a fresh, matching observation. This is not
+yet the cold-admin CLI lifecycle: receipt V3 does not make a custom candidate projectable,
+and these APIs do not scan, install, configure, or execute candidate code. A qualification basis
+must bind exact organization evidence or the exact catalog signer, head, catalog, and
+member; catalog membership is provenance, not permission. Upstream observations also
+bind the named integration owner and exact integration version. Current custom stdio and
+remote policy rows remain blocked until the later runtime, adapter, and lifecycle work lands.
+
 <!-- aih:claim CM-52 -->
 `buildPackageGraphIndex` retains every authority claim, preserves identical claims,
 and reports divergent definitions without choosing a winner. Its canonical serializer
