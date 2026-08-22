@@ -45,34 +45,72 @@ async function gitChildRead(
   return options.trim === false ? res.stdout : res.stdout.replace(/\s+$/, "");
 }
 
-function parseAheadBehind(raw: string | undefined): { ahead?: number; behind?: number } {
-  const fields = raw?.replace(/\r?\n$/, "").split("\t");
-  if (fields === undefined || fields.length !== 2) return {};
-  const behind = gitInt(fields[0]);
-  const ahead = gitInt(fields[1]);
-  if (ahead === undefined || behind === undefined) return {};
+function parseBranchDivergence(raw: string): { ahead: number; behind: number } | undefined {
+  const match = /^\+([0-9]+) -([0-9]+)$/.exec(raw);
+  if (match === null) return undefined;
+  const ahead = gitInt(match[1]);
+  const behind = gitInt(match[2]);
+  if (ahead === undefined || behind === undefined) return undefined;
   return { ahead, behind };
 }
 
 interface WorkspaceRevision {
   branch: string;
   sha: string;
+  dirty: boolean;
+  ahead?: number;
+  behind?: number;
 }
 
 async function readWorkspaceRevision(
   ctx: PlanContext,
   repo: WorkspaceRepo,
 ): Promise<WorkspaceRevision | undefined> {
-  const [branch, sha] = await Promise.all([
-    gitChildRead(ctx, repo, ["rev-parse", "--abbrev-ref", "HEAD"]),
-    gitChildRead(ctx, repo, ["rev-parse", "HEAD"]),
-  ]);
-  if (branch === undefined || sha === undefined) return undefined;
-  return { branch, sha };
+  // `status --porcelain=v2 --branch` emits branch, HEAD, dirty state, and
+  // upstream divergence in one Git process. Independent rev-parse/status calls
+  // could otherwise each be valid yet describe different revisions mid-switch.
+  const raw = await gitChildRead(ctx, repo, ["status", "--porcelain=v2", "--branch"], {
+    trim: false,
+  });
+  if (raw === undefined) return undefined;
+  const headers = new Map<string, string>();
+  const entries: string[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    if (line.length === 0) continue;
+    if (!line.startsWith("# ")) {
+      entries.push(line);
+      continue;
+    }
+    const separator = line.indexOf(" ", 2);
+    if (separator < 0) return undefined;
+    const key = line.slice(2, separator);
+    const value = line.slice(separator + 1);
+    if (value.length === 0 || headers.has(key)) return undefined;
+    headers.set(key, value);
+  }
+  const branch = headers.get("branch.head");
+  const sha = headers.get("branch.oid");
+  if (
+    branch === undefined ||
+    branch.length === 0 ||
+    sha === undefined ||
+    !/^[a-f0-9]{40,64}$/i.test(sha)
+  )
+    return undefined;
+  const branchAb = headers.get("branch.ab");
+  const counts = branchAb === undefined ? {} : parseBranchDivergence(branchAb);
+  if (counts === undefined) return undefined;
+  return { branch, sha, dirty: entries.length > 0, ...counts };
 }
 
 function sameWorkspaceRevision(left: WorkspaceRevision, right: WorkspaceRevision): boolean {
-  return left.branch === right.branch && left.sha === right.sha;
+  return (
+    left.branch === right.branch &&
+    left.sha === right.sha &&
+    left.dirty === right.dirty &&
+    left.ahead === right.ahead &&
+    left.behind === right.behind
+  );
 }
 
 function incompleteWorkspaceRepoState(
@@ -110,30 +148,23 @@ export async function readWorkspaceRepoState(
   if (!inside) return { id: repo.id, path: repo.path, dirty: false, git: false };
   const before = await readWorkspaceRevision(ctx, repo);
   if (before === undefined) return incompleteWorkspaceRepoState(repo, "unavailable");
-  const [status, upstream, remote] = await Promise.all([
-    gitChildRead(ctx, repo, ["status", "--porcelain"]),
-    gitChildRead(ctx, repo, ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"], {
-      trim: false,
-    }),
-    repo.remote === undefined ? readWorkspaceRepoRemote(ctx, repo) : Promise.resolve(repo.remote),
-  ]);
+  const remote = repo.remote === undefined ? await readWorkspaceRepoRemote(ctx, repo) : repo.remote;
   const after = await readWorkspaceRevision(ctx, repo);
   if (after === undefined) return incompleteWorkspaceRepoState(repo, "unavailable");
   if (!sameWorkspaceRevision(before, after)) {
     return incompleteWorkspaceRepoState(repo, "diverged");
   }
-  if (status === undefined) return incompleteWorkspaceRepoState(repo, "unavailable");
-  const dirty = status.length > 0;
-  const aheadBehind = parseAheadBehind(upstream);
   return {
     id: repo.id,
     path: repo.path,
     ...(remote ? { remote } : {}),
     branch: before.branch,
     sha: before.sha,
-    dirty,
+    dirty: before.dirty,
     git: true,
-    ...aheadBehind,
+    ...(before.ahead === undefined || before.behind === undefined
+      ? {}
+      : { ahead: before.ahead, behind: before.behind }),
   };
 }
 
