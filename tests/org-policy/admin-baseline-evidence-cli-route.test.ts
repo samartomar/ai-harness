@@ -114,4 +114,26 @@ describe("policy generate baseline evidence route", () => {
       ),
     ).toThrow(/baseline evidence provenance/);
   });
+
+  it.each([
+    ["duplicate source IDs", { sourceIds: ["ecc", "ecc"] }],
+    ["unordered source IDs", { sourceIds: ["superpowers", "ecc"] }],
+    ["non-current schema", { schemaVersion: 2 }],
+    ["fresh nonzero age", { ageSeconds: 1 }],
+    ["packaged numeric age", { ageSeconds: 0, tier: "packaged" as const }],
+    ["cached null age", { ageSeconds: null, tier: "last-downloaded" as const }],
+    ["cached excessive age", { ageSeconds: 31_536_001, tier: "last-downloaded" as const }],
+  ])("rejects internally inconsistent baseline provenance: %s", (_label, change) => {
+    expect(() =>
+      policyStudioModel(undefined, {
+        ageSeconds: 0,
+        digest: "a".repeat(64),
+        resolvedAt: "2026-08-21T00:00:00Z",
+        schemaVersion: 1,
+        sourceIds: ["ecc", "superpowers"],
+        tier: "fresh" as const,
+        ...change,
+      }),
+    ).toThrow(/baseline evidence provenance/);
+  });
 });

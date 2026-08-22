@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -115,6 +115,8 @@ describe("admin baseline evidence cache v1", () => {
       );
       rmSync(slot);
       mkdirSync(slot);
+      expect(commitAdminBaselineEvidenceCacheV1(root, bootstrap, evidence)).toBe(false);
+      expect(existsSync(`${slot}.lock`)).toBe(false);
       expect(() => readAdminBaselineEvidenceCacheV1(root, bootstrap)).toThrow(
         /admin baseline evidence cache/,
       );

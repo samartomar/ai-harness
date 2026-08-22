@@ -14,6 +14,7 @@ import {
 import {
   ADMIN_BASELINE_EVIDENCE_ARTIFACT_FILES_V1,
   collectBoundedAdminBaselineEvidenceResponseV1,
+  createAdminBaselineEvidenceHttpsFetchV1,
   defaultAdminBaselineEvidenceHttpsFetchV1,
   fetchAdminBaselineEvidenceArtifactV1,
   parseGithubBaselineEvidenceAttestationV1,
@@ -103,11 +104,15 @@ describe("admin baseline evidence resolution v1", () => {
         resumed: () => resumed,
       };
     };
+    let statusAborts = 0;
     const missing = response(404);
     await expect(
-      collectBoundedAdminBaselineEvidenceResponseV1(missing.response, 8, () => undefined),
+      collectBoundedAdminBaselineEvidenceResponseV1(missing.response, 8, () => {
+        statusAborts += 1;
+      }),
     ).resolves.toEqual({ kind: "unavailable" });
-    expect(missing.resumed()).toBe(1);
+    expect(statusAborts).toBe(1);
+    expect(missing.resumed()).toBe(0);
 
     const gone = response(410);
     await expect(
@@ -158,6 +163,27 @@ describe("admin baseline evidence resolution v1", () => {
         url: "not a locator",
       }),
     ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+
+    let timedOutRequestDestroyed = 0;
+    const fetchWithTotalDeadline = createAdminBaselineEvidenceHttpsFetchV1(() => ({
+      destroy() {
+        timedOutRequestDestroyed += 1;
+      },
+      end() {
+        return undefined;
+      },
+      on() {
+        return this;
+      },
+    }));
+    await expect(
+      fetchWithTotalDeadline({
+        maxBytes: 8,
+        timeoutMs: 1,
+        url: "https://evidence.example.test/artifact",
+      }),
+    ).rejects.toMatchObject({ code: "AIH_ADMIN_BASELINE_EVIDENCE" });
+    expect(timedOutRequestDestroyed).toBe(1);
 
     let cacheReads = 0;
     await expect(
