@@ -1240,6 +1240,18 @@ describe("governed candidate projection", () => {
       verify: () => true,
     });
     expect(verifiedObservation).toBeDefined();
+    const preNotBeforeObservation = verifyUpstreamObservationV1({
+      ...resolverInput,
+      receipt: {
+        ...observed,
+        observedAt: new Date(now - 100 * 60_000).toISOString(),
+        validUntil: new Date(now + 10 * 60_000).toISOString(),
+      },
+      verify: () => true,
+    });
+    expect(
+      resolveObservedEffect({ ...resolverInput, observation: preNotBeforeObservation }),
+    ).toMatchObject({ state: "observation-mismatch" });
     expect(
       resolveObservedEffect({ ...resolverInput, observation: verifiedObservation }),
     ).toMatchObject({ state: "observed-effective" });

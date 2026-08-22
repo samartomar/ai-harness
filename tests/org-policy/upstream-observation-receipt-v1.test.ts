@@ -108,6 +108,10 @@ describe("UpstreamObservationReceiptV1 public contract", () => {
     for (const invalid of [
       { ...valid, id: "not-an-observation" },
       { ...valid, verifier: { id: "upstream-admin", version: "latest" } },
+      {
+        ...valid,
+        integration: { mode: "upstream-managed", owner: "upstream-admin", version: "01.2.3" },
+      },
       { ...valid, approved: true },
       { ...valid, integration: { mode: "aih-managed", owner: "upstream-admin", version: "1.0.0" } },
       { ...valid, integration: { mode: "upstream-managed", version: "1.0.0" } },

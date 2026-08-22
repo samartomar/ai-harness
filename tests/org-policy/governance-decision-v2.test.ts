@@ -71,7 +71,7 @@ function decision(overrides: Record<string, unknown> = {}) {
 describe("GovernanceDecisionV2 public contract", () => {
   it("uses strict SemVer for pinned executable and observer versions", () => {
     expect(ExactSemverV2Schema.safeParse("1.2.3-rc.1+build.7").success).toBe(true);
-    for (const invalid of ["01.2.3", "1.2.3-..", "1.2.3-", "1.2.3+"]) {
+    for (const invalid of ["01.2.3", "1.2.3-..", "1.2.3-", "1.2.3+", "1.2.3+build..7"]) {
       expect(ExactSemverV2Schema.safeParse(invalid).success).toBe(false);
     }
   });
