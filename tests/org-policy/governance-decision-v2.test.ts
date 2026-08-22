@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   GovernanceDecisionRevocationV2Schema,
   GovernanceDecisionV2Schema,
+  ExactSemverV2Schema,
   governanceDecisionDigestV2,
   governanceDecisionSourceDigestV2,
   governanceDecisionSubjectDigestV2,
@@ -68,6 +69,12 @@ function decision(overrides: Record<string, unknown> = {}) {
 }
 
 describe("GovernanceDecisionV2 public contract", () => {
+  it("uses strict SemVer for pinned executable and observer versions", () => {
+    expect(ExactSemverV2Schema.safeParse("1.2.3-rc.1+build.7").success).toBe(true);
+    for (const invalid of ["01.2.3", "1.2.3-..", "1.2.3-", "1.2.3+"]) {
+      expect(ExactSemverV2Schema.safeParse(invalid).success).toBe(false);
+    }
+  });
   it("publishes a strict, standalone DecisionV2 JSON Schema", () => {
     const schema = JSON.parse(
       readFileSync(join(root, "schemas/aih-governance-decision-v2.schema.json"), "utf8"),

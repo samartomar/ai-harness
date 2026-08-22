@@ -1263,6 +1263,29 @@ describe("governed candidate projection", () => {
     expect(
       resolveObservedEffect({ ...resolverInput, observation: verifiedObservation, effect: "use" }),
     ).toMatchObject({ state: "decision-scope-mismatch" });
+    for (const unverified of [
+      observed,
+      { ...verifiedObservation },
+      structuredClone(verifiedObservation),
+    ]) {
+      expect(resolveObservedEffect({ ...resolverInput, observation: unverified })).toMatchObject({
+        state: "observation-unverified",
+      });
+    }
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        observation: verifiedObservation,
+        expectedInstalled: { ...observed.installed, digest: `sha256:${"0".repeat(64)}` },
+      }),
+    ).toMatchObject({ state: "observation-mismatch" });
+    expect(
+      resolveObservedEffect({
+        ...resolverInput,
+        observation: verifiedObservation,
+        expectedIntegration: { ...observed.integration, owner: "github:Acme/owner@v2" },
+      }),
+    ).toMatchObject({ state: "observation-mismatch" });
     expect(
       resolveObservedEffect({
         ...resolverInput,
@@ -1301,6 +1324,122 @@ describe("governed candidate projection", () => {
         observation: verifiedObservation,
       }),
     ).toMatchObject({ state: "authority-version" });
+  });
+
+  it("derives rejection, revocation, and conditional expiry only from verified V3 authority", async () => {
+    const now = Date.now();
+    const issuedAt = new Date(now - 3 * 60 * 60_000).toISOString();
+    const receiptIssuedAt = new Date(now - 2 * 60 * 60_000).toISOString();
+    const expiresAt = new Date(now + 2 * 60 * 60_000).toISOString();
+    const mint = async (
+      signedDecision: ReturnType<typeof governanceDecisionV2>,
+      revocations: unknown[] = [],
+    ) => {
+      mkdirSync(join(dir, ".aih"), { recursive: true });
+      writeFileSync(
+        join(dir, ".aih", "policy-authority-receipt.json"),
+        JSON.stringify({
+          format: "aih-policy-authority-receipt",
+          version: 3,
+          issuerRepository: "acme/governance",
+          issuedAt: receiptIssuedAt,
+          expiresAt,
+          targets: ["claude"],
+          trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+          decisions: [signedDecision],
+          decisionRevocations: revocations,
+        }),
+      );
+      const authority = await verifiedAuthority(ctx());
+      const digest = governanceDecisionDigestV2(signedDecision as never);
+      const observed = {
+        format: "aih-upstream-observation-receipt",
+        version: 1,
+        id: "observation-platform-tool",
+        decision: { id: signedDecision.id, digest },
+        subject: {
+          kind: signedDecision.subject.kind,
+          id: signedDecision.subject.id,
+          sourceDigest: signedDecision.subject.sourceDigest,
+          subjectDigest: signedDecision.subject.subjectDigest,
+        },
+        targets: ["claude"],
+        allowedEffects: ["configure"],
+        integration: {
+          mode: "upstream-managed",
+          owner: "upstream-admin",
+          version: "1.0.0",
+        } as const,
+        installed: { id: "platform-review-tool", digest: `sha256:${"d".repeat(64)}` },
+        verifier: { id: "upstream-admin", version: "1.0.0", digest: `sha256:${"f".repeat(64)}` },
+        observedAt: new Date(now - 60_000).toISOString(),
+        validUntil: new Date(now + 60_000).toISOString(),
+        outcome: "observed-success",
+      };
+      const input = {
+        authority,
+        decisionReference: { id: signedDecision.id, digest },
+        subject: signedDecision.subject as never,
+        target: "claude",
+        effect: "configure" as const,
+        supportedTargets: ["claude"],
+        expectedVerifier: observed.verifier,
+        expectedInstalled: observed.installed,
+        expectedIntegration: observed.integration,
+        now: new Date(now).toISOString(),
+      };
+      return {
+        input,
+        observation: verifyUpstreamObservationV1({
+          ...input,
+          receipt: observed,
+          verify: () => true,
+        }),
+      };
+    };
+    const rejected = governanceDecisionV2({
+      disposition: "rejected",
+      issuedAt,
+      notBefore: issuedAt,
+      expiresAt,
+    });
+    const rejectedMint = await mint(rejected);
+    expect(
+      resolveObservedEffect({
+        ...rejectedMint.input,
+        observation: rejectedMint.observation,
+        decision: governanceDecisionV2(),
+      } as never),
+    ).toMatchObject({ state: "decision-rejected" });
+    const approved = governanceDecisionV2({ issuedAt, notBefore: issuedAt, expiresAt });
+    const approvedDigest = governanceDecisionDigestV2(approved as never);
+    const revokedMint = await mint(approved, [
+      {
+        format: "aih-governance-decision-revocation",
+        version: 2,
+        decisionDigest: approvedDigest,
+        issuer: approved.issuer,
+        revokedAt: new Date(now - 150 * 60_000).toISOString(),
+        reason: "Withdrawn.",
+      },
+    ]);
+    expect(
+      resolveObservedEffect({ ...revokedMint.input, observation: revokedMint.observation }),
+    ).toMatchObject({ state: "decision-revoked" });
+    const conditional = governanceDecisionV2({
+      disposition: "accepted-with-conditions",
+      acceptedFindings: ["bounded-gap"],
+      acceptedGaps: [],
+      conditions: ["Review."],
+      issuedAt,
+      notBefore: issuedAt,
+      expiresAt,
+      reviewBy: new Date(now - 60_000).toISOString(),
+    });
+    const conditionalMint = await mint(conditional);
+    expect(
+      resolveObservedEffect({ ...conditionalMint.input, observation: conditionalMint.observation }),
+    ).toMatchObject({ state: "decision-not-current" });
   });
 
   it("rejects malformed or non-authoritative v2 decision receipt relationships", () => {
