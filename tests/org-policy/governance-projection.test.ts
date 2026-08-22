@@ -1173,9 +1173,9 @@ describe("governed candidate projection", () => {
   it("keeps externally verified V3 authority facts in immutable detached custody", async () => {
     const now = Date.now();
     const signedDecision = governanceDecisionV2({
-      issuedAt: new Date(now - 60_000).toISOString(),
-      notBefore: new Date(now - 60_000).toISOString(),
-      expiresAt: new Date(now + 20_000).toISOString(),
+      issuedAt: new Date(now - 90 * 60_000).toISOString(),
+      notBefore: new Date(now - 90 * 60_000).toISOString(),
+      expiresAt: new Date(now + 60 * 60_000).toISOString(),
     });
     mkdirSync(join(dir, ".aih"), { recursive: true });
     writeFileSync(
@@ -1184,8 +1184,8 @@ describe("governed candidate projection", () => {
         format: "aih-policy-authority-receipt",
         version: 3,
         issuerRepository: "acme/governance",
-        issuedAt: new Date(now - 30_000).toISOString(),
-        expiresAt: new Date(now + 30_000).toISOString(),
+        issuedAt: new Date(now - 60 * 60_000).toISOString(),
+        expiresAt: new Date(now + 2 * 60 * 60_000).toISOString(),
         targets: ["claude"],
         trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
         decisions: [signedDecision],
@@ -1218,8 +1218,8 @@ describe("governed candidate projection", () => {
       integration: { mode: "upstream-managed", owner: "upstream-admin", version: "1.0.0" } as const,
       installed: { id: "platform-review-tool", digest: `sha256:${"d".repeat(64)}` },
       verifier: { id: "upstream-admin", version: "1.0.0", digest: `sha256:${"f".repeat(64)}` },
-      observedAt: new Date(now - 10_000).toISOString(),
-      validUntil: new Date(now + 10_000).toISOString(),
+      observedAt: new Date(now - 30 * 60_000).toISOString(),
+      validUntil: new Date(now + 30 * 60_000).toISOString(),
       outcome: "observed-success",
     };
     const resolverInput = {
@@ -1274,7 +1274,7 @@ describe("governed candidate projection", () => {
       resolveObservedEffect({
         ...resolverInput,
         observation: verifiedObservation,
-        now: new Date(now + 15_000).toISOString(),
+        now: new Date(now + 31 * 60_000).toISOString(),
       }),
     ).toMatchObject({ state: "observation-stale" });
     expect(
@@ -1289,7 +1289,7 @@ describe("governed candidate projection", () => {
       resolveObservedEffect({
         ...resolverInput,
         observation: verifiedObservation,
-        now: new Date(now + 31_000).toISOString(),
+        now: new Date(now + 3 * 60 * 60_000).toISOString(),
       }),
     ).toMatchObject({ state: "authority-not-current" });
     writeAuthorityReceipt();

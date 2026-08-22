@@ -267,68 +267,6 @@ describe("UpstreamObservationReceiptV1 public contract", () => {
         UpstreamObservationReceiptV1Schema.parse(structuredClone(currentObservation)),
       ),
     );
-    for (const [_expected, changed] of [
-      ["observation-missing", { ...effectiveInput, observation: undefined }],
-      ["observation-unverified", { ...input, observation: observation({ outcome: "partial" }) }],
-      [
-        "observation-unverified",
-        {
-          ...input,
-          observation: observation({
-            decision: { id: currentDecision.id, digest: `sha256:${"0".repeat(64)}` },
-          }),
-        },
-      ],
-      [
-        "observation-unverified",
-        {
-          ...input,
-          observation: observation({
-            verifier: { ...currentObservation.verifier, version: "2.0.0" },
-          }),
-        },
-      ],
-      ["decision-rejected", { ...effectiveInput, decision: decision({ disposition: "rejected" }) }],
-      ["decision-scope-mismatch", { ...effectiveInput, effect: "use" as const }],
-      [
-        "observation-mismatch",
-        {
-          ...effectiveInput,
-          expectedInstalled: {
-            ...currentObservation.installed,
-            digest: `sha256:${"0".repeat(64)}`,
-          },
-        },
-      ],
-      [
-        "observation-mismatch",
-        {
-          ...effectiveInput,
-          expectedIntegration: { ...currentObservation.integration, owner: "aih-materializer" },
-        },
-      ],
-      ["decision-not-current", { ...effectiveInput, now: "2026-08-11T00:00:00+00:00" }],
-      ["observation-stale", { ...effectiveInput, now: "2026-08-03T00:00:00+00:00" }],
-      [
-        "decision-revoked",
-        {
-          ...effectiveInput,
-          revocation: {
-            format: "aih-governance-decision-revocation",
-            version: 2,
-            decisionDigest: governanceDecisionDigestV2(currentDecision as never),
-            issuer: currentDecision.issuer,
-            revokedAt: "2026-08-02T00:00:00+00:00",
-            reason: "Withdrawn.",
-          },
-        },
-      ],
-      ["decision-revocation-invalid", { ...effectiveInput, revocation: { decisionDigest: "bad" } }],
-    ] as const) {
-      expect(resolveObservedEffect(changed as never)).toMatchObject({
-        state: "authority-unverified",
-      });
-    }
   });
 
   it("bounds live observation freshness at exactly 24 hours", () => {

@@ -28,7 +28,12 @@ const sourcePath = z
       !/[\p{C}]/u.test(value),
     "must be a bounded relative source path",
   );
-const exactSemver = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/);
+export const ExactSemverV2Schema = z
+  .string()
+  .regex(
+    /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:(?:0|[1-9]\d*)|(?:\d*[A-Za-z-][0-9A-Za-z-]*))(?:\.(?:(?:0|[1-9]\d*)|(?:\d*[A-Za-z-][0-9A-Za-z-]*)))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u,
+  );
+const exactSemver = ExactSemverV2Schema;
 const exactPypiVersion = z
   .string()
   .regex(/^[A-Za-z0-9][A-Za-z0-9.!+_-]{0,127}$/, "must be a bounded exact provider version");
