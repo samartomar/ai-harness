@@ -1245,7 +1245,20 @@ describe("Codex managed destination safety", () => {
     mkdirSync(codexDir, { recursive: true });
     writeFileSync(
       configPath,
-      ['approval_policy = "on-request"', "", "[features]", "multi_agent = true", ""].join("\n"),
+      [
+        'approval_policy = "on-request"',
+        "",
+        "[features]",
+        "multi_agent = true",
+        "",
+        "# >>> aih managed (mcp) >>>",
+        '[mcp_servers."chrome-devtools"]',
+        'command = "npx"',
+        'args = ["-y", "chrome-devtools-mcp@1.7.0"]',
+        "startup_timeout_sec = 30",
+        "# <<< aih managed (mcp) <<<",
+        "",
+      ].join("\n"),
       "utf8",
     );
     writeFileSync(
@@ -1257,7 +1270,7 @@ describe("Codex managed destination safety", () => {
           rootKeys: ["approval_policy"],
           tables: ["features"],
           tableKeys: { features: ["multi_agent"] },
-          mcpServers: [],
+          mcpServers: ["chrome-devtools"],
         },
         agentsBlock: false,
       })}\n`,
