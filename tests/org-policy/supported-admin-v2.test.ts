@@ -833,6 +833,40 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     }
   });
 
+  it("fails closed when inspect sees partial or foreign custody directories", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-supported-inspect-invalid-"));
+    const completeRoot = mkdtempSync(join(tmpdir(), "aih-supported-inspect-foreign-"));
+    try {
+      const plan = supported.planSupportedCustodyAcceptV2({ posture: "vibe", root, ...input });
+      const signer = writes(plan)[0];
+      const signerPath = join(root, signer?.path ?? "");
+      mkdirSync(dirname(signerPath), { recursive: true });
+      writeFileSync(signerPath, signer?.contents ?? "", "utf8");
+      await expect(
+        Promise.resolve(supported.inspectSupportedCustodyV2({ root, posture: "vibe" })),
+      ).rejects.toMatchObject({ code: "AIH_TRUST" });
+      const genesis = await prepare(completeRoot);
+      await executePlan(genesis, planContext(completeRoot));
+      const foreign = join(
+        completeRoot,
+        ".aih",
+        "supported-qualification",
+        "v2",
+        "signers",
+        `${"a".repeat(64)}.json`,
+      );
+      writeFileSync(foreign, canonicalStrictJsonBytesV1({ kind: "foreign" }));
+      await expect(
+        Promise.resolve(
+          supported.inspectSupportedCustodyV2({ root: completeRoot, posture: "vibe" }),
+        ),
+      ).rejects.toMatchObject({ code: "AIH_TRUST" });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(completeRoot, { recursive: true, force: true });
+    }
+  });
+
   it("rejects a raced current replay or predecessor head without successor effects", async () => {
     for (const recordIndex of [1, 3]) {
       const { root, context, genesis } = await applyGenesis();
