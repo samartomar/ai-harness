@@ -18,6 +18,8 @@ import {
   npmPackageObservationHandoffForLifecycleV1,
   observeNpmPackageV1,
 } from "./npm-package-observer-v1.js";
+import { validateCurrentSupportedCustodyV2 } from "./supported-admin-v2.js";
+import type { VerifiedAihSupportedCustodyBindingV2 } from "./supported-qualification-receipt-v2.js";
 import {
   parseUpstreamObservationReceiptV1,
   type UpstreamObservationReceiptV1,
@@ -127,6 +129,12 @@ interface Prepared {
     recordText: string;
     /** Branded support-custody assertions kept internal to the observation handoff. */
     supportedCustodyAssertions?: readonly WriteAction[];
+    /** Opaque production facts kept only for final full-custody validation. */
+    supportedCustody?: Readonly<{
+      binding: VerifiedAihSupportedCustodyBindingV2;
+      platform: "win32" | "darwin" | "linux";
+      posture: "enterprise" | "vibe";
+    }>;
   };
   readonly result: NpmPackageLifecycleResultV1;
 }
@@ -340,6 +348,20 @@ function assertionCurrent(root: string, action: WriteAction): boolean {
   );
 }
 
+function supportedCustodyCurrent(
+  root: string,
+  supportedCustody: NonNullable<NonNullable<Prepared["postcondition"]>["supportedCustody"]>,
+): boolean {
+  return (
+    validateCurrentSupportedCustodyV2({
+      root,
+      binding: supportedCustody.binding,
+      platform: supportedCustody.platform,
+      posture: supportedCustody.posture,
+    }).state === "verified"
+  );
+}
+
 /** @internal Test-only external-custody assertion seam; never routed through Commander. */
 export function __isNpmPackageLifecycleAssertionCurrentForInternalTestV1(
   root: string,
@@ -373,6 +395,8 @@ function persisted(root: string, postcondition: NonNullable<Prepared["postcondit
     parsedHead !== undefined &&
     (postcondition.supportedCustodyAssertions === undefined ||
       postcondition.supportedCustodyAssertions.every((action) => assertionCurrent(root, action))) &&
+    (postcondition.supportedCustody === undefined ||
+      supportedCustodyCurrent(root, postcondition.supportedCustody)) &&
     verifyHistory(root, parsedHead, postcondition.lineage) &&
     hasOnlyExpectedSuccessor(root, parsedHead, postcondition.lineage)
   );
@@ -1426,6 +1450,11 @@ function lifecycleActions(
     authorityReceiptDigest: string;
     custody: readonly { path: string; sha256: string }[];
     custodyAssertions?: readonly WriteAction[];
+    supportedCustody?: Readonly<{
+      binding: VerifiedAihSupportedCustodyBindingV2;
+      platform: "win32" | "darwin" | "linux";
+      posture: "enterprise" | "vibe";
+    }>;
     decision: GovernanceDecisionV2;
     receipt: UpstreamObservationReceiptV1;
   },
@@ -1581,6 +1610,9 @@ function lifecycleActions(
       ...(handoff.custodyAssertions === undefined
         ? {}
         : { supportedCustodyAssertions: handoff.custodyAssertions }),
+      ...(handoff.supportedCustody === undefined
+        ? {}
+        : { supportedCustody: handoff.supportedCustody }),
     },
     result: {
       applied: ctx.apply,

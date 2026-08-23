@@ -672,6 +672,49 @@ describe("npm package lifecycle V1", () => {
     });
   });
 
+  it.each(["members", "signers"])(
+    "refuses a supported lifecycle when a foreign %s custody entry appears after transaction assertions",
+    async (directory) => {
+      const value = supportedFixture();
+      writeFixture(value);
+      writeFileSync(
+        join(root, ".aih", "aih-supported-qualification-receipt.json"),
+        canonicalAihSupportedQualificationReceiptV2(value.receipt),
+      );
+      const env = {
+        AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+        AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+      };
+      const accept = context(true, value.decision, { evidence: undefined }, env);
+      await executePlan(await supportedCustodyAcceptPlanV2(accept), accept, {
+        skipWorktreeGate: true,
+      });
+      const ctx = context(true, value.decision, { evidence: undefined }, env);
+      const planned = await npmPackageLifecyclePlan(ctx);
+      __setNpmPackageLifecycleInternalTestHookV1(() => {
+        const foreign = join(
+          root,
+          ".aih",
+          "supported-qualification",
+          "v2",
+          directory,
+          "foreign.json",
+        );
+        writeFileSync(foreign, "{}\n");
+      });
+
+      const result = await executePlan(planned, ctx, { skipWorktreeGate: true });
+
+      expect(result.digests[0]?.data).toMatchObject({
+        applied: false,
+        outcome: "refused",
+        reason: "store-detached",
+        state: "store-detached",
+      });
+      expect(readNpmPackageLifecycleStoreV1(root)).toMatchObject({ kind: "complete" });
+    },
+  );
+
   it("keeps preview zero-write, then appends immutable observation records before advancing a subject head", async () => {
     writeFixture();
     const planned = await npmPackageLifecyclePlan(context(true));

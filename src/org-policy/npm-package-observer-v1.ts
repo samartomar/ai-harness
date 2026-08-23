@@ -18,7 +18,10 @@ import {
   verifyOrganizationQualificationV1,
 } from "./qualification-v1.js";
 import { verifiedCurrentSupportedCustodyAssertionsV2 } from "./supported-admin-v2.js";
-import { verifyAihSupportedQualificationReceiptV2 } from "./supported-qualification-receipt-v2.js";
+import {
+  type VerifiedAihSupportedCustodyBindingV2,
+  verifyAihSupportedQualificationReceiptV2,
+} from "./supported-qualification-receipt-v2.js";
 import {
   MAX_UPSTREAM_OBSERVATION_WINDOW_MS,
   type ObservedEffectResolution,
@@ -93,6 +96,12 @@ export interface NpmPackageObservationLifecycleHandoffV1 {
   }[];
   /** Opaque support-custody assertions prepared only by the branded V2 custody owner. */
   readonly custodyAssertions?: readonly WriteAction[];
+  /** Opaque production facts retained only for the lifecycle's final custody re-observation. */
+  readonly supportedCustody?: Readonly<{
+    readonly binding: VerifiedAihSupportedCustodyBindingV2;
+    readonly platform: "win32" | "darwin" | "linux";
+    readonly posture: "enterprise" | "vibe";
+  }>;
   /** Exact decision verified in the same final observation that minted receipt. */
   readonly decision: GovernanceDecisionV2;
   readonly receipt: UpstreamObservationReceiptV1;
@@ -524,6 +533,11 @@ async function observeAihSupportedNpmPackageV1(
         ...local.custody,
       ],
       custodyAssertions,
+      supportedCustody: {
+        binding,
+        platform: supportedCustodyPlatform(ctx),
+        posture: supportedCustodyPosture(ctx),
+      },
       decision,
       receipt,
     }),
