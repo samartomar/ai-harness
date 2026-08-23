@@ -453,7 +453,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
     ).toMatchObject({ state: "qualification-mismatch" });
   });
 
-  it("refuses supported receipts expired before now, not yet valid, or non-overlapping", async () => {
+  it("refuses supported receipts expired before now or not yet valid", async () => {
     const value = decision();
     const verifiedAuthority = await authority(value);
     const input = {
@@ -475,7 +475,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
         }),
       ],
       [
-        "window does not overlap the current decision",
+        "expired window precedes the current decision",
         receipt(value, {
           issuedAt: "2026-07-20T00:00:00+00:00",
           notBefore: "2026-07-20T00:00:00+00:00",
@@ -485,6 +485,42 @@ describe("AihSupportedQualificationReceiptV1", () => {
     ];
     for (const [condition, invalidReceipt] of invalidReceipts) {
       writeReceipt(invalidReceipt);
+      const result = await verifyAihSupportedQualificationReceiptV1(
+        context((argv) => ({ code: argv[0] === trustedSupportedGh ? 0 : 1 })),
+        input,
+      );
+      expect(result.problem, condition).toBeDefined();
+      expect(result.qualification, condition).toBeUndefined();
+    }
+  });
+
+  it("requires the supported receipt validity window to stay within the current decision", async () => {
+    const value = decision();
+    const verifiedAuthority = await authority(value);
+    const input = {
+      authority: verifiedAuthority,
+      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      subject: value.subject,
+      target: "claude" as const,
+      effect: "configure" as const,
+      supportedTargets: ["claude"],
+      now: "2026-08-02T12:00:00+00:00",
+    };
+    const outsideDecisionWindows: Array<[string, ReturnType<typeof receipt>]> = [
+      [
+        "expires after the current decision",
+        receipt(value, { expiresAt: "2026-08-10T00:00:01+00:00" }),
+      ],
+      [
+        "starts before the current decision",
+        receipt(value, {
+          issuedAt: "2026-07-31T00:00:00+00:00",
+          notBefore: "2026-07-31T00:00:00+00:00",
+        }),
+      ],
+    ];
+    for (const [condition, outsideDecisionWindow] of outsideDecisionWindows) {
+      writeReceipt(outsideDecisionWindow);
       const result = await verifyAihSupportedQualificationReceiptV1(
         context((argv) => ({ code: argv[0] === trustedSupportedGh ? 0 : 1 })),
         input,
