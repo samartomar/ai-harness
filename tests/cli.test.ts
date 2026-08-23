@@ -137,6 +137,7 @@ describe("CLI program", () => {
       "evaluate",
       "generate",
       "init",
+      "observe",
       "project",
       "resolve",
       "validate",
@@ -155,6 +156,11 @@ describe("CLI program", () => {
         expect(
           sub.registeredArguments.map((a) => ({ name: a.name(), required: a.required })),
         ).toEqual([{ name: "admin-root", required: false }]);
+        continue;
+      }
+      if (sub.name() === "observe") {
+        expect(sub.commands.map((nested) => nested.name())).toEqual(["npm-package"]);
+        expect(sub.registeredArguments).toEqual([]);
         continue;
       }
       expect(
@@ -251,6 +257,7 @@ describe("CLI program", () => {
       ...PARENT_GROUPS.filter((name) => name !== "workspace"),
       "capability package",
       "ecc mcp",
+      "policy observe",
     ]);
     const registeredPaths = (program: Command, parent: string[] = []): string[] =>
       program.commands.flatMap((cmd) => {

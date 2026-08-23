@@ -9,7 +9,10 @@ import {
   governanceDecisionSourceDigestV2,
   governanceDecisionSubjectDigestV2,
 } from "../../src/org-policy/governance-decision-v2.js";
-import { observeNpmPackageV1 } from "../../src/org-policy/npm-package-observer-v1.js";
+import {
+  npmPackageObserveCommand,
+  observeNpmPackageV1,
+} from "../../src/org-policy/npm-package-observer-v1.js";
 import {
   canonicalOrganizationEvidenceEnvelopeV1,
   organizationEvidenceEnvelopeDigestV1,
@@ -119,7 +122,7 @@ function writeAuthority(decision: ReturnType<typeof fixture>["decision"]): void 
       issuedAt: "2026-08-01T00:00:00+00:00",
       expiresAt: "2026-08-10T00:00:00+00:00",
       trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
-      targets: ["claude"],
+      targets: ["claude", "codex"],
       decisions: [decision],
       decisionRevocations: [],
     }),
@@ -164,6 +167,17 @@ function context(options: Record<string, unknown>, calls: string[][]): PlanConte
 }
 
 describe("npm package upstream observer V1", () => {
+  it("hardcodes install and derives the npm identity instead of accepting caller overrides", () => {
+    expect(npmPackageObserveCommand.readOnly).toBe(true);
+    expect(npmPackageObserveCommand.zeroWrite).toBe(true);
+    expect(npmPackageObserveCommand.options?.map((item) => item.flags)).toEqual([
+      "--decision <id>",
+      "--decision-digest <sha256>",
+      "--target <cli>",
+      "--evidence <path>",
+    ]);
+  });
+
   it("observes only the signed exact installed package without executing it", async () => {
     const value = fixture();
     writeAuthority(value.decision);
@@ -222,7 +236,7 @@ describe("npm package upstream observer V1", () => {
     );
     expect(observedLater).toMatchObject({ outcome: "observed-effective" });
     expect(observedLater.observationDigest).not.toBe(result.observationDigest);
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(3);
     expect(calls[0]?.slice(1, 3)).toEqual(["attestation", "verify"]);
     expect(readFileSync(join(root, "package-lock.json"))).toEqual(before.get("lock"));
     expect(readFileSync(join(root, "node_modules", "@acme", "widget", "package.json"))).toEqual(
@@ -253,6 +267,31 @@ describe("npm package upstream observer V1", () => {
       ),
     );
 
+    expect(result).toMatchObject({ outcome: "refused", reason: "installed-identity-mismatch" });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("rejects a duplicate lock key before it can provide an installed identity", async () => {
+    const value = fixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    writeFileSync(
+      join(root, "package-lock.json"),
+      `{"lockfileVersion":3,"packages":{"node_modules/@acme/widget":{"version":"1.2.3","integrity":"${INTEGRITY}"},"node_modules/@acme/widget":{"version":"1.2.3","integrity":"${INTEGRITY}"}}}`,
+    );
+    const calls: string[][] = [];
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+          evidence: "evidence.json",
+        },
+        calls,
+      ),
+    );
     expect(result).toMatchObject({ outcome: "refused", reason: "installed-identity-mismatch" });
     expect(calls).toHaveLength(1);
   });

@@ -38,6 +38,7 @@ import { marketplaceValidateCommand } from "../marketplace/validate.js";
 import { command as mcp, mcpApproveCommand } from "../mcp/index.js";
 import { policyGenerateCommand, runPolicyGenerate } from "../org-policy/generate.js";
 import { policyInitCommand } from "../org-policy/init.js";
+import { npmPackageObserveCommand } from "../org-policy/npm-package-observer-v1.js";
 import { policyResolveCommand } from "../org-policy/policy-resolve-v1.js";
 import {
   policyEvaluateCommand,
@@ -217,6 +218,7 @@ export const GROUPED_COMMAND_SPECS = {
   policy: [
     policyGenerateCommand,
     policyInitCommand,
+    npmPackageObserveCommand,
     policyResolveCommand,
     policyEvaluateCommand,
     policyProjectCommand,
@@ -244,7 +246,11 @@ export const ALL_COMMAND_SPEC_PATHS: ReadonlyArray<readonly string[]> = [
   ["ecc", "mcp", eccMcpAddCommand.name] as const,
   ["ecc", "mcp", eccMcpRemoveCommand.name] as const,
   ...Object.entries(GROUPED_COMMAND_SPECS).flatMap(([parent, specs]) =>
-    specs.map((spec) => [parent, spec.name] as const),
+    specs.map((spec) =>
+      spec === npmPackageObserveCommand
+        ? ["policy", "observe", spec.name]
+        : ([parent, spec.name] as const),
+    ),
   ),
   ...CAPABILITY_PACKAGE_COMMAND_SPECS.map((spec) => ["capability", "package", spec.name] as const),
 ];
@@ -890,6 +896,20 @@ export function registerCommands(
       },
     );
   }
+  const policyObserve = policy
+    .command("observe")
+    .description("Read-only upstream observations under current organization policy");
+  const npmPackage = policyObserve
+    .command(npmPackageObserveCommand.name)
+    .description(npmPackageObserveCommand.summary)
+    .argument("[root]", "target repository root (defaults to --root or cwd)");
+  addFlagsForSpec(npmPackage, npmPackageObserveCommand);
+  addOptionsForSpec(npmPackage, npmPackageObserveCommand);
+  npmPackage.action(
+    async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
+      process.exitCode = await runCapability(npmPackageObserveCommand, command);
+    },
+  );
 
   // `evidence` mirrors the same options-only shape: `build` packages the
   // governance artifacts aih already emits into a verifiable, bundle-standard
