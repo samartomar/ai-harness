@@ -38,6 +38,7 @@ import { marketplaceValidateCommand } from "../marketplace/validate.js";
 import { command as mcp, mcpApproveCommand } from "../mcp/index.js";
 import { policyGenerateCommand, runPolicyGenerate } from "../org-policy/generate.js";
 import { policyInitCommand } from "../org-policy/init.js";
+import { policyResolveCommand } from "../org-policy/policy-resolve-v1.js";
 import {
   policyEvaluateCommand,
   policyProjectCommand,
@@ -216,6 +217,7 @@ export const GROUPED_COMMAND_SPECS = {
   policy: [
     policyGenerateCommand,
     policyInitCommand,
+    policyResolveCommand,
     policyEvaluateCommand,
     policyProjectCommand,
     policyValidateCommand,
@@ -846,7 +848,7 @@ export function registerCommands(
   const policy = program
     .command("policy")
     .description(
-      "Generate, seed, evaluate, project, validate + verify the org policy and its generated settings",
+      "Generate, seed, resolve, evaluate, project, validate + verify the org policy and its generated settings",
     );
   // The optional `[admin-root]` positional is the ONLY switch that turns on
   // administrator catalog consumption; omitting it keeps the rootless portable
@@ -870,6 +872,7 @@ export function registerCommands(
   );
   for (const spec of [
     policyInitCommand,
+    policyResolveCommand,
     policyEvaluateCommand,
     policyProjectCommand,
     policyValidateCommand,

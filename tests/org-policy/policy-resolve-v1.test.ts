@@ -1,14 +1,18 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import {
+  governanceDecisionDigestV2,
   governanceDecisionSourceDigestV2,
   governanceDecisionSubjectDigestV2,
 } from "../../src/org-policy/governance-decision-v2.js";
-import { resolvePolicyEvidenceV1 } from "../../src/org-policy/policy-resolve-v1.js";
+import {
+  policyResolvePlan,
+  resolvePolicyEvidenceV1,
+} from "../../src/org-policy/policy-resolve-v1.js";
 import {
   canonicalOrganizationEvidenceEnvelopeV1,
   organizationEvidenceEnvelopeDigestV1,
@@ -98,6 +102,7 @@ function decision() {
       acceptedGaps: [],
       conditions: [],
     },
+    evidence,
     bytes: Buffer.from(canonicalOrganizationEvidenceEnvelopeV1(evidence), "utf8"),
   };
 }
@@ -140,6 +145,15 @@ function writeAuthority(value: ReturnType<typeof decision>["value"]): void {
 }
 
 describe("policy resolve V1", () => {
+  it("constructs only read-only digest and verification actions", () => {
+    const calls: string[][] = [];
+    expect(policyResolvePlan(context({}, calls)).actions.map((action) => action.kind)).toEqual([
+      "digest",
+      "probe",
+    ]);
+    expect(calls).toEqual([]);
+  });
+
   it("uses V3 authority plus canonical custodied organization evidence and reports observation-missing as a non-effective partial", async () => {
     const fixture = decision();
     writeAuthority(fixture.value);
@@ -150,7 +164,7 @@ describe("policy resolve V1", () => {
       context(
         {
           decision: fixture.value.id,
-          decisionDigest: `sha256:${"0".repeat(64)}`,
+          decisionDigest: governanceDecisionDigestV2(fixture.value as never),
           target: "claude",
           effect: "configure",
           evidence: "evidence.json",
@@ -190,5 +204,72 @@ describe("policy resolve V1", () => {
       outcome: "refused",
     });
     expect(calls).toEqual([]);
+  });
+
+  it("refuses an exact-decision-digest substitution after only the existing authority attestation", async () => {
+    const fixture = decision();
+    writeAuthority(fixture.value);
+    writeFileSync(join(root, "evidence.json"), fixture.bytes);
+    const calls: string[][] = [];
+
+    const result = await resolvePolicyEvidenceV1(
+      context(
+        {
+          decision: fixture.value.id,
+          decisionDigest: `sha256:${"0".repeat(64)}`,
+          target: "claude",
+          effect: "configure",
+          evidence: "evidence.json",
+        },
+        calls,
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      effective: "decision-missing-or-mismatch",
+      outcome: "refused",
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("refuses noncanonical evidence and symlink custody without widening the authority boundary", async () => {
+    const fixture = decision();
+    writeAuthority(fixture.value);
+    const cases: Array<{ path: string; setup: () => void }> = [
+      {
+        path: "noncanonical.json",
+        setup: () =>
+          writeFileSync(join(root, "noncanonical.json"), JSON.stringify(fixture.evidence)),
+      },
+      {
+        path: "linked.json",
+        setup: () => {
+          writeFileSync(join(root, "outside.json"), fixture.bytes);
+          symlinkSync(join(root, "outside.json"), join(root, "linked.json"));
+        },
+      },
+    ];
+    for (const testCase of cases) {
+      if (process.platform === "win32" && testCase.path === "linked.json") continue;
+      testCase.setup();
+      const calls: string[][] = [];
+      const result = await resolvePolicyEvidenceV1(
+        context(
+          {
+            decision: fixture.value.id,
+            decisionDigest: governanceDecisionDigestV2(fixture.value as never),
+            target: "claude",
+            effect: "configure",
+            evidence: testCase.path,
+          },
+          calls,
+        ),
+      );
+      expect(result.outcome).toBe("refused");
+      expect(result.qualification).toBe("unqualified");
+      expect(calls).toHaveLength(testCase.path === "linked.json" ? 0 : 1);
+    }
   });
 });

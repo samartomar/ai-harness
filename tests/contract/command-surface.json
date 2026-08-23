@@ -2524,6 +2524,48 @@
           "commands": []
         },
         {
+          "name": "resolve",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "root",
+              "required": false
+            }
+          ],
+          "options": [
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--decision <id>"
+            },
+            {
+              "flags": "--decision-digest <sha256>"
+            },
+            {
+              "flags": "--effect <effect>"
+            },
+            {
+              "flags": "--evidence <root-relative-file>"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--target <id>"
+            }
+          ],
+          "commands": []
+        },
+        {
           "name": "validate",
           "hasDescription": true,
           "arguments": [
