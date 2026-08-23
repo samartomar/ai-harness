@@ -15,6 +15,7 @@ import * as packageApi from "../../src/index.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import {
+  PolicyAuthorityReceiptSchema,
   type VerifiedPolicyAuthority,
   verifyPolicyAuthorityReceipt,
 } from "../../src/org-policy/authority.js";
@@ -403,7 +404,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
     expect(reuseCalls).toHaveLength(1);
   });
 
-  it("fails closed for authority and referenced-decision currency boundaries", async () => {
+  it("fails closed for future authority issuance and referenced-decision currency boundaries", async () => {
     const internalApi = supportedQualificationModule as Record<string, unknown>;
     const verifier = internalApi.verifyAihSupportedQualificationArtifactV1WithContext;
     expect(verifier).toEqual(expect.any(Function));
@@ -412,7 +413,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
       value: ReturnType<typeof decision>,
       authorityOverrides: Record<string, unknown> = {},
     ) => {
-      writeAuthorityReceipt(value, authorityOverrides);
+      await authority(value, undefined, authorityOverrides);
       writeReceipt(receipt(value));
       return (
         verifier as (
@@ -432,23 +433,51 @@ describe("AihSupportedQualificationReceiptV1", () => {
         },
       );
     };
-    for (const [value, authorityOverrides] of [
-      [decision(), { issuedAt: "2026-08-02T12:00:01+00:00" }],
-      [decision(), { expiresAt: "2026-08-02T12:00:00+00:00" }],
-      [decision(), { version: 2 }],
-      [decision({ notBefore: "2026-08-02T12:00:01+00:00" }), {}],
-      [decision({ expiresAt: "2026-08-02T12:00:00+00:00" }), {}],
-      [decision({ disposition: "rejected" }), {}],
-      [
-        decision({
-          disposition: "accepted-with-conditions",
-          reviewBy: "2026-08-02T12:00:00+00:00",
-        }),
-        {},
-      ],
-    ] as const) {
+    const futureAuthority = decision();
+    writeAuthorityReceipt(futureAuthority, { issuedAt: "2026-08-02T12:00:01+00:00" });
+    expect(
+      PolicyAuthorityReceiptSchema.safeParse(
+        JSON.parse(readFileSync(join(dir, ".aih", "policy-authority-receipt.json"), "utf8")),
+      ).success,
+    ).toBe(true);
+    writeReceipt(receipt(futureAuthority));
+    await expect(
+      (
+        verifier as (
+          ctx: PlanContext,
+          input: {
+            root: string;
+            decisionReference: { id: string; digest: string };
+            subject: typeof futureAuthority.subject;
+          },
+        ) => Promise<Record<string, unknown>>
+      )(
+        context(() => ({ code: 0 })),
+        {
+          root: dir,
+          decisionReference: {
+            id: futureAuthority.id,
+            digest: governanceDecisionDigestV2(futureAuthority as never),
+          },
+          subject: futureAuthority.subject,
+        },
+      ),
+    ).resolves.toMatchObject({ state: "unverified" });
+    const invalidDecisions: Array<ReturnType<typeof decision>> = [
+      decision({ notBefore: "2026-08-02T12:00:01+00:00" }),
+      decision({ expiresAt: "2026-08-02T12:00:00+00:00" }),
+      decision({ disposition: "rejected" }),
+      decision({
+        disposition: "accepted-with-conditions",
+        acceptedFindings: ["finding-1"],
+        acceptedGaps: [],
+        conditions: ["review-required"],
+        reviewBy: "2026-08-02T12:00:00+00:00",
+      }),
+    ];
+    for (const value of invalidDecisions) {
       expect(GovernanceDecisionV2Schema.safeParse(value).success).toBe(true);
-      await expect(verify(value, authorityOverrides)).resolves.toMatchObject({
+      await expect(verify(value)).resolves.toMatchObject({
         state: "unverified",
       });
     }
@@ -461,7 +490,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
             version: 2,
             decisionDigest: governanceDecisionDigestV2(revoked as never),
             issuer: revoked.issuer,
-            revokedAt: "2026-08-02T12:00:00+00:00",
+            revokedAt: "2026-08-01T00:00:00+00:00",
             reason: "Withdrawn at the exact validity boundary.",
           },
         ],
