@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -12,6 +13,7 @@ import { join } from "node:path";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCapability } from "../../src/commands/run.js";
+import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import {
@@ -29,6 +31,7 @@ import {
   canonicalOrganizationEvidenceEnvelopeV1,
   organizationEvidenceEnvelopeDigestV1,
 } from "../../src/org-policy/qualification-v1.js";
+import { upstreamObservationReceiptDigestV1 } from "../../src/org-policy/upstream-observation-receipt-v1.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { toFinding } from "../../src/support/findings.js";
 
@@ -203,6 +206,42 @@ function command(argv: string[]): Command {
 }
 
 describe("npm package upstream observer V1", () => {
+  it.each([
+    [{}, "invalid-input"],
+    [
+      {
+        decision: "bad!",
+        decisionDigest: `sha256:${"0".repeat(64)}`,
+        target: "claude",
+        evidence: "x",
+      },
+      "invalid-input",
+    ],
+    [
+      {
+        decision: "decision-acme-widget",
+        decisionDigest: "sha256:not-a-digest",
+        target: "claude",
+        evidence: "x",
+      },
+      "invalid-input",
+    ],
+    [
+      {
+        decision: "decision-acme-widget",
+        decisionDigest: `sha256:${"0".repeat(64)}`,
+        target: "not-a-cli",
+        evidence: "x",
+      },
+      "invalid-input",
+    ],
+  ])("rejects invalid observer input before any attestation process", async (options, reason) => {
+    const calls: string[][] = [];
+    const result = await observeNpmPackageV1(context(options, calls));
+    expect(result).toMatchObject({ outcome: "refused", reason });
+    expect(calls).toEqual([]);
+  });
+
   it("emits sealed observe-specific codes with the required remediation owners", async () => {
     const value = fixture();
     writeAuthority(value.decision);
@@ -293,7 +332,51 @@ describe("npm package upstream observer V1", () => {
       outcome: "observed-effective",
       effective: "observed-effective",
     });
-    expect(result.observationDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    const verifierDigest = `sha256:${createHash("sha256")
+      .update("aih-npm-package-observer/v1\0", "utf8")
+      .update(
+        canonicalStrictJsonBytesV1({
+          format: "aih-npm-package-observer",
+          version: 1,
+          effect: "install",
+          lockfileVersion: 3,
+        }),
+      )
+      .digest("hex")}`;
+    const installedDigest = `sha256:${createHash("sha256")
+      .update(
+        canonicalStrictJsonBytesV1({
+          integrity: INTEGRITY,
+          name: "@acme/widget",
+          version: "1.2.3",
+        }),
+      )
+      .digest("hex")}`;
+    expect(result.observationDigest).toBe(
+      upstreamObservationReceiptDigestV1({
+        format: "aih-upstream-observation-receipt",
+        version: 1,
+        id: "observation-npm-package",
+        decision: {
+          id: value.decision.id,
+          digest: governanceDecisionDigestV2(value.decision as never),
+        },
+        subject: {
+          kind: value.decision.subject.kind,
+          id: value.decision.subject.id,
+          sourceDigest: value.decision.subject.sourceDigest,
+          subjectDigest: value.decision.subject.subjectDigest,
+        },
+        targets: ["claude"],
+        allowedEffects: ["install"],
+        integration: { mode: "upstream-managed", owner: "npm-package-observer", version: "1.0.0" },
+        installed: { id: "npm-package", digest: installedDigest },
+        verifier: { id: "npm-package-observer", version: "1.0.0", digest: verifierDigest },
+        observedAt: "2026-08-02T12:00:00.000Z",
+        validUntil: "2026-08-02T12:01:00.000Z",
+        outcome: "observed-success",
+      }),
+    );
     const later = await observeNpmPackageV1(
       context(
         {
