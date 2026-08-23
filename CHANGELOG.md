@@ -8,6 +8,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Strict V2 observed effects now require independently verified organization qualification.**
+  Core accepts only canonical, bounded organization-evidence bytes that bind the exact subject,
+  evidence record, payload and artifact digests, issuer-claimed attestor, and current validity
+  window. The domain-separated evidence digest and attestor must match an exact decision inside
+  an externally verified authority receipt V3 before Core mints an opaque, clone-resistant
+  qualification capability. The upstream-observation resolver requires that capability and fails
+  closed on missing, unverified, mismatched, expired, or time-rewound qualification before it can
+  report `observed-effective`. Evidence kinds remain bounded organization identifiers rather than
+  a Core allow-list. This is a pure zero-effect runtime boundary: it does not sign evidence, trust
+  a scanner result as approval, install or execute a candidate, or yet verify `aih-supported`
+  catalog provenance. (#834)
+
 - **Strict V2 establishes the data-only organization-qualified governance boundary without
   making the maintained catalog an allow-list.** A public canonical decision contract covers
   exact GitHub, npm, PyPI, OCI, remote, and AIH identities for tools, skills, MCP servers,

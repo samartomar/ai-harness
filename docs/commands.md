@@ -895,6 +895,15 @@ exact catalog signer identity, head, catalog, member, subject kind, and subject 
 administrator-set status labels; absence from the maintained catalog is not a schema denial, and
 `unqualified` is a non-effective resolver state rather than an approvable origin.
 
+Organization evidence travels in the closed, canonical
+`OrganizationEvidenceEnvelopeV1` contract. It binds the exact subject digest, a bounded
+organization-defined evidence kind and record id, a public-safe summary, payload and artifact
+digests, an issuer-claimed attestor, and a validity window. Core hashes the canonical bytes with
+the `aih-organization-evidence/v1` domain and mints an opaque qualification capability only when
+the digest, attestor, subject, scope, time, and exact Decision V2 reference all match an externally
+verified receipt V3. The attestor field is an authority-issued attribution, not a separately
+verified signer identity.
+
 Receipt V3 is usable only after the same out-of-band GitHub attestation verification
 that mints other `VerifiedPolicyAuthority` values. It carries only Strict V2 decisions
 and revocations: unsigned policy or Workbench `approved` fields, legacy approvals,
@@ -902,12 +911,15 @@ and standalone decision files cannot enter it. The separate observation receipt 
 the decision digest, exact subject and installed digests, registered targets/effects,
 the named upstream integration owner and exact integration version,
 code-owned verifier id/version/digest, explicit outcome, and a bounded observation
-window. Core's internal pure resolver accepts only the opaque verified V3 authority token
-and an exact decision id/digest reference; raw decisions and revocations are untrusted data.
-It reports `observed-effective` only when those facts match a current approved or
+window. Core's internal pure resolver accepts only the opaque verified V3 authority token,
+an exact decision id/digest reference, and an opaque qualification capability; raw decisions,
+evidence envelopes, revocations, and cloned capabilities are untrusted data. It reports
+`observed-effective` only when those facts match a current approved or
 conditionally accepted decision from that receipt. Missing, rejected,
-revoked, stale, partial, refused, drifted, unknown, or mismatched inputs remain
-explicitly non-effective.
+revoked, stale, partial, refused, drifted, unknown, or mismatched inputs remain explicitly
+non-effective. This slice mints organization-qualified capabilities only. A claimed
+`aih-supported` basis remains refused until Core can verify the dedicated catalog qualification
+receipt under its own supported-repository trust root.
 
 This is a cross-repository data contract, not a new `aih policy` command or a generic
 installer. Current policy evaluation and projection do not consume V3 decisions, so
