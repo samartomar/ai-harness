@@ -933,6 +933,15 @@ inside the current decision window. Raw, cloned, expired, substituted, or differ
 receipts cannot mint the process-local qualification capability. The portable schema is shipped at
 `@aihq/harness/schemas/aih-supported-qualification-receipt-v1.schema.json`.
 
+A packed consumer may call `verifyAihSupportedQualificationArtifactV1` with only the target root,
+the exact expected decision id/digest, and the exact expected subject. The package resolves the
+root, constructs its production process runner from the live process environment, verifies the
+organization authority before the separately rooted supported receipt, and takes a fresh UTC time
+after authority verification. The result is only a scrubbed `verified` or `unverified` artifact
+state. The package root does not export the authority-bearing verifier and this call returns no
+authority, receipt bytes, qualification capability, effect, or reusable evidence. A fake external
+`gh` in a disposable test proves the process path only; it is not a public attestation.
+
 This remains a library and cross-repository data contract, not a new `aih policy` command or a generic
 installer. Current policy evaluation and projection do not consume V3 decisions, so
 custom stdio and remote candidates remain visible but non-projectable. The verifier's
