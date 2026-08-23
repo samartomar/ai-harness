@@ -45,6 +45,7 @@ import {
   organizationEvidenceEnvelopeDigestV1,
 } from "../../src/org-policy/qualification-v1.js";
 import { readOrgPolicy } from "../../src/org-policy/schema.js";
+import { upstreamObservationReceiptDigestV1 } from "../../src/org-policy/upstream-observation-receipt-v1.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { buildProgram } from "../../src/program.js";
 
@@ -428,6 +429,45 @@ describe("npm package lifecycle V1", () => {
     expect(resolved).toEqual([
       expect.objectContaining({ state: "stale", reason: "observation-stale" }),
     ]);
+  });
+
+  it("refuses a self-consistent future durable observation before it can become effective", async () => {
+    const value = fixture();
+    writeFixture(value);
+    writeGovernedPolicy();
+    await run(context(true, value.decision));
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const headName = readdirSync(join(base, "heads")).find((name) => name.endsWith(".json"));
+    if (headName === undefined) throw new Error("expected lifecycle head");
+    const headPath = join(base, "heads", headName);
+    const head = JSON.parse(readFileSync(headPath, "utf8"));
+    const originalPath = recordFile(base, head.recordDigest);
+    const record = JSON.parse(readFileSync(originalPath, "utf8")) as Record<string, unknown>;
+    const observation = record.observation as Parameters<
+      typeof upstreamObservationReceiptDigestV1
+    >[0];
+    const future = {
+      ...observation,
+      observedAt: "2026-08-02T12:01:00.000Z",
+      validUntil: "2026-08-03T12:01:00.000Z",
+    };
+    record.observation = future;
+    record.observationDigest = upstreamObservationReceiptDigestV1(future);
+    const digest = lifecycleRecordDigest(record);
+    const futurePath = join(dirname(originalPath), `${digest.slice("sha256:".length)}.json`);
+    rmSync(originalPath);
+    writeFileSync(futurePath, canonicalStrictJsonBytesV1(record));
+    writeFileSync(headPath, canonicalStrictJsonBytesV1({ ...head, recordDigest: digest }));
+
+    const resolved = await resolveNpmPackageEffectiveStateV1(context(false));
+    expect(resolved).toEqual([
+      expect.objectContaining({ state: "drifted", reason: "observation-drift" }),
+    ]);
+    expect(JSON.stringify(resolved)).not.toContain("observed-effective");
+    await expect(orgPolicyEffectiveCheck(context(false))).resolves.toMatchObject({
+      code: "org-policy.effective-blocked",
+      verdict: "fail",
+    });
   });
 
   it("keeps a 24-hour observation effective after 60 seconds, while stale history blocks evaluate but not projection", async () => {

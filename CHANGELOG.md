@@ -19,7 +19,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   custody, authority failure, rejection, revocation, and other lifecycle failures still block it.
   Missing or unsafe store custody, malformed or substituted heads/records/bindings, detached history,
   authority replacement, current rejection or revocation, decision/source/subject/target/effect
-  mismatch, and expired observations fail closed. Directory enumeration stops at the configured
+  mismatch, and future-dated or expired observations fail closed. Directory enumeration stops at the configured
   head, partition, and lineage caps instead of first materializing an unbounded hostile directory.
   The result is deterministic and read-only: it does
   not install, update, remove, configure, project, execute, or publish a package, and it does not make

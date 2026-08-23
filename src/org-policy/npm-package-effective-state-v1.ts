@@ -152,6 +152,8 @@ function resolveRecord(
   if (record.state === "decision-revoked") return base(record, "drifted", "revocation-drift");
   if (record.observation === undefined || record.observation.outcome !== "observed-success")
     return base(record, "partial", "observation-partial");
+  if (Date.parse(record.observation.observedAt) > now)
+    return base(record, "drifted", "observation-drift");
   if (now >= Date.parse(record.observation.validUntil))
     return base(record, "stale", "observation-stale");
   return base(record, "observed-effective", "current-exact-observation");
