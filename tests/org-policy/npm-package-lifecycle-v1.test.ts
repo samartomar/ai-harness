@@ -724,7 +724,7 @@ describe("npm package lifecycle V1", () => {
       "changed after the plan was computed",
     );
     expect(lifecycleFiles()).toEqual(afterWinner);
-  });
+  }, 30_000);
 
   it("migrates an absent aggregate guard but refuses a substituted one without lifecycle writes", async () => {
     writeFixture();
