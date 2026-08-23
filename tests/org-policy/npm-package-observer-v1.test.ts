@@ -514,6 +514,58 @@ describe("npm package upstream observer V1", () => {
     expect(npmPackageObserveCommand.plan.toString()).not.toContain('"0".repeat(64)');
   });
 
+  it("keeps verified authority phase-honest when organization evidence is missing, unsafe, or malformed", async () => {
+    const value = fixture();
+    const options = {
+      decision: value.decision.id,
+      decisionDigest: governanceDecisionDigestV2(value.decision as never),
+      target: "claude",
+    };
+
+    writeAuthority(value.decision);
+    const missingCalls: string[][] = [];
+    await expect(
+      observeNpmPackageV1(context({ ...options, evidence: "missing.json" }, missingCalls)),
+    ).resolves.toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      outcome: "refused",
+      reason: "evidence-unavailable",
+    });
+    expect(missingCalls).toHaveLength(1);
+
+    writeFileSync(join(root, "malformed.json"), "not-json", "utf8");
+    const malformedCalls: string[][] = [];
+    await expect(
+      observeNpmPackageV1(context({ ...options, evidence: "malformed.json" }, malformedCalls)),
+    ).resolves.toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      outcome: "refused",
+      reason: "qualification-unverified",
+    });
+    expect(malformedCalls).toHaveLength(1);
+
+    const external = mkdtempSync(join(tmpdir(), "aih-observer-evidence-parent-"));
+    const linkedParent = join(root, "linked-evidence");
+    try {
+      writeFileSync(join(external, "evidence.json"), value.evidenceBytes);
+      symlinkSync(external, linkedParent, process.platform === "win32" ? "junction" : "dir");
+      const unsafeCalls: string[][] = [];
+      await expect(
+        observeNpmPackageV1(context({ ...options, evidence: "linked-evidence/evidence.json" }, unsafeCalls)),
+      ).resolves.toMatchObject({
+        authority: "verified",
+        qualification: "unqualified",
+        outcome: "refused",
+        reason: "unsafe-evidence-custody",
+      });
+      expect(unsafeCalls).toHaveLength(1);
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
+  });
+
   it("routes an AIH-supported npm decision without organization evidence, then refuses absent durable custody", async () => {
     const value = supportedFixture();
     writeAuthority(value.decision);
