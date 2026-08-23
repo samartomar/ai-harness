@@ -194,19 +194,12 @@ export async function resolvePolicyEvidenceV1(ctx: PlanContext): Promise<PolicyR
 }
 
 function resultCheck(result: PolicyResolveResultV1): Check {
-  return result.outcome === "partial"
-    ? {
-        name: "policy resolve",
-        verdict: "fail",
-        code: "org-policy.effective-blocked",
-        detail: `policy resolve ${result.reason} (${result.effective})`,
-      }
-    : {
-        name: "policy resolve",
-        verdict: "fail",
-        code: "org-policy.effective-blocked",
-        detail: `policy resolve ${result.reason} (${result.effective})`,
-      };
+  return {
+    name: "policy resolve",
+    verdict: "fail",
+    code: "org-policy.effective-blocked",
+    detail: `policy resolve ${result.reason} (${result.effective})`,
+  };
 }
 
 export function policyResolvePlan(ctx: PlanContext): Plan {

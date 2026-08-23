@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCapability } from "../../src/commands/run.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { isContainedEvidenceRelativePathV1 } from "../../src/org-policy/evidence-custody-v1.js";
 import {
   governanceDecisionDigestV2,
   governanceDecisionSourceDigestV2,
@@ -165,6 +166,27 @@ function writeAuthority(
   );
 }
 
+function writeV2Authority(): void {
+  mkdirSync(join(root, ".aih"), { recursive: true });
+  writeFileSync(
+    join(root, ".aih", "policy-authority-receipt.json"),
+    JSON.stringify({
+      format: "aih-policy-authority-receipt",
+      version: 2,
+      issuerRepository: "acme/governance",
+      issuedAt: "2026-08-01T00:00:00+00:00",
+      expiresAt: "2026-08-10T00:00:00+00:00",
+      trustedIssuers: [],
+      evidence: [],
+      approvals: [],
+      revocations: [],
+      targets: ["claude"],
+      decisions: [],
+      decisionRevocations: [],
+    }),
+  );
+}
+
 function command(argv: string[]): Command {
   const value = new Command("resolve");
   value.argument("[root]").option("--json").option("--root <dir>").option("--context-dir <dir>");
@@ -176,6 +198,8 @@ function command(argv: string[]): Command {
 describe("policy resolve V1", () => {
   it("constructs only read-only digest and verification actions", () => {
     const calls: string[][] = [];
+    expect(policyResolveCommand.readOnly).toBe(true);
+    expect(policyResolveCommand.zeroWrite).toBe(true);
     expect(policyResolvePlan(context({}, calls)).actions.map((action) => action.kind)).toEqual([
       "digest",
       "probe",
@@ -209,6 +233,35 @@ describe("policy resolve V1", () => {
       effective: "observation-missing",
       outcome: "partial",
       reason: "observation-missing",
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("refuses an externally verified V2 authority receipt with the closed V3-only reason", async () => {
+    const fixture = decision();
+    writeV2Authority();
+    writeFileSync(join(root, "evidence.json"), fixture.bytes);
+    const calls: string[][] = [];
+
+    const result = await resolvePolicyEvidenceV1(
+      context(
+        {
+          decision: fixture.value.id,
+          decisionDigest: governanceDecisionDigestV2(fixture.value as never),
+          target: "claude",
+          effect: "configure",
+          evidence: "evidence.json",
+        },
+        calls,
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "unverified",
+      qualification: "unqualified",
+      effective: "authority-version",
+      outcome: "refused",
+      reason: "authority-version",
     });
     expect(calls).toHaveLength(1);
   });
@@ -355,6 +408,10 @@ describe("policy resolve V1", () => {
     },
   );
 
+  it("refuses an absolute cross-device result from the custody containment guard", () => {
+    expect(isContainedEvidenceRelativePathV1("D:\\evidence.json")).toBe(false);
+  });
+
   it("refuses an exact-decision-digest substitution after only the existing authority attestation", async () => {
     const fixture = decision();
     writeAuthority(fixture.value);
@@ -482,6 +539,39 @@ describe("policy resolve V1", () => {
         testCase.path === "linked.json" ? "unsafe-evidence-custody" : "qualification-unverified",
       );
       expect(calls).toHaveLength(testCase.path === "linked.json" ? 0 : 1);
+    }
+  });
+
+  it("refuses evidence beneath a symlinked parent before calling the authority verifier", async () => {
+    const fixture = decision();
+    writeAuthority(fixture.value);
+    const outside = mkdtempSync(join(tmpdir(), "aih-policy-resolve-outside-"));
+    try {
+      writeFileSync(join(outside, "evidence.json"), fixture.bytes);
+      symlinkSync(outside, join(root, "sub"), "junction");
+      const calls: string[][] = [];
+      const result = await resolvePolicyEvidenceV1(
+        context(
+          {
+            decision: fixture.value.id,
+            decisionDigest: governanceDecisionDigestV2(fixture.value as never),
+            target: "claude",
+            effect: "configure",
+            evidence: "sub/evidence.json",
+          },
+          calls,
+        ),
+      );
+
+      expect(result).toMatchObject({
+        authority: "unverified",
+        qualification: "unqualified",
+        outcome: "refused",
+        reason: "unsafe-evidence-custody",
+      });
+      expect(calls).toEqual([]);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
     }
   });
 

@@ -28,18 +28,22 @@ function relativeEvidencePath(value: unknown): string | undefined {
   return value;
 }
 
+/** @internal Pure containment guard; intentionally not exported from the package root. */
+export function isContainedEvidenceRelativePathV1(pathRelative: string): boolean {
+  return (
+    pathRelative !== "" &&
+    !isAbsolute(pathRelative) &&
+    !win32.isAbsolute(pathRelative) &&
+    !pathRelative.split(/[\\/]+/).some((part) => part === "" || part === "." || part === "..")
+  );
+}
+
 function hasSymlinkedParent(root: string, path: string): boolean {
   const rootStat = safeLstat(root);
   if (rootStat === undefined || rootStat.isSymbolicLink() || !rootStat.isDirectory()) return true;
   let current = root;
   const pathRelative = relative(root, path);
-  if (
-    pathRelative === "" ||
-    isAbsolute(pathRelative) ||
-    win32.isAbsolute(pathRelative) ||
-    pathRelative.split(/[\\/]+/).some((part) => part === "" || part === "." || part === "..")
-  )
-    return true;
+  if (!isContainedEvidenceRelativePathV1(pathRelative)) return true;
   for (const part of pathRelative.split(sep).slice(0, -1)) {
     current = resolve(current, part);
     const stat = safeLstat(current);
@@ -69,13 +73,7 @@ export function custodyOrganizationEvidenceV1(
   if (rel === undefined) return { problem: "invalid-evidence-path" };
   const path = resolve(root, rel);
   const pathRelative = relative(root, path);
-  if (
-    pathRelative === "" ||
-    isAbsolute(pathRelative) ||
-    win32.isAbsolute(pathRelative) ||
-    pathRelative === ".." ||
-    pathRelative.startsWith(`..${sep}`)
-  ) {
+  if (!isContainedEvidenceRelativePathV1(pathRelative)) {
     return { problem: "invalid-evidence-path" };
   }
   if (hasSymlinkedParent(root, path)) return { problem: "unsafe-evidence-custody" };
