@@ -465,7 +465,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
       supportedTargets: ["claude"],
       now: "2026-08-02T12:00:00+00:00",
     };
-    const invalidReceipts = [
+    const invalidReceipts: Array<[string, ReturnType<typeof receipt>]> = [
       ["expires before now", receipt(value, { expiresAt: "2026-08-02T11:59:59+00:00" })],
       [
         "notBefore is after now",
