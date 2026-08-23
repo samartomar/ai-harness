@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import {
   existsSync,
-  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -18,6 +17,7 @@ import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCapability } from "../../src/commands/run.js";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
+import { readRegularFileWithStats } from "../../src/internals/fsxn.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import {
@@ -216,10 +216,11 @@ function treeSnapshot(path: string, relative = ""): string[] {
     .flatMap((entry) => {
       const child = join(path, entry.name);
       const rel = relative.length === 0 ? entry.name : `${relative}/${entry.name}`;
-      const stat = lstatSync(child);
-      if (stat.isSymbolicLink()) return [`link:${rel}:${readlinkSync(child)}`];
-      if (stat.isDirectory()) return [`dir:${rel}`, ...treeSnapshot(child, rel)];
-      return [`file:${rel}:${createHash("sha256").update(readFileSync(child)).digest("hex")}`];
+      if (entry.isSymbolicLink()) return [`link:${rel}:${readlinkSync(child)}`];
+      if (entry.isDirectory()) return [`dir:${rel}`, ...treeSnapshot(child, rel)];
+      const file = readRegularFileWithStats(child);
+      if (file === undefined) throw new Error(`snapshot cannot read regular file: ${rel}`);
+      return [`file:${rel}:${createHash("sha256").update(file.contents).digest("hex")}`];
     });
 }
 
@@ -1230,6 +1231,7 @@ describe("npm package upstream observer V1", () => {
     }
   });
 
+  // This intentionally reads and parses the real maximum twice; slow CI disks need more than Vitest's 5s default.
   it("accepts the exact 16 MiB lock boundary and treats one extra byte as unavailable", async () => {
     const value = fixture();
     writeAuthority(value.decision);
@@ -1271,7 +1273,7 @@ describe("npm package upstream observer V1", () => {
       outcome: "partial",
       reason: "installed-evidence-unavailable",
     });
-  });
+  }, 20_000);
 
   it.each([true, false, "true"])(
     "rejects a lock link marker (%j) rather than treating it as installed package evidence",
