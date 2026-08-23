@@ -661,6 +661,36 @@ describe("SupportedQualificationCustodyV2 durable acceptance", { timeout: 15_000
     }
   });
 
+  it("reports retained member-record capacity separately from current-head members", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-supported-custody-inspect-"));
+    const context = planContext(root);
+    try {
+      expect(supported.inspectSupportedCustodyV2({ root, posture: "vibe" })).toEqual({
+        deterministic: true,
+        scrubbed: true,
+        memberRecords: { limit: 4096, occupied: 0, remaining: 4096 },
+        members: [],
+      });
+      await executePlan(await prepare(root), context);
+      await executePlan(
+        await prepare(
+          root,
+          candidateFor(successorReceipt(), {
+            decision: { id: "decision-successor", digest: `sha256:${"8".repeat(64)}` },
+          }),
+        ),
+        context,
+      );
+      expect(supported.inspectSupportedCustodyV2({ root, posture: "vibe" })).toMatchObject({
+        memberRecords: { limit: 4096, occupied: 2, remaining: 4094 },
+        members: [expect.objectContaining({ entryId: "recipe.successor" })],
+      });
+      expect(supported.inspectSupportedCustodyV2({ root, posture: "vibe" }).members).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("refuses gaps, wrong predecessors, key rotation, and replay reuse at genesis", async () => {
     const { root, context } = await applyGenesis();
     try {
