@@ -925,8 +925,8 @@ non-linked-parent boundary, copies the exact bytes into owner-only temporary cus
 absolute external `gh attestation verify` against both
 `AIH_SUPPORTED_QUALIFICATION_REPOSITORY` and
 `AIH_SUPPORTED_QUALIFICATION_WORKFLOW`. Those roots are required and cannot reuse the root bound
-inside the opaque organization authority. Only after attestation succeeds does Core parse and hash
-the exact copied canonical bytes, require `organizationAdmission: "not-authoritative"`, and
+inside the opaque organization authority. Only after attestation succeeds does Core parse the exact
+copied canonical bytes, require `organizationAdmission: "not-authoritative"`, and
 exact-match the full Decision V2 subject plus catalog signer, catalog, head, member, subject kind,
 subject digest, and qualification kind. Raw, cloned, expired, substituted, or differently scoped
 receipts cannot mint the process-local qualification capability. The portable schema is shipped at
@@ -934,10 +934,11 @@ receipts cannot mint the process-local qualification capability. The portable sc
 
 This remains a library and cross-repository data contract, not a new `aih policy` command or a generic
 installer. Current policy evaluation and projection do not consume V3 decisions, so
-custom stdio and remote candidates remain visible but non-projectable. The contract
-does no scanning, provider access, process launch, package planning, or filesystem
-write and cannot satisfy or bypass the held ECC preview and executable-package
-closure work.
+custom stdio and remote candidates remain visible but non-projectable. The verifier's
+only process/provider observation is the bounded external GitHub attestation check, and
+its only write is owner-only temporary verification custody. It performs no candidate
+scan or execution, installation, target-root mutation, or package planning and cannot
+satisfy or bypass the held ECC preview and executable-package closure work.
 
 Approvals cover only a missing or failed **waivable** evidence record, require a non-empty signed reason,
 and last at most 90 days. Mandatory detector failures and every unwaivable danger code remain blocked even

@@ -13,8 +13,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that binds the exact Decision V2 subject and all seven `aih-supported` catalog-basis fields,
   explicit non-admission, and bounded validity. The library verifier reads only the fixed bounded
   regular file, rejects linked custody, verifies an owner-only private copy with an absolute
-  external `gh` against dedicated supported repository/workflow roots, and then parses and hashes
-  the exact copied bytes. It refuses organization-authority root reuse, noncanonical or substituted
+  external `gh` against dedicated supported repository/workflow roots, and then parses the exact
+  copied canonical bytes. It refuses organization-authority root reuse, noncanonical or substituted
   bytes, stale or mismatched fields, and raw or cloned capabilities. A current externally verified
   V3 organization decision and a fresh exact upstream observation are still required before the
   zero-effect resolver can report `observed-effective`. This adds no catalog fetch, scanner,
