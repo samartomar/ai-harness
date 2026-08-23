@@ -70,13 +70,12 @@ describe("committed JSON Schemas", () => {
       title: "aih-supported-qualification-receipt-v2.schema.json",
       type: "object",
     });
-    expect(
-      (
-        schemas[6]?.schema as {
+    const supportSchema = schemas[6]?.schema as
+      | {
           properties?: { catalogContinuity?: { properties?: { sequence?: { minimum?: number } } } };
         }
-      ).properties?.catalogContinuity?.properties?.sequence?.minimum,
-    ).toBe(0);
+      | undefined;
+    expect(supportSchema?.properties?.catalogContinuity?.properties?.sequence?.minimum).toBe(0);
     expect(schemas[7]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $comment: expect.stringContaining("PackageGraphSchema.parse"),
