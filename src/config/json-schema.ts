@@ -3,6 +3,7 @@ import { PackageGraphSchema } from "../capability/package-graph/schema.js";
 import { CapabilityPackageManifestSchema } from "../capability/package-manager/schema.js";
 import { PolicyAuthorityReceiptSchema } from "../org-policy/authority.js";
 import { GovernanceDecisionV2Schema } from "../org-policy/governance-decision-v2.js";
+import { OrganizationEvidenceEnvelopeV1Schema } from "../org-policy/qualification-v1.js";
 import {
   enterpriseSupportedClisJsonSchemaConstraint,
   OrgPolicySchema,
@@ -45,6 +46,13 @@ export function generatedConfigSchemas(): GeneratedConfigSchema[] {
       schema: schemaFor(
         "aih-upstream-observation-receipt-v1.schema.json",
         UpstreamObservationReceiptV1Schema,
+      ),
+    },
+    {
+      path: "schemas/aih-organization-evidence-envelope-v1.schema.json",
+      schema: schemaFor(
+        "aih-organization-evidence-envelope-v1.schema.json",
+        OrganizationEvidenceEnvelopeV1Schema,
       ),
     },
     {

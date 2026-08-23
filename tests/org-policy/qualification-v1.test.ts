@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import {
@@ -15,7 +15,8 @@ import {
 } from "../../src/org-policy/governance-decision-v2.js";
 import {
   canonicalOrganizationEvidenceEnvelopeV1,
-  isVerifiedOrganizationQualificationV1,
+  isVerifiedQualificationV1,
+  MAX_ORGANIZATION_EVIDENCE_ENVELOPE_BYTES_V1,
   organizationEvidenceEnvelopeDigestV1,
   parseOrganizationEvidenceEnvelopeV1Bytes,
   verifyOrganizationQualificationV1,
@@ -31,6 +32,8 @@ let authorityBin: string;
 let trustedGh: string;
 
 beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-08-02T12:00:00+00:00"));
   dir = mkdtempSync(join(tmpdir(), "aih-organization-qualification-"));
   authorityBin = mkdtempSync(join(tmpdir(), "aih-organization-qualification-gh-"));
   const gh = join(authorityBin, process.platform === "win32" ? "gh.exe" : "gh");
@@ -39,6 +42,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   rmSync(dir, { recursive: true, force: true });
   rmSync(authorityBin, { recursive: true, force: true });
 });
@@ -61,7 +65,7 @@ function decision(overrides: Record<string, unknown> = {}) {
       attestor: "scanner-service",
     },
     subject: {
-      kind: "tool",
+      kind: "tool" as const,
       id: "platform-review-tool",
       source,
       sourceDigest,
@@ -104,7 +108,7 @@ function envelope(value: ReturnType<typeof decision>, overrides: Record<string, 
       id: value.evidence.id,
       summary: "The named organization assessment approved this exact subject.",
       payloadDigest: `sha256:${"1".repeat(64)}`,
-      artifactDigest: `sha256:${"2".repeat(64)}`,
+      artifactDigests: [`sha256:${"2".repeat(64)}`],
     },
     attestor: value.evidence.attestor,
     issuedAt: "2026-08-01T00:00:00+00:00",
@@ -132,6 +136,49 @@ function qualifiedDecision(overrides: Record<string, unknown> = {}) {
   });
 }
 
+function qualifiedDecisionWithEnvelope(envelopeOverrides: Record<string, unknown>) {
+  const base = decision();
+  const evidence = envelope(base, envelopeOverrides);
+  const evidenceDigest = organizationEvidenceEnvelopeDigestV1(evidence as never);
+  return decision({
+    qualificationBasis: {
+      kind: "organization-qualified",
+      evidenceDigest,
+      attestor: "scanner-service",
+    },
+    evidence: { id: "scan-record", digest: evidenceDigest, attestor: "scanner-service" },
+  });
+}
+
+function qualifiedDecisionForOtherSubject() {
+  const base = decision();
+  const subject = {
+    ...base.subject,
+    id: "other-review-tool",
+    subjectDigest: governanceDecisionSubjectDigestV2({
+      kind: "tool",
+      id: "other-review-tool",
+      sourceDigest: base.subject.sourceDigest,
+    }),
+  };
+  return qualifiedDecision({ id: "decision-secondary-tool", subject });
+}
+
+function unsupportedDecision() {
+  const base = decision();
+  return decision({
+    qualificationBasis: {
+      kind: "aih-supported",
+      catalogSignerIdentity: "aih-catalog-service",
+      catalogDigest: `sha256:${"3".repeat(64)}`,
+      catalogHeadDigest: `sha256:${"4".repeat(64)}`,
+      catalogMemberDigest: `sha256:${"5".repeat(64)}`,
+      subjectKind: base.subject.kind,
+      subjectDigest: base.subject.subjectDigest,
+    },
+  });
+}
+
 function ctx(): PlanContext {
   const run = fakeRunner((argv) =>
     argv[0] === trustedGh && argv[1] === "attestation" && argv[2] === "verify"
@@ -152,7 +199,7 @@ function ctx(): PlanContext {
   };
 }
 
-async function authority(value: ReturnType<typeof decision>) {
+async function authority(...values: ReturnType<typeof decision>[]) {
   mkdirSync(join(dir, ".aih"), { recursive: true });
   writeFileSync(
     join(dir, ".aih", "policy-authority-receipt.json"),
@@ -164,7 +211,7 @@ async function authority(value: ReturnType<typeof decision>) {
       expiresAt: "2026-08-10T00:00:00+00:00",
       trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
       targets: ["claude"],
-      decisions: [value],
+      decisions: [...values].sort((left, right) => left.id.localeCompare(right.id)),
       decisionRevocations: [],
     }),
   );
@@ -202,18 +249,60 @@ describe("OrganizationEvidenceEnvelopeV1", () => {
     const valid = envelope(value);
     const bytes = canonicalBytes(valid);
     expect(parseOrganizationEvidenceEnvelopeV1Bytes(bytes)).toEqual(valid);
+    expect(parseOrganizationEvidenceEnvelopeV1Bytes(bytes)?.attestor).toBe("scanner-service");
     expect(organizationEvidenceEnvelopeDigestV1(valid as never)).toMatch(/^sha256:[0-9a-f]{64}$/);
 
     for (const invalid of [
       Buffer.from(JSON.stringify(valid)),
+      Buffer.concat([Buffer.from(" "), bytes]),
+      Buffer.concat([bytes, Buffer.from("\n")]),
       Buffer.from(canonicalOrganizationEvidenceEnvelopeV1({ ...valid, unexpected: true } as never)),
-      canonicalBytes({ ...valid, subjectDigest: `sha256:${"0".repeat(64)}` }),
       canonicalBytes({ ...valid, evidence: { ...valid.evidence, payloadDigest: "not-a-digest" } }),
+      canonicalBytes({ ...valid, evidence: { ...valid.evidence, artifactDigests: [] } }),
+      canonicalBytes({
+        ...valid,
+        evidence: {
+          ...valid.evidence,
+          artifactDigests: Array.from(
+            { length: 17 },
+            (_, index) => `sha256:${index.toString(16).padStart(64, "0")}`,
+          ),
+        },
+      }),
+      canonicalBytes({ ...valid, evidence: { ...valid.evidence, summary: " ".repeat(501) } }),
+      canonicalBytes({ ...valid, issuedAt: "not-a-timestamp" }),
       canonicalBytes({ ...valid, issuedAt: "2026-08-02T00:00:00+00:00" }),
       canonicalBytes({ ...valid, expiresAt: "2027-01-01T00:00:00+00:00" }),
     ]) {
       expect(parseOrganizationEvidenceEnvelopeV1Bytes(invalid)).toBeUndefined();
     }
+    const maximumShape = canonicalBytes({
+      ...valid,
+      subjectDigest: `sha256:${"a".repeat(64)}`,
+      attestor: "a".repeat(256),
+      issuedAt: "9999-01-01T00:00:00.000+00:00",
+      notBefore: "9999-01-01T00:00:00.000+00:00",
+      expiresAt: "9999-03-31T00:00:00.000+00:00",
+      evidence: {
+        kind: "k".repeat(64),
+        id: "i".repeat(64),
+        summary: "x".repeat(500),
+        payloadDigest: `sha256:${"b".repeat(64)}`,
+        artifactDigests: Array.from(
+          { length: 16 },
+          (_, index) => `sha256:${index.toString(16).padStart(64, "0")}`,
+        ),
+      },
+    });
+    expect(maximumShape.byteLength).toBeLessThanOrEqual(
+      MAX_ORGANIZATION_EVIDENCE_ENVELOPE_BYTES_V1,
+    );
+    expect(parseOrganizationEvidenceEnvelopeV1Bytes(maximumShape)).toBeDefined();
+    expect(
+      parseOrganizationEvidenceEnvelopeV1Bytes(
+        Buffer.alloc(MAX_ORGANIZATION_EVIDENCE_ENVELOPE_BYTES_V1 + 1),
+      ),
+    ).toBeUndefined();
   });
 
   it("mints opaque qualification only for a current V3 organization-qualified decision", async () => {
@@ -235,10 +324,11 @@ describe("OrganizationEvidenceEnvelopeV1", () => {
     const verified = verifyOrganizationQualificationV1(input);
     expect(verified).toBeDefined();
     if (verified === undefined) throw new Error("expected verified qualification");
-    expect(isVerifiedOrganizationQualificationV1(verified)).toBe(true);
+    expect(isVerifiedQualificationV1(verified)).toBe(true);
     expect(verified).not.toHaveProperty("envelope");
-    expect(isVerifiedOrganizationQualificationV1({ ...verified })).toBe(false);
-    expect(isVerifiedOrganizationQualificationV1(structuredClone(verified))).toBe(false);
+    expect(verified).not.toHaveProperty("attestor");
+    expect(isVerifiedQualificationV1({ ...verified })).toBe(false);
+    expect(isVerifiedQualificationV1(structuredClone(verified))).toBe(false);
 
     for (const changed of [
       { ...evidence, attestor: "other-attestor" },
@@ -254,7 +344,8 @@ describe("OrganizationEvidenceEnvelopeV1", () => {
 
   it("requires the opaque organization qualification before an observed effect and never performs it", async () => {
     const value = qualifiedDecision();
-    const verifiedAuthority = await authority(value);
+    const other = qualifiedDecisionForOtherSubject();
+    const verifiedAuthority = await authority(value, other);
     const currentObservation = observation(value);
     const verifiedObservation = verifyUpstreamObservationV1({
       receipt: currentObservation,
@@ -299,11 +390,83 @@ describe("OrganizationEvidenceEnvelopeV1", () => {
       now: input.now,
     });
     expect(qualification).toBeDefined();
-    expect(resolveObservedEffect({ ...input, qualification })).toMatchObject({
+    expect(resolveObservedEffect({ ...input, qualification })).toEqual({
       state: "observed-effective",
+      decisionDigest: input.decisionReference.digest,
     });
     expect(resolveObservedEffect({ ...input, qualification: { ...qualification } })).toMatchObject({
       state: "qualification-unverified",
     });
+
+    const otherQualification = verifyOrganizationQualificationV1({
+      authority: verifiedAuthority,
+      decisionReference: { id: other.id, digest: governanceDecisionDigestV2(other as never) },
+      bytes: canonicalBytes(envelope(other)),
+      subject: other.subject,
+      target: input.target,
+      effect: input.effect,
+      supportedTargets: input.supportedTargets,
+      now: input.now,
+    });
+    expect(otherQualification).toBeDefined();
+    expect(resolveObservedEffect({ ...input, qualification: otherQualification })).toMatchObject({
+      state: "qualification-mismatch",
+    });
+    expect(
+      resolveObservedEffect({ ...input, qualification, now: "2026-08-03T00:00:00+00:00" }),
+    ).toMatchObject({ state: "observation-stale" });
+  });
+
+  it("refuses aih-supported provenance and refuses a token rewound before its validity window", async () => {
+    const unsupported = unsupportedDecision();
+    const unsupportedAuthority = await authority(unsupported);
+    const unsupportedObservation = observation(unsupported);
+    expect(
+      resolveObservedEffect({
+        authority: unsupportedAuthority,
+        decisionReference: {
+          id: unsupported.id,
+          digest: governanceDecisionDigestV2(unsupported as never),
+        },
+        observation: undefined,
+        subject: unsupported.subject,
+        target: "claude",
+        effect: "configure",
+        supportedTargets: ["claude"],
+        expectedVerifier: unsupportedObservation.verifier,
+        expectedInstalled: unsupportedObservation.installed,
+        expectedIntegration: unsupportedObservation.integration,
+        now: "2026-08-02T12:00:00+00:00",
+      }),
+    ).toMatchObject({ state: "qualification-mismatch" });
+
+    const bounded = qualifiedDecisionWithEnvelope({ notBefore: "2026-08-02T12:00:00+00:00" });
+    const boundedAuthority = await authority(bounded);
+    const qualification = verifyOrganizationQualificationV1({
+      authority: boundedAuthority,
+      decisionReference: { id: bounded.id, digest: governanceDecisionDigestV2(bounded as never) },
+      bytes: canonicalBytes(envelope(bounded, { notBefore: "2026-08-02T12:00:00+00:00" })),
+      subject: bounded.subject,
+      target: "claude",
+      effect: "configure",
+      supportedTargets: ["claude"],
+      now: "2026-08-02T12:00:00+00:00",
+    });
+    const boundedObservation = observation(bounded);
+    expect(
+      resolveObservedEffect({
+        authority: boundedAuthority,
+        decisionReference: { id: bounded.id, digest: governanceDecisionDigestV2(bounded as never) },
+        qualification,
+        subject: bounded.subject,
+        target: "claude",
+        effect: "configure",
+        supportedTargets: ["claude"],
+        expectedVerifier: boundedObservation.verifier,
+        expectedInstalled: boundedObservation.installed,
+        expectedIntegration: boundedObservation.integration,
+        now: "2026-08-02T11:59:59+00:00",
+      }),
+    ).toMatchObject({ state: "qualification-mismatch" });
   });
 });

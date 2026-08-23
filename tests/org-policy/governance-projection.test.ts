@@ -56,6 +56,11 @@ import {
   orgPolicyProjectionActions,
   verifiedOrgPolicyProjectionActions,
 } from "../../src/org-policy/project.js";
+import {
+  canonicalOrganizationEvidenceEnvelopeV1,
+  organizationEvidenceEnvelopeDigestV1,
+  verifyOrganizationQualificationV1,
+} from "../../src/org-policy/qualification-v1.js";
 import { resolveRuntimeOrgPolicy } from "../../src/org-policy/runtime.js";
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 import {
@@ -431,6 +436,45 @@ function governanceDecisionV2(overrides: Record<string, unknown> = {}) {
     conditions: [],
     ...overrides,
   };
+}
+
+function organizationEvidenceEnvelopeV1(value: ReturnType<typeof governanceDecisionV2>) {
+  return {
+    format: "aih-organization-evidence",
+    version: 1,
+    subjectDigest: value.subject.subjectDigest,
+    evidence: {
+      kind: "organization-review",
+      id: value.evidence.id,
+      summary: "The organization review qualified this exact governed subject.",
+      payloadDigest: `sha256:${"1".repeat(64)}`,
+      artifactDigests: [`sha256:${"2".repeat(64)}`],
+    },
+    attestor: value.evidence.attestor,
+    issuedAt: value.issuedAt,
+    notBefore: value.notBefore,
+    expiresAt: value.expiresAt,
+  };
+}
+
+function organizationQualifiedDecisionV2(value: ReturnType<typeof governanceDecisionV2>) {
+  const evidence = organizationEvidenceEnvelopeV1(value);
+  const digest = organizationEvidenceEnvelopeDigestV1(evidence as never);
+  return {
+    ...value,
+    qualificationBasis: {
+      kind: "organization-qualified",
+      evidenceDigest: digest,
+      attestor: evidence.attestor,
+    },
+    evidence: { ...value.evidence, digest },
+  };
+}
+
+function organizationEvidenceBytes(value: ReturnType<typeof governanceDecisionV2>): Buffer {
+  return Buffer.from(
+    canonicalOrganizationEvidenceEnvelopeV1(organizationEvidenceEnvelopeV1(value) as never),
+  );
 }
 
 function waivableApproval(overrides: Record<string, unknown> = {}) {
@@ -1172,11 +1216,13 @@ describe("governed candidate projection", () => {
 
   it("keeps externally verified V3 authority facts in immutable detached custody", async () => {
     const now = Date.now();
-    const signedDecision = governanceDecisionV2({
-      issuedAt: new Date(now - 90 * 60_000).toISOString(),
-      notBefore: new Date(now - 90 * 60_000).toISOString(),
-      expiresAt: new Date(now + 60 * 60_000).toISOString(),
-    });
+    const signedDecision = organizationQualifiedDecisionV2(
+      governanceDecisionV2({
+        issuedAt: new Date(now - 90 * 60_000).toISOString(),
+        notBefore: new Date(now - 90 * 60_000).toISOString(),
+        expiresAt: new Date(now + 60 * 60_000).toISOString(),
+      }),
+    );
     mkdirSync(join(dir, ".aih"), { recursive: true });
     writeFileSync(
       join(dir, ".aih", "policy-authority-receipt.json"),
@@ -1233,7 +1279,21 @@ describe("governed candidate projection", () => {
       expectedInstalled: observed.installed,
       expectedIntegration: observed.integration,
       now: new Date(now).toISOString(),
+      qualification: undefined as unknown,
     };
+    const qualification = verifyOrganizationQualificationV1({
+      authority,
+      decisionReference: resolverInput.decisionReference,
+      bytes: organizationEvidenceBytes(signedDecision),
+      subject: signedDecision.subject as never,
+      target: resolverInput.target,
+      effect: resolverInput.effect,
+      supportedTargets: resolverInput.supportedTargets,
+      now: resolverInput.now,
+    });
+    if (qualification === undefined)
+      throw new Error("expected verified organization qualification");
+    resolverInput.qualification = qualification;
     const verifiedObservation = verifyUpstreamObservationV1({
       ...resolverInput,
       receipt: observed,
@@ -1404,8 +1464,18 @@ describe("governed candidate projection", () => {
         expectedIntegration: observed.integration,
         now: new Date(now).toISOString(),
       };
+      const qualification = verifyOrganizationQualificationV1({
+        authority,
+        decisionReference: input.decisionReference,
+        bytes: organizationEvidenceBytes(signedDecision),
+        subject: signedDecision.subject as never,
+        target: input.target,
+        effect: input.effect,
+        supportedTargets: input.supportedTargets,
+        now: input.now,
+      });
       return {
-        input,
+        input: { ...input, qualification },
         observation: verifyUpstreamObservationV1({
           ...input,
           receipt: observed,
@@ -1427,7 +1497,9 @@ describe("governed candidate projection", () => {
         decision: governanceDecisionV2(),
       } as never),
     ).toMatchObject({ state: "decision-rejected" });
-    const approved = governanceDecisionV2({ issuedAt, notBefore: issuedAt, expiresAt });
+    const approved = organizationQualifiedDecisionV2(
+      governanceDecisionV2({ issuedAt, notBefore: issuedAt, expiresAt }),
+    );
     const coPresentRejected = governanceDecisionV2({
       id: "decision-rejection",
       disposition: "rejected",
