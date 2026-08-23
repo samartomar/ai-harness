@@ -163,7 +163,10 @@ function context(
   };
 }
 
-async function authority(value: ReturnType<typeof decision>): Promise<VerifiedPolicyAuthority> {
+async function authority(
+  value: ReturnType<typeof decision>,
+  workflow?: string,
+): Promise<VerifiedPolicyAuthority> {
   mkdirSync(join(dir, ".aih"), { recursive: true });
   writeFileSync(
     join(dir, ".aih", "policy-authority-receipt.json"),
@@ -183,6 +186,7 @@ async function authority(value: ReturnType<typeof decision>): Promise<VerifiedPo
     (argv) => (argv[0] === trustedAuthorityGh ? { code: 0 } : { code: 1 }),
     {
       AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance",
+      ...(workflow === undefined ? {} : { AIH_POLICY_AUTHORITY_WORKFLOW: workflow }),
       PATH: authorityBin,
     },
   );
@@ -331,6 +335,38 @@ describe("AihSupportedQualificationReceiptV1", () => {
     expect(result.qualification).toBeDefined();
     expect(calls).toHaveLength(1);
     expect(calls[0]?.[0]).toBe(trustedSupportedGh);
+  });
+
+  it("binds root separation to the previously verified authority rather than mutable caller env", async () => {
+    const value = decision();
+    const verifiedAuthority = await authority(value, "policy.yml");
+    writeReceipt(receipt(value));
+    const calls: string[][] = [];
+    const result = await verifyAihSupportedQualificationReceiptV1(
+      context(
+        (argv) => {
+          calls.push(argv);
+          return { code: 0 };
+        },
+        {
+          AIH_POLICY_AUTHORITY_REPOSITORY: undefined,
+          AIH_POLICY_AUTHORITY_WORKFLOW: undefined,
+          AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "acme/governance",
+          AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "policy.yml",
+        },
+      ),
+      {
+        authority: verifiedAuthority,
+        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+        subject: value.subject,
+        target: "claude",
+        effect: "configure",
+        supportedTargets: ["claude"],
+        now: "2026-08-02T12:00:00+00:00",
+      },
+    );
+    expect(result.problem).toMatch(/reuses the organization authority root/);
+    expect(calls).toEqual([]);
   });
 
   it("allows support provenance to predate a current decision while capping the token at receipt expiry", async () => {
