@@ -86,16 +86,24 @@ window, evidence record, payload, and artifact digests are checked before Core m
 opaque qualification capability. `aih policy resolve` makes the organization-evidence half of
 that boundary reachable as a zero-write administrator check: it verifies the externally attested
 V3 receipt, exact decision id/digest, code-owned target/effect, and one canonical root-relative
-evidence envelope. With no upstream observer in this slice it returns a non-effective `partial`
-result and a nonzero exit; it cannot claim success. The internal resolver requires the resulting
-opaque qualification capability in addition to the opaque authority and a fresh matching
-observation; a decision cannot assert its own qualification. For an `aih-supported`
+evidence envelope. By itself it returns a non-effective `partial` result and a nonzero exit; it
+cannot claim success. For the narrower organization-qualified npm-package case,
+`aih policy observe npm-package` can now reverify the same authority and evidence, then observe
+the exact package name, version, and integrity from a regular npm v3 lockfile and the matching
+installed package manifest. The decision supplies the package and fixes the effect to `install`;
+callers cannot select an observer, verifier, runner, clock, receipt, package, or effect. A complete
+match returns `observed-effective` and the full canonical observation-receipt digest without
+installing or executing the package or persisting a receipt. Missing installed evidence is
+`partial`; unsafe, changed, stale, rejected, revoked, or mismatched evidence refuses. The internal
+resolver requires the resulting opaque qualification capability in addition to the opaque
+authority and a fresh matching observation; a decision cannot assert its own qualification. For an `aih-supported`
 basis, Core reads the fixed canonical receipt file, verifies its outer GitHub attestation against
 dedicated repository and workflow roots, and exact-matches its subject and all seven catalog-basis
 fields before minting the same opaque capability. The separate organization decision remains the
-only admission authority. This is not yet the complete cold-admin lifecycle: receipt V3 and
-`policy resolve` do not make a custom candidate projectable, and these paths do not scan, observe,
-install, configure, or execute candidate code. Catalog membership is provenance, not permission.
+only admission authority. This is not yet the complete cold-admin lifecycle: receipt V3,
+`policy resolve`, and the npm observer do not make a custom candidate projectable, install or
+configure it, or cover skills, MCP servers, remote endpoints, non-npm packages, or an
+`aih-supported` observation route. Catalog membership is provenance, not permission.
 Upstream observations also bind the
 named integration owner and exact integration version. Current custom stdio and remote policy
 rows remain blocked until the later command, adapter, and lifecycle work lands.

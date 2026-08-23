@@ -956,8 +956,8 @@ Authority still comes only from the fixed receipt and out-of-band
 command line, policy JSON, or evidence file. JSON output uses closed reason values and contains no
 verifier text or filesystem path.
 
-This slice intentionally supplies no upstream observation. A valid authority, decision, scope, and
-organization qualification therefore returns `outcome: "partial"`,
+`aih policy resolve` intentionally supplies no upstream observation. A valid authority, decision,
+scope, and organization qualification therefore returns `outcome: "partial"`,
 `reason: "observation-missing"`, and a nonzero exit; every refusal is also nonzero. The command
 cannot report `observed-effective`, append a run ledger, return a qualification capability, or scan,
 install, configure, or execute the candidate. Current policy evaluation and projection still do not
@@ -966,6 +966,27 @@ verifier's only process/provider observation is the bounded external GitHub atte
 its only transient write is owner-only authority-verification custody outside the target. It
 performs no candidate scan or execution, installation, target-root mutation, or package planning
 and cannot satisfy or bypass the held ECC preview and executable-package closure work.
+
+`aih policy observe npm-package [root] --decision <id> --decision-digest <sha256> --target <id>
+--evidence <root-relative-file>` is the first fixed upstream-observation route. It accepts no
+package or effect option: the exact current organization-qualified Decision V2 must name a
+`package` subject with an npm source, and the command always observes the `install` effect. It
+repeats the V3 authority and canonical organization-evidence verification above, then reads only
+`package-lock.json` and `node_modules/<decision-package>/package.json` under the target root. The
+lockfile must be bounded strict JSON with a version 3 entry carrying the decision's exact name,
+version, and integrity; the installed manifest must repeat the exact name and version. Linked
+parents or files, npm link entries, malformed or ambiguous JSON, oversized files, and any byte or
+file-identity change during re-observation fail closed.
+
+An exact current match returns `outcome: "observed-effective"`, exits zero, and includes the full
+domain-separated canonical observation-receipt digest. The receipt itself and the opaque
+qualification/observation capabilities never leave package-internal custody. Missing lockfile or
+manifest evidence reports non-effective `partial`; unsafe, changed, stale, rejected, revoked, and
+mismatched states refuse, and both classes exit nonzero. Apart from the fixed external GitHub
+authority-attestation check, the command starts no process. It does not write the target, append a
+run ledger, install, configure, execute, sign, publish, or make the subject projectable. This route
+does not observe AIH-supported qualifications, skills, MCP servers, remote endpoints, PyPI/OCI
+packages, or generic executable closures.
 
 Approvals cover only a missing or failed **waivable** evidence record, require a non-empty signed reason,
 and last at most 90 days. Mandatory detector failures and every unwaivable danger code remain blocked even

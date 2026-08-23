@@ -8,14 +8,28 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`aih policy observe npm-package` reports an exact organization-qualified npm install without
+  installing or executing it.** The zero-write command derives one npm package and the fixed
+  `install` effect from an exact current Decision V2, after independently verifying the external
+  V3 authority receipt and canonical organization evidence. It then reads only the target root's
+  bounded regular npm v3 lockfile and matching installed `node_modules` manifest, rejects linked,
+  malformed, non-NFC, ambiguous, changed, or mismatched custody, and feeds an internal opaque
+  observation into the existing resolver. An exact current match reports `observed-effective`
+  with the full canonical receipt digest. Missing installed evidence remains non-effective
+  `partial`; every unsafe, stale, rejected, revoked, or mismatched state refuses. The caller cannot
+  supply a package, effect, observer, verifier, runner, clock, receipt, callback, or alternate
+  install source. The command writes no target or ledger state, installs and executes nothing,
+  and does not add an adapter, an AIH-supported observation route, MCP/skill observation, signing,
+  publication, or a bypass for held executable-package admission. (#842)
+
 - **`aih policy resolve` exposes the first read-only Strict V2 administrator resolution path.**
   The zero-write command accepts only an exact Decision V2 id/digest, a code-owned target and
   effect, and one bounded canonical organization-evidence envelope below the target root. It
   verifies the fixed V3 authority receipt through the existing out-of-band GitHub attestation
   boundary, re-observes evidence bytes and file identity after that process, then derives the
   opaque organization qualification internally. Inputs, unsafe custody, authority, decision,
-  scope, qualification, and live-expiry failures return closed public-safe reasons. Because this
-  slice deliberately supplies no upstream observation, a valid qualification reports
+  scope, qualification, and live-expiry failures return closed public-safe reasons. Because
+  `policy resolve` deliberately supplies no upstream observation, a valid qualification reports
   `observation-missing` as non-effective `partial` with a nonzero exit; no route can report
   fulfilled, append a run ledger, export a capability mint, install, configure, execute, or
   observe a candidate. (#840)

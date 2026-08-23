@@ -64,17 +64,36 @@ aih policy resolve <root> \
 Configure `AIH_POLICY_AUTHORITY_REPOSITORY` outside the governed checkout (and optional
 `AIH_POLICY_AUTHORITY_WORKFLOW` when your authority policy requires it). The command
 re-verifies the fixed V3 receipt, exact decision and evidence; it writes neither the target
-nor a run ledger. A valid result is still `partial`/`observation-missing` and exits nonzero
-because this slice has no upstream observer. Treat that result as verified prerequisites,
-not as permission or effective state.
+nor a run ledger. A valid result is still `partial`/`observation-missing` and exits nonzero.
+Treat that result as verified prerequisites, not as permission or effective state.
 
-The lifecycle is therefore not yet end to end. Custom stdio and remote policy candidates
-remain non-projectable, and neither a V3 receipt nor `policy resolve` can install, configure,
-activate, or observe one. Do not tell developers that an organization-chosen subject is
-governed-effective until a later slice supplies the observer and adapter lifecycle and AIH
-has freshly observed the exact approved installed identity. Scanner and catalog publication
-are also separate trust and release boundaries. This limitation must stay visible while the
-remaining Core, scanner, and catalog work is completed.
+For an organization-qualified npm `package` decision whose allowed effects include `install`, an
+administrator can also observe an installation that npm already manages:
+
+```bash
+aih policy observe npm-package <root> \
+  --decision <exact-decision-id> \
+  --decision-digest sha256:<exact-decision-digest> \
+  --target <code-owned-cli-id> \
+  --evidence <root-relative-canonical-envelope> \
+  --json
+```
+
+The command derives the package from the decision and reads the fixed npm v3 lockfile plus the
+matching installed manifest. It cannot install or execute the package, and exposes no package,
+effect, observer, verifier, runner, clock, receipt, or callback override. Exact current evidence
+returns `observed-effective` with a canonical receipt digest; missing installed evidence remains
+`partial`, while linked, changed, stale, revoked, rejected, malformed, or mismatched evidence
+refuses. No receipt or capability is persisted.
+
+The lifecycle is therefore not yet end to end. Custom stdio and remote policy candidates remain
+non-projectable, and neither a V3 receipt, `policy resolve`, nor this fixed npm observer can install,
+configure, or activate one. The observer also does not cover skills, MCP servers, remote endpoints,
+non-npm packages, or the AIH-supported qualification route. Do not tell developers that any other
+organization-chosen subject is governed-effective until its exact observer and adapter lifecycle
+exist and AIH has freshly observed the approved installed identity. Scanner and catalog
+publication are separate trust and release boundaries. This limitation must stay visible while
+the remaining Core, scanner, and catalog work is completed.
 
 ## 2. Quickstart / Implementation Blueprint
 
