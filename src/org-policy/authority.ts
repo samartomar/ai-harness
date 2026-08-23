@@ -358,8 +358,39 @@ export function policyAuthorityReceiptLeafPaths(): string[] {
 }
 
 const V3_TRANSPORT_ONLY_PREFIX = "V3 downstream resolver: ";
+const V3_ORGANIZATION_QUALIFICATION_RUNTIME_LEAVES = new Set([
+  "decisionRevocations.*.decisionDigest",
+  "decisionRevocations.*.revokedAt",
+  "decisions.*.allowedEffects.*",
+  "decisions.*.disposition",
+  "decisions.*.evidence.attestor",
+  "decisions.*.evidence.digest",
+  "decisions.*.evidence.id",
+  "decisions.*.expiresAt",
+  "decisions.*.id",
+  "decisions.*.issuedAt",
+  "decisions.*.notBefore",
+  "decisions.*.qualificationBasis.attestor",
+  "decisions.*.qualificationBasis.evidenceDigest",
+  "decisions.*.qualificationBasis.kind",
+  "decisions.*.reviewBy",
+  "decisions.*.subject.id",
+  "decisions.*.subject.kind",
+  "decisions.*.subject.sourceDigest",
+  "decisions.*.subject.subjectDigest",
+  "decisions.*.targets.*",
+  "expiresAt",
+  "issuedAt",
+  "version",
+]);
 
-function phaseHonestV3Consumer(consumer: string): string {
+function phaseHonestV3Consumer(leaf: string, consumer: string): string {
+  if (V3_ORGANIZATION_QUALIFICATION_RUNTIME_LEAVES.has(leaf)) {
+    const detail = consumer.startsWith(V3_TRANSPORT_ONLY_PREFIX)
+      ? consumer.slice(V3_TRANSPORT_ONLY_PREFIX.length)
+      : consumer;
+    return `V3 externally verified signed transport/schema validation; current organization-qualified upstream-observation runtime: ${detail}`;
+  }
   if (!consumer.startsWith(V3_TRANSPORT_ONLY_PREFIX)) return consumer;
   return `V3 externally verified signed transport/schema validation; legacy effective resolver deliberately withholds V3 runtime use: ${consumer.slice(V3_TRANSPORT_ONLY_PREFIX.length)}`;
 }
@@ -552,7 +583,7 @@ export const POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS: Readonly<Record<string, s
       Object.fromEntries(
         Object.entries(RECEIPT_TOP_LEVEL_CONSUMERS).map(([leaf, consumer]) => [
           leaf,
-          phaseHonestV3Consumer(consumer),
+          phaseHonestV3Consumer(leaf, consumer),
         ]),
       ),
     ),

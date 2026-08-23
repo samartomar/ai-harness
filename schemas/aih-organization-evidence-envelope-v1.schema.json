@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "format": {
+      "type": "string",
+      "const": "aih-organization-evidence"
+    },
+    "version": {
+      "type": "number",
+      "const": 1
+    },
+    "subjectDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "payloadDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "artifactDigests": {
+          "minItems": 1,
+          "maxItems": 16,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "summary",
+        "payloadDigest",
+        "artifactDigests"
+      ],
+      "additionalProperties": false
+    },
+    "attestor": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$"
+    },
+    "issuedAt": {
+      "type": "string"
+    },
+    "notBefore": {
+      "type": "string"
+    },
+    "expiresAt": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "format",
+    "version",
+    "subjectDigest",
+    "evidence",
+    "attestor",
+    "issuedAt",
+    "notBefore",
+    "expiresAt"
+  ],
+  "additionalProperties": false,
+  "title": "aih-organization-evidence-envelope-v1.schema.json"
+}

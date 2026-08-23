@@ -9,6 +9,7 @@ import {
   type GovernanceDecisionV2,
   governanceDecisionDigestV2,
 } from "./governance-decision-v2.js";
+import { isVerifiedQualificationV1, matchesVerifiedQualificationV1 } from "./qualification-v1.js";
 
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
@@ -189,6 +190,9 @@ export type ObservedEffectResolution =
         | "decision-revoked"
         | "decision-not-current"
         | "decision-scope-mismatch"
+        | "qualification-missing"
+        | "qualification-unverified"
+        | "qualification-mismatch"
         | "observation-missing"
         | "observation-unverified"
         | "observation-stale"
@@ -200,6 +204,8 @@ export interface ObservedEffectResolutionInput {
   /** Only an opaque externally verified V3 authority can supply the decision. */
   authority?: unknown;
   decisionReference?: { id: string; digest: string };
+  /** Current organization-qualified capability; raw evidence cannot stand in for it. */
+  qualification?: unknown;
   observation?: unknown;
   subject: Pick<GovernanceDecisionV2["subject"], "kind" | "id" | "sourceDigest" | "subjectDigest">;
   target: string;
@@ -283,6 +289,29 @@ export function resolveObservedEffect(
     !decision.allowedEffects.includes(input.effect)
   ) {
     return { state: "decision-scope-mismatch", decisionDigest };
+  }
+  if (decision.qualificationBasis.kind !== "organization-qualified") {
+    return { state: "qualification-mismatch", decisionDigest };
+  }
+  if (input.qualification === undefined) {
+    return { state: "qualification-missing", decisionDigest };
+  }
+  if (!isVerifiedQualificationV1(input.qualification)) {
+    return { state: "qualification-unverified", decisionDigest };
+  }
+  if (
+    !matchesVerifiedQualificationV1({
+      authority: input.authority,
+      decisionDigest,
+      effect: input.effect,
+      now: input.now,
+      qualification: input.qualification,
+      qualificationKind: "organization-qualified",
+      subjectDigest: decision.subject.subjectDigest,
+      target: input.target,
+    })
+  ) {
+    return { state: "qualification-mismatch", decisionDigest };
   }
   if (input.observation === undefined) return { state: "observation-missing", decisionDigest };
   if (!isVerifiedUpstreamObservationV1(input.observation)) {

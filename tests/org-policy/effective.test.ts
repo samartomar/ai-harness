@@ -649,8 +649,43 @@ describe("headless effective org policy", () => {
     expect(v3Consumers).toEqual(
       expect.arrayContaining([
         expect.stringContaining("externally verified signed transport/schema validation"),
+        expect.stringContaining("current organization-qualified upstream-observation runtime"),
         expect.stringContaining("legacy effective resolver deliberately withholds V3 runtime use"),
       ]),
     );
+    for (const leaf of [
+      "authorityReceipt.decisions.*.id",
+      "authorityReceipt.decisions.*.qualificationBasis.evidenceDigest",
+      "authorityReceipt.decisions.*.subject.sourceDigest",
+      "authorityReceipt.decisions.*.subject.subjectDigest",
+      "authorityReceipt.decisions.*.targets.*",
+    ]) {
+      expect(POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS[leaf]).toContain(
+        "current organization-qualified upstream-observation runtime",
+      );
+    }
+    expect(
+      POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS[
+        "authorityReceipt.decisions.*.qualificationBasis.catalogDigest"
+      ],
+    ).toContain("legacy effective resolver deliberately withholds V3 runtime use");
+    const revokingIssuerConsumer =
+      POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS["authorityReceipt.decisionRevocations.*.issuer"];
+    expect(revokingIssuerConsumer).toContain("effective resolver: exact revoking issuer binding");
+    expect(revokingIssuerConsumer).not.toContain(
+      "current organization-qualified upstream-observation runtime",
+    );
+    expect(revokingIssuerConsumer).not.toContain(
+      "legacy effective resolver deliberately withholds V3 runtime use",
+    );
+    for (const leaf of [
+      "authorityReceipt.version",
+      "authorityReceipt.issuedAt",
+      "authorityReceipt.expiresAt",
+    ]) {
+      expect(POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS[leaf]).toContain(
+        "current organization-qualified upstream-observation runtime",
+      );
+    }
   });
 });
