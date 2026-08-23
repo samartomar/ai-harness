@@ -541,6 +541,31 @@ describe("npm package upstream observer V1", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("resolves the exact authority decision before selecting an AIH-supported qualification branch", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    const calls: string[][] = [];
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: `sha256:${"f".repeat(64)}`,
+          target: "claude",
+        },
+        calls,
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      outcome: "refused",
+      reason: "decision-missing-or-mismatch",
+    });
+    expect(calls).toHaveLength(1);
+  });
+
   it("observes only the signed exact installed package without executing it", async () => {
     const value = fixture();
     writeAuthority(value.decision);
