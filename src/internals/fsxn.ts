@@ -467,19 +467,20 @@ export class FsTransaction {
         // handle may be briefly held by AV/the indexer right after the prior write.
         this.guardParents(w.path, w.root, false);
         this.validateWriteExpectation(w);
+        const parentGuard = this.captureParentGuard(w.path, w.root);
         this.assertCommitDeadline();
         retryTransient(() => {
           this.assertCommitDeadline();
           return renameSync(tmpPath, w.path);
         });
-        this.guardParents(w.path, w.root, false);
         applied.push({
           path: w.path,
           contents: w.contents,
           backup,
           created: !existed,
-          parentGuard: this.captureParentGuard(w.path, w.root),
+          parentGuard,
         });
+        this.guardParents(w.path, w.root, false);
         if (w.durable) this.syncDurableWrite(w.path, w.root);
       }
       // Removals commit AFTER writes so a partial failure rolls both back in order.
@@ -506,6 +507,8 @@ export class FsTransaction {
         const dest = r.backupSibling ? freeBackupDest(r.legacyPath) : freeLegacyDest(r.legacyPath);
         this.guardParents(r.path, r.root, false);
         this.guardParents(dest, r.root, false);
+        const sourceParentGuard = this.captureParentGuard(r.path, r.root);
+        const legacyParentGuard = this.captureParentGuard(dest, r.root);
         this.assertCommitDeadline();
         retryTransient(() => {
           this.assertCommitDeadline();
@@ -514,9 +517,11 @@ export class FsTransaction {
         removed.push({
           path: r.path,
           legacyPath: dest,
-          sourceParentGuard: this.captureParentGuard(r.path, r.root),
-          legacyParentGuard: this.captureParentGuard(dest, r.root),
+          sourceParentGuard,
+          legacyParentGuard,
         });
+        this.guardParents(r.path, r.root, false);
+        this.guardParents(dest, r.root, false);
         if (r.expect !== undefined) {
           const moved = readRegularFile(dest);
           const actual =
@@ -537,8 +542,7 @@ export class FsTransaction {
       };
     } catch (err) {
       failed = true;
-      rollbackRemovals(removed);
-      const preserved = rollbackAppliedWrites(applied);
+      const preserved = [...rollbackRemovals(removed), ...rollbackAppliedWrites(applied)];
       const suffix =
         preserved.length === 0
           ? "was rolled back"
@@ -620,7 +624,8 @@ function freeBackupDest(base: string): string {
 }
 
 /** Restore moved-out files by renaming them back from `.aih/legacy/` (best-effort). */
-function rollbackRemovals(removed: AppliedRemoval[]): void {
+function rollbackRemovals(removed: AppliedRemoval[]): string[] {
+  const preserved: string[] = [];
   for (const r of [...removed].reverse()) {
     try {
       if (
@@ -634,11 +639,14 @@ function rollbackRemovals(removed: AppliedRemoval[]): void {
         if (!parentGuardMatches(r.sourceParentGuard) || !parentGuardMatches(r.legacyParentGuard))
           continue;
         renameSync(r.legacyPath, r.path);
+      } else {
+        preserved.push(r.path);
       }
     } catch {
-      // best-effort; rollback should never mask the original error
+      preserved.push(r.path);
     }
   }
+  return [...new Set(preserved)];
 }
 
 function parentGuardMatches(guard: ParentGuard | undefined): boolean {
@@ -722,21 +730,75 @@ export function rollbackAppliedWrites(applied: AppliedWrite[]): string[] {
           preserved.push(a.path);
         } else if (current !== undefined) preserved.push(a.path);
       } else if (a.backup && existsSync(a.backup)) {
-        if (current === a.contents && parentGuardMatches(a.parentGuard)) {
-          copyFileSync(a.backup, a.path);
-          if (parentGuardMatches(a.parentGuard)) rmSync(a.backup, { force: true });
-          else preserved.push(a.path);
-        } else if (current === a.contents) {
-          preserved.push(a.path);
-        } else {
-          preserved.push(a.path);
+        if (current === a.contents && restoreOverwrittenWrite(a)) {
+          continue;
         }
+        preserved.push(a.path);
       }
     } catch {
       preserved.push(a.path);
     }
   }
   return [...new Set(preserved)];
+}
+
+/**
+ * Restore a backed-up file without ever copying through the mutable destination
+ * leaf. Node exposes only path-based primitives, so its lstat/read/rename checks
+ * retain a bounded non-atomic race; every check is repeated immediately before
+ * rename and a swapped leaf is preserved rather than followed.
+ */
+function restoreOverwrittenWrite(applied: AppliedWrite): boolean {
+  if (applied.backup === undefined) return false;
+  if (!parentGuardMatches(applied.parentGuard)) return false;
+  const backup = readRegularFile(applied.backup);
+  if (!parentGuardMatches(applied.parentGuard)) return false;
+  if (backup === undefined) return false;
+  const tmpPath = `${applied.path}.aih.rollback.tmp`;
+  if (!clearRollbackScratch(tmpPath, applied.parentGuard)) return false;
+  try {
+    if (!parentGuardMatches(applied.parentGuard)) return false;
+    writeFileSync(tmpPath, backup, { flag: "wx" });
+    if (!parentGuardMatches(applied.parentGuard)) return false;
+    const live = lstatSafe(applied.path);
+    if (live === undefined || live.isSymbolicLink()) return false;
+    const current = readFileSync(applied.path, "utf8");
+    if (current !== applied.contents || !parentGuardMatches(applied.parentGuard)) return false;
+    // Repeat the leaf check immediately before atomic replacement. `rename` replaces
+    // a symlink entry itself rather than following it, unlike `copyFileSync`.
+    const final = lstatSafe(applied.path);
+    if (final === undefined || final.isSymbolicLink()) return false;
+    if (readFileSync(applied.path, "utf8") !== applied.contents) return false;
+    if (!parentGuardMatches(applied.parentGuard)) return false;
+    renameSync(tmpPath, applied.path);
+    const backupInfo = lstatSafe(applied.backup);
+    if (
+      backupInfo !== undefined &&
+      !backupInfo.isSymbolicLink() &&
+      parentGuardMatches(applied.parentGuard)
+    ) {
+      rmSync(applied.backup, { force: true });
+    }
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearRollbackScratch(tmpPath, applied.parentGuard);
+  }
+}
+
+function clearRollbackScratch(path: string, parentGuard: ParentGuard | undefined): boolean {
+  if (!parentGuardMatches(parentGuard)) return false;
+  const info = lstatSafe(path);
+  if (info === undefined) return true;
+  if (info.isSymbolicLink()) return false;
+  try {
+    if (!parentGuardMatches(parentGuard)) return false;
+    rmSync(path, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Read a file's text, or `undefined` if it does not exist. */
