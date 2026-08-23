@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as packageApi from "../../src/index.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import {
@@ -29,6 +30,7 @@ import {
   parseAihSupportedQualificationReceiptV1Bytes,
   verifyAihSupportedQualificationReceiptV1,
 } from "../../src/org-policy/supported-qualification-receipt-v1.js";
+import * as supportedQualificationModule from "../../src/org-policy/supported-qualification-receipt-v1.js";
 import {
   resolveObservedEffect,
   verifyUpstreamObservationV1,
@@ -226,6 +228,58 @@ function observation(value: ReturnType<typeof decision>) {
 }
 
 describe("AihSupportedQualificationReceiptV1", () => {
+  it("publishes only an inert supported qualification artifact verifier", async () => {
+    const publicApi = packageApi as Record<string, unknown>;
+    expect(publicApi.verifyAihSupportedQualificationReceiptV1).toBeUndefined();
+    const verifier = publicApi.verifyAihSupportedQualificationArtifactV1;
+    expect(verifier).toEqual(expect.any(Function));
+    if (typeof verifier !== "function") return;
+    const value = decision();
+    const result = await (verifier as (input: {
+      root: string;
+      decisionReference: { id: string; digest: string };
+      subject: typeof value.subject;
+    }) => Promise<Record<string, unknown>>)({
+      root: dir,
+      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      subject: value.subject,
+    });
+    expect(Object.keys(result).sort()).toEqual(expect.arrayContaining(["state"]));
+    expect(result.qualification).toBeUndefined();
+    expect(result.authority).toBeUndefined();
+  });
+
+  it("uses an internal-only seam to verify the artifact without minting a capability", async () => {
+    const internalApi = supportedQualificationModule as Record<string, unknown>;
+    const verifier = internalApi.verifyAihSupportedQualificationArtifactV1WithContext;
+    expect(verifier).toEqual(expect.any(Function));
+    if (typeof verifier !== "function") return;
+    const value = decision();
+    await authority(value);
+    writeReceipt(receipt(value));
+    const calls: string[][] = [];
+    const result = await (verifier as (ctx: PlanContext, input: {
+      root: string;
+      decisionReference: { id: string; digest: string };
+      subject: typeof value.subject;
+    }) => Promise<Record<string, unknown>>)(
+      context((argv) => {
+        calls.push(argv);
+        return { code: 0 };
+      }),
+      {
+        root: dir,
+        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+        subject: value.subject,
+      },
+    );
+    expect(result).toEqual({ state: "verified" });
+    expect(calls).toHaveLength(2);
+    expect(calls.flat().join(" ")).not.toContain("configure");
+    expect(result.qualification).toBeUndefined();
+    expect(result.authority).toBeUndefined();
+  });
+
   it("accepts only exact canonical UTF-8 receipt bytes and rejects malformed transport", () => {
     const value = receipt(decision());
     const bytes = canonicalBytes(value);
