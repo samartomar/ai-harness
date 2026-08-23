@@ -17,11 +17,17 @@ export function supportedCustodyLockV2(
   input: SupportedCustodyPathInputV2,
 ): string | { external: true; path: string; trustedBase: string } {
   const root = supportedCustodyRootV2(input);
+  const trustedBase =
+    input.platform === "win32"
+      ? "C:\\ProgramData"
+      : input.platform === "darwin"
+        ? "/Library/Application Support"
+        : "/etc";
   return input.posture === "vibe"
     ? ".aih/supported-qualification/v2/locks/commit.lock"
     : {
         external: true,
         path: `${root}${input.platform === "win32" ? "\\" : "/"}locks${input.platform === "win32" ? "\\" : "/"}commit.lock`,
-        trustedBase: root,
+        trustedBase,
       };
 }
