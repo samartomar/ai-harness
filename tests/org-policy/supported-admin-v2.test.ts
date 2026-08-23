@@ -81,6 +81,12 @@ describe("SupportedQualificationCustodyV2 roots", () => {
       trustedBase: "/Library/Application Support",
     });
   });
+
+  it("rejects an enterprise custody inspection without an explicit platform", () => {
+    expect(() =>
+      supported.inspectSupportedCustodyV2({ root: "/disposable", posture: "enterprise" }),
+    ).toThrow(expect.objectContaining({ code: "AIH_TRUST" }));
+  });
 });
 
 describe("SupportedQualificationCustodyV2 durable acceptance", { timeout: 15_000 }, () => {
@@ -379,6 +385,36 @@ describe("SupportedQualificationCustodyV2 durable acceptance", { timeout: 15_000
       plan.actions.filter((action: { kind: string }) => action.kind === "write").at(-1),
     ).toMatchObject({ expect: { absent: true } });
     expect(plan.actions.at(-1)).toMatchObject({ kind: "digest" });
+  });
+
+  it("rejects acceptance outside the exact receipt and decision validity window", () => {
+    expect(() =>
+      supported.planSupportedCustodyAcceptV2({
+        posture: "vibe",
+        root: "/disposable",
+        ...input,
+        acceptedAt: receipt.expiresAt,
+      }),
+    ).toThrow(expect.objectContaining({ code: "AIH_TRUST" }));
+    expect(() =>
+      supported.planSupportedCustodyAcceptV2({
+        posture: "vibe",
+        root: "/disposable",
+        ...input,
+        acceptedAt: "not-a-canonical-utc-timestamp",
+      }),
+    ).toThrow(expect.objectContaining({ code: "AIH_TRUST" }));
+  });
+
+  it("fails closed for unbranded receipt-current and custody-assertion bindings", () => {
+    expect(supported.isVerifiedSupportedReceiptCurrentV2("/disposable", {} as never)).toBe(false);
+    expect(
+      supported.verifiedCurrentSupportedCustodyAssertionsV2({
+        root: "/disposable",
+        posture: "vibe",
+        binding: {} as never,
+      }),
+    ).toBeUndefined();
   });
 
   it("keeps a dry-run phase-honest and writes no custody files", async () => {

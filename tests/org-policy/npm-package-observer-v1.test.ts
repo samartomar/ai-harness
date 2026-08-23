@@ -580,6 +580,51 @@ describe("npm package upstream observer V1", () => {
     expect(calls).toHaveLength(2);
   });
 
+  it("refuses unsafe installed npm custody without erasing a current AIH-supported qualification", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    await acceptSupportedCustody(value);
+    const target = mkdtempSync(join(tmpdir(), "aih-npm-observer-supported-linked-"));
+    const source = join(root, "node_modules");
+    const destination = join(target, "linked");
+    try {
+      mkdirSync(join(destination, "@acme", "widget"), { recursive: true });
+      writeFileSync(
+        join(destination, "@acme", "widget", "package.json"),
+        readFileSync(join(source, "@acme", "widget", "package.json")),
+      );
+      rmSync(source, { recursive: true });
+      symlinkSync(destination, source, process.platform === "win32" ? "junction" : "dir");
+      const calls: string[][] = [];
+
+      const result = await observeNpmPackageV1(
+        context(
+          {
+            decision: value.decision.id,
+            decisionDigest: governanceDecisionDigestV2(value.decision as never),
+            target: "claude",
+          },
+          calls,
+          {
+            AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+            AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+          },
+        ),
+      );
+
+      expect(result).toMatchObject({
+        authority: "verified",
+        qualification: "qualified",
+        outcome: "refused",
+        reason: "installed-evidence-unsafe",
+      });
+      expect(calls).toHaveLength(2);
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
   it("refuses when AIH-supported durable custody changes after installed evidence is read", async () => {
     const value = supportedFixture();
     writeAuthority(value.decision);
