@@ -82,7 +82,8 @@ aih policy observe npm-package <root> \
 The command derives the package from the decision and reads the fixed npm v3 lockfile plus the
 matching installed manifest. It cannot install or execute the package, and exposes no package,
 effect, observer, verifier, runner, clock, receipt, or callback override. Exact current evidence
-returns `observed-effective` with a canonical receipt digest; missing installed evidence remains
+returns `observed-effective` with a canonical receipt digest for at most 24 hours and never beyond
+the authority, decision, or conditional-review deadline; missing installed evidence remains
 `partial`, while linked, changed, stale, revoked, rejected, malformed, or mismatched evidence
 refuses. This observation command persists no receipt or capability.
 
@@ -106,16 +107,22 @@ aih policy lifecycle npm-package <root> \
 ```
 
 The applied command repeats live authority, qualification, installed-state, and observation checks
-before appending an immutable record under `.aih/governance/npm-package-lifecycle/v1/`. Use a newly
+before appending an immutable record under `.aih/governance/npm-package-lifecycle/v1/`. Each prepared
+write has at most 60 seconds to commit, shortened by any earlier authority, decision, review, or
+observation deadline. Use a newly
 authorized exact decision/evidence set for a version or integrity bump; the prior record remains in
 the stable package/integration lineage. When the current V3 authority revokes the decision, the
 same command appends that revocation only for the verified current lineage. This is an audit fact,
 not a claim that npm removed or stopped the package. The record append is durable evidence, but the
 revoked result remains non-effective, failing, and nonzero. Refused, expired, corrupt, detectably
-rolled-back, forked, raced, linked, or detached state cannot produce a successful apply result.
+rolled-back, forked, raced, linked, over-capacity, or detached state cannot produce a successful
+apply result.
 A durable subject-and-target claim prevents loss of the ordinary subject binding from silently
-admitting a different registry or integration lineage. AIH serializes these local writers with a
-subject-scoped cooperative lease: a crashed owner is reclaimable after its bounded 30-second mutation
+admitting a different registry or integration lineage. AIH serializes these local writers with one
+fixed store-wide cooperative lease and advances a strict writer-only aggregate capacity guard using
+an exact-original transaction precondition. A stale cross-lineage plan therefore cannot race past
+the reader's limits. The reader independently derives its counts and does not trust this guard as
+authority. A crashed owner is reclaimable after its bounded 30-second mutation
 window and 30-second recovery grace, while malformed or foreign lock state blocks. The inert lock
 anchor can remain in the lifecycle store. This is local AIH writer coordination, not an
 operating-system lock or protection from another process that can rewrite the store.
@@ -138,14 +145,27 @@ Retain the whole store in organization-controlled versioned evidence. Do not
 promote the inert offline high-water seam to authority; that requires Core's future
 administrator-managed trust-root loader and fixed verifier/producer.
 
-The lifecycle is durable but not yet end to end. Custom stdio and remote policy candidates remain
-non-projectable, and neither a V3 receipt, `policy resolve`, nor this fixed npm observer can install,
+For this narrow npm route, the durable lifecycle now reaches the governance read surfaces. Run
+`aih policy evaluate --verify` after the lifecycle apply, then inspect the governed report. Both
+validate the fixed store and freshly verify current V3 authority. They report the exact lineage as
+`observed-effective` only while the observation and authority remain current; partial,
+withheld/refused, revoked, stale, or drifted state is explicit and blocks evaluation. Observation
+expiry alone does not freeze unrelated policy projection; unsafe custody, authority failure,
+rejection, revocation, and other lifecycle failures still block it. These commands do not repeat the
+package observation, mutate the target, or control the installed runtime. The store supports at most
+256 active lineages, 16,384 aggregate records, and 4,096 records in one lineage. Exceeding a limit is
+reported as `over-capacity`, not as corruption, and blocks both evaluation and projection. Preserve
+the complete store as organization-controlled evidence and reconcile onto a newly governed target;
+do not delete or prune target-local history to make the check pass.
+
+The broader custom-source journey is not complete. Custom stdio and remote policy candidates remain
+non-projectable, and neither a V3 receipt, `policy resolve`, nor this fixed npm route can install,
 configure, or activate one. The observer also does not cover skills, MCP servers, remote endpoints,
 non-npm packages, or the AIH-supported qualification route. Do not tell developers that any other
 organization-chosen subject is governed-effective until its exact observer and adapter lifecycle
-exist and AIH has freshly observed the approved installed identity. Scanner and catalog
-publication are separate trust and release boundaries. This limitation must stay visible while
-the remaining Core, scanner, and catalog work is completed.
+exist and AIH has freshly observed the approved installed identity. Scanner and catalog publication
+are separate trust and release boundaries. This limitation must stay visible while the remaining
+Core, scanner, and catalog work is completed.
 
 ## 2. Quickstart / Implementation Blueprint
 

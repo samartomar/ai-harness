@@ -8,6 +8,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Governed evaluation and reports now consume the durable npm lifecycle as observed state.**
+  For a governance-owned target, `aih policy evaluate --verify` and the governed report path read
+  only the fixed `.aih/governance/npm-package-lifecycle/v1/` store, validate each current head and
+  its complete bounded history, and freshly verify the V3 authority receipt before classifying the
+  exact package/target lineage. Current exact observations are `observed-effective` for at most 24
+  hours and never beyond the authority, decision, or conditional-review deadline; partial,
+  withheld/refused, revoked, stale, and drifted states remain distinct, non-effective, and block
+  evaluation. Observation expiry alone does not freeze unrelated policy projection, while unsafe
+  custody, authority failure, rejection, revocation, and other lifecycle failures still block it.
+  Missing or unsafe store custody, malformed or substituted heads/records/bindings, detached history,
+  authority replacement, current rejection or revocation, decision/source/subject/target/effect
+  mismatch, and future-dated or expired observations fail closed. Directory enumeration stops at
+  256 active lineages, 16,384 aggregate records, and 4,096 records in any one lineage instead of
+  first materializing an unbounded hostile directory. A store beyond those limits is reported as
+  `over-capacity`, not as fabricated corruption, and remains fail-closed for both evaluation and
+  projection. Preserve the complete store as organization-controlled evidence and move incident
+  reconciliation to a newly governed target; do not prune the target-local audit chain in place.
+  The result is deterministic and read-only: it does
+  not install, update, remove, configure, project, execute, or publish a package, and it does not make
+  custom stdio or remote MCP candidates projectable. (#845)
+
 - **`aih policy lifecycle npm-package` persists exact governed observation, bump, and revocation
   history without managing the package.** Preview is zero-write; `--apply` first repeats the current
   V3 authority, organization evidence, npm v3 lockfile, installed-manifest, and observation checks,
@@ -18,8 +39,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   non-effective and produces a failing, nonzero verification result; it makes no package-removal or
   process-stop claim.
   The transaction pins all authorizing bytes, writes a durable subject-and-target lineage claim before
-  the ordinary binding, uses a subject-scoped cooperative lifecycle-store lease, commits the immutable
-  record durably before its head, rechecks its deadline and filesystem custody during commit, and
+  the ordinary binding, uses one store-wide cooperative lifecycle lease, and advances a strict
+  writer-only aggregate capacity guard before the lifecycle mutation. The guard prevents stale
+  cross-lineage plans from racing past the reader's 256-lineage or 16,384-record limits; the reader
+  independently derives store truth and never treats the guard as authority. The transaction commits
+  the immutable record durably before its head, gives each prepared write no more than 60 seconds to commit,
+  rechecks that deadline and filesystem custody during commit, and
   re-reads the exact claim, binding, record, head, and bounded lineage before reporting success. The
   claim prevents ordinary binding loss from silently admitting a different lineage. A crashed lease is
   reclaimable after a bounded 30-second mutation window plus 30-second recovery grace; malformed or

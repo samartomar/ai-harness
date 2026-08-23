@@ -10,6 +10,7 @@ import {
   resolveEffectiveOrgPolicy,
   reviewedControlDigest,
 } from "./effective.js";
+import { npmPackageEffectiveStateResolutionV1 } from "./npm-package-effective-state-v1.js";
 import { governanceOwnsAihSurfaces, type OrgPolicy } from "./schema.js";
 
 export interface RuntimeOrgPolicyResolution {
@@ -46,7 +47,11 @@ export async function resolveRuntimeOrgPolicy(
   if (usageControl?.source.type !== "hook") {
     throw new Error("AIH policy catalog is missing the usage-metering hook control");
   }
-  const verification = await verifyPolicyAuthorityReceipt(ctx);
+  const lifecycleResolution = governanceOwnsAihSurfaces(policy)
+    ? await npmPackageEffectiveStateResolutionV1(ctx)
+    : undefined;
+  const verification = lifecycleResolution?.authority ?? (await verifyPolicyAuthorityReceipt(ctx));
+  const npmPackageLifecycle = lifecycleResolution?.states ?? [];
   const projectorsDisabledAtVibe = (ctx.posture ?? policy.minimumPosture) === "vibe";
   const effective = resolveEffectiveOrgPolicy(policy, {
     authority: verification.authority,
@@ -67,6 +72,7 @@ export async function resolveRuntimeOrgPolicy(
     hookIdentities: {
       "usage-metering": { scriptDigest: usageControl.source.scriptDigest, projectable: true },
     },
+    npmPackageLifecycle,
     projectorFindings: Object.fromEntries(
       policyCandidates
         .filter((candidate) => candidate.kind === "mcp" && candidate.source.type === "stdio")

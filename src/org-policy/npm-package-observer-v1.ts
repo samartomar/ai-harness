@@ -18,6 +18,7 @@ import {
   verifyOrganizationQualificationV1,
 } from "./qualification-v1.js";
 import {
+  MAX_UPSTREAM_OBSERVATION_WINDOW_MS,
   type ObservedEffectResolution,
   resolveObservedEffect,
   type UpstreamObservationReceiptV1,
@@ -455,7 +456,7 @@ export async function observeNpmPackageV1(
       decision.disposition === "accepted-with-conditions"
         ? Date.parse(decision.reviewBy)
         : Number.POSITIVE_INFINITY,
-      Date.parse(observedAt) + 60_000,
+      Date.parse(observedAt) + MAX_UPSTREAM_OBSERVATION_WINDOW_MS,
     ),
   ).toISOString();
   const receipt = {

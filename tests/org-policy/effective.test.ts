@@ -10,6 +10,7 @@ import {
   FENCED_POLICY_PREREQUISITE_CODES,
   isDispositionableFinding,
   isFencedPrerequisite,
+  lifecycleStateBlocksProjection,
   POLICY_ENGINE_FIELD_CONSUMERS,
   resolveEffectiveOrgPolicy,
   reviewedControlDigest,
@@ -24,6 +25,15 @@ import {
 
 const SUBJECT = `mcp-server-sha256:${"a".repeat(64)}`;
 const DIGEST = `sha256:${"b".repeat(64)}`;
+
+it("exempts only a stale observed-package record from projection blocking", () => {
+  expect(lifecycleStateBlocksProjection({ state: "stale", reason: "observation-stale" })).toBe(
+    false,
+  );
+  expect(lifecycleStateBlocksProjection({ state: "partial", reason: "observation-stale" })).toBe(
+    true,
+  );
+});
 
 function candidate(overrides: Record<string, unknown> = {}) {
   const source = { type: "mcp" as const, server: "catalog-mcp", subject: SUBJECT };

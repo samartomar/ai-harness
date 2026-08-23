@@ -910,8 +910,8 @@ and revocations: unsigned policy or Workbench `approved` fields, legacy approval
 and standalone decision files cannot enter it. The separate observation receipt binds
 the decision digest, exact subject and installed digests, registered targets/effects,
 the named upstream integration owner and exact integration version,
-code-owned verifier id/version/digest, explicit outcome, and a bounded observation
-window. Core's internal pure resolver accepts only the opaque verified V3 authority token,
+code-owned verifier id/version/digest, explicit outcome, and an observation window of at most 24
+hours, shortened by the authority, decision, or conditional-review deadline. Core's internal pure resolver accepts only the opaque verified V3 authority token,
 an exact decision id/digest reference, and an opaque qualification capability; raw decisions,
 evidence envelopes, revocations, and cloned capabilities are untrusted data. It reports
 `observed-effective` only when those facts match a current approved or
@@ -960,8 +960,9 @@ verifier text or filesystem path.
 scope, and organization qualification therefore returns `outcome: "partial"`,
 `reason: "observation-missing"`, and a nonzero exit; every refusal is also nonzero. The command
 cannot report `observed-effective`, append a run ledger, return a qualification capability, or scan,
-install, configure, or execute the candidate. Current policy evaluation and projection still do not
-consume V3 decisions, so custom stdio and remote candidates remain visible but non-projectable. The
+install, configure, or execute the candidate. Policy evaluation does not treat a V3 decision alone
+as effective. Its only V3 package route is the separately persisted, freshly reverified npm lifecycle
+described below; custom stdio and remote candidates remain visible but non-projectable. The
 verifier's only process/provider observation is the bounded external GitHub attestation check, and
 its only transient write is owner-only authority-verification custody outside the target. It
 performs no candidate scan or execution, installation, target-root mutation, or package planning
@@ -1020,12 +1021,17 @@ package. The durable append is reported truthfully, but revocation removes permi
 establishing an effect, so verification and the command exit remain failing and nonzero.
 
 Apply re-verifies authority, evidence, installed custody, and observation before constructing the
-transaction, pins every authorizing file, refuses after the shortest applicable validity deadline,
-serializes cooperative lifecycle writers by subject and target, writes a durable immutable lineage
-claim before the ordinary binding and record, writes the record before the head, and reads the exact
-committed claim, binding, record, head, and bounded lineage before it reports success. The claim keeps
+transaction, pins every authorizing file, and gives the prepared write at most 60 seconds—shorter
+when an authority, decision, review, or observation deadline arrives first. It refuses after that deadline,
+serializes cooperative lifecycle writers with one fixed store-wide lease, advances a strict canonical
+aggregate capacity guard with an exact-original transaction precondition, writes a durable immutable
+lineage claim before the ordinary binding and record, writes the record before the head, and reads the
+exact committed claim, binding, record, head, and bounded lineage before it reports success. The claim keeps
 an accidentally missing binding from admitting a different registry or integration lineage without a
-global store scan. Missing or partial observation, invalid or stale authority, linked store paths,
+global record-partition scan. The capacity guard is writer coordination rather than reader authority:
+the read path independently derives the active-lineage and record counts. The writer permits at most
+256 active lineages, 16,384 aggregate records, and 4,096 records in one lineage. Missing or partial
+observation, invalid or stale authority, linked store paths,
 substitution, a stale head whose canonical successor remains, forks, collisions, deadline expiry,
 content races, capacity exhaustion, and detached post-commit state refuse without a successful
 lifecycle claim. A
@@ -1039,8 +1045,8 @@ canonical bytes can be reused. A fresh command performs a newly timed observatio
 normally sees that orphan as an ambiguous fork; it fails closed for approved operator incident
 reconciliation and neither deletes nor silently adopts the orphan.
 
-The cooperative writer lock uses an owner lease with a maximum 30-second forward-mutation window and
-a further 30-second recovery grace. After that grace a later writer can reclaim a crashed owner's
+The fixed store-wide cooperative writer lock uses an owner lease with a maximum 30-second
+forward-mutation window and a further 30-second recovery grace. After that grace a later writer can reclaim a crashed owner's
 canonical claim; malformed or foreign lock state fails closed. Its inert canonical anchor and staging
 directory can remain under the lifecycle store. This coordinates AIH writers on the local filesystem;
 it is not an operating-system lock and does not isolate the store from a process that can rewrite it.
@@ -1052,9 +1058,25 @@ record; preserve the whole store in organization-controlled versioned evidence. 
 offline-revocation high-water primitive remains inert until Core has an administrator-managed
 trust-root loader and a fixed verifier/producer.
 
-This is durable npm audit history, not yet the complete custom-source lifecycle. The command does
-not make a candidate projectable and does not cover skills, MCP servers, remote endpoints, non-npm
-packages, or the AIH-supported qualification route.
+The durable store also feeds the read-only governed-state surfaces. For a policy that owns AIH
+governance surfaces, `aih policy evaluate --verify` and the governed report read the fixed lifecycle
+heads in deterministic order, validate canonical head/binding/claim custody plus the complete bounded
+history, and freshly verify current V3 authority. An exact current observation is reported as
+`observed-effective`; partial, withheld/refused, revoked, stale, and drifted states stay distinct and
+block evaluation. Observation expiry alone does not freeze unrelated policy projection. Unsafe or
+malformed store custody, a missing/substituted head or record, detached history, authority
+replacement, a current rejection or revocation, or decision/source/subject/target/effect mismatch
+also blocks projection and cannot become effective. A store beyond 256 active lineages, 16,384
+aggregate records, or 4,096 records in one lineage is reported distinctly as `over-capacity`, blocks
+both evaluation and projection, and is not described as corruption. Preserve the complete store in
+organization-controlled evidence and reconcile onto a newly governed target; do not delete or prune
+the target-local audit chain to make the reader pass. These reads write no target or run-ledger state
+and perform no package effect.
+
+This remains the narrow organization-qualified root npm lifecycle, not a generic custom-source
+lifecycle. Neither the lifecycle command nor evaluate/report makes a candidate projectable, and the
+route does not cover skills, MCP servers, remote endpoints, non-npm packages, or the AIH-supported
+qualification route.
 
 Approvals cover only a missing or failed **waivable** evidence record, require a non-empty signed reason,
 and last at most 90 days. Mandatory detector failures and every unwaivable danger code remain blocked even

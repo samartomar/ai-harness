@@ -44,6 +44,7 @@ import { planEccHookControlsProjection } from "./ecc-hook-controls-projection.js
 import {
   candidateIdentityDigest,
   type EffectiveOrgPolicy,
+  lifecycleStateBlocksProjection,
   resolveEffectiveOrgPolicy,
   stableJson,
 } from "./effective.js";
@@ -134,7 +135,16 @@ function blockedProjectionDetail(effective: EffectiveOrgPolicy): string {
     )
     .join("; ");
   const policy = policyDecisionBlockDetail(effective);
-  return [candidates, policy === "" ? "" : `policy decision blockers: ${policy}`]
+  const lifecycle = (effective.npmPackageLifecycle ?? [])
+    .filter(lifecycleStateBlocksProjection)
+    .map((item) => `${item.subjectId ?? "unknown"}@${item.target ?? "unknown"}: ${item.reason}`)
+    .sort(ordinalCompare)
+    .join(", ");
+  return [
+    candidates,
+    policy === "" ? "" : `policy decision blockers: ${policy}`,
+    lifecycle === "" ? "" : `npm lifecycle: ${lifecycle}`,
+  ]
     .filter((detail) => detail !== "")
     .join("; ");
 }
@@ -173,7 +183,7 @@ function stdioAllowedServers(
   enforceAllowlist: boolean,
 ): { servers: Record<string, StdioServer>; effective: EffectiveOrgPolicy } {
   const { catalog, effective } = runtime;
-  if (effective.blocking) {
+  if (effective.projectionBlocking ?? effective.blocking) {
     const blocked = blockedProjectionDetail(effective);
     throw new OrgPolicyError(
       `policy project refuses blocked candidate activation(s): ${blocked || "unknown policy resolution failure"}${authoritySuffix(runtime)}`,
@@ -1360,7 +1370,19 @@ function projectionActionsFromRuntime(
 ): Action[] {
   const posture = ctx.posture ?? policy.minimumPosture;
   const targets = ctx.targets ?? ["claude"];
-  if (runtime.effective.blocking) {
+  if (runtime.effective.projectionBlocking ?? runtime.effective.blocking) {
+    const lifecycleBlocks = (runtime.effective.npmPackageLifecycle ?? []).some(
+      lifecycleStateBlocksProjection,
+    );
+    const candidateOrDecisionBlocks =
+      runtime.effective.decisionBlockers.length > 0 ||
+      runtime.effective.candidates.some((candidate) => candidate.requested && !candidate.effective);
+    // A lifecycle-store custody problem is itself blocking, but must not hide a
+    // more specific host-artifact custody failure. This only performs the
+    // existing read-only hook receipt validation; it emits no plan actions.
+    if (lifecycleBlocks && !candidateOrDecisionBlocks && governanceOwnsAihSurfaces(policy)) {
+      usageHookProjectionActions(ctx, runtime.effective);
+    }
     const blocked = blockedProjectionDetail(runtime.effective);
     throw new OrgPolicyError(
       `policy project refuses blocked candidate activation(s): ${blocked || "unknown policy resolution failure"}${authoritySuffix(runtime)}`,
