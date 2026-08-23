@@ -328,6 +328,33 @@ describe("policy resolve V1", () => {
     expect(calls).toEqual([]);
   });
 
+  it.each(["C:evidence.json", "D:evidence.json", "/evidence.json", "//server/share/evidence.json"])(
+    "refuses hostile platform path %s before calling the authority verifier",
+    async (evidence) => {
+      const calls: string[][] = [];
+      const result = await resolvePolicyEvidenceV1(
+        context(
+          {
+            decision: "decision-platform-tool",
+            decisionDigest: `sha256:${"0".repeat(64)}`,
+            target: "claude",
+            effect: "configure",
+            evidence,
+          },
+          calls,
+        ),
+      );
+
+      expect(result).toMatchObject({
+        authority: "unverified",
+        qualification: "unqualified",
+        outcome: "refused",
+        reason: "invalid-evidence-path",
+      });
+      expect(calls).toEqual([]);
+    },
+  );
+
   it("refuses an exact-decision-digest substitution after only the existing authority attestation", async () => {
     const fixture = decision();
     writeAuthority(fixture.value);

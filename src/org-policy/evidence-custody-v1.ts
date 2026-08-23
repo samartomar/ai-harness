@@ -1,5 +1,5 @@
 import { lstatSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, relative, resolve, sep, win32 } from "node:path";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 
 /** The organization evidence envelope has the same fixed hostile-input ceiling as its parser. */
@@ -19,6 +19,8 @@ function relativeEvidencePath(value: unknown): string | undefined {
   if (typeof value !== "string" || value.length === 0 || value.length > 512) return undefined;
   if (
     isAbsolute(value) ||
+    win32.isAbsolute(value) ||
+    /^[A-Za-z]:/.test(value) ||
     value.includes("\\") ||
     value.split("/").some((part) => part === "" || part === "." || part === "..")
   )
@@ -30,7 +32,15 @@ function hasSymlinkedParent(root: string, path: string): boolean {
   const rootStat = safeLstat(root);
   if (rootStat === undefined || rootStat.isSymbolicLink() || !rootStat.isDirectory()) return true;
   let current = root;
-  for (const part of relative(root, path).split(sep).slice(0, -1)) {
+  const pathRelative = relative(root, path);
+  if (
+    pathRelative === "" ||
+    isAbsolute(pathRelative) ||
+    win32.isAbsolute(pathRelative) ||
+    pathRelative.split(/[\\/]+/).some((part) => part === "" || part === "." || part === "..")
+  )
+    return true;
+  for (const part of pathRelative.split(sep).slice(0, -1)) {
     current = resolve(current, part);
     const stat = safeLstat(current);
     if (stat === undefined || stat.isSymbolicLink() || !stat.isDirectory()) return true;
@@ -59,7 +69,13 @@ export function custodyOrganizationEvidenceV1(
   if (rel === undefined) return { problem: "invalid-evidence-path" };
   const path = resolve(root, rel);
   const pathRelative = relative(root, path);
-  if (pathRelative === "" || pathRelative === ".." || pathRelative.startsWith(`..${sep}`)) {
+  if (
+    pathRelative === "" ||
+    isAbsolute(pathRelative) ||
+    win32.isAbsolute(pathRelative) ||
+    pathRelative === ".." ||
+    pathRelative.startsWith(`..${sep}`)
+  ) {
     return { problem: "invalid-evidence-path" };
   }
   if (hasSymlinkedParent(root, path)) return { problem: "unsafe-evidence-custody" };
