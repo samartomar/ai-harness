@@ -541,6 +541,63 @@ describe("npm package upstream observer V1", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("rejects a hostile evidence symlink for an AIH-supported decision without reading it", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    const hostile = join(root, "hostile-evidence.json");
+    symlinkSync(join(bin, "not-evidence.json"), hostile, "file");
+    const calls: string[][] = [];
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+          evidence: "hostile-evidence.json",
+        },
+        calls,
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      outcome: "refused",
+      reason: "invalid-input",
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  it.each(["", " ", 7, null])(
+    "rejects a supplied invalid evidence value for an AIH-supported decision before attestation (%j)",
+    async (evidence) => {
+      const value = supportedFixture();
+      writeAuthority(value.decision);
+      const calls: string[][] = [];
+
+      const result = await observeNpmPackageV1(
+        context(
+          {
+            decision: value.decision.id,
+            decisionDigest: governanceDecisionDigestV2(value.decision as never),
+            target: "claude",
+            evidence,
+          },
+          calls,
+        ),
+      );
+
+      expect(result).toMatchObject({
+        authority: "unverified",
+        qualification: "unqualified",
+        outcome: "refused",
+        reason: "invalid-input",
+      });
+      expect(calls).toEqual([]);
+    },
+  );
+
   it("resolves the exact authority decision before selecting an AIH-supported qualification branch", async () => {
     const value = supportedFixture();
     writeAuthority(value.decision);

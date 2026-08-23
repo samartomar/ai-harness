@@ -39,6 +39,8 @@ import {
 } from "../../src/org-policy/governance-decision-v2.js";
 import { resolveNpmPackageEffectiveStateV1 } from "../../src/org-policy/npm-package-effective-state-v1.js";
 import {
+  __isNpmPackageLifecycleAssertionCurrentForInternalTestV1,
+  __setNpmPackageLifecycleInternalTestHookV1,
   npmPackageLifecycleCommand,
   npmPackageLifecyclePlan,
   readNpmPackageLifecycleStoreV1,
@@ -49,8 +51,9 @@ import {
   canonicalOrganizationEvidenceEnvelopeV1,
   organizationEvidenceEnvelopeDigestV1,
 } from "../../src/org-policy/qualification-v1.js";
-import { canonicalAihSupportedQualificationReceiptV2 } from "../../src/org-policy/supported-qualification-receipt-v2.js";
 import { readOrgPolicy } from "../../src/org-policy/schema.js";
+import { supportedCustodyAcceptPlanV2 } from "../../src/org-policy/supported-admin-v2.js";
+import { canonicalAihSupportedQualificationReceiptV2 } from "../../src/org-policy/supported-qualification-receipt-v2.js";
 import { upstreamObservationReceiptDigestV1 } from "../../src/org-policy/upstream-observation-receipt-v1.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { buildProgram } from "../../src/program.js";
@@ -120,6 +123,7 @@ beforeEach(() => {
 afterEach(() => {
   fsEvents.directoryRead = undefined;
   fsEvents.failRecordRename = undefined;
+  __setNpmPackageLifecycleInternalTestHookV1(undefined);
   vi.useRealTimers();
   rmSync(root, { recursive: true, force: true });
   rmSync(bin, { recursive: true, force: true });
@@ -533,6 +537,32 @@ function command(argv: string[]): Command {
 }
 
 describe("npm package lifecycle V1", () => {
+  it("re-observes an enterprise-shaped external custody assertion inside its trusted base", () => {
+    const externalBase = join(root, "enterprise-custody");
+    mkdirSync(externalBase, { recursive: true });
+    const path = join(externalBase, "heads", "current.json");
+    mkdirSync(dirname(path), { recursive: true });
+    const contents = '{"current":true}\n';
+    writeFileSync(path, contents);
+    const action = {
+      kind: "write" as const,
+      path,
+      contents,
+      exactContents: true as const,
+      describe: "assert enterprise supported custody head unchanged",
+      assertUnchanged: true as const,
+      external: true as const,
+      trustedBase: externalBase,
+      expect: {
+        sha256: createHash("sha256").update(contents, "utf8").digest("hex"),
+      },
+    };
+
+    expect(__isNpmPackageLifecycleAssertionCurrentForInternalTestV1(root, action)).toBe(true);
+    writeFileSync(path, "tampered\n");
+    expect(__isNpmPackageLifecycleAssertionCurrentForInternalTestV1(root, action)).toBe(false);
+  });
+
   it("delegates an evidence-free AIH-supported lifecycle request to the observer without preview or apply writes", async () => {
     const value = supportedFixture();
     writeFixture(value);
@@ -561,6 +591,85 @@ describe("npm package lifecycle V1", () => {
     });
     expect(calls).toHaveLength(2);
     expect(lifecycleFiles()).toEqual([]);
+  });
+
+  it.each(["", " ", 7, null])(
+    "rejects a supplied invalid evidence value for an AIH-supported lifecycle before observation (%j)",
+    async (evidence) => {
+      const value = supportedFixture();
+      const calls: string[][] = [];
+
+      const result = await execute(context(false, value.decision, { evidence }, {}, calls));
+
+      expect(result.digests[0]?.data).toMatchObject({
+        applied: false,
+        outcome: "refused",
+        reason: "invalid-input",
+        state: "invalid-input",
+      });
+      expect(calls).toEqual([]);
+      expect(lifecycleFiles()).toEqual([]);
+    },
+  );
+
+  it("persists an evidence-free AIH-supported lifecycle only after the branded custody accept path", async () => {
+    const value = supportedFixture();
+    writeFixture(value);
+    writeFileSync(
+      join(root, ".aih", "aih-supported-qualification-receipt.json"),
+      canonicalAihSupportedQualificationReceiptV2(value.receipt),
+    );
+    const env = {
+      AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+      AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+    };
+    const accept = context(true, value.decision, { evidence: undefined }, env);
+    await executePlan(await supportedCustodyAcceptPlanV2(accept), accept, {
+      skipWorktreeGate: true,
+    });
+
+    const preview = await run(context(false, value.decision, { evidence: undefined }, env));
+    expect(preview).toMatchObject({
+      applied: false,
+      outcome: "reported-only",
+      state: "observed-effective",
+    });
+    expect(lifecycleFiles()).toEqual([]);
+
+    const applied = await run(context(true, value.decision, { evidence: undefined }, env));
+    expect(applied).toMatchObject({
+      applied: true,
+      outcome: "fulfilled",
+      state: "observed-effective",
+    });
+    expect(readNpmPackageLifecycleStoreV1(root)).toMatchObject({ kind: "complete" });
+  });
+
+  it("refuses a supported lifecycle when its fixed receipt changes after transaction assertions", async () => {
+    const value = supportedFixture();
+    writeFixture(value);
+    const receiptPath = join(root, ".aih", "aih-supported-qualification-receipt.json");
+    writeFileSync(receiptPath, canonicalAihSupportedQualificationReceiptV2(value.receipt));
+    const env = {
+      AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+      AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+    };
+    const accept = context(true, value.decision, { evidence: undefined }, env);
+    await executePlan(await supportedCustodyAcceptPlanV2(accept), accept, {
+      skipWorktreeGate: true,
+    });
+    const ctx = context(true, value.decision, { evidence: undefined }, env);
+    const planned = await npmPackageLifecyclePlan(ctx);
+    __setNpmPackageLifecycleInternalTestHookV1(() => writeFileSync(receiptPath, "tampered\n"));
+
+    const result = await executePlan(planned, ctx, { skipWorktreeGate: true });
+
+    expect(result.digests[0]?.data).toMatchObject({
+      applied: false,
+      outcome: "refused",
+      reason: "store-detached",
+      state: "store-detached",
+    });
   });
 
   it("keeps preview zero-write, then appends immutable observation records before advancing a subject head", async () => {
