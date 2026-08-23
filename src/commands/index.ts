@@ -38,6 +38,7 @@ import { marketplaceValidateCommand } from "../marketplace/validate.js";
 import { command as mcp, mcpApproveCommand } from "../mcp/index.js";
 import { policyGenerateCommand, runPolicyGenerate } from "../org-policy/generate.js";
 import { policyInitCommand } from "../org-policy/init.js";
+import { npmPackageLifecycleCommand } from "../org-policy/npm-package-lifecycle-v1.js";
 import { npmPackageObserveCommand } from "../org-policy/npm-package-observer-v1.js";
 import { policyResolveCommand } from "../org-policy/policy-resolve-v1.js";
 import {
@@ -218,6 +219,7 @@ export const GROUPED_COMMAND_SPECS = {
   policy: [
     policyGenerateCommand,
     policyInitCommand,
+    npmPackageLifecycleCommand,
     npmPackageObserveCommand,
     policyResolveCommand,
     policyEvaluateCommand,
@@ -249,7 +251,9 @@ export const ALL_COMMAND_SPEC_PATHS: ReadonlyArray<readonly string[]> = [
     specs.map((spec) =>
       spec === npmPackageObserveCommand
         ? ["policy", "observe", spec.name]
-        : ([parent, spec.name] as const),
+        : spec === npmPackageLifecycleCommand
+          ? ["policy", "lifecycle", spec.name]
+          : ([parent, spec.name] as const),
     ),
   ),
   ...CAPABILITY_PACKAGE_COMMAND_SPECS.map((spec) => ["capability", "package", spec.name] as const),
@@ -908,6 +912,20 @@ export function registerCommands(
   npmPackage.action(
     async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
       process.exitCode = await runCapability(npmPackageObserveCommand, command);
+    },
+  );
+  const policyLifecycle = policy
+    .command("lifecycle")
+    .description("Durable governance lifecycle history under current organization policy");
+  const npmPackageLifecycle = policyLifecycle
+    .command(npmPackageLifecycleCommand.name)
+    .description(npmPackageLifecycleCommand.summary)
+    .argument("[root]", "target repository root (defaults to --root or cwd)");
+  addFlagsForSpec(npmPackageLifecycle, npmPackageLifecycleCommand);
+  addOptionsForSpec(npmPackageLifecycle, npmPackageLifecycleCommand);
+  npmPackageLifecycle.action(
+    async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
+      process.exitCode = await runCapability(npmPackageLifecycleCommand, command);
     },
   );
 

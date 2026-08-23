@@ -28,6 +28,7 @@ import {
 } from "../../src/org-policy/governance-decision-v2.js";
 import {
   __setNpmPackageObserverInternalTestHookV1,
+  npmPackageObservationHandoffForLifecycleV1,
   npmPackageObserveCommand,
   npmPackageObservePlan,
   observeNpmPackageV1,
@@ -539,6 +540,44 @@ describe("npm package upstream observer V1", () => {
     expect(readFileSync(join(root, "package-lock.json"))).toEqual(before.get("lock"));
     expect(readFileSync(join(root, "node_modules", "@acme", "widget", "package.json"))).toEqual(
       before.get("manifest"),
+    );
+  });
+
+  it("caps the sealed observation validity at the organization evidence expiry", async () => {
+    const value = fixture();
+    value.evidence.expiresAt = "2026-08-02T12:00:30+00:00";
+    value.evidenceBytes = Buffer.from(canonicalOrganizationEvidenceEnvelopeV1(value.evidence));
+    const evidenceDigest = organizationEvidenceEnvelopeDigestV1(value.evidence);
+    value.decision = {
+      ...value.decision,
+      qualificationBasis: {
+        kind: "organization-qualified",
+        evidenceDigest,
+        attestor: value.evidence.attestor,
+      },
+      evidence: {
+        id: value.evidence.evidence.id,
+        digest: evidenceDigest,
+        attestor: value.evidence.attestor,
+      },
+    };
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision),
+          target: "claude",
+          evidence: "evidence.json",
+        },
+        [],
+      ),
+    );
+    expect(result).toMatchObject({ outcome: "observed-effective" });
+    expect(npmPackageObservationHandoffForLifecycleV1(result)?.receipt.validUntil).toBe(
+      "2026-08-02T12:00:30.000Z",
     );
   });
 

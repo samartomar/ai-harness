@@ -110,6 +110,14 @@ export type CheckCode =
   | "org-policy.observe-installed-evidence-changed"
   | "org-policy.observe-installed-identity-mismatch"
   | "org-policy.observe-invariant-violation"
+  // Sealed durable npm lifecycle failures. These are separate from observation:
+  // they route store custody/conflicts without weakening the observer boundary.
+  | "org-policy.lifecycle-input-invalid"
+  | "org-policy.lifecycle-authority-unverified"
+  | "org-policy.lifecycle-decision-revoked"
+  | "org-policy.lifecycle-observation-invalid"
+  | "org-policy.lifecycle-store-invalid"
+  | "org-policy.lifecycle-store-conflict"
   | "org-policy.resolve-input-invalid"
   | "org-policy.resolve-evidence-invalid"
   | "org-policy.resolve-authority-blocked"
