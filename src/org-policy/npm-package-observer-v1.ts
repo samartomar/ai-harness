@@ -15,18 +15,29 @@ import {
 import { type GovernanceDecisionV2, governanceDecisionDigestV2 } from "./governance-decision-v2.js";
 import { verifyOrganizationQualificationV1 } from "./qualification-v1.js";
 import {
+  type ObservedEffectResolution,
   resolveObservedEffect,
   upstreamObservationReceiptDigestV1,
   verifyUpstreamObservationV1,
 } from "./upstream-observation-receipt-v1.js";
 
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
-const MAX_LOCK_BYTES = 1024 * 1024;
+/** Large enterprise lockfiles are common; still bounded before strict parsing. */
+const MAX_LOCK_BYTES = 16 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 64 * 1024;
+const OBSERVER_CONTRACT = Object.freeze({
+  format: "aih-npm-package-observer",
+  version: 1,
+  effect: "install",
+  lockfileVersion: 3,
+});
 const OBSERVER = Object.freeze({
   id: "npm-package-observer",
   version: "1.0.0",
-  digest: `sha256:${"8".repeat(64)}`,
+  digest: `sha256:${createHash("sha256")
+    .update("aih-npm-package-observer/v1\0", "utf8")
+    .update(canonicalStrictJsonBytesV1(OBSERVER_CONTRACT))
+    .digest("hex")}`,
 });
 const INTEGRATION = Object.freeze({
   mode: "upstream-managed" as const,
@@ -54,10 +65,15 @@ type Reason =
   | "installed-evidence-changed"
   | "installed-identity-mismatch"
   | "observation-unverified";
+export type NpmPackageObservationEffectiveV1 =
+  | "observed-effective"
+  | "observation-missing"
+  | Reason
+  | ObservedEffectResolution["state"];
 export interface NpmPackageObservationResultV1 {
   readonly authority: "verified" | "unverified";
   readonly qualification: "qualified" | "unqualified";
-  readonly effective: string;
+  readonly effective: NpmPackageObservationEffectiveV1;
   readonly outcome: "observed-effective" | "partial" | "refused";
   readonly reason?: Reason;
   readonly observationDigest?: string;
@@ -87,7 +103,7 @@ const CODE: Readonly<Record<Reason, CheckCode>> = {
 function refusal(
   reason: Reason,
   authority: "verified" | "unverified" = "unverified",
-  effective: string = reason,
+  effective: NpmPackageObservationEffectiveV1 = reason,
 ): NpmPackageObservationResultV1 {
   return { authority, qualification: "unqualified", effective, outcome: "refused", reason };
 }
@@ -154,7 +170,7 @@ function custody(
   const path = resolve(root, relativePath);
   const rel = relative(root, path);
   if (!isContainedEvidenceRelativePathV1(rel)) return "unsafe";
-  if (hasSymlinkedParent(root, path)) return "unsafe";
+  if (hasSymlinkedParent(root, path)) return safeStat(path) === undefined ? undefined : "unsafe";
   const opened = readRegularFileWithStats(path, { maxBytes });
   if (opened === undefined) return safeStat(path)?.isSymbolicLink() ? "unsafe" : undefined;
   const bytes = Buffer.from(opened.contents);
@@ -260,13 +276,27 @@ export async function observeNpmPackageV1(
   });
   if (qualification === undefined) return refusal("qualification-unverified", "verified");
   const local = installed(ctx.root, decision);
-  if (typeof local === "string") return refusal(local, "verified");
+  if (typeof local === "string") {
+    if (local === "installed-evidence-unavailable") {
+      return {
+        authority: "verified",
+        qualification: "qualified",
+        effective: "observation-missing",
+        outcome: "partial",
+        reason: local,
+      };
+    }
+    return { ...refusal(local, "verified"), qualification: "qualified" };
+  }
   if (!local.unchanged()) return refusal("installed-evidence-changed", "verified");
   const validUntil = new Date(
     Math.min(
       Date.parse(verified.authority.receipt.expiresAt),
       Date.parse(decision.expiresAt),
-      now === "" ? 0 : Date.parse(now) + 60_000,
+      decision.disposition === "accepted-with-conditions"
+        ? Date.parse(decision.reviewBy)
+        : Number.POSITIVE_INFINITY,
+      Date.parse(now) + 60_000,
     ),
   ).toISOString();
   const receipt = {
