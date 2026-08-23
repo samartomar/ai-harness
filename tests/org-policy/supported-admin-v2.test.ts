@@ -938,6 +938,59 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     }
   });
 
+  it("rejects a store whose active head lost its current member", async () => {
+    const { root, genesis } = await applyGenesis();
+    try {
+      rmSync(join(root, writes(genesis)[2]?.path ?? ""));
+      expect(() => supported.inspectSupportedCustodyV2({ root, posture: "vibe" })).toThrow(
+        expect.objectContaining({ code: "AIH_TRUST" }),
+      );
+      await expect(prepare(root)).rejects.toMatchObject({ code: "AIH_TRUST" });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects schema-valid orphan signer and replay claims", async () => {
+    const { root } = await applyGenesis();
+    try {
+      const identity = "orphan-signer";
+      const key = `ed25519:${"c".repeat(64)}`;
+      const headDigest = `sha256:${"d".repeat(64)}`;
+      const replayIdentity = `catalog-head:${"d".repeat(64)}:${"e".repeat(64)}`;
+      const custody = join(root, ".aih", "supported-qualification", "v2");
+      writeFileSync(
+        join(custody, "signers", `${custodySlot("signer", identity)}.json`),
+        canonicalStrictJsonBytesV1({
+          format: "aih-supported-qualification-custody",
+          version: 2,
+          kind: "signer-claim",
+          catalogSignerIdentity: identity,
+          signerKeyId: key,
+        }),
+      );
+      writeFileSync(
+        join(custody, "replays", `${custodySlot("replay", replayIdentity)}.json`),
+        canonicalStrictJsonBytesV1({
+          format: "aih-supported-qualification-custody",
+          version: 2,
+          kind: "replay-claim",
+          replayIdentity,
+          catalogSignerIdentity: identity,
+          signerKeyId: key,
+          catalogHeadDigest: headDigest,
+          sequence: 0,
+        }),
+      );
+      expect(() => supported.inspectSupportedCustodyV2({ root, posture: "vibe" })).toThrow(
+        expect.objectContaining({ code: "AIH_TRUST" }),
+      );
+      await expect(prepare(root)).rejects.toMatchObject({ code: "AIH_TRUST" });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("refuses an in-directory mutation after a bounded custody scan", async () => {
     const { root, genesis } = await applyGenesis();
     try {
