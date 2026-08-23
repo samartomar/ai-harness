@@ -67,6 +67,7 @@ interface Lineage {
 
 interface Existing {
   readonly bytes: Buffer;
+  readonly nlink: bigint;
   readonly sha256: string;
   readonly text: string;
 }
@@ -190,7 +191,12 @@ function readCanonicalStoreFile(
     const text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(opened.contents);
     const parsed = parseStrictJsonObjectV1(text, "npm lifecycle store");
     if (!canonicalStrictJsonBytesV1(parsed).equals(opened.contents)) return "corrupt";
-    return { bytes: Buffer.from(opened.contents), sha256: hash(opened.contents), text };
+    return {
+      bytes: Buffer.from(opened.contents),
+      nlink: opened.identity.nlink,
+      sha256: hash(opened.contents),
+      text,
+    };
   } catch {
     return "corrupt";
   }
@@ -218,6 +224,7 @@ function staged(
   existing: Existing | "absent",
   describe: string,
   durable = false,
+  expectScratch?: { absent: true } | { sha256: string },
 ): WriteAction {
   return {
     kind: "write",
@@ -225,6 +232,7 @@ function staged(
     contents,
     exactContents: true,
     ...(durable ? { durable: true as const } : {}),
+    ...(expectScratch === undefined ? {} : { expectScratch }),
     describe,
     expect: existing === "absent" ? { absent: true } : { sha256: existing.sha256 },
   };
@@ -308,7 +316,12 @@ function pinObservedCustody(
       return undefined;
     return pin(
       custody.path,
-      { bytes: Buffer.from(opened.contents), sha256: hash(opened.contents), text },
+      {
+        bytes: Buffer.from(opened.contents),
+        nlink: opened.identity.nlink,
+        sha256: hash(opened.contents),
+        text,
+      },
       `pin observed ${custody.path}`,
     );
   } catch {
@@ -340,6 +353,57 @@ function recordPath(lineage: Pick<Lineage, "digest">, recordDigest: string): rea
     lineage.digest.slice("sha256:".length),
     `${recordDigest.slice("sha256:".length)}.json`,
   ] as const;
+}
+
+type RecordScratch =
+  | { readonly kind: "absent" }
+  | {
+      readonly existing: Existing;
+      readonly name: string;
+      kind: "exact";
+    }
+  | { readonly kind: "unsafe" }
+  | { readonly kind: "collision" };
+
+/**
+ * A failed immutable-record rename may leave exactly one private scratch file.
+ * It is recoverable only when it is the byte-identical candidate this plan will
+ * publish. Any other scratch is untrusted collision state, not cleanup input.
+ */
+function preparedRecordScratch(
+  root: string,
+  lineage: Pick<Lineage, "digest">,
+  recordDigest: string,
+  recordText: string,
+): RecordScratch {
+  const record = recordPath(lineage, recordDigest);
+  const file = record.at(-1);
+  if (file === undefined) return { kind: "unsafe" };
+  const directoryParts = record.slice(0, -1);
+  const directory = safeStorePath(root, ...directoryParts);
+  if (directory === undefined) return { kind: "unsafe" };
+  const directoryInfo = lstat(directory);
+  if (directoryInfo !== undefined) {
+    if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink()) return { kind: "unsafe" };
+    let names: string[];
+    try {
+      names = readdirSync(directory);
+    } catch {
+      return { kind: "unsafe" };
+    }
+    const name = `${file}.aih.tmp`;
+    if (names.some((entry) => entry.endsWith(".aih.tmp") && entry !== name)) {
+      return { kind: "collision" };
+    }
+  }
+  const parts = [...directoryParts, `${file}.aih.tmp`] as const;
+  const scratch = readCanonicalStoreFile(root, ...parts);
+  if (scratch === "absent") return { kind: "absent" };
+  if (scratch === "unsafe") return { kind: "unsafe" };
+  if (scratch === "corrupt") return { kind: "collision" };
+  if (scratch.nlink !== 1n) return { kind: "unsafe" };
+  if (scratch.text !== recordText) return { kind: "collision" };
+  return { existing: scratch, kind: "exact", name: parts.at(-1) as string };
 }
 
 function parseObject(existing: Existing): Record<string, unknown> | undefined {
@@ -549,7 +613,6 @@ function recordLink(
         "format",
         "lineage",
         "previousRecordDigest",
-        "recordedAt",
         "revocation",
         "sequence",
         "state",
@@ -584,7 +647,6 @@ function recordLink(
       )
     )
       return undefined;
-    if (!Number.isFinite(Date.parse(stableText(item.recordedAt) ?? ""))) return undefined;
   }
   return {
     decisionDigest: (decision as Record<string, unknown>).digest as string,
@@ -621,6 +683,7 @@ function hasOnlyExpectedSuccessor(
   head: LifecycleHead | undefined,
   lineage: Lineage,
   expectedOrphanDigest?: string,
+  expectedScratchName?: string,
 ): boolean {
   const directory = safeStorePath(
     root,
@@ -638,16 +701,17 @@ function hasOnlyExpectedSuccessor(
   } catch {
     return false;
   }
+  const records = names.filter((name) => /^[0-9a-f]{64}\.json$/.test(name));
   if (
-    names.length > MAX_RECORDS_PER_LINEAGE ||
-    names.some((name) => !/^[0-9a-f]{64}\.json$/.test(name))
+    records.length > MAX_RECORDS_PER_LINEAGE ||
+    names.some((name) => !/^[0-9a-f]{64}\.json$/.test(name) && name !== expectedScratchName)
   )
     return false;
   const links = new Map<
     string,
     ReturnType<typeof recordLink> extends infer T ? Exclude<T, undefined> : never
   >();
-  for (const name of names) {
+  for (const name of records) {
     if (!/^[0-9a-f]{64}\.json$/.test(name)) continue;
     const recordDigest = `sha256:${name.slice(0, -5)}`;
     const existing = readCanonicalStoreFile(
@@ -688,7 +752,12 @@ function hasOnlyExpectedSuccessor(
 }
 
 /** Avoid starting a bounded history walk when a new record would exceed its capacity. */
-function capacityAllowsCandidate(root: string, lineage: Lineage, candidateDigest: string): boolean {
+function capacityAllowsCandidate(
+  root: string,
+  lineage: Lineage,
+  candidateDigest: string,
+  expectedScratchName?: string,
+): boolean {
   const directory = safeStorePath(
     root,
     ...STORE,
@@ -705,10 +774,13 @@ function capacityAllowsCandidate(root: string, lineage: Lineage, candidateDigest
   } catch {
     return false;
   }
+  const records = names.filter((name) => /^[0-9a-f]{64}\.json$/.test(name));
+  if (names.some((name) => !/^[0-9a-f]{64}\.json$/.test(name) && name !== expectedScratchName))
+    return false;
   return (
-    names.length < MAX_RECORDS_PER_LINEAGE ||
-    (names.length === MAX_RECORDS_PER_LINEAGE &&
-      names.includes(`${candidateDigest.slice("sha256:".length)}.json`))
+    records.length < MAX_RECORDS_PER_LINEAGE ||
+    (records.length === MAX_RECORDS_PER_LINEAGE &&
+      records.includes(`${candidateDigest.slice("sha256:".length)}.json`))
   );
 }
 
@@ -841,18 +913,38 @@ function lifecycleActions(
     version: 1,
   };
   const recordDigest = digestOf("aih-npm-package-lifecycle-record/v1", candidateRecord);
-  if (!capacityAllowsCandidate(ctx.root, lineage, recordDigest)) return refused("head-conflict");
-  if (priorHead !== undefined && !verifyHistory(ctx.root, priorHead, lineage))
-    return refused("head-conflict");
-  if (!hasOnlyExpectedSuccessor(ctx.root, priorHead, lineage, recordDigest))
-    return refused("head-conflict");
   const recordParts = recordPath(lineage, recordDigest);
+  const recordText = canonicalText(candidateRecord);
   const existingRecord = readCanonicalStoreFile(ctx.root, ...recordParts);
   if (existingRecord === "unsafe") return refused("store-unsafe");
   if (existingRecord === "corrupt") return refused("store-corrupt");
-  const recordText = canonicalText(candidateRecord);
   if (existingRecord !== "absent" && existingRecord.text !== recordText)
     return refused("store-collision");
+  const scratch = preparedRecordScratch(ctx.root, lineage, recordDigest, recordText);
+  if (scratch.kind === "unsafe") return refused("store-unsafe");
+  if (scratch.kind === "collision") return refused("store-collision");
+  if (existingRecord !== "absent" && scratch.kind !== "absent") return refused("store-collision");
+  if (
+    !capacityAllowsCandidate(
+      ctx.root,
+      lineage,
+      recordDigest,
+      scratch.kind === "exact" ? scratch.name : undefined,
+    )
+  )
+    return refused("head-conflict");
+  if (priorHead !== undefined && !verifyHistory(ctx.root, priorHead, lineage))
+    return refused("head-conflict");
+  if (
+    !hasOnlyExpectedSuccessor(
+      ctx.root,
+      priorHead,
+      lineage,
+      recordDigest,
+      scratch.kind === "exact" ? scratch.name : undefined,
+    )
+  )
+    return refused("head-conflict");
   const bindingText = canonicalText({
     format: "aih-npm-package-lifecycle-subject",
     lineage,
@@ -887,6 +979,7 @@ function lifecycleActions(
           existingRecord,
           "persist immutable npm lifecycle record",
           true,
+          scratch.kind === "exact" ? { sha256: scratch.existing.sha256 } : { absent: true },
         )
       : pin(recordParts.join("/"), existingRecord, "pin reusable immutable npm lifecycle record"),
     staged(headParts.join("/"), headText, head, "advance npm lifecycle subject head"),
@@ -965,9 +1058,6 @@ function revocationActions(
   const priorHead = parseHead(head, lineage);
   if (priorHead === undefined || !verifyHistory(ctx.root, priorHead, lineage))
     return refused("head-conflict");
-  // A terminal/reported-only revocation still reads untrusted durable state.
-  // Validate that there is no forward fork before returning any semantic status.
-  if (!hasOnlyExpectedSuccessor(ctx.root, priorHead, lineage)) return refused("head-conflict");
   const currentRecord = readCanonicalStoreFile(
     ctx.root,
     ...recordPath(lineage, priorHead.recordDigest),
@@ -985,6 +1075,9 @@ function revocationActions(
     currentLink.subjectDigest !== current.decision.subject.subjectDigest ||
     currentLink.state === "decision-revoked"
   ) {
+    // A terminal/reported-only revocation still reads untrusted durable state.
+    // Validate that there is no forward fork or unowned scratch before reporting it.
+    if (!hasOnlyExpectedSuccessor(ctx.root, priorHead, lineage)) return refused("head-conflict");
     return {
       actions: [],
       result: {
@@ -1001,7 +1094,6 @@ function revocationActions(
     format: "aih-npm-package-lifecycle-record",
     lineage,
     previousRecordDigest: priorHead.recordDigest,
-    recordedAt: new Date().toISOString(),
     revocation: current.revocation,
     sequence: priorHead.sequence + 1,
     state: "decision-revoked" as const,
@@ -1009,9 +1101,6 @@ function revocationActions(
     version: 1,
   };
   const recordDigest = digestOf("aih-npm-package-lifecycle-record/v1", record);
-  if (!capacityAllowsCandidate(ctx.root, lineage, recordDigest)) return refused("head-conflict");
-  if (!hasOnlyExpectedSuccessor(ctx.root, priorHead, lineage, recordDigest))
-    return refused("head-conflict");
   const recordParts = recordPath(lineage, recordDigest);
   const existingRecord = readCanonicalStoreFile(ctx.root, ...recordParts);
   if (existingRecord === "unsafe") return refused("store-unsafe");
@@ -1019,6 +1108,32 @@ function revocationActions(
   const recordText = canonicalText(record);
   if (existingRecord !== "absent" && existingRecord.text !== recordText)
     return refused("store-collision");
+  // A complete direct successor can be a stale rolled-back head just as easily
+  // as an interrupted apply. Only the exact private scratch has the narrower
+  // failure provenance needed for safe retry; never replay a final record here.
+  if (existingRecord !== "absent") return refused("head-conflict");
+  const scratch = preparedRecordScratch(ctx.root, lineage, recordDigest, recordText);
+  if (scratch.kind === "unsafe") return refused("store-unsafe");
+  if (scratch.kind === "collision") return refused("store-collision");
+  if (
+    !capacityAllowsCandidate(
+      ctx.root,
+      lineage,
+      recordDigest,
+      scratch.kind === "exact" ? scratch.name : undefined,
+    )
+  )
+    return refused("head-conflict");
+  if (
+    !hasOnlyExpectedSuccessor(
+      ctx.root,
+      priorHead,
+      lineage,
+      recordDigest,
+      scratch.kind === "exact" ? scratch.name : undefined,
+    )
+  )
+    return refused("head-conflict");
   const headText = canonicalText({
     format: "aih-npm-package-lifecycle-head",
     lineageDigest: lineage.digest,
@@ -1044,6 +1159,7 @@ function revocationActions(
             existingRecord,
             "persist npm lifecycle revocation record",
             true,
+            scratch.kind === "exact" ? { sha256: scratch.existing.sha256 } : { absent: true },
           )
         : pin(
             recordParts.join("/"),
@@ -1108,6 +1224,17 @@ async function prepare(ctx: PlanContext): Promise<Prepared> {
 }
 
 function check(result: NpmPackageLifecycleResultV1): Check {
+  // A revocation is truthful lifecycle state, never an effective permission.
+  // Keep the durable/JSON outcome distinct from the verification verdict so a
+  // freshly recorded revocation cannot be mistaken for a successful effect.
+  if (result.state === "decision-revoked") {
+    return {
+      name: "policy lifecycle npm-package",
+      verdict: "fail",
+      code: "org-policy.lifecycle-decision-revoked",
+      detail: "policy lifecycle npm-package decision-revoked",
+    };
+  }
   if (result.outcome === "fulfilled" || result.outcome === "reported-only") {
     return {
       name: "policy lifecycle npm-package",

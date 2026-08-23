@@ -904,6 +904,7 @@ export async function executePlan(
           targetTxn.stage(absPath, contents, action.mode, action.expect, {
             root: action.external ? action.trustedBase : ctx.root,
             durable: action.durable,
+            expectScratch: action.expectScratch,
           });
           if (action.sensitive?.path) sensitiveBackupTargets.add(absPath);
         }

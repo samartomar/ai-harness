@@ -84,6 +84,11 @@ export interface WriteAction {
    * current bytes must hash to `sha256`.
    */
   expect?: { absent: true } | { sha256: string };
+  /**
+   * Internal write-local precondition for this target's `<path>.aih.tmp`
+   * scratch. The transaction rechecks it immediately before consuming scratch.
+   */
+  expectScratch?: { absent: true } | { sha256: string };
   /** Recheck an unchanged expected file inside the filesystem transaction without rewriting it. */
   assertUnchanged?: boolean;
   /**

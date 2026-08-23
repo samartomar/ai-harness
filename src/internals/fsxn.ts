@@ -72,6 +72,7 @@ interface StagedWrite {
   contents: string;
   mode?: number;
   expect?: { absent: true } | { sha256: string };
+  expectScratch?: { absent: true } | { sha256: string };
   root?: string;
   durable?: boolean;
 }
@@ -187,9 +188,21 @@ export class FsTransaction {
     contents: string,
     mode?: number,
     expect?: { absent: true } | { sha256: string },
-    opts: { root?: string; durable?: boolean } = {},
+    opts: {
+      root?: string;
+      durable?: boolean;
+      expectScratch?: { absent: true } | { sha256: string };
+    } = {},
   ): void {
-    this.staged.push({ path, contents, mode, expect, root: opts.root, durable: opts.durable });
+    this.staged.push({
+      path,
+      contents,
+      mode,
+      expect,
+      expectScratch: opts.expectScratch,
+      root: opts.root,
+      durable: opts.durable,
+    });
   }
 
   /**
@@ -312,6 +325,43 @@ export class FsTransaction {
       return;
     }
     this.guardParents(path, root, true);
+  }
+
+  /** Guard every existing parent without creating a missing suffix. */
+  private guardExistingParents(path: string, root: string | undefined): void {
+    if (root === undefined) return;
+    this.assertCommitDeadline();
+    const base = resolve(root);
+    const parent = resolve(dirname(path));
+    const rel = relative(base, parent);
+    if (rel.startsWith("..") || isAbsolute(rel))
+      throw new FsTxnError("unsafe transaction parent path");
+    let current = base;
+    const capture = (): boolean => {
+      try {
+        const actual = this.identity(current);
+        const prior = this.guardedDirectories.get(current);
+        if (prior !== undefined && (prior.dev !== actual.dev || prior.ino !== actual.ino)) {
+          throw new FsTxnError("unsafe transaction parent path");
+        }
+        this.guardedDirectories.set(current, actual);
+        return true;
+      } catch (err) {
+        if (current !== base) {
+          try {
+            lstatSync(current);
+          } catch (statErr) {
+            if ((statErr as NodeJS.ErrnoException).code === "ENOENT") return false;
+          }
+        }
+        throw err;
+      }
+    };
+    if (!capture()) throw new FsTxnError("unsafe transaction parent path");
+    for (const part of rel === "" ? [] : rel.split(/[\\/]+/).filter(Boolean)) {
+      current = resolve(current, part);
+      if (!capture()) return;
+    }
   }
 
   private captureParentGuard(path: string, root: string | undefined): ParentGuard | undefined {
@@ -823,6 +873,12 @@ export class FsTransaction {
           `transaction both asserts and mutates the same path: ${assertion.path}`,
         );
     }
+    // There is nothing to protect when the transaction has no assertions or
+    // filesystem effects. In particular, a deferred executor transaction must
+    // not contend for a lease after its primary transaction already committed.
+    if (staged.length === 0 && removals.length === 0 && assertions.length === 0) {
+      return { written: [], backups: [], removed: [] };
+    }
     let lockIdentity: OwnedCommitLease | undefined;
     let failed = false;
     try {
@@ -830,7 +886,19 @@ export class FsTransaction {
       this.assertCommitDeadline();
       for (const assertion of assertions) this.guardParents(assertion.path, assertion.root, false);
       validateAssertions(assertions);
+      // Scratch expectations are effect-boundary preconditions. Validate every
+      // one before any staged write can create a directory, clear scratch, or
+      // replace a target; rollback is not an authorization to start effects.
       for (const w of staged) {
+        if (w.expectScratch === undefined) continue;
+        const tmpPath = `${w.path}.aih.tmp`;
+        this.guardExistingParents(w.path, w.root);
+        this.assertCommitDeadline();
+        validateScratchExpectation(tmpPath, w.expectScratch, w.contents);
+      }
+      for (const w of staged) {
+        const backupPath = `${w.path}.aih.bak`;
+        const tmpPath = `${w.path}.aih.tmp`;
         this.ensureParents(w.path, w.root);
         // Refuse to write THROUGH an existing symlink — it can redirect the write
         // outside the repo, and copyFileSync would back up the link's TARGET, not the
@@ -841,20 +909,24 @@ export class FsTransaction {
         }
         this.validateWriteExpectation(w);
         const existed = info !== undefined;
-        const backupPath = `${w.path}.aih.bak`;
-        const tmpPath = `${w.path}.aih.tmp`;
         // The temp + backup paths are followed by copyFileSync/writeFileSync, so a
         // pre-placed symlink THERE would redirect the write/copy outside the repo just
         // like a symlinked target. Reject a planted link and clear any stale scratch so
         // the exclusive create below can't be tricked into following one.
+        const clearExpectedScratch = (): void =>
+          clearScratch(tmpPath, () => {
+            this.guardParents(w.path, w.root, false);
+            this.assertCommitDeadline();
+            validateScratchExpectation(tmpPath, w.expectScratch, w.contents);
+          });
+        // Recheck again in the same clearScratch call immediately before the
+        // unlink. The earlier check guarantees no prior transaction mutation.
+        if (w.expectScratch !== undefined) clearExpectedScratch();
         clearScratch(backupPath, () => {
           this.guardParents(w.path, w.root, false);
           this.assertCommitDeadline();
         });
-        clearScratch(tmpPath, () => {
-          this.guardParents(w.path, w.root, false);
-          this.assertCommitDeadline();
-        });
+        if (w.expectScratch === undefined) clearExpectedScratch();
         let backup: string | undefined;
         if (existed) {
           backup = backupPath;
@@ -1125,6 +1197,36 @@ function clearScratch(path: string, assertCommitDeadline: () => void): void {
   }
   assertCommitDeadline();
   rmSync(path, { force: true });
+}
+
+/** Validate a write-local scratch precondition at the consume boundary. */
+function validateScratchExpectation(
+  path: string,
+  expected: { absent: true } | { sha256: string } | undefined,
+  contents: string,
+): void {
+  if (expected === undefined) return;
+  if ("absent" in expected) {
+    try {
+      lstatSync(path);
+      throw new FsTxnError(`write scratch changed before commit: ${path}`);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      if (err instanceof FsTxnError) throw err;
+      throw new FsTxnError(`write scratch could not be verified: ${path}`);
+    }
+  }
+  const expectedContentsHash = createHash("sha256").update(contents).digest("hex");
+  if (expected.sha256 !== expectedContentsHash) {
+    throw new FsTxnError(`write scratch precondition does not match staged contents: ${path}`);
+  }
+  const opened = readRegularFileWithStats(path, { maxBytes: Buffer.byteLength(contents, "utf8") });
+  const actual =
+    opened === undefined || opened.identity.nlink !== 1n
+      ? undefined
+      : createHash("sha256").update(opened.contents).digest("hex");
+  if (actual !== expected.sha256)
+    throw new FsTxnError(`write scratch changed before commit: ${path}`);
 }
 
 /**

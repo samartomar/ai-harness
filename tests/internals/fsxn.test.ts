@@ -17,7 +17,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import fc from "fast-check";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -41,6 +41,7 @@ const fsEvents = vi.hoisted(() => ({
   afterRead: undefined as ((path: string) => void) | undefined,
   afterRemove: undefined as ((path: string) => void) | undefined,
   afterLeaseWrite: undefined as ((path: string) => void) | undefined,
+  afterClose: undefined as ((path: string) => void) | undefined,
   afterRollbackTempWrite: undefined as ((path: string) => void) | undefined,
 }));
 
@@ -54,8 +55,11 @@ vi.mock("node:fs", async (importOriginal) => {
       return fd;
     },
     closeSync: (fd: number) => {
+      const path = fsEvents.openedPaths.get(fd) ?? "";
+      const result = original.closeSync(fd);
       fsEvents.openedPaths.delete(fd);
-      return original.closeSync(fd);
+      fsEvents.afterClose?.(path);
+      return result;
     },
     fsyncSync: (fd: number) => {
       fsEvents.events.push("fsync");
@@ -106,6 +110,7 @@ afterEach(() => {
   fsEvents.afterRead = undefined;
   fsEvents.afterRemove = undefined;
   fsEvents.afterLeaseWrite = undefined;
+  fsEvents.afterClose = undefined;
   fsEvents.afterRollbackTempWrite = undefined;
   fsEvents.openedPaths.clear();
   fsEvents.readPathnames = [];
@@ -227,6 +232,22 @@ describe("FsTransaction", () => {
     expect(existsSync(target)).toBe(false);
     expect(existsSync(join(lock, "active"))).toBe(false);
     now.mockRestore();
+  });
+
+  it("returns an empty transaction without touching a hostile commit lock", () => {
+    const lock = join(dir, ".aih", "commit.lock");
+    mkdirSync(dirname(lock), { recursive: true });
+    // A regular file at the lease anchor is hostile: any lock acquisition must
+    // refuse it. An empty transaction has no effects or assertions to guard.
+    writeFileSync(lock, "not a canonical commit-lock anchor");
+    fsEvents.events = [];
+    fsEvents.readPathnames = [];
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+
+    expect(t.commit()).toEqual({ backups: [], removed: [], written: [] });
+    expect(fsEvents.events).toEqual([]);
+    expect(fsEvents.readPathnames).not.toContain(lock);
+    expect(readFileSync(lock, "utf8")).toBe("not a canonical commit-lock anchor");
   });
 
   it("commits normally before a future deadline", () => {
@@ -943,6 +964,108 @@ describe("FsTransaction", () => {
     t.stage(target, "fresh");
     t.commit();
     expect(readFileSync(target, "utf8")).toBe("fresh");
+  });
+
+  it("consumes a scratch file only when its exact staged bytes still match", () => {
+    const target = join(dir, "record.json");
+    const contents = '{"record":"expected"}';
+    writeFileSync(`${target}.aih.tmp`, '{"record":"substituted"}');
+    const t = new FsTransaction();
+    t.stage(
+      target,
+      contents,
+      undefined,
+      { absent: true },
+      {
+        root: dir,
+        expectScratch: { sha256: createHash("sha256").update(contents).digest("hex") },
+      },
+    );
+
+    expect(() => t.commit()).toThrow(/write scratch changed before commit/);
+    expect(existsSync(target)).toBe(false);
+    expect(readFileSync(`${target}.aih.tmp`, "utf8")).toBe('{"record":"substituted"}');
+  });
+
+  it("does not consume a scratch file when the staged write requires absence", () => {
+    const target = join(dir, "record.json");
+    writeFileSync(`${target}.aih.tmp`, "unexpected");
+    const t = new FsTransaction();
+    t.stage(
+      target,
+      "record",
+      undefined,
+      { absent: true },
+      {
+        root: dir,
+        expectScratch: { absent: true },
+      },
+    );
+
+    expect(() => t.commit()).toThrow(/write scratch changed before commit/);
+    expect(existsSync(target)).toBe(false);
+    expect(readFileSync(`${target}.aih.tmp`, "utf8")).toBe("unexpected");
+  });
+
+  it("preflights a later scratch expectation before earlier staged writes", () => {
+    const earlier = join(dir, "claim.json");
+    const target = join(dir, "record.json");
+    const contents = '{"record":"expected"}';
+    writeFileSync(`${target}.aih.tmp`, '{"record":"substituted"}');
+    fsEvents.events = [];
+    const t = new FsTransaction();
+    t.stage(earlier, '{"claim":"new"}', undefined, { absent: true }, { root: dir });
+    t.stage(
+      target,
+      contents,
+      undefined,
+      { absent: true },
+      {
+        root: dir,
+        expectScratch: { sha256: createHash("sha256").update(contents).digest("hex") },
+      },
+    );
+
+    expect(() => t.commit()).toThrow(/write scratch changed before commit/);
+    expect(fsEvents.events).not.toContain(`rename:${earlier}`);
+    expect(existsSync(earlier)).toBe(false);
+    expect(existsSync(target)).toBe(false);
+    expect(readFileSync(`${target}.aih.tmp`, "utf8")).toBe('{"record":"substituted"}');
+  });
+
+  it("rechecks exact scratch bytes immediately before consuming them", () => {
+    const target = join(dir, "record.json");
+    const contents = '{"record":"expected"}';
+    const scratch = `${target}.aih.tmp`;
+    writeFileSync(scratch, contents);
+    let swapped = false;
+    fsEvents.afterRead = (path) => {
+      if (swapped || path !== scratch) return;
+      swapped = true;
+      fsEvents.afterClose = (closed) => {
+        if (closed !== scratch) return;
+        fsEvents.afterClose = undefined;
+        const replacement = `${scratch}.replacement`;
+        writeFileSync(replacement, '{"record":"substituted"}');
+        renameSync(replacement, scratch);
+      };
+    };
+    const t = new FsTransaction();
+    t.stage(
+      target,
+      contents,
+      undefined,
+      { absent: true },
+      {
+        root: dir,
+        expectScratch: { sha256: createHash("sha256").update(contents).digest("hex") },
+      },
+    );
+
+    expect(() => t.commit()).toThrow(/write scratch changed before commit/);
+    expect(swapped).toBe(true);
+    expect(existsSync(target)).toBe(false);
+    expect(readFileSync(scratch, "utf8")).toBe('{"record":"substituted"}');
   });
 
   it("readIfExists returns undefined for a missing file", () => {

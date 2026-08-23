@@ -133,6 +133,32 @@ describe("executePlan", () => {
     expect(readFileSync(lock, "utf8")).toBe("held");
   });
 
+  it("passes a write-local scratch precondition to the transaction", async () => {
+    const target = join(dir, "record.json");
+    const contents = '{"record":"expected"}';
+    writeFileSync(`${target}.aih.tmp`, '{"record":"substituted"}');
+    const p: Plan = {
+      capability: "scratch",
+      actions: [
+        {
+          kind: "write",
+          path: "record.json",
+          contents,
+          exactContents: true,
+          describe: "persist record",
+          expect: { absent: true },
+          expectScratch: { sha256: createHash("sha256").update(contents).digest("hex") },
+        },
+      ],
+    };
+
+    await expect(executePlan(p, ctx({ apply: true }))).rejects.toThrow(
+      /write scratch changed before commit/,
+    );
+    expect(existsSync(target)).toBe(false);
+    expect(readFileSync(`${target}.aih.tmp`, "utf8")).toBe('{"record":"substituted"}');
+  });
+
   it("enforces the commit deadline for deferred writes", async () => {
     const start = Date.parse("2030-01-01T00:00:00.000Z");
     const deadline = start + 1;
