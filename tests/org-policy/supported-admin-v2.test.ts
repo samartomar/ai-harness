@@ -235,6 +235,9 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
         (action as { kind?: string }).kind === "write",
     );
   }
+  function mutatingWrites(plan: { actions: readonly unknown[] }): WriteAction[] {
+    return writes(plan).filter((action) => !action.assertUnchanged);
+  }
   async function prepare(root: string, candidate = input) {
     return supported.prepareSupportedCustodyAcceptV2({ root, posture: "vibe", candidate });
   }
@@ -469,8 +472,22 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
         }),
       );
       const planned = writes(additionalMember);
-      expect(planned).toHaveLength(1);
-      expect(planned[0]?.path).toMatch(/^\.aih\/supported-qualification\/v2\/members\//);
+      const mutations = mutatingWrites(additionalMember);
+      expect(mutations).toHaveLength(1);
+      expect(mutations[0]?.path).toMatch(/^\.aih\/supported-qualification\/v2\/members\//);
+      const assertions = planned.filter((action) => action.assertUnchanged);
+      expect(assertions.map((action) => action.path)).toEqual([
+        original[0]?.path,
+        original[1]?.path,
+        original[3]?.path,
+      ]);
+      for (const action of assertions) {
+        expect(action.expect).toEqual({
+          sha256: createHash("sha256")
+            .update(readFileSync(join(root, action.path)))
+            .digest("hex"),
+        });
+      }
       await executePlan(additionalMember, context);
       for (const state of before) expect(readFileSync(join(root, state.path))).toEqual(state.bytes);
     } finally {
@@ -504,6 +521,21 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     }
   });
 
+  it("rejects signer and head races before committing a member-only plan", async () => {
+    for (const recordIndex of [0, 3]) {
+      const { root, context, genesis } = await applyGenesis();
+      try {
+        const memberOnly = await prepare(root, candidateFor(memberReceipt()));
+        const member = mutatingWrites(memberOnly)[0];
+        writeFileSync(join(root, writes(genesis)[recordIndex]?.path ?? ""), "raced", "utf8");
+        await expect(executePlan(memberOnly, context)).rejects.toMatchObject({ code: "AIH_TRUST" });
+        expect(existsSync(join(root, member?.path ?? ""))).toBe(false);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
   it("commits a valid direct successor with immutable slots before the head CAS", async () => {
     const { root, context, genesis } = await applyGenesis();
     try {
@@ -515,17 +547,28 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
         }),
       );
       const planned = writes(successor);
-      expect(planned).toHaveLength(3);
-      const head = planned.at(-1);
-      expect(head).toMatchObject({ durable: true, once: undefined });
+      const mutations = mutatingWrites(successor);
+      expect(mutations).toHaveLength(3);
+      const signerAssertion = planned.find((action) => action.assertUnchanged);
+      expect(signerAssertion).toMatchObject({
+        path: original[0]?.path,
+        assertUnchanged: true,
+        expect: {
+          sha256: createHash("sha256")
+            .update(readFileSync(join(root, original[0]?.path ?? "")))
+            .digest("hex"),
+        },
+      });
+      const head = mutations.at(-1);
+      expect(head).toMatchObject({ durable: true, assertUnchanged: undefined, once: undefined });
       expect(head?.expect).toEqual({
         sha256: createHash("sha256")
           .update(readFileSync(join(root, original[3]?.path ?? "")))
           .digest("hex"),
       });
-      for (const action of planned.slice(0, -1))
+      for (const action of mutations.slice(0, -1))
         expect(action).toMatchObject({ durable: true, once: true, expect: { absent: true } });
-      expect(planned.slice(0, -1).map((action) => action.path)).toEqual([
+      expect(mutations.slice(0, -1).map((action) => action.path)).toEqual([
         expect.stringMatching(/^\.aih\/supported-qualification\/v2\/replays\//),
         expect.stringMatching(/^\.aih\/supported-qualification\/v2\/members\//),
       ]);
@@ -549,34 +592,33 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     }
   });
 
-  it("refuses gaps, rollbacks, wrong predecessors, key rotation, and replay reuse", async () => {
-    const { root } = await applyGenesis();
+  it("refuses gaps, wrong predecessors, key rotation, and replay reuse at genesis", async () => {
+    const { root, context } = await applyGenesis();
     try {
-      const successor = successorReceipt();
+      const successorReceiptData = successorReceipt();
       const variants = [
         {
-          ...successor,
-          catalogContinuity: { ...successor.catalogContinuity, sequence: 2 },
+          ...successorReceiptData,
+          catalogContinuity: { ...successorReceiptData.catalogContinuity, sequence: 2 },
         },
-        receipt,
         {
-          ...successor,
+          ...successorReceiptData,
           catalogContinuity: {
-            ...successor.catalogContinuity,
+            ...successorReceiptData.catalogContinuity,
             previousCatalogHeadDigest: `sha256:${"0".repeat(63)}1`,
           },
         },
         {
-          ...successor,
+          ...successorReceiptData,
           catalogContinuity: {
-            ...successor.catalogContinuity,
+            ...successorReceiptData.catalogContinuity,
             signerKeyId: `ed25519:${"9".repeat(64)}`,
           },
         },
         {
-          ...successor,
+          ...successorReceiptData,
           catalogContinuity: {
-            ...successor.catalogContinuity,
+            ...successorReceiptData.catalogContinuity,
             replayIdentity: receipt.catalogContinuity.replayIdentity,
           },
         },
@@ -585,6 +627,11 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
         await expect(prepare(root, candidateFor(candidateReceipt))).rejects.toMatchObject({
           code: "AIH_TRUST",
         });
+      const successor = await prepare(root, candidateFor(successorReceipt()));
+      await executePlan(successor, context);
+      await expect(prepare(root, candidateFor(receipt))).rejects.toMatchObject({
+        code: "AIH_TRUST",
+      });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -650,9 +697,8 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     const { root, context, genesis } = await applyGenesis();
     try {
       const successor = await prepare(root, candidateFor(successorReceipt()));
-      const planned = writes(successor);
-      const head = planned.at(-1);
-      const immutable = planned.slice(0, -1);
+      const head = mutatingWrites(successor).at(-1);
+      const immutable = mutatingWrites(successor).slice(0, -1);
       writeFileSync(join(root, writes(genesis).at(-1)?.path ?? ""), "raced", "utf8");
       await expect(executePlan(successor, context)).rejects.toMatchObject({ code: "AIH_TRUST" });
       for (const action of immutable) expect(existsSync(join(root, action.path))).toBe(false);
