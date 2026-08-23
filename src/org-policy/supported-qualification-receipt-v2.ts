@@ -42,10 +42,36 @@ const identity = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$/);
 const entryId = z.string().regex(/^[a-z][a-z0-9.-]{0,63}$/);
 const replayIdentity = z.string().regex(/^catalog-head:[0-9a-f]{64}:[0-9a-f]{64}$/);
 const signerKeyId = z.string().regex(/^ed25519:[0-9a-f]{64}$/);
+function isCanonicalUtcSecond(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/.exec(value);
+  if (match === null) return false;
+  const [year, month, day, hour, minute, second] = match.slice(1).map(Number);
+  if (
+    year === undefined ||
+    month === undefined ||
+    day === undefined ||
+    hour === undefined ||
+    minute === undefined ||
+    second === undefined ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59
+  )
+    return false;
+  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return (
+    day <= days &&
+    new Date(Date.UTC(year, month - 1, day, hour, minute, second)).toISOString() ===
+      value.replace("Z", ".000Z")
+  );
+}
 const canonicalTimestamp = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/)
-  .refine((value) => Number.isFinite(Date.parse(value)), "must be a canonical UTC timestamp");
+  .refine(isCanonicalUtcSecond, "must be a canonical UTC timestamp");
 
 const QualificationBasisSchema = z
   .object({

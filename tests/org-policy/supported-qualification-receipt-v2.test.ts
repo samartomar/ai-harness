@@ -837,6 +837,18 @@ describe("AihSupportedQualificationReceiptV2", () => {
       } as never),
       Buffer.from(bytes.toString("utf8").replace('"sequence":0', '"sequence":-0')),
       Buffer.from(bytes.toString("utf8").replace('"sequence":0', '"sequence":9007199254740992')),
+      ...(["issuedAt", "notBefore", "expiresAt"] as const).map((field) =>
+        canonicalBytes({ ...value, [field]: "2026-02-30T00:00:00Z" } as never),
+      ),
+      ...(["headValidFrom", "headValidUntil"] as const).map((field) =>
+        canonicalBytes({
+          ...value,
+          catalogContinuity: {
+            ...value.catalogContinuity,
+            [field]: "2026-02-30T00:00:00Z",
+          },
+        } as never),
+      ),
     ]) {
       expect(parseAihSupportedQualificationReceiptV2Bytes(invalid)).toBeUndefined();
     }
