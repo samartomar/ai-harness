@@ -11,17 +11,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as packageApi from "../../src/index.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import {
+  PolicyAuthorityReceiptSchema,
   type VerifiedPolicyAuthority,
   verifyPolicyAuthorityReceipt,
 } from "../../src/org-policy/authority.js";
 import {
+  GovernanceDecisionV2Schema,
   governanceDecisionDigestV2,
   governanceDecisionSourceDigestV2,
   governanceDecisionSubjectDigestV2,
 } from "../../src/org-policy/governance-decision-v2.js";
+import * as supportedQualificationModule from "../../src/org-policy/supported-qualification-receipt-v1.js";
 import {
   AihSupportedQualificationReceiptV1Schema,
   canonicalAihSupportedQualificationReceiptV1,
@@ -162,10 +166,10 @@ function context(
   };
 }
 
-async function authority(
+function writeAuthorityReceipt(
   value: ReturnType<typeof decision>,
-  workflow?: string,
-): Promise<VerifiedPolicyAuthority> {
+  overrides: Record<string, unknown> = {},
+): void {
   mkdirSync(join(dir, ".aih"), { recursive: true });
   writeFileSync(
     join(dir, ".aih", "policy-authority-receipt.json"),
@@ -179,8 +183,17 @@ async function authority(
       targets: value.targets,
       decisions: [value],
       decisionRevocations: [],
+      ...overrides,
     }),
   );
+}
+
+async function authority(
+  value: ReturnType<typeof decision>,
+  workflow?: string,
+  receiptOverrides: Record<string, unknown> = {},
+): Promise<VerifiedPolicyAuthority> {
+  writeAuthorityReceipt(value, receiptOverrides);
   const authorityContext = context(
     (argv) => (argv[0] === trustedAuthorityGh ? { code: 0 } : { code: 1 }),
     {
@@ -226,6 +239,409 @@ function observation(value: ReturnType<typeof decision>) {
 }
 
 describe("AihSupportedQualificationReceiptV1", () => {
+  it("publishes only an inert supported qualification artifact verifier", async () => {
+    const publicApi = packageApi as Record<string, unknown>;
+    expect(publicApi.verifyAihSupportedQualificationReceiptV1).toBeUndefined();
+    const verifier = publicApi.verifyAihSupportedQualificationArtifactV1;
+    expect(verifier).toEqual(expect.any(Function));
+    if (typeof verifier !== "function") return;
+    const value = decision();
+    const result = await (
+      verifier as (input: {
+        root: string;
+        decisionReference: { id: string; digest: string };
+        subject: typeof value.subject;
+      }) => Promise<Record<string, unknown>>
+    )({
+      root: dir,
+      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      subject: value.subject,
+    });
+    expect(result).toEqual({
+      state: "unverified",
+      problem: "AIH-supported qualification artifact could not be verified",
+    });
+    const forged = await (
+      verifier as (input: Record<string, unknown>) => Promise<Record<string, unknown>>
+    )({
+      root: dir,
+      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      subject: value.subject,
+      run: () => ({ code: 0 }),
+      env: { AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "forged/registry" },
+      now: "2099-01-01T00:00:00+00:00",
+      supportedTargets: ["forged-target"],
+    });
+    expect(forged).toEqual({
+      state: "unverified",
+      problem: "AIH-supported qualification artifact could not be verified",
+    });
+  });
+
+  it("uses an internal-only seam to verify the artifact without minting a capability", async () => {
+    const internalApi = supportedQualificationModule as Record<string, unknown>;
+    const verifier = internalApi.verifyAihSupportedQualificationArtifactV1WithContext;
+    expect(verifier).toEqual(expect.any(Function));
+    if (typeof verifier !== "function") return;
+    const value = decision();
+    await authority(value);
+    writeReceipt(receipt(value));
+    const calls: string[][] = [];
+    const result = await (
+      verifier as (
+        ctx: PlanContext,
+        input: {
+          root: string;
+          decisionReference: { id: string; digest: string };
+          subject: typeof value.subject;
+        },
+      ) => Promise<Record<string, unknown>>
+    )(
+      context((argv) => {
+        calls.push(argv);
+        return { code: 0 };
+      }),
+      {
+        root: dir,
+        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+        subject: value.subject,
+      },
+    );
+    expect(result).toEqual({ state: "verified" });
+    expect(calls).toHaveLength(2);
+    expect(calls.flat().join(" ")).not.toContain("configure");
+    expect(result.qualification).toBeUndefined();
+    expect(result.authority).toBeUndefined();
+  });
+
+  it("fails closed in the artifact seam for roots, attestations, and exact bindings", async () => {
+    const internalApi = supportedQualificationModule as Record<string, unknown>;
+    const verifier = internalApi.verifyAihSupportedQualificationArtifactV1WithContext;
+    expect(verifier).toEqual(expect.any(Function));
+    if (typeof verifier !== "function") return;
+    const value = decision();
+    await authority(value);
+    const input = {
+      root: dir,
+      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      subject: value.subject,
+    };
+    for (const receiptValue of [
+      receipt(value, {
+        qualificationBasis: {
+          ...value.qualificationBasis,
+          catalogDigest: `sha256:${"0".repeat(64)}`,
+        },
+      }),
+      receipt(value, { expiresAt: "2026-08-02T11:59:59+00:00" }),
+      receipt(value, {
+        notBefore: "2026-08-02T12:00:01+00:00",
+        expiresAt: "2026-08-03T00:00:00+00:00",
+      }),
+      receipt(value, { expiresAt: "2026-08-10T00:00:01+00:00" }),
+    ]) {
+      writeReceipt(receiptValue);
+      await expect(
+        (verifier as (ctx: PlanContext, value: typeof input) => Promise<Record<string, unknown>>)(
+          context(() => ({ code: 0 })),
+          input,
+        ),
+      ).resolves.toMatchObject({ state: "unverified" });
+    }
+    writeReceipt(receipt(value));
+    await expect(
+      (verifier as (ctx: PlanContext, value: typeof input) => Promise<Record<string, unknown>>)(
+        context(() => ({ code: 0 })),
+        { ...input, decisionReference: { ...input.decisionReference, id: "other-decision" } },
+      ),
+    ).resolves.toMatchObject({ state: "unverified" });
+    const differentSource = { ...value.subject.source, repository: "acme/other-review-tool" };
+    const differentSourceDigest = governanceDecisionSourceDigestV2(differentSource);
+    await expect(
+      (verifier as (ctx: PlanContext, value: typeof input) => Promise<Record<string, unknown>>)(
+        context(() => ({ code: 0 })),
+        {
+          ...input,
+          subject: {
+            ...value.subject,
+            source: differentSource,
+            sourceDigest: differentSourceDigest,
+            subjectDigest: governanceDecisionSubjectDigestV2({
+              kind: value.subject.kind,
+              id: value.subject.id,
+              sourceDigest: differentSourceDigest,
+            }),
+          },
+        },
+      ),
+    ).resolves.toMatchObject({ state: "unverified" });
+    await expect(
+      (verifier as (ctx: PlanContext, value: typeof input) => Promise<Record<string, unknown>>)(
+        context(() => ({ code: 1 })),
+        input,
+      ),
+    ).resolves.toMatchObject({ state: "unverified" });
+    let attestations = 0;
+    await expect(
+      (verifier as (ctx: PlanContext, value: typeof input) => Promise<Record<string, unknown>>)(
+        context(() => ({ code: attestations++ === 0 ? 0 : 1 })),
+        input,
+      ),
+    ).resolves.toMatchObject({ state: "unverified" });
+    const reuseCalls: string[][] = [];
+    await expect(
+      (verifier as (ctx: PlanContext, value: typeof input) => Promise<Record<string, unknown>>)(
+        context(
+          (argv) => {
+            reuseCalls.push(argv);
+            return { code: 0 };
+          },
+          { AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "acme/governance" },
+        ),
+        input,
+      ),
+    ).resolves.toMatchObject({ state: "unverified" });
+    expect(reuseCalls).toHaveLength(1);
+  });
+
+  it("fails closed for future authority issuance and referenced-decision currency boundaries", async () => {
+    const internalApi = supportedQualificationModule as Record<string, unknown>;
+    const verifier = internalApi.verifyAihSupportedQualificationArtifactV1WithContext;
+    expect(verifier).toEqual(expect.any(Function));
+    if (typeof verifier !== "function") return;
+    const verify = async (
+      value: ReturnType<typeof decision>,
+      authorityOverrides: Record<string, unknown> = {},
+    ) => {
+      await authority(value, undefined, authorityOverrides);
+      writeReceipt(receipt(value));
+      return (
+        verifier as (
+          ctx: PlanContext,
+          input: {
+            root: string;
+            decisionReference: { id: string; digest: string };
+            subject: typeof value.subject;
+          },
+        ) => Promise<Record<string, unknown>>
+      )(
+        context(() => ({ code: 0 })),
+        {
+          root: dir,
+          decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+          subject: value.subject,
+        },
+      );
+    };
+    const futureAuthority = decision();
+    writeAuthorityReceipt(futureAuthority, { issuedAt: "2026-08-02T12:00:01+00:00" });
+    expect(
+      PolicyAuthorityReceiptSchema.safeParse(
+        JSON.parse(readFileSync(join(dir, ".aih", "policy-authority-receipt.json"), "utf8")),
+      ).success,
+    ).toBe(true);
+    writeReceipt(receipt(futureAuthority));
+    await expect(
+      (
+        verifier as (
+          ctx: PlanContext,
+          input: {
+            root: string;
+            decisionReference: { id: string; digest: string };
+            subject: typeof futureAuthority.subject;
+          },
+        ) => Promise<Record<string, unknown>>
+      )(
+        context(() => ({ code: 0 })),
+        {
+          root: dir,
+          decisionReference: {
+            id: futureAuthority.id,
+            digest: governanceDecisionDigestV2(futureAuthority as never),
+          },
+          subject: futureAuthority.subject,
+        },
+      ),
+    ).resolves.toMatchObject({ state: "unverified" });
+    const invalidDecisions: Array<ReturnType<typeof decision>> = [
+      decision({ notBefore: "2026-08-02T12:00:01+00:00" }),
+      decision({ expiresAt: "2026-08-02T12:00:00+00:00" }),
+      decision({ disposition: "rejected" }),
+      decision({
+        disposition: "accepted-with-conditions",
+        acceptedFindings: ["finding-1"],
+        acceptedGaps: [],
+        conditions: ["review-required"],
+        reviewBy: "2026-08-02T12:00:00+00:00",
+      }),
+    ];
+    for (const value of invalidDecisions) {
+      expect(GovernanceDecisionV2Schema.safeParse(value).success).toBe(true);
+      await expect(verify(value)).resolves.toMatchObject({
+        state: "unverified",
+      });
+    }
+    const revoked = decision();
+    await expect(
+      verify(revoked, {
+        decisionRevocations: [
+          {
+            format: "aih-governance-decision-revocation",
+            version: 2,
+            decisionDigest: governanceDecisionDigestV2(revoked as never),
+            issuer: revoked.issuer,
+            revokedAt: "2026-08-01T00:00:00+00:00",
+            reason: "Withdrawn at the exact validity boundary.",
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({ state: "unverified" });
+  });
+
+  it("refuses a subject-wide current rejected decision even for an approved reference", async () => {
+    const internalApi = supportedQualificationModule as Record<string, unknown>;
+    const verifier = internalApi.verifyAihSupportedQualificationArtifactV1WithContext;
+    expect(verifier).toEqual(expect.any(Function));
+    if (typeof verifier !== "function") return;
+    const approved = decision();
+    const rejected = decision({ id: "decision-rejected-tool", disposition: "rejected" });
+    writeAuthorityReceipt(approved, { decisions: [approved, rejected] });
+    writeReceipt(receipt(approved));
+    await expect(
+      (
+        verifier as (
+          ctx: PlanContext,
+          input: {
+            root: string;
+            decisionReference: { id: string; digest: string };
+            subject: typeof approved.subject;
+          },
+        ) => Promise<Record<string, unknown>>
+      )(
+        context(() => ({ code: 0 })),
+        {
+          root: dir,
+          decisionReference: {
+            id: approved.id,
+            digest: governanceDecisionDigestV2(approved as never),
+          },
+          subject: approved.subject,
+        },
+      ),
+    ).resolves.toMatchObject({ state: "unverified" });
+    const subjectRejection = internalApi.isCurrentUnrevokedSubjectRejectionV1;
+    expect(subjectRejection).toEqual(expect.any(Function));
+    if (typeof subjectRejection !== "function") return;
+    const base = {
+      decisions: [approved, rejected],
+      subjectDigest: approved.subject.subjectDigest,
+      now: "2026-08-02T12:00:00+00:00",
+    };
+    expect(
+      (subjectRejection as (input: Record<string, unknown>) => boolean)({
+        ...base,
+        decisionRevocations: [
+          {
+            decisionDigest: governanceDecisionDigestV2(rejected as never),
+            revokedAt: "2026-08-02T12:00:01+00:00",
+          },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      (subjectRejection as (input: Record<string, unknown>) => boolean)({
+        ...base,
+        decisionRevocations: [
+          {
+            decisionDigest: governanceDecisionDigestV2(rejected as never),
+            revokedAt: "2026-08-02T12:00:00+00:00",
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it("returns the fixed inert failure for nonexistent and regular-file public roots", async () => {
+    const publicApi = packageApi as Record<string, unknown>;
+    const verifier = publicApi.verifyAihSupportedQualificationArtifactV1;
+    expect(verifier).toEqual(expect.any(Function));
+    if (typeof verifier !== "function") return;
+    const value = decision();
+    const rootFile = join(dir, "not-a-directory");
+    writeFileSync(rootFile, "not a root\n");
+    for (const root of [join(dir, "missing-root"), rootFile]) {
+      await expect(
+        (
+          verifier as (input: {
+            root: string;
+            decisionReference: { id: string; digest: string };
+            subject: typeof value.subject;
+          }) => Promise<unknown>
+        )({
+          root,
+          decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+          subject: value.subject,
+        }),
+      ).resolves.toEqual({
+        state: "unverified",
+        problem: "AIH-supported qualification artifact could not be verified",
+      });
+    }
+  });
+
+  it("POSIX simulation: package root uses only its own default-runner attestation path", async () => {
+    if (process.platform === "win32") return;
+    const publicApi = packageApi as Record<string, unknown>;
+    const verifier = publicApi.verifyAihSupportedQualificationArtifactV1;
+    expect(verifier).toEqual(expect.any(Function));
+    if (typeof verifier !== "function") return;
+    const value = decision();
+    await authority(value);
+    writeReceipt(receipt(value));
+    const externalBin = mkdtempSync(join(tmpdir(), "aih-supported-public-gh-"));
+    const fakeGh = join(externalBin, "gh");
+    writeFileSync(fakeGh, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    const prior = {
+      authorityRepository: process.env.AIH_POLICY_AUTHORITY_REPOSITORY,
+      supportedRepository: process.env.AIH_SUPPORTED_QUALIFICATION_REPOSITORY,
+      supportedWorkflow: process.env.AIH_SUPPORTED_QUALIFICATION_WORKFLOW,
+      path: process.env.PATH,
+    };
+    try {
+      process.env.AIH_POLICY_AUTHORITY_REPOSITORY = "acme/governance";
+      process.env.AIH_SUPPORTED_QUALIFICATION_REPOSITORY = "aihq/supported-catalog";
+      process.env.AIH_SUPPORTED_QUALIFICATION_WORKFLOW = "qualification.yml";
+      process.env.PATH = externalBin;
+      await expect(
+        (
+          verifier as (input: {
+            root: string;
+            decisionReference: { id: string; digest: string };
+            subject: typeof value.subject;
+          }) => Promise<unknown>
+        )({
+          root: dir,
+          decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+          subject: value.subject,
+        }),
+      ).resolves.toEqual({ state: "verified" });
+    } finally {
+      for (const [key, previous] of Object.entries(prior)) {
+        const envKey =
+          key === "authorityRepository"
+            ? "AIH_POLICY_AUTHORITY_REPOSITORY"
+            : key === "supportedRepository"
+              ? "AIH_SUPPORTED_QUALIFICATION_REPOSITORY"
+              : key === "supportedWorkflow"
+                ? "AIH_SUPPORTED_QUALIFICATION_WORKFLOW"
+                : "PATH";
+        if (previous === undefined) delete process.env[envKey];
+        else process.env[envKey] = previous;
+      }
+      rmSync(externalBin, { recursive: true, force: true });
+    }
+  });
+
   it("accepts only exact canonical UTF-8 receipt bytes and rejects malformed transport", () => {
     const value = receipt(decision());
     const bytes = canonicalBytes(value);

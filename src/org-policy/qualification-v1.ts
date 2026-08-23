@@ -158,6 +158,26 @@ export interface AihSupportedQualificationBindingV1 {
   readonly expiresAt: string;
 }
 
+/** Shared receipt/decision binding check for the closed AIH-supported paths. */
+export function matchesAihSupportedQualificationBindingV1(input: {
+  decision: GovernanceDecisionV2;
+  now: string;
+  receipt: AihSupportedQualificationBindingV1;
+}): boolean {
+  const now = Date.parse(input.now);
+  return (
+    Number.isFinite(now) &&
+    input.decision.qualificationBasis.kind === "aih-supported" &&
+    stableJson(input.receipt.subject) === stableJson(input.decision.subject) &&
+    stableJson(input.receipt.qualificationBasis) ===
+      stableJson(input.decision.qualificationBasis) &&
+    now >= Date.parse(input.receipt.notBefore) &&
+    now < Date.parse(input.receipt.expiresAt) &&
+    Date.parse(input.receipt.notBefore) >= Date.parse(input.decision.notBefore) &&
+    Date.parse(input.receipt.expiresAt) <= Date.parse(input.decision.expiresAt)
+  );
+}
+
 export function isVerifiedQualificationV1(value: unknown): value is VerifiedQualificationV1 {
   return typeof value === "object" && value !== null && verifiedQualifications.has(value);
 }
@@ -306,13 +326,11 @@ export function mintAihSupportedQualificationV1(input: {
   if (current === undefined) return undefined;
   const receipt = input.receipt;
   if (
-    current.decision.qualificationBasis.kind !== "aih-supported" ||
-    stableJson(receipt.subject) !== stableJson(current.decision.subject) ||
-    stableJson(receipt.qualificationBasis) !== stableJson(current.decision.qualificationBasis) ||
-    current.now < Date.parse(receipt.notBefore) ||
-    current.now >= Date.parse(receipt.expiresAt) ||
-    Date.parse(receipt.notBefore) < Date.parse(current.decision.notBefore) ||
-    Date.parse(receipt.expiresAt) > Date.parse(current.decision.expiresAt)
+    !matchesAihSupportedQualificationBindingV1({
+      decision: current.decision,
+      now: input.now,
+      receipt,
+    })
   ) {
     return undefined;
   }
