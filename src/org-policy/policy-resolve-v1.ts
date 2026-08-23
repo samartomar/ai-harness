@@ -24,6 +24,7 @@ export type PolicyResolveReasonV1 =
   | "evidence-changed"
   | "authority-unverified"
   | "authority-version"
+  | "authority-not-current"
   | "decision-missing-or-mismatch"
   | "decision-rejected"
   | "decision-revoked"
@@ -175,7 +176,8 @@ export async function resolvePolicyEvidenceV1(ctx: PlanContext): Promise<PolicyR
   const reason =
     effective.state === "observation-missing"
       ? "observation-missing"
-      : effective.state === "decision-rejected" ||
+      : effective.state === "authority-not-current" ||
+          effective.state === "decision-rejected" ||
           effective.state === "decision-revoked" ||
           effective.state === "decision-not-current" ||
           effective.state === "decision-scope-mismatch"
