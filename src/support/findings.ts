@@ -73,6 +73,9 @@ interface CodeMeta {
 /** Acceptance line every external fix shares: the project itself must not change. */
 const NO_CODE_CHANGES = "No project code changes are required.";
 
+const POLICY_RESOLVE_BLOCKED_ACTION =
+  "Policy resolve is read-only. Have the organization authority owner correct or reissue the V3 authority receipt, decision, or canonical evidence named by the closed result; for observation-missing, arrange an upstream-managed observation. Rerun the same `aih policy resolve` command after that external change.";
+
 /**
  * The taxonomy → support routing table. Exhaustive over {@link CheckCode}.
  * EXTERNAL entries keep `action`/`evidence` tool-neutral — a system/environment
@@ -1123,6 +1126,10 @@ export function isExternal(audience: Audience): boolean {
 export function toFinding(check: Check, capability: string): SupportFinding | undefined {
   if (check.verdict === "pass" || check.code === undefined) return undefined;
   const meta = CODE_META[check.code];
+  const recommendedAction =
+    check.code === "org-policy.effective-blocked" && capability === "policy resolve"
+      ? POLICY_RESOLVE_BLOCKED_ACTION
+      : meta.action;
   const isSkip = check.verdict === "skip";
   const kind: TemplateKind = !isExternal(meta.audience)
     ? "self-fix"
@@ -1135,7 +1142,7 @@ export function toFinding(check: Check, capability: string): SupportFinding | un
     severity: isSkip ? "optional" : meta.failSeverity,
     kind,
     title: meta.title,
-    recommendedAction: meta.action,
+    recommendedAction,
     details: check.detail ? [check.detail] : [],
     evidence: meta.evidence,
     affectedArea: meta.affectedArea,

@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCapability } from "../../src/commands/run.js";
+import { SUPPORTED_CLIS } from "../../src/internals/clis.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { isContainedEvidenceRelativePathV1 } from "../../src/org-policy/evidence-custody-v1.js";
@@ -303,6 +304,7 @@ describe("policy resolve V1", () => {
     const payload = JSON.parse(output) as {
       digests: Array<{ data: { reason: string; outcome: string } }>;
       report: { checks: Array<{ detail?: string }> };
+      support: { findings: Array<{ code: string; recommendedAction: string }> };
     };
     expect(code).toBe(1);
     expect(payload.digests[0]?.data).toMatchObject({
@@ -312,6 +314,13 @@ describe("policy resolve V1", () => {
     expect(payload.report.checks[0]?.detail).toBe(
       "policy resolve observation-missing (observation-missing)",
     );
+    expect(payload.support.findings[0]).toMatchObject({
+      code: "org-policy.effective-blocked",
+      recommendedAction:
+        "Policy resolve is read-only. Have the organization authority owner correct or reissue the V3 authority receipt, decision, or canonical evidence named by the closed result; for observation-missing, arrange an upstream-managed observation. Rerun the same `aih policy resolve` command after that external change.",
+    });
+    expect(payload.support.findings[0]?.recommendedAction).not.toContain("policy evaluate");
+    expect(payload.support.findings[0]?.recommendedAction).not.toContain("policy project");
     expect(readFileSync(join(root, ".aih", "policy-authority-receipt.json"))).toEqual(
       before.get("authority"),
     );
@@ -578,24 +587,27 @@ describe("policy resolve V1", () => {
   it("accepts every canonical CLI target at input validation while refusing unknown targets", async () => {
     const fixture = decision();
     writeFileSync(join(root, "evidence.json"), fixture.bytes);
-    const cursor = { ...fixture.value, targets: ["cursor"] };
-    writeAuthority(cursor, { targets: ["cursor"] });
-    const calls: string[][] = [];
-    const registered = await resolvePolicyEvidenceV1(
-      context(
-        {
-          decision: cursor.id,
-          decisionDigest: governanceDecisionDigestV2(cursor as never),
-          target: "cursor",
-          effect: "configure",
-          evidence: "evidence.json",
-        },
-        calls,
-      ),
-    );
-    expect(registered).toMatchObject({ reason: "observation-missing", outcome: "partial" });
-    expect(calls).toHaveLength(1);
+    for (const target of SUPPORTED_CLIS) {
+      const scopedDecision = { ...fixture.value, targets: [target] };
+      writeAuthority(scopedDecision, { targets: [target] });
+      const calls: string[][] = [];
+      const registered = await resolvePolicyEvidenceV1(
+        context(
+          {
+            decision: scopedDecision.id,
+            decisionDigest: governanceDecisionDigestV2(scopedDecision as never),
+            target,
+            effect: "configure",
+            evidence: "evidence.json",
+          },
+          calls,
+        ),
+      );
+      expect(registered).toMatchObject({ reason: "observation-missing", outcome: "partial" });
+      expect(calls).toHaveLength(1);
+    }
 
+    const unknownCalls: string[][] = [];
     const unknown = await resolvePolicyEvidenceV1(
       context(
         {
@@ -605,10 +617,46 @@ describe("policy resolve V1", () => {
           effect: "configure",
           evidence: "evidence.json",
         },
-        calls,
+        unknownCalls,
       ),
     );
     expect(unknown).toMatchObject({ reason: "invalid-input", effective: "input-invalid" });
+    expect(unknownCalls).toEqual([]);
+  });
+
+  it("refuses a referenced accepted-with-conditions decision whose review window is no longer current", async () => {
+    const fixture = decision();
+    const expiredReview = {
+      ...fixture.value,
+      disposition: "accepted-with-conditions" as const,
+      acceptedFindings: ["residual-risk"],
+      conditions: ["Re-review the residual risk before the stated deadline."],
+      reviewBy: "2026-08-02T11:59:59+00:00",
+    };
+    writeAuthority(expiredReview as never);
+    writeFileSync(join(root, "evidence.json"), fixture.bytes);
+    const calls: string[][] = [];
+
+    const result = await resolvePolicyEvidenceV1(
+      context(
+        {
+          decision: expiredReview.id,
+          decisionDigest: governanceDecisionDigestV2(expiredReview as never),
+          target: "claude",
+          effect: "configure",
+          evidence: "evidence.json",
+        },
+        calls,
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      effective: "decision-not-current",
+      outcome: "refused",
+      reason: "decision-not-current",
+    });
     expect(calls).toHaveLength(1);
   });
 
