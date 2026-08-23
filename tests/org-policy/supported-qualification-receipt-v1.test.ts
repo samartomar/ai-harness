@@ -226,7 +226,7 @@ function observation(value: ReturnType<typeof decision>) {
 }
 
 describe("AihSupportedQualificationReceiptV1", () => {
-  it("accepts only exact canonical UTF-8 bytes and produces deterministic domain-separated digests", () => {
+  it("accepts only exact canonical UTF-8 receipt bytes and rejects malformed transport", () => {
     const value = receipt(decision());
     const bytes = canonicalBytes(value);
     expect(parseAihSupportedQualificationReceiptV1Bytes(bytes)).toEqual(value);
@@ -451,6 +451,41 @@ describe("AihSupportedQualificationReceiptV1", () => {
         now: "2026-08-02T13:00:00+00:00",
       }),
     ).toMatchObject({ state: "qualification-mismatch" });
+  });
+
+  it("refuses supported receipts outside the current decision validity window", async () => {
+    const value = decision();
+    const verifiedAuthority = await authority(value);
+    const input = {
+      authority: verifiedAuthority,
+      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      subject: value.subject,
+      target: "claude" as const,
+      effect: "configure" as const,
+      supportedTargets: ["claude"],
+      now: "2026-08-02T12:00:00+00:00",
+    };
+    const invalidReceipts = [
+      receipt(value, { expiresAt: "2026-08-02T11:59:59+00:00" }),
+      receipt(value, {
+        notBefore: "2026-08-02T12:00:01+00:00",
+        expiresAt: "2026-08-03T00:00:00+00:00",
+      }),
+      receipt(value, {
+        issuedAt: "2026-07-20T00:00:00+00:00",
+        notBefore: "2026-07-20T00:00:00+00:00",
+        expiresAt: "2026-07-21T00:00:00+00:00",
+      }),
+    ];
+    for (const invalidReceipt of invalidReceipts) {
+      writeReceipt(invalidReceipt);
+      const result = await verifyAihSupportedQualificationReceiptV1(
+        context((argv) => ({ code: argv[0] === trustedSupportedGh ? 0 : 1 })),
+        input,
+      );
+      expect(result.problem).toBeDefined();
+      expect(result.qualification).toBeUndefined();
+    }
   });
 
   it("fails closed for roots, custody, attestation, receipt, and binding substitutions", async () => {

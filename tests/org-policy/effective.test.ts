@@ -650,6 +650,7 @@ describe("headless effective org policy", () => {
       expect.arrayContaining([
         expect.stringContaining("externally verified signed transport/schema validation"),
         expect.stringContaining("current organization-qualified upstream-observation runtime"),
+        expect.stringContaining("current AIH-supported qualification runtime"),
         expect.stringContaining("legacy effective resolver deliberately withholds V3 runtime use"),
       ]),
     );
@@ -664,11 +665,37 @@ describe("headless effective org policy", () => {
         "current organization-qualified upstream-observation runtime",
       );
     }
-    expect(
-      POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS[
-        "authorityReceipt.decisions.*.qualificationBasis.catalogDigest"
-      ],
-    ).toContain("legacy effective resolver deliberately withholds V3 runtime use");
+    for (const leaf of [
+      "authorityReceipt.decisions.*.qualificationBasis.catalogDigest",
+      "authorityReceipt.decisions.*.qualificationBasis.catalogHeadDigest",
+      "authorityReceipt.decisions.*.qualificationBasis.catalogMemberDigest",
+      "authorityReceipt.decisions.*.qualificationBasis.catalogSignerIdentity",
+      "authorityReceipt.decisions.*.qualificationBasis.subjectKind",
+      "authorityReceipt.decisions.*.qualificationBasis.subjectDigest",
+      "authorityReceipt.decisions.*.subject.source.commit",
+      "authorityReceipt.decisions.*.subject.source.contentDigest",
+      "authorityReceipt.decisions.*.subject.source.endpoint",
+      "authorityReceipt.decisions.*.subject.source.filename",
+      "authorityReceipt.decisions.*.subject.source.indexDigest",
+      "authorityReceipt.decisions.*.subject.source.integrity",
+      "authorityReceipt.decisions.*.subject.source.manifestDigest",
+      "authorityReceipt.decisions.*.subject.source.package",
+      "authorityReceipt.decisions.*.subject.source.path",
+      "authorityReceipt.decisions.*.subject.source.platform.architecture",
+      "authorityReceipt.decisions.*.subject.source.platform.os",
+      "authorityReceipt.decisions.*.subject.source.platform.variant",
+      "authorityReceipt.decisions.*.subject.source.registry",
+      "authorityReceipt.decisions.*.subject.source.release",
+      "authorityReceipt.decisions.*.subject.source.repository",
+      "authorityReceipt.decisions.*.subject.source.revision",
+      "authorityReceipt.decisions.*.subject.source.sha256",
+      "authorityReceipt.decisions.*.subject.source.type",
+      "authorityReceipt.decisions.*.subject.source.version",
+    ]) {
+      expect(POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS[leaf]).toContain(
+        "current AIH-supported qualification runtime",
+      );
+    }
     const revokingIssuerConsumer =
       POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS["authorityReceipt.decisionRevocations.*.issuer"];
     expect(revokingIssuerConsumer).toContain("effective resolver: exact revoking issuer binding");
