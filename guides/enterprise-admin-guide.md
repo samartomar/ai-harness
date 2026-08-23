@@ -48,14 +48,33 @@ Those roots cannot reuse the verified organization authority root. A verified
 supported receipt qualifies provenance only; the organization must still issue the
 separate V3 decision that authorizes the exact target and effect.
 
-That foundation is not yet an end-to-end administrator command flow. The current
-CLI still leaves custom stdio and remote policy candidates non-projectable, and a
-V3 authority receipt alone cannot install, configure, or activate one. Do not tell
-developers that an organization-chosen subject is governed-effective until a later
-release supplies the command and adapter lifecycle and AIH has freshly observed the
-exact approved installed identity. Scanner and catalog publication are also separate
-trust and release boundaries. This limitation is intentional and must stay visible
-while the remaining Core, scanner, and catalog work is completed.
+The unreleased `aih policy resolve` command now verifies the organization-evidence
+half of that boundary from an administrator-selected target root:
+
+```bash
+aih policy resolve <root> \
+  --decision <exact-decision-id> \
+  --decision-digest sha256:<exact-decision-digest> \
+  --target <code-owned-cli-id> \
+  --effect <configure|install|observe|use> \
+  --evidence <root-relative-canonical-envelope> \
+  --json
+```
+
+Configure `AIH_POLICY_AUTHORITY_REPOSITORY` outside the governed checkout (and optional
+`AIH_POLICY_AUTHORITY_WORKFLOW` when your authority policy requires it). The command
+re-verifies the fixed V3 receipt, exact decision and evidence; it writes neither the target
+nor a run ledger. A valid result is still `partial`/`observation-missing` and exits nonzero
+because this slice has no upstream observer. Treat that result as verified prerequisites,
+not as permission or effective state.
+
+The lifecycle is therefore not yet end to end. Custom stdio and remote policy candidates
+remain non-projectable, and neither a V3 receipt nor `policy resolve` can install, configure,
+activate, or observe one. Do not tell developers that an organization-chosen subject is
+governed-effective until a later slice supplies the observer and adapter lifecycle and AIH
+has freshly observed the exact approved installed identity. Scanner and catalog publication
+are also separate trust and release boundaries. This limitation must stay visible while the
+remaining Core, scanner, and catalog work is completed.
 
 ## 2. Quickstart / Implementation Blueprint
 

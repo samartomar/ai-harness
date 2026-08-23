@@ -549,6 +549,49 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Run `aih policy evaluate --verify` to inspect requested versus effective candidates. Correct the exact identity, evidence or externally verified approval, target, ownership, or projector finding shown there; unwaivable danger codes cannot be approved. Do not use `aih policy project --apply` until evaluation passes.",
   },
+  "org-policy.resolve-input-invalid": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "policy resolve command input is invalid",
+    action:
+      "Correct the required `aih policy resolve` command option(s): decision id/digest, supported target, effect, and bounded root-relative evidence path. Rerun only after supplying valid values.",
+  },
+  "org-policy.resolve-evidence-invalid": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "policy resolve evidence is unavailable or unsafe",
+    action:
+      "Fix or select a bounded, regular, non-linked root-relative local evidence file under the target root, then rerun `aih policy resolve` with that file.",
+  },
+  "org-policy.resolve-authority-blocked": {
+    audience: "dev-platform",
+    failSeverity: "blocking",
+    title: "organization policy does not authorize the requested resolution",
+    affectedArea: "organization policy authority / governance registry",
+    evidence:
+      "The V3 authority, referenced decision, or qualification state does not authorize the requested governed operation. A rejected or revoked decision is a closed governance outcome, not an authority-verification failure.",
+    action:
+      "Please investigate the V3 authority receipt, referenced decision, and qualification binding. Correct malformed, stale, or mismatched artifacts only. Rejected or revoked decisions must remain closed and must not be altered merely to clear this check; a separately reviewed and authorized successor is required to change that state. A not-yet-current decision becomes eligible only when its validity time arrives or a reviewed successor authorizes it.",
+    acceptance: [
+      "The current V3 authority receipt, decision, and qualification state authorize the requested governed operation, or the requested resolution remains closed.",
+      "A rejected, revoked, or not-yet-current decision changes only through its validity time or a separately reviewed and authorized successor.",
+      NO_CODE_CHANGES,
+    ],
+  },
+  "org-policy.resolve-observation-missing": {
+    audience: "dev-platform",
+    failSeverity: "blocking",
+    title: "upstream-managed governance observation is missing",
+    affectedArea: "upstream-managed governance observation",
+    evidence:
+      "No current upstream-managed observation verifies the referenced V3 decision, subject, target, and effect.",
+    action:
+      "Please arrange for the upstream-managed observer to publish a current observation bound to the referenced V3 decision, subject, target, and effect, then ask the operator to rerun the verification.",
+    acceptance: [
+      "A current upstream-managed observation verifies the referenced V3 decision, subject, target, and effect.",
+      NO_CODE_CHANGES,
+    ],
+  },
   "bundle.signature": {
     audience: "developer",
     failSeverity: "blocking",

@@ -131,13 +131,14 @@ describe("CLI program", () => {
     }
   });
 
-  it("registers policy workbench generation, starter, evaluation, projection, validation, and pin verification as nested commands", () => {
+  it("registers policy workbench generation, starter, evidence resolution, evaluation, projection, validation, and pin verification as nested commands", () => {
     const policy = buildProgram().commands.find((c) => c.name() === "policy");
     expect(policy?.commands.map((c) => c.name()).sort()).toEqual([
       "evaluate",
       "generate",
       "init",
       "project",
+      "resolve",
       "validate",
       "verify",
     ]);

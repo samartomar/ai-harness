@@ -83,15 +83,20 @@ the domain-separated source and subject digest derivations. Organization evidenc
 separate closed, canonical, size-bounded envelope whose digest and issuer-claimed attestor
 must match the exact externally verified authority decision. Its subject digest, validity
 window, evidence record, payload, and artifact digests are checked before Core mints an
-opaque qualification capability. The internal resolver requires that capability in addition
-to the opaque, attestation-verified authority receipt V3, exact decision reference, and fresh
-matching observation; a decision cannot assert its own qualification. For an `aih-supported`
+opaque qualification capability. `aih policy resolve` makes the organization-evidence half of
+that boundary reachable as a zero-write administrator check: it verifies the externally attested
+V3 receipt, exact decision id/digest, code-owned target/effect, and one canonical root-relative
+evidence envelope. With no upstream observer in this slice it returns a non-effective `partial`
+result and a nonzero exit; it cannot claim success. The internal resolver requires the resulting
+opaque qualification capability in addition to the opaque authority and a fresh matching
+observation; a decision cannot assert its own qualification. For an `aih-supported`
 basis, Core reads the fixed canonical receipt file, verifies its outer GitHub attestation against
 dedicated repository and workflow roots, and exact-matches its subject and all seven catalog-basis
 fields before minting the same opaque capability. The separate organization decision remains the
-only admission authority. This is not yet the cold-admin CLI lifecycle: receipt V3 does not make a
-custom candidate projectable, and these APIs do not scan, install, configure, or execute candidate
-code. Catalog membership is provenance, not permission. Upstream observations also bind the
+only admission authority. This is not yet the complete cold-admin lifecycle: receipt V3 and
+`policy resolve` do not make a custom candidate projectable, and these paths do not scan, observe,
+install, configure, or execute candidate code. Catalog membership is provenance, not permission.
+Upstream observations also bind the
 named integration owner and exact integration version. Current custom stdio and remote policy
 rows remain blocked until the later command, adapter, and lifecycle work lands.
 
@@ -214,7 +219,7 @@ still initialize under the vendor CLI. Aih does not attest those customizations 
 | [`aih skill`](docs/commands.md#aih-skill) | Govern the skill lifecycle — vet → approve → inventory → quarantine → remove — anchored in `aih-skills.lock.json`. |
 | [`aih pack`](docs/commands.md#aih-pack) | Curate committed sets of approved skills (`aih-packs.json`); every ref is cross-checked against the lock, fail-closed. |
 | [`aih marketplace`](docs/commands.md#aih-marketplace) | Build, validate, and publish a reproducible, verifiable distribution artifact for hostable approved skills — never a registry. |
-| [`aih policy`](docs/commands.md#aih-policy) | Generate a portable Policy Workbench for authoring the org policy, evaluate requested governed candidates before projection, validate policy shape, or verify the policy against a pinned hash/bundle. |
+| [`aih policy`](docs/commands.md#aih-policy) | Generate the Policy Workbench; resolve attested V3 authority plus exact organization evidence without effects; evaluate, project, validate, or verify policy. |
 | [`aih evidence`](docs/commands.md#aih-evidence) | Vet exact-pinned baseline components and package local audit artifacts into deterministic signed evidence bundles. |
 | [`aih truth`](docs/commands.md#aih-truth) | Create and verify an external project-truth sidecar; commit, version, claim, decision, acceptance-preflight, and agent-evidence assertions fail closed before a pack helps govern evidence. <!-- aih:claim CM-13 --> |
 | [`aih bundle`](docs/commands.md#aih-bundle) | Build a deterministic fleet bundle with checksums; `aih verify-bundle --require-signature` turns missing/unverifiable signatures into failures. |
