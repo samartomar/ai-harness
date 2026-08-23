@@ -453,7 +453,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
     ).toMatchObject({ state: "qualification-mismatch" });
   });
 
-  it("refuses supported receipts outside the current decision validity window", async () => {
+  it("refuses supported receipts expired before now, not yet valid, or non-overlapping", async () => {
     const value = decision();
     const verifiedAuthority = await authority(value);
     const input = {
@@ -466,25 +466,31 @@ describe("AihSupportedQualificationReceiptV1", () => {
       now: "2026-08-02T12:00:00+00:00",
     };
     const invalidReceipts = [
-      receipt(value, { expiresAt: "2026-08-02T11:59:59+00:00" }),
-      receipt(value, {
-        notBefore: "2026-08-02T12:00:01+00:00",
-        expiresAt: "2026-08-03T00:00:00+00:00",
-      }),
-      receipt(value, {
-        issuedAt: "2026-07-20T00:00:00+00:00",
-        notBefore: "2026-07-20T00:00:00+00:00",
-        expiresAt: "2026-07-21T00:00:00+00:00",
-      }),
+      ["expires before now", receipt(value, { expiresAt: "2026-08-02T11:59:59+00:00" })],
+      [
+        "notBefore is after now",
+        receipt(value, {
+          notBefore: "2026-08-02T12:00:01+00:00",
+          expiresAt: "2026-08-03T00:00:00+00:00",
+        }),
+      ],
+      [
+        "window does not overlap the current decision",
+        receipt(value, {
+          issuedAt: "2026-07-20T00:00:00+00:00",
+          notBefore: "2026-07-20T00:00:00+00:00",
+          expiresAt: "2026-07-21T00:00:00+00:00",
+        }),
+      ],
     ];
-    for (const invalidReceipt of invalidReceipts) {
+    for (const [condition, invalidReceipt] of invalidReceipts) {
       writeReceipt(invalidReceipt);
       const result = await verifyAihSupportedQualificationReceiptV1(
         context((argv) => ({ code: argv[0] === trustedSupportedGh ? 0 : 1 })),
         input,
       );
-      expect(result.problem).toBeDefined();
-      expect(result.qualification).toBeUndefined();
+      expect(result.problem, condition).toBeDefined();
+      expect(result.qualification, condition).toBeUndefined();
     }
   });
 
