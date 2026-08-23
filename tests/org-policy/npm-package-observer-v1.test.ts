@@ -11,6 +11,7 @@ import {
 } from "../../src/org-policy/governance-decision-v2.js";
 import {
   npmPackageObserveCommand,
+  npmPackageObservePlan,
   observeNpmPackageV1,
 } from "../../src/org-policy/npm-package-observer-v1.js";
 import {
@@ -18,6 +19,7 @@ import {
   organizationEvidenceEnvelopeDigestV1,
 } from "../../src/org-policy/qualification-v1.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { toFinding } from "../../src/support/findings.js";
 
 const INTEGRITY = `sha512-${Buffer.alloc(64, 3).toString("base64")}`;
 
@@ -167,6 +169,54 @@ function context(options: Record<string, unknown>, calls: string[][]): PlanConte
 }
 
 describe("npm package upstream observer V1", () => {
+  it("emits sealed observe-specific codes with the required remediation owners", async () => {
+    const value = fixture();
+    writeAuthority(value.decision);
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    const calls: string[][] = [];
+    const ctx = context(
+      {
+        decision: value.decision.id,
+        decisionDigest: governanceDecisionDigestV2(value.decision as never),
+        target: "claude",
+        evidence: "evidence.json",
+      },
+      calls,
+    );
+    const probe = npmPackageObservePlan(ctx).actions.find((action) => action.kind === "probe");
+    if (probe?.kind !== "probe") throw new Error("expected observer probe");
+    const check = await probe.run(ctx);
+
+    expect(check.code).toBe("org-policy.observe-installed-evidence-unavailable");
+    expect(toFinding(check, "policy observe npm-package")).toMatchObject({
+      audience: "developer",
+      kind: "self-fix",
+      severity: "blocking",
+    });
+    expect(
+      toFinding(
+        {
+          name: "policy observe npm-package",
+          verdict: "fail",
+          detail: "policy observe npm-package decision-revoked",
+          code: "org-policy.observe-decision-revoked" as never,
+        },
+        "policy observe npm-package",
+      ),
+    ).toMatchObject({ audience: "dev-platform", kind: "escalation", severity: "blocking" });
+    expect(
+      toFinding(
+        {
+          name: "policy observe npm-package",
+          verdict: "fail",
+          detail: "policy observe npm-package observation-unverified",
+          code: "org-policy.observe-invariant-violation" as never,
+        },
+        "policy observe npm-package",
+      ),
+    ).toMatchObject({ audience: "dev-platform", kind: "escalation", severity: "blocking" });
+  });
+
   it("hardcodes install and derives the npm identity instead of accepting caller overrides", () => {
     expect(npmPackageObserveCommand.readOnly).toBe(true);
     expect(npmPackageObserveCommand.zeroWrite).toBe(true);
