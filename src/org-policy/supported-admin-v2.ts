@@ -1450,7 +1450,17 @@ export function inspectSupportedCustodyV2(input: {
       )
         throw new AihError("supported custody state is invalid", "AIH_TRUST");
     }
+    for (const [catalogSignerIdentity, signer] of signers) {
+      const head = headsBySigner.get(catalogSignerIdentity);
+      if (head === undefined || head.signerKeyId !== signer.signerKeyId)
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+    }
+    for (const replay of replays.values()) {
+      if (signers.get(replay.catalogSignerIdentity)?.signerKeyId !== replay.signerKeyId)
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+    }
     const members: Array<SupportedCustodyInspectionV2["members"][number]> = [];
+    const currentHeadMembers = new Set<string>();
     for (const entry of boundedMemberEntries(membersBefore.realPath)) {
       if (!/^[0-9a-f]{64}\.json$/.test(entry))
         throw new AihError("supported custody state is invalid", "AIH_TRUST");
@@ -1489,6 +1499,7 @@ export function inspectSupportedCustodyV2(input: {
         throw new AihError("supported custody state is invalid", "AIH_TRUST");
       const key = `${member.data.catalogHeadDigest}\0${member.data.catalogSignerIdentity}\0${member.data.signerKeyId}\0${member.data.replayIdentity}\0${member.data.sequence}\0${member.data.headValidFrom}\0${member.data.headValidUntil}`;
       if (!heads.has(key)) continue;
+      currentHeadMembers.add(key);
       members.push({
         entryId: member.data.entryId,
         subject: {
@@ -1501,6 +1512,8 @@ export function inspectSupportedCustodyV2(input: {
         acceptedAt: member.data.acceptedAt,
       });
     }
+    if ([...heads.keys()].some((key) => !currentHeadMembers.has(key)))
+      throw new AihError("supported custody state is invalid", "AIH_TRUST");
     afterCustodyDirectoryScanForInternalTest?.();
     assertDirectoryUnchanged(signerBoundary.root, signerBoundary.relativePath, signersBefore);
     assertDirectoryUnchanged(replayBoundary.root, replayBoundary.relativePath, replaysBefore);
