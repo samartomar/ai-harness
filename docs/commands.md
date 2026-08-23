@@ -944,13 +944,28 @@ authority-bearing verifier and this call returns no
 authority, receipt bytes, qualification capability, effect, or reusable evidence. A fake external
 `gh` in a disposable test proves the process path only; it is not a public attestation.
 
-This remains a library and cross-repository data contract, not a new `aih policy` command or a generic
-installer. Current policy evaluation and projection do not consume V3 decisions, so
-custom stdio and remote candidates remain visible but non-projectable. The verifier's
-only process/provider observation is the bounded external GitHub attestation check, and
-its only write is owner-only temporary verification custody. It performs no candidate
-scan or execution, installation, target-root mutation, or package planning and cannot
-satisfy or bypass the held ECC preview and executable-package closure work.
+`aih policy resolve [root] --decision <id> --decision-digest <sha256> --target <id>
+--effect <effect> --evidence <root-relative-file>` exposes the organization-evidence route as a
+read-only, zero-write administrator command. It accepts only code-owned CLI targets and the fixed
+`configure`, `install`, `observe`, or `use` effects. The evidence path must be a bounded
+forward-slash relative path below the target root; the root and parent directories must be
+non-linked, the file must be regular/non-linked, and the exact bytes and file identity are re-read
+after the external authority verifier returns.
+Authority still comes only from the fixed receipt and out-of-band
+`AIH_POLICY_AUTHORITY_REPOSITORY` (plus optional `AIH_POLICY_AUTHORITY_WORKFLOW`), never from the
+command line, policy JSON, or evidence file. JSON output uses closed reason values and contains no
+verifier text or filesystem path.
+
+This slice intentionally supplies no upstream observation. A valid authority, decision, scope, and
+organization qualification therefore returns `outcome: "partial"`,
+`reason: "observation-missing"`, and a nonzero exit; every refusal is also nonzero. The command
+cannot report `observed-effective`, append a run ledger, return a qualification capability, or scan,
+install, configure, or execute the candidate. Current policy evaluation and projection still do not
+consume V3 decisions, so custom stdio and remote candidates remain visible but non-projectable. The
+verifier's only process/provider observation is the bounded external GitHub attestation check, and
+its only transient write is owner-only authority-verification custody outside the target. It
+performs no candidate scan or execution, installation, target-root mutation, or package planning
+and cannot satisfy or bypass the held ECC preview and executable-package closure work.
 
 Approvals cover only a missing or failed **waivable** evidence record, require a non-empty signed reason,
 and last at most 90 days. Mandatory detector failures and every unwaivable danger code remain blocked even

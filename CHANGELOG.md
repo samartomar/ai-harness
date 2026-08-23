@@ -8,6 +8,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`aih policy resolve` exposes the first read-only Strict V2 administrator resolution path.**
+  The zero-write command accepts only an exact Decision V2 id/digest, a code-owned target and
+  effect, and one bounded canonical organization-evidence envelope below the target root. It
+  verifies the fixed V3 authority receipt through the existing out-of-band GitHub attestation
+  boundary, re-observes evidence bytes and file identity after that process, then derives the
+  opaque organization qualification internally. Inputs, unsafe custody, authority, decision,
+  scope, qualification, and live-expiry failures return closed public-safe reasons. Because this
+  slice deliberately supplies no upstream observation, a valid qualification reports
+  `observation-missing` as non-effective `partial` with a nonzero exit; no route can report
+  fulfilled, append a run ledger, export a capability mint, install, configure, execute, or
+  observe a candidate. (#840)
+
 - **Strict V2 can independently verify an attested AIH-supported qualification without making
   catalog membership an organization approval.** Core ships a closed canonical receipt schema
   that binds the exact Decision V2 subject and all seven `aih-supported` catalog-basis fields,
