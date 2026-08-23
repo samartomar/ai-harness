@@ -28,6 +28,7 @@ const STORE = [".aih", "governance", "npm-package-lifecycle", "v1"] as const;
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 const MAX_STORE_FILE_BYTES = 512 * 1024;
+const MAX_RECORDS_PER_LINEAGE = 4_096;
 
 type LifecycleReason =
   | "invalid-input"
@@ -77,6 +78,8 @@ interface Prepared {
   readonly postcondition?: {
     bindingPath: string;
     bindingText: string;
+    claimPath: string;
+    claimText: string;
     headPath: string;
     headText: string;
     lineage: Lineage;
@@ -227,8 +230,8 @@ function staged(
   };
 }
 
-function lineageLockPath(lineage: Lineage): string {
-  return [...STORE, "locks", `${lineage.digest.slice("sha256:".length)}.lock`].join("/");
+function subjectLockPath(subjectId: string, target: string): string {
+  return [...STORE, "locks", `${hash(`${subjectId}\0${target}`)}.lock`].join("/");
 }
 
 function lifecycleReason(result: NpmPackageObservationResultV1): LifecycleReason {
@@ -249,15 +252,18 @@ function refused(reason: LifecycleReason, outcome: "partial" | "refused" = "refu
 
 function persisted(root: string, postcondition: NonNullable<Prepared["postcondition"]>): boolean {
   const binding = readCanonicalStoreFile(root, ...postcondition.bindingPath.split("/"));
+  const claim = readCanonicalStoreFile(root, ...postcondition.claimPath.split("/"));
   const record = readCanonicalStoreFile(root, ...postcondition.recordPath.split("/"));
   const head = readCanonicalStoreFile(root, ...postcondition.headPath.split("/"));
   const parsedBinding = typeof binding === "string" ? undefined : parseBinding(binding);
   const parsedHead = typeof head === "string" ? undefined : parseHead(head, postcondition.lineage);
   return (
     typeof binding !== "string" &&
+    typeof claim !== "string" &&
     typeof record !== "string" &&
     typeof head !== "string" &&
     binding.text === postcondition.bindingText &&
+    claim.text === postcondition.claimText &&
     record.text === postcondition.recordText &&
     head.text === postcondition.headText &&
     parsedBinding !== undefined &&
@@ -314,11 +320,20 @@ function subjectBindingPath(subjectId: string, target: string): readonly string[
   return [...STORE, "subjects", `${hash(`${subjectId}\0${target}`)}.json`] as const;
 }
 
+/**
+ * Immutable local index for a subject+target lineage. It makes binding-loss
+ * recovery bounded to this subject rather than turning normal onboarding into
+ * a scan of every organization lineage.
+ */
+function subjectClaimPath(subjectId: string, target: string): readonly string[] {
+  return [...STORE, "claims", `${hash(`${subjectId}\0${target}`)}.json`] as const;
+}
+
 function headPath(lineageDigest: string): readonly string[] {
   return [...STORE, "heads", `${lineageDigest.slice("sha256:".length)}.json`] as const;
 }
 
-function recordPath(lineage: Lineage, recordDigest: string): readonly string[] {
+function recordPath(lineage: Pick<Lineage, "digest">, recordDigest: string): readonly string[] {
   return [
     ...STORE,
     "records",
@@ -583,7 +598,7 @@ function recordLink(
 function verifyHistory(root: string, head: LifecycleHead, lineage: Lineage): boolean {
   let digest = head.recordDigest;
   let expectedSequence = head.sequence;
-  for (let count = 0; count < 4_096; count += 1) {
+  for (let count = 0; count < MAX_RECORDS_PER_LINEAGE; count += 1) {
     const prior = readCanonicalStoreFile(root, ...recordPath(lineage, digest));
     if (typeof prior === "string") return false;
     const link = recordLink(prior, digest, lineage);
@@ -623,7 +638,10 @@ function hasOnlyExpectedSuccessor(
   } catch {
     return false;
   }
-  if (names.length > 4_096 || names.some((name) => !/^[0-9a-f]{64}\.json$/.test(name)))
+  if (
+    names.length > MAX_RECORDS_PER_LINEAGE ||
+    names.some((name) => !/^[0-9a-f]{64}\.json$/.test(name))
+  )
     return false;
   const links = new Map<
     string,
@@ -649,7 +667,7 @@ function hasOnlyExpectedSuccessor(
   }
   const chain = new Set<string>();
   let cursor = head?.recordDigest;
-  for (let count = 0; cursor !== undefined && count < 4_096; count += 1) {
+  for (let count = 0; cursor !== undefined && count < MAX_RECORDS_PER_LINEAGE; count += 1) {
     const link = links.get(cursor);
     if (link === undefined || chain.has(cursor)) return false;
     chain.add(cursor);
@@ -688,8 +706,9 @@ function capacityAllowsCandidate(root: string, lineage: Lineage, candidateDigest
     return false;
   }
   return (
-    names.length < 4_096 ||
-    (names.length === 4_096 && names.includes(`${candidateDigest.slice("sha256:".length)}.json`))
+    names.length < MAX_RECORDS_PER_LINEAGE ||
+    (names.length === MAX_RECORDS_PER_LINEAGE &&
+      names.includes(`${candidateDigest.slice("sha256:".length)}.json`))
   );
 }
 
@@ -782,15 +801,26 @@ function lifecycleActions(
   if (!custody.every((item): item is WriteAction => item !== undefined))
     return refused("observation-unverified");
   const bindingParts = subjectBindingPath(lineage.subjectId, lineage.target);
+  const claimParts = subjectClaimPath(lineage.subjectId, lineage.target);
   const headParts = headPath(lineage.digest);
   const binding = readCanonicalStoreFile(ctx.root, ...bindingParts);
+  const claim = readCanonicalStoreFile(ctx.root, ...claimParts);
   const head = readCanonicalStoreFile(ctx.root, ...headParts);
-  if (binding === "unsafe" || head === "unsafe") return refused("store-unsafe");
-  if (binding === "corrupt" || head === "corrupt") return refused("store-corrupt");
+  if (binding === "unsafe" || claim === "unsafe" || head === "unsafe")
+    return refused("store-unsafe");
+  if (binding === "corrupt" || claim === "corrupt" || head === "corrupt")
+    return refused("store-corrupt");
   const existingLineage = binding === "absent" ? undefined : parseBinding(binding);
+  const claimedLineage = claim === "absent" ? undefined : parseBinding(claim);
   if (
     binding !== "absent" &&
     (existingLineage === undefined || canonicalText(existingLineage) !== canonicalText(lineage))
+  )
+    return refused("store-collision");
+  if (
+    (claim !== "absent" &&
+      (claimedLineage === undefined || canonicalText(claimedLineage) !== canonicalText(lineage))) ||
+    (binding !== "absent" && claim === "absent")
   )
     return refused("store-collision");
   const priorHead = head === "absent" ? undefined : parseHead(head, lineage);
@@ -838,6 +868,15 @@ function lifecycleActions(
   });
   const actions: WriteAction[] = [
     ...custody,
+    claim === "absent"
+      ? staged(
+          claimParts.join("/"),
+          bindingText,
+          claim,
+          "claim npm lifecycle subject lineage",
+          true,
+        )
+      : pin(claimParts.join("/"), claim, "pin npm lifecycle subject lineage claim"),
     binding === "absent"
       ? staged(bindingParts.join("/"), bindingText, binding, "bind npm lifecycle subject lineage")
       : pin(bindingParts.join("/"), binding, "pin npm lifecycle subject lineage"),
@@ -855,10 +894,12 @@ function lifecycleActions(
   return {
     actions,
     commitNotAfter: receipt.validUntil,
-    commitLock: lineageLockPath(lineage),
+    commitLock: subjectLockPath(lineage.subjectId, lineage.target),
     postcondition: {
       bindingPath: bindingParts.join("/"),
       bindingText,
+      claimPath: claimParts.join("/"),
+      claimText: bindingText,
       headPath: headParts.join("/"),
       headText,
       lineage,
@@ -880,12 +921,15 @@ function revocationActions(
   requested: { target: string },
 ): Prepared {
   const bindingParts = subjectBindingPath(current.decision.subject.id, requested.target);
+  const claimParts = subjectClaimPath(current.decision.subject.id, requested.target);
   const binding = readCanonicalStoreFile(ctx.root, ...bindingParts);
-  if (binding === "unsafe") return refused("store-unsafe");
-  if (binding === "corrupt") return refused("store-corrupt");
+  const claim = readCanonicalStoreFile(ctx.root, ...claimParts);
+  if (binding === "unsafe" || claim === "unsafe") return refused("store-unsafe");
+  if (binding === "corrupt" || claim === "corrupt") return refused("store-corrupt");
   // A revocation must never create a lineage from unobserved data. It only
   // closes a verified existing chain and makes no package-deletion claim.
   if (binding === "absent") {
+    if (claim !== "absent") return refused("head-conflict");
     return {
       actions: [],
       result: {
@@ -897,9 +941,13 @@ function revocationActions(
     };
   }
   const lineage = parseBinding(binding);
+  const claimedLineage = claim === "absent" ? undefined : parseBinding(claim);
   const source = current.decision.subject.source;
   if (
     lineage === undefined ||
+    claim === "absent" ||
+    claimedLineage === undefined ||
+    canonicalText(claimedLineage) !== canonicalText(lineage) ||
     source.type !== "npm" ||
     lineage.subjectId !== current.decision.subject.id ||
     lineage.target !== requested.target ||
@@ -912,15 +960,7 @@ function revocationActions(
   if (head === "unsafe") return refused("store-unsafe");
   if (head === "corrupt") return refused("store-corrupt");
   if (head === "absent") {
-    return {
-      actions: [],
-      result: {
-        applied: false,
-        outcome: "reported-only",
-        reason: "decision-revoked",
-        state: "decision-revoked",
-      },
-    };
+    return refused("head-conflict");
   }
   const priorHead = parseHead(head, lineage);
   if (priorHead === undefined || !verifyHistory(ctx.root, priorHead, lineage))
@@ -995,6 +1035,7 @@ function revocationActions(
   return {
     actions: [
       authorityPin,
+      pin(claimParts.join("/"), claim, "pin npm lifecycle subject lineage claim"),
       pin(bindingParts.join("/"), binding, "pin npm lifecycle subject lineage"),
       existingRecord === "absent"
         ? staged(
@@ -1020,10 +1061,12 @@ function revocationActions(
           : Number.POSITIVE_INFINITY,
       ),
     ).toISOString(),
-    commitLock: lineageLockPath(lineage),
+    commitLock: subjectLockPath(lineage.subjectId, lineage.target),
     postcondition: {
       bindingPath: bindingParts.join("/"),
       bindingText: binding.text,
+      claimPath: claimParts.join("/"),
+      claimText: claim.text,
       headPath: headParts.join("/"),
       headText,
       lineage,

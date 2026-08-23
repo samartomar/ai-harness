@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   type BigIntStats,
   chmodSync,
@@ -11,6 +11,7 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   readSync,
   renameSync,
@@ -19,7 +20,7 @@ import {
   type Stats,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { FsTxnError } from "../errors.js";
 
 /**
@@ -126,6 +127,24 @@ export interface ParentGuard {
 interface CommitLock {
   path: string;
   root: string;
+  /** Internal bounded lease for a synchronous transaction. */
+  leaseMs?: number;
+}
+
+interface CommitLease {
+  expiresAt: number;
+  reclaimAfter: number;
+  owner: string;
+}
+
+interface OwnedCommitLease extends CommitLease, DirectoryIdentity {
+  activePath: string;
+  anchorDev: bigint;
+  anchorIno: bigint;
+  leaseDev: bigint;
+  leaseIno: bigint;
+  leasePath: string;
+  leaseText: string;
 }
 
 interface FsTransactionOptions {
@@ -153,6 +172,7 @@ export class FsTransaction {
   private stagedAssertions: StagedAssertion[] = [];
   private readonly guardedDirectories = new Map<string, DirectoryIdentity>();
   private readonly createdDirectories = new Map<string, DirectoryIdentity>();
+  private activeCommitLease: OwnedCommitLease | undefined;
 
   constructor(private readonly options: FsTransactionOptions = {}) {}
 
@@ -201,6 +221,22 @@ export class FsTransaction {
     if (this.options.commitNotAfter !== undefined && Date.now() >= this.options.commitNotAfter) {
       throw new FsTxnError("commit deadline expired");
     }
+    const active = this.activeCommitLease;
+    const lock = this.options.commitLock;
+    if (active === undefined || lock === undefined) return;
+    if (Date.now() >= active.expiresAt) throw new FsTxnError("commit lock lease expired");
+    if (!this.sameLease(active, this.activeLease(lock)))
+      throw new FsTxnError("commit lock lease lost");
+  }
+
+  private assertRollbackLease(): void {
+    const active = this.activeCommitLease;
+    const lock = this.options.commitLock;
+    if (active === undefined || lock === undefined) return;
+    if (Date.now() >= active.reclaimAfter)
+      throw new FsTxnError("commit lock lease recovery window expired");
+    if (!this.sameLease(active, this.activeLease(lock)))
+      throw new FsTxnError("commit lock lease lost");
   }
 
   private identity(path: string): DirectoryIdentity {
@@ -295,58 +331,424 @@ export class FsTransaction {
     return { directories };
   }
 
-  private rollbackCreatedDirectories(): void {
+  private rollbackCreatedDirectories(assertCanMutate: () => void = () => {}): void {
     for (const [path, identity] of [...this.createdDirectories.entries()].sort(
       ([left], [right]) => right.length - left.length,
     )) {
       try {
-        if (this.sameDirectory(path, identity)) rmdirSync(path);
+        if (this.sameDirectory(path, identity)) {
+          assertCanMutate();
+          rmdirSync(path);
+        }
       } catch {
         // Do not remove a concurrently repopulated or replaced directory.
       }
     }
   }
 
-  private acquireCommitLock(): DirectoryIdentity | undefined {
-    const lock = this.options.commitLock;
-    if (lock === undefined) return undefined;
-    this.guardParents(lock.path, lock.root, true);
-    this.assertCommitDeadline();
-    let fd: number;
+  private static readonly commitLeaseMs = 30_000;
+  private static readonly recoveryGraceMs = FsTransaction.commitLeaseMs;
+  private static readonly maxStagingClaims = 32;
+  private static readonly anchorText = '{"format":"aih-fs-commit-lock-anchor","version":1}';
+
+  private leaseContents(lease: CommitLease): string {
+    return JSON.stringify({
+      expiresAt: lease.expiresAt,
+      format: "aih-fs-commit-lease",
+      owner: lease.owner,
+      reclaimAfter: lease.reclaimAfter,
+      version: 1,
+    });
+  }
+
+  private parseLease(contents: string): CommitLease | undefined {
     try {
-      fd = openSync(lock.path, "wx", 0o600);
+      const value = JSON.parse(contents) as Record<string, unknown>;
+      const keys = Object.keys(value).sort();
+      if (
+        keys.length !== 5 ||
+        keys.join(",") !== "expiresAt,format,owner,reclaimAfter,version" ||
+        value.format !== "aih-fs-commit-lease" ||
+        value.version !== 1 ||
+        typeof value.expiresAt !== "number" ||
+        !Number.isSafeInteger(value.expiresAt) ||
+        typeof value.reclaimAfter !== "number" ||
+        !Number.isSafeInteger(value.reclaimAfter) ||
+        value.reclaimAfter - value.expiresAt !== FsTransaction.recoveryGraceMs ||
+        typeof value.owner !== "string" ||
+        !/^[0-9a-f]{64}$/.test(value.owner)
+      )
+        return undefined;
+      const lease = {
+        expiresAt: value.expiresAt,
+        reclaimAfter: value.reclaimAfter,
+        owner: value.owner,
+      };
+      return this.leaseContents(lease) === contents ? lease : undefined;
     } catch {
-      throw new FsTxnError("commit lock is already held");
+      return undefined;
     }
+  }
+
+  private anchorPath(lock: CommitLock): string {
+    return lock.path;
+  }
+
+  private activePath(lock: CommitLock): string {
+    return join(this.anchorPath(lock), "active");
+  }
+
+  private stagingPath(lock: CommitLock): string {
+    return join(this.anchorPath(lock), "staging");
+  }
+
+  private leasePath(activePath: string, owner: string): string {
+    return join(activePath, `lease.${owner}.json`);
+  }
+
+  private stagingName(lease: CommitLease): string {
+    return `${lease.expiresAt}.${lease.reclaimAfter}.${lease.owner}`;
+  }
+
+  private parseStagingName(name: string): CommitLease | undefined {
+    const match = /^(\d+)\.(\d+)\.([0-9a-f]{64})$/.exec(name);
+    if (match === null) return undefined;
+    const expiresAt = Number(match[1]);
+    const reclaimAfter = Number(match[2]);
+    const owner = match[3];
+    if (
+      !Number.isSafeInteger(expiresAt) ||
+      !Number.isSafeInteger(reclaimAfter) ||
+      reclaimAfter - expiresAt !== FsTransaction.recoveryGraceMs ||
+      owner === undefined
+    )
+      return undefined;
+    return { expiresAt, reclaimAfter, owner };
+  }
+
+  private directoryIdentity(path: string): DirectoryIdentity | undefined {
     try {
-      this.guardParents(lock.path, lock.root, false);
-      this.assertCommitDeadline();
-      const stats = lstatSync(lock.path, { bigint: true });
-      if (!stats.isFile() || stats.isSymbolicLink() || stats.dev === 0n || stats.ino === 0n) {
-        throw new FsTxnError("commit lock could not be verified");
-      }
-      return { dev: stats.dev, ino: stats.ino };
+      const stats = lstatSync(path, { bigint: true });
+      return stats.isDirectory() && !stats.isSymbolicLink() && stats.dev !== 0n && stats.ino !== 0n
+        ? { dev: stats.dev, ino: stats.ino }
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private syncLeasePath(path: string, directory = false): void {
+    if (directory && process.platform === "win32") return;
+    const fd = openSync(path, directory ? fsConstants.O_RDONLY : fsConstants.O_RDWR);
+    try {
+      fsyncSync(fd);
     } finally {
       closeSync(fd);
     }
   }
 
-  private releaseCommitLock(identity: DirectoryIdentity | undefined): void {
+  private ensureAnchor(lock: CommitLock): void {
+    this.guardParents(lock.path, lock.root, true);
+    const existing = lstatSafe(lock.path);
+    if (existing === undefined) {
+      const candidate = `${lock.path}.aih.anchor.${randomBytes(32).toString("hex")}`;
+      const marker = join(candidate, "anchor.json");
+      try {
+        mkdirSync(candidate, 0o700);
+        writeFileSync(marker, FsTransaction.anchorText, {
+          encoding: "utf8",
+          flag: "wx",
+          mode: 0o600,
+        });
+        const markerInfo = lstatSync(marker, { bigint: true });
+        if (!markerInfo.isFile() || markerInfo.isSymbolicLink() || markerInfo.nlink !== 1n)
+          throw new FsTxnError("commit lock could not be verified");
+        this.syncLeasePath(marker);
+        this.syncLeasePath(candidate, true);
+        renameSync(candidate, lock.path);
+        this.syncLeasePath(dirname(lock.path), true);
+      } catch {
+        try {
+          const markerInfo = lstatSync(marker, { bigint: true });
+          if (markerInfo.isFile() && !markerInfo.isSymbolicLink() && markerInfo.nlink === 1n) {
+            rmSync(marker);
+            rmdirSync(candidate);
+          }
+        } catch {
+          // Owner-specific pre-anchor staging never authorizes effects.
+        }
+        throw new FsTxnError("commit lock could not be verified");
+      }
+    }
+    const identity = this.directoryIdentity(lock.path);
+    const marker = join(lock.path, "anchor.json");
+    try {
+      const markerInfo = lstatSync(marker, { bigint: true });
+      if (
+        identity === undefined ||
+        !markerInfo.isFile() ||
+        markerInfo.isSymbolicLink() ||
+        markerInfo.nlink !== 1n ||
+        readFileSync(marker, "utf8") !== FsTransaction.anchorText
+      )
+        throw new FsTxnError("commit lock could not be verified");
+      const names = readdirSync(lock.path).sort();
+      if (names.some((name) => name !== "active" && name !== "anchor.json" && name !== "staging"))
+        throw new FsTxnError("commit lock could not be verified");
+      for (const name of ["active", "staging"] as const) {
+        const entry = join(lock.path, name);
+        if (lstatSafe(entry) !== undefined && this.directoryIdentity(entry) === undefined)
+          throw new FsTxnError("commit lock could not be verified");
+      }
+    } catch (err) {
+      if (err instanceof FsTxnError) throw err;
+      throw new FsTxnError("commit lock could not be verified");
+    }
+  }
+
+  private activeLease(lock: CommitLock): OwnedCommitLease | undefined {
+    const anchor = this.directoryIdentity(this.anchorPath(lock));
+    if (anchor === undefined) return undefined;
+    try {
+      const marker = lstatSync(join(this.anchorPath(lock), "anchor.json"), { bigint: true });
+      if (
+        !marker.isFile() ||
+        marker.isSymbolicLink() ||
+        marker.nlink !== 1n ||
+        readFileSync(join(this.anchorPath(lock), "anchor.json"), "utf8") !==
+          FsTransaction.anchorText
+      )
+        return undefined;
+    } catch {
+      return undefined;
+    }
+    const activePath = this.activePath(lock);
+    const active = this.directoryIdentity(activePath);
+    if (active === undefined) return undefined;
+    let names: string[];
+    try {
+      names = readdirSync(activePath).sort();
+    } catch {
+      return undefined;
+    }
+    const name = names[0];
+    if (names.length !== 1 || name === undefined || !/^lease\.[0-9a-f]{64}\.json$/.test(name))
+      return undefined;
+    const leasePath = join(activePath, name);
+    let leaseText: string;
+    let leaseDev: bigint;
+    let leaseIno: bigint;
+    try {
+      const stats = lstatSync(leasePath, { bigint: true });
+      if (!stats.isFile() || stats.isSymbolicLink() || stats.nlink !== 1n) return undefined;
+      leaseText = readFileSync(leasePath, "utf8");
+      leaseDev = stats.dev;
+      leaseIno = stats.ino;
+    } catch {
+      return undefined;
+    }
+    const parsed = this.parseLease(leaseText);
+    if (parsed === undefined || name !== `lease.${parsed.owner}.json`) return undefined;
+    return {
+      ...parsed,
+      ...active,
+      activePath,
+      anchorDev: anchor.dev,
+      anchorIno: anchor.ino,
+      leaseDev,
+      leaseIno,
+      leasePath,
+      leaseText,
+    };
+  }
+
+  private sameLease(left: OwnedCommitLease, right: OwnedCommitLease | undefined): boolean {
+    return (
+      right !== undefined &&
+      left.owner === right.owner &&
+      left.expiresAt === right.expiresAt &&
+      left.reclaimAfter === right.reclaimAfter &&
+      left.dev === right.dev &&
+      left.ino === right.ino &&
+      left.anchorDev === right.anchorDev &&
+      left.anchorIno === right.anchorIno &&
+      left.leaseDev === right.leaseDev &&
+      left.leaseIno === right.leaseIno &&
+      left.leasePath === right.leasePath &&
+      left.leaseText === right.leaseText
+    );
+  }
+
+  private removeOwnedActive(lock: CommitLock, owned: OwnedCommitLease): boolean {
+    if (!this.sameLease(owned, this.activeLease(lock))) return false;
+    try {
+      rmSync(owned.leasePath);
+      rmdirSync(owned.activePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * A live owner is always represented by a non-empty active directory. An
+   * empty one is only an interrupted owner-specific cleanup, so removing it
+   * cannot delete a successor; any raced promotion makes rmdir fail.
+   */
+  private removeEmptyActive(lock: CommitLock): boolean {
+    const activePath = this.activePath(lock);
+    const identity = this.directoryIdentity(activePath);
+    if (identity === undefined) return false;
+    try {
+      if (readdirSync(activePath).length !== 0) return false;
+      const live = this.directoryIdentity(activePath);
+      if (live === undefined || live.dev !== identity.dev || live.ino !== identity.ino)
+        return false;
+      rmdirSync(activePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private cleanStaging(lock: CommitLock, now: number): boolean {
+    const staging = this.stagingPath(lock);
+    const info = lstatSafe(staging);
+    if (info === undefined) return true;
+    if (!info.isDirectory() || info.isSymbolicLink()) return false;
+    let names: string[];
+    try {
+      names = readdirSync(staging).sort();
+    } catch {
+      return false;
+    }
+    if (
+      names.length > FsTransaction.maxStagingClaims ||
+      names.some((name) => this.parseStagingName(name) === undefined)
+    )
+      return false;
+    for (const name of names) {
+      const lease = this.parseStagingName(name);
+      if (lease === undefined) return false;
+      const candidate = join(staging, name);
+      const candidateIdentity = this.directoryIdentity(candidate);
+      const leasePath = this.leasePath(candidate, lease.owner);
+      if (candidateIdentity === undefined || now < lease.reclaimAfter) return false;
+      const contents = (() => {
+        try {
+          const childNames = readdirSync(candidate);
+          if (childNames.length === 0) return "empty";
+          if (childNames.length !== 1 || childNames[0] !== `lease.${lease.owner}.json`)
+            return undefined;
+          return this.parseLease(readFileSync(leasePath, "utf8"));
+        } catch {
+          return undefined;
+        }
+      })();
+      if (
+        contents !== "empty" &&
+        (contents === undefined || this.leaseContents(contents) !== this.leaseContents(lease))
+      )
+        return false;
+      const live = this.directoryIdentity(candidate);
+      if (
+        live === undefined ||
+        live.dev !== candidateIdentity.dev ||
+        live.ino !== candidateIdentity.ino ||
+        !this.removeStagingCandidate(candidate, contents === "empty" ? undefined : leasePath)
+      )
+        return false;
+    }
+    return true;
+  }
+
+  private removeStagingCandidate(candidate: string, leasePath: string | undefined): boolean {
+    try {
+      if (leasePath !== undefined) {
+        const info = lstatSync(leasePath, { bigint: true });
+        if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1n) return false;
+        rmSync(leasePath);
+      }
+      rmdirSync(candidate);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private acquireCommitLock(): OwnedCommitLease | undefined {
+    const lock = this.options.commitLock;
+    if (lock === undefined) return undefined;
+    this.ensureAnchor(lock);
+    this.assertCommitDeadline();
+    const now = Date.now();
+    const leaseMs = lock.leaseMs ?? FsTransaction.commitLeaseMs;
+    if (!Number.isSafeInteger(leaseMs) || leaseMs <= 0 || leaseMs > FsTransaction.commitLeaseMs)
+      throw new FsTxnError("commit lock could not be verified");
+    const expiresAt = Math.min(
+      now + leaseMs,
+      this.options.commitNotAfter ?? Number.MAX_SAFE_INTEGER,
+    );
+    if (expiresAt <= now) throw new FsTxnError("commit deadline expired");
+    if (!this.cleanStaging(lock, now)) throw new FsTxnError("commit lock is already held");
+    const existing = this.activeLease(lock);
+    if (existing !== undefined) {
+      if (now < existing.reclaimAfter || !this.removeOwnedActive(lock, existing))
+        throw new FsTxnError("commit lock is already held");
+    } else if (lstatSafe(this.activePath(lock)) !== undefined && !this.removeEmptyActive(lock)) {
+      throw new FsTxnError("commit lock is already held");
+    }
+    const staging = this.stagingPath(lock);
+    this.assertCommitDeadline();
+    try {
+      mkdirSync(staging, { recursive: true, mode: 0o700 });
+    } catch {
+      throw new FsTxnError("commit lock could not be verified");
+    }
+    if (this.directoryIdentity(staging) === undefined)
+      throw new FsTxnError("commit lock could not be verified");
+    const lease: CommitLease = {
+      expiresAt,
+      reclaimAfter: expiresAt + FsTransaction.recoveryGraceMs,
+      owner: randomBytes(32).toString("hex"),
+    };
+    const candidate = join(staging, this.stagingName(lease));
+    const candidateLease = this.leasePath(candidate, lease.owner);
+    const leaseText = this.leaseContents(lease);
+    try {
+      this.assertCommitDeadline();
+      mkdirSync(candidate, 0o700);
+      this.assertCommitDeadline();
+      writeFileSync(candidateLease, leaseText, { encoding: "utf8", flag: "wx", mode: 0o600 });
+      this.syncLeasePath(candidateLease);
+      this.syncLeasePath(candidate, true);
+      this.assertCommitDeadline();
+      renameSync(candidate, this.activePath(lock));
+      this.syncLeasePath(this.anchorPath(lock), true);
+    } catch (err) {
+      this.removeStagingCandidate(
+        candidate,
+        lstatSafe(candidateLease) === undefined ? undefined : candidateLease,
+      );
+      if (err instanceof FsTxnError) throw err;
+      throw new FsTxnError("commit lock is already held");
+    }
+    const owned = this.activeLease(lock);
+    if (owned === undefined || owned.owner !== lease.owner || owned.leaseText !== leaseText) {
+      this.removeStagingCandidate(candidate, candidateLease);
+      throw new FsTxnError("commit lock could not be verified");
+    }
+    this.activeCommitLease = owned;
+    return owned;
+  }
+
+  private releaseCommitLock(identity: OwnedCommitLease | undefined): void {
     const lock = this.options.commitLock;
     if (identity === undefined || lock === undefined) return;
-    try {
-      const stats = lstatSync(lock.path, { bigint: true });
-      if (
-        stats.isFile() &&
-        !stats.isSymbolicLink() &&
-        stats.dev === identity.dev &&
-        stats.ino === identity.ino
-      ) {
-        rmSync(lock.path, { force: true });
-      }
-    } catch {
-      // A replaced lock is never removed by this transaction.
-    }
+    // Never delete the shared anchor or an active path by name. The only
+    // deletions target this transaction's owner-named lease and its now-empty
+    // directory; a successor or foreign entry makes rmdir fail closed.
+    this.removeOwnedActive(lock, identity);
   }
 
   private validateWriteExpectation(write: StagedWrite): void {
@@ -409,7 +811,7 @@ export class FsTransaction {
           `transaction both asserts and mutates the same path: ${assertion.path}`,
         );
     }
-    let lockIdentity: DirectoryIdentity | undefined;
+    let lockIdentity: OwnedCommitLease | undefined;
     let failed = false;
     try {
       lockIdentity = this.acquireCommitLock();
@@ -542,15 +944,19 @@ export class FsTransaction {
       };
     } catch (err) {
       failed = true;
-      const preserved = [...rollbackRemovals(removed), ...rollbackAppliedWrites(applied)];
+      const preserved = [
+        ...rollbackRemovals(removed, () => this.assertRollbackLease()),
+        ...rollbackAppliedWrites(applied, () => this.assertRollbackLease()),
+      ];
       const suffix =
         preserved.length === 0
           ? "was rolled back"
           : `preserved concurrent changes at ${preserved.join(", ")}`;
       throw new FsTxnError(`transaction failed and ${suffix}: ${(err as Error).message}`);
     } finally {
+      if (failed) this.rollbackCreatedDirectories(() => this.assertRollbackLease());
       this.releaseCommitLock(lockIdentity);
-      if (failed) this.rollbackCreatedDirectories();
+      this.activeCommitLease = undefined;
     }
   }
 }
@@ -624,7 +1030,10 @@ function freeBackupDest(base: string): string {
 }
 
 /** Restore moved-out files by renaming them back from `.aih/legacy/` (best-effort). */
-function rollbackRemovals(removed: AppliedRemoval[]): string[] {
+function rollbackRemovals(
+  removed: AppliedRemoval[],
+  assertCanMutate: () => void = () => {},
+): string[] {
   const preserved: string[] = [];
   for (const r of [...removed].reverse()) {
     try {
@@ -634,10 +1043,13 @@ function rollbackRemovals(removed: AppliedRemoval[]): string[] {
         existsSync(r.legacyPath) &&
         !existsSync(r.path)
       ) {
+        assertCanMutate();
         if (!parentGuardMatches(r.sourceParentGuard)) continue;
+        assertCanMutate();
         mkdirSync(dirname(r.path), { recursive: true });
         if (!parentGuardMatches(r.sourceParentGuard) || !parentGuardMatches(r.legacyParentGuard))
           continue;
+        assertCanMutate();
         renameSync(r.legacyPath, r.path);
       } else {
         preserved.push(r.path);
@@ -712,7 +1124,10 @@ function clearScratch(path: string, assertCommitDeadline: () => void): void {
  * Exported for direct unit testing: a real concurrent write is not schedulable
  * deterministically between this synchronous transaction's filesystem calls.
  */
-export function rollbackAppliedWrites(applied: AppliedWrite[]): string[] {
+export function rollbackAppliedWrites(
+  applied: AppliedWrite[],
+  assertCanMutate: () => void = () => {},
+): string[] {
   const preserved: string[] = [];
   for (const a of [...applied].reverse()) {
     try {
@@ -725,12 +1140,13 @@ export function rollbackAppliedWrites(applied: AppliedWrite[]): string[] {
         info === undefined || info.isSymbolicLink() ? undefined : readFileSync(a.path, "utf8");
       if (a.created) {
         if (current === a.contents && parentGuardMatches(a.parentGuard)) {
+          assertCanMutate();
           rmSync(a.path, { force: true });
         } else if (current === a.contents) {
           preserved.push(a.path);
         } else if (current !== undefined) preserved.push(a.path);
       } else if (a.backup && existsSync(a.backup)) {
-        if (current === a.contents && restoreOverwrittenWrite(a)) {
+        if (current === a.contents && restoreOverwrittenWrite(a, assertCanMutate)) {
           continue;
         }
         preserved.push(a.path);
@@ -748,16 +1164,17 @@ export function rollbackAppliedWrites(applied: AppliedWrite[]): string[] {
  * retain a bounded non-atomic race; every check is repeated immediately before
  * rename and a swapped leaf is preserved rather than followed.
  */
-function restoreOverwrittenWrite(applied: AppliedWrite): boolean {
+function restoreOverwrittenWrite(applied: AppliedWrite, assertCanMutate: () => void): boolean {
   if (applied.backup === undefined) return false;
   if (!parentGuardMatches(applied.parentGuard)) return false;
   const backup = readRegularFile(applied.backup);
   if (!parentGuardMatches(applied.parentGuard)) return false;
   if (backup === undefined) return false;
   const tmpPath = `${applied.path}.aih.rollback.tmp`;
-  if (!clearRollbackScratch(tmpPath, applied.parentGuard)) return false;
+  if (!clearRollbackScratch(tmpPath, applied.parentGuard, assertCanMutate)) return false;
   try {
     if (!parentGuardMatches(applied.parentGuard)) return false;
+    assertCanMutate();
     writeFileSync(tmpPath, backup, { flag: "wx" });
     if (!parentGuardMatches(applied.parentGuard)) return false;
     const live = lstatSafe(applied.path);
@@ -770,6 +1187,7 @@ function restoreOverwrittenWrite(applied: AppliedWrite): boolean {
     if (final === undefined || final.isSymbolicLink()) return false;
     if (readFileSync(applied.path, "utf8") !== applied.contents) return false;
     if (!parentGuardMatches(applied.parentGuard)) return false;
+    assertCanMutate();
     renameSync(tmpPath, applied.path);
     const backupInfo = lstatSafe(applied.backup);
     if (
@@ -777,23 +1195,29 @@ function restoreOverwrittenWrite(applied: AppliedWrite): boolean {
       !backupInfo.isSymbolicLink() &&
       parentGuardMatches(applied.parentGuard)
     ) {
+      assertCanMutate();
       rmSync(applied.backup, { force: true });
     }
     return true;
   } catch {
     return false;
   } finally {
-    clearRollbackScratch(tmpPath, applied.parentGuard);
+    clearRollbackScratch(tmpPath, applied.parentGuard, assertCanMutate);
   }
 }
 
-function clearRollbackScratch(path: string, parentGuard: ParentGuard | undefined): boolean {
+function clearRollbackScratch(
+  path: string,
+  parentGuard: ParentGuard | undefined,
+  assertCanMutate: () => void,
+): boolean {
   if (!parentGuardMatches(parentGuard)) return false;
   const info = lstatSafe(path);
   if (info === undefined) return true;
   if (info.isSymbolicLink()) return false;
   try {
     if (!parentGuardMatches(parentGuard)) return false;
+    assertCanMutate();
     rmSync(path, { force: true });
     return true;
   } catch {

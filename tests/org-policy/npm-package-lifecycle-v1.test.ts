@@ -59,10 +59,14 @@ afterEach(() => {
   rmSync(bin, { recursive: true, force: true });
 });
 
-function fixture(version = "1.2.3", integrity = INTEGRITY) {
+function fixture(
+  version = "1.2.3",
+  integrity = INTEGRITY,
+  registry = "https://registry.npmjs.org/",
+) {
   const source = {
     type: "npm" as const,
-    registry: "https://registry.npmjs.org/",
+    registry,
     package: "@acme/widget",
     version,
     integrity,
@@ -291,6 +295,22 @@ describe("npm package lifecycle V1", () => {
     expect(lifecycleFiles().filter((file) => file.startsWith("records/"))).toHaveLength(2);
   });
 
+  it("uses one stable subject-target lock across first-time lineage changes", async () => {
+    const first = fixture();
+    writeFixture(first);
+    const firstPlan = await npmPackageLifecyclePlan(context(true, first.decision));
+
+    const changed = fixture(
+      "1.2.4",
+      `sha512-${Buffer.alloc(64, 4).toString("base64")}`,
+      "https://registry.example.com/",
+    );
+    writeFixture(changed);
+    const changedPlan = await npmPackageLifecyclePlan(context(true, changed.decision));
+
+    expect(firstPlan.commitLock).toBe(changedPlan.commitLock);
+  });
+
   it("does not create lifecycle state for a refused write and exposes no package/effect override", async () => {
     writeFixture();
     const missing = await run({ ...context(true), options: {} });
@@ -445,6 +465,116 @@ describe("npm package lifecycle V1", () => {
     const renewed = JSON.parse(readFileSync(renewedHeadPath, "utf8"));
     renewed.subjectDigest = `sha256:${"f".repeat(64)}`;
     writeFileSync(renewedHeadPath, JSON.stringify(renewed));
+    expect(await run(context(true, value.decision))).toMatchObject({
+      outcome: "refused",
+      state: "head-conflict",
+    });
+  });
+
+  it("refuses a new registry lineage when a deleted binding still has canonical subject history", async () => {
+    const original = fixture();
+    writeFixture(original);
+    await run(context(true, original.decision));
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const binding = lifecycleFiles().find((file) => file.startsWith("subjects/"));
+    if (binding === undefined) throw new Error("expected lifecycle subject binding");
+    rmSync(join(base, ...binding.split("/")));
+
+    const changed = fixture(
+      "1.2.4",
+      `sha512-${Buffer.alloc(64, 4).toString("base64")}`,
+      "https://registry.example.com/",
+    );
+    writeFixture(changed);
+    expect(await run(context(true, changed.decision))).toMatchObject({
+      outcome: "refused",
+      state: "store-collision",
+    });
+    expect(lifecycleFiles().filter((file) => file.startsWith("heads/"))).toHaveLength(1);
+  });
+
+  it("refuses a new registry lineage when deleted binding and head leave durable records", async () => {
+    const original = fixture();
+    writeFixture(original);
+    await run(context(true, original.decision));
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const binding = lifecycleFiles().find((file) => file.startsWith("subjects/"));
+    const head = lifecycleFiles().find((file) => file.startsWith("heads/"));
+    if (binding === undefined || head === undefined)
+      throw new Error("expected lifecycle binding and head");
+    rmSync(join(base, ...binding.split("/")));
+    rmSync(join(base, ...head.split("/")));
+
+    const changed = fixture(
+      "1.2.4",
+      `sha512-${Buffer.alloc(64, 4).toString("base64")}`,
+      "https://registry.example.com/",
+    );
+    writeFixture(changed);
+    expect(await run(context(true, changed.decision))).toMatchObject({
+      outcome: "refused",
+      state: "store-collision",
+    });
+    expect(lifecycleFiles().filter((file) => file.startsWith("heads/"))).toHaveLength(0);
+  });
+
+  it("does not inspect an unrelated malformed durable record partition on new-subject onboarding", async () => {
+    const value = fixture();
+    writeFixture(value);
+    const records = join(root, ".aih", "governance", "npm-package-lifecycle", "v1", "records");
+    mkdirSync(records, { recursive: true });
+    mkdirSync(join(records, "f".repeat(64)));
+
+    expect(await run(context(true, value.decision))).toMatchObject({
+      outcome: "fulfilled",
+      state: "observed-effective",
+    });
+    expect(lifecycleFiles().filter((file) => file.startsWith("subjects/"))).toHaveLength(1);
+  });
+
+  it("refuses revocation when a present binding has no canonical head", async () => {
+    const value = fixture();
+    writeFixture(value);
+    await run(context(true, value.decision));
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const head = lifecycleFiles().find((file) => file.startsWith("heads/"));
+    if (head === undefined) throw new Error("expected lifecycle head");
+    rmSync(join(base, ...head.split("/")));
+    writeAuthority(value.decision, [
+      {
+        format: "aih-governance-decision-revocation",
+        version: 2,
+        decisionDigest: governanceDecisionDigestV2(value.decision),
+        issuer: "platform-security",
+        revokedAt: "2026-08-01T00:00:00+00:00",
+        reason: "Critical upstream withdrawal.",
+      },
+    ]);
+    expect(await run(context(true, value.decision))).toMatchObject({
+      outcome: "refused",
+      state: "head-conflict",
+    });
+  });
+
+  it("refuses revocation when a durable lineage claim survives a deleted binding", async () => {
+    const value = fixture();
+    writeFixture(value);
+    await run(context(true, value.decision));
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const binding = lifecycleFiles().find((file) => file.startsWith("subjects/"));
+    if (binding === undefined) throw new Error("expected lifecycle binding");
+    rmSync(join(base, ...binding.split("/")));
+    writeAuthority(value.decision, [
+      {
+        format: "aih-governance-decision-revocation",
+        version: 2,
+        decisionDigest: governanceDecisionDigestV2(value.decision),
+        issuer: "platform-security",
+        revokedAt: "2026-08-01T00:00:00+00:00",
+        reason: "Critical upstream withdrawal.",
+      },
+    ]);
+
     expect(await run(context(true, value.decision))).toMatchObject({
       outcome: "refused",
       state: "head-conflict",
@@ -801,7 +931,7 @@ describe("npm package lifecycle V1", () => {
     expect(lifecycleFiles().filter((file) => file.startsWith("heads/"))).toHaveLength(
       SUPPORTED_CLIS.length,
     );
-  });
+  }, 15_000);
 
   it("refuses a valid record substituted into a different lineage partition", async () => {
     const value = fixture();

@@ -115,7 +115,7 @@ describe("executePlan", () => {
     expect(existsSync(target)).toBe(false);
   });
 
-  it("refuses a contended root-relative plan commit lock before writing", async () => {
+  it("refuses a noncanonical root-relative plan commit lock before writing", async () => {
     const target = join(dir, "locked.txt");
     const lock = join(dir, ".aih", "commit.lock");
     mkdirSync(dirname(lock), { recursive: true });
@@ -127,7 +127,7 @@ describe("executePlan", () => {
     };
 
     await expect(executePlan(p, ctx({ apply: true }))).rejects.toThrow(
-      "commit lock is already held",
+      "commit lock could not be verified",
     );
     expect(existsSync(target)).toBe(false);
     expect(readFileSync(lock, "utf8")).toBe("held");
