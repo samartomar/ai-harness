@@ -296,6 +296,10 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
       catalogHeadDigest: receipt.qualificationBasis.catalogHeadDigest,
       catalogMemberDigest: receipt.qualificationBasis.catalogMemberDigest,
       subject,
+      catalogSignerIdentity: receipt.qualificationBasis.catalogSignerIdentity,
+      signerKeyId: receipt.catalogContinuity.signerKeyId,
+      replayIdentity: receipt.catalogContinuity.replayIdentity,
+      sequence: receipt.catalogContinuity.sequence,
       decisionId: input.decision.id,
       decisionDigest: input.decision.digest,
       target: input.target,
@@ -392,7 +396,7 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
       );
       expect(existsSync(join(root, ".aih", "supported-qualification", "v2"))).toBe(false);
       expect(result.digests).toEqual([
-        { describe: "verify supported custody genesis", text: "supported custody genesis pending" },
+        { describe: "verify supported custody state", text: "supported custody state pending" },
       ]);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -446,8 +450,8 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
       const result = await executePlan(repeat, context);
       expect(result.digests).toEqual([
         {
-          describe: "verify supported custody genesis",
-          text: "supported custody genesis verified",
+          describe: "verify supported custody state",
+          text: "supported custody state verified",
         },
       ]);
     } finally {
@@ -591,7 +595,7 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
             context,
           )
         ).digests.at(-1)?.text,
-      ).toBe("supported custody genesis verified");
+      ).toBe("supported custody state verified");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -695,6 +699,86 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
+    }
+  });
+
+  it("refuses forged or wrongly named current-head member records", async () => {
+    for (const mutation of ["forged", "wrong-slot"] as const) {
+      const { root, genesis } = await applyGenesis();
+      try {
+        const original = writes(genesis)[2];
+        const memberPath = join(root, original?.path ?? "");
+        const displacedPath = join(dirname(memberPath), `${"f".repeat(64)}.json`);
+        const originalBytes = readFileSync(memberPath);
+        rmSync(memberPath);
+        writeFileSync(
+          displacedPath,
+          mutation === "forged"
+            ? canonicalStrictJsonBytesV1({
+                format: "aih-supported-qualification-custody",
+                version: 2,
+                kind: "member-claim",
+                catalogHeadDigest: receipt.catalogContinuity.catalogHeadDigest,
+              })
+            : originalBytes,
+        );
+        await expect(prepare(root, candidateFor(memberReceipt()))).rejects.toMatchObject({
+          code: "AIH_TRUST",
+        });
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("refuses malformed stored head continuity before successor planning", async () => {
+    for (const mutation of ["non-genesis-predecessor", "unordered-validity"] as const) {
+      const { root, genesis } = await applyGenesis();
+      try {
+        const headPath = join(root, writes(genesis)[3]?.path ?? "");
+        const head = JSON.parse(readFileSync(headPath, "utf8"));
+        writeFileSync(
+          headPath,
+          canonicalStrictJsonBytesV1(
+            mutation === "non-genesis-predecessor"
+              ? { ...head, previousCatalogHeadDigest: `sha256:${"9".repeat(64)}` }
+              : {
+                  ...head,
+                  headValidFrom: "2026-08-10T00:00:00Z",
+                  headValidUntil: "2026-08-01T00:00:00Z",
+                },
+          ),
+        );
+        await expect(prepare(root, candidateFor(successorReceipt()))).rejects.toMatchObject({
+          code: "AIH_TRUST",
+        });
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("bounds current-head member enumeration before scanning a large custody directory", async () => {
+    const { root, genesis } = await applyGenesis();
+    try {
+      const memberDirectory = dirname(join(root, writes(genesis)[2]?.path ?? ""));
+      for (let index = 0; index < 4_096; index++) {
+        const path = join(memberDirectory, `${index.toString(16).padStart(64, "0")}.json`);
+        writeFileSync(
+          path,
+          canonicalStrictJsonBytesV1({
+            format: "aih-supported-qualification-custody",
+            version: 2,
+            kind: "member-claim",
+            catalogHeadDigest: `sha256:${"a".repeat(64)}`,
+          }),
+        );
+      }
+      await expect(prepare(root, candidateFor(memberReceipt()))).rejects.toMatchObject({
+        code: "AIH_TRUST",
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
