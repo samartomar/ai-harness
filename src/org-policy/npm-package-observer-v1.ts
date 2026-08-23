@@ -585,9 +585,9 @@ export async function observeNpmPackageV1(
   }
   if (requested.evidence === undefined) return refusal("invalid-input", "verified");
   const evidence = custodyOrganizationEvidenceV1(ctx.root, requested.evidence);
-  if ("problem" in evidence) return refusal(evidence.problem);
+  if ("problem" in evidence) return refusal(evidence.problem, "verified");
   const evidenceEnvelope = parseOrganizationEvidenceEnvelopeV1Bytes(evidence.evidence.bytes);
-  if (evidenceEnvelope === undefined) return refusal("qualification-unverified");
+  if (evidenceEnvelope === undefined) return refusal("qualification-unverified", "verified");
   if (!evidence.evidence.unchanged()) return refusal("evidence-changed", "verified");
   const expectedInstalled = npmInstalledIdentity(decision.subject.source);
   const qualificationInput = {

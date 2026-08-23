@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstatSync, opendirSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative, win32 } from "node:path";
 import { z } from "zod";
 import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { AihError } from "../errors.js";
@@ -660,7 +660,7 @@ function assertNewCustodySlotCapacity(
     throw new AihError("supported custody state is invalid", "AIH_TRUST");
   const entries = boundedMemberEntries(
     before.realPath,
-    directory.endsWith(`${CUSTODY_PREFIX}/heads`) || directory.endsWith(`${CUSTODY_PREFIX}\\heads`)
+    basename(directory) === "heads" || win32.basename(directory) === "heads"
       ? MAX_CUSTODY_MEMBERS * 2
       : MAX_CUSTODY_MEMBERS,
   );
@@ -1241,7 +1241,7 @@ export async function supportedCustodyAcceptPlanV2(ctx: PlanContext): Promise<Pl
 export type SupportedCustodyInspectionV2 = Readonly<{
   deterministic: true;
   scrubbed: true;
-  limit: 4096;
+  memberRecords: Readonly<{ limit: 4096; occupied: number; remaining: number }>;
   members: readonly Readonly<{
     entryId: string;
     subject: { kind: string; id: string; digest: string };
@@ -1288,7 +1288,7 @@ export function inspectSupportedCustodyV2(input: {
   const empty: SupportedCustodyInspectionV2 = {
     deterministic: true,
     scrubbed: true,
-    limit: MAX_CUSTODY_MEMBERS,
+    memberRecords: { limit: MAX_CUSTODY_MEMBERS, occupied: 0, remaining: MAX_CUSTODY_MEMBERS },
     members: [],
   };
   try {
@@ -1459,9 +1459,10 @@ export function inspectSupportedCustodyV2(input: {
       if (signers.get(replay.catalogSignerIdentity)?.signerKeyId !== replay.signerKeyId)
         throw new AihError("supported custody state is invalid", "AIH_TRUST");
     }
+    const memberEntries = boundedMemberEntries(membersBefore.realPath);
     const members: Array<SupportedCustodyInspectionV2["members"][number]> = [];
     const currentHeadMembers = new Set<string>();
-    for (const entry of boundedMemberEntries(membersBefore.realPath)) {
+    for (const entry of memberEntries) {
       if (!/^[0-9a-f]{64}\.json$/.test(entry))
         throw new AihError("supported custody state is invalid", "AIH_TRUST");
       const separator = membersDirectory.path.includes("\\") ? "\\" : "/";
@@ -1525,7 +1526,15 @@ export function inspectSupportedCustodyV2(input: {
         "en",
       ),
     );
-    return { ...empty, members };
+    return {
+      ...empty,
+      memberRecords: {
+        limit: MAX_CUSTODY_MEMBERS,
+        occupied: memberEntries.length,
+        remaining: MAX_CUSTODY_MEMBERS - memberEntries.length,
+      },
+      members,
+    };
   } catch (error) {
     if (error instanceof AihError) throw error;
     throw new AihError("supported custody state is invalid", "AIH_TRUST");

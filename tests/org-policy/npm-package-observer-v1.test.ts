@@ -42,6 +42,7 @@ import * as supportedCustody from "../../src/org-policy/supported-admin-v2.js";
 import {
   canonicalAihSupportedQualificationReceiptV2,
   receiptDigestV2,
+  verifyAihSupportedCustodyBindingV2,
 } from "../../src/org-policy/supported-qualification-receipt-v2.js";
 import { upstreamObservationReceiptDigestV1 } from "../../src/org-policy/upstream-observation-receipt-v1.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -553,7 +554,9 @@ describe("npm package upstream observer V1", () => {
       symlinkSync(external, linkedParent, process.platform === "win32" ? "junction" : "dir");
       const unsafeCalls: string[][] = [];
       await expect(
-        observeNpmPackageV1(context({ ...options, evidence: "linked-evidence/evidence.json" }, unsafeCalls)),
+        observeNpmPackageV1(
+          context({ ...options, evidence: "linked-evidence/evidence.json" }, unsafeCalls),
+        ),
       ).resolves.toMatchObject({
         authority: "verified",
         qualification: "unqualified",
@@ -741,6 +744,104 @@ describe("npm package upstream observer V1", () => {
     });
     expect(npmPackageObservationHandoffForLifecycleV1(result)?.custodyAssertions).toHaveLength(5);
     expect(calls).toHaveLength(2);
+  });
+
+  it("invalidates a branded supported receipt when its custody head is superseded", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    await acceptSupportedCustody(value);
+    const options = {
+      decision: value.decision.id,
+      decisionDigest: governanceDecisionDigestV2(value.decision as never),
+      target: "claude",
+    };
+    const env = {
+      AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+      AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+    };
+    const genesisBinding = await verifyAihSupportedCustodyBindingV2(
+      context(options, [], env),
+      options,
+    );
+    expect(genesisBinding).toBeDefined();
+    if (genesisBinding === undefined) throw new Error("expected production verifier binding");
+
+    const successorReceipt = {
+      ...value.receipt,
+      entryId: "recipe.acme-widget-successor",
+      qualificationBasis: {
+        ...value.receipt.qualificationBasis,
+        catalogHeadDigest: `sha256:${"f".repeat(64)}`,
+        catalogMemberDigest: `sha256:${"9".repeat(64)}`,
+      },
+      catalogContinuity: {
+        ...value.receipt.catalogContinuity,
+        catalogHeadDigest: `sha256:${"f".repeat(64)}`,
+        previousCatalogHeadDigest: value.receipt.catalogContinuity.catalogHeadDigest,
+        sequence: 1,
+        replayIdentity: `catalog-head:${"f".repeat(64)}:${"1".repeat(64)}`,
+      },
+    };
+    const successorDecision = {
+      ...value.decision,
+      qualificationBasis: successorReceipt.qualificationBasis,
+    };
+    const successorOptions = {
+      decision: successorDecision.id,
+      decisionDigest: governanceDecisionDigestV2(successorDecision as never),
+      target: "claude",
+    };
+    writeAuthority(successorDecision);
+    writeFileSync(
+      join(root, ".aih", "aih-supported-qualification-receipt.json"),
+      canonicalAihSupportedQualificationReceiptV2(successorReceipt),
+    );
+    const successorBinding = await verifyAihSupportedCustodyBindingV2(
+      context(successorOptions, [], env),
+      successorOptions,
+    );
+    expect(successorBinding).toBeDefined();
+    if (successorBinding === undefined)
+      throw new Error("expected successor production verifier binding");
+    await executePlan(
+      supportedCustody.prepareVerifiedSupportedCustodyAcceptV2({
+        root,
+        posture: "vibe",
+        binding: successorBinding,
+      }),
+      { ...context({}, [], env), posture: "vibe", apply: true, verify: false },
+    );
+
+    writeAuthority(value.decision);
+    writeFileSync(
+      join(root, ".aih", "aih-supported-qualification-receipt.json"),
+      canonicalAihSupportedQualificationReceiptV2(value.receipt),
+    );
+    expect(
+      supportedCustody.validateCurrentSupportedCustodyV2({
+        root,
+        posture: "vibe",
+        binding: genesisBinding,
+      }),
+    ).toMatchObject({ state: "unverified" });
+    expect(
+      supportedCustody.verifiedCurrentSupportedCustodyAssertionsV2({
+        root,
+        posture: "vibe",
+        binding: genesisBinding,
+      }),
+    ).toBeUndefined();
+    expect(supportedCustody.inspectSupportedCustodyV2({ root, posture: "vibe" }).members).toEqual([
+      expect.objectContaining({ entryId: successorReceipt.entryId }),
+    ]);
+
+    await expect(observeNpmPackageV1(context(options, [], env))).resolves.toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      outcome: "refused",
+      reason: "qualification-unverified",
+    });
   });
 
   it("rejects a caller evidence path for an AIH-supported decision before it can select a weaker branch", async () => {
