@@ -31,10 +31,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **`aih policy lifecycle npm-package` persists exact governed observation, bump, and revocation
   history without managing the package.** Preview is zero-write; `--apply` first repeats the current
-  V3 authority, organization evidence, npm v3 lockfile, installed-manifest, and observation checks,
-  then appends one canonical content-addressed record and advances a subject head under the
-  dedicated `.aih/governance/npm-package-lifecycle/v1/` store. Exact version/integrity changes keep
-  one stable package/integration lineage while preserving prior records. A current authenticated V3
+  V3 authority, decision-selected qualification, npm v3 lockfile, installed-manifest, and
+  observation checks, then appends one canonical content-addressed record and advances a subject
+  head under the dedicated `.aih/governance/npm-package-lifecycle/v1/` store. Exact
+  version/integrity changes keep one stable package/integration lineage while preserving prior
+  records. A current authenticated V3
   decision revocation can append a revocation record only on an existing verified lineage, but remains
   non-effective and produces a failing, nonzero verification result; it makes no package-removal or
   process-stop claim.
@@ -58,24 +59,28 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   closed without cleanup. Only the same prepared canonical bytes can reuse a completed-record crash
   orphan; a freshly timed command normally fails closed for approved operator incident reconciliation
   instead of deleting or silently adopting it. The command never installs, updates, removes,
-  configures, executes, signs, or publishes a package, and remains limited to the
-  organization-qualified root npm route. A target-local chain cannot detect a coordinated rollback
-  that deletes both subject indexes, or a head advance and all later records; administrators must
-  retain the whole store in organization-controlled versioned evidence. (#844)
+  configures, executes, signs, or publishes a package, and remains limited to the fixed root npm
+  route for organization-qualified or durably accepted AIH-supported decisions. On the supported
+  route it pins the exact receipt and signer/replay/member/head custody, then revalidates the full
+  bounded custody graph before reporting fulfilled. A target-local chain cannot detect a
+  coordinated rollback that deletes both subject indexes, or a head advance and all later records;
+  administrators must retain the whole store in organization-controlled versioned evidence. (#844)
 
-- **`aih policy observe npm-package` reports an exact organization-qualified npm install without
-  installing or executing it.** The zero-write command derives one npm package and the fixed
-  `install` effect from an exact current Decision V2, after independently verifying the external
-  V3 authority receipt and canonical organization evidence. It then reads only the target root's
-  bounded regular npm v3 lockfile and matching installed `node_modules` manifest, rejects linked,
+- **`aih policy observe npm-package` reports an exact qualified npm install without installing or
+  executing it.** The zero-write command derives one npm package and the fixed `install` effect
+  from an exact current Decision V2. An organization-qualified decision requires its canonical
+  organization evidence. An AIH-supported decision rejects that option and instead requires the
+  exact separately attested Receipt V2 plus current head-scoped administrator custody. It then reads
+  only the target root's bounded regular npm v3 lockfile and matching installed `node_modules`
+  manifest, rejects linked,
   malformed, non-NFC, ambiguous, changed, or mismatched custody, and feeds an internal opaque
   observation into the existing resolver. An exact current match reports `observed-effective`
   with the full canonical receipt digest. Missing installed evidence remains non-effective
   `partial`; every unsafe, stale, rejected, revoked, or mismatched state refuses. The caller cannot
   supply a package, effect, observer, verifier, runner, clock, receipt, callback, or alternate
   install source. The command writes no target or ledger state, installs and executes nothing,
-  and does not add an adapter, an AIH-supported observation route, MCP/skill observation, signing,
-  publication, or a bypass for held executable-package admission. (#842)
+  and does not add an adapter, MCP/skill observation, signing, publication, or a bypass for held
+  executable-package admission. (#842, #848)
 
 - **`aih policy resolve` exposes the first read-only Strict V2 administrator resolution path.**
   The zero-write command accepts only an exact Decision V2 id/digest, a code-owned target and
@@ -90,9 +95,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   observe a candidate. (#840)
 
 - **Strict V2 can independently verify an attested AIH-supported qualification without making
-  catalog membership an organization approval.** Core ships a closed canonical receipt schema
-  that binds the exact Decision V2 subject and all seven `aih-supported` catalog-basis fields,
-  explicit non-admission, and bounded validity. The library verifier reads only the fixed bounded
+  catalog membership an organization approval.** Core replaces Receipt V1 with one closed canonical
+  Receipt V2 schema that binds the exact Decision V2 subject, all seven `aih-supported`
+  catalog-basis fields, entry id, signer key, sequence, predecessor, replay identity, explicit
+  non-admission, and bounded head validity. The library verifier reads only the fixed bounded
   regular file, rejects linked custody, verifies an owner-only private copy with an absolute
   external `gh` against dedicated supported repository/workflow roots, and then parses the exact
   copied canonical bytes. It refuses organization-authority root reuse, noncanonical or substituted
@@ -101,11 +107,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   target root plus the exact expected decision reference and subject, owns the process runner and
   live clock, and returns neither authority nor a qualification capability. Because the inert call
   has no target or effect input, any other current unrevoked rejection for the same subject fails
-  the verdict closed. The authority-bearing verifier remains package-internal. A current externally
-  verified V3 organization decision and a
-  fresh exact upstream observation are still required before the zero-effect resolver can report
-  `observed-effective`. This adds no catalog fetch, scanner,
-  installer, projector, candidate execution, signing, release, or publication path. (#835)
+  the verdict closed. The authority-bearing verifier remains package-internal.
+  `aih policy supported accept --apply` adds bounded versioned signer/replay/head/member custody
+  under a fixed cooperative lock; `inspect` is deterministic, scrubbed, and read-only. Genesis,
+  exact succession, member renewal, replay refusal, capacity, link, race, and detached-state checks
+  fail closed. A current exact AIH-supported npm decision can use that custody through the same
+  fixed observer and lifecycle path without an organization evidence envelope. These commands do
+  not fetch a catalog, install, project, execute, sign, release, or publish anything. Simulated test
+  attestations are not public verification evidence. (#835, #848)
 
 - **Strict V2 observed effects now require independently verified organization qualification.**
   Core accepts only canonical, bounded organization-evidence bytes that bind the exact subject,

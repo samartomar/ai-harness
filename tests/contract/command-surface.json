@@ -2663,6 +2663,70 @@
           "commands": []
         },
         {
+          "name": "supported",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [],
+          "commands": [
+            {
+              "name": "accept",
+              "hasDescription": true,
+              "arguments": [],
+              "options": [
+                {
+                  "flags": "--apply"
+                },
+                {
+                  "flags": "--context-dir <dir>",
+                  "defaultValue": "ai-coding"
+                },
+                {
+                  "flags": "--decision <id>"
+                },
+                {
+                  "flags": "--decision-digest <sha256>"
+                },
+                {
+                  "flags": "--json"
+                },
+                {
+                  "flags": "--posture <posture>",
+                  "defaultValue": "vibe"
+                },
+                {
+                  "flags": "--root <dir>"
+                },
+                {
+                  "flags": "--target <id>"
+                }
+              ],
+              "commands": []
+            },
+            {
+              "name": "inspect",
+              "hasDescription": true,
+              "arguments": [],
+              "options": [
+                {
+                  "flags": "--context-dir <dir>",
+                  "defaultValue": "ai-coding"
+                },
+                {
+                  "flags": "--json"
+                },
+                {
+                  "flags": "--posture <posture>",
+                  "defaultValue": "vibe"
+                },
+                {
+                  "flags": "--root <dir>"
+                }
+              ],
+              "commands": []
+            }
+          ]
+        },
+        {
           "name": "validate",
           "hasDescription": true,
           "arguments": [

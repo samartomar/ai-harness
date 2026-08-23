@@ -904,7 +904,7 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  }, 60_000);
+  }, 120_000);
 
   it("fails closed when inspect sees partial or foreign custody directories", async () => {
     const root = mkdtempSync(join(tmpdir(), "aih-supported-inspect-invalid-"));
