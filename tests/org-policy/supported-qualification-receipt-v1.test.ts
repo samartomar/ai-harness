@@ -235,7 +235,14 @@ describe("AihSupportedQualificationReceiptV1", () => {
       Buffer.from(JSON.stringify(value)),
       Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), bytes]),
       Buffer.concat([bytes, Buffer.from("\n")]),
-      Buffer.from(`{"format":"wrong","format":"aih-supported-qualification-receipt"}`),
+      Buffer.from(
+        bytes
+          .toString("utf8")
+          .replace(
+            '"format":"aih-supported-qualification-receipt"',
+            '"format":"aih-supported-qualification-receipt","format":"aih-supported-qualification-receipt"',
+          ),
+      ),
       canonicalBytes({ ...value, extra: true } as never),
       canonicalBytes({ ...value, organizationAdmission: "authoritative" } as never),
       canonicalBytes({ ...value, expiresAt: value.notBefore } as never),
@@ -407,6 +414,32 @@ describe("AihSupportedQualificationReceiptV1", () => {
         problem: expect.any(String),
       });
     }
+    const rootCalls: string[][] = [];
+    await expect(
+      verifyAihSupportedQualificationReceiptV1(
+        context(
+          (argv) => {
+            rootCalls.push(argv);
+            return { code: 0 };
+          },
+          { AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "" },
+        ),
+        input,
+      ),
+    ).resolves.toMatchObject({ problem: expect.any(String) });
+    expect(rootCalls).toEqual([]);
+    writeFileSync(join(dir, ".aih", "aih-supported-qualification-receipt.json"), "{not-json");
+    const malformedCalls: string[][] = [];
+    await expect(
+      verifyAihSupportedQualificationReceiptV1(
+        context((argv) => {
+          malformedCalls.push(argv);
+          return { code: 0 };
+        }),
+        input,
+      ),
+    ).resolves.toMatchObject({ problem: expect.any(String) });
+    expect(malformedCalls).toHaveLength(1);
     for (const changed of [
       receipt(value, { subject: { ...value.subject, id: "other-tool" } }),
       receipt(value, {
@@ -464,6 +497,55 @@ describe("AihSupportedQualificationReceiptV1", () => {
         input,
       ),
     ).resolves.toMatchObject({ problem: expect.any(String) });
+    const organizationDecision = decision({
+      qualificationBasis: {
+        kind: "organization-qualified",
+        evidenceDigest: `sha256:${"e".repeat(64)}`,
+        attestor: "aih-catalog-service",
+      },
+    });
+    const organizationAuthority = await authority(organizationDecision);
+    writeReceipt(receipt(organizationDecision, { qualificationBasis: value.qualificationBasis }));
+    await expect(
+      verifyAihSupportedQualificationReceiptV1(
+        context((argv) => ({ code: argv[0] === trustedSupportedGh ? 0 : 1 })),
+        {
+          ...input,
+          authority: organizationAuthority,
+          decisionReference: {
+            id: organizationDecision.id,
+            digest: governanceDecisionDigestV2(organizationDecision as never),
+          },
+        },
+      ),
+    ).resolves.toMatchObject({ problem: expect.any(String) });
+  });
+
+  it("fails if the externally invoked verifier mutates its exact private receipt copy", async () => {
+    const value = decision();
+    const verifiedAuthority = await authority(value);
+    writeReceipt(receipt(value));
+    const result = await verifyAihSupportedQualificationReceiptV1(
+      context((argv) => {
+        if (argv[0] === trustedSupportedGh) {
+          writeFileSync(argv[3] ?? "", "mutated");
+          return { code: 0 };
+        }
+        return { code: 1 };
+      }),
+      {
+        authority: verifiedAuthority,
+        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+        subject: value.subject,
+        target: "claude",
+        effect: "configure",
+        supportedTargets: ["claude"],
+        now: "2026-08-02T12:00:00+00:00",
+      },
+    );
+    expect(result).toMatchObject({
+      problem: "supported qualification receipt changed during verification",
+    });
   });
 
   it("resists source swaps and only admits the opaque supported capability to the resolver", async () => {
