@@ -147,6 +147,12 @@ interface OwnedCommitLease extends CommitLease, DirectoryIdentity {
   leaseText: string;
 }
 
+interface SingleLinkLockFile {
+  readonly dev: bigint;
+  readonly ino: bigint;
+  readonly text: string;
+}
+
 interface FsTransactionOptions {
   commitNotAfter?: number;
   commitLock?: CommitLock;
@@ -447,6 +453,32 @@ export class FsTransaction {
     }
   }
 
+  /**
+   * Read a lock protocol file from one no-follow descriptor. The bytes, link
+   * count, and inode identity must describe that same opened file: checking a
+   * pathname and then reading it would let a replacement split those facts.
+   */
+  private readSingleLinkLockFile(path: string): SingleLinkLockFile | undefined {
+    const opened = readRegularFileWithStats(path, { maxBytes: 8 * 1024 });
+    if (
+      opened === undefined ||
+      opened.stats.nlink !== 1 ||
+      opened.identity.nlink !== 1n ||
+      opened.identity.dev === 0n ||
+      opened.identity.ino === 0n
+    )
+      return undefined;
+    try {
+      return {
+        dev: opened.identity.dev,
+        ino: opened.identity.ino,
+        text: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(opened.contents),
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
   private ensureAnchor(lock: CommitLock): void {
     this.guardParents(lock.path, lock.root, true);
     const existing = lstatSafe(lock.path);
@@ -483,13 +515,11 @@ export class FsTransaction {
     const identity = this.directoryIdentity(lock.path);
     const marker = join(lock.path, "anchor.json");
     try {
-      const markerInfo = lstatSync(marker, { bigint: true });
+      const markerFile = this.readSingleLinkLockFile(marker);
       if (
         identity === undefined ||
-        !markerInfo.isFile() ||
-        markerInfo.isSymbolicLink() ||
-        markerInfo.nlink !== 1n ||
-        readFileSync(marker, "utf8") !== FsTransaction.anchorText
+        markerFile === undefined ||
+        markerFile.text !== FsTransaction.anchorText
       )
         throw new FsTxnError("commit lock could not be verified");
       const names = readdirSync(lock.path).sort();
@@ -509,17 +539,8 @@ export class FsTransaction {
   private activeLease(lock: CommitLock): OwnedCommitLease | undefined {
     const anchor = this.directoryIdentity(this.anchorPath(lock));
     if (anchor === undefined) return undefined;
-    try {
-      const marker = lstatSync(join(this.anchorPath(lock), "anchor.json"), { bigint: true });
-      if (
-        !marker.isFile() ||
-        marker.isSymbolicLink() ||
-        marker.nlink !== 1n ||
-        readFileSync(join(this.anchorPath(lock), "anchor.json"), "utf8") !==
-          FsTransaction.anchorText
-      )
-        return undefined;
-    } catch {
+    const marker = this.readSingleLinkLockFile(join(this.anchorPath(lock), "anchor.json"));
+    if (marker === undefined || marker.text !== FsTransaction.anchorText) {
       return undefined;
     }
     const activePath = this.activePath(lock);
@@ -535,19 +556,9 @@ export class FsTransaction {
     if (names.length !== 1 || name === undefined || !/^lease\.[0-9a-f]{64}\.json$/.test(name))
       return undefined;
     const leasePath = join(activePath, name);
-    let leaseText: string;
-    let leaseDev: bigint;
-    let leaseIno: bigint;
-    try {
-      const stats = lstatSync(leasePath, { bigint: true });
-      if (!stats.isFile() || stats.isSymbolicLink() || stats.nlink !== 1n) return undefined;
-      leaseText = readFileSync(leasePath, "utf8");
-      leaseDev = stats.dev;
-      leaseIno = stats.ino;
-    } catch {
-      return undefined;
-    }
-    const parsed = this.parseLease(leaseText);
+    const leaseFile = this.readSingleLinkLockFile(leasePath);
+    if (leaseFile === undefined) return undefined;
+    const parsed = this.parseLease(leaseFile.text);
     if (parsed === undefined || name !== `lease.${parsed.owner}.json`) return undefined;
     return {
       ...parsed,
@@ -555,10 +566,10 @@ export class FsTransaction {
       activePath,
       anchorDev: anchor.dev,
       anchorIno: anchor.ino,
-      leaseDev,
-      leaseIno,
+      leaseDev: leaseFile.dev,
+      leaseIno: leaseFile.ino,
       leasePath,
-      leaseText,
+      leaseText: leaseFile.text,
     };
   }
 
@@ -640,7 +651,8 @@ export class FsTransaction {
           if (childNames.length === 0) return "empty";
           if (childNames.length !== 1 || childNames[0] !== `lease.${lease.owner}.json`)
             return undefined;
-          return this.parseLease(readFileSync(leasePath, "utf8"));
+          const leaseFile = this.readSingleLinkLockFile(leasePath);
+          return leaseFile === undefined ? undefined : this.parseLease(leaseFile.text);
         } catch {
           return undefined;
         }
@@ -1257,7 +1269,15 @@ const O_NONBLOCK = (fsConstants as Record<string, number | undefined>).O_NONBLOC
 export function readRegularFileWithStats(
   abs: string,
   options: { maxBytes?: number } = {},
-): { contents: Buffer; stats: Stats } | undefined {
+):
+  | {
+      contents: Buffer;
+      /** Ordinary descriptor stats retained for existing numeric consumers. */
+      stats: Stats;
+      /** BigInt identity/link facts from the same descriptor as {@link contents}. */
+      identity: Pick<BigIntStats, "dev" | "ino" | "nlink">;
+    }
+  | undefined {
   let fd: number;
   try {
     fd = openSync(abs, fsConstants.O_RDONLY | O_NOFOLLOW | O_NONBLOCK, 0o600);
@@ -1266,14 +1286,21 @@ export function readRegularFileWithStats(
   }
   try {
     const stats = fstatSync(fd);
-    if (!stats.isFile()) return undefined;
+    const identity = fstatSync(fd, { bigint: true });
+    if (!stats.isFile() || !identity.isFile()) return undefined;
     if (options.maxBytes !== undefined && stats.size > options.maxBytes) return undefined;
     if (!HAS_O_NOFOLLOW && !openedPathStillNamesFile(abs, fd)) return undefined;
     const contents =
       options.maxBytes === undefined
         ? readFileSync(fd)
         : readBoundedFileDescriptor(fd, options.maxBytes);
-    return contents === undefined ? undefined : { contents, stats };
+    return contents === undefined
+      ? undefined
+      : {
+          contents,
+          identity: { dev: identity.dev, ino: identity.ino, nlink: identity.nlink },
+          stats,
+        };
   } finally {
     closeSync(fd);
   }

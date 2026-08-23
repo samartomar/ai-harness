@@ -34,6 +34,8 @@ import {
 
 const fsEvents = vi.hoisted(() => ({
   events: [] as string[],
+  openedPaths: new Map<number, string>(),
+  readPathnames: [] as string[],
   afterTempWrite: undefined as ((path: string) => void) | undefined,
   afterRename: undefined as ((to: string) => void) | undefined,
   afterRead: undefined as ((path: string) => void) | undefined,
@@ -46,6 +48,15 @@ vi.mock("node:fs", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:fs")>();
   return {
     ...original,
+    openSync: (path: string | Buffer | URL, flags: string | number, mode?: number) => {
+      const fd = original.openSync(path, flags, mode);
+      if (typeof path === "string") fsEvents.openedPaths.set(fd, path);
+      return fd;
+    },
+    closeSync: (fd: number) => {
+      fsEvents.openedPaths.delete(fd);
+      return original.closeSync(fd);
+    },
     fsyncSync: (fd: number) => {
       fsEvents.events.push("fsync");
       return original.fsyncSync(fd);
@@ -56,9 +67,18 @@ vi.mock("node:fs", async (importOriginal) => {
       fsEvents.afterRename?.(to);
       return result;
     },
-    readFileSync: (path: string, options?: unknown) => {
+    readFileSync: (path: string | number, options?: unknown) => {
       const result = original.readFileSync(path, options as never);
-      fsEvents.afterRead?.(path);
+      if (typeof path === "string") fsEvents.readPathnames.push(path);
+      fsEvents.afterRead?.(
+        typeof path === "number" ? (fsEvents.openedPaths.get(path) ?? "") : path,
+      );
+      return result;
+    },
+    readSync: (...args: unknown[]) => {
+      const result = (original.readSync as (...inner: unknown[]) => number)(...args);
+      const fd = args[0];
+      if (typeof fd === "number") fsEvents.afterRead?.(fsEvents.openedPaths.get(fd) ?? "");
       return result;
     },
     rmSync: (path: string, options?: unknown) => {
@@ -87,6 +107,8 @@ afterEach(() => {
   fsEvents.afterRemove = undefined;
   fsEvents.afterLeaseWrite = undefined;
   fsEvents.afterRollbackTempWrite = undefined;
+  fsEvents.openedPaths.clear();
+  fsEvents.readPathnames = [];
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -346,6 +368,25 @@ describe("FsTransaction", () => {
     now.mockRestore();
   });
 
+  it("reads lock marker and lease facts from descriptors rather than raced path reads", () => {
+    const start = Date.parse("2030-01-01T00:00:00.000Z");
+    const lock = join(dir, ".aih", "commit.lock");
+    const target = join(dir, "descriptor-locked.txt");
+    writeLockAnchor(lock);
+    const staleLease = writeActiveLease(lock, "a".repeat(64), start - 30_001);
+    const marker = join(lock, "anchor.json");
+    const now = vi.spyOn(Date, "now").mockReturnValue(start);
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    t.stage(target, "reclaimed", undefined, undefined, { root: dir });
+
+    fsEvents.readPathnames = [];
+    t.commit();
+
+    expect(fsEvents.readPathnames).not.toContain(marker);
+    expect(fsEvents.readPathnames).not.toContain(staleLease);
+    now.mockRestore();
+  });
+
   it("fails closed for a malformed commit lease without deleting it", () => {
     const lock = join(dir, ".aih", "commit.lock");
     const target = join(dir, "blocked.txt");
@@ -524,7 +565,14 @@ describe("FsTransaction", () => {
   it("detects an identical-byte active lease replacement by inode and preserves the target", () => {
     const lock = join(dir, ".aih", "commit.lock");
     const target = join(dir, "generated.txt");
-    let replacement: { path: string; text: string } | undefined;
+    let replacement:
+      | {
+          after: { dev: bigint; ino: bigint };
+          before: { dev: bigint; ino: bigint };
+          path: string;
+          text: string;
+        }
+      | undefined;
     fsEvents.afterRename = (to) => {
       if (to !== target) return;
       const active = join(lock, "active");
@@ -532,9 +580,21 @@ describe("FsTransaction", () => {
       if (name === undefined) throw new Error("expected active lease");
       const path = join(active, name);
       const text = readFileSync(path, "utf8");
+      const before = lstatSync(path, { bigint: true });
+      const stagedReplacement = `${path}.replacement`;
+      writeFileSync(stagedReplacement, text);
+      const staged = lstatSync(stagedReplacement, { bigint: true });
+      if (staged.dev === before.dev && staged.ino === before.ino)
+        throw new Error("expected a distinct staged replacement inode");
       rmSync(path);
-      writeFileSync(path, text);
-      replacement = { path, text };
+      renameSync(stagedReplacement, path);
+      const after = lstatSync(path, { bigint: true });
+      replacement = {
+        after: { dev: after.dev, ino: after.ino },
+        before: { dev: before.dev, ino: before.ino },
+        path,
+        text,
+      };
     };
     const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
     t.stage(target, "generated", undefined, undefined, { root: dir });
@@ -543,6 +603,7 @@ describe("FsTransaction", () => {
     expect(readFileSync(target, "utf8")).toBe("generated");
     expect(replacement).toBeDefined();
     expect(readFileSync(replacement?.path as string, "utf8")).toBe(replacement?.text);
+    expect(replacement?.after).not.toEqual(replacement?.before);
   });
 
   it("allows exactly one concurrent contender to acquire the active claim", () => {
@@ -1344,6 +1405,11 @@ describe("readRegularFile — the fd-guarded read for scan-discovered paths", ()
     const file = readRegularFileWithStats(join(dir, "stats.json"));
     expect(file?.contents.toString("utf8")).toBe('{"stats":true}\n');
     expect(file?.stats.isFile()).toBe(true);
+    expect(file?.identity).toMatchObject({
+      dev: expect.any(BigInt),
+      ino: expect.any(BigInt),
+      nlink: 1n,
+    });
   });
 
   it("refuses an oversized regular file before reading from the opened descriptor", () => {
