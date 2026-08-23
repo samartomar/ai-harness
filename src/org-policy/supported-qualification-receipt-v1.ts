@@ -352,16 +352,12 @@ function currentAihSupportedArtifactDecision(
   );
   const subjectRejected =
     decision !== undefined &&
-    authorityReceipt.decisions.some(
-      (candidate) =>
-        candidate.disposition === "rejected" &&
-        candidate.subject.subjectDigest === decision.subject.subjectDigest &&
-        Date.parse(candidate.notBefore) <= at &&
-        at < Date.parse(candidate.expiresAt) &&
-        !authorityReceipt.decisionRevocations.some(
-          (revocation) => revocation.decisionDigest === governanceDecisionDigestV2(candidate),
-        ),
-    );
+    isCurrentUnrevokedSubjectRejectionV1({
+      decisions: authorityReceipt.decisions,
+      decisionRevocations: authorityReceipt.decisionRevocations,
+      subjectDigest: decision.subject.subjectDigest,
+      now,
+    });
   if (
     decision === undefined ||
     subjectRejected ||
@@ -381,6 +377,31 @@ function currentAihSupportedArtifactDecision(
     return undefined;
   }
   return decision;
+}
+
+/** @internal Shared, time-aware rejection gate for the inert artifact path. */
+export function isCurrentUnrevokedSubjectRejectionV1(input: {
+  decisions: readonly GovernanceDecisionV2[];
+  decisionRevocations: readonly { decisionDigest: string; revokedAt: string }[];
+  subjectDigest: string;
+  now: string;
+}): boolean {
+  const at = Date.parse(input.now);
+  return (
+    Number.isFinite(at) &&
+    input.decisions.some(
+      (candidate) =>
+        candidate.disposition === "rejected" &&
+        candidate.subject.subjectDigest === input.subjectDigest &&
+        Date.parse(candidate.notBefore) <= at &&
+        at < Date.parse(candidate.expiresAt) &&
+        !input.decisionRevocations.some(
+          (revocation) =>
+            revocation.decisionDigest === governanceDecisionDigestV2(candidate) &&
+            Date.parse(revocation.revokedAt) <= at,
+        ),
+    )
+  );
 }
 
 function resolvedArtifactRoot(root: string): string | undefined {
