@@ -107,9 +107,14 @@ function decision() {
   };
 }
 
-function context(options: Record<string, unknown>, calls: string[][]): PlanContext {
+function context(
+  options: Record<string, unknown>,
+  calls: string[][],
+  duringAuthorityVerification?: () => void,
+): PlanContext {
   const run = fakeRunner((argv) => {
     calls.push(argv);
+    duringAuthorityVerification?.();
     return argv[0] === gh ? { code: 0 } : { code: 1 };
   });
   return {
@@ -229,6 +234,34 @@ describe("policy resolve V1", () => {
       authority: "verified",
       qualification: "unqualified",
       effective: "decision-missing-or-mismatch",
+      outcome: "refused",
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("refuses evidence swapped while the external authority attestation is in flight", async () => {
+    const fixture = decision();
+    writeAuthority(fixture.value);
+    writeFileSync(join(root, "evidence.json"), fixture.bytes);
+    const calls: string[][] = [];
+    const result = await resolvePolicyEvidenceV1(
+      context(
+        {
+          decision: fixture.value.id,
+          decisionDigest: governanceDecisionDigestV2(fixture.value as never),
+          target: "claude",
+          effect: "configure",
+          evidence: "evidence.json",
+        },
+        calls,
+        () => writeFileSync(join(root, "evidence.json"), "swapped"),
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      effective: "qualification-unverified",
       outcome: "refused",
     });
     expect(calls).toHaveLength(1);
