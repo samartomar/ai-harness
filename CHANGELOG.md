@@ -15,18 +15,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   dedicated `.aih/governance/npm-package-lifecycle/v1/` store. Exact version/integrity changes keep
   one stable package/integration lineage while preserving prior records. A current authenticated V3
   decision revocation appends a revocation record but makes no package-removal or process-stop claim.
-  The transaction pins all authorizing bytes, uses a cooperative exclusive lifecycle-store commit
-  boundary, commits the immutable record durably before its head, rechecks its deadline and
-  filesystem custody during commit, and re-reads the exact binding, record, head, and bounded
-  lineage before reporting success. Corrupt, substituted, expired, detectably rolled-back, forked,
-  linked, raced, over-capacity, or detached state fails closed; refused applies write no lifecycle
-  state. Only the same prepared canonical bytes can reuse a crash orphan; a fresh
+  The transaction pins all authorizing bytes, writes a durable subject-and-target lineage claim before
+  the ordinary binding, uses a subject-scoped cooperative lifecycle-store lease, commits the immutable
+  record durably before its head, rechecks its deadline and filesystem custody during commit, and
+  re-reads the exact claim, binding, record, head, and bounded lineage before reporting success. The
+  claim prevents ordinary binding loss from silently admitting a different lineage. A crashed lease is
+  reclaimable after a bounded 30-second mutation window plus 30-second recovery grace; malformed or
+  foreign lock state blocks, and the inert canonical anchor can remain. This coordinates local AIH
+  writers rather than providing an operating-system or hostile-process isolation boundary. Corrupt,
+  substituted, expired, detectably rolled-back, forked, linked, raced, over-capacity, or detached state
+  fails closed; refused apply attempts append no governance claim, record, or head, though an attempted
+  apply can leave the inert canonical lock metadata used for crash recovery. Only the same prepared
+  canonical bytes can reuse a crash orphan; a fresh
   command is newly timed and normally fails closed for approved operator incident reconciliation
   instead of deleting or silently adopting it. The command never installs, updates, removes,
   configures, executes, signs, or publishes a package, and remains limited to the
   organization-qualified root npm route. A target-local chain cannot detect a coordinated rollback
-  that removes both its head advance and
-  later records; administrators must retain it in organization-controlled versioned evidence. (#844)
+  that deletes both subject indexes, or a head advance and all later records; administrators must
+  retain the whole store in organization-controlled versioned evidence. (#844)
 
 - **`aih policy observe npm-package` reports an exact organization-qualified npm install without
   installing or executing it.** The zero-write command derives one npm package and the fixed

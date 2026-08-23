@@ -104,10 +104,17 @@ a current authenticated V3 revocation appends a revocation fact without claiming
 or stopped the package. Missing installed evidence is `partial`; unsafe, changed, stale, rejected,
 revoked, mismatched, detectably rolled-back, forked, or detached store state refuses. Only the same
 prepared canonical bytes can reuse a crash orphan; a freshly timed command normally fails closed on
-it for operator incident reconciliation. The target-local chain detects a stale head only while its
-successor evidence remains, so administrators must retain it in organization-controlled versioned
-evidence for coordinated-rollback detection. The internal
-resolver requires the resulting opaque qualification capability in addition to the opaque
+it for operator incident reconciliation. A durable subject-and-target claim prevents loss of the
+ordinary subject binding from silently admitting a different registry or integration lineage. Apply
+writers use a subject-scoped cooperative lease: a crashed owner becomes reclaimable after its bounded
+30-second mutation window and 30-second recovery grace, while malformed or foreign lock state blocks.
+The inert canonical lock anchor can remain in the store; this is local writer coordination, not an
+operating-system lock or protection from a process that can rewrite the store. The target-local chain
+blocks lineage substitution while either subject index remains and detects a stale head while its
+successor records remain. Coordinated deletion of both the claim and binding, or of a head advance and
+all later records, is not detectable without external custody, so administrators must retain the store
+in organization-controlled versioned evidence. The
+internal resolver requires the resulting opaque qualification capability in addition to the opaque
 authority and a fresh matching observation; a decision cannot assert its own qualification.
 
 <!-- aih:claim CM-86 -->

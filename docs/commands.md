@@ -1020,22 +1020,32 @@ package.
 
 Apply re-verifies authority, evidence, installed custody, and observation before constructing the
 transaction, pins every authorizing file, refuses after the shortest applicable validity deadline,
-serializes cooperative lifecycle writers, writes the immutable record before the head, and reads the
-exact committed binding, record, head, and bounded lineage before it reports success. Missing or
-partial observation, invalid or stale authority, linked store paths, substitution, a stale head whose
-canonical successor remains, forks, collisions, deadline expiry, content races, capacity exhaustion,
-and detached post-commit state refuse without a successful lifecycle claim. A
+serializes cooperative lifecycle writers by subject and target, writes a durable immutable lineage
+claim before the ordinary binding and record, writes the record before the head, and reads the exact
+committed claim, binding, record, head, and bounded lineage before it reports success. The claim keeps
+an accidentally missing binding from admitting a different registry or integration lineage without a
+global store scan. Missing or partial observation, invalid or stale authority, linked store paths,
+substitution, a stale head whose canonical successor remains, forks, collisions, deadline expiry,
+content races, capacity exhaustion, and detached post-commit state refuse without a successful
+lifecycle claim. A
 non-effective result remains nonzero; no lifecycle record can make a failed observation effective.
 If a hard process or machine failure leaves a record without its head, only the same prepared
 canonical bytes can be reused. A fresh command performs a newly timed observation and therefore
 normally sees that orphan as an ambiguous fork; it fails closed for approved operator incident
 reconciliation and neither deletes nor silently adopts the orphan.
 
-This target-local store detects a stale head when its canonical successor remains. It cannot by
-itself detect a coordinated rollback that removes both the head advance and every later record;
-preserve the store in organization-controlled versioned evidence. The existing offline-revocation
-high-water primitive remains inert until Core has an administrator-managed trust-root loader and a
-fixed verifier/producer.
+The cooperative writer lock uses an owner lease with a maximum 30-second forward-mutation window and
+a further 30-second recovery grace. After that grace a later writer can reclaim a crashed owner's
+canonical claim; malformed or foreign lock state fails closed. Its inert canonical anchor and staging
+directory can remain under the lifecycle store. This coordinates AIH writers on the local filesystem;
+it is not an operating-system lock and does not isolate the store from a process that can rewrite it.
+
+This target-local store blocks a different lineage while either subject index remains and detects a
+stale head while its canonical successor records remain. It cannot by itself detect coordinated
+deletion of both the claim and binding, or a rollback that removes a head advance and every later
+record; preserve the whole store in organization-controlled versioned evidence. The existing
+offline-revocation high-water primitive remains inert until Core has an administrator-managed
+trust-root loader and a fixed verifier/producer.
 
 This is durable npm audit history, not yet the complete custom-source lifecycle. The command does
 not make a candidate projectable and does not cover skills, MCP servers, remote endpoints, non-npm

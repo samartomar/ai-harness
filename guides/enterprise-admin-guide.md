@@ -112,6 +112,12 @@ the stable package/integration lineage. When the current V3 authority revokes th
 same command appends that revocation only for the verified current lineage. This is an audit fact,
 not a claim that npm removed or stopped the package. Refused, expired, corrupt, detectably
 rolled-back, forked, raced, linked, or detached state cannot produce a successful apply result.
+A durable subject-and-target claim prevents loss of the ordinary subject binding from silently
+admitting a different registry or integration lineage. AIH serializes these local writers with a
+subject-scoped cooperative lease: a crashed owner is reclaimable after its bounded 30-second mutation
+window and 30-second recovery grace, while malformed or foreign lock state blocks. The inert lock
+anchor can remain in the lifecycle store. This is local AIH writer coordination, not an
+operating-system lock or protection from another process that can rewrite the store.
 
 A hard process or machine failure can leave an immutable record before its head advances. Only the
 same prepared canonical bytes can be reused; a fresh command performs a newly timed observation and
@@ -119,11 +125,12 @@ normally treats that orphan as an ambiguous fork. AIH fails closed instead of de
 it, so preserve the store and route it through the organization's approved
 incident-reconciliation process.
 
-The target-local chain detects a stale head when its canonical successor remains, but it cannot
-prove that an administrator or attacker did not roll back the head and all later records together.
-Retain the store in organization-controlled versioned evidence. Do not promote the inert offline
-high-water seam to authority; that requires Core's future administrator-managed trust-root loader
-and fixed verifier/producer.
+The target-local chain blocks a different lineage while either subject index remains and detects a
+stale head while its canonical successor records remain. It cannot prove that an administrator or
+attacker did not delete both the claim and binding, or roll back a head advance and all later records.
+Retain the whole store in organization-controlled versioned evidence. Do not
+promote the inert offline high-water seam to authority; that requires Core's future
+administrator-managed trust-root loader and fixed verifier/producer.
 
 The lifecycle is durable but not yet end to end. Custom stdio and remote policy candidates remain
 non-projectable, and neither a V3 receipt, `policy resolve`, nor this fixed npm observer can install,
