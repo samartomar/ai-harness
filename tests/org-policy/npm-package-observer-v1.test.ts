@@ -1,11 +1,15 @@
 import { createHash } from "node:crypto";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -203,6 +207,19 @@ function command(argv: string[]): Command {
     .option("--evidence <path>");
   value.parse(argv, { from: "user" });
   return value;
+}
+
+function treeSnapshot(path: string, relative = ""): string[] {
+  return readdirSync(path, { withFileTypes: true })
+    .sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0))
+    .flatMap((entry) => {
+      const child = join(path, entry.name);
+      const rel = relative.length === 0 ? entry.name : `${relative}/${entry.name}`;
+      const stat = lstatSync(child);
+      if (stat.isSymbolicLink()) return [`link:${rel}:${readlinkSync(child)}`];
+      if (stat.isDirectory()) return [`dir:${rel}`, ...treeSnapshot(child, rel)];
+      return [`file:${rel}:${createHash("sha256").update(readFileSync(child)).digest("hex")}`];
+    });
 }
 
 describe("npm package upstream observer V1", () => {
@@ -423,6 +440,7 @@ describe("npm package upstream observer V1", () => {
     );
     const calls: string[][] = [];
     let out = "";
+    const beforeTree = treeSnapshot(root);
 
     const code = await runCapability(
       npmPackageObserveCommand,
@@ -468,6 +486,7 @@ describe("npm package upstream observer V1", () => {
       beforeManifest,
     );
     expect(existsSync(join(root, ".aih", "run-log.jsonl"))).toBe(false);
+    expect(treeSnapshot(root)).toEqual(beforeTree);
   });
 
   it("emits a deterministic scrubbed zero-write partial JSON result", async () => {
@@ -487,6 +506,7 @@ describe("npm package upstream observer V1", () => {
       "--evidence",
       "evidence.json",
     ];
+    const beforeTree = treeSnapshot(root);
     const invoke = async () => {
       let out = "";
       const code = await runCapability(npmPackageObserveCommand, command(argv), {
@@ -513,6 +533,48 @@ describe("npm package upstream observer V1", () => {
     expect(first.out).not.toContain("do-not-leak");
     expect(JSON.parse(first.out)).toMatchObject({ writes: [], execs: [] });
     expect(existsSync(join(root, ".aih", "run-log.jsonl"))).toBe(false);
+    expect(treeSnapshot(root)).toEqual(beforeTree);
+  });
+
+  it("scrubs hostile attestation stderr from a zero-write refusal JSON result", async () => {
+    const value = fixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    const beforeTree = treeSnapshot(root);
+    let out = "";
+    const code = await runCapability(
+      npmPackageObserveCommand,
+      command([
+        "--json",
+        "--root",
+        root,
+        "--decision",
+        value.decision.id,
+        "--decision-digest",
+        governanceDecisionDigestV2(value.decision as never),
+        "--target",
+        "claude",
+        "--evidence",
+        "evidence.json",
+      ]),
+      {
+        env: { AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance", PATH: bin },
+        run: fakeRunner((child) =>
+          child[0] === gh ? { code: 1, stderr: `${root} token=do-not-leak` } : { code: 1 },
+        ),
+        now: () => new Date("2026-08-02T12:00:00.000Z"),
+        newRunId: () => "run_observer",
+        write: (text) => {
+          out += text;
+        },
+      },
+    );
+    expect(code).toBe(1);
+    expect(JSON.parse(out)).toMatchObject({ writes: [], execs: [] });
+    expect(out).not.toContain(root);
+    expect(out).not.toContain("do-not-leak");
+    expect(treeSnapshot(root)).toEqual(beforeTree);
   });
 
   it("evaluates the observer plan once when its digest and probe are both consumed", async () => {
@@ -544,8 +606,12 @@ describe("npm package upstream observer V1", () => {
 
   it("keeps observer authority out of the public package and CLI option surface", () => {
     const publicIndex = readFileSync(join(process.cwd(), "src", "index.ts"), "utf8");
+    const packageExports = JSON.stringify(
+      JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")).exports,
+    );
     for (const forbidden of ["npm-package-observer", "observeNpmPackage", "InternalTestHook"]) {
       expect(publicIndex).not.toContain(forbidden);
+      expect(packageExports).not.toContain(forbidden);
     }
     const flags = npmPackageObserveCommand.options?.map((option) => option.flags).join(" ") ?? "";
     for (const forbidden of [
@@ -909,9 +975,24 @@ describe("npm package upstream observer V1", () => {
     ["a malformed lock", "package-lock.json", "{not-json"],
     ["a malformed installed manifest", "node_modules/@acme/widget/package.json", "{not-json"],
     [
+      "a duplicate installed manifest key",
+      "node_modules/@acme/widget/package.json",
+      '{"name":"@acme/widget","name":"@acme/widget","version":"1.2.3"}',
+    ],
+    [
       "a non-NFC exact package name",
       "node_modules/@acme/widget/package.json",
       JSON.stringify({ name: "@acme/widge\u0301t", version: "1.2.3" }),
+    ],
+    [
+      "a non-NFC lock package key",
+      "package-lock.json",
+      JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          "node_modules/@acme/widge\u0301t": { version: "1.2.3", integrity: INTEGRITY },
+        },
+      }),
     ],
   ])("refuses %s", async (_label, path, contents) => {
     const value = fixture();
@@ -933,6 +1014,72 @@ describe("npm package upstream observer V1", () => {
     );
 
     expect(result).toMatchObject({ outcome: "refused", reason: "installed-identity-mismatch" });
+  });
+
+  it.each([
+    ["the package lock file", "package-lock.json", "file" as const],
+    ["the installed manifest file", "node_modules/@acme/widget/package.json", "file" as const],
+    ["the node_modules parent", "node_modules", "dir" as const],
+    ["the scoped-package parent", "node_modules/@acme", "dir" as const],
+  ])("refuses linked custody through %s after qualification", async (_label, linked, kind) => {
+    if (process.platform === "win32" && kind === "file") return;
+    const value = fixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    const target = mkdtempSync(join(tmpdir(), "aih-npm-observer-linked-"));
+    const linkedPath = join(root, linked);
+    try {
+      if (kind === "file") {
+        writeFileSync(join(target, "artifact.json"), readFileSync(linkedPath));
+        rmSync(linkedPath);
+        symlinkSync(join(target, "artifact.json"), linkedPath, "file");
+      } else {
+        const source =
+          linked === "node_modules"
+            ? join(root, "node_modules")
+            : join(root, "node_modules", "@acme");
+        const destination = join(target, "linked");
+        mkdirSync(destination, { recursive: true });
+        if (linked === "node_modules") {
+          mkdirSync(join(destination, "@acme", "widget"), { recursive: true });
+          writeFileSync(
+            join(destination, "@acme", "widget", "package.json"),
+            readFileSync(join(source, "@acme", "widget", "package.json")),
+          );
+        } else {
+          mkdirSync(join(destination, "widget"), { recursive: true });
+          writeFileSync(
+            join(destination, "widget", "package.json"),
+            readFileSync(join(source, "widget", "package.json")),
+          );
+        }
+        rmSync(source, { recursive: true });
+        symlinkSync(destination, source, process.platform === "win32" ? "junction" : "dir");
+      }
+      const calls: string[][] = [];
+      const result = await observeNpmPackageV1(
+        context(
+          {
+            decision: value.decision.id,
+            decisionDigest: governanceDecisionDigestV2(value.decision as never),
+            target: "claude",
+            evidence: "evidence.json",
+          },
+          calls,
+        ),
+      );
+      expect(result).toMatchObject({
+        authority: "verified",
+        qualification: "qualified",
+        outcome: "refused",
+        reason: "installed-evidence-unsafe",
+      });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.slice(1, 3)).toEqual(["attestation", "verify"]);
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
   });
 
   it("accepts the exact 16 MiB lock boundary and treats one extra byte as unavailable", async () => {
