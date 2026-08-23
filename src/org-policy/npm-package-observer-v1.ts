@@ -118,7 +118,28 @@ export function npmPackageObservationHandoffForLifecycleV1(
   result: NpmPackageObservationResultV1,
 ): NpmPackageObservationLifecycleHandoffV1 | undefined {
   const handoff = lifecycleObservationReceipts.get(result);
-  return handoff === undefined ? undefined : structuredClone(handoff);
+  if (handoff === undefined) return undefined;
+  const ordinary = structuredClone({
+    authorityReceiptDigest: handoff.authorityReceiptDigest,
+    custody: handoff.custody,
+    ...(handoff.custodyAssertions === undefined
+      ? {}
+      : { custodyAssertions: handoff.custodyAssertions }),
+    decision: handoff.decision,
+    receipt: handoff.receipt,
+  });
+  return handoff.supportedCustody === undefined
+    ? ordinary
+    : {
+        ...ordinary,
+        // The binding's WeakSet brand is deliberately process-local. Preserve only that
+        // opaque reference across this internal sibling handoff; callers never receive it.
+        supportedCustody: {
+          binding: handoff.supportedCustody.binding,
+          platform: handoff.supportedCustody.platform,
+          posture: handoff.supportedCustody.posture,
+        },
+      };
 }
 const CODE: Readonly<Record<Reason, CheckCode>> = {
   "invalid-input": "org-policy.observe-input-invalid",
@@ -524,24 +545,24 @@ async function observeAihSupportedNpmPackageV1(
     outcome: "observed-effective",
     observationDigest: upstreamObservationReceiptDigestV1(receipt),
   };
-  lifecycleObservationReceipts.set(
-    result,
-    structuredClone({
-      authorityReceiptDigest: verified.receiptDigest,
-      custody: [
-        { path: POLICY_AUTHORITY_RECEIPT_PATH, sha256: verified.receiptDigest },
-        ...local.custody,
-      ],
-      custodyAssertions,
-      supportedCustody: {
-        binding,
-        platform: supportedCustodyPlatform(ctx),
-        posture: supportedCustodyPosture(ctx),
-      },
-      decision,
-      receipt,
-    }),
-  );
+  const ordinaryHandoff = structuredClone({
+    authorityReceiptDigest: verified.receiptDigest,
+    custody: [
+      { path: POLICY_AUTHORITY_RECEIPT_PATH, sha256: verified.receiptDigest },
+      ...local.custody,
+    ],
+    custodyAssertions,
+    decision,
+    receipt,
+  });
+  lifecycleObservationReceipts.set(result, {
+    ...ordinaryHandoff,
+    supportedCustody: {
+      binding,
+      platform: supportedCustodyPlatform(ctx),
+      posture: supportedCustodyPosture(ctx),
+    },
+  });
   return result;
 }
 
