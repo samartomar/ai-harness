@@ -73,7 +73,13 @@ function requestedCandidateSummary(effective: EffectiveOrgPolicy): string {
         `decisionBlockers=${publicList(candidate.decisionBlockers.map((blocker) => blocker.code))}}`
       );
     });
-  return `requested candidates: ${summaries.length === 0 ? "none" : summaries.join(" | ")}; policyDecisionBlockers=${publicPolicyDecisionBlockers(effective)}`;
+  const lifecycle = (effective.npmPackageLifecycle ?? [])
+    .map(
+      (item) =>
+        `${item.subjectId ?? "store"}@${item.target ?? "none"}{state=${item.state}; reason=${item.reason}}`,
+    )
+    .sort(ordinalCompare);
+  return `requested candidates: ${summaries.length === 0 ? "none" : summaries.join(" | ")}; npmLifecycle=${lifecycle.length === 0 ? "none" : lifecycle.join(" | ")}; policyDecisionBlockers=${publicPolicyDecisionBlockers(effective)}`;
 }
 
 function withRequestedCandidateSummary(detail: string, effective: EffectiveOrgPolicy): string {
@@ -82,7 +88,7 @@ function withRequestedCandidateSummary(detail: string, effective: EffectiveOrgPo
 
 function blockedDetail(effective: EffectiveOrgPolicy): string {
   const blocked = requestedCandidates(effective).filter((candidate) => !candidate.effective);
-  return blocked
+  const candidates = blocked
     .map((candidate) => {
       const codes = [
         ...candidate.dangerCodes,
@@ -95,6 +101,14 @@ function blockedDetail(effective: EffectiveOrgPolicy): string {
       }`;
     })
     .join("; ");
+  const lifecycle = (effective.npmPackageLifecycle ?? [])
+    .filter((item) => item.state !== "observed-effective")
+    .map(
+      (item) =>
+        `${item.subjectId ?? "store"}@${item.target ?? "none"}: ${item.state}; reason=${item.reason}`,
+    )
+    .sort(ordinalCompare);
+  return [...(candidates.length === 0 ? [] : [candidates]), ...lifecycle].join("; ");
 }
 
 /** Read-only verdict used by doctor and policy evaluate; never trusts policy booleans as proof. */
@@ -232,6 +246,7 @@ export async function orgPolicyEffectiveDigest(
     const kiroMcpReceipt = orgPolicyKiroMcpReceiptState(ctx, effective);
     const hookRegistrar = hookRegistrarReport(ctx.root);
     const candidates = effective.candidates;
+    const lifecycle = effective.npmPackageLifecycle ?? [];
     const body = lines(
       "Requested vs effective governed candidates. A requested item is never active merely because",
       "it appears below: evidence/authority, immutable identity, safety, target, ownership, and projector",
@@ -295,6 +310,13 @@ export async function orgPolicyEffectiveDigest(
       `Kiro workspace-MCP receipt: ${kiroMcpReceipt.state} — ${kiroMcpReceipt.detail}.`,
       `Hook registrar: ${hookRegistrar.state} — ${hookRegistrar.detail}.`,
       `Policy decision blockers: ${publicPolicyDecisionBlockers(effective)}.`,
+      "",
+      "Observed npm package lifecycle (read-only; never installed, configured, projected, or executed):",
+      ...lifecycle.map(
+        (item) =>
+          `- ${item.subjectId ?? "store"}; target=${item.target ?? "none"}; state=${item.state}; reason=${item.reason}; decision=${item.decision?.id ?? "none"}; record=${item.recordDigest ?? "none"}`,
+      ),
+      ...(lifecycle.length === 0 ? ["- none"] : []),
       ...(hookRegistrar.unowned.length === 0
         ? []
         : [
@@ -331,6 +353,7 @@ export async function orgPolicyEffectiveDigest(
         activeMcpServerIds: effective.activeMcpServerIds,
         frameworkSelections: effective.frameworkSelections,
         externalCuration: effective.externalCuration,
+        npmPackageLifecycle: lifecycle,
         authority: effective.authority,
         hookReceipt,
         mcpReceipt,

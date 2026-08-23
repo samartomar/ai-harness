@@ -218,6 +218,13 @@ export function governanceReviewView(input: GovernanceReviewInput): DigestAction
     attribution.unmatched,
     attribution.heuristic,
   );
+  const npmPackageLifecycle = [...(input.effective.npmPackageLifecycle ?? [])].sort(
+    (left, right) => {
+      const leftKey = `${left.subjectId ?? ""}\0${left.target ?? ""}\0${left.recordDigest ?? ""}`;
+      const rightKey = `${right.subjectId ?? ""}\0${right.target ?? ""}\0${right.recordDigest ?? ""}`;
+      return ordinalCompare(leftKey, rightKey);
+    },
+  );
   const subjects = candidates.map((candidate, index) => {
     const counts = attribution.bySubject.get(candidate.id);
     if (counts === undefined)
@@ -269,6 +276,14 @@ export function governanceReviewView(input: GovernanceReviewInput): DigestAction
       unmatched: attribution.unmatched,
       nonSubject: attribution.nonSubject,
     },
+    npmPackageLifecycle: npmPackageLifecycle.map((item) => ({
+      state: item.state,
+      reason: item.reason,
+      ...(item.subjectId === undefined ? {} : { subjectId: item.subjectId }),
+      ...(item.target === undefined ? {} : { target: item.target }),
+      ...(item.decision === undefined ? {} : { decision: item.decision }),
+      ...(item.recordDigest === undefined ? {} : { recordDigest: item.recordDigest }),
+    })),
     subjects,
   };
   const body = lines(
@@ -276,6 +291,7 @@ export function governanceReviewView(input: GovernanceReviewInput): DigestAction
     "Unmatched event names and rejected payloads are never rendered.",
     "",
     `Capture: ${data.usage.state}; valid=${data.usage.validEvents}; malformed-excluded=${data.usage.malformedExcluded}; unknown-kind-excluded=${data.usage.unknownKindExcluded}; unmatched=${data.usage.unmatched}; non-subject=${data.usage.nonSubject}.`,
+    `Observed npm lifecycle: ${npmPackageLifecycle.length === 0 ? "none" : npmPackageLifecycle.map((item) => `${item.subjectId ?? "store"}@${item.target ?? "none"}=${item.state}`).join(",")}. This is observed state only; it never configures or executes a package.`,
     "",
     "| # | Subject | Requested | Effective | Evidence / blockers | Decision / approval / revocation | Projector / receipt | Capture / attribution |",
     "|---:|---|---:|---:|---|---|---|---|",

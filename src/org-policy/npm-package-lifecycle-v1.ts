@@ -29,6 +29,10 @@ const SHA256 = /^sha256:[0-9a-f]{64}$/;
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 const MAX_STORE_FILE_BYTES = 512 * 1024;
 const MAX_RECORDS_PER_LINEAGE = 4_096;
+/** Bounded reporting read; this is not an onboarding or store-size limit. */
+const MAX_EFFECTIVE_LIFECYCLE_HEADS = 256;
+/** Aggregate reporting I/O bound across independent lifecycle lineages. */
+const MAX_EFFECTIVE_LIFECYCLE_RECORDS = 16_384;
 
 type LifecycleReason =
   | "invalid-input"
@@ -51,6 +55,37 @@ export interface NpmPackageLifecycleResultV1 {
   readonly recordDigest?: string;
   readonly state: "decision-revoked" | "observed-effective" | LifecycleReason;
 }
+
+/**
+ * Read-only, already-validated durable lifecycle fact. This is deliberately
+ * narrower than the writer's internal record shape: callers receive only the
+ * identity needed to compare the chain with a freshly verified authority.
+ */
+export interface NpmPackageLifecycleStoredStateV1 {
+  readonly authorityReceiptDigest: string;
+  readonly decision: { readonly digest: string; readonly id: string };
+  readonly lineage: {
+    readonly digest: string;
+    readonly effect: "install";
+    readonly integration: {
+      readonly mode: "upstream-managed";
+      readonly owner: string;
+      readonly version: string;
+    };
+    readonly npm: { readonly package: string; readonly registry: string };
+    readonly subjectId: string;
+    readonly target: string;
+  };
+  readonly observation?: UpstreamObservationReceiptV1;
+  readonly recordDigest: string;
+  readonly state: "decision-revoked" | "observed-effective";
+  readonly subjectDigest: string;
+}
+
+export type NpmPackageLifecycleStoreReadV1 =
+  | { readonly kind: "absent" }
+  | { readonly kind: "complete"; readonly records: readonly NpmPackageLifecycleStoredStateV1[] }
+  | { readonly kind: "unsafe" | "corrupt" };
 
 interface Lineage {
   readonly digest: string;
@@ -657,12 +692,17 @@ function recordLink(
   };
 }
 
-function verifyHistory(root: string, head: LifecycleHead, lineage: Lineage): boolean {
+function verifyHistory(
+  root: string,
+  head: LifecycleHead,
+  lineage: Lineage,
+  requireSingleLink = false,
+): boolean {
   let digest = head.recordDigest;
   let expectedSequence = head.sequence;
   for (let count = 0; count < MAX_RECORDS_PER_LINEAGE; count += 1) {
     const prior = readCanonicalStoreFile(root, ...recordPath(lineage, digest));
-    if (typeof prior === "string") return false;
+    if (typeof prior === "string" || (requireSingleLink && prior.nlink !== 1n)) return false;
     const link = recordLink(prior, digest, lineage);
     if (link === undefined || link.sequence !== expectedSequence) return false;
     if (digest === head.recordDigest && link.subjectDigest !== head.subjectDigest) return false;
@@ -684,6 +724,7 @@ function hasOnlyExpectedSuccessor(
   lineage: Lineage,
   expectedOrphanDigest?: string,
   expectedScratchName?: string,
+  requireSingleLink = false,
 ): boolean {
   const directory = safeStorePath(
     root,
@@ -721,7 +762,7 @@ function hasOnlyExpectedSuccessor(
       lineage.digest.slice("sha256:".length),
       name,
     );
-    if (typeof existing === "string") return false;
+    if (typeof existing === "string" || (requireSingleLink && existing.nlink !== 1n)) return false;
     const item = parseObject(existing);
     const recordLineage = item === undefined ? undefined : parseLineage(item.lineage);
     if (recordLineage === undefined || recordLineage.digest !== lineage.digest) return false;
@@ -749,6 +790,293 @@ function hasOnlyExpectedSuccessor(
       return false;
   }
   return true;
+}
+
+function parseStoredHead(value: Existing): LifecycleHead | undefined {
+  const item = parseObject(value);
+  const sequence = item?.sequence;
+  if (
+    item === undefined ||
+    !exactKeys(item, [
+      "format",
+      "lineageDigest",
+      "recordDigest",
+      "sequence",
+      "subjectDigest",
+      "version",
+    ]) ||
+    item.format !== "aih-npm-package-lifecycle-head" ||
+    item.version !== 1 ||
+    !SHA256.test(stableText(item.lineageDigest) ?? "") ||
+    !SHA256.test(stableText(item.recordDigest) ?? "") ||
+    !SHA256.test(stableText(item.subjectDigest) ?? "") ||
+    !Number.isSafeInteger(sequence) ||
+    (sequence as number) < 1
+  )
+    return undefined;
+  return {
+    lineageDigest: item.lineageDigest as string,
+    recordDigest: item.recordDigest as string,
+    sequence: sequence as number,
+    subjectDigest: item.subjectDigest as string,
+  };
+}
+
+function storedState(
+  root: string,
+  head: LifecycleHead,
+): NpmPackageLifecycleStoredStateV1 | undefined {
+  const record = readCanonicalStoreFile(
+    root,
+    ...STORE,
+    "records",
+    head.lineageDigest.slice("sha256:".length),
+    `${head.recordDigest.slice("sha256:".length)}.json`,
+  );
+  if (typeof record === "string" || record.nlink !== 1n) return undefined;
+  const item = parseObject(record);
+  const lineage = item === undefined ? undefined : parseLineage(item.lineage);
+  if (lineage === undefined || lineage.digest !== head.lineageDigest) return undefined;
+  const link = recordLink(record, head.recordDigest, lineage);
+  if (
+    link === undefined ||
+    link.sequence !== head.sequence ||
+    link.subjectDigest !== head.subjectDigest
+  )
+    return undefined;
+  const binding = readCanonicalStoreFile(
+    root,
+    ...subjectBindingPath(lineage.subjectId, lineage.target),
+  );
+  const claim = readCanonicalStoreFile(
+    root,
+    ...subjectClaimPath(lineage.subjectId, lineage.target),
+  );
+  if (
+    typeof binding === "string" ||
+    binding.nlink !== 1n ||
+    typeof claim === "string" ||
+    claim.nlink !== 1n ||
+    canonicalText(parseBinding(binding) ?? {}) !== canonicalText(lineage) ||
+    canonicalText(parseBinding(claim) ?? {}) !== canonicalText(lineage) ||
+    !verifyHistory(root, head, lineage, true) ||
+    !hasOnlyExpectedSuccessor(root, head, lineage, undefined, undefined, true)
+  )
+    return undefined;
+  const decision = item?.decision;
+  const authorityReceiptDigest = stableText(item?.authorityReceiptDigest);
+  if (
+    decision === null ||
+    typeof decision !== "object" ||
+    Array.isArray(decision) ||
+    !exactKeys(decision as Record<string, unknown>, ["digest", "id"]) ||
+    stableText((decision as Record<string, unknown>).id) === undefined ||
+    !SHA256.test(stableText((decision as Record<string, unknown>).digest) ?? "") ||
+    authorityReceiptDigest === undefined ||
+    !SHA256.test(authorityReceiptDigest)
+  )
+    return undefined;
+  if (link.state === "observed-effective") {
+    try {
+      return {
+        authorityReceiptDigest,
+        decision: {
+          digest: (decision as { digest: string }).digest,
+          id: (decision as { id: string }).id,
+        },
+        lineage,
+        observation: parseUpstreamObservationReceiptV1(item?.observation),
+        recordDigest: head.recordDigest,
+        state: link.state,
+        subjectDigest: link.subjectDigest,
+      };
+    } catch {
+      return undefined;
+    }
+  }
+  return {
+    authorityReceiptDigest,
+    decision: {
+      digest: (decision as { digest: string }).digest,
+      id: (decision as { id: string }).id,
+    },
+    lineage,
+    recordDigest: head.recordDigest,
+    state: link.state,
+    subjectDigest: link.subjectDigest,
+  };
+}
+
+function validHeadBackup(
+  root: string,
+  name: string,
+  head: LifecycleHead,
+  lineage: Lineage,
+): boolean {
+  const backup = readCanonicalStoreFile(root, ...STORE, "heads", `${name}.aih.bak`);
+  if (typeof backup === "string" || backup.nlink !== 1n) return false;
+  const prior = parseStoredHead(backup);
+  if (
+    prior === undefined ||
+    prior.lineageDigest !== head.lineageDigest ||
+    prior.sequence + 1 !== head.sequence ||
+    !verifyHistory(root, prior, lineage, true)
+  )
+    return false;
+  const current = readCanonicalStoreFile(
+    root,
+    ...STORE,
+    "records",
+    lineage.digest.slice("sha256:".length),
+    `${head.recordDigest.slice("sha256:".length)}.json`,
+  );
+  if (typeof current === "string" || current.nlink !== 1n) return false;
+  return recordLink(current, head.recordDigest, lineage)?.previous === prior.recordDigest;
+}
+
+function recordEntryCount(root: string, lineageDigest: string): number | undefined {
+  const directory = safeStorePath(root, ...STORE, "records", lineageDigest.slice("sha256:".length));
+  if (directory === undefined) return undefined;
+  const info = lstat(directory);
+  if (info === undefined || !info.isDirectory() || info.isSymbolicLink()) return undefined;
+  let names: string[];
+  try {
+    names = readdirSync(directory);
+  } catch {
+    return undefined;
+  }
+  if (
+    names.length > MAX_RECORDS_PER_LINEAGE ||
+    names.some((name) => !/^[0-9a-f]{64}\.json$/.test(name))
+  )
+    return undefined;
+  return names.length;
+}
+
+type StoreDirectoryNames = readonly string[] | "absent" | "unsafe";
+
+/**
+ * Enumerate only a fixed, flat store directory. The reporting reader keeps
+ * this bounded; it never uses this inverse-consistency check on the writer's
+ * onboarding path.
+ */
+function canonicalStoreDirectoryNames(root: string, section: string): StoreDirectoryNames {
+  const directory = safeStorePath(root, ...STORE, section);
+  if (directory === undefined) return "unsafe";
+  const info = lstat(directory);
+  if (info === undefined) return "absent";
+  if (!info.isDirectory() || info.isSymbolicLink()) return "unsafe";
+  try {
+    return readdirSync(directory).sort();
+  } catch {
+    return "unsafe";
+  }
+}
+
+function hasExactCanonicalNames(
+  actual: StoreDirectoryNames,
+  expected: ReadonlySet<string>,
+  pattern: RegExp,
+): boolean {
+  if (actual === "unsafe") return false;
+  if (actual === "absent") return expected.size === 0;
+  if (actual.length !== expected.size || actual.some((name) => !pattern.test(name))) return false;
+  return actual.every((name) => expected.has(name));
+}
+
+/**
+ * Read the fixed lifecycle store without observing, executing, or changing a
+ * target. A malformed head is a whole-store failure: choosing a subset would
+ * let hostile local state hide a lifecycle conflict from the governed report.
+ */
+export function readNpmPackageLifecycleStoreV1(root: string): NpmPackageLifecycleStoreReadV1 {
+  const store = safeStorePath(root, ...STORE);
+  if (store === undefined) return { kind: "unsafe" };
+  const storeInfo = lstat(store);
+  if (storeInfo === undefined) return { kind: "absent" };
+  if (!storeInfo.isDirectory() || storeInfo.isSymbolicLink()) return { kind: "unsafe" };
+  const headNames = canonicalStoreDirectoryNames(root, "heads");
+  if (headNames === "unsafe") return { kind: "unsafe" };
+  const names = headNames === "absent" ? [] : headNames;
+  const heads = names.filter((name) => /^[0-9a-f]{64}\.json$/.test(name));
+  if (
+    heads.length > MAX_EFFECTIVE_LIFECYCLE_HEADS ||
+    names.some(
+      (name) =>
+        !/^[0-9a-f]{64}\.json(?:\.aih\.bak)?$/.test(name) ||
+        (name.endsWith(".aih.bak") && !heads.includes(name.slice(0, -".aih.bak".length))),
+    )
+  )
+    return { kind: "corrupt" };
+  const recordPartitions = canonicalStoreDirectoryNames(root, "records");
+  if (
+    !hasExactCanonicalNames(
+      recordPartitions,
+      new Set(heads.map((name) => name.slice(0, -".json".length))),
+      /^[0-9a-f]{64}$/,
+    )
+  )
+    return { kind: "corrupt" };
+  if (heads.length === 0) {
+    const claims = canonicalStoreDirectoryNames(root, "claims");
+    const subjects = canonicalStoreDirectoryNames(root, "subjects");
+    if (
+      !hasExactCanonicalNames(claims, new Set(), /^[0-9a-f]{64}\.json$/) ||
+      !hasExactCanonicalNames(subjects, new Set(), /^[0-9a-f]{64}\.json$/)
+    )
+      return { kind: "corrupt" };
+    return { kind: "absent" };
+  }
+  const records: NpmPackageLifecycleStoredStateV1[] = [];
+  let totalRecords = 0;
+  let totalSequence = 0;
+  for (const name of heads) {
+    const headFile = readCanonicalStoreFile(root, ...STORE, "heads", name);
+    if (typeof headFile === "string" || headFile.nlink !== 1n)
+      return { kind: headFile === "unsafe" ? "unsafe" : "corrupt" };
+    const head = parseStoredHead(headFile);
+    if (head === undefined || name !== `${head.lineageDigest.slice("sha256:".length)}.json`)
+      return { kind: "corrupt" };
+    if (totalSequence + head.sequence > MAX_EFFECTIVE_LIFECYCLE_RECORDS) return { kind: "corrupt" };
+    totalSequence += head.sequence;
+    const entries = recordEntryCount(root, head.lineageDigest);
+    if (entries === undefined || totalRecords + entries > MAX_EFFECTIVE_LIFECYCLE_RECORDS)
+      return { kind: "corrupt" };
+    totalRecords += entries;
+    const record = storedState(root, head);
+    if (record === undefined) return { kind: "corrupt" };
+    if (names.includes(`${name}.aih.bak`) && !validHeadBackup(root, name, head, record.lineage))
+      return { kind: "corrupt" };
+    records.push(record);
+  }
+  const expectedBindings = new Set(
+    records.map(
+      (record) => `${hash(`${record.lineage.subjectId}\0${record.lineage.target}`)}.json`,
+    ),
+  );
+  if (
+    !hasExactCanonicalNames(
+      canonicalStoreDirectoryNames(root, "claims"),
+      expectedBindings,
+      /^[0-9a-f]{64}\.json$/,
+    ) ||
+    !hasExactCanonicalNames(
+      canonicalStoreDirectoryNames(root, "subjects"),
+      expectedBindings,
+      /^[0-9a-f]{64}\.json$/,
+    )
+  )
+    return { kind: "corrupt" };
+  return {
+    kind: "complete",
+    records: records.sort((left, right) =>
+      left.lineage.digest < right.lineage.digest
+        ? -1
+        : left.lineage.digest > right.lineage.digest
+          ? 1
+          : 0,
+    ),
+  };
 }
 
 /** Avoid starting a bounded history walk when a new record would exceed its capacity. */

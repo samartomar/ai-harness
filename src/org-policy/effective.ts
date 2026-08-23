@@ -5,6 +5,7 @@ import {
   type VerifiedPolicyAuthority,
 } from "./authority.js";
 import { type GovernanceDecisionV1, governanceDecisionDigestV1 } from "./governance-decision-v1.js";
+import type { NpmPackageEffectiveStateV1 } from "./npm-package-effective-state-v1.js";
 import { governanceOwnsAihSurfaces, type OrgPolicy } from "./schema.js";
 
 /**
@@ -173,6 +174,8 @@ export interface EffectivePolicyContext {
   /** Exact AIH-shipped control identities, built from live catalog + owned hooks. */
   aihReviewedControls?: Readonly<Record<string, RuntimeReviewedControl>>;
   projectorFindings?: Readonly<Record<string, readonly PolicyDangerCode[]>>;
+  /** Read-only, current-authority comparison of durable npm lifecycle state. */
+  npmPackageLifecycle?: readonly NpmPackageEffectiveStateV1[];
 }
 
 export interface CandidateProjectionState {
@@ -346,6 +349,8 @@ export interface EffectiveOrgPolicy {
     }>;
     status: "requested-evidence-needed";
   }>;
+  /** Observed package state only; it is never a projector or runtime control. */
+  npmPackageLifecycle?: readonly NpmPackageEffectiveStateV1[];
   decisionBlockers: PolicyDecisionBlocker[];
   blocking: boolean;
   authority: { verified: boolean; receiptDigest?: string; problem?: string };
@@ -1278,8 +1283,11 @@ export function resolveEffectiveOrgPolicy(
       frameworkSelections: [],
       externalCuration: [],
       externalSelections: [],
+      npmPackageLifecycle: [...(context.npmPackageLifecycle ?? [])],
       decisionBlockers: [],
-      blocking: false,
+      blocking: (context.npmPackageLifecycle ?? []).some(
+        (item) => item.state !== "observed-effective",
+      ),
       authority: {
         verified: authority !== undefined,
         ...(authority ? { receiptDigest: authority.receiptDigest } : {}),
@@ -1355,10 +1363,12 @@ export function resolveEffectiveOrgPolicy(
       items: selection.items.map((item) => ({ ...item, source: { ...item.source } })),
       status: "requested-evidence-needed" as const,
     })),
+    npmPackageLifecycle: [...(context.npmPackageLifecycle ?? [])],
     decisionBlockers,
     blocking:
       decisionBlockers.length > 0 ||
-      candidates.some((candidate) => candidate.requested && !candidate.effective),
+      candidates.some((candidate) => candidate.requested && !candidate.effective) ||
+      (context.npmPackageLifecycle ?? []).some((item) => item.state !== "observed-effective"),
     authority: {
       verified: authority !== undefined,
       ...(authority === undefined

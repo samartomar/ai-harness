@@ -138,14 +138,21 @@ Retain the whole store in organization-controlled versioned evidence. Do not
 promote the inert offline high-water seam to authority; that requires Core's future
 administrator-managed trust-root loader and fixed verifier/producer.
 
-The lifecycle is durable but not yet end to end. Custom stdio and remote policy candidates remain
-non-projectable, and neither a V3 receipt, `policy resolve`, nor this fixed npm observer can install,
+For this narrow npm route, the durable lifecycle now reaches the governance read surfaces. Run
+`aih policy evaluate --verify` after the lifecycle apply, then inspect the governed report. Both
+validate the fixed store and freshly verify current V3 authority. They report the exact lineage as
+`observed-effective` only while the observation and authority remain current; partial,
+withheld/refused, revoked, stale, or drifted state is explicit and blocks evaluation. These commands
+do not repeat the package observation, mutate the target, or control the installed runtime.
+
+The broader custom-source journey is not complete. Custom stdio and remote policy candidates remain
+non-projectable, and neither a V3 receipt, `policy resolve`, nor this fixed npm route can install,
 configure, or activate one. The observer also does not cover skills, MCP servers, remote endpoints,
 non-npm packages, or the AIH-supported qualification route. Do not tell developers that any other
 organization-chosen subject is governed-effective until its exact observer and adapter lifecycle
-exist and AIH has freshly observed the approved installed identity. Scanner and catalog
-publication are separate trust and release boundaries. This limitation must stay visible while
-the remaining Core, scanner, and catalog work is completed.
+exist and AIH has freshly observed the approved installed identity. Scanner and catalog publication
+are separate trust and release boundaries. This limitation must stay visible while the remaining
+Core, scanner, and catalog work is completed.
 
 ## 2. Quickstart / Implementation Blueprint
 

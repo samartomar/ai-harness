@@ -123,6 +123,39 @@ const RECEIPTS = {
 } as const;
 
 describe("governanceReviewView", () => {
+  it("surfaces observed npm lifecycle as read-only state rather than a projected subject", () => {
+    const policy = effective(["context7"]);
+    policy.npmPackageLifecycle = [
+      {
+        decision: { id: "decision-acme-widget", digest: `sha256:${"e".repeat(64)}` },
+        recordDigest: `sha256:${"f".repeat(64)}`,
+        reason: "current-exact-observation",
+        state: "observed-effective",
+        subjectId: "acme-widget",
+        target: "claude",
+      },
+    ];
+
+    const view = governanceReviewView({
+      effective: policy,
+      receipts: RECEIPTS,
+      usage: { events: [], malformed: 0, unknownKind: 0 },
+    });
+
+    expect(view.data).toMatchObject({
+      npmPackageLifecycle: [
+        {
+          state: "observed-effective",
+          subjectId: "acme-widget",
+          target: "claude",
+        },
+      ],
+    });
+    expect(view.text).toContain(
+      "This is observed state only; it never configures or executes a package.",
+    );
+  });
+
   it("keeps all governed subjects in deterministic ordinal order and never includes raw unmatched names", () => {
     const ids = [
       "subject-12",

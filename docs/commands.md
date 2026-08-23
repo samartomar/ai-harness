@@ -960,8 +960,9 @@ verifier text or filesystem path.
 scope, and organization qualification therefore returns `outcome: "partial"`,
 `reason: "observation-missing"`, and a nonzero exit; every refusal is also nonzero. The command
 cannot report `observed-effective`, append a run ledger, return a qualification capability, or scan,
-install, configure, or execute the candidate. Current policy evaluation and projection still do not
-consume V3 decisions, so custom stdio and remote candidates remain visible but non-projectable. The
+install, configure, or execute the candidate. Policy evaluation does not treat a V3 decision alone
+as effective. Its only V3 package route is the separately persisted, freshly reverified npm lifecycle
+described below; custom stdio and remote candidates remain visible but non-projectable. The
 verifier's only process/provider observation is the bounded external GitHub attestation check, and
 its only transient write is owner-only authority-verification custody outside the target. It
 performs no candidate scan or execution, installation, target-root mutation, or package planning
@@ -1052,9 +1053,20 @@ record; preserve the whole store in organization-controlled versioned evidence. 
 offline-revocation high-water primitive remains inert until Core has an administrator-managed
 trust-root loader and a fixed verifier/producer.
 
-This is durable npm audit history, not yet the complete custom-source lifecycle. The command does
-not make a candidate projectable and does not cover skills, MCP servers, remote endpoints, non-npm
-packages, or the AIH-supported qualification route.
+The durable store also feeds the read-only governed-state surfaces. For a policy that owns AIH
+governance surfaces, `aih policy evaluate --verify` and the governed report read the fixed lifecycle
+heads in deterministic order, validate canonical head/binding/claim custody plus the complete bounded
+history, and freshly verify current V3 authority. An exact current observation is reported as
+`observed-effective`; partial, withheld/refused, revoked, stale, and drifted states stay distinct and
+block evaluation. Unsafe or malformed store custody, a missing/substituted head or record, detached
+history, authority replacement, a current rejection or revocation, decision/source/subject/target/
+effect mismatch, or observation expiry cannot become effective. These reads write no target or run
+ledger state and perform no package effect.
+
+This remains the narrow organization-qualified root npm lifecycle, not a generic custom-source
+lifecycle. Neither the lifecycle command nor evaluate/report makes a candidate projectable, and the
+route does not cover skills, MCP servers, remote endpoints, non-npm packages, or the AIH-supported
+qualification route.
 
 Approvals cover only a missing or failed **waivable** evidence record, require a non-empty signed reason,
 and last at most 90 days. Mandatory detector failures and every unwaivable danger code remain blocked even

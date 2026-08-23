@@ -117,9 +117,19 @@ operating-system lock or protection from a process that can rewrite the store. T
 blocks lineage substitution while either subject index remains and detects a stale head while its
 successor records remain. Coordinated deletion of both the claim and binding, or of a head advance and
 all later records, is not detectable without external custody, so administrators must retain the store
-in organization-controlled versioned evidence. The
-internal resolver requires the resulting opaque qualification capability in addition to the opaque
-authority and a fresh matching observation; a decision cannot assert its own qualification.
+in organization-controlled versioned evidence. The internal resolver requires the resulting opaque
+qualification capability in addition to the opaque authority and a fresh matching observation; a
+decision cannot assert its own qualification.
+
+<!-- aih:claim CM-88 -->
+For a governance-owned target, `aih policy evaluate --verify` and the governed report now consume
+that fixed lifecycle store as observed state. They validate canonical heads, bindings, and complete
+bounded history, then freshly verify current V3 authority before classifying each exact npm
+package/target lineage as `observed-effective`, `partial`, `withheld`, `refused`, `revoked`, `stale`,
+or `drifted`. Every non-effective lifecycle state blocks policy evaluation and remains explicit in
+the report. This is read-only observation, not a package projector: it performs no install, update,
+removal, configuration, execution, or publication and does not make custom stdio or remote MCP
+candidates projectable.
 
 <!-- aih:claim CM-86 -->
 For an `aih-supported`

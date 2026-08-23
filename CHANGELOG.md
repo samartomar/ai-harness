@@ -8,6 +8,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Governed evaluation and reports now consume the durable npm lifecycle as observed state.**
+  For a governance-owned target, `aih policy evaluate --verify` and the governed report path read
+  only the fixed `.aih/governance/npm-package-lifecycle/v1/` store, validate each current head and
+  its complete bounded history, and freshly verify the V3 authority receipt before classifying the
+  exact package/target lineage. Current exact observations are `observed-effective`; partial,
+  withheld/refused, revoked, stale, and drifted states remain distinct, non-effective, and blocking.
+  Missing or unsafe store custody, malformed or substituted heads/records/bindings, detached history,
+  authority replacement, current rejection or revocation, decision/source/subject/target/effect
+  mismatch, and expired observations fail closed. The result is deterministic and read-only: it does
+  not install, update, remove, configure, project, execute, or publish a package, and it does not make
+  custom stdio or remote MCP candidates projectable. (#845)
+
 - **`aih policy lifecycle npm-package` persists exact governed observation, bump, and revocation
   history without managing the package.** Preview is zero-write; `--apply` first repeats the current
   V3 authority, organization evidence, npm v3 lockfile, installed-manifest, and observation checks,
