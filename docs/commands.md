@@ -938,7 +938,9 @@ the exact expected decision id/digest, and the exact expected subject. The packa
 root, constructs its production process runner from the live process environment, verifies the
 organization authority before the separately rooted supported receipt, and takes a fresh UTC time
 after authority verification. The result is only a scrubbed `verified` or `unverified` artifact
-state. The package root does not export the authority-bearing verifier and this call returns no
+state. Because this inert call has no target or effect input, any other current, unrevoked rejected
+decision for the same subject makes the result `unverified`. The package root does not export the
+authority-bearing verifier and this call returns no
 authority, receipt bytes, qualification capability, effect, or reusable evidence. A fake external
 `gh` in a disposable test proves the process path only; it is not a public attestation.
 
