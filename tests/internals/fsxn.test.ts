@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import fc from "fast-check";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import {
   FsTransaction,
   readBoundedFileDescriptor,
@@ -26,11 +27,37 @@ import {
   rollbackAppliedWrites,
 } from "../../src/internals/fsxn.js";
 
+const fsEvents = vi.hoisted(() => ({
+  events: [] as string[],
+  afterTempWrite: undefined as (() => void) | undefined,
+}));
+
+vi.mock("node:fs", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...original,
+    fsyncSync: (fd: number) => {
+      fsEvents.events.push("fsync");
+      return original.fsyncSync(fd);
+    },
+    renameSync: (from: string, to: string) => {
+      fsEvents.events.push(`rename:${to}`);
+      return original.renameSync(from, to);
+    },
+    writeFileSync: (path: string, data: string | NodeJS.ArrayBufferView, options?: unknown) => {
+      const result = original.writeFileSync(path, data, options as never);
+      if (path.endsWith(".aih.tmp")) fsEvents.afterTempWrite?.();
+      return result;
+    },
+  };
+});
+
 let dir: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aih-fsxn-"));
 });
 afterEach(() => {
+  fsEvents.afterTempWrite = undefined;
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -115,6 +142,76 @@ describe("FsTransaction", () => {
     t.commit();
     expect(readFileSync(target, "utf8")).toBe("written");
     now.mockRestore();
+  });
+
+  it("refuses a staged write through a symlinked parent beneath its guarded root", () => {
+    const outside = mkdtempSync(join(tmpdir(), "aih-fsxn-outside-"));
+    const linked = join(dir, "linked");
+    try {
+      symlinkSync(outside, linked, "dir");
+    } catch {
+      rmSync(outside, { recursive: true, force: true });
+      return;
+    }
+    const target = join(linked, "escape.txt");
+    const t = new FsTransaction();
+    t.stage(target, "blocked", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow(/parent path/);
+    expect(existsSync(join(outside, "escape.txt"))).toBe(false);
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("removes transaction-created empty parent directories after rollback", () => {
+    const created = join(dir, "created", "nested");
+    const blockingFile = join(dir, "blocking-file");
+    writeFileSync(blockingFile, "not a directory");
+    const t = new FsTransaction();
+    t.stage(join(created, "first.txt"), "first", undefined, undefined, { root: dir });
+    t.stage(join(blockingFile, "second.txt"), "second", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow();
+    expect(existsSync(join(dir, "created"))).toBe(false);
+  });
+
+  it("syncs a durable record before a later staged rename", () => {
+    const first = join(dir, "record.json");
+    const second = join(dir, "head.json");
+    fsEvents.events = [];
+    const t = new FsTransaction();
+    t.stage(first, "record", undefined, undefined, { durable: true });
+    t.stage(second, "head");
+
+    t.commit();
+
+    const durableSync = fsEvents.events.indexOf("fsync");
+    expect(durableSync).toBeGreaterThanOrEqual(0);
+    expect(durableSync).toBeLessThan(fsEvents.events.indexOf(`rename:${second}`));
+  });
+
+  it("rechecks an expected target immediately before replacing it", () => {
+    const target = join(dir, "expected.txt");
+    writeFileSync(target, "planned");
+    const expected = createHash("sha256").update("planned").digest("hex");
+    fsEvents.afterTempWrite = () => writeFileSync(target, "operator");
+    const t = new FsTransaction();
+    t.stage(target, "generated", undefined, { sha256: expected }, { root: dir });
+
+    expect(() => t.commit()).toThrow(/write target changed before commit/);
+    expect(readFileSync(target, "utf8")).toBe("operator");
+    fsEvents.afterTempWrite = undefined;
+  });
+
+  it("removes its lock and lock parent after a failed transaction", () => {
+    const lock = join(dir, ".aih", "commit.lock");
+    const blockingFile = join(dir, "blocking-file");
+    writeFileSync(blockingFile, "not a directory");
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    t.stage(join(blockingFile, "child.txt"), "blocked", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow();
+    expect(existsSync(lock)).toBe(false);
+    expect(existsSync(join(dir, ".aih"))).toBe(false);
   });
 
   it("commit writes new files and backs up existing ones", () => {

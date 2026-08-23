@@ -455,6 +455,27 @@ function resolvePath(ctx: PlanContext, p: string): string {
   return resolve(ctx.root, p);
 }
 
+function localTransactionRoot(ctx: PlanContext, absPath: string): string | undefined {
+  const rel = relative(ctx.root, absPath);
+  return !rel.startsWith("..") && !isAbsolute(rel) ? ctx.root : undefined;
+}
+
+function resolveCommitLock(plan: Plan, ctx: PlanContext): string | undefined {
+  const lock = plan.commitLock;
+  if (lock === undefined) return undefined;
+  if (
+    typeof lock !== "string" ||
+    !/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/.test(lock) ||
+    lock.split("/").some((part) => part === "." || part === "..")
+  ) {
+    throw new AihError("invalid plan commit lock", "AIH_CONFIG");
+  }
+  const absPath = resolvePath(ctx, lock);
+  assertContained(ctx.root, absPath);
+  assertNoSymlinkParents(ctx.root, absPath, lock);
+  return absPath;
+}
+
 /** lstat kind (does not follow links) or `undefined` when the path is absent. */
 function lstatKind(p: string): { isSymlink: boolean } | undefined {
   try {
@@ -613,7 +634,7 @@ export function writeArtifact(ctx: PlanContext, relPath: string, contents: strin
   const next = ensureTrailingNewline(contents);
   if (readIfExists(absPath) === next) return [];
   const txn = new FsTransaction();
-  txn.stage(absPath, next);
+  txn.stage(absPath, next, undefined, undefined, { root: ctx.root });
   return txn.commit().backups;
 }
 
@@ -769,6 +790,7 @@ export async function executePlan(
   opts: { skipWorktreeGate?: boolean } = {},
 ): Promise<PlanResult> {
   const commitNotAfter = parseCommitNotAfter(plan.commitNotAfter);
+  const commitLock = resolveCommitLock(plan, ctx);
   // Dirty-worktree --apply preflight: refuse only when this apply would write over a
   // file that ITSELF has uncommitted changes — the precise "clobber your work" case —
   // not merely because some unrelated file in the repo is dirty. So creating a new
@@ -804,8 +826,12 @@ export async function executePlan(
     }
   }
 
-  const txn = new FsTransaction({ commitNotAfter });
-  const deferredTxn = new FsTransaction({ commitNotAfter });
+  const transactionOptions = {
+    commitNotAfter,
+    ...(commitLock === undefined ? {} : { commitLock: { path: commitLock, root: ctx.root } }),
+  };
+  const txn = new FsTransaction(transactionOptions);
+  const deferredTxn = new FsTransaction(transactionOptions);
   const sensitiveBackupTargets = new Set<string>();
   const writes: WriteSummary[] = [];
   const docs: PlanResult["docs"] = [];
@@ -866,11 +892,19 @@ export async function executePlan(
           }
           if (ctx.apply) {
             const targetTxn = action.requiresPriorExecSuccess ? deferredTxn : txn;
-            targetTxn.stageAssertion(absPath, action.expect.sha256, action.describe);
+            targetTxn.stageAssertion(
+              absPath,
+              action.expect.sha256,
+              action.describe,
+              action.external ? action.trustedBase : ctx.root,
+            );
           }
         } else if (ctx.apply && effect !== "unchanged") {
           const targetTxn = action.requiresPriorExecSuccess ? deferredTxn : txn;
-          targetTxn.stage(absPath, contents, action.mode, action.expect);
+          targetTxn.stage(absPath, contents, action.mode, action.expect, {
+            root: action.external ? action.trustedBase : ctx.root,
+            durable: action.durable,
+          });
           if (action.sensitive?.path) sensitiveBackupTargets.add(absPath);
         }
         writes.push({
@@ -896,7 +930,7 @@ export async function executePlan(
         const effect: NonNullable<PlanResult["docs"][number]["effect"]> =
           existing === undefined ? "create" : existing === contents ? "unchanged" : "overwrite";
         if (ctx.apply && effect !== "unchanged") {
-          txn.stage(absPath, contents);
+          txn.stage(absPath, contents, undefined, undefined, { root: ctx.root });
         }
         docs.push({ describe: action.describe, text: action.text, path: action.path, effect });
       } else {
@@ -944,6 +978,7 @@ export async function executePlan(
           txn.stageRemoval(absPath, destAbs, {
             backupSibling: action.hardDelete,
             expect: action.expect,
+            root: ctx.root,
           });
         removes.push({
           path: action.path,
@@ -998,7 +1033,9 @@ export async function executePlan(
       existing === undefined ? "create" : existing === content ? "unchanged" : "merge";
     if (ctx.apply && effect !== "unchanged") {
       const targetTxn = requiresPriorExecSuccess ? deferredTxn : txn;
-      targetTxn.stage(absPath, content);
+      targetTxn.stage(absPath, content, undefined, undefined, {
+        root: localTransactionRoot(ctx, absPath),
+      });
       if (sensitive) sensitiveBackupTargets.add(absPath);
     }
     writes.push({

@@ -74,6 +74,8 @@ export interface WriteAction {
   dedupeJsonArrayCommands?: Record<string, readonly string[]>;
   /** POSIX file mode, e.g. 0o755 for hooks. */
   mode?: number;
+  /** Sync this file before a later staged write can commit. */
+  durable?: true;
   /** Write only if the file is absent; never overwrite (user-owned seed files). */
   once?: boolean;
   /**
@@ -264,6 +266,8 @@ export interface Plan {
   actions: Action[];
   /** Exact UTC ISO deadline after which an apply must not commit local mutations. */
   commitNotAfter?: string;
+  /** Fixed root-relative lock path held while a transaction commits this plan. */
+  commitLock?: string;
 }
 
 const EXACT_UTC_ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -456,6 +460,7 @@ export function writeText(
     expect?: WriteAction["expect"];
     sensitive?: ActionSensitivity;
     requiresPriorExecSuccess?: boolean;
+    durable?: true;
   } = {},
 ): WriteAction {
   return {
@@ -470,6 +475,7 @@ export function writeText(
     trustedBase: opts.trustedBase,
     expect: opts.expect,
     requiresPriorExecSuccess: opts.requiresPriorExecSuccess,
+    durable: opts.durable,
     ...(opts.sensitive === undefined ? {} : { sensitive: opts.sensitive }),
   };
 }
@@ -497,6 +503,7 @@ export function writeJson(
     >;
     removeJsonTopLevelKeys?: readonly string[];
     dedupeJsonArrayCommands?: Record<string, readonly string[]>;
+    durable?: true;
   } = {},
 ): WriteAction {
   if (value === undefined) {
@@ -520,6 +527,7 @@ export function writeJson(
     pruneJsonChildKeys: opts.pruneJsonChildKeys,
     removeJsonTopLevelKeys: opts.removeJsonTopLevelKeys,
     dedupeJsonArrayCommands: opts.dedupeJsonArrayCommands,
+    durable: opts.durable,
   };
 }
 

@@ -115,6 +115,24 @@ describe("executePlan", () => {
     expect(existsSync(target)).toBe(false);
   });
 
+  it("refuses a contended root-relative plan commit lock before writing", async () => {
+    const target = join(dir, "locked.txt");
+    const lock = join(dir, ".aih", "commit.lock");
+    mkdirSync(dirname(lock), { recursive: true });
+    writeFileSync(lock, "held");
+    const p: Plan = {
+      capability: "lock",
+      commitLock: ".aih/commit.lock",
+      actions: [writeText("locked.txt", "blocked", "write under lock")],
+    };
+
+    await expect(executePlan(p, ctx({ apply: true }))).rejects.toThrow(
+      "commit lock is already held",
+    );
+    expect(existsSync(target)).toBe(false);
+    expect(readFileSync(lock, "utf8")).toBe("held");
+  });
+
   it("enforces the commit deadline for deferred writes", async () => {
     const start = Date.parse("2030-01-01T00:00:00.000Z");
     const deadline = start + 1;

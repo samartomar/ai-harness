@@ -7,17 +7,19 @@ import {
   existsSync,
   constants as fsConstants,
   fstatSync,
+  fsyncSync,
   lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
   readSync,
   renameSync,
+  rmdirSync,
   rmSync,
   type Stats,
   writeFileSync,
 } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { FsTxnError } from "../errors.js";
 
 /**
@@ -69,6 +71,8 @@ interface StagedWrite {
   contents: string;
   mode?: number;
   expect?: { absent: true } | { sha256: string };
+  root?: string;
+  durable?: boolean;
 }
 
 export interface AppliedWrite {
@@ -92,6 +96,7 @@ interface StagedRemoval {
    */
   backupSibling?: boolean;
   expect?: { sha256: string };
+  root?: string;
 }
 
 interface AppliedRemoval {
@@ -103,6 +108,22 @@ interface StagedAssertion {
   path: string;
   sha256: string;
   describe: string;
+  root?: string;
+}
+
+interface DirectoryIdentity {
+  dev: bigint;
+  ino: bigint;
+}
+
+interface CommitLock {
+  path: string;
+  root: string;
+}
+
+interface FsTransactionOptions {
+  commitNotAfter?: number;
+  commitLock?: CommitLock;
 }
 
 export interface FsTxnResult {
@@ -123,16 +144,19 @@ export class FsTransaction {
   private staged: StagedWrite[] = [];
   private stagedRemovals: StagedRemoval[] = [];
   private stagedAssertions: StagedAssertion[] = [];
+  private readonly guardedDirectories = new Map<string, DirectoryIdentity>();
+  private readonly createdDirectories = new Map<string, DirectoryIdentity>();
 
-  constructor(private readonly options: { commitNotAfter?: number } = {}) {}
+  constructor(private readonly options: FsTransactionOptions = {}) {}
 
   stage(
     path: string,
     contents: string,
     mode?: number,
     expect?: { absent: true } | { sha256: string },
+    opts: { root?: string; durable?: boolean } = {},
   ): void {
-    this.staged.push({ path, contents, mode, expect });
+    this.staged.push({ path, contents, mode, expect, root: opts.root, durable: opts.durable });
   }
 
   /**
@@ -147,18 +171,19 @@ export class FsTransaction {
   stageRemoval(
     path: string,
     legacyPath: string,
-    opts: { backupSibling?: boolean; expect?: { sha256: string } } = {},
+    opts: { backupSibling?: boolean; expect?: { sha256: string }; root?: string } = {},
   ): void {
     this.stagedRemovals.push({
       path,
       legacyPath,
       backupSibling: opts.backupSibling,
       expect: opts.expect,
+      root: opts.root,
     });
   }
 
-  stageAssertion(path: string, sha256: string, describe: string): void {
-    this.stagedAssertions.push({ path, sha256, describe });
+  stageAssertion(path: string, sha256: string, describe: string, root?: string): void {
+    this.stagedAssertions.push({ path, sha256, describe, root });
   }
 
   preview(): ReadonlyArray<StagedWrite> {
@@ -168,6 +193,165 @@ export class FsTransaction {
   private assertCommitDeadline(): void {
     if (this.options.commitNotAfter !== undefined && Date.now() >= this.options.commitNotAfter) {
       throw new FsTxnError("commit deadline expired");
+    }
+  }
+
+  private identity(path: string): DirectoryIdentity {
+    let stats: BigIntStats;
+    try {
+      stats = lstatSync(path, { bigint: true });
+    } catch {
+      throw new FsTxnError("unsafe transaction parent path");
+    }
+    if (!stats.isDirectory() || stats.isSymbolicLink() || stats.dev === 0n || stats.ino === 0n) {
+      throw new FsTxnError("unsafe transaction parent path");
+    }
+    return { dev: stats.dev, ino: stats.ino };
+  }
+
+  private sameDirectory(path: string, expected: DirectoryIdentity): boolean {
+    try {
+      const actual = this.identity(path);
+      return actual.dev === expected.dev && actual.ino === expected.ino;
+    } catch {
+      return false;
+    }
+  }
+
+  private guardParents(path: string, root: string | undefined, create: boolean): void {
+    if (root === undefined) return;
+    this.assertCommitDeadline();
+    const base = resolve(root);
+    const parent = resolve(dirname(path));
+    const rel = relative(base, parent);
+    if (rel.startsWith("..") || isAbsolute(rel))
+      throw new FsTxnError("unsafe transaction parent path");
+    const parts = rel === "" ? [] : rel.split(/[\\/]+/).filter((part) => part.length > 0);
+    let current = base;
+    const capture = (dir: string, created = false): void => {
+      this.assertCommitDeadline();
+      const actual = this.identity(dir);
+      const prior = this.guardedDirectories.get(dir);
+      if (prior !== undefined && (prior.dev !== actual.dev || prior.ino !== actual.ino)) {
+        throw new FsTxnError("unsafe transaction parent path");
+      }
+      this.guardedDirectories.set(dir, actual);
+      if (created) this.createdDirectories.set(dir, actual);
+    };
+    capture(current);
+    for (const part of parts) {
+      current = resolve(current, part);
+      try {
+        capture(current);
+      } catch (err) {
+        if (!create) throw err;
+        this.assertCommitDeadline();
+        try {
+          mkdirSync(current);
+        } catch {
+          throw new FsTxnError("unsafe transaction parent path");
+        }
+        capture(current, true);
+      }
+    }
+  }
+
+  private ensureParents(path: string, root: string | undefined): void {
+    if (root === undefined) {
+      this.assertCommitDeadline();
+      mkdirSync(dirname(path), { recursive: true });
+      return;
+    }
+    this.guardParents(path, root, true);
+  }
+
+  private rollbackCreatedDirectories(): void {
+    for (const [path, identity] of [...this.createdDirectories.entries()].sort(
+      ([left], [right]) => right.length - left.length,
+    )) {
+      try {
+        if (this.sameDirectory(path, identity)) rmdirSync(path);
+      } catch {
+        // Do not remove a concurrently repopulated or replaced directory.
+      }
+    }
+  }
+
+  private acquireCommitLock(): DirectoryIdentity | undefined {
+    const lock = this.options.commitLock;
+    if (lock === undefined) return undefined;
+    this.guardParents(lock.path, lock.root, true);
+    this.assertCommitDeadline();
+    let fd: number;
+    try {
+      fd = openSync(lock.path, "wx", 0o600);
+    } catch {
+      throw new FsTxnError("commit lock is already held");
+    }
+    try {
+      this.guardParents(lock.path, lock.root, false);
+      this.assertCommitDeadline();
+      const stats = lstatSync(lock.path, { bigint: true });
+      if (!stats.isFile() || stats.isSymbolicLink() || stats.dev === 0n || stats.ino === 0n) {
+        throw new FsTxnError("commit lock could not be verified");
+      }
+      return { dev: stats.dev, ino: stats.ino };
+    } finally {
+      closeSync(fd);
+    }
+  }
+
+  private releaseCommitLock(identity: DirectoryIdentity | undefined): void {
+    const lock = this.options.commitLock;
+    if (identity === undefined || lock === undefined) return;
+    try {
+      const stats = lstatSync(lock.path, { bigint: true });
+      if (
+        stats.isFile() &&
+        !stats.isSymbolicLink() &&
+        stats.dev === identity.dev &&
+        stats.ino === identity.ino
+      ) {
+        rmSync(lock.path, { force: true });
+      }
+    } catch {
+      // A replaced lock is never removed by this transaction.
+    }
+  }
+
+  private validateWriteExpectation(write: StagedWrite): void {
+    if (write.expect === undefined) return;
+    const info = lstatSafe(write.path);
+    if (info?.isSymbolicLink()) throw new FsTxnError("write target changed before commit");
+    const live = info === undefined ? undefined : readFileSync(write.path, "utf8");
+    const unchanged =
+      "absent" in write.expect
+        ? live === undefined
+        : live !== undefined &&
+          createHash("sha256").update(live, "utf8").digest("hex") === write.expect.sha256;
+    if (!unchanged) throw new FsTxnError("write target changed before commit");
+  }
+
+  private syncDurableWrite(path: string, root: string | undefined): void {
+    this.guardParents(path, root, false);
+    this.assertCommitDeadline();
+    const fd = openSync(path, fsConstants.O_RDWR);
+    try {
+      this.assertCommitDeadline();
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    if (process.platform !== "win32") {
+      this.guardParents(path, root, false);
+      this.assertCommitDeadline();
+      const parentFd = openSync(dirname(path), fsConstants.O_RDONLY);
+      try {
+        this.assertCommitDeadline();
+        fsyncSync(parentFd);
+      } finally {
+        closeSync(parentFd);
+      }
     }
   }
 
@@ -195,12 +379,15 @@ export class FsTransaction {
           `transaction both asserts and mutates the same path: ${assertion.path}`,
         );
     }
+    let lockIdentity: DirectoryIdentity | undefined;
+    let failed = false;
     try {
+      lockIdentity = this.acquireCommitLock();
       this.assertCommitDeadline();
+      for (const assertion of assertions) this.guardParents(assertion.path, assertion.root, false);
       validateAssertions(assertions);
       for (const w of staged) {
-        this.assertCommitDeadline();
-        mkdirSync(dirname(w.path), { recursive: true });
+        this.ensureParents(w.path, w.root);
         // Refuse to write THROUGH an existing symlink — it can redirect the write
         // outside the repo, and copyFileSync would back up the link's TARGET, not the
         // link. Fail closed; the executor enforces parent-dir containment separately.
@@ -208,15 +395,7 @@ export class FsTransaction {
         if (info?.isSymbolicLink()) {
           throw new Error(`refusing to write through a symlink: ${w.path}`);
         }
-        if (w.expect !== undefined) {
-          const live = info === undefined ? undefined : readFileSync(w.path, "utf8");
-          const unchanged =
-            "absent" in w.expect
-              ? live === undefined
-              : live !== undefined &&
-                createHash("sha256").update(live, "utf8").digest("hex") === w.expect.sha256;
-          if (!unchanged) throw new FsTxnError(`write target changed before commit: ${w.path}`);
-        }
+        this.validateWriteExpectation(w);
         const existed = info !== undefined;
         const backupPath = `${w.path}.aih.bak`;
         const tmpPath = `${w.path}.aih.tmp`;
@@ -224,38 +403,52 @@ export class FsTransaction {
         // pre-placed symlink THERE would redirect the write/copy outside the repo just
         // like a symlinked target. Reject a planted link and clear any stale scratch so
         // the exclusive create below can't be tricked into following one.
-        clearScratch(backupPath, () => this.assertCommitDeadline());
-        clearScratch(tmpPath, () => this.assertCommitDeadline());
+        clearScratch(backupPath, () => {
+          this.guardParents(w.path, w.root, false);
+          this.assertCommitDeadline();
+        });
+        clearScratch(tmpPath, () => {
+          this.guardParents(w.path, w.root, false);
+          this.assertCommitDeadline();
+        });
         let backup: string | undefined;
         if (existed) {
           backup = backupPath;
           // Reads the just-written source; retry the transient Windows scanner lock.
+          this.guardParents(w.path, w.root, false);
           this.assertCommitDeadline();
           retryTransient(() => {
             this.assertCommitDeadline();
             return copyFileSync(w.path, backupPath, fsConstants.COPYFILE_EXCL);
           });
         }
+        this.guardParents(w.path, w.root, false);
         this.assertCommitDeadline();
         retryTransient(() => {
           this.assertCommitDeadline();
           return writeFileSync(tmpPath, w.contents, { encoding: "utf8", flag: "wx" });
         });
         if (w.mode !== undefined) {
+          this.guardParents(w.path, w.root, false);
           this.assertCommitDeadline();
           chmodSync(tmpPath, w.mode);
         }
         // Renaming OVER the existing target is the classic Windows flake: the dest
         // handle may be briefly held by AV/the indexer right after the prior write.
+        this.guardParents(w.path, w.root, false);
+        this.validateWriteExpectation(w);
         this.assertCommitDeadline();
         retryTransient(() => {
           this.assertCommitDeadline();
           return renameSync(tmpPath, w.path);
         });
+        this.guardParents(w.path, w.root, false);
         applied.push({ path: w.path, contents: w.contents, backup, created: !existed });
+        if (w.durable) this.syncDurableWrite(w.path, w.root);
       }
       // Removals commit AFTER writes so a partial failure rolls both back in order.
       for (const r of removals) {
+        this.guardParents(r.path, r.root, false);
         const info = lstatSafe(r.path);
         if (info === undefined) continue; // already gone — idempotent no-op
         // Never MOVE a symlink: rollback would renameSync it back as-is, but a link
@@ -267,8 +460,7 @@ export class FsTransaction {
         if (r.expect !== undefined && !info.isFile()) {
           throw new FsTxnError(`removal target is not a regular file: ${r.path}`);
         }
-        this.assertCommitDeadline();
-        mkdirSync(dirname(r.legacyPath), { recursive: true });
+        this.ensureParents(r.legacyPath, r.root);
         // NEVER overwrite an occupied destination — for BOTH modes. An aborted prune
         // rolls its move back (so it leaves nothing here), which means an existing file
         // at the dest is a COMPLETED prior rescue (or a write backup that may be the
@@ -276,6 +468,8 @@ export class FsTransaction {
         // The archive falls back to `<path>.N`; a hard-delete backup falls back to
         // `<path>.N.aih.bak` so every slot keeps matching the gitignored glob.
         const dest = r.backupSibling ? freeBackupDest(r.legacyPath) : freeLegacyDest(r.legacyPath);
+        this.guardParents(r.path, r.root, false);
+        this.guardParents(dest, r.root, false);
         this.assertCommitDeadline();
         retryTransient(() => {
           this.assertCommitDeadline();
@@ -292,6 +486,7 @@ export class FsTransaction {
         }
       }
       this.assertCommitDeadline();
+      for (const assertion of assertions) this.guardParents(assertion.path, assertion.root, false);
       validateAssertions(assertions);
       this.assertCommitDeadline();
       return {
@@ -300,6 +495,7 @@ export class FsTransaction {
         removed,
       };
     } catch (err) {
+      failed = true;
       rollbackRemovals(removed);
       const preserved = rollbackAppliedWrites(applied);
       const suffix =
@@ -307,6 +503,9 @@ export class FsTransaction {
           ? "was rolled back"
           : `preserved concurrent changes at ${preserved.join(", ")}`;
       throw new FsTxnError(`transaction failed and ${suffix}: ${(err as Error).message}`);
+    } finally {
+      this.releaseCommitLock(lockIdentity);
+      if (failed) this.rollbackCreatedDirectories();
     }
   }
 }
