@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readdirSync } from "node:fs";
+import { lstatSync, opendirSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { z } from "zod";
 import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
@@ -11,7 +11,11 @@ import {
 } from "../internals/contained-path.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import { dynamicDigest, type Plan, type WriteAction } from "../internals/plan.js";
-import { GovernanceDecisionSubjectV2Schema } from "./governance-decision-v2.js";
+import {
+  GovernanceDecisionSubjectV2Schema,
+  governanceDecisionSourceDigestV2,
+  governanceDecisionSubjectDigestV2,
+} from "./governance-decision-v2.js";
 import {
   type AihSupportedQualificationReceiptV2,
   AihSupportedQualificationReceiptV2Schema,
@@ -358,6 +362,23 @@ const MemberRecordSchema = z
       value.acceptedAt >= value.decisionExpiresAt
     )
       ctx.addIssue({ code: "custom", message: "member validity is unordered" });
+    if (
+      value.subject.sourceDigest !== governanceDecisionSourceDigestV2(value.subject.source) ||
+      value.subject.subjectDigest !==
+        governanceDecisionSubjectDigestV2({
+          kind: value.subject.kind,
+          id: value.subject.id,
+          sourceDigest: value.subject.sourceDigest,
+        })
+    )
+      ctx.addIssue({ code: "custom", message: "member subject digests are invalid" });
+    if (
+      value.acceptedAt < value.receiptNotBefore ||
+      value.acceptedAt >= value.receiptExpiresAt ||
+      value.headValidFrom > value.receiptIssuedAt ||
+      value.receiptExpiresAt !== value.headValidUntil
+    )
+      ctx.addIssue({ code: "custom", message: "member receipt and head bindings are invalid" });
   });
 
 function strictStoredRecord(bytes: Buffer): StoredRecord {
@@ -409,6 +430,21 @@ function recordHash(record: Extract<StoredRecord, { state: "present" }>): string
   return createHash("sha256").update(record.bytes).digest("hex");
 }
 
+function boundedMemberEntries(directory: string): string[] {
+  const opened = opendirSync(directory);
+  const entries: string[] = [];
+  try {
+    for (let entry = opened.readSync(); entry !== null; entry = opened.readSync()) {
+      if (entries.length === MAX_CUSTODY_MEMBERS)
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      entries.push(entry.name);
+    }
+    return entries.sort();
+  } finally {
+    opened.closeSync();
+  }
+}
+
 function hasCurrentHeadMember(
   root: string,
   posture: "enterprise" | "vibe",
@@ -423,9 +459,7 @@ function hasCurrentHeadMember(
   if (before.state !== "present" || before.kind !== "directory")
     throw new AihError("supported custody state is invalid", "AIH_TRUST");
   try {
-    const entries = readdirSync(before.realPath).sort();
-    if (entries.length > MAX_CUSTODY_MEMBERS)
-      throw new AihError("supported custody state is invalid", "AIH_TRUST");
+    const entries = boundedMemberEntries(before.realPath);
     let found = false;
     for (const entry of entries) {
       if (!/^[0-9a-f]{64}\.json$/.test(entry))
@@ -453,7 +487,9 @@ function hasCurrentHeadMember(
         parsedMember.data.catalogSignerIdentity === head.catalogSignerIdentity &&
         parsedMember.data.signerKeyId === head.signerKeyId &&
         parsedMember.data.replayIdentity === head.replayIdentity &&
-        parsedMember.data.sequence === head.sequence
+        parsedMember.data.sequence === head.sequence &&
+        parsedMember.data.headValidFrom === head.headValidFrom &&
+        parsedMember.data.headValidUntil === head.headValidUntil
       )
         found = true;
     }

@@ -134,6 +134,12 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
       .update(canonicalAihSupportedQualificationReceiptV2(value), "utf8")
       .digest("hex")}`;
   }
+  function custodySlot(domain: string, value: unknown): string {
+    return createHash("sha256")
+      .update(`aih-supported-qualification-custody/v2/${domain}\0`, "utf8")
+      .update(canonicalStrictJsonBytesV1(value))
+      .digest("hex");
+  }
   const input = {
     receipt,
     decision: { id: "decision-allow-tool", digest: `sha256:${"7".repeat(64)}` },
@@ -722,6 +728,49 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
               })
             : originalBytes,
         );
+        await expect(prepare(root, candidateFor(memberReceipt()))).rejects.toMatchObject({
+          code: "AIH_TRUST",
+        });
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("refuses members with forged subject, head-validity, or acceptance bindings", async () => {
+    for (const mutation of ["subject", "head-validity", "accepted-at"] as const) {
+      const { root, genesis } = await applyGenesis();
+      try {
+        const original = writes(genesis)[2];
+        const originalPath = join(root, original?.path ?? "");
+        const value = JSON.parse(readFileSync(originalPath, "utf8"));
+        const mutated =
+          mutation === "subject"
+            ? {
+                ...value,
+                subject: { ...value.subject, subjectDigest: `sha256:${"b".repeat(64)}` },
+              }
+            : mutation === "head-validity"
+              ? { ...value, headValidFrom: "2026-07-31T00:00:00Z" }
+              : {
+                  ...value,
+                  receiptExpiresAt: "2026-08-08T00:00:00Z",
+                  acceptedAt: "2026-08-08T12:00:00Z",
+                };
+        const path =
+          mutation === "subject"
+            ? join(
+                dirname(originalPath),
+                `${custodySlot("member", {
+                  catalogHeadDigest: mutated.catalogHeadDigest,
+                  catalogMemberDigest: mutated.catalogMemberDigest,
+                  subject: mutated.subject,
+                  target: mutated.target,
+                })}.json`,
+              )
+            : originalPath;
+        rmSync(originalPath);
+        writeFileSync(path, canonicalStrictJsonBytesV1(mutated));
         await expect(prepare(root, candidateFor(memberReceipt()))).rejects.toMatchObject({
           code: "AIH_TRUST",
         });
