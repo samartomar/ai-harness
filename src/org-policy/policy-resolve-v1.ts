@@ -1,7 +1,7 @@
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import type { CommandSpec, Plan, PlanContext } from "../internals/plan.js";
 import { dynamicDigest, plan, probe } from "../internals/plan.js";
-import type { Check } from "../internals/verify.js";
+import type { Check, CheckCode } from "../internals/verify.js";
 import { verifyPolicyAuthorityReceipt } from "./authority.js";
 import { custodyOrganizationEvidenceV1 } from "./evidence-custody-v1.js";
 import { type GovernanceDecisionV2, governanceDecisionDigestV2 } from "./governance-decision-v2.js";
@@ -42,6 +42,24 @@ export interface PolicyResolveResultV1 {
   /** Closed, public-safe refusal category; never contains verifier output or filesystem paths. */
   readonly reason: PolicyResolveReasonV1;
 }
+
+const POLICY_RESOLVE_CHECK_CODE: Readonly<Record<PolicyResolveReasonV1, CheckCode>> = {
+  "invalid-input": "org-policy.resolve-input-invalid",
+  "invalid-evidence-path": "org-policy.resolve-input-invalid",
+  "unsafe-evidence-custody": "org-policy.resolve-evidence-invalid",
+  "evidence-unavailable": "org-policy.resolve-evidence-invalid",
+  "evidence-changed": "org-policy.resolve-evidence-invalid",
+  "authority-unverified": "org-policy.resolve-authority-blocked",
+  "authority-version": "org-policy.resolve-authority-blocked",
+  "authority-not-current": "org-policy.resolve-authority-blocked",
+  "decision-missing-or-mismatch": "org-policy.resolve-authority-blocked",
+  "decision-rejected": "org-policy.resolve-authority-blocked",
+  "decision-revoked": "org-policy.resolve-authority-blocked",
+  "decision-not-current": "org-policy.resolve-authority-blocked",
+  "decision-scope-mismatch": "org-policy.resolve-authority-blocked",
+  "qualification-unverified": "org-policy.resolve-authority-blocked",
+  "observation-missing": "org-policy.resolve-observation-missing",
+};
 
 function optionString(ctx: PlanContext, key: string): string | undefined {
   const value = ctx.options[key];
@@ -197,7 +215,7 @@ function resultCheck(result: PolicyResolveResultV1): Check {
   return {
     name: "policy resolve",
     verdict: "fail",
-    code: "org-policy.effective-blocked",
+    code: POLICY_RESOLVE_CHECK_CODE[result.reason],
     detail: `policy resolve ${result.reason} (${result.effective})`,
   };
 }

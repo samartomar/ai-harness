@@ -315,9 +315,11 @@ describe("policy resolve V1", () => {
       "policy resolve observation-missing (observation-missing)",
     );
     expect(payload.support.findings[0]).toMatchObject({
-      code: "org-policy.effective-blocked",
+      code: "org-policy.resolve-observation-missing",
+      audience: "dev-platform",
+      kind: "escalation",
       recommendedAction:
-        "Policy resolve is read-only. Have the organization authority owner correct or reissue the V3 authority receipt, decision, or canonical evidence named by the closed result; for observation-missing, arrange an upstream-managed observation. Rerun the same `aih policy resolve` command after that external change.",
+        "Please arrange for the upstream-managed observer to publish a current observation bound to the referenced V3 decision, subject, target, and effect, then ask the operator to rerun the verification.",
     });
     expect(payload.support.findings[0]?.recommendedAction).not.toContain("policy evaluate");
     expect(payload.support.findings[0]?.recommendedAction).not.toContain("policy project");
@@ -325,6 +327,116 @@ describe("policy resolve V1", () => {
       before.get("authority"),
     );
     expect(readFileSync(join(root, "evidence.json"))).toEqual(before.get("evidence"));
+  });
+
+  it("routes invalid command inputs and local evidence custody to their own actual JSON support actions", async () => {
+    const validOptions = [
+      "--decision",
+      "decision-platform-tool",
+      "--decision-digest",
+      `sha256:${"0".repeat(64)}`,
+      "--target",
+      "claude",
+      "--effect",
+      "configure",
+    ];
+    const cases = [
+      {
+        name: "invalid-input",
+        args: [root, "--json"],
+        reason: "invalid-input",
+        code: "org-policy.resolve-input-invalid",
+        action:
+          "Correct the required `aih policy resolve` command option(s): decision id/digest, supported target, effect, and bounded root-relative evidence path. Rerun only after supplying valid values.",
+      },
+      {
+        name: "invalid-evidence-path",
+        args: [...validOptions, "--evidence", "../escape.json", root, "--json"],
+        reason: "invalid-evidence-path",
+        code: "org-policy.resolve-input-invalid",
+        action:
+          "Correct the required `aih policy resolve` command option(s): decision id/digest, supported target, effect, and bounded root-relative evidence path. Rerun only after supplying valid values.",
+      },
+      {
+        name: "evidence-unavailable",
+        args: [...validOptions, "--evidence", "missing.json", root, "--json"],
+        reason: "evidence-unavailable",
+        code: "org-policy.resolve-evidence-invalid",
+        action:
+          "Fix or select a bounded, regular, non-linked root-relative local evidence file under the target root, then rerun `aih policy resolve` with that file.",
+      },
+    ];
+
+    for (const testCase of cases) {
+      let output = "";
+      const calls: string[][] = [];
+      const code = await runCapability(policyResolveCommand, command(testCase.args), {
+        env: { AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance", PATH: bin },
+        run: fakeRunner((argv) => {
+          calls.push(argv);
+          return { code: 1 };
+        }),
+        write: (text) => {
+          output += text;
+        },
+      });
+      const payload = JSON.parse(output) as {
+        digests: Array<{ data: { reason: string } }>;
+        support: {
+          findings: Array<{
+            code: string;
+            audience: string;
+            kind: string;
+            recommendedAction: string;
+          }>;
+        };
+      };
+
+      expect(code, testCase.name).toBe(1);
+      expect(payload.digests[0]?.data.reason, testCase.name).toBe(testCase.reason);
+      expect(payload.support.findings[0]?.code, testCase.name).toBe(testCase.code);
+      expect(payload.support.findings[0]?.audience, testCase.name).toBe("developer");
+      expect(payload.support.findings[0]?.kind, testCase.name).toBe("self-fix");
+      expect(payload.support.findings[0]?.recommendedAction, testCase.name).toBe(testCase.action);
+      expect(calls, testCase.name).toEqual([]);
+    }
+
+    const outside = mkdtempSync(join(tmpdir(), "aih-policy-resolve-support-outside-"));
+    try {
+      writeFileSync(join(outside, "evidence.json"), "{}");
+      symlinkSync(outside, join(root, "sub"), "junction");
+      let output = "";
+      const calls: string[][] = [];
+      const code = await runCapability(
+        policyResolveCommand,
+        command([...validOptions, "--evidence", "sub/evidence.json", root, "--json"]),
+        {
+          env: { AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance", PATH: bin },
+          run: fakeRunner((argv) => {
+            calls.push(argv);
+            return { code: 1 };
+          }),
+          write: (text) => {
+            output += text;
+          },
+        },
+      );
+      const payload = JSON.parse(output) as {
+        digests: Array<{ data: { reason: string } }>;
+        support: { findings: Array<{ code: string; recommendedAction: string }> };
+      };
+
+      expect(code).toBe(1);
+      expect(payload.digests[0]?.data.reason).toBe("unsafe-evidence-custody");
+      expect(payload.support.findings[0]).toMatchObject({
+        code: "org-policy.resolve-evidence-invalid",
+        recommendedAction:
+          "Fix or select a bounded, regular, non-linked root-relative local evidence file under the target root, then rerun `aih policy resolve` with that file.",
+      });
+      expect(calls).toEqual([]);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it("scrubs a failed GitHub verifier from command JSON while returning a closed authority reason", async () => {
@@ -361,9 +473,76 @@ describe("policy resolve V1", () => {
     expect(code).toBe(1);
     expect(JSON.parse(output)).toMatchObject({
       digests: [{ data: { reason: "authority-unverified", outcome: "refused" } }],
+      support: {
+        findings: [
+          {
+            code: "org-policy.resolve-authority-blocked",
+            audience: "dev-platform",
+            kind: "escalation",
+          },
+        ],
+      },
     });
+    expect(
+      (JSON.parse(output) as { support: { findings: Array<{ recommendedAction: string }> } })
+        .support.findings[0]?.recommendedAction,
+    ).toContain("Correct malformed, stale, or mismatched artifacts only.");
     expect(output).not.toContain("verifier-private-detail");
     expect(output).not.toContain(root);
+  });
+
+  it("escalates a verified rejected decision without suggesting governance be changed merely to pass", async () => {
+    const fixture = decision();
+    const rejected = { ...fixture.value, disposition: "rejected" as const };
+    writeAuthority(rejected as never);
+    writeFileSync(join(root, "evidence.json"), fixture.bytes);
+    let output = "";
+    const code = await runCapability(
+      policyResolveCommand,
+      command([
+        root,
+        "--json",
+        "--decision",
+        rejected.id,
+        "--decision-digest",
+        governanceDecisionDigestV2(rejected as never),
+        "--target",
+        "claude",
+        "--effect",
+        "configure",
+        "--evidence",
+        "evidence.json",
+      ]),
+      {
+        env: { AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance", PATH: bin },
+        run: fakeRunner((argv) => (argv[0] === gh ? { code: 0 } : { code: 1 })),
+        write: (text) => {
+          output += text;
+        },
+      },
+    );
+    const payload = JSON.parse(output) as {
+      digests: Array<{ data: { reason: string } }>;
+      support: {
+        findings: Array<{
+          code: string;
+          audience: string;
+          kind: string;
+          recommendedAction: string;
+        }>;
+      };
+    };
+
+    expect(code).toBe(1);
+    expect(payload.digests[0]?.data.reason).toBe("decision-rejected");
+    expect(payload.support.findings[0]).toMatchObject({
+      code: "org-policy.resolve-authority-blocked",
+      audience: "dev-platform",
+      kind: "escalation",
+    });
+    expect(payload.support.findings[0]?.recommendedAction).toContain(
+      "Rejected or revoked decisions must remain closed and must not be altered merely to clear this check",
+    );
   });
 
   it("refuses invalid root-relative evidence before calling the authority verifier", async () => {

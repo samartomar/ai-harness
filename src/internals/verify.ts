@@ -91,6 +91,10 @@ export type CheckCode =
   | "org-policy.invalid"
   | "org-policy.bundle-invalid"
   | "org-policy.effective-blocked"
+  | "org-policy.resolve-input-invalid"
+  | "org-policy.resolve-evidence-invalid"
+  | "org-policy.resolve-authority-blocked"
+  | "org-policy.resolve-observation-missing"
   | "bundle.signature"
   // report (analytics-derived advisories)
   | "report.context-over-budget"
