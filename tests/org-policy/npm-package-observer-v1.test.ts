@@ -9,10 +9,7 @@ import {
   governanceDecisionSourceDigestV2,
   governanceDecisionSubjectDigestV2,
 } from "../../src/org-policy/governance-decision-v2.js";
-import {
-  npmPackageObservationDigestV1,
-  observeNpmPackageV1,
-} from "../../src/org-policy/npm-package-observer-v1.js";
+import { observeNpmPackageV1 } from "../../src/org-policy/npm-package-observer-v1.js";
 import {
   canonicalOrganizationEvidenceEnvelopeV1,
   organizationEvidenceEnvelopeDigestV1,
@@ -88,7 +85,7 @@ function fixture() {
       attestor: "scanner-service",
     },
     subject,
-    targets: ["claude"],
+    targets: ["claude", "codex"],
     allowedEffects: ["install" as const],
     policy: { id: "platform-policy", version: "2026.08", digest: `sha256:${"c".repeat(64)}` },
     control: { id: "review-control", digest: `sha256:${"d".repeat(64)}` },
@@ -198,13 +195,33 @@ describe("npm package upstream observer V1", () => {
       effective: "observed-effective",
     });
     expect(result.observationDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
-    expect(
-      npmPackageObservationDigestV1(value.decision.subject.source, {
-        name: "@acme/widget",
-        version: "1.2.3",
-        integrity: INTEGRITY,
-      }),
-    ).toBe(result.observationDigest);
+    const later = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "codex",
+          evidence: "evidence.json",
+        },
+        calls,
+      ),
+    );
+    expect(later).toMatchObject({ outcome: "observed-effective" });
+    expect(later.observationDigest).not.toBe(result.observationDigest);
+    vi.setSystemTime(new Date("2026-08-02T12:01:00+00:00"));
+    const observedLater = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+          evidence: "evidence.json",
+        },
+        calls,
+      ),
+    );
+    expect(observedLater).toMatchObject({ outcome: "observed-effective" });
+    expect(observedLater.observationDigest).not.toBe(result.observationDigest);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.slice(1, 3)).toEqual(["attestation", "verify"]);
     expect(readFileSync(join(root, "package-lock.json"))).toEqual(before.get("lock"));
