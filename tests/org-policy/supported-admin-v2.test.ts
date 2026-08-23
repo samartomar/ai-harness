@@ -109,7 +109,11 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     });
     expect(plan.commitLock).toBe(".aih/supported-qualification/v2/locks/commit.lock");
     expect(plan.commitNotAfter).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect(plan.actions.map((action: { path?: string }) => action.path)).toEqual([
+    expect(
+      plan.actions
+        .filter((action: { kind: string }) => action.kind === "write")
+        .map((action: { path?: string }) => action.path),
+    ).toEqual([
       expect.stringMatching(
         /^\.aih\/supported-qualification\/v2\/signers\/[0-9a-f]{64}\/[0-9a-f]{64}\.json$/,
       ),
@@ -124,7 +128,10 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     for (const action of plan.actions.slice(0, -1)) {
       expect(action).toMatchObject({ durable: true, once: true, expect: { absent: true } });
     }
-    expect(plan.actions.at(-1)).toMatchObject({ expect: { absent: true } });
+    expect(
+      plan.actions.filter((action: { kind: string }) => action.kind === "write").at(-1),
+    ).toMatchObject({ expect: { absent: true } });
+    expect(plan.actions.at(-1)).toMatchObject({ kind: "digest" });
   });
 
   it("reads immutable slots from disk, makes exact reacceptance write-free, and guards a raced successor", async () => {
@@ -154,13 +161,17 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
         posture: "vibe",
         candidate: input,
       });
-      expect(repeat.actions.filter((action: { type: string }) => action.type === "write")).toEqual(
+      expect(repeat.actions.filter((action: { kind: string }) => action.kind === "write")).toEqual(
         [],
       );
       const successor = {
         ...input,
         receipt: {
           ...receipt,
+          qualificationBasis: {
+            ...receipt.qualificationBasis,
+            catalogHeadDigest: `sha256:${"b".repeat(64)}`,
+          },
           catalogContinuity: {
             ...receipt.catalogContinuity,
             catalogHeadDigest: `sha256:${"b".repeat(64)}`,
