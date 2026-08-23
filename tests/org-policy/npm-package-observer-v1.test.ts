@@ -125,7 +125,10 @@ function fixture() {
   };
 }
 
-function writeAuthority(decision: ReturnType<typeof fixture>["decision"]): void {
+function writeAuthority(
+  decision: ReturnType<typeof fixture>["decision"],
+  overrides: Record<string, unknown> = {},
+): void {
   mkdirSync(join(root, ".aih"), { recursive: true });
   writeFileSync(
     join(root, ".aih", "policy-authority-receipt.json"),
@@ -139,6 +142,7 @@ function writeAuthority(decision: ReturnType<typeof fixture>["decision"]): void 
       targets: ["claude", "codex"],
       decisions: [decision],
       decisionRevocations: [],
+      ...overrides,
     }),
   );
 }
@@ -435,6 +439,89 @@ describe("npm package upstream observer V1", () => {
 
     expect(result).toMatchObject({ outcome: "refused", reason: "installed-identity-mismatch" });
     expect(calls).toHaveLength(1);
+  });
+
+  it("closes future or stale authority and future, rejected, revoked, scoped, or review-expired decisions", async () => {
+    const value = fixture();
+    writeInstalledPackage();
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    const options = {
+      decision: value.decision.id,
+      decisionDigest: governanceDecisionDigestV2(value.decision as never),
+      target: "claude",
+      evidence: "evidence.json",
+    };
+
+    writeAuthority(value.decision, { issuedAt: "2026-08-02T12:00:01+00:00" });
+    expect(await observeNpmPackageV1(context(options, []))).toMatchObject({
+      outcome: "refused",
+      reason: "authority-unverified",
+    });
+
+    writeAuthority(value.decision, { expiresAt: "2026-08-02T12:00:00+00:00" });
+    expect(await observeNpmPackageV1(context(options, []))).toMatchObject({
+      outcome: "refused",
+      reason: "authority-unverified",
+    });
+
+    const future = { ...value.decision, notBefore: "2026-08-02T12:00:01+00:00" };
+    writeAuthority(future);
+    expect(
+      await observeNpmPackageV1(
+        context({ ...options, decisionDigest: governanceDecisionDigestV2(future as never) }, []),
+      ),
+    ).toMatchObject({ outcome: "refused", reason: "decision-not-current" });
+
+    const rejected = { ...value.decision, disposition: "rejected" as const };
+    writeAuthority(rejected as never);
+    expect(
+      await observeNpmPackageV1(
+        context({ ...options, decisionDigest: governanceDecisionDigestV2(rejected as never) }, []),
+      ),
+    ).toMatchObject({ outcome: "refused", reason: "decision-rejected" });
+
+    writeAuthority(value.decision, {
+      issuedAt: "2026-08-02T12:00:00+00:00",
+      decisionRevocations: [
+        {
+          format: "aih-governance-decision-revocation",
+          version: 2,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          issuer: "platform-security",
+          revokedAt: "2026-08-02T12:00:00+00:00",
+          reason: "The decision was revoked after review.",
+        },
+      ],
+    });
+    expect(await observeNpmPackageV1(context(options, []))).toMatchObject({
+      outcome: "refused",
+      reason: "decision-revoked",
+    });
+
+    const scoped = { ...value.decision, targets: ["codex"] };
+    writeAuthority(scoped, { targets: ["codex"] });
+    expect(
+      await observeNpmPackageV1(
+        context({ ...options, decisionDigest: governanceDecisionDigestV2(scoped as never) }, []),
+      ),
+    ).toMatchObject({ outcome: "refused", reason: "decision-scope-mismatch" });
+
+    const reviewExpired = {
+      ...value.decision,
+      disposition: "accepted-with-conditions" as const,
+      acceptedFindings: ["residual-risk"],
+      conditions: ["Re-review before the stated deadline."],
+      reviewBy: "2026-08-02T11:59:59+00:00",
+    };
+    writeAuthority(reviewExpired as never);
+    expect(
+      await observeNpmPackageV1(
+        context(
+          { ...options, decisionDigest: governanceDecisionDigestV2(reviewExpired as never) },
+          [],
+        ),
+      ),
+    ).toMatchObject({ outcome: "refused", reason: "decision-not-current" });
   });
 
   it("keeps a proven qualification truthful when fixed installed evidence is absent", async () => {
