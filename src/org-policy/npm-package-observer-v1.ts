@@ -7,16 +7,20 @@ import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { CommandSpec, Plan, PlanContext } from "../internals/plan.js";
 import { dynamicDigest, plan, probe } from "../internals/plan.js";
 import type { Check, CheckCode } from "../internals/verify.js";
-import { verifyPolicyAuthorityReceipt } from "./authority.js";
+import { POLICY_AUTHORITY_RECEIPT_PATH, verifyPolicyAuthorityReceipt } from "./authority.js";
 import {
   custodyOrganizationEvidenceV1,
   isContainedEvidenceRelativePathV1,
 } from "./evidence-custody-v1.js";
 import { type GovernanceDecisionV2, governanceDecisionDigestV2 } from "./governance-decision-v2.js";
-import { verifyOrganizationQualificationV1 } from "./qualification-v1.js";
+import {
+  parseOrganizationEvidenceEnvelopeV1Bytes,
+  verifyOrganizationQualificationV1,
+} from "./qualification-v1.js";
 import {
   type ObservedEffectResolution,
   resolveObservedEffect,
+  type UpstreamObservationReceiptV1,
   upstreamObservationReceiptDigestV1,
   verifyUpstreamObservationV1,
 } from "./upstream-observation-receipt-v1.js";
@@ -77,6 +81,30 @@ export interface NpmPackageObservationResultV1 {
   readonly outcome: "observed-effective" | "partial" | "refused";
   readonly reason?: Reason;
   readonly observationDigest?: string;
+}
+export interface NpmPackageObservationLifecycleHandoffV1 {
+  readonly authorityReceiptDigest: string;
+  readonly custody: readonly {
+    readonly path: string;
+    readonly sha256: string;
+  }[];
+  /** Exact decision verified in the same final observation that minted receipt. */
+  readonly decision: GovernanceDecisionV2;
+  readonly receipt: UpstreamObservationReceiptV1;
+}
+/**
+ * Non-public hand-off for the sibling lifecycle writer. A result alone remains
+ * the sealed CLI API; only this module can associate it with the exact receipt
+ * freshly minted by the code-owned observer.
+ */
+const lifecycleObservationReceipts = new WeakMap<object, NpmPackageObservationLifecycleHandoffV1>();
+
+/** @internal Never exported from the package root or wired to a caller option. */
+export function npmPackageObservationHandoffForLifecycleV1(
+  result: NpmPackageObservationResultV1,
+): NpmPackageObservationLifecycleHandoffV1 | undefined {
+  const handoff = lifecycleObservationReceipts.get(result);
+  return handoff === undefined ? undefined : structuredClone(handoff);
 }
 const CODE: Readonly<Record<Reason, CheckCode>> = {
   "invalid-input": "org-policy.observe-input-invalid",
@@ -202,7 +230,7 @@ function custody(
   root: string,
   relativePath: string,
   maxBytes: number,
-): { bytes: Buffer; unchanged: () => boolean } | undefined | "unsafe" {
+): { bytes: Buffer; sha256: string; unchanged: () => boolean } | undefined | "unsafe" {
   const path = resolve(root, relativePath);
   const rel = relative(root, path);
   if (!isContainedEvidenceRelativePathV1(rel)) return "unsafe";
@@ -213,6 +241,7 @@ function custody(
   const identity = { dev: opened.stats.dev, ino: opened.stats.ino, size: opened.stats.size };
   return {
     bytes,
+    sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
     unchanged: () => {
       if (hasSymlinkedParent(root, path)) return false;
       const current = readRegularFileWithStats(path, { maxBytes });
@@ -263,7 +292,13 @@ function npmInstalledIdentity(
 function installed(
   root: string,
   decision: GovernanceDecisionV2,
-): { installed: { id: string; digest: string }; unchanged: () => boolean } | Reason {
+):
+  | {
+      installed: { id: string; digest: string };
+      custody: readonly { path: string; sha256: string }[];
+      unchanged: () => boolean;
+    }
+  | Reason {
   const source = decision.subject.source;
   if (source.type !== "npm") return "installed-identity-mismatch";
   const lock = custody(root, "package-lock.json", MAX_LOCK_BYTES);
@@ -289,6 +324,10 @@ function installed(
   )
     return "installed-identity-mismatch";
   return {
+    custody: [
+      { path: "package-lock.json", sha256: lock.sha256 },
+      { path: `node_modules/${source.package}/package.json`, sha256: manifest.sha256 },
+    ],
     installed: npmInstalledIdentity(source),
     unchanged: () => lock.unchanged() && manifest.unchanged(),
   };
@@ -302,6 +341,8 @@ export async function observeNpmPackageV1(
   if (requested === undefined) return refusal("invalid-input");
   const evidence = custodyOrganizationEvidenceV1(ctx.root, requested.evidence);
   if ("problem" in evidence) return refusal(evidence.problem);
+  const evidenceEnvelope = parseOrganizationEvidenceEnvelopeV1Bytes(evidence.evidence.bytes);
+  if (evidenceEnvelope === undefined) return refusal("qualification-unverified");
   const verified = await verifyPolicyAuthorityReceipt(ctx);
   if (verified.authority === undefined) return refusal("authority-unverified");
   if (verified.authority.receipt.version !== 3) return refusal("authority-version", "verified");
@@ -410,6 +451,7 @@ export async function observeNpmPackageV1(
     Math.min(
       Date.parse(verified.authority.receipt.expiresAt),
       Date.parse(decision.expiresAt),
+      Date.parse(evidenceEnvelope.expiresAt),
       decision.disposition === "accepted-with-conditions"
         ? Date.parse(decision.reviewBy)
         : Number.POSITIVE_INFINITY,
@@ -465,13 +507,30 @@ export async function observeNpmPackageV1(
   });
   if (effective.state !== "observed-effective")
     return effectiveRefusal(effective.state, "qualified");
-  return {
+  const result: NpmPackageObservationResultV1 = {
     authority: "verified",
     qualification: "qualified",
     effective: effective.state,
     outcome: "observed-effective",
     observationDigest: upstreamObservationReceiptDigestV1(receipt),
   };
+  lifecycleObservationReceipts.set(
+    result,
+    structuredClone({
+      authorityReceiptDigest: verified.authority.receiptDigest,
+      custody: [
+        {
+          path: requested.evidence,
+          sha256: `sha256:${createHash("sha256").update(evidence.evidence.bytes).digest("hex")}`,
+        },
+        { path: POLICY_AUTHORITY_RECEIPT_PATH, sha256: verified.authority.receiptDigest },
+        ...local.custody,
+      ],
+      decision,
+      receipt,
+    }),
+  );
+  return result;
 }
 function check(result: NpmPackageObservationResultV1): Check {
   return result.outcome === "observed-effective"

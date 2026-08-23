@@ -74,6 +74,8 @@ export interface WriteAction {
   dedupeJsonArrayCommands?: Record<string, readonly string[]>;
   /** POSIX file mode, e.g. 0o755 for hooks. */
   mode?: number;
+  /** Sync this file before a later staged write can commit. */
+  durable?: true;
   /** Write only if the file is absent; never overwrite (user-owned seed files). */
   once?: boolean;
   /**
@@ -82,6 +84,11 @@ export interface WriteAction {
    * current bytes must hash to `sha256`.
    */
   expect?: { absent: true } | { sha256: string };
+  /**
+   * Internal write-local precondition for this target's `<path>.aih.tmp`
+   * scratch. The transaction rechecks it immediately before consuming scratch.
+   */
+  expectScratch?: { absent: true } | { sha256: string };
   /** Recheck an unchanged expected file inside the filesystem transaction without rewriting it. */
   assertUnchanged?: boolean;
   /**
@@ -262,6 +269,25 @@ export type Action =
 export interface Plan {
   capability: string;
   actions: Action[];
+  /** Exact UTC ISO deadline after which an apply must not commit local mutations. */
+  commitNotAfter?: string;
+  /** Fixed root-relative lock path held while a transaction commits this plan. */
+  commitLock?: string;
+}
+
+const EXACT_UTC_ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/** Parse the closed Plan deadline form once, before any apply-time filesystem work. */
+export function parseCommitNotAfter(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !EXACT_UTC_ISO_TIMESTAMP.test(value)) {
+    throw new AihError("invalid plan commit deadline", "AIH_CONFIG");
+  }
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString() !== value) {
+    throw new AihError("invalid plan commit deadline", "AIH_CONFIG");
+  }
+  return timestamp;
 }
 
 /** Everything a capability needs to compute (and a runner to execute) its plan. */
@@ -439,6 +465,7 @@ export function writeText(
     expect?: WriteAction["expect"];
     sensitive?: ActionSensitivity;
     requiresPriorExecSuccess?: boolean;
+    durable?: true;
   } = {},
 ): WriteAction {
   return {
@@ -453,6 +480,7 @@ export function writeText(
     trustedBase: opts.trustedBase,
     expect: opts.expect,
     requiresPriorExecSuccess: opts.requiresPriorExecSuccess,
+    durable: opts.durable,
     ...(opts.sensitive === undefined ? {} : { sensitive: opts.sensitive }),
   };
 }
@@ -480,6 +508,7 @@ export function writeJson(
     >;
     removeJsonTopLevelKeys?: readonly string[];
     dedupeJsonArrayCommands?: Record<string, readonly string[]>;
+    durable?: true;
   } = {},
 ): WriteAction {
   if (value === undefined) {
@@ -503,6 +532,7 @@ export function writeJson(
     pruneJsonChildKeys: opts.pruneJsonChildKeys,
     removeJsonTopLevelKeys: opts.removeJsonTopLevelKeys,
     dedupeJsonArrayCommands: opts.dedupeJsonArrayCommands,
+    durable: opts.durable,
   };
 }
 

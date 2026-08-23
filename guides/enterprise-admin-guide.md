@@ -84,9 +84,61 @@ matching installed manifest. It cannot install or execute the package, and expos
 effect, observer, verifier, runner, clock, receipt, or callback override. Exact current evidence
 returns `observed-effective` with a canonical receipt digest; missing installed evidence remains
 `partial`, while linked, changed, stale, revoked, rejected, malformed, or mismatched evidence
-refuses. No receipt or capability is persisted.
+refuses. This observation command persists no receipt or capability.
 
-The lifecycle is therefore not yet end to end. Custom stdio and remote policy candidates remain
+After reviewing that observation, persist its audit lineage with the same exact inputs. The first
+call remains a zero-write preview; only the second call can write:
+
+```bash
+aih policy lifecycle npm-package <root> \
+  --decision <exact-decision-id> \
+  --decision-digest sha256:<exact-decision-digest> \
+  --target <code-owned-cli-id> \
+  --evidence <root-relative-canonical-envelope> \
+  --json
+
+aih policy lifecycle npm-package <root> \
+  --decision <exact-decision-id> \
+  --decision-digest sha256:<exact-decision-digest> \
+  --target <code-owned-cli-id> \
+  --evidence <root-relative-canonical-envelope> \
+  --apply --json
+```
+
+The applied command repeats live authority, qualification, installed-state, and observation checks
+before appending an immutable record under `.aih/governance/npm-package-lifecycle/v1/`. Use a newly
+authorized exact decision/evidence set for a version or integrity bump; the prior record remains in
+the stable package/integration lineage. When the current V3 authority revokes the decision, the
+same command appends that revocation only for the verified current lineage. This is an audit fact,
+not a claim that npm removed or stopped the package. The record append is durable evidence, but the
+revoked result remains non-effective, failing, and nonzero. Refused, expired, corrupt, detectably
+rolled-back, forked, raced, linked, or detached state cannot produce a successful apply result.
+A durable subject-and-target claim prevents loss of the ordinary subject binding from silently
+admitting a different registry or integration lineage. AIH serializes these local writers with a
+subject-scoped cooperative lease: a crashed owner is reclaimable after its bounded 30-second mutation
+window and 30-second recovery grace, while malformed or foreign lock state blocks. The inert lock
+anchor can remain in the lifecycle store. This is local AIH writer coordination, not an
+operating-system lock or protection from another process that can rewrite the store.
+
+A failed immutable-record rename can leave the exact private `.aih.tmp` scratch. AIH consumes that
+scratch on retry only when its canonical candidate bytes and single-link custody still match at the
+transaction boundary. It preserves and refuses mismatched, linked, wrongly named, or foreign scratch
+instead of treating untrusted state as cleanup input.
+
+A hard process or machine failure can leave an immutable record before its head advances. Only the
+same prepared canonical bytes can be reused; a fresh command performs a newly timed observation and
+normally treats that orphan as an ambiguous fork. AIH fails closed instead of deleting or adopting
+it, so preserve the store and route it through the organization's approved
+incident-reconciliation process.
+
+The target-local chain blocks a different lineage while either subject index remains and detects a
+stale head while its canonical successor records remain. It cannot prove that an administrator or
+attacker did not delete both the claim and binding, or roll back a head advance and all later records.
+Retain the whole store in organization-controlled versioned evidence. Do not
+promote the inert offline high-water seam to authority; that requires Core's future
+administrator-managed trust-root loader and fixed verifier/producer.
+
+The lifecycle is durable but not yet end to end. Custom stdio and remote policy candidates remain
 non-projectable, and neither a V3 receipt, `policy resolve`, nor this fixed npm observer can install,
 configure, or activate one. The observer also does not cover skills, MCP servers, remote endpoints,
 non-npm packages, or the AIH-supported qualification route. Do not tell developers that any other

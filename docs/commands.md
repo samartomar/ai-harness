@@ -988,6 +988,74 @@ run ledger, install, configure, execute, sign, publish, or make the subject proj
 does not observe AIH-supported qualifications, skills, MCP servers, remote endpoints, PyPI/OCI
 packages, or generic executable closures.
 
+`aih policy lifecycle npm-package [root] --decision <id> --decision-digest <sha256> --target <id>
+--evidence <root-relative-file>` repeats the fixed observation route and can persist its result as
+governance history. It is preview-only unless `--apply` is explicit:
+
+```bash
+aih policy lifecycle npm-package <root> \
+  --decision <exact-decision-id> \
+  --decision-digest sha256:<exact-decision-digest> \
+  --target <code-owned-cli-id> \
+  --evidence <root-relative-canonical-envelope> \
+  --json
+
+aih policy lifecycle npm-package <root> \
+  --decision <exact-decision-id> \
+  --decision-digest sha256:<exact-decision-digest> \
+  --target <code-owned-cli-id> \
+  --evidence <root-relative-canonical-envelope> \
+  --apply --json
+```
+
+Preview performs the complete fresh verification but writes nothing. `--apply` appends a canonical
+content-addressed record and advances the matching subject head in
+`.aih/governance/npm-package-lifecycle/v1/`; it never uses generic report history as policy
+authority. Each fresh unchanged re-observation appends an independently timed immutable record;
+the output of one prepared plan is deterministic. A separately authorized exact version/integrity
+change appends a bump on the stable package/integration lineage. A current
+authenticated V3 decision revocation can append a revocation record only for an already observed
+current head. That records governance state; it does not remove, stop, update, or configure the npm
+package. The durable append is reported truthfully, but revocation removes permission rather than
+establishing an effect, so verification and the command exit remain failing and nonzero.
+
+Apply re-verifies authority, evidence, installed custody, and observation before constructing the
+transaction, pins every authorizing file, refuses after the shortest applicable validity deadline,
+serializes cooperative lifecycle writers by subject and target, writes a durable immutable lineage
+claim before the ordinary binding and record, writes the record before the head, and reads the exact
+committed claim, binding, record, head, and bounded lineage before it reports success. The claim keeps
+an accidentally missing binding from admitting a different registry or integration lineage without a
+global store scan. Missing or partial observation, invalid or stale authority, linked store paths,
+substitution, a stale head whose canonical successor remains, forks, collisions, deadline expiry,
+content races, capacity exhaustion, and detached post-commit state refuse without a successful
+lifecycle claim. A
+non-effective result remains nonzero; no lifecycle record can make a failed observation effective.
+If an interrupted immutable-record rename leaves its private `.aih.tmp` scratch, a retry may consume
+it only when the exact candidate bytes still match, the file has single-link custody, and the
+transaction rechecks that precondition before any related filesystem effect. Mismatched, linked,
+wrongly named, or otherwise foreign scratch is preserved and refused rather than cleaned up.
+If a hard process or machine failure leaves a record without its head, only the same prepared
+canonical bytes can be reused. A fresh command performs a newly timed observation and therefore
+normally sees that orphan as an ambiguous fork; it fails closed for approved operator incident
+reconciliation and neither deletes nor silently adopts the orphan.
+
+The cooperative writer lock uses an owner lease with a maximum 30-second forward-mutation window and
+a further 30-second recovery grace. After that grace a later writer can reclaim a crashed owner's
+canonical claim; malformed or foreign lock state fails closed. Its inert canonical anchor and staging
+directory can remain under the lifecycle store. This coordinates AIH writers on the local filesystem;
+it is not an operating-system lock and does not isolate the store from a process that can rewrite it.
+
+This target-local store blocks a different lineage while either subject index remains and detects a
+stale head while its canonical successor records remain. It cannot by itself detect coordinated
+deletion of both the claim and binding, or a rollback that removes a head advance and every later
+record; preserve the whole store in organization-controlled versioned evidence. The existing
+offline-revocation high-water primitive remains inert until Core has an administrator-managed
+trust-root loader and a fixed verifier/producer.
+
+This is durable npm audit history, not yet the complete custom-source lifecycle. The command does
+not make a candidate projectable and does not cover skills, MCP servers, remote endpoints, non-npm
+packages, or the AIH-supported qualification route.
+
 Approvals cover only a missing or failed **waivable** evidence record, require a non-empty signed reason,
 and last at most 90 days. Mandatory detector failures and every unwaivable danger code remain blocked even
 with an otherwise valid approval.

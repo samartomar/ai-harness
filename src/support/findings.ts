@@ -648,6 +648,39 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     ...OBSERVE_PLATFORM,
     title: "npm observation invariant could not be established",
   },
+  "org-policy.lifecycle-input-invalid": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "npm lifecycle command input is invalid",
+    action:
+      "Correct the exact decision id/digest, supported target, and root-relative evidence path before rerunning the lifecycle preview.",
+  },
+  "org-policy.lifecycle-authority-unverified": {
+    ...OBSERVE_PLATFORM,
+    title: "npm lifecycle authority is not current or verified",
+  },
+  "org-policy.lifecycle-decision-revoked": {
+    ...OBSERVE_PLATFORM,
+    title: "npm lifecycle decision is revoked",
+  },
+  "org-policy.lifecycle-observation-invalid": {
+    ...OBSERVE_PLATFORM,
+    title: "npm lifecycle observation is incomplete or invalid",
+  },
+  "org-policy.lifecycle-store-invalid": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "npm lifecycle store is unsafe or corrupt",
+    action:
+      "Do not repair a linked or malformed governance store in place. Preserve the evidence, remove the unsafe store only after approved incident handling, then rerun from fresh authority.",
+  },
+  "org-policy.lifecycle-store-conflict": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "npm lifecycle store conflicts with current immutable history",
+    action:
+      "Do not overwrite lifecycle history. Investigate the stale head, record collision, or subject-lineage conflict and rerun only after the durable store has been reconciled.",
+  },
   "org-policy.resolve-input-invalid": {
     audience: "developer",
     failSeverity: "blocking",

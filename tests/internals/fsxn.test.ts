@@ -3,19 +3,25 @@ import { createHash } from "node:crypto";
 import {
   closeSync,
   existsSync,
+  linkSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   openSync,
+  readdirSync,
   readFileSync,
+  renameSync,
+  rmdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import fc from "fast-check";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import {
   FsTransaction,
   readBoundedFileDescriptor,
@@ -26,13 +32,113 @@ import {
   rollbackAppliedWrites,
 } from "../../src/internals/fsxn.js";
 
+const fsEvents = vi.hoisted(() => ({
+  events: [] as string[],
+  openedPaths: new Map<number, string>(),
+  readPathnames: [] as string[],
+  afterTempWrite: undefined as ((path: string) => void) | undefined,
+  afterRename: undefined as ((to: string) => void) | undefined,
+  afterRead: undefined as ((path: string) => void) | undefined,
+  afterRemove: undefined as ((path: string) => void) | undefined,
+  afterLeaseWrite: undefined as ((path: string) => void) | undefined,
+  afterClose: undefined as ((path: string) => void) | undefined,
+  afterRollbackTempWrite: undefined as ((path: string) => void) | undefined,
+}));
+
+vi.mock("node:fs", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...original,
+    openSync: (path: string | Buffer | URL, flags: string | number, mode?: number) => {
+      const fd = original.openSync(path, flags, mode);
+      if (typeof path === "string") fsEvents.openedPaths.set(fd, path);
+      return fd;
+    },
+    closeSync: (fd: number) => {
+      const path = fsEvents.openedPaths.get(fd) ?? "";
+      const result = original.closeSync(fd);
+      fsEvents.openedPaths.delete(fd);
+      fsEvents.afterClose?.(path);
+      return result;
+    },
+    fsyncSync: (fd: number) => {
+      fsEvents.events.push("fsync");
+      return original.fsyncSync(fd);
+    },
+    renameSync: (from: string, to: string) => {
+      fsEvents.events.push(`rename:${to}`);
+      const result = original.renameSync(from, to);
+      fsEvents.afterRename?.(to);
+      return result;
+    },
+    readFileSync: (path: string | number, options?: unknown) => {
+      const result = original.readFileSync(path, options as never);
+      if (typeof path === "string") fsEvents.readPathnames.push(path);
+      fsEvents.afterRead?.(
+        typeof path === "number" ? (fsEvents.openedPaths.get(path) ?? "") : path,
+      );
+      return result;
+    },
+    readSync: (...args: unknown[]) => {
+      const result = (original.readSync as (...inner: unknown[]) => number)(...args);
+      const fd = args[0];
+      if (typeof fd === "number") fsEvents.afterRead?.(fsEvents.openedPaths.get(fd) ?? "");
+      return result;
+    },
+    rmSync: (path: string, options?: unknown) => {
+      const result = original.rmSync(path, options as never);
+      fsEvents.afterRemove?.(path);
+      return result;
+    },
+    writeFileSync: (path: string, data: string | NodeJS.ArrayBufferView, options?: unknown) => {
+      const result = original.writeFileSync(path, data, options as never);
+      if (path.endsWith(".aih.tmp")) fsEvents.afterTempWrite?.(path);
+      if (path.endsWith(".aih.rollback.tmp")) fsEvents.afterRollbackTempWrite?.(path);
+      if (/lease\.[0-9a-f]{64}\.json$/.test(path)) fsEvents.afterLeaseWrite?.(path);
+      return result;
+    },
+  };
+});
+
 let dir: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aih-fsxn-"));
 });
 afterEach(() => {
+  fsEvents.afterTempWrite = undefined;
+  fsEvents.afterRename = undefined;
+  fsEvents.afterRead = undefined;
+  fsEvents.afterRemove = undefined;
+  fsEvents.afterLeaseWrite = undefined;
+  fsEvents.afterClose = undefined;
+  fsEvents.afterRollbackTempWrite = undefined;
+  fsEvents.openedPaths.clear();
+  fsEvents.readPathnames = [];
   rmSync(dir, { recursive: true, force: true });
 });
+
+function commitLease(owner: string, expiresAt: number): string {
+  return JSON.stringify({
+    expiresAt,
+    format: "aih-fs-commit-lease",
+    owner,
+    reclaimAfter: expiresAt + 30_000,
+    version: 1,
+  });
+}
+
+function writeLockAnchor(lock: string): void {
+  mkdirSync(lock, { recursive: true });
+  writeFileSync(`${lock}/anchor.json`, '{"format":"aih-fs-commit-lock-anchor","version":1}');
+}
+
+function writeActiveLease(lock: string, owner: string, expiresAt: number): string {
+  const active = join(lock, "active");
+  mkdirSync(active, { recursive: true });
+  const lease = join(active, `lease.${owner}.json`);
+  writeFileSync(lease, commitLease(owner, expiresAt));
+  return lease;
+}
 
 describe("FsTransaction", () => {
   it("preview does not touch disk", () => {
@@ -40,6 +146,718 @@ describe("FsTransaction", () => {
     t.stage(join(dir, "a.txt"), "hi");
     expect(t.preview()).toHaveLength(1);
     expect(existsSync(join(dir, "a.txt"))).toBe(false);
+  });
+
+  it("keeps an expired deadline preview mutation-free", () => {
+    const target = join(dir, "expired-preview.txt");
+    const t = new FsTransaction({ commitNotAfter: Date.parse("2020-01-01T00:00:00.000Z") });
+    t.stage(target, "hi");
+
+    expect(t.preview()).toHaveLength(1);
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it("rolls back earlier writes when its deadline expires mid-transaction", () => {
+    const start = Date.parse("2030-01-01T00:00:00.000Z");
+    const first = join(dir, "first.txt");
+    const second = join(dir, "second.txt");
+    let sawFirstWrite = false;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => {
+      if (existsSync(first)) sawFirstWrite = true;
+      return sawFirstWrite ? start + 1 : start;
+    });
+    const t = new FsTransaction({ commitNotAfter: start + 1 });
+    t.stage(first, "first");
+    t.stage(second, "second");
+
+    expect(() => t.commit()).toThrow("commit deadline expired");
+    expect(sawFirstWrite).toBe(true);
+    expect(existsSync(first)).toBe(false);
+    expect(existsSync(second)).toBe(false);
+    now.mockRestore();
+  });
+
+  it("rolls back earlier removals when its deadline expires mid-transaction", () => {
+    const start = Date.parse("2030-01-01T00:00:00.000Z");
+    const first = join(dir, "first.txt");
+    const second = join(dir, "second.txt");
+    const firstLegacy = join(dir, ".aih", "legacy", "first.txt");
+    writeFileSync(first, "first");
+    writeFileSync(second, "second");
+    let sawFirstRemoval = false;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => {
+      if (existsSync(firstLegacy)) sawFirstRemoval = true;
+      return sawFirstRemoval ? start + 1 : start;
+    });
+    const t = new FsTransaction({ commitNotAfter: start + 1 });
+    t.stageRemoval(first, firstLegacy);
+    t.stageRemoval(second, join(dir, ".aih", "legacy", "second.txt"));
+
+    expect(() => t.commit()).toThrow("commit deadline expired");
+    expect(sawFirstRemoval).toBe(true);
+    expect(readFileSync(first, "utf8")).toBe("first");
+    expect(readFileSync(second, "utf8")).toBe("second");
+    now.mockRestore();
+  });
+
+  it("rejects an expired deadline before its first mutation", () => {
+    const deadline = Date.parse("2030-01-01T00:00:00.000Z");
+    const now = vi.spyOn(Date, "now").mockReturnValue(deadline);
+    const target = join(dir, "expired.txt");
+    const t = new FsTransaction({ commitNotAfter: deadline });
+    t.stage(target, "blocked");
+
+    expect(() => t.commit()).toThrow("commit deadline expired");
+    expect(existsSync(target)).toBe(false);
+    now.mockRestore();
+  });
+
+  it("preserves an internal deadline failure while building a commit lease", () => {
+    const start = Date.parse("2030-01-01T00:00:00.000Z");
+    const deadline = start + 1;
+    const lock = join(dir, ".aih", "commit.lock");
+    const target = join(dir, "blocked.txt");
+    let current = start;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => current);
+    fsEvents.afterLeaseWrite = () => {
+      current = deadline;
+    };
+    const t = new FsTransaction({
+      commitLock: { path: lock, root: dir },
+      commitNotAfter: deadline,
+    });
+    t.stage(target, "blocked", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow(/commit deadline expired/);
+    expect(existsSync(target)).toBe(false);
+    expect(existsSync(join(lock, "active"))).toBe(false);
+    now.mockRestore();
+  });
+
+  it("returns an empty transaction without touching a hostile commit lock", () => {
+    const lock = join(dir, ".aih", "commit.lock");
+    mkdirSync(dirname(lock), { recursive: true });
+    // A regular file at the lease anchor is hostile: any lock acquisition must
+    // refuse it. An empty transaction has no effects or assertions to guard.
+    writeFileSync(lock, "not a canonical commit-lock anchor");
+    fsEvents.events = [];
+    fsEvents.readPathnames = [];
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+
+    expect(t.commit()).toEqual({ backups: [], removed: [], written: [] });
+    expect(fsEvents.events).toEqual([]);
+    expect(fsEvents.readPathnames).not.toContain(lock);
+    expect(readFileSync(lock, "utf8")).toBe("not a canonical commit-lock anchor");
+  });
+
+  it("commits normally before a future deadline", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2030-01-01T00:00:00.000Z"));
+    const target = join(dir, "future.txt");
+    const t = new FsTransaction({ commitNotAfter: Date.parse("2030-01-01T00:00:01.000Z") });
+    t.stage(target, "written");
+
+    t.commit();
+    expect(readFileSync(target, "utf8")).toBe("written");
+    now.mockRestore();
+  });
+
+  it("refuses a staged write through a symlinked parent beneath its guarded root", () => {
+    const outside = mkdtempSync(join(tmpdir(), "aih-fsxn-outside-"));
+    const linked = join(dir, "linked");
+    try {
+      symlinkSync(outside, linked, "dir");
+    } catch {
+      rmSync(outside, { recursive: true, force: true });
+      return;
+    }
+    const target = join(linked, "escape.txt");
+    const t = new FsTransaction();
+    t.stage(target, "blocked", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow(/parent path/);
+    expect(existsSync(join(outside, "escape.txt"))).toBe(false);
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("removes transaction-created empty parent directories after rollback", () => {
+    const created = join(dir, "created", "nested");
+    const blockingFile = join(dir, "blocking-file");
+    writeFileSync(blockingFile, "not a directory");
+    const t = new FsTransaction();
+    t.stage(join(created, "first.txt"), "first", undefined, undefined, { root: dir });
+    t.stage(join(blockingFile, "second.txt"), "second", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow();
+    expect(existsSync(join(dir, "created"))).toBe(false);
+  });
+
+  it("preserves created directories when lease ownership is lost between rollback phases", () => {
+    const lock = join(dir, ".aih", "commit.lock");
+    const parent = join(dir, "created", "nested");
+    const first = join(parent, "first.txt");
+    const blocking = join(dir, "blocking-file");
+    const successorOwner = "e".repeat(64);
+    writeFileSync(blocking, "not a directory");
+    fsEvents.afterRemove = (path) => {
+      if (path !== first) return;
+      rmSync(join(lock, "active"), { recursive: true, force: true });
+      writeActiveLease(lock, successorOwner, Date.parse("2030-01-02T00:00:00.000Z"));
+    };
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    t.stage(first, "generated", undefined, undefined, { root: dir });
+    t.stage(join(blocking, "second.txt"), "blocked", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow();
+    expect(existsSync(parent)).toBe(true);
+    expect(readFileSync(join(lock, "active", `lease.${successorOwner}.json`), "utf8")).toBe(
+      commitLease(successorOwner, Date.parse("2030-01-02T00:00:00.000Z")),
+    );
+  });
+
+  it("syncs a durable record before a later staged rename", () => {
+    const first = join(dir, "record.json");
+    const second = join(dir, "head.json");
+    fsEvents.events = [];
+    const t = new FsTransaction();
+    t.stage(first, "record", undefined, undefined, { durable: true });
+    t.stage(second, "head");
+
+    t.commit();
+
+    const durableSync = fsEvents.events.indexOf("fsync");
+    expect(durableSync).toBeGreaterThanOrEqual(0);
+    expect(durableSync).toBeLessThan(fsEvents.events.indexOf(`rename:${second}`));
+  });
+
+  it("rechecks an expected target immediately before replacing it", () => {
+    const target = join(dir, "expected.txt");
+    writeFileSync(target, "planned");
+    const expected = createHash("sha256").update("planned").digest("hex");
+    fsEvents.afterTempWrite = () => writeFileSync(target, "operator");
+    const t = new FsTransaction();
+    t.stage(target, "generated", undefined, { sha256: expected }, { root: dir });
+
+    expect(() => t.commit()).toThrow(/write target changed before commit/);
+    expect(readFileSync(target, "utf8")).toBe("operator");
+    fsEvents.afterTempWrite = undefined;
+  });
+
+  it("keeps only its canonical anchor after a failed transaction", () => {
+    const lock = join(dir, ".aih", "commit.lock");
+    const blockingFile = join(dir, "blocking-file");
+    writeFileSync(blockingFile, "not a directory");
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    t.stage(join(blockingFile, "child.txt"), "blocked", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow();
+    expect(readFileSync(join(lock, "anchor.json"), "utf8")).toBe(
+      '{"format":"aih-fs-commit-lock-anchor","version":1}',
+    );
+    expect(existsSync(join(lock, "active"))).toBe(false);
+  });
+
+  it("refuses an unexpired canonical commit lease without touching its target", () => {
+    const start = Date.parse("2030-01-01T00:00:00.000Z");
+    const lock = join(dir, ".aih", "commit.lock");
+    const target = join(dir, "blocked.txt");
+    writeLockAnchor(lock);
+    const lease = writeActiveLease(lock, "a".repeat(64), start + 60_000);
+    const now = vi.spyOn(Date, "now").mockReturnValue(start);
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    t.stage(target, "blocked", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow(/commit lock is already held/);
+    expect(readFileSync(lease, "utf8")).toBe(commitLease("a".repeat(64), start + 60_000));
+    expect(existsSync(target)).toBe(false);
+    now.mockRestore();
+  });
+
+  it("reclaims an expired canonical commit lease and leaves no active lease", () => {
+    const start = Date.parse("2030-01-01T00:00:00.000Z");
+    const lock = join(dir, ".aih", "commit.lock");
+    const target = join(dir, "reclaimed.txt");
+    writeLockAnchor(lock);
+    writeActiveLease(lock, "a".repeat(64), start - 30_001);
+    const now = vi.spyOn(Date, "now").mockReturnValue(start);
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    t.stage(target, "reclaimed", undefined, undefined, { root: dir });
+
+    t.commit();
+    expect(readFileSync(target, "utf8")).toBe("reclaimed");
+    expect(existsSync(join(lock, "active"))).toBe(false);
+    expect(readdirSync(lock).sort()).toEqual(["anchor.json", "staging"]);
+    now.mockRestore();
+  });
+
+  it("reads lock marker and lease facts from descriptors rather than raced path reads", () => {
+    const start = Date.parse("2030-01-01T00:00:00.000Z");
+    const lock = join(dir, ".aih", "commit.lock");
+    const target = join(dir, "descriptor-locked.txt");
+    writeLockAnchor(lock);
+    const staleLease = writeActiveLease(lock, "a".repeat(64), start - 30_001);
+    const marker = join(lock, "anchor.json");
+    const now = vi.spyOn(Date, "now").mockReturnValue(start);
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    t.stage(target, "reclaimed", undefined, undefined, { root: dir });
+
+    fsEvents.readPathnames = [];
+    t.commit();
+
+    expect(fsEvents.readPathnames).not.toContain(marker);
+    expect(fsEvents.readPathnames).not.toContain(staleLease);
+    now.mockRestore();
+  });
+
+  it("fails closed for a malformed commit lease without deleting it", () => {
+    const lock = join(dir, ".aih", "commit.lock");
+    const target = join(dir, "blocked.txt");
+    writeLockAnchor(lock);
+    mkdirSync(join(lock, "active"));
+    writeFileSync(join(lock, "active", "foreign"), "foreign");
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    t.stage(target, "blocked", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow(/commit lock is already held/);
+    expect(readFileSync(join(lock, "active", "foreign"), "utf8")).toBe("foreign");
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it("fails closed for a missing, linked, or symlinked canonical anchor", () => {
+    const target = join(dir, "blocked.txt");
+    const lock = join(dir, ".aih", "commit.lock");
+    mkdirSync(lock, { recursive: true });
+    const missing = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    missing.stage(target, "blocked", undefined, undefined, { root: dir });
+    expect(() => missing.commit()).toThrow(/commit lock could not be verified/);
+
+    writeFileSync(join(lock, "anchor.json"), '{"format":"aih-fs-commit-lock-anchor","version":1}');
+    linkSync(join(lock, "anchor.json"), join(dir, "anchor-link"));
+    const linked = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    linked.stage(target, "blocked", undefined, undefined, { root: dir });
+    expect(() => linked.commit()).toThrow(/commit lock could not be verified/);
+    expect(existsSync(target)).toBe(false);
+
+    const symlinked = join(dir, ".aih", "symlink.lock");
+    try {
+      symlinkSync(lock, symlinked, "dir");
+    } catch {
+      return;
+    }
+    const linkedPath = new FsTransaction({ commitLock: { path: symlinked, root: dir } });
+    linkedPath.stage(target, "blocked", undefined, undefined, { root: dir });
+    expect(() => linkedPath.commit()).toThrow(/commit lock could not be verified/);
+  });
+
+  it("recovers only an expired, empty owner-named staging candidate", () => {
+    const start = Date.parse("2030-01-01T00:00:00.000Z");
+    const lock = join(dir, ".aih", "commit.lock");
+    const target = join(dir, "recovered.txt");
+    writeLockAnchor(lock);
+    const owner = "c".repeat(64);
+    mkdirSync(join(lock, "staging", `${start - 30_001}.${start - 1}.${owner}`), {
+      recursive: true,
+    });
+    const now = vi.spyOn(Date, "now").mockReturnValue(start);
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    t.stage(target, "recovered", undefined, undefined, { root: dir });
+
+    t.commit();
+    expect(readFileSync(target, "utf8")).toBe("recovered");
+    expect(readdirSync(join(lock, "staging"))).toEqual([]);
+    now.mockRestore();
+  });
+
+  it("recovers an empty active directory left after owner-lease cleanup interruption", () => {
+    const lock = join(dir, ".aih", "commit.lock");
+    const target = join(dir, "recovered.txt");
+    writeLockAnchor(lock);
+    const staleLease = writeActiveLease(
+      lock,
+      "d".repeat(64),
+      Date.parse("2030-01-02T00:00:00.000Z"),
+    );
+    rmSync(staleLease);
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    t.stage(target, "recovered", undefined, undefined, { root: dir });
+
+    t.commit();
+    expect(readFileSync(target, "utf8")).toBe("recovered");
+    expect(existsSync(join(lock, "active"))).toBe(false);
+  });
+
+  it("fails closed for foreign active or staging entries", () => {
+    const lock = join(dir, ".aih", "commit.lock");
+    const target = join(dir, "blocked.txt");
+    writeLockAnchor(lock);
+    mkdirSync(join(lock, "staging", "foreign"), { recursive: true });
+    const staging = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    staging.stage(target, "blocked", undefined, undefined, { root: dir });
+    expect(() => staging.commit()).toThrow(/commit lock is already held/);
+    expect(existsSync(target)).toBe(false);
+
+    const foreignLock = join(dir, ".aih", "foreign.lock");
+    writeLockAnchor(foreignLock);
+    writeFileSync(join(foreignLock, "foreign"), "foreign");
+    const foreign = new FsTransaction({ commitLock: { path: foreignLock, root: dir } });
+    foreign.stage(target, "blocked", undefined, undefined, { root: dir });
+    expect(() => foreign.commit()).toThrow(/commit lock could not be verified/);
+  });
+
+  it("fails closed for a multi-linked canonical commit lease", () => {
+    const lock = join(dir, ".aih", "commit.lock");
+    const target = join(dir, "blocked.txt");
+    writeLockAnchor(lock);
+    const lease = writeActiveLease(lock, "a".repeat(64), Date.parse("2030-01-02T00:00:00.000Z"));
+    linkSync(lease, join(dir, "other-link"));
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    t.stage(target, "blocked", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow(/commit lock is already held/);
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it("rejects a canonical-looking lease with an unbounded recovery grace", () => {
+    const start = Date.parse("2030-01-01T00:00:00.000Z");
+    const lock = join(dir, ".aih", "commit.lock");
+    const target = join(dir, "blocked.txt");
+    const owner = "a".repeat(64);
+    writeLockAnchor(lock);
+    const lease = writeActiveLease(lock, owner, start - 1);
+    writeFileSync(
+      lease,
+      JSON.stringify({
+        expiresAt: start - 1,
+        format: "aih-fs-commit-lease",
+        owner,
+        reclaimAfter: start + 365 * 24 * 60 * 60 * 1_000,
+        version: 1,
+      }),
+    );
+    const now = vi.spyOn(Date, "now").mockReturnValue(start);
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    t.stage(target, "blocked", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow(/commit lock is already held/);
+    expect(existsSync(target)).toBe(false);
+    now.mockRestore();
+  });
+
+  it("stops and rolls back before its commit lease becomes reclaimable", () => {
+    const start = Date.parse("2030-01-01T00:00:00.000Z");
+    const first = join(dir, "first.txt");
+    const second = join(dir, "second.txt");
+    let sawFirst = false;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => {
+      if (existsSync(first)) sawFirst = true;
+      return sawFirst ? start + 2 : start;
+    });
+    const t = new FsTransaction({
+      commitLock: { path: join(dir, ".aih", "commit.lock"), root: dir, leaseMs: 1 },
+    });
+    t.stage(first, "first", undefined, undefined, { root: dir });
+    t.stage(second, "second", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow(/commit lock lease expired/);
+    expect(sawFirst).toBe(true);
+    expect(existsSync(first)).toBe(false);
+    expect(existsSync(second)).toBe(false);
+    now.mockRestore();
+  });
+
+  it("never removes a successor lease substituted before cleanup", () => {
+    const lock = join(dir, ".aih", "commit.lock");
+    const target = join(dir, "generated.txt");
+    const successorOwner = "b".repeat(64);
+    fsEvents.afterRename = (to) => {
+      if (to !== target) return;
+      rmSync(join(lock, "active"), { recursive: true, force: true });
+      writeActiveLease(lock, successorOwner, Date.parse("2030-01-02T00:00:00.000Z"));
+    };
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    t.stage(target, "generated", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow(/preserved concurrent changes.*commit lock lease lost/);
+    expect(readFileSync(target, "utf8")).toBe("generated");
+    expect(readFileSync(join(lock, "active", `lease.${successorOwner}.json`), "utf8")).toBe(
+      commitLease(successorOwner, Date.parse("2030-01-02T00:00:00.000Z")),
+    );
+  });
+
+  it("detects an identical-byte active lease replacement by inode and preserves the target", () => {
+    const lock = join(dir, ".aih", "commit.lock");
+    const target = join(dir, "generated.txt");
+    let replacement:
+      | {
+          after: { dev: bigint; ino: bigint };
+          before: { dev: bigint; ino: bigint };
+          path: string;
+          text: string;
+        }
+      | undefined;
+    fsEvents.afterRename = (to) => {
+      if (to !== target) return;
+      const active = join(lock, "active");
+      const name = readdirSync(active).find((entry) => entry.startsWith("lease."));
+      if (name === undefined) throw new Error("expected active lease");
+      const path = join(active, name);
+      const text = readFileSync(path, "utf8");
+      const before = lstatSync(path, { bigint: true });
+      const stagedReplacement = `${path}.replacement`;
+      writeFileSync(stagedReplacement, text);
+      const staged = lstatSync(stagedReplacement, { bigint: true });
+      if (staged.dev === before.dev && staged.ino === before.ino)
+        throw new Error("expected a distinct staged replacement inode");
+      rmSync(path);
+      renameSync(stagedReplacement, path);
+      const after = lstatSync(path, { bigint: true });
+      replacement = {
+        after: { dev: after.dev, ino: after.ino },
+        before: { dev: before.dev, ino: before.ino },
+        path,
+        text,
+      };
+    };
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    t.stage(target, "generated", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow(/preserved concurrent changes.*commit lock lease lost/);
+    expect(readFileSync(target, "utf8")).toBe("generated");
+    expect(replacement).toBeDefined();
+    expect(readFileSync(replacement?.path as string, "utf8")).toBe(replacement?.text);
+    expect(replacement?.after).not.toEqual(replacement?.before);
+  });
+
+  it("allows exactly one concurrent contender to acquire the active claim", () => {
+    const lock = join(dir, ".aih", "commit.lock");
+    const firstTarget = join(dir, "first.txt");
+    const secondTarget = join(dir, "second.txt");
+    const first = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    const second = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    first.stage(firstTarget, "first", undefined, undefined, { root: dir });
+    second.stage(secondTarget, "second", undefined, undefined, { root: dir });
+    let secondAttempted = false;
+    fsEvents.afterRename = (to) => {
+      if (to !== join(lock, "active") || secondAttempted) return;
+      secondAttempted = true;
+      expect(() => second.commit()).toThrow(/commit lock is already held/);
+    };
+
+    first.commit();
+    expect(secondAttempted).toBe(true);
+    expect(readFileSync(firstTarget, "utf8")).toBe("first");
+    expect(existsSync(secondTarget)).toBe(false);
+    expect(existsSync(join(lock, "active"))).toBe(false);
+  });
+
+  it("does not reclaim an expired lease replaced after inspection", () => {
+    const start = Date.parse("2030-01-01T00:00:00.000Z");
+    const lock = join(dir, ".aih", "commit.lock");
+    const target = join(dir, "blocked.txt");
+    const successorOwner = "b".repeat(64);
+    writeLockAnchor(lock);
+    const stale = writeActiveLease(lock, "a".repeat(64), start - 30_001);
+    fsEvents.afterRead = (path) => {
+      if (path !== stale) return;
+      rmSync(join(lock, "active"), { recursive: true, force: true });
+      writeActiveLease(lock, successorOwner, start + 60_000);
+    };
+    const now = vi.spyOn(Date, "now").mockReturnValue(start);
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    t.stage(target, "blocked", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow(/commit lock is already held/);
+    expect(readFileSync(join(lock, "active", `lease.${successorOwner}.json`), "utf8")).toBe(
+      commitLease(successorOwner, start + 60_000),
+    );
+    expect(existsSync(target)).toBe(false);
+    now.mockRestore();
+  });
+
+  it("does not delete an outside victim when a created write parent is replaced before rollback", () => {
+    const parent = join(dir, "created");
+    const target = join(parent, "generated.txt");
+    const outside = mkdtempSync(join(tmpdir(), "aih-fsxn-outside-"));
+    const victim = join(outside, "generated.txt");
+    const blockingFile = join(dir, "blocking-file");
+    writeFileSync(victim, "generated");
+    writeFileSync(blockingFile, "not a directory");
+    const second = join(dir, "second.txt");
+    fsEvents.afterTempWrite = (tmpPath) => {
+      if (tmpPath !== `${second}.aih.tmp`) return;
+      rmSync(target);
+      rmdirSync(parent);
+      symlinkSync(outside, parent, "dir");
+    };
+    const t = new FsTransaction();
+    t.stage(target, "generated", undefined, undefined, { root: dir });
+    t.stage(second, "second", undefined, undefined, { root: dir });
+    t.stage(join(blockingFile, "child.txt"), "blocked", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow();
+    expect(readFileSync(victim, "utf8")).toBe("generated");
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("does not restore through an outside parent swapped before overwrite rollback", () => {
+    const parent = join(dir, "managed");
+    const target = join(parent, "config.txt");
+    const outside = mkdtempSync(join(tmpdir(), "aih-fsxn-outside-"));
+    const victim = join(outside, "config.txt");
+    const blockingFile = join(dir, "blocking-file");
+    mkdirSync(parent);
+    writeFileSync(target, "original");
+    writeFileSync(victim, "generated");
+    writeFileSync(join(outside, "config.txt.aih.bak"), "attacker backup");
+    writeFileSync(blockingFile, "not a directory");
+    const second = join(dir, "second.txt");
+    fsEvents.afterTempWrite = (tmpPath) => {
+      if (tmpPath !== `${second}.aih.tmp`) return;
+      rmSync(target);
+      rmSync(`${target}.aih.bak`);
+      rmdirSync(parent);
+      symlinkSync(outside, parent, "dir");
+    };
+    const t = new FsTransaction();
+    t.stage(target, "generated", undefined, undefined, { root: dir });
+    t.stage(second, "second", undefined, undefined, { root: dir });
+    t.stage(join(blockingFile, "child.txt"), "blocked", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow();
+    expect(readFileSync(victim, "utf8")).toBe("generated");
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("accounts for a write that is followed by a parent replacement before post-rename checks", () => {
+    const parent = join(dir, "managed");
+    const target = join(parent, "config.txt");
+    const outside = mkdtempSync(join(tmpdir(), "aih-fsxn-outside-"));
+    const probe = join(dir, "directory-link-probe");
+    const linkType = process.platform === "win32" ? "junction" : "dir";
+    try {
+      symlinkSync(outside, probe, linkType);
+      rmSync(probe);
+    } catch {
+      rmSync(outside, { recursive: true, force: true });
+      return;
+    }
+    fsEvents.afterRename = (to) => {
+      if (to !== target) return;
+      renameSync(parent, `${parent}.old`);
+      symlinkSync(outside, parent, linkType);
+    };
+    const t = new FsTransaction();
+    t.stage(target, "generated", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow(/preserved concurrent changes/);
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("accounts for a removal that is followed by a destination-parent replacement", () => {
+    const source = join(dir, "owned.txt");
+    const legacy = join(dir, ".aih", "legacy", "owned.txt");
+    const legacyParent = join(dir, ".aih", "legacy");
+    const outside = mkdtempSync(join(tmpdir(), "aih-fsxn-outside-"));
+    const probe = join(dir, "directory-link-probe");
+    const linkType = process.platform === "win32" ? "junction" : "dir";
+    try {
+      symlinkSync(outside, probe, linkType);
+      rmSync(probe);
+    } catch {
+      rmSync(outside, { recursive: true, force: true });
+      return;
+    }
+    writeFileSync(source, "owned");
+    fsEvents.afterRename = (to) => {
+      if (to !== legacy) return;
+      renameSync(legacyParent, `${legacyParent}.old`);
+      symlinkSync(outside, legacyParent, linkType);
+    };
+    const t = new FsTransaction();
+    t.stageRemoval(source, legacy, { root: dir });
+
+    expect(() => t.commit()).toThrow(/preserved concurrent changes/);
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("does not restore an overwrite through a leaf symlink swapped after its generated bytes were read", () => {
+    const parent = join(dir, "managed");
+    const target = join(parent, "config.txt");
+    const backup = `${target}.aih.bak`;
+    const outside = mkdtempSync(join(tmpdir(), "aih-fsxn-outside-"));
+    const victim = join(outside, "victim.txt");
+    mkdirSync(parent);
+    writeFileSync(target, "generated");
+    writeFileSync(backup, "original");
+    writeFileSync(victim, "victim");
+    const stats = lstatSync(parent, { bigint: true });
+    const probe = join(parent, "file-link-probe");
+    try {
+      symlinkSync(victim, probe, "file");
+      rmSync(probe);
+    } catch {
+      rmSync(outside, { recursive: true, force: true });
+      return;
+    }
+    fsEvents.afterRead = (path) => {
+      if (path !== target) return;
+      rmSync(target);
+      symlinkSync(victim, target, "file");
+    };
+
+    const preserved = rollbackAppliedWrites([
+      {
+        path: target,
+        contents: "generated",
+        backup,
+        created: false,
+        parentGuard: { directories: [{ path: parent, dev: stats.dev, ino: stats.ino }] },
+      },
+    ]);
+
+    expect(preserved).toEqual([target]);
+    expect(readFileSync(victim, "utf8")).toBe("victim");
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("does not clean a rollback temp through a parent swapped after its exclusive create", () => {
+    const parent = join(dir, "managed");
+    const target = join(parent, "config.txt");
+    const backup = `${target}.aih.bak`;
+    const rollbackTemp = `${target}.aih.rollback.tmp`;
+    const outside = mkdtempSync(join(tmpdir(), "aih-fsxn-outside-"));
+    const outsideTemp = join(outside, "config.txt.aih.rollback.tmp");
+    const probe = join(dir, "symlink-probe");
+    try {
+      symlinkSync(outside, probe, "dir");
+      rmSync(probe);
+    } catch {
+      rmSync(outside, { recursive: true, force: true });
+      return;
+    }
+    mkdirSync(parent);
+    writeFileSync(target, "generated");
+    writeFileSync(backup, "original");
+    writeFileSync(outsideTemp, "outside victim");
+    const stats = lstatSync(parent, { bigint: true });
+    fsEvents.afterRollbackTempWrite = (path) => {
+      if (path !== rollbackTemp) return;
+      renameSync(parent, `${parent}.old`);
+      symlinkSync(outside, parent, "dir");
+    };
+
+    const preserved = rollbackAppliedWrites([
+      {
+        path: target,
+        contents: "generated",
+        backup,
+        created: false,
+        parentGuard: { directories: [{ path: parent, dev: stats.dev, ino: stats.ino }] },
+      },
+    ]);
+
+    expect(preserved).toEqual([target]);
+    expect(readFileSync(outsideTemp, "utf8")).toBe("outside victim");
+    rmSync(outside, { recursive: true, force: true });
   });
 
   it("commit writes new files and backs up existing ones", () => {
@@ -146,6 +964,108 @@ describe("FsTransaction", () => {
     t.stage(target, "fresh");
     t.commit();
     expect(readFileSync(target, "utf8")).toBe("fresh");
+  });
+
+  it("consumes a scratch file only when its exact staged bytes still match", () => {
+    const target = join(dir, "record.json");
+    const contents = '{"record":"expected"}';
+    writeFileSync(`${target}.aih.tmp`, '{"record":"substituted"}');
+    const t = new FsTransaction();
+    t.stage(
+      target,
+      contents,
+      undefined,
+      { absent: true },
+      {
+        root: dir,
+        expectScratch: { sha256: createHash("sha256").update(contents).digest("hex") },
+      },
+    );
+
+    expect(() => t.commit()).toThrow(/write scratch changed before commit/);
+    expect(existsSync(target)).toBe(false);
+    expect(readFileSync(`${target}.aih.tmp`, "utf8")).toBe('{"record":"substituted"}');
+  });
+
+  it("does not consume a scratch file when the staged write requires absence", () => {
+    const target = join(dir, "record.json");
+    writeFileSync(`${target}.aih.tmp`, "unexpected");
+    const t = new FsTransaction();
+    t.stage(
+      target,
+      "record",
+      undefined,
+      { absent: true },
+      {
+        root: dir,
+        expectScratch: { absent: true },
+      },
+    );
+
+    expect(() => t.commit()).toThrow(/write scratch changed before commit/);
+    expect(existsSync(target)).toBe(false);
+    expect(readFileSync(`${target}.aih.tmp`, "utf8")).toBe("unexpected");
+  });
+
+  it("preflights a later scratch expectation before earlier staged writes", () => {
+    const earlier = join(dir, "claim.json");
+    const target = join(dir, "record.json");
+    const contents = '{"record":"expected"}';
+    writeFileSync(`${target}.aih.tmp`, '{"record":"substituted"}');
+    fsEvents.events = [];
+    const t = new FsTransaction();
+    t.stage(earlier, '{"claim":"new"}', undefined, { absent: true }, { root: dir });
+    t.stage(
+      target,
+      contents,
+      undefined,
+      { absent: true },
+      {
+        root: dir,
+        expectScratch: { sha256: createHash("sha256").update(contents).digest("hex") },
+      },
+    );
+
+    expect(() => t.commit()).toThrow(/write scratch changed before commit/);
+    expect(fsEvents.events).not.toContain(`rename:${earlier}`);
+    expect(existsSync(earlier)).toBe(false);
+    expect(existsSync(target)).toBe(false);
+    expect(readFileSync(`${target}.aih.tmp`, "utf8")).toBe('{"record":"substituted"}');
+  });
+
+  it("rechecks exact scratch bytes immediately before consuming them", () => {
+    const target = join(dir, "record.json");
+    const contents = '{"record":"expected"}';
+    const scratch = `${target}.aih.tmp`;
+    writeFileSync(scratch, contents);
+    let swapped = false;
+    fsEvents.afterRead = (path) => {
+      if (swapped || path !== scratch) return;
+      swapped = true;
+      fsEvents.afterClose = (closed) => {
+        if (closed !== scratch) return;
+        fsEvents.afterClose = undefined;
+        const replacement = `${scratch}.replacement`;
+        writeFileSync(replacement, '{"record":"substituted"}');
+        renameSync(replacement, scratch);
+      };
+    };
+    const t = new FsTransaction();
+    t.stage(
+      target,
+      contents,
+      undefined,
+      { absent: true },
+      {
+        root: dir,
+        expectScratch: { sha256: createHash("sha256").update(contents).digest("hex") },
+      },
+    );
+
+    expect(() => t.commit()).toThrow(/write scratch changed before commit/);
+    expect(swapped).toBe(true);
+    expect(existsSync(target)).toBe(false);
+    expect(readFileSync(scratch, "utf8")).toBe('{"record":"substituted"}');
   });
 
   it("readIfExists returns undefined for a missing file", () => {
@@ -608,6 +1528,11 @@ describe("readRegularFile — the fd-guarded read for scan-discovered paths", ()
     const file = readRegularFileWithStats(join(dir, "stats.json"));
     expect(file?.contents.toString("utf8")).toBe('{"stats":true}\n');
     expect(file?.stats.isFile()).toBe(true);
+    expect(file?.identity).toMatchObject({
+      dev: expect.any(BigInt),
+      ino: expect.any(BigInt),
+      nlink: 1n,
+    });
   });
 
   it("refuses an oversized regular file before reading from the opened descriptor", () => {

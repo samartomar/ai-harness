@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AihError, DirtyWorktreeError, PathContainmentError } from "../../src/errors.js";
 import { executePlan, summarizeResult, writeArtifact } from "../../src/internals/execute.js";
 import { FsTransaction } from "../../src/internals/fsxn.js";
@@ -20,6 +20,7 @@ import {
   doc,
   envBlock,
   exec,
+  type Plan,
   type PlanContext,
   plan,
   probe,
@@ -100,6 +101,93 @@ function structuredRun(results: VerificationResult[]): VerificationPipelineRun {
 }
 
 describe("executePlan", () => {
+  it("rejects a noncanonical commit deadline before writing", async () => {
+    const target = join(dir, "deadline.txt");
+    const p: Plan = {
+      capability: "deadline",
+      commitNotAfter: "2030-01-01T00:00:00Z",
+      actions: [writeText("deadline.txt", "blocked", "write after deadline")],
+    };
+
+    await expect(executePlan(p, ctx({ apply: true }))).rejects.toMatchObject({
+      code: "AIH_CONFIG",
+    });
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it("refuses a noncanonical root-relative plan commit lock before writing", async () => {
+    const target = join(dir, "locked.txt");
+    const lock = join(dir, ".aih", "commit.lock");
+    mkdirSync(dirname(lock), { recursive: true });
+    writeFileSync(lock, "held");
+    const p: Plan = {
+      capability: "lock",
+      commitLock: ".aih/commit.lock",
+      actions: [writeText("locked.txt", "blocked", "write under lock")],
+    };
+
+    await expect(executePlan(p, ctx({ apply: true }))).rejects.toThrow(
+      "commit lock could not be verified",
+    );
+    expect(existsSync(target)).toBe(false);
+    expect(readFileSync(lock, "utf8")).toBe("held");
+  });
+
+  it("passes a write-local scratch precondition to the transaction", async () => {
+    const target = join(dir, "record.json");
+    const contents = '{"record":"expected"}';
+    writeFileSync(`${target}.aih.tmp`, '{"record":"substituted"}');
+    const p: Plan = {
+      capability: "scratch",
+      actions: [
+        {
+          kind: "write",
+          path: "record.json",
+          contents,
+          exactContents: true,
+          describe: "persist record",
+          expect: { absent: true },
+          expectScratch: { sha256: createHash("sha256").update(contents).digest("hex") },
+        },
+      ],
+    };
+
+    await expect(executePlan(p, ctx({ apply: true }))).rejects.toThrow(
+      /write scratch changed before commit/,
+    );
+    expect(existsSync(target)).toBe(false);
+    expect(readFileSync(`${target}.aih.tmp`, "utf8")).toBe('{"record":"substituted"}');
+  });
+
+  it("enforces the commit deadline for deferred writes", async () => {
+    const start = Date.parse("2030-01-01T00:00:00.000Z");
+    const deadline = start + 1;
+    let currentTime = start;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => currentTime);
+    const target = join(dir, "deferred.txt");
+    const p: Plan = {
+      capability: "deadline",
+      commitNotAfter: new Date(deadline).toISOString(),
+      actions: [
+        exec("prepare", ["node", "prepare"]),
+        writeText(target, "deferred", "write after exec", {
+          external: true,
+          requiresPriorExecSuccess: true,
+        }),
+      ],
+    };
+
+    const run = fakeRunner(() => {
+      currentTime = deadline;
+      return { code: 0 };
+    });
+    await expect(executePlan(p, ctx({ apply: true, run }))).rejects.toThrow(
+      "commit deadline expired",
+    );
+    expect(existsSync(target)).toBe(false);
+    now.mockRestore();
+  });
+
   it("dry-run reports planned writes but writes nothing", async () => {
     const res = await executePlan(
       plan("t", writeText("a.txt", "hi", "write a")),

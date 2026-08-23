@@ -1,0 +1,1349 @@
+import { createHash } from "node:crypto";
+import {
+  copyFileSync,
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, join } from "node:path";
+import { Command } from "commander";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runCapability } from "../../src/commands/run.js";
+import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
+import { SUPPORTED_CLIS } from "../../src/internals/clis.js";
+import { executePlan } from "../../src/internals/execute.js";
+import type { PlanContext } from "../../src/internals/plan.js";
+import { fakeRunner } from "../../src/internals/proc.js";
+import {
+  governanceDecisionDigestV2,
+  governanceDecisionSourceDigestV2,
+  governanceDecisionSubjectDigestV2,
+} from "../../src/org-policy/governance-decision-v2.js";
+import {
+  npmPackageLifecycleCommand,
+  npmPackageLifecyclePlan,
+} from "../../src/org-policy/npm-package-lifecycle-v1.js";
+import { observeNpmPackageV1 } from "../../src/org-policy/npm-package-observer-v1.js";
+import {
+  canonicalOrganizationEvidenceEnvelopeV1,
+  organizationEvidenceEnvelopeDigestV1,
+} from "../../src/org-policy/qualification-v1.js";
+import { makeHostAdapter } from "../../src/platform/detect.js";
+import { buildProgram } from "../../src/program.js";
+
+const fsEvents = vi.hoisted(() => ({
+  failRecordRename: undefined as ((from: string, to: string) => boolean) | undefined,
+}));
+
+vi.mock("node:fs", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...original,
+    renameSync: (from: string, to: string) => {
+      if (fsEvents.failRecordRename?.(from, to)) throw new Error("injected record rename failure");
+      return original.renameSync(from, to);
+    },
+  };
+});
+
+const INTEGRITY = `sha512-${Buffer.alloc(64, 3).toString("base64")}`;
+let root: string;
+let bin: string;
+let gh: string;
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-08-02T12:00:00+00:00"));
+  root = mkdtempSync(join(tmpdir(), "aih-npm-lifecycle-"));
+  bin = mkdtempSync(join(tmpdir(), "aih-npm-lifecycle-gh-"));
+  gh = join(bin, process.platform === "win32" ? "gh.exe" : "gh");
+  writeFileSync(gh, "trusted gh fixture\n", { mode: 0o755 });
+  gh = realpathSync.native(gh);
+});
+
+afterEach(() => {
+  fsEvents.failRecordRename = undefined;
+  vi.useRealTimers();
+  rmSync(root, { recursive: true, force: true });
+  rmSync(bin, { recursive: true, force: true });
+});
+
+function fixture(
+  version = "1.2.3",
+  integrity = INTEGRITY,
+  registry = "https://registry.npmjs.org/",
+) {
+  const source = {
+    type: "npm" as const,
+    registry,
+    package: "@acme/widget",
+    version,
+    integrity,
+  };
+  const sourceDigest = governanceDecisionSourceDigestV2(source);
+  const subject = {
+    kind: "package" as const,
+    id: "acme-widget",
+    source,
+    sourceDigest,
+    subjectDigest: governanceDecisionSubjectDigestV2({
+      kind: "package",
+      id: "acme-widget",
+      sourceDigest,
+    }),
+  };
+  const evidence = {
+    format: "aih-organization-evidence" as const,
+    version: 1 as const,
+    subjectDigest: subject.subjectDigest,
+    evidence: {
+      kind: "assessment" as const,
+      id: "scan-record",
+      summary: "The named organization assessment approved this exact package.",
+      payloadDigest: `sha256:${"1".repeat(64)}`,
+      artifactDigests: [`sha256:${"2".repeat(64)}`],
+    },
+    attestor: "scanner-service",
+    issuedAt: "2026-08-01T00:00:00+00:00",
+    notBefore: "2026-08-01T00:00:00+00:00",
+    expiresAt: "2026-08-05T00:00:00+00:00",
+  };
+  const evidenceDigest = organizationEvidenceEnvelopeDigestV1(evidence);
+  const decision = {
+    format: "aih-governance-decision" as const,
+    version: 2 as const,
+    id: "decision-acme-widget",
+    qualificationBasis: {
+      kind: "organization-qualified" as const,
+      evidenceDigest,
+      attestor: "scanner-service",
+    },
+    subject,
+    targets: ["claude", "codex"],
+    allowedEffects: ["install" as const],
+    policy: { id: "platform-policy", version: "2026.08", digest: `sha256:${"c".repeat(64)}` },
+    control: { id: "review-control", digest: `sha256:${"d".repeat(64)}` },
+    evidence: { id: "scan-record", digest: evidenceDigest, attestor: "scanner-service" },
+    issuer: "platform-security",
+    actor: "security-admin",
+    reason: "The exact package passed the reviewed control.",
+    issuedAt: "2026-08-01T00:00:00+00:00",
+    notBefore: "2026-08-01T00:00:00+00:00",
+    expiresAt: "2026-08-10T00:00:00+00:00",
+    disposition: "approved" as const,
+    acceptedFindings: [],
+    acceptedGaps: [],
+    conditions: [],
+  };
+  return { decision, evidence };
+}
+
+function writeAuthority(
+  decision: ReturnType<typeof fixture>["decision"],
+  decisionRevocations: readonly Record<string, unknown>[] = [],
+): void {
+  mkdirSync(join(root, ".aih"), { recursive: true });
+  writeFileSync(
+    join(root, ".aih", "policy-authority-receipt.json"),
+    JSON.stringify({
+      format: "aih-policy-authority-receipt",
+      version: 3,
+      issuerRepository: "acme/governance",
+      issuedAt: "2026-08-01T00:00:00+00:00",
+      expiresAt: "2026-08-10T00:00:00+00:00",
+      trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+      targets: [...decision.targets],
+      decisions: [decision],
+      decisionRevocations,
+    }),
+  );
+}
+
+function writeFixture(value = fixture()): void {
+  mkdirSync(join(root, ".aih"), { recursive: true });
+  writeFileSync(
+    join(root, "evidence.json"),
+    canonicalOrganizationEvidenceEnvelopeV1(value.evidence),
+  );
+  writeAuthority(value.decision);
+  mkdirSync(join(root, "node_modules", "@acme", "widget"), { recursive: true });
+  writeFileSync(
+    join(root, "package-lock.json"),
+    JSON.stringify({
+      name: "fixture",
+      lockfileVersion: 3,
+      packages: {
+        "": { name: "fixture" },
+        "node_modules/@acme/widget": {
+          version: value.decision.subject.source.version,
+          integrity: value.decision.subject.source.integrity,
+        },
+      },
+    }),
+  );
+  writeFileSync(
+    join(root, "node_modules", "@acme", "widget", "package.json"),
+    JSON.stringify({ name: "@acme/widget", version: value.decision.subject.source.version }),
+  );
+}
+
+function context(apply = false, decision = fixture().decision): PlanContext {
+  const run = fakeRunner((argv) => (argv[0] === gh ? { code: 0 } : { code: 1 }));
+  return {
+    root,
+    contextDir: "ai-coding",
+    apply,
+    verify: true,
+    json: true,
+    run,
+    host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    env: { AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance", PATH: bin },
+    options: {
+      decision: decision.id,
+      decisionDigest: governanceDecisionDigestV2(decision),
+      target: "claude",
+      evidence: "evidence.json",
+    },
+  };
+}
+
+function lifecycleFiles(): string[] {
+  const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+  if (!existsSync(base)) return [];
+  const walk = (path: string): string[] =>
+    readdirSync(path, { withFileTypes: true }).flatMap((entry) => {
+      const child = join(path, entry.name);
+      return entry.isDirectory()
+        ? walk(child)
+        : [child.slice(base.length + 1).replaceAll("\\", "/")];
+    });
+  return walk(base).sort();
+}
+
+function recordFile(base: string, digest: string): string {
+  const name = `${digest.slice(7)}.json`;
+  const relative = lifecycleFiles().find(
+    (file) => file.startsWith("records/") && file.endsWith(name),
+  );
+  if (relative === undefined) throw new Error(`missing lifecycle record ${digest}`);
+  return join(base, ...relative.split("/"));
+}
+
+function lifecycleRecordDigest(record: unknown): string {
+  return `sha256:${createHash("sha256")
+    .update("aih-npm-package-lifecycle-record/v1\0", "utf8")
+    .update(canonicalStrictJsonBytesV1(record))
+    .digest("hex")}`;
+}
+
+async function execute(ctx: PlanContext) {
+  return executePlan(await npmPackageLifecyclePlan(ctx), ctx, {
+    skipWorktreeGate: true,
+  });
+}
+
+async function run(ctx: PlanContext) {
+  const result = await execute(ctx);
+  return result.digests[0]?.data as { applied: boolean; outcome: string };
+}
+
+function expectRevokedCheck(result: Awaited<ReturnType<typeof execute>>): void {
+  expect(result.report?.exitCode()).toBe(1);
+  expect(result.report?.checks).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: "org-policy.lifecycle-decision-revoked",
+        verdict: "fail",
+      }),
+    ]),
+  );
+}
+
+function immutableRecordAction(planned: Awaited<ReturnType<typeof npmPackageLifecyclePlan>>) {
+  const action = planned.actions.find(
+    (candidate) =>
+      candidate.kind === "write" &&
+      candidate.path.startsWith(".aih/governance/") &&
+      candidate.path.includes("/records/"),
+  );
+  if (action?.kind !== "write" || action.contents === undefined) {
+    throw new Error("expected immutable lifecycle record action");
+  }
+  return { contents: action.contents, durable: action.durable, path: action.path };
+}
+
+function preplace(action: { contents: string; path: string }): void {
+  const path = join(root, ...action.path.split("/"));
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, action.contents);
+}
+
+function recordScratch(action: { path: string }): string {
+  return `${join(root, ...action.path.split("/"))}.aih.tmp`;
+}
+
+function command(argv: string[]): Command {
+  const value = new Command("npm-package");
+  value.exitOverride();
+  value.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+  value
+    .option("--apply")
+    .option("--verify")
+    .option("--json")
+    .option("--root <dir>")
+    .option("--context-dir <dir>", "", "ai-coding")
+    .option("--decision <id>")
+    .option("--decision-digest <sha256>")
+    .option("--target <cli>")
+    .option("--evidence <path>");
+  value.parse(argv, { from: "user" });
+  return value;
+}
+
+describe("npm package lifecycle V1", () => {
+  it("keeps preview zero-write, then appends immutable observation records before advancing a subject head", async () => {
+    writeFixture();
+    const planned = await npmPackageLifecyclePlan(context(true));
+    expect(immutableRecordAction(planned).durable).toBe(true);
+    expect(planned.commitLock).toMatch(
+      /^\.aih\/governance\/npm-package-lifecycle\/v1\/locks\/[0-9a-f]{64}\.lock$/,
+    );
+    const preview = await run(context(false));
+    expect(preview).toMatchObject({ outcome: "reported-only", applied: false });
+    expect(lifecycleFiles()).toEqual([]);
+
+    const first = await run(context(true));
+    expect(first).toMatchObject({ outcome: "fulfilled", applied: true });
+    const firstFiles = lifecycleFiles();
+    expect(firstFiles.filter((file) => file.startsWith("records/"))).toHaveLength(1);
+    expect(firstFiles.filter((file) => file.startsWith("heads/"))).toHaveLength(1);
+
+    vi.advanceTimersByTime(1000);
+    const second = await run(context(true));
+    expect(second).toMatchObject({ outcome: "fulfilled", applied: true });
+    expect(lifecycleFiles().filter((file) => file.startsWith("records/"))).toHaveLength(2);
+  });
+
+  it("uses one stable subject-target lock across first-time lineage changes", async () => {
+    const first = fixture();
+    writeFixture(first);
+    const firstPlan = await npmPackageLifecyclePlan(context(true, first.decision));
+
+    const changed = fixture(
+      "1.2.4",
+      `sha512-${Buffer.alloc(64, 4).toString("base64")}`,
+      "https://registry.example.com/",
+    );
+    writeFixture(changed);
+    const changedPlan = await npmPackageLifecyclePlan(context(true, changed.decision));
+
+    expect(firstPlan.commitLock).toBe(changedPlan.commitLock);
+  });
+
+  it("does not create lifecycle state for a refused write and exposes no package/effect override", async () => {
+    writeFixture();
+    const missing = await run({ ...context(true), options: {} });
+    expect(missing).toMatchObject({ outcome: "refused", applied: false });
+    expect(lifecycleFiles()).toEqual([]);
+    const policy = buildProgram().commands.find((command) => command.name() === "policy");
+    const lifecycle = policy?.commands.find((command) => command.name() === "lifecycle");
+    const npmPackage = lifecycle?.commands.find((command) => command.name() === "npm-package");
+    expect(npmPackage?.options.map((item) => item.flags)).toEqual(
+      expect.arrayContaining(["--apply"]),
+    );
+    expect(npmPackageLifecycleCommand.options?.map((item) => item.flags)).not.toEqual(
+      expect.arrayContaining(["--package <name>", "--effect <effect>"]),
+    );
+  });
+
+  it("uses one stable lineage across an exact npm version bump and chains the new record", async () => {
+    const first = fixture("1.2.3");
+    writeFixture(first);
+    await run(context(true, first.decision));
+    const secondIntegrity = `sha512-${Buffer.alloc(64, 4).toString("base64")}`;
+    const second = fixture("1.2.4", secondIntegrity);
+    writeFixture(second);
+    vi.advanceTimersByTime(1_000);
+    await run(context(true, second.decision));
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const heads = readdirSync(join(base, "heads")).filter((name) => name.endsWith(".json"));
+    const records = lifecycleFiles().filter(
+      (file) => file.startsWith("records/") && file.endsWith(".json"),
+    );
+    expect(heads).toHaveLength(1);
+    expect(records).toHaveLength(2);
+    const head = JSON.parse(readFileSync(join(base, "heads", heads[0] as string), "utf8"));
+    const newest = JSON.parse(readFileSync(recordFile(base, head.recordDigest), "utf8"));
+    expect(newest.sequence).toBe(2);
+    expect(newest.previousRecordDigest).toMatch(/^sha256:/);
+    const prior = JSON.parse(readFileSync(recordFile(base, newest.previousRecordDigest), "utf8"));
+    expect(newest.observation.installed).not.toEqual(prior.observation.installed);
+    expect(newest.observation.subject.sourceDigest).toBe(second.decision.subject.sourceDigest);
+    expect(newest.observation.subject.subjectDigest).toBe(second.decision.subject.subjectDigest);
+    expect(prior.observation.subject.sourceDigest).toBe(first.decision.subject.sourceDigest);
+    expect(prior.observation.subject.subjectDigest).toBe(first.decision.subject.subjectDigest);
+  });
+
+  it("persists the full authenticated V3 revocation once, without claiming package removal", async () => {
+    const value = fixture();
+    writeFixture(value);
+    await run(context(true, value.decision));
+    const digest = governanceDecisionDigestV2(value.decision);
+    const revocation = {
+      format: "aih-governance-decision-revocation",
+      version: 2,
+      decisionDigest: digest,
+      issuer: "platform-security",
+      revokedAt: "2026-08-01T00:00:00+00:00",
+      reason: "Critical upstream withdrawal.",
+    };
+    writeAuthority(value.decision, [revocation]);
+    const revokedExecution = await execute(context(true, value.decision));
+    const revoked = revokedExecution.digests[0]?.data as {
+      applied: boolean;
+      outcome: string;
+      recordDigest?: string;
+      state: string;
+    };
+    expect(revoked).toMatchObject({ outcome: "fulfilled", state: "decision-revoked" });
+    expect(revoked.applied).toBe(true);
+    expect(revoked.recordDigest).toMatch(/^sha256:/);
+    expectRevokedCheck(revokedExecution);
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const head = JSON.parse(
+      readFileSync(
+        join(
+          base,
+          "heads",
+          readdirSync(join(base, "heads")).find((name) => name.endsWith(".json")) as string,
+        ),
+        "utf8",
+      ),
+    );
+    const record = JSON.parse(readFileSync(recordFile(base, head.recordDigest), "utf8"));
+    expect(record.revocation).toEqual(revocation);
+    expect(record.authorityReceiptDigest).toMatch(/^sha256:/);
+    expect(record).not.toHaveProperty("removed");
+    expect(record).not.toHaveProperty("terminated");
+    const recordsBefore = lifecycleFiles().filter((file) => file.startsWith("records/"));
+    const repeatedExecution = await execute(context(true, value.decision));
+    const repeated = repeatedExecution.digests[0]?.data as { outcome: string; state: string };
+    expect(repeated).toMatchObject({ outcome: "reported-only", state: "decision-revoked" });
+    expectRevokedCheck(repeatedExecution);
+    expect(lifecycleFiles().filter((file) => file.startsWith("records/"))).toEqual(recordsBefore);
+  });
+
+  it("reports a first-seen revoked decision as a failing, nonzero no-history status", async () => {
+    const value = fixture();
+    writeFixture(value);
+    writeAuthority(value.decision, [
+      {
+        format: "aih-governance-decision-revocation",
+        version: 2,
+        decisionDigest: governanceDecisionDigestV2(value.decision),
+        issuer: "platform-security",
+        revokedAt: "2026-08-01T00:00:00+00:00",
+        reason: "Critical upstream withdrawal.",
+      },
+    ]);
+
+    const execution = await execute(context(true, value.decision));
+    expect(execution.digests[0]?.data).toMatchObject({
+      applied: false,
+      outcome: "reported-only",
+      state: "decision-revoked",
+    });
+    expectRevokedCheck(execution);
+    expect(lifecycleFiles()).toEqual([]);
+  });
+
+  it("does not let revocation of an older decision supersede the latest exact bump", async () => {
+    const oldValue = fixture("1.2.3");
+    writeFixture(oldValue);
+    await run(context(true, oldValue.decision));
+    const newer = fixture("1.2.4");
+    writeFixture(newer);
+    vi.advanceTimersByTime(1_000);
+    await run(context(true, newer.decision));
+    const oldDigest = governanceDecisionDigestV2(oldValue.decision);
+    writeAuthority(oldValue.decision, [
+      {
+        format: "aih-governance-decision-revocation",
+        version: 2,
+        decisionDigest: oldDigest,
+        issuer: "platform-security",
+        revokedAt: "2026-08-01T00:00:00+00:00",
+        reason: "Old package version withdrawn.",
+      },
+    ]);
+    const before = lifecycleFiles().filter((file) => file.startsWith("records/"));
+    const execution = await execute(context(true, oldValue.decision));
+    const result = execution.digests[0]?.data as { outcome: string; state: string };
+    expect(result).toMatchObject({ outcome: "reported-only", state: "decision-revoked" });
+    expectRevokedCheck(execution);
+    expect(lifecycleFiles().filter((file) => file.startsWith("records/"))).toEqual(before);
+  });
+
+  it("refuses a stale rolled-back head when the canonical successor record remains", async () => {
+    const oldValue = fixture("1.2.3");
+    writeFixture(oldValue);
+    await run(context(true, oldValue.decision));
+    const newer = fixture("1.2.4", `sha512-${Buffer.alloc(64, 4).toString("base64")}`);
+    writeFixture(newer);
+    vi.advanceTimersByTime(1_000);
+    await run(context(true, newer.decision));
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const headName = readdirSync(join(base, "heads")).find((name) =>
+      name.endsWith(".json"),
+    ) as string;
+    copyFileSync(join(base, "heads", `${headName}.aih.bak`), join(base, "heads", headName));
+    const before = lifecycleFiles();
+    vi.advanceTimersByTime(1_000);
+    const refused = await run(context(true, newer.decision));
+    expect(refused).toMatchObject({ outcome: "refused", state: "head-conflict" });
+    expect(lifecycleFiles()).toEqual(before);
+  });
+
+  it("refuses a head whose referenced immutable record is missing or whose subject binding is substituted", async () => {
+    const value = fixture();
+    writeFixture(value);
+    await run(context(true, value.decision));
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const headPath = join(
+      base,
+      "heads",
+      readdirSync(join(base, "heads")).find((name) => name.endsWith(".json")) as string,
+    );
+    const head = JSON.parse(readFileSync(headPath, "utf8"));
+    rmSync(recordFile(base, head.recordDigest));
+    expect(await run(context(true, value.decision))).toMatchObject({
+      outcome: "refused",
+      state: "head-conflict",
+    });
+
+    rmSync(join(root, ".aih", "governance"), { recursive: true, force: true });
+    await run(context(true, value.decision));
+    const renewedHeadPath = join(
+      base,
+      "heads",
+      readdirSync(join(base, "heads")).find((name) => name.endsWith(".json")) as string,
+    );
+    const renewed = JSON.parse(readFileSync(renewedHeadPath, "utf8"));
+    renewed.subjectDigest = `sha256:${"f".repeat(64)}`;
+    writeFileSync(renewedHeadPath, JSON.stringify(renewed));
+    expect(await run(context(true, value.decision))).toMatchObject({
+      outcome: "refused",
+      state: "head-conflict",
+    });
+  });
+
+  it("refuses a new registry lineage when a deleted binding still has canonical subject history", async () => {
+    const original = fixture();
+    writeFixture(original);
+    await run(context(true, original.decision));
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const binding = lifecycleFiles().find((file) => file.startsWith("subjects/"));
+    if (binding === undefined) throw new Error("expected lifecycle subject binding");
+    rmSync(join(base, ...binding.split("/")));
+
+    const changed = fixture(
+      "1.2.4",
+      `sha512-${Buffer.alloc(64, 4).toString("base64")}`,
+      "https://registry.example.com/",
+    );
+    writeFixture(changed);
+    expect(await run(context(true, changed.decision))).toMatchObject({
+      outcome: "refused",
+      state: "store-collision",
+    });
+    expect(lifecycleFiles().filter((file) => file.startsWith("heads/"))).toHaveLength(1);
+  });
+
+  it("refuses a new registry lineage when deleted binding and head leave durable records", async () => {
+    const original = fixture();
+    writeFixture(original);
+    await run(context(true, original.decision));
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const binding = lifecycleFiles().find((file) => file.startsWith("subjects/"));
+    const head = lifecycleFiles().find((file) => file.startsWith("heads/"));
+    if (binding === undefined || head === undefined)
+      throw new Error("expected lifecycle binding and head");
+    rmSync(join(base, ...binding.split("/")));
+    rmSync(join(base, ...head.split("/")));
+
+    const changed = fixture(
+      "1.2.4",
+      `sha512-${Buffer.alloc(64, 4).toString("base64")}`,
+      "https://registry.example.com/",
+    );
+    writeFixture(changed);
+    expect(await run(context(true, changed.decision))).toMatchObject({
+      outcome: "refused",
+      state: "store-collision",
+    });
+    expect(lifecycleFiles().filter((file) => file.startsWith("heads/"))).toHaveLength(0);
+  });
+
+  it("does not inspect an unrelated malformed durable record partition on new-subject onboarding", async () => {
+    const value = fixture();
+    writeFixture(value);
+    const records = join(root, ".aih", "governance", "npm-package-lifecycle", "v1", "records");
+    mkdirSync(records, { recursive: true });
+    mkdirSync(join(records, "f".repeat(64)));
+
+    expect(await run(context(true, value.decision))).toMatchObject({
+      outcome: "fulfilled",
+      state: "observed-effective",
+    });
+    expect(lifecycleFiles().filter((file) => file.startsWith("subjects/"))).toHaveLength(1);
+  });
+
+  it("refuses revocation when a present binding has no canonical head", async () => {
+    const value = fixture();
+    writeFixture(value);
+    await run(context(true, value.decision));
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const head = lifecycleFiles().find((file) => file.startsWith("heads/"));
+    if (head === undefined) throw new Error("expected lifecycle head");
+    rmSync(join(base, ...head.split("/")));
+    writeAuthority(value.decision, [
+      {
+        format: "aih-governance-decision-revocation",
+        version: 2,
+        decisionDigest: governanceDecisionDigestV2(value.decision),
+        issuer: "platform-security",
+        revokedAt: "2026-08-01T00:00:00+00:00",
+        reason: "Critical upstream withdrawal.",
+      },
+    ]);
+    expect(await run(context(true, value.decision))).toMatchObject({
+      outcome: "refused",
+      state: "head-conflict",
+    });
+  });
+
+  it("refuses revocation when a durable lineage claim survives a deleted binding", async () => {
+    const value = fixture();
+    writeFixture(value);
+    await run(context(true, value.decision));
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const binding = lifecycleFiles().find((file) => file.startsWith("subjects/"));
+    if (binding === undefined) throw new Error("expected lifecycle binding");
+    rmSync(join(base, ...binding.split("/")));
+    writeAuthority(value.decision, [
+      {
+        format: "aih-governance-decision-revocation",
+        version: 2,
+        decisionDigest: governanceDecisionDigestV2(value.decision),
+        issuer: "platform-security",
+        revokedAt: "2026-08-01T00:00:00+00:00",
+        reason: "Critical upstream withdrawal.",
+      },
+    ]);
+
+    expect(await run(context(true, value.decision))).toMatchObject({
+      outcome: "refused",
+      state: "head-conflict",
+    });
+  });
+
+  it("refuses an apply after the sealed observation deadline without creating lifecycle state", async () => {
+    const value = fixture();
+    value.evidence.expiresAt = "2026-08-02T12:00:30+00:00";
+    const evidenceDigest = organizationEvidenceEnvelopeDigestV1(value.evidence);
+    value.decision.qualificationBasis = {
+      kind: "organization-qualified",
+      evidenceDigest,
+      attestor: value.evidence.attestor,
+    };
+    value.decision.evidence = {
+      id: value.evidence.evidence.id,
+      digest: evidenceDigest,
+      attestor: value.evidence.attestor,
+    };
+    writeFixture(value);
+    const ctx = context(true, value.decision);
+    const planned = await npmPackageLifecyclePlan(ctx);
+    expect(planned.commitNotAfter).toBe("2026-08-02T12:00:30.000Z");
+    vi.advanceTimersByTime(30_000);
+    await expect(executePlan(planned, ctx, { skipWorktreeGate: true })).rejects.toThrow(
+      /deadline expired/i,
+    );
+    expect(lifecycleFiles()).toEqual([]);
+  });
+
+  it("pins the exact authority, evidence, lockfile, and installed manifest used by observation", async () => {
+    const value = fixture();
+    const paths = [
+      join(root, ".aih", "policy-authority-receipt.json"),
+      join(root, "evidence.json"),
+      join(root, "package-lock.json"),
+      join(root, "node_modules", "@acme", "widget", "package.json"),
+    ];
+    for (const path of paths) {
+      writeFixture(value);
+      const ctx = context(true, value.decision);
+      const planned = await npmPackageLifecyclePlan(ctx);
+      writeFileSync(path, `swapped:${path}\n`);
+      await expect(executePlan(planned, ctx, { skipWorktreeGate: true })).rejects.toThrow(
+        /changed after the plan|unchanged|transaction failed/i,
+      );
+      expect(lifecycleFiles()).toEqual([]);
+    }
+  });
+
+  it("is deterministic and invokes only the fixed authority attestation boundary once per plan", async () => {
+    const value = fixture();
+    writeFixture(value);
+    const calls: string[][] = [];
+    const ctx = context(false, value.decision);
+    const originalRun = ctx.run;
+    ctx.run = async (argv, options) => {
+      calls.push(argv);
+      return originalRun(argv, options);
+    };
+    const first = await npmPackageLifecyclePlan(ctx);
+    const second = await npmPackageLifecyclePlan(ctx);
+    expect(first.actions.map((action) => action.kind)).toEqual(
+      second.actions.map((action) => action.kind),
+    );
+    expect(calls).toHaveLength(2);
+    expect(calls.every((argv) => argv[0] === gh && argv[1] === "attestation")).toBe(true);
+    expect((await executePlan(first, ctx, { skipWorktreeGate: true })).digests[0]?.data).toEqual(
+      (await executePlan(second, ctx, { skipWorktreeGate: true })).digests[0]?.data,
+    );
+    expect(lifecycleFiles()).toEqual([]);
+  });
+
+  it("refuses a linked governance-store parent without writing through it", async () => {
+    const value = fixture();
+    writeFixture(value);
+    const outside = mkdtempSync(join(tmpdir(), "aih-npm-lifecycle-outside-"));
+    try {
+      symlinkSync(
+        outside,
+        join(root, ".aih", "governance"),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+      const result = await run(context(true, value.decision));
+      expect(result).toMatchObject({ outcome: "refused", state: "store-unsafe" });
+      expect(readdirSync(outside)).toEqual([]);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("reuses only an identical staged orphan and refuses a distinct same-lineage fork", async () => {
+    const first = fixture();
+    writeFixture(first);
+    await run(context(true, first.decision));
+    const bumped = fixture("1.2.4", `sha512-${Buffer.alloc(64, 4).toString("base64")}`);
+    writeFixture(bumped);
+    vi.advanceTimersByTime(1_000);
+    const exactPlan = await npmPackageLifecyclePlan(context(true, bumped.decision));
+    const orphan = immutableRecordAction(exactPlan);
+    preplace(orphan);
+    const applied = await executePlan(
+      await npmPackageLifecyclePlan(context(true, bumped.decision)),
+      context(true, bumped.decision),
+      {
+        skipWorktreeGate: true,
+      },
+    );
+    expect(applied.digests[0]?.data).toMatchObject({ outcome: "fulfilled" });
+
+    const forked = fixture("1.2.5", `sha512-${Buffer.alloc(64, 5).toString("base64")}`);
+    writeFixture(forked);
+    vi.advanceTimersByTime(1_000);
+    const expected = await npmPackageLifecyclePlan(context(true, forked.decision));
+    vi.advanceTimersByTime(1_000);
+    const other = await npmPackageLifecyclePlan(context(true, forked.decision));
+    vi.advanceTimersByTime(1_000);
+    const otherFork = await npmPackageLifecyclePlan(context(true, forked.decision));
+    preplace(immutableRecordAction(other));
+    preplace(immutableRecordAction(otherFork));
+    vi.setSystemTime(new Date("2026-08-02T12:00:03+00:00"));
+    expect(immutableRecordAction(expected).path).not.toBe(immutableRecordAction(other).path);
+    const rejected = await npmPackageLifecyclePlan(context(true, forked.decision));
+    const result = await executePlan(rejected, context(true, forked.decision), {
+      skipWorktreeGate: true,
+    });
+    expect(result.digests[0]?.data).toMatchObject({ outcome: "refused", state: "head-conflict" });
+  });
+
+  it("recovers only an exact immutable-record scratch left by an interrupted rename", async () => {
+    const value = fixture();
+    writeFixture(value);
+    const ctx = context(true, value.decision);
+    const interruptedPlan = await npmPackageLifecyclePlan(ctx);
+    const record = immutableRecordAction(interruptedPlan);
+    const scratch = recordScratch(record);
+    fsEvents.failRecordRename = (from, to) => from === scratch && to === scratch.slice(0, -8);
+
+    await expect(executePlan(interruptedPlan, ctx, { skipWorktreeGate: true })).rejects.toThrow(
+      /injected record rename failure/,
+    );
+    expect(readFileSync(scratch, "utf8")).toBe(record.contents);
+
+    fsEvents.failRecordRename = undefined;
+    const retry = await execute(context(true, value.decision));
+    expect(retry.digests[0]?.data).toMatchObject({ applied: true, outcome: "fulfilled" });
+    expect(existsSync(scratch)).toBe(false);
+  });
+
+  it("retries an interrupted authenticated revocation record without a timestamp-derived fork", async () => {
+    const value = fixture();
+    writeFixture(value);
+    await run(context(true, value.decision));
+    const revocation = {
+      format: "aih-governance-decision-revocation",
+      version: 2,
+      decisionDigest: governanceDecisionDigestV2(value.decision),
+      issuer: "platform-security",
+      revokedAt: "2026-08-01T00:00:00+00:00",
+      reason: "Critical upstream withdrawal.",
+    };
+    writeAuthority(value.decision, [revocation]);
+    const ctx = context(true, value.decision);
+    const interruptedPlan = await npmPackageLifecyclePlan(ctx);
+    const record = immutableRecordAction(interruptedPlan);
+    const scratch = recordScratch(record);
+    fsEvents.failRecordRename = (from, to) => from === scratch && to === scratch.slice(0, -8);
+
+    await expect(executePlan(interruptedPlan, ctx, { skipWorktreeGate: true })).rejects.toThrow(
+      /injected record rename failure/,
+    );
+    expect(readFileSync(scratch, "utf8")).toBe(record.contents);
+
+    fsEvents.failRecordRename = undefined;
+    vi.advanceTimersByTime(1_000);
+    const retry = await execute(context(true, value.decision));
+    expect(retry.digests[0]?.data).toMatchObject({
+      applied: true,
+      outcome: "fulfilled",
+      state: "decision-revoked",
+    });
+    expect(existsSync(scratch)).toBe(false);
+  });
+
+  it("refuses non-exact, linked, wrongly named, or colliding record scratch state", async () => {
+    const value = fixture();
+    const cases: Array<{
+      expected: string;
+      place: (record: ReturnType<typeof immutableRecordAction>) => boolean;
+    }> = [
+      {
+        expected: "store-collision",
+        place: (record) => {
+          const scratch = recordScratch(record);
+          mkdirSync(dirname(scratch), { recursive: true });
+          writeFileSync(scratch, `${record.contents}\n`);
+          return true;
+        },
+      },
+      {
+        expected: "store-unsafe",
+        place: (record) => {
+          const scratch = recordScratch(record);
+          const source = join(root, "linked-record-source.json");
+          mkdirSync(dirname(scratch), { recursive: true });
+          writeFileSync(source, record.contents);
+          try {
+            linkSync(source, scratch);
+            return true;
+          } catch {
+            // Some Windows policy configurations forbid test hard links.
+            return false;
+          }
+        },
+      },
+      {
+        expected: "store-collision",
+        place: (record) => {
+          const path = join(dirname(recordScratch(record)), `${"f".repeat(64)}.json.aih.tmp`);
+          mkdirSync(dirname(path), { recursive: true });
+          writeFileSync(path, record.contents);
+          return true;
+        },
+      },
+      {
+        expected: "store-collision",
+        place: (record) => {
+          preplace({ ...record, contents: "{}" });
+          return true;
+        },
+      },
+    ];
+    for (const item of cases) {
+      writeFixture(value);
+      const planned = await npmPackageLifecyclePlan(context(true, value.decision));
+      const record = immutableRecordAction(planned);
+      const placed = item.place(record);
+      try {
+        // Link creation may be unavailable under a Windows filesystem policy.
+        if (!placed) continue;
+        const result = await run(context(true, value.decision));
+        expect(result).toMatchObject({ outcome: "refused", state: item.expected });
+      } finally {
+        rmSync(join(root, ".aih", "governance"), { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("fails closed on a fresh re-observation when a prior process left an orphan record", async () => {
+    const first = fixture();
+    writeFixture(first);
+    await run(context(true, first.decision));
+    const bumped = fixture("1.2.4", `sha512-${Buffer.alloc(64, 4).toString("base64")}`);
+    writeFixture(bumped);
+    vi.advanceTimersByTime(1_000);
+    preplace(immutableRecordAction(await npmPackageLifecyclePlan(context(true, bumped.decision))));
+    vi.advanceTimersByTime(1_000);
+    expect(await run(context(true, bumped.decision))).toMatchObject({
+      outcome: "refused",
+      state: "head-conflict",
+    });
+  });
+
+  it("runs the cold disposable sequence without touching package bytes, a run ledger, or offline state", async () => {
+    const first = fixture();
+    writeFixture(first);
+    const lock = readFileSync(join(root, "package-lock.json"));
+    const manifest = readFileSync(join(root, "node_modules", "@acme", "widget", "package.json"));
+    expect(await observeNpmPackageV1(context(false, first.decision))).toMatchObject({
+      outcome: "observed-effective",
+    });
+    expect(await run(context(false, first.decision))).toMatchObject({ outcome: "reported-only" });
+    expect(await run(context(true, first.decision))).toMatchObject({ outcome: "fulfilled" });
+    vi.advanceTimersByTime(1_000);
+    expect(await run(context(true, first.decision))).toMatchObject({ outcome: "fulfilled" });
+    const bumped = fixture("1.2.4", `sha512-${Buffer.alloc(64, 4).toString("base64")}`);
+    writeFixture(bumped);
+    const bumpedLock = readFileSync(join(root, "package-lock.json"));
+    const bumpedManifest = readFileSync(
+      join(root, "node_modules", "@acme", "widget", "package.json"),
+    );
+    vi.advanceTimersByTime(1_000);
+    expect(await run(context(true, bumped.decision))).toMatchObject({ outcome: "fulfilled" });
+    writeAuthority(bumped.decision, [
+      {
+        format: "aih-governance-decision-revocation",
+        version: 2,
+        decisionDigest: governanceDecisionDigestV2(bumped.decision),
+        issuer: "platform-security",
+        revokedAt: "2026-08-01T00:00:00+00:00",
+        reason: "Critical upstream withdrawal.",
+      },
+    ]);
+    expect(await run(context(true, bumped.decision))).toMatchObject({
+      outcome: "fulfilled",
+      state: "decision-revoked",
+    });
+    expect(readFileSync(join(root, "package-lock.json"))).not.toEqual(lock);
+    expect(readFileSync(join(root, "node_modules", "@acme", "widget", "package.json"))).not.toEqual(
+      manifest,
+    );
+    expect(readFileSync(join(root, "package-lock.json"))).toEqual(bumpedLock);
+    expect(readFileSync(join(root, "node_modules", "@acme", "widget", "package.json"))).toEqual(
+      bumpedManifest,
+    );
+    expect(existsSync(join(root, ".aih", "run-log.jsonl"))).toBe(false);
+    expect(existsSync(join(root, ".aih", "offline-revocations"))).toBe(false);
+  });
+
+  it("requires explicit CLI apply, emits deterministic JSON, and never writes a run ledger or package files", async () => {
+    const value = fixture();
+    writeFixture(value);
+    const args = [
+      "--json",
+      "--root",
+      root,
+      "--decision",
+      value.decision.id,
+      "--decision-digest",
+      governanceDecisionDigestV2(value.decision),
+      "--target",
+      "claude",
+      "--evidence",
+      "evidence.json",
+    ];
+    const lockBefore = readFileSync(join(root, "package-lock.json"));
+    const manifestBefore = readFileSync(
+      join(root, "node_modules", "@acme", "widget", "package.json"),
+    );
+    const invoke = async (apply: boolean) => {
+      let out = "";
+      const code = await runCapability(
+        npmPackageLifecycleCommand,
+        command(apply ? [...args, "--apply"] : args),
+        {
+          env: { AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance", PATH: bin },
+          run: fakeRunner((argv) => (argv[0] === gh ? { code: 0 } : { code: 1 })),
+          write: (text) => {
+            out += text;
+          },
+        },
+      );
+      return { code, payload: JSON.parse(out) as { applied: boolean; writes: unknown[] } };
+    };
+    const preview = await invoke(false);
+    expect(preview.code).toBe(0);
+    expect(preview.payload).toMatchObject({ applied: false });
+    expect(lifecycleFiles()).toEqual([]);
+    const applied = await invoke(true);
+    expect(applied.code).toBe(0);
+    expect(applied.payload).toMatchObject({ applied: true });
+    expect(lifecycleFiles().some((file) => file.startsWith("heads/"))).toBe(true);
+    expect(existsSync(join(root, ".aih", "run-log.jsonl"))).toBe(false);
+    expect(readFileSync(join(root, "package-lock.json"))).toEqual(lockBefore);
+    expect(readFileSync(join(root, "node_modules", "@acme", "widget", "package.json"))).toEqual(
+      manifestBefore,
+    );
+  });
+
+  it("reports invalid authority, unqualified evidence, and partial installed custody distinctly without lifecycle writes", async () => {
+    const value = fixture();
+    const cases: Array<{
+      expected: { outcome: string; state: string };
+      mutate: () => void;
+    }> = [
+      {
+        expected: { outcome: "refused", state: "authority-unverified" },
+        mutate: () => writeFileSync(join(root, ".aih", "policy-authority-receipt.json"), "{}"),
+      },
+      {
+        expected: { outcome: "refused", state: "observation-unverified" },
+        mutate: () => writeFileSync(join(root, "evidence.json"), "{}"),
+      },
+      {
+        expected: { outcome: "partial", state: "observation-partial" },
+        mutate: () => rmSync(join(root, "node_modules", "@acme", "widget"), { recursive: true }),
+      },
+    ];
+    for (const item of cases) {
+      writeFixture(value);
+      item.mutate();
+      expect(await run(context(true, value.decision))).toMatchObject(item.expected);
+      expect(lifecycleFiles()).toEqual([]);
+    }
+  });
+
+  it("refuses a valid-but-substituted authority during the mandatory second revocation verification", async () => {
+    const value = fixture();
+    writeFixture(value);
+    writeAuthority(value.decision, [
+      {
+        format: "aih-governance-decision-revocation",
+        version: 2,
+        decisionDigest: governanceDecisionDigestV2(value.decision),
+        issuer: "platform-security",
+        revokedAt: "2026-08-01T00:00:00+00:00",
+        reason: "Critical upstream withdrawal.",
+      },
+    ]);
+    const ctx = context(true, value.decision);
+    let attestations = 0;
+    const originalRun = ctx.run;
+    ctx.run = async (argv, options) => {
+      const result = await originalRun(argv, options);
+      if (argv[0] === gh && ++attestations === 1) writeAuthority(value.decision);
+      return result;
+    };
+
+    expect(await run(ctx)).toMatchObject({
+      outcome: "refused",
+      state: "authority-drift",
+    });
+    expect(attestations).toBe(2);
+    expect(lifecycleFiles()).toEqual([]);
+  });
+
+  it("distinguishes authority expiry at the second revocation verification without writing", async () => {
+    const value = fixture();
+    writeFixture(value);
+    writeAuthority(value.decision, [
+      {
+        format: "aih-governance-decision-revocation",
+        version: 2,
+        decisionDigest: governanceDecisionDigestV2(value.decision),
+        issuer: "platform-security",
+        revokedAt: "2026-08-01T00:00:00+00:00",
+        reason: "Critical upstream withdrawal.",
+      },
+    ]);
+    const ctx = context(true, value.decision);
+    let attestations = 0;
+    const originalRun = ctx.run;
+    ctx.run = async (argv, options) => {
+      const result = await originalRun(argv, options);
+      if (argv[0] === gh) attestations += 1;
+      return result;
+    };
+    const now = vi
+      .spyOn(Date, "now")
+      .mockImplementation(() =>
+        attestations === 0
+          ? Date.parse("2026-08-02T12:00:00+00:00")
+          : Date.parse("2026-08-11T12:00:00+00:00"),
+      );
+    try {
+      expect(await run(ctx)).toMatchObject({
+        outcome: "refused",
+        state: "authority-not-current",
+      });
+      // The observer's first attested receipt completed at the original clock;
+      // the second real verifier rejects the now-expired live receipt pre-spawn.
+      expect(attestations).toBe(1);
+      expect(lifecycleFiles()).toEqual([]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("keeps a subject's target lineages independent for every observer-supported target", async () => {
+    const value = fixture();
+    value.decision.targets = [...SUPPORTED_CLIS].sort();
+    writeFixture(value);
+    for (const target of SUPPORTED_CLIS) {
+      const ctx = context(true, value.decision);
+      ctx.options.target = target;
+      expect(await run(ctx)).toMatchObject({ outcome: "fulfilled" });
+      vi.advanceTimersByTime(1_000);
+    }
+    expect(lifecycleFiles().filter((file) => file.startsWith("subjects/"))).toHaveLength(
+      SUPPORTED_CLIS.length,
+    );
+    expect(lifecycleFiles().filter((file) => file.startsWith("heads/"))).toHaveLength(
+      SUPPORTED_CLIS.length,
+    );
+  }, 15_000);
+
+  it("refuses a valid record substituted into a different lineage partition", async () => {
+    const value = fixture();
+    writeFixture(value);
+    await run(context(true, value.decision));
+    const codex = context(true, value.decision);
+    codex.options.target = "codex";
+    await run(codex);
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const records = lifecycleFiles().filter((file) => file.startsWith("records/"));
+    expect(records).toHaveLength(2);
+    const first = join(base, ...(records[0] as string).split("/"));
+    const second = join(base, ...(records[1] as string).split("/"));
+    copyFileSync(second, join(dirname(first), basename(second)));
+    vi.advanceTimersByTime(1_000);
+    expect(await run(context(true, value.decision))).toMatchObject({
+      outcome: "refused",
+      state: "head-conflict",
+    });
+  });
+
+  it("refuses an unexpected non-record entry in a lineage partition", async () => {
+    const value = fixture();
+    writeFixture(value);
+    await run(context(true, value.decision));
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const headName = readdirSync(join(base, "heads")).find((name) => name.endsWith(".json"));
+    if (headName === undefined) throw new Error("expected lifecycle head");
+    const head = JSON.parse(readFileSync(join(base, "heads", headName), "utf8"));
+    writeFileSync(join(dirname(recordFile(base, head.recordDigest)), "unexpected"), "not a record");
+    expect(await run(context(true, value.decision))).toMatchObject({
+      outcome: "refused",
+      state: "head-conflict",
+    });
+  });
+
+  it("accepts a valid staged record at capacity and refuses record 4,097", async () => {
+    const value = fixture();
+    writeFixture(value);
+    await run(context(true, value.decision));
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const headName = readdirSync(join(base, "heads")).find((name) => name.endsWith(".json"));
+    if (headName === undefined) throw new Error("expected lifecycle head");
+    const headPath = join(base, "heads", headName);
+    const head = JSON.parse(readFileSync(headPath, "utf8"));
+    const first = JSON.parse(readFileSync(recordFile(base, head.recordDigest), "utf8"));
+    const partition = dirname(recordFile(base, head.recordDigest));
+    let previous = head.recordDigest as string;
+    for (let sequence = 2; sequence <= 4_095; sequence += 1) {
+      const record = { ...first, previousRecordDigest: previous, sequence };
+      const digest = lifecycleRecordDigest(record);
+      writeFileSync(join(partition, `${digest.slice(7)}.json`), canonicalStrictJsonBytesV1(record));
+      previous = digest;
+    }
+    writeFileSync(
+      headPath,
+      canonicalStrictJsonBytesV1({ ...head, recordDigest: previous, sequence: 4_095 }),
+    );
+    const staged = { ...first, previousRecordDigest: previous, sequence: 4_096 };
+    const stagedDigest = lifecycleRecordDigest(staged);
+    writeFileSync(
+      join(partition, `${stagedDigest.slice(7)}.json`),
+      canonicalStrictJsonBytesV1(staged),
+    );
+    expect(await run(context(true, value.decision))).toMatchObject({ outcome: "fulfilled" });
+    const before = lifecycleFiles();
+    expect(await run(context(true, value.decision))).toMatchObject({
+      outcome: "refused",
+      state: "head-conflict",
+    });
+    expect(lifecycleFiles()).toEqual(before);
+  }, 60_000);
+
+  it("refuses a rolled-back head before replaying a revocation record", async () => {
+    const value = fixture();
+    writeFixture(value);
+    await run(context(true, value.decision));
+    writeAuthority(value.decision, [
+      {
+        format: "aih-governance-decision-revocation",
+        version: 2,
+        decisionDigest: governanceDecisionDigestV2(value.decision),
+        issuer: "platform-security",
+        revokedAt: "2026-08-01T00:00:00+00:00",
+        reason: "Critical upstream withdrawal.",
+      },
+    ]);
+    await run(context(true, value.decision));
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const headName = readdirSync(join(base, "heads")).find((name) =>
+      name.endsWith(".json"),
+    ) as string;
+    copyFileSync(join(base, "heads", `${headName}.aih.bak`), join(base, "heads", headName));
+    const before = lifecycleFiles();
+    vi.advanceTimersByTime(1_000);
+    expect(await run(context(true, value.decision))).toMatchObject({
+      outcome: "refused",
+      state: "head-conflict",
+    });
+    expect(lifecycleFiles()).toEqual(before);
+  });
+
+  it("reports a detached store rather than claiming fulfilled after an apply-time postcondition failure", async () => {
+    const value = fixture();
+    writeFixture(value);
+    const ctx = context(true, value.decision);
+    const planned = await npmPackageLifecyclePlan(ctx);
+    const head = planned.actions.find(
+      (action) =>
+        action.kind === "write" && action.describe === "advance npm lifecycle subject head",
+    );
+    if (head?.kind !== "write") throw new Error("expected lifecycle head action");
+    planned.actions.push({
+      kind: "exec",
+      describe: "test postcondition race",
+      argv: ["test-race"],
+    });
+    const originalRun = ctx.run;
+    ctx.run = async (argv, options) => {
+      if (argv[0] === "test-race") {
+        writeFileSync(join(root, ...head.path.split("/")), "{}");
+        return { code: 0, stderr: "", stdout: "" };
+      }
+      return originalRun(argv, options);
+    };
+    const result = await executePlan(planned, ctx, { skipWorktreeGate: true });
+    expect(result.digests[0]?.data).toMatchObject({
+      applied: false,
+      outcome: "refused",
+      state: "store-detached",
+    });
+    expect(result.report?.ok).toBe(false);
+  });
+
+  it("reports a detached store when a non-cooperative writer forks the committed lineage", async () => {
+    const value = fixture();
+    writeFixture(value);
+    const ctx = context(true, value.decision);
+    const planned = await npmPackageLifecyclePlan(ctx);
+    planned.actions.push({
+      kind: "exec",
+      describe: "test postcommit lineage fork",
+      argv: ["test-fork"],
+    });
+    const originalRun = ctx.run;
+    ctx.run = async (argv, options) => {
+      if (argv[0] === "test-fork") {
+        const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+        const headName = readdirSync(join(base, "heads")).find((name) => name.endsWith(".json"));
+        if (headName === undefined) throw new Error("expected committed lifecycle head");
+        const head = JSON.parse(readFileSync(join(base, "heads", headName), "utf8"));
+        const current = JSON.parse(readFileSync(recordFile(base, head.recordDigest), "utf8"));
+        const fork = {
+          ...current,
+          previousRecordDigest: head.recordDigest,
+          sequence: head.sequence + 1,
+        };
+        const digest = lifecycleRecordDigest(fork);
+        writeFileSync(
+          join(dirname(recordFile(base, head.recordDigest)), `${digest.slice(7)}.json`),
+          canonicalStrictJsonBytesV1(fork),
+        );
+        return { code: 0, stderr: "", stdout: "" };
+      }
+      return originalRun(argv, options);
+    };
+    const result = await executePlan(planned, ctx, { skipWorktreeGate: true });
+    expect(result.digests[0]?.data).toMatchObject({
+      applied: false,
+      outcome: "refused",
+      state: "store-detached",
+    });
+    expect(result.report?.ok).toBe(false);
+  });
+
+  it("refuses a current revoked head with a distinct forward record fork instead of reporting it clean", async () => {
+    const value = fixture();
+    writeFixture(value);
+    await run(context(true, value.decision));
+    const revocation = {
+      format: "aih-governance-decision-revocation",
+      version: 2,
+      decisionDigest: governanceDecisionDigestV2(value.decision),
+      issuer: "platform-security",
+      revokedAt: "2026-08-01T00:00:00+00:00",
+      reason: "Critical upstream withdrawal.",
+    };
+    writeAuthority(value.decision, [revocation]);
+    await run(context(true, value.decision));
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const head = JSON.parse(
+      readFileSync(
+        join(
+          base,
+          "heads",
+          readdirSync(join(base, "heads")).find((name) => name.endsWith(".json")) as string,
+        ),
+        "utf8",
+      ),
+    );
+    const current = JSON.parse(readFileSync(recordFile(base, head.recordDigest), "utf8"));
+    const fork = {
+      ...current,
+      previousRecordDigest: head.recordDigest,
+      revocation: { ...current.revocation, reason: "Competing revocation record." },
+      sequence: head.sequence + 1,
+    };
+    const forkBytes = canonicalStrictJsonBytesV1(fork);
+    const forkDigest = createHash("sha256")
+      .update("aih-npm-package-lifecycle-record/v1\0", "utf8")
+      .update(forkBytes)
+      .digest("hex");
+    writeFileSync(
+      join(dirname(recordFile(base, head.recordDigest)), `${forkDigest}.json`),
+      forkBytes,
+    );
+    expect(await run(context(true, value.decision))).toMatchObject({
+      outcome: "refused",
+      state: "head-conflict",
+    });
+  });
+});

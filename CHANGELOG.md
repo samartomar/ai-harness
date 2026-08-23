@@ -8,6 +8,36 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`aih policy lifecycle npm-package` persists exact governed observation, bump, and revocation
+  history without managing the package.** Preview is zero-write; `--apply` first repeats the current
+  V3 authority, organization evidence, npm v3 lockfile, installed-manifest, and observation checks,
+  then appends one canonical content-addressed record and advances a subject head under the
+  dedicated `.aih/governance/npm-package-lifecycle/v1/` store. Exact version/integrity changes keep
+  one stable package/integration lineage while preserving prior records. A current authenticated V3
+  decision revocation can append a revocation record only on an existing verified lineage, but remains
+  non-effective and produces a failing, nonzero verification result; it makes no package-removal or
+  process-stop claim.
+  The transaction pins all authorizing bytes, writes a durable subject-and-target lineage claim before
+  the ordinary binding, uses a subject-scoped cooperative lifecycle-store lease, commits the immutable
+  record durably before its head, rechecks its deadline and filesystem custody during commit, and
+  re-reads the exact claim, binding, record, head, and bounded lineage before reporting success. The
+  claim prevents ordinary binding loss from silently admitting a different lineage. A crashed lease is
+  reclaimable after a bounded 30-second mutation window plus 30-second recovery grace; malformed or
+  foreign lock state blocks, and the inert canonical anchor can remain. This coordinates local AIH
+  writers rather than providing an operating-system or hostile-process isolation boundary. Corrupt,
+  substituted, expired, detectably rolled-back, forked, linked, raced, over-capacity, or detached state
+  fails closed; refused apply attempts append no governance claim, record, or head, though an interrupted
+  apply can leave inert canonical lock metadata or the private scratch for its immutable record. Only
+  byte-identical canonical bytes at that exact scratch path, with single-link custody rechecked at the
+  transaction effect boundary, can be consumed by a retry; mismatched, linked, or foreign scratch fails
+  closed without cleanup. Only the same prepared canonical bytes can reuse a completed-record crash
+  orphan; a freshly timed command normally fails closed for approved operator incident reconciliation
+  instead of deleting or silently adopting it. The command never installs, updates, removes,
+  configures, executes, signs, or publishes a package, and remains limited to the
+  organization-qualified root npm route. A target-local chain cannot detect a coordinated rollback
+  that deletes both subject indexes, or a head advance and all later records; administrators must
+  retain the whole store in organization-controlled versioned evidence. (#844)
+
 - **`aih policy observe npm-package` reports an exact organization-qualified npm install without
   installing or executing it.** The zero-write command derives one npm package and the fixed
   `install` effect from an exact current Decision V2, after independently verifying the external
