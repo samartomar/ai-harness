@@ -422,6 +422,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
   it("fails closed for roots, custody, attestation, receipt, and binding substitutions", async () => {
     const value = decision();
     const verifiedAuthority = await authority(value);
+    const workflowAuthority = await authority(value, "policy.yml");
     writeReceipt(receipt(value));
     const input = {
       authority: verifiedAuthority,
@@ -432,19 +433,19 @@ describe("AihSupportedQualificationReceiptV1", () => {
       supportedTargets: ["claude"],
       now: "2026-08-02T12:00:00+00:00",
     };
-    for (const env of [
-      { AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "" },
-      { AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "" },
-      { AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "acme/governance" },
+    for (const { authority: rootAuthority, env } of [
+      { authority: verifiedAuthority, env: { AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "" } },
+      { authority: verifiedAuthority, env: { AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "" } },
       {
-        AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "policy.yml",
-        AIH_POLICY_AUTHORITY_WORKFLOW: "policy.yml",
+        authority: verifiedAuthority,
+        env: { AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "acme/governance" },
       },
+      { authority: workflowAuthority, env: { AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "policy.yml" } },
     ]) {
       await expect(
         verifyAihSupportedQualificationReceiptV1(
           context(() => ({ code: 0 }), env),
-          input,
+          { ...input, authority: rootAuthority },
         ),
       ).resolves.toMatchObject({
         problem: expect.any(String),

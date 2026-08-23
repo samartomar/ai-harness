@@ -610,6 +610,8 @@ export interface VerifiedPolicyAuthority {
   readonly receipt: PolicyAuthorityReceipt;
   readonly receiptDigest: string;
   readonly repository: string;
+  /** Optional signer-workflow root verified with the authority receipt. */
+  readonly workflow?: string;
 }
 
 export function isVerifiedPolicyAuthority(value: unknown): value is VerifiedPolicyAuthority {
@@ -749,6 +751,7 @@ export async function verifyPolicyAuthorityReceipt(
     receipt: deepFreeze(structuredClone(receipt)) as PolicyAuthorityReceipt,
     receiptDigest: `sha256:${createHash("sha256").update(contents).digest("hex")}`,
     repository: root.repository,
+    ...(root.workflow === undefined ? {} : { workflow: root.workflow }),
   });
   verifiedAuthorities.add(authority);
   return { authority };

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { readRegularFile } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import { findOnPath } from "../live/runner.js";
+import { isVerifiedPolicyAuthority, type VerifiedPolicyAuthority } from "./authority.js";
 import { GovernanceDecisionTimestampSchema } from "./governance-decision-v1.js";
 import {
   type GovernanceDecisionEffectV2Schema,
@@ -153,6 +154,7 @@ export interface AihSupportedQualificationVerificationV1 {
 
 function configuredSupportRoot(
   ctx: PlanContext,
+  authority: VerifiedPolicyAuthority | undefined,
 ): { repository: string; workflow: string } | undefined {
   const supportedRepository = ctx.env.AIH_SUPPORTED_QUALIFICATION_REPOSITORY?.trim();
   const supportedWorkflow = ctx.env.AIH_SUPPORTED_QUALIFICATION_WORKFLOW?.trim();
@@ -171,11 +173,10 @@ function configuredSupportRoot(
   ) {
     return undefined;
   }
-  const authorityRepository = ctx.env.AIH_POLICY_AUTHORITY_REPOSITORY?.trim();
-  const authorityWorkflow = ctx.env.AIH_POLICY_AUTHORITY_WORKFLOW?.trim();
   if (
-    supportedRepository === authorityRepository ||
-    (authorityWorkflow !== undefined && supportedWorkflow === authorityWorkflow)
+    authority !== undefined &&
+    (supportedRepository === authority.repository ||
+      (authority.workflow !== undefined && supportedWorkflow === authority.workflow))
   ) {
     return undefined;
   }
@@ -206,7 +207,10 @@ export async function verifyAihSupportedQualificationReceiptV1(
   ctx: PlanContext,
   input: VerifyAihSupportedQualificationReceiptV1Input,
 ): Promise<AihSupportedQualificationVerificationV1> {
-  const supportRoot = configuredSupportRoot(ctx);
+  const verifiedAuthority = isVerifiedPolicyAuthority(input.authority)
+    ? input.authority
+    : undefined;
+  const supportRoot = configuredSupportRoot(ctx, verifiedAuthority);
   if (supportRoot === undefined) {
     return {
       problem:
