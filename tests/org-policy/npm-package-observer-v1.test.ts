@@ -271,6 +271,32 @@ describe("npm package upstream observer V1", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("keeps a proven qualification truthful when fixed installed evidence is absent", async () => {
+    const value = fixture();
+    writeAuthority(value.decision);
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    const calls: string[][] = [];
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+          evidence: "evidence.json",
+        },
+        calls,
+      ),
+    );
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "qualified",
+      effective: "observation-missing",
+      outcome: "partial",
+      reason: "installed-evidence-unavailable",
+    });
+    expect(calls).toHaveLength(1);
+  });
+
   it("rejects a duplicate lock key before it can provide an installed identity", async () => {
     const value = fixture();
     writeAuthority(value.decision);
