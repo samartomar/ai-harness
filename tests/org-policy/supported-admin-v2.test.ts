@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as supported from "../../src/org-policy/supported-admin-v2.js";
+import { buildProgram } from "../../src/program.js";
 
 describe("SupportedQualificationCustodyV2 roots", () => {
   it("derives only the fixed OS-admin enterprise roots and a governed vibe subpath", () => {
@@ -108,7 +109,7 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
       expect.stringContaining("members/sha256:"),
       expect.stringContaining("heads/catalog-signer/ed25519:"),
     ]);
-    for (const action of plan.actions) {
+    for (const action of plan.actions.slice(0, -1)) {
       expect(action).toMatchObject({ durable: true, once: true, expect: { absent: true } });
     }
     expect(plan.actions.at(-1)).toMatchObject({ expect: { absent: true } });
@@ -122,7 +123,7 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     expect(evaluate({ ...base, existing: [input] })).toEqual({ state: "unchanged", writes: [] });
     expect(
       evaluate({ ...base, existing: [{ ...input, decision: { ...input.decision, id: "other" } }] }),
-    ).toMatchObject({ state: "member-only" });
+    ).toMatchObject({ state: "conflict" });
     expect(
       evaluate({
         ...base,
@@ -143,17 +144,47 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
   });
 
   it("reports bounded, scrubbed current-head members without write actions and never accepts caller receipt or verifier controls", () => {
-    const command = supported.supportedAcceptCommandV2;
-    const inspect = supported.supportedInspectCommandV2;
-    expect(command).toEqual(expect.any(Function));
-    expect(inspect).toEqual(expect.any(Function));
-    expect(command.options).toEqual(["decision", "decision-digest", "target"]);
-    expect(inspect.options).toEqual([]);
+    const program = buildProgram();
+    const policy = program.commands.find((command) => command.name() === "policy");
+    const command = policy?.commands.find((candidate) => candidate.name() === "supported");
+    expect(command?.commands.map((candidate) => candidate.name())).toEqual(["accept", "inspect"]);
+    expect(
+      command?.commands
+        .find((candidate) => candidate.name() === "accept")
+        ?.options.map((option) => option.long),
+    ).toEqual(["--decision", "--decision-digest", "--target"]);
+    expect(command?.commands.find((candidate) => candidate.name() === "inspect")?.options).toEqual(
+      [],
+    );
     const report = supported.inspectSupportedCustodyV2({
       posture: "vibe",
       root: "/disposable",
       limit: 1,
     });
     expect(report).toMatchObject({ writes: [], deterministic: true, scrubbed: true, limit: 1 });
+  });
+
+  it("refuses malformed or raced custody and requires exact successor CAS plus a post-commit digest", () => {
+    const validate = supported.validateSupportedCustodyStateV2;
+    expect(validate).toEqual(expect.any(Function));
+    for (const state of [
+      "gap",
+      "rollback",
+      "wrong-predecessor",
+      "replay-reuse",
+      "key-mismatch",
+      "corrupt",
+      "linked",
+      "detached",
+      "raced",
+    ]) {
+      expect(validate({ state })).toMatchObject({ accepted: false });
+    }
+    const successor = supported.planSupportedCustodySuccessorV2;
+    expect(successor).toEqual(expect.any(Function));
+    expect(successor({ previousHead: `sha256:${"f".repeat(64)}` })).toMatchObject({
+      expect: { sha256: `sha256:${"f".repeat(64)}` },
+      postcondition: { kind: "digest" },
+    });
   });
 });
