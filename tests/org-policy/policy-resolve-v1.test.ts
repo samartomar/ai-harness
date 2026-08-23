@@ -386,6 +386,36 @@ describe("policy resolve V1", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("preserves authority-not-current when the authority expires after attestation", async () => {
+    const fixture = decision();
+    const expiringDecision = { ...fixture.value, expiresAt: "2026-08-02T12:00:01+00:00" };
+    writeAuthority(expiringDecision, { expiresAt: "2026-08-02T12:00:01+00:00" });
+    writeFileSync(join(root, "evidence.json"), fixture.bytes);
+    const calls: string[][] = [];
+    const result = await resolvePolicyEvidenceV1(
+      context(
+        {
+          decision: expiringDecision.id,
+          decisionDigest: governanceDecisionDigestV2(expiringDecision as never),
+          target: "claude",
+          effect: "configure",
+          evidence: "evidence.json",
+        },
+        calls,
+        () => vi.setSystemTime(new Date("2026-08-02T12:00:01+00:00")),
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      effective: "authority-not-current",
+      reason: "authority-not-current",
+      outcome: "refused",
+    });
+    expect(calls).toHaveLength(1);
+  });
+
   it("refuses noncanonical evidence and symlink custody without widening the authority boundary", async () => {
     const fixture = decision();
     writeAuthority(fixture.value);
