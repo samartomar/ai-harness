@@ -2,9 +2,10 @@ import { createHash } from "node:crypto";
 import { lstatSync, readdirSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
+import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
-import { digest, plan, probe } from "../internals/plan.js";
+import { dynamicDigest, plan, probe } from "../internals/plan.js";
 import type { Check, CheckCode } from "../internals/verify.js";
 import { verifyPolicyAuthorityReceipt } from "./authority.js";
 import type {
@@ -32,12 +33,14 @@ type LifecycleReason =
   | "invalid-input"
   | "authority-unverified"
   | "authority-not-current"
+  | "authority-drift"
   | "decision-revoked"
   | "observation-unverified"
   | "observation-partial"
   | "store-unsafe"
   | "store-corrupt"
   | "store-collision"
+  | "store-detached"
   | "head-conflict";
 
 export interface NpmPackageLifecycleResultV1 {
@@ -70,6 +73,16 @@ interface Existing {
 interface Prepared {
   readonly actions: readonly WriteAction[];
   readonly commitNotAfter?: string;
+  readonly commitLock?: string;
+  readonly postcondition?: {
+    bindingPath: string;
+    bindingText: string;
+    headPath: string;
+    headText: string;
+    lineage: Lineage;
+    recordPath: string;
+    recordText: string;
+  };
   readonly result: NpmPackageLifecycleResultV1;
 }
 interface LifecycleHead {
@@ -78,6 +91,18 @@ interface LifecycleHead {
   readonly sequence: number;
   readonly subjectDigest: string;
 }
+
+type CurrentAuthorityRevocation =
+  | { readonly kind: "authority-unverified" }
+  | { readonly kind: "authority-not-current" }
+  | { readonly kind: "authority-drift" }
+  | {
+      readonly kind: "revoked";
+      readonly authorityReceiptDigest: string;
+      readonly authorityExpiresAt: string;
+      readonly decision: GovernanceDecisionV2;
+      readonly revocation: GovernanceDecisionRevocationV2;
+    };
 
 function hash(bytes: Buffer | string): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -99,7 +124,7 @@ function option(ctx: PlanContext, key: string): string | undefined {
 
 function input(
   ctx: PlanContext,
-): { decision: string; digest: string; evidence: string; target: string } | undefined {
+): { decision: string; digest: string; evidence: string; target: Cli } | undefined {
   const decision = option(ctx, "decision");
   const decisionDigest = option(ctx, "decisionDigest");
   const evidence = option(ctx, "evidence");
@@ -111,10 +136,10 @@ function input(
     !SHA256.test(decisionDigest) ||
     evidence === undefined ||
     target === undefined ||
-    !["claude", "codex", "kiro"].includes(target)
+    !SUPPORTED_CLIS.includes(target as Cli)
   )
     return undefined;
-  return { decision, digest: decisionDigest, evidence, target };
+  return { decision, digest: decisionDigest, evidence, target: target as Cli };
 }
 
 function lstat(path: string) {
@@ -189,15 +214,21 @@ function staged(
   contents: string,
   existing: Existing | "absent",
   describe: string,
+  durable = false,
 ): WriteAction {
   return {
     kind: "write",
     path,
     contents,
     exactContents: true,
+    ...(durable ? { durable: true as const } : {}),
     describe,
     expect: existing === "absent" ? { absent: true } : { sha256: existing.sha256 },
   };
+}
+
+function lineageLockPath(lineage: Lineage): string {
+  return [...STORE, "locks", `${lineage.digest.slice("sha256:".length)}.lock`].join("/");
 }
 
 function lifecycleReason(result: NpmPackageObservationResultV1): LifecycleReason {
@@ -214,6 +245,43 @@ function refused(reason: LifecycleReason, outcome: "partial" | "refused" = "refu
     actions: [],
     result: { applied: false, outcome, reason, state: reason },
   };
+}
+
+function persisted(root: string, postcondition: NonNullable<Prepared["postcondition"]>): boolean {
+  const binding = readCanonicalStoreFile(root, ...postcondition.bindingPath.split("/"));
+  const record = readCanonicalStoreFile(root, ...postcondition.recordPath.split("/"));
+  const head = readCanonicalStoreFile(root, ...postcondition.headPath.split("/"));
+  const parsedBinding = typeof binding === "string" ? undefined : parseBinding(binding);
+  const parsedHead = typeof head === "string" ? undefined : parseHead(head, postcondition.lineage);
+  return (
+    typeof binding !== "string" &&
+    typeof record !== "string" &&
+    typeof head !== "string" &&
+    binding.text === postcondition.bindingText &&
+    record.text === postcondition.recordText &&
+    head.text === postcondition.headText &&
+    parsedBinding !== undefined &&
+    canonicalText(parsedBinding) === canonicalText(postcondition.lineage) &&
+    parsedHead !== undefined &&
+    verifyHistory(root, parsedHead, postcondition.lineage) &&
+    hasOnlyExpectedSuccessor(root, parsedHead, postcondition.lineage)
+  );
+}
+
+function reportedResult(ctx: PlanContext, prepared: Prepared): NpmPackageLifecycleResultV1 {
+  if (
+    ctx.apply &&
+    prepared.postcondition !== undefined &&
+    !persisted(ctx.root, prepared.postcondition)
+  ) {
+    return {
+      applied: false,
+      outcome: "refused",
+      reason: "store-detached",
+      state: "store-detached",
+    };
+  }
+  return prepared.result;
 }
 
 function pinObservedCustody(
@@ -242,16 +310,21 @@ function pinObservedCustody(
   }
 }
 
-function subjectBindingPath(subjectId: string): readonly string[] {
-  return [...STORE, "subjects", `${hash(subjectId).slice(0, 64)}.json`] as const;
+function subjectBindingPath(subjectId: string, target: string): readonly string[] {
+  return [...STORE, "subjects", `${hash(`${subjectId}\0${target}`)}.json`] as const;
 }
 
 function headPath(lineageDigest: string): readonly string[] {
   return [...STORE, "heads", `${lineageDigest.slice("sha256:".length)}.json`] as const;
 }
 
-function recordPath(recordDigest: string): readonly string[] {
-  return [...STORE, "records", `${recordDigest.slice("sha256:".length)}.json`] as const;
+function recordPath(lineage: Lineage, recordDigest: string): readonly string[] {
+  return [
+    ...STORE,
+    "records",
+    lineage.digest.slice("sha256:".length),
+    `${recordDigest.slice("sha256:".length)}.json`,
+  ] as const;
 }
 
 function parseObject(existing: Existing): Record<string, unknown> | undefined {
@@ -461,6 +534,7 @@ function recordLink(
         "format",
         "lineage",
         "previousRecordDigest",
+        "recordedAt",
         "revocation",
         "sequence",
         "state",
@@ -495,6 +569,7 @@ function recordLink(
       )
     )
       return undefined;
+    if (!Number.isFinite(Date.parse(stableText(item.recordedAt) ?? ""))) return undefined;
   }
   return {
     decisionDigest: (decision as Record<string, unknown>).digest as string,
@@ -509,7 +584,7 @@ function verifyHistory(root: string, head: LifecycleHead, lineage: Lineage): boo
   let digest = head.recordDigest;
   let expectedSequence = head.sequence;
   for (let count = 0; count < 4_096; count += 1) {
-    const prior = readCanonicalStoreFile(root, ...recordPath(digest));
+    const prior = readCanonicalStoreFile(root, ...recordPath(lineage, digest));
     if (typeof prior === "string") return false;
     const link = recordLink(prior, digest, lineage);
     if (link === undefined || link.sequence !== expectedSequence) return false;
@@ -530,9 +605,14 @@ function hasOnlyExpectedSuccessor(
   root: string,
   head: LifecycleHead | undefined,
   lineage: Lineage,
-  expectedOrphanDigest: string,
+  expectedOrphanDigest?: string,
 ): boolean {
-  const directory = safeStorePath(root, ...STORE, "records");
+  const directory = safeStorePath(
+    root,
+    ...STORE,
+    "records",
+    lineage.digest.slice("sha256:".length),
+  );
   if (directory === undefined) return false;
   const info = lstat(directory);
   if (info === undefined) return true;
@@ -543,7 +623,8 @@ function hasOnlyExpectedSuccessor(
   } catch {
     return false;
   }
-  if (names.length > 4_096) return false;
+  if (names.length > 4_096 || names.some((name) => !/^[0-9a-f]{64}\.json$/.test(name)))
+    return false;
   const links = new Map<
     string,
     ReturnType<typeof recordLink> extends infer T ? Exclude<T, undefined> : never
@@ -551,12 +632,17 @@ function hasOnlyExpectedSuccessor(
   for (const name of names) {
     if (!/^[0-9a-f]{64}\.json$/.test(name)) continue;
     const recordDigest = `sha256:${name.slice(0, -5)}`;
-    const existing = readCanonicalStoreFile(root, ...STORE, "records", name);
+    const existing = readCanonicalStoreFile(
+      root,
+      ...STORE,
+      "records",
+      lineage.digest.slice("sha256:".length),
+      name,
+    );
     if (typeof existing === "string") return false;
     const item = parseObject(existing);
     const recordLineage = item === undefined ? undefined : parseLineage(item.lineage);
-    if (recordLineage === undefined) return false;
-    if (recordLineage.digest !== lineage.digest) continue;
+    if (recordLineage === undefined || recordLineage.digest !== lineage.digest) return false;
     const link = recordLink(existing, recordDigest, lineage);
     if (link === undefined) return false;
     links.set(recordDigest, link);
@@ -572,7 +658,7 @@ function hasOnlyExpectedSuccessor(
   if (cursor !== undefined) return false;
   for (const [recordDigest, link] of links) {
     if (chain.has(recordDigest)) continue;
-    if (recordDigest !== expectedOrphanDigest) return false;
+    if (expectedOrphanDigest === undefined || recordDigest !== expectedOrphanDigest) return false;
     if (
       head === undefined
         ? link.sequence !== 1 || link.previous !== undefined
@@ -583,22 +669,48 @@ function hasOnlyExpectedSuccessor(
   return true;
 }
 
+/** Avoid starting a bounded history walk when a new record would exceed its capacity. */
+function capacityAllowsCandidate(root: string, lineage: Lineage, candidateDigest: string): boolean {
+  const directory = safeStorePath(
+    root,
+    ...STORE,
+    "records",
+    lineage.digest.slice("sha256:".length),
+  );
+  if (directory === undefined) return false;
+  const info = lstat(directory);
+  if (info === undefined) return true;
+  if (!info.isDirectory() || info.isSymbolicLink()) return false;
+  let names: string[];
+  try {
+    names = readdirSync(directory);
+  } catch {
+    return false;
+  }
+  return (
+    names.length < 4_096 ||
+    (names.length === 4_096 && names.includes(`${candidateDigest.slice("sha256:".length)}.json`))
+  );
+}
+
 function currentAuthorityRevocation(
   ctx: PlanContext,
-  requested: { decision: string; digest: string; target: string },
-): Promise<
-  | {
-      authorityReceiptDigest: string;
-      authorityExpiresAt: string;
-      decision: GovernanceDecisionV2;
-      revocation: GovernanceDecisionRevocationV2;
-    }
-  | undefined
-> {
+  requested: { decision: string; digest: string; target: Cli },
+): Promise<CurrentAuthorityRevocation> {
   return verifyPolicyAuthorityReceipt(ctx).then((verified) => {
     const authority = verified.authority;
-    if (authority === undefined || authority.receipt.version !== 3) return undefined;
+    if (authority === undefined)
+      return {
+        kind:
+          verified.problem === "authority receipt is not currently valid"
+            ? "authority-not-current"
+            : "authority-unverified",
+      };
+    if (authority.receipt.version !== 3) return { kind: "authority-unverified" };
     const receipt = authority.receipt;
+    const now = Date.now();
+    if (now < Date.parse(receipt.issuedAt) || now >= Date.parse(receipt.expiresAt))
+      return { kind: "authority-not-current" };
     const decision = receipt.decisions.find(
       (candidate) =>
         candidate.id === requested.decision &&
@@ -610,12 +722,19 @@ function currentAuthorityRevocation(
     if (
       decision === undefined ||
       revocation === undefined ||
-      Date.parse(revocation.revokedAt) > Date.now() ||
+      Date.parse(revocation.revokedAt) > now ||
       decision.subject.source.type !== "npm" ||
-      !decision.targets.includes(requested.target as "claude" | "codex" | "kiro")
+      !decision.targets.includes(requested.target)
     )
-      return undefined;
+      return { kind: "authority-drift" };
+    if (
+      now < Date.parse(decision.notBefore) ||
+      now >= Date.parse(decision.expiresAt) ||
+      (decision.disposition === "accepted-with-conditions" && now >= Date.parse(decision.reviewBy))
+    )
+      return { kind: "authority-not-current" };
     return {
+      kind: "revoked",
       authorityReceiptDigest: authority.receiptDigest,
       authorityExpiresAt: receipt.expiresAt,
       decision,
@@ -662,20 +781,12 @@ function lifecycleActions(
   const custody = handoff.custody.map((item) => pinObservedCustody(ctx.root, item));
   if (!custody.every((item): item is WriteAction => item !== undefined))
     return refused("observation-unverified");
-  const bindingParts = subjectBindingPath(lineage.subjectId);
+  const bindingParts = subjectBindingPath(lineage.subjectId, lineage.target);
   const headParts = headPath(lineage.digest);
   const binding = readCanonicalStoreFile(ctx.root, ...bindingParts);
   const head = readCanonicalStoreFile(ctx.root, ...headParts);
   if (binding === "unsafe" || head === "unsafe") return refused("store-unsafe");
   if (binding === "corrupt" || head === "corrupt") return refused("store-corrupt");
-  const headFile = headParts.at(-1);
-  const headBackup =
-    headFile === undefined
-      ? "unsafe"
-      : readCanonicalStoreFile(ctx.root, ...headParts.slice(0, -1), `${headFile}.aih.bak`);
-  if (headBackup === "unsafe" || headBackup === "corrupt") return refused("store-unsafe");
-  if (head !== "absent" && typeof headBackup !== "string" && head.text === headBackup.text)
-    return refused("head-conflict");
   const existingLineage = binding === "absent" ? undefined : parseBinding(binding);
   if (
     binding !== "absent" &&
@@ -683,14 +794,10 @@ function lifecycleActions(
   )
     return refused("store-collision");
   const priorHead = head === "absent" ? undefined : parseHead(head, lineage);
-  if (
-    head !== "absent" &&
-    (priorHead === undefined || !verifyHistory(ctx.root, priorHead, lineage))
-  )
-    return refused("head-conflict");
+  if (head !== "absent" && priorHead === undefined) return refused("head-conflict");
   const sequence = (priorHead?.sequence ?? 0) + 1;
   const observationDigest = upstreamObservationReceiptDigestV1(receipt);
-  const record = {
+  const candidateRecord = {
     decision: receipt.decision,
     authorityReceiptDigest: handoff.authorityReceiptDigest,
     format: "aih-npm-package-lifecycle-record",
@@ -703,14 +810,17 @@ function lifecycleActions(
     subjectDigest: receipt.subject.subjectDigest,
     version: 1,
   };
-  const recordDigest = digestOf("aih-npm-package-lifecycle-record/v1", record);
+  const recordDigest = digestOf("aih-npm-package-lifecycle-record/v1", candidateRecord);
+  if (!capacityAllowsCandidate(ctx.root, lineage, recordDigest)) return refused("head-conflict");
+  if (priorHead !== undefined && !verifyHistory(ctx.root, priorHead, lineage))
+    return refused("head-conflict");
   if (!hasOnlyExpectedSuccessor(ctx.root, priorHead, lineage, recordDigest))
     return refused("head-conflict");
-  const recordParts = recordPath(recordDigest);
+  const recordParts = recordPath(lineage, recordDigest);
   const existingRecord = readCanonicalStoreFile(ctx.root, ...recordParts);
   if (existingRecord === "unsafe") return refused("store-unsafe");
   if (existingRecord === "corrupt") return refused("store-corrupt");
-  const recordText = canonicalText(record);
+  const recordText = canonicalText(candidateRecord);
   if (existingRecord !== "absent" && existingRecord.text !== recordText)
     return refused("store-collision");
   const bindingText = canonicalText({
@@ -737,6 +847,7 @@ function lifecycleActions(
           recordText,
           existingRecord,
           "persist immutable npm lifecycle record",
+          true,
         )
       : pin(recordParts.join("/"), existingRecord, "pin reusable immutable npm lifecycle record"),
     staged(headParts.join("/"), headText, head, "advance npm lifecycle subject head"),
@@ -744,6 +855,16 @@ function lifecycleActions(
   return {
     actions,
     commitNotAfter: receipt.validUntil,
+    commitLock: lineageLockPath(lineage),
+    postcondition: {
+      bindingPath: bindingParts.join("/"),
+      bindingText,
+      headPath: headParts.join("/"),
+      headText,
+      lineage,
+      recordPath: recordParts.join("/"),
+      recordText,
+    },
     result: {
       applied: ctx.apply,
       outcome: ctx.apply ? "fulfilled" : "reported-only",
@@ -755,10 +876,10 @@ function lifecycleActions(
 
 function revocationActions(
   ctx: PlanContext,
-  current: NonNullable<Awaited<ReturnType<typeof currentAuthorityRevocation>>>,
+  current: Extract<CurrentAuthorityRevocation, { kind: "revoked" }>,
   requested: { target: string },
 ): Prepared {
-  const bindingParts = subjectBindingPath(current.decision.subject.id);
+  const bindingParts = subjectBindingPath(current.decision.subject.id, requested.target);
   const binding = readCanonicalStoreFile(ctx.root, ...bindingParts);
   if (binding === "unsafe") return refused("store-unsafe");
   if (binding === "corrupt") return refused("store-corrupt");
@@ -804,7 +925,13 @@ function revocationActions(
   const priorHead = parseHead(head, lineage);
   if (priorHead === undefined || !verifyHistory(ctx.root, priorHead, lineage))
     return refused("head-conflict");
-  const currentRecord = readCanonicalStoreFile(ctx.root, ...recordPath(priorHead.recordDigest));
+  // A terminal/reported-only revocation still reads untrusted durable state.
+  // Validate that there is no forward fork before returning any semantic status.
+  if (!hasOnlyExpectedSuccessor(ctx.root, priorHead, lineage)) return refused("head-conflict");
+  const currentRecord = readCanonicalStoreFile(
+    ctx.root,
+    ...recordPath(lineage, priorHead.recordDigest),
+  );
   const currentLink =
     typeof currentRecord === "string"
       ? undefined
@@ -834,6 +961,7 @@ function revocationActions(
     format: "aih-npm-package-lifecycle-record",
     lineage,
     previousRecordDigest: priorHead.recordDigest,
+    recordedAt: new Date().toISOString(),
     revocation: current.revocation,
     sequence: priorHead.sequence + 1,
     state: "decision-revoked" as const,
@@ -841,7 +969,10 @@ function revocationActions(
     version: 1,
   };
   const recordDigest = digestOf("aih-npm-package-lifecycle-record/v1", record);
-  const recordParts = recordPath(recordDigest);
+  if (!capacityAllowsCandidate(ctx.root, lineage, recordDigest)) return refused("head-conflict");
+  if (!hasOnlyExpectedSuccessor(ctx.root, priorHead, lineage, recordDigest))
+    return refused("head-conflict");
+  const recordParts = recordPath(lineage, recordDigest);
   const existingRecord = readCanonicalStoreFile(ctx.root, ...recordParts);
   if (existingRecord === "unsafe") return refused("store-unsafe");
   if (existingRecord === "corrupt") return refused("store-corrupt");
@@ -871,6 +1002,7 @@ function revocationActions(
             recordText,
             existingRecord,
             "persist npm lifecycle revocation record",
+            true,
           )
         : pin(
             recordParts.join("/"),
@@ -888,6 +1020,16 @@ function revocationActions(
           : Number.POSITIVE_INFINITY,
       ),
     ).toISOString(),
+    commitLock: lineageLockPath(lineage),
+    postcondition: {
+      bindingPath: bindingParts.join("/"),
+      bindingText: binding.text,
+      headPath: headParts.join("/"),
+      headText,
+      lineage,
+      recordPath: recordParts.join("/"),
+      recordText,
+    },
     result: {
       applied: ctx.apply,
       outcome: ctx.apply ? "fulfilled" : "reported-only",
@@ -907,7 +1049,8 @@ async function prepare(ctx: PlanContext): Promise<Prepared> {
     // authority verification; every other non-effective state remains read-only.
     if (observed.reason === "decision-revoked") {
       const revocation = await currentAuthorityRevocation(ctx, requested);
-      if (revocation !== undefined) return revocationActions(ctx, revocation, requested);
+      if (revocation.kind === "revoked") return revocationActions(ctx, revocation, requested);
+      return refused(revocation.kind);
     }
     return refused(
       lifecycleReason(observed),
@@ -933,12 +1076,14 @@ function check(result: NpmPackageLifecycleResultV1): Check {
     "invalid-input": "org-policy.lifecycle-input-invalid",
     "authority-unverified": "org-policy.lifecycle-authority-unverified",
     "authority-not-current": "org-policy.lifecycle-authority-unverified",
+    "authority-drift": "org-policy.lifecycle-authority-unverified",
     "decision-revoked": "org-policy.lifecycle-decision-revoked",
     "observation-unverified": "org-policy.lifecycle-observation-invalid",
     "observation-partial": "org-policy.lifecycle-observation-invalid",
     "store-unsafe": "org-policy.lifecycle-store-invalid",
     "store-corrupt": "org-policy.lifecycle-store-invalid",
     "store-collision": "org-policy.lifecycle-store-conflict",
+    "store-detached": "org-policy.lifecycle-store-invalid",
     "head-conflict": "org-policy.lifecycle-store-conflict",
   };
   return {
@@ -950,15 +1095,26 @@ function check(result: NpmPackageLifecycleResultV1): Check {
 }
 
 function planFrom(prepared: Prepared): Plan {
+  let applyResult: NpmPackageLifecycleResultV1 | undefined;
+  const resultFor = (ctx: PlanContext): NpmPackageLifecycleResultV1 => {
+    if (!ctx.apply) return prepared.result;
+    applyResult ??= reportedResult(ctx, prepared);
+    return applyResult;
+  };
   const built = plan(
     "policy lifecycle npm-package",
     ...prepared.actions,
-    digest("policy lifecycle npm-package", JSON.stringify(prepared.result), prepared.result),
-    probe("policy lifecycle npm-package", () => check(prepared.result)),
+    dynamicDigest("policy lifecycle npm-package", (ctx) => {
+      const result = resultFor(ctx);
+      return { text: JSON.stringify(result), data: result };
+    }),
+    probe("policy lifecycle npm-package", (ctx) => check(resultFor(ctx))),
   );
-  return prepared.commitNotAfter === undefined
-    ? built
-    : { ...built, commitNotAfter: prepared.commitNotAfter };
+  return {
+    ...built,
+    ...(prepared.commitNotAfter === undefined ? {} : { commitNotAfter: prepared.commitNotAfter }),
+    ...(prepared.commitLock === undefined ? {} : { commitLock: prepared.commitLock }),
+  };
 }
 
 export async function npmPackageLifecyclePlan(ctx: PlanContext): Promise<Plan> {

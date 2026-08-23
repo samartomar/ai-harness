@@ -137,6 +137,7 @@ describe("CLI program", () => {
       "evaluate",
       "generate",
       "init",
+      "lifecycle",
       "observe",
       "project",
       "resolve",
@@ -158,7 +159,7 @@ describe("CLI program", () => {
         ).toEqual([{ name: "admin-root", required: false }]);
         continue;
       }
-      if (sub.name() === "observe") {
+      if (sub.name() === "observe" || sub.name() === "lifecycle") {
         expect(sub.commands.map((nested) => nested.name())).toEqual(["npm-package"]);
         expect(sub.registeredArguments).toEqual([]);
         continue;
@@ -258,6 +259,7 @@ describe("CLI program", () => {
       "capability package",
       "ecc mcp",
       "policy observe",
+      "policy lifecycle",
     ]);
     const registeredPaths = (program: Command, parent: string[] = []): string[] =>
       program.commands.flatMap((cmd) => {
