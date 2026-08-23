@@ -92,6 +92,8 @@ describe("external shared commit locks", () => {
   it("rejects relative, escaping, unknown, and symlinked external lock specifications", async () => {
     const trustedBase = join(dir, "trusted");
     mkdirSync(trustedBase, { recursive: true });
+    const fileBase = join(dir, "not-a-directory");
+    writeFileSync(fileBase, "not a directory");
     const planWith = (commitLock: unknown): Plan => ({
       capability: "bad",
       actions: [],
@@ -102,6 +104,8 @@ describe("external shared commit locks", () => {
       { external: true, path: join(trustedBase, "..", "escape.lock"), trustedBase },
       { external: true, path: join(trustedBase, "x.lock"), trustedBase: join(dir, "missing") },
       { external: false, path: join(trustedBase, "x.lock"), trustedBase },
+      { external: true, path: join(trustedBase, "x.lock"), trustedBase, unexpected: true },
+      { external: true, path: join(fileBase, "x.lock"), trustedBase: fileBase },
     ])
       await expect(executePlan(planWith(lock), ctx({ apply: true }))).rejects.toThrow(
         /commit lock/i,

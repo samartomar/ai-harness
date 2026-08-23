@@ -472,10 +472,15 @@ function resolveCommitLock(
       lock.external !== true ||
       typeof lock.path !== "string" ||
       typeof lock.trustedBase !== "string" ||
+      Object.keys(lock).length !== 3 ||
+      !Object.keys(lock).every(
+        (key) => key === "external" || key === "path" || key === "trustedBase",
+      ) ||
       !isAbsolute(lock.path) ||
       !isAbsolute(lock.trustedBase) ||
       !existsSync(lock.trustedBase) ||
-      lstatSync(lock.trustedBase).isSymbolicLink()
+      lstatSync(lock.trustedBase).isSymbolicLink() ||
+      !lstatSync(lock.trustedBase).isDirectory()
     )
       throw new AihError("invalid plan commit lock", "AIH_CONFIG");
     const base = realpathSync(lock.trustedBase);
