@@ -15,9 +15,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   regular file, rejects linked custody, verifies an owner-only private copy with an absolute
   external `gh` against dedicated supported repository/workflow roots, and then parses the exact
   copied canonical bytes. It refuses organization-authority root reuse, noncanonical or substituted
-  bytes, stale or mismatched fields, and raw or cloned capabilities. A current externally verified
-  V3 organization decision and a fresh exact upstream observation are still required before the
-  zero-effect resolver can report `observed-effective`. This adds no catalog fetch, scanner,
+  bytes, stale or mismatched fields, receipt validity outside the current decision window, and raw
+  or cloned capabilities. A current externally verified V3 organization decision and a fresh exact
+  upstream observation are still required before the zero-effect resolver can report
+  `observed-effective`. This adds no catalog fetch, scanner,
   installer, projector, candidate execution, signing, release, or publication path. (#835)
 
 - **Strict V2 observed effects now require independently verified organization qualification.**

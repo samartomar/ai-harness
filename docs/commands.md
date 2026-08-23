@@ -928,7 +928,8 @@ absolute external `gh attestation verify` against both
 inside the opaque organization authority. Only after attestation succeeds does Core parse the exact
 copied canonical bytes, require `organizationAdmission: "not-authoritative"`, and
 exact-match the full Decision V2 subject plus catalog signer, catalog, head, member, subject kind,
-subject digest, and qualification kind. Raw, cloned, expired, substituted, or differently scoped
+subject digest, and qualification kind, and require the receipt validity window to stay wholly
+inside the current decision window. Raw, cloned, expired, substituted, or differently scoped
 receipts cannot mint the process-local qualification capability. The portable schema is shipped at
 `@aihq/harness/schemas/aih-supported-qualification-receipt-v1.schema.json`.
 
