@@ -498,6 +498,36 @@ describe("AihSupportedQualificationReceiptV1", () => {
         },
       ),
     ).resolves.toMatchObject({ state: "unverified" });
+    const subjectRejection = internalApi.isCurrentUnrevokedSubjectRejectionV1;
+    expect(subjectRejection).toEqual(expect.any(Function));
+    if (typeof subjectRejection !== "function") return;
+    const base = {
+      decisions: [approved, rejected],
+      subjectDigest: approved.subject.subjectDigest,
+      now: "2026-08-02T12:00:00+00:00",
+    };
+    expect(
+      (subjectRejection as (input: Record<string, unknown>) => boolean)({
+        ...base,
+        decisionRevocations: [
+          {
+            decisionDigest: governanceDecisionDigestV2(rejected as never),
+            revokedAt: "2026-08-02T12:00:01+00:00",
+          },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      (subjectRejection as (input: Record<string, unknown>) => boolean)({
+        ...base,
+        decisionRevocations: [
+          {
+            decisionDigest: governanceDecisionDigestV2(rejected as never),
+            revokedAt: "2026-08-02T12:00:00+00:00",
+          },
+        ],
+      }),
+    ).toBe(false);
   });
 
   it("returns the fixed inert failure for nonexistent and regular-file public roots", async () => {
