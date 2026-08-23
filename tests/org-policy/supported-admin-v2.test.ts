@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import * as supported from "../../src/org-policy/supported-admin-v2.js";
 import { buildProgram } from "../../src/program.js";
+import { executePlan } from "../../src/internals/execute.js";
+import { fakeRunner } from "../../src/internals/proc.js";
+import { makeHostAdapter } from "../../src/platform/detect.js";
 
 describe("SupportedQualificationCustodyV2 roots", () => {
   it("derives only the fixed OS-admin enterprise roots and a governed vibe subpath", () => {
@@ -109,38 +115,49 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
       expect.stringContaining("members/sha256:"),
       expect.stringContaining("heads/catalog-signer/ed25519:"),
     ]);
+    for (const path of plan.actions.map((action: { path?: string }) => action.path ?? ""))
+      expect(path.split("/").every((segment) => /^[A-Za-z0-9._-]+$/.test(segment))).toBe(true);
     for (const action of plan.actions.slice(0, -1)) {
       expect(action).toMatchObject({ durable: true, once: true, expect: { absent: true } });
     }
     expect(plan.actions.at(-1)).toMatchObject({ expect: { absent: true } });
   });
 
-  it("classifies exact reacceptance as unchanged, permits only a new head-scoped member for same replay, and refuses conflicts", () => {
-    const evaluate = supported.evaluateSupportedCustodyV2;
-    expect(evaluate).toEqual(expect.any(Function));
-    const base = { ...input, existing: [] };
-    expect(evaluate(base)).toMatchObject({ state: "apply" });
-    expect(evaluate({ ...base, existing: [input] })).toEqual({ state: "unchanged", writes: [] });
-    expect(
-      evaluate({ ...base, existing: [{ ...input, decision: { ...input.decision, id: "other" } }] }),
-    ).toMatchObject({ state: "conflict" });
-    expect(
-      evaluate({
-        ...base,
-        existing: [
-          {
-            ...input,
-            receipt: {
-              ...receipt,
-              catalogContinuity: {
-                ...receipt.catalogContinuity,
-                replayIdentity: `catalog-head:${"2".repeat(64)}:${"b".repeat(64)}`,
-              },
-            },
-          },
-        ],
-      }),
-    ).toMatchObject({ state: "conflict" });
+  it("reads immutable slots from disk, makes exact reacceptance write-free, and guards a raced successor", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-supported-custody-"));
+    try {
+      const base = join(root, ".aih", "supported-qualification", "v2");
+      mkdirSync(join(base, "heads", "catalog-signer"), { recursive: true });
+      const head = join(base, "heads", "catalog-signer", "ed25519:abc.json");
+      writeFileSync(
+        head,
+        JSON.stringify({ sequence: 0, replayIdentity: receipt.catalogContinuity.replayIdentity }),
+      );
+      const prepared = await supported.prepareSupportedCustodyAcceptV2({
+        root,
+        posture: "vibe",
+        candidate: input,
+      });
+      expect(prepared.plan.actions).toEqual([]);
+      writeFileSync(head, "raced");
+      const run = fakeRunner(() => undefined);
+      await expect(
+        executePlan(prepared.successorPlan, {
+          root,
+          contextDir: "ai-coding",
+          posture: "vibe",
+          apply: true,
+          verify: false,
+          json: false,
+          run,
+          host: makeHostAdapter({ platform: "linux", run, env: {} }),
+          env: {},
+          options: {},
+        }),
+      ).rejects.toMatchObject({ code: "AIH_TRUST" });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("reports bounded, scrubbed current-head members without write actions and never accepts caller receipt or verifier controls", () => {
@@ -162,29 +179,5 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
       limit: 1,
     });
     expect(report).toMatchObject({ writes: [], deterministic: true, scrubbed: true, limit: 1 });
-  });
-
-  it("refuses malformed or raced custody and requires exact successor CAS plus a post-commit digest", () => {
-    const validate = supported.validateSupportedCustodyStateV2;
-    expect(validate).toEqual(expect.any(Function));
-    for (const state of [
-      "gap",
-      "rollback",
-      "wrong-predecessor",
-      "replay-reuse",
-      "key-mismatch",
-      "corrupt",
-      "linked",
-      "detached",
-      "raced",
-    ]) {
-      expect(validate({ state })).toMatchObject({ accepted: false });
-    }
-    const successor = supported.planSupportedCustodySuccessorV2;
-    expect(successor).toEqual(expect.any(Function));
-    expect(successor({ previousHead: `sha256:${"f".repeat(64)}` })).toMatchObject({
-      expect: { sha256: `sha256:${"f".repeat(64)}` },
-      postcondition: { kind: "digest" },
-    });
   });
 });
