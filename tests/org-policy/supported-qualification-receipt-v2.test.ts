@@ -60,5 +60,9 @@ describe("AIH-supported qualification receipt V2", () => {
     expect(supported?.commands.map((command) => command.name())).toEqual(["accept", "inspect"]);
     expect(supported?.commands.find((command) => command.name() === "accept")?.options.some((option) => option.long === "--apply")).toBe(true);
     expect(supported?.commands.find((command) => command.name() === "inspect")?.options.some((option) => option.long === "--apply")).toBe(false);
+    expect(supported?.commands.find((command) => command.name() === "accept")?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--decision", "--decision-digest", "--target"]),
+    );
+    expect(supported?.commands.find((command) => command.name() === "accept")?.options.map((option) => option.long)).not.toContain("--evidence");
   });
 });
