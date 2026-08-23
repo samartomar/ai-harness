@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as packageApi from "../../src/index.js";
 import { buildProgram } from "../../src/program.js";
 
 describe("policy resolve command", () => {
@@ -19,5 +20,16 @@ describe("policy resolve command", () => {
     expect(resolve?.options.map((option) => option.flags)).not.toEqual(
       expect.arrayContaining(["--observation <file>", "--verifier <path>", "--report-only"]),
     );
+  });
+
+  it("does not expose qualification capability mints from the package boundary", () => {
+    for (const internal of [
+      "verifyOrganizationQualificationV1",
+      "mintAihSupportedQualificationV1",
+      "mintVerifiedQualificationV1",
+      "resolvePolicyEvidenceV1",
+    ]) {
+      expect(packageApi).not.toHaveProperty(internal);
+    }
   });
 });

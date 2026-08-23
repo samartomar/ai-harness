@@ -1,3 +1,4 @@
+import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import type { CommandSpec, Plan, PlanContext } from "../internals/plan.js";
 import { dynamicDigest, plan, probe } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
@@ -10,12 +11,26 @@ import {
   resolveObservedEffect,
 } from "./upstream-observation-receipt-v1.js";
 
-const TARGETS = ["claude", "codex", "kiro"] as const;
 const EFFECTS = ["configure", "install", "observe", "use"] as const;
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
 
-type PolicyResolveTarget = (typeof TARGETS)[number];
 type PolicyResolveEffect = (typeof EFFECTS)[number];
+
+export type PolicyResolveReasonV1 =
+  | "invalid-input"
+  | "invalid-evidence-path"
+  | "unsafe-evidence-custody"
+  | "evidence-unavailable"
+  | "evidence-changed"
+  | "authority-unverified"
+  | "authority-version"
+  | "decision-missing-or-mismatch"
+  | "decision-rejected"
+  | "decision-revoked"
+  | "decision-not-current"
+  | "decision-scope-mismatch"
+  | "qualification-unverified"
+  | "observation-missing";
 
 export interface PolicyResolveResultV1 {
   readonly authority: "verified" | "unverified";
@@ -23,6 +38,8 @@ export interface PolicyResolveResultV1 {
   readonly observation: "missing";
   readonly effective: ObservedEffectResolution["state"] | "input-invalid";
   readonly outcome: "partial" | "refused";
+  /** Closed, public-safe refusal category; never contains verifier output or filesystem paths. */
+  readonly reason: PolicyResolveReasonV1;
 }
 
 function optionString(ctx: PlanContext, key: string): string | undefined {
@@ -36,7 +53,7 @@ function input(ctx: PlanContext):
   | {
       decision: string;
       digest: string;
-      target: PolicyResolveTarget;
+      target: Cli;
       effect: PolicyResolveEffect;
       evidence: string;
     }
@@ -52,7 +69,7 @@ function input(ctx: PlanContext):
     digest === undefined ||
     !SHA256.test(digest) ||
     target === undefined ||
-    !TARGETS.includes(target as PolicyResolveTarget) ||
+    !SUPPORTED_CLIS.includes(target as Cli) ||
     effect === undefined ||
     !EFFECTS.includes(effect as PolicyResolveEffect) ||
     evidence === undefined
@@ -61,24 +78,29 @@ function input(ctx: PlanContext):
   return {
     decision,
     digest,
-    target: target as PolicyResolveTarget,
+    target: target as Cli,
     effect: effect as PolicyResolveEffect,
     evidence,
   };
 }
 
-function refused(effective: PolicyResolveResultV1["effective"]): PolicyResolveResultV1 {
+function refused(
+  effective: PolicyResolveResultV1["effective"],
+  reason: PolicyResolveReasonV1,
+): PolicyResolveResultV1 {
   return {
     authority: "unverified",
     qualification: "unqualified",
     observation: "missing",
     effective,
     outcome: "refused",
+    reason,
   };
 }
 
 function refusedAfterAuthority(
   effective: PolicyResolveResultV1["effective"],
+  reason: PolicyResolveReasonV1,
 ): PolicyResolveResultV1 {
   return {
     authority: "verified",
@@ -86,6 +108,7 @@ function refusedAfterAuthority(
     observation: "missing",
     effective,
     outcome: "refused",
+    reason,
   };
 }
 
@@ -114,15 +137,19 @@ const noObservationExpectation = {
  */
 export async function resolvePolicyEvidenceV1(ctx: PlanContext): Promise<PolicyResolveResultV1> {
   const requested = input(ctx);
-  if (requested === undefined) return refused("input-invalid");
+  if (requested === undefined) return refused("input-invalid", "invalid-input");
   const custody = custodyOrganizationEvidenceV1(ctx.root, requested.evidence);
-  if ("problem" in custody) return refused("input-invalid");
+  if ("problem" in custody) return refused("input-invalid", custody.problem);
   const verified = await verifyPolicyAuthorityReceipt(ctx);
-  if (verified.authority === undefined) return refused("authority-unverified");
-  if (verified.authority.receipt.version !== 3) return refused("authority-version");
-  if (!custody.evidence.unchanged()) return refusedAfterAuthority("qualification-unverified");
+  if (verified.authority === undefined)
+    return refused("authority-unverified", "authority-unverified");
+  if (verified.authority.receipt.version !== 3)
+    return refused("authority-version", "authority-version");
+  if (!custody.evidence.unchanged())
+    return refusedAfterAuthority("qualification-unverified", "evidence-changed");
   const decision = referencedDecision(verified.authority, requested);
-  if (decision === undefined) return refusedAfterAuthority("decision-missing-or-mismatch");
+  if (decision === undefined)
+    return refusedAfterAuthority("decision-missing-or-mismatch", "decision-missing-or-mismatch");
   const now = new Date().toISOString();
   const qualification = verifyOrganizationQualificationV1({
     authority: verified.authority,
@@ -131,7 +158,7 @@ export async function resolvePolicyEvidenceV1(ctx: PlanContext): Promise<PolicyR
     effect: requested.effect,
     now,
     subject: decision.subject,
-    supportedTargets: TARGETS,
+    supportedTargets: SUPPORTED_CLIS,
     target: requested.target,
   });
   const effective = resolveObservedEffect({
@@ -141,16 +168,26 @@ export async function resolvePolicyEvidenceV1(ctx: PlanContext): Promise<PolicyR
     subject: decision.subject,
     target: requested.target,
     effect: requested.effect,
-    supportedTargets: TARGETS,
+    supportedTargets: SUPPORTED_CLIS,
     now,
     ...noObservationExpectation,
   });
+  const reason =
+    effective.state === "observation-missing"
+      ? "observation-missing"
+      : effective.state === "decision-rejected" ||
+          effective.state === "decision-revoked" ||
+          effective.state === "decision-not-current" ||
+          effective.state === "decision-scope-mismatch"
+        ? effective.state
+        : "qualification-unverified";
   return {
     authority: "verified",
     qualification: qualification === undefined ? "unqualified" : "qualified",
     observation: "missing",
     effective: effective.state,
     outcome: effective.state === "observation-missing" ? "partial" : "refused",
+    reason,
   };
 }
 
@@ -160,13 +197,13 @@ function resultCheck(result: PolicyResolveResultV1): Check {
         name: "policy resolve",
         verdict: "fail",
         code: "org-policy.effective-blocked",
-        detail: "upstream observation is missing",
+        detail: `policy resolve ${result.reason} (${result.effective})`,
       }
     : {
         name: "policy resolve",
         verdict: "fail",
         code: "org-policy.effective-blocked",
-        detail: "policy resolution refused",
+        detail: `policy resolve ${result.reason} (${result.effective})`,
       };
 }
 

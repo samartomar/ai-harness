@@ -1,7 +1,17 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runCapability } from "../../src/commands/run.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import {
@@ -10,6 +20,7 @@ import {
   governanceDecisionSubjectDigestV2,
 } from "../../src/org-policy/governance-decision-v2.js";
 import {
+  policyResolveCommand,
   policyResolvePlan,
   resolvePolicyEvidenceV1,
 } from "../../src/org-policy/policy-resolve-v1.js";
@@ -111,11 +122,12 @@ function context(
   options: Record<string, unknown>,
   calls: string[][],
   duringAuthorityVerification?: () => void,
+  authorityExitCode = 0,
 ): PlanContext {
   const run = fakeRunner((argv) => {
     calls.push(argv);
     duringAuthorityVerification?.();
-    return argv[0] === gh ? { code: 0 } : { code: 1 };
+    return argv[0] === gh ? { code: authorityExitCode } : { code: 1 };
   });
   return {
     root,
@@ -131,7 +143,10 @@ function context(
   };
 }
 
-function writeAuthority(value: ReturnType<typeof decision>["value"]): void {
+function writeAuthority(
+  value: ReturnType<typeof decision>["value"],
+  overrides: Record<string, unknown> = {},
+): void {
   mkdirSync(join(root, ".aih"), { recursive: true });
   writeFileSync(
     join(root, ".aih", "policy-authority-receipt.json"),
@@ -145,8 +160,17 @@ function writeAuthority(value: ReturnType<typeof decision>["value"]): void {
       targets: ["claude"],
       decisions: [value],
       decisionRevocations: [],
+      ...overrides,
     }),
   );
+}
+
+function command(argv: string[]): Command {
+  const value = new Command("resolve");
+  value.argument("[root]").option("--json").option("--root <dir>").option("--context-dir <dir>");
+  for (const option of policyResolveCommand.options ?? []) value.option(option.flags);
+  value.parse(argv, { from: "user" });
+  return value;
 }
 
 describe("policy resolve V1", () => {
@@ -184,8 +208,100 @@ describe("policy resolve V1", () => {
       observation: "missing",
       effective: "observation-missing",
       outcome: "partial",
+      reason: "observation-missing",
     });
     expect(calls).toHaveLength(1);
+  });
+
+  it("runs through the actual command runner as JSON with a nonzero partial outcome and no writes", async () => {
+    const fixture = decision();
+    writeAuthority(fixture.value);
+    writeFileSync(join(root, "evidence.json"), fixture.bytes);
+    const before = new Map([
+      ["authority", Buffer.from(readFileSync(join(root, ".aih", "policy-authority-receipt.json")))],
+      ["evidence", Buffer.from(readFileSync(join(root, "evidence.json")))],
+    ]);
+    let output = "";
+    const run = fakeRunner((argv) => (argv[0] === gh ? { code: 0 } : { code: 1 }));
+    const code = await runCapability(
+      policyResolveCommand,
+      command([
+        root,
+        "--json",
+        "--decision",
+        fixture.value.id,
+        "--decision-digest",
+        governanceDecisionDigestV2(fixture.value as never),
+        "--target",
+        "claude",
+        "--effect",
+        "configure",
+        "--evidence",
+        "evidence.json",
+      ]),
+      {
+        env: { AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance", PATH: bin },
+        run,
+        write: (text) => {
+          output += text;
+        },
+      },
+    );
+    const payload = JSON.parse(output) as {
+      digests: Array<{ data: { reason: string; outcome: string } }>;
+      report: { checks: Array<{ detail?: string }> };
+    };
+    expect(code).toBe(1);
+    expect(payload.digests[0]?.data).toMatchObject({
+      reason: "observation-missing",
+      outcome: "partial",
+    });
+    expect(payload.report.checks[0]?.detail).toBe(
+      "policy resolve observation-missing (observation-missing)",
+    );
+    expect(readFileSync(join(root, ".aih", "policy-authority-receipt.json"))).toEqual(
+      before.get("authority"),
+    );
+    expect(readFileSync(join(root, "evidence.json"))).toEqual(before.get("evidence"));
+  });
+
+  it("scrubs a failed GitHub verifier from command JSON while returning a closed authority reason", async () => {
+    const fixture = decision();
+    writeAuthority(fixture.value);
+    writeFileSync(join(root, "evidence.json"), fixture.bytes);
+    let output = "";
+    const code = await runCapability(
+      policyResolveCommand,
+      command([
+        root,
+        "--json",
+        "--decision",
+        fixture.value.id,
+        "--decision-digest",
+        governanceDecisionDigestV2(fixture.value as never),
+        "--target",
+        "claude",
+        "--effect",
+        "configure",
+        "--evidence",
+        "evidence.json",
+      ]),
+      {
+        env: { AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance", PATH: bin },
+        run: fakeRunner((argv) =>
+          argv[0] === gh ? { code: 1, stderr: "verifier-private-detail" } : { code: 1 },
+        ),
+        write: (text) => {
+          output += text;
+        },
+      },
+    );
+    expect(code).toBe(1);
+    expect(JSON.parse(output)).toMatchObject({
+      digests: [{ data: { reason: "authority-unverified", outcome: "refused" } }],
+    });
+    expect(output).not.toContain("verifier-private-detail");
+    expect(output).not.toContain(root);
   });
 
   it("refuses invalid root-relative evidence before calling the authority verifier", async () => {
@@ -207,6 +323,7 @@ describe("policy resolve V1", () => {
       authority: "unverified",
       qualification: "unqualified",
       outcome: "refused",
+      reason: "invalid-evidence-path",
     });
     expect(calls).toEqual([]);
   });
@@ -235,6 +352,7 @@ describe("policy resolve V1", () => {
       qualification: "unqualified",
       effective: "decision-missing-or-mismatch",
       outcome: "refused",
+      reason: "decision-missing-or-mismatch",
     });
     expect(calls).toHaveLength(1);
   });
@@ -263,6 +381,7 @@ describe("policy resolve V1", () => {
       qualification: "unqualified",
       effective: "qualification-unverified",
       outcome: "refused",
+      reason: "evidence-changed",
     });
     expect(calls).toHaveLength(1);
   });
@@ -302,7 +421,115 @@ describe("policy resolve V1", () => {
       );
       expect(result.outcome).toBe("refused");
       expect(result.qualification).toBe("unqualified");
+      expect(result.reason).toBe(
+        testCase.path === "linked.json" ? "unsafe-evidence-custody" : "qualification-unverified",
+      );
       expect(calls).toHaveLength(testCase.path === "linked.json" ? 0 : 1);
     }
+  });
+
+  it("accepts every canonical CLI target at input validation while refusing unknown targets", async () => {
+    const fixture = decision();
+    writeFileSync(join(root, "evidence.json"), fixture.bytes);
+    const cursor = { ...fixture.value, targets: ["cursor"] };
+    writeAuthority(cursor, { targets: ["cursor"] });
+    const calls: string[][] = [];
+    const registered = await resolvePolicyEvidenceV1(
+      context(
+        {
+          decision: cursor.id,
+          decisionDigest: governanceDecisionDigestV2(cursor as never),
+          target: "cursor",
+          effect: "configure",
+          evidence: "evidence.json",
+        },
+        calls,
+      ),
+    );
+    expect(registered).toMatchObject({ reason: "observation-missing", outcome: "partial" });
+    expect(calls).toHaveLength(1);
+
+    const unknown = await resolvePolicyEvidenceV1(
+      context(
+        {
+          decision: fixture.value.id,
+          decisionDigest: governanceDecisionDigestV2(fixture.value as never),
+          target: "not-a-cli",
+          effect: "configure",
+          evidence: "evidence.json",
+        },
+        calls,
+      ),
+    );
+    expect(unknown).toMatchObject({ reason: "invalid-input", effective: "input-invalid" });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("returns scrubbed closed reasons for authority, decision scope, and evidence refusal boundaries", async () => {
+    const fixture = decision();
+    const options = {
+      decision: fixture.value.id,
+      decisionDigest: governanceDecisionDigestV2(fixture.value as never),
+      target: "claude",
+      effect: "configure",
+      evidence: "evidence.json",
+    };
+    writeFileSync(join(root, "evidence.json"), fixture.bytes);
+
+    writeAuthority(fixture.value);
+    const ghFailure = await resolvePolicyEvidenceV1(context(options, [], undefined, 1));
+    expect(ghFailure).toMatchObject({ reason: "authority-unverified", outcome: "refused" });
+
+    writeFileSync(join(root, ".aih", "policy-authority-receipt.json"), "not-json");
+    const malformed = await resolvePolicyEvidenceV1(context(options, []));
+    expect(malformed).toMatchObject({ reason: "authority-unverified", outcome: "refused" });
+
+    writeAuthority(fixture.value, { expiresAt: "2026-08-02T12:00:00+00:00" });
+    const stale = await resolvePolicyEvidenceV1(context(options, []));
+    expect(stale).toMatchObject({ reason: "authority-unverified", outcome: "refused" });
+
+    const rejected = { ...fixture.value, disposition: "rejected" as const };
+    writeAuthority(rejected as never);
+    const rejectedResult = await resolvePolicyEvidenceV1(
+      context({ ...options, decisionDigest: governanceDecisionDigestV2(rejected as never) }, []),
+    );
+    expect(rejectedResult).toMatchObject({ reason: "decision-rejected", outcome: "refused" });
+
+    writeAuthority(fixture.value, {
+      issuedAt: "2026-08-02T12:00:00+00:00",
+      decisionRevocations: [
+        {
+          format: "aih-governance-decision-revocation",
+          version: 2,
+          decisionDigest: governanceDecisionDigestV2(fixture.value as never),
+          issuer: "platform-security",
+          revokedAt: "2026-08-02T12:00:00+00:00",
+          reason: "The decision was revoked after review.",
+        },
+      ],
+    });
+    const revokedResult = await resolvePolicyEvidenceV1(context(options, []));
+    expect(revokedResult).toMatchObject({ reason: "decision-revoked", outcome: "refused" });
+
+    const scope = { ...fixture.value, targets: ["codex"] };
+    writeAuthority(scope, { targets: ["codex"] });
+    const scopeResult = await resolvePolicyEvidenceV1(
+      context({ ...options, decisionDigest: governanceDecisionDigestV2(scope as never) }, []),
+    );
+    expect(scopeResult).toMatchObject({ reason: "decision-scope-mismatch", outcome: "refused" });
+
+    const effectScope = { ...fixture.value, allowedEffects: ["use"] };
+    writeAuthority(effectScope);
+    const effectResult = await resolvePolicyEvidenceV1(
+      context({ ...options, decisionDigest: governanceDecisionDigestV2(effectScope as never) }, []),
+    );
+    expect(effectResult).toMatchObject({ reason: "decision-scope-mismatch", outcome: "refused" });
+
+    rmSync(join(root, "evidence.json"));
+    const missingEvidence = await resolvePolicyEvidenceV1(context(options, []));
+    expect(missingEvidence).toMatchObject({ reason: "evidence-unavailable", outcome: "refused" });
+    writeFileSync(join(root, "evidence.json"), Buffer.alloc(4_097));
+    const oversizedEvidence = await resolvePolicyEvidenceV1(context(options, []));
+    expect(oversizedEvidence).toMatchObject({ reason: "evidence-unavailable", outcome: "refused" });
   });
 });
