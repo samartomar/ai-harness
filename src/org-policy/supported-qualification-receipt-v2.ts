@@ -495,6 +495,8 @@ export interface AihSupportedQualificationVerificationV2 {
   qualification?: VerifiedQualificationV1;
   problem?: string;
   receipt?: AihSupportedQualificationReceiptV2;
+  /** @internal Same-attestation custody facts for effect-specific lifecycle consumers. */
+  custodyBinding?: VerifiedAihSupportedCustodyBindingV2;
 }
 /** Internal observer bridge. The outer path is always production GitHub attestation verification. */
 export async function verifyAihSupportedQualificationReceiptV2(
@@ -531,7 +533,20 @@ export async function verifyAihSupportedQualificationReceiptV2(
   const qualification = mintAihSupportedQualificationV1({ ...input, receipt });
   return qualification === undefined
     ? { problem: "AIH-supported qualification artifact could not be verified" }
-    : { qualification, receipt };
+    : {
+        qualification,
+        receipt,
+        custodyBinding: mintVerifiedCustodyBinding({
+          authority,
+          decision,
+          receipt,
+          receiptSha256: support.receiptSha256,
+          repository: support.repository,
+          decisionReference: input.decisionReference,
+          now: input.now,
+          target: input.target,
+        }),
+      };
 }
 
 const verifiedCustodyBindings = new WeakSet<object>();
@@ -575,6 +590,52 @@ export function isVerifiedAihSupportedCustodyBindingV2(
   return typeof value === "object" && value !== null && verifiedCustodyBindings.has(value);
 }
 
+function mintVerifiedCustodyBinding(input: {
+  authority: VerifiedPolicyAuthority;
+  decision: GovernanceDecisionV2;
+  receipt: AihSupportedQualificationReceiptV2;
+  receiptSha256?: string;
+  repository?: { repository: string; workflow: string };
+  decisionReference?: { id: string; digest: string };
+  now: string;
+  target: string;
+}): VerifiedAihSupportedCustodyBindingV2 | undefined {
+  if (
+    input.decisionReference === undefined ||
+    input.receiptSha256 === undefined ||
+    input.repository === undefined ||
+    !SUPPORTED_CLIS.includes(input.target as Cli) ||
+    input.decision.id !== input.decisionReference.id ||
+    governanceDecisionDigestV2(input.decision) !== input.decisionReference.digest ||
+    !input.decision.targets.includes(input.target)
+  )
+    return undefined;
+  const binding: VerifiedAihSupportedCustodyBindingV2 = Object.freeze({
+    receipt: deepFreezeBinding(
+      structuredClone(input.receipt),
+    ) as AihSupportedQualificationReceiptV2,
+    receiptDigest: receiptDigestV2(input.receipt),
+    receiptSha256: input.receiptSha256,
+    authorityReceiptDigest: input.authority.receiptDigest,
+    authorityExpiresAt: input.authority.receipt.expiresAt,
+    repository: input.repository.repository,
+    workflow: input.repository.workflow,
+    decision: Object.freeze({
+      id: input.decisionReference.id,
+      digest: input.decisionReference.digest,
+      notBefore: input.decision.notBefore,
+      expiresAt: input.decision.expiresAt,
+      ...(input.decision.disposition === "accepted-with-conditions"
+        ? { reviewBy: input.decision.reviewBy }
+        : {}),
+    }),
+    acceptedAt: input.now,
+    target: input.target as Cli,
+  });
+  verifiedCustodyBindings.add(binding);
+  return binding;
+}
+
 /**
  * Fixed-production bridge for durable custody. The only input is the command's
  * exact decision reference and target; authority roots, GitHub attestation,
@@ -614,28 +675,16 @@ export async function verifyAihSupportedCustodyBindingV2(
     !matchesAihSupportedQualificationBindingV1({ decision: current, now: acceptedAt, receipt })
   )
     return undefined;
-  const binding: VerifiedAihSupportedCustodyBindingV2 = Object.freeze({
-    receipt: deepFreezeBinding(structuredClone(receipt)) as AihSupportedQualificationReceiptV2,
-    receiptDigest: receiptDigestV2(receipt),
+  return mintVerifiedCustodyBinding({
+    authority: authority.authority,
+    decision: current,
+    receipt,
     receiptSha256: support.receiptSha256,
-    authorityReceiptDigest: authority.authority.receiptDigest,
-    authorityExpiresAt: authority.authority.receipt.expiresAt,
-    repository: support.repository.repository,
-    workflow: support.repository.workflow,
-    decision: Object.freeze({
-      id: parsed.data.decision,
-      digest: parsed.data.decisionDigest,
-      notBefore: decision.notBefore,
-      expiresAt: decision.expiresAt,
-      ...(decision.disposition === "accepted-with-conditions"
-        ? { reviewBy: decision.reviewBy }
-        : {}),
-    }),
-    acceptedAt,
+    repository: support.repository,
+    decisionReference: { id: parsed.data.decision, digest: parsed.data.decisionDigest },
+    now: acceptedAt,
     target: parsed.data.target,
   });
-  verifiedCustodyBindings.add(binding);
-  return binding;
 }
 
 export interface VerifyAihSupportedQualificationArtifactV2Input {
