@@ -19,6 +19,7 @@ import {
   verifyPolicyAuthorityReceipt,
 } from "../../src/org-policy/authority.js";
 import {
+  GovernanceDecisionV2Schema,
   governanceDecisionDigestV2,
   governanceDecisionSourceDigestV2,
   governanceDecisionSubjectDigestV2,
@@ -446,6 +447,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
         {},
       ],
     ] as const) {
+      expect(GovernanceDecisionV2Schema.safeParse(value).success).toBe(true);
       await expect(verify(value, authorityOverrides)).resolves.toMatchObject({
         state: "unverified",
       });
