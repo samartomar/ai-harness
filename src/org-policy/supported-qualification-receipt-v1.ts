@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { lstatSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +11,8 @@ import {
   type GovernanceDecisionEffectV2Schema,
   GovernanceDecisionSubjectV2Schema,
   type GovernanceDecisionV2,
+  governanceDecisionSourceDigestV2,
+  governanceDecisionSubjectDigestV2,
 } from "./governance-decision-v2.js";
 import {
   mintAihSupportedQualificationV1,
@@ -77,6 +78,25 @@ export const AihSupportedQualificationReceiptV1Schema = z
         message: "supported qualification must bind the exact receipt subject",
       });
     }
+    if (value.subject.sourceDigest !== governanceDecisionSourceDigestV2(value.subject.source)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "supported qualification subject sourceDigest must bind the exact source",
+      });
+    }
+    if (
+      value.subject.subjectDigest !==
+      governanceDecisionSubjectDigestV2({
+        kind: value.subject.kind,
+        id: value.subject.id,
+        sourceDigest: value.subject.sourceDigest,
+      })
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "supported qualification subjectDigest must bind the exact subject descriptor",
+      });
+    }
   });
 
 export type AihSupportedQualificationReceiptV1 = z.infer<
@@ -103,17 +123,6 @@ export function canonicalAihSupportedQualificationReceiptV1(
   value: AihSupportedQualificationReceiptV1,
 ): string {
   return stableJson(value);
-}
-
-export function supportedQualificationReceiptDigestV1(
-  value: AihSupportedQualificationReceiptV1,
-): string {
-  return `sha256:${createHash("sha256")
-    .update(
-      `aih-supported-qualification-receipt/v1\0${canonicalAihSupportedQualificationReceiptV1(value)}`,
-      "utf8",
-    )
-    .digest("hex")}`;
 }
 
 /** Parse only an exact, canonical UTF-8 transport; JSON's duplicate keys fail the byte check. */
@@ -175,7 +184,7 @@ function configuredSupportRoot(
   }
   if (
     authority !== undefined &&
-    (supportedRepository === authority.repository ||
+    (supportedRepository.toLowerCase() === authority.repository.toLowerCase() ||
       (authority.workflow !== undefined && supportedWorkflow === authority.workflow))
   ) {
     return undefined;
@@ -291,9 +300,6 @@ export async function verifyAihSupportedQualificationReceiptV1(
   const receipt =
     copied === undefined ? undefined : parseAihSupportedQualificationReceiptV1Bytes(copied);
   if (receipt === undefined) return { problem: "supported qualification receipt is malformed" };
-  // Bind the exact canonical bytes before custody is minted. The value is kept
-  // local only for the binding calculation; no digest authorizes a decision alone.
-  supportedQualificationReceiptDigestV1(receipt);
   const qualification = mintAihSupportedQualificationV1({ ...input, receipt });
   if (qualification === undefined) {
     return {
