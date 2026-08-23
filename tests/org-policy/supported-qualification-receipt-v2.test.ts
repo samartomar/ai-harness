@@ -854,6 +854,22 @@ describe("AihSupportedQualificationReceiptV2", () => {
     }
   });
 
+  it("accepts producer-canonical proleptic Gregorian years across receipt and head timestamps", () => {
+    for (const year of ["0000", "0099", "0100"]) {
+      const value = receipt(decision(), {
+        catalogContinuity: {
+          ...receipt(decision()).catalogContinuity,
+          headValidFrom: `${year}-01-01T00:00:00Z`,
+          headValidUntil: `${year}-01-02T00:00:00Z`,
+        },
+        issuedAt: `${year}-01-01T00:00:00Z`,
+        notBefore: `${year}-01-01T00:00:00Z`,
+        expiresAt: `${year}-01-02T00:00:00Z`,
+      });
+      expect(parseAihSupportedQualificationReceiptV2Bytes(canonicalBytes(value))).toEqual(value);
+    }
+  });
+
   it("accepts the producer's exact 4,096-byte source and 5,970-byte receipt ceilings", () => {
     const exact = maximumReceiptV2();
     const exactBytes = Buffer.from(canonicalAihSupportedQualificationReceiptV2(exact), "utf8");
