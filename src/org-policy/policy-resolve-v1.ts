@@ -203,14 +203,16 @@ function resultCheck(result: PolicyResolveResultV1): Check {
 }
 
 export function policyResolvePlan(ctx: PlanContext): Plan {
-  const resolution = resolvePolicyEvidenceV1(ctx);
+  let resolution: Promise<PolicyResolveResultV1> | undefined;
+  const resolveOnce = (): Promise<PolicyResolveResultV1> =>
+    (resolution ??= resolvePolicyEvidenceV1(ctx));
   return plan(
     "policy resolve",
-    dynamicDigest("policy resolve", async () => ({
-      text: JSON.stringify(await resolution),
-      data: await resolution,
-    })),
-    probe("policy resolve", async () => resultCheck(await resolution)),
+    dynamicDigest("policy resolve", async () => {
+      const result = await resolveOnce();
+      return { text: JSON.stringify(result), data: result };
+    }),
+    probe("policy resolve", async () => resultCheck(await resolveOnce())),
   );
 }
 
