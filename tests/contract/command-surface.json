@@ -2470,6 +2470,53 @@
           "commands": []
         },
         {
+          "name": "observe",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [],
+          "commands": [
+            {
+              "name": "npm-package",
+              "hasDescription": true,
+              "arguments": [
+                {
+                  "name": "root",
+                  "required": false
+                }
+              ],
+              "options": [
+                {
+                  "flags": "--context-dir <dir>",
+                  "defaultValue": "ai-coding"
+                },
+                {
+                  "flags": "--decision <id>"
+                },
+                {
+                  "flags": "--decision-digest <sha256>"
+                },
+                {
+                  "flags": "--evidence <path>"
+                },
+                {
+                  "flags": "--json"
+                },
+                {
+                  "flags": "--posture <posture>",
+                  "defaultValue": "vibe"
+                },
+                {
+                  "flags": "--root <dir>"
+                },
+                {
+                  "flags": "--target <cli>"
+                }
+              ],
+              "commands": []
+            }
+          ]
+        },
+        {
           "name": "project",
           "hasDescription": true,
           "arguments": [
