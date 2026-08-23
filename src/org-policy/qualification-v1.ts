@@ -311,8 +311,8 @@ export function mintAihSupportedQualificationV1(input: {
     stableJson(receipt.qualificationBasis) !== stableJson(current.decision.qualificationBasis) ||
     current.now < Date.parse(receipt.notBefore) ||
     current.now >= Date.parse(receipt.expiresAt) ||
-    Date.parse(receipt.expiresAt) <= Date.parse(current.decision.notBefore) ||
-    Date.parse(receipt.notBefore) >= Date.parse(current.decision.expiresAt)
+    Date.parse(receipt.notBefore) < Date.parse(current.decision.notBefore) ||
+    Date.parse(receipt.expiresAt) > Date.parse(current.decision.expiresAt)
   ) {
     return undefined;
   }
