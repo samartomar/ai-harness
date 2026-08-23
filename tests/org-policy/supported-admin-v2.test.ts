@@ -110,10 +110,14 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     expect(plan.commitLock).toBe(".aih/supported-qualification/v2/locks/commit.lock");
     expect(plan.commitNotAfter).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(plan.actions.map((action: { path?: string }) => action.path)).toEqual([
-      expect.stringContaining("signers/catalog-signer/ed25519:"),
-      expect.stringContaining("replays/catalog-head:"),
-      expect.stringContaining("members/sha256:"),
-      expect.stringContaining("heads/catalog-signer/ed25519:"),
+      expect.stringMatching(
+        /^\.aih\/supported-qualification\/v2\/signers\/[0-9a-f]{64}\/[0-9a-f]{64}\.json$/,
+      ),
+      expect.stringMatching(/^\.aih\/supported-qualification\/v2\/replays\/[0-9a-f]{64}\.json$/),
+      expect.stringMatching(/^\.aih\/supported-qualification\/v2\/members\/[0-9a-f]{64}\.json$/),
+      expect.stringMatching(
+        /^\.aih\/supported-qualification\/v2\/heads\/[0-9a-f]{64}\/[0-9a-f]{64}\.json$/,
+      ),
     ]);
     for (const path of plan.actions.map((action: { path?: string }) => action.path ?? ""))
       expect(path.split("/").every((segment) => /^[A-Za-z0-9._-]+$/.test(segment))).toBe(true);
@@ -126,35 +130,57 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
   it("reads immutable slots from disk, makes exact reacceptance write-free, and guards a raced successor", async () => {
     const root = mkdtempSync(join(tmpdir(), "aih-supported-custody-"));
     try {
-      const base = join(root, ".aih", "supported-qualification", "v2");
-      mkdirSync(join(base, "heads", "catalog-signer"), { recursive: true });
-      const head = join(base, "heads", "catalog-signer", "ed25519:abc.json");
-      writeFileSync(
-        head,
-        JSON.stringify({ sequence: 0, replayIdentity: receipt.catalogContinuity.replayIdentity }),
-      );
-      const prepared = await supported.prepareSupportedCustodyAcceptV2({
+      const run = fakeRunner(() => undefined);
+      const context = {
+        root,
+        contextDir: "ai-coding",
+        posture: "vibe" as const,
+        apply: true,
+        verify: false,
+        json: false,
+        run,
+        host: makeHostAdapter({ platform: "linux", run, env: {} }),
+        env: {},
+        options: {},
+      };
+      const genesis = await supported.prepareSupportedCustodyAcceptV2({
         root,
         posture: "vibe",
         candidate: input,
       });
-      expect(prepared.plan.actions).toEqual([]);
+      await executePlan(genesis, context);
+      const repeat = await supported.prepareSupportedCustodyAcceptV2({
+        root,
+        posture: "vibe",
+        candidate: input,
+      });
+      expect(repeat.actions.filter((action: { type: string }) => action.type === "write")).toEqual(
+        [],
+      );
+      const successor = {
+        ...input,
+        receipt: {
+          ...receipt,
+          catalogContinuity: {
+            ...receipt.catalogContinuity,
+            catalogHeadDigest: `sha256:${"b".repeat(64)}`,
+            previousCatalogHeadDigest: receipt.catalogContinuity.catalogHeadDigest,
+            sequence: 1,
+            replayIdentity: `catalog-head:${"b".repeat(64)}:${"c".repeat(64)}`,
+          },
+        },
+      };
+      const successorPlan = await supported.prepareSupportedCustodyAcceptV2({
+        root,
+        posture: "vibe",
+        candidate: successor,
+      });
+      const headAction = genesis.actions.at(-1) as { path: string };
+      const head = join(root, headAction.path);
       writeFileSync(head, "raced");
-      const run = fakeRunner(() => undefined);
-      await expect(
-        executePlan(prepared.successorPlan, {
-          root,
-          contextDir: "ai-coding",
-          posture: "vibe",
-          apply: true,
-          verify: false,
-          json: false,
-          run,
-          host: makeHostAdapter({ platform: "linux", run, env: {} }),
-          env: {},
-          options: {},
-        }),
-      ).rejects.toMatchObject({ code: "AIH_TRUST" });
+      await expect(executePlan(successorPlan, context)).rejects.toMatchObject({
+        code: "AIH_TRUST",
+      });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
