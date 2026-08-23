@@ -669,5 +669,17 @@ describe("headless effective org policy", () => {
         "authorityReceipt.decisions.*.qualificationBasis.catalogDigest"
       ],
     ).toContain("legacy effective resolver deliberately withholds V3 runtime use");
+    expect(
+      POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS["authorityReceipt.decisionRevocations.*.issuer"],
+    ).toContain("legacy effective resolver deliberately withholds V3 runtime use");
+    for (const leaf of [
+      "authorityReceipt.version",
+      "authorityReceipt.issuedAt",
+      "authorityReceipt.expiresAt",
+    ]) {
+      expect(POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS[leaf]).toContain(
+        "current organization-qualified upstream-observation runtime",
+      );
+    }
   });
 });

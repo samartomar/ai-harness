@@ -210,7 +210,7 @@ async function authority(...values: ReturnType<typeof decision>[]) {
       issuedAt: "2026-08-01T00:00:00+00:00",
       expiresAt: "2026-08-10T00:00:00+00:00",
       trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
-      targets: ["claude"],
+      targets: [...new Set(values.flatMap((value) => value.targets))].sort(),
       decisions: [...values].sort((left, right) => left.id.localeCompare(right.id)),
       decisionRevocations: [],
     }),
@@ -482,6 +482,67 @@ describe("OrganizationEvidenceEnvelopeV1", () => {
     expect(
       resolveObservedEffect({ ...input, qualification, now: "2026-08-03T00:00:00+00:00" }),
     ).toMatchObject({ state: "observation-stale" });
+  });
+
+  it("binds an organization qualification to one target and effect within broader decision and observation scope", async () => {
+    const value = qualifiedDecision({
+      targets: ["claude", "codex"],
+      allowedEffects: ["configure", "use"],
+    });
+    const verifiedAuthority = await authority(value);
+    const currentObservation = {
+      ...observation(value),
+      targets: ["claude", "codex"],
+      allowedEffects: ["configure", "use"],
+    };
+    const verifiedObservation = verifyUpstreamObservationV1({
+      receipt: currentObservation,
+      expectedVerifier: currentObservation.verifier,
+      expectedInstalled: currentObservation.installed,
+      expectedIntegration: currentObservation.integration,
+      subject: value.subject,
+      target: "claude",
+      effect: "configure",
+      supportedTargets: ["claude", "codex"],
+      now: "2026-08-02T12:00:00+00:00",
+      verify: () => true,
+    });
+    if (verifiedObservation === undefined) throw new Error("expected verified observation");
+
+    const input = {
+      authority: verifiedAuthority,
+      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      observation: verifiedObservation,
+      subject: value.subject,
+      target: "claude",
+      effect: "configure" as const,
+      supportedTargets: ["claude", "codex"],
+      expectedVerifier: currentObservation.verifier,
+      expectedInstalled: currentObservation.installed,
+      expectedIntegration: currentObservation.integration,
+      now: "2026-08-02T12:00:00+00:00",
+    };
+    const qualification = verifyOrganizationQualificationV1({
+      authority: verifiedAuthority,
+      decisionReference: input.decisionReference,
+      bytes: canonicalBytes(envelope(value)),
+      subject: value.subject,
+      target: input.target,
+      effect: input.effect,
+      supportedTargets: input.supportedTargets,
+      now: input.now,
+    });
+    expect(qualification).toBeDefined();
+    expect(resolveObservedEffect({ ...input, qualification })).toMatchObject({
+      state: "observed-effective",
+    });
+
+    expect(resolveObservedEffect({ ...input, qualification, target: "codex" })).toMatchObject({
+      state: "qualification-mismatch",
+    });
+    expect(resolveObservedEffect({ ...input, qualification, effect: "use" })).toMatchObject({
+      state: "qualification-mismatch",
+    });
   });
 
   it("refuses a qualification token after its authority receipt is substituted", async () => {
