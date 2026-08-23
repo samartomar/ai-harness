@@ -917,9 +917,9 @@ evidence envelopes, revocations, and cloned capabilities are untrusted data. It 
 `observed-effective` only when those facts match a current approved or
 conditionally accepted decision from that receipt. Missing, rejected,
 revoked, stale, partial, refused, drifted, unknown, or mismatched inputs remain explicitly
-non-effective. This slice mints organization-qualified capabilities only. A claimed
-`aih-supported` basis requires the separate closed
-`AihSupportedQualificationReceiptV1` contract. Core reads its fixed
+non-effective. This slice mints organization-qualified capabilities only from a closed
+`OrganizationEvidenceEnvelopeV1`, and `aih-supported` capabilities only from the
+separately rooted, closed `AihSupportedQualificationReceiptV1` contract. Core reads its fixed
 `.aih/aih-supported-qualification-receipt.json` transport through a bounded regular-file and
 non-linked-parent boundary, copies the exact bytes into owner-only temporary custody, and runs an
 absolute external `gh attestation verify` against both
