@@ -8,6 +8,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Strict V2 can independently verify an attested AIH-supported qualification without making
+  catalog membership an organization approval.** Core ships a closed canonical receipt schema
+  that binds the exact Decision V2 subject and all seven `aih-supported` catalog-basis fields,
+  explicit non-admission, and bounded validity. The library verifier reads only the fixed bounded
+  regular file, rejects linked custody, verifies an owner-only private copy with an absolute
+  external `gh` against dedicated supported repository/workflow roots, and then parses and hashes
+  the exact copied bytes. It refuses organization-authority root reuse, noncanonical or substituted
+  bytes, stale or mismatched fields, and raw or cloned capabilities. A current externally verified
+  V3 organization decision and a fresh exact upstream observation are still required before the
+  zero-effect resolver can report `observed-effective`. This adds no catalog fetch, scanner,
+  installer, projector, candidate execution, signing, release, or publication path. (#835)
+
 - **Strict V2 observed effects now require independently verified organization qualification.**
   Core accepts only canonical, bounded organization-evidence bytes that bind the exact subject,
   evidence record, payload and artifact digests, issuer-claimed attestor, and current validity
@@ -17,8 +29,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   closed on missing, unverified, mismatched, expired, or time-rewound qualification before it can
   report `observed-effective`. Evidence kinds remain bounded organization identifiers rather than
   a Core allow-list. This is a pure zero-effect runtime boundary: it does not sign evidence, trust
-  a scanner result as approval, install or execute a candidate, or yet verify `aih-supported`
-  catalog provenance. (#834)
+  a scanner result as approval, or install or execute a candidate. The separately rooted
+  `aih-supported` verifier is tracked and implemented under #835. (#834)
 
 - **Strict V2 establishes the data-only organization-qualified governance boundary without
   making the maintained catalog an allow-list.** A public canonical decision contract covers

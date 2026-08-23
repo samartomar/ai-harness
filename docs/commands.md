@@ -918,10 +918,21 @@ evidence envelopes, revocations, and cloned capabilities are untrusted data. It 
 conditionally accepted decision from that receipt. Missing, rejected,
 revoked, stale, partial, refused, drifted, unknown, or mismatched inputs remain explicitly
 non-effective. This slice mints organization-qualified capabilities only. A claimed
-`aih-supported` basis remains refused until Core can verify the dedicated catalog qualification
-receipt under its own supported-repository trust root.
+`aih-supported` basis requires the separate closed
+`AihSupportedQualificationReceiptV1` contract. Core reads its fixed
+`.aih/aih-supported-qualification-receipt.json` transport through a bounded regular-file and
+non-linked-parent boundary, copies the exact bytes into owner-only temporary custody, and runs an
+absolute external `gh attestation verify` against both
+`AIH_SUPPORTED_QUALIFICATION_REPOSITORY` and
+`AIH_SUPPORTED_QUALIFICATION_WORKFLOW`. Those roots are required and cannot reuse the root bound
+inside the opaque organization authority. Only after attestation succeeds does Core parse and hash
+the exact copied canonical bytes, require `organizationAdmission: "not-authoritative"`, and
+exact-match the full Decision V2 subject plus catalog signer, catalog, head, member, subject kind,
+subject digest, and qualification kind. Raw, cloned, expired, substituted, or differently scoped
+receipts cannot mint the process-local qualification capability. The portable schema is shipped at
+`@aihq/harness/schemas/aih-supported-qualification-receipt-v1.schema.json`.
 
-This is a cross-repository data contract, not a new `aih policy` command or a generic
+This remains a library and cross-repository data contract, not a new `aih policy` command or a generic
 installer. Current policy evaluation and projection do not consume V3 decisions, so
 custom stdio and remote candidates remain visible but non-projectable. The contract
 does no scanning, provider access, process launch, package planning, or filesystem
