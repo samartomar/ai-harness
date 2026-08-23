@@ -272,7 +272,7 @@ export interface Plan {
   /** Exact UTC ISO deadline after which an apply must not commit local mutations. */
   commitNotAfter?: string;
   /** Fixed root-relative lock path held while a transaction commits this plan. */
-  commitLock?: string;
+  commitLock?: string | { external: true; path: string; trustedBase: string };
 }
 
 const EXACT_UTC_ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;

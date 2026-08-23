@@ -460,9 +460,32 @@ function localTransactionRoot(ctx: PlanContext, absPath: string): string | undef
   return !rel.startsWith("..") && !isAbsolute(rel) ? ctx.root : undefined;
 }
 
-function resolveCommitLock(plan: Plan, ctx: PlanContext): string | undefined {
+function resolveCommitLock(
+  plan: Plan,
+  ctx: PlanContext,
+): { path: string; root: string } | undefined {
   const lock = plan.commitLock;
   if (lock === undefined) return undefined;
+  if (typeof lock === "object") {
+    if (
+      lock === null ||
+      lock.external !== true ||
+      typeof lock.path !== "string" ||
+      typeof lock.trustedBase !== "string" ||
+      !isAbsolute(lock.path) ||
+      !isAbsolute(lock.trustedBase) ||
+      !existsSync(lock.trustedBase) ||
+      lstatSync(lock.trustedBase).isSymbolicLink()
+    )
+      throw new AihError("invalid plan commit lock", "AIH_CONFIG");
+    const base = realpathSync(lock.trustedBase);
+    const path = resolve(lock.path);
+    const rel = relative(base, path);
+    if (rel === "" || rel.startsWith("..") || isAbsolute(rel))
+      throw new AihError("invalid plan commit lock", "AIH_CONFIG");
+    assertNoSymlinkParents(base, path, lock.path);
+    return { path, root: base };
+  }
   if (
     typeof lock !== "string" ||
     !/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/.test(lock) ||
@@ -473,7 +496,7 @@ function resolveCommitLock(plan: Plan, ctx: PlanContext): string | undefined {
   const absPath = resolvePath(ctx, lock);
   assertContained(ctx.root, absPath);
   assertNoSymlinkParents(ctx.root, absPath, lock);
-  return absPath;
+  return { path: absPath, root: ctx.root };
 }
 
 /** lstat kind (does not follow links) or `undefined` when the path is absent. */
@@ -828,7 +851,7 @@ export async function executePlan(
 
   const transactionOptions = {
     commitNotAfter,
-    ...(commitLock === undefined ? {} : { commitLock: { path: commitLock, root: ctx.root } }),
+    ...(commitLock === undefined ? {} : { commitLock }),
   };
   const txn = new FsTransaction(transactionOptions);
   const deferredTxn = new FsTransaction(transactionOptions);
