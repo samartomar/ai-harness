@@ -298,6 +298,114 @@ function lifecycleRecordDigest(record: unknown): string {
     .digest("hex")}`;
 }
 
+function lifecycleLineageDigest(lineage: Omit<Record<string, unknown>, "digest">): string {
+  return `sha256:${createHash("sha256")
+    .update("aih-npm-package-lifecycle-lineage/v1\0", "utf8")
+    .update(canonicalStrictJsonBytesV1(lineage))
+    .digest("hex")}`;
+}
+
+function subjectTargetKey(subjectId: string, target: string): string {
+  return createHash("sha256").update(`${subjectId}\0${target}`, "utf8").digest("hex");
+}
+
+async function populateCompleteLifecycleHeads(count: number): Promise<void> {
+  const value = fixture();
+  writeFixture(value);
+  await run(context(true, value.decision));
+  const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+  const firstHeadName = readdirSync(join(base, "heads")).find((name) => name.endsWith(".json"));
+  if (firstHeadName === undefined) throw new Error("expected lifecycle head");
+  const firstHead = JSON.parse(readFileSync(join(base, "heads", firstHeadName), "utf8"));
+  const firstRecord = JSON.parse(
+    readFileSync(recordFile(base, firstHead.recordDigest), "utf8"),
+  ) as Record<string, unknown>;
+  for (let index = 1; index < count; index += 1) {
+    const subjectId = `capacity-subject-${index}`;
+    const { digest: _digest, ...baseLineage } = firstRecord.lineage as Record<string, unknown>;
+    const target = baseLineage.target;
+    if (typeof target !== "string") throw new Error("expected lifecycle target");
+    const lineageBase = { ...baseLineage, subjectId };
+    const lineage = {
+      ...lineageBase,
+      digest: lifecycleLineageDigest(lineageBase),
+    };
+    const record = structuredClone(firstRecord) as Record<string, unknown>;
+    const observation = record.observation as Record<string, unknown>;
+    record.lineage = lineage;
+    record.observation = {
+      ...observation,
+      subject: { ...(observation.subject as Record<string, unknown>), id: subjectId },
+    };
+    record.observationDigest = upstreamObservationReceiptDigestV1(
+      record.observation as Parameters<typeof upstreamObservationReceiptDigestV1>[0],
+    );
+    const recordDigest = lifecycleRecordDigest(record);
+    const partition = lineage.digest.slice("sha256:".length);
+    const key = subjectTargetKey(subjectId, target);
+    const binding = canonicalStrictJsonBytesV1({
+      format: "aih-npm-package-lifecycle-subject",
+      lineage,
+      version: 1,
+    });
+    mkdirSync(join(base, "records", partition), { recursive: true });
+    writeFileSync(
+      join(base, "records", partition, `${recordDigest.slice("sha256:".length)}.json`),
+      canonicalStrictJsonBytesV1(record),
+    );
+    writeFileSync(
+      join(base, "heads", `${partition}.json`),
+      canonicalStrictJsonBytesV1({
+        format: "aih-npm-package-lifecycle-head",
+        lineageDigest: lineage.digest,
+        recordDigest,
+        sequence: 1,
+        subjectDigest: record.subjectDigest,
+        version: 1,
+      }),
+    );
+    writeFileSync(join(base, "claims", `${key}.json`), binding);
+    writeFileSync(join(base, "subjects", `${key}.json`), binding);
+  }
+  writeFileSync(
+    join(base, "capacity.json"),
+    canonicalStrictJsonBytesV1({
+      format: "aih-npm-package-lifecycle-capacity",
+      headCount: count,
+      recordCount: count,
+      version: 1,
+    }),
+  );
+}
+
+function writeAggregateHeadCapacity(headCount: number, sequence: number): void {
+  const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+  mkdirSync(join(base, "heads"), { recursive: true });
+  for (let index = 0; index < headCount; index += 1) {
+    const digest = `${index.toString(16).padStart(63, "0")}f`;
+    writeFileSync(
+      join(base, "heads", `${digest}.json`),
+      canonicalStrictJsonBytesV1({
+        format: "aih-npm-package-lifecycle-head",
+        lineageDigest: `sha256:${digest}`,
+        recordDigest: `sha256:${"a".repeat(63)}${index.toString(16)}`,
+        sequence,
+        subjectDigest: `sha256:${"b".repeat(64)}`,
+        version: 1,
+      }),
+    );
+  }
+  writeFileSync(
+    join(base, "capacity.json"),
+    canonicalStrictJsonBytesV1({
+      format: "aih-npm-package-lifecycle-capacity",
+      headCount,
+      recordCount: headCount * sequence,
+      version: 1,
+    }),
+  );
+}
+
 async function execute(ctx: PlanContext) {
   return executePlan(await npmPackageLifecyclePlan(ctx), ctx, {
     skipWorktreeGate: true,
@@ -367,8 +475,8 @@ describe("npm package lifecycle V1", () => {
     writeFixture();
     const planned = await npmPackageLifecyclePlan(context(true));
     expect(immutableRecordAction(planned).durable).toBe(true);
-    expect(planned.commitLock).toMatch(
-      /^\.aih\/governance\/npm-package-lifecycle\/v1\/locks\/[0-9a-f]{64}\.lock$/,
+    expect(planned.commitLock).toBe(
+      ".aih/governance/npm-package-lifecycle/v1/locks/lifecycle.lock",
     );
     const preview = await run(context(false));
     expect(preview).toMatchObject({ outcome: "reported-only", applied: false });
@@ -555,9 +663,100 @@ describe("npm package lifecycle V1", () => {
     };
 
     expect(readNpmPackageLifecycleStoreV1(root)).toEqual({ kind: "corrupt" });
-    // The reader observes the 257th partition as the threshold breach without
-    // materializing the rest of a hostile directory.
+    // The reader detects detached durable partitions without materializing a
+    // hostile directory beyond the configured bounded read.
     expect(reads).toBe(257);
+  });
+
+  it("keeps a complete store at 256 heads readable and refuses an official 257th lineage without writes", async () => {
+    await populateCompleteLifecycleHeads(256);
+    expect(readNpmPackageLifecycleStoreV1(root)).toMatchObject({
+      kind: "complete",
+      records: expect.arrayContaining([expect.anything()]),
+    });
+    const codex = context(true);
+    codex.options.target = "codex";
+    const before = lifecycleFiles();
+
+    expect(await run(codex)).toMatchObject({
+      outcome: "refused",
+      state: "store-over-capacity",
+    });
+    expect(lifecycleFiles()).toEqual(before);
+  }, 30_000);
+
+  it("refuses an aggregate 16,385th candidate from bounded canonical head metadata", async () => {
+    writeFixture();
+    writeAggregateHeadCapacity(4, 4_096);
+    const codex = context(true);
+    codex.options.target = "codex";
+    const before = lifecycleFiles();
+
+    expect(await run(codex)).toMatchObject({
+      outcome: "refused",
+      state: "store-over-capacity",
+    });
+    expect(lifecycleFiles()).toEqual(before);
+  });
+
+  it("refuses a stale cross-lineage last-slot plan before any losing lifecycle mutation", async () => {
+    await populateCompleteLifecycleHeads(255);
+    const value = fixture();
+    const decision = { ...value.decision, targets: ["claude", "codex", "cursor"] };
+    writeAuthority(decision);
+    const codex = context(true, decision);
+    codex.options.target = "codex";
+    const cursor = context(true, decision);
+    cursor.options.target = "cursor";
+    const first = await npmPackageLifecyclePlan(codex);
+    const stale = await npmPackageLifecyclePlan(cursor);
+    expect(first.commitLock).toBe(".aih/governance/npm-package-lifecycle/v1/locks/lifecycle.lock");
+    expect(stale.commitLock).toBe(first.commitLock);
+
+    await executePlan(first, codex, { skipWorktreeGate: true });
+    const afterWinner = lifecycleFiles();
+    await expect(executePlan(stale, cursor, { skipWorktreeGate: true })).rejects.toThrow(
+      "changed after the plan was computed",
+    );
+    expect(lifecycleFiles()).toEqual(afterWinner);
+  });
+
+  it("migrates an absent aggregate guard but refuses a substituted one without lifecycle writes", async () => {
+    writeFixture();
+    await run(context(true));
+    const guard = join(root, ".aih", "governance", "npm-package-lifecycle", "v1", "capacity.json");
+    rmSync(guard);
+    vi.advanceTimersByTime(1_000);
+    expect(await run(context(true))).toMatchObject({ outcome: "fulfilled" });
+    expect(existsSync(guard)).toBe(true);
+    writeFileSync(guard, "{}");
+    const before = lifecycleFiles();
+    vi.advanceTimersByTime(1_000);
+
+    expect(await run(context(true))).toMatchObject({
+      outcome: "refused",
+      state: "store-corrupt",
+    });
+    expect(lifecycleFiles()).toEqual(before);
+  });
+
+  it("reports external over-capacity state distinctly and blocks evaluate and projection", async () => {
+    await populateCompleteLifecycleHeads(257);
+    writeGovernedPolicy();
+
+    expect(readNpmPackageLifecycleStoreV1(root)).toEqual({ kind: "over-capacity" });
+    await expect(resolveNpmPackageEffectiveStateV1(context(false))).resolves.toEqual([
+      { state: "partial", reason: "lifecycle-store-over-capacity" },
+    ]);
+    await expect(orgPolicyEffectiveCheck(context(false))).resolves.toMatchObject({
+      code: "org-policy.effective-blocked",
+      verdict: "fail",
+    });
+    const policy = readOrgPolicy(root, context(false).env);
+    if (policy === undefined) throw new Error("expected governed policy");
+    await expect(verifiedOrgPolicyProjectionActions(context(false), policy)).rejects.toThrow(
+      "policy project refuses blocked candidate activation",
+    );
   });
 
   it("blocks policy evaluate when the durable lifecycle head is revoked", async () => {
@@ -770,6 +969,39 @@ describe("npm package lifecycle V1", () => {
     }
   });
 
+  it.skipIf(!HARD_LINKS_AVAILABLE)(
+    "reports a detached lifecycle result when the capacity guard is linked after apply",
+    async () => {
+      writeFixture();
+      const ctx = context(true);
+      const planned = await npmPackageLifecyclePlan(ctx);
+      planned.actions.push({
+        argv: ["link-capacity-guard"],
+        describe: "link lifecycle capacity guard after apply",
+        kind: "exec",
+      });
+      const originalRun = ctx.run;
+      ctx.run = async (argv, options) => {
+        if (argv[0] === "link-capacity-guard") {
+          linkSync(
+            join(root, ".aih", "governance", "npm-package-lifecycle", "v1", "capacity.json"),
+            join(root, "linked-capacity-guard.json"),
+          );
+          return { code: 0, stderr: "", stdout: "" };
+        }
+        return originalRun(argv, options);
+      };
+
+      const result = await executePlan(planned, ctx, { skipWorktreeGate: true });
+      expect(result.digests[0]?.data).toMatchObject({
+        applied: false,
+        outcome: "refused",
+        state: "store-detached",
+      });
+      expect(result.report?.ok).toBe(false);
+    },
+  );
+
   it("treats a newly attested authority receipt as drift until lifecycle is re-observed", async () => {
     const current = fixture();
     writeFixture(current);
@@ -892,7 +1124,7 @@ describe("npm package lifecycle V1", () => {
       }),
     );
 
-    expect(readNpmPackageLifecycleStoreV1(root)).toEqual({ kind: "corrupt" });
+    expect(readNpmPackageLifecycleStoreV1(root)).toEqual({ kind: "over-capacity" });
   });
 
   it("is deterministic and leaves package, lifecycle, and run-ledger bytes untouched", async () => {
@@ -938,7 +1170,7 @@ describe("npm package lifecycle V1", () => {
     expect(resolved).toEqual([{ state: "partial", reason: "lifecycle-store-corrupt" }]);
   });
 
-  it("uses one stable subject-target lock across first-time lineage changes", async () => {
+  it("uses one stable store-wide lock across first-time lineage changes", async () => {
     const first = fixture();
     writeFixture(first);
     const firstPlan = await npmPackageLifecyclePlan(context(true, first.decision));
@@ -1114,7 +1346,7 @@ describe("npm package lifecycle V1", () => {
     const before = lifecycleFiles();
     vi.advanceTimersByTime(1_000);
     const refused = await run(context(true, newer.decision));
-    expect(refused).toMatchObject({ outcome: "refused", state: "head-conflict" });
+    expect(refused).toMatchObject({ outcome: "refused", state: "store-corrupt" });
     expect(lifecycleFiles()).toEqual(before);
   });
 
@@ -1789,6 +2021,15 @@ describe("npm package lifecycle V1", () => {
       headPath,
       canonicalStrictJsonBytesV1({ ...head, recordDigest: previous, sequence: 4_095 }),
     );
+    writeFileSync(
+      join(base, "capacity.json"),
+      canonicalStrictJsonBytesV1({
+        format: "aih-npm-package-lifecycle-capacity",
+        headCount: 1,
+        recordCount: 4_095,
+        version: 1,
+      }),
+    );
     const staged = { ...first, previousRecordDigest: previous, sequence: 4_096 };
     const stagedDigest = lifecycleRecordDigest(staged);
     writeFileSync(
@@ -1810,6 +2051,15 @@ describe("npm package lifecycle V1", () => {
     }
     expect(JSON.parse(acceptedHead.contents)).toMatchObject({ sequence: 4_096 });
     writeFileSync(headPath, acceptedHead.contents);
+    writeFileSync(
+      join(base, "capacity.json"),
+      canonicalStrictJsonBytesV1({
+        format: "aih-npm-package-lifecycle-capacity",
+        headCount: 1,
+        recordCount: 4_096,
+        version: 1,
+      }),
+    );
     const before = lifecycleFiles();
     vi.advanceTimersByTime(1_000);
     expect(await run(context(true, value.decision))).toMatchObject({
@@ -1817,6 +2067,14 @@ describe("npm package lifecycle V1", () => {
       state: "head-conflict",
     });
     expect(lifecycleFiles()).toEqual(before);
+    writeFileSync(
+      headPath,
+      canonicalStrictJsonBytesV1({ ...head, recordDigest: stagedDigest, sequence: 4_097 }),
+    );
+    expect(readNpmPackageLifecycleStoreV1(root)).toEqual({ kind: "over-capacity" });
+    writeFileSync(headPath, acceptedHead.contents);
+    writeFileSync(join(partition, `${"e".repeat(64)}.json`), "{}");
+    expect(readNpmPackageLifecycleStoreV1(root)).toEqual({ kind: "over-capacity" });
   }, 60_000);
 
   it("refuses a rolled-back head before replaying a revocation record", async () => {

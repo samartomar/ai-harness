@@ -115,10 +115,14 @@ the stable package/integration lineage. When the current V3 authority revokes th
 same command appends that revocation only for the verified current lineage. This is an audit fact,
 not a claim that npm removed or stopped the package. The record append is durable evidence, but the
 revoked result remains non-effective, failing, and nonzero. Refused, expired, corrupt, detectably
-rolled-back, forked, raced, linked, or detached state cannot produce a successful apply result.
+rolled-back, forked, raced, linked, over-capacity, or detached state cannot produce a successful
+apply result.
 A durable subject-and-target claim prevents loss of the ordinary subject binding from silently
-admitting a different registry or integration lineage. AIH serializes these local writers with a
-subject-scoped cooperative lease: a crashed owner is reclaimable after its bounded 30-second mutation
+admitting a different registry or integration lineage. AIH serializes these local writers with one
+fixed store-wide cooperative lease and advances a strict writer-only aggregate capacity guard using
+an exact-original transaction precondition. A stale cross-lineage plan therefore cannot race past
+the reader's limits. The reader independently derives its counts and does not trust this guard as
+authority. A crashed owner is reclaimable after its bounded 30-second mutation
 window and 30-second recovery grace, while malformed or foreign lock state blocks. The inert lock
 anchor can remain in the lifecycle store. This is local AIH writer coordination, not an
 operating-system lock or protection from another process that can rewrite the store.
@@ -148,7 +152,11 @@ validate the fixed store and freshly verify current V3 authority. They report th
 withheld/refused, revoked, stale, or drifted state is explicit and blocks evaluation. Observation
 expiry alone does not freeze unrelated policy projection; unsafe custody, authority failure,
 rejection, revocation, and other lifecycle failures still block it. These commands do not repeat the
-package observation, mutate the target, or control the installed runtime.
+package observation, mutate the target, or control the installed runtime. The store supports at most
+256 active lineages, 16,384 aggregate records, and 4,096 records in one lineage. Exceeding a limit is
+reported as `over-capacity`, not as corruption, and blocks both evaluation and projection. Preserve
+the complete store as organization-controlled evidence and reconcile onto a newly governed target;
+do not delete or prune target-local history to make the check pass.
 
 The broader custom-source journey is not complete. Custom stdio and remote policy candidates remain
 non-projectable, and neither a V3 receipt, `policy resolve`, nor this fixed npm route can install,

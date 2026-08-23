@@ -45,6 +45,7 @@ type LifecycleReason =
   | "observation-partial"
   | "store-unsafe"
   | "store-corrupt"
+  | "store-over-capacity"
   | "store-collision"
   | "store-detached"
   | "head-conflict";
@@ -86,7 +87,7 @@ export interface NpmPackageLifecycleStoredStateV1 {
 export type NpmPackageLifecycleStoreReadV1 =
   | { readonly kind: "absent" }
   | { readonly kind: "complete"; readonly records: readonly NpmPackageLifecycleStoredStateV1[] }
-  | { readonly kind: "unsafe" | "corrupt" };
+  | { readonly kind: "unsafe" | "corrupt" | "over-capacity" };
 
 interface Lineage {
   readonly digest: string;
@@ -115,6 +116,8 @@ interface Prepared {
   readonly postcondition?: {
     bindingPath: string;
     bindingText: string;
+    capacityPath: string;
+    capacityText: string;
     claimPath: string;
     claimText: string;
     headPath: string;
@@ -274,8 +277,12 @@ function staged(
   };
 }
 
-function subjectLockPath(subjectId: string, target: string): string {
-  return [...STORE, "locks", `${hash(`${subjectId}\0${target}`)}.lock`].join("/");
+function lifecycleStoreLockPath(): string {
+  return [...STORE, "locks", "lifecycle.lock"].join("/");
+}
+
+function aggregateCapacityPath(): readonly string[] {
+  return [...STORE, "capacity.json"] as const;
 }
 
 function lifecycleReason(result: NpmPackageObservationResultV1): LifecycleReason {
@@ -296,6 +303,7 @@ function refused(reason: LifecycleReason, outcome: "partial" | "refused" = "refu
 
 function persisted(root: string, postcondition: NonNullable<Prepared["postcondition"]>): boolean {
   const binding = readCanonicalStoreFile(root, ...postcondition.bindingPath.split("/"));
+  const capacity = readCanonicalStoreFile(root, ...postcondition.capacityPath.split("/"));
   const claim = readCanonicalStoreFile(root, ...postcondition.claimPath.split("/"));
   const record = readCanonicalStoreFile(root, ...postcondition.recordPath.split("/"));
   const head = readCanonicalStoreFile(root, ...postcondition.headPath.split("/"));
@@ -303,10 +311,13 @@ function persisted(root: string, postcondition: NonNullable<Prepared["postcondit
   const parsedHead = typeof head === "string" ? undefined : parseHead(head, postcondition.lineage);
   return (
     typeof binding !== "string" &&
+    typeof capacity !== "string" &&
+    capacity.nlink === 1n &&
     typeof claim !== "string" &&
     typeof record !== "string" &&
     typeof head !== "string" &&
     binding.text === postcondition.bindingText &&
+    capacity.text === postcondition.capacityText &&
     claim.text === postcondition.claimText &&
     record.text === postcondition.recordText &&
     head.text === postcondition.headText &&
@@ -946,18 +957,18 @@ function validHeadBackup(
   return recordLink(current, head.recordDigest, lineage)?.previous === prior.recordDigest;
 }
 
-function recordEntryCount(root: string, lineageDigest: string): number | undefined {
+type RecordEntryCount = number | "unsafe" | "corrupt" | "over-capacity";
+
+function recordEntryCount(root: string, lineageDigest: string): RecordEntryCount {
   const directory = safeStorePath(root, ...STORE, "records", lineageDigest.slice("sha256:".length));
-  if (directory === undefined) return undefined;
+  if (directory === undefined) return "unsafe";
   const info = lstat(directory);
-  if (info === undefined || !info.isDirectory() || info.isSymbolicLink()) return undefined;
+  if (info === undefined) return "corrupt";
+  if (!info.isDirectory() || info.isSymbolicLink()) return "unsafe";
   const names = boundedDirectoryNames(directory, MAX_RECORDS_PER_LINEAGE);
-  if (
-    typeof names === "string" ||
-    names.length > MAX_RECORDS_PER_LINEAGE ||
-    names.some((name) => !/^[0-9a-f]{64}\.json$/.test(name))
-  )
-    return undefined;
+  if (names === "unsafe") return "unsafe";
+  if (names === "overbound") return "over-capacity";
+  if (names.some((name) => !/^[0-9a-f]{64}\.json$/.test(name))) return "corrupt";
   return names.length;
 }
 
@@ -1031,6 +1042,125 @@ function hasExactCanonicalNames(
   return actual.every((name) => expected.has(name));
 }
 
+interface AggregateCapacity {
+  readonly existing: Existing | "absent";
+  readonly headCount: number;
+  readonly heads: ReadonlyMap<string, LifecycleHead>;
+  readonly recordCount: number;
+}
+
+type AggregateCapacityRead =
+  | { readonly kind: "ready"; readonly capacity: AggregateCapacity }
+  | { readonly kind: "unsafe" | "corrupt" | "over-capacity" };
+
+function parseAggregateCapacity(
+  value: Existing,
+): { headCount: number; recordCount: number } | undefined {
+  const item = parseObject(value);
+  if (
+    item === undefined ||
+    !exactKeys(item, ["format", "headCount", "recordCount", "version"]) ||
+    item.format !== "aih-npm-package-lifecycle-capacity" ||
+    item.version !== 1 ||
+    !Number.isSafeInteger(item.headCount) ||
+    !Number.isSafeInteger(item.recordCount) ||
+    (item.headCount as number) < 0 ||
+    (item.recordCount as number) < 0
+  )
+    return undefined;
+  return { headCount: item.headCount as number, recordCount: item.recordCount as number };
+}
+
+/**
+ * The writer's aggregate guard reads only canonical active head metadata. This
+ * keeps normal onboarding bounded without opening unrelated record partitions.
+ */
+function aggregateCapacity(root: string): AggregateCapacityRead {
+  const names = canonicalStoreDirectoryNames(root, "heads", MAX_EFFECTIVE_LIFECYCLE_HEADS * 2);
+  if (names === "unsafe") return { kind: "unsafe" };
+  if (names === "overbound") return { kind: "over-capacity" };
+  const entries = names === "absent" ? [] : names;
+  const heads = entries.filter((name) => /^[0-9a-f]{64}\.json$/.test(name));
+  if (
+    entries.some(
+      (name) =>
+        !/^[0-9a-f]{64}\.json(?:\.aih\.bak)?$/.test(name) ||
+        (name.endsWith(".aih.bak") && !heads.includes(name.slice(0, -".aih.bak".length))),
+    )
+  )
+    return { kind: "corrupt" };
+  if (heads.length > MAX_EFFECTIVE_LIFECYCLE_HEADS) return { kind: "over-capacity" };
+  const parsedHeads = new Map<string, LifecycleHead>();
+  let recordCount = 0;
+  for (const name of heads) {
+    const existing = readCanonicalStoreFile(root, ...STORE, "heads", name);
+    if (existing === "unsafe") return { kind: "unsafe" };
+    if (existing === "absent" || existing === "corrupt" || existing.nlink !== 1n)
+      return { kind: "corrupt" };
+    const head = parseStoredHead(existing);
+    if (head === undefined || name !== `${head.lineageDigest.slice("sha256:".length)}.json`)
+      return { kind: "corrupt" };
+    if (head.sequence > MAX_RECORDS_PER_LINEAGE) return { kind: "over-capacity" };
+    if (recordCount + head.sequence > MAX_EFFECTIVE_LIFECYCLE_RECORDS)
+      return { kind: "over-capacity" };
+    recordCount += head.sequence;
+    parsedHeads.set(head.lineageDigest, head);
+  }
+  const existing = readCanonicalStoreFile(root, ...aggregateCapacityPath());
+  if (existing === "unsafe") return { kind: "unsafe" };
+  if (existing === "corrupt" || (existing !== "absent" && existing.nlink !== 1n))
+    return { kind: "corrupt" };
+  if (existing !== "absent") {
+    const guarded = parseAggregateCapacity(existing);
+    if (
+      guarded === undefined ||
+      guarded.headCount !== heads.length ||
+      guarded.recordCount !== recordCount
+    )
+      return { kind: "corrupt" };
+  }
+  return {
+    kind: "ready",
+    capacity: { existing, headCount: heads.length, heads: parsedHeads, recordCount },
+  };
+}
+
+function nextAggregateCapacity(
+  root: string,
+  lineage: Lineage,
+  priorHead: LifecycleHead | undefined,
+  sequence: number,
+):
+  | { readonly kind: "ready"; readonly existing: Existing | "absent"; readonly text: string }
+  | { readonly kind: "unsafe" | "corrupt" | "over-capacity" } {
+  const current = aggregateCapacity(root);
+  if (current.kind !== "ready") return current;
+  const prior = current.capacity.heads.get(lineage.digest);
+  if (
+    (priorHead === undefined && prior !== undefined) ||
+    (priorHead !== undefined &&
+      (prior === undefined ||
+        prior.recordDigest !== priorHead.recordDigest ||
+        prior.sequence !== priorHead.sequence ||
+        prior.subjectDigest !== priorHead.subjectDigest))
+  )
+    return { kind: "corrupt" };
+  const headCount = current.capacity.headCount + (priorHead === undefined ? 1 : 0);
+  const recordCount = current.capacity.recordCount - (priorHead?.sequence ?? 0) + sequence;
+  if (headCount > MAX_EFFECTIVE_LIFECYCLE_HEADS || recordCount > MAX_EFFECTIVE_LIFECYCLE_RECORDS)
+    return { kind: "over-capacity" };
+  return {
+    kind: "ready",
+    existing: current.capacity.existing,
+    text: canonicalText({
+      format: "aih-npm-package-lifecycle-capacity",
+      headCount,
+      recordCount,
+      version: 1,
+    }),
+  };
+}
+
 /**
  * Read the fixed lifecycle store without observing, executing, or changing a
  * target. A malformed head is a whole-store failure: choosing a subset would
@@ -1044,11 +1174,10 @@ export function readNpmPackageLifecycleStoreV1(root: string): NpmPackageLifecycl
   if (!storeInfo.isDirectory() || storeInfo.isSymbolicLink()) return { kind: "unsafe" };
   const headNames = canonicalStoreDirectoryNames(root, "heads", MAX_EFFECTIVE_LIFECYCLE_HEADS * 2);
   if (headNames === "unsafe") return { kind: "unsafe" };
-  if (headNames === "overbound") return { kind: "corrupt" };
+  if (headNames === "overbound") return { kind: "over-capacity" };
   const names = headNames === "absent" ? [] : headNames;
   const heads = names.filter((name) => /^[0-9a-f]{64}\.json$/.test(name));
   if (
-    heads.length > MAX_EFFECTIVE_LIFECYCLE_HEADS ||
     names.some(
       (name) =>
         !/^[0-9a-f]{64}\.json(?:\.aih\.bak)?$/.test(name) ||
@@ -1056,6 +1185,7 @@ export function readNpmPackageLifecycleStoreV1(root: string): NpmPackageLifecycl
     )
   )
     return { kind: "corrupt" };
+  if (heads.length > MAX_EFFECTIVE_LIFECYCLE_HEADS) return { kind: "over-capacity" };
   const recordPartitions = canonicalStoreDirectoryNames(
     root,
     "records",
@@ -1089,11 +1219,15 @@ export function readNpmPackageLifecycleStoreV1(root: string): NpmPackageLifecycl
     const head = parseStoredHead(headFile);
     if (head === undefined || name !== `${head.lineageDigest.slice("sha256:".length)}.json`)
       return { kind: "corrupt" };
-    if (totalSequence + head.sequence > MAX_EFFECTIVE_LIFECYCLE_RECORDS) return { kind: "corrupt" };
+    if (head.sequence > MAX_RECORDS_PER_LINEAGE) return { kind: "over-capacity" };
+    if (totalSequence + head.sequence > MAX_EFFECTIVE_LIFECYCLE_RECORDS)
+      return { kind: "over-capacity" };
     totalSequence += head.sequence;
     const entries = recordEntryCount(root, head.lineageDigest);
-    if (entries === undefined || totalRecords + entries > MAX_EFFECTIVE_LIFECYCLE_RECORDS)
-      return { kind: "corrupt" };
+    if (entries === "unsafe") return { kind: "unsafe" };
+    if (entries === "corrupt") return { kind: "corrupt" };
+    if (entries === "over-capacity") return { kind: "over-capacity" };
+    if (totalRecords + entries > MAX_EFFECTIVE_LIFECYCLE_RECORDS) return { kind: "over-capacity" };
     totalRecords += entries;
     const record = storedState(root, head);
     if (record === undefined) return { kind: "corrupt" };
@@ -1304,6 +1438,12 @@ function lifecycleActions(
   if (scratch.kind === "unsafe") return refused("store-unsafe");
   if (scratch.kind === "collision") return refused("store-collision");
   if (existingRecord !== "absent" && scratch.kind !== "absent") return refused("store-collision");
+  const aggregate = nextAggregateCapacity(ctx.root, lineage, priorHead, sequence);
+  if (aggregate.kind !== "ready") {
+    if (aggregate.kind === "unsafe") return refused("store-unsafe");
+    if (aggregate.kind === "corrupt") return refused("store-corrupt");
+    return refused("store-over-capacity");
+  }
   if (
     !capacityAllowsCandidate(
       ctx.root,
@@ -1339,6 +1479,12 @@ function lifecycleActions(
     version: 1,
   });
   const actions: WriteAction[] = [
+    staged(
+      aggregateCapacityPath().join("/"),
+      aggregate.text,
+      aggregate.existing,
+      "advance npm lifecycle aggregate capacity",
+    ),
     ...custody,
     claim === "absent"
       ? staged(
@@ -1367,10 +1513,12 @@ function lifecycleActions(
   return {
     actions,
     commitNotAfter: lifecycleCommitNotAfter(Date.parse(receipt.validUntil)),
-    commitLock: subjectLockPath(lineage.subjectId, lineage.target),
+    commitLock: lifecycleStoreLockPath(),
     postcondition: {
       bindingPath: bindingParts.join("/"),
       bindingText,
+      capacityPath: aggregateCapacityPath().join("/"),
+      capacityText: aggregate.text,
       claimPath: claimParts.join("/"),
       claimText: bindingText,
       headPath: headParts.join("/"),
@@ -1495,6 +1643,12 @@ function revocationActions(
   const scratch = preparedRecordScratch(ctx.root, lineage, recordDigest, recordText);
   if (scratch.kind === "unsafe") return refused("store-unsafe");
   if (scratch.kind === "collision") return refused("store-collision");
+  const aggregate = nextAggregateCapacity(ctx.root, lineage, priorHead, priorHead.sequence + 1);
+  if (aggregate.kind !== "ready") {
+    if (aggregate.kind === "unsafe") return refused("store-unsafe");
+    if (aggregate.kind === "corrupt") return refused("store-corrupt");
+    return refused("store-over-capacity");
+  }
   if (
     !capacityAllowsCandidate(
       ctx.root,
@@ -1529,6 +1683,12 @@ function revocationActions(
   if (authorityPin === undefined) return refused("authority-unverified");
   return {
     actions: [
+      staged(
+        aggregateCapacityPath().join("/"),
+        aggregate.text,
+        aggregate.existing,
+        "advance npm lifecycle aggregate capacity",
+      ),
       authorityPin,
       pin(claimParts.join("/"), claim, "pin npm lifecycle subject lineage claim"),
       pin(bindingParts.join("/"), binding, "pin npm lifecycle subject lineage"),
@@ -1555,10 +1715,12 @@ function revocationActions(
         ? Date.parse(current.decision.reviewBy)
         : Number.POSITIVE_INFINITY,
     ),
-    commitLock: subjectLockPath(lineage.subjectId, lineage.target),
+    commitLock: lifecycleStoreLockPath(),
     postcondition: {
       bindingPath: bindingParts.join("/"),
       bindingText: binding.text,
+      capacityPath: aggregateCapacityPath().join("/"),
+      capacityText: aggregate.text,
       claimPath: claimParts.join("/"),
       claimText: claim.text,
       headPath: headParts.join("/"),
@@ -1630,6 +1792,7 @@ function check(result: NpmPackageLifecycleResultV1): Check {
     "observation-partial": "org-policy.lifecycle-observation-invalid",
     "store-unsafe": "org-policy.lifecycle-store-invalid",
     "store-corrupt": "org-policy.lifecycle-store-invalid",
+    "store-over-capacity": "org-policy.lifecycle-store-conflict",
     "store-collision": "org-policy.lifecycle-store-conflict",
     "store-detached": "org-policy.lifecycle-store-invalid",
     "head-conflict": "org-policy.lifecycle-store-conflict",

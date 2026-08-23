@@ -110,8 +110,11 @@ also leave its private `.aih.tmp` scratch. A retry consumes it only when its exa
 single-link custody still match at the transaction boundary; mismatched, linked, or foreign scratch is
 preserved and refused. A durable subject-and-target claim prevents loss of the
 ordinary subject binding from silently admitting a different registry or integration lineage. Apply
-writers use a subject-scoped cooperative lease: a crashed owner becomes reclaimable after its bounded
-30-second mutation window and 30-second recovery grace, while malformed or foreign lock state blocks.
+writers use one fixed store-wide cooperative lease and an exact-original writer-only capacity guard,
+so stale cross-lineage plans cannot race past 256 active lineages, 16,384 aggregate records, or 4,096
+records in one lineage. The reader derives those counts independently. A crashed owner becomes
+reclaimable after its bounded 30-second mutation window and 30-second recovery grace, while malformed
+or foreign lock state blocks.
 The inert canonical lock anchor can remain in the store; this is local writer coordination, not an
 operating-system lock or protection from a process that can rewrite the store. The target-local chain
 blocks lineage substitution while either subject index remains and detects a stale head while its
@@ -132,7 +135,10 @@ evaluation and remains explicit in the report. Observation expiry alone does not
 policy projection; unsafe custody, authority failure, rejection, revocation, and other lifecycle
 failures still block projection. This is read-only observation, not a package projector: it performs
 no install, update, removal, configuration, execution, or publication and does not make custom stdio
-or remote MCP candidates projectable.
+or remote MCP candidates projectable. A store beyond any lifecycle cap is reported as
+`over-capacity`, not as corruption, and blocks both evaluation and projection. Administrators retain
+the complete store as organization-controlled evidence and reconcile onto a newly governed target
+rather than pruning target-local audit history.
 
 <!-- aih:claim CM-86 -->
 For an `aih-supported`

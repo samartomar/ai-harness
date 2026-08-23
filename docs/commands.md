@@ -1023,11 +1023,15 @@ establishing an effect, so verification and the command exit remain failing and 
 Apply re-verifies authority, evidence, installed custody, and observation before constructing the
 transaction, pins every authorizing file, and gives the prepared write at most 60 seconds—shorter
 when an authority, decision, review, or observation deadline arrives first. It refuses after that deadline,
-serializes cooperative lifecycle writers by subject and target, writes a durable immutable lineage
-claim before the ordinary binding and record, writes the record before the head, and reads the exact
-committed claim, binding, record, head, and bounded lineage before it reports success. The claim keeps
+serializes cooperative lifecycle writers with one fixed store-wide lease, advances a strict canonical
+aggregate capacity guard with an exact-original transaction precondition, writes a durable immutable
+lineage claim before the ordinary binding and record, writes the record before the head, and reads the
+exact committed claim, binding, record, head, and bounded lineage before it reports success. The claim keeps
 an accidentally missing binding from admitting a different registry or integration lineage without a
-global store scan. Missing or partial observation, invalid or stale authority, linked store paths,
+global record-partition scan. The capacity guard is writer coordination rather than reader authority:
+the read path independently derives the active-lineage and record counts. The writer permits at most
+256 active lineages, 16,384 aggregate records, and 4,096 records in one lineage. Missing or partial
+observation, invalid or stale authority, linked store paths,
 substitution, a stale head whose canonical successor remains, forks, collisions, deadline expiry,
 content races, capacity exhaustion, and detached post-commit state refuse without a successful
 lifecycle claim. A
@@ -1041,8 +1045,8 @@ canonical bytes can be reused. A fresh command performs a newly timed observatio
 normally sees that orphan as an ambiguous fork; it fails closed for approved operator incident
 reconciliation and neither deletes nor silently adopts the orphan.
 
-The cooperative writer lock uses an owner lease with a maximum 30-second forward-mutation window and
-a further 30-second recovery grace. After that grace a later writer can reclaim a crashed owner's
+The fixed store-wide cooperative writer lock uses an owner lease with a maximum 30-second
+forward-mutation window and a further 30-second recovery grace. After that grace a later writer can reclaim a crashed owner's
 canonical claim; malformed or foreign lock state fails closed. Its inert canonical anchor and staging
 directory can remain under the lifecycle store. This coordinates AIH writers on the local filesystem;
 it is not an operating-system lock and does not isolate the store from a process that can rewrite it.
@@ -1062,7 +1066,11 @@ history, and freshly verify current V3 authority. An exact current observation i
 block evaluation. Observation expiry alone does not freeze unrelated policy projection. Unsafe or
 malformed store custody, a missing/substituted head or record, detached history, authority
 replacement, a current rejection or revocation, or decision/source/subject/target/effect mismatch
-also blocks projection and cannot become effective. These reads write no target or run-ledger state
+also blocks projection and cannot become effective. A store beyond 256 active lineages, 16,384
+aggregate records, or 4,096 records in one lineage is reported distinctly as `over-capacity`, blocks
+both evaluation and projection, and is not described as corruption. Preserve the complete store in
+organization-controlled evidence and reconcile onto a newly governed target; do not delete or prune
+the target-local audit chain to make the reader pass. These reads write no target or run-ledger state
 and perform no package effect.
 
 This remains the narrow organization-qualified root npm lifecycle, not a generic custom-source
