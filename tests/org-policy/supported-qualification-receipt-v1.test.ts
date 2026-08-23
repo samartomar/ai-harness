@@ -27,7 +27,6 @@ import {
   canonicalAihSupportedQualificationReceiptV1,
   MAX_AIH_SUPPORTED_QUALIFICATION_RECEIPT_BYTES_V1,
   parseAihSupportedQualificationReceiptV1Bytes,
-  supportedQualificationReceiptDigestV1,
   verifyAihSupportedQualificationReceiptV1,
 } from "../../src/org-policy/supported-qualification-receipt-v1.js";
 import {
@@ -231,10 +230,6 @@ describe("AihSupportedQualificationReceiptV1", () => {
     const value = receipt(decision());
     const bytes = canonicalBytes(value);
     expect(parseAihSupportedQualificationReceiptV1Bytes(bytes)).toEqual(value);
-    expect(supportedQualificationReceiptDigestV1(value as never)).toMatch(/^sha256:[0-9a-f]{64}$/);
-    expect(supportedQualificationReceiptDigestV1(value as never)).toBe(
-      supportedQualificationReceiptDigestV1(structuredClone(value) as never),
-    );
     for (const invalid of [
       Buffer.from(JSON.stringify(value)),
       Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), bytes]),
@@ -249,6 +244,14 @@ describe("AihSupportedQualificationReceiptV1", () => {
       ),
       canonicalBytes({ ...value, extra: true } as never),
       canonicalBytes({ ...value, organizationAdmission: "authoritative" } as never),
+      canonicalBytes({
+        ...value,
+        subject: { ...value.subject, sourceDigest: `sha256:${"0".repeat(64)}` },
+      }),
+      canonicalBytes({
+        ...value,
+        subject: { ...value.subject, subjectDigest: `sha256:${"0".repeat(64)}` },
+      }),
       canonicalBytes({ ...value, expiresAt: value.notBefore } as never),
       canonicalBytes({ ...value, expiresAt: "2026-12-01T00:00:00+00:00" } as never),
       Buffer.alloc(MAX_AIH_SUPPORTED_QUALIFICATION_RECEIPT_BYTES_V1 + 1),
@@ -354,6 +357,33 @@ describe("AihSupportedQualificationReceiptV1", () => {
           AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "acme/governance",
           AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "policy.yml",
         },
+      ),
+      {
+        authority: verifiedAuthority,
+        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+        subject: value.subject,
+        target: "claude",
+        effect: "configure",
+        supportedTargets: ["claude"],
+        now: "2026-08-02T12:00:00+00:00",
+      },
+    );
+    expect(result.problem).toMatch(/reuses the organization authority root/);
+    expect(calls).toEqual([]);
+  });
+
+  it("rejects case-variant reuse of the verified authority repository before gh", async () => {
+    const value = decision();
+    const verifiedAuthority = await authority(value);
+    writeReceipt(receipt(value));
+    const calls: string[][] = [];
+    const result = await verifyAihSupportedQualificationReceiptV1(
+      context(
+        (argv) => {
+          calls.push(argv);
+          return { code: 0 };
+        },
+        { AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "Acme/Governance" },
       ),
       {
         authority: verifiedAuthority,
