@@ -254,6 +254,7 @@ describe("OrganizationEvidenceEnvelopeV1", () => {
 
     for (const invalid of [
       Buffer.from(JSON.stringify(valid)),
+      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), bytes]),
       Buffer.concat([Buffer.from(" "), bytes]),
       Buffer.concat([bytes, Buffer.from("\n")]),
       Buffer.from(canonicalOrganizationEvidenceEnvelopeV1({ ...valid, unexpected: true } as never)),
@@ -481,6 +482,106 @@ describe("OrganizationEvidenceEnvelopeV1", () => {
     expect(
       resolveObservedEffect({ ...input, qualification, now: "2026-08-03T00:00:00+00:00" }),
     ).toMatchObject({ state: "observation-stale" });
+  });
+
+  it("refuses a qualification token after its authority receipt is substituted", async () => {
+    const value = qualifiedDecision();
+    const other = qualifiedDecisionForOtherSubject();
+    const mintingAuthority = await authority(value);
+    const replacementAuthority = await authority(value, other);
+    expect(replacementAuthority.receiptDigest).not.toBe(mintingAuthority.receiptDigest);
+
+    const currentObservation = observation(value);
+    const verifiedObservation = verifyUpstreamObservationV1({
+      receipt: currentObservation,
+      expectedVerifier: currentObservation.verifier,
+      expectedInstalled: currentObservation.installed,
+      expectedIntegration: currentObservation.integration,
+      subject: value.subject,
+      target: "claude",
+      effect: "configure",
+      supportedTargets: ["claude"],
+      now: "2026-08-02T12:00:00+00:00",
+      verify: () => true,
+    });
+    if (verifiedObservation === undefined) throw new Error("expected verified observation");
+
+    const qualification = verifyOrganizationQualificationV1({
+      authority: mintingAuthority,
+      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      bytes: canonicalBytes(envelope(value)),
+      subject: value.subject,
+      target: "claude",
+      effect: "configure",
+      supportedTargets: ["claude"],
+      now: "2026-08-02T12:00:00+00:00",
+    });
+    expect(qualification).toBeDefined();
+
+    expect(
+      resolveObservedEffect({
+        authority: replacementAuthority,
+        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+        qualification,
+        observation: verifiedObservation,
+        subject: value.subject,
+        target: "claude",
+        effect: "configure",
+        supportedTargets: ["claude"],
+        expectedVerifier: currentObservation.verifier,
+        expectedInstalled: currentObservation.installed,
+        expectedIntegration: currentObservation.integration,
+        now: "2026-08-02T12:00:00+00:00",
+      }),
+    ).toMatchObject({ state: "qualification-mismatch" });
+  });
+
+  it("refuses a qualification token after its evidence expires before observation", async () => {
+    const value = qualifiedDecisionWithEnvelope({ expiresAt: "2026-08-02T13:00:00+00:00" });
+    const verifiedAuthority = await authority(value);
+    const currentObservation = observation(value);
+    const verifiedObservation = verifyUpstreamObservationV1({
+      receipt: currentObservation,
+      expectedVerifier: currentObservation.verifier,
+      expectedInstalled: currentObservation.installed,
+      expectedIntegration: currentObservation.integration,
+      subject: value.subject,
+      target: "claude",
+      effect: "configure",
+      supportedTargets: ["claude"],
+      now: "2026-08-02T12:00:00+00:00",
+      verify: () => true,
+    });
+    if (verifiedObservation === undefined) throw new Error("expected verified observation");
+
+    const qualification = verifyOrganizationQualificationV1({
+      authority: verifiedAuthority,
+      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      bytes: canonicalBytes(envelope(value, { expiresAt: "2026-08-02T13:00:00+00:00" })),
+      subject: value.subject,
+      target: "claude",
+      effect: "configure",
+      supportedTargets: ["claude"],
+      now: "2026-08-02T12:00:00+00:00",
+    });
+    expect(qualification).toBeDefined();
+
+    expect(
+      resolveObservedEffect({
+        authority: verifiedAuthority,
+        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+        qualification,
+        observation: verifiedObservation,
+        subject: value.subject,
+        target: "claude",
+        effect: "configure",
+        supportedTargets: ["claude"],
+        expectedVerifier: currentObservation.verifier,
+        expectedInstalled: currentObservation.installed,
+        expectedIntegration: currentObservation.integration,
+        now: "2026-08-02T14:00:00+00:00",
+      }),
+    ).toMatchObject({ state: "qualification-mismatch" });
   });
 
   it("refuses aih-supported provenance and refuses a token rewound before its validity window", async () => {

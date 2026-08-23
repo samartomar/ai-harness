@@ -115,7 +115,8 @@ export function parseOrganizationEvidenceEnvelopeV1Bytes(
   let text: string;
   let raw: unknown;
   try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    // Keep a byte-order mark visible so the exact canonical-byte comparison rejects it.
+    text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
     raw = JSON.parse(text);
   } catch {
     return undefined;
