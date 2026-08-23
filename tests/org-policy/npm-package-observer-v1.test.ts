@@ -17,6 +17,7 @@ import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCapability } from "../../src/commands/run.js";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
+import { executePlan } from "../../src/internals/execute.js";
 import { readRegularFileWithStats } from "../../src/internals/fsxn.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -37,7 +38,11 @@ import {
   canonicalOrganizationEvidenceEnvelopeV1,
   organizationEvidenceEnvelopeDigestV1,
 } from "../../src/org-policy/qualification-v1.js";
-import { canonicalAihSupportedQualificationReceiptV2 } from "../../src/org-policy/supported-qualification-receipt-v2.js";
+import * as supportedCustody from "../../src/org-policy/supported-admin-v2.js";
+import {
+  canonicalAihSupportedQualificationReceiptV2,
+  receiptDigestV2,
+} from "../../src/org-policy/supported-qualification-receipt-v2.js";
 import { upstreamObservationReceiptDigestV1 } from "../../src/org-policy/upstream-observation-receipt-v1.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { toFinding } from "../../src/support/findings.js";
@@ -215,6 +220,36 @@ function writeInstalledPackage(): void {
     join(root, "node_modules", "@acme", "widget", "package.json"),
     JSON.stringify({ name: "@acme/widget", version: "1.2.3" }),
   );
+}
+
+async function acceptSupportedCustody(value: ReturnType<typeof supportedFixture>): Promise<void> {
+  const receiptText = canonicalAihSupportedQualificationReceiptV2(value.receipt);
+  mkdirSync(join(root, ".aih"), { recursive: true });
+  writeFileSync(join(root, ".aih", "aih-supported-qualification-receipt.json"), receiptText);
+  const authorityReceipt = readFileSync(join(root, ".aih", "policy-authority-receipt.json"));
+  const rawSha256 = (bytes: Uint8Array) =>
+    `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+  const plan = supportedCustody.prepareSupportedCustodyAcceptV2({
+    root,
+    posture: "vibe",
+    candidate: {
+      receipt: value.receipt,
+      decision: {
+        id: value.decision.id,
+        digest: governanceDecisionDigestV2(value.decision as never),
+      },
+      target: "claude",
+      receiptDigest: receiptDigestV2(value.receipt),
+      receiptSha256: rawSha256(Buffer.from(receiptText, "utf8")),
+      authorityReceiptDigest: rawSha256(authorityReceipt),
+      repository: "aihq/supported-catalog",
+      workflow: "qualification.yml",
+      acceptedAt: "2026-08-02T12:00:00Z",
+      decisionNotBefore: "2026-08-01T00:00:00Z",
+      decisionExpiresAt: "2026-08-10T00:00:00Z",
+    },
+  });
+  await executePlan(plan, { ...context({}, []), posture: "vibe", apply: true, verify: false });
 }
 
 function context(
@@ -511,6 +546,103 @@ describe("npm package upstream observer V1", () => {
       outcome: "refused",
       reason: "qualification-unverified",
     });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("keeps a current AIH-supported qualification truthful when installed npm evidence is unavailable", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    await acceptSupportedCustody(value);
+    const calls: string[][] = [];
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+        },
+        calls,
+        {
+          AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+          AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+        },
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "qualified",
+      effective: "observation-missing",
+      outcome: "partial",
+      reason: "installed-evidence-unavailable",
+    });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("refuses when AIH-supported durable custody changes after installed evidence is read", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    await acceptSupportedCustody(value);
+    __setNpmPackageObserverInternalTestHookV1(() => {
+      rmSync(join(root, ".aih", "aih-supported-qualification-receipt.json"));
+    });
+    const calls: string[][] = [];
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+        },
+        calls,
+        {
+          AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+          AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+        },
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "qualified",
+      outcome: "refused",
+      reason: "qualification-unverified",
+    });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("observes a current AIH-supported package only with exact durable custody", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    await acceptSupportedCustody(value);
+    const calls: string[][] = [];
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+        },
+        calls,
+        {
+          AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+          AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+        },
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "qualified",
+      effective: "observed-effective",
+      outcome: "observed-effective",
+    });
+    expect(npmPackageObservationHandoffForLifecycleV1(result)?.custodyAssertions).toHaveLength(5);
     expect(calls).toHaveLength(2);
   });
 
