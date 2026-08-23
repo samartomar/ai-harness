@@ -56,6 +56,14 @@ const workflow = z
     "must be a bounded relative workflow path",
   );
 
+/** Internal deterministic seam for proving a directory scan cannot race its result. */
+let afterCustodyDirectoryScanForInternalTest: (() => void) | undefined;
+
+/** @internal Test-only scan race seam; never exposed by the command surface. */
+export function __setSupportedCustodyDirectoryScanHookV2(hook: (() => void) | undefined): void {
+  afterCustodyDirectoryScanForInternalTest = hook;
+}
+
 export interface SupportedCustodyPathInputV2 {
   posture: "enterprise" | "vibe";
   platform: "win32" | "darwin" | "linux";
@@ -629,7 +637,10 @@ function assertDirectoryUnchanged(
     after.kind !== "directory" ||
     after.realPath !== before.realPath ||
     after.stats.dev !== before.stats.dev ||
-    after.stats.ino !== before.stats.ino
+    after.stats.ino !== before.stats.ino ||
+    after.stats.size !== before.stats.size ||
+    after.stats.mtimeMs !== before.stats.mtimeMs ||
+    after.stats.ctimeMs !== before.stats.ctimeMs
   )
     throw new AihError("supported custody state is invalid", "AIH_TRUST");
 }
@@ -908,6 +919,7 @@ export function planSupportedCustodyAcceptV2(input: SupportedCustodyPlanInputV2)
         );
         if (!matched)
           throw new AihError("supported custody state verification failed", "AIH_TRUST");
+        inspectSupportedCustodyV2({ root, posture, platform });
         return { text: "supported custody state verified" };
       }),
     ],
@@ -1489,6 +1501,7 @@ export function inspectSupportedCustodyV2(input: {
         acceptedAt: member.data.acceptedAt,
       });
     }
+    afterCustodyDirectoryScanForInternalTest?.();
     assertDirectoryUnchanged(signerBoundary.root, signerBoundary.relativePath, signersBefore);
     assertDirectoryUnchanged(replayBoundary.root, replayBoundary.relativePath, replaysBefore);
     assertDirectoryUnchanged(headBoundary.root, headBoundary.relativePath, headsBefore);

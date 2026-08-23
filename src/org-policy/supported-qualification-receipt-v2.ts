@@ -109,7 +109,7 @@ export const AihSupportedQualificationReceiptV2Schema = z
       .object({
         catalogHeadDigest: digest,
         previousCatalogHeadDigest: digest,
-        sequence: z.number().int().min(0).safe(),
+        sequence: z.number().int().safe().min(0),
         replayIdentity,
         signerKeyId,
         headValidFrom: canonicalTimestamp,
@@ -288,8 +288,8 @@ function supportRoot(
   ctx: PlanContext,
   authority: VerifiedPolicyAuthority | undefined,
 ): { repository: string; workflow: string } | undefined {
-  const supportedRepository = ctx.env.AIH_SUPPORTED_QUALIFICATION_REPOSITORY?.trim();
-  const workflow = ctx.env.AIH_SUPPORTED_QUALIFICATION_WORKFLOW?.trim();
+  const supportedRepository = ctx.env.AIH_SUPPORTED_QUALIFICATION_REPOSITORY;
+  const workflow = ctx.env.AIH_SUPPORTED_QUALIFICATION_WORKFLOW;
   const hasControl = (value: string) =>
     [...value].some((character) => {
       const code = character.codePointAt(0) ?? 0;
@@ -298,6 +298,8 @@ function supportRoot(
   if (
     supportedRepository === undefined ||
     workflow === undefined ||
+    supportedRepository !== supportedRepository.trim() ||
+    workflow !== workflow.trim() ||
     workflow.length === 0 ||
     workflow.length > 1_000 ||
     !repository.safeParse(supportedRepository).success ||

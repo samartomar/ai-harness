@@ -409,6 +409,22 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     }
   });
 
+  it("fails the applied postcondition when custody changes after exact slot writes", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-supported-custody-postcondition-"));
+    try {
+      const context = planContext(root);
+      const plan = supported.planSupportedCustodyAcceptV2({ posture: "vibe", root, ...input });
+      const memberDirectory = dirname(join(root, writes(plan)[2]?.path ?? ""));
+      supported.__setSupportedCustodyDirectoryScanHookV2(() => {
+        writeFileSync(join(memberDirectory, "postcondition-race"), "raced\n", "utf8");
+      });
+      await expect(executePlan(plan, context)).rejects.toMatchObject({ code: "AIH_TRUST" });
+    } finally {
+      supported.__setSupportedCustodyDirectoryScanHookV2(undefined);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("refuses a symlinked custody parent before reading the committed records", async () => {
     if (process.platform === "win32") return;
     const root = mkdtempSync(join(tmpdir(), "aih-supported-custody-link-"));
@@ -833,6 +849,64 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     }
   });
 
+  it("allows an occupied exact member slot at capacity but refuses a new member", async () => {
+    const { root } = await applyGenesis();
+    try {
+      const original = await prepare(root);
+      const originalMember = writes(
+        supported.planSupportedCustodyAcceptV2({ posture: "vibe", root, ...input }),
+      )[2];
+      const memberValue = JSON.parse(originalMember?.contents ?? "{}") as {
+        catalogHeadDigest: unknown;
+        catalogMemberDigest: unknown;
+        subject: unknown;
+        target: unknown;
+        authorityReceiptDigest: unknown;
+        receiptDigest: unknown;
+        repository: unknown;
+        workflow: unknown;
+        [key: string]: unknown;
+      };
+      for (let index = 0; index < 4_095; index++) {
+        const digest = `sha256:${index.toString(16).padStart(64, "0")}`;
+        const value = {
+          ...memberValue,
+          decisionId: `capacity-${index}`,
+          decisionDigest: digest,
+        };
+        const path = join(
+          dirname(join(root, originalMember?.path ?? "")),
+          `${custodySlot("member", {
+            catalogHeadDigest: memberValue.catalogHeadDigest,
+            catalogMemberDigest: memberValue.catalogMemberDigest,
+            subject: memberValue.subject,
+            target: memberValue.target,
+            decision: { id: value.decisionId, digest: value.decisionDigest },
+            authorityReceiptDigest: memberValue.authorityReceiptDigest,
+            receiptDigest: memberValue.receiptDigest,
+            repository: memberValue.repository,
+            workflow: memberValue.workflow,
+          })}.json`,
+        );
+        writeFileSync(path, canonicalStrictJsonBytesV1(value), "utf8");
+      }
+      expect(mutatingWrites(await prepare(root))).toHaveLength(0);
+      await expect(
+        prepare(
+          root,
+          candidateFor(receipt, {
+            decision: { id: "capacity-new", digest: `sha256:${"b".repeat(64)}` },
+          }),
+        ),
+      ).rejects.toMatchObject({ code: "AIH_TRUST" });
+      expect(readFileSync(join(root, writes(original)[2]?.path ?? ""), "utf8")).toBe(
+        writes(original)[2]?.contents,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("fails closed when inspect sees partial or foreign custody directories", async () => {
     const root = mkdtempSync(join(tmpdir(), "aih-supported-inspect-invalid-"));
     const completeRoot = mkdtempSync(join(tmpdir(), "aih-supported-inspect-foreign-"));
@@ -862,6 +936,22 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
       rmSync(completeRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses an in-directory mutation after a bounded custody scan", async () => {
+    const { root, genesis } = await applyGenesis();
+    try {
+      const memberDirectory = dirname(join(root, writes(genesis)[2]?.path ?? ""));
+      supported.__setSupportedCustodyDirectoryScanHookV2(() => {
+        writeFileSync(join(memberDirectory, "scan-race"), "raced\n", "utf8");
+      });
+      expect(() => supported.inspectSupportedCustodyV2({ root, posture: "vibe" })).toThrow(
+        expect.objectContaining({ code: "AIH_TRUST" }),
+      );
+    } finally {
+      supported.__setSupportedCustodyDirectoryScanHookV2(undefined);
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
