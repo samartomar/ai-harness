@@ -147,6 +147,17 @@ interface QualificationBinding {
   readonly target: string;
 }
 
+export interface AihSupportedQualificationBindingV1 {
+  readonly subject: GovernanceDecisionV2["subject"];
+  readonly qualificationBasis: Extract<
+    GovernanceDecisionV2["qualificationBasis"],
+    { kind: "aih-supported" }
+  >;
+  readonly issuedAt: string;
+  readonly notBefore: string;
+  readonly expiresAt: string;
+}
+
 export function isVerifiedQualificationV1(value: unknown): value is VerifiedQualificationV1 {
   return typeof value === "object" && value !== null && verifiedQualifications.has(value);
 }
@@ -162,7 +173,17 @@ export interface VerifyOrganizationQualificationV1Input {
   target: string;
 }
 
-function currentDecision(input: VerifyOrganizationQualificationV1Input):
+interface CurrentDecisionInput {
+  authority?: unknown;
+  decisionReference?: { id: string; digest: string };
+  effect: z.infer<typeof GovernanceDecisionEffectV2Schema>;
+  now: string;
+  subject: Pick<GovernanceDecisionV2["subject"], "kind" | "id" | "sourceDigest" | "subjectDigest">;
+  supportedTargets: readonly string[];
+  target: string;
+}
+
+function currentDecision(input: CurrentDecisionInput):
   | {
       authority: VerifiedPolicyAuthority;
       decision: GovernanceDecisionV2;
@@ -223,6 +244,12 @@ function currentDecision(input: VerifyOrganizationQualificationV1Input):
   return { authority, decision, digest: decisionDigest, now };
 }
 
+function mintVerifiedQualificationV1(binding: QualificationBinding): VerifiedQualificationV1 {
+  const verified: VerifiedQualificationV1 = Object.freeze({});
+  verifiedQualifications.set(verified, Object.freeze(binding));
+  return verified;
+}
+
 /**
  * Creates a capability only for canonical evidence bound to a current,
  * externally verified V3 organization-qualified decision. No scanner output,
@@ -247,21 +274,58 @@ export function verifyOrganizationQualificationV1(
     current.now >= Date.parse(envelope.expiresAt)
   )
     return undefined;
-  const verified: VerifiedQualificationV1 = Object.freeze({});
-  verifiedQualifications.set(
-    verified,
-    Object.freeze({
-      authorityReceiptDigest: current.authority.receiptDigest,
-      decisionDigest: current.digest,
-      effect: input.effect,
-      expiresAt: envelope.expiresAt,
-      kind: "organization-qualified",
-      notBefore: envelope.notBefore,
-      subjectDigest: envelope.subjectDigest,
-      target: input.target,
-    }),
-  );
-  return verified;
+  return mintVerifiedQualificationV1({
+    authorityReceiptDigest: current.authority.receiptDigest,
+    decisionDigest: current.digest,
+    effect: input.effect,
+    expiresAt: envelope.expiresAt,
+    kind: "organization-qualified",
+    notBefore: envelope.notBefore,
+    subjectDigest: envelope.subjectDigest,
+    target: input.target,
+  });
+}
+
+/**
+ * Internal custody bridge for the package-shipped, externally attested AIH
+ * support receipt. The caller must supply only bytes whose provenance has
+ * already been verified; arbitrary Catalog V2 structures are never inspected
+ * or verified here.
+ */
+export function mintAihSupportedQualificationV1(input: {
+  authority?: unknown;
+  decisionReference?: { id: string; digest: string };
+  effect: z.infer<typeof GovernanceDecisionEffectV2Schema>;
+  now: string;
+  receipt: AihSupportedQualificationBindingV1;
+  subject: Pick<GovernanceDecisionV2["subject"], "kind" | "id" | "sourceDigest" | "subjectDigest">;
+  supportedTargets: readonly string[];
+  target: string;
+}): VerifiedQualificationV1 | undefined {
+  const current = currentDecision(input);
+  if (current === undefined) return undefined;
+  const receipt = input.receipt;
+  if (
+    current.decision.qualificationBasis.kind !== "aih-supported" ||
+    stableJson(receipt.subject) !== stableJson(current.decision.subject) ||
+    stableJson(receipt.qualificationBasis) !== stableJson(current.decision.qualificationBasis) ||
+    current.now < Date.parse(receipt.notBefore) ||
+    current.now >= Date.parse(receipt.expiresAt) ||
+    Date.parse(receipt.notBefore) < Date.parse(current.decision.notBefore) ||
+    Date.parse(receipt.expiresAt) > Date.parse(current.decision.expiresAt)
+  ) {
+    return undefined;
+  }
+  return mintVerifiedQualificationV1({
+    authorityReceiptDigest: current.authority.receiptDigest,
+    decisionDigest: current.digest,
+    effect: input.effect,
+    expiresAt: receipt.expiresAt,
+    kind: "aih-supported",
+    notBefore: receipt.notBefore,
+    subjectDigest: receipt.subject.subjectDigest,
+    target: input.target,
+  });
 }
 
 /** @internal Opaque token plus every active runtime binding must still match. */

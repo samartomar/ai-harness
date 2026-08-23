@@ -384,12 +384,43 @@ const V3_ORGANIZATION_QUALIFICATION_RUNTIME_LEAVES = new Set([
   "version",
 ]);
 
+const V3_AIH_SUPPORTED_QUALIFICATION_RUNTIME_LEAVES = new Set([
+  "decisions.*.qualificationBasis.catalogDigest",
+  "decisions.*.qualificationBasis.catalogHeadDigest",
+  "decisions.*.qualificationBasis.catalogMemberDigest",
+  "decisions.*.qualificationBasis.catalogSignerIdentity",
+  "decisions.*.qualificationBasis.subjectDigest",
+  "decisions.*.qualificationBasis.subjectKind",
+  "decisions.*.subject.source.commit",
+  "decisions.*.subject.source.contentDigest",
+  "decisions.*.subject.source.endpoint",
+  "decisions.*.subject.source.filename",
+  "decisions.*.subject.source.indexDigest",
+  "decisions.*.subject.source.integrity",
+  "decisions.*.subject.source.manifestDigest",
+  "decisions.*.subject.source.package",
+  "decisions.*.subject.source.path",
+  "decisions.*.subject.source.platform.architecture",
+  "decisions.*.subject.source.platform.os",
+  "decisions.*.subject.source.platform.variant",
+  "decisions.*.subject.source.registry",
+  "decisions.*.subject.source.release",
+  "decisions.*.subject.source.repository",
+  "decisions.*.subject.source.revision",
+  "decisions.*.subject.source.sha256",
+  "decisions.*.subject.source.type",
+  "decisions.*.subject.source.version",
+]);
+
 function phaseHonestV3Consumer(leaf: string, consumer: string): string {
+  const detail = consumer.startsWith(V3_TRANSPORT_ONLY_PREFIX)
+    ? consumer.slice(V3_TRANSPORT_ONLY_PREFIX.length)
+    : consumer;
   if (V3_ORGANIZATION_QUALIFICATION_RUNTIME_LEAVES.has(leaf)) {
-    const detail = consumer.startsWith(V3_TRANSPORT_ONLY_PREFIX)
-      ? consumer.slice(V3_TRANSPORT_ONLY_PREFIX.length)
-      : consumer;
     return `V3 externally verified signed transport/schema validation; current organization-qualified upstream-observation runtime: ${detail}`;
+  }
+  if (V3_AIH_SUPPORTED_QUALIFICATION_RUNTIME_LEAVES.has(leaf)) {
+    return `V3 externally verified signed transport/schema validation; current AIH-supported qualification runtime: ${detail}`;
   }
   if (!consumer.startsWith(V3_TRANSPORT_ONLY_PREFIX)) return consumer;
   return `V3 externally verified signed transport/schema validation; legacy effective resolver deliberately withholds V3 runtime use: ${consumer.slice(V3_TRANSPORT_ONLY_PREFIX.length)}`;
@@ -610,6 +641,8 @@ export interface VerifiedPolicyAuthority {
   readonly receipt: PolicyAuthorityReceipt;
   readonly receiptDigest: string;
   readonly repository: string;
+  /** Optional signer-workflow root verified with the authority receipt. */
+  readonly workflow?: string;
 }
 
 export function isVerifiedPolicyAuthority(value: unknown): value is VerifiedPolicyAuthority {
@@ -749,6 +782,7 @@ export async function verifyPolicyAuthorityReceipt(
     receipt: deepFreeze(structuredClone(receipt)) as PolicyAuthorityReceipt,
     receiptDigest: `sha256:${createHash("sha256").update(contents).digest("hex")}`,
     repository: root.repository,
+    ...(root.workflow === undefined ? {} : { workflow: root.workflow }),
   });
   verifiedAuthorities.add(authority);
   return { authority };

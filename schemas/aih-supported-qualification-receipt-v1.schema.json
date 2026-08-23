@@ -1,0 +1,325 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "format": {
+      "type": "string",
+      "const": "aih-supported-qualification-receipt"
+    },
+    "version": {
+      "type": "number",
+      "const": 1
+    },
+    "organizationAdmission": {
+      "type": "string",
+      "const": "not-authoritative"
+    },
+    "subject": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "tool",
+            "skill",
+            "mcp",
+            "package",
+            "profile"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "source": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "github"
+                },
+                "repository": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$"
+                },
+                "commit": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$"
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                }
+              },
+              "required": [
+                "type",
+                "repository",
+                "commit",
+                "path"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "npm"
+                },
+                "registry": {
+                  "type": "string"
+                },
+                "package": {
+                  "type": "string",
+                  "pattern": "^(?:@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*$"
+                },
+                "version": {
+                  "type": "string",
+                  "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*))(?:\\.(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*)))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                },
+                "integrity": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "registry",
+                "package",
+                "version",
+                "integrity"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "pypi"
+                },
+                "registry": {
+                  "type": "string"
+                },
+                "package": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                },
+                "version": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9.!+_-]{0,127}$"
+                },
+                "filename": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "type",
+                "registry",
+                "package",
+                "version",
+                "filename",
+                "sha256"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "oci"
+                },
+                "registry": {
+                  "type": "string"
+                },
+                "repository": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "indexDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "platform": {
+                  "type": "object",
+                  "properties": {
+                    "os": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                    },
+                    "architecture": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                    },
+                    "variant": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                    }
+                  },
+                  "required": [
+                    "os",
+                    "architecture"
+                  ],
+                  "additionalProperties": false
+                },
+                "manifestDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "type",
+                "registry",
+                "repository",
+                "indexDigest",
+                "platform",
+                "manifestDigest"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "remote"
+                },
+                "endpoint": {
+                  "type": "string"
+                },
+                "contentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "type",
+                "endpoint",
+                "contentDigest"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "aih"
+                },
+                "release": {
+                  "type": "string",
+                  "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*))(?:\\.(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*)))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                },
+                "revision": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "type",
+                "release",
+                "revision"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "sourceDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "subjectDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "source",
+        "sourceDigest",
+        "subjectDigest"
+      ],
+      "additionalProperties": false
+    },
+    "qualificationBasis": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "aih-supported"
+        },
+        "catalogSignerIdentity": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$"
+        },
+        "catalogDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "catalogHeadDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "catalogMemberDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "subjectKind": {
+          "type": "string",
+          "enum": [
+            "tool",
+            "skill",
+            "mcp",
+            "package",
+            "profile"
+          ]
+        },
+        "subjectDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "kind",
+        "catalogSignerIdentity",
+        "catalogDigest",
+        "catalogHeadDigest",
+        "catalogMemberDigest",
+        "subjectKind",
+        "subjectDigest"
+      ],
+      "additionalProperties": false
+    },
+    "issuedAt": {
+      "type": "string"
+    },
+    "notBefore": {
+      "type": "string"
+    },
+    "expiresAt": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "format",
+    "version",
+    "organizationAdmission",
+    "subject",
+    "qualificationBasis",
+    "issuedAt",
+    "notBefore",
+    "expiresAt"
+  ],
+  "additionalProperties": false,
+  "title": "aih-supported-qualification-receipt-v1.schema.json"
+}

@@ -37,11 +37,22 @@ attested V3 authority token—not a standalone decision file. It deliberately ke
 `aih-supported`, `organization-qualified`, and `unqualified` distinct and never
 treats an unsigned `approved` field as authority.
 
+For an `aih-supported` basis, the unreleased library consumes the fixed
+`.aih/aih-supported-qualification-receipt.json` file. The file must be canonical,
+no larger than 4 KiB, and externally attested by the independently configured
+`AIH_SUPPORTED_QUALIFICATION_REPOSITORY` and
+`AIH_SUPPORTED_QUALIFICATION_WORKFLOW`. Core rejects linked custody, verifies an
+owner-only private copy with an absolute external GitHub CLI, then exact-matches the
+receipt's full subject and seven catalog-basis fields to the current Decision V2.
+Those roots cannot reuse the verified organization authority root. A verified
+supported receipt qualifies provenance only; the organization must still issue the
+separate V3 decision that authorizes the exact target and effect.
+
 That foundation is not yet an end-to-end administrator command flow. The current
 CLI still leaves custom stdio and remote policy candidates non-projectable, and a
 V3 authority receipt alone cannot install, configure, or activate one. Do not tell
 developers that an organization-chosen subject is governed-effective until a later
-release supplies the runtime consumer or adapter and AIH has freshly observed the
+release supplies the command and adapter lifecycle and AIH has freshly observed the
 exact approved installed identity. Scanner and catalog publication are also separate
 trust and release boundaries. This limitation is intentional and must stay visible
 while the remaining Core, scanner, and catalog work is completed.

@@ -645,7 +645,7 @@ describe("OrganizationEvidenceEnvelopeV1", () => {
     ).toMatchObject({ state: "qualification-mismatch" });
   });
 
-  it("refuses aih-supported provenance and refuses a token rewound before its validity window", async () => {
+  it("requires an aih-supported qualification receipt before effect resolution and refuses a token rewound before its validity window", async () => {
     const unsupported = unsupportedDecision();
     const unsupportedAuthority = await authority(unsupported);
     const unsupportedObservation = observation(unsupported);
@@ -666,7 +666,7 @@ describe("OrganizationEvidenceEnvelopeV1", () => {
         expectedIntegration: unsupportedObservation.integration,
         now: "2026-08-02T12:00:00+00:00",
       }),
-    ).toMatchObject({ state: "qualification-mismatch" });
+    ).toMatchObject({ state: "qualification-missing" });
 
     const bounded = qualifiedDecisionWithEnvelope({ notBefore: "2026-08-02T12:00:00+00:00" });
     const boundedAuthority = await authority(bounded);

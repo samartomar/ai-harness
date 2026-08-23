@@ -25,6 +25,7 @@ export * from "./internals/proc.js";
 export * from "./internals/render.js";
 export * from "./internals/verify.js";
 export * from "./org-policy/governance-decision-v2.js";
+export * from "./org-policy/supported-qualification-receipt-v1.js";
 export {
   canonicalUpstreamObservationReceiptV1,
   MAX_UPSTREAM_OBSERVATION_WINDOW_MS,
