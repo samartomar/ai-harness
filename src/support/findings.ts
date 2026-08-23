@@ -73,6 +73,20 @@ interface CodeMeta {
 /** Acceptance line every external fix shares: the project itself must not change. */
 const NO_CODE_CHANGES = "No project code changes are required.";
 
+const OBSERVE_PLATFORM: Omit<CodeMeta, "title"> = {
+  audience: "dev-platform",
+  failSeverity: "blocking",
+  affectedArea: "organization policy authority / npm observation service",
+  evidence:
+    "The sealed npm installation observation could not establish a current policy-authorized result for the exact installed package.",
+  action:
+    "Please investigate the current V3 authority receipt, referenced decision, qualification, and observation service boundary. Preserve rejected and revoked decisions as closed outcomes; issue a separately reviewed successor when policy must change.",
+  acceptance: [
+    "The current authority, decision, qualification, and exact observation state are internally consistent, or the operation remains closed.",
+    NO_CODE_CHANGES,
+  ],
+};
+
 /**
  * The taxonomy → support routing table. Exhaustive over {@link CheckCode}.
  * EXTERNAL entries keep `action`/`evidence` tool-neutral — a system/environment
@@ -548,6 +562,91 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "requested org policy cannot be made effective safely",
     action:
       "Run `aih policy evaluate --verify` to inspect requested versus effective candidates. Correct the exact identity, evidence or externally verified approval, target, ownership, or projector finding shown there; unwaivable danger codes cannot be approved. Do not use `aih policy project --apply` until evaluation passes.",
+  },
+  "org-policy.observe-input-invalid": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "npm observation command input is invalid",
+    action:
+      "Correct the required decision id/digest, supported target, and bounded root-relative evidence path, then rerun the npm observation.",
+  },
+  "org-policy.observe-evidence-invalid": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "npm observation evidence is unavailable or unsafe",
+    action:
+      "Provide a bounded regular non-linked organization evidence file beneath the target root, then rerun the npm observation.",
+  },
+  "org-policy.observe-evidence-changed": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "npm observation evidence changed during verification",
+    action:
+      "Restore stable organization evidence and rerun the npm observation; do not reuse an observation after its evidence changed.",
+  },
+  "org-policy.observe-authority-unverified": {
+    ...OBSERVE_PLATFORM,
+    title: "npm observation authority is unverified",
+  },
+  "org-policy.observe-authority-not-current": {
+    ...OBSERVE_PLATFORM,
+    title: "npm observation authority is not current",
+  },
+  "org-policy.observe-decision-mismatch": {
+    ...OBSERVE_PLATFORM,
+    title: "npm observation decision does not match the authority",
+  },
+  "org-policy.observe-decision-rejected": {
+    ...OBSERVE_PLATFORM,
+    title: "npm observation decision is rejected",
+  },
+  "org-policy.observe-decision-revoked": {
+    ...OBSERVE_PLATFORM,
+    title: "npm observation decision is revoked",
+  },
+  "org-policy.observe-decision-not-current": {
+    ...OBSERVE_PLATFORM,
+    title: "npm observation decision is not current",
+  },
+  "org-policy.observe-decision-scope-mismatch": {
+    ...OBSERVE_PLATFORM,
+    title: "npm observation decision scope does not match",
+  },
+  "org-policy.observe-qualification-unverified": {
+    ...OBSERVE_PLATFORM,
+    title: "npm observation qualification is unverified",
+  },
+  "org-policy.observe-installed-evidence-unavailable": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "installed npm evidence is unavailable",
+    action:
+      "Restore the exact package-lock.json and installed package manifest under the target root, then rerun the read-only observation.",
+  },
+  "org-policy.observe-installed-evidence-invalid": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "installed npm evidence is unsafe or invalid",
+    action:
+      "Repair the exact regular non-linked lockfile and installed package manifest; do not observe through linked or malformed local evidence.",
+  },
+  "org-policy.observe-installed-evidence-changed": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "installed npm evidence changed during observation",
+    action:
+      "Restore a stable installed lockfile and package manifest, then rerun the read-only observation from the beginning.",
+  },
+  "org-policy.observe-installed-identity-mismatch": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "installed npm package does not match the decision",
+    action:
+      "Install the exact policy-approved package name, version, and integrity recorded by the current decision, then rerun the observation.",
+  },
+  "org-policy.observe-invariant-violation": {
+    ...OBSERVE_PLATFORM,
+    title: "npm observation invariant could not be established",
   },
   "org-policy.resolve-input-invalid": {
     audience: "developer",

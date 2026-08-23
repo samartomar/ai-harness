@@ -1,7 +1,17 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runCapability } from "../../src/commands/run.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import {
@@ -10,6 +20,7 @@ import {
   governanceDecisionSubjectDigestV2,
 } from "../../src/org-policy/governance-decision-v2.js";
 import {
+  __setNpmPackageObserverInternalTestHookV1,
   npmPackageObserveCommand,
   npmPackageObservePlan,
   observeNpmPackageV1,
@@ -38,6 +49,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  __setNpmPackageObserverInternalTestHookV1(undefined);
   vi.useRealTimers();
   rmSync(root, { recursive: true, force: true });
   rmSync(bin, { recursive: true, force: true });
@@ -168,6 +180,24 @@ function context(options: Record<string, unknown>, calls: string[][]): PlanConte
   };
 }
 
+function command(argv: string[]): Command {
+  const value = new Command("npm-package");
+  value.exitOverride();
+  value.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+  value
+    .option("--apply")
+    .option("--verify")
+    .option("--json")
+    .option("--root <dir>")
+    .option("--context-dir <dir>", "", "ai-coding")
+    .option("--decision <id>")
+    .option("--decision-digest <sha256>")
+    .option("--target <cli>")
+    .option("--evidence <path>");
+  value.parse(argv, { from: "user" });
+  return value;
+}
+
 describe("npm package upstream observer V1", () => {
   it("emits sealed observe-specific codes with the required remediation owners", async () => {
     const value = fixture();
@@ -226,6 +256,7 @@ describe("npm package upstream observer V1", () => {
       "--target <cli>",
       "--evidence <path>",
     ]);
+    expect(npmPackageObserveCommand.plan.toString()).not.toContain('"0".repeat(64)');
   });
 
   it("observes only the signed exact installed package without executing it", async () => {
@@ -294,6 +325,91 @@ describe("npm package upstream observer V1", () => {
     );
   });
 
+  it("runs through runCapability as a zero-write JSON observation with exactly one attestation process", async () => {
+    const value = fixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    const beforeLock = readFileSync(join(root, "package-lock.json"));
+    const beforeManifest = readFileSync(
+      join(root, "node_modules", "@acme", "widget", "package.json"),
+    );
+    const calls: string[][] = [];
+    let out = "";
+
+    const code = await runCapability(
+      npmPackageObserveCommand,
+      command([
+        "--json",
+        "--root",
+        root,
+        "--decision",
+        value.decision.id,
+        "--decision-digest",
+        governanceDecisionDigestV2(value.decision as never),
+        "--target",
+        "claude",
+        "--evidence",
+        "evidence.json",
+      ]),
+      {
+        env: { AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance", PATH: bin },
+        run: fakeRunner((argv) => {
+          calls.push([...argv]);
+          return argv[0] === gh ? { code: 0 } : { code: 1 };
+        }),
+        write: (text) => {
+          out += text;
+        },
+      },
+    );
+
+    const payload = JSON.parse(out) as {
+      applied: boolean;
+      execs: unknown[];
+      writes: unknown[];
+      digests: Array<{ data?: { outcome?: string } }>;
+    };
+    expect(code).toBe(0);
+    expect(payload).toMatchObject({ applied: false, execs: [], writes: [] });
+    expect(payload.digests[0]?.data).toMatchObject({ outcome: "observed-effective" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.slice(0, 3)).toEqual([gh, "attestation", "verify"]);
+    expect(calls[0]?.slice(-2)).toEqual(["--repo", "acme/governance"]);
+    expect(readFileSync(join(root, "package-lock.json"))).toEqual(beforeLock);
+    expect(readFileSync(join(root, "node_modules", "@acme", "widget", "package.json"))).toEqual(
+      beforeManifest,
+    );
+    expect(existsSync(join(root, ".aih", "run-log.jsonl"))).toBe(false);
+  });
+
+  it("evaluates the observer plan once when its digest and probe are both consumed", async () => {
+    const value = fixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    const calls: string[][] = [];
+    const ctx = context(
+      {
+        decision: value.decision.id,
+        decisionDigest: governanceDecisionDigestV2(value.decision as never),
+        target: "claude",
+        evidence: "evidence.json",
+      },
+      calls,
+    );
+    const actions = npmPackageObservePlan(ctx).actions;
+    const digest = actions.find((action) => action.kind === "digest");
+    const probe = actions.find((action) => action.kind === "probe");
+    if (digest?.kind !== "digest" || probe?.kind !== "probe")
+      throw new Error("expected observer digest and probe");
+
+    await digest.run?.(ctx);
+    await probe.run(ctx);
+
+    expect(calls).toHaveLength(1);
+  });
+
   it("refuses lock or manifest identity disagreement without another process", async () => {
     const value = fixture();
     writeAuthority(value.decision);
@@ -347,6 +463,124 @@ describe("npm package upstream observer V1", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("does not report a qualified partial after the unavailable observation crosses a decision window", async () => {
+    const value = fixture();
+    value.decision.expiresAt = "2026-08-03T00:00:00+00:00";
+    writeAuthority(value.decision);
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    __setNpmPackageObserverInternalTestHookV1(() => {
+      vi.setSystemTime(new Date("2026-08-03T00:00:00+00:00"));
+    });
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+          evidence: "evidence.json",
+        },
+        [],
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      outcome: "refused",
+      reason: "decision-not-current",
+    });
+  });
+
+  it("rechecks organization evidence after installed observation before minting a receipt", async () => {
+    const value = fixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    __setNpmPackageObserverInternalTestHookV1(() => {
+      writeFileSync(
+        join(root, "evidence.json"),
+        Buffer.concat([value.evidenceBytes, Buffer.from("\n")]),
+      );
+    });
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+          evidence: "evidence.json",
+        },
+        [],
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "qualified",
+      outcome: "refused",
+      reason: "evidence-changed",
+    });
+  });
+
+  it("refuses a lock-or-manifest swap after qualification without erasing the qualified phase", async () => {
+    const value = fixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    __setNpmPackageObserverInternalTestHookV1(() => {
+      writeFileSync(
+        join(root, "node_modules", "@acme", "widget", "package.json"),
+        JSON.stringify({ name: "@acme/widget", version: "9.9.9" }),
+      );
+    });
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+          evidence: "evidence.json",
+        },
+        [],
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "qualified",
+      outcome: "refused",
+      reason: "installed-evidence-changed",
+    });
+  });
+
+  it("takes a fresh time after installed observation and refuses an expired decision", async () => {
+    const value = fixture();
+    value.decision.expiresAt = "2026-08-03T00:00:00+00:00";
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    __setNpmPackageObserverInternalTestHookV1(() => {
+      vi.setSystemTime(new Date("2026-08-03T00:00:00+00:00"));
+    });
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+          evidence: "evidence.json",
+        },
+        [],
+      ),
+    );
+
+    expect(result).toMatchObject({ outcome: "refused", reason: "decision-not-current" });
+  });
+
   it("rejects a duplicate lock key before it can provide an installed identity", async () => {
     const value = fixture();
     writeAuthority(value.decision);
@@ -371,4 +605,110 @@ describe("npm package upstream observer V1", () => {
     expect(result).toMatchObject({ outcome: "refused", reason: "installed-identity-mismatch" });
     expect(calls).toHaveLength(1);
   });
+
+  it.each([
+    ["a malformed lock", "package-lock.json", "{not-json"],
+    ["a malformed installed manifest", "node_modules/@acme/widget/package.json", "{not-json"],
+    [
+      "a non-NFC exact package name",
+      "node_modules/@acme/widget/package.json",
+      JSON.stringify({ name: "@acme/widge\u0301t", version: "1.2.3" }),
+    ],
+  ])("refuses %s", async (_label, path, contents) => {
+    const value = fixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    writeFileSync(join(root, path), contents);
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+          evidence: "evidence.json",
+        },
+        [],
+      ),
+    );
+
+    expect(result).toMatchObject({ outcome: "refused", reason: "installed-identity-mismatch" });
+  });
+
+  it("accepts the exact 16 MiB lock boundary and treats one extra byte as unavailable", async () => {
+    const value = fixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    const lockPath = join(root, "package-lock.json");
+    const compact = readFileSync(lockPath);
+    const exact = Buffer.concat([compact, Buffer.alloc(16 * 1024 * 1024 - compact.length, 0x20)]);
+    writeFileSync(lockPath, exact);
+
+    const exactResult = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+          evidence: "evidence.json",
+        },
+        [],
+      ),
+    );
+    expect(exactResult.outcome).toBe("observed-effective");
+
+    writeFileSync(lockPath, Buffer.concat([exact, Buffer.from(" ")]));
+    const oversizeResult = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+          evidence: "evidence.json",
+        },
+        [],
+      ),
+    );
+    expect(oversizeResult).toMatchObject({
+      authority: "verified",
+      qualification: "qualified",
+      outcome: "partial",
+      reason: "installed-evidence-unavailable",
+    });
+  });
+
+  it.each([true, false, "true"])(
+    "rejects a lock link marker (%j) rather than treating it as installed package evidence",
+    async (link) => {
+      const value = fixture();
+      writeAuthority(value.decision);
+      writeInstalledPackage();
+      writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+      writeFileSync(
+        join(root, "package-lock.json"),
+        JSON.stringify({
+          lockfileVersion: 3,
+          packages: {
+            "node_modules/@acme/widget": { version: "1.2.3", integrity: INTEGRITY, link },
+          },
+        }),
+      );
+
+      const result = await observeNpmPackageV1(
+        context(
+          {
+            decision: value.decision.id,
+            decisionDigest: governanceDecisionDigestV2(value.decision as never),
+            target: "claude",
+            evidence: "evidence.json",
+          },
+          [],
+        ),
+      );
+
+      expect(result).toMatchObject({ outcome: "refused", reason: "installed-identity-mismatch" });
+    },
+  );
 });

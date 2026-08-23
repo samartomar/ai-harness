@@ -79,26 +79,56 @@ export interface NpmPackageObservationResultV1 {
   readonly observationDigest?: string;
 }
 const CODE: Readonly<Record<Reason, CheckCode>> = {
-  "invalid-input": "org-policy.resolve-input-invalid",
-  "invalid-evidence-path": "org-policy.resolve-input-invalid",
-  "unsafe-evidence-custody": "org-policy.resolve-evidence-invalid",
-  "evidence-unavailable": "org-policy.resolve-evidence-invalid",
-  "evidence-changed": "org-policy.resolve-evidence-invalid",
-  "authority-unverified": "org-policy.resolve-authority-blocked",
-  "authority-version": "org-policy.resolve-authority-blocked",
-  "authority-not-current": "org-policy.resolve-authority-blocked",
-  "decision-missing-or-mismatch": "org-policy.resolve-authority-blocked",
-  "decision-rejected": "org-policy.resolve-authority-blocked",
-  "decision-revoked": "org-policy.resolve-authority-blocked",
-  "decision-not-current": "org-policy.resolve-authority-blocked",
-  "decision-scope-mismatch": "org-policy.resolve-authority-blocked",
-  "qualification-unverified": "org-policy.resolve-authority-blocked",
-  "installed-evidence-unavailable": "org-policy.resolve-evidence-invalid",
-  "installed-evidence-unsafe": "org-policy.resolve-evidence-invalid",
-  "installed-evidence-changed": "org-policy.resolve-evidence-invalid",
-  "installed-identity-mismatch": "org-policy.resolve-authority-blocked",
-  "observation-unverified": "org-policy.resolve-observation-missing",
+  "invalid-input": "org-policy.observe-input-invalid",
+  "invalid-evidence-path": "org-policy.observe-input-invalid",
+  "unsafe-evidence-custody": "org-policy.observe-evidence-invalid",
+  "evidence-unavailable": "org-policy.observe-evidence-invalid",
+  "evidence-changed": "org-policy.observe-evidence-changed",
+  "authority-unverified": "org-policy.observe-authority-unverified",
+  "authority-version": "org-policy.observe-authority-unverified",
+  "authority-not-current": "org-policy.observe-authority-not-current",
+  "decision-missing-or-mismatch": "org-policy.observe-decision-mismatch",
+  "decision-rejected": "org-policy.observe-decision-rejected",
+  "decision-revoked": "org-policy.observe-decision-revoked",
+  "decision-not-current": "org-policy.observe-decision-not-current",
+  "decision-scope-mismatch": "org-policy.observe-decision-scope-mismatch",
+  "qualification-unverified": "org-policy.observe-qualification-unverified",
+  "installed-evidence-unavailable": "org-policy.observe-installed-evidence-unavailable",
+  "installed-evidence-unsafe": "org-policy.observe-installed-evidence-invalid",
+  "installed-evidence-changed": "org-policy.observe-installed-evidence-changed",
+  "installed-identity-mismatch": "org-policy.observe-installed-identity-mismatch",
+  "observation-unverified": "org-policy.observe-invariant-violation",
 };
+
+/** Hermetic custody-race seam; not exported by the package or wired to the CLI. */
+let afterInstalledReadForInternalTest: (() => void) | undefined;
+
+/** @internal Test-only hook for the final evidence/time recheck boundary. */
+export function __setNpmPackageObserverInternalTestHookV1(hook: (() => void) | undefined): void {
+  afterInstalledReadForInternalTest = hook;
+}
+
+function effectiveRefusal(
+  state: ObservedEffectResolution["state"],
+  qualification: "qualified" | "unqualified" = "unqualified",
+): NpmPackageObservationResultV1 {
+  const reason: Reason =
+    state === "authority-not-current" ||
+    state === "decision-missing-or-mismatch" ||
+    state === "decision-rejected" ||
+    state === "decision-revoked" ||
+    state === "decision-not-current" ||
+    state === "decision-scope-mismatch"
+      ? state
+      : state === "authority-unverified" || state === "authority-version"
+        ? "authority-unverified"
+        : state === "qualification-missing" ||
+            state === "qualification-unverified" ||
+            state === "qualification-mismatch"
+          ? "qualification-unverified"
+          : "observation-unverified";
+  return { ...refusal(reason, "verified", state), qualification };
+}
 
 function refusal(
   reason: Reason,
@@ -106,6 +136,12 @@ function refusal(
   effective: NpmPackageObservationEffectiveV1 = reason,
 ): NpmPackageObservationResultV1 {
   return { authority, qualification: "unqualified", effective, outcome: "refused", reason };
+}
+function refusalAfterQualified(
+  reason: Reason,
+  effective: NpmPackageObservationEffectiveV1 = reason,
+): NpmPackageObservationResultV1 {
+  return { ...refusal(reason, "verified", effective), qualification: "qualified" };
 }
 function option(ctx: PlanContext, key: string): string | undefined {
   const value = ctx.options[key];
@@ -205,6 +241,25 @@ function parse(custodied: { bytes: Buffer }): Record<string, unknown> | undefine
     return undefined;
   }
 }
+function npmInstalledIdentity(
+  source: Extract<GovernanceDecisionV2["subject"]["source"], { type: "npm" }>,
+): {
+  id: string;
+  digest: string;
+} {
+  return {
+    id: "npm-package",
+    digest: `sha256:${createHash("sha256")
+      .update(
+        canonicalStrictJsonBytesV1({
+          integrity: source.integrity,
+          name: source.package,
+          version: source.version,
+        }),
+      )
+      .digest("hex")}`,
+  };
+}
 function installed(
   root: string,
   decision: GovernanceDecisionV2,
@@ -226,23 +281,15 @@ function installed(
     packages === undefined ? undefined : object(packages[`node_modules/${source.package}`]);
   if (
     parsedLock?.lockfileVersion !== 3 ||
+    (entry !== undefined && Object.hasOwn(entry, "link")) ||
     entry?.version !== source.version ||
     entry.integrity !== source.integrity ||
     parsedManifest?.name !== source.package ||
     parsedManifest.version !== source.version
   )
     return "installed-identity-mismatch";
-  const digest = `sha256:${createHash("sha256")
-    .update(
-      canonicalStrictJsonBytesV1({
-        integrity: source.integrity,
-        name: source.package,
-        version: source.version,
-      }),
-    )
-    .digest("hex")}`;
   return {
-    installed: { id: "npm-package", digest },
+    installed: npmInstalledIdentity(source),
     unchanged: () => lock.unchanged() && manifest.unchanged(),
   };
 }
@@ -263,21 +310,63 @@ export async function observeNpmPackageV1(
   if (decision === undefined) return refusal("decision-missing-or-mismatch", "verified");
   if (decision.subject.kind !== "package" || decision.subject.source.type !== "npm")
     return refusal("installed-identity-mismatch", "verified");
-  const now = new Date().toISOString();
-  const qualification = verifyOrganizationQualificationV1({
+  const expectedInstalled = npmInstalledIdentity(decision.subject.source);
+  const qualificationInput = {
     authority: verified.authority,
     bytes: evidence.evidence.bytes,
     decisionReference: { id: requested.decision, digest: requested.digest },
-    effect: "install",
-    now,
+    effect: "install" as const,
     subject: decision.subject,
     supportedTargets: SUPPORTED_CLIS,
     target: requested.target,
+  };
+  const initiallyObservedAt = new Date().toISOString();
+  const qualification = verifyOrganizationQualificationV1({
+    ...qualificationInput,
+    now: initiallyObservedAt,
   });
-  if (qualification === undefined) return refusal("qualification-unverified", "verified");
+  const initialCurrent = resolveObservedEffect({
+    authority: verified.authority,
+    decisionReference: { id: requested.decision, digest: requested.digest },
+    qualification,
+    subject: decision.subject,
+    target: requested.target,
+    effect: "install",
+    supportedTargets: SUPPORTED_CLIS,
+    expectedVerifier: OBSERVER,
+    expectedInstalled,
+    expectedIntegration: INTEGRATION,
+    now: initiallyObservedAt,
+  });
+  if (initialCurrent.state !== "observation-missing") return effectiveRefusal(initialCurrent.state);
   const local = installed(ctx.root, decision);
   if (typeof local === "string") {
     if (local === "installed-evidence-unavailable") {
+      afterInstalledReadForInternalTest?.();
+      if (!evidence.evidence.unchanged()) return refusalAfterQualified("evidence-changed");
+      const observedAt = new Date().toISOString();
+      const currentQualification = verifyOrganizationQualificationV1({
+        ...qualificationInput,
+        now: observedAt,
+      });
+      const current = resolveObservedEffect({
+        authority: verified.authority,
+        decisionReference: { id: requested.decision, digest: requested.digest },
+        qualification: currentQualification,
+        subject: decision.subject,
+        target: requested.target,
+        effect: "install",
+        supportedTargets: SUPPORTED_CLIS,
+        expectedVerifier: OBSERVER,
+        expectedInstalled,
+        expectedIntegration: INTEGRATION,
+        now: observedAt,
+      });
+      if (current.state !== "observation-missing")
+        return effectiveRefusal(
+          current.state,
+          currentQualification === undefined ? "unqualified" : "qualified",
+        );
       return {
         authority: "verified",
         qualification: "qualified",
@@ -288,7 +377,35 @@ export async function observeNpmPackageV1(
     }
     return { ...refusal(local, "verified"), qualification: "qualified" };
   }
-  if (!local.unchanged()) return refusal("installed-evidence-changed", "verified");
+  afterInstalledReadForInternalTest?.();
+  if (!evidence.evidence.unchanged()) return refusalAfterQualified("evidence-changed");
+  if (!local.unchanged()) return refusalAfterQualified("installed-evidence-changed");
+  // The receipt's time begins only after every local read is re-proved stable.
+  // Requalify and re-evaluate at that instant so no earlier authority/evidence
+  // window can be carried across a slow or raced installed-artifact observation.
+  const observedAt = new Date().toISOString();
+  const currentQualification = verifyOrganizationQualificationV1({
+    ...qualificationInput,
+    now: observedAt,
+  });
+  const current = resolveObservedEffect({
+    authority: verified.authority,
+    decisionReference: { id: requested.decision, digest: requested.digest },
+    qualification: currentQualification,
+    subject: decision.subject,
+    target: requested.target,
+    effect: "install",
+    supportedTargets: SUPPORTED_CLIS,
+    expectedVerifier: OBSERVER,
+    expectedInstalled,
+    expectedIntegration: INTEGRATION,
+    now: observedAt,
+  });
+  if (current.state !== "observation-missing")
+    return effectiveRefusal(
+      current.state,
+      currentQualification === undefined ? "unqualified" : "qualified",
+    );
   const validUntil = new Date(
     Math.min(
       Date.parse(verified.authority.receipt.expiresAt),
@@ -296,7 +413,7 @@ export async function observeNpmPackageV1(
       decision.disposition === "accepted-with-conditions"
         ? Date.parse(decision.reviewBy)
         : Number.POSITIVE_INFINITY,
-      Date.parse(now) + 60_000,
+      Date.parse(observedAt) + 60_000,
     ),
   ).toISOString();
   const receipt = {
@@ -315,27 +432,27 @@ export async function observeNpmPackageV1(
     integration: INTEGRATION,
     installed: local.installed,
     verifier: OBSERVER,
-    observedAt: now,
+    observedAt,
     validUntil,
     outcome: "observed-success" as const,
   };
   const observation = verifyUpstreamObservationV1({
     receipt,
     expectedVerifier: OBSERVER,
-    expectedInstalled: local.installed,
+    expectedInstalled,
     expectedIntegration: INTEGRATION,
     subject: decision.subject,
     target: requested.target,
     effect: "install",
     supportedTargets: SUPPORTED_CLIS,
-    now,
+    now: observedAt,
     verify: (candidate) =>
       upstreamObservationReceiptDigestV1(candidate) === upstreamObservationReceiptDigestV1(receipt),
   });
   const effective = resolveObservedEffect({
     authority: verified.authority,
     decisionReference: { id: requested.decision, digest: requested.digest },
-    qualification,
+    qualification: currentQualification,
     observation,
     subject: decision.subject,
     target: requested.target,
@@ -344,20 +461,10 @@ export async function observeNpmPackageV1(
     expectedVerifier: OBSERVER,
     expectedInstalled: local.installed,
     expectedIntegration: INTEGRATION,
-    now,
+    now: observedAt,
   });
   if (effective.state !== "observed-effective")
-    return refusal(
-      effective.state === "authority-not-current" ||
-        effective.state === "decision-rejected" ||
-        effective.state === "decision-revoked" ||
-        effective.state === "decision-not-current" ||
-        effective.state === "decision-scope-mismatch"
-        ? effective.state
-        : "observation-unverified",
-      "verified",
-      effective.state,
-    );
+    return effectiveRefusal(effective.state, "qualified");
   return {
     authority: "verified",
     qualification: "qualified",
