@@ -610,6 +610,30 @@ function mintVerifiedCustodyBinding(input: {
     !input.decision.targets.includes(input.target)
   )
     return undefined;
+  // Governance artifacts permit offset-qualified timestamps while custody has
+  // a deliberately canonical, byte-stable UTC-second representation.
+  const canonicalUtcSecond = (value: string): string | undefined => {
+    const milliseconds = Date.parse(value);
+    return Number.isFinite(milliseconds)
+      ? new Date(milliseconds).toISOString().replace(/\.\d{3}Z$/, "Z")
+      : undefined;
+  };
+  const authorityExpiresAt = canonicalUtcSecond(input.authority.receipt.expiresAt);
+  const decisionNotBefore = canonicalUtcSecond(input.decision.notBefore);
+  const decisionExpiresAt = canonicalUtcSecond(input.decision.expiresAt);
+  const acceptedAt = canonicalUtcSecond(input.now);
+  const reviewBy =
+    input.decision.disposition === "accepted-with-conditions"
+      ? canonicalUtcSecond(input.decision.reviewBy)
+      : undefined;
+  if (
+    authorityExpiresAt === undefined ||
+    decisionNotBefore === undefined ||
+    decisionExpiresAt === undefined ||
+    acceptedAt === undefined ||
+    (input.decision.disposition === "accepted-with-conditions" && reviewBy === undefined)
+  )
+    return undefined;
   const binding: VerifiedAihSupportedCustodyBindingV2 = Object.freeze({
     receipt: deepFreezeBinding(
       structuredClone(input.receipt),
@@ -617,19 +641,17 @@ function mintVerifiedCustodyBinding(input: {
     receiptDigest: receiptDigestV2(input.receipt),
     receiptSha256: input.receiptSha256,
     authorityReceiptDigest: input.authority.receiptDigest,
-    authorityExpiresAt: input.authority.receipt.expiresAt,
+    authorityExpiresAt,
     repository: input.repository.repository,
     workflow: input.repository.workflow,
     decision: Object.freeze({
       id: input.decisionReference.id,
       digest: input.decisionReference.digest,
-      notBefore: input.decision.notBefore,
-      expiresAt: input.decision.expiresAt,
-      ...(input.decision.disposition === "accepted-with-conditions"
-        ? { reviewBy: input.decision.reviewBy }
-        : {}),
+      notBefore: decisionNotBefore,
+      expiresAt: decisionExpiresAt,
+      ...(input.decision.disposition === "accepted-with-conditions" ? { reviewBy } : {}),
     }),
-    acceptedAt: input.now,
+    acceptedAt,
     target: input.target as Cli,
   });
   verifiedCustodyBindings.add(binding);

@@ -842,9 +842,9 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
       const signerPath = join(root, signer?.path ?? "");
       mkdirSync(dirname(signerPath), { recursive: true });
       writeFileSync(signerPath, signer?.contents ?? "", "utf8");
-      await expect(
-        Promise.resolve(supported.inspectSupportedCustodyV2({ root, posture: "vibe" })),
-      ).rejects.toMatchObject({ code: "AIH_TRUST" });
+      expect(() => supported.inspectSupportedCustodyV2({ root, posture: "vibe" })).toThrow(
+        expect.objectContaining({ code: "AIH_TRUST" }),
+      );
       const genesis = await prepare(completeRoot);
       await executePlan(genesis, planContext(completeRoot));
       const foreign = join(
@@ -856,11 +856,9 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
         `${"a".repeat(64)}.json`,
       );
       writeFileSync(foreign, canonicalStrictJsonBytesV1({ kind: "foreign" }));
-      await expect(
-        Promise.resolve(
-          supported.inspectSupportedCustodyV2({ root: completeRoot, posture: "vibe" }),
-        ),
-      ).rejects.toMatchObject({ code: "AIH_TRUST" });
+      expect(() =>
+        supported.inspectSupportedCustodyV2({ root: completeRoot, posture: "vibe" }),
+      ).toThrow(expect.objectContaining({ code: "AIH_TRUST" }));
     } finally {
       rmSync(root, { recursive: true, force: true });
       rmSync(completeRoot, { recursive: true, force: true });

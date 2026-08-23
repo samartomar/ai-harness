@@ -297,10 +297,12 @@ function candidateWithHistoricAcceptance(input: {
     posture: input.posture,
     ...(input.platform === undefined ? {} : { platform: input.platform }),
   });
-  const member = planned.actions.filter(
-    (action): action is WriteAction => action.kind === "write",
-  )[2];
-  if (member === undefined)
+  const memberActions = planned.actions.filter(
+    (action): action is WriteAction =>
+      action.kind === "write" && action.describe === "write supported custody member claim",
+  );
+  const member = memberActions[0];
+  if (member === undefined || memberActions.length !== 1)
     throw new AihError("supported custody verification failed", "AIH_TRUST");
   const parsed = parseCandidate({
     ...input.candidate,
@@ -319,10 +321,14 @@ function candidateWithHistoricAcceptance(input: {
     posture: input.posture,
     ...(input.platform === undefined ? {} : { platform: input.platform }),
   });
-  const historicMember = historicPlan.actions.filter(
-    (action): action is WriteAction => action.kind === "write",
-  )[2];
-  return historicMember !== undefined && sameStoredRecord(existing, historicMember)
+  const historicMembers = historicPlan.actions.filter(
+    (action): action is WriteAction =>
+      action.kind === "write" && action.describe === "write supported custody member claim",
+  );
+  const historicMember = historicMembers[0];
+  return historicMember !== undefined &&
+    historicMembers.length === 1 &&
+    sameStoredRecord(existing, historicMember)
     ? historic
     : input.candidate;
 }
@@ -451,6 +457,36 @@ const HeadRecordSchema = z
       ctx.addIssue({ code: "custom", message: "invalid catalog head validity" });
   });
 
+const SignerRecordSchema = z
+  .object({
+    format: z.literal("aih-supported-qualification-custody"),
+    version: z.literal(2),
+    kind: z.literal("signer-claim"),
+    catalogSignerIdentity: identity,
+    signerKeyId,
+  })
+  .strict();
+
+const ReplayRecordSchema = z
+  .object({
+    format: z.literal("aih-supported-qualification-custody"),
+    version: z.literal(2),
+    kind: z.literal("replay-claim"),
+    replayIdentity,
+    catalogSignerIdentity: identity,
+    signerKeyId,
+    catalogHeadDigest: digest,
+    sequence: z.number().int().min(0).safe(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (
+      value.replayIdentity.slice("catalog-head:".length, "catalog-head:".length + 64) !==
+      value.catalogHeadDigest.slice("sha256:".length)
+    )
+      ctx.addIssue({ code: "custom", message: "replay does not bind catalog head" });
+  });
+
 const MemberRecordSchema = z
   .object({
     format: z.literal("aih-supported-qualification-custody"),
@@ -565,12 +601,12 @@ function recordHash(record: Extract<StoredRecord, { state: "present" }>): string
   return createHash("sha256").update(record.bytes).digest("hex");
 }
 
-function boundedMemberEntries(directory: string): string[] {
+function boundedMemberEntries(directory: string, maximum = MAX_CUSTODY_MEMBERS): string[] {
   const opened = opendirSync(directory);
   const entries: string[] = [];
   try {
     for (let entry = opened.readSync(); entry !== null; entry = opened.readSync()) {
-      if (entries.length === MAX_CUSTODY_MEMBERS)
+      if (entries.length === maximum)
         throw new AihError("supported custody state is invalid", "AIH_TRUST");
       entries.push(entry.name);
     }
@@ -578,6 +614,49 @@ function boundedMemberEntries(directory: string): string[] {
   } finally {
     opened.closeSync();
   }
+}
+
+function assertDirectoryUnchanged(
+  root: string,
+  relativePath: string,
+  before: ReturnType<typeof inspectContainedRelativePath>,
+): void {
+  const after = inspectContainedRelativePath(root, relativePath);
+  if (
+    before.state !== "present" ||
+    before.kind !== "directory" ||
+    after.state !== "present" ||
+    after.kind !== "directory" ||
+    after.realPath !== before.realPath ||
+    after.stats.dev !== before.stats.dev ||
+    after.stats.ino !== before.stats.ino
+  )
+    throw new AihError("supported custody state is invalid", "AIH_TRUST");
+}
+
+/** A new immutable slot may not grow any custody directory beyond its fixed cap. */
+function assertNewCustodySlotCapacity(
+  root: string,
+  posture: "enterprise" | "vibe",
+  action: WriteAction,
+): void {
+  const directory = dirname(action.path);
+  const boundary = custodyReadBoundary(root, posture, { ...action, path: directory });
+  if (boundary === undefined) throw new AihError("supported custody state is invalid", "AIH_TRUST");
+  const before = inspectContainedRelativePath(boundary.root, boundary.relativePath);
+  if (before.state === "absent") return;
+  if (before.state !== "present" || before.kind !== "directory")
+    throw new AihError("supported custody state is invalid", "AIH_TRUST");
+  const entries = boundedMemberEntries(
+    before.realPath,
+    directory.endsWith(`${CUSTODY_PREFIX}/heads`) || directory.endsWith(`${CUSTODY_PREFIX}\\heads`)
+      ? MAX_CUSTODY_MEMBERS * 2
+      : MAX_CUSTODY_MEMBERS,
+  );
+  const activeEntries = entries.filter((entry) => /^[0-9a-f]{64}\.json$/.test(entry));
+  if (activeEntries.length >= MAX_CUSTODY_MEMBERS)
+    throw new AihError("supported custody state is at capacity", "AIH_TRUST");
+  assertDirectoryUnchanged(boundary.root, boundary.relativePath, before);
 }
 
 function hasCurrentHeadMember(
@@ -634,15 +713,7 @@ function hasCurrentHeadMember(
       )
         found = true;
     }
-    const after = inspectContainedRelativePath(boundary.root, boundary.relativePath);
-    if (
-      after.state !== "present" ||
-      after.kind !== "directory" ||
-      after.realPath !== before.realPath ||
-      after.stats.dev !== before.stats.dev ||
-      after.stats.ino !== before.stats.ino
-    )
-      throw new AihError("supported custody state is invalid", "AIH_TRUST");
+    assertDirectoryUnchanged(boundary.root, boundary.relativePath, before);
     return found;
   } catch (error) {
     if (error instanceof AihError) throw error;
@@ -867,6 +938,13 @@ export function prepareSupportedCustodyAcceptV2(input: {
     root: input.root,
     ...(input.platform === undefined ? {} : { platform: input.platform }),
   });
+  // Every non-empty custody store is a closed bounded structure. Validate it
+  // before deciding whether this candidate reuses a slot or adds a new one.
+  inspectSupportedCustodyV2({
+    root: input.root,
+    posture: parsed.posture,
+    platform: parsed.platform,
+  });
   const signerState = storedRecord(input.root, parsed.posture, signer);
   const replayState = storedRecord(input.root, parsed.posture, replay);
   const memberState = storedRecord(input.root, parsed.posture, member);
@@ -885,6 +963,10 @@ export function prepareSupportedCustodyAcceptV2(input: {
       continuity.previousCatalogHeadDigest !== `sha256:${"0".repeat(64)}`
     )
       throw new AihError("supported custody continuity is invalid", "AIH_TRUST");
+    assertNewCustodySlotCapacity(input.root, parsed.posture, signer);
+    assertNewCustodySlotCapacity(input.root, parsed.posture, replay);
+    assertNewCustodySlotCapacity(input.root, parsed.posture, member);
+    assertNewCustodySlotCapacity(input.root, parsed.posture, head);
     return planned;
   }
   if (
@@ -928,6 +1010,7 @@ export function prepareSupportedCustodyAcceptV2(input: {
     }
     if (!hasCurrentHeadMember(input.root, parsed.posture, member, currentHead.data))
       throw new AihError("supported custody state is invalid", "AIH_TRUST");
+    assertNewCustodySlotCapacity(input.root, parsed.posture, member);
     return {
       ...planned,
       actions: [
@@ -949,6 +1032,8 @@ export function prepareSupportedCustodyAcceptV2(input: {
     throw new AihError("supported custody continuity is invalid", "AIH_TRUST");
   if (!hasCurrentHeadMember(input.root, parsed.posture, member, currentHead.data))
     throw new AihError("supported custody state is invalid", "AIH_TRUST");
+  assertNewCustodySlotCapacity(input.root, parsed.posture, replay);
+  assertNewCustodySlotCapacity(input.root, parsed.posture, member);
   return {
     ...planned,
     actions: [
@@ -997,6 +1082,13 @@ export function validateCurrentSupportedCustodyV2(input: {
       return { state: "unverified", scrubbed: true };
     if (!isVerifiedSupportedReceiptCurrentV2(input.root, input.binding))
       return { state: "unverified", scrubbed: true };
+    // Exact slot equality is insufficient: a foreign or corrupt record in any
+    // bounded custody directory detaches the whole durable store.
+    inspectSupportedCustodyV2({
+      root: input.root,
+      posture: input.posture,
+      ...(input.platform === undefined ? {} : { platform: input.platform }),
+    });
     const plan = planSupportedCustodyAcceptV2({
       ...candidate,
       root: input.root,
@@ -1151,7 +1243,7 @@ function custodyDirectoryAction(
   root: string,
   posture: "enterprise" | "vibe",
   platform: "win32" | "darwin" | "linux",
-  directory: "heads" | "members",
+  directory: "signers" | "replays" | "heads" | "members",
 ): WriteAction {
   const external = posture === "enterprise";
   const trustedBase =
@@ -1191,29 +1283,108 @@ export function inspectSupportedCustodyV2(input: {
     if (input.posture === "enterprise" && input.platform === undefined)
       throw new AihError("supported custody state is invalid", "AIH_TRUST");
     const platform = input.platform ?? localPlatform();
+    const signersDirectory = custodyDirectoryAction(input.root, input.posture, platform, "signers");
+    const replaysDirectory = custodyDirectoryAction(input.root, input.posture, platform, "replays");
     const headsDirectory = custodyDirectoryAction(input.root, input.posture, platform, "heads");
     const membersDirectory = custodyDirectoryAction(input.root, input.posture, platform, "members");
+    const signerBoundary = custodyReadBoundary(input.root, input.posture, signersDirectory);
+    const replayBoundary = custodyReadBoundary(input.root, input.posture, replaysDirectory);
     const headBoundary = custodyReadBoundary(input.root, input.posture, headsDirectory);
     const memberBoundary = custodyReadBoundary(input.root, input.posture, membersDirectory);
-    if (headBoundary === undefined || memberBoundary === undefined)
+    if (
+      signerBoundary === undefined ||
+      replayBoundary === undefined ||
+      headBoundary === undefined ||
+      memberBoundary === undefined
+    )
       throw new AihError("supported custody state is invalid", "AIH_TRUST");
+    const signersBefore = inspectContainedRelativePath(
+      signerBoundary.root,
+      signerBoundary.relativePath,
+    );
+    const replaysBefore = inspectContainedRelativePath(
+      replayBoundary.root,
+      replayBoundary.relativePath,
+    );
     const headsBefore = inspectContainedRelativePath(headBoundary.root, headBoundary.relativePath);
     const membersBefore = inspectContainedRelativePath(
       memberBoundary.root,
       memberBoundary.relativePath,
     );
-    if (headsBefore.state === "absent" && membersBefore.state === "absent") return empty;
     if (
+      signersBefore.state === "absent" &&
+      replaysBefore.state === "absent" &&
+      headsBefore.state === "absent" &&
+      membersBefore.state === "absent"
+    )
+      return empty;
+    if (
+      signersBefore.state !== "present" ||
+      signersBefore.kind !== "directory" ||
+      replaysBefore.state !== "present" ||
+      replaysBefore.kind !== "directory" ||
       headsBefore.state !== "present" ||
       headsBefore.kind !== "directory" ||
       membersBefore.state !== "present" ||
       membersBefore.kind !== "directory"
     )
       throw new AihError("supported custody state is invalid", "AIH_TRUST");
-    const heads = new Map<string, z.infer<typeof HeadRecordSchema>>();
-    for (const entry of boundedMemberEntries(headsBefore.realPath)) {
+    const signers = new Map<string, z.infer<typeof SignerRecordSchema>>();
+    for (const entry of boundedMemberEntries(signersBefore.realPath)) {
       if (!/^[0-9a-f]{64}\.json$/.test(entry))
         throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      const separator = signersDirectory.path.includes("\\") ? "\\" : "/";
+      const record = storedRecord(input.root, input.posture, {
+        ...signersDirectory,
+        path: `${signersDirectory.path}${separator}${entry}`,
+      });
+      const signer =
+        record.state === "present" ? SignerRecordSchema.safeParse(record.value) : undefined;
+      if (
+        signer === undefined ||
+        !signer.success ||
+        entry !== `${custodySlot("signer", signer.data.catalogSignerIdentity)}.json`
+      )
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      if (signers.has(signer.data.catalogSignerIdentity))
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      signers.set(signer.data.catalogSignerIdentity, signer.data);
+    }
+    const replays = new Map<string, z.infer<typeof ReplayRecordSchema>>();
+    for (const entry of boundedMemberEntries(replaysBefore.realPath)) {
+      if (!/^[0-9a-f]{64}\.json$/.test(entry))
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      const separator = replaysDirectory.path.includes("\\") ? "\\" : "/";
+      const record = storedRecord(input.root, input.posture, {
+        ...replaysDirectory,
+        path: `${replaysDirectory.path}${separator}${entry}`,
+      });
+      const replay =
+        record.state === "present" ? ReplayRecordSchema.safeParse(record.value) : undefined;
+      if (
+        replay === undefined ||
+        !replay.success ||
+        entry !== `${custodySlot("replay", replay.data.replayIdentity)}.json`
+      )
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      if (replays.has(replay.data.replayIdentity))
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      replays.set(replay.data.replayIdentity, replay.data);
+    }
+    const heads = new Map<string, z.infer<typeof HeadRecordSchema>>();
+    const headSigners = new Set<string>();
+    const headEntries = boundedMemberEntries(headsBefore.realPath, MAX_CUSTODY_MEMBERS * 2);
+    const activeHeadEntries = headEntries.filter((entry) => /^[0-9a-f]{64}\.json$/.test(entry));
+    const backupHeadEntries = headEntries.filter((entry) =>
+      /^[0-9a-f]{64}\.json\.aih\.bak$/.test(entry),
+    );
+    if (
+      activeHeadEntries.length + backupHeadEntries.length !== headEntries.length ||
+      activeHeadEntries.length > MAX_CUSTODY_MEMBERS
+    )
+      throw new AihError("supported custody state is invalid", "AIH_TRUST");
+    const headsBySigner = new Map<string, z.infer<typeof HeadRecordSchema>>();
+    for (const entry of activeHeadEntries) {
       const separator = headsDirectory.path.includes("\\") ? "\\" : "/";
       const record = storedRecord(input.root, input.posture, {
         ...headsDirectory,
@@ -1223,10 +1394,49 @@ export function inspectSupportedCustodyV2(input: {
         throw new AihError("supported custody state is invalid", "AIH_TRUST");
       const head = HeadRecordSchema.safeParse(record.value);
       if (!head.success) throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      if (entry !== `${custodySlot("signer", head.data.catalogSignerIdentity)}.json`)
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      const signer = signers.get(head.data.catalogSignerIdentity);
+      const replay = replays.get(head.data.replayIdentity);
+      if (
+        signer?.signerKeyId !== head.data.signerKeyId ||
+        replay?.catalogSignerIdentity !== head.data.catalogSignerIdentity ||
+        replay.signerKeyId !== head.data.signerKeyId ||
+        replay.catalogHeadDigest !== head.data.catalogHeadDigest ||
+        replay.sequence !== head.data.sequence
+      )
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      if (headSigners.has(head.data.catalogSignerIdentity))
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      headSigners.add(head.data.catalogSignerIdentity);
+      headsBySigner.set(head.data.catalogSignerIdentity, head.data);
       heads.set(
         `${head.data.catalogHeadDigest}\0${head.data.catalogSignerIdentity}\0${head.data.signerKeyId}\0${head.data.replayIdentity}\0${head.data.sequence}\0${head.data.headValidFrom}\0${head.data.headValidUntil}`,
         head.data,
       );
+    }
+    for (const entry of backupHeadEntries) {
+      const activeName = entry.slice(0, -".aih.bak".length);
+      const separator = headsDirectory.path.includes("\\") ? "\\" : "/";
+      const record = storedRecord(input.root, input.posture, {
+        ...headsDirectory,
+        path: `${headsDirectory.path}${separator}${entry}`,
+      });
+      const backup =
+        record.state === "present" ? HeadRecordSchema.safeParse(record.value) : undefined;
+      const current = backup?.success
+        ? headsBySigner.get(backup.data.catalogSignerIdentity)
+        : undefined;
+      if (
+        backup === undefined ||
+        !backup.success ||
+        activeName !== `${custodySlot("signer", backup.data.catalogSignerIdentity)}.json` ||
+        current === undefined ||
+        current.signerKeyId !== backup.data.signerKeyId ||
+        current.sequence !== backup.data.sequence + 1 ||
+        current.previousCatalogHeadDigest !== backup.data.catalogHeadDigest
+      )
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
     }
     const members: Array<SupportedCustodyInspectionV2["members"][number]> = [];
     for (const entry of boundedMemberEntries(membersBefore.realPath)) {
@@ -1255,6 +1465,16 @@ export function inspectSupportedCustodyV2(input: {
       });
       if (entry !== `${slot}.json`)
         throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      const signer = signers.get(member.data.catalogSignerIdentity);
+      const replay = replays.get(member.data.replayIdentity);
+      if (
+        signer?.signerKeyId !== member.data.signerKeyId ||
+        replay?.catalogSignerIdentity !== member.data.catalogSignerIdentity ||
+        replay.signerKeyId !== member.data.signerKeyId ||
+        replay.catalogHeadDigest !== member.data.catalogHeadDigest ||
+        replay.sequence !== member.data.sequence
+      )
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
       const key = `${member.data.catalogHeadDigest}\0${member.data.catalogSignerIdentity}\0${member.data.signerKeyId}\0${member.data.replayIdentity}\0${member.data.sequence}\0${member.data.headValidFrom}\0${member.data.headValidUntil}`;
       if (!heads.has(key)) continue;
       members.push({
@@ -1269,6 +1489,16 @@ export function inspectSupportedCustodyV2(input: {
         acceptedAt: member.data.acceptedAt,
       });
     }
+    assertDirectoryUnchanged(signerBoundary.root, signerBoundary.relativePath, signersBefore);
+    assertDirectoryUnchanged(replayBoundary.root, replayBoundary.relativePath, replaysBefore);
+    assertDirectoryUnchanged(headBoundary.root, headBoundary.relativePath, headsBefore);
+    assertDirectoryUnchanged(memberBoundary.root, memberBoundary.relativePath, membersBefore);
+    members.sort((left, right) =>
+      `${left.entryId}\0${left.subject.digest}\0${left.target}\0${left.decision.digest}`.localeCompare(
+        `${right.entryId}\0${right.subject.digest}\0${right.target}\0${right.decision.digest}`,
+        "en",
+      ),
+    );
     return { ...empty, members };
   } catch (error) {
     if (error instanceof AihError) throw error;

@@ -25,5 +25,6 @@ export const policySupportedInspectCommandV2: CommandSpec = {
   summary: "Read the bounded, scrubbed current AIH-supported custody state",
   readOnly: true,
   zeroWrite: true,
+  honorReadOnlyPostureFlag: true,
   plan: supportedCustodyInspectPlanV2,
 };
