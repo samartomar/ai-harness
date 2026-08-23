@@ -910,8 +910,8 @@ and revocations: unsigned policy or Workbench `approved` fields, legacy approval
 and standalone decision files cannot enter it. The separate observation receipt binds
 the decision digest, exact subject and installed digests, registered targets/effects,
 the named upstream integration owner and exact integration version,
-code-owned verifier id/version/digest, explicit outcome, and a bounded observation
-window. Core's internal pure resolver accepts only the opaque verified V3 authority token,
+code-owned verifier id/version/digest, explicit outcome, and an observation window of at most 24
+hours, shortened by the authority, decision, or conditional-review deadline. Core's internal pure resolver accepts only the opaque verified V3 authority token,
 an exact decision id/digest reference, and an opaque qualification capability; raw decisions,
 evidence envelopes, revocations, and cloned capabilities are untrusted data. It reports
 `observed-effective` only when those facts match a current approved or
@@ -1021,7 +1021,8 @@ package. The durable append is reported truthfully, but revocation removes permi
 establishing an effect, so verification and the command exit remain failing and nonzero.
 
 Apply re-verifies authority, evidence, installed custody, and observation before constructing the
-transaction, pins every authorizing file, refuses after the shortest applicable validity deadline,
+transaction, pins every authorizing file, and gives the prepared write at most 60 seconds—shorter
+when an authority, decision, review, or observation deadline arrives first. It refuses after that deadline,
 serializes cooperative lifecycle writers by subject and target, writes a durable immutable lineage
 claim before the ordinary binding and record, writes the record before the head, and reads the exact
 committed claim, binding, record, head, and bounded lineage before it reports success. The claim keeps
@@ -1058,10 +1059,11 @@ governance surfaces, `aih policy evaluate --verify` and the governed report read
 heads in deterministic order, validate canonical head/binding/claim custody plus the complete bounded
 history, and freshly verify current V3 authority. An exact current observation is reported as
 `observed-effective`; partial, withheld/refused, revoked, stale, and drifted states stay distinct and
-block evaluation. Unsafe or malformed store custody, a missing/substituted head or record, detached
-history, authority replacement, a current rejection or revocation, decision/source/subject/target/
-effect mismatch, or observation expiry cannot become effective. These reads write no target or run
-ledger state and perform no package effect.
+block evaluation. Observation expiry alone does not freeze unrelated policy projection. Unsafe or
+malformed store custody, a missing/substituted head or record, detached history, authority
+replacement, a current rejection or revocation, or decision/source/subject/target/effect mismatch
+also blocks projection and cannot become effective. These reads write no target or run-ledger state
+and perform no package effect.
 
 This remains the narrow organization-qualified root npm lifecycle, not a generic custom-source
 lifecycle. Neither the lifecycle command nor evaluate/report makes a candidate projectable, and the

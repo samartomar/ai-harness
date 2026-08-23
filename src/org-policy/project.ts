@@ -44,6 +44,7 @@ import { planEccHookControlsProjection } from "./ecc-hook-controls-projection.js
 import {
   candidateIdentityDigest,
   type EffectiveOrgPolicy,
+  lifecycleStateBlocksProjection,
   resolveEffectiveOrgPolicy,
   stableJson,
 } from "./effective.js";
@@ -135,7 +136,7 @@ function blockedProjectionDetail(effective: EffectiveOrgPolicy): string {
     .join("; ");
   const policy = policyDecisionBlockDetail(effective);
   const lifecycle = (effective.npmPackageLifecycle ?? [])
-    .filter((item) => item.state !== "observed-effective")
+    .filter(lifecycleStateBlocksProjection)
     .map((item) => `${item.subjectId ?? "unknown"}@${item.target ?? "unknown"}: ${item.reason}`)
     .sort(ordinalCompare)
     .join(", ");
@@ -182,7 +183,7 @@ function stdioAllowedServers(
   enforceAllowlist: boolean,
 ): { servers: Record<string, StdioServer>; effective: EffectiveOrgPolicy } {
   const { catalog, effective } = runtime;
-  if (effective.blocking) {
+  if (effective.projectionBlocking ?? effective.blocking) {
     const blocked = blockedProjectionDetail(effective);
     throw new OrgPolicyError(
       `policy project refuses blocked candidate activation(s): ${blocked || "unknown policy resolution failure"}${authoritySuffix(runtime)}`,
@@ -1369,9 +1370,9 @@ function projectionActionsFromRuntime(
 ): Action[] {
   const posture = ctx.posture ?? policy.minimumPosture;
   const targets = ctx.targets ?? ["claude"];
-  if (runtime.effective.blocking) {
+  if (runtime.effective.projectionBlocking ?? runtime.effective.blocking) {
     const lifecycleBlocks = (runtime.effective.npmPackageLifecycle ?? []).some(
-      (item) => item.state !== "observed-effective",
+      lifecycleStateBlocksProjection,
     );
     const candidateOrDecisionBlocks =
       runtime.effective.decisionBlockers.length > 0 ||

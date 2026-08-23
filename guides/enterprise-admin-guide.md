@@ -82,7 +82,8 @@ aih policy observe npm-package <root> \
 The command derives the package from the decision and reads the fixed npm v3 lockfile plus the
 matching installed manifest. It cannot install or execute the package, and exposes no package,
 effect, observer, verifier, runner, clock, receipt, or callback override. Exact current evidence
-returns `observed-effective` with a canonical receipt digest; missing installed evidence remains
+returns `observed-effective` with a canonical receipt digest for at most 24 hours and never beyond
+the authority, decision, or conditional-review deadline; missing installed evidence remains
 `partial`, while linked, changed, stale, revoked, rejected, malformed, or mismatched evidence
 refuses. This observation command persists no receipt or capability.
 
@@ -106,7 +107,9 @@ aih policy lifecycle npm-package <root> \
 ```
 
 The applied command repeats live authority, qualification, installed-state, and observation checks
-before appending an immutable record under `.aih/governance/npm-package-lifecycle/v1/`. Use a newly
+before appending an immutable record under `.aih/governance/npm-package-lifecycle/v1/`. Each prepared
+write has at most 60 seconds to commit, shortened by any earlier authority, decision, review, or
+observation deadline. Use a newly
 authorized exact decision/evidence set for a version or integrity bump; the prior record remains in
 the stable package/integration lineage. When the current V3 authority revokes the decision, the
 same command appends that revocation only for the verified current lineage. This is an audit fact,
@@ -142,8 +145,10 @@ For this narrow npm route, the durable lifecycle now reaches the governance read
 `aih policy evaluate --verify` after the lifecycle apply, then inspect the governed report. Both
 validate the fixed store and freshly verify current V3 authority. They report the exact lineage as
 `observed-effective` only while the observation and authority remain current; partial,
-withheld/refused, revoked, stale, or drifted state is explicit and blocks evaluation. These commands
-do not repeat the package observation, mutate the target, or control the installed runtime.
+withheld/refused, revoked, stale, or drifted state is explicit and blocks evaluation. Observation
+expiry alone does not freeze unrelated policy projection; unsafe custody, authority failure,
+rejection, revocation, and other lifecycle failures still block it. These commands do not repeat the
+package observation, mutate the target, or control the installed runtime.
 
 The broader custom-source journey is not complete. Custom stdio and remote policy candidates remain
 non-projectable, and neither a V3 receipt, `policy resolve`, nor this fixed npm route can install,

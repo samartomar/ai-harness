@@ -352,6 +352,8 @@ export interface EffectiveOrgPolicy {
   /** Observed package state only; it is never a projector or runtime control. */
   npmPackageLifecycle?: readonly NpmPackageEffectiveStateV1[];
   decisionBlockers: PolicyDecisionBlocker[];
+  /** Projection has a narrower lifecycle gate than evaluate/doctor. */
+  projectionBlocking?: boolean;
   blocking: boolean;
   authority: { verified: boolean; receiptDigest?: string; problem?: string };
 }
@@ -369,6 +371,14 @@ export function stableJson(value: unknown): string {
 
 function ordinalCompare(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/** An aged observation fails evaluation but cannot freeze unrelated projection. */
+export function lifecycleStateBlocksProjection(item: NpmPackageEffectiveStateV1): boolean {
+  return !(
+    item.state === "observed-effective" ||
+    (item.state === "stale" && item.reason === "observation-stale")
+  );
 }
 
 /** Digest only immutable source identity, never catalog wording or an activation flag. */
@@ -1285,6 +1295,7 @@ export function resolveEffectiveOrgPolicy(
       externalSelections: [],
       npmPackageLifecycle: [...(context.npmPackageLifecycle ?? [])],
       decisionBlockers: [],
+      projectionBlocking: (context.npmPackageLifecycle ?? []).some(lifecycleStateBlocksProjection),
       blocking: (context.npmPackageLifecycle ?? []).some(
         (item) => item.state !== "observed-effective",
       ),
@@ -1365,6 +1376,10 @@ export function resolveEffectiveOrgPolicy(
     })),
     npmPackageLifecycle: [...(context.npmPackageLifecycle ?? [])],
     decisionBlockers,
+    projectionBlocking:
+      decisionBlockers.length > 0 ||
+      candidates.some((candidate) => candidate.requested && !candidate.effective) ||
+      (context.npmPackageLifecycle ?? []).some(lifecycleStateBlocksProjection),
     blocking:
       decisionBlockers.length > 0 ||
       candidates.some((candidate) => candidate.requested && !candidate.effective) ||

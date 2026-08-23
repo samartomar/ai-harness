@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readdirSync } from "node:fs";
+import { lstatSync, opendirSync, readdirSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
@@ -33,6 +33,7 @@ const MAX_RECORDS_PER_LINEAGE = 4_096;
 const MAX_EFFECTIVE_LIFECYCLE_HEADS = 256;
 /** Aggregate reporting I/O bound across independent lifecycle lineages. */
 const MAX_EFFECTIVE_LIFECYCLE_RECORDS = 16_384;
+const MAX_LIFECYCLE_COMMIT_WINDOW_MS = 60_000;
 
 type LifecycleReason =
   | "invalid-input"
@@ -461,6 +462,11 @@ function stableText(value: unknown): string | undefined {
     : undefined;
 }
 
+/** Fresh observation facts may remain readable for 24h; writes stay 60s-bound. */
+function lifecycleCommitNotAfter(...bounds: readonly number[]): string {
+  return new Date(Math.min(Date.now() + MAX_LIFECYCLE_COMMIT_WINDOW_MS, ...bounds)).toISOString();
+}
+
 function parseLineage(value: unknown): Lineage | undefined {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
   const item = value as Record<string, unknown>;
@@ -468,8 +474,8 @@ function parseLineage(value: unknown): Lineage | undefined {
     !exactKeys(item, ["digest", "effect", "integration", "npm", "subjectId", "target"]) ||
     item.effect !== "install" ||
     stableText(item.digest) === undefined ||
-    stableText(item.subjectId) === undefined ||
-    stableText(item.target) === undefined ||
+    !ID.test(stableText(item.subjectId) ?? "") ||
+    !SUPPORTED_CLIS.includes((stableText(item.target) ?? "") as Cli) ||
     item.integration === null ||
     typeof item.integration !== "object" ||
     Array.isArray(item.integration) ||
@@ -591,7 +597,7 @@ function recordLink(
     typeof decision !== "object" ||
     Array.isArray(decision) ||
     !exactKeys(decision as Record<string, unknown>, ["digest", "id"]) ||
-    stableText((decision as Record<string, unknown>).id) === undefined ||
+    !ID.test(stableText((decision as Record<string, unknown>).id) ?? "") ||
     !SHA256.test(stableText((decision as Record<string, unknown>).digest) ?? "") ||
     !SHA256.test(stableText(item.authorityReceiptDigest) ?? "") ||
     !SHA256.test(stableText(item.subjectDigest) ?? "")
@@ -725,6 +731,7 @@ function hasOnlyExpectedSuccessor(
   expectedOrphanDigest?: string,
   expectedScratchName?: string,
   requireSingleLink = false,
+  boundedRead = false,
 ): boolean {
   const directory = safeStorePath(
     root,
@@ -736,12 +743,17 @@ function hasOnlyExpectedSuccessor(
   const info = lstat(directory);
   if (info === undefined) return true;
   if (!info.isDirectory() || info.isSymbolicLink()) return false;
-  let names: string[];
-  try {
-    names = readdirSync(directory).sort();
-  } catch {
-    return false;
-  }
+  const enumerated = boundedRead
+    ? boundedDirectoryNames(directory, MAX_RECORDS_PER_LINEAGE)
+    : (() => {
+        try {
+          return readdirSync(directory).sort();
+        } catch {
+          return "unsafe" as const;
+        }
+      })();
+  if (typeof enumerated === "string") return false;
+  const names = enumerated;
   const records = names.filter((name) => /^[0-9a-f]{64}\.json$/.test(name));
   if (
     records.length > MAX_RECORDS_PER_LINEAGE ||
@@ -860,7 +872,7 @@ function storedState(
     canonicalText(parseBinding(binding) ?? {}) !== canonicalText(lineage) ||
     canonicalText(parseBinding(claim) ?? {}) !== canonicalText(lineage) ||
     !verifyHistory(root, head, lineage, true) ||
-    !hasOnlyExpectedSuccessor(root, head, lineage, undefined, undefined, true)
+    !hasOnlyExpectedSuccessor(root, head, lineage, undefined, undefined, true, true)
   )
     return undefined;
   const decision = item?.decision;
@@ -939,13 +951,9 @@ function recordEntryCount(root: string, lineageDigest: string): number | undefin
   if (directory === undefined) return undefined;
   const info = lstat(directory);
   if (info === undefined || !info.isDirectory() || info.isSymbolicLink()) return undefined;
-  let names: string[];
-  try {
-    names = readdirSync(directory);
-  } catch {
-    return undefined;
-  }
+  const names = boundedDirectoryNames(directory, MAX_RECORDS_PER_LINEAGE);
   if (
+    typeof names === "string" ||
     names.length > MAX_RECORDS_PER_LINEAGE ||
     names.some((name) => !/^[0-9a-f]{64}\.json$/.test(name))
   )
@@ -953,24 +961,63 @@ function recordEntryCount(root: string, lineageDigest: string): number | undefin
   return names.length;
 }
 
-type StoreDirectoryNames = readonly string[] | "absent" | "unsafe";
+type StoreDirectoryNames = readonly string[] | "absent" | "unsafe" | "overbound";
+
+type BoundedDirectoryNames = readonly string[] | "overbound" | "unsafe";
+
+/**
+ * Read a reporting directory incrementally so an attacker cannot make the
+ * reader allocate an unbounded name array before the configured store cap is
+ * enforced. The extra read distinguishes exactly `limit` entries from an
+ * over-limit directory.
+ */
+function boundedDirectoryNames(directory: string, limit: number): BoundedDirectoryNames {
+  let handle: ReturnType<typeof opendirSync> | undefined;
+  let result: BoundedDirectoryNames = "unsafe";
+  try {
+    handle = opendirSync(directory);
+    const names: string[] = [];
+    for (let count = 0; count <= limit; count += 1) {
+      const entry = handle.readSync();
+      if (entry === null) {
+        result = names.sort();
+        break;
+      }
+      if (count === limit) {
+        result = "overbound";
+        break;
+      }
+      names.push(entry.name);
+    }
+  } catch {
+    result = "unsafe";
+  }
+  if (handle !== undefined) {
+    try {
+      handle.closeSync();
+    } catch {
+      return "unsafe";
+    }
+  }
+  return result;
+}
 
 /**
  * Enumerate only a fixed, flat store directory. The reporting reader keeps
  * this bounded; it never uses this inverse-consistency check on the writer's
  * onboarding path.
  */
-function canonicalStoreDirectoryNames(root: string, section: string): StoreDirectoryNames {
+function canonicalStoreDirectoryNames(
+  root: string,
+  section: string,
+  limit: number,
+): StoreDirectoryNames {
   const directory = safeStorePath(root, ...STORE, section);
   if (directory === undefined) return "unsafe";
   const info = lstat(directory);
   if (info === undefined) return "absent";
   if (!info.isDirectory() || info.isSymbolicLink()) return "unsafe";
-  try {
-    return readdirSync(directory).sort();
-  } catch {
-    return "unsafe";
-  }
+  return boundedDirectoryNames(directory, limit);
 }
 
 function hasExactCanonicalNames(
@@ -978,7 +1025,7 @@ function hasExactCanonicalNames(
   expected: ReadonlySet<string>,
   pattern: RegExp,
 ): boolean {
-  if (actual === "unsafe") return false;
+  if (actual === "unsafe" || actual === "overbound") return false;
   if (actual === "absent") return expected.size === 0;
   if (actual.length !== expected.size || actual.some((name) => !pattern.test(name))) return false;
   return actual.every((name) => expected.has(name));
@@ -995,8 +1042,9 @@ export function readNpmPackageLifecycleStoreV1(root: string): NpmPackageLifecycl
   const storeInfo = lstat(store);
   if (storeInfo === undefined) return { kind: "absent" };
   if (!storeInfo.isDirectory() || storeInfo.isSymbolicLink()) return { kind: "unsafe" };
-  const headNames = canonicalStoreDirectoryNames(root, "heads");
+  const headNames = canonicalStoreDirectoryNames(root, "heads", MAX_EFFECTIVE_LIFECYCLE_HEADS * 2);
   if (headNames === "unsafe") return { kind: "unsafe" };
+  if (headNames === "overbound") return { kind: "corrupt" };
   const names = headNames === "absent" ? [] : headNames;
   const heads = names.filter((name) => /^[0-9a-f]{64}\.json$/.test(name));
   if (
@@ -1008,7 +1056,11 @@ export function readNpmPackageLifecycleStoreV1(root: string): NpmPackageLifecycl
     )
   )
     return { kind: "corrupt" };
-  const recordPartitions = canonicalStoreDirectoryNames(root, "records");
+  const recordPartitions = canonicalStoreDirectoryNames(
+    root,
+    "records",
+    MAX_EFFECTIVE_LIFECYCLE_HEADS,
+  );
   if (
     !hasExactCanonicalNames(
       recordPartitions,
@@ -1018,8 +1070,8 @@ export function readNpmPackageLifecycleStoreV1(root: string): NpmPackageLifecycl
   )
     return { kind: "corrupt" };
   if (heads.length === 0) {
-    const claims = canonicalStoreDirectoryNames(root, "claims");
-    const subjects = canonicalStoreDirectoryNames(root, "subjects");
+    const claims = canonicalStoreDirectoryNames(root, "claims", MAX_EFFECTIVE_LIFECYCLE_HEADS);
+    const subjects = canonicalStoreDirectoryNames(root, "subjects", MAX_EFFECTIVE_LIFECYCLE_HEADS);
     if (
       !hasExactCanonicalNames(claims, new Set(), /^[0-9a-f]{64}\.json$/) ||
       !hasExactCanonicalNames(subjects, new Set(), /^[0-9a-f]{64}\.json$/)
@@ -1056,12 +1108,12 @@ export function readNpmPackageLifecycleStoreV1(root: string): NpmPackageLifecycl
   );
   if (
     !hasExactCanonicalNames(
-      canonicalStoreDirectoryNames(root, "claims"),
+      canonicalStoreDirectoryNames(root, "claims", MAX_EFFECTIVE_LIFECYCLE_HEADS),
       expectedBindings,
       /^[0-9a-f]{64}\.json$/,
     ) ||
     !hasExactCanonicalNames(
-      canonicalStoreDirectoryNames(root, "subjects"),
+      canonicalStoreDirectoryNames(root, "subjects", MAX_EFFECTIVE_LIFECYCLE_HEADS),
       expectedBindings,
       /^[0-9a-f]{64}\.json$/,
     )
@@ -1314,7 +1366,7 @@ function lifecycleActions(
   ];
   return {
     actions,
-    commitNotAfter: receipt.validUntil,
+    commitNotAfter: lifecycleCommitNotAfter(Date.parse(receipt.validUntil)),
     commitLock: subjectLockPath(lineage.subjectId, lineage.target),
     postcondition: {
       bindingPath: bindingParts.join("/"),
@@ -1496,15 +1548,13 @@ function revocationActions(
           ),
       staged(headParts.join("/"), headText, head, "advance revoked npm lifecycle subject head"),
     ],
-    commitNotAfter: new Date(
-      Math.min(
-        Date.parse(current.authorityExpiresAt),
-        Date.parse(current.decision.expiresAt),
-        current.decision.disposition === "accepted-with-conditions"
-          ? Date.parse(current.decision.reviewBy)
-          : Number.POSITIVE_INFINITY,
-      ),
-    ).toISOString(),
+    commitNotAfter: lifecycleCommitNotAfter(
+      Date.parse(current.authorityExpiresAt),
+      Date.parse(current.decision.expiresAt),
+      current.decision.disposition === "accepted-with-conditions"
+        ? Date.parse(current.decision.reviewBy)
+        : Number.POSITIVE_INFINITY,
+    ),
     commitLock: subjectLockPath(lineage.subjectId, lineage.target),
     postcondition: {
       bindingPath: bindingParts.join("/"),

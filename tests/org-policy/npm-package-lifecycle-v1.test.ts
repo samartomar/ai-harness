@@ -22,7 +22,10 @@ import { SUPPORTED_CLIS } from "../../src/internals/clis.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
-import { orgPolicyEffectiveCheck } from "../../src/org-policy/evaluate.js";
+import {
+  orgPolicyEffectiveCheck,
+  orgPolicyEffectiveDigest,
+} from "../../src/org-policy/evaluate.js";
 import {
   type GovernanceDecisionV2,
   governanceDecisionDigestV2,
@@ -36,14 +39,17 @@ import {
   readNpmPackageLifecycleStoreV1,
 } from "../../src/org-policy/npm-package-lifecycle-v1.js";
 import { observeNpmPackageV1 } from "../../src/org-policy/npm-package-observer-v1.js";
+import { verifiedOrgPolicyProjectionActions } from "../../src/org-policy/project.js";
 import {
   canonicalOrganizationEvidenceEnvelopeV1,
   organizationEvidenceEnvelopeDigestV1,
 } from "../../src/org-policy/qualification-v1.js";
+import { readOrgPolicy } from "../../src/org-policy/schema.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { buildProgram } from "../../src/program.js";
 
 const fsEvents = vi.hoisted(() => ({
+  directoryRead: undefined as ((path: string) => void) | undefined,
   failRecordRename: undefined as ((from: string, to: string) => boolean) | undefined,
 }));
 
@@ -54,6 +60,16 @@ vi.mock("node:fs", async (importOriginal) => {
     renameSync: (from: string, to: string) => {
       if (fsEvents.failRecordRename?.(from, to)) throw new Error("injected record rename failure");
       return original.renameSync(from, to);
+    },
+    opendirSync: (path: string) => {
+      const directory = original.opendirSync(path);
+      return {
+        closeSync: () => directory.closeSync(),
+        readSync: () => {
+          fsEvents.directoryRead?.(path);
+          return directory.readSync();
+        },
+      } as ReturnType<typeof original.opendirSync>;
     },
   };
 });
@@ -87,6 +103,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  fsEvents.directoryRead = undefined;
   fsEvents.failRecordRename = undefined;
   vi.useRealTimers();
   rmSync(root, { recursive: true, force: true });
@@ -231,7 +248,7 @@ function writeGovernedPolicy(): void {
   );
 }
 
-function context(apply = false, decision = fixture().decision): PlanContext {
+function context(apply = false, decision: GovernanceDecisionV2 = fixture().decision): PlanContext {
   const run = fakeRunner((argv) => (argv[0] === gh ? { code: 0 } : { code: 1 }));
   return {
     root,
@@ -413,6 +430,48 @@ describe("npm package lifecycle V1", () => {
     ]);
   });
 
+  it("keeps a 24-hour observation effective after 60 seconds, while stale history blocks evaluate but not projection", async () => {
+    const value = fixture();
+    writeFixture(value);
+    writeGovernedPolicy();
+    expect((await npmPackageLifecyclePlan(context(true, value.decision))).commitNotAfter).toBe(
+      "2026-08-02T12:01:00.000Z",
+    );
+    await run(context(true, value.decision));
+    const policy = readOrgPolicy(root, context(false).env);
+    if (policy === undefined) throw new Error("expected governed policy");
+
+    vi.advanceTimersByTime(61_000);
+    await expect(resolveNpmPackageEffectiveStateV1(context(false))).resolves.toEqual([
+      expect.objectContaining({ state: "observed-effective" }),
+    ]);
+    await expect(verifiedOrgPolicyProjectionActions(context(false), policy)).resolves.toBeDefined();
+
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000 - 61_000);
+    await expect(resolveNpmPackageEffectiveStateV1(context(false))).resolves.toEqual([
+      expect.objectContaining({ state: "stale", reason: "observation-stale" }),
+    ]);
+    await expect(orgPolicyEffectiveCheck(context(false))).resolves.toMatchObject({
+      code: "org-policy.effective-blocked",
+      verdict: "fail",
+    });
+    await expect(verifiedOrgPolicyProjectionActions(context(false), policy)).resolves.toBeDefined();
+  });
+
+  it("accepts a current multi-effect decision when its durable observation remains install-only", async () => {
+    const value = fixture();
+    const decision = {
+      ...value.decision,
+      allowedEffects: ["install", "use"],
+    } as GovernanceDecisionV2;
+    writeFixture({ ...value, decision: decision as typeof value.decision });
+    await run(context(true, decision));
+
+    await expect(resolveNpmPackageEffectiveStateV1(context(false))).resolves.toEqual([
+      expect.objectContaining({ state: "observed-effective" }),
+    ]);
+  });
+
   it("refuses a live subject-wide rejection and reports a current revocation distinctly", async () => {
     const value = fixture();
     writeFixture(value);
@@ -435,6 +494,30 @@ describe("npm package lifecycle V1", () => {
     expect(resolved).toEqual([
       expect.objectContaining({ state: "revoked", reason: "decision-revoked" }),
     ]);
+  });
+
+  it("bounds reporting lifecycle partition enumeration at the configured head cap", async () => {
+    const value = fixture();
+    writeFixture(value);
+    await run(context(true, value.decision));
+    const partitions = join(root, ".aih", "governance", "npm-package-lifecycle", "v1", "records");
+    let added = 0;
+    for (let value = 0; added < 256; value += 1) {
+      const name = `${value.toString(16).padStart(63, "0")}f`;
+      const candidate = join(partitions, name);
+      if (existsSync(candidate)) continue;
+      mkdirSync(candidate);
+      added += 1;
+    }
+    let reads = 0;
+    fsEvents.directoryRead = (path) => {
+      if (path === partitions) reads += 1;
+    };
+
+    expect(readNpmPackageLifecycleStoreV1(root)).toEqual({ kind: "corrupt" });
+    // The reader observes the 257th partition as the threshold breach without
+    // materializing the rest of a hostile directory.
+    expect(reads).toBe(257);
   });
 
   it("blocks policy evaluate when the durable lifecycle head is revoked", async () => {
@@ -461,6 +544,71 @@ describe("npm package lifecycle V1", () => {
       verdict: "fail",
     });
     expect(check.detail).toContain("decision-revoked");
+  });
+
+  it("refuses hostile durable lineage and decision identifiers before they can render", async () => {
+    const value = fixture();
+    writeFixture(value);
+    await run(context(true, value.decision));
+    writeAuthority(value.decision, [
+      {
+        format: "aih-governance-decision-revocation",
+        version: 2,
+        decisionDigest: governanceDecisionDigestV2(value.decision),
+        issuer: "platform-security",
+        revokedAt: "2026-08-01T00:00:00+00:00",
+        reason: "Critical upstream withdrawal.",
+      },
+    ]);
+    await run(context(true, value.decision));
+    const base = join(root, ".aih", "governance", "npm-package-lifecycle", "v1");
+    const headName = readdirSync(join(base, "heads")).find((name) => name.endsWith(".json"));
+    if (headName === undefined) throw new Error("expected lifecycle head");
+    const headPath = join(base, "heads", headName);
+    const head = JSON.parse(readFileSync(headPath, "utf8"));
+    const recordPath = recordFile(base, head.recordDigest);
+    const originalRecord = readFileSync(recordPath);
+    const originalHead = readFileSync(headPath);
+    const invalidLineage = [
+      (record: Record<string, unknown>) => {
+        (record.lineage as Record<string, unknown>).subjectId = "acme\n|forged";
+      },
+      (record: Record<string, unknown>) => {
+        (record.lineage as Record<string, unknown>).target = "unrecognized-cli";
+      },
+    ];
+    for (const mutate of invalidLineage) {
+      const record = JSON.parse(originalRecord.toString("utf8")) as Record<string, unknown>;
+      mutate(record);
+      const digest = lifecycleRecordDigest(record);
+      const substitutedPath = join(dirname(recordPath), `${digest.slice("sha256:".length)}.json`);
+      rmSync(recordPath);
+      writeFileSync(substitutedPath, canonicalStrictJsonBytesV1(record));
+      writeFileSync(headPath, canonicalStrictJsonBytesV1({ ...head, recordDigest: digest }));
+      const resolved = await resolveNpmPackageEffectiveStateV1(context(false));
+      expect(resolved).toEqual([{ state: "partial", reason: "lifecycle-store-corrupt" }]);
+      expect(JSON.stringify(resolved)).not.toContain("forged");
+      rmSync(substitutedPath);
+      writeFileSync(recordPath, originalRecord);
+      writeFileSync(headPath, originalHead);
+    }
+    const hostile = JSON.parse(originalRecord.toString("utf8")) as Record<string, unknown>;
+    (hostile.decision as Record<string, unknown>).id = `decision\n|${"x".repeat(80)}`;
+    const hostileDigest = lifecycleRecordDigest(hostile);
+    const hostilePath = join(dirname(recordPath), `${hostileDigest.slice("sha256:".length)}.json`);
+    writeFileSync(hostilePath, canonicalStrictJsonBytesV1(hostile));
+    rmSync(recordPath);
+    writeFileSync(headPath, canonicalStrictJsonBytesV1({ ...head, recordDigest: hostileDigest }));
+
+    const resolved = await resolveNpmPackageEffectiveStateV1(context(false));
+    expect(resolved).toEqual([{ state: "partial", reason: "lifecycle-store-corrupt" }]);
+    writeGovernedPolicy();
+    const check = await orgPolicyEffectiveCheck(context(false));
+    const report = await orgPolicyEffectiveDigest(context(false));
+    expect(JSON.stringify(check)).not.toContain("forged");
+    expect(JSON.stringify(resolved)).not.toContain("forged");
+    expect(report?.text).not.toContain("forged");
+    writeFileSync(headPath, originalHead);
   });
 
   it("refuses a current subject-wide rejection even when the recorded decision remains approved", async () => {

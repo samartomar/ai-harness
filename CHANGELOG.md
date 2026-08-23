@@ -12,11 +12,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   For a governance-owned target, `aih policy evaluate --verify` and the governed report path read
   only the fixed `.aih/governance/npm-package-lifecycle/v1/` store, validate each current head and
   its complete bounded history, and freshly verify the V3 authority receipt before classifying the
-  exact package/target lineage. Current exact observations are `observed-effective`; partial,
-  withheld/refused, revoked, stale, and drifted states remain distinct, non-effective, and blocking.
+  exact package/target lineage. Current exact observations are `observed-effective` for at most 24
+  hours and never beyond the authority, decision, or conditional-review deadline; partial,
+  withheld/refused, revoked, stale, and drifted states remain distinct, non-effective, and block
+  evaluation. Observation expiry alone does not freeze unrelated policy projection, while unsafe
+  custody, authority failure, rejection, revocation, and other lifecycle failures still block it.
   Missing or unsafe store custody, malformed or substituted heads/records/bindings, detached history,
   authority replacement, current rejection or revocation, decision/source/subject/target/effect
-  mismatch, and expired observations fail closed. The result is deterministic and read-only: it does
+  mismatch, and expired observations fail closed. Directory enumeration stops at the configured
+  head, partition, and lineage caps instead of first materializing an unbounded hostile directory.
+  The result is deterministic and read-only: it does
   not install, update, remove, configure, project, execute, or publish a package, and it does not make
   custom stdio or remote MCP candidates projectable. (#845)
 
@@ -31,7 +36,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   process-stop claim.
   The transaction pins all authorizing bytes, writes a durable subject-and-target lineage claim before
   the ordinary binding, uses a subject-scoped cooperative lifecycle-store lease, commits the immutable
-  record durably before its head, rechecks its deadline and filesystem custody during commit, and
+  record durably before its head, gives each prepared write no more than 60 seconds to commit,
+  rechecks that deadline and filesystem custody during commit, and
   re-reads the exact claim, binding, record, head, and bounded lineage before reporting success. The
   claim prevents ordinary binding loss from silently admitting a different lineage. A crashed lease is
   reclaimable after a bounded 30-second mutation window plus 30-second recovery grace; malformed or

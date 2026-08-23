@@ -126,10 +126,13 @@ For a governance-owned target, `aih policy evaluate --verify` and the governed r
 that fixed lifecycle store as observed state. They validate canonical heads, bindings, and complete
 bounded history, then freshly verify current V3 authority before classifying each exact npm
 package/target lineage as `observed-effective`, `partial`, `withheld`, `refused`, `revoked`, `stale`,
-or `drifted`. Every non-effective lifecycle state blocks policy evaluation and remains explicit in
-the report. This is read-only observation, not a package projector: it performs no install, update,
-removal, configuration, execution, or publication and does not make custom stdio or remote MCP
-candidates projectable.
+or `drifted`. The observation window is at most 24 hours and is shortened by the authority,
+decision, or conditional-review deadline. Every non-effective lifecycle state blocks policy
+evaluation and remains explicit in the report. Observation expiry alone does not freeze an unrelated
+policy projection; unsafe custody, authority failure, rejection, revocation, and other lifecycle
+failures still block projection. This is read-only observation, not a package projector: it performs
+no install, update, removal, configuration, execution, or publication and does not make custom stdio
+or remote MCP candidates projectable.
 
 <!-- aih:claim CM-86 -->
 For an `aih-supported`

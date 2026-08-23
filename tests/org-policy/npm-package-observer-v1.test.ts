@@ -504,7 +504,7 @@ describe("npm package upstream observer V1", () => {
         installed: { id: "npm-package", digest: installedDigest },
         verifier: { id: "npm-package-observer", version: "1.0.0", digest: verifierDigest },
         observedAt: "2026-08-02T12:00:00.000Z",
-        validUntil: "2026-08-02T12:01:00.000Z",
+        validUntil: "2026-08-03T12:00:00.000Z",
         outcome: "observed-success",
       }),
     );

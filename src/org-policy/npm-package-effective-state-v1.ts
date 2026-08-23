@@ -71,8 +71,7 @@ function matchesRecord(
     decision.subject.id === record.lineage.subjectId &&
     decision.subject.subjectDigest === record.subjectDigest &&
     decision.targets.includes(record.lineage.target as never) &&
-    decision.allowedEffects.length === 1 &&
-    decision.allowedEffects[0] === "install" &&
+    decision.allowedEffects.includes("install") &&
     (observation === undefined ||
       (observation.decision.id === record.decision.id &&
         observation.decision.digest === record.decision.digest &&
