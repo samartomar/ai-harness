@@ -196,6 +196,31 @@ function custodySlot(domain: string, value: unknown): string {
     .digest("hex");
 }
 
+function memberCustodySlot(value: {
+  catalogHeadDigest: string;
+  catalogMemberDigest: string;
+  subject: unknown;
+  target: string;
+  decisionId: string;
+  decisionDigest: string;
+  authorityReceiptDigest: string;
+  receiptDigest: string;
+  repository: string;
+  workflow: string;
+}): string {
+  return custodySlot("member", {
+    catalogHeadDigest: value.catalogHeadDigest,
+    catalogMemberDigest: value.catalogMemberDigest,
+    subject: value.subject,
+    target: value.target,
+    decision: { id: value.decisionId, digest: value.decisionDigest },
+    authorityReceiptDigest: value.authorityReceiptDigest,
+    receiptDigest: value.receiptDigest,
+    repository: value.repository,
+    workflow: value.workflow,
+  });
+}
+
 function custodyRecord(value: unknown): string {
   const bytes = canonicalStrictJsonBytesV1(value);
   if (bytes.byteLength > MAX_CUSTODY_RECORD_BYTES)
@@ -584,11 +609,17 @@ function hasCurrentHeadMember(
       const parsedMember = MemberRecordSchema.safeParse(record.value);
       if (!parsedMember.success)
         throw new AihError("supported custody state is invalid", "AIH_TRUST");
-      const memberSlot = custodySlot("member", {
+      const memberSlot = memberCustodySlot({
         catalogHeadDigest: parsedMember.data.catalogHeadDigest,
         catalogMemberDigest: parsedMember.data.catalogMemberDigest,
         subject: parsedMember.data.subject,
         target: parsedMember.data.target,
+        decisionId: parsedMember.data.decisionId,
+        decisionDigest: parsedMember.data.decisionDigest,
+        authorityReceiptDigest: parsedMember.data.authorityReceiptDigest,
+        receiptDigest: parsedMember.data.receiptDigest,
+        repository: parsedMember.data.repository,
+        workflow: parsedMember.data.workflow,
       });
       if (entry !== `${memberSlot}.json`)
         throw new AihError("supported custody state is invalid", "AIH_TRUST");
@@ -670,11 +701,17 @@ export function planSupportedCustodyAcceptV2(input: SupportedCustodyPlanInputV2)
   const continuity = receipt.catalogContinuity;
   const signerSlot = custodySlot("signer", basis.catalogSignerIdentity);
   const replaySlot = custodySlot("replay", continuity.replayIdentity);
-  const memberSlot = custodySlot("member", {
+  const memberSlot = memberCustodySlot({
     catalogHeadDigest: basis.catalogHeadDigest,
     catalogMemberDigest: basis.catalogMemberDigest,
     subject: receipt.subject,
     target: candidate.target,
+    decisionId: candidate.decision.id,
+    decisionDigest: candidate.decision.digest,
+    authorityReceiptDigest: candidate.authorityReceiptDigest,
+    receiptDigest: candidate.receiptDigest,
+    repository: candidate.repository,
+    workflow: candidate.workflow,
   });
 
   const records = [
@@ -1162,11 +1199,17 @@ export function inspectSupportedCustodyV2(input: {
         throw new AihError("supported custody state is invalid", "AIH_TRUST");
       const member = MemberRecordSchema.safeParse(record.value);
       if (!member.success) throw new AihError("supported custody state is invalid", "AIH_TRUST");
-      const slot = custodySlot("member", {
+      const slot = memberCustodySlot({
         catalogHeadDigest: member.data.catalogHeadDigest,
         catalogMemberDigest: member.data.catalogMemberDigest,
         subject: member.data.subject,
         target: member.data.target,
+        decisionId: member.data.decisionId,
+        decisionDigest: member.data.decisionDigest,
+        authorityReceiptDigest: member.data.authorityReceiptDigest,
+        receiptDigest: member.data.receiptDigest,
+        repository: member.data.repository,
+        workflow: member.data.workflow,
       });
       if (entry !== `${slot}.json`)
         throw new AihError("supported custody state is invalid", "AIH_TRUST");

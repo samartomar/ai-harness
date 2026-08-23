@@ -348,7 +348,7 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     const changedDecisionMember = changedDecision.actions.filter(
       (action): action is WriteAction => action.kind === "write",
     )[2];
-    expect(changedDecisionMember?.path).toBe(writes[2]?.path);
+    expect(changedDecisionMember?.path).not.toBe(writes[2]?.path);
     expect(changedDecisionMember?.contents).not.toBe(writes[2]?.contents);
     const rotatedReceipt = {
       ...receipt,
@@ -506,17 +506,19 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     }
   });
 
-  it("refuses decision and replay conflicts at the current head", async () => {
+  it("appends a renewed decision binding but refuses replay conflicts at the current head", async () => {
     const { root } = await applyGenesis();
     try {
-      await expect(
-        prepare(
-          root,
-          candidateFor(receipt, {
-            decision: { id: "decision-changed", digest: `sha256:${"8".repeat(64)}` },
-          }),
-        ),
-      ).rejects.toMatchObject({ code: "AIH_TRUST" });
+      const renewedDecision = await prepare(
+        root,
+        candidateFor(receipt, {
+          decision: { id: "decision-changed", digest: `sha256:${"8".repeat(64)}` },
+        }),
+      );
+      expect(mutatingWrites(renewedDecision)).toHaveLength(1);
+      expect(mutatingWrites(renewedDecision)[0]?.path).toMatch(
+        /^\.aih\/supported-qualification\/v2\/members\//,
+      );
       const replayConflict = {
         ...receipt,
         catalogContinuity: {
