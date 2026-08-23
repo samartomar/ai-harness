@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   openSync,
   readFileSync,
+  rmdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -29,7 +30,7 @@ import {
 
 const fsEvents = vi.hoisted(() => ({
   events: [] as string[],
-  afterTempWrite: undefined as (() => void) | undefined,
+  afterTempWrite: undefined as ((path: string) => void) | undefined,
 }));
 
 vi.mock("node:fs", async (importOriginal) => {
@@ -46,7 +47,7 @@ vi.mock("node:fs", async (importOriginal) => {
     },
     writeFileSync: (path: string, data: string | NodeJS.ArrayBufferView, options?: unknown) => {
       const result = original.writeFileSync(path, data, options as never);
-      if (path.endsWith(".aih.tmp")) fsEvents.afterTempWrite?.();
+      if (path.endsWith(".aih.tmp")) fsEvents.afterTempWrite?.(path);
       return result;
     },
   };
@@ -212,6 +213,60 @@ describe("FsTransaction", () => {
     expect(() => t.commit()).toThrow();
     expect(existsSync(lock)).toBe(false);
     expect(existsSync(join(dir, ".aih"))).toBe(false);
+  });
+
+  it("does not delete an outside victim when a created write parent is replaced before rollback", () => {
+    const parent = join(dir, "created");
+    const target = join(parent, "generated.txt");
+    const outside = mkdtempSync(join(tmpdir(), "aih-fsxn-outside-"));
+    const victim = join(outside, "generated.txt");
+    const blockingFile = join(dir, "blocking-file");
+    writeFileSync(victim, "generated");
+    writeFileSync(blockingFile, "not a directory");
+    const second = join(dir, "second.txt");
+    fsEvents.afterTempWrite = (tmpPath) => {
+      if (tmpPath !== `${second}.aih.tmp`) return;
+      rmSync(target);
+      rmdirSync(parent);
+      symlinkSync(outside, parent, "dir");
+    };
+    const t = new FsTransaction();
+    t.stage(target, "generated", undefined, undefined, { root: dir });
+    t.stage(second, "second", undefined, undefined, { root: dir });
+    t.stage(join(blockingFile, "child.txt"), "blocked", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow();
+    expect(readFileSync(victim, "utf8")).toBe("generated");
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("does not restore through an outside parent swapped before overwrite rollback", () => {
+    const parent = join(dir, "managed");
+    const target = join(parent, "config.txt");
+    const outside = mkdtempSync(join(tmpdir(), "aih-fsxn-outside-"));
+    const victim = join(outside, "config.txt");
+    const blockingFile = join(dir, "blocking-file");
+    mkdirSync(parent);
+    writeFileSync(target, "original");
+    writeFileSync(victim, "generated");
+    writeFileSync(join(outside, "config.txt.aih.bak"), "attacker backup");
+    writeFileSync(blockingFile, "not a directory");
+    const second = join(dir, "second.txt");
+    fsEvents.afterTempWrite = (tmpPath) => {
+      if (tmpPath !== `${second}.aih.tmp`) return;
+      rmSync(target);
+      rmSync(`${target}.aih.bak`);
+      rmdirSync(parent);
+      symlinkSync(outside, parent, "dir");
+    };
+    const t = new FsTransaction();
+    t.stage(target, "generated", undefined, undefined, { root: dir });
+    t.stage(second, "second", undefined, undefined, { root: dir });
+    t.stage(join(blockingFile, "child.txt"), "blocked", undefined, undefined, { root: dir });
+
+    expect(() => t.commit()).toThrow();
+    expect(readFileSync(victim, "utf8")).toBe("generated");
+    rmSync(outside, { recursive: true, force: true });
   });
 
   it("commit writes new files and backs up existing ones", () => {

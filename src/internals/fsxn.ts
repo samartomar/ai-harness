@@ -80,6 +80,7 @@ export interface AppliedWrite {
   contents: string;
   backup?: string;
   created: boolean;
+  parentGuard?: ParentGuard;
 }
 
 /** A file to remove by MOVING it to `legacyPath` (under gitignored `.aih/legacy/`). */
@@ -102,6 +103,8 @@ interface StagedRemoval {
 interface AppliedRemoval {
   path: string;
   legacyPath: string;
+  sourceParentGuard?: ParentGuard;
+  legacyParentGuard?: ParentGuard;
 }
 
 interface StagedAssertion {
@@ -114,6 +117,10 @@ interface StagedAssertion {
 interface DirectoryIdentity {
   dev: bigint;
   ino: bigint;
+}
+
+export interface ParentGuard {
+  directories: readonly ({ path: string } & DirectoryIdentity)[];
 }
 
 interface CommitLock {
@@ -263,6 +270,29 @@ export class FsTransaction {
       return;
     }
     this.guardParents(path, root, true);
+  }
+
+  private captureParentGuard(path: string, root: string | undefined): ParentGuard | undefined {
+    if (root === undefined) return undefined;
+    this.guardParents(path, root, false);
+    const base = resolve(root);
+    const parent = resolve(dirname(path));
+    const rel = relative(base, parent);
+    if (rel.startsWith("..") || isAbsolute(rel))
+      throw new FsTxnError("unsafe transaction parent path");
+    const directories: ({ path: string } & DirectoryIdentity)[] = [];
+    let current = base;
+    const add = (): void => {
+      const identity = this.guardedDirectories.get(current);
+      if (identity === undefined) throw new FsTxnError("unsafe transaction parent path");
+      directories.push({ path: current, ...identity });
+    };
+    add();
+    for (const part of rel.split(/[\\/]+/).filter((item) => item.length > 0)) {
+      current = resolve(current, part);
+      add();
+    }
+    return { directories };
   }
 
   private rollbackCreatedDirectories(): void {
@@ -443,7 +473,13 @@ export class FsTransaction {
           return renameSync(tmpPath, w.path);
         });
         this.guardParents(w.path, w.root, false);
-        applied.push({ path: w.path, contents: w.contents, backup, created: !existed });
+        applied.push({
+          path: w.path,
+          contents: w.contents,
+          backup,
+          created: !existed,
+          parentGuard: this.captureParentGuard(w.path, w.root),
+        });
         if (w.durable) this.syncDurableWrite(w.path, w.root);
       }
       // Removals commit AFTER writes so a partial failure rolls both back in order.
@@ -475,7 +511,12 @@ export class FsTransaction {
           this.assertCommitDeadline();
           return renameSync(r.path, dest);
         });
-        removed.push({ path: r.path, legacyPath: dest });
+        removed.push({
+          path: r.path,
+          legacyPath: dest,
+          sourceParentGuard: this.captureParentGuard(r.path, r.root),
+          legacyParentGuard: this.captureParentGuard(dest, r.root),
+        });
         if (r.expect !== undefined) {
           const moved = readRegularFile(dest);
           const actual =
@@ -582,14 +623,44 @@ function freeBackupDest(base: string): string {
 function rollbackRemovals(removed: AppliedRemoval[]): void {
   for (const r of [...removed].reverse()) {
     try {
-      if (existsSync(r.legacyPath) && !existsSync(r.path)) {
+      if (
+        parentGuardMatches(r.sourceParentGuard) &&
+        parentGuardMatches(r.legacyParentGuard) &&
+        existsSync(r.legacyPath) &&
+        !existsSync(r.path)
+      ) {
+        if (!parentGuardMatches(r.sourceParentGuard)) continue;
         mkdirSync(dirname(r.path), { recursive: true });
+        if (!parentGuardMatches(r.sourceParentGuard) || !parentGuardMatches(r.legacyParentGuard))
+          continue;
         renameSync(r.legacyPath, r.path);
       }
     } catch {
       // best-effort; rollback should never mask the original error
     }
   }
+}
+
+function parentGuardMatches(guard: ParentGuard | undefined): boolean {
+  if (guard === undefined) return true;
+  for (const directory of guard.directories) {
+    try {
+      const stats = lstatSync(directory.path, { bigint: true });
+      if (
+        !stats.isDirectory() ||
+        stats.isSymbolicLink() ||
+        stats.dev === 0n ||
+        stats.ino === 0n ||
+        stats.dev !== directory.dev ||
+        stats.ino !== directory.ino
+      ) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** Keep only the last staged write per target path (deterministic, insertion order). */
@@ -637,16 +708,26 @@ export function rollbackAppliedWrites(applied: AppliedWrite[]): string[] {
   const preserved: string[] = [];
   for (const a of [...applied].reverse()) {
     try {
+      if (!parentGuardMatches(a.parentGuard)) {
+        preserved.push(a.path);
+        continue;
+      }
       const info = lstatSafe(a.path);
       const current =
         info === undefined || info.isSymbolicLink() ? undefined : readFileSync(a.path, "utf8");
       if (a.created) {
-        if (current === a.contents) rmSync(a.path, { force: true });
-        else if (current !== undefined) preserved.push(a.path);
+        if (current === a.contents && parentGuardMatches(a.parentGuard)) {
+          rmSync(a.path, { force: true });
+        } else if (current === a.contents) {
+          preserved.push(a.path);
+        } else if (current !== undefined) preserved.push(a.path);
       } else if (a.backup && existsSync(a.backup)) {
-        if (current === a.contents) {
+        if (current === a.contents && parentGuardMatches(a.parentGuard)) {
           copyFileSync(a.backup, a.path);
-          rmSync(a.backup, { force: true });
+          if (parentGuardMatches(a.parentGuard)) rmSync(a.backup, { force: true });
+          else preserved.push(a.path);
+        } else if (current === a.contents) {
+          preserved.push(a.path);
         } else {
           preserved.push(a.path);
         }
