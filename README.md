@@ -100,11 +100,15 @@ installing or executing the package.
 check and can, only with `--apply`, append an immutable content-addressed observation record and
 advance its exact subject head under `.aih/governance/npm-package-lifecycle/v1/`. Preview is
 zero-write. A later exact version/integrity decision appends a bump instead of rewriting history;
-a current authenticated V3 revocation appends a revocation fact without claiming that npm removed
-or stopped the package. Missing installed evidence is `partial`; unsafe, changed, stale, rejected,
+a current authenticated V3 revocation can append a revocation fact but remains non-effective with a
+failing, nonzero result and never claims that npm removed or stopped the package. Missing installed
+evidence is `partial`; unsafe, changed, stale, rejected,
 revoked, mismatched, detectably rolled-back, forked, or detached store state refuses. Only the same
-prepared canonical bytes can reuse a crash orphan; a freshly timed command normally fails closed on
-it for operator incident reconciliation. A durable subject-and-target claim prevents loss of the
+prepared canonical bytes can reuse a completed-record crash orphan; a freshly timed command normally
+fails closed on it for operator incident reconciliation. An interrupted immutable-record rename may
+also leave its private `.aih.tmp` scratch. A retry consumes it only when its exact candidate bytes and
+single-link custody still match at the transaction boundary; mismatched, linked, or foreign scratch is
+preserved and refused. A durable subject-and-target claim prevents loss of the
 ordinary subject binding from silently admitting a different registry or integration lineage. Apply
 writers use a subject-scoped cooperative lease: a crashed owner becomes reclaimable after its bounded
 30-second mutation window and 30-second recovery grace, while malformed or foreign lock state blocks.

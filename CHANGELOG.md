@@ -14,7 +14,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   then appends one canonical content-addressed record and advances a subject head under the
   dedicated `.aih/governance/npm-package-lifecycle/v1/` store. Exact version/integrity changes keep
   one stable package/integration lineage while preserving prior records. A current authenticated V3
-  decision revocation appends a revocation record but makes no package-removal or process-stop claim.
+  decision revocation can append a revocation record only on an existing verified lineage, but remains
+  non-effective and produces a failing, nonzero verification result; it makes no package-removal or
+  process-stop claim.
   The transaction pins all authorizing bytes, writes a durable subject-and-target lineage claim before
   the ordinary binding, uses a subject-scoped cooperative lifecycle-store lease, commits the immutable
   record durably before its head, rechecks its deadline and filesystem custody during commit, and
@@ -24,10 +26,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   foreign lock state blocks, and the inert canonical anchor can remain. This coordinates local AIH
   writers rather than providing an operating-system or hostile-process isolation boundary. Corrupt,
   substituted, expired, detectably rolled-back, forked, linked, raced, over-capacity, or detached state
-  fails closed; refused apply attempts append no governance claim, record, or head, though an attempted
-  apply can leave the inert canonical lock metadata used for crash recovery. Only the same prepared
-  canonical bytes can reuse a crash orphan; a fresh
-  command is newly timed and normally fails closed for approved operator incident reconciliation
+  fails closed; refused apply attempts append no governance claim, record, or head, though an interrupted
+  apply can leave inert canonical lock metadata or the private scratch for its immutable record. Only
+  byte-identical canonical bytes at that exact scratch path, with single-link custody rechecked at the
+  transaction effect boundary, can be consumed by a retry; mismatched, linked, or foreign scratch fails
+  closed without cleanup. Only the same prepared canonical bytes can reuse a completed-record crash
+  orphan; a freshly timed command normally fails closed for approved operator incident reconciliation
   instead of deleting or silently adopting it. The command never installs, updates, removes,
   configures, executes, signs, or publishes a package, and remains limited to the
   organization-qualified root npm route. A target-local chain cannot detect a coordinated rollback

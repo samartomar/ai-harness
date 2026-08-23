@@ -1016,7 +1016,8 @@ the output of one prepared plan is deterministic. A separately authorized exact 
 change appends a bump on the stable package/integration lineage. A current
 authenticated V3 decision revocation can append a revocation record only for an already observed
 current head. That records governance state; it does not remove, stop, update, or configure the npm
-package.
+package. The durable append is reported truthfully, but revocation removes permission rather than
+establishing an effect, so verification and the command exit remain failing and nonzero.
 
 Apply re-verifies authority, evidence, installed custody, and observation before constructing the
 transaction, pins every authorizing file, refuses after the shortest applicable validity deadline,
@@ -1029,6 +1030,10 @@ substitution, a stale head whose canonical successor remains, forks, collisions,
 content races, capacity exhaustion, and detached post-commit state refuse without a successful
 lifecycle claim. A
 non-effective result remains nonzero; no lifecycle record can make a failed observation effective.
+If an interrupted immutable-record rename leaves its private `.aih.tmp` scratch, a retry may consume
+it only when the exact candidate bytes still match, the file has single-link custody, and the
+transaction rechecks that precondition before any related filesystem effect. Mismatched, linked,
+wrongly named, or otherwise foreign scratch is preserved and refused rather than cleaned up.
 If a hard process or machine failure leaves a record without its head, only the same prepared
 canonical bytes can be reused. A fresh command performs a newly timed observation and therefore
 normally sees that orphan as an ambiguous fork; it fails closed for approved operator incident

@@ -110,7 +110,8 @@ before appending an immutable record under `.aih/governance/npm-package-lifecycl
 authorized exact decision/evidence set for a version or integrity bump; the prior record remains in
 the stable package/integration lineage. When the current V3 authority revokes the decision, the
 same command appends that revocation only for the verified current lineage. This is an audit fact,
-not a claim that npm removed or stopped the package. Refused, expired, corrupt, detectably
+not a claim that npm removed or stopped the package. The record append is durable evidence, but the
+revoked result remains non-effective, failing, and nonzero. Refused, expired, corrupt, detectably
 rolled-back, forked, raced, linked, or detached state cannot produce a successful apply result.
 A durable subject-and-target claim prevents loss of the ordinary subject binding from silently
 admitting a different registry or integration lineage. AIH serializes these local writers with a
@@ -118,6 +119,11 @@ subject-scoped cooperative lease: a crashed owner is reclaimable after its bound
 window and 30-second recovery grace, while malformed or foreign lock state blocks. The inert lock
 anchor can remain in the lifecycle store. This is local AIH writer coordination, not an
 operating-system lock or protection from another process that can rewrite the store.
+
+A failed immutable-record rename can leave the exact private `.aih.tmp` scratch. AIH consumes that
+scratch on retry only when its canonical candidate bytes and single-link custody still match at the
+transaction boundary. It preserves and refuses mismatched, linked, wrongly named, or foreign scratch
+instead of treating untrusted state as cleanup input.
 
 A hard process or machine failure can leave an immutable record before its head advances. Only the
 same prepared canonical bytes can be reused; a fresh command performs a newly timed observation and
