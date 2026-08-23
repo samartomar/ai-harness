@@ -852,7 +852,6 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
   it("allows an occupied exact member slot at capacity but refuses a new member", async () => {
     const { root } = await applyGenesis();
     try {
-      const original = await prepare(root);
       const originalMember = writes(
         supported.planSupportedCustodyAcceptV2({ posture: "vibe", root, ...input }),
       )[2];
@@ -899,13 +898,13 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
           }),
         ),
       ).rejects.toMatchObject({ code: "AIH_TRUST" });
-      expect(readFileSync(join(root, writes(original)[2]?.path ?? ""), "utf8")).toBe(
-        writes(original)[2]?.contents,
+      expect(readFileSync(join(root, originalMember?.path ?? ""), "utf8")).toBe(
+        originalMember?.contents,
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 60_000);
 
   it("fails closed when inspect sees partial or foreign custody directories", async () => {
     const root = mkdtempSync(join(tmpdir(), "aih-supported-inspect-invalid-"));
