@@ -1341,6 +1341,37 @@ describe("AihSupportedQualificationReceiptV2", () => {
     ).resolves.toMatchObject({ problem: expect.any(String) });
   });
 
+  it("rejects whitespace-padded support roots before invoking GitHub", async () => {
+    const value = decision();
+    const verifiedAuthority = await authority(value);
+    writeReceipt(receipt(value));
+    const input = {
+      authority: verifiedAuthority,
+      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      subject: value.subject,
+      target: "claude" as const,
+      effect: "configure" as const,
+      supportedTargets: ["claude"],
+      now: "2026-08-02T12:00:00Z",
+    };
+    for (const env of [
+      { AIH_SUPPORTED_QUALIFICATION_REPOSITORY: " aihq/supported-catalog" },
+      { AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml " },
+    ]) {
+      const calls: string[][] = [];
+      await expect(
+        verifyAihSupportedQualificationReceiptV2(
+          context((argv) => {
+            calls.push(argv);
+            return { code: 0 };
+          }, env),
+          input,
+        ),
+      ).resolves.toMatchObject({ problem: expect.any(String) });
+      expect(calls).toEqual([]);
+    }
+  });
+
   it("fails if the externally invoked verifier mutates its exact private receipt copy", async () => {
     const value = decision();
     const verifiedAuthority = await authority(value);
