@@ -263,6 +263,20 @@ describe("OrganizationEvidenceEnvelopeV1", () => {
         ...valid,
         evidence: {
           ...valid.evidence,
+          artifactDigests: [`sha256:${"2".repeat(64)}`, `sha256:${"2".repeat(64)}`],
+        },
+      }),
+      canonicalBytes({
+        ...valid,
+        evidence: {
+          ...valid.evidence,
+          artifactDigests: [`sha256:${"3".repeat(64)}`, `sha256:${"2".repeat(64)}`],
+        },
+      }),
+      canonicalBytes({
+        ...valid,
+        evidence: {
+          ...valid.evidence,
           artifactDigests: Array.from(
             { length: 17 },
             (_, index) => `sha256:${index.toString(16).padStart(64, "0")}`,
@@ -333,6 +347,17 @@ describe("OrganizationEvidenceEnvelopeV1", () => {
     for (const changed of [
       { ...evidence, attestor: "other-attestor" },
       { ...evidence, evidence: { ...evidence.evidence, id: "other-evidence" } },
+      {
+        ...evidence,
+        evidence: { ...evidence.evidence, payloadDigest: `sha256:${"3".repeat(64)}` },
+      },
+      {
+        ...evidence,
+        evidence: {
+          ...evidence.evidence,
+          artifactDigests: [`sha256:${"4".repeat(64)}`],
+        },
+      },
       { ...evidence, subjectDigest: `sha256:${"0".repeat(64)}` },
       { ...evidence, expiresAt: "2026-08-02T12:00:00+00:00" },
     ]) {
@@ -340,6 +365,47 @@ describe("OrganizationEvidenceEnvelopeV1", () => {
         verifyOrganizationQualificationV1({ ...input, bytes: canonicalBytes(changed) }),
       ).toBeUndefined();
     }
+    for (const changed of [
+      { target: "codex" },
+      { effect: "use" as const },
+      { supportedTargets: ["codex"] },
+    ]) {
+      expect(verifyOrganizationQualificationV1({ ...input, ...changed })).toBeUndefined();
+    }
+  });
+
+  it("accepts a bounded organization-defined evidence kind without a Core allowlist", async () => {
+    const base = decision();
+    const customEvidence = envelope(base, {
+      evidence: { ...envelope(base).evidence, kind: "vendor-posture-report" },
+    });
+    const evidenceDigest = organizationEvidenceEnvelopeDigestV1(customEvidence as never);
+    const value = decision({
+      qualificationBasis: {
+        kind: "organization-qualified",
+        evidenceDigest,
+        attestor: customEvidence.attestor,
+      },
+      evidence: {
+        id: customEvidence.evidence.id,
+        digest: evidenceDigest,
+        attestor: customEvidence.attestor,
+      },
+    });
+    const verifiedAuthority = await authority(value);
+
+    expect(
+      verifyOrganizationQualificationV1({
+        authority: verifiedAuthority,
+        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+        bytes: canonicalBytes(customEvidence),
+        subject: value.subject,
+        target: "claude",
+        effect: "configure",
+        supportedTargets: ["claude"],
+        now: "2026-08-02T12:00:00+00:00",
+      }),
+    ).toBeDefined();
   });
 
   it("requires the opaque organization qualification before an observed effect and never performs it", async () => {
