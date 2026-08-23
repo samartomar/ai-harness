@@ -296,9 +296,6 @@ export function resolveObservedEffect(
   ) {
     return { state: "qualification-mismatch", decisionDigest };
   }
-  if (input.qualification === undefined && decision.qualificationBasis.kind === "aih-supported") {
-    return { state: "qualification-mismatch", decisionDigest };
-  }
   if (input.qualification === undefined) {
     return { state: "qualification-missing", decisionDigest };
   }
