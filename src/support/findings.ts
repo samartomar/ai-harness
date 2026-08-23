@@ -76,11 +76,11 @@ const NO_CODE_CHANGES = "No project code changes are required.";
 const OBSERVE_PLATFORM: Omit<CodeMeta, "title"> = {
   audience: "dev-platform",
   failSeverity: "blocking",
-  affectedArea: "organization policy authority / npm observation service",
+  affectedArea: "organization policy authority / npm observation boundary",
   evidence:
     "The sealed npm installation observation could not establish a current policy-authorized result for the exact installed package.",
   action:
-    "Please investigate the current V3 authority receipt, referenced decision, qualification, and observation service boundary. Preserve rejected and revoked decisions as closed outcomes; issue a separately reviewed successor when policy must change.",
+    "Please investigate the current V3 authority receipt, referenced decision, qualification, and CLI observer boundary. Preserve rejected and revoked decisions as closed outcomes; issue a separately reviewed successor when policy must change.",
   acceptance: [
     "The current authority, decision, qualification, and exact observation state are internally consistent, or the operation remains closed.",
     NO_CODE_CHANGES,

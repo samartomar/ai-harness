@@ -470,6 +470,51 @@ describe("npm package upstream observer V1", () => {
     expect(existsSync(join(root, ".aih", "run-log.jsonl"))).toBe(false);
   });
 
+  it("emits a deterministic scrubbed zero-write partial JSON result", async () => {
+    const value = fixture();
+    writeAuthority(value.decision);
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    const argv = [
+      "--json",
+      "--root",
+      root,
+      "--decision",
+      value.decision.id,
+      "--decision-digest",
+      governanceDecisionDigestV2(value.decision as never),
+      "--target",
+      "claude",
+      "--evidence",
+      "evidence.json",
+    ];
+    const invoke = async () => {
+      let out = "";
+      const code = await runCapability(npmPackageObserveCommand, command(argv), {
+        env: {
+          AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance",
+          PATH: bin,
+          SECRET: "do-not-leak",
+        },
+        run: fakeRunner((child) => (child[0] === gh ? { code: 0 } : { code: 1 })),
+        now: () => new Date("2026-08-02T12:00:00.000Z"),
+        newRunId: () => "run_observer",
+        write: (text) => {
+          out += text;
+        },
+      });
+      return { code, out };
+    };
+    const first = await invoke();
+    const second = await invoke();
+    expect(first.code).toBe(1);
+    expect(second).toEqual(first);
+    expect(first.out).not.toContain(root);
+    expect(first.out).not.toContain(gh);
+    expect(first.out).not.toContain("do-not-leak");
+    expect(JSON.parse(first.out)).toMatchObject({ writes: [], execs: [] });
+    expect(existsSync(join(root, ".aih", "run-log.jsonl"))).toBe(false);
+  });
+
   it("evaluates the observer plan once when its digest and probe are both consumed", async () => {
     const value = fixture();
     writeAuthority(value.decision);
@@ -495,6 +540,27 @@ describe("npm package upstream observer V1", () => {
     await probe.run(ctx);
 
     expect(calls).toHaveLength(1);
+  });
+
+  it("keeps observer authority out of the public package and CLI option surface", () => {
+    const publicIndex = readFileSync(join(process.cwd(), "src", "index.ts"), "utf8");
+    for (const forbidden of ["npm-package-observer", "observeNpmPackage", "InternalTestHook"]) {
+      expect(publicIndex).not.toContain(forbidden);
+    }
+    const flags = npmPackageObserveCommand.options?.map((option) => option.flags).join(" ") ?? "";
+    for (const forbidden of [
+      "package",
+      "effect",
+      "observer",
+      "verifier",
+      "config",
+      "runner",
+      "clock",
+      "receipt",
+      "callback",
+    ]) {
+      expect(flags).not.toContain(`--${forbidden}`);
+    }
   });
 
   it("refuses lock or manifest identity disagreement without another process", async () => {
