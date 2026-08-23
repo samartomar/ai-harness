@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { WriteAction } from "../../src/internals/plan.js";
@@ -849,29 +849,59 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     }
   });
 
-  it("reports bounded, scrubbed current-head members without write actions and never accepts caller receipt or verifier controls", () => {
+  it("registers real supported accept and scrubbed read-only inspect commands", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-supported-inspect-"));
+    const priorExitCode = process.exitCode;
+    const output: string[] = [];
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation((chunk: string | Uint8Array) => {
+        output.push(String(chunk));
+        return true;
+      });
     const program = buildProgram();
     const policy = program.commands.find((command) => command.name() === "policy");
     const command = policy?.commands.find((candidate) => candidate.name() === "supported");
     expect(command?.commands.map((candidate) => candidate.name())).toEqual(["accept", "inspect"]);
+    const accept = command?.commands.find((candidate) => candidate.name() === "accept");
+    const acceptFlags = accept?.options.map((option) => option.long) ?? [];
+    for (const flag of ["--decision", "--decision-digest", "--target", "--apply"])
+      expect(acceptFlags).toContain(flag);
+    for (const forbidden of ["--receipt", "--verifier", "--clock", "--continuity", "--store-root"])
+      expect(acceptFlags).not.toContain(forbidden);
     expect(
-      command?.commands
-        .find((candidate) => candidate.name() === "accept")
-        ?.options.map((option) => option.long),
-    ).toEqual(["--decision", "--decision-digest", "--target"]);
-    expect(command?.commands.find((candidate) => candidate.name() === "inspect")?.options).toEqual(
-      [],
-    );
-    const inspect = (
-      supported as unknown as {
-        inspectSupportedCustodyV2(input: unknown): unknown;
-      }
-    ).inspectSupportedCustodyV2;
-    const report = inspect({
-      posture: "vibe",
-      root: "/disposable",
-      limit: 1,
-    });
-    expect(report).toMatchObject({ writes: [], deterministic: true, scrubbed: true, limit: 1 });
+      command?.commands.find((candidate) => candidate.name() === "inspect")?.options,
+    ).not.toContain(expect.objectContaining({ long: "--apply" }));
+    try {
+      program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+      await expect(
+        program.parseAsync([
+          "node",
+          "aih",
+          "policy",
+          "supported",
+          "inspect",
+          "--root",
+          root,
+          "--json",
+          "--no-log",
+        ]),
+      ).resolves.toBeDefined();
+      expect(process.exitCode).toBe(0);
+      expect(JSON.parse(output.join(""))).toMatchObject({
+        capability: "policy-supported-custody-inspect-v2",
+        writes: [],
+        digests: [
+          {
+            data: { deterministic: true, scrubbed: true, limit: 4096, members: [] },
+          },
+        ],
+      });
+      expect(output.join("")).not.toContain(root);
+    } finally {
+      write.mockRestore();
+      process.exitCode = priorExitCode;
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
