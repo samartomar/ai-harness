@@ -61,12 +61,16 @@ function isCanonicalUtcSecond(value: string): boolean {
     second > 59
   )
     return false;
-  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  return (
-    day <= days &&
-    new Date(Date.UTC(year, month - 1, day, hour, minute, second)).toISOString() ===
-      value.replace("Z", ".000Z")
-  );
+  const isLeapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days =
+    month === 2
+      ? isLeapYear
+        ? 29
+        : 28
+      : month === 4 || month === 6 || month === 9 || month === 11
+        ? 30
+        : 31;
+  return day <= days;
 }
 const canonicalTimestamp = z
   .string()
