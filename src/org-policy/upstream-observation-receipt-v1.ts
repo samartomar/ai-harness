@@ -204,7 +204,7 @@ export interface ObservedEffectResolutionInput {
   /** Only an opaque externally verified V3 authority can supply the decision. */
   authority?: unknown;
   decisionReference?: { id: string; digest: string };
-  /** Current organization-qualified capability; raw evidence cannot stand in for it. */
+  /** Current externally verified qualification capability; raw evidence cannot stand in for it. */
   qualification?: unknown;
   observation?: unknown;
   subject: Pick<GovernanceDecisionV2["subject"], "kind" | "id" | "sourceDigest" | "subjectDigest">;
@@ -290,7 +290,13 @@ export function resolveObservedEffect(
   ) {
     return { state: "decision-scope-mismatch", decisionDigest };
   }
-  if (decision.qualificationBasis.kind !== "organization-qualified") {
+  if (
+    decision.qualificationBasis.kind !== "organization-qualified" &&
+    decision.qualificationBasis.kind !== "aih-supported"
+  ) {
+    return { state: "qualification-mismatch", decisionDigest };
+  }
+  if (input.qualification === undefined && decision.qualificationBasis.kind === "aih-supported") {
     return { state: "qualification-mismatch", decisionDigest };
   }
   if (input.qualification === undefined) {
@@ -306,7 +312,7 @@ export function resolveObservedEffect(
       effect: input.effect,
       now: input.now,
       qualification: input.qualification,
-      qualificationKind: "organization-qualified",
+      qualificationKind: decision.qualificationBasis.kind,
       subjectDigest: decision.subject.subjectDigest,
       target: input.target,
     })

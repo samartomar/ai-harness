@@ -21,7 +21,7 @@ describe("committed JSON Schemas", () => {
     expect(validate(value)).toBe(false);
   }
 
-  it("emits editor schemas for config, governed policy, authority receipt, decision, observation, organization evidence, and package graph", () => {
+  it("emits editor schemas for config, governed policy, authority receipt, decision, observation, qualification evidence, and package graph", () => {
     const schemas = generatedConfigSchemas();
 
     expect(schemas.map((schema) => schema.path)).toEqual([
@@ -31,6 +31,7 @@ describe("committed JSON Schemas", () => {
       "schemas/aih-governance-decision-v2.schema.json",
       "schemas/aih-upstream-observation-receipt-v1.schema.json",
       "schemas/aih-organization-evidence-envelope-v1.schema.json",
+      "schemas/aih-supported-qualification-receipt-v1.schema.json",
       "schemas/aih-package-graph.schema.json",
       "schemas/aih-capability-package-manifest.schema.json",
     ]);
@@ -66,11 +67,16 @@ describe("committed JSON Schemas", () => {
     });
     expect(schemas[6]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
+      title: "aih-supported-qualification-receipt-v1.schema.json",
+      type: "object",
+    });
+    expect(schemas[7]?.schema).toMatchObject({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
       $comment: expect.stringContaining("PackageGraphSchema.parse"),
       title: "aih-package-graph.schema.json",
       type: "object",
     });
-    expect(schemas[7]?.schema).toMatchObject({
+    expect(schemas[8]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $comment: expect.stringContaining("CapabilityPackageManifestSchema.parse"),
       title: "aih-capability-package-manifest.schema.json",

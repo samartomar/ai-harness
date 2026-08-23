@@ -8,6 +8,7 @@ import {
   enterpriseSupportedClisJsonSchemaConstraint,
   OrgPolicySchema,
 } from "../org-policy/schema.js";
+import { AihSupportedQualificationReceiptV1Schema } from "../org-policy/supported-qualification-receipt-v1.js";
 import { UpstreamObservationReceiptV1Schema } from "../org-policy/upstream-observation-receipt-v1.js";
 import { AihConfigSchema } from "./marker.js";
 
@@ -53,6 +54,13 @@ export function generatedConfigSchemas(): GeneratedConfigSchema[] {
       schema: schemaFor(
         "aih-organization-evidence-envelope-v1.schema.json",
         OrganizationEvidenceEnvelopeV1Schema,
+      ),
+    },
+    {
+      path: "schemas/aih-supported-qualification-receipt-v1.schema.json",
+      schema: schemaFor(
+        "aih-supported-qualification-receipt-v1.schema.json",
+        AihSupportedQualificationReceiptV1Schema,
       ),
     },
     {

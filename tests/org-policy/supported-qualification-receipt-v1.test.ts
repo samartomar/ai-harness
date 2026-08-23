@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -6,8 +14,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import {
-  verifyPolicyAuthorityReceipt,
   type VerifiedPolicyAuthority,
+  verifyPolicyAuthorityReceipt,
 } from "../../src/org-policy/authority.js";
 import {
   governanceDecisionDigestV2,
@@ -15,12 +23,12 @@ import {
   governanceDecisionSubjectDigestV2,
 } from "../../src/org-policy/governance-decision-v2.js";
 import {
+  AihSupportedQualificationReceiptV1Schema,
   canonicalAihSupportedQualificationReceiptV1,
   MAX_AIH_SUPPORTED_QUALIFICATION_RECEIPT_BYTES_V1,
   parseAihSupportedQualificationReceiptV1Bytes,
   supportedQualificationReceiptDigestV1,
   verifyAihSupportedQualificationReceiptV1,
-  AihSupportedQualificationReceiptV1Schema,
 } from "../../src/org-policy/supported-qualification-receipt-v1.js";
 import {
   resolveObservedEffect,
@@ -241,7 +249,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
   it("ships a strict schema", () => {
     const schema = JSON.parse(
       // The committed schema test pins byte-for-byte generated output; this checks consumer validity.
-      require("node:fs").readFileSync(
+      readFileSync(
         join(process.cwd(), "schemas/aih-supported-qualification-receipt-v1.schema.json"),
         "utf8",
       ),
@@ -286,6 +294,86 @@ describe("AihSupportedQualificationReceiptV1", () => {
       "--signer-workflow",
       "qualification.yml",
     ]);
+  });
+
+  it("selects only an external native gh and never the governed checkout binary", async () => {
+    const value = decision();
+    const verifiedAuthority = await authority(value);
+    writeReceipt(receipt(value));
+    const localGh = join(dir, process.platform === "win32" ? "gh.exe" : "gh");
+    writeFileSync(localGh, "untrusted local gh fixture\n", { mode: 0o755 });
+    const calls: string[][] = [];
+    const result = await verifyAihSupportedQualificationReceiptV1(
+      context(
+        (argv) => {
+          calls.push(argv);
+          return { code: argv[0] === trustedSupportedGh ? 0 : 1 };
+        },
+        { PATH: `${dir}${process.platform === "win32" ? ";" : ":"}${supportedBin}` },
+      ),
+      {
+        authority: verifiedAuthority,
+        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+        subject: value.subject,
+        target: "claude",
+        effect: "configure",
+        supportedTargets: ["claude"],
+        now: "2026-08-02T12:00:00+00:00",
+      },
+    );
+    expect(result.qualification).toBeDefined();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[0]).toBe(trustedSupportedGh);
+  });
+
+  it("allows support provenance to predate a current decision while capping the token at receipt expiry", async () => {
+    const value = decision();
+    const verifiedAuthority = await authority(value);
+    writeReceipt(
+      receipt(value, {
+        issuedAt: "2026-07-25T00:00:00+00:00",
+        notBefore: "2026-08-01T00:00:00+00:00",
+        expiresAt: "2026-08-02T13:00:00+00:00",
+      }),
+    );
+    const input = {
+      authority: verifiedAuthority,
+      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      subject: value.subject,
+      target: "claude" as const,
+      effect: "configure" as const,
+      supportedTargets: ["claude"],
+      now: "2026-08-02T12:00:00+00:00",
+    };
+    const result = await verifyAihSupportedQualificationReceiptV1(
+      context((argv) => ({ code: argv[0] === trustedSupportedGh ? 0 : 1 })),
+      input,
+    );
+    expect(result.qualification).toBeDefined();
+    const currentObservation = observation(value);
+    const verifiedObservation = verifyUpstreamObservationV1({
+      receipt: currentObservation,
+      expectedVerifier: currentObservation.verifier,
+      expectedInstalled: currentObservation.installed,
+      expectedIntegration: currentObservation.integration,
+      subject: value.subject,
+      target: "claude",
+      effect: "configure",
+      supportedTargets: ["claude"],
+      now: input.now,
+      verify: () => true,
+    });
+    expect(
+      resolveObservedEffect({
+        ...input,
+        qualification: result.qualification,
+        observation: verifiedObservation,
+        expectedVerifier: currentObservation.verifier,
+        expectedInstalled: currentObservation.installed,
+        expectedIntegration: currentObservation.integration,
+        now: "2026-08-02T13:00:00+00:00",
+      }),
+    ).toMatchObject({ state: "qualification-mismatch" });
   });
 
   it("fails closed for roots, custody, attestation, receipt, and binding substitutions", async () => {
@@ -443,6 +531,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
       join(outside, "aih-supported-qualification-receipt.json"),
       canonicalBytes(receipt(value)),
     );
+    rmSync(join(dir, ".aih"), { recursive: true, force: true });
     symlinkSync(outside, join(dir, ".aih"), process.platform === "win32" ? "junction" : "dir");
     const calls: string[][] = [];
     const result = await verifyAihSupportedQualificationReceiptV1(
@@ -461,6 +550,34 @@ describe("AihSupportedQualificationReceiptV1", () => {
       },
     );
     expect(result.problem).toMatch(/symlinked parent/);
+    expect(calls).toEqual([]);
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("rejects a symlinked receipt file before it can reach the verifier", async () => {
+    const value = decision();
+    const verifiedAuthority = await authority(value);
+    const outside = mkdtempSync(join(tmpdir(), "aih-supported-receipt-file-"));
+    const outsideReceipt = join(outside, "receipt.json");
+    writeFileSync(outsideReceipt, canonicalBytes(receipt(value)));
+    symlinkSync(outsideReceipt, join(dir, ".aih", "aih-supported-qualification-receipt.json"));
+    const calls: string[][] = [];
+    const result = await verifyAihSupportedQualificationReceiptV1(
+      context((argv) => {
+        calls.push(argv);
+        return { code: 0 };
+      }),
+      {
+        authority: verifiedAuthority,
+        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+        subject: value.subject,
+        target: "claude",
+        effect: "configure",
+        supportedTargets: ["claude"],
+        now: "2026-08-02T12:00:00+00:00",
+      },
+    );
+    expect(result.problem).toMatch(/unsafe symlink/);
     expect(calls).toEqual([]);
     rmSync(outside, { recursive: true, force: true });
   });
