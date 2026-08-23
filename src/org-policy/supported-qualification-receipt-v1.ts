@@ -1,20 +1,28 @@
-import { lstatSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { z } from "zod";
 import { readRegularFile } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
+import { defaultRunner } from "../internals/proc.js";
 import { findOnPath } from "../live/runner.js";
-import { isVerifiedPolicyAuthority, type VerifiedPolicyAuthority } from "./authority.js";
+import { makeHostAdapter } from "../platform/detect.js";
+import {
+  isVerifiedPolicyAuthority,
+  type VerifiedPolicyAuthority,
+  verifyPolicyAuthorityReceipt,
+} from "./authority.js";
 import { GovernanceDecisionTimestampSchema } from "./governance-decision-v1.js";
 import {
   type GovernanceDecisionEffectV2Schema,
   GovernanceDecisionSubjectV2Schema,
   type GovernanceDecisionV2,
+  governanceDecisionDigestV2,
   governanceDecisionSourceDigestV2,
   governanceDecisionSubjectDigestV2,
 } from "./governance-decision-v2.js";
 import {
+  matchesAihSupportedQualificationBindingV1,
   mintAihSupportedQualificationV1,
   type VerifiedQualificationV1,
 } from "./qualification-v1.js";
@@ -161,6 +169,33 @@ export interface AihSupportedQualificationVerificationV1 {
   problem?: string;
 }
 
+const AihSupportedQualificationArtifactVerificationInputV1Schema = z
+  .object({
+    root: z.string().min(1),
+    decisionReference: z.object({ id: z.string().min(1).max(256), digest }).strict(),
+    subject: GovernanceDecisionSubjectV2Schema,
+  })
+  .strict();
+
+export interface VerifyAihSupportedQualificationArtifactV1Input {
+  root: string;
+  decisionReference: { id: string; digest: string };
+  subject: GovernanceDecisionV2["subject"];
+}
+
+/** Inert public verdict: never carries authority, capabilities, or verifier detail. */
+export interface AihSupportedQualificationArtifactVerificationV1 {
+  state: "verified" | "unverified";
+  problem?: "AIH-supported qualification artifact could not be verified";
+}
+
+function unverifiedArtifact(): AihSupportedQualificationArtifactVerificationV1 {
+  return {
+    state: "unverified",
+    problem: "AIH-supported qualification artifact could not be verified",
+  };
+}
+
 function configuredSupportRoot(
   ctx: PlanContext,
   authority: VerifiedPolicyAuthority | undefined,
@@ -206,20 +241,11 @@ function receiptHasSymlinkParent(root: string): boolean {
   return false;
 }
 
-/**
- * Verify the fixed support receipt against a dedicated external GitHub root,
- * then mint the same process-local qualification capability used by the V3
- * organization path. This only observes receipt bytes and runs `gh`; it never
- * evaluates candidate code, configures a host, or inspects Catalog V2 crypto.
- */
-export async function verifyAihSupportedQualificationReceiptV1(
+async function verifyAihSupportedQualificationReceiptArtifact(
   ctx: PlanContext,
-  input: VerifyAihSupportedQualificationReceiptV1Input,
-): Promise<AihSupportedQualificationVerificationV1> {
-  const verifiedAuthority = isVerifiedPolicyAuthority(input.authority)
-    ? input.authority
-    : undefined;
-  const supportRoot = configuredSupportRoot(ctx, verifiedAuthority);
+  authority: VerifiedPolicyAuthority | undefined,
+): Promise<{ receipt?: AihSupportedQualificationReceiptV1; problem?: string }> {
+  const supportRoot = configuredSupportRoot(ctx, authority);
   if (supportRoot === undefined) {
     return {
       problem:
@@ -299,8 +325,151 @@ export async function verifyAihSupportedQualificationReceiptV1(
 
   const receipt =
     copied === undefined ? undefined : parseAihSupportedQualificationReceiptV1Bytes(copied);
-  if (receipt === undefined) return { problem: "supported qualification receipt is malformed" };
-  const qualification = mintAihSupportedQualificationV1({ ...input, receipt });
+  return receipt === undefined
+    ? { problem: "supported qualification receipt is malformed" }
+    : { receipt };
+}
+
+function currentAihSupportedArtifactDecision(
+  authority: VerifiedPolicyAuthority,
+  input: z.infer<typeof AihSupportedQualificationArtifactVerificationInputV1Schema>,
+  now: string,
+): GovernanceDecisionV2 | undefined {
+  const authorityReceipt = authority.receipt;
+  const at = Date.parse(now);
+  if (
+    authorityReceipt.version !== 3 ||
+    !Number.isFinite(at) ||
+    at < Date.parse(authorityReceipt.issuedAt) ||
+    at >= Date.parse(authorityReceipt.expiresAt)
+  ) {
+    return undefined;
+  }
+  const decision = authorityReceipt.decisions.find(
+    (candidate) =>
+      candidate.id === input.decisionReference.id &&
+      governanceDecisionDigestV2(candidate) === input.decisionReference.digest,
+  );
+  if (
+    decision === undefined ||
+    decision.disposition === "rejected" ||
+    decision.qualificationBasis.kind !== "aih-supported" ||
+    at < Date.parse(decision.issuedAt) ||
+    at < Date.parse(decision.notBefore) ||
+    at >= Date.parse(decision.expiresAt) ||
+    (decision.disposition === "accepted-with-conditions" && at >= Date.parse(decision.reviewBy)) ||
+    authorityReceipt.decisionRevocations.some(
+      (revocation) =>
+        revocation.decisionDigest === governanceDecisionDigestV2(decision) &&
+        Date.parse(revocation.revokedAt) <= at,
+    ) ||
+    stableJson(decision.subject) !== stableJson(input.subject)
+  ) {
+    return undefined;
+  }
+  return decision;
+}
+
+function resolvedArtifactRoot(root: string): string | undefined {
+  try {
+    const resolved = realpathSync(resolve(root));
+    return statSync(resolved).isDirectory() ? resolved : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function productionArtifactContext(root: string): PlanContext {
+  const env = { ...process.env };
+  const run = defaultRunner;
+  return {
+    root,
+    contextDir: "ai-coding",
+    apply: false,
+    verify: true,
+    json: false,
+    run,
+    host: makeHostAdapter({ run, env }),
+    env,
+    options: {},
+  };
+}
+
+/** @internal Test seam; deliberately absent from the package-root exports. */
+export async function verifyAihSupportedQualificationArtifactV1WithContext(
+  ctx: PlanContext,
+  input: unknown,
+): Promise<AihSupportedQualificationArtifactVerificationV1> {
+  const parsed = AihSupportedQualificationArtifactVerificationInputV1Schema.safeParse(input);
+  if (!parsed.success) return unverifiedArtifact();
+  const root = resolvedArtifactRoot(parsed.data.root);
+  if (root === undefined) return unverifiedArtifact();
+  const safeCtx = { ...ctx, root };
+  const authorityVerification = await verifyPolicyAuthorityReceipt(safeCtx);
+  if (authorityVerification.authority === undefined) return unverifiedArtifact();
+  const now = new Date().toISOString();
+  const supportVerification = await verifyAihSupportedQualificationReceiptArtifact(
+    safeCtx,
+    authorityVerification.authority,
+  );
+  if (supportVerification.receipt === undefined) return unverifiedArtifact();
+  const decision = currentAihSupportedArtifactDecision(
+    authorityVerification.authority,
+    parsed.data,
+    now,
+  );
+  if (
+    decision === undefined ||
+    !matchesAihSupportedQualificationBindingV1({
+      decision,
+      now,
+      receipt: supportVerification.receipt,
+    })
+  ) {
+    return unverifiedArtifact();
+  }
+  return { state: "verified" };
+}
+
+/**
+ * Verify a package-shipped AIH-supported qualification artifact without
+ * minting authority or enabling an effect. The package owns the runtime
+ * context; callers receive only a scrubbed, inert verdict.
+ */
+export async function verifyAihSupportedQualificationArtifactV1(
+  input: VerifyAihSupportedQualificationArtifactV1Input,
+): Promise<AihSupportedQualificationArtifactVerificationV1> {
+  const parsed = AihSupportedQualificationArtifactVerificationInputV1Schema.safeParse(input);
+  const root = parsed.success ? resolvedArtifactRoot(parsed.data.root) : undefined;
+  if (parsed.success === false || root === undefined) return unverifiedArtifact();
+  return verifyAihSupportedQualificationArtifactV1WithContext(productionArtifactContext(root), {
+    ...parsed.data,
+    root,
+  });
+}
+
+/**
+ * Verify the fixed support receipt against a dedicated external GitHub root,
+ * then mint the same process-local qualification capability used by the V3
+ * organization path. This only observes receipt bytes and runs `gh`; it never
+ * evaluates candidate code, configures a host, or inspects Catalog V2 crypto.
+ */
+export async function verifyAihSupportedQualificationReceiptV1(
+  ctx: PlanContext,
+  input: VerifyAihSupportedQualificationReceiptV1Input,
+): Promise<AihSupportedQualificationVerificationV1> {
+  const verifiedAuthority = isVerifiedPolicyAuthority(input.authority)
+    ? input.authority
+    : undefined;
+  const supportVerification = await verifyAihSupportedQualificationReceiptArtifact(
+    ctx,
+    verifiedAuthority,
+  );
+  if (supportVerification.receipt === undefined) return { problem: supportVerification.problem };
+  const qualification = mintAihSupportedQualificationV1({
+    ...input,
+    receipt: supportVerification.receipt,
+  });
   if (qualification === undefined) {
     return {
       problem: "supported qualification receipt does not match the current authority decision",
