@@ -988,6 +988,59 @@ run ledger, install, configure, execute, sign, publish, or make the subject proj
 does not observe AIH-supported qualifications, skills, MCP servers, remote endpoints, PyPI/OCI
 packages, or generic executable closures.
 
+`aih policy lifecycle npm-package [root] --decision <id> --decision-digest <sha256> --target <id>
+--evidence <root-relative-file>` repeats the fixed observation route and can persist its result as
+governance history. It is preview-only unless `--apply` is explicit:
+
+```bash
+aih policy lifecycle npm-package <root> \
+  --decision <exact-decision-id> \
+  --decision-digest sha256:<exact-decision-digest> \
+  --target <code-owned-cli-id> \
+  --evidence <root-relative-canonical-envelope> \
+  --json
+
+aih policy lifecycle npm-package <root> \
+  --decision <exact-decision-id> \
+  --decision-digest sha256:<exact-decision-digest> \
+  --target <code-owned-cli-id> \
+  --evidence <root-relative-canonical-envelope> \
+  --apply --json
+```
+
+Preview performs the complete fresh verification but writes nothing. `--apply` appends a canonical
+content-addressed record and advances the matching subject head in
+`.aih/governance/npm-package-lifecycle/v1/`; it never uses generic report history as policy
+authority. Each fresh unchanged re-observation appends an independently timed immutable record;
+the output of one prepared plan is deterministic. A separately authorized exact version/integrity
+change appends a bump on the stable package/integration lineage. A current
+authenticated V3 decision revocation can append a revocation record only for an already observed
+current head. That records governance state; it does not remove, stop, update, or configure the npm
+package.
+
+Apply re-verifies authority, evidence, installed custody, and observation before constructing the
+transaction, pins every authorizing file, refuses after the shortest applicable validity deadline,
+serializes cooperative lifecycle writers, writes the immutable record before the head, and reads the
+exact committed binding, record, head, and bounded lineage before it reports success. Missing or
+partial observation, invalid or stale authority, linked store paths, substitution, a stale head whose
+canonical successor remains, forks, collisions, deadline expiry, content races, capacity exhaustion,
+and detached post-commit state refuse without a successful lifecycle claim. A
+non-effective result remains nonzero; no lifecycle record can make a failed observation effective.
+If a hard process or machine failure leaves a record without its head, only the same prepared
+canonical bytes can be reused. A fresh command performs a newly timed observation and therefore
+normally sees that orphan as an ambiguous fork; it fails closed for approved operator incident
+reconciliation and neither deletes nor silently adopts the orphan.
+
+This target-local store detects a stale head when its canonical successor remains. It cannot by
+itself detect a coordinated rollback that removes both the head advance and every later record;
+preserve the store in organization-controlled versioned evidence. The existing offline-revocation
+high-water primitive remains inert until Core has an administrator-managed trust-root loader and a
+fixed verifier/producer.
+
+This is durable npm audit history, not yet the complete custom-source lifecycle. The command does
+not make a candidate projectable and does not cover skills, MCP servers, remote endpoints, non-npm
+packages, or the AIH-supported qualification route.
+
 Approvals cover only a missing or failed **waivable** evidence record, require a non-empty signed reason,
 and last at most 90 days. Mandatory detector failures and every unwaivable danger code remain blocked even
 with an otherwise valid approval.

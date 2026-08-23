@@ -84,9 +84,48 @@ matching installed manifest. It cannot install or execute the package, and expos
 effect, observer, verifier, runner, clock, receipt, or callback override. Exact current evidence
 returns `observed-effective` with a canonical receipt digest; missing installed evidence remains
 `partial`, while linked, changed, stale, revoked, rejected, malformed, or mismatched evidence
-refuses. No receipt or capability is persisted.
+refuses. This observation command persists no receipt or capability.
 
-The lifecycle is therefore not yet end to end. Custom stdio and remote policy candidates remain
+After reviewing that observation, persist its audit lineage with the same exact inputs. The first
+call remains a zero-write preview; only the second call can write:
+
+```bash
+aih policy lifecycle npm-package <root> \
+  --decision <exact-decision-id> \
+  --decision-digest sha256:<exact-decision-digest> \
+  --target <code-owned-cli-id> \
+  --evidence <root-relative-canonical-envelope> \
+  --json
+
+aih policy lifecycle npm-package <root> \
+  --decision <exact-decision-id> \
+  --decision-digest sha256:<exact-decision-digest> \
+  --target <code-owned-cli-id> \
+  --evidence <root-relative-canonical-envelope> \
+  --apply --json
+```
+
+The applied command repeats live authority, qualification, installed-state, and observation checks
+before appending an immutable record under `.aih/governance/npm-package-lifecycle/v1/`. Use a newly
+authorized exact decision/evidence set for a version or integrity bump; the prior record remains in
+the stable package/integration lineage. When the current V3 authority revokes the decision, the
+same command appends that revocation only for the verified current lineage. This is an audit fact,
+not a claim that npm removed or stopped the package. Refused, expired, corrupt, detectably
+rolled-back, forked, raced, linked, or detached state cannot produce a successful apply result.
+
+A hard process or machine failure can leave an immutable record before its head advances. Only the
+same prepared canonical bytes can be reused; a fresh command performs a newly timed observation and
+normally treats that orphan as an ambiguous fork. AIH fails closed instead of deleting or adopting
+it, so preserve the store and route it through the organization's approved
+incident-reconciliation process.
+
+The target-local chain detects a stale head when its canonical successor remains, but it cannot
+prove that an administrator or attacker did not roll back the head and all later records together.
+Retain the store in organization-controlled versioned evidence. Do not promote the inert offline
+high-water seam to authority; that requires Core's future administrator-managed trust-root loader
+and fixed verifier/producer.
+
+The lifecycle is durable but not yet end to end. Custom stdio and remote policy candidates remain
 non-projectable, and neither a V3 receipt, `policy resolve`, nor this fixed npm observer can install,
 configure, or activate one. The observer also does not cover skills, MCP servers, remote endpoints,
 non-npm packages, or the AIH-supported qualification route. Do not tell developers that any other

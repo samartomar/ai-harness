@@ -8,6 +8,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`aih policy lifecycle npm-package` persists exact governed observation, bump, and revocation
+  history without managing the package.** Preview is zero-write; `--apply` first repeats the current
+  V3 authority, organization evidence, npm v3 lockfile, installed-manifest, and observation checks,
+  then appends one canonical content-addressed record and advances a subject head under the
+  dedicated `.aih/governance/npm-package-lifecycle/v1/` store. Exact version/integrity changes keep
+  one stable package/integration lineage while preserving prior records. A current authenticated V3
+  decision revocation appends a revocation record but makes no package-removal or process-stop claim.
+  The transaction pins all authorizing bytes, uses a cooperative exclusive lifecycle-store commit
+  boundary, commits the immutable record durably before its head, rechecks its deadline and
+  filesystem custody during commit, and re-reads the exact binding, record, head, and bounded
+  lineage before reporting success. Corrupt, substituted, expired, detectably rolled-back, forked,
+  linked, raced, over-capacity, or detached state fails closed; refused applies write no lifecycle
+  state. Only the same prepared canonical bytes can reuse a crash orphan; a fresh
+  command is newly timed and normally fails closed for approved operator incident reconciliation
+  instead of deleting or silently adopting it. The command never installs, updates, removes,
+  configures, executes, signs, or publishes a package, and remains limited to the
+  organization-qualified root npm route. A target-local chain cannot detect a coordinated rollback
+  that removes both its head advance and
+  later records; administrators must retain it in organization-controlled versioned evidence. (#844)
+
 - **`aih policy observe npm-package` reports an exact organization-qualified npm install without
   installing or executing it.** The zero-write command derives one npm package and the fixed
   `install` effect from an exact current Decision V2, after independently verifying the external
