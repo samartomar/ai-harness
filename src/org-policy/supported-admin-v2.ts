@@ -10,18 +10,23 @@ import {
   readContainedRegularFile,
 } from "../internals/contained-path.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
-import { dynamicDigest, type Plan, type WriteAction } from "../internals/plan.js";
+import { dynamicDigest, type Plan, type PlanContext, type WriteAction } from "../internals/plan.js";
 import {
   GovernanceDecisionSubjectV2Schema,
   governanceDecisionSourceDigestV2,
   governanceDecisionSubjectDigestV2,
 } from "./governance-decision-v2.js";
 import {
+  AIH_SUPPORTED_QUALIFICATION_RECEIPT_PATH,
   type AihSupportedQualificationReceiptV2,
   AihSupportedQualificationReceiptV2Schema,
   canonicalAihSupportedQualificationReceiptV2,
+  isVerifiedAihSupportedCustodyBindingV2,
+  MAX_AIH_SUPPORTED_QUALIFICATION_RECEIPT_BYTES_V2,
   parseAihSupportedQualificationReceiptV2Bytes,
   receiptDigestV2,
+  type VerifiedAihSupportedCustodyBindingV2,
+  verifyAihSupportedCustodyBindingV2,
 } from "./supported-qualification-receipt-v2.js";
 
 const CUSTODY_PREFIX = ".aih/supported-qualification/v2";
@@ -31,7 +36,7 @@ const MAX_CUSTODY_MEMBERS = 4_096;
 const ZERO_DIGEST = `sha256:${"0".repeat(64)}`;
 const digest = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 const timestamp = z.string().refine(isStrictUtcTimestamp, "must be a canonical UTC timestamp");
-const decisionId = z.string().regex(/^decision-[a-z][a-z0-9-]{0,54}$/);
+const decisionId = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 const entryId = z.string().regex(/^[a-z][a-z0-9.-]{0,63}$/);
 const identity = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$/);
 const signerKeyId = z.string().regex(/^ed25519:[0-9a-f]{64}$/);
@@ -233,6 +238,111 @@ function parseCandidate(input: unknown): {
     root,
     candidate: { ...candidate, receipt },
   };
+}
+
+function candidateFromVerifiedBinding(
+  binding: VerifiedAihSupportedCustodyBindingV2,
+): SupportedCustodyCandidateV2 {
+  if (!isVerifiedAihSupportedCustodyBindingV2(binding))
+    throw new AihError("supported custody verification failed", "AIH_TRUST");
+  return {
+    receipt: binding.receipt,
+    decision: { id: binding.decision.id, digest: binding.decision.digest },
+    target: binding.target,
+    receiptDigest: binding.receiptDigest,
+    receiptSha256: binding.receiptSha256,
+    authorityReceiptDigest: binding.authorityReceiptDigest,
+    repository: binding.repository,
+    workflow: binding.workflow,
+    acceptedAt: binding.acceptedAt,
+    decisionNotBefore: binding.decision.notBefore,
+    decisionExpiresAt: binding.decision.expiresAt,
+  };
+}
+
+function candidateWithHistoricAcceptance(input: {
+  root: string;
+  posture: "enterprise" | "vibe";
+  platform?: "win32" | "darwin" | "linux";
+  candidate: SupportedCustodyCandidateV2;
+}): SupportedCustodyCandidateV2 {
+  const planned = planSupportedCustodyAcceptV2({
+    ...input.candidate,
+    root: input.root,
+    posture: input.posture,
+    ...(input.platform === undefined ? {} : { platform: input.platform }),
+  });
+  const member = planned.actions.filter(
+    (action): action is WriteAction => action.kind === "write",
+  )[2];
+  if (member === undefined)
+    throw new AihError("supported custody verification failed", "AIH_TRUST");
+  const parsed = parseCandidate({
+    ...input.candidate,
+    root: input.root,
+    posture: input.posture,
+    ...(input.platform === undefined ? {} : { platform: input.platform }),
+  });
+  const existing = storedRecord(input.root, parsed.posture, member);
+  if (existing.state !== "present") return input.candidate;
+  const stored = MemberRecordSchema.safeParse(existing.value);
+  if (!stored.success) return input.candidate;
+  const historic = { ...input.candidate, acceptedAt: stored.data.acceptedAt };
+  const historicPlan = planSupportedCustodyAcceptV2({
+    ...historic,
+    root: input.root,
+    posture: input.posture,
+    ...(input.platform === undefined ? {} : { platform: input.platform }),
+  });
+  const historicMember = historicPlan.actions.filter(
+    (action): action is WriteAction => action.kind === "write",
+  )[2];
+  return historicMember !== undefined && sameStoredRecord(existing, historicMember)
+    ? historic
+    : input.candidate;
+}
+
+/** Internal transaction assertion for the exact locally verified support receipt. */
+export function verifiedSupportedReceiptAssertionV2(
+  binding: VerifiedAihSupportedCustodyBindingV2,
+): WriteAction {
+  const candidate = candidateFromVerifiedBinding(binding);
+  const contents = canonicalAihSupportedQualificationReceiptV2(candidate.receipt);
+  const expected = `sha256:${createHash("sha256").update(contents, "utf8").digest("hex")}`;
+  if (expected !== candidate.receiptSha256)
+    throw new AihError("supported custody verification failed", "AIH_TRUST");
+  return {
+    kind: "write",
+    path: AIH_SUPPORTED_QUALIFICATION_RECEIPT_PATH,
+    contents,
+    exactContents: true,
+    describe: "assert verified supported receipt unchanged",
+    sensitive: { path: true },
+    assertUnchanged: true,
+    expect: { sha256: expected.slice("sha256:".length) },
+  };
+}
+
+/** True only while the verified, canonical support receipt still occupies its fixed local custody path. */
+export function isVerifiedSupportedReceiptCurrentV2(
+  root: string,
+  binding: VerifiedAihSupportedCustodyBindingV2,
+): boolean {
+  try {
+    const candidate = candidateFromVerifiedBinding(binding);
+    const read = readContainedRegularFile(root, AIH_SUPPORTED_QUALIFICATION_RECEIPT_PATH, {
+      maxBytes: MAX_AIH_SUPPORTED_QUALIFICATION_RECEIPT_BYTES_V2,
+    });
+    return (
+      read.state === "present" &&
+      read.stats.nlink === 1 &&
+      read.contents.equals(
+        Buffer.from(canonicalAihSupportedQualificationReceiptV2(candidate.receipt), "utf8"),
+      )
+    );
+  } catch {
+    return false;
+  }
 }
 
 function immutableWrite(
@@ -811,6 +921,293 @@ export function prepareSupportedCustodyAcceptV2(input: {
       member,
       headCas(head, headState),
       ...planned.actions.filter((action) => action.kind !== "write"),
+    ],
+  };
+}
+
+export type CurrentSupportedCustodyValidationV2 = Readonly<{
+  state: "verified" | "unverified";
+  scrubbed: true;
+}>;
+
+/**
+ * Proves the current four custody records still exactly bind a production-verified
+ * support receipt, decision, target, authority receipt, and support root.
+ */
+export function validateCurrentSupportedCustodyV2(input: {
+  root: string;
+  posture: "enterprise" | "vibe";
+  platform?: "win32" | "darwin" | "linux";
+  binding: VerifiedAihSupportedCustodyBindingV2;
+}): CurrentSupportedCustodyValidationV2 {
+  try {
+    const candidate = candidateWithHistoricAcceptance({
+      ...input,
+      candidate: candidateFromVerifiedBinding(input.binding),
+    });
+    const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+    const receipt = candidate.receipt;
+    if (
+      now < receipt.notBefore ||
+      now >= receipt.expiresAt ||
+      now < candidate.decisionNotBefore ||
+      now >= candidate.decisionExpiresAt ||
+      now < receipt.catalogContinuity.headValidFrom ||
+      now >= receipt.catalogContinuity.headValidUntil ||
+      now >= input.binding.authorityExpiresAt ||
+      (input.binding.decision.reviewBy !== undefined && now >= input.binding.decision.reviewBy)
+    )
+      return { state: "unverified", scrubbed: true };
+    if (!isVerifiedSupportedReceiptCurrentV2(input.root, input.binding))
+      return { state: "unverified", scrubbed: true };
+    const plan = planSupportedCustodyAcceptV2({
+      ...candidate,
+      root: input.root,
+      posture: input.posture,
+      ...(input.platform === undefined ? {} : { platform: input.platform }),
+    });
+    const writes = plan.actions.filter((action): action is WriteAction => action.kind === "write");
+    if (writes.length !== 4) return { state: "unverified", scrubbed: true };
+    const parsed = parseCandidate({
+      ...candidate,
+      root: input.root,
+      posture: input.posture,
+      ...(input.platform === undefined ? {} : { platform: input.platform }),
+    });
+    const records = writes.map((action) => storedRecord(input.root, parsed.posture, action));
+    if (!records.every((record, index) => sameStoredRecord(record, writes[index] as WriteAction)))
+      return { state: "unverified", scrubbed: true };
+    const head =
+      records[3]?.state === "present" ? HeadRecordSchema.safeParse(records[3].value) : undefined;
+    return head?.success &&
+      hasCurrentHeadMember(input.root, parsed.posture, writes[2] as WriteAction, head.data)
+      ? { state: "verified", scrubbed: true }
+      : { state: "unverified", scrubbed: true };
+  } catch {
+    return { state: "unverified", scrubbed: true };
+  }
+}
+
+/** Converts only opaque production-verifier facts into the internal custody candidate. */
+export function prepareVerifiedSupportedCustodyAcceptV2(input: {
+  root: string;
+  posture: "enterprise" | "vibe";
+  platform?: "win32" | "darwin" | "linux";
+  binding: VerifiedAihSupportedCustodyBindingV2;
+}): Plan {
+  const candidate = candidateWithHistoricAcceptance({
+    ...input,
+    candidate: candidateFromVerifiedBinding(input.binding),
+  });
+  const planned = prepareSupportedCustodyAcceptV2({
+    ...input,
+    candidate,
+  });
+  const deadlines = [
+    new Date(Date.now() + 60_000),
+    new Date(candidate.receipt.expiresAt),
+    new Date(candidate.receipt.catalogContinuity.headValidUntil),
+    new Date(candidate.decisionExpiresAt),
+    new Date(input.binding.authorityExpiresAt),
+    ...(input.binding.decision.reviewBy === undefined
+      ? []
+      : [new Date(input.binding.decision.reviewBy)]),
+  ];
+  const deadline = deadlines.reduce((earliest, candidateDeadline) =>
+    candidateDeadline.getTime() < earliest.getTime() ? candidateDeadline : earliest,
+  );
+  if (!Number.isFinite(deadline.getTime()) || deadline.getTime() <= Date.now())
+    throw new AihError("supported custody verification failed", "AIH_TRUST");
+  return { ...planned, commitNotAfter: deadline.toISOString() };
+}
+
+/** Fixed-production accept path: only the decision reference and target arrive from Commander. */
+export async function supportedCustodyAcceptPlanV2(ctx: PlanContext): Promise<Plan> {
+  const binding = await verifyAihSupportedCustodyBindingV2(ctx, {
+    decision: ctx.options.decision,
+    decisionDigest: ctx.options.decisionDigest,
+    target: ctx.options.target,
+  });
+  if (binding === undefined)
+    throw new AihError("supported custody verification failed", "AIH_TRUST");
+  const planned = prepareVerifiedSupportedCustodyAcceptV2({
+    root: ctx.root,
+    posture: ctx.posture === "enterprise" ? "enterprise" : "vibe",
+    platform:
+      ctx.host.platform === "windows"
+        ? "win32"
+        : ctx.host.platform === "darwin"
+          ? "darwin"
+          : "linux",
+    binding,
+  });
+  return {
+    ...planned,
+    actions: [
+      verifiedSupportedReceiptAssertionV2(binding),
+      ...planned.actions,
+      dynamicDigest("verify supported receipt unchanged", () => {
+        if (!isVerifiedSupportedReceiptCurrentV2(ctx.root, binding))
+          throw new AihError("supported custody verification failed", "AIH_TRUST");
+        return { text: "supported receipt verified" };
+      }),
+    ],
+  };
+}
+
+export type SupportedCustodyInspectionV2 = Readonly<{
+  deterministic: true;
+  scrubbed: true;
+  limit: 4096;
+  members: readonly Readonly<{
+    entryId: string;
+    subject: { kind: string; id: string; digest: string };
+    target: string;
+    decision: { id: string; digest: string };
+    acceptedAt: string;
+  }>[];
+}>;
+
+function custodyDirectoryAction(
+  root: string,
+  posture: "enterprise" | "vibe",
+  platform: "win32" | "darwin" | "linux",
+  directory: "heads" | "members",
+): WriteAction {
+  const external = posture === "enterprise";
+  const trustedBase =
+    platform === "win32"
+      ? "C:\\ProgramData"
+      : platform === "darwin"
+        ? "/Library/Application Support"
+        : "/etc";
+  return {
+    kind: "write",
+    path: external
+      ? absoluteCustodyPath(
+          supportedCustodyRootV2({ root, posture, platform }),
+          directory,
+          platform,
+        )
+      : `${CUSTODY_PREFIX}/${directory}`,
+    contents: "",
+    describe: "inspect supported custody directory",
+    ...(external ? { external: true, trustedBase } : {}),
+  };
+}
+
+/** Bounded, deterministic, path-scrubbed view of members bound to currently stored heads. */
+export function inspectSupportedCustodyV2(input: {
+  root: string;
+  posture: "enterprise" | "vibe";
+  platform?: "win32" | "darwin" | "linux";
+}): SupportedCustodyInspectionV2 {
+  const empty: SupportedCustodyInspectionV2 = {
+    deterministic: true,
+    scrubbed: true,
+    limit: MAX_CUSTODY_MEMBERS,
+    members: [],
+  };
+  try {
+    if (input.posture === "enterprise" && input.platform === undefined)
+      throw new AihError("supported custody state is invalid", "AIH_TRUST");
+    const platform = input.platform ?? localPlatform();
+    const headsDirectory = custodyDirectoryAction(input.root, input.posture, platform, "heads");
+    const membersDirectory = custodyDirectoryAction(input.root, input.posture, platform, "members");
+    const headBoundary = custodyReadBoundary(input.root, input.posture, headsDirectory);
+    const memberBoundary = custodyReadBoundary(input.root, input.posture, membersDirectory);
+    if (headBoundary === undefined || memberBoundary === undefined)
+      throw new AihError("supported custody state is invalid", "AIH_TRUST");
+    const headsBefore = inspectContainedRelativePath(headBoundary.root, headBoundary.relativePath);
+    const membersBefore = inspectContainedRelativePath(
+      memberBoundary.root,
+      memberBoundary.relativePath,
+    );
+    if (headsBefore.state === "absent" && membersBefore.state === "absent") return empty;
+    if (
+      headsBefore.state !== "present" ||
+      headsBefore.kind !== "directory" ||
+      membersBefore.state !== "present" ||
+      membersBefore.kind !== "directory"
+    )
+      throw new AihError("supported custody state is invalid", "AIH_TRUST");
+    const heads = new Map<string, z.infer<typeof HeadRecordSchema>>();
+    for (const entry of boundedMemberEntries(headsBefore.realPath)) {
+      if (!/^[0-9a-f]{64}\.json$/.test(entry))
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      const separator = headsDirectory.path.includes("\\") ? "\\" : "/";
+      const record = storedRecord(input.root, input.posture, {
+        ...headsDirectory,
+        path: `${headsDirectory.path}${separator}${entry}`,
+      });
+      if (record.state !== "present")
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      const head = HeadRecordSchema.safeParse(record.value);
+      if (!head.success) throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      heads.set(
+        `${head.data.catalogHeadDigest}\0${head.data.catalogSignerIdentity}\0${head.data.signerKeyId}\0${head.data.replayIdentity}\0${head.data.sequence}\0${head.data.headValidFrom}\0${head.data.headValidUntil}`,
+        head.data,
+      );
+    }
+    const members: Array<SupportedCustodyInspectionV2["members"][number]> = [];
+    for (const entry of boundedMemberEntries(membersBefore.realPath)) {
+      if (!/^[0-9a-f]{64}\.json$/.test(entry))
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      const separator = membersDirectory.path.includes("\\") ? "\\" : "/";
+      const record = storedRecord(input.root, input.posture, {
+        ...membersDirectory,
+        path: `${membersDirectory.path}${separator}${entry}`,
+      });
+      if (record.state !== "present")
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      const member = MemberRecordSchema.safeParse(record.value);
+      if (!member.success) throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      const slot = custodySlot("member", {
+        catalogHeadDigest: member.data.catalogHeadDigest,
+        catalogMemberDigest: member.data.catalogMemberDigest,
+        subject: member.data.subject,
+        target: member.data.target,
+      });
+      if (entry !== `${slot}.json`)
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      const key = `${member.data.catalogHeadDigest}\0${member.data.catalogSignerIdentity}\0${member.data.signerKeyId}\0${member.data.replayIdentity}\0${member.data.sequence}\0${member.data.headValidFrom}\0${member.data.headValidUntil}`;
+      if (!heads.has(key)) continue;
+      members.push({
+        entryId: member.data.entryId,
+        subject: {
+          kind: member.data.subject.kind,
+          id: member.data.subject.id,
+          digest: member.data.subject.subjectDigest,
+        },
+        target: member.data.target,
+        decision: { id: member.data.decisionId, digest: member.data.decisionDigest },
+        acceptedAt: member.data.acceptedAt,
+      });
+    }
+    return { ...empty, members };
+  } catch (error) {
+    if (error instanceof AihError) throw error;
+    throw new AihError("supported custody state is invalid", "AIH_TRUST");
+  }
+}
+
+export function supportedCustodyInspectPlanV2(ctx: PlanContext): Plan {
+  return {
+    capability: "policy-supported-custody-inspect-v2",
+    actions: [
+      dynamicDigest("inspect supported custody", () => ({
+        text: "supported custody inspected",
+        data: inspectSupportedCustodyV2({
+          root: ctx.root,
+          posture: ctx.posture === "enterprise" ? "enterprise" : "vibe",
+          platform:
+            ctx.host.platform === "windows"
+              ? "win32"
+              : ctx.host.platform === "darwin"
+                ? "darwin"
+                : "linux",
+        }),
+      })),
     ],
   };
 }

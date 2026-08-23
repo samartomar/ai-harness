@@ -42,6 +42,10 @@ import { npmPackageLifecycleCommand } from "../org-policy/npm-package-lifecycle-
 import { npmPackageObserveCommand } from "../org-policy/npm-package-observer-v1.js";
 import { policyResolveCommand } from "../org-policy/policy-resolve-v1.js";
 import {
+  policySupportedAcceptCommandV2,
+  policySupportedInspectCommandV2,
+} from "../org-policy/supported-admin-command-v2.js";
+import {
   policyEvaluateCommand,
   policyProjectCommand,
   policyValidateCommand,
@@ -238,6 +242,8 @@ export const ALL_COMMAND_SPECS: CommandSpec[] = [
   eccMcpAddCommand,
   eccMcpRemoveCommand,
   ...Object.values(GROUPED_COMMAND_SPECS).flat(),
+  policySupportedAcceptCommandV2,
+  policySupportedInspectCommandV2,
   ...CAPABILITY_PACKAGE_COMMAND_SPECS,
 ];
 
@@ -256,6 +262,8 @@ export const ALL_COMMAND_SPEC_PATHS: ReadonlyArray<readonly string[]> = [
           : ([parent, spec.name] as const),
     ),
   ),
+  ["policy", "supported", policySupportedAcceptCommandV2.name] as const,
+  ["policy", "supported", policySupportedInspectCommandV2.name] as const,
   ...CAPABILITY_PACKAGE_COMMAND_SPECS.map((spec) => ["capability", "package", spec.name] as const),
 ];
 
@@ -928,6 +936,17 @@ export function registerCommands(
       process.exitCode = await runCapability(npmPackageLifecycleCommand, command);
     },
   );
+  const policySupported = policy
+    .command("supported")
+    .description("Durable custody for externally attested AIH-supported decisions");
+  for (const spec of [policySupportedAcceptCommandV2, policySupportedInspectCommandV2]) {
+    const sub = policySupported.command(spec.name).description(spec.summary);
+    addFlagsForSpec(sub, spec);
+    addOptionsForSpec(sub, spec);
+    sub.action(async (_options: Record<string, unknown>, command: Command) => {
+      process.exitCode = await runCapability(spec, command, { positionalRoot: false });
+    });
+  }
 
   // `evidence` mirrors the same options-only shape: `build` packages the
   // governance artifacts aih already emits into a verifiable, bundle-standard

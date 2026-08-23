@@ -3,6 +3,7 @@ import { lstatSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { z } from "zod";
+import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import { defaultRunner } from "../internals/proc.js";
@@ -42,6 +43,13 @@ const identity = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$/);
 const entryId = z.string().regex(/^[a-z][a-z0-9.-]{0,63}$/);
 const replayIdentity = z.string().regex(/^catalog-head:[0-9a-f]{64}:[0-9a-f]{64}$/);
 const signerKeyId = z.string().regex(/^ed25519:[0-9a-f]{64}$/);
+const custodyBindingInput = z
+  .object({
+    decision: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
+    decisionDigest: digest,
+    target: z.enum(SUPPORTED_CLIS),
+  })
+  .strict();
 function isCanonicalUtcSecond(value: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/.exec(value);
   if (match === null) return false;
@@ -307,7 +315,12 @@ function supportRoot(
 async function verifiedReceipt(
   ctx: PlanContext,
   authority: VerifiedPolicyAuthority | undefined,
-): Promise<{ receipt?: AihSupportedQualificationReceiptV2; problem?: string }> {
+): Promise<{
+  receipt?: AihSupportedQualificationReceiptV2;
+  receiptSha256?: string;
+  repository?: { repository: string; workflow: string };
+  problem?: string;
+}> {
   const root = supportRoot(ctx, authority);
   if (root === undefined)
     return {
@@ -375,7 +388,11 @@ async function verifiedReceipt(
     const receipt = parseAihSupportedQualificationReceiptV2Bytes(copied.contents);
     return receipt === undefined
       ? { problem: "supported qualification receipt is malformed" }
-      : { receipt };
+      : {
+          receipt,
+          receiptSha256: `sha256:${createHash("sha256").update(original.bytes).digest("hex")}`,
+          repository: root,
+        };
   } catch {
     return {
       problem: "GitHub support qualification attestation could not be verified",
@@ -515,6 +532,110 @@ export async function verifyAihSupportedQualificationReceiptV2(
   return qualification === undefined
     ? { problem: "AIH-supported qualification artifact could not be verified" }
     : { qualification, receipt };
+}
+
+const verifiedCustodyBindings = new WeakSet<object>();
+
+function deepFreezeBinding<T>(value: T): Readonly<T> {
+  if (value !== null && typeof value === "object") {
+    for (const child of Object.values(value as object)) deepFreezeBinding(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+/**
+ * Opaque, internal-only facts minted after production authority and support
+ * attestation verification. This module intentionally does not re-export them
+ * from the package surface: callers cannot substitute receipt bytes, clocks,
+ * verifier output, or custody locations.
+ */
+export interface VerifiedAihSupportedCustodyBindingV2 {
+  readonly receipt: AihSupportedQualificationReceiptV2;
+  readonly receiptDigest: string;
+  readonly receiptSha256: string;
+  readonly authorityReceiptDigest: string;
+  readonly repository: string;
+  readonly workflow: string;
+  readonly decision: Readonly<{
+    id: string;
+    digest: string;
+    notBefore: string;
+    expiresAt: string;
+    reviewBy?: string;
+  }>;
+  readonly authorityExpiresAt: string;
+  readonly acceptedAt: string;
+  readonly target: Cli;
+}
+
+export function isVerifiedAihSupportedCustodyBindingV2(
+  value: unknown,
+): value is VerifiedAihSupportedCustodyBindingV2 {
+  return typeof value === "object" && value !== null && verifiedCustodyBindings.has(value);
+}
+
+/**
+ * Fixed-production bridge for durable custody. The only input is the command's
+ * exact decision reference and target; authority roots, GitHub attestation,
+ * receipt custody, and the verification clock remain code-owned.
+ */
+export async function verifyAihSupportedCustodyBindingV2(
+  ctx: PlanContext,
+  input: unknown,
+): Promise<VerifiedAihSupportedCustodyBindingV2 | undefined> {
+  const parsed = custodyBindingInput.safeParse(input);
+  if (!parsed.success) return undefined;
+  const authority = await verifyPolicyAuthorityReceipt(ctx);
+  if (authority.authority?.receipt.version !== 3) return undefined;
+  const decision = authority.authority.receipt.decisions.find(
+    (candidate) =>
+      candidate.id === parsed.data.decision &&
+      governanceDecisionDigestV2(candidate) === parsed.data.decisionDigest,
+  );
+  if (decision === undefined) return undefined;
+  const support = await verifiedReceipt(ctx, authority.authority);
+  const acceptedAt = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  const current = currentDecision(
+    authority.authority,
+    {
+      decisionReference: { id: parsed.data.decision, digest: parsed.data.decisionDigest },
+      subject: decision.subject,
+    },
+    acceptedAt,
+  );
+  const receipt = support.receipt;
+  if (
+    current === undefined ||
+    !current.targets.includes(parsed.data.target) ||
+    receipt === undefined ||
+    support.repository === undefined ||
+    support.receiptSha256 === undefined ||
+    !matchesAihSupportedQualificationBindingV1({ decision: current, now: acceptedAt, receipt })
+  )
+    return undefined;
+  const binding: VerifiedAihSupportedCustodyBindingV2 = Object.freeze({
+    receipt: deepFreezeBinding(structuredClone(receipt)) as AihSupportedQualificationReceiptV2,
+    receiptDigest: receiptDigestV2(receipt),
+    receiptSha256: support.receiptSha256,
+    authorityReceiptDigest: authority.authority.receiptDigest,
+    authorityExpiresAt: authority.authority.receipt.expiresAt,
+    repository: support.repository.repository,
+    workflow: support.repository.workflow,
+    decision: Object.freeze({
+      id: parsed.data.decision,
+      digest: parsed.data.decisionDigest,
+      notBefore: decision.notBefore,
+      expiresAt: decision.expiresAt,
+      ...(decision.disposition === "accepted-with-conditions"
+        ? { reviewBy: decision.reviewBy }
+        : {}),
+    }),
+    acceptedAt,
+    target: parsed.data.target,
+  });
+  verifiedCustodyBindings.add(binding);
+  return binding;
 }
 
 export interface VerifyAihSupportedQualificationArtifactV2Input {

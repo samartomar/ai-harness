@@ -884,7 +884,6 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
           "--root",
           root,
           "--json",
-          "--no-log",
         ]),
       ).resolves.toBeDefined();
       expect(process.exitCode).toBe(0);
