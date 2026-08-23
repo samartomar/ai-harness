@@ -549,16 +549,20 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
       const planned = writes(successor);
       const mutations = mutatingWrites(successor);
       expect(mutations).toHaveLength(3);
-      const signerAssertion = planned.find((action) => action.assertUnchanged);
-      expect(signerAssertion).toMatchObject({
-        path: original[0]?.path,
-        assertUnchanged: true,
-        expect: {
-          sha256: createHash("sha256")
-            .update(readFileSync(join(root, original[0]?.path ?? "")))
-            .digest("hex"),
-        },
-      });
+      const assertions = planned.filter((action) => action.assertUnchanged);
+      expect(assertions.map((action) => action.path)).toEqual([
+        original[0]?.path,
+        original[1]?.path,
+      ]);
+      for (const action of assertions)
+        expect(action).toMatchObject({
+          assertUnchanged: true,
+          expect: {
+            sha256: createHash("sha256")
+              .update(readFileSync(join(root, action.path)))
+              .digest("hex"),
+          },
+        });
       const head = mutations.at(-1);
       expect(head).toMatchObject({ durable: true, assertUnchanged: undefined, once: undefined });
       expect(head?.expect).toEqual({
@@ -693,18 +697,20 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     }
   });
 
-  it("rejects a raced predecessor head without committing successor effects", async () => {
-    const { root, context, genesis } = await applyGenesis();
-    try {
-      const successor = await prepare(root, candidateFor(successorReceipt()));
-      const head = mutatingWrites(successor).at(-1);
-      const immutable = mutatingWrites(successor).slice(0, -1);
-      writeFileSync(join(root, writes(genesis).at(-1)?.path ?? ""), "raced", "utf8");
-      await expect(executePlan(successor, context)).rejects.toMatchObject({ code: "AIH_TRUST" });
-      for (const action of immutable) expect(existsSync(join(root, action.path))).toBe(false);
-      expect(readFileSync(join(root, head?.path ?? ""), "utf8")).toBe("raced");
-    } finally {
-      rmSync(root, { recursive: true, force: true });
+  it("rejects a raced current replay or predecessor head without successor effects", async () => {
+    for (const recordIndex of [1, 3]) {
+      const { root, context, genesis } = await applyGenesis();
+      try {
+        const successor = await prepare(root, candidateFor(successorReceipt()));
+        const head = mutatingWrites(successor).at(-1);
+        const immutable = mutatingWrites(successor).slice(0, -1);
+        writeFileSync(join(root, writes(genesis)[recordIndex]?.path ?? ""), "raced", "utf8");
+        await expect(executePlan(successor, context)).rejects.toMatchObject({ code: "AIH_TRUST" });
+        for (const action of immutable) expect(existsSync(join(root, action.path))).toBe(false);
+        expect(readFileSync(join(root, head?.path ?? ""), "utf8")).toBe("raced");
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
     }
   });
 
