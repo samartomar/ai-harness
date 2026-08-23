@@ -1058,6 +1058,48 @@ export function prepareVerifiedSupportedCustodyAcceptV2(input: {
   return { ...planned, commitNotAfter: deadline.toISOString() };
 }
 
+/**
+ * Internal zero-effect transaction assertions for another lifecycle that needs
+ * to pin an already verified support custody lineage at commit time.
+ */
+export function verifiedCurrentSupportedCustodyAssertionsV2(input: {
+  root: string;
+  posture: "enterprise" | "vibe";
+  platform?: "win32" | "darwin" | "linux";
+  binding: VerifiedAihSupportedCustodyBindingV2;
+}): readonly WriteAction[] | undefined {
+  if (validateCurrentSupportedCustodyV2(input).state !== "verified") return undefined;
+  try {
+    const candidate = candidateWithHistoricAcceptance({
+      ...input,
+      candidate: candidateFromVerifiedBinding(input.binding),
+    });
+    const planned = planSupportedCustodyAcceptV2({
+      ...candidate,
+      root: input.root,
+      posture: input.posture,
+      ...(input.platform === undefined ? {} : { platform: input.platform }),
+    });
+    const parsed = parseCandidate({
+      ...candidate,
+      root: input.root,
+      posture: input.posture,
+      ...(input.platform === undefined ? {} : { platform: input.platform }),
+    });
+    const assertions = planned.actions
+      .filter((action): action is WriteAction => action.kind === "write")
+      .map((action) => {
+        const current = storedRecord(input.root, parsed.posture, action);
+        return current.state === "present" ? assertUnchanged(action, current) : undefined;
+      });
+    return assertions.length === 4 && assertions.every((action) => action !== undefined)
+      ? [verifiedSupportedReceiptAssertionV2(input.binding), ...(assertions as WriteAction[])]
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Fixed-production accept path: only the decision reference and target arrive from Commander. */
 export async function supportedCustodyAcceptPlanV2(ctx: PlanContext): Promise<Plan> {
   const binding = await verifyAihSupportedCustodyBindingV2(ctx, {
