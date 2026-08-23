@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
 import { executePlan } from "../../src/internals/execute.js";
@@ -11,6 +12,10 @@ import {
   governanceDecisionSubjectDigestV2,
 } from "../../src/org-policy/governance-decision-v2.js";
 import * as supported from "../../src/org-policy/supported-admin-v2.js";
+import {
+  canonicalAihSupportedQualificationReceiptV2,
+  receiptDigestV2,
+} from "../../src/org-policy/supported-qualification-receipt-v2.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { buildProgram } from "../../src/program.js";
 
@@ -114,12 +119,17 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     notBefore: "2026-08-01T00:00:00Z",
     expiresAt: "2026-08-10T00:00:00Z",
   };
+  function rawReceiptSha256(value: typeof receipt): string {
+    return `sha256:${createHash("sha256")
+      .update(canonicalAihSupportedQualificationReceiptV2(value), "utf8")
+      .digest("hex")}`;
+  }
   const input = {
     receipt,
-    decision: { id: "allow-tool", digest: `sha256:${"7".repeat(64)}` },
+    decision: { id: "decision-allow-tool", digest: `sha256:${"7".repeat(64)}` },
     target: "claude",
-    receiptDigest: `sha256:${"8".repeat(64)}`,
-    receiptSha256: `sha256:${"9".repeat(64)}`,
+    receiptDigest: receiptDigestV2(receipt),
+    receiptSha256: rawReceiptSha256(receipt),
     authorityReceiptDigest: `sha256:${"a".repeat(64)}`,
     repository: "aihq/aih-supported",
     workflow: ".github/workflows/qualification.yml",
@@ -129,6 +139,13 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
   };
 
   it("plans immutable claim, replay and member slots before a guarded lineage head", () => {
+    expect(() =>
+      supported.planSupportedCustodyAcceptV2({
+        posture: "enterprise",
+        root: "/disposable",
+        ...input,
+      }),
+    ).toThrow(/supported custody candidate is invalid/);
     const plan = supported.planSupportedCustodyAcceptV2({
       posture: "vibe",
       root: "/disposable",
@@ -173,9 +190,21 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
       receiptDigest: input.receiptDigest,
       receiptSha256: input.receiptSha256,
       authorityReceiptDigest: input.authorityReceiptDigest,
+      decisionNotBefore: input.decisionNotBefore,
+      decisionExpiresAt: input.decisionExpiresAt,
+      headValidFrom: receipt.catalogContinuity.headValidFrom,
+      headValidUntil: receipt.catalogContinuity.headValidUntil,
       repository: input.repository,
       workflow: input.workflow,
       acceptedAt: input.acceptedAt,
+    });
+    expect(JSON.parse(writes[1]?.contents ?? "{} ")).toMatchObject({
+      kind: "replay-claim",
+      replayIdentity: receipt.catalogContinuity.replayIdentity,
+      catalogSignerIdentity: receipt.qualificationBasis.catalogSignerIdentity,
+      signerKeyId: receipt.catalogContinuity.signerKeyId,
+      catalogHeadDigest: receipt.catalogContinuity.catalogHeadDigest,
+      sequence: receipt.catalogContinuity.sequence,
     });
     expect(JSON.parse(writes[3]?.contents ?? "{} ")).toMatchObject({
       kind: "catalog-head",
@@ -192,24 +221,27 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
       posture: "vibe",
       root: "/disposable",
       ...input,
-      decision: { id: "allow-other", digest: `sha256:${"b".repeat(64)}` },
+      decision: { id: "decision-allow-other", digest: `sha256:${"b".repeat(64)}` },
     });
     const changedDecisionMember = changedDecision.actions.filter(
       (action): action is WriteAction => action.kind === "write",
     )[2];
     expect(changedDecisionMember?.path).toBe(writes[2]?.path);
     expect(changedDecisionMember?.contents).not.toBe(writes[2]?.contents);
+    const rotatedReceipt = {
+      ...receipt,
+      catalogContinuity: {
+        ...receipt.catalogContinuity,
+        signerKeyId: `ed25519:${"c".repeat(64)}`,
+      },
+    };
     const rotatedKey = supported.planSupportedCustodyAcceptV2({
       posture: "vibe",
       root: "/disposable",
       ...input,
-      receipt: {
-        ...receipt,
-        catalogContinuity: {
-          ...receipt.catalogContinuity,
-          signerKeyId: `ed25519:${"c".repeat(64)}`,
-        },
-      },
+      receipt: rotatedReceipt,
+      receiptDigest: receiptDigestV2(rotatedReceipt),
+      receiptSha256: rawReceiptSha256(rotatedReceipt),
     });
     const rotatedSigner = rotatedKey.actions.filter(
       (action): action is WriteAction => action.kind === "write",
@@ -225,6 +257,73 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
       plan.actions.filter((action: { kind: string }) => action.kind === "write").at(-1),
     ).toMatchObject({ expect: { absent: true } });
     expect(plan.actions.at(-1)).toMatchObject({ kind: "digest" });
+  });
+
+  it("keeps a dry-run phase-honest and writes no custody files", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-supported-custody-dry-"));
+    try {
+      const run = fakeRunner(() => undefined);
+      const result = await executePlan(
+        supported.planSupportedCustodyAcceptV2({ posture: "vibe", root, ...input }),
+        {
+          root,
+          contextDir: "ai-coding",
+          posture: "vibe",
+          apply: false,
+          verify: false,
+          json: false,
+          run,
+          host: makeHostAdapter({ platform: "linux", run, env: {} }),
+          env: {},
+          options: {},
+        },
+      );
+      expect(existsSync(join(root, ".aih", "supported-qualification", "v2"))).toBe(false);
+      expect(result.digests).toEqual([
+        { describe: "verify supported custody genesis", text: "supported custody genesis pending" },
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a symlinked custody parent before reading the committed records", async () => {
+    if (process.platform === "win32") return;
+    const root = mkdtempSync(join(tmpdir(), "aih-supported-custody-link-"));
+    try {
+      const plan = supported.planSupportedCustodyAcceptV2({ posture: "vibe", root, ...input });
+      const target = join(root, "target");
+      const writes = plan.actions.filter(
+        (action): action is WriteAction => action.kind === "write",
+      );
+      for (const action of writes) {
+        const relative = action.path.replace(".aih/supported-qualification/", "");
+        const path = join(target, relative);
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, action.contents ?? "", "utf8");
+      }
+      mkdirSync(join(root, ".aih"), { recursive: true });
+      symlinkSync(target, join(root, ".aih", "supported-qualification"));
+      const digest = plan.actions.at(-1);
+      if (digest?.kind !== "digest" || digest.run === undefined) throw new Error("missing digest");
+      const run = fakeRunner(() => undefined);
+      await expect(
+        digest.run({
+          root,
+          contextDir: "ai-coding",
+          posture: "vibe",
+          apply: true,
+          verify: false,
+          json: false,
+          run,
+          host: makeHostAdapter({ platform: "linux", run, env: {} }),
+          env: {},
+          options: {},
+        }),
+      ).rejects.toMatchObject({ code: "AIH_TRUST" });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("reads immutable slots from disk, makes exact reacceptance write-free, and guards a raced successor", async () => {

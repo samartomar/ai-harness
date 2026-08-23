@@ -10,14 +10,17 @@ import { dynamicDigest, type Plan, type WriteAction } from "../internals/plan.js
 import {
   type AihSupportedQualificationReceiptV2,
   AihSupportedQualificationReceiptV2Schema,
+  canonicalAihSupportedQualificationReceiptV2,
+  parseAihSupportedQualificationReceiptV2Bytes,
+  receiptDigestV2,
 } from "./supported-qualification-receipt-v2.js";
 
 const CUSTODY_PREFIX = ".aih/supported-qualification/v2";
 const MAX_CUSTODY_CANDIDATE_BYTES = 16 * 1024;
 const MAX_CUSTODY_RECORD_BYTES = 12 * 1024;
 const digest = z.string().regex(/^sha256:[0-9a-f]{64}$/);
-const timestamp = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
-const decisionId = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
+const timestamp = z.string().refine(isStrictUtcTimestamp, "must be a canonical UTC timestamp");
+const decisionId = z.string().regex(/^decision-[a-z][a-z0-9-]{0,54}$/);
 const repository = z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
 const workflow = z
   .string()
@@ -69,19 +72,11 @@ const CandidateSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
-    const acceptedAt = Date.parse(value.acceptedAt);
-    const receiptNotBefore = Date.parse(value.receipt.notBefore);
-    const receiptExpiresAt = Date.parse(value.receipt.expiresAt);
-    const decisionNotBefore = Date.parse(value.decisionNotBefore);
-    const decisionExpiresAt = Date.parse(value.decisionExpiresAt);
     if (
-      !Number.isFinite(acceptedAt) ||
-      !Number.isFinite(decisionNotBefore) ||
-      !Number.isFinite(decisionExpiresAt) ||
-      decisionNotBefore > acceptedAt ||
-      acceptedAt >= decisionExpiresAt ||
-      acceptedAt < receiptNotBefore ||
-      acceptedAt >= receiptExpiresAt
+      value.decisionNotBefore > value.acceptedAt ||
+      value.acceptedAt >= value.decisionExpiresAt ||
+      value.acceptedAt < value.receipt.notBefore ||
+      value.acceptedAt >= value.receipt.expiresAt
     )
       ctx.addIssue({
         code: "custom",
@@ -97,9 +92,45 @@ const PlanInputSchema = CandidateSchema.extend({
     .min(1)
     .max(4_096)
     .refine((value) => !/[\0\r\n]/.test(value)),
-}).strict();
+})
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.posture === "enterprise" && value.platform === undefined)
+      ctx.addIssue({ code: "custom", message: "enterprise custody requires an explicit platform" });
+  });
 
 export type SupportedCustodyPlanInputV2 = z.input<typeof PlanInputSchema>;
+
+function isStrictUtcTimestamp(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/.exec(value);
+  if (match === null) return false;
+  const [year, month, day, hour, minute, second] = match.slice(1).map(Number);
+  if (
+    year === undefined ||
+    month === undefined ||
+    day === undefined ||
+    hour === undefined ||
+    minute === undefined ||
+    second === undefined ||
+    month < 1 ||
+    month > 12 ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59
+  )
+    return false;
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  return day >= 1 && day <= (days ?? 0);
+}
+
+function localPlatform(): SupportedCustodyPathInputV2["platform"] {
+  return process.platform === "win32"
+    ? "win32"
+    : process.platform === "darwin"
+      ? "darwin"
+      : "linux";
+}
 
 export function supportedCustodyRootV2(input: SupportedCustodyPathInputV2): string {
   if (input.posture === "vibe")
@@ -160,16 +191,33 @@ function parseCandidate(input: unknown): {
 } {
   const parsed = PlanInputSchema.safeParse(input);
   if (!parsed.success) throw new AihError("supported custody candidate is invalid", "AIH_TRUST");
+  const { posture, platform, root, ...candidate } = parsed.data;
   let bytes: Buffer;
   try {
-    bytes = canonicalStrictJsonBytesV1(parsed.data);
+    bytes = canonicalStrictJsonBytesV1(candidate);
   } catch {
     throw new AihError("supported custody candidate is invalid", "AIH_TRUST");
   }
   if (bytes.byteLength > MAX_CUSTODY_CANDIDATE_BYTES)
     throw new AihError("supported custody candidate is invalid", "AIH_TRUST");
-  const { posture, platform = "linux", root, ...candidate } = parsed.data;
-  return { posture, platform, root, candidate };
+  const receiptBytes = Buffer.from(
+    canonicalAihSupportedQualificationReceiptV2(candidate.receipt),
+    "utf8",
+  );
+  const receipt = parseAihSupportedQualificationReceiptV2Bytes(receiptBytes);
+  const receiptSha256 = `sha256:${createHash("sha256").update(receiptBytes).digest("hex")}`;
+  if (
+    receipt === undefined ||
+    candidate.receiptDigest !== receiptDigestV2(receipt) ||
+    candidate.receiptSha256 !== receiptSha256
+  )
+    throw new AihError("supported custody candidate is invalid", "AIH_TRUST");
+  return {
+    posture,
+    platform: platform ?? localPlatform(),
+    root,
+    candidate: { ...candidate, receipt },
+  };
 }
 
 function immutableWrite(
@@ -193,12 +241,9 @@ function immutableWrite(
 }
 
 function exactCustodyBytes(root: string, relativePath: string, expected: Buffer): boolean {
-  const absolutePath = join(root, ...relativePath.split("/"));
-  const opened = readRegularFileWithStats(absolutePath, { maxBytes: expected.byteLength });
-  if (opened === undefined || opened.identity.nlink !== 1n || !opened.contents.equals(expected))
-    return false;
   let current = root;
-  for (const segment of relativePath.split("/")) {
+  const segments = relativePath.split("/");
+  for (const segment of segments.slice(0, -1)) {
     try {
       const stats = lstatSync(current);
       if (!stats.isDirectory() || stats.isSymbolicLink()) return false;
@@ -207,7 +252,16 @@ function exactCustodyBytes(root: string, relativePath: string, expected: Buffer)
       return false;
     }
   }
-  return true;
+  try {
+    const stats = lstatSync(current);
+    if (!stats.isDirectory() || stats.isSymbolicLink()) return false;
+  } catch {
+    return false;
+  }
+  const leaf = segments.at(-1);
+  if (leaf === undefined) return false;
+  const opened = readRegularFileWithStats(join(current, leaf), { maxBytes: expected.byteLength });
+  return opened !== undefined && opened.identity.nlink === 1n && opened.contents.equals(expected);
 }
 
 /** Plans only immutable genesis custody records; successor handling is intentionally separate. */
@@ -245,6 +299,10 @@ export function planSupportedCustodyAcceptV2(input: SupportedCustodyPlanInputV2)
         version: 2,
         kind: "replay-claim",
         replayIdentity: continuity.replayIdentity,
+        catalogSignerIdentity: basis.catalogSignerIdentity,
+        signerKeyId: continuity.signerKeyId,
+        catalogHeadDigest: continuity.catalogHeadDigest,
+        sequence: continuity.sequence,
       },
     },
     {
@@ -268,6 +326,10 @@ export function planSupportedCustodyAcceptV2(input: SupportedCustodyPlanInputV2)
         receiptIssuedAt: receipt.issuedAt,
         receiptNotBefore: receipt.notBefore,
         receiptExpiresAt: receipt.expiresAt,
+        headValidFrom: continuity.headValidFrom,
+        headValidUntil: continuity.headValidUntil,
+        decisionNotBefore: candidate.decisionNotBefore,
+        decisionExpiresAt: candidate.decisionExpiresAt,
         repository: candidate.repository,
         workflow: candidate.workflow,
         authorityReceiptDigest: candidate.authorityReceiptDigest,
@@ -329,7 +391,8 @@ export function planSupportedCustodyAcceptV2(input: SupportedCustodyPlanInputV2)
     commitNotAfter: new Date(Date.now() + 60_000).toISOString(),
     actions: [
       ...writes,
-      dynamicDigest("verify supported custody genesis", () => {
+      dynamicDigest("verify supported custody genesis", (ctx) => {
+        if (!ctx.apply) return { text: "supported custody genesis pending" };
         const actualRoot = posture === "vibe" ? join(root, CUSTODY_PREFIX) : custodyRoot;
         const matched = expected.every(({ relativePath, bytes }) =>
           exactCustodyBytes(actualRoot, relativePath.slice(`${CUSTODY_PREFIX}/`.length), bytes),
