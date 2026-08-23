@@ -995,6 +995,42 @@ describe("npm package upstream observer V1", () => {
     expect(result).toMatchObject({ outcome: "refused", reason: "decision-not-current" });
   });
 
+  it.each(["installed-present", "installed-unavailable"])(
+    "refuses when authority expires during %s observation",
+    async (mode) => {
+      const value = fixture();
+      // A receipt may not outlive any embedded decision; matching expiry keeps
+      // the fixture schema-valid while the resolver still reports authority first.
+      value.decision.expiresAt = "2026-08-02T12:00:30.000Z";
+      writeAuthority(value.decision, { expiresAt: "2026-08-02T12:00:30.000Z" });
+      if (mode === "installed-present") writeInstalledPackage();
+      writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+      __setNpmPackageObserverInternalTestHookV1(() => {
+        vi.setSystemTime(new Date("2026-08-02T12:00:30.000Z"));
+      });
+
+      const result = await observeNpmPackageV1(
+        context(
+          {
+            decision: value.decision.id,
+            decisionDigest: governanceDecisionDigestV2(value.decision as never),
+            target: "claude",
+            evidence: "evidence.json",
+          },
+          [],
+        ),
+      );
+
+      expect(result).toMatchObject({
+        authority: "verified",
+        qualification: "unqualified",
+        outcome: "refused",
+        effective: "authority-not-current",
+        reason: "authority-not-current",
+      });
+    },
+  );
+
   it("caps an accepted-with-conditions observation at reviewBy", async () => {
     const value = fixture();
     const conditional = {
