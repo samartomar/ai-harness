@@ -72,7 +72,7 @@ describe("AIH-supported qualification receipt V2", () => {
 
   it("registers a distinct supported-admin group with an apply-only accept and read-only inspect", () => {
     const policy = buildProgram().commands.find((command) => command.name() === "policy");
-    const supported = policy?.commands.find((command) => command.name() === "supported-admin");
+    const supported = policy?.commands.find((command) => command.name() === "supported");
     expect(supported?.commands.map((command) => command.name())).toEqual(["accept", "inspect"]);
     expect(supported?.commands.find((command) => command.name() === "accept")?.options.some((option) => option.long === "--apply")).toBe(true);
     expect(supported?.commands.find((command) => command.name() === "inspect")?.options.some((option) => option.long === "--apply")).toBe(false);
