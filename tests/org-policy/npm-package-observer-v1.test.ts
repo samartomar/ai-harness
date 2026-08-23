@@ -817,6 +817,69 @@ describe("npm package upstream observer V1", () => {
     expect(result).toMatchObject({ outcome: "refused", reason: "decision-not-current" });
   });
 
+  it("caps an accepted-with-conditions observation at reviewBy", async () => {
+    const value = fixture();
+    const conditional = {
+      ...value.decision,
+      disposition: "accepted-with-conditions" as const,
+      acceptedFindings: ["residual-risk"],
+      conditions: ["Re-review before the stated deadline."],
+      reviewBy: "2026-08-02T12:00:30.000Z",
+    };
+    writeAuthority(conditional as never);
+    writeInstalledPackage();
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: conditional.id,
+          decisionDigest: governanceDecisionDigestV2(conditional as never),
+          target: "claude",
+          evidence: "evidence.json",
+        },
+        [],
+      ),
+    );
+    const digest = (value: unknown) =>
+      `sha256:${createHash("sha256").update(canonicalStrictJsonBytesV1(value)).digest("hex")}`;
+    const verifier = `sha256:${createHash("sha256")
+      .update("aih-npm-package-observer/v1\0", "utf8")
+      .update(
+        canonicalStrictJsonBytesV1({
+          format: "aih-npm-package-observer",
+          version: 1,
+          effect: "install",
+          lockfileVersion: 3,
+        }),
+      )
+      .digest("hex")}`;
+    expect(result.observationDigest).toBe(
+      upstreamObservationReceiptDigestV1({
+        format: "aih-upstream-observation-receipt",
+        version: 1,
+        id: "observation-npm-package",
+        decision: { id: conditional.id, digest: governanceDecisionDigestV2(conditional as never) },
+        subject: {
+          kind: conditional.subject.kind,
+          id: conditional.subject.id,
+          sourceDigest: conditional.subject.sourceDigest,
+          subjectDigest: conditional.subject.subjectDigest,
+        },
+        targets: ["claude"],
+        allowedEffects: ["install"],
+        integration: { mode: "upstream-managed", owner: "npm-package-observer", version: "1.0.0" },
+        installed: {
+          id: "npm-package",
+          digest: digest({ integrity: INTEGRITY, name: "@acme/widget", version: "1.2.3" }),
+        },
+        verifier: { id: "npm-package-observer", version: "1.0.0", digest: verifier },
+        observedAt: "2026-08-02T12:00:00.000Z",
+        validUntil: conditional.reviewBy,
+        outcome: "observed-success",
+      }),
+    );
+  });
+
   it("rejects a duplicate lock key before it can provide an installed identity", async () => {
     const value = fixture();
     writeAuthority(value.decision);
