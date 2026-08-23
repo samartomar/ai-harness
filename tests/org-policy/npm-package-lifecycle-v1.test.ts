@@ -1,16 +1,21 @@
 import { createHash } from "node:crypto";
 import {
+  closeSync,
   copyFileSync,
   existsSync,
+  fstatSync,
+  ftruncateSync,
   linkSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
+  writeSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -728,8 +733,14 @@ describe("npm package lifecycle V1", () => {
     rmSync(guard);
     vi.advanceTimersByTime(1_000);
     expect(await run(context(true))).toMatchObject({ outcome: "fulfilled" });
-    expect(existsSync(guard)).toBe(true);
-    writeFileSync(guard, "{}");
+    const guardDescriptor = openSync(guard, "r+");
+    try {
+      expect(fstatSync(guardDescriptor).isFile()).toBe(true);
+      ftruncateSync(guardDescriptor, 0);
+      writeSync(guardDescriptor, "{}");
+    } finally {
+      closeSync(guardDescriptor);
+    }
     const before = lifecycleFiles();
     vi.advanceTimersByTime(1_000);
 
