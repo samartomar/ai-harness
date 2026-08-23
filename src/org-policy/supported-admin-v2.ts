@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import { lstatSync } from "node:fs";
-import { join } from "node:path";
+import { lstatSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { z } from "zod";
-import { canonicalStrictJsonBytesV1 } from "../contract/strict-json-v1.js";
+import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { AihError } from "../errors.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
+import { readContainedRegularFile } from "../internals/contained-path.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import { dynamicDigest, type Plan, type WriteAction } from "../internals/plan.js";
 import {
@@ -45,7 +46,7 @@ export interface SupportedCustodyPathInputV2 {
 export interface SupportedCustodyCandidateV2 {
   receipt: AihSupportedQualificationReceiptV2;
   decision: { id: string; digest: string };
-  target: string;
+  target: (typeof SUPPORTED_CLIS)[number];
   receiptDigest: string;
   receiptSha256: string;
   authorityReceiptDigest: string;
@@ -264,6 +265,167 @@ function exactCustodyBytes(root: string, relativePath: string, expected: Buffer)
   return opened !== undefined && opened.identity.nlink === 1n && opened.contents.equals(expected);
 }
 
+type StoredRecord =
+  | { state: "absent" }
+  | { state: "invalid" }
+  | { state: "present"; bytes: Buffer; value: Record<string, unknown> };
+
+const HeadRecordSchema = z
+  .object({
+    format: z.literal("aih-supported-qualification-custody"),
+    version: z.literal(2),
+    kind: z.literal("catalog-head"),
+    catalogSignerIdentity: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$/),
+    signerKeyId: z.string().regex(/^ed25519:[0-9a-f]{64}$/),
+    catalogHeadDigest: digest,
+    previousCatalogHeadDigest: digest,
+    sequence: z.number().int().min(0).safe(),
+    replayIdentity: z.string().regex(/^catalog-head:[0-9a-f]{64}:[0-9a-f]{64}$/),
+    headValidFrom: timestamp,
+    headValidUntil: timestamp,
+  })
+  .strict();
+
+function strictStoredRecord(bytes: Buffer): StoredRecord {
+  try {
+    const text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+    const value = parseStrictJsonObjectV1(text, "supported custody state");
+    return Buffer.from(custodyRecord(value), "utf8").equals(bytes)
+      ? { state: "present", bytes, value }
+      : { state: "invalid" };
+  } catch {
+    return { state: "invalid" };
+  }
+}
+
+function storedRecord(
+  root: string,
+  posture: "enterprise" | "vibe",
+  action: WriteAction,
+): StoredRecord {
+  if (posture === "vibe") {
+    const read = readContainedRegularFile(root, action.path, {
+      maxBytes: MAX_CUSTODY_RECORD_BYTES,
+    });
+    if (read.state === "absent") return { state: "absent" };
+    if (read.state !== "present" || read.stats.nlink !== 1) return { state: "invalid" };
+    return strictStoredRecord(read.contents);
+  }
+  const opened = readRegularFileWithStats(action.path, { maxBytes: MAX_CUSTODY_RECORD_BYTES });
+  if (opened === undefined) {
+    try {
+      lstatSync(action.path);
+      return { state: "invalid" };
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === "ENOENT"
+        ? { state: "absent" }
+        : { state: "invalid" };
+    }
+  }
+  return opened.identity.nlink === 1n ? strictStoredRecord(opened.contents) : { state: "invalid" };
+}
+
+function sameStoredRecord(record: StoredRecord, action: WriteAction): boolean {
+  return (
+    record.state === "present" &&
+    action.contents !== undefined &&
+    record.bytes.equals(Buffer.from(action.contents, "utf8"))
+  );
+}
+
+function recordHash(record: Extract<StoredRecord, { state: "present" }>): string {
+  return createHash("sha256").update(record.bytes).digest("hex");
+}
+
+function hasCurrentHeadMember(
+  root: string,
+  posture: "enterprise" | "vibe",
+  member: WriteAction,
+  headDigest: string,
+): boolean {
+  const memberDirectory = dirname(member.path);
+  let directory = posture === "vibe" ? root : memberDirectory;
+  if (posture === "vibe") {
+    for (const segment of memberDirectory.split("/")) {
+      try {
+        const stats = lstatSync(directory);
+        if (!stats.isDirectory() || stats.isSymbolicLink())
+          throw new AihError("supported custody state is invalid", "AIH_TRUST");
+        directory = join(directory, segment);
+      } catch (error) {
+        if (error instanceof AihError) throw error;
+        return false;
+      }
+    }
+  }
+  try {
+    const stats = lstatSync(directory);
+    if (!stats.isDirectory() || stats.isSymbolicLink())
+      throw new AihError("supported custody state is invalid", "AIH_TRUST");
+    let found = false;
+    for (const entry of readdirSync(directory)) {
+      if (!/^[0-9a-f]{64}\.json$/.test(entry))
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      const separator = member.path.includes("\\") ? "\\" : "/";
+      const record = storedRecord(root, posture, {
+        ...member,
+        path: `${memberDirectory}${separator}${entry}`,
+      });
+      if (record.state !== "present")
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      if (record.value.kind === "member-claim" && record.value.catalogHeadDigest === headDigest)
+        found = true;
+    }
+    return found;
+  } catch (error) {
+    if (error instanceof AihError) throw error;
+    return false;
+  }
+}
+
+function assertUnchanged(
+  action: WriteAction,
+  record: Extract<StoredRecord, { state: "present" }>,
+): WriteAction {
+  return {
+    ...action,
+    once: undefined,
+    durable: undefined,
+    assertUnchanged: true,
+    expect: { sha256: recordHash(record) },
+  };
+}
+
+function headCas(
+  action: WriteAction,
+  record: Extract<StoredRecord, { state: "present" }>,
+): WriteAction {
+  return {
+    ...action,
+    once: undefined,
+    assertUnchanged: undefined,
+    expect: { sha256: recordHash(record) },
+  };
+}
+
+function replayForHead(action: WriteAction, head: z.infer<typeof HeadRecordSchema>): WriteAction {
+  const path = action.path.replace(
+    /([\\/])replays[\\/][0-9a-f]{64}\.json$/,
+    `$1replays${action.path.includes("\\") ? "\\" : "/"}${custodySlot("replay", head.replayIdentity)}.json`,
+  );
+  const value = {
+    format: "aih-supported-qualification-custody",
+    version: 2,
+    kind: "replay-claim",
+    replayIdentity: head.replayIdentity,
+    catalogSignerIdentity: head.catalogSignerIdentity,
+    signerKeyId: head.signerKeyId,
+    catalogHeadDigest: head.catalogHeadDigest,
+    sequence: head.sequence,
+  };
+  return { ...action, path, contents: custodyRecord(value) };
+}
+
 /** Plans only immutable genesis custody records; successor handling is intentionally separate. */
 export function planSupportedCustodyAcceptV2(input: SupportedCustodyPlanInputV2): Plan {
   const { posture, platform, root, candidate } = parseCandidate(input);
@@ -401,6 +563,127 @@ export function planSupportedCustodyAcceptV2(input: SupportedCustodyPlanInputV2)
           throw new AihError("supported custody genesis verification failed", "AIH_TRUST");
         return { text: "supported custody genesis verified" };
       }),
+    ],
+  };
+}
+
+export function prepareSupportedCustodyAcceptV2(input: {
+  root: string;
+  posture: "enterprise" | "vibe";
+  platform?: "win32" | "darwin" | "linux";
+  candidate: SupportedCustodyCandidateV2;
+}): Plan {
+  const planned = planSupportedCustodyAcceptV2({
+    ...input.candidate,
+    posture: input.posture,
+    root: input.root,
+    ...(input.platform === undefined ? {} : { platform: input.platform }),
+  });
+  const plannedWrites = planned.actions.filter(
+    (action): action is WriteAction => action.kind === "write",
+  );
+  const [signer, replay, member, head] = plannedWrites;
+  if (signer === undefined || replay === undefined || member === undefined || head === undefined)
+    throw new AihError("supported custody candidate is invalid", "AIH_TRUST");
+  const parsed = parseCandidate({
+    ...input.candidate,
+    posture: input.posture,
+    root: input.root,
+    ...(input.platform === undefined ? {} : { platform: input.platform }),
+  });
+  const signerState = storedRecord(input.root, parsed.posture, signer);
+  const replayState = storedRecord(input.root, parsed.posture, replay);
+  const memberState = storedRecord(input.root, parsed.posture, member);
+  const headState = storedRecord(input.root, parsed.posture, head);
+  if (
+    [signerState, replayState, memberState, headState].some((record) => record.state === "invalid")
+  )
+    throw new AihError("supported custody state is invalid", "AIH_TRUST");
+  const continuity = parsed.candidate.receipt.catalogContinuity;
+  const allAbsent = [signerState, replayState, memberState, headState].every(
+    (record) => record.state === "absent",
+  );
+  if (allAbsent) {
+    if (
+      continuity.sequence !== 0 ||
+      continuity.previousCatalogHeadDigest !== `sha256:${"0".repeat(64)}`
+    )
+      throw new AihError("supported custody continuity is invalid", "AIH_TRUST");
+    return planned;
+  }
+  if (
+    signerState.state !== "present" ||
+    headState.state !== "present" ||
+    !sameStoredRecord(signerState, signer)
+  )
+    throw new AihError("supported custody state is invalid", "AIH_TRUST");
+  const currentHead = HeadRecordSchema.safeParse(headState.value);
+  if (!currentHead.success) throw new AihError("supported custody state is invalid", "AIH_TRUST");
+  const basis = parsed.candidate.receipt.qualificationBasis;
+  if (
+    currentHead.data.catalogSignerIdentity !== basis.catalogSignerIdentity ||
+    currentHead.data.signerKeyId !== continuity.signerKeyId
+  )
+    throw new AihError("supported custody state is invalid", "AIH_TRUST");
+  const currentReplay = replayForHead(replay, currentHead.data);
+  const currentReplayState = storedRecord(input.root, parsed.posture, currentReplay);
+  if (
+    currentReplayState.state !== "present" ||
+    !sameStoredRecord(currentReplayState, currentReplay)
+  )
+    throw new AihError("supported custody state is invalid", "AIH_TRUST");
+  const sameHead = continuity.catalogHeadDigest === currentHead.data.catalogHeadDigest;
+  if (sameHead) {
+    if (
+      !sameStoredRecord(headState, head) ||
+      replayState.state !== "present" ||
+      !sameStoredRecord(replayState, replay) ||
+      continuity.sequence !== currentHead.data.sequence ||
+      continuity.replayIdentity !== currentHead.data.replayIdentity
+    )
+      throw new AihError("supported custody continuity is invalid", "AIH_TRUST");
+    if (memberState.state === "present") {
+      if (!sameStoredRecord(memberState, member))
+        throw new AihError(
+          "supported custody member conflicts with accepted decision",
+          "AIH_TRUST",
+        );
+      return { ...planned, actions: planned.actions.filter((action) => action.kind !== "write") };
+    }
+    if (
+      !hasCurrentHeadMember(input.root, parsed.posture, member, currentHead.data.catalogHeadDigest)
+    )
+      throw new AihError("supported custody state is invalid", "AIH_TRUST");
+    return {
+      ...planned,
+      actions: [
+        assertUnchanged(signer, signerState),
+        assertUnchanged(replay, replayState),
+        assertUnchanged(head, headState),
+        member,
+        ...planned.actions.filter((action) => action.kind !== "write"),
+      ],
+    };
+  }
+  if (
+    continuity.sequence !== currentHead.data.sequence + 1 ||
+    continuity.previousCatalogHeadDigest !== currentHead.data.catalogHeadDigest ||
+    continuity.replayIdentity === currentHead.data.replayIdentity ||
+    replayState.state !== "absent" ||
+    memberState.state !== "absent"
+  )
+    throw new AihError("supported custody continuity is invalid", "AIH_TRUST");
+  if (!hasCurrentHeadMember(input.root, parsed.posture, member, currentHead.data.catalogHeadDigest))
+    throw new AihError("supported custody state is invalid", "AIH_TRUST");
+  return {
+    ...planned,
+    actions: [
+      assertUnchanged(signer, signerState),
+      assertUnchanged(currentReplay, currentReplayState),
+      replay,
+      member,
+      headCas(head, headState),
+      ...planned.actions.filter((action) => action.kind !== "write"),
     ],
   };
 }

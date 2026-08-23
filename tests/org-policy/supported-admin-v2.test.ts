@@ -22,6 +22,7 @@ import {
 } from "../../src/org-policy/governance-decision-v2.js";
 import * as supported from "../../src/org-policy/supported-admin-v2.js";
 import {
+  type AihSupportedQualificationReceiptV2,
   canonicalAihSupportedQualificationReceiptV2,
   receiptDigestV2,
 } from "../../src/org-policy/supported-qualification-receipt-v2.js";
@@ -111,7 +112,7 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
       catalogDigest: `sha256:${"1".repeat(64)}`,
       catalogHeadDigest: `sha256:${"2".repeat(64)}`,
       catalogMemberDigest: `sha256:${"3".repeat(64)}`,
-      subjectKind: "tool",
+      subjectKind: "tool" as const,
       subjectDigest: subject.subjectDigest,
     },
     catalogContinuity: {
@@ -127,7 +128,7 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     issuedAt: "2026-08-01T00:00:00Z",
     notBefore: "2026-08-01T00:00:00Z",
     expiresAt: "2026-08-10T00:00:00Z",
-  };
+  } satisfies AihSupportedQualificationReceiptV2;
   function rawReceiptSha256(value: typeof receipt): string {
     return `sha256:${createHash("sha256")
       .update(canonicalAihSupportedQualificationReceiptV2(value), "utf8")
@@ -136,7 +137,7 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
   const input = {
     receipt,
     decision: { id: "decision-allow-tool", digest: `sha256:${"7".repeat(64)}` },
-    target: "claude",
+    target: "claude" as const,
     receiptDigest: receiptDigestV2(receipt),
     receiptSha256: rawReceiptSha256(receipt),
     authorityReceiptDigest: `sha256:${"a".repeat(64)}`,
@@ -266,8 +267,8 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     expect(plan.commitNotAfter).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(
       plan.actions
-        .filter((action: { kind: string }) => action.kind === "write")
-        .map((action: { path?: string }) => action.path),
+        .filter((action): action is WriteAction => action.kind === "write")
+        .map((action) => action.path),
     ).toEqual([
       expect.stringMatching(/^\.aih\/supported-qualification\/v2\/signers\/[0-9a-f]{64}\.json$/),
       expect.stringMatching(/^\.aih\/supported-qualification\/v2\/replays\/[0-9a-f]{64}\.json$/),
@@ -702,12 +703,13 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
       const { root, context, genesis } = await applyGenesis();
       try {
         const successor = await prepare(root, candidateFor(successorReceipt()));
-        const head = mutatingWrites(successor).at(-1);
         const immutable = mutatingWrites(successor).slice(0, -1);
         writeFileSync(join(root, writes(genesis)[recordIndex]?.path ?? ""), "raced", "utf8");
         await expect(executePlan(successor, context)).rejects.toMatchObject({ code: "AIH_TRUST" });
         for (const action of immutable) expect(existsSync(join(root, action.path))).toBe(false);
-        expect(readFileSync(join(root, head?.path ?? ""), "utf8")).toBe("raced");
+        expect(readFileSync(join(root, writes(genesis)[recordIndex]?.path ?? ""), "utf8")).toBe(
+          "raced",
+        );
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
@@ -727,7 +729,12 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     expect(command?.commands.find((candidate) => candidate.name() === "inspect")?.options).toEqual(
       [],
     );
-    const report = supported.inspectSupportedCustodyV2({
+    const inspect = (
+      supported as unknown as {
+        inspectSupportedCustodyV2(input: unknown): unknown;
+      }
+    ).inspectSupportedCustodyV2;
+    const report = inspect({
       posture: "vibe",
       root: "/disposable",
       limit: 1,
