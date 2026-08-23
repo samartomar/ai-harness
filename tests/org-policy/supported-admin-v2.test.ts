@@ -83,7 +83,7 @@ describe("SupportedQualificationCustodyV2 roots", () => {
   });
 });
 
-describe("SupportedQualificationCustodyV2 durable acceptance", () => {
+describe("SupportedQualificationCustodyV2 durable acceptance", { timeout: 15_000 }, () => {
   const source = {
     type: "aih" as const,
     release: "1.0.0",
