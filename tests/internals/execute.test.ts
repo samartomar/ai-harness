@@ -68,6 +68,47 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
   };
 }
 
+describe("external shared commit locks", () => {
+  it("accepts only a contained, non-linked absolute external lock shared by different target roots", async () => {
+    const trustedBase = join(dir, "shared-admin-store");
+    const firstRoot = join(dir, "one");
+    const secondRoot = join(dir, "two");
+    mkdirSync(trustedBase, { recursive: true });
+    const lock = join(trustedBase, "locks", "commit.lock");
+    const external = { external: true, path: lock, trustedBase };
+    const planWith = (capability: string): Plan => ({
+      capability,
+      actions: [],
+      commitLock: external as unknown as string,
+    });
+    await expect(
+      executePlan(planWith("first"), ctx({ root: firstRoot, apply: true })),
+    ).resolves.toBeDefined();
+    await expect(
+      executePlan(planWith("second"), ctx({ root: secondRoot, apply: true })),
+    ).resolves.toBeDefined();
+  });
+
+  it("rejects relative, escaping, unknown, and symlinked external lock specifications", async () => {
+    const trustedBase = join(dir, "trusted");
+    mkdirSync(trustedBase, { recursive: true });
+    const planWith = (commitLock: unknown): Plan => ({
+      capability: "bad",
+      actions: [],
+      commitLock: commitLock as string,
+    });
+    for (const lock of [
+      { external: true, path: "relative.lock", trustedBase },
+      { external: true, path: join(trustedBase, "..", "escape.lock"), trustedBase },
+      { external: true, path: join(trustedBase, "x.lock"), trustedBase: join(dir, "missing") },
+      { external: false, path: join(trustedBase, "x.lock"), trustedBase },
+    ])
+      await expect(executePlan(planWith(lock), ctx({ apply: true }))).rejects.toThrow(
+        /commit lock/i,
+      );
+  });
+});
+
 function treeSnapshot(root: string): Map<string, string> {
   const out = new Map<string, string>();
   const visit = (rel: string): void => {
