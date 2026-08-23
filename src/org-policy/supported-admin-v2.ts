@@ -1,13 +1,17 @@
 import { createHash } from "node:crypto";
 import { lstatSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { z } from "zod";
 import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { AihError } from "../errors.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
-import { readContainedRegularFile } from "../internals/contained-path.js";
+import {
+  inspectContainedRelativePath,
+  readContainedRegularFile,
+} from "../internals/contained-path.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import { dynamicDigest, type Plan, type WriteAction } from "../internals/plan.js";
+import { GovernanceDecisionSubjectV2Schema } from "./governance-decision-v2.js";
 import {
   type AihSupportedQualificationReceiptV2,
   AihSupportedQualificationReceiptV2Schema,
@@ -19,9 +23,15 @@ import {
 const CUSTODY_PREFIX = ".aih/supported-qualification/v2";
 const MAX_CUSTODY_CANDIDATE_BYTES = 16 * 1024;
 const MAX_CUSTODY_RECORD_BYTES = 12 * 1024;
+const MAX_CUSTODY_MEMBERS = 4_096;
+const ZERO_DIGEST = `sha256:${"0".repeat(64)}`;
 const digest = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 const timestamp = z.string().refine(isStrictUtcTimestamp, "must be a canonical UTC timestamp");
 const decisionId = z.string().regex(/^decision-[a-z][a-z0-9-]{0,54}$/);
+const entryId = z.string().regex(/^[a-z][a-z0-9.-]{0,63}$/);
+const identity = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$/);
+const signerKeyId = z.string().regex(/^ed25519:[0-9a-f]{64}$/);
+const replayIdentity = z.string().regex(/^catalog-head:[0-9a-f]{64}:[0-9a-f]{64}$/);
 const repository = z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
 const workflow = z
   .string()
@@ -275,16 +285,80 @@ const HeadRecordSchema = z
     format: z.literal("aih-supported-qualification-custody"),
     version: z.literal(2),
     kind: z.literal("catalog-head"),
-    catalogSignerIdentity: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$/),
-    signerKeyId: z.string().regex(/^ed25519:[0-9a-f]{64}$/),
+    catalogSignerIdentity: identity,
+    signerKeyId,
     catalogHeadDigest: digest,
     previousCatalogHeadDigest: digest,
     sequence: z.number().int().min(0).safe(),
-    replayIdentity: z.string().regex(/^catalog-head:[0-9a-f]{64}:[0-9a-f]{64}$/),
+    replayIdentity,
     headValidFrom: timestamp,
     headValidUntil: timestamp,
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if ((value.sequence === 0) !== (value.previousCatalogHeadDigest === ZERO_DIGEST))
+      ctx.addIssue({ code: "custom", message: "invalid genesis predecessor" });
+    if (
+      Object.is(value.sequence, -0) ||
+      value.previousCatalogHeadDigest === value.catalogHeadDigest
+    )
+      ctx.addIssue({ code: "custom", message: "invalid catalog predecessor" });
+    if (
+      value.replayIdentity.slice("catalog-head:".length, "catalog-head:".length + 64) !==
+      value.catalogHeadDigest.slice("sha256:".length)
+    )
+      ctx.addIssue({ code: "custom", message: "replay does not bind catalog head" });
+    if (value.headValidFrom >= value.headValidUntil)
+      ctx.addIssue({ code: "custom", message: "invalid catalog head validity" });
+  });
+
+const MemberRecordSchema = z
+  .object({
+    format: z.literal("aih-supported-qualification-custody"),
+    version: z.literal(2),
+    kind: z.literal("member-claim"),
+    entryId,
+    catalogSignerIdentity: identity,
+    signerKeyId,
+    catalogDigest: digest,
+    catalogHeadDigest: digest,
+    catalogMemberDigest: digest,
+    replayIdentity,
+    sequence: z.number().int().min(0).safe(),
+    subject: GovernanceDecisionSubjectV2Schema,
+    decisionId,
+    decisionDigest: digest,
+    target: z.enum(SUPPORTED_CLIS),
+    receiptDigest: digest,
+    receiptSha256: digest,
+    receiptIssuedAt: timestamp,
+    receiptNotBefore: timestamp,
+    receiptExpiresAt: timestamp,
+    headValidFrom: timestamp,
+    headValidUntil: timestamp,
+    decisionNotBefore: timestamp,
+    decisionExpiresAt: timestamp,
+    repository,
+    workflow,
+    authorityReceiptDigest: digest,
+    acceptedAt: timestamp,
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (
+      value.replayIdentity.slice("catalog-head:".length, "catalog-head:".length + 64) !==
+      value.catalogHeadDigest.slice("sha256:".length)
+    )
+      ctx.addIssue({ code: "custom", message: "member replay does not bind its head" });
+    if (
+      value.receiptIssuedAt > value.receiptNotBefore ||
+      value.receiptNotBefore >= value.receiptExpiresAt ||
+      value.headValidFrom >= value.headValidUntil ||
+      value.decisionNotBefore > value.acceptedAt ||
+      value.acceptedAt >= value.decisionExpiresAt
+    )
+      ctx.addIssue({ code: "custom", message: "member validity is unordered" });
+  });
 
 function strictStoredRecord(bytes: Buffer): StoredRecord {
   try {
@@ -298,31 +372,29 @@ function strictStoredRecord(bytes: Buffer): StoredRecord {
   }
 }
 
+function custodyReadBoundary(
+  root: string,
+  posture: "enterprise" | "vibe",
+  action: Pick<WriteAction, "path" | "trustedBase">,
+): { root: string; relativePath: string } | undefined {
+  if (posture === "vibe") return { root, relativePath: action.path };
+  if (action.trustedBase === undefined) return undefined;
+  return { root: action.trustedBase, relativePath: relative(action.trustedBase, action.path) };
+}
+
 function storedRecord(
   root: string,
   posture: "enterprise" | "vibe",
   action: WriteAction,
 ): StoredRecord {
-  if (posture === "vibe") {
-    const read = readContainedRegularFile(root, action.path, {
-      maxBytes: MAX_CUSTODY_RECORD_BYTES,
-    });
-    if (read.state === "absent") return { state: "absent" };
-    if (read.state !== "present" || read.stats.nlink !== 1) return { state: "invalid" };
-    return strictStoredRecord(read.contents);
-  }
-  const opened = readRegularFileWithStats(action.path, { maxBytes: MAX_CUSTODY_RECORD_BYTES });
-  if (opened === undefined) {
-    try {
-      lstatSync(action.path);
-      return { state: "invalid" };
-    } catch (error) {
-      return (error as NodeJS.ErrnoException).code === "ENOENT"
-        ? { state: "absent" }
-        : { state: "invalid" };
-    }
-  }
-  return opened.identity.nlink === 1n ? strictStoredRecord(opened.contents) : { state: "invalid" };
+  const boundary = custodyReadBoundary(root, posture, action);
+  if (boundary === undefined) return { state: "invalid" };
+  const read = readContainedRegularFile(boundary.root, boundary.relativePath, {
+    maxBytes: MAX_CUSTODY_RECORD_BYTES,
+  });
+  if (read.state === "absent") return { state: "absent" };
+  if (read.state !== "present" || read.stats.nlink !== 1) return { state: "invalid" };
+  return strictStoredRecord(read.contents);
 }
 
 function sameStoredRecord(record: StoredRecord, action: WriteAction): boolean {
@@ -341,29 +413,21 @@ function hasCurrentHeadMember(
   root: string,
   posture: "enterprise" | "vibe",
   member: WriteAction,
-  headDigest: string,
+  head: z.infer<typeof HeadRecordSchema>,
 ): boolean {
   const memberDirectory = dirname(member.path);
-  let directory = posture === "vibe" ? root : memberDirectory;
-  if (posture === "vibe") {
-    for (const segment of memberDirectory.split("/")) {
-      try {
-        const stats = lstatSync(directory);
-        if (!stats.isDirectory() || stats.isSymbolicLink())
-          throw new AihError("supported custody state is invalid", "AIH_TRUST");
-        directory = join(directory, segment);
-      } catch (error) {
-        if (error instanceof AihError) throw error;
-        return false;
-      }
-    }
-  }
+  const boundary = custodyReadBoundary(root, posture, { ...member, path: memberDirectory });
+  if (boundary === undefined) throw new AihError("supported custody state is invalid", "AIH_TRUST");
+  const before = inspectContainedRelativePath(boundary.root, boundary.relativePath);
+  if (before.state === "absent") return false;
+  if (before.state !== "present" || before.kind !== "directory")
+    throw new AihError("supported custody state is invalid", "AIH_TRUST");
   try {
-    const stats = lstatSync(directory);
-    if (!stats.isDirectory() || stats.isSymbolicLink())
+    const entries = readdirSync(before.realPath).sort();
+    if (entries.length > MAX_CUSTODY_MEMBERS)
       throw new AihError("supported custody state is invalid", "AIH_TRUST");
     let found = false;
-    for (const entry of readdirSync(directory)) {
+    for (const entry of entries) {
       if (!/^[0-9a-f]{64}\.json$/.test(entry))
         throw new AihError("supported custody state is invalid", "AIH_TRUST");
       const separator = member.path.includes("\\") ? "\\" : "/";
@@ -373,9 +437,35 @@ function hasCurrentHeadMember(
       });
       if (record.state !== "present")
         throw new AihError("supported custody state is invalid", "AIH_TRUST");
-      if (record.value.kind === "member-claim" && record.value.catalogHeadDigest === headDigest)
+      const parsedMember = MemberRecordSchema.safeParse(record.value);
+      if (!parsedMember.success)
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      const memberSlot = custodySlot("member", {
+        catalogHeadDigest: parsedMember.data.catalogHeadDigest,
+        catalogMemberDigest: parsedMember.data.catalogMemberDigest,
+        subject: parsedMember.data.subject,
+        target: parsedMember.data.target,
+      });
+      if (entry !== `${memberSlot}.json`)
+        throw new AihError("supported custody state is invalid", "AIH_TRUST");
+      if (
+        parsedMember.data.catalogHeadDigest === head.catalogHeadDigest &&
+        parsedMember.data.catalogSignerIdentity === head.catalogSignerIdentity &&
+        parsedMember.data.signerKeyId === head.signerKeyId &&
+        parsedMember.data.replayIdentity === head.replayIdentity &&
+        parsedMember.data.sequence === head.sequence
+      )
         found = true;
     }
+    const after = inspectContainedRelativePath(boundary.root, boundary.relativePath);
+    if (
+      after.state !== "present" ||
+      after.kind !== "directory" ||
+      after.realPath !== before.realPath ||
+      after.stats.dev !== before.stats.dev ||
+      after.stats.ino !== before.stats.ino
+    )
+      throw new AihError("supported custody state is invalid", "AIH_TRUST");
     return found;
   } catch (error) {
     if (error instanceof AihError) throw error;
@@ -476,9 +566,12 @@ export function planSupportedCustodyAcceptV2(input: SupportedCustodyPlanInputV2)
         kind: "member-claim",
         entryId: receipt.entryId,
         catalogSignerIdentity: basis.catalogSignerIdentity,
+        signerKeyId: continuity.signerKeyId,
         catalogDigest: basis.catalogDigest,
         catalogHeadDigest: basis.catalogHeadDigest,
         catalogMemberDigest: basis.catalogMemberDigest,
+        replayIdentity: continuity.replayIdentity,
+        sequence: continuity.sequence,
         subject: receipt.subject,
         decisionId: candidate.decision.id,
         decisionDigest: candidate.decision.digest,
@@ -553,15 +646,15 @@ export function planSupportedCustodyAcceptV2(input: SupportedCustodyPlanInputV2)
     commitNotAfter: new Date(Date.now() + 60_000).toISOString(),
     actions: [
       ...writes,
-      dynamicDigest("verify supported custody genesis", (ctx) => {
-        if (!ctx.apply) return { text: "supported custody genesis pending" };
+      dynamicDigest("verify supported custody state", (ctx) => {
+        if (!ctx.apply) return { text: "supported custody state pending" };
         const actualRoot = posture === "vibe" ? join(root, CUSTODY_PREFIX) : custodyRoot;
         const matched = expected.every(({ relativePath, bytes }) =>
           exactCustodyBytes(actualRoot, relativePath.slice(`${CUSTODY_PREFIX}/`.length), bytes),
         );
         if (!matched)
-          throw new AihError("supported custody genesis verification failed", "AIH_TRUST");
-        return { text: "supported custody genesis verified" };
+          throw new AihError("supported custody state verification failed", "AIH_TRUST");
+        return { text: "supported custody state verified" };
       }),
     ],
   };
@@ -650,9 +743,7 @@ export function prepareSupportedCustodyAcceptV2(input: {
         );
       return { ...planned, actions: planned.actions.filter((action) => action.kind !== "write") };
     }
-    if (
-      !hasCurrentHeadMember(input.root, parsed.posture, member, currentHead.data.catalogHeadDigest)
-    )
+    if (!hasCurrentHeadMember(input.root, parsed.posture, member, currentHead.data))
       throw new AihError("supported custody state is invalid", "AIH_TRUST");
     return {
       ...planned,
@@ -673,7 +764,7 @@ export function prepareSupportedCustodyAcceptV2(input: {
     memberState.state !== "absent"
   )
     throw new AihError("supported custody continuity is invalid", "AIH_TRUST");
-  if (!hasCurrentHeadMember(input.root, parsed.posture, member, currentHead.data.catalogHeadDigest))
+  if (!hasCurrentHeadMember(input.root, parsed.posture, member, currentHead.data))
     throw new AihError("supported custody state is invalid", "AIH_TRUST");
   return {
     ...planned,
