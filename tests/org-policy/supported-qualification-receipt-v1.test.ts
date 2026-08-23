@@ -251,6 +251,10 @@ describe("AihSupportedQualificationReceiptV1", () => {
       canonicalBytes({
         ...value,
         subject: { ...value.subject, subjectDigest: `sha256:${"0".repeat(64)}` },
+        qualificationBasis: {
+          ...value.qualificationBasis,
+          subjectDigest: `sha256:${"0".repeat(64)}`,
+        },
       }),
       canonicalBytes({ ...value, expiresAt: value.notBefore } as never),
       canonicalBytes({ ...value, expiresAt: "2026-12-01T00:00:00+00:00" } as never),
