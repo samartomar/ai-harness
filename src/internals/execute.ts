@@ -37,6 +37,7 @@ import type {
   StructuredLegacyProbeRun,
   WriteAction,
 } from "./plan.js";
+import { parseCommitNotAfter } from "./plan.js";
 import { ensureTrailingNewline, indent, jsonFile, stripTrailingNewlines } from "./render.js";
 import { type Check, VerificationReport } from "./verify.js";
 import { dirtyRemoveTargets, dirtyWriteTargets, normalizeRel } from "./worktree-gate.js";
@@ -767,6 +768,7 @@ export async function executePlan(
   ctx: PlanContext,
   opts: { skipWorktreeGate?: boolean } = {},
 ): Promise<PlanResult> {
+  const commitNotAfter = parseCommitNotAfter(plan.commitNotAfter);
   // Dirty-worktree --apply preflight: refuse only when this apply would write over a
   // file that ITSELF has uncommitted changes — the precise "clobber your work" case —
   // not merely because some unrelated file in the repo is dirty. So creating a new
@@ -802,8 +804,8 @@ export async function executePlan(
     }
   }
 
-  const txn = new FsTransaction();
-  const deferredTxn = new FsTransaction();
+  const txn = new FsTransaction({ commitNotAfter });
+  const deferredTxn = new FsTransaction({ commitNotAfter });
   const sensitiveBackupTargets = new Set<string>();
   const writes: WriteSummary[] = [];
   const docs: PlanResult["docs"] = [];

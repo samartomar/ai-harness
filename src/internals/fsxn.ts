@@ -124,6 +124,8 @@ export class FsTransaction {
   private stagedRemovals: StagedRemoval[] = [];
   private stagedAssertions: StagedAssertion[] = [];
 
+  constructor(private readonly options: { commitNotAfter?: number } = {}) {}
+
   stage(
     path: string,
     contents: string,
@@ -163,6 +165,12 @@ export class FsTransaction {
     return [...this.staged];
   }
 
+  private assertCommitDeadline(): void {
+    if (this.options.commitNotAfter !== undefined && Date.now() >= this.options.commitNotAfter) {
+      throw new FsTxnError("commit deadline expired");
+    }
+  }
+
   commit(): FsTxnResult {
     const applied: AppliedWrite[] = [];
     const removed: AppliedRemoval[] = [];
@@ -188,8 +196,10 @@ export class FsTransaction {
         );
     }
     try {
+      this.assertCommitDeadline();
       validateAssertions(assertions);
       for (const w of staged) {
+        this.assertCommitDeadline();
         mkdirSync(dirname(w.path), { recursive: true });
         // Refuse to write THROUGH an existing symlink — it can redirect the write
         // outside the repo, and copyFileSync would back up the link's TARGET, not the
@@ -214,19 +224,34 @@ export class FsTransaction {
         // pre-placed symlink THERE would redirect the write/copy outside the repo just
         // like a symlinked target. Reject a planted link and clear any stale scratch so
         // the exclusive create below can't be tricked into following one.
-        clearScratch(backupPath);
-        clearScratch(tmpPath);
+        clearScratch(backupPath, () => this.assertCommitDeadline());
+        clearScratch(tmpPath, () => this.assertCommitDeadline());
         let backup: string | undefined;
         if (existed) {
           backup = backupPath;
           // Reads the just-written source; retry the transient Windows scanner lock.
-          retryTransient(() => copyFileSync(w.path, backupPath, fsConstants.COPYFILE_EXCL));
+          this.assertCommitDeadline();
+          retryTransient(() => {
+            this.assertCommitDeadline();
+            return copyFileSync(w.path, backupPath, fsConstants.COPYFILE_EXCL);
+          });
         }
-        retryTransient(() => writeFileSync(tmpPath, w.contents, { encoding: "utf8", flag: "wx" }));
-        if (w.mode !== undefined) chmodSync(tmpPath, w.mode);
+        this.assertCommitDeadline();
+        retryTransient(() => {
+          this.assertCommitDeadline();
+          return writeFileSync(tmpPath, w.contents, { encoding: "utf8", flag: "wx" });
+        });
+        if (w.mode !== undefined) {
+          this.assertCommitDeadline();
+          chmodSync(tmpPath, w.mode);
+        }
         // Renaming OVER the existing target is the classic Windows flake: the dest
         // handle may be briefly held by AV/the indexer right after the prior write.
-        retryTransient(() => renameSync(tmpPath, w.path));
+        this.assertCommitDeadline();
+        retryTransient(() => {
+          this.assertCommitDeadline();
+          return renameSync(tmpPath, w.path);
+        });
         applied.push({ path: w.path, contents: w.contents, backup, created: !existed });
       }
       // Removals commit AFTER writes so a partial failure rolls both back in order.
@@ -242,6 +267,7 @@ export class FsTransaction {
         if (r.expect !== undefined && !info.isFile()) {
           throw new FsTxnError(`removal target is not a regular file: ${r.path}`);
         }
+        this.assertCommitDeadline();
         mkdirSync(dirname(r.legacyPath), { recursive: true });
         // NEVER overwrite an occupied destination — for BOTH modes. An aborted prune
         // rolls its move back (so it leaves nothing here), which means an existing file
@@ -250,7 +276,11 @@ export class FsTransaction {
         // The archive falls back to `<path>.N`; a hard-delete backup falls back to
         // `<path>.N.aih.bak` so every slot keeps matching the gitignored glob.
         const dest = r.backupSibling ? freeBackupDest(r.legacyPath) : freeLegacyDest(r.legacyPath);
-        retryTransient(() => renameSync(r.path, dest));
+        this.assertCommitDeadline();
+        retryTransient(() => {
+          this.assertCommitDeadline();
+          return renameSync(r.path, dest);
+        });
         removed.push({ path: r.path, legacyPath: dest });
         if (r.expect !== undefined) {
           const moved = readRegularFile(dest);
@@ -261,7 +291,9 @@ export class FsTransaction {
           }
         }
       }
+      this.assertCommitDeadline();
       validateAssertions(assertions);
+      this.assertCommitDeadline();
       return {
         written: applied.map((a) => a.path),
         backups: applied.flatMap((a) => (a.backup ? [a.backup] : [])),
@@ -383,12 +415,13 @@ function lstatSafe(path: string): Stats | undefined {
  * the repo), and remove a stale REGULAR leftover from a prior aborted run so the
  * exclusive create doesn't `EEXIST`. Never follows or deletes through a link.
  */
-function clearScratch(path: string): void {
+function clearScratch(path: string, assertCommitDeadline: () => void): void {
   const st = lstatSafe(path);
   if (st === undefined) return;
   if (st.isSymbolicLink()) {
     throw new Error(`refusing to write through a symlinked scratch path: ${path}`);
   }
+  assertCommitDeadline();
   rmSync(path, { force: true });
 }
 

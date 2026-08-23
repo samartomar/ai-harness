@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import fc from "fast-check";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   FsTransaction,
   readBoundedFileDescriptor,
@@ -40,6 +40,81 @@ describe("FsTransaction", () => {
     t.stage(join(dir, "a.txt"), "hi");
     expect(t.preview()).toHaveLength(1);
     expect(existsSync(join(dir, "a.txt"))).toBe(false);
+  });
+
+  it("keeps an expired deadline preview mutation-free", () => {
+    const target = join(dir, "expired-preview.txt");
+    const t = new FsTransaction({ commitNotAfter: Date.parse("2020-01-01T00:00:00.000Z") });
+    t.stage(target, "hi");
+
+    expect(t.preview()).toHaveLength(1);
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it("rolls back earlier writes when its deadline expires mid-transaction", () => {
+    const start = Date.parse("2030-01-01T00:00:00.000Z");
+    const first = join(dir, "first.txt");
+    const second = join(dir, "second.txt");
+    let sawFirstWrite = false;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => {
+      if (existsSync(first)) sawFirstWrite = true;
+      return sawFirstWrite ? start + 1 : start;
+    });
+    const t = new FsTransaction({ commitNotAfter: start + 1 });
+    t.stage(first, "first");
+    t.stage(second, "second");
+
+    expect(() => t.commit()).toThrow("commit deadline expired");
+    expect(sawFirstWrite).toBe(true);
+    expect(existsSync(first)).toBe(false);
+    expect(existsSync(second)).toBe(false);
+    now.mockRestore();
+  });
+
+  it("rolls back earlier removals when its deadline expires mid-transaction", () => {
+    const start = Date.parse("2030-01-01T00:00:00.000Z");
+    const first = join(dir, "first.txt");
+    const second = join(dir, "second.txt");
+    const firstLegacy = join(dir, ".aih", "legacy", "first.txt");
+    writeFileSync(first, "first");
+    writeFileSync(second, "second");
+    let sawFirstRemoval = false;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => {
+      if (existsSync(firstLegacy)) sawFirstRemoval = true;
+      return sawFirstRemoval ? start + 1 : start;
+    });
+    const t = new FsTransaction({ commitNotAfter: start + 1 });
+    t.stageRemoval(first, firstLegacy);
+    t.stageRemoval(second, join(dir, ".aih", "legacy", "second.txt"));
+
+    expect(() => t.commit()).toThrow("commit deadline expired");
+    expect(sawFirstRemoval).toBe(true);
+    expect(readFileSync(first, "utf8")).toBe("first");
+    expect(readFileSync(second, "utf8")).toBe("second");
+    now.mockRestore();
+  });
+
+  it("rejects an expired deadline before its first mutation", () => {
+    const deadline = Date.parse("2030-01-01T00:00:00.000Z");
+    const now = vi.spyOn(Date, "now").mockReturnValue(deadline);
+    const target = join(dir, "expired.txt");
+    const t = new FsTransaction({ commitNotAfter: deadline });
+    t.stage(target, "blocked");
+
+    expect(() => t.commit()).toThrow("commit deadline expired");
+    expect(existsSync(target)).toBe(false);
+    now.mockRestore();
+  });
+
+  it("commits normally before a future deadline", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2030-01-01T00:00:00.000Z"));
+    const target = join(dir, "future.txt");
+    const t = new FsTransaction({ commitNotAfter: Date.parse("2030-01-01T00:00:01.000Z") });
+    t.stage(target, "written");
+
+    t.commit();
+    expect(readFileSync(target, "utf8")).toBe("written");
+    now.mockRestore();
   });
 
   it("commit writes new files and backs up existing ones", () => {

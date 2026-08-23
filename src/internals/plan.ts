@@ -262,6 +262,23 @@ export type Action =
 export interface Plan {
   capability: string;
   actions: Action[];
+  /** Exact UTC ISO deadline after which an apply must not commit local mutations. */
+  commitNotAfter?: string;
+}
+
+const EXACT_UTC_ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/** Parse the closed Plan deadline form once, before any apply-time filesystem work. */
+export function parseCommitNotAfter(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !EXACT_UTC_ISO_TIMESTAMP.test(value)) {
+    throw new AihError("invalid plan commit deadline", "AIH_CONFIG");
+  }
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString() !== value) {
+    throw new AihError("invalid plan commit deadline", "AIH_CONFIG");
+  }
+  return timestamp;
 }
 
 /** Everything a capability needs to compute (and a runner to execute) its plan. */
