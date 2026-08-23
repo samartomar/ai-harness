@@ -37,6 +37,7 @@ import {
   canonicalOrganizationEvidenceEnvelopeV1,
   organizationEvidenceEnvelopeDigestV1,
 } from "../../src/org-policy/qualification-v1.js";
+import { canonicalAihSupportedQualificationReceiptV2 } from "../../src/org-policy/supported-qualification-receipt-v2.js";
 import { upstreamObservationReceiptDigestV1 } from "../../src/org-policy/upstream-observation-receipt-v1.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { toFinding } from "../../src/support/findings.js";
@@ -134,6 +135,47 @@ function fixture() {
   };
 }
 
+function supportedFixture() {
+  const value = fixture();
+  const catalogHeadDigest = `sha256:${"a".repeat(64)}`;
+  const receipt = {
+    format: "aih-supported-qualification-receipt" as const,
+    version: 2 as const,
+    organizationAdmission: "not-authoritative" as const,
+    entryId: "recipe.acme-widget",
+    subject: value.decision.subject,
+    qualificationBasis: {
+      kind: "aih-supported" as const,
+      catalogSignerIdentity: "administrator:aih-supported",
+      catalogDigest: `sha256:${"b".repeat(64)}`,
+      catalogHeadDigest,
+      catalogMemberDigest: `sha256:${"c".repeat(64)}`,
+      subjectKind: value.decision.subject.kind,
+      subjectDigest: value.decision.subject.subjectDigest,
+    },
+    catalogContinuity: {
+      catalogHeadDigest,
+      previousCatalogHeadDigest: `sha256:${"0".repeat(64)}`,
+      sequence: 0,
+      replayIdentity: `catalog-head:${"a".repeat(64)}:${"d".repeat(64)}`,
+      signerKeyId: `ed25519:${"e".repeat(64)}`,
+      headValidFrom: "2026-08-01T00:00:00Z",
+      headValidUntil: "2026-08-05T00:00:00Z",
+    },
+    issuedAt: "2026-08-02T00:00:00Z",
+    notBefore: "2026-08-02T00:00:00Z",
+    expiresAt: "2026-08-05T00:00:00Z",
+  };
+  return {
+    ...value,
+    decision: {
+      ...value.decision,
+      qualificationBasis: receipt.qualificationBasis,
+    },
+    receipt,
+  };
+}
+
 function writeAuthority(
   decision: GovernanceDecisionV2,
   overrides: Record<string, unknown> = {},
@@ -175,7 +217,11 @@ function writeInstalledPackage(): void {
   );
 }
 
-function context(options: Record<string, unknown>, calls: string[][]): PlanContext {
+function context(
+  options: Record<string, unknown>,
+  calls: string[][],
+  extraEnv: Record<string, string> = {},
+): PlanContext {
   const run = fakeRunner((argv) => {
     calls.push([...argv]);
     return argv[0] === gh ? { code: 0 } : { code: 1 };
@@ -188,7 +234,7 @@ function context(options: Record<string, unknown>, calls: string[][]): PlanConte
     json: true,
     run,
     host: makeHostAdapter({ platform: "linux", run, env: {} }),
-    env: { AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance", PATH: bin },
+    env: { AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance", PATH: bin, ...extraEnv },
     options,
   };
 }
@@ -431,6 +477,68 @@ describe("npm package upstream observer V1", () => {
       "--evidence <path>",
     ]);
     expect(npmPackageObserveCommand.plan.toString()).not.toContain('"0".repeat(64)');
+  });
+
+  it("routes an AIH-supported npm decision without organization evidence, then refuses absent durable custody", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    mkdirSync(join(root, ".aih"), { recursive: true });
+    writeFileSync(
+      join(root, ".aih", "aih-supported-qualification-receipt.json"),
+      canonicalAihSupportedQualificationReceiptV2(value.receipt),
+    );
+    const calls: string[][] = [];
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+        },
+        calls,
+        {
+          AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+          AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+        },
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      outcome: "refused",
+      reason: "qualification-unverified",
+    });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("rejects a caller evidence path for an AIH-supported decision before it can select a weaker branch", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    const calls: string[][] = [];
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+          evidence: "evidence.json",
+        },
+        calls,
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      outcome: "refused",
+      reason: "invalid-input",
+    });
+    expect(calls).toHaveLength(1);
   });
 
   it("observes only the signed exact installed package without executing it", async () => {
