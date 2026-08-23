@@ -21,6 +21,7 @@ import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import {
+  type GovernanceDecisionV2,
   governanceDecisionDigestV2,
   governanceDecisionSourceDigestV2,
   governanceDecisionSubjectDigestV2,
@@ -133,7 +134,7 @@ function fixture() {
 }
 
 function writeAuthority(
-  decision: ReturnType<typeof fixture>["decision"],
+  decision: GovernanceDecisionV2,
   overrides: Record<string, unknown> = {},
 ): void {
   mkdirSync(join(root, ".aih"), { recursive: true });
@@ -257,6 +258,117 @@ describe("npm package upstream observer V1", () => {
     const result = await observeNpmPackageV1(context(options, calls));
     expect(result).toMatchObject({ outcome: "refused", reason });
     expect(calls).toEqual([]);
+  });
+
+  it("closes well-formed decision, evidence, subject, source, and install-scope mismatches", async () => {
+    const value = fixture();
+    const cases: Array<{
+      label: string;
+      decision?: GovernanceDecisionV2;
+      evidence?: typeof value.evidence;
+      digest?: string;
+      reason: string;
+      qualification: "qualified" | "unqualified";
+    }> = [];
+    cases.push({
+      label: "wrong decision digest",
+      digest: `sha256:${"0".repeat(64)}`,
+      reason: "decision-missing-or-mismatch",
+      qualification: "unqualified",
+    });
+    for (const [label, evidence] of [
+      [
+        "evidence digest",
+        {
+          ...value.evidence,
+          evidence: { ...value.evidence.evidence, payloadDigest: `sha256:${"9".repeat(64)}` },
+        },
+      ],
+      ["evidence attestor", { ...value.evidence, attestor: "other-scanner" }],
+      ["evidence subject", { ...value.evidence, subjectDigest: `sha256:${"8".repeat(64)}` }],
+    ] as const) {
+      cases.push({
+        label,
+        evidence,
+        reason: "qualification-unverified",
+        qualification: "unqualified",
+      });
+    }
+    const toolSubject = {
+      ...value.decision.subject,
+      kind: "tool" as const,
+      id: "acme-widget-tool",
+      subjectDigest: governanceDecisionSubjectDigestV2({
+        kind: "tool",
+        id: "acme-widget-tool",
+        sourceDigest: value.decision.subject.sourceDigest,
+      }),
+    };
+    cases.push({
+      label: "non-package subject",
+      decision: { ...value.decision, subject: toolSubject },
+      reason: "installed-identity-mismatch",
+      qualification: "unqualified",
+    });
+    const githubSource = {
+      type: "github" as const,
+      repository: "acme/widget",
+      commit: "a".repeat(40),
+      path: "package.json",
+    };
+    const githubSourceDigest = governanceDecisionSourceDigestV2(githubSource);
+    cases.push({
+      label: "non-npm source",
+      decision: {
+        ...value.decision,
+        subject: {
+          ...value.decision.subject,
+          source: githubSource,
+          sourceDigest: githubSourceDigest,
+          subjectDigest: governanceDecisionSubjectDigestV2({
+            kind: "package",
+            id: value.decision.subject.id,
+            sourceDigest: githubSourceDigest,
+          }),
+        },
+      },
+      reason: "installed-identity-mismatch",
+      qualification: "unqualified",
+    });
+    cases.push({
+      label: "missing install effect",
+      decision: { ...value.decision, allowedEffects: ["use"] },
+      reason: "decision-scope-mismatch",
+      qualification: "unqualified",
+    });
+
+    for (const item of cases) {
+      const decision = item.decision ?? value.decision;
+      writeAuthority(decision);
+      writeFileSync(
+        join(root, "evidence.json"),
+        Buffer.from(canonicalOrganizationEvidenceEnvelopeV1(item.evidence ?? value.evidence)),
+      );
+      const calls: string[][] = [];
+      const result = await observeNpmPackageV1(
+        context(
+          {
+            decision: decision.id,
+            decisionDigest: item.digest ?? governanceDecisionDigestV2(decision as never),
+            target: "claude",
+            evidence: "evidence.json",
+          },
+          calls,
+        ),
+      );
+      expect(result, item.label).toMatchObject({
+        authority: "verified",
+        qualification: item.qualification,
+        outcome: "refused",
+        reason: item.reason,
+      });
+      expect(calls, item.label).toHaveLength(1);
+    }
   });
 
   it("emits sealed observe-specific codes with the required remediation owners", async () => {
