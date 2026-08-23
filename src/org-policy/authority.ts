@@ -400,7 +400,7 @@ const RECEIPT_TOP_LEVEL_CONSUMERS: Readonly<Record<string, string>> = {
   "decisionRevocations.*.decisionDigest":
     "V3 downstream resolver: immutable decision revocation lookup",
   "decisionRevocations.*.format": "receipt schema: fixed signed revocation artifact protocol",
-  "decisionRevocations.*.issuer": "V3 downstream resolver: exact revoking issuer binding",
+  "decisionRevocations.*.issuer": "effective resolver: exact revoking issuer binding",
   "decisionRevocations.*.reason": "signed revocation audit-only record; never authorizes an effect",
   "decisionRevocations.*.revokedAt": "effective resolver: signed decision revocation time gate",
   "decisionRevocations.*.version": "receipt schema: fixed signed revocation artifact protocol",

@@ -669,9 +669,15 @@ describe("headless effective org policy", () => {
         "authorityReceipt.decisions.*.qualificationBasis.catalogDigest"
       ],
     ).toContain("legacy effective resolver deliberately withholds V3 runtime use");
-    expect(
-      POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS["authorityReceipt.decisionRevocations.*.issuer"],
-    ).toContain("legacy effective resolver deliberately withholds V3 runtime use");
+    const revokingIssuerConsumer =
+      POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS["authorityReceipt.decisionRevocations.*.issuer"];
+    expect(revokingIssuerConsumer).toContain("effective resolver: exact revoking issuer binding");
+    expect(revokingIssuerConsumer).not.toContain(
+      "current organization-qualified upstream-observation runtime",
+    );
+    expect(revokingIssuerConsumer).not.toContain(
+      "legacy effective resolver deliberately withholds V3 runtime use",
+    );
     for (const leaf of [
       "authorityReceipt.version",
       "authorityReceipt.issuedAt",
