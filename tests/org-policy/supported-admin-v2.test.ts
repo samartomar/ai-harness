@@ -1,12 +1,18 @@
-import { describe, expect, it } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import * as supported from "../../src/org-policy/supported-admin-v2.js";
-import { buildProgram } from "../../src/program.js";
+import { describe, expect, it } from "vitest";
+import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
 import { executePlan } from "../../src/internals/execute.js";
+import type { WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import {
+  governanceDecisionSourceDigestV2,
+  governanceDecisionSubjectDigestV2,
+} from "../../src/org-policy/governance-decision-v2.js";
+import * as supported from "../../src/org-policy/supported-admin-v2.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { buildProgram } from "../../src/program.js";
 
 describe("SupportedQualificationCustodyV2 roots", () => {
   it("derives only the fixed OS-admin enterprise roots and a governed vibe subpath", () => {
@@ -63,15 +69,36 @@ describe("SupportedQualificationCustodyV2 roots", () => {
 });
 
 describe("SupportedQualificationCustodyV2 durable acceptance", () => {
+  const source = {
+    type: "aih" as const,
+    release: "1.0.0",
+    revision: `sha256:${"4".repeat(64)}`,
+  };
+  const sourceDigest = governanceDecisionSourceDigestV2(source);
+  const subject = {
+    kind: "tool" as const,
+    id: "test-tool",
+    source,
+    sourceDigest,
+    subjectDigest: governanceDecisionSubjectDigestV2({
+      kind: "tool",
+      id: "test-tool",
+      sourceDigest,
+    }),
+  };
   const receipt = {
+    format: "aih-supported-qualification-receipt" as const,
+    version: 2 as const,
+    organizationAdmission: "not-authoritative" as const,
     entryId: "recipe.default",
     qualificationBasis: {
+      kind: "aih-supported" as const,
       catalogSignerIdentity: "catalog-signer",
       catalogDigest: `sha256:${"1".repeat(64)}`,
       catalogHeadDigest: `sha256:${"2".repeat(64)}`,
       catalogMemberDigest: `sha256:${"3".repeat(64)}`,
       subjectKind: "tool",
-      subjectDigest: `sha256:${"4".repeat(64)}`,
+      subjectDigest: subject.subjectDigest,
     },
     catalogContinuity: {
       catalogHeadDigest: `sha256:${"2".repeat(64)}`,
@@ -82,7 +109,7 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
       headValidFrom: "2026-08-01T00:00:00Z",
       headValidUntil: "2026-08-10T00:00:00Z",
     },
-    subject: { kind: "tool", subjectDigest: `sha256:${"4".repeat(64)}` },
+    subject,
     issuedAt: "2026-08-01T00:00:00Z",
     notBefore: "2026-08-01T00:00:00Z",
     expiresAt: "2026-08-10T00:00:00Z",
@@ -114,16 +141,82 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
         .filter((action: { kind: string }) => action.kind === "write")
         .map((action: { path?: string }) => action.path),
     ).toEqual([
-      expect.stringMatching(
-        /^\.aih\/supported-qualification\/v2\/signers\/[0-9a-f]{64}\/[0-9a-f]{64}\.json$/,
-      ),
+      expect.stringMatching(/^\.aih\/supported-qualification\/v2\/signers\/[0-9a-f]{64}\.json$/),
       expect.stringMatching(/^\.aih\/supported-qualification\/v2\/replays\/[0-9a-f]{64}\.json$/),
       expect.stringMatching(/^\.aih\/supported-qualification\/v2\/members\/[0-9a-f]{64}\.json$/),
-      expect.stringMatching(
-        /^\.aih\/supported-qualification\/v2\/heads\/[0-9a-f]{64}\/[0-9a-f]{64}\.json$/,
-      ),
+      expect.stringMatching(/^\.aih\/supported-qualification\/v2\/heads\/[0-9a-f]{64}\.json$/),
     ]);
-    for (const path of plan.actions.map((action: { path?: string }) => action.path ?? ""))
+    const writes = plan.actions.filter((action): action is WriteAction => action.kind === "write");
+    expect(writes).toHaveLength(4);
+    for (const action of writes) {
+      const contents = action.contents ?? "";
+      expect(Buffer.from(contents, "utf8")).toEqual(
+        canonicalStrictJsonBytesV1(JSON.parse(contents)),
+      );
+      expect(action.sensitive).toEqual({ path: true });
+    }
+    expect(JSON.parse(writes[0]?.contents ?? "{} ")).toMatchObject({
+      kind: "signer-claim",
+      catalogSignerIdentity: receipt.qualificationBasis.catalogSignerIdentity,
+      signerKeyId: receipt.catalogContinuity.signerKeyId,
+    });
+    expect(JSON.parse(writes[2]?.contents ?? "{} ")).toMatchObject({
+      kind: "member-claim",
+      entryId: receipt.entryId,
+      catalogDigest: receipt.qualificationBasis.catalogDigest,
+      catalogHeadDigest: receipt.qualificationBasis.catalogHeadDigest,
+      catalogMemberDigest: receipt.qualificationBasis.catalogMemberDigest,
+      subject,
+      decisionId: input.decision.id,
+      decisionDigest: input.decision.digest,
+      target: input.target,
+      receiptDigest: input.receiptDigest,
+      receiptSha256: input.receiptSha256,
+      authorityReceiptDigest: input.authorityReceiptDigest,
+      repository: input.repository,
+      workflow: input.workflow,
+      acceptedAt: input.acceptedAt,
+    });
+    expect(JSON.parse(writes[3]?.contents ?? "{} ")).toMatchObject({
+      kind: "catalog-head",
+      catalogSignerIdentity: receipt.qualificationBasis.catalogSignerIdentity,
+      signerKeyId: receipt.catalogContinuity.signerKeyId,
+      catalogHeadDigest: receipt.catalogContinuity.catalogHeadDigest,
+      previousCatalogHeadDigest: receipt.catalogContinuity.previousCatalogHeadDigest,
+      sequence: receipt.catalogContinuity.sequence,
+      replayIdentity: receipt.catalogContinuity.replayIdentity,
+      headValidFrom: receipt.catalogContinuity.headValidFrom,
+      headValidUntil: receipt.catalogContinuity.headValidUntil,
+    });
+    const changedDecision = supported.planSupportedCustodyAcceptV2({
+      posture: "vibe",
+      root: "/disposable",
+      ...input,
+      decision: { id: "allow-other", digest: `sha256:${"b".repeat(64)}` },
+    });
+    const changedDecisionMember = changedDecision.actions.filter(
+      (action): action is WriteAction => action.kind === "write",
+    )[2];
+    expect(changedDecisionMember?.path).toBe(writes[2]?.path);
+    expect(changedDecisionMember?.contents).not.toBe(writes[2]?.contents);
+    const rotatedKey = supported.planSupportedCustodyAcceptV2({
+      posture: "vibe",
+      root: "/disposable",
+      ...input,
+      receipt: {
+        ...receipt,
+        catalogContinuity: {
+          ...receipt.catalogContinuity,
+          signerKeyId: `ed25519:${"c".repeat(64)}`,
+        },
+      },
+    });
+    const rotatedSigner = rotatedKey.actions.filter(
+      (action): action is WriteAction => action.kind === "write",
+    )[0];
+    expect(rotatedSigner?.path).toBe(writes[0]?.path);
+    expect(rotatedSigner?.contents).not.toBe(writes[0]?.contents);
+    for (const path of writes.map((action) => action.path))
       expect(path.split("/").every((segment) => /^[A-Za-z0-9._-]+$/.test(segment))).toBe(true);
     for (const action of plan.actions.slice(0, -1)) {
       expect(action).toMatchObject({ durable: true, once: true, expect: { absent: true } });
