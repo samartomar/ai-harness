@@ -350,8 +350,21 @@ function currentAihSupportedArtifactDecision(
       candidate.id === input.decisionReference.id &&
       governanceDecisionDigestV2(candidate) === input.decisionReference.digest,
   );
+  const subjectRejected =
+    decision !== undefined &&
+    authorityReceipt.decisions.some(
+      (candidate) =>
+        candidate.disposition === "rejected" &&
+        candidate.subject.subjectDigest === decision.subject.subjectDigest &&
+        Date.parse(candidate.notBefore) <= at &&
+        at < Date.parse(candidate.expiresAt) &&
+        !authorityReceipt.decisionRevocations.some(
+          (revocation) => revocation.decisionDigest === governanceDecisionDigestV2(candidate),
+        ),
+    );
   if (
     decision === undefined ||
+    subjectRejected ||
     decision.disposition === "rejected" ||
     decision.qualificationBasis.kind !== "aih-supported" ||
     at < Date.parse(decision.issuedAt) ||

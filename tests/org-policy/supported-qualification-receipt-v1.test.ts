@@ -413,15 +413,23 @@ describe("AihSupportedQualificationReceiptV1", () => {
     ) => {
       writeAuthorityReceipt(value, authorityOverrides);
       writeReceipt(receipt(value));
-      return (verifier as (ctx: PlanContext, input: {
-        root: string;
-        decisionReference: { id: string; digest: string };
-        subject: typeof value.subject;
-      }) => Promise<Record<string, unknown>>)(context(() => ({ code: 0 })), {
-        root: dir,
-        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
-        subject: value.subject,
-      });
+      return (
+        verifier as (
+          ctx: PlanContext,
+          input: {
+            root: string;
+            decisionReference: { id: string; digest: string };
+            subject: typeof value.subject;
+          },
+        ) => Promise<Record<string, unknown>>
+      )(
+        context(() => ({ code: 0 })),
+        {
+          root: dir,
+          decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+          subject: value.subject,
+        },
+      );
     };
     for (const [value, authorityOverrides] of [
       [decision(), { issuedAt: "2026-08-02T12:00:01+00:00" }],
@@ -438,7 +446,9 @@ describe("AihSupportedQualificationReceiptV1", () => {
         {},
       ],
     ] as const) {
-      await expect(verify(value, authorityOverrides)).resolves.toMatchObject({ state: "unverified" });
+      await expect(verify(value, authorityOverrides)).resolves.toMatchObject({
+        state: "unverified",
+      });
     }
     const revoked = decision();
     await expect(
@@ -467,15 +477,26 @@ describe("AihSupportedQualificationReceiptV1", () => {
     writeAuthorityReceipt(approved, { decisions: [approved, rejected] });
     writeReceipt(receipt(approved));
     await expect(
-      (verifier as (ctx: PlanContext, input: {
-        root: string;
-        decisionReference: { id: string; digest: string };
-        subject: typeof approved.subject;
-      }) => Promise<Record<string, unknown>>)(context(() => ({ code: 0 })), {
-        root: dir,
-        decisionReference: { id: approved.id, digest: governanceDecisionDigestV2(approved as never) },
-        subject: approved.subject,
-      }),
+      (
+        verifier as (
+          ctx: PlanContext,
+          input: {
+            root: string;
+            decisionReference: { id: string; digest: string };
+            subject: typeof approved.subject;
+          },
+        ) => Promise<Record<string, unknown>>
+      )(
+        context(() => ({ code: 0 })),
+        {
+          root: dir,
+          decisionReference: {
+            id: approved.id,
+            digest: governanceDecisionDigestV2(approved as never),
+          },
+          subject: approved.subject,
+        },
+      ),
     ).resolves.toMatchObject({ state: "unverified" });
   });
 
@@ -489,11 +510,13 @@ describe("AihSupportedQualificationReceiptV1", () => {
     writeFileSync(rootFile, "not a root\n");
     for (const root of [join(dir, "missing-root"), rootFile]) {
       await expect(
-        (verifier as (input: {
-          root: string;
-          decisionReference: { id: string; digest: string };
-          subject: typeof value.subject;
-        }) => Promise<unknown>)({
+        (
+          verifier as (input: {
+            root: string;
+            decisionReference: { id: string; digest: string };
+            subject: typeof value.subject;
+          }) => Promise<unknown>
+        )({
           root,
           decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
           subject: value.subject,
