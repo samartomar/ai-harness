@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -137,6 +146,105 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     decisionNotBefore: "2026-08-01T00:00:00Z",
     decisionExpiresAt: "2026-08-09T00:00:00Z",
   };
+  function candidateFor(
+    candidateReceipt: typeof receipt,
+    overrides: Partial<Omit<typeof input, "receipt" | "receiptDigest" | "receiptSha256">> = {},
+  ) {
+    return {
+      ...input,
+      ...overrides,
+      receipt: candidateReceipt,
+      receiptDigest: receiptDigestV2(candidateReceipt),
+      receiptSha256: rawReceiptSha256(candidateReceipt),
+    };
+  }
+  function alternativeSubject() {
+    const alternativeSource = {
+      type: "aih" as const,
+      release: "1.0.1",
+      revision: `sha256:${"d".repeat(64)}`,
+    };
+    const alternativeSourceDigest = governanceDecisionSourceDigestV2(alternativeSource);
+    return {
+      kind: "tool" as const,
+      id: "other-tool",
+      source: alternativeSource,
+      sourceDigest: alternativeSourceDigest,
+      subjectDigest: governanceDecisionSubjectDigestV2({
+        kind: "tool",
+        id: "other-tool",
+        sourceDigest: alternativeSourceDigest,
+      }),
+    };
+  }
+  function memberReceipt() {
+    const nextSubject = alternativeSubject();
+    return {
+      ...receipt,
+      entryId: "recipe.other",
+      subject: nextSubject,
+      qualificationBasis: {
+        ...receipt.qualificationBasis,
+        catalogMemberDigest: `sha256:${"e".repeat(64)}`,
+        subjectDigest: nextSubject.subjectDigest,
+      },
+    };
+  }
+  function successorReceipt() {
+    const nextSubject = alternativeSubject();
+    const head = `sha256:${"f".repeat(64)}`;
+    return {
+      ...receipt,
+      entryId: "recipe.successor",
+      subject: nextSubject,
+      qualificationBasis: {
+        ...receipt.qualificationBasis,
+        catalogHeadDigest: head,
+        catalogMemberDigest: `sha256:${"e".repeat(64)}`,
+        subjectDigest: nextSubject.subjectDigest,
+      },
+      catalogContinuity: {
+        ...receipt.catalogContinuity,
+        catalogHeadDigest: head,
+        previousCatalogHeadDigest: receipt.catalogContinuity.catalogHeadDigest,
+        sequence: 1,
+        replayIdentity: `catalog-head:${"f".repeat(64)}:${"1".repeat(64)}`,
+      },
+    };
+  }
+  function planContext(root: string, apply = true) {
+    const run = fakeRunner(() => undefined);
+    return {
+      root,
+      contextDir: "ai-coding",
+      posture: "vibe" as const,
+      apply,
+      verify: false,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: {},
+      options: {},
+    };
+  }
+  function writes(plan: { actions: readonly unknown[] }): WriteAction[] {
+    return plan.actions.filter(
+      (action): action is WriteAction =>
+        typeof action === "object" &&
+        action !== null &&
+        (action as { kind?: string }).kind === "write",
+    );
+  }
+  async function prepare(root: string, candidate = input) {
+    return supported.prepareSupportedCustodyAcceptV2({ root, posture: "vibe", candidate });
+  }
+  async function applyGenesis() {
+    const root = mkdtempSync(join(tmpdir(), "aih-supported-custody-"));
+    const context = planContext(root);
+    const genesis = await prepare(root);
+    await executePlan(genesis, context);
+    return { root, context, genesis };
+  }
 
   it("plans immutable claim, replay and member slots before a guarded lineage head", () => {
     expect(() =>
@@ -326,64 +434,229 @@ describe("SupportedQualificationCustodyV2 durable acceptance", () => {
     }
   });
 
-  it("reads immutable slots from disk, makes exact reacceptance write-free, and guards a raced successor", async () => {
-    const root = mkdtempSync(join(tmpdir(), "aih-supported-custody-"));
+  it("makes exact reacceptance write-free and verifies its postcondition", async () => {
+    const { root, context } = await applyGenesis();
     try {
-      const run = fakeRunner(() => undefined);
-      const context = {
+      const repeat = await prepare(root);
+      expect(writes(repeat)).toEqual([]);
+      const result = await executePlan(repeat, context);
+      expect(result.digests).toEqual([
+        {
+          describe: "verify supported custody genesis",
+          text: "supported custody genesis verified",
+        },
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("adds only an immutable member for another member at the same head and replay", async () => {
+    const { root, context, genesis } = await applyGenesis();
+    try {
+      const original = writes(genesis);
+      const before = original
+        .slice(0, 2)
+        .concat(original.slice(3))
+        .map((action) => ({
+          path: action.path,
+          bytes: readFileSync(join(root, action.path)),
+        }));
+      const additionalMember = await prepare(
         root,
-        contextDir: "ai-coding",
-        posture: "vibe" as const,
-        apply: true,
-        verify: false,
-        json: false,
-        run,
-        host: makeHostAdapter({ platform: "linux", run, env: {} }),
-        env: {},
-        options: {},
-      };
-      const genesis = await supported.prepareSupportedCustodyAcceptV2({
-        root,
-        posture: "vibe",
-        candidate: input,
-      });
-      await executePlan(genesis, context);
-      const repeat = await supported.prepareSupportedCustodyAcceptV2({
-        root,
-        posture: "vibe",
-        candidate: input,
-      });
-      expect(repeat.actions.filter((action: { kind: string }) => action.kind === "write")).toEqual(
-        [],
+        candidateFor(memberReceipt(), {
+          decision: { id: "decision-allow-other", digest: `sha256:${"8".repeat(64)}` },
+        }),
       );
-      const successor = {
-        ...input,
-        receipt: {
-          ...receipt,
-          qualificationBasis: {
-            ...receipt.qualificationBasis,
-            catalogHeadDigest: `sha256:${"b".repeat(64)}`,
-          },
-          catalogContinuity: {
-            ...receipt.catalogContinuity,
-            catalogHeadDigest: `sha256:${"b".repeat(64)}`,
-            previousCatalogHeadDigest: receipt.catalogContinuity.catalogHeadDigest,
-            sequence: 1,
-            replayIdentity: `catalog-head:${"b".repeat(64)}:${"c".repeat(64)}`,
-          },
+      const planned = writes(additionalMember);
+      expect(planned).toHaveLength(1);
+      expect(planned[0]?.path).toMatch(/^\.aih\/supported-qualification\/v2\/members\//);
+      await executePlan(additionalMember, context);
+      for (const state of before) expect(readFileSync(join(root, state.path))).toEqual(state.bytes);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses decision and replay conflicts at the current head", async () => {
+    const { root } = await applyGenesis();
+    try {
+      await expect(
+        prepare(
+          root,
+          candidateFor(receipt, {
+            decision: { id: "decision-changed", digest: `sha256:${"8".repeat(64)}` },
+          }),
+        ),
+      ).rejects.toMatchObject({ code: "AIH_TRUST" });
+      const replayConflict = {
+        ...receipt,
+        catalogContinuity: {
+          ...receipt.catalogContinuity,
+          replayIdentity: `catalog-head:${"2".repeat(64)}:${"8".repeat(64)}`,
         },
       };
-      const successorPlan = await supported.prepareSupportedCustodyAcceptV2({
-        root,
-        posture: "vibe",
-        candidate: successor,
-      });
-      const headAction = genesis.actions.at(-1) as { path: string };
-      const head = join(root, headAction.path);
-      writeFileSync(head, "raced");
-      await expect(executePlan(successorPlan, context)).rejects.toMatchObject({
+      await expect(prepare(root, candidateFor(replayConflict))).rejects.toMatchObject({
         code: "AIH_TRUST",
       });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("commits a valid direct successor with immutable slots before the head CAS", async () => {
+    const { root, context, genesis } = await applyGenesis();
+    try {
+      const original = writes(genesis);
+      const successor = await prepare(
+        root,
+        candidateFor(successorReceipt(), {
+          decision: { id: "decision-successor", digest: `sha256:${"8".repeat(64)}` },
+        }),
+      );
+      const planned = writes(successor);
+      expect(planned).toHaveLength(3);
+      const head = planned.at(-1);
+      expect(head).toMatchObject({ durable: true, once: undefined });
+      expect(head?.expect).toEqual({
+        sha256: createHash("sha256")
+          .update(readFileSync(join(root, original[3]?.path ?? "")))
+          .digest("hex"),
+      });
+      for (const action of planned.slice(0, -1))
+        expect(action).toMatchObject({ durable: true, once: true, expect: { absent: true } });
+      expect(planned.slice(0, -1).map((action) => action.path)).toEqual([
+        expect.stringMatching(/^\.aih\/supported-qualification\/v2\/replays\//),
+        expect.stringMatching(/^\.aih\/supported-qualification\/v2\/members\//),
+      ]);
+      await executePlan(successor, context);
+      for (const action of original) expect(existsSync(join(root, action.path))).toBe(true);
+      expect(
+        (
+          await executePlan(
+            await prepare(
+              root,
+              candidateFor(successorReceipt(), {
+                decision: { id: "decision-successor", digest: `sha256:${"8".repeat(64)}` },
+              }),
+            ),
+            context,
+          )
+        ).digests.at(-1)?.text,
+      ).toBe("supported custody genesis verified");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses gaps, rollbacks, wrong predecessors, key rotation, and replay reuse", async () => {
+    const { root } = await applyGenesis();
+    try {
+      const successor = successorReceipt();
+      const variants = [
+        {
+          ...successor,
+          catalogContinuity: { ...successor.catalogContinuity, sequence: 2 },
+        },
+        receipt,
+        {
+          ...successor,
+          catalogContinuity: {
+            ...successor.catalogContinuity,
+            previousCatalogHeadDigest: `sha256:${"0".repeat(63)}1`,
+          },
+        },
+        {
+          ...successor,
+          catalogContinuity: {
+            ...successor.catalogContinuity,
+            signerKeyId: `ed25519:${"9".repeat(64)}`,
+          },
+        },
+        {
+          ...successor,
+          catalogContinuity: {
+            ...successor.catalogContinuity,
+            replayIdentity: receipt.catalogContinuity.replayIdentity,
+          },
+        },
+      ];
+      for (const candidateReceipt of variants)
+        await expect(prepare(root, candidateFor(candidateReceipt))).rejects.toMatchObject({
+          code: "AIH_TRUST",
+        });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses malformed, detached, hardlinked, symlinked, and replay-misused custody state", async () => {
+    const mutationCases = [
+      "signer-malformed",
+      "head-noncanonical",
+      "replay-misused",
+      "signer-detached",
+      "replay-detached",
+      "member-detached",
+      "head-detached",
+      "head-hardlinked",
+      "signer-symlinked",
+    ] as const;
+    for (const mutation of mutationCases) {
+      if (
+        process.platform === "win32" &&
+        (mutation === "head-hardlinked" || mutation === "signer-symlinked")
+      )
+        continue;
+      const { root, genesis } = await applyGenesis();
+      try {
+        const records = writes(genesis);
+        const signer = join(root, records[0]?.path ?? "");
+        const replay = join(root, records[1]?.path ?? "");
+        const member = join(root, records[2]?.path ?? "");
+        const head = join(root, records[3]?.path ?? "");
+        if (mutation === "signer-malformed") writeFileSync(signer, "{}", "utf8");
+        if (mutation === "head-noncanonical")
+          writeFileSync(
+            head,
+            `${JSON.stringify(JSON.parse(readFileSync(head, "utf8")), null, 2)}\n`,
+            "utf8",
+          );
+        if (mutation === "replay-misused") {
+          const value = JSON.parse(readFileSync(replay, "utf8"));
+          writeFileSync(
+            replay,
+            JSON.stringify({ ...value, replayIdentity: "catalog-head:bad" }),
+            "utf8",
+          );
+        }
+        if (mutation === "signer-detached") rmSync(signer);
+        if (mutation === "replay-detached") rmSync(replay);
+        if (mutation === "member-detached") rmSync(member);
+        if (mutation === "head-detached") rmSync(head);
+        if (mutation === "head-hardlinked") linkSync(head, `${head}.link`);
+        if (mutation === "signer-symlinked") {
+          rmSync(signer);
+          symlinkSync(head, signer);
+        }
+        await expect(prepare(root)).rejects.toMatchObject({ code: "AIH_TRUST" });
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("rejects a raced predecessor head without committing successor effects", async () => {
+    const { root, context, genesis } = await applyGenesis();
+    try {
+      const successor = await prepare(root, candidateFor(successorReceipt()));
+      const planned = writes(successor);
+      const head = planned.at(-1);
+      const immutable = planned.slice(0, -1);
+      writeFileSync(join(root, writes(genesis).at(-1)?.path ?? ""), "raced", "utf8");
+      await expect(executePlan(successor, context)).rejects.toMatchObject({ code: "AIH_TRUST" });
+      for (const action of immutable) expect(existsSync(join(root, action.path))).toBe(false);
+      expect(readFileSync(join(root, head?.path ?? ""), "utf8")).toBe("raced");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
