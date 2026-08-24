@@ -109,9 +109,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   has no target or effect input, any other current unrevoked rejection for the same subject fails
   the verdict closed. The authority-bearing verifier remains package-internal.
   `aih policy supported accept --apply` adds bounded versioned signer/replay/head/member custody
-  under a fixed cooperative lock; `inspect` is deterministic, scrubbed, and read-only. Genesis,
-  exact succession, member renewal, replay refusal, capacity, link, race, and detached-state checks
-  fail closed. A current exact AIH-supported npm decision can use that custody through the same
+  under a fixed cooperative lock; `inspect` is deterministic, scrubbed, and read-only. It lists
+  current-head members separately from the exact occupied/remaining physical member-record capacity.
+  Superseded member records remain immutable replay/audit evidence, continue to count toward the
+  4,096-record cap, and are not pruned automatically; reaching the cap fails new acceptance closed
+  and requires separately authorized operator migration or archival. Genesis, exact succession,
+  member renewal, replay refusal, capacity, link, race, and detached-state checks fail closed. A
+  current exact AIH-supported npm decision can use that custody through the same
   fixed observer and lifecycle path without an organization evidence envelope. These commands do
   not fetch a catalog, install, project, execute, sign, release, or publish anything. Simulated test
   attestations are not public verification evidence. (#835, #848)

@@ -962,8 +962,15 @@ closed.
 At Enterprise posture, custody is held below the fixed OS administrator base; at Vibe posture it is
 held below `<target>/.aih/supported-qualification/v2/`.
 `aih policy supported inspect --root <target> --json` is strictly read-only and returns only a
-deterministic, path-scrubbed list of members bound to current heads. It reports no receipt bytes,
-verifier output, credentials, or
+deterministic, path-scrubbed list of members bound to current heads. Its `memberRecords` object
+reports the fixed physical member-record `limit`, exact `occupied` count, and `remaining` capacity.
+That count includes immutable records retained from superseded heads even though those stale members
+are omitted from the current-head `members` list. Retained member records preserve replay and audit
+truth, continue to consume the 4,096-record capacity, and are not pruned by this command or by
+acceptance. At capacity, further member acceptance fails closed. Store migration or archival then
+requires a separately authorized administrator incident-reconciliation procedure; AIH does not
+silently delete or reuse the retained evidence. Inspect reports no receipt bytes, verifier output,
+credentials, or
 reusable capability. Catalog membership remains provenance; only the separately verified
 organization decision supplies admission. Simulated test attestations are not public evidence, and
 these commands perform no signing, release, or publication.

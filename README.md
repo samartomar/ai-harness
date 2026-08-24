@@ -83,7 +83,10 @@ size-bounded evidence envelope to an externally verified V3 authority decision. 
 route accepts only canonical Qualification Receipt V2 bytes after separate GitHub attestation,
 then records bounded signer, replay, head, and head-scoped member custody with
 `aih policy supported accept --apply`. `aih policy supported inspect` reports a deterministic,
-path-scrubbed view and fails closed on partial, linked, raced, over-capacity, or foreign state.
+path-scrubbed view of current-head members plus the occupied and remaining retained-member-record
+capacity, and fails closed on partial, linked, raced, over-capacity, or foreign state. Superseded
+member records remain in custody for replay and audit truth and continue to count toward that fixed
+capacity; this route does not prune them automatically.
 Receipt V1 is unsupported.
 
 `aih policy observe npm-package` selects the qualification route from the exact current decision.
@@ -160,6 +163,10 @@ aih policy supported inspect --root <governed-target> --json
 The fixed receipt at `.aih/aih-supported-qualification-receipt.json` is evidence only after its
 outer attestation, exact decision/subject binding, validity, continuity, and durable head-scoped
 member state all pass. The separate organization decision remains the only admission authority.
+Inspection lists only members bound to current heads, but its `memberRecords` capacity object counts
+all retained member records, including superseded heads. At the fixed capacity, new acceptance fails
+closed; preserving and migrating or archiving that administrator store is a separately authorized
+operator incident-reconciliation action, not an automatic AIH prune.
 This route currently reaches the fixed npm observer/lifecycle; it does not make custom candidates
 projectable, install or configure anything, or cover skills, MCP servers, remote endpoints, or
 non-npm packages. Simulated test attestations are not public verification evidence, and no real
