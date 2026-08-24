@@ -390,11 +390,15 @@ function parseRecord(
   )
     return undefined;
   const parsedLineage = parseLineage(item.lineage);
-  const decision = item.decision as Record<string, unknown> | undefined;
+  const candidateDecision = item.decision;
+  const decision = candidateDecision as Record<string, unknown>;
   if (
     parsedLineage === undefined ||
     canonical(parsedLineage) !== canonical(lineage) ||
-    decision === undefined ||
+    candidateDecision === null ||
+    typeof candidateDecision !== "object" ||
+    Array.isArray(candidateDecision) ||
+    !exactKeys(decision, ["digest", "id"]) ||
     typeof decision.id !== "string" ||
     !ID.test(decision.id) ||
     typeof decision.digest !== "string" ||
@@ -894,7 +898,10 @@ function requestedReference(
     : undefined;
 }
 
-async function prepareRevocation(ctx: PlanContext): Promise<Prepared> {
+async function prepareRevocation(
+  ctx: PlanContext,
+  effect: Lineage["effect"] | undefined,
+): Promise<Prepared> {
   const requested = requestedReference(ctx);
   if (requested === undefined) return { actions: [], result: refused("observation-unverified") };
   const verification = await verifyPolicyAuthorityReceipt(ctx);
@@ -914,7 +921,9 @@ async function prepareRevocation(ctx: PlanContext): Promise<Prepared> {
   if (
     decision === undefined ||
     revocation === undefined ||
+    effect === undefined ||
     decision.issuer !== revocation.issuer ||
+    !decision.allowedEffects.includes(effect) ||
     now < Date.parse(decision.notBefore) ||
     now >= Date.parse(decision.expiresAt) ||
     (decision.disposition === "accepted-with-conditions" && now >= Date.parse(decision.reviewBy)) ||
@@ -934,7 +943,7 @@ async function prepareRevocation(ctx: PlanContext): Promise<Prepared> {
       record.subject.id === decision.subject.id &&
       record.lineage.target === requested.target &&
       record.decision.digest === requested.digest &&
-      decision.allowedEffects.includes(record.lineage.effect),
+      record.lineage.effect === effect,
   );
   if (candidates.length !== 1) return { actions: [], result: refused("head-conflict") };
   const current = candidates[0];
@@ -1113,7 +1122,7 @@ function preparedResult(
 
 async function prepare(ctx: PlanContext): Promise<Prepared> {
   const observation = await observeUpstreamArtifactV1({ ...ctx, apply: false });
-  if (observation.reason === "decision-revoked") return prepareRevocation(ctx);
+  if (observation.reason === "decision-revoked") return prepareRevocation(ctx, observation.effect);
   if (observation.outcome !== "observed-effective")
     return {
       actions: [],

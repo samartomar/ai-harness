@@ -88,6 +88,7 @@ type Reason =
 
 export interface UpstreamArtifactObservationResultV1 {
   readonly authority: "verified" | "unverified";
+  readonly effect?: UpstreamArtifactManifestV1["effect"];
   readonly qualification: QualificationProvenanceV1;
   readonly effective: "observed-effective" | Reason | ObservedEffectResolution["state"];
   readonly outcome: "observed-effective" | "partial" | "refused";
@@ -135,6 +136,7 @@ function refusal(
 function effectiveRefusal(
   state: ObservedEffectResolution["state"],
   qualification: QualificationProvenanceV1,
+  effect?: UpstreamArtifactManifestV1["effect"],
 ): UpstreamArtifactObservationResultV1 {
   const reason: Reason =
     state === "authority-unverified" || state === "authority-version"
@@ -153,7 +155,10 @@ function effectiveRefusal(
             : state === "decision-missing-or-mismatch"
               ? "decision-missing-or-mismatch"
               : "observation-unverified";
-  return refusal(reason, "verified", qualification, state);
+  return {
+    ...refusal(reason, "verified", qualification, state),
+    ...(effect === undefined ? {} : { effect }),
+  };
 }
 
 function option(ctx: PlanContext, key: string): string | undefined {
@@ -408,6 +413,7 @@ export async function observeUpstreamArtifactV1(
     return effectiveRefusal(
       initial.state,
       qualification === undefined ? "unqualified" : provenance,
+      manifest.effect,
     );
 
   const observedFiles: CustodiedFile[] = [];
@@ -459,6 +465,7 @@ export async function observeUpstreamArtifactV1(
     return effectiveRefusal(
       current.state,
       currentQualification === undefined ? "unqualified" : provenance,
+      manifest.effect,
     );
   const validUntil = new Date(
     Math.min(
@@ -514,7 +521,7 @@ export async function observeUpstreamArtifactV1(
     now: observedAt,
   });
   if (effective.state !== "observed-effective")
-    return effectiveRefusal(effective.state, provenance);
+    return effectiveRefusal(effective.state, provenance, manifest.effect);
 
   const result: UpstreamArtifactObservationResultV1 = {
     authority: "verified",

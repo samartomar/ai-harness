@@ -108,7 +108,11 @@ afterEach(() => {
   rmSync(bin, { recursive: true, force: true });
 });
 
-function fixture(kind: "tool" | "skill" | "mcp" | "package" = "mcp", revision = "v1") {
+function fixture(
+  kind: "tool" | "skill" | "mcp" | "package" = "mcp",
+  revision = "v1",
+  effect: "configure" | "use" = "configure",
+) {
   const files = [
     {
       path: ".codex/config.toml",
@@ -142,7 +146,7 @@ function fixture(kind: "tool" | "skill" | "mcp" | "package" = "mcp", revision = 
       subjectDigest: subject.subjectDigest,
     },
     target: "codex",
-    effect: "configure" as const,
+    effect,
     integration: {
       owner: "organization-platform",
       version: revision === "v1" ? "1.0.0" : "2.0.0",
@@ -178,7 +182,7 @@ function fixture(kind: "tool" | "skill" | "mcp" | "package" = "mcp", revision = 
     },
     subject,
     targets: ["codex"],
-    allowedEffects: ["configure"],
+    allowedEffects: [effect],
     policy: { id: "platform-policy", version: "2026.08", digest: sha("policy") },
     control: { id: "review-control", digest: sha("control") },
     evidence: { id: evidence.evidence.id, digest: evidenceDigest, attestor: evidence.attestor },
@@ -1129,6 +1133,15 @@ describe("upstream artifact observer V1", () => {
       (item.decision as Record<string, unknown>).id = "INVALID";
     });
     mutateRecord((item) => {
+      (item.decision as Record<string, unknown>).extra = true;
+    });
+    mutateRecord((item) => {
+      item.decision = null;
+    });
+    mutateRecord((item) => {
+      item.decision = [];
+    });
+    mutateRecord((item) => {
       item.previousRecordDigest = "invalid";
     });
     mutateRecord((item) => {
@@ -1295,6 +1308,15 @@ describe("upstream artifact observer V1", () => {
       item.extra = true;
     });
     mutateRevocation((item) => {
+      (item.decision as Record<string, unknown>).extra = true;
+    });
+    mutateRevocation((item) => {
+      item.decision = null;
+    });
+    mutateRevocation((item) => {
+      item.decision = [];
+    });
+    mutateRevocation((item) => {
       (item.revocation as Record<string, unknown>).decisionDigest = sha("different decision");
     });
     mutateRevocation((item) => {
@@ -1302,6 +1324,128 @@ describe("upstream artifact observer V1", () => {
     });
     for (const [index, file] of value.files.entries()) {
       expect(readFileSync(join(root, file.path))).toEqual(before[index]);
+    }
+  });
+
+  it("revokes only the validated manifest effect when one decision has multiple lifecycle lineages", async () => {
+    const configure = fixture("mcp", "v1", "configure");
+    const use = fixture("mcp", "v1", "use");
+    const evidence = {
+      ...configure.evidence,
+      evidence: {
+        ...configure.evidence.evidence,
+        artifactDigests: [sha(configure.manifestBytes), sha(use.manifestBytes)],
+      },
+    };
+    const evidenceDigest = organizationEvidenceEnvelopeDigestV1(evidence);
+    const decision = {
+      ...configure.decision,
+      allowedEffects: ["configure", "use"] as Array<"configure" | "use">,
+      qualificationBasis: {
+        kind: "organization-qualified" as const,
+        evidenceDigest,
+        attestor: evidence.attestor,
+      },
+      evidence: { ...configure.decision.evidence, digest: evidenceDigest },
+    };
+    configure.decision = decision;
+    configure.evidence = evidence;
+    use.decision = decision;
+    use.evidence = evidence;
+    writeFixture(configure);
+    writeFileSync(join(root, "manifest-use.json"), use.manifestBytes);
+    const useOptions = { ...options(use), manifest: "manifest-use.json" };
+
+    const configured = context(options(configure), [], true);
+    await executePlan(await upstreamArtifactLifecyclePlan(configured), configured, {
+      skipWorktreeGate: true,
+    });
+    const used = context(useOptions, [], true);
+    await executePlan(await upstreamArtifactLifecyclePlan(used), used, {
+      skipWorktreeGate: true,
+    });
+    const initialStore = readUpstreamArtifactLifecycleStoreV1(root);
+    expect(initialStore.kind).toBe("complete");
+    if (initialStore.kind === "complete") {
+      expect(initialStore.records.map((record) => record.lineage.effect).sort()).toEqual([
+        "configure",
+        "use",
+      ]);
+    }
+
+    const revocation = {
+      format: "aih-governance-decision-revocation",
+      version: 2,
+      decisionDigest: governanceDecisionDigestV2(decision),
+      issuer: decision.issuer,
+      revokedAt: "2026-08-24T00:00:00Z",
+      reason: "The organization revoked this exact integration.",
+    };
+    writeFixture(configure, [revocation]);
+    await expect(observeUpstreamArtifactV1(context(options(configure)))).resolves.toMatchObject({
+      effect: "configure",
+      reason: "decision-revoked",
+    });
+    const revokeConfigure = context(options(configure), [], true);
+    await expect(resolveUpstreamArtifactEffectiveStateV1(revokeConfigure)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ reason: "decision-revoked", state: "revoked" }),
+      ]),
+    );
+    const configuredRevocation = await executePlan(
+      await upstreamArtifactLifecyclePlan(revokeConfigure),
+      revokeConfigure,
+      { skipWorktreeGate: true },
+    );
+    expect(configuredRevocation.digests[0]?.data).toMatchObject({
+      applied: true,
+      outcome: "reported-only",
+      state: "decision-revoked",
+    });
+    const afterConfigure = readUpstreamArtifactLifecycleStoreV1(root);
+    expect(afterConfigure.kind).toBe("complete");
+    if (afterConfigure.kind === "complete") {
+      expect(
+        afterConfigure.records
+          .map((record) => ({ effect: record.lineage.effect, state: record.state }))
+          .sort((left, right) => left.effect.localeCompare(right.effect)),
+      ).toEqual([
+        { effect: "configure", state: "decision-revoked" },
+        { effect: "use", state: "observed-effective" },
+      ]);
+    }
+
+    await expect(observeUpstreamArtifactV1(context(useOptions))).resolves.toMatchObject({
+      effect: "use",
+      reason: "decision-revoked",
+    });
+    const revokeUse = context(useOptions, [], true);
+    const usedRevocation = await executePlan(
+      await upstreamArtifactLifecyclePlan(revokeUse),
+      revokeUse,
+      { skipWorktreeGate: true },
+    );
+    expect(usedRevocation.digests[0]?.data).toMatchObject({
+      applied: true,
+      outcome: "reported-only",
+      state: "decision-revoked",
+    });
+    await expect(resolveUpstreamArtifactEffectiveStateV1(context(useOptions))).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ reason: "decision-revoked", state: "revoked" }),
+      ]),
+    );
+    const finalStore = readUpstreamArtifactLifecycleStoreV1(root);
+    expect(finalStore.kind).toBe("complete");
+    if (finalStore.kind === "complete") {
+      expect(
+        finalStore.records
+          .map((record) => ({ effect: record.lineage.effect, state: record.state }))
+          .sort((left, right) => left.effect.localeCompare(right.effect)),
+      ).toEqual([
+        { effect: "configure", state: "decision-revoked" },
+        { effect: "use", state: "decision-revoked" },
+      ]);
     }
   });
 
