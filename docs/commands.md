@@ -1207,8 +1207,9 @@ separate fixed route below.
 the organization already placed below the governed root. The Decision V2 must be
 `organization-qualified` and name a tool, skill, MCP server, or package; `aih-supported` is not
 accepted on this route. The canonical `UpstreamArtifactManifestV1` is bounded to 512 KiB and 256
-sorted, duplicate-free file entries. It exact-matches the decision id, subject kind/id,
-source/subject digests, target, allowed effect, accountable integration owner, and exact
+sorted, portable-case-unique file entries. It accepts exact mixed-case paths while rejecting any
+segment with a trailing dot/space or Windows device alias. It exact-matches the decision id, subject
+kind/id, source/subject digests, target, allowed effect, accountable integration owner, and exact
 integration-contract version. Its raw canonical SHA-256 must be present in the canonical
 organization evidence envelope's `artifactDigests`. The manifest binds the decision id rather than
 the decision digest because the decision already binds the evidence digest and the evidence binds
@@ -1219,19 +1220,19 @@ exports the strict canonical parser and serializer.
 The fixed observer accepts no caller-selected command, executable, callback, runner, clock,
 network source, installer, or projector. It reads each bounded regular single-link file, rejects
 AIH's reserved `.aih/` custody tree and absolute, traversing, backslash, linked-parent, linked-file,
-malformed, missing, oversized, or mismatched inputs, and rechecks authority, evidence, manifest, and
-every observed file after the initial read. A success is exact observed state only. It performs no installation, copy,
-configuration, activation, removal, process launch, endpoint reachability check, or candidate-code
-execution.
+platform-aliased, repeated-identity, malformed, missing, oversized, or mismatched inputs, and
+rechecks authority, evidence, manifest, and every observed file after the initial read. A success is
+exact observed state only. It performs no installation, copy, configuration, activation, removal,
+process launch, endpoint reachability check, or candidate-code execution.
 
 `aih policy lifecycle upstream-artifact [root]` takes the same exact options. Preview performs the
 full fresh observation and writes nothing. Literal `--apply` appends an immutable
 content-addressed record, then advances the exact lineage head under
 `.aih/governance/upstream-artifact-lifecycle/v1/`. The owner-stable lineage binds subject kind/id,
 target, effect, and integration owner; every immutable observation record binds the exact
-integration-contract version and subject/source digest, so a newly authorized version/source update
-appends without rewriting the prior record. Claims, aggregate capacity, authorizing files, and the
-mutable head use exact-original transaction preconditions, and
+integration-contract version, subject/source digest, and exact evidence/manifest request paths, so a
+newly authorized version/source update appends without rewriting the prior record. Claims, aggregate
+capacity, authorizing files, and the mutable head use exact-original transaction preconditions, and
 the record is written before the head. The reader rejects unknown claims, orphan record partitions,
 forks, stale heads, unauthenticated head backups, linked custody, malformed canonical bytes, and
 capacity mismatch. Limits are 256 lineages, 16,384 aggregate records, and 4,096 records per lineage.
@@ -1239,11 +1240,12 @@ capacity mismatch. Limits are 256 lineages, 16,384 aggregate records, and 4,096 
 A current authenticated Decision V2 revocation can append negative history only for the exact
 current lineage. The result remains non-effective, failing, and nonzero; it does not remove files or
 claim that a process stopped. `aih policy evaluate <root> --no-log --json` and
-`aih report <root> --no-log` surface current-authority comparison of the recorded state. Run
-`aih policy observe upstream-artifact` again after an external file or version change to reverify
-the live bytes, then preview and apply lifecycle with the newly authorized decision/evidence. The
-read surfaces do not repeat file observation and must not be described as live installation or
-activation proof.
+`aih report <root> --no-log` freshly verify authority once and then repeat the fixed read-only
+observation for every current stored request before returning `observed-effective`. Missing or
+drifted live inputs and substituted stored verifier/installed identities remain non-effective. After
+an external file or version change, run `aih policy observe upstream-artifact`, then preview and apply
+lifecycle with the newly authorized decision/evidence to append the new audit record. Live file
+observation is still not installation, activation, endpoint reachability, or process-running proof.
 
 `npm run verify:cold-upstream-artifact-lifecycle` builds and packs Core, installs only the tarball in
 a disposable consumer, exercises the public parser, packaged schema, and both installed CLI help

@@ -11,7 +11,9 @@ import type { CommandSpec, FileAssertion, Plan, PlanContext } from "../internals
 import { dynamicDigest, plan, probe } from "../internals/plan.js";
 import type { Check, CheckCode } from "../internals/verify.js";
 import {
+  isVerifiedPolicyAuthority,
   POLICY_AUTHORITY_RECEIPT_PATH,
+  type PolicyAuthorityVerification,
   verifiedPolicyAuthorityReceiptAssertionV1,
   verifyPolicyAuthorityReceipt,
 } from "./authority.js";
@@ -103,6 +105,7 @@ export interface UpstreamArtifactObservationLifecycleHandoffV1 {
   readonly decision: GovernanceDecisionV2;
   readonly manifest: UpstreamArtifactManifestV1;
   readonly manifestDigest: string;
+  readonly request: UpstreamArtifactObservationRequestV1;
   readonly receipt: UpstreamObservationReceiptV1;
 }
 
@@ -168,15 +171,15 @@ function option(ctx: PlanContext, key: string): string | undefined {
     : undefined;
 }
 
-interface Request {
-  decision: string;
-  digest: string;
-  evidence: string;
-  manifest: string;
-  target: Cli;
+export interface UpstreamArtifactObservationRequestV1 {
+  readonly decision: string;
+  readonly digest: string;
+  readonly evidence: string;
+  readonly manifest: string;
+  readonly target: Cli;
 }
 
-function request(ctx: PlanContext): Request | undefined {
+function request(ctx: PlanContext): UpstreamArtifactObservationRequestV1 | undefined {
   const decision = option(ctx, "decision");
   const digest = option(ctx, "decisionDigest");
   const evidence = option(ctx, "evidence");
@@ -196,7 +199,7 @@ function request(ctx: PlanContext): Request | undefined {
 
 function decisionFor(
   authority: Awaited<ReturnType<typeof verifyPolicyAuthorityReceipt>>["authority"],
-  requested: Pick<Request, "decision" | "digest">,
+  requested: Pick<UpstreamArtifactObservationRequestV1, "decision" | "digest">,
 ): GovernanceDecisionV2 | undefined {
   return authority?.receipt.version === 3
     ? authority.receipt.decisions.find(
@@ -245,6 +248,7 @@ function parentState(root: string, absolute: string): "safe" | "unsafe" | "unava
 interface CustodiedFile {
   readonly assertion: FileAssertion;
   readonly bytes: Buffer;
+  readonly identity: { readonly dev: bigint; readonly ino: bigint; readonly nlink: bigint };
   readonly rawDigest: string;
   readonly size: number;
   unchanged(): boolean;
@@ -265,7 +269,6 @@ function custodyFile(
     const stat = safeLstat(absolute);
     return stat === undefined ? "unavailable" : "unsafe";
   }
-  if (opened.identity.nlink !== 1n) return "unsafe";
   const bytes = Buffer.from(opened.contents);
   const identity = {
     dev: opened.identity.dev,
@@ -277,6 +280,7 @@ function custodyFile(
   return {
     assertion: { path, sha256: raw, maxBytes, describe },
     bytes,
+    identity: { dev: identity.dev, ino: identity.ino, nlink: identity.nlink },
     rawDigest: `sha256:${raw}`,
     size: bytes.byteLength,
     unchanged(): boolean {
@@ -297,7 +301,7 @@ function custodyFile(
 function manifestMatches(
   manifest: UpstreamArtifactManifestV1,
   decision: GovernanceDecisionV2,
-  request: Request,
+  request: UpstreamArtifactObservationRequestV1,
 ): boolean {
   return (
     manifest.decisionId === request.decision &&
@@ -334,8 +338,24 @@ export async function observeUpstreamArtifactV1(
 ): Promise<UpstreamArtifactObservationResultV1> {
   const requested = request(ctx);
   if (requested === undefined) return refusal("invalid-input");
-  const verified = await verifyPolicyAuthorityReceipt(ctx);
-  if (verified.authority === undefined) return refusal("authority-unverified");
+  return reobserveUpstreamArtifactWithAuthorityV1(
+    ctx,
+    await verifyPolicyAuthorityReceipt(ctx),
+    requested,
+  );
+}
+
+/**
+ * Re-observe a stored exact request using one already externally verified authority.
+ * This still custodies the current authority receipt and every local input before
+ * reporting an observed effect.
+ */
+export async function reobserveUpstreamArtifactWithAuthorityV1(
+  ctx: PlanContext,
+  verified: PolicyAuthorityVerification,
+  requested: UpstreamArtifactObservationRequestV1,
+): Promise<UpstreamArtifactObservationResultV1> {
+  if (!isVerifiedPolicyAuthority(verified.authority)) return refusal("authority-unverified");
   if (verified.authority.receipt.version !== 3) return refusal("authority-version", "verified");
   const authorityFile = custodyFile(
     ctx.root,
@@ -347,6 +367,7 @@ export async function observeUpstreamArtifactV1(
   if (
     typeof authorityFile === "string" ||
     authorityAssertion === undefined ||
+    authorityFile.identity.nlink !== 1n ||
     authorityFile.rawDigest !== verified.authority.receiptDigest ||
     authorityFile.assertion.sha256 !== authorityAssertion.sha256
   )
@@ -366,7 +387,8 @@ export async function observeUpstreamArtifactV1(
     "assert upstream artifact manifest remains exact",
   );
   if (manifestFile === "unavailable") return refusal("manifest-unavailable", "verified");
-  if (manifestFile === "unsafe") return refusal("manifest-unsafe", "verified");
+  if (manifestFile === "unsafe" || manifestFile.identity.nlink !== 1n)
+    return refusal("manifest-unsafe", "verified");
   const manifest = parseUpstreamArtifactManifestV1Bytes(manifestFile.bytes);
   if (manifest === undefined || !envelope.evidence.artifactDigests.includes(manifestFile.rawDigest))
     return refusal("manifest-unverified", "verified");
@@ -435,6 +457,14 @@ export async function observeUpstreamArtifactV1(
       return refusal("observed-file-mismatch", "verified", provenance);
     observedFiles.push(observed);
   }
+  const observedIdentities = new Set(
+    observedFiles.map((file) => `${file.identity.dev}:${file.identity.ino}`),
+  );
+  if (
+    observedFiles.some((file) => file.identity.nlink !== 1n) ||
+    observedIdentities.size !== observedFiles.length
+  )
+    return refusal("observed-file-unsafe", "verified", provenance);
 
   afterObservedReadForInternalTest?.();
   if (!authorityFile.unchanged()) return refusal("authority-unverified");
@@ -548,6 +578,7 @@ export async function observeUpstreamArtifactV1(
     decision,
     manifest,
     manifestDigest: manifestFile.rawDigest,
+    request: requested,
     receipt,
   });
   return result;

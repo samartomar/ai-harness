@@ -49,6 +49,7 @@ import {
   upstreamArtifactObserveCommand,
   upstreamArtifactObservePlan,
 } from "../../src/org-policy/upstream-artifact-observer-v1.js";
+import { upstreamObservationReceiptDigestV1 } from "../../src/org-policy/upstream-observation-receipt-v1.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
 const lifecycleFs = vi.hoisted(() => ({
@@ -390,6 +391,25 @@ describe("upstream artifact observer V1", () => {
     });
   });
 
+  it("rejects two manifest rows that resolve to one hard-linked file identity", async () => {
+    const aliases = fixture();
+    const source = fixtureFile(aliases, 0);
+    const target = fixtureFile(aliases, 1);
+    const manifestTarget = aliases.manifest.files[1];
+    if (manifestTarget === undefined) throw new Error("missing manifest target");
+    aliases.files[1] = { ...target, bytes: Buffer.from(source.bytes) };
+    aliases.manifest.files[1] = { ...manifestTarget, sha256: sha(source.bytes) };
+    rebindManifest(aliases);
+    writeFixture(aliases);
+    rmSync(join(root, target.path));
+    linkSync(join(root, source.path), join(root, target.path));
+
+    await expect(observeUpstreamArtifactV1(context(options(aliases)))).resolves.toMatchObject({
+      outcome: "refused",
+      reason: "observed-file-unsafe",
+    });
+  });
+
   it("distinguishes malformed manifests, scope mismatch, unavailable files, and byte mismatch", async () => {
     const malformed = fixture();
     writeFixture(malformed);
@@ -620,6 +640,159 @@ describe("upstream artifact observer V1", () => {
       expect(readFileSync(join(root, file.path))).toEqual(observedBefore[index]);
     }
     expect(upstreamArtifactLifecycleCommand.requireExplicitApply).toBe(true);
+  });
+
+  it("does not promote a lifecycle record after its live inputs disappear", async () => {
+    const value = fixture("mcp");
+    writeFixture(value);
+    const applied = context(options(value), [], true);
+    await executePlan(await upstreamArtifactLifecyclePlan(applied), applied, {
+      skipWorktreeGate: true,
+    });
+
+    const base = join(root, ".aih", "governance", "upstream-artifact-lifecycle", "v1");
+    const headName = readdirSync(join(base, "heads")).find((name) =>
+      /^[0-9a-f]{64}\.json$/.test(name),
+    );
+    if (headName === undefined) throw new Error("expected lifecycle head");
+    const partition = headName.slice(0, -".json".length);
+    const recordName = readdirSync(join(base, "records", partition))[0];
+    if (recordName === undefined) throw new Error("expected lifecycle record");
+    const record = JSON.parse(
+      readFileSync(join(base, "records", partition, recordName), "utf8"),
+    ) as Record<string, unknown>;
+    const recordBytes = canonicalStrictJsonBytesV1(record);
+    const recordDigest = sha(
+      Buffer.concat([Buffer.from("aih-upstream-artifact-lifecycle-record/v1\0"), recordBytes]),
+    );
+    const lineage = record.lineage as Record<string, unknown>;
+    const claimKey = createHash("sha256")
+      .update(
+        canonicalStrictJsonBytesV1({
+          effect: lineage.effect,
+          subject: lineage.subject,
+          target: lineage.target,
+        }),
+      )
+      .digest("hex");
+
+    rmSync(base, { recursive: true, force: true });
+    mkdirSync(join(base, "claims"), { recursive: true });
+    mkdirSync(join(base, "heads"), { recursive: true });
+    mkdirSync(join(base, "records", `${lineage.digest as string}`.slice("sha256:".length)), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(base, "claims", `${claimKey}.json`),
+      canonicalStrictJsonBytesV1({
+        format: "aih-upstream-artifact-lifecycle-claim",
+        lineage,
+        version: 1,
+      }),
+    );
+    writeFileSync(
+      join(
+        base,
+        "records",
+        `${lineage.digest as string}`.slice("sha256:".length),
+        `${recordDigest.slice("sha256:".length)}.json`,
+      ),
+      recordBytes,
+    );
+    writeFileSync(
+      join(base, "heads", `${`${lineage.digest as string}`.slice("sha256:".length)}.json`),
+      canonicalStrictJsonBytesV1({
+        format: "aih-upstream-artifact-lifecycle-head",
+        lineageDigest: lineage.digest,
+        recordDigest,
+        sequence: record.sequence,
+        subjectDigest: record.subjectDigest,
+        version: 1,
+      }),
+    );
+    writeFileSync(
+      join(base, "capacity.json"),
+      canonicalStrictJsonBytesV1({
+        format: "aih-upstream-artifact-lifecycle-capacity",
+        headCount: 1,
+        recordCount: 1,
+        version: 1,
+      }),
+    );
+    rmSync(join(root, "evidence.json"));
+    rmSync(join(root, "manifest.json"));
+    for (const file of value.files) rmSync(join(root, file.path));
+
+    expect(readUpstreamArtifactLifecycleStoreV1(root)).toMatchObject({ kind: "complete" });
+    await expect(
+      resolveUpstreamArtifactEffectiveStateV1(context(options(value))),
+    ).resolves.not.toEqual([expect.objectContaining({ state: "observed-effective" })]);
+  });
+
+  it("re-observes persisted paths live and withholds effective state after artifact drift", async () => {
+    const value = fixture("mcp");
+    writeFixture(value);
+    const applied = context(options(value), [], true);
+    await executePlan(await upstreamArtifactLifecyclePlan(applied), applied, {
+      skipWorktreeGate: true,
+    });
+
+    const currentCalls: string[][] = [];
+    await expect(
+      resolveUpstreamArtifactEffectiveStateV1(context(options(value), currentCalls)),
+    ).resolves.toEqual([expect.objectContaining({ state: "observed-effective" })]);
+    expect(currentCalls).toHaveLength(1);
+
+    writeFileSync(join(root, fixtureFile(value, 0).path), "drifted");
+    await expect(
+      resolveUpstreamArtifactEffectiveStateV1(context(options(value))),
+    ).resolves.not.toEqual([expect.objectContaining({ state: "observed-effective" })]);
+  });
+
+  it("drifts a self-consistent stored verifier or installed identity from the fresh receipt", async () => {
+    const value = fixture("mcp");
+    writeFixture(value);
+    const applied = context(options(value), [], true);
+    await executePlan(await upstreamArtifactLifecyclePlan(applied), applied, {
+      skipWorktreeGate: true,
+    });
+
+    const base = join(root, ".aih", "governance", "upstream-artifact-lifecycle", "v1");
+    const headName = readdirSync(join(base, "heads")).find((name) =>
+      /^[0-9a-f]{64}\.json$/.test(name),
+    );
+    if (headName === undefined) throw new Error("expected lifecycle head");
+    const partition = headName.slice(0, -".json".length);
+    const recordName = readdirSync(join(base, "records", partition))[0];
+    if (recordName === undefined) throw new Error("expected lifecycle record");
+    const recordPath = join(base, "records", partition, recordName);
+    const record = JSON.parse(readFileSync(recordPath, "utf8")) as Record<string, unknown>;
+    const observation = record.observation as Record<string, unknown>;
+    observation.installed = { digest: sha("forged installed"), id: "forged-installed" };
+    observation.verifier = {
+      digest: sha("forged verifier"),
+      id: "forged-verifier",
+      version: "1.0.0",
+    };
+    record.observationDigest = upstreamObservationReceiptDigestV1(observation as never);
+    const recordBytes = canonicalStrictJsonBytesV1(record);
+    const recordDigest = sha(
+      Buffer.concat([Buffer.from("aih-upstream-artifact-lifecycle-record/v1\0"), recordBytes]),
+    );
+    const headPath = join(base, "heads", headName);
+    const head = JSON.parse(readFileSync(headPath, "utf8")) as Record<string, unknown>;
+    head.recordDigest = recordDigest;
+    rmSync(recordPath);
+    writeFileSync(
+      join(base, "records", partition, `${recordDigest.slice("sha256:".length)}.json`),
+      recordBytes,
+    );
+    writeFileSync(headPath, canonicalStrictJsonBytesV1(head));
+
+    expect(readUpstreamArtifactLifecycleStoreV1(root)).toMatchObject({ kind: "complete" });
+    await expect(
+      resolveUpstreamArtifactEffectiveStateV1(context(options(value))),
+    ).resolves.not.toEqual([expect.objectContaining({ state: "observed-effective" })]);
   });
 
   it.each([
@@ -1149,6 +1322,12 @@ describe("upstream artifact observer V1", () => {
     });
     mutateRecord((item) => {
       item.manifestDigest = "invalid";
+    });
+    mutateRecord((item) => {
+      item.request = null;
+    });
+    mutateRecord((item) => {
+      (item.request as Record<string, unknown>).evidence = "../outside";
     });
     mutateRecord((item) => {
       (item.observation as { decision: Record<string, unknown> }).decision.id = "different";

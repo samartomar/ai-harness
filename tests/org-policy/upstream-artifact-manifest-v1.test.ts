@@ -36,14 +36,57 @@ describe("upstream artifact manifest V1", () => {
     expect(upstreamArtifactManifestDigestV1(value)).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 
+  it("accepts exact mixed-case visible artifact paths", () => {
+    const value = {
+      ...manifest(),
+      files: [
+        { path: ".codex/Config.toml", sha256: d("4") },
+        { path: "vendor/custom/README.md", sha256: d("5") },
+      ],
+    };
+    expect(
+      parseUpstreamArtifactManifestV1Bytes(Buffer.from(canonicalUpstreamArtifactManifestV1(value))),
+    ).toEqual(value);
+  });
+
   it.each([
     ["unknown member", { ...manifest(), extra: true }],
     ["unsorted files", { ...manifest(), files: [...manifest().files].reverse() }],
     ["duplicate files", { ...manifest(), files: [manifest().files[0], manifest().files[0]] }],
+    [
+      "case-fold-equivalent files",
+      {
+        ...manifest(),
+        files: [
+          { path: "vendor/custom/manifest.json", sha256: d("4") },
+          { path: "vendor/custom/MANIFEST.json", sha256: d("5") },
+        ],
+      },
+    ],
     ["escaping path", { ...manifest(), files: [{ path: "../outside", sha256: d("4") }] }],
     ["backslash path", { ...manifest(), files: [{ path: "vendor\\outside", sha256: d("4") }] }],
     ["absolute path", { ...manifest(), files: [{ path: "C:/outside", sha256: d("4") }] }],
+    [
+      "Windows alternate data stream",
+      { ...manifest(), files: [{ path: "vendor/file.txt:stream", sha256: d("4") }] },
+    ],
+    [
+      "Windows invalid path character",
+      { ...manifest(), files: [{ path: "vendor/file?.txt", sha256: d("4") }] },
+    ],
     ["control path", { ...manifest(), files: [{ path: "vendor/\u0000file", sha256: d("4") }] }],
+    [
+      "trailing-dot path segment",
+      { ...manifest(), files: [{ path: "vendor./file", sha256: d("4") }] },
+    ],
+    [
+      "trailing-space path segment",
+      { ...manifest(), files: [{ path: "vendor /file", sha256: d("4") }] },
+    ],
+    [
+      "reserved Windows device segment",
+      { ...manifest(), files: [{ path: "vendor/con.json", sha256: d("4") }] },
+    ],
     [
       "AIH custody path",
       { ...manifest(), files: [{ path: ".aih/authority.json", sha256: d("4") }] },

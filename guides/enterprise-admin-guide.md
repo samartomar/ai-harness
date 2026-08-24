@@ -269,7 +269,8 @@ fixed integration-contract version, and one to 256 sorted root-relative file dig
 canonical manifest SHA-256 must appear in the organization evidence `artifactDigests`. The manifest
 uses the decision id rather than its digest because the decision binds the evidence digest and the
 evidence binds the manifest bytes; adding the decision digest to the manifest would create a digest
-cycle.
+cycle. Paths remain mixed-case capable but must be portable-case unique; every segment rejects
+trailing-dot/space and Windows-device aliases.
 
 ```bash
 aih policy observe upstream-artifact <root> \
@@ -290,15 +291,19 @@ aih policy lifecycle upstream-artifact <root> \
 ```
 
 The code-owned observer reads only the named bounded regular files, rejects AIH's reserved `.aih/`
-custody tree and linked or ambiguous paths, and re-observes authority, evidence, manifest, and every file before returning
-`observed-effective`. It has no caller-selected command, callback, executable, network, installer,
-or projector. Lifecycle preview is zero-write; apply appends immutable history under
+custody tree, linked or ambiguous paths, and repeated physical file identities, and re-observes
+authority, evidence, manifest, and every file before returning `observed-effective`. It has no
+caller-selected command, callback, executable, network, installer, or projector. Lifecycle preview
+is zero-write; apply appends immutable history under
 `.aih/governance/upstream-artifact-lifecycle/v1/`, records an exact update without rewriting the
 prior record, and records a current authenticated revocation as failing/nonzero negative state.
 Neither command installs, copies, configures, activates, removes, stops, or executes an artifact.
-`policy evaluate --no-log --json` and `report --no-log` surface the current recorded state, while a
-fresh `policy observe upstream-artifact` is the exact live file re-observation after an external
-change.
+For every current observation record, `policy evaluate --no-log --json` and `report --no-log` use
+its stored exact request to repeat the same live read-only observation under one freshly verified
+authority result. Missing or drifted live inputs and substituted stored verifier/installed identities
+stay non-effective. After an external version or source change, run
+`policy observe upstream-artifact` and lifecycle apply with the newly authorized decision/evidence to
+append the new audit record.
 
 Scanner can produce attributable evidence for a catalog-absent exact detector through its one
 code-owned adapter, but the Scanner repository/package remain private and unpublished. Production

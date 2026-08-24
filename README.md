@@ -194,16 +194,19 @@ organization has already placed in the governed root. A canonical, evidence-boun
 the exact Decision V2 id, subject/source digests, target/effect, accountable integration owner and
 contract version, and sorted root-relative file digests. The code-owned observer accepts no
 executable, callback, installer, projector, or network override; it rechecks authority, evidence,
-manifest, and every bounded regular file before success.
+manifest, and every bounded regular file before success. Portable path rules reject case-fold
+duplicates, trailing-dot/space and Windows-device aliases, and repeated physical file identities.
 
 `aih policy lifecycle upstream-artifact` previews with zero writes and, only with `--apply`, appends
 content-addressed update or revocation history under
-`.aih/governance/upstream-artifact-lifecycle/v1/`. Evaluate and report expose the current recorded
-state. Revocation is durable but non-effective and nonzero. These commands govern exact observed
-files; they do not install, copy, configure, activate, remove, stop, or execute them. The packed
-proof uses installed package bytes and proves the public parser/schema/commands plus refusal without
-external authority. It does not claim successful production custody, which still requires genuine
-V3 organization authority and a separately authorized GitHub attestation.
+`.aih/governance/upstream-artifact-lifecycle/v1/`. For each current observation record, evaluate and
+report reuse its exact evidence/manifest request only to run the fixed read-only observer again;
+missing or drifted live inputs and substituted stored identities remain non-effective. Revocation is
+durable but non-effective and nonzero. These commands govern exact observed files; they do not install, copy, configure, activate,
+remove, stop, or execute them. The packed proof uses installed package bytes and proves the public
+parser/schema/commands plus refusal without external authority. It does not claim successful
+production custody, which still requires genuine V3 organization authority and a separately
+authorized GitHub attestation.
 
 <!-- aih:claim CM-86 -->
 For an `aih-supported` basis, the administrator first supplies the separately controlled support

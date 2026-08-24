@@ -52,8 +52,8 @@ export async function resolveRuntimeOrgPolicy(
   const npmPackageLifecycle = governanceOwnsAihSurfaces(policy)
     ? resolveNpmPackageEffectiveStateWithAuthorityV1(ctx.root, verification)
     : [];
-  const upstreamArtifactLifecycle = resolveUpstreamArtifactEffectiveStateWithAuthorityV1(
-    ctx.root,
+  const upstreamArtifactLifecycle = await resolveUpstreamArtifactEffectiveStateWithAuthorityV1(
+    ctx,
     verification,
   );
   const projectorsDisabledAtVibe = (ctx.posture ?? policy.minimumPosture) === "vibe";

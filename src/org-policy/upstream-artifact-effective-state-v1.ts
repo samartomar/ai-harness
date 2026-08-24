@@ -10,6 +10,10 @@ import {
   readUpstreamArtifactLifecycleStoreV1,
   type UpstreamArtifactLifecycleStoredStateV1,
 } from "./upstream-artifact-lifecycle-v1.js";
+import {
+  reobserveUpstreamArtifactWithAuthorityV1,
+  upstreamArtifactObservationHandoffForLifecycleV1,
+} from "./upstream-artifact-observer-v1.js";
 
 export interface UpstreamArtifactEffectiveStateV1 {
   readonly state:
@@ -118,12 +122,14 @@ function subjectWideRejection(
   });
 }
 
-function resolveRecord(
+async function resolveRecord(
   record: UpstreamArtifactLifecycleStoredStateV1,
-  authority: PolicyAuthorityVerification["authority"],
-  authorityProblem: string | undefined,
+  ctx: PlanContext,
+  verification: PolicyAuthorityVerification,
   now: number,
-): UpstreamArtifactEffectiveStateV1 {
+): Promise<UpstreamArtifactEffectiveStateV1> {
+  const authority = verification.authority;
+  const authorityProblem = verification.problem;
   if (!isVerifiedPolicyAuthority(authority) || authority.receipt.version !== 3) {
     return base(
       record,
@@ -159,24 +165,52 @@ function resolveRecord(
   const observation = record.observation;
   if (observation === undefined || observation.outcome !== "observed-success")
     return base(record, "partial", "observation-partial");
+  if (record.request === undefined) return base(record, "partial", "observation-request-missing");
   if (Date.parse(observation.observedAt) > now) return base(record, "drifted", "observation-drift");
   if (now >= Date.parse(observation.validUntil)) return base(record, "stale", "observation-stale");
+  const live = await reobserveUpstreamArtifactWithAuthorityV1(ctx, verification, record.request);
+  if (live.outcome !== "observed-effective")
+    return base(record, "partial", `live-observation-${live.reason ?? "unverified"}`);
+  const handoff = upstreamArtifactObservationHandoffForLifecycleV1(live);
+  if (
+    handoff === undefined ||
+    handoff.request.decision !== record.request.decision ||
+    handoff.request.digest !== record.request.digest ||
+    handoff.request.evidence !== record.request.evidence ||
+    handoff.request.manifest !== record.request.manifest ||
+    handoff.request.target !== record.request.target ||
+    handoff.decision.id !== record.decision.id ||
+    governanceDecisionDigestV2(handoff.decision) !== record.decision.digest ||
+    handoff.manifestDigest !== record.manifestDigest ||
+    handoff.manifest.subject.kind !== record.lineage.subject.kind ||
+    handoff.manifest.subject.id !== record.lineage.subject.id ||
+    handoff.manifest.target !== record.lineage.target ||
+    handoff.manifest.effect !== record.lineage.effect ||
+    handoff.manifest.integration.owner !== record.lineage.integration.owner ||
+    handoff.receipt.installed.id !== observation.installed.id ||
+    handoff.receipt.installed.digest !== observation.installed.digest ||
+    handoff.receipt.integration.mode !== observation.integration.mode ||
+    handoff.receipt.integration.owner !== observation.integration.owner ||
+    handoff.receipt.integration.version !== observation.integration.version ||
+    handoff.receipt.verifier.id !== observation.verifier.id ||
+    handoff.receipt.verifier.digest !== observation.verifier.digest ||
+    handoff.receipt.verifier.version !== observation.verifier.version
+  )
+    return base(record, "drifted", "live-observation-drift");
   return base(record, "observed-effective", "current-exact-recorded-observation");
 }
 
-/** Resolve only the fixed durable store using one freshly verified authority result. */
-export function resolveUpstreamArtifactEffectiveStateWithAuthorityV1(
-  root: string,
+/** Resolve durable records only after live re-observation with one verified authority result. */
+export async function resolveUpstreamArtifactEffectiveStateWithAuthorityV1(
+  ctx: PlanContext,
   authority: PolicyAuthorityVerification,
-): readonly UpstreamArtifactEffectiveStateV1[] {
-  const store = readUpstreamArtifactLifecycleStoreV1(root);
+): Promise<readonly UpstreamArtifactEffectiveStateV1[]> {
+  const store = readUpstreamArtifactLifecycleStoreV1(ctx.root);
   if (store.kind === "absent") return [];
   if (store.kind !== "complete")
     return [{ state: "partial", reason: `lifecycle-store-${store.kind}` }];
   const now = Date.now();
-  return store.records.map((record) =>
-    resolveRecord(record, authority.authority, authority.problem, now),
-  );
+  return Promise.all(store.records.map((record) => resolveRecord(record, ctx, authority, now)));
 }
 
 /** Re-verify authority once, then resolve the fixed upstream-artifact lifecycle store. */
@@ -186,7 +220,7 @@ export async function upstreamArtifactEffectiveStateResolutionV1(
   const authority = await verifyPolicyAuthorityReceipt(ctx);
   return {
     authority,
-    states: resolveUpstreamArtifactEffectiveStateWithAuthorityV1(ctx.root, authority),
+    states: await resolveUpstreamArtifactEffectiveStateWithAuthorityV1(ctx, authority),
   };
 }
 

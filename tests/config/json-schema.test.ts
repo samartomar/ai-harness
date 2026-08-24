@@ -146,6 +146,40 @@ describe("committed JSON Schemas", () => {
     }
   });
 
+  it("rejects portable Windows path aliases in upstream artifact manifests", () => {
+    const manifest = {
+      format: "aih-upstream-artifact-manifest",
+      version: 1,
+      decisionId: "decision-custom-mcp",
+      subject: {
+        kind: "mcp",
+        id: "custom-mcp",
+        sourceDigest: `sha256:${"a".repeat(64)}`,
+        subjectDigest: `sha256:${"b".repeat(64)}`,
+      },
+      target: "codex",
+      effect: "configure",
+      integration: { owner: "organization-platform", version: "1.0.0" },
+    };
+
+    for (const path of [
+      "vendor./file",
+      "vendor /file",
+      "vendor/con.json",
+      "vendor/file.txt:stream",
+      "vendor/file?.txt",
+    ]) {
+      rejectCommittedSchema("schemas/aih-upstream-artifact-manifest-v1.schema.json", {
+        ...manifest,
+        files: [{ path, sha256: `sha256:${"c".repeat(64)}` }],
+      });
+    }
+    validateCommittedSchema("schemas/aih-upstream-artifact-manifest-v1.schema.json", {
+      ...manifest,
+      files: [{ path: "vendor/Manifest.json", sha256: `sha256:${"c".repeat(64)}` }],
+    });
+  });
+
   it("treats runtime-defaulted fields as optional editor inputs", () => {
     validateCommittedSchema("schemas/aih-config.schema.json", {
       schemaVersion: 1,

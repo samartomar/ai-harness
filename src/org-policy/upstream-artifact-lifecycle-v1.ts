@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import { lstatSync, opendirSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
-import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
+import {
+  assertSafeRelativePosixPathV1,
+  canonicalStrictJsonBytesV1,
+  parseStrictJsonObjectV1,
+} from "../contract/strict-json-v1.js";
+import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type {
   CommandSpec,
@@ -16,12 +21,14 @@ import {
   verifiedPolicyAuthorityReceiptAssertionV1,
   verifyPolicyAuthorityReceipt,
 } from "./authority.js";
+import { isContainedEvidenceRelativePathV1 } from "./evidence-custody-v1.js";
 import {
   governanceDecisionDigestV2,
   parseGovernanceDecisionRevocationV2,
 } from "./governance-decision-v2.js";
 import {
   observeUpstreamArtifactV1,
+  type UpstreamArtifactObservationRequestV1,
   type UpstreamArtifactObservationResultV1,
   upstreamArtifactObservationHandoffForLifecycleV1,
 } from "./upstream-artifact-observer-v1.js";
@@ -69,6 +76,7 @@ export interface UpstreamArtifactLifecycleStoredStateV1 {
   readonly manifestDigest?: string;
   readonly observation?: UpstreamObservationReceiptV1;
   readonly previousRecordDigest?: string;
+  readonly request?: UpstreamArtifactObservationRequestV1;
   readonly recordDigest: string;
   readonly revocation?: ReturnType<typeof parseGovernanceDecisionRevocationV2>;
   readonly sequence: number;
@@ -368,6 +376,38 @@ function parseHead(existing: Existing, lineage: Lineage): Head | undefined {
   };
 }
 
+function parseStoredRequest(value: unknown): UpstreamArtifactObservationRequestV1 | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const item = value as Record<string, unknown>;
+  if (
+    !exactKeys(item, ["decision", "digest", "evidence", "manifest", "target"]) ||
+    typeof item.decision !== "string" ||
+    !ID.test(item.decision) ||
+    typeof item.digest !== "string" ||
+    !SHA256.test(item.digest) ||
+    typeof item.evidence !== "string" ||
+    typeof item.manifest !== "string" ||
+    typeof item.target !== "string" ||
+    !SUPPORTED_CLIS.includes(item.target as (typeof SUPPORTED_CLIS)[number])
+  )
+    return undefined;
+  try {
+    for (const path of [item.evidence, item.manifest]) {
+      assertSafeRelativePosixPathV1(path, "stored upstream artifact request path");
+      if (path.length > 500 || !isContainedEvidenceRelativePathV1(path)) return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+  return {
+    decision: item.decision,
+    digest: item.digest,
+    evidence: item.evidence,
+    manifest: item.manifest,
+    target: item.target as UpstreamArtifactObservationRequestV1["target"],
+  };
+}
+
 function parseRecord(
   existing: Existing,
   lineage: Lineage,
@@ -421,6 +461,7 @@ function parseRecord(
           "observation",
           "observationDigest",
           "previousRecordDigest",
+          "request",
           "sequence",
           "state",
           "subjectDigest",
@@ -438,8 +479,13 @@ function parseRecord(
       return undefined;
     try {
       const observation = parseUpstreamObservationReceiptV1(item.observation);
+      const request = parseStoredRequest(item.request);
       if (
+        request === undefined ||
         upstreamObservationReceiptDigestV1(observation) !== item.observationDigest ||
+        request.decision !== decision.id ||
+        request.digest !== decision.digest ||
+        request.target !== lineage.target ||
         observation.decision.id !== decision.id ||
         observation.decision.digest !== decision.digest ||
         observation.subject.kind !== lineage.subject.kind ||
@@ -461,6 +507,7 @@ function parseRecord(
         observation,
         ...(previous === undefined ? {} : { previousRecordDigest: previous }),
         recordDigest: expectedDigest,
+        request,
         sequence: item.sequence,
         state: "observed-effective",
         subject: observation.subject,
@@ -1220,6 +1267,7 @@ async function prepare(ctx: PlanContext): Promise<Prepared> {
     sequence,
     state: "observed-effective" as const,
     subjectDigest: handoff.receipt.subject.subjectDigest,
+    request: handoff.request,
     version: 1,
   };
   const recordDigest = digestOf("aih-upstream-artifact-lifecycle-record/v1", record);

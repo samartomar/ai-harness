@@ -10,8 +10,9 @@ import { ExactSemverV2Schema, GovernanceDecisionEffectV2Schema } from "./governa
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
 const SAFE_MANIFEST_PATH_SOURCE =
-  "^(?!\\.[aA][iI][hH][. ]*(?:/|$))(?![aA][iI][hH]~[0-9]+[. ]*(?:/|$))(?![A-Za-z]:)(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*/$)[^\\x00-\\x1F\\x7F]+$";
+  "^(?!\\.[aA][iI][hH][. ]*(?:/|$))(?![aA][iI][hH]~[0-9]+[. ]*(?:/|$))(?!.*(?:^|/)(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.[^/]*)?(?:/|$))(?!.*(?:^|/)[^/]*[. ](?:/|$))(?!.*[<>:\\x22|?*])(?![A-Za-z]:)(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*\\/$)[^\\x00-\\x1F\\x7F]+$";
 const SAFE_MANIFEST_PATH = new RegExp(SAFE_MANIFEST_PATH_SOURCE);
+const WINDOWS_DEVICE_SEGMENT = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu;
 const stableId = z.string().regex(ID, "must be a bounded stable identifier");
 const digest = z.string().regex(SHA256, "must be a sha256 digest");
 
@@ -21,12 +22,14 @@ export const MAX_UPSTREAM_ARTIFACT_FILES_V1 = 256;
 function safePath(value: string): boolean {
   try {
     assertSafeRelativePosixPathV1(value, "upstream artifact path");
-    const firstSegment =
-      value
-        .split("/", 1)[0]
-        ?.replace(/[. ]+$/u, "")
-        .toLowerCase() ?? "";
-    return value.length <= 500 && firstSegment !== ".aih" && !/^aih~[0-9]+$/u.test(firstSegment);
+    const segments = value.split("/");
+    const firstSegment = segments[0]?.toLowerCase() ?? "";
+    return (
+      value.length <= 500 &&
+      firstSegment !== ".aih" &&
+      !/^aih~[0-9]+$/u.test(firstSegment) &&
+      segments.every((segment) => !/[. ]$/u.test(segment) && !WINDOWS_DEVICE_SEGMENT.test(segment))
+    );
   } catch {
     return false;
   }
@@ -65,13 +68,14 @@ export const UpstreamArtifactManifestV1Schema = z
       )
       .min(1)
       .max(MAX_UPSTREAM_ARTIFACT_FILES_V1)
+      .meta({ uniqueItems: true })
       .refine(
         (files) =>
           files.every(
             (file, index) =>
               index === 0 || ordinalCompare(files[index - 1]?.path ?? "", file.path) < 0,
-          ),
-        "files must be sorted by path and duplicate-free",
+          ) && new Set(files.map((file) => file.path.toLowerCase())).size === files.length,
+        "files must be sorted and portable-case unique",
       ),
   })
   .strict();
