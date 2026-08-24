@@ -1220,41 +1220,45 @@ describe("FsTransaction — bounded property model", () => {
     );
   });
 
-  it("rolls back injected write failures to their pre-transaction state", () => {
-    fc.assert(
-      fc.property(
-        fc.array(
-          fc.record({
-            pathIndex: fc.integer({ min: 0, max: PROPERTY_PATHS.length - 1 }),
-            revision: fc.integer({ min: 0, max: 999 }),
-          }),
-          { minLength: 1, maxLength: 8 },
+  it(
+    "rolls back injected write failures to their pre-transaction state",
+    () => {
+      fc.assert(
+        fc.property(
+          fc.array(
+            fc.record({
+              pathIndex: fc.integer({ min: 0, max: PROPERTY_PATHS.length - 1 }),
+              revision: fc.integer({ min: 0, max: 999 }),
+            }),
+            { minLength: 1, maxLength: 8 },
+          ),
+          (writes) => {
+            const caseDir = mkdtempSync(join(dir, "property-case-"));
+            const paths = PROPERTY_PATHS.map((name) => join(caseDir, name));
+            const initial = paths.map((_, index) => `initial-${index}\\n`);
+            for (const [index, path] of paths.entries())
+              writeFileSync(path, initial[index] as string);
+
+            const failureParent = join(caseDir, "failure-parent");
+            writeFileSync(failureParent, "not a directory");
+            const transaction = new FsTransaction();
+            for (const write of writes) {
+              transaction.stage(paths[write.pathIndex] as string, `generated-${write.revision}\\n`);
+            }
+            transaction.stage(join(failureParent, "child.txt"), "must not be written");
+
+            expect(() => transaction.commit()).toThrow();
+            for (const [index, path] of paths.entries()) {
+              expect(readFileSync(path, "utf8")).toBe(initial[index]);
+              expect(existsSync(`${path}.aih.bak`)).toBe(false);
+            }
+          },
         ),
-        (writes) => {
-          const caseDir = mkdtempSync(join(dir, "property-case-"));
-          const paths = PROPERTY_PATHS.map((name) => join(caseDir, name));
-          const initial = paths.map((_, index) => `initial-${index}\\n`);
-          for (const [index, path] of paths.entries())
-            writeFileSync(path, initial[index] as string);
-
-          const failureParent = join(caseDir, "failure-parent");
-          writeFileSync(failureParent, "not a directory");
-          const transaction = new FsTransaction();
-          for (const write of writes) {
-            transaction.stage(paths[write.pathIndex] as string, `generated-${write.revision}\\n`);
-          }
-          transaction.stage(join(failureParent, "child.txt"), "must not be written");
-
-          expect(() => transaction.commit()).toThrow();
-          for (const [index, path] of paths.entries()) {
-            expect(readFileSync(path, "utf8")).toBe(initial[index]);
-            expect(existsSync(`${path}.aih.bak`)).toBe(false);
-          }
-        },
-      ),
-      { numRuns: PROPERTY_RUNS, seed: PROPERTY_SEED },
-    );
-  });
+        { numRuns: PROPERTY_RUNS, seed: PROPERTY_SEED },
+      );
+    },
+    process.platform === "win32" ? 15_000 : 5_000,
+  );
 
   it("preserves operator-mutated files while rolling back generated writes", () => {
     fc.assert(
