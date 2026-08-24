@@ -1,7 +1,7 @@
 ---
 status: guide
 owner: AI-Harness maintainers
-last_verified: 2026-07-09
+last_verified: 2026-08-24
 truth_home: true
 purpose: Admin guide for governed organizations and enterprise rollout of AI-Harness.
 ---
@@ -37,6 +37,27 @@ attested V3 authority token—not a standalone decision file. It deliberately ke
 `aih-supported`, `organization-qualified`, and `unqualified` distinct and never
 treats an unsigned `approved` field as authority.
 
+#### Exact governance command map
+
+The packed [command reference](../docs/commands.md#aih-policy) is authoritative for flags. Use the
+closed route selected by the exact decision; do not treat a command's reachability as approval:
+
+| Journey step | Exact command |
+|---|---|
+| Verify organization-qualified evidence | `aih policy resolve <root> --decision <id> --decision-digest sha256:<digest> --target <id> --effect <effect> --evidence <file> --json` |
+| Accept and inspect an AIH-supported member | `aih policy supported accept --root <root> --decision <id> --decision-digest sha256:<digest> --target <id> --apply --json`; then `aih policy supported inspect --root <root> --json` |
+| Discover, preview, apply, and inspect the fixed AIH-managed adapter | `aih policy managed usage-metering describe --json`; `aih policy managed usage-metering reconcile <root> --decision <id> --decision-digest sha256:<digest> --target <claude|codex> --evidence <file> [--apply] --json`; `aih policy managed usage-metering inspect <root> --json` |
+| Re-observe an upstream-managed exact npm package | `aih policy observe npm-package <root> --decision <id> --decision-digest sha256:<digest> --target <id> [--evidence <file>] --json` |
+| Persist observation, exact version update, or authenticated revocation | `aih policy lifecycle npm-package <root> --decision <id> --decision-digest sha256:<digest> --target <id> [--evidence <file>] [--apply] --json` |
+| Inspect durable effective-state and audit truth without adding inspection rows | `aih policy evaluate <root> --no-log --json`; `aih report <root> --no-log` (see the packed [`aih report` reference](../docs/commands.md#aih-report)) |
+
+A version update requires a newly authorized decision whose exact version/integrity and evidence
+match the newly observed installation; rerun lifecycle preview and explicit apply. A revocation
+requires the current authenticated V3 revocation and the same lifecycle command. Revocation appends
+an audit fact and remains non-effective/nonzero; it does not claim that an upstream package manager
+removed or stopped the package. The fixed AIH-managed route has its own authenticated reconcile and
+inspect lifecycle because it owns only its code-derived bytes.
+
 For an `aih-supported` basis, the unreleased library consumes the fixed
 `.aih/aih-supported-qualification-receipt.json` file. The file must be canonical,
 no larger than 4 KiB, and externally attested by the independently configured
@@ -47,6 +68,84 @@ receipt's full subject and seven catalog-basis fields to the current Decision V2
 Those roots cannot reuse the verified organization authority root. A verified
 supported receipt qualifies provenance only; the organization must still issue the
 separate V3 decision that authorizes the exact target and effect.
+
+#### Catalog-absent organization detector evidence
+
+An organization does not need an AIH-maintained catalog entry to produce Scanner evidence for its
+own exact compatible detector. The Scanner V2 contract accepts a canonical
+`DetectorRegistrationV1` whose authoring form contains one to 128 deterministically ordered entries
+and is bounded to 512 KiB. Each entry has this closed shape (every digest placeholder is 64 lowercase
+hexadecimal characters):
+
+```json
+{
+  "protocol": "DetectorRegistrationV1",
+  "registrations": [
+    {
+      "detector": {
+        "detectorId": "detector.example.policy",
+        "analyzerIdentity": "native.0123456789ab",
+        "ociImage": {
+          "reference": "local.invalid/aih-scan/cisco@sha256:<manifest-sha256>",
+          "sha256": "<manifest-sha256>"
+        },
+        "adapter": {
+          "identity": "adapter.0123456789ab",
+          "sha256": "<adapter-sha256>"
+        },
+        "observationConfigurationSha256": "<configuration-sha256>",
+        "executionProfileSha256": "<execution-profile-sha256>",
+        "supportedPlatforms": [{ "os": "linux", "architecture": "amd64" }],
+        "sbom": { "mediaType": "application/spdx+json", "sha256": "<sbom-sha256>" },
+        "provenance": {
+          "mediaType": "application/vnd.in-toto+json",
+          "sha256": "<provenance-sha256>"
+        }
+      },
+      "runtime": {
+        "sourceReference": "local.invalid/aih-scan/cisco@sha256:<manifest-sha256>",
+        "sourceSha256": "<manifest-sha256>",
+        "configSha256": "<image-config-sha256>"
+      },
+      "adapterCapability": "cisco-oci-v1",
+      "broker": {
+        "identity": "broker.0123456789ab",
+        "capability": "cisco-oci-v1"
+      }
+    }
+  ]
+}
+```
+
+`detector.cisco` is reserved for Scanner's direct built-in path. Organization IDs must remain in
+the `detector.<namespace>...` grammar. The registration selects only the checked-in
+`cisco-oci-v1` adapter on Linux `amd64`; it cannot provide JavaScript, a command, a host path, or a
+dynamic adapter. The strict capture request combines this registration and selected `detectorId`
+with the matching canonical OCI layout, source root, selected closure, and exact SBOM/provenance
+annex files. Runtime/configuration substitution, unknown fields, duplicate IDs, mutable image
+references, unsupported platforms, cross-detector evidence, source/request drift, and final
+caller-registration drift fail closed.
+
+Until `@aihq/scan` is separately published, install only a reviewed Scanner tarball into a
+disposable consumer. The repository remains private, so this is prepublication guidance rather than
+a claim that an outside administrator can obtain it from npm:
+
+```bash
+npm install --save-dev /reviewed/path/aihq-scan-1.0.0.tgz
+npx --no-install aih-scan capture --request <capture-request.json> --output <new-bundle>
+npx --no-install aih-scan sign --bundle <bundle> --signer <signer.json> --private-key <key.pem> --claims <claims.json> --output <evidence.json>
+npx --no-install aih-scan verify --evidence <evidence.json> --bundle <bundle> --roots <independent-roots.json> --expected <expected-claims.json>
+npx --no-install aih-scan project-core-evidence --evidence <evidence.json> --bundle <bundle> --roots <independent-roots.json> --expected <expected-claims.json> --subject-digest sha256:<core-subject-digest> --output <organization-evidence.json>
+```
+
+Capture, signing, independent verification, and Core projection are separate phases. Scanner runs
+only in a disposable target and cannot mint qualification, approval, Core authority, installation,
+configuration, or runtime effects. Generated test keys, signer-class strings, and packed proofs are
+mechanics only. Production use still requires independently controlled signer roots and claims, a
+genuine current V3 organization decision plus its separately authorized public attestation, and a
+matching Core observation/effect route. Place the projected canonical envelope below the governed
+target only after preserving its custody, then use `aih policy resolve` or a supported observer from
+the command map above. Missing catalog membership is not a denial, but missing authority is.
 
 The unreleased `aih policy resolve` command now verifies the organization-evidence
 half of that boundary from an administrator-selected target root:
@@ -146,26 +245,27 @@ promote the inert offline high-water seam to authority; that requires Core's fut
 administrator-managed trust-root loader and fixed verifier/producer.
 
 For this narrow npm route, the durable lifecycle now reaches the governance read surfaces. Run
-`aih policy evaluate --verify` after the lifecycle apply, then inspect the governed report. Both
+`aih policy evaluate <root> --no-log --json` after the lifecycle apply, then inspect the governed report with
+`aih report <root> --no-log`. Both
 validate the fixed store and freshly verify current V3 authority. They report the exact lineage as
 `observed-effective` only while the observation and authority remain current; partial,
 withheld/refused, revoked, stale, or drifted state is explicit and blocks evaluation. Observation
 expiry alone does not freeze unrelated policy projection; unsafe custody, authority failure,
-rejection, revocation, and other lifecycle failures still block it. These commands do not repeat the
-package observation, mutate the target, or control the installed runtime. The store supports at most
+rejection, revocation, and other lifecycle failures still block it. With `--no-log`, these commands
+do not repeat the package observation, mutate the target, or control the installed runtime. The store supports at most
 256 active lineages, 16,384 aggregate records, and 4,096 records in one lineage. Exceeding a limit is
 reported as `over-capacity`, not as corruption, and blocks both evaluation and projection. Preserve
 the complete store as organization-controlled evidence and reconcile onto a newly governed target;
 do not delete or prune target-local history to make the check pass.
 
-The broader custom-source journey is not complete. Custom stdio and remote policy candidates remain
-non-projectable, and neither a V3 receipt, `policy resolve`, nor this fixed npm route can install,
-configure, or activate one. The observer also does not cover skills, MCP servers, remote endpoints,
-non-npm packages, or the AIH-supported qualification route. Do not tell developers that any other
-organization-chosen subject is governed-effective until its exact observer and adapter lifecycle
-exist and AIH has freshly observed the approved installed identity. Scanner and catalog publication
-are separate trust and release boundaries. This limitation must stay visible while the remaining
-Core, scanner, and catalog work is completed.
+The broader custom-source journey is not complete. Scanner can produce attributable evidence for a
+catalog-absent exact detector through its one code-owned adapter, but the Scanner repository/package
+remain private and unpublished. Custom stdio and remote policy candidates remain non-projectable,
+and neither a V3 receipt, `policy resolve`, nor this fixed npm route can install, configure, or
+activate one. The observer also does not cover skills, MCP servers, remote endpoints, or non-npm
+packages. Do not tell developers that any other organization-chosen subject is governed-effective
+until its exact observer and adapter lifecycle exist and AIH has freshly observed the approved
+installed identity. Scanner and catalog publication are separate trust and release boundaries.
 
 ## 2. Quickstart / Implementation Blueprint
 
