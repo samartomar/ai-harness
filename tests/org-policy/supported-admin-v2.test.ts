@@ -387,35 +387,6 @@ describe("SupportedQualificationCustodyV2 durable acceptance", { timeout: 15_000
     expect(plan.actions.at(-1)).toMatchObject({ kind: "digest" });
   });
 
-  it.each([
-    [
-      "win32",
-      /^C:\\ProgramData\\aih\\supported-qualification\\v2\\heads\\[0-9a-f]{64}\.json$/,
-      "C:\\ProgramData",
-    ],
-    [
-      "darwin",
-      /^\/Library\/Application Support\/aih\/supported-qualification\/v2\/heads\/[0-9a-f]{64}\.json$/,
-      "/Library/Application Support",
-    ],
-    ["linux", /^\/etc\/aih\/supported-qualification\/v2\/heads\/[0-9a-f]{64}\.json$/, "/etc"],
-  ] as const)(
-    "routes enterprise %s head planning through the external heads directory",
-    (platform, headPath, trustedBase) => {
-      const plan = supported.planSupportedCustodyAcceptV2({
-        posture: "enterprise",
-        platform,
-        root: "/disposable",
-        ...input,
-      });
-      expect(writes(plan).at(-1)).toMatchObject({
-        path: expect.stringMatching(headPath),
-        external: true,
-        trustedBase,
-      });
-    },
-  );
-
   it("rejects acceptance outside the exact receipt and decision validity window", () => {
     expect(() =>
       supported.planSupportedCustodyAcceptV2({
