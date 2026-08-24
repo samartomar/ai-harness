@@ -10,9 +10,9 @@ import { ExactSemverV2Schema, GovernanceDecisionEffectV2Schema } from "./governa
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
 const SAFE_MANIFEST_PATH_SOURCE =
-  "^(?!\\.[aA][iI][hH][. ]*(?:/|$))(?![aA][iI][hH]~[0-9]+[. ]*(?:/|$))(?!.*(?:^|/)(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.[^/]*)?(?:/|$))(?!.*(?:^|/)[^/]*[. ](?:/|$))(?!.*[<>:\\x22|?*])(?![A-Za-z]:)(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*\\/$)[^\\x00-\\x1F\\x7F]+$";
+  "^(?!\\.[aA][iI][hH][. ]*(?:/|$))(?![aA][iI][hH]~[0-9]+[. ]*(?:/|$))(?!.*(?:^|/)(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9¹²³]|[lL][pP][tT][1-9¹²³])(?:\\.[^/]*)?(?:/|$))(?!.*(?:^|/)[^/]*[. ](?:/|$))(?!.*[<>:\\x22|?*])(?![A-Za-z]:)(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*\\/$)[^\\x00-\\x1F\\x7F]+$";
 const SAFE_MANIFEST_PATH = new RegExp(SAFE_MANIFEST_PATH_SOURCE);
-const WINDOWS_DEVICE_SEGMENT = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu;
+const WINDOWS_DEVICE_SEGMENT = /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\..*)?$/iu;
 const stableId = z.string().regex(ID, "must be a bounded stable identifier");
 const digest = z.string().regex(SHA256, "must be a sha256 digest");
 

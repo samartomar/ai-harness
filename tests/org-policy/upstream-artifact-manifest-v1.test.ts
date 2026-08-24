@@ -88,6 +88,30 @@ describe("upstream artifact manifest V1", () => {
       { ...manifest(), files: [{ path: "vendor/con.json", sha256: d("4") }] },
     ],
     [
+      "reserved Windows superscript device segment COM¹",
+      { ...manifest(), files: [{ path: "vendor/COM¹.json", sha256: d("4") }] },
+    ],
+    [
+      "reserved Windows superscript device segment COM²",
+      { ...manifest(), files: [{ path: "vendor/COM².json", sha256: d("4") }] },
+    ],
+    [
+      "reserved Windows superscript device segment COM³",
+      { ...manifest(), files: [{ path: "vendor/COM³.json", sha256: d("4") }] },
+    ],
+    [
+      "reserved Windows superscript device segment LPT¹",
+      { ...manifest(), files: [{ path: "vendor/LPT¹.json", sha256: d("4") }] },
+    ],
+    [
+      "reserved Windows superscript device segment LPT²",
+      { ...manifest(), files: [{ path: "vendor/LPT².json", sha256: d("4") }] },
+    ],
+    [
+      "reserved Windows superscript device segment LPT³",
+      { ...manifest(), files: [{ path: "vendor/LPT³.json", sha256: d("4") }] },
+    ],
+    [
       "AIH custody path",
       { ...manifest(), files: [{ path: ".aih/authority.json", sha256: d("4") }] },
     ],

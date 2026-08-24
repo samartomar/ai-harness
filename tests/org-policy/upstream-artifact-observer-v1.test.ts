@@ -573,6 +573,8 @@ describe("upstream artifact observer V1", () => {
     { manifest: "aih~1/custody.json" },
     { evidence: "CON/custody.json" },
     { manifest: "CON/custody.json" },
+    { evidence: "COM¹/custody.json" },
+    { manifest: "LPT³/custody.json" },
     { evidence: "evidence./custody.json" },
     { manifest: "manifest /custody.json" },
   ])(
