@@ -95,7 +95,7 @@ describe("ai-harness self-hosting boundary", () => {
     expect(windows.strategy.matrix.shard).toEqual([1, 2]);
     expect(windows["runs-on"]).toBe("windows-latest");
     expect(windows.steps.map((step) => step.run)).toContain(
-      `npx vitest run --shard=${githubExpression("matrix.shard")}/2`,
+      `npx vitest run --testTimeout=15000 --shard=${githubExpression("matrix.shard")}/2`,
     );
     expect(windows.steps.filter((step) => step.if === "matrix.shard == 1")).toHaveLength(5);
 

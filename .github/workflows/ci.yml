@@ -87,7 +87,9 @@ jobs:
         if: matrix.shard == 1
         run: npx tsc --noEmit
       - name: Test Windows shard
-        run: npx vitest run --shard=${{ matrix.shard }}/2
+        # Hosted Windows load can push filesystem-heavy cases past Vitest's
+        # 5-second default without changing their assertions or file coverage.
+        run: npx vitest run --testTimeout=15000 --shard=${{ matrix.shard }}/2
       - name: Build
         if: matrix.shard == 1
         run: npx tsup

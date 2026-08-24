@@ -1115,7 +1115,6 @@ function lastByPath<T extends { pathIndex: number }>(operations: readonly T[]): 
 }
 
 describe("FsTransaction — bounded property model", () => {
-  // biome-ignore format: Keep the property body stable while assigning its platform timeout.
   it("keeps preview inert and commits every non-conflicting staged sequence as modeled", () => {
     fc.assert(
       fc.property(fc.array(propertyOperationArb, { maxLength: 12 }), (operations) => {
@@ -1219,7 +1218,7 @@ describe("FsTransaction — bounded property model", () => {
       }),
       { numRuns: PROPERTY_RUNS, seed: PROPERTY_SEED },
     );
-  }, process.platform === "win32" ? 15_000 : 5_000);
+  });
 
   it(
     "rolls back injected write failures to their pre-transaction state",
