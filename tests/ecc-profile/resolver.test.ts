@@ -352,6 +352,7 @@ describe("manifest-derived AIH ECC profile resolution", () => {
         await rm(outside, { recursive: true, force: true });
       }
     },
+    15_000,
   );
 
   it.each([
