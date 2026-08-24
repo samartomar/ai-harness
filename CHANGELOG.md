@@ -8,6 +8,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Policy resolution reports exact qualification provenance instead of the collapsed `qualified`
+  state.** `aih policy resolve` emits `organization-qualified` only after canonical organization
+  evidence is current and verified. `aih policy observe npm-package` emits the exact
+  decision-selected `organization-qualified` or `aih-supported` route after qualification, retains
+  that provenance when a later installed-state, observation, or custody check refuses, and reports
+  `unqualified` before qualification succeeds. These values are derived reporting facts, not caller
+  input or authorization; authority, effect resolution, exit codes, writes, and lifecycle persistence
+  are unchanged. (#852)
+
 - **Governed evaluation and reports now consume the durable npm lifecycle as observed state.**
   For a governance-owned target, `aih policy evaluate --verify` and the governed report path read
   only the fixed `.aih/governance/npm-package-lifecycle/v1/` store, validate each current head and

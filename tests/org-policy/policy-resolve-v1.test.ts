@@ -229,7 +229,7 @@ describe("policy resolve V1", () => {
 
     expect(result).toMatchObject({
       authority: "verified",
-      qualification: "qualified",
+      qualification: "organization-qualified",
       observation: "missing",
       effective: "observation-missing",
       outcome: "partial",
@@ -302,12 +302,13 @@ describe("policy resolve V1", () => {
       },
     );
     const payload = JSON.parse(output) as {
-      digests: Array<{ data: { reason: string; outcome: string } }>;
+      digests: Array<{ data: { qualification: string; reason: string; outcome: string } }>;
       report: { checks: Array<{ detail?: string }> };
       support: { findings: Array<{ code: string; recommendedAction: string }> };
     };
     expect(code).toBe(1);
     expect(payload.digests[0]?.data).toMatchObject({
+      qualification: "organization-qualified",
       reason: "observation-missing",
       outcome: "partial",
     });
