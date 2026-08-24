@@ -10,7 +10,7 @@ import { ExactSemverV2Schema, GovernanceDecisionEffectV2Schema } from "./governa
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
 const SAFE_MANIFEST_PATH_SOURCE =
-  "^(?!\\.aih(?:/|$))(?![A-Za-z]:)(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*/$)[^\\x00-\\x1F\\x7F]+$";
+  "^(?!\\.[aA][iI][hH][. ]*(?:/|$))(?![aA][iI][hH]~[0-9]+[. ]*(?:/|$))(?![A-Za-z]:)(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*/$)[^\\x00-\\x1F\\x7F]+$";
 const SAFE_MANIFEST_PATH = new RegExp(SAFE_MANIFEST_PATH_SOURCE);
 const stableId = z.string().regex(ID, "must be a bounded stable identifier");
 const digest = z.string().regex(SHA256, "must be a sha256 digest");
@@ -21,7 +21,12 @@ export const MAX_UPSTREAM_ARTIFACT_FILES_V1 = 256;
 function safePath(value: string): boolean {
   try {
     assertSafeRelativePosixPathV1(value, "upstream artifact path");
-    return value.length <= 500 && !value.startsWith(".aih/");
+    const firstSegment =
+      value
+        .split("/", 1)[0]
+        ?.replace(/[. ]+$/u, "")
+        .toLowerCase() ?? "";
+    return value.length <= 500 && firstSegment !== ".aih" && !/^aih~[0-9]+$/u.test(firstSegment);
   } catch {
     return false;
   }

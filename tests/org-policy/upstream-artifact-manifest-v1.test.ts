@@ -48,6 +48,22 @@ describe("upstream artifact manifest V1", () => {
       "AIH custody path",
       { ...manifest(), files: [{ path: ".aih/authority.json", sha256: d("4") }] },
     ],
+    [
+      "case-folded AIH custody path",
+      { ...manifest(), files: [{ path: ".AIH/authority.json", sha256: d("4") }] },
+    ],
+    [
+      "trailing-dot AIH custody alias",
+      { ...manifest(), files: [{ path: ".aih./authority.json", sha256: d("4") }] },
+    ],
+    [
+      "trailing-space AIH custody alias",
+      { ...manifest(), files: [{ path: ".aih /authority.json", sha256: d("4") }] },
+    ],
+    [
+      "short-name AIH custody alias",
+      { ...manifest(), files: [{ path: "AIH~1/authority.json", sha256: d("4") }] },
+    ],
     ["unsafe owner", { ...manifest(), integration: { owner: "../owner", version: "1.0.0" } }],
     [
       "unbounded version",
@@ -55,6 +71,9 @@ describe("upstream artifact manifest V1", () => {
     ],
   ])("rejects %s", (_label, value) => {
     expect(() => canonicalUpstreamArtifactManifestV1(value as never)).toThrow();
+    expect(
+      parseUpstreamArtifactManifestV1Bytes(Buffer.from(JSON.stringify(value))),
+    ).toBeUndefined();
   });
 
   it("rejects noncanonical bytes and the byte ceiling before parsing", () => {
