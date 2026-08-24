@@ -748,11 +748,11 @@ describe("SupportedQualificationCustodyV2 durable acceptance", { timeout: 15_000
         await prepare(root, candidateFor(receiptFor("a", aSubject, `sha256:${"f".repeat(64)}`))),
         context,
       );
-      expect(supported.inspectSupportedCustodyV2({ root, posture: "vibe" }).members.map((member) => member.entryId)).toEqual([
-        "a",
-        "ab",
-        receipt.entryId,
-      ]);
+      expect(
+        supported
+          .inspectSupportedCustodyV2({ root, posture: "vibe" })
+          .members.map((member) => member.entryId),
+      ).toEqual(["a", "ab", receipt.entryId]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

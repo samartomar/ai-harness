@@ -41,6 +41,11 @@ const entryId = z.string().regex(/^[a-z][a-z0-9.-]{0,63}$/);
 const identity = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:._@/-]{0,255}$/);
 const signerKeyId = z.string().regex(/^ed25519:[0-9a-f]{64}$/);
 const replayIdentity = z.string().regex(/^catalog-head:[0-9a-f]{64}:[0-9a-f]{64}$/);
+
+function ordinalCompare(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 const repository = z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
 const workflow = z
   .string()
@@ -1517,9 +1522,9 @@ export function inspectSupportedCustodyV2(input: {
     assertDirectoryUnchanged(headBoundary.root, headBoundary.relativePath, headsBefore);
     assertDirectoryUnchanged(memberBoundary.root, memberBoundary.relativePath, membersBefore);
     members.sort((left, right) =>
-      `${left.entryId}\0${left.subject.digest}\0${left.target}\0${left.decision.digest}`.localeCompare(
+      ordinalCompare(
+        `${left.entryId}\0${left.subject.digest}\0${left.target}\0${left.decision.digest}`,
         `${right.entryId}\0${right.subject.digest}\0${right.target}\0${right.decision.digest}`,
-        "en",
       ),
     );
     return {
