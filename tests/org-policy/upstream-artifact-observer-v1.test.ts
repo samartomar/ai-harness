@@ -564,7 +564,18 @@ describe("upstream artifact observer V1", () => {
     await expect(resolveUpstreamArtifactEffectiveStateV1(context({}))).resolves.toEqual([]);
   });
 
-  it.each([{ evidence: "evidence%2ejson" }, { manifest: "manifest:alternate.json" }])(
+  it.each([
+    { evidence: "evidence%2ejson" },
+    { manifest: "manifest:alternate.json" },
+    { evidence: ".aih/custody.json" },
+    { manifest: ".aih/custody.json" },
+    { evidence: "aih~1/custody.json" },
+    { manifest: "aih~1/custody.json" },
+    { evidence: "CON/custody.json" },
+    { manifest: "CON/custody.json" },
+    { evidence: "evidence./custody.json" },
+    { manifest: "manifest /custody.json" },
+  ])(
     "rejects non-canonical request paths before verification or lifecycle writes",
     async (override) => {
       const value = fixture();
@@ -794,6 +805,95 @@ describe("upstream artifact observer V1", () => {
     await expect(
       resolveUpstreamArtifactEffectiveStateV1(context(options(value))),
     ).resolves.not.toEqual([expect.objectContaining({ state: "observed-effective" })]);
+  });
+
+  it("revalidates every live handoff after parallel observations", async () => {
+    const first = fixture("tool");
+    const second = fixture("skill");
+    second.files = second.files.map((file, index) => ({
+      ...file,
+      path: `vendor/second/${String(index)}.json`,
+    }));
+    second.manifest.files = second.manifest.files.map((file, index) => ({
+      ...file,
+      path: second.files[index]?.path ?? file.path,
+    }));
+    rebindManifest(second);
+    writeFixture(first);
+    for (const file of second.files) {
+      mkdirSync(join(root, file.path, ".."), { recursive: true });
+      writeFileSync(join(root, file.path), file.bytes);
+    }
+    writeFileSync(join(root, "manifest-second.json"), second.manifestBytes);
+    writeFileSync(
+      join(root, "evidence-second.json"),
+      canonicalOrganizationEvidenceEnvelopeV1(second.evidence),
+    );
+    writeFileSync(
+      join(root, ".aih", "policy-authority-receipt.json"),
+      JSON.stringify({
+        format: "aih-policy-authority-receipt",
+        version: 3,
+        issuerRepository: "acme/governance",
+        issuedAt: "2026-08-24T00:00:00Z",
+        expiresAt: "2026-08-25T00:00:00Z",
+        trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+        targets: ["codex"],
+        decisions: [first.decision, second.decision].sort((left, right) =>
+          left.id.localeCompare(right.id),
+        ),
+        decisionRevocations: [],
+      }),
+    );
+    const firstContext = context(options(first), [], true);
+    const secondContext = context(
+      { ...options(second), evidence: "evidence-second.json", manifest: "manifest-second.json" },
+      [],
+      true,
+    );
+    await executePlan(await upstreamArtifactLifecyclePlan(firstContext), firstContext, {
+      skipWorktreeGate: true,
+    });
+    await executePlan(await upstreamArtifactLifecyclePlan(secondContext), secondContext, {
+      skipWorktreeGate: true,
+    });
+    const store = readUpstreamArtifactLifecycleStoreV1(root);
+    expect(store.kind).toBe("complete");
+    if (store.kind !== "complete") throw new Error("expected two lifecycle records");
+    expect(store.records).toHaveLength(2);
+    const firstRecord = store.records[0];
+    const secondRecord = store.records[1];
+    if (firstRecord === undefined || secondRecord === undefined)
+      throw new Error("expected ordered lifecycle records");
+    const firstValue = firstRecord.decision.id === first.decision.id ? first : second;
+    let firstObserved = false;
+    let raced = false;
+    __setUpstreamArtifactObserverInternalTestHookV1((requested) => {
+      if (requested.decision === firstRecord.decision.id) firstObserved = true;
+      if (requested.decision === secondRecord.decision.id && firstObserved && !raced) {
+        raced = true;
+        writeFileSync(join(root, fixtureFile(firstValue, 0).path), "drifted during sibling read");
+      }
+    });
+
+    const calls: string[][] = [];
+    const states = await resolveUpstreamArtifactEffectiveStateV1(context(options(first), calls));
+
+    expect(raced).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(states).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          decision: firstRecord.decision,
+          reason: "live-observation-drift",
+          state: "drifted",
+        }),
+        expect.objectContaining({
+          decision: secondRecord.decision,
+          state: "observed-effective",
+        }),
+      ]),
+    );
   });
 
   it("withholds effective state after organization evidence gains a hard link", async () => {

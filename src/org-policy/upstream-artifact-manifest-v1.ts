@@ -19,13 +19,15 @@ const digest = z.string().regex(SHA256, "must be a sha256 digest");
 export const MAX_UPSTREAM_ARTIFACT_MANIFEST_BYTES_V1 = 512 * 1024;
 export const MAX_UPSTREAM_ARTIFACT_FILES_V1 = 256;
 
-function safePath(value: string): boolean {
+/** Portable canonical grammar shared by manifests and observation request custody paths. */
+export function isCanonicalUpstreamArtifactPathV1(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 500) return false;
+  if (!SAFE_MANIFEST_PATH.test(value)) return false;
   try {
     assertSafeRelativePosixPathV1(value, "upstream artifact path");
     const segments = value.split("/");
     const firstSegment = segments[0]?.toLowerCase() ?? "";
     return (
-      value.length <= 500 &&
       firstSegment !== ".aih" &&
       !/^aih~[0-9]+$/u.test(firstSegment) &&
       segments.every((segment) => !/[. ]$/u.test(segment) && !WINDOWS_DEVICE_SEGMENT.test(segment))
@@ -61,7 +63,12 @@ export const UpstreamArtifactManifestV1Schema = z
       .array(
         z
           .object({
-            path: z.string().min(1).max(500).regex(SAFE_MANIFEST_PATH).refine(safePath),
+            path: z
+              .string()
+              .min(1)
+              .max(500)
+              .regex(SAFE_MANIFEST_PATH)
+              .refine(isCanonicalUpstreamArtifactPathV1),
             sha256: digest,
           })
           .strict(),

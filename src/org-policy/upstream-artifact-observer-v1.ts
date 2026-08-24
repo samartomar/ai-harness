@@ -1,10 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstatSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
-import {
-  assertSafeRelativePosixPathV1,
-  canonicalStrictJsonBytesV1,
-} from "../contract/strict-json-v1.js";
+import { canonicalStrictJsonBytesV1 } from "../contract/strict-json-v1.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { CommandSpec, FileAssertion, Plan, PlanContext } from "../internals/plan.js";
@@ -28,6 +25,7 @@ import {
   verifyOrganizationQualificationV1,
 } from "./qualification-v1.js";
 import {
+  isCanonicalUpstreamArtifactPathV1,
   MAX_UPSTREAM_ARTIFACT_MANIFEST_BYTES_V1,
   parseUpstreamArtifactManifestV1Bytes,
   type UpstreamArtifactManifestV1,
@@ -110,6 +108,13 @@ export interface UpstreamArtifactObservationLifecycleHandoffV1 {
 }
 
 const lifecycleHandoffs = new WeakMap<object, UpstreamArtifactObservationLifecycleHandoffV1>();
+const liveCustodies = new WeakMap<
+  object,
+  {
+    readonly authorityReceiptDigest: string;
+    readonly files: readonly { unchanged(): boolean }[];
+  }
+>();
 
 export function upstreamArtifactObservationHandoffForLifecycleV1(
   result: UpstreamArtifactObservationResultV1,
@@ -118,11 +123,32 @@ export function upstreamArtifactObservationHandoffForLifecycleV1(
   return handoff === undefined ? undefined : structuredClone(handoff);
 }
 
-let afterObservedReadForInternalTest: (() => void) | undefined;
+/** @internal Re-check live, private custody after concurrent effective-state observation. */
+export function isCurrentUpstreamArtifactObservationCustodyV1(
+  result: UpstreamArtifactObservationResultV1,
+  verified: PolicyAuthorityVerification,
+): boolean {
+  if (!isVerifiedPolicyAuthority(verified.authority)) return false;
+  const custody = liveCustodies.get(result);
+  const handoff = lifecycleHandoffs.get(result);
+  const now = Date.now();
+  return (
+    custody !== undefined &&
+    handoff !== undefined &&
+    custody.authorityReceiptDigest === verified.authority.receiptDigest &&
+    Date.parse(handoff.receipt.observedAt) <= now &&
+    now < Date.parse(handoff.receipt.validUntil) &&
+    custody.files.every((file) => file.unchanged())
+  );
+}
+
+let afterObservedReadForInternalTest:
+  | ((requested: UpstreamArtifactObservationRequestV1) => void)
+  | undefined;
 
 /** @internal Hermetic race seam; never exported from the package root or CLI. */
 export function __setUpstreamArtifactObserverInternalTestHookV1(
-  hook: (() => void) | undefined,
+  hook: ((requested: UpstreamArtifactObservationRequestV1) => void) | undefined,
 ): void {
   afterObservedReadForInternalTest = hook;
 }
@@ -181,13 +207,12 @@ export interface UpstreamArtifactObservationRequestV1 {
 
 /** Exact bounded grammar shared by live observation and durable lifecycle parsing. */
 export function isCanonicalUpstreamArtifactRequestPathV1(value: unknown): value is string {
-  if (typeof value !== "string" || value.length > 500 || value !== value.trim()) return false;
-  try {
-    assertSafeRelativePosixPathV1(value, "upstream artifact custody path");
-  } catch {
-    return false;
-  }
-  return isContainedEvidenceRelativePathV1(value);
+  return (
+    typeof value === "string" &&
+    value === value.trim() &&
+    isCanonicalUpstreamArtifactPathV1(value) &&
+    isContainedEvidenceRelativePathV1(value)
+  );
 }
 
 function request(ctx: PlanContext): UpstreamArtifactObservationRequestV1 | undefined {
@@ -232,7 +257,7 @@ function safeLstat(path: string): ReturnType<typeof lstatSync> | undefined {
 }
 
 function containedPath(root: string, path: string): string | undefined {
-  if (!isCanonicalUpstreamArtifactRequestPathV1(path)) return undefined;
+  if (!isContainedEvidenceRelativePathV1(path)) return undefined;
   const absolute = resolve(root, ...path.split("/"));
   return isContainedEvidenceRelativePathV1(relative(root, absolute)) ? absolute : undefined;
 }
@@ -474,7 +499,7 @@ export async function reobserveUpstreamArtifactWithAuthorityV1(
   )
     return refusal("observed-file-unsafe", "verified", provenance);
 
-  afterObservedReadForInternalTest?.();
+  afterObservedReadForInternalTest?.(requested);
   if (!authorityFile.unchanged()) return refusal("authority-unverified");
   if (!evidence.evidence.unchanged()) return refusal("evidence-changed", "verified", provenance);
   if (!manifestFile.unchanged()) return refusal("manifest-changed", "verified", provenance);
@@ -588,6 +613,10 @@ export async function reobserveUpstreamArtifactWithAuthorityV1(
     manifestDigest: manifestFile.rawDigest,
     request: requested,
     receipt,
+  });
+  liveCustodies.set(result, {
+    authorityReceiptDigest: verified.authority.receiptDigest,
+    files: [authorityFile, evidence.evidence, manifestFile, ...observedFiles],
   });
   return result;
 }

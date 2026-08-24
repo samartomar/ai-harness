@@ -12,7 +12,9 @@ import {
   upstreamArtifactLifecycleStoreSnapshotDigestV1,
 } from "./upstream-artifact-lifecycle-v1.js";
 import {
+  isCurrentUpstreamArtifactObservationCustodyV1,
   reobserveUpstreamArtifactWithAuthorityV1,
+  type UpstreamArtifactObservationResultV1,
   upstreamArtifactObservationHandoffForLifecycleV1,
 } from "./upstream-artifact-observer-v1.js";
 
@@ -128,6 +130,7 @@ async function resolveRecord(
   ctx: PlanContext,
   verification: PolicyAuthorityVerification,
   now: number,
+  liveObservations: Map<UpstreamArtifactEffectiveStateV1, UpstreamArtifactObservationResultV1>,
 ): Promise<UpstreamArtifactEffectiveStateV1> {
   const authority = verification.authority;
   const authorityProblem = verification.problem;
@@ -198,7 +201,9 @@ async function resolveRecord(
     handoff.receipt.verifier.version !== observation.verifier.version
   )
     return base(record, "drifted", "live-observation-drift");
-  return base(record, "observed-effective", "current-exact-recorded-observation");
+  const state = base(record, "observed-effective", "current-exact-recorded-observation");
+  liveObservations.set(state, live);
+  return state;
 }
 
 /** Resolve durable records only after live re-observation with one verified authority result. */
@@ -212,17 +217,29 @@ export async function resolveUpstreamArtifactEffectiveStateWithAuthorityV1(
     return [{ state: "partial", reason: `lifecycle-store-${store.kind}` }];
   const now = Date.now();
   const snapshot = upstreamArtifactLifecycleStoreSnapshotDigestV1(store);
+  const liveObservations = new Map<
+    UpstreamArtifactEffectiveStateV1,
+    UpstreamArtifactObservationResultV1
+  >();
   const states = await Promise.all(
-    store.records.map((record) => resolveRecord(record, ctx, authority, now)),
+    store.records.map((record) => resolveRecord(record, ctx, authority, now, liveObservations)),
   );
   if (!states.some((state) => state.state === "observed-effective")) return states;
+  const stabilized = states.map((state) => {
+    const live = liveObservations.get(state);
+    if (state.state !== "observed-effective") return state;
+    return live !== undefined && isCurrentUpstreamArtifactObservationCustodyV1(live, authority)
+      ? state
+      : { ...state, state: "drifted" as const, reason: "live-observation-drift" };
+  });
+  if (!stabilized.some((state) => state.state === "observed-effective")) return stabilized;
   const current = readUpstreamArtifactLifecycleStoreV1(ctx.root);
   if (
     current.kind !== "complete" ||
     upstreamArtifactLifecycleStoreSnapshotDigestV1(current) !== snapshot
   )
     return [{ state: "partial", reason: "lifecycle-store-changed-during-live-observation" }];
-  return states;
+  return stabilized;
 }
 
 /** Re-verify authority once, then resolve the fixed upstream-artifact lifecycle store. */
