@@ -112,6 +112,7 @@ interface AppliedRemoval {
 interface StagedAssertion {
   path: string;
   sha256: string;
+  maxBytes?: number;
   describe: string;
   root?: string;
 }
@@ -228,8 +229,14 @@ export class FsTransaction {
     });
   }
 
-  stageAssertion(path: string, sha256: string, describe: string, root?: string): void {
-    this.stagedAssertions.push({ path, sha256, describe, root });
+  stageAssertion(
+    path: string,
+    sha256: string,
+    describe: string,
+    root?: string,
+    maxBytes?: number,
+  ): void {
+    this.stagedAssertions.push({ path, sha256, describe, root, maxBytes });
   }
 
   preview(): ReadonlyArray<StagedWrite> {
@@ -1053,7 +1060,9 @@ function dedupeAssertions(staged: StagedAssertion[]): StagedAssertion[] {
 
 function validateAssertions(assertions: StagedAssertion[]): void {
   for (const assertion of assertions) {
-    const opened = readRegularFileWithStats(assertion.path);
+    const opened = readRegularFileWithStats(assertion.path, {
+      ...(assertion.maxBytes === undefined ? {} : { maxBytes: assertion.maxBytes }),
+    });
     const actual =
       opened === undefined || opened.stats.nlink > 1
         ? undefined

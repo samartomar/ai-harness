@@ -12,7 +12,10 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
-import { verifyPolicyAuthorityReceipt } from "../../src/org-policy/authority.js";
+import {
+  verifiedPolicyAuthorityReceiptAssertionV1,
+  verifyPolicyAuthorityReceipt,
+} from "../../src/org-policy/authority.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
 let root: string;
@@ -68,6 +71,16 @@ function context(handler: (argv: string[]) => { code: number }): PlanContext {
 }
 
 describe("policy authority live receipt custody", () => {
+  it("does not mint a transaction assertion from an unverified structural lookalike", () => {
+    expect(
+      verifiedPolicyAuthorityReceiptAssertionV1({
+        receipt: JSON.parse(receipt("claude")),
+        receiptDigest: `sha256:${"0".repeat(64)}`,
+        repository: "acme/governance",
+      }),
+    ).toBeUndefined();
+  });
+
   it("mints no authority when the live receipt changes while gh verifies its private copy", async () => {
     const path = receiptPath();
     const initial = receipt("claude");

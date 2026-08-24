@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
-import type { PlanContext } from "../internals/plan.js";
+import type { FileAssertion, PlanContext } from "../internals/plan.js";
 import { findOnPath } from "../live/runner.js";
 import {
   GovernanceDecisionRevocationV1Schema,
@@ -647,6 +647,23 @@ export interface VerifiedPolicyAuthority {
 
 export function isVerifiedPolicyAuthority(value: unknown): value is VerifiedPolicyAuthority {
   return typeof value === "object" && value !== null && verifiedAuthorities.has(value);
+}
+
+/** Read-only transaction pin for the exact no-follow authority receipt just verified. */
+export function verifiedPolicyAuthorityReceiptAssertionV1(
+  authority: VerifiedPolicyAuthority,
+): FileAssertion | undefined {
+  if (
+    !isVerifiedPolicyAuthority(authority) ||
+    !/^sha256:[0-9a-f]{64}$/.test(authority.receiptDigest)
+  )
+    return undefined;
+  return {
+    path: POLICY_AUTHORITY_RECEIPT_PATH,
+    sha256: authority.receiptDigest.slice("sha256:".length),
+    maxBytes: 1_000_000,
+    describe: "assert verified policy authority receipt remains exact",
+  };
 }
 
 export interface PolicyAuthorityVerification {

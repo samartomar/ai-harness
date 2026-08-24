@@ -3,6 +3,7 @@ import { executePlan, type PlanResult } from "../internals/execute.js";
 import {
   type Action,
   dynamicDigest,
+  type FileAssertion,
   type Plan,
   type PlanContext,
   plan,
@@ -30,7 +31,10 @@ import {
 } from "./aih-managed-usage-audit-v1.js";
 import { aihManagedUsagePlanResultV1 } from "./aih-managed-usage-result-v1.js";
 import { revokeAihManagedUsageAdapterTransactionV1 } from "./aih-managed-usage-revocation-v1.js";
-import { verifyPolicyAuthorityReceipt } from "./authority.js";
+import {
+  verifiedPolicyAuthorityReceiptAssertionV1,
+  verifyPolicyAuthorityReceipt,
+} from "./authority.js";
 import { custodyOrganizationEvidenceV1 } from "./evidence-custody-v1.js";
 import {
   type GovernanceDecisionV2,
@@ -214,6 +218,7 @@ interface AuthorizedAihManagedUsageAdapterV1 {
     readonly evidenceDigest: string;
     readonly record: string;
   };
+  readonly fileAssertions: readonly FileAssertion[];
   readonly unchanged: () => boolean;
 }
 
@@ -228,6 +233,8 @@ async function authorizeAihManagedUsageAdapterV1(
   const verified = await verifyPolicyAuthorityReceipt(ctx);
   if (verified.authority === undefined) return refused("authority-unverified");
   if (verified.authority.receipt.version !== 3) return refused("authority-version", "verified");
+  const authorityAssertion = verifiedPolicyAuthorityReceiptAssertionV1(verified.authority);
+  if (authorityAssertion === undefined) return refused("authority-unverified");
   if (!custody.evidence.unchanged()) return refused("evidence-changed", "verified");
   const decision = verified.authority.receipt.decisions.find(
     (candidate) =>
@@ -271,6 +278,7 @@ async function authorizeAihManagedUsageAdapterV1(
       evidenceDigest: organizationEvidenceEnvelopeDigestV1(envelope),
       record: envelope.evidence.id,
     },
+    fileAssertions: [authorityAssertion, custody.evidence.assertion],
     request: accepted,
     unchanged: () => custody.evidence.unchanged(),
   };
@@ -417,6 +425,13 @@ function outputAssertions(root: string, target: "claude" | "codex"): Action[] | 
     expect: { sha256: output.sha256.slice("sha256:".length) },
     assertUnchanged: true,
   }));
+}
+
+function withAuthorizationAssertions(
+  governed: Plan,
+  authorized: AuthorizedAihManagedUsageAdapterV1,
+): Plan {
+  return { ...governed, fileAssertions: authorized.fileAssertions };
 }
 
 /** Read-only preflight for Commander and library callers; it emits no effect actions. */
@@ -600,15 +615,18 @@ async function runAihManagedUsageAdapterUncheckedV1(
       );
       phases.push(
         await executePlan(
-          governedPlan(
-            authorized.commitNotAfter,
-            "policy usage-metering refresh custody",
-            ...refreshPins,
-            exactReceiptWrite(
-              refreshed,
-              parsed.text,
-              "record current exact usage adapter authority and qualification",
+          withAuthorizationAssertions(
+            governedPlan(
+              authorized.commitNotAfter,
+              "policy usage-metering refresh custody",
+              ...refreshPins,
+              exactReceiptWrite(
+                refreshed,
+                parsed.text,
+                "record current exact usage adapter authority and qualification",
+              ),
             ),
+            authorized,
           ),
           ctx,
           { skipWorktreeGate: true },
@@ -663,16 +681,19 @@ async function runAihManagedUsageAdapterUncheckedV1(
   const claim = receiptText(receiptPayload(authorized, "claimed", ownership));
   phases.push(
     await executePlan(
-      governedPlan(authorized.commitNotAfter, "policy usage-metering claim", {
-        ...writeExactText(
-          AIH_MANAGED_USAGE_RECEIPT_V4_PATH,
-          claim,
-          "durably claim fixed usage adapter before configuration",
-        ),
-        mode: 0o600,
-        expect: { absent: true },
-        durable: true,
-      }),
+      withAuthorizationAssertions(
+        governedPlan(authorized.commitNotAfter, "policy usage-metering claim", {
+          ...writeExactText(
+            AIH_MANAGED_USAGE_RECEIPT_V4_PATH,
+            claim,
+            "durably claim fixed usage adapter before configuration",
+          ),
+          mode: 0o600,
+          expect: { absent: true },
+          durable: true,
+        }),
+        authorized,
+      ),
       ctx,
     ),
   );
@@ -701,14 +722,17 @@ async function runAihManagedUsageAdapterUncheckedV1(
   }
   phases.push(
     await executePlan(
-      governedPlan(
-        current.commitNotAfter,
-        "policy usage-metering configure",
-        ...actions,
-        exactReceiptAssertion(
-          claim,
-          "assert exact V4 claim remains unchanged through configuration",
+      withAuthorizationAssertions(
+        governedPlan(
+          current.commitNotAfter,
+          "policy usage-metering configure",
+          ...actions,
+          exactReceiptAssertion(
+            claim,
+            "assert exact V4 claim remains unchanged through configuration",
+          ),
         ),
+        current,
       ),
       ctx,
     ),
@@ -743,11 +767,14 @@ async function runAihManagedUsageAdapterUncheckedV1(
   const configured = receiptText(receiptPayload(fresh, "configured", ownership, outputs));
   phases.push(
     await executePlan(
-      governedPlan(
-        fresh.commitNotAfter,
-        "policy usage-metering finalize",
-        ...outputPins,
-        exactReceiptWrite(configured, claim, "record exact fixed usage adapter outputs"),
+      withAuthorizationAssertions(
+        governedPlan(
+          fresh.commitNotAfter,
+          "policy usage-metering finalize",
+          ...outputPins,
+          exactReceiptWrite(configured, claim, "record exact fixed usage adapter outputs"),
+        ),
+        fresh,
       ),
       ctx,
       { skipWorktreeGate: true },

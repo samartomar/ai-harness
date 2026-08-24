@@ -246,6 +246,28 @@ function structuredRun(results: VerificationResult[]): VerificationPipelineRun {
 }
 
 describe("executePlan", () => {
+  it("rejects a malformed transaction file assertion before writing", async () => {
+    const target = join(dir, "asserted.txt");
+    const p: Plan = {
+      capability: "assertion",
+      fileAssertions: [
+        {
+          path: "authority.json",
+          sha256: "not-a-sha256",
+          maxBytes: 4_096,
+          describe: "authority receipt",
+        },
+      ],
+      actions: [writeText("asserted.txt", "blocked", "write after assertion")],
+    };
+
+    await expect(executePlan(p, ctx({ apply: true }))).rejects.toMatchObject({
+      code: "AIH_CONFIG",
+      message: "invalid transaction file assertion",
+    });
+    expect(existsSync(target)).toBe(false);
+  });
+
   it("rejects a noncanonical commit deadline before writing", async () => {
     const target = join(dir, "deadline.txt");
     const p: Plan = {

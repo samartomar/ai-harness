@@ -1,6 +1,13 @@
 import { AihError, FsTxnError } from "../errors.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
-import { type Action, type PlanContext, plan, writeExactText } from "../internals/plan.js";
+import {
+  type Action,
+  type FileAssertion,
+  type Plan,
+  type PlanContext,
+  plan,
+  writeExactText,
+} from "../internals/plan.js";
 import type { AihManagedUsageAdapterResultV1 } from "./aih-managed-usage-adapter-v1.js";
 import {
   AIH_MANAGED_USAGE_RECEIPT_V4_PATH,
@@ -15,7 +22,10 @@ import {
   sameAihManagedUsageRevocationV1,
   sha256,
 } from "./aih-managed-usage-audit-v1.js";
-import { verifyPolicyAuthorityReceipt } from "./authority.js";
+import {
+  verifiedPolicyAuthorityReceiptAssertionV1,
+  verifyPolicyAuthorityReceipt,
+} from "./authority.js";
 import {
   aihManagedUsageHookRollbackActionsV1,
   aihManagedUsageOwnershipMatchesCodeV4,
@@ -105,7 +115,7 @@ function parse(root: string, descriptor: AihManagedUsageDescriptorV4): DurableRe
 async function revocationCommitDeadline(
   ctx: PlanContext,
   authorityReceiptDigest: string,
-): Promise<string | undefined> {
+): Promise<{ deadline: string; assertion: FileAssertion } | undefined> {
   const verified = await verifyPolicyAuthorityReceipt(ctx);
   if (
     verified.authority === undefined ||
@@ -113,14 +123,20 @@ async function revocationCommitDeadline(
     verified.authority.receiptDigest !== authorityReceiptDigest
   )
     return undefined;
+  const assertion = verifiedPolicyAuthorityReceiptAssertionV1(verified.authority);
+  if (assertion === undefined) return undefined;
   const deadline = Math.min(Date.now() + 60_000, Date.parse(verified.authority.receipt.expiresAt));
   return Number.isFinite(deadline) && deadline > Date.now()
-    ? new Date(deadline).toISOString()
+    ? { deadline: new Date(deadline).toISOString(), assertion }
     : undefined;
 }
 
 function governedPlan(commitNotAfter: string, name: string, ...actions: Action[]) {
   return { ...plan(name, ...actions), commitNotAfter };
+}
+
+function withAuthorityAssertion(governed: Plan, assertion: FileAssertion): Plan {
+  return { ...governed, fileAssertions: [assertion] };
 }
 
 /** Claim-before-cleanup V4 revocation. No qualification bytes are read here. */
@@ -158,14 +174,17 @@ export async function revokeAihManagedUsageAdapterTransactionV1(input: {
       return result("partial", "recovery-required", "verified", initial.digest);
     phases.push(
       await executePlan(
-        governedPlan(
-          deadline,
-          "policy usage-metering refresh revoked custody",
-          exactReceiptWrite(
-            refreshed,
-            initial.text,
-            "record current revoked usage adapter authority",
+        withAuthorityAssertion(
+          governedPlan(
+            deadline.deadline,
+            "policy usage-metering refresh revoked custody",
+            exactReceiptWrite(
+              refreshed,
+              initial.text,
+              "record current revoked usage adapter authority",
+            ),
           ),
+          deadline.assertion,
         ),
         ctx,
         { skipWorktreeGate: true },
@@ -202,14 +221,17 @@ export async function revokeAihManagedUsageAdapterTransactionV1(input: {
       return result("partial", "recovery-required", "verified", initial.digest);
     phases.push(
       await executePlan(
-        governedPlan(
-          deadline,
-          "policy usage-metering revocation claim",
-          exactReceiptWrite(
-            contents,
-            initial.text,
-            "durably claim fixed usage adapter revocation before cleanup",
+        withAuthorityAssertion(
+          governedPlan(
+            deadline.deadline,
+            "policy usage-metering revocation claim",
+            exactReceiptWrite(
+              contents,
+              initial.text,
+              "durably claim fixed usage adapter revocation before cleanup",
+            ),
           ),
+          deadline.assertion,
         ),
         ctx,
         { skipWorktreeGate: true },
@@ -238,19 +260,22 @@ export async function revokeAihManagedUsageAdapterTransactionV1(input: {
       return result("partial", "recovery-required", "verified", revoking.digest);
     phases.push(
       await executePlan(
-        governedPlan(
-          deadline,
-          "policy usage-metering revoke",
-          exactReceiptAssertion(
-            revoking.text,
-            "assert exact V4 revocation claim remains unchanged through cleanup",
+        withAuthorityAssertion(
+          governedPlan(
+            deadline.deadline,
+            "policy usage-metering revoke",
+            exactReceiptAssertion(
+              revoking.text,
+              "assert exact V4 revocation claim remains unchanged through cleanup",
+            ),
+            ...aihManagedUsageHookRollbackActionsV1(
+              ctx,
+              revoking.receipt.target,
+              revoking.receipt.outputs,
+              revoking.receipt.ownership,
+            ),
           ),
-          ...aihManagedUsageHookRollbackActionsV1(
-            ctx,
-            revoking.receipt.target,
-            revoking.receipt.outputs,
-            revoking.receipt.ownership,
-          ),
+          deadline.assertion,
         ),
         ctx,
         // These cleanup mutations are fixed-code, exact-output CAS
@@ -289,14 +314,17 @@ export async function revokeAihManagedUsageAdapterTransactionV1(input: {
     return result("partial", "recovery-required", "verified", revoking.digest);
   phases.push(
     await executePlan(
-      governedPlan(
-        finalDeadline,
-        "policy usage-metering revocation finalize",
-        exactReceiptWrite(
-          revoked,
-          revoking.text,
-          "retain bounded fixed usage adapter revocation audit",
+      withAuthorityAssertion(
+        governedPlan(
+          finalDeadline.deadline,
+          "policy usage-metering revocation finalize",
+          exactReceiptWrite(
+            revoked,
+            revoking.text,
+            "retain bounded fixed usage adapter revocation audit",
+          ),
         ),
+        finalDeadline.assertion,
       ),
       ctx,
       { skipWorktreeGate: true },

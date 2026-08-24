@@ -841,6 +841,48 @@ describe("AIH-managed usage adapter V1", () => {
     ).resolves.toMatchObject({ outcome: "partial", reason: "recovery-required" });
   }, 60_000);
 
+  it.each(["authority", "qualification evidence"] as const)(
+    "does not commit fixed configuration when %s changes during the Git preflight",
+    async (input) => {
+      const value = fixture();
+      writeAuthority(value);
+      initializeGit();
+      const ctx = gitAwareContext(true);
+      const originalRun = ctx.run;
+      let attestations = 0;
+      let mutated = false;
+      ctx.run = async (argv, options) => {
+        if (argv[0] === "git" && argv.includes("status") && attestations === 2 && !mutated) {
+          mutated = true;
+          if (input === "authority") {
+            const path = join(root, ".aih", "policy-authority-receipt.json");
+            const authority = JSON.parse(readFileSync(path, "utf8"));
+            authority.decisions = [];
+            writeFileSync(path, JSON.stringify(authority));
+          } else {
+            writeFileSync(join(root, "evidence.json"), "{}\n");
+          }
+        }
+        const result = await originalRun(argv, options);
+        if (argv[0] === gh) attestations++;
+        return result;
+      };
+
+      await expect(
+        applyAihManagedUsageAdapterV1(ctx, {
+          decision: value.decision.id,
+          digest: value.digest,
+          evidence: "evidence.json",
+          target: "claude",
+        }),
+      ).resolves.toMatchObject({ outcome: "partial", reason: "recovery-required" });
+      expect(mutated).toBe(true);
+      expect(inspectAihManagedUsageAdapterV1(root)).toMatchObject({ state: "claimed" });
+      expect(existsSync(join(root, ".aih", "usage-record.mjs"))).toBe(false);
+    },
+    60_000,
+  );
+
   it("projects qualified and refused previews through the real plan boundary", async () => {
     const value = fixture();
     writeAuthority(value);
